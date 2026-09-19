@@ -26,9 +26,14 @@ Chosen per agent with ``context_policy:`` in the agent YAML.
     summary is in the run's tool-call log for audit), but the wire view stubs
     its summaries to a few lines so each summary is sent once, and drops the
     call once every block it made has been folded into a higher tier. If the
-    model does not act and the hard limit is reached, tool results outside the
-    working set are evicted with a visible stub (the model knows what is gone
-    and can re-read it) — never cut from the head.
+    model does not act and the hard limit is reached, the harness hides the
+    oldest whole turns behind a block of its own — the same mechanism, with a
+    listing of what was there for a summary, extended as the run goes on —
+    never cut from the head, never stubbed in place. (Per-message eviction
+    stubs were tried first: a 400-turn run left 33 stubs, 29 stubbed compress
+    calls and 5 un-evictable receipts in a 10K window, ~12K tokens with
+    "nothing left to evict". Everything that stays in the view per turn
+    grows without bound unless it can be folded away.)
 
 Refs are transcript positions: ``m00001`` is ``messages[0]``. Under this
 policy the transcript is append-only, so a ref never moves and a ref the
@@ -63,8 +68,10 @@ _BLOCK = re.compile(r"^b(\d+)$")
 NUDGE_AT = 0.6
 # The nudge only fires when this much of the window could actually be reclaimed.
 NUDGE_MIN_COMPRESSIBLE = 0.1
-# Emergency eviction aims here, so one eviction buys more than one turn.
-EVICT_TO = 0.9
+# When the harness has to make room it aims here, so it buys more than one turn.
+MAKE_ROOM_TO = 0.9
+# call_id of the blocks the harness makes itself; no tool call carries it.
+HARNESS_CALL = "harness"
 # A compress call's summaries are cut to this many chars in the wire view: the
 # full text is rendered where the range was, and the call is only the trace.
 SUMMARY_STUB_CHARS = 200
@@ -114,16 +121,20 @@ class Block:
     tier: int
     start: int  # first transcript index hidden by this block; where its summary is rendered
     end: int  # last transcript index hidden by this block (inclusive)
-    call_id: str  # tool_call_id of the compress call that created it
+    call_id: str  # tool_call_id of the compress call that created it, or HARNESS_CALL
     summary: str
     topic: str
     tokens_before: int
     tokens_after: int
     children: list[str] = field(default_factory=list)
-    # members whose bodies were already evicted when the summary was written:
-    # what it says about them is the model's memory, not a record
-    evicted: list[int] = field(default_factory=list)
+    # harness blocks folded in (at any depth): the model never summarized
+    # their content, so what this summary says about them is memory, not record
+    unread: list[str] = field(default_factory=list)
     active: bool = True
+
+    @property
+    def by_harness(self) -> bool:
+        return self.call_id == HARNESS_CALL
 
     def label(self) -> str:
         return f"{self.id} (tier {self.tier}, {ref(self.start)}–{ref(self.end)})"
@@ -132,7 +143,7 @@ class Block:
 GUIDANCE = """
 
 ## Context management
-You manage your own context. Every user message and tool result ends with a tag like <acp tokens="4.1K">m00042</acp>; that ref names the message (your own messages are unnumbered — name them by their neighbours). When the transcript grows, a [context] message after the latest tool result says how full it is and which ranges are largest. Use `compress` to replace a contiguous range of consumed messages with a summary you write; the range is then shown, where it was, as one message headed [Compressed bN] holding your summary — the only record of that range, so keep file paths with line numbers, function signatures, exact error strings, decisions and why, exact values and open questions verbatim, and drop logs, duplicate reads and dead ends. Never compress what the current step still needs. `decompress` brings a block's original content back when you need exact detail, `search_context` finds where something is, `context_status` shows usage and blocks. Block ids (b1, b2, …) can bound a range to fold blocks into a higher-tier summary."""
+You manage your own context. Every user message and tool result ends with a tag like <acp tokens="4.1K">m00042</acp>; that ref names the message (your own messages are unnumbered — name them by their neighbours). When the transcript grows, a [context] message after the latest tool result says how full it is and which ranges are largest. Use `compress` to replace a contiguous range of consumed messages with a summary you write; the range is then shown, where it was, as one message headed [Compressed bN] holding your summary — the only record of that range, so keep file paths with line numbers, function signatures, exact error strings, decisions and why, exact values and open questions verbatim, and drop logs, duplicate reads and dead ends. Never compress what the current step still needs. `decompress` brings a block's original content back when you need exact detail, `search_context` finds where something is, `context_status` shows usage and blocks. Block ids (b1, b2, …) can bound a range to fold blocks into a higher-tier summary. If the limit is reached before you compress, the harness hides the oldest turns behind a block that only lists what was there — nothing gets summarized — so compress first."""
 
 
 class ContextCompressor:
@@ -145,8 +156,9 @@ class ContextCompressor:
     def __init__(self, max_context_tokens: int) -> None:
         self.max_context_tokens = max_context_tokens
         self.blocks: dict[str, Block] = {}
-        self._evicted: set[int] = set()
-        self._evicted_note: str = ""
+        self._room_note: str = (
+            ""  # what the harness hid since the model last saw a view
+        )
         self._seen = 0  # transcript length last time we looked; it may only grow
 
     # -- wire view ---------------------------------------------------------
@@ -160,13 +172,11 @@ class ContextCompressor:
         self._seen = len(messages)
         view = self.view(messages)
         est = estimate_messages_tokens(view)
-        if est > self.max_context_tokens:
-            evicted = self._evict(
-                messages, target=int(self.max_context_tokens * EVICT_TO)
-            )
-            if evicted:
-                view = self.view(messages)
-                est = estimate_messages_tokens(view)
+        if est > self.max_context_tokens and self._make_room(
+            messages, target=int(self.max_context_tokens * MAKE_ROOM_TO)
+        ):
+            view = self.view(messages)
+            est = estimate_messages_tokens(view)
         self._append_nudge(view, messages, est)
         return view
 
@@ -178,38 +188,47 @@ class ContextCompressor:
         at = {b.start: b for b in self.blocks.values() if b.active}
         folded_calls = self._folded_calls()
         out: list[dict] = []
-        for i, msg in enumerate(messages):
+        for i in range(len(messages)):
             if (block := at.get(i)) is not None:
                 out.append(self.render(block))
             if i in hidden:
                 continue
-            m = {k: v for k, v in msg.items() if not k.startswith("_")}
-            role = m.get("role")
-            if role == "tool":
-                if m.get("tool_call_id") in folded_calls:
-                    continue
-                content = m.get("content") or ""
-                if i in self._evicted:
-                    content = self._evicted_stub(messages, i)
-                m["content"] = (
-                    f'{content}\n<acp tokens="{_fmt(_message_tokens(msg))}">{ref(i)}</acp>'
-                )
-            elif role == "assistant" and m.get("tool_calls"):
-                calls = self._view_calls(m["tool_calls"], folded_calls)
-                if calls:
-                    m["tool_calls"] = calls
-                else:
-                    del m["tool_calls"]
-                    if not m.get("content"):
-                        continue  # only carried a compress call whose blocks are all folded
-            elif role == "user" and isinstance(m.get("content"), str):
-                m["content"] = (
-                    f'{m["content"]}\n<acp tokens="{_fmt(_message_tokens(msg))}">{ref(i)}</acp>'
-                )
-            elif role == "system" and i == 0 and isinstance(m.get("content"), str):
-                m["content"] = m["content"] + GUIDANCE
-            out.append(m)
+            m = self._view_message(messages, i, folded_calls)
+            if m is not None:
+                out.append(m)
         return out
+
+    def _view_message(
+        self, messages: list[dict], i: int, folded_calls: set[str]
+    ) -> dict | None:
+        """``messages[i]`` as the view shows it (tagged, compress calls stubbed),
+        or None when the view drops it: a folded compress pair."""
+        msg = messages[i]
+        m = {k: v for k, v in msg.items() if not k.startswith("_")}
+        role = m.get("role")
+        if role == "tool":
+            if m.get("tool_call_id") in folded_calls:
+                return None
+            m["content"] = (
+                f'{m.get("content") or ""}\n<acp tokens="{_fmt(_message_tokens(msg))}">{ref(i)}</acp>'
+            )
+        elif role == "assistant" and m.get("tool_calls"):
+            calls = self._view_calls(m["tool_calls"], folded_calls)
+            if calls:
+                m["tool_calls"] = calls
+            else:
+                del m["tool_calls"]
+                if not m.get("content"):
+                    return (
+                        None  # only carried a compress call whose blocks are all folded
+                    )
+        elif role == "user" and isinstance(m.get("content"), str):
+            m["content"] = (
+                f'{m["content"]}\n<acp tokens="{_fmt(_message_tokens(msg))}">{ref(i)}</acp>'
+            )
+        elif role == "system" and i == 0 and isinstance(m.get("content"), str):
+            m["content"] = m["content"] + GUIDANCE
+        return m
 
     @staticmethod
     def render(block: Block) -> dict:
@@ -221,10 +240,10 @@ class ContextCompressor:
             f" {ref(block.start)}–{ref(block.end)}, tier {block.tier}, "
             f"~{_fmt(block.tokens_before)} → {_fmt(block.tokens_after)} tokens"
         )
-        if block.evicted:
+        if block.unread:
             head += (
-                f"\n({', '.join(ref(i) for i in block.evicted)} had already been evicted when this "
-                "summary was written; what it says about them is from memory, not the content)"
+                f"\n(folds {', '.join(block.unread)}, which the harness had hidden unsummarized; "
+                "what this summary says about that content is from memory, not the content)"
             )
         return {
             "role": "user",
@@ -354,8 +373,8 @@ class ContextCompressor:
                     "name": "search_context",
                     "description": (
                         "Keyword search across the whole transcript, including messages hidden inside compressed "
-                        "blocks and evicted tool results. Returns refs, where each hit lives (visible / hidden in "
-                        "bN / evicted) and a snippet — cheaper than decompressing blind."
+                        "blocks. Returns refs, where each hit lives (visible / hidden in bN) and a snippet — "
+                        "cheaper than decompressing blind."
                     ),
                     "parameters": {
                         "type": "object",
@@ -423,6 +442,7 @@ class ContextCompressor:
             )
         hidden = self._hidden_indices()
         protected = self._protected_indices(messages)
+        folded = self._folded_calls()
         planned: list[Block] = []
         notes: dict[int, list[str]] = {}
         for r in ranges:
@@ -455,10 +475,12 @@ class ContextCompressor:
                         "end the range before it or start after it"
                     )
             children = self._children_for(s, e)
-            # what the range costs in the view today: live messages (an evicted one
-            # is only its stub), plus the children's summaries
+            # what the range costs in the view today: live messages as the view
+            # shows them, plus the children's summaries
             tokens_before = sum(
-                self._view_cost(messages, i) for i in range(s, e + 1) if i not in hidden
+                self._view_cost(messages, i, folded)
+                for i in range(s, e + 1)
+                if i not in hidden
             ) + sum(c.tokens_after for c in children)
             block = Block(
                 id="",
@@ -471,16 +493,9 @@ class ContextCompressor:
                 tokens_before=tokens_before,
                 tokens_after=0,
                 children=[c.id for c in children],
-                evicted=[
-                    i for i in range(s, e + 1) if i in self._evicted and i not in hidden
-                ],
+                unread=[c.label() for c in children if c.by_harness]
+                + [u for c in children for u in c.unread],
             )
-            block.tokens_after = _message_tokens(self.render(block))
-            if block.tokens_after >= tokens_before:
-                raise ContextError(
-                    f"summary for {ref(s)}–{ref(e)} is ~{block.tokens_after} tokens but the range is only "
-                    f"~{tokens_before}; nothing would be gained. Compress a larger range or write less."
-                )
             planned.append(block)
 
         planned.sort(key=lambda b: b.start)
@@ -489,11 +504,21 @@ class ContextCompressor:
                 raise ContextError(
                     f"ranges overlap: {ref(b1.start)}–{ref(b1.end)} and one starting at {ref(b2.start)}"
                 )
+        for n, block in enumerate(
+            planned
+        ):  # ids in transcript order; the id is part of the render
+            block.id = f"b{len(self.blocks) + 1 + n}"
+            self._settle(block)
+            if block.tokens_after >= block.tokens_before:
+                raise ContextError(
+                    f"summary for {ref(block.start)}–{ref(block.end)} is ~{block.tokens_after} tokens "
+                    f"but the range is only ~{block.tokens_before}; nothing would be gained. "
+                    "Compress a larger range or write less."
+                )
 
         before = estimate_messages_tokens(self.view(messages))
         lines = []
         for block in planned:
-            block.id = f"b{len(self.blocks) + 1}"
             for c in block.children:
                 self.blocks[c].active = False
             self.blocks[block.id] = block
@@ -503,10 +528,10 @@ class ContextCompressor:
             )
             if block.children:
                 line += f", folds {', '.join(block.children)}"
-            if block.evicted:
+            if block.unread:
                 line += (
-                    f"; note: {', '.join(ref(i) for i in block.evicted)} had already been evicted, "
-                    "so the summary's account of them is from memory — re-read before relying on it"
+                    f"; note: folds {', '.join(block.unread)}, which the harness had hidden "
+                    "unsummarized — this summary covers that content from memory only"
                 )
             if block.start in notes:
                 line += f"; {'; '.join(notes[block.start])}"
@@ -632,11 +657,6 @@ class ContextCompressor:
             lines.append(
                 "Largest compressible ranges: "
                 + ", ".join(f"{ref(s)}–{ref(e)} (~{_fmt(t)})" for s, e, t in ranges[:5])
-            )
-        if self._evicted:
-            lines.append(
-                "Evicted (re-run to recover): "
-                + ", ".join(ref(i) for i in sorted(self._evicted))
             )
         return "\n".join(lines)
 
@@ -767,53 +787,115 @@ class ContextCompressor:
                 )
         return children
 
-    def _evict(self, messages: list[dict], *, target: int) -> list[int]:
-        hidden = self._hidden_indices()
-        last_turn = max(
-            (i for i, m in enumerate(messages) if m.get("role") == "assistant"),
-            default=len(messages),
-        )
-        names = self._tool_names(messages)
-        candidates = [
-            i
-            for i, m in enumerate(messages)
-            if m.get("role") == "tool"
-            and i not in hidden
-            and i not in self._evicted
-            and i < last_turn
-            # a context tool's receipt is small and is the model's only record
-            # of what it did to its own context
-            and not self.handles(names.get(m.get("tool_call_id") or "", ""))
-        ]
-        est = estimate_messages_tokens(self.view(messages))
-        evicted: list[int] = []
-        for i in candidates:
-            if est <= target:
+    def _make_room(self, messages: list[dict], *, target: int) -> bool:
+        """Over the limit: hide the oldest live turns, whole, behind a block the
+        harness writes itself, until the view fits ``target``.
+
+        The same mechanism as the model's ``compress`` with a listing for a
+        summary, so nothing in the view is left standing per message: the
+        block grows at its end as more has to go, and the model can fold it
+        into a block of its own later. Blocks the model made are never put
+        under a harness block — its summaries are the point — so a harness
+        block runs from where the last block ended to where it had to stop.
+        Returns whether anything was hidden.
+        """
+        hid: list[str] = []
+        while (est := estimate_messages_tokens(self.view(messages))) > target:
+            folded = self._folded_calls()
+            hidden_now = False
+            for s, e, _ in sorted(self._compressible_ranges(messages)):  # oldest first
+                need, freed, end = est - target, 0, e
+                for i in range(s, e + 1):
+                    freed += self._view_cost(messages, i, folded)
+                    if freed >= need and self._ends_turn(messages, i):
+                        end = i
+                        break
+                s, end = self._snap(messages, s, end)
+                prev = next(
+                    (
+                        b
+                        for b in self.blocks.values()
+                        if b.active and b.by_harness and b.end == s - 1
+                    ),
+                    None,
+                )
+                if prev is None:
+                    block = Block(
+                        id=f"b{len(self.blocks) + 1}",
+                        tier=1,
+                        start=s,
+                        end=end,
+                        call_id=HARNESS_CALL,
+                        summary="",
+                        topic="hidden by the harness",
+                        tokens_before=0,
+                        tokens_after=0,
+                    )
+                else:
+                    block = prev
+                    block.end = end
+                block.tokens_before += sum(
+                    self._view_cost(messages, i, folded) for i in range(s, end + 1)
+                )
+                block.summary = self._listing(messages, block)
+                self._settle(block)
+                if prev is None and block.tokens_after >= block.tokens_before:
+                    continue  # a run smaller than its own listing; try the next one
+                self.blocks[block.id] = block
+                hid.append(f"{ref(s)}–{ref(end)} behind {block.id}")
+                hidden_now = True
                 break
-            est -= _message_tokens(messages[i])
-            self._evicted.add(i)
-            evicted.append(i)
-        if evicted:
-            self._evicted_note = (
-                f"{len(evicted)} tool result(s) were evicted to stay under the limit: "
-                f"{', '.join(ref(i) for i in evicted)}. Compress consumed ranges instead so their content survives as summaries."
+            if not hidden_now:
+                logger.warning(
+                    "context: ~%d tokens over the limit with nothing left to hide",
+                    est - self.max_context_tokens,
+                )
+                break
+        if hid:
+            self._room_note = (
+                f"The harness hid {', '.join(hid)} to stay under the limit; nothing was summarized — "
+                "decompress or search_context can still reach it. Compress consumed ranges yourself "
+                "before this happens again."
             )
             logger.warning(
-                "context: evicted %d tool result(s) to stay under %d tokens",
-                len(evicted),
+                "context: harness hid %s to stay under %d tokens",
+                ", ".join(hid),
                 self.max_context_tokens,
             )
-        elif est > target:
-            logger.warning(
-                "context: still ~%d tokens over the limit with nothing left to evict",
-                est - self.max_context_tokens,
-            )
-        return evicted
+        return bool(hid)
+
+    @staticmethod
+    def _ends_turn(messages: list[dict], i: int) -> bool:
+        return i + 1 >= len(messages) or messages[i + 1].get("role") != "tool"
+
+    @staticmethod
+    def _listing(messages: list[dict], block: Block) -> str:
+        """What a harness block says in place of a summary: counts, not content."""
+        counts: dict[str, int] = {}
+        turns = 0
+        for i in range(block.start, block.end + 1):
+            m = messages[i]
+            if m.get("role") == "assistant":
+                turns += 1
+                for tc in m.get("tool_calls") or []:
+                    name = (tc.get("function") or {}).get("name") or "tool"
+                    counts[name] = counts.get(name, 0) + 1
+            elif m.get("role") == "user":
+                counts["user message"] = counts.get("user message", 0) + 1
+        what = ", ".join(
+            f"{n} ×{c}"
+            for n, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        )
+        return (
+            f"Hidden by the harness to stay under the context limit; the model never summarized it. "
+            f"{turns} turn(s): {what or 'no tool calls'}. decompress {block.id} to read it, or search_context."
+        )
 
     def _compressible_ranges(self, messages: list[dict]) -> list[tuple[int, int, int]]:
         """Contiguous runs of live, unprotected messages, largest first: (start, end, tokens)."""
         hidden = self._hidden_indices()
         protected = self._protected_indices(messages)
+        folded = self._folded_calls()
         last_turn = max(
             (i for i, m in enumerate(messages) if m.get("role") == "assistant"),
             default=len(messages),
@@ -831,7 +913,7 @@ class ContextCompressor:
             if live:
                 if start is None:
                     start, tokens = i, 0
-                tokens += self._view_cost(messages, i)
+                tokens += self._view_cost(messages, i, folded)
             elif start is not None:
                 s, e = self._snap(messages, start, i - 1)
                 runs.append((s, e, tokens))
@@ -839,19 +921,20 @@ class ContextCompressor:
         runs.sort(key=lambda r: -r[2])
         return runs
 
-    def _view_cost(self, messages: list[dict], i: int) -> int:
-        if i in self._evicted:
-            return _message_tokens({"content": self._evicted_stub(messages, i)})
-        return _message_tokens(messages[i])
+    def _settle(self, block: Block) -> None:
+        """Set ``tokens_after`` to what the block's render costs. The render
+        prints that number, so it is a fixed point: re-render until stable."""
+        for _ in range(3):
+            n = _message_tokens(self.render(block))
+            if n == block.tokens_after:
+                return
+            block.tokens_after = n
 
-    def _evicted_stub(self, messages: list[dict], i: int) -> str:
-        name = self._tool_names(messages).get(
-            messages[i].get("tool_call_id") or "", "tool"
-        )
-        return (
-            f"[evicted to stay under the context limit: {name} result, "
-            f"~{_fmt(_message_tokens(messages[i]))} tokens. Re-run the tool if you need it.]"
-        )
+    def _view_cost(self, messages: list[dict], i: int, folded_calls: set[str]) -> int:
+        """What ``messages[i]`` costs in the wire view: the tagged/stubbed message
+        the view builds, or nothing for a folded compress pair."""
+        m = self._view_message(messages, i, folded_calls)
+        return _message_tokens(m) if m is not None else 0
 
     def _append_nudge(self, view: list[dict], messages: list[dict], est: int) -> None:
         """Say what the harness has to say as a message of its own, after the
@@ -860,9 +943,9 @@ class ContextCompressor:
         if not view or view[-1].get("role") != "tool":
             return
         notes = []
-        if self._evicted_note:
-            notes.append(self._evicted_note)
-            self._evicted_note = ""
+        if self._room_note:
+            notes.append(self._room_note)
+            self._room_note = ""
         ranges = self._compressible_ranges(messages)
         compressible = sum(t for _, _, t in ranges)
         if (
@@ -883,7 +966,7 @@ class ContextCompressor:
                 b for b in self.blocks.values() if b.active and b.start <= i <= b.end
             )
             return f"hidden in {owner.id}"
-        return "evicted" if i in self._evicted else "visible"
+        return "visible"
 
     @staticmethod
     def _describe(msg: dict, names: dict[str, str]) -> str:

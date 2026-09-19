@@ -75,7 +75,7 @@ and it has four extra tools:
 |---|---|
 | `compress` | Replace one or more contiguous ranges (`m00003`–`m00006`, or block ids `b1`–`b3` to fold blocks into a higher tier) with a summary the model writes. All ranges apply or none. |
 | `decompress` | Return a block's original content one tier up. The block stays compressed. |
-| `search_context` | Keyword search across the whole transcript, including compressed and evicted content. |
+| `search_context` | Keyword search across the whole transcript, including compressed and harness-hidden content. |
 | `context_status` | Usage, blocks, and the largest compressible ranges. |
 
 The transcript itself is never edited. The provider gets a *view*: a
@@ -91,23 +91,28 @@ is a message of its own, not a line inside the tool result — models are
 trained to discount instructions found in tool output, and one ignored the
 inline form at 97% usage on every turn.
 
-If the model does not act and the hard limit is reached, the oldest tool
-results outside the current turn are evicted and replaced by a visible stub
-(`[evicted to stay under the context limit: Read result, ~9.4K tokens.
-Re-run the tool if you need it.]`). Receipts from the context tools are
-never evicted — they are the model's only record of what it did to its own
-context. A summary written over already-evicted content is marked as such
-in the block header, since what it says about those messages is the
-model's memory, not the content.
+If the model does not act and the hard limit is reached, the harness hides
+the oldest turns, whole, behind a block of its own — the same mechanism as
+`compress`, but with a listing for a summary (`[Compressed b1 — hidden by
+the harness] … 8 turn(s): Read ×8. decompress b1 to read it`), so nothing
+is summarized and the model is told so in the next `[context]` message. The
+block grows at its end as more has to go, so a model that never compresses
+costs one rendered block, not a stub per hidden result; the model can fold
+it into a block of its own later, and a summary that does is marked in its
+header as covering that content from memory only. Blocks the model wrote
+are never put under a harness block. Verified to 1,200 turns (~2,400
+messages) in a 10K window with a scripted model, a fuzzed one and one that
+never compresses: the view never exceeds the limit and every message is
+visible, summarized or hidden exactly once (`tests/test_llm/test_context_longrun.py`).
 
 An unknown value fails at construction:
 `context_policy must be one of truncate, compress, not 'evict'`.
 
 Measured on a four-file read task (~35K tokens of results against a 24K
 window, claude-haiku-4-5): `compress` finished in 6 iterations with one
-model-written summary and zero evictions, 56K tokens total; all four answers
-correct, two of them from the model's own summary after the raw content was
-gone.
+model-written summary and nothing hidden by the harness, 56K tokens total;
+all four answers correct, two of them from the model's own summary after the
+raw content was gone.
 
 ## Related
 

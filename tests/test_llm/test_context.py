@@ -14,6 +14,7 @@ from temper_ai.llm.context import (
     SUMMARY_STUB_CHARS,
     ContextCompressor,
     ContextError,
+    _message_tokens,
     estimate_messages_tokens,
     ref,
 )
@@ -591,118 +592,161 @@ class TestNudgeAndEviction:
         assert "Largest compressible ranges: m00003–m00012" in note
         assert "Compress consumed ranges before continuing" in note
 
-    def test_over_the_limit_evicts_old_results_visibly(self):
-        messages = _transcript(turns=6, size=3000)
+    def test_over_the_limit_the_harness_hides_the_oldest_turns_whole(self):
+        messages = _transcript(turns=6, size=3000)  # ~6K of results
         c = ContextCompressor(4_000)
         view = c.prepare(messages)
 
-        stubs = [
-            m
-            for m in view
-            if "[evicted to stay under the context limit: Read result"
-            in str(m.get("content"))
-        ]
-        assert stubs and stubs[0]["content"].endswith("m00004</acp>")  # oldest first
-        assert (
-            "file 5: xxx" in view[-2]["content"]
-        )  # the newest result is never evicted
+        (b1,) = c.blocks.values()
+        assert b1.by_harness and b1.active and b1.tier == 1
+        assert b1.start == 2  # right after the task message
+        assert messages[b1.end]["role"] == "tool"  # whole turns: never splits a pair
+        assert b1.end < len(messages) - 2  # the current turn is never hidden
+        rendered = view[2]["content"]
+        assert rendered.startswith("[Compressed b1 — hidden by the harness]")
+        assert "the model never summarized it" in rendered
+        assert f"Read ×{(b1.end - 1) // 2}" in rendered  # a listing, not content
+        assert "decompress b1 to read it" in rendered
+        assert "file 5: xxx" in view[-2]["content"]  # the newest result stays
         assert view[-1]["role"] == "user"
-        assert "tool result(s) were evicted" in view[-1]["content"]
+        assert "The harness hid m00003–" in view[-1]["content"]
+        assert "nothing was summarized" in view[-1]["content"]
         assert messages[3]["content"].startswith("file 0: xxx")  # transcript intact
-        assert estimate_messages_tokens(view) < estimate_messages_tokens(messages)
+        assert estimate_messages_tokens(view) <= 4_000
+        assert "file 0: xxx" in c.decompress(messages, "b1")  # still reachable
 
-    def test_eviction_note_is_shown_once(self):
+    def test_the_harness_note_is_shown_once(self):
         messages = _transcript(turns=6, size=3000)
         c = ContextCompressor(4_000)
         c.prepare(messages)
         _turn(messages, "c9", "Read", "file 9: " + "y" * 100)
         view = c.prepare(messages)
-        assert "were evicted" not in view[-1]["content"]
+        assert "The harness hid" not in view[-1]["content"]
 
-    def test_compressing_evicted_results_counts_their_stubs_not_their_bodies(self):
-        """Live run: two evicted 9K/13K reads inside the range made the result say
-        'Context ≈ 20,333 → 0' — they were only ~40-token stubs in the view."""
+    def test_the_harness_block_grows_instead_of_multiplying(self):
+        """Per-message eviction left a ~48-token stub per result, forever; 400
+        turns of it was ~1.6K tokens of stubs in a 10K window."""
         messages = _transcript(turns=6, size=3000)
         c = ContextCompressor(4_000)
-        c.prepare(messages)  # evicts the oldest results
-        assert 3 in c._evicted
+        c.prepare(messages)
+        end_before = c.blocks["b1"].end
+        for n in range(6):
+            _turn(messages, f"n{n}", "Read", f"file {10 + n}: " + "z" * 3000)
+            view = c.prepare(messages)
+            assert estimate_messages_tokens(view) <= 4_000
+
+        assert [b.id for b in c.blocks.values()] == ["b1"]
+        assert c.blocks["b1"].end > end_before
+        renders = [m for m in view if str(m.get("content")).startswith("[Compressed")]
+        assert len(renders) == 1
+
+    def test_the_harness_never_puts_the_models_blocks_under_its_own(self):
+        """A summary the model wrote is the point; it stays in view, and the
+        harness block resumes after it."""
+        messages = _transcript(turns=4, size=3000)
+        c = ContextCompressor(1_000_000)
+        c.prepare(messages)
+        _compress(
+            c,
+            messages,
+            "k1",
+            [{"start": "m00003", "end": "m00006", "summary": "files 0-1: nothing"}],
+        )
+        c.max_context_tokens = 4_000
+        for n in range(8):
+            _turn(messages, f"n{n}", "Read", f"file {10 + n}: " + "z" * 3000)
+            c.prepare(messages)
+
+        model = c.blocks["b1"]
+        harness = [b for b in c.blocks.values() if b.by_harness]
+        assert model.active and not model.by_harness
+        assert len(harness) == 1 and harness[0].start == model.end + 1
+        assert "files 0-1: nothing" in c.view(messages)[2]["content"]
+
+    def test_a_summary_folding_a_harness_block_says_so(self):
+        """Live run (with eviction): the model compressed over content it had
+        never seen, then answered with docstrings it made up for it."""
+        messages = _transcript(turns=6, size=3000)
+        c = ContextCompressor(4_000)
+        c.prepare(messages)
+        h = c.blocks["b1"]
+        assert h.by_harness
 
         result = c.compress(
             messages,
             [
                 {
-                    "start": "m00003",
-                    "end": "m00008",
-                    "summary": "files 0-2: nothing relevant",
+                    "start": "b1",
+                    "end": ref(h.end + 2),
+                    "summary": "files 0-4: nothing relevant",
                 }
             ],
             tool_call_id="k1",
         )
-        b = c.blocks["b1"]
-        assert b.tokens_before < 2 * 1_000  # not the 3 × 1K bodies
+        b2 = c.blocks["b2"]
+        assert b2.children == ["b1"] and b2.unread == [h.label()]
+        assert (
+            f"note: folds {h.label()}, which the harness had hidden unsummarized — "
+            "this summary covers that content from memory only" in result
+        )
+        rendered = ContextCompressor.render(b2)["content"]
+        assert (
+            f"(folds {h.label()}, which the harness had hidden unsummarized" in rendered
+        )
+
+        # and the warning outlives the next fold
+        _reply(messages, c, "k1", [], result)
+        _turn(messages, "c9", "Read", "file 9: " + "y" * 100)
+        c.prepare(messages)
+        c.compress(
+            messages,
+            [{"start": "b2", "end": "m00016", "summary": "everything so far: nothing"}],
+            tool_call_id="k2",
+        )
+        assert c.blocks["b3"].unread == [h.label()]
+
+    def test_compress_counts_what_the_view_shows_not_the_transcript(self):
+        """A compress call's summary is stubbed in the view and a folded pair is
+        dropped; a range over them reclaims what the view held, not what the
+        transcript holds. (Under eviction the same slip read 'Context ≈ 20,333
+        → 0' for two stubs.)"""
+        messages = _transcript(turns=4, size=3000)
+        c = ContextCompressor(1_000_000)
+        c.prepare(messages)
+        long = "a summary " * 200  # 2,000 chars in the transcript, 200 in the view
+        _compress(
+            c, messages, "k1", [{"start": "m00003", "end": "m00004", "summary": long}]
+        )
+        _compress(
+            c,
+            messages,
+            "k2",
+            [{"start": "m00005", "end": "m00006", "summary": "file 1: nothing"}],
+        )
+        _turn(messages, "c9", "Read", "file 9: " + "y" * 100)
+        view = c.prepare(messages)
+        # the view of b1..m00014: b1, b2, two live turns, the k1 call (stubbed)
+        # and receipt, the k2 call and receipt; then the c9 turn and the nudge
+        assert [tc["id"] for tc in view[12]["tool_calls"]] == ["c9"]
+        shown = estimate_messages_tokens(view[2:12])
+        held = sum(_message_tokens(messages[i]) for i in range(2, 14))
+        # four 1K bodies became two renders (~700, ~40), and the 2K-char summary
+        # is counted once (b1's render), not again inside the stubbed k1 call
+        assert 1_500 < held - shown < 2_000, (held, shown)
+
+        result = c.compress(
+            messages,
+            [{"start": "b1", "end": "m00014", "summary": "files 0-1 and 9: nothing"}],
+            tool_call_id="k3",
+        )
+        b3 = c.blocks["b3"]
+        assert b3.tokens_before == shown
         before, after = (
             int(x.replace(",", ""))
             for x in result.split("Context ≈ ")[1].split(" of ")[0].split(" → ")
         )
         assert after == estimate_messages_tokens(c.view(messages))  # measured
         assert 0 < after < before
-
-    def test_a_summary_written_over_evicted_content_says_so(self):
-        """Live run: the model compressed a range seven of whose reads were already
-        evicted, then answered with docstrings it had made up for them."""
-        messages = _transcript(turns=6, size=3000)
-        c = ContextCompressor(4_000)
-        c.prepare(messages)
-        assert sorted(c._evicted) == [
-            3,
-            5,
-            7,
-        ]  # the three oldest results, all in the range
-
-        result = c.compress(
-            messages,
-            [
-                {
-                    "start": "m00003",
-                    "end": "m00008",
-                    "summary": "files 0-2: nothing relevant",
-                }
-            ],
-            tool_call_id="k1",
-        )
-        assert (
-            "note: m00004, m00006, m00008 had already been evicted, so the summary's account of them is from memory"
-            in result
-        )
-        rendered = ContextCompressor.render(c.blocks["b1"])["content"]
-        assert (
-            "(m00004, m00006, m00008 had already been evicted when this summary was written"
-            in rendered
-        )
-        assert c.blocks["b1"].evicted == [3, 5, 7]
-
-    def test_context_tool_receipts_are_never_evicted(self):
-        messages = _transcript(turns=6, size=3000)
-        c = ContextCompressor(4_000)
-        c.prepare(messages)
-        _compress(
-            c,
-            messages,
-            "k1",
-            [{"start": "m00009", "end": "m00010", "summary": "file 3: nothing"}],
-        )
-        receipt = len(messages) - 1  # the compress result, appended by _reply
-        assert messages[receipt]["tool_call_id"] == "k1"
-        # enough pressure that oldest-first eviction has to walk past the receipt:
-        # six more 3K reads against a 4K limit
-        for n in range(6):
-            _turn(messages, f"n{n}", "Read", f"file {10 + n}: " + "z" * 3000)
-            c.prepare(messages)
-
-        assert receipt not in c._evicted
-        newer = [i for i in c._evicted if i > receipt]
-        assert newer  # results younger than the receipt were evicted instead
-        assert messages[newer[0]]["role"] == "tool"
 
 
 def _text(content="Done", tokens=100):

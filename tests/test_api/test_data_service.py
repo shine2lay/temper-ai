@@ -162,6 +162,47 @@ class TestGetWorkflowExecution:
         assert result["workflow_name"] == "test_wf"
         assert len(result["nodes"]) == 1
 
+    def _rewound_run(self, wf_data: dict) -> list[dict]:
+        """One node that ran twice under the same name, with one llm and one
+        tool call surviving in the tree. A loop rewind discarded the first
+        attempt, so only the second is reachable by name.
+        """
+        return [
+            _evt("wf", "workflow.started", execution_id="run-1", data=wf_data),
+            _evt("s1", "stage.started", parent_id="wf", data={"name": "implement"}),
+            _evt("a1", "agent.started", parent_id="s1", data={"agent_name": "coder"}),
+            _evt("l1", "llm.call.started", parent_id="a1", data={"iteration": 1}),
+            _evt("t1", "tool.call.started", parent_id="a1", data={"tool_name": "Bash"}),
+        ]
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_discarded_attempts_are_added_to_the_call_counts(self, mock_get_events):
+        """The node tree keeps one entry per name, so a rewound node's earlier
+        attempt is invisible to it. The executor publishes that share on the
+        workflow event and it has to be added, or the run under-reports.
+        """
+        mock_get_events.return_value = self._rewound_run({
+            "name": "test_wf", "retired_llm_calls": 4, "retired_tool_calls": 6,
+        })
+
+        result = get_workflow_execution("run-1")
+
+        assert result is not None
+        assert result["total_llm_calls"] == 5  # 1 surviving + 4 discarded
+        assert result["total_tool_calls"] == 7  # 1 surviving + 6 discarded
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_a_run_that_never_rewound_counts_only_the_tree(self, mock_get_events):
+        """No key on the event (every run before this change, and every run
+        without a loop) must be left exactly as it was."""
+        mock_get_events.return_value = self._rewound_run({"name": "test_wf"})
+
+        result = get_workflow_execution("run-1")
+
+        assert result is not None
+        assert result["total_llm_calls"] == 1
+        assert result["total_tool_calls"] == 1
+
     @patch("temper_ai.api.data_service.get_events")
     def test_no_events_returns_none(self, mock_get_events):
         mock_get_events.return_value = []

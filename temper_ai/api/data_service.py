@@ -179,8 +179,16 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     total_tokens = wf_data.get("total_tokens")
     if total_tokens is None:
         total_tokens = _sum_node_metric(nodes, "total_tokens")
-    total_llm_calls = _sum_node_metric(nodes, "total_llm_calls")
-    total_tool_calls = _sum_node_metric(nodes, "total_tool_calls")
+    # The node tree holds one entry per name, so attempts a loop rewind
+    # discarded aren't in it. The executor publishes their share separately;
+    # add it rather than replace, since these two counts come from different
+    # sources (nested llm.*/tool.* events here, AgentResult in the executor).
+    total_llm_calls = _sum_node_metric(nodes, "total_llm_calls") + (
+        wf_data.get("retired_llm_calls") or 0
+    )
+    total_tool_calls = _sum_node_metric(nodes, "total_tool_calls") + (
+        wf_data.get("retired_tool_calls") or 0
+    )
 
     result = {
         "id": execution_id,

@@ -104,11 +104,18 @@ def execute_graph(
     if context.run_state is None:
         context.run_state = node_outputs
 
+    # Attempts discarded by a loop rewind. They are gone from node_outputs but
+    # they were paid for, so the run's totals have to keep them.
+    retired: list[NodeResult] = []
+
     try:
-        _run_batches(batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id)
+        _run_batches(
+            batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id,
+            retired,
+        )
         return _build_final_result(
             nodes, node_outputs, input_data, start, graph_event_id, context, workflow_outputs,
-            is_workflow=is_workflow,
+            is_workflow=is_workflow, retired=retired,
         )
 
     except Exception as exc:
@@ -128,6 +135,8 @@ def execute_graph(
             agent_results=[r for nr in node_outputs.values() for r in nr.agent_results],
             node_results=node_outputs,
             duration_seconds=duration,
+            cost_usd=sum(r.cost_usd for r in (*node_outputs.values(), *retired)),
+            total_tokens=sum(r.total_tokens for r in (*node_outputs.values(), *retired)),
         )
 
 def _run_batches(
@@ -138,6 +147,7 @@ def _run_batches(
     loop_counts: dict[str, int],
     context: ExecutionContext,
     graph_event_id: str,
+    retired: list[NodeResult] | None = None,
 ) -> None:
     """Iterate through topological batches, handling single-node loops and parallel execution."""
     batch_idx = 0
@@ -164,7 +174,7 @@ def _run_batches(
             if cp:
                 cp.save_node_completed(node.name, result)
             _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
-            rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp, input_data)
+            rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp, input_data, retired)
             if rewind is not None:
                 batch_idx = rewind
                 continue
@@ -190,6 +200,7 @@ def _build_final_result(
     context: ExecutionContext,
     workflow_outputs: dict[str, str] | None = None,
     is_workflow: bool = False,
+    retired: list[NodeResult] | None = None,
 ) -> NodeResult:
     """Assemble the final NodeResult once every batch has run.
 
@@ -209,8 +220,12 @@ def _build_final_result(
     ]
 
     duration = time.monotonic() - start
-    total_cost = sum(r.cost_usd for r in node_outputs.values())
-    total_tokens = sum(r.total_tokens for r in node_outputs.values())
+    # Every attempt that ran, including the ones a loop rewind threw away.
+    # Summing node_outputs alone reports only each node's surviving attempt
+    # and silently under-reports the run's real spend.
+    accounted = [*node_outputs.values(), *(retired or [])]
+    total_cost = sum(r.cost_usd for r in accounted)
+    total_tokens = sum(r.total_tokens for r in accounted)
     last_output = _get_final_output(nodes, node_outputs)
 
     # Resolve workflow-level outputs from node results
@@ -230,6 +245,15 @@ def _build_final_result(
         "total_tokens": total_tokens,
         "duration_seconds": duration,
     }
+
+    # Call counts are derived by the API from the node tree, which keeps only
+    # each node's surviving attempt. Publish just the discarded attempts' share
+    # so the API can add it to what it already counts, rather than replacing a
+    # figure that is sourced differently (events, not AgentResult).
+    retired_agents = [a for r in (retired or []) for a in r.agent_results]
+    if retired_agents:
+        event_data["retired_llm_calls"] = sum(a.llm_calls for a in retired_agents)
+        event_data["retired_tool_calls"] = sum(a.tool_calls for a in retired_agents)
     if resolved_outputs:
         event_data["workflow_output"] = resolved_outputs
 
@@ -898,6 +922,7 @@ def _handle_loop(
     node_map: dict[str, Node],
     checkpoint_service: Any = None,
     input_data: dict | None = None,
+    retired: list[NodeResult] | None = None,
 ) -> int | None:
     """Handle loop_to logic. Returns batch index to rewind to, or None.
 
@@ -973,9 +998,13 @@ def _handle_loop(
                     cleared_nodes=cleared_nodes,
                     trigger_result=result,
                 )
-            # Clear outputs for nodes from target onwards (they'll re-run)
+            # Clear outputs for nodes from target onwards (they'll re-run).
+            # Retire rather than drop: the attempt is no longer the node's
+            # output, but its cost and tokens still belong to the run.
             for name in cleared_nodes:
-                node_outputs.pop(name, None)
+                discarded = node_outputs.pop(name, None)
+                if discarded is not None and retired is not None:
+                    retired.append(discarded)
             return idx
 
     logger.warning("Loop target '%s' not found in graph", node.loop_to)

@@ -8,6 +8,12 @@ Temper AI includes **15 built-in tools**. Agents reference tools by name in thei
 
 Tool execution is gated by [safety policies](../policies/index.md) — see [File Access](../policies/file_access.md) and [Forbidden Ops](../policies/forbidden_ops.md).
 
+## Workspace
+
+Every tool call runs in a **workspace**: the node's `workspace_path` input when it has one (typically a worktree an earlier node made, mapped in the workflow), else the run's (`--workspace` on the CLI, `workspace_path` on `POST /api/runs`). Path parameters must stay inside it, relative paths resolve against it, and `Bash` and `git` run in it. A node's workspace must itself lie inside the run's when the run has one — the value can come from another node's output, and a node cannot move the sandbox.
+
+Tools that take a path (`Read`, `Write`, `Edit`, `Grep`, `Glob`) do not run with no workspace at all; the refusal says how to give the node one. `Bash` has no path to judge and is governed by its command allowlist either way, so a script node that *creates* the worktree can run before there is a workspace.
+
 | Name | Description |
 |------|-------------|
 | [`AddNode`](addnode.md) | Add a new node to the running workflow graph. Called during an agent's run to dispatch follow-up work conditionally (use when the decision can't be expressed as a declarative Jinja template over your output). The new node is queued and inserted into the DAG atomically after your agent completes, alongside any `dispatch:` block from your config. Safety caps (max_children_per_dispatch, max_dispatch_depth, etc.) apply to the merged batch. |

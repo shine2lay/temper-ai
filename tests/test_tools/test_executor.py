@@ -142,13 +142,145 @@ class TestWorkspaceSandbox:
         # Null byte causes either our explicit check or an OS-level path error
         assert "null" in result.error.lower() or "invalid" in result.error.lower()
 
-    def test_no_workspace_root_allows_all(self):
-        """When workspace_root is not set, path validation is skipped."""
+    def test_no_workspace_root_still_runs_tools_without_paths(self):
+        """A tool with nothing to confine runs whether or not there is a workspace."""
         from temper_ai.tools.calculator import Calculator
         executor = ToolExecutor()  # no workspace_root
         executor.register_tools({"Calculator": Calculator()})
         result = executor.execute("Calculator", {"expression": "1"}, allowed_tools=ALL_TOOLS)
         assert result.success is True
+
+
+class TestWorkspaceFailsClosed:
+    """No workspace is not no sandbox.
+
+    The run's workspace used to be the only one, and optional: with none set,
+    path validation was skipped, so a run whose worktree is made by a node
+    mid-run (the run itself starting with workspace_path=null) had its later
+    agents reading and writing anywhere. Now a tool that takes a path does
+    not run without a workspace, and a node can name its own — which must
+    lie inside the run's when there is one.
+    """
+
+    def _tools(self):
+        from temper_ai.tools.read import Read
+        from temper_ai.tools.write import Write
+        return {"Read": Read(), "Write": Write()}
+
+    def test_path_tool_refused_without_any_workspace(self, tmp_path, monkeypatch):
+        target = tmp_path / "anywhere.txt"
+        ex = ToolExecutor()
+        ex.register_tools(self._tools())
+        events: list[tuple] = []
+        monkeypatch.setattr(
+            "temper_ai.tools.executor.record", lambda et, **kw: events.append((et, kw)),
+        )
+        result = ex.execute(
+            "Write", {"path": str(target), "content": "x"}, allowed_tools=ALL_TOOLS,
+        )
+        assert result.success is False
+        assert "no workspace" in result.error
+        assert "workspace_path" in result.error  # says how to fix it
+        assert not target.exists()
+        assert [(et, kw["data"]["reason"]) for et, kw in events] == [
+            (EventType.TOOL_BLOCKED, "no_workspace"),
+        ]
+
+    def test_call_workspace_stands_in_for_the_runs(self, tmp_path):
+        """A node's workspace_path confines its tools when the run has none."""
+        ws = tmp_path / "worktree"
+        ws.mkdir()
+        ex = ToolExecutor()
+        ex.register_tools(self._tools())
+        ok = ex.execute(
+            "Write", {"path": "notes.md", "content": "hi"}, allowed_tools=ALL_TOOLS, workspace=str(ws),
+        )
+        assert ok.success is True, ok.error
+        assert (ws / "notes.md").read_text() == "hi"  # relative path resolved against the workspace
+        out = ex.execute(
+            "Write", {"path": str(tmp_path / "outside.txt"), "content": "no"},
+            allowed_tools=ALL_TOOLS, workspace=str(ws),
+        )
+        assert out.success is False
+        assert "escapes workspace" in out.error
+        assert not (tmp_path / "outside.txt").exists()
+
+    def test_relative_path_is_judged_from_the_workspace_not_the_cwd(self, tmp_path, monkeypatch):
+        """'.' means the workspace. Judged from the server's cwd it would be an 'escape'."""
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        (ws / "a.txt").write_text("a")
+        monkeypatch.chdir(tmp_path)  # somewhere else entirely
+        ex = ToolExecutor(workspace_root=str(ws))
+        ex.register_tools(self._tools())
+        result = ex.execute("Read", {"path": "a.txt"}, allowed_tools=ALL_TOOLS)
+        assert result.success is True, result.error
+        assert "a" in result.result
+        up = ex.execute("Read", {"path": "../secret.txt"}, allowed_tools=ALL_TOOLS)
+        assert up.success is False and "escapes workspace" in up.error
+
+    def test_call_workspace_must_lie_inside_the_runs(self, tmp_path):
+        """workspace_path can come from another node's output; it cannot move the sandbox."""
+        run_ws = tmp_path / "run"
+        run_ws.mkdir()
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        ex = ToolExecutor(workspace_root=str(run_ws))
+        ex.register_tools(self._tools())
+        result = ex.execute(
+            "Write", {"path": "x.txt", "content": "x"}, allowed_tools=ALL_TOOLS, workspace=str(elsewhere),
+        )
+        assert result.success is False
+        assert "outside this run's workspace" in result.error
+        assert not (elsewhere / "x.txt").exists()
+        sub = run_ws / "worktrees" / "feat"
+        sub.mkdir(parents=True)
+        ok = ex.execute(
+            "Write", {"path": "x.txt", "content": "x"}, allowed_tools=ALL_TOOLS, workspace=str(sub),
+        )
+        assert ok.success is True, ok.error
+        assert (sub / "x.txt").exists()
+
+    def test_bash_runs_in_the_call_workspace(self, tmp_path):
+        from temper_ai.tools.bash import Bash
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        a.mkdir()
+        b.mkdir()
+        ex = ToolExecutor(workspace_root=str(tmp_path))
+        ex.register_tools({"Bash": Bash()})
+        ra = ex.execute("Bash", {"command": "pwd"}, allowed_tools=ALL_TOOLS, workspace=str(a))
+        rb = ex.execute("Bash", {"command": "pwd"}, allowed_tools=ALL_TOOLS, workspace=str(b))
+        root = ex.execute("Bash", {"command": "pwd"}, allowed_tools=ALL_TOOLS)
+        assert ra.result.strip() == str(a.resolve())
+        assert rb.result.strip() == str(b.resolve())
+        assert root.result.strip() == str(tmp_path.resolve())
+        # The registered instance was not moved: the per-call copy is what ran.
+        assert ex.get_tool("Bash").config["workspace_root"] == str(tmp_path)
+
+    def test_bash_without_any_workspace_still_runs(self):
+        """Bash has no path to confine; the allowlist is its gate. The worktree
+        node itself needs this: it runs before there is a workspace."""
+        from temper_ai.tools.bash import Bash
+        ex = ToolExecutor()
+        ex.register_tools({"Bash": Bash()})
+        assert ex.execute("Bash", {"command": "echo ok"}, allowed_tools=ALL_TOOLS).success is True
+
+    def test_git_runs_in_the_workspace(self, tmp_path):
+        """Registration does `Git()` with no workspace: it used to run in the server's cwd."""
+        import subprocess
+
+        from temper_ai.tools.git import Git
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        ex = ToolExecutor(workspace_root=str(tmp_path))
+        ex.register_tools({"git": Git()})
+        result = ex.execute(
+            "git", {"command": "rev-parse --show-toplevel"}, allowed_tools=ALL_TOOLS, workspace=str(repo),
+        )
+        assert result.success is True, result.result
+        assert result.result.strip() == str(repo.resolve())
 
 
 class TestSkipPolicies:

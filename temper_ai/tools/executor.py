@@ -13,6 +13,7 @@ Future extensibility points:
 - Rate limiting
 """
 
+import copy
 import logging
 import time
 from collections.abc import Collection, Container
@@ -100,7 +101,9 @@ class ToolExecutor:
 
     def register_tools(self, tools: dict[str, BaseTool]) -> None:
         """Register tool instances for this executor."""
-        # Inject workspace_root into each tool's config so they can resolve relative paths
+        # The run-level workspace is the default every call resolves relative
+        # paths against; a call that names its own workspace gets a copy of the
+        # tool configured for that one instead (see _tool_for).
         if self.workspace_root:
             for tool in tools.values():
                 if hasattr(tool, 'config') and isinstance(tool.config, dict):
@@ -113,6 +116,7 @@ class ToolExecutor:
         params: dict[str, Any],
         *,
         allowed_tools: Container[str],
+        workspace: str | None = None,
         timeout: int | None = None,
         context: dict[str, Any] | None = None,
     ) -> ToolResult:
@@ -121,6 +125,19 @@ class ToolExecutor:
         Args:
             tool_name: Registered tool name.
             params: Parameters to pass to the tool.
+            workspace: The directory THIS caller works in — a node's
+                ``workspace_path`` input, typically a worktree another node
+                made earlier in the run. Defaults to the run's workspace_root.
+                Path parameters must stay inside it, relative ones resolve
+                against it, and Bash/git run in it. It must itself lie inside
+                the run's workspace when the run has one: the value can come
+                from another node's output, and a node must not be able to
+                move the sandbox. A tool that takes a path (Read, Write, Edit,
+                Grep, Glob) does not run with no workspace at all — "no
+                sandbox configured" used to mean "no sandbox", which is how a
+                run whose worktree was made mid-run got its reviewer writing
+                to /tmp. Bash has no path to judge; it stays governed by its
+                command allowlist either way.
             allowed_tools: What THIS caller may run — an agent's declared tool
                 list, or ALL_TOOLS for trusted internal callers. Required and
                 keyword-only: the executor is per RUN and holds every node's
@@ -189,9 +206,16 @@ class ToolExecutor:
         # tool's `path` names a file in a repo or on another machine, and resolving
         # it against this process's workspace would reject every legitimate call.
         if tool.local_paths:
-            workspace_block = self._validate_workspace_paths(tool_name, params, parent_id, execution_id)
-            if workspace_block is not None:
-                return workspace_block
+            effective, block = self._resolve_workspace(tool, tool_name, workspace, parent_id, execution_id)
+            if block is not None:
+                return block
+            if effective:
+                workspace_block = self._validate_workspace_paths(
+                    tool_name, params, effective, parent_id, execution_id,
+                )
+                if workspace_block is not None:
+                    return workspace_block
+                tool = _tool_for(tool, effective)
 
         # Tools that manage their own execution (e.g., Delegate runs sub-agents)
         # skip the timeout wrapper — they handle timeouts internally.
@@ -248,34 +272,69 @@ class ToolExecutor:
             error=f"Blocked by safety policy '{decision.policy_name}': {decision.reason}",
         )
 
+    def _resolve_workspace(
+        self,
+        tool: BaseTool,
+        tool_name: str,
+        workspace: str | None,
+        parent_id: str | None,
+        execution_id: str | None,
+    ) -> tuple[str | None, ToolResult | None]:
+        """The workspace this call runs in, or a blocking ToolResult.
+
+        The caller's workspace narrows the run's; it cannot leave it. With
+        neither, a tool that takes a path does not run (see execute()).
+        """
+        if workspace and self.workspace_root and not _inside(workspace, self.workspace_root):
+            error = (
+                f"Workspace '{workspace}' is outside this run's workspace '{self.workspace_root}'"
+            )
+            self._record_blocked(tool_name, "workspace_violation", error, parent_id, execution_id)
+            return None, ToolResult(success=False, result="", error=error)
+
+        effective = workspace or self.workspace_root
+        if effective is None and _takes_path(tool):
+            error = (
+                f"Tool '{tool_name}' takes a path and this run has no workspace to confine it to. "
+                "Start the run with a workspace (--workspace / workspace_path), or give this node a "
+                "workspace_path input."
+            )
+            self._record_blocked(tool_name, "no_workspace", error, parent_id, execution_id)
+            return None, ToolResult(success=False, result="", error=error)
+        return effective, None
+
     def _validate_workspace_paths(
         self,
         tool_name: str,
         params: dict[str, Any],
+        workspace_root: str,
         parent_id: str | None,
         execution_id: str | None,
     ) -> ToolResult | None:
         """Check that path params stay within the workspace. Returns blocking ToolResult or None."""
-        if not self.workspace_root:
-            return None
-
-        path_error = _validate_workspace_paths(params, self.workspace_root)
+        path_error = _validate_workspace_paths(params, workspace_root)
         if not path_error:
             return None
+        self._record_blocked(tool_name, "workspace_violation", path_error, parent_id, execution_id,
+                             workspace_root=workspace_root)
+        return ToolResult(success=False, result="", error=path_error)
 
+    def _record_blocked(
+        self,
+        tool_name: str,
+        reason: str,
+        error: str,
+        parent_id: str | None,
+        execution_id: str | None,
+        **data: Any,
+    ) -> None:
         record(
             EventType.TOOL_BLOCKED,
             parent_id=parent_id,
             execution_id=execution_id,
             status="blocked",
-            data={
-                "tool_name": tool_name,
-                "reason": "workspace_violation",
-                "error": path_error,
-                "workspace_root": self.workspace_root,
-            },
+            data={"tool_name": tool_name, "reason": reason, "error": error, **data},
         )
-        return ToolResult(success=False, result="", error=path_error)
 
     def _execute_direct(
         self,
@@ -363,23 +422,54 @@ class ToolExecutor:
 
 
 def _validate_workspace_paths(params: dict[str, Any], workspace_root: str) -> str | None:
-    """Check that path parameters don't escape the workspace. Returns error string or None."""
-    root = Path(workspace_root).resolve()
+    """Check that path parameters don't escape the workspace. Returns error string or None.
 
+    A relative path is judged from the workspace, which is where the tool will
+    resolve it — not from this process's cwd, which is wherever the server
+    was started.
+    """
     for key in _PATH_PARAMS:
         value = params.get(key)
         if not value or not isinstance(value, str):
             continue
 
-        try:
-            resolved = Path(value).resolve()
-        except (OSError, ValueError):
-            return f"Invalid path in '{key}': {value}"
-
         if "\x00" in value:
             return f"Path in '{key}' contains null byte"
 
-        if not (resolved == root or str(resolved).startswith(str(root) + "/")):
-            return f"Path '{value}' escapes workspace root '{workspace_root}'"
+        try:
+            if not _inside(value, workspace_root):
+                return f"Path '{value}' escapes workspace root '{workspace_root}'"
+        except (OSError, ValueError):
+            return f"Invalid path in '{key}': {value}"
 
     return None
+
+
+def _inside(path: str, root: str) -> bool:
+    """Whether ``path`` (relative ones taken from ``root``) resolves to ``root`` or under it."""
+    base = Path(root).resolve()
+    p = Path(path)
+    resolved = (p if p.is_absolute() else base / p).resolve()
+    return resolved == base or str(resolved).startswith(str(base) + "/")
+
+
+def _takes_path(tool: BaseTool) -> bool:
+    """Whether the tool declares a parameter the sandbox judges (see _PATH_PARAMS)."""
+    props = (getattr(tool, "parameters", None) or {}).get("properties") or {}
+    return any(key in props for key in _PATH_PARAMS)
+
+
+def _tool_for(tool: BaseTool, workspace: str) -> BaseTool:
+    """The tool as configured for ``workspace``: itself if that is already its
+    workspace_root, else a shallow copy whose config says so.
+
+    A copy per call rather than an assignment on the registered instance: the
+    executor is per run and its tools are shared by every node, and two nodes
+    in different worktrees can run at the same time.
+    """
+    config = getattr(tool, "config", None)
+    if not isinstance(config, dict) or config.get("workspace_root") == workspace:
+        return tool
+    clone = copy.copy(tool)
+    clone.config = {**config, "workspace_root": workspace}
+    return clone

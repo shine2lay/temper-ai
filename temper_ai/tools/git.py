@@ -43,8 +43,15 @@ class Git(BaseTool):
     modifies_state = True
 
     def __init__(self, workspace: str | None = None, timeout: int = _DEFAULT_TIMEOUT):
+        super().__init__()
         self.workspace = workspace
         self.timeout = timeout
+
+    @property
+    def cwd(self) -> str | None:
+        """Where commands run: the constructor's workspace, else the one the
+        executor configured (the run's, or the calling node's)."""
+        return self.workspace or self.config.get("workspace_root")
 
     def execute(self, **params: Any) -> ToolResult:
         """Execute a git command.
@@ -72,7 +79,7 @@ class Git(BaseTool):
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
-                cwd=self.workspace,
+                cwd=self.cwd,
             )
 
             output = result.stdout

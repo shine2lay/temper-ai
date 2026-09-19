@@ -273,7 +273,20 @@ class ToolsSection(DocSection):
             f"Agents reference tools by name in their {link_to('agents', 'llm', 'agent config')}.\n\n"
             f"Tool execution is gated by {link_to('policies', label='safety policies')} — "
             f"see {link_to('policies', 'file_access', 'File Access')} and "
-            f"{link_to('policies', 'forbidden_ops', 'Forbidden Ops')}."
+            f"{link_to('policies', 'forbidden_ops', 'Forbidden Ops')}.\n\n"
+            "## Workspace\n\n"
+            "Every tool call runs in a **workspace**: the node's `workspace_path` input "
+            "when it has one (typically a worktree an earlier node made, mapped in the "
+            "workflow), else the run's (`--workspace` on the CLI, `workspace_path` on "
+            "`POST /api/runs`). Path parameters must stay inside it, relative paths "
+            "resolve against it, and `Bash` and `git` run in it. A node's workspace must "
+            "itself lie inside the run's when the run has one — the value can come from "
+            "another node's output, and a node cannot move the sandbox.\n\n"
+            "Tools that take a path (`Read`, `Write`, `Edit`, `Grep`, `Glob`) do not run "
+            "with no workspace at all; the refusal says how to give the node one. "
+            "`Bash` has no path to judge and is governed by its command allowlist "
+            "either way, so a script node that *creates* the worktree can run before "
+            "there is a workspace."
         )
 
     def item_summary(self, name, cls):
@@ -531,6 +544,67 @@ class ProvidersSection(DocSection):
 # Agents section
 # ---------------------------------------------------------------------------
 
+_LLM_CONTEXT_POLICY = """
+## Context Policy
+
+A long tool-calling run outgrows `max_context_tokens`. `context_policy`
+chooses what the agent does about it. It is per agent; an agent that says
+nothing gets `truncate`.
+
+**`truncate`** (default) — mechanical. Once the estimate passes the limit,
+the message list is windowed and every tool result is cut to its first
+5000/2000/1000 characters. Silent, and it keeps the wrong half of a build
+log, but it is what every existing agent has always had.
+
+**`compress`** — the model manages its own context. Every user message and
+tool result it sees ends with a ref tag (`<acp tokens="9.3K">m00004</acp>`),
+and it has four extra tools:
+
+| Tool | Does |
+|---|---|
+| `compress` | Replace one or more contiguous ranges (`m00003`–`m00006`, or block ids `b1`–`b3` to fold blocks into a higher tier) with a summary the model writes. All ranges apply or none. |
+| `decompress` | Return a block's original content one tier up. The block stays compressed. |
+| `search_context` | Keyword search across the whole transcript, including compressed and harness-hidden content. |
+| `context_status` | Usage, blocks, and the largest compressible ranges. |
+
+The transcript itself is never edited. The provider gets a *view*: a
+compressed range is replaced, where it stood, by one message headed
+`[Compressed b1 — topic]` holding the model's summary, so the view stays in
+chronological order and what the model remembers is exactly what it chose
+to write down. Every summary is an ordinary tool call in the run's event
+log, so it can be audited afterwards.
+
+At 60% of the limit the harness adds a `[context]` message after the latest
+tool result saying how full the window is and which ranges are largest. It
+is a message of its own, not a line inside the tool result — models are
+trained to discount instructions found in tool output, and one ignored the
+inline form at 97% usage on every turn.
+
+If the model does not act and the hard limit is reached, the harness hides
+the oldest turns, whole, behind a block of its own — the same mechanism as
+`compress`, but with a listing for a summary (`[Compressed b1 — hidden by
+the harness] … 8 turn(s): Read ×8. decompress b1 to read it`), so nothing
+is summarized and the model is told so in the next `[context]` message. The
+block grows at its end as more has to go, so a model that never compresses
+costs one rendered block, not a stub per hidden result; the model can fold
+it into a block of its own later, and a summary that does is marked in its
+header as covering that content from memory only. Blocks the model wrote
+are never put under a harness block. Verified to 1,200 turns (~2,400
+messages) in a 10K window with a scripted model, a fuzzed one and one that
+never compresses: the view never exceeds the limit and every message is
+visible, summarized or hidden exactly once (`tests/test_llm/test_context_longrun.py`).
+
+An unknown value fails at construction:
+`context_policy must be one of truncate, compress, not 'evict'`.
+
+Measured on a four-file read task (~35K tokens of results against a 24K
+window, claude-haiku-4-5): `compress` finished in 6 iterations with one
+model-written summary and nothing hidden by the harness, 56K tokens total;
+all four answers correct, two of them from the model's own summary after the
+raw content was gone.
+"""
+
+
 class AgentsSection(DocSection):
     key = "agents"
     title = "Agent Types"
@@ -602,6 +676,8 @@ class AgentsSection(DocSection):
             lines.append("  max_tokens: 4096")
             lines.append("  max_iterations: 10        # Tool-calling loop limit")
             lines.append("  token_budget: 8000        # Prompt token budget")
+            lines.append("  max_context_tokens: 100000 # Window the tool-calling loop must stay under")
+            lines.append("  context_policy: truncate  # What happens at the window: truncate | compress")
             lines.append("  tools: [Bash, FileWriter] # see tools/")
             lines.append("  memory:")
             lines.append("    enabled: true")
@@ -614,6 +690,10 @@ class AgentsSection(DocSection):
 
         lines.append("```")
         lines.append("")
+
+        if name == "llm":
+            lines.append(_LLM_CONTEXT_POLICY.strip("\n"))
+            lines.append("")
 
         # Related
         lines.append("## Related")

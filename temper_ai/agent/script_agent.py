@@ -58,6 +58,7 @@ class ScriptAgent(AgentABC):
             script = template.render(**escaped)
 
             timeout = self.config.get("timeout_seconds", 30)
+            workspace = render_vars.get("workspace_path")
             tool_result = context.tool_executor.execute(
                 "Bash",
                 {"command": script, "_skip_allowlist": True, "timeout": timeout},
@@ -65,6 +66,9 @@ class ScriptAgent(AgentABC):
                 # command is rendered from the template here, not chosen by a
                 # model — so it declares exactly the one tool it uses.
                 allowed_tools=("Bash",),
+                # … and runs it in the node's workspace when it has one (the
+                # same `{{ workspace_path }}` the template sees).
+                workspace=workspace if isinstance(workspace, str) and workspace.strip() else None,
                 timeout=timeout,
                 context={
                     "parent_id": agent_event_id,

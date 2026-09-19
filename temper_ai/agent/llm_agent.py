@@ -193,7 +193,7 @@ class LLMAgent(AgentABC):
         call_context = self._build_call_context(context, agent_event_id, input_data)
 
         tools = self._get_tools(context)
-        execute_tool = self._make_tool_executor(context) if tools else None
+        execute_tool = self._make_tool_executor(context, input_data) if tools else None
 
         # An agent that declares tools against a provider that cannot offer
         # them runs without them and still reports success — a workflow
@@ -442,13 +442,19 @@ class LLMAgent(AgentABC):
                 )
         return schemas
 
-    def _make_tool_executor(self, context: ExecutionContext):
+    def _make_tool_executor(self, context: ExecutionContext, input_data: dict | None = None):
         """Create a tool executor function compatible with LLMService.
 
         Binds the execution context to any declared tool that has
         ``bind_context`` (Delegate runs sub-agents, QueryRunState reads live
         node_outputs, …), then returns the callback the model's tool calls go
         through.
+
+        Every call also names this node's workspace — its ``workspace_path``
+        input (a worktree another node made, mapped in the workflow), else the
+        run's. The executor confines the tools to it; the same value is the cwd
+        the Claude Code provider gets (see _build_call_context), so what the
+        model reads and writes is the same tree whichever way it works.
 
         Every call declares this agent's tools, so the executor refuses a name
         the agent did not declare — _get_tools only controls what the model is
@@ -460,6 +466,7 @@ class LLMAgent(AgentABC):
         """
         te = context.tool_executor
         allowed = tuple(self._declared_tools())
+        workspace = _node_workspace(input_data, context)
         if te is not None:
             for tool_name in allowed:
                 tool = te.get_tool(tool_name)
@@ -471,6 +478,7 @@ class LLMAgent(AgentABC):
                 tool_name,
                 params,
                 allowed_tools=allowed,
+                workspace=workspace,
                 context={
                     "parent_id": None,
                     "execution_id": context.run_id,
@@ -492,6 +500,14 @@ class LLMAgent(AgentABC):
         inputs = self.config.get("inputs", {})
         outputs = self.config.get("outputs", {})
         return AgentInterface(inputs=inputs, outputs=outputs)
+
+
+def _node_workspace(input_data: dict | None, context: ExecutionContext) -> str | None:
+    """The directory a node's tools work in: its ``workspace_path`` input, else the run's."""
+    own = (input_data or {}).get("workspace_path")
+    if isinstance(own, str) and own.strip():
+        return own.strip()
+    return context.workspace_path or None
 
 
 def _extract_structured_output(text: str) -> dict | None:

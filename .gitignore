@@ -30,9 +30,13 @@ env.bak/
 venv.bak/
 
 # Environment variables
+# Ignore EVERY .env variant, not just the three names that used to be listed.
+# Nine backups (.env.before-rebuild, .env.pool-backup, .env.pre-escalate, ...)
+# were committed and pushed to a public repo on 2026-09-18 precisely because
+# they matched none of `.env`, `.env.local`, `.env.*.local`. Allow-list the
+# files that are meant to be tracked instead of trying to name the bad ones.
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
 
 # Databases

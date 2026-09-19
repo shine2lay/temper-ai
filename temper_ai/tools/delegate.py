@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace as dc_replace
 from typing import Any
 
+from temper_ai.shared.types import Status
 from temper_ai.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -150,15 +151,34 @@ class Delegate(BaseTool):
                 },
             )
 
-            agent = create_agent(agent_config)
-            agent_ctx = dc_replace(
-                ctx,
-                parent_event_id=stage_event_id,
-                agent_name=agent_name,
-                node_path=f"{ctx.node_path}.delegate.{agent_ref}_{idx}",
-            )
+            try:
+                agent = create_agent(agent_config)
+                agent_ctx = dc_replace(
+                    ctx,
+                    parent_event_id=stage_event_id,
+                    agent_name=agent_name,
+                    node_path=f"{ctx.node_path}.delegate.{agent_ref}_{idx}",
+                )
 
-            agent_result = agent.run(task_inputs, agent_ctx)
+                agent_result = agent.run(task_inputs, agent_ctx)
+            except Exception as exc:
+                # The node is already on the graph as "running". Returning without
+                # closing it strands it there for the rest of the run, so the
+                # failure has to land on the event as well as in the result.
+                error = f"{type(exc).__name__}: {exc}"
+                logger.exception("Delegated agent '%s' raised", agent_ref)
+                ctx.event_recorder.update_event(
+                    stage_event_id,
+                    status=Status.FAILED.value,
+                    data={"error": error},
+                )
+                return {
+                    "task_index": idx,
+                    "agent": agent_ref,
+                    "status": Status.FAILED.value,
+                    "error": error,
+                    "output": "",
+                }
 
             # Update stage event with completion status
             ctx.event_recorder.update_event(
@@ -171,13 +191,20 @@ class Delegate(BaseTool):
                 },
             )
 
-            # Checkpoint if available
+            # Checkpoint if available. Best-effort persistence for resume: the
+            # agent has already finished, so a failed write must not rewrite its
+            # outcome into a failure.
             if ctx.checkpoint_service:
-                ctx.checkpoint_service.save_agent_completed(
-                    ctx.node_path or "delegate",
-                    f"{agent_ref}_{idx}",
-                    agent_result,
-                )
+                try:
+                    ctx.checkpoint_service.save_agent_completed(
+                        ctx.node_path or "delegate",
+                        f"{agent_ref}_{idx}",
+                        agent_result,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to checkpoint delegated agent '%s'", agent_ref, exc_info=True
+                    )
 
             return {
                 "task_index": idx,
@@ -190,24 +217,31 @@ class Delegate(BaseTool):
                 "tokens": agent_result.tokens.total_tokens,
             }
 
+        def _run_task_guarded(idx: int, task: dict) -> dict:
+            """Last-resort net, so a task reports a failure the same way whether
+            it ran alone or in the pool. _run_task handles its own errors once
+            the node exists; this catches what happens before that, such as the
+            recorder refusing to write the node in the first place.
+            """
+            try:
+                return _run_task(idx, task)
+            except Exception as exc:
+                logger.exception("Delegate task %d could not be started", idx)
+                return {
+                    "task_index": idx,
+                    "agent": task.get("agent", "?"),
+                    "status": Status.FAILED.value,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "output": "",
+                }
+
         # Run tasks with concurrency control
         if len(tasks) == 1:
-            results = [_run_task(0, tasks[0])]
+            results = [_run_task_guarded(0, tasks[0])]
         else:
             with ThreadPoolExecutor(max_workers=min(self._max_concurrency, len(tasks))) as pool:
-                futures = {pool.submit(_run_task, i, t): i for i, t in enumerate(tasks)}
-                for future in as_completed(futures):
-                    try:
-                        results.append(future.result())
-                    except Exception as exc:
-                        idx = futures[future]
-                        results.append({
-                            "task_index": idx,
-                            "agent": tasks[idx].get("agent", "?"),
-                            "status": "failed",
-                            "error": str(exc),
-                            "output": "",
-                        })
+                futures = [pool.submit(_run_task_guarded, i, t) for i, t in enumerate(tasks)]
+                results = [f.result() for f in as_completed(futures)]
 
         # Sort by task_index for deterministic output
         results.sort(key=lambda r: r.get("task_index", 0))

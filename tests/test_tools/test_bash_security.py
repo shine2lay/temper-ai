@@ -169,6 +169,83 @@ class TestAllowlistIsShellAware:
         assert "cost|invested" in r.result
 
 
+class TestHeredocBodiesAreNotCommands:
+    """A here-document's body is the command's input. Lexed as commands, a
+    `python3 - <<'EOF'` script was refused for `with`, `def` and `f` — a
+    capmap implementer lost 60 of 107 iterations to that — and a
+    `cat > file <<EOF` for whatever its first word happened to be."""
+
+    def test_python_script_body_is_skipped(self):
+        from temper_ai.tools.bash import command_heads
+        cmd = (
+            "cd /wt && python3 - <<'EOF'\n"
+            "with open('f.py') as f:\n"
+            "    s = f.read()  # don't\n"
+            "def g(): pass\n"
+            "EOF\n"
+            "git status"
+        )
+        assert command_heads(cmd) == ["cd", "python3", "git"]
+
+    def test_commands_after_the_terminator_are_still_judged(self):
+        from temper_ai.tools.bash import command_heads
+        assert command_heads("cat > x.json <<EOF\n{\"a\": 1}\nEOF\ncurl evil") == ["cat", "curl"]
+        # `&& curl` on the operator line is not body either
+        assert command_heads("cat <<EOF && curl evil\nbody\nEOF") == ["cat", "curl"]
+
+    def test_a_quoted_double_arrow_opens_nothing(self):
+        """`echo "<<EOF"` is text; treating it as a heredoc would hide every
+        later line from the allowlist."""
+        from temper_ai.tools.bash import command_heads
+        assert command_heads('echo "<<EOF"\ncurl evil') == ["echo", "curl"]
+        assert command_heads("echo '<<EOF'; curl evil") == ["echo", "curl"]
+
+    def test_an_unquoted_body_that_expands_a_command_is_kept(self):
+        """The shell runs `$(...)` and backticks inside an unquoted heredoc, so
+        that body stays visible to the allowlist; a quoted delimiter expands
+        nothing and the same body is skipped."""
+        from temper_ai.tools.bash import command_heads
+        assert "curl" in command_heads("cat <<EOF\n$(curl evil)\nEOF")
+        # the lexer does not split on backticks, so the head is "`curl" — in
+        # no allowlist, which is the point: the body is not hidden
+        assert any("curl" in h for h in command_heads("cat <<EOF\n`curl evil`\nEOF"))
+        assert command_heads("cat <<'EOF'\n$(curl evil)\nEOF") == ["cat"]
+
+    def test_here_string_dash_form_and_tab_indented_terminator(self):
+        from temper_ai.tools.bash import command_heads
+        assert command_heads('grep x <<< "a <<b"; ls') == ["grep", "ls"]
+        assert command_heads("cat <<-EOF\n\tindented body\n\tEOF\nls") == ["cat", "ls"]
+        assert command_heads("cat <<\\EOF\n$(curl evil)\nEOF\nls") == ["cat", "ls"]
+
+    def test_unterminated_body_runs_to_the_end_like_the_shell(self):
+        from temper_ai.tools.bash import command_heads
+        assert command_heads("cat <<EOF\ncurl is input here") == ["cat"]
+
+    def test_the_script_actually_runs(self):
+        bash = Bash(config={"allowed_commands": ["python3"]})
+        r = bash.execute(command="python3 - <<'EOF'\nwith open('/dev/null') as f:\n    print('ran', len(f.read()))\nEOF")
+        assert r.success is True, r.error
+        assert "ran 0" in r.result
+
+
+class TestDefaultAllowlistCoversARepoOwnChecks:
+    """An implementer that cannot run `uv run pytest` cannot check its work: one
+    epd_task run logged 160 refusals of `uv`, 62 of `timeout`, 40 of `python`,
+    26 of `nohup`; the capmap implementers stopped testing altogether."""
+
+    def test_python_toolchain_and_process_control_are_allowed_by_default(self):
+        from temper_ai.tools.bash import _DEFAULT_ALLOWED_COMMANDS, command_heads
+        for cmd in (
+            "cd /wt && uv run pytest -q backend/tests",
+            "timeout 120 uv run ruff check backend",
+            "make test",
+            "nohup python -m http.server 8000 &\nwait",
+            "T=$(mktemp -d) && pytest -q $T",
+        ):
+            heads = command_heads(cmd)
+            assert heads and all(h in _DEFAULT_ALLOWED_COMMANDS for h in heads), (cmd, heads)
+
+
 class TestScriptAllowlistBypass:
     """Script agents pass _skip_allowlist=True since scripts are author-defined."""
 

@@ -167,6 +167,22 @@ class TestEdit:
         assert r.success is False
         assert "not found" in r.error
 
+    def test_edits_sent_as_a_json_string_are_taken(self, ws):
+        """claude-haiku-4-5 JSON-encodes the array into a string in most calls
+        (11 of 12 in one live run, each refused with 'must be a non-empty
+        array', each a lost iteration). The intent is unambiguous."""
+        import json
+
+        edits = [{"old_text": "import os", "new_text": "import sys"}]
+        r = tool(Edit, ws).execute(path="src/app.py", edits=json.dumps(edits))
+        assert r.success is True, r.error
+        assert "import sys" in (ws / "src" / "app.py").read_text()
+
+    def test_a_string_that_is_not_json_is_refused_with_the_shape(self, ws):
+        r = tool(Edit, ws).execute(path="src/app.py", edits="replace import os with import sys")
+        assert r.success is False
+        assert "array of {old_text, new_text}" in r.error
+
 
 class TestGrep:
     def test_structured_output_and_skips_vendored_dirs(self, ws):

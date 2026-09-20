@@ -16,6 +16,7 @@ Uniqueness is kept from both tools: `old_text` must match exactly once, unless
 surrounding context rather than guess.
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -76,6 +77,17 @@ class Edit(BaseTool):
                 "new_text": params.get("new_text", ""),
                 "replace_all": params.get("replace_all", False),
             }]
+        if isinstance(edits, str):
+            # claude-haiku-4-5 sends the array JSON-encoded in a string in most
+            # calls (11 of 12 in one run, each refused, each a lost iteration).
+            # The intent is unambiguous, so take it.
+            try:
+                edits = json.loads(edits)
+            except ValueError:
+                return ToolResult(
+                    success=False, result="",
+                    error="edits must be an array of {old_text, new_text} objects (got a string that is not JSON)",
+                )
         if not isinstance(edits, list) or not edits:
             return ToolResult(success=False, result="", error="edits must be a non-empty array")
 

@@ -9,6 +9,7 @@ Security:
 
 import logging
 import os
+import re
 import shlex
 import subprocess  # noqa: B404
 from typing import Any
@@ -33,8 +34,16 @@ _DEFAULT_ALLOWED_COMMANDS = [
     "basename", "dirname", "realpath", "readlink", "which",
     # Shell built-ins / safe utilities
     "cd", "test", "true", "false", "sleep", "date", "whoami", "env",
-    # Dev tools
-    "python3", "pip", "node", "npm", "npx", "git", "curl",
+    # Dev tools. `python`, `uv`, `pytest`, `ruff` and `make` are how a Python
+    # repo runs its own checks (`make test` -> `uv run pytest`); refusing them
+    # cost one epd_task implementer 160 `uv` refusals in a single run, and the
+    # capmap implementers gave up on testing altogether. They add no power
+    # `python3` did not already grant.
+    "python3", "python", "pip", "uv", "pytest", "ruff", "make",
+    "node", "npm", "npx", "git", "curl",
+    # Process control and scratch files, which the same agents reached for
+    # (`timeout 120 uv run pytest`, `nohup uv run rollcall serve &`, `wait`).
+    "timeout", "nohup", "wait", "mktemp",
 ]
 
 _DEFAULT_TIMEOUT = 30
@@ -98,6 +107,85 @@ _SHELL_WORDS = frozenset((
 ))
 _SEPARATORS = frozenset(("|", "||", "&&", ";", "&", "(", ")", ";;"))
 _REDIRECTS = frozenset((">", ">>", "<", "<<", "<<<", ">&", "<&", "&>", ">|"))
+_HEREDOC_DELIM = re.compile(r"'([^']*)'|\"([^\"]*)\"|([^\s;|&<>()]+)")
+
+
+def strip_heredoc_bodies(command: str) -> str:
+    """Drop the body of every here-document: it is the command's input, not commands.
+
+    Lexed as commands, a `python3 - <<'EOF'` script was refused for `with`,
+    `def` and `f` (an implementer lost 60 iterations to that), and a
+    `cat > file <<EOF` was refused for whatever its first word was. Only a
+    `<<` outside quotes opens a heredoc (`echo "<<EOF"` does not), so the
+    walk tracks quotes; the body runs from the next line to the delimiter
+    line (`<<-` lets the shell strip its leading tabs; so does this), or to
+    the end when there is none, which is also what the shell does.
+
+    The one thing a body can execute is `$(...)` or a backtick under an
+    unquoted delimiter, where the shell expands it. Such a body is kept, so
+    the lexer still sees (and the allowlist still judges) whatever it runs.
+    """
+    if "<<" not in command:
+        return command
+    out: list[str] = []
+    pending: list[tuple[str, bool]] = []  # (delimiter, body may expand) for the next line(s)
+    quote: str | None = None
+    i, n = 0, len(command)
+    while i < n:
+        ch = command[i]
+        if quote:
+            if ch == "\\" and quote == '"' and i + 1 < n:
+                out.append(command[i:i + 2])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            out.append(command[i:i + 2])
+            i += 2
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if command.startswith("<<<", i):  # a here-string: one word of input, no body
+            out.append("<<<")
+            i += 3
+            continue
+        if command.startswith("<<", i):
+            j = i + 2
+            if j < n and command[j] == "-":
+                j += 1
+            while j < n and command[j] in " \t":
+                j += 1
+            escaped = j < n and command[j] == "\\"  # `<<\EOF` quotes the delimiter too
+            m = _HEREDOC_DELIM.match(command, j + 1 if escaped else j)
+            if m:
+                quoted = escaped or m.group(3) is None
+                pending.append((m.group(1) or m.group(2) or m.group(3), not quoted))
+                out.append(command[i:m.end()])
+                i = m.end()
+                continue
+        out.append(ch)
+        i += 1
+        if ch == "\n" and pending:
+            for delim, may_expand in pending:
+                body: list[str] = []
+                while i < n:
+                    k = command.find("\n", i)
+                    line = command[i:k] if k != -1 else command[i:]
+                    i = k + 1 if k != -1 else n
+                    if line.rstrip("\r").lstrip("\t") == delim:
+                        break
+                    body.append(line)
+                if may_expand and any("$(" in ln or "`" in ln for ln in body):
+                    out.append("\n".join(body) + "\n")
+            pending = []
+    return "".join(out)
 
 
 def command_heads(command: str) -> list[str]:
@@ -114,6 +202,7 @@ def command_heads(command: str) -> list[str]:
     # may span lines (a multi-paragraph `git commit -m "..."`), and lexing
     # each line alone would see an unbalanced quote and refuse it. Newlines
     # outside quotes are command separators, and `#` starts a comment.
+    command = strip_heredoc_bodies(command)
     lexer = shlex.shlex(command, posix=True, punctuation_chars="();<>|&\n")
     lexer.whitespace_split = True
     lexer.whitespace = " \t\r"  # \n is punctuation: its own token, a command separator

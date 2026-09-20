@@ -319,6 +319,39 @@ def standee_up(source: Path, as_name: str, ttl: str) -> tuple[str, str]:
     return env, url
 
 
+def preflight_login(url: str, emails: tuple[str, ...] = (QA_EMAIL, QA_EMPTY_EMAIL), password: str = "") -> None:
+    """Refuse to spend anything on a stack nobody can sign in to.
+
+    A walker that cannot get past the login page produces a walk about the login page: three of them ran
+    on b002 against an environment whose database was empty, cost $0.77, and would have fed a report and
+    a bet built on nothing. The credentials are the first thing the walkers use, so they are the first
+    thing we check -- one POST, no model, before a run exists. An environment that is up but unusable is
+    a harness failure, and a harness failure must look like one.
+    """
+    endpoint = url.rstrip("/") + "/api/auth/login"
+    for email in emails:
+        body = json.dumps({"email": email, "password": password or QA_PASSWORD}).encode()
+        req = urllib.request.Request(endpoint, data=body, headers={"Content-Type": "application/json"})
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    if resp.status < 400:
+                        break
+                    detail = f"HTTP {resp.status}"
+            except urllib.error.HTTPError as e:
+                # 429 is the endpoint working and rate-limiting us; anything else is a real answer.
+                if e.code == 429 and attempt < 2:
+                    time.sleep(20)
+                    continue
+                detail = f"HTTP {e.code}: {(e.read().decode(errors='replace') or '').strip()[:200]}"
+            except urllib.error.URLError as e:
+                detail = str(e.reason)
+            die(f"{email} cannot sign in at {endpoint} ({detail}). The stack is up but unusable — "
+                f"most likely unseeded. Check `standee status` and run `standee seed <env>`; "
+                f"nothing was dispatched and nothing was spent.")
+    log(f"preflight: {len(emails)} accounts can sign in")
+
+
 def wait_for_url(url: str, timeout: float = 240.0) -> None:
     """Block until the URL answers over https. The gateway issues the
     certificate on the first request, which can take half a minute; the
@@ -675,6 +708,7 @@ def stage_report(st: dict, keep: bool) -> None:
     st["stages"]["report"] = {"env": env, "url": url, "base_head": head}
     save_state(st)
     wait_for_url(url)
+    preflight_login(url)
     out = run_workflow("epd_report", {
         "app_url": url,
         "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL, "password": QA_PASSWORD,
@@ -917,6 +951,12 @@ def stage_measure(st: dict, keep: bool) -> None:
     if data_url:
         wait_for_url(data_url)
     password = ensure_qa_password() if (on_prod and qa_on_prod) else QA_PASSWORD
+    # Whichever stack the signed-in checks will use has to admit them, and finding that out costs one
+    # request here versus a whole measurement spent describing a login page.
+    if data_url:
+        preflight_login(data_url)
+    elif qa_on_prod or not on_prod:
+        preflight_login(url, password=password)
     out = run_workflow("epd_measure", {
         "bet_id": bet_id,
         "outcome_path": cpath(bdir / "outcome.md"),

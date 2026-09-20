@@ -149,15 +149,14 @@ def start_run(body: RunRequest):
 
     # Build execution context
 
-    # Create per-run policy engine from workflow safety config (if any)
-    policy_engine = None
-    if config.safety:
-        from temper_ai.safety import PolicyEngine
-        try:
-            policy_engine = PolicyEngine.from_config(config.safety)
-            logger.info("Safety policies loaded: %d", len(policy_engine.policies))
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid safety config: {exc}") from exc
+    # Per-run policy engine: the platform baseline plus the workflow's safety
+    # config (if any), see PolicyEngine.for_run.
+    from temper_ai.safety import PolicyEngine
+    try:
+        policy_engine = PolicyEngine.for_run(config.safety)
+        logger.info("Safety policies loaded: %d", len(policy_engine.policies))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid safety config: {exc}") from exc
 
     # Create per-run tool executor with safety policies
     run_tool_executor = ToolExecutor(
@@ -444,10 +443,8 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         or (result.get("input_data") or {}).get("workspace_path")
     )
 
-    policy_engine = None
-    if config.safety:
-        from temper_ai.safety import PolicyEngine
-        policy_engine = PolicyEngine.from_config(config.safety)
+    from temper_ai.safety import PolicyEngine
+    policy_engine = PolicyEngine.for_run(config.safety)
 
     run_tool_executor = ToolExecutor(workspace_root=workspace, policy_engine=policy_engine)
     # The resumed nodes are the ones that had not finished, so they are exactly the ones that still need
@@ -547,10 +544,8 @@ def fork_run(body: ForkRequest):
     )
 
 
-    policy_engine = None
-    if config.safety:
-        from temper_ai.safety import PolicyEngine
-        policy_engine = PolicyEngine.from_config(config.safety)
+    from temper_ai.safety import PolicyEngine
+    policy_engine = PolicyEngine.for_run(config.safety)
 
     run_tool_executor = ToolExecutor(workspace_root=body.workspace_path, policy_engine=policy_engine)
     _register_run_tools(run_tool_executor, nodes)

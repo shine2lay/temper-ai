@@ -10,6 +10,10 @@ Policies are evaluated with **first-deny-wins** semantics: if any policy denies 
 
 Policies gate [tool](../tools/index.md) execution — every tool call passes through the policy engine before running.
 
+## The platform baseline
+
+Every run gets one policy before its own: a `forbidden_ops` named `platform_baseline` (`PolicyEngine.for_run`). It carries the `forbidden_ops` defaults plus tripwires for what a node could reach through Bash that no workflow should — the host docker socket (`/var/run/docker.sock`), mounted credential files (`.credentials.json`) and another process's environment (`/proc/<pid>/environ`). A workflow's `safety.policies` come after it and add to it; a workflow with no `safety:` block still has it. Like the workspace check, it is a tripwire on the command text, not a boundary: the attempt is refused and recorded as a `safety.policy.triggered` event with `policy_name: platform_baseline`. The boundary is the container the run executes in — see [What the sandbox is](../tools/index.md).
+
 | Name | Description |
 |------|-------------|
 | [`budget`](budget.md) | Enforce cost and token limits for a workflow run. |

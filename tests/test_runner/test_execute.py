@@ -67,3 +67,25 @@ def test_the_executor_is_shut_down_when_the_run_raises(
     assert result.status == "failed"
     assert result.error == "node exploded"
     assert not scratch.exists()
+
+
+def test_a_run_without_a_safety_block_gets_the_platform_baseline(
+    runner_ctx, monkeypatch, tmp_path
+):
+    """The worker path used to build no policy engine at all unless the workflow
+    had a `safety:` block. The baseline tripwires (docker socket, credential
+    files, /proc/<pid>/environ) have to reach the executor of every run."""
+    from temper_ai.safety.engine import BASELINE_POLICY_NAME
+
+    def graph(ctx):
+        engine = ctx.tool_executor.policy_engine
+        assert [p.name for p in engine.policies] == [BASELINE_POLICY_NAME]
+        blocked = ctx.tool_executor.execute(
+            "Bash", {"command": "cat /proc/1/environ"}, allowed_tools={"Bash"},
+        )
+        assert not blocked.success
+        assert BASELINE_POLICY_NAME in blocked.error
+        return SimpleNamespace(status="completed", cost_usd=0.0, total_tokens=0)
+
+    result, _ = _run(runner_ctx, monkeypatch, tmp_path, graph=graph)
+    assert result.status == "completed"

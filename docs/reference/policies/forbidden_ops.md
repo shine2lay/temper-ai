@@ -9,6 +9,7 @@ Block shell commands matching dangerous patterns.
 Config:
     type: forbidden_ops
     forbidden_patterns: ["rm -rf", "DROP TABLE", ...]  # optional, has defaults
+    forbidden_regexes: ["/proc/\S+/environ"]           # optional, case-insensitive
 
 - **Evaluates on:** `tool_call`
 

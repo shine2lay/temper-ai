@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # New policies register here to be usable in YAML configs.
 POLICY_REGISTRY: dict[str, type[BasePolicy]] = {}
 
+# The name of the policy every run gets first (see PolicyEngine.for_run).
+# Appears as policy_name in safety.policy.triggered events.
+BASELINE_POLICY_NAME = "platform_baseline"
+
 
 def register_policy(name: str, cls: type[BasePolicy]):
     """Register a policy type for use in YAML configs."""
@@ -78,6 +82,42 @@ class PolicyEngine:
     def add_policy(self, policy: BasePolicy):
         """Add a policy to the engine at runtime."""
         self.policies.append(policy)
+
+    @classmethod
+    def for_run(cls, safety: dict | None) -> PolicyEngine:
+        """The engine a run gets: the platform baseline, then the workflow's own policies.
+
+        The baseline is one forbidden_ops policy over what a node could reach
+        through Bash that no workflow should — the host docker socket, mounted
+        credential files, another process's environment (see
+        forbidden_ops.PLATFORM_TRIPWIRE_*). It is a tripwire on the command
+        text, not a boundary: its value is that the attempt is refused and
+        recorded as a safety.policy.triggered event instead of quietly
+        succeeding. A workflow's `safety:` block comes after it, so a
+        workflow's own forbidden_ops adds to the baseline rather than
+        replacing it; a workflow with no `safety:` block still has the
+        baseline.
+
+        Raises SafetyConfigError for an invalid workflow config, as from_config does.
+        """
+        from temper_ai.safety.forbidden_ops import (
+            PLATFORM_TRIPWIRE_PATTERNS,
+            PLATFORM_TRIPWIRE_REGEXES,
+            ForbiddenOpsPolicy,
+        )
+
+        baseline = ForbiddenOpsPolicy({
+            "type": "forbidden_ops",
+            "name": BASELINE_POLICY_NAME,
+            "forbidden_patterns": [
+                *ForbiddenOpsPolicy.DEFAULT_FORBIDDEN,
+                *PLATFORM_TRIPWIRE_PATTERNS,
+            ],
+            "forbidden_regexes": list(PLATFORM_TRIPWIRE_REGEXES),
+        })
+        engine = cls.from_config(safety or {})
+        engine.policies.insert(0, baseline)
+        return engine
 
     @classmethod
     def from_config(cls, config: dict) -> PolicyEngine:

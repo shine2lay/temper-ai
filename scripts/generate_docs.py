@@ -760,7 +760,21 @@ class PoliciesSection(DocSection):
             "Policies are evaluated with **first-deny-wins** semantics: if any policy "
             "denies an action, it is blocked regardless of other policies.\n\n"
             f"Policies gate {link_to('tools', label='tool')} execution — "
-            "every tool call passes through the policy engine before running."
+            "every tool call passes through the policy engine before running.\n\n"
+            "## The platform baseline\n\n"
+            "Every run gets one policy before its own: a `forbidden_ops` named "
+            "`platform_baseline` (`PolicyEngine.for_run`). It carries the "
+            "`forbidden_ops` defaults plus tripwires for what a node could reach "
+            "through Bash that no workflow should — the host docker socket "
+            "(`/var/run/docker.sock`), mounted credential files (`.credentials.json`) "
+            "and another process's environment (`/proc/<pid>/environ`). A workflow's "
+            "`safety.policies` come after it and add to it; a workflow with no "
+            "`safety:` block still has it. Like the workspace check, it is a "
+            "tripwire on the command text, not a boundary: the attempt is refused "
+            "and recorded as a `safety.policy.triggered` event with "
+            "`policy_name: platform_baseline`. The boundary is the container the "
+            "run executes in — see "
+            f"{link_to('tools', label='What the sandbox is')}."
         )
 
     def item_summary(self, name, cls):

@@ -131,6 +131,47 @@ class TestForbiddenOpsPolicy:
 
 # --- BudgetPolicy ---
 
+class TestForbiddenOpsRegexes:
+    """`forbidden_regexes`: for what a substring cannot say, like /proc/<any pid>/environ."""
+
+    def _eval(self, policy, command):
+        return policy.evaluate(
+            ActionType.TOOL_CALL,
+            {"tool_name": "Bash", "tool_params": {"command": command}},
+            {},
+        )
+
+    def test_blocks_a_regex_match_and_names_the_pattern(self):
+        policy = ForbiddenOpsPolicy({
+            "type": "forbidden_ops",
+            "forbidden_patterns": [],
+            "forbidden_regexes": [r"/proc/[^/\s]+/environ"],
+        })
+        decision = self._eval(policy, "cat /proc/139/environ | tr '\\0' '\\n'")
+        assert decision.action == "deny"
+        assert "/proc/[^/\\s]+/environ" in decision.reason
+
+    def test_regexes_are_case_insensitive(self):
+        policy = ForbiddenOpsPolicy({
+            "type": "forbidden_ops", "forbidden_patterns": [], "forbidden_regexes": ["secret"],
+        })
+        assert self._eval(policy, "echo SECRET").action == "deny"
+
+    def test_no_regexes_by_default(self):
+        policy = ForbiddenOpsPolicy({"type": "forbidden_ops"})
+        assert policy.forbidden_regexes == []
+        assert self._eval(policy, "cat /proc/1/environ").action == "allow"
+
+    def test_invalid_regex_is_a_config_error(self):
+        errors = ForbiddenOpsPolicy.validate_config({
+            "type": "forbidden_ops", "forbidden_regexes": ["(unclosed"],
+        })
+        assert len(errors) == 1
+        assert "(unclosed" in errors[0] and "not a valid regex" in errors[0]
+        with pytest.raises(SafetyConfigError):
+            ForbiddenOpsPolicy({"type": "forbidden_ops", "forbidden_regexes": ["(unclosed"]})
+
+
 class TestBudgetPolicy:
     def _eval(self, policy, run_cost=0.0, run_tokens=0):
         return policy.evaluate(

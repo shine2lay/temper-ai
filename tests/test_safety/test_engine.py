@@ -3,8 +3,70 @@
 import pytest
 
 from temper_ai.safety import ActionType, BasePolicy, PolicyDecision, PolicyEngine
-from temper_ai.safety.engine import POLICY_REGISTRY, register_policy
+from temper_ai.safety.engine import (
+    BASELINE_POLICY_NAME,
+    POLICY_REGISTRY,
+    register_policy,
+)
 from temper_ai.safety.exceptions import SafetyConfigError
+
+
+def _bash(engine, command):
+    return engine.evaluate(
+        ActionType.TOOL_CALL,
+        {"tool_name": "Bash", "tool_params": {"command": command}},
+        {},
+    )
+
+
+class TestForRun:
+    """PolicyEngine.for_run: the baseline every run gets, then the workflow's policies.
+
+    The baseline trips on what a node could reach through Bash that no
+    workflow should: the host docker socket, mounted credential files, another
+    process's environment. The path check never sees Bash and the env scrub
+    only covers Bash's own child, so this is where those attempts get refused
+    and recorded instead of quietly succeeding.
+    """
+
+    def test_a_run_with_no_safety_block_still_has_the_baseline(self):
+        engine = PolicyEngine.for_run(None)
+        assert [p.name for p in engine.policies] == [BASELINE_POLICY_NAME]
+
+    @pytest.mark.parametrize("command", [
+        "curl -s --unix-socket /var/run/docker.sock http://localhost/containers/json",
+        "cat /home/temperai-worker/.claude/.credentials.json",
+        "cat /proc/1/environ | tr '\\0' '\\n'",
+        "python3 -c \"print(open('/proc/139/environ').read())\"",
+        "rm -rf /",  # the policy's own defaults still apply
+    ])
+    def test_the_baseline_trips_on_the_platform_hazards(self, command):
+        decision = _bash(PolicyEngine.for_run(None), command)
+        assert decision.action == "deny", command
+        assert decision.policy_name == BASELINE_POLICY_NAME
+
+    @pytest.mark.parametrize("command", [
+        "grep -n docker.sock docker-compose.yml",  # talking about it is not using it
+        "cat docs/environment.md",
+        "env | sort",  # Bash's own env is already scrubbed
+        "uv run pytest -q",
+    ])
+    def test_the_baseline_leaves_ordinary_work_alone(self, command):
+        assert _bash(PolicyEngine.for_run(None), command).action == "allow", command
+
+    def test_workflow_policies_come_after_the_baseline_not_instead_of_it(self):
+        engine = PolicyEngine.for_run({
+            "policies": [{"type": "forbidden_ops", "forbidden_patterns": ["git push --force"]}],
+        })
+        assert [p.name for p in engine.policies] == [BASELINE_POLICY_NAME, "ForbiddenOpsPolicy"]
+        # The workflow's own pattern replaces the defaults for *its* policy, but
+        # the baseline is still there: both trip.
+        assert _bash(engine, "git push --force origin main").policy_name == "ForbiddenOpsPolicy"
+        assert _bash(engine, "cat /proc/1/environ").policy_name == BASELINE_POLICY_NAME
+
+    def test_an_invalid_workflow_config_still_raises(self):
+        with pytest.raises(SafetyConfigError):
+            PolicyEngine.for_run({"policies": [{"type": "no_such_policy"}]})
 
 
 class TestPolicyEngine:

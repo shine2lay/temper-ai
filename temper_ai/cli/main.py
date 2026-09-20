@@ -343,13 +343,12 @@ def _load_workflow(workflow_name: str, overrides: dict | None = None):
 
 def _build_tool_executor(args, config, nodes):
     """Build the ToolExecutor with safety policies and MCP tools wired in."""
+    from temper_ai.safety import PolicyEngine
     from temper_ai.tools import TOOL_CLASSES
     from temper_ai.tools.executor import ToolExecutor
 
-    policy_engine = None
-    if config.safety:
-        from temper_ai.safety import PolicyEngine
-        policy_engine = PolicyEngine.from_config(config.safety)
+    # Baseline tripwires plus the workflow's own safety block, see PolicyEngine.for_run.
+    policy_engine = PolicyEngine.for_run(config.safety)
 
     tool_executor = ToolExecutor(
         workspace_root=args.workspace,

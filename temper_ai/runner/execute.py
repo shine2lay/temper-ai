@@ -111,11 +111,10 @@ def execute_workflow(
     )
 
     # --- Tool executor + safety policy ---
-    policy_engine = None
-    if config.safety:
-        from temper_ai.safety import PolicyEngine
-        policy_engine = PolicyEngine.from_config(config.safety)
-        logger.info("Safety policies loaded: %d", len(policy_engine.policies))
+    # Baseline tripwires plus the workflow's own safety block, see PolicyEngine.for_run.
+    from temper_ai.safety import PolicyEngine
+    policy_engine = PolicyEngine.for_run(config.safety)
+    logger.info("Safety policies loaded: %d", len(policy_engine.policies))
 
     run_tool_executor = ToolExecutor(
         workspace_root=workspace_path,

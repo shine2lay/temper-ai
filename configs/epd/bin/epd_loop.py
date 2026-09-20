@@ -1137,6 +1137,91 @@ def cmd_run(keep: bool, wait: bool) -> None:
     log("   it is temper's now; `epd_loop.py collect` records the outcome once it is done")
 
 
+def fork_run(source_run_id: str, sequence: int, workflow: str, inputs: dict, workspace: str) -> str:
+    """A new run that starts from ``source_run_id``'s checkpoint ``sequence`` and runs the rest."""
+    body = json.dumps({"workflow": workflow, "source_execution_id": source_run_id, "sequence": sequence,
+                       "inputs": inputs, "workspace_path": workspace}).encode()
+    req = urllib.request.Request(f"{API}/api/runs/fork", data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.load(resp)["execution_id"]
+
+
+def checkpoints(run_id: str) -> list[dict]:
+    with urllib.request.urlopen(f"{API}/api/runs/{run_id}/checkpoints", timeout=60) as resp:
+        return json.load(resp)["checkpoints"]
+
+
+def in_server(cmd: str) -> subprocess.CompletedProcess:
+    """Run a shell command inside the server container, where the run's files are its own."""
+    return subprocess.run(["docker", "exec", SERVER_CONTAINER, "sh", "-c", cmd], text=True, capture_output=True)
+
+
+def cmd_resume() -> None:
+    """Fork the open bet's failed loop run at its last good stage and run the rest, in temper.
+
+    The finished stages come back as checkpoints -- report, bet, the owner's approval, tasks: the
+    expensive and the human parts -- and the stage that failed runs again whole, in a run temper
+    records as a fork of the old one. Temper's own resume would not do: a stage whose inner node
+    failed is "completed" to the run above it, so a resume skips the stage and re-skips everything
+    conditioned on it. Forking at the checkpoint before the failed stage is the resume this loop needs.
+
+    The failed attempt's leftovers are cleared first, since the stage starts over: its claim on the
+    task (held by a run that is over), and whatever it left uncommitted in the worktree, which is
+    kept as a patch beside the bet, so the new attempt starts where the tasks say and not where the
+    old one stopped.
+    """
+    bet_id = open_bet()
+    if not bet_id:
+        die("no open bet; nothing to resume")
+    st = load_state(bet_id)
+    bdir = BETS_DIR / bet_id
+    loop = st["stages"].get("loop") or {}
+    rid = loop.get("_run_id")
+    if not rid:
+        die(f"{bet_id} has no loop run; `run` first")
+    info = get_run(rid)
+    status = info.get("status")
+    if status in ("running", "pending"):
+        die(f"{bet_id}: run {rid[:8]} is still {status}; nothing to resume")
+    if status == "completed":
+        die(f"{bet_id}: run {rid[:8]} completed; `collect` it")
+    # "2 node(s) failed: build/deploy, build/cleanup" -> the first failed top-level stage.
+    failed = re.findall(r"(?:^|[:,]\s*)([a-z_]+)(?:/[a-z_/]+)?", info.get("error_message") or "")
+    failed = [f for f in failed if f in STAGES]
+    if not failed:
+        die(f"{bet_id}: run {rid[:8]} ended {status} but names no failed stage: {info.get('error_message')!r}")
+    stage = min(failed, key=STAGES.index)
+    before = STAGES[STAGES.index(stage) - 1] if STAGES.index(stage) else None
+    seqs = [c["sequence"] for c in checkpoints(rid) if c.get("node_name") == before and c.get("status") == "completed"]
+    if before and not seqs:
+        die(f"{bet_id}: run {rid[:8]} has no completed checkpoint for `{before}` to fork from")
+    seq = max(seqs) if seqs else 0
+
+    slug = f"epd-{bet_id}"
+    claim = f"{CONTAINER_WORKSPACES}/repos/{REPO_NAME}/claims/{slug}.json"
+    wt = f"{CONTAINER_WORKSPACES}/repos/{REPO_NAME}/worktrees/{slug}"
+    r = in_server(f"python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(\"run_id\",\"\"))' {claim} 2>/dev/null")
+    if r.stdout.strip() == rid:
+        in_server(f"rm -f {claim}")
+        log(f"cleared the claim on {slug} held by the failed run")
+    r = in_server(f"git -C {wt} status --porcelain 2>/dev/null | wc -l")
+    if r.returncode == 0 and r.stdout.strip() not in ("", "0"):
+        patch = bdir / f"build-{rid[:8]}.patch"
+        diff = in_server(f"git -C {wt} add -N . && git -C {wt} diff")
+        write(patch, diff.stdout)
+        in_server(f"git -C {wt} reset -q --hard && git -C {wt} clean -qfd")
+        log(f"the failed attempt left {r.stdout.strip()} uncommitted paths in {slug}; kept as {patch.name}, worktree reset")
+
+    env, url = (st["stages"].get("report") or {}).get("env", ""), (st["stages"].get("report") or {}).get("url", "")
+    log(f"== {bet_id}: resuming at `{stage}` (fork of {rid[:8]} after `{before}`, checkpoint {seq}) ==")
+    new = fork_run(rid, seq, "epd_loop", loop_inputs(bet_id, bdir, env, url), LOOP_WORKSPACE)
+    st["stages"]["loop"] = {"_run_id": new, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+                            "_forked_from": rid, "_fork_sequence": seq}
+    save_state(st)
+    log(f"epd_loop → run {new}")
+    log("   it is temper's now; `epd_loop.py collect` records the outcome once it is done")
+
+
 def cmd_collect(keep: bool) -> None:
     """Record what the loop run produced, once temper is done with it.
 
@@ -1271,6 +1356,7 @@ def main() -> None:
     r_ = sub.add_parser("run", help="the whole loop as one temper run (gates in the UI); returns once submitted")
     r_.add_argument("--keep", action="store_true", help="leave the report stack up (with --wait)")
     r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
+    sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
     c = sub.add_parser("collect", help="record the outcome of the open bet's loop run, once temper is done")
     c.add_argument("--keep", action="store_true", help="leave the report stack up")
     n = sub.add_parser("next")
@@ -1303,6 +1389,8 @@ def main() -> None:
         cmd_status()
     elif args.cmd == "run":
         cmd_run(args.keep, args.wait)
+    elif args.cmd == "resume":
+        cmd_resume()
     elif args.cmd == "collect":
         cmd_collect(args.keep)
     elif args.cmd == "next":

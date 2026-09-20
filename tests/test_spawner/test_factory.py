@@ -39,9 +39,12 @@ def test_inprocess_raises_value_error():
         get_spawner(SpawnerKind.inprocess)
 
 
-def test_docker_raises_not_implemented():
-    with pytest.raises(NotImplementedError, match="phase 6"):
-        get_spawner(SpawnerKind.docker)
+def test_docker_builds_a_docker_spawner():
+    from temper_ai.spawner.docker_spawner import DockerSpawner
+
+    spawner = get_spawner(SpawnerKind.docker)
+    assert isinstance(spawner, DockerSpawner)
+    assert spawner.kind == SpawnerKind.docker
 
 
 def test_k8s_raises_not_implemented():

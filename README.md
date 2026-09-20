@@ -311,9 +311,14 @@ The `temper-ai-worker` service is profile-gated in docker-compose:
 docker compose --profile worker up -d
 ```
 
-The worker does not get the host's docker socket by default — a node's Bash runs as the worker's uid, and a uid that can reach the socket is root on the host. Runs that need it (engineer agents bringing a repository's compose stack up) layer on the opt-in overlay:
+The worker does not get the host's docker socket by default — a node's Bash runs as the worker's uid, and a uid that can reach the socket is root on the host. The opt-in overlay mounts it, and `TEMPER_SPAWNER` decides who gets to use it:
 
 ```bash
+# sandbox: the worker starts a container per run; runs never see the socket
+TEMPER_SPAWNER=docker docker compose -f docker-compose.yml -f docker-compose.host-docker.yml --profile worker up -d worker
+
+# shared: runs execute inside the worker and can drive the host daemon themselves
+# (engineer agents bringing a repository's compose stack up) — root on the host
 docker compose -f docker-compose.yml -f docker-compose.host-docker.yml --profile worker up -d worker
 ```
 

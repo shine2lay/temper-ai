@@ -22,6 +22,8 @@ Each run has one other place its tools may use: a scratch directory, made the fi
 
 The path check is a guardrail against a node *straying*, not a boundary against a model that wants out: `Bash` can reach anything the container can, subject only to its allowlist. The boundary that holds against intent is the container the run executes in, plus that allowlist. Do not rest a policy decision on the workspace check alone.
 
+Which container that is depends on the worker's `TEMPER_SPAWNER`. With `docker`, every run gets a container of its own: the worker's image, environment and read-only mounts, only the run's workspace writable (plus its git main repository when the workspace is a worktree), its own `/tmp`, and never the docker socket — see `temper_ai/spawner/docker_spawner.py`. With `subprocess` (the default) runs share the worker container, and `Bash` reaches whatever the worker can, including every other run's workspace.
+
 | Name | Description |
 |------|-------------|
 | [`AddNode`](addnode.md) | Add a new node to the running workflow graph. Called during an agent's run to dispatch follow-up work conditionally (use when the decision can't be expressed as a declarative Jinja template over your output). The new node is queued and inserted into the DAG atomically after your agent completes, alongside any `dispatch:` block from your config. Safety caps (max_children_per_dispatch, max_dispatch_depth, etc.) apply to the merged batch. |

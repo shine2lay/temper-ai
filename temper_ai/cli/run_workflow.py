@@ -66,11 +66,14 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         return 2
 
     # --- Mark running ---------------------------------------------------------
+    # The handle the reaper polls: our PID under the subprocess spawner, our
+    # container's name when the docker spawner put us in one (a PID would
+    # mean nothing outside the container).
     _update_run_row(
         execution_id,
         status="running",
         started_at=datetime.now(UTC),
-        spawner_handle=str(os.getpid()),
+        spawner_handle=os.environ.get("TEMPER_RUN_CONTAINER") or str(os.getpid()),
         attempts=run_row["attempts"] + 1,
     )
 

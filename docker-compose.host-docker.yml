@@ -1,22 +1,37 @@
 # Opt-in overlay: give the worker the host's docker socket.
 #
-# Only for runs that need it — engineer agents bringing a repository's own
-# compose stack up (qa_release_discover, devops_engineer, task_deploy) do;
-# a research or coding run does not. What it costs: a node's Bash runs as
-# the worker's uid, and a uid that can reach the socket can start a
-# container with the host's filesystem mounted, i.e. is root on the host.
-# The platform baseline policy refuses and records a command that names
-# the socket (see docs/reference/policies/index.md), but that is a
-# tripwire on the command text, not a boundary. Do not leave this on for
-# runs that do not need it.
+# What the socket costs: a uid that can reach it can start a container
+# with the host's filesystem mounted, i.e. is root on the host. Who gets
+# to reach it depends on TEMPER_SPAWNER:
+#
+#   TEMPER_SPAWNER=docker      The worker uses the socket for one thing:
+#                              starting a sibling container per run (see
+#                              temper_ai/spawner/docker_spawner.py). Runs
+#                              execute in those containers and never see
+#                              the socket. This is the sandbox; use it.
+#
+#   TEMPER_SPAWNER=subprocess  Runs execute inside the worker container,
+#                              as the same uid, so every node's Bash can
+#                              reach the socket. Only for runs that must
+#                              drive the host daemon themselves (engineer
+#                              agents bringing a repository's own compose
+#                              stack up: qa_release_discover,
+#                              devops_engineer, task_deploy). The platform
+#                              baseline policy refuses and records a
+#                              command that names the socket, but that is
+#                              a tripwire on the command text, not a
+#                              boundary. Do not leave this on for runs that
+#                              do not need it.
 #
 # Layer it on top of the base file (and your local override, if any):
 #
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#   TEMPER_SPAWNER=docker docker compose \
+#       -f docker-compose.yml -f docker-compose.override.yml \
 #       -f docker-compose.host-docker.yml --profile worker up -d worker
 #
 # or, to make it the default for this checkout, in .env:
 #
+#   TEMPER_SPAWNER=docker
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.host-docker.yml
 #
 # Volumes and group_add merge with the base file's lists.

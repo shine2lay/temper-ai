@@ -25,6 +25,13 @@ from temper_ai.spawner.factory import reset_spawner
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
 
+def _fake_spawner(kind: SpawnerKind = SpawnerKind.subprocess) -> MagicMock:
+    """A spawner double with the `kind` the watcher stamps into the claim."""
+    spawner = MagicMock()
+    spawner.kind = kind
+    return spawner
+
+
 @pytest.fixture
 def isolated_db(tmp_path, monkeypatch):
     db_path = tmp_path / "watcher_test.db"
@@ -76,6 +83,14 @@ def test_claim_row_sets_kind_and_placeholder(isolated_db):
     assert row["spawner_handle"] == "claiming"
 
 
+def test_claim_row_stamps_the_spawner_kind_it_was_given(isolated_db):
+    """The reaper rebuilds the handle from spawner_kind, so a run the docker
+    spawner started must not be recorded as a subprocess."""
+    _enqueue("e1-docker")
+    assert _claim_row("e1-docker", "docker") is True
+    assert _read("e1-docker")["spawner_kind"] == "docker"
+
+
 def test_claim_row_returns_false_for_already_claimed(isolated_db):
     _enqueue("e2")
     assert _claim_row("e2") is True
@@ -94,7 +109,7 @@ def test_scan_dispatches_each_queued_row(isolated_db):
     _enqueue("b")
     _enqueue("c")
 
-    spawner = MagicMock()
+    spawner = _fake_spawner()
     spawner.spawn.side_effect = lambda eid: ProcessHandle(
         kind=SpawnerKind.subprocess,
         handle=f"pid-{eid}",
@@ -114,7 +129,7 @@ def test_scan_skips_already_claimed_rows(isolated_db):
     # Pre-claim it (simulating another watcher)
     _claim_row("d")
 
-    spawner = MagicMock()
+    spawner = _fake_spawner()
     n = _scan_and_dispatch(spawner)
     assert n == 0
     spawner.spawn.assert_not_called()
@@ -122,7 +137,7 @@ def test_scan_skips_already_claimed_rows(isolated_db):
 
 def test_scan_marks_failed_on_spawn_error(isolated_db):
     _enqueue("e")
-    spawner = MagicMock()
+    spawner = _fake_spawner()
     spawner.spawn.side_effect = SpawnerError("fork bombed")
 
     n = _scan_and_dispatch(spawner)
@@ -135,7 +150,7 @@ def test_scan_marks_failed_on_spawn_error(isolated_db):
 
 
 def test_scan_no_op_when_queue_empty(isolated_db):
-    spawner = MagicMock()
+    spawner = _fake_spawner()
     n = _scan_and_dispatch(spawner)
     assert n == 0
     spawner.spawn.assert_not_called()
@@ -150,9 +165,21 @@ def test_scan_skips_terminal_rows(isolated_db):
                 status=status,
             ))
 
-    spawner = MagicMock()
+    spawner = _fake_spawner()
     n = _scan_and_dispatch(spawner)
     assert n == 0
+
+
+def test_scan_claims_with_the_spawners_kind(isolated_db):
+    _enqueue("f")
+    spawner = _fake_spawner(SpawnerKind.docker)
+    spawner.spawn.side_effect = lambda eid: ProcessHandle(
+        kind=SpawnerKind.docker, handle=f"temper-run-{eid}", metadata={"execution_id": eid},
+    )
+    assert _scan_and_dispatch(spawner) == 1
+    row = _read("f")
+    assert row["spawner_kind"] == "docker"
+    assert row["spawner_handle"] == "temper-run-f"
 
 
 # --- Race safety ------------------------------------------------------

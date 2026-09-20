@@ -37,6 +37,8 @@ class SubprocessSpawner(Spawner):
     will switch chunk streaming to Redis; logs stay on stdout for ops.
     """
 
+    kind = SpawnerKind.subprocess
+
     def __init__(
         self,
         *,

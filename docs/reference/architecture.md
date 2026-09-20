@@ -50,7 +50,7 @@ The server inserts a `WorkflowRun` row, then `subprocess.Popen`s `python -m temp
 
 The server inserts a queued `WorkflowRun` row with `status='queued'` and returns. A separate `temper-ai-worker` container runs `temper watch-queue` as a long-lived daemon, polls for queued rows, atomically claims them (race-safe across multiple watchers), and spawns workers locally to itself.
 
-- **Where it runs:** subprocess inside the `temper-ai-worker` container
+- **Where it runs:** decided by the worker's `TEMPER_SPAWNER` — `subprocess` (default): a child process inside the `temper-ai-worker` container; `docker`: a container of the run's own, started by the worker through the host's docker socket (see [Spawner abstraction](#spawner-abstraction)).
 - **Crash semantics:** server can die freely; worker keeps running. Worker crash detected by reaper → row marked `orphaned`.
 - **Toolchain:** worker image bakes in `pytest`, `npm`, `docker-ce-cli`, `docker-compose-plugin`, `postgresql-client`, `redis-tools`, `jq`, `vim`, build essentials. Engineer agents reach for them naturally.
 - **Cancel:** `POST /api/runs/{id}/cancel` flips `cancel_requested`; worker container's reaper observes within 5s and signals.
@@ -120,7 +120,10 @@ Missing footer line = the run was interrupted before clean shutdown. Append-mode
 
 ## Spawner abstraction
 
-`temper_ai/spawner/` defines a `Spawner` ABC with `spawn(execution_id) → ProcessHandle`, `is_alive(handle) → bool`, `kill(handle, force=False)`. `SubprocessSpawner` is the only concrete implementation today; future `DockerSpawner` (per-workflow image) and `K8sJobSpawner` (per-run pod) drop in without touching routes — `get_spawner()` reads `$TEMPER_SPAWNER` and returns the right one.
+`temper_ai/spawner/` defines a `Spawner` ABC with `spawn(execution_id) → ProcessHandle`, `is_alive(handle) → bool`, `kill(handle, force=False)`, and a class-level `kind` the watcher stamps into `WorkflowRun.spawner_kind` when it claims a row. `get_spawner()` reads `$TEMPER_SPAWNER` and returns the right one; a future `K8sJobSpawner` (per-run pod) drops in without touching routes.
+
+- **`SubprocessSpawner`** (default) — `python -m temper_ai.cli.main run-workflow` as a child process of the watcher, in the worker container. Every run shares the container: its filesystem, its uid, every other run's workspace, and the docker socket if the overlay mounted it.
+- **`DockerSpawner`** (`TEMPER_SPAWNER=docker`) — one container per run. The worker inspects its own container and starts a sibling from it: same image (or `TEMPER_DOCKER_IMAGE`), same environment, same networks and read-only mounts; the broad workspaces mount replaced by the run's own workspace at the same host path (plus the git main repository when the workspace is a worktree); its own `/tmp`; never the docker socket. Named `temper-run-<execution_id>`, `--rm --init`, `no-new-privileges`; optional `TEMPER_DOCKER_MEMORY` / `TEMPER_DOCKER_CPUS` / `TEMPER_DOCKER_PIDS_LIMIT`. The worker needs the socket for this (`docker-compose.host-docker.yml`) and uses it for nothing else; the run tells the reaper its container name through `TEMPER_RUN_CONTAINER`, and liveness/kill are keyed on the execution_id so they survive a worker restart. This is the sandbox the tool docs refer to; the workspace check, the Bash allowlist and the platform baseline are guardrails inside it.
 
 The reaper (`temper_ai/spawner/reaper.py`) runs on a 5s tick, polls `WorkflowRun` rows with `status='running'`, asks the spawner if each handle is alive, marks the dead as `orphaned`. For `cancel_requested=true`, sends SIGTERM, then SIGKILL after a 30s grace period. Idempotent kill — already-dead processes don't error.
 
@@ -139,11 +142,11 @@ The reaper (`temper_ai/spawner/reaper.py`) runs on a 5s tick, polls `WorkflowRun
 
 4. worker container, watch-queue daemon (every 2s):
      SELECT FROM workflow_runs WHERE status='queued' AND spawner_kind IS NULL
-     UPDATE ... SET spawner_kind='subprocess', spawner_handle='claiming'  (atomic)
-     spawner.spawn(execution_id) → ProcessHandle(pid=...)
-     UPDATE ... SET spawner_handle=<pid>
+     UPDATE ... SET spawner_kind=<spawner.kind>, spawner_handle='claiming'  (atomic)
+     spawner.spawn(execution_id) → ProcessHandle(pid | container name)
+     UPDATE ... SET spawner_handle=<handle>
 
-5. worker subprocess (`temper run-workflow --execution-id <id>`):
+5. the run (`temper run-workflow --execution-id <id>`, a child process or its own container):
      UPDATE ... SET status='running', started_at=now(), attempts++
      install signal handlers (SIGTERM/SIGINT → cancel_event.set())
      bootstrap RunnerContext from env (DB, LLM providers, memory, configs)

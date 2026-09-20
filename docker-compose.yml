@@ -204,6 +204,13 @@ services:
       TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
       TEMPER_REDIS_URL: redis://redis:6379/0
       TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
+      # Where a claimed run executes: `subprocess` (default) is a child
+      # process of the watcher in this container; `docker` is a container
+      # of its own per run — the worker's image, env and read-only mounts,
+      # only the run's workspace writable, never the docker socket. `docker`
+      # needs the socket on the *worker* (docker-compose.host-docker.yml):
+      # that is what it spawns with.
+      TEMPER_SPAWNER: ${TEMPER_SPAWNER:-subprocess}
       # Workspace path string the server writes into WorkflowRun rows must
       # match what the worker can resolve — same value on both sides.
       WORKSPACE_DIR: ${WORKSPACE_DIR:-./workspaces}

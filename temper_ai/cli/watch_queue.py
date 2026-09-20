@@ -4,11 +4,12 @@ Runs in the temper-worker container (or anywhere with DB + spawn ability).
 Each tick:
   1. Query Postgres for WorkflowRun rows where status='queued' and
      spawner_handle is NULL (not already picked up by another watcher)
-  2. For each, claim the row by setting spawner_kind='subprocess' and
-     spawner_handle='claiming' (race-safe via UPDATE ... WHERE handle IS NULL)
-  3. Call SubprocessSpawner.spawn() — launches `temper run-workflow
-     --execution-id <id>` as a child process in this container
-  4. Stamp the resulting handle (PID) onto the row
+  2. For each, claim the row by setting spawner_kind to the spawner's kind
+     and spawner_handle='claiming' (race-safe via UPDATE ... WHERE handle IS NULL)
+  3. Call spawner.spawn() — `temper run-workflow --execution-id <id>` as a
+     child process in this container (subprocess, the default) or in a
+     sibling container of its own (docker, TEMPER_SPAWNER=docker)
+  4. Stamp the resulting handle (PID / container name) onto the row
 
 Reaper from Phase 3 piggybacks: runs in the same process, polls the same
 rows for liveness + cancel_requested. One container = one watcher process
@@ -93,7 +94,7 @@ def _scan_and_dispatch(spawner) -> int:
     """Find queued rows, claim each, spawn a worker. Returns dispatched count.
 
     Claim semantics: a row is "ours" once we've UPDATEd spawner_kind from
-    NULL to 'subprocess' atomically. Two watchers racing — only one's
+    NULL to the spawner's kind atomically. Two watchers racing — only one's
     UPDATE matches the WHERE clause, the other gets zero rows changed.
     """
     queued = _load_queued()
@@ -103,7 +104,7 @@ def _scan_and_dispatch(spawner) -> int:
     dispatched = 0
     for row_dict in queued:
         execution_id = row_dict["execution_id"]
-        if not _claim_row(execution_id):
+        if not _claim_row(execution_id, spawner.kind.value):
             # Another watcher beat us to it
             continue
         try:
@@ -136,7 +137,7 @@ def _load_queued() -> list[dict]:
         return [{"execution_id": r.execution_id} for r in rows]
 
 
-def _claim_row(execution_id: str) -> bool:
+def _claim_row(execution_id: str, spawner_kind: str = "subprocess") -> bool:
     """Try to atomically claim a queued row. Returns True if we got it.
 
     Uses a single UPDATE...WHERE statement so the claim is atomic at the
@@ -157,7 +158,7 @@ def _claim_row(execution_id: str) -> bool:
                 WorkflowRun.execution_id == execution_id,  # type: ignore[arg-type]
                 WorkflowRun.spawner_kind.is_(None),  # type: ignore[union-attr]
             )
-            .values(spawner_kind="subprocess", spawner_handle="claiming")
+            .values(spawner_kind=spawner_kind, spawner_handle="claiming")
         )
         result = session.exec(stmt)  # type: ignore[arg-type]
         return result.rowcount > 0

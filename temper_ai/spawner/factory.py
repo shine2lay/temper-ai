@@ -11,6 +11,7 @@ import logging
 import os
 
 from temper_ai.spawner.base import Spawner
+from temper_ai.spawner.docker_spawner import DockerSpawner
 from temper_ai.spawner.subprocess_spawner import SubprocessSpawner
 from temper_ai.worker_proto import SpawnerKind
 
@@ -28,8 +29,7 @@ def get_spawner(kind: SpawnerKind | str | None = None) -> Spawner:
             $TEMPER_SPAWNER, fall back to subprocess.
 
     Raises:
-        NotImplementedError if the requested kind isn't implemented yet
-        (docker / k8s_job land in phases 6+).
+        NotImplementedError for k8s_job (v2).
 
     The function intentionally does NOT support `inprocess` here — that
     backend is the existing thread-based path inlined in routes.py and
@@ -50,7 +50,7 @@ def get_spawner(kind: SpawnerKind | str | None = None) -> Spawner:
     if kind == SpawnerKind.subprocess:
         _singleton = SubprocessSpawner()
     elif kind == SpawnerKind.docker:
-        raise NotImplementedError("DockerSpawner lands in phase 6")
+        _singleton = DockerSpawner()
     elif kind == SpawnerKind.k8s_job:
         raise NotImplementedError("K8s spawner is v2 (out of phase scope)")
     elif kind == SpawnerKind.inprocess:

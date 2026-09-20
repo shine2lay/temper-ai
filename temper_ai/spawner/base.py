@@ -13,8 +13,9 @@ Lifecycle:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
-from temper_ai.worker_proto import ProcessHandle
+from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
 
 class SpawnerError(Exception):
@@ -32,6 +33,10 @@ class Spawner(ABC):
     Implementations must be reusable across many spawns; the server calls
     `get_spawner()` once and reuses the instance for every POST /api/runs.
     """
+
+    # What the watcher stamps into WorkflowRun.spawner_kind when it claims a
+    # row, and what the reaper reads back to rebuild the handle.
+    kind: ClassVar[SpawnerKind]
 
     @abstractmethod
     def spawn(self, execution_id: str) -> ProcessHandle:

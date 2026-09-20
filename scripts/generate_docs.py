@@ -301,7 +301,15 @@ class ToolsSection(DocSection):
             "against a model that wants out: `Bash` can reach anything the container "
             "can, subject only to its allowlist. The boundary that holds against "
             "intent is the container the run executes in, plus that allowlist. Do "
-            "not rest a policy decision on the workspace check alone."
+            "not rest a policy decision on the workspace check alone.\n\n"
+            "Which container that is depends on the worker's `TEMPER_SPAWNER`. With "
+            "`docker`, every run gets a container of its own: the worker's image, "
+            "environment and read-only mounts, only the run's workspace writable "
+            "(plus its git main repository when the workspace is a worktree), its "
+            "own `/tmp`, and never the docker socket — see "
+            "`temper_ai/spawner/docker_spawner.py`. With `subprocess` (the default) "
+            "runs share the worker container, and `Bash` reaches whatever the worker "
+            "can, including every other run's workspace."
         )
 
     def item_summary(self, name, cls):

@@ -1,0 +1,66 @@
+# EPD loop, report stage, step 1: who will walk through the product today.
+#
+# A product with no users has no analytics, so the report is manufactured the
+# way Tero's Multiverse does it: a few synthetic users, each with a concrete
+# job, use the real app on a dev stack and write down where they got stuck.
+# This node invents those users from the profile and the owner's goals. Three,
+# every time, because the workflow fans out to three walk nodes; what changes
+# between iterations is WHO they are, steered by the last outcome so the same
+# three jobs are not walked forever.
+#
+# A persona is a job, not a demographic. "Owner checking whether anything needs
+# doing before the market opens" is a persona; "35-year-old male investor" is
+# not, because a walk cannot be made of it.
+agent:
+  name: epd_personas
+  type: llm
+  provider: anthropic
+  model: claude-fable-5-1
+  max_iterations: 3
+  total_timeout: 300
+  provider_config:
+    max_tokens: 4000
+    effort: low
+  system_prompt: |
+    You design synthetic users for a product walkthrough. You are given what
+    the product is, who it is for and what the owner cares about right now.
+    Produce exactly three personas. Each is a JOB TO BE DONE that a person
+    could try to complete in the app in ten to fifteen browser actions,
+    starting from the login page, using one of two test accounts:
+
+      "book"  — a tenant with a seeded covered-call book (positions, cushion,
+                recommendations, history) on a simulated broker that fills
+                orders after a short delay.
+      "empty" — a tenant with nothing: no positions, no history.
+
+    Choose personas that together cover the goals: at least one is the
+    primary user doing the primary job; at least one starts from nothing (the
+    "empty" account) so onboarding and empty states get walked; the third is
+    whatever the goals and the last outcome say is least understood. If a
+    previous outcome exists, do not repeat its walks unless it says to.
+
+    Each persona brief is one paragraph, written to the walker in the second
+    person: who you are, what you already know, what you are trying to get
+    done, and how you will know you are done. Concrete: name the figures or
+    pages you expect to find, so the walker can tell "found it" from "gave up".
+
+    Reply with a short rationale, then exactly one ```json block:
+    {
+      "persona_1": "<brief>", "account_1": "book|empty",
+      "persona_2": "<brief>", "account_2": "book|empty",
+      "persona_3": "<brief>", "account_3": "book|empty",
+      "coverage": "<one sentence: what the three together cover and what they leave out>"
+    }
+  task_template: |
+    ## Product profile
+    {{ profile }}
+
+    ## Owner's goals
+    {{ goals }}
+
+    {% if last_outcome %}
+    ## Outcome of the previous bet
+    {{ last_outcome }}
+    {% endif %}
+
+    Design the three personas.

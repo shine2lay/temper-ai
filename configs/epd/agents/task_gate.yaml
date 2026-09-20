@@ -1,0 +1,96 @@
+# EPD task pipeline: one decision out of several judgements.
+#
+# Review reads the diff, QA uses the running application, security reads what
+# the branch added. They judge the same round at the same time and none of them
+# outranks the others: a change that reads well but does not work is not done,
+# a change that works but leaves a wrong comment behind is not done, and a
+# change that does both while committing a key is certainly not done. This node
+# turns their verdicts into the single one the loop runs on, so the implementer
+# gets every list of findings in the same round instead of each judge arriving
+# after the last one approved.
+#
+# It sees only the verdicts — never the findings text. The lists go straight
+# from each judge to the implementer through the workflow's input_map; keeping
+# prose out of a shell template keeps a finding that contains a quote, a
+# backtick or a newline from becoming a shell problem. The one number that does
+# come through is a count, which cannot be anything but digits.
+#
+# A judge that did not run (no stack, verify=false, implement skipped) renders
+# as an empty string or the literal None, and counts as "did not object".
+agent:
+  name: task_gate
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    python3 - <<'PYEOF'
+    import json
+    import re
+
+    # label, raw verdict, the word that means "fine", the word that means "not fine".
+    # A judge is one row. Adding a fourth is adding a row, not editing the logic.
+    JUDGES = [
+        ("review", "{{ review_verdict | default('') }}", "approve", "request_changes"),
+        ("QA", "{{ qa_verdict | default('') }}", "pass", "fail"),
+        ("security", "{{ security_verdict | default('') }}", "pass", "fail"),
+    ]
+
+
+    def read(raw: str) -> str:
+        """A verdict is a bare word. Anything else — empty, None, or something a model
+        invented — is reduced to the word characters in it, so nothing that arrives here
+        can be more than a word."""
+        word = re.sub(r"[^a-z_]", "", str(raw).strip().lower())
+        return "" if word in ("", "none", "null") else word
+
+
+    verdicts, unknown, wants, ran = {}, [], [], []
+    for label, raw, ok, no in JUDGES:
+        v = read(raw)
+        verdicts[label] = v or None
+        if not v:
+            continue  # did not run
+        ran.append(label)
+        # A judge that ran and said something nobody recognises has not approved
+        # anything: it counts as wanting changes, never as consent. The judges re-run
+        # on the rewind, so a one-off malformed verdict corrects itself; a persistent
+        # one stops at max_loops with `unreadable` in the outputs saying why.
+        if v == no:
+            wants.append(label)
+        elif v != ok:
+            unknown.append(f"{label}={v}")
+            wants.append(label)
+
+    # Things no round of the loop can discharge — rotating a credential that was
+    # committed, above all. They must not block the loop (the implementer cannot do
+    # them) and must not be silently approved past either, so they ride along in the
+    # one line a human actually reads.
+    try:
+        human_actions = int("{{ security_human_actions_count | default('0') }}" or 0)
+    except ValueError:
+        human_actions = 0
+
+    if wants:
+        verdict = "request_changes"
+        summary = f"{' and '.join(wants)} asked for changes"
+        if unknown:
+            summary += f" (unreadable verdict: {', '.join(unknown)} — not treated as approval)"
+    else:
+        verdict = "approve"
+        summary = f"{' and '.join(ran)} approved" if ran else "nothing judged this round"
+    if human_actions:
+        summary += (
+            f" — {human_actions} action(s) still need a human "
+            "(see security_human_actions: committing a credential is not undone by removing it)"
+        )
+
+    print(json.dumps({
+        "verdict": verdict,
+        "summary": summary,
+        "review_verdict": verdicts["review"],
+        "qa_verdict": verdicts["QA"],
+        "security_verdict": verdicts["security"],
+        "changes_wanted_by": wants,
+        "unreadable": unknown,
+        "human_actions": human_actions,
+    }))
+    PYEOF

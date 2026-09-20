@@ -1,0 +1,44 @@
+workflow:
+  name: epd_bet
+  description: |
+    EPD loop, stage 2 of 7: the bet. Replaces the product department's
+    decision. One agent reads the report, the goals, the profile and the
+    ledger of past bets, proposes three candidates, picks one, and writes
+    <bet dir>/bet.md as a pitch with ONE falsifiable invariant and a
+    pre-registered success threshold.
+
+    Ends with status DECIDE, always: the owner signs, edits or rejects the
+    invariant before the tasks stage runs. That gate is the product
+    judgement lever, and it is the only place a human is required.
+
+    Isolated: inputs are the texts of the files. Run it alone on any
+    report to work on the product judgement.
+  inputs:
+    bet_id: {type: string, required: true}
+    bet_path: {type: string, required: true}
+    goals: {type: string, required: true}
+    profile: {type: string, required: true}
+    report: {type: string, required: true}
+    bets_tsv: {type: string, required: true}
+  outputs:
+    status: bet.structured.status
+    bet_path: bet.structured.bet_path
+    title: bet.structured.title
+    problem: bet.structured.problem
+    invariant: bet.structured.invariant
+    threshold: bet.structured.threshold
+    appetite_hours: bet.structured.appetite_hours
+    candidates: bet.structured.candidates
+    questions_for_owner: bet.structured.questions_for_owner
+
+  nodes:
+    - name: bet
+      type: agent
+      agent: epd_bet
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        goals: input.goals
+        profile: input.profile
+        report: input.report
+        bets_tsv: input.bets_tsv

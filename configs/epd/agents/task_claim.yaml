@@ -1,0 +1,93 @@
+# EPD task pipeline, step 1: claim a task.
+#
+# A claim is a local record, not a GitHub side effect: an atomically created
+# JSON file at <workspaces>/<repo>/claims/<slug>.json naming the run that
+# owns the task. A second run for the same task fails here unless
+# force=true, so two workers cannot start the same task.
+#
+# Inputs: repo_url (GitHub repo link), task_name (free text), force (bool).
+# Emits JSON on the last line for the next node.
+agent:
+  name: task_claim
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/sh
+    # POSIX sh: the Bash tool runs scripts through /bin/sh, not bash.
+    set -eu
+
+    REPO_URL={{ repo_url }}
+    TASK_NAME={{ task_name }}
+    FORCE={{ force | default('false') }}
+    RUN_ID={{ run_id | default('') }}
+    WORKSPACES_ROOT={{ workspaces_root | default('') }}
+    # An optional workflow input that was not given arrives as Python None.
+    [ "$WORKSPACES_ROOT" = None ] && WORKSPACES_ROOT=""
+    [ "$RUN_ID" = None ] && RUN_ID=""
+    # Default root: the mounted workspaces dir. The server (inprocess runs)
+    # mounts it at /app/workspaces; the worker at the host path, which it
+    # also exports as WORKSPACE_DIR. No dollar-brace env syntax here: the
+    # config loader rewrites it with the *server's* env before the script runs.
+    if [ -z "$WORKSPACES_ROOT" ]; then
+      WD=$(printenv WORKSPACE_DIR || true)
+      if [ -d /app/workspaces ]; then
+        WORKSPACES_ROOT=/app/workspaces/repos
+      elif [ -n "$WD" ] && [ -d "$WD" ]; then
+        WORKSPACES_ROOT="$WD/repos"
+      else
+        WORKSPACES_ROOT="$HOME/workspaces/repos"
+      fi
+    fi
+
+    fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
+
+    # owner/repo from https://github.com/owner/repo(.git) or git@github.com:owner/repo(.git)
+    SLUG_PATH=$(printf '%s' "$REPO_URL" | sed -E 's#^(https?://[^/]+/|git@[^:]+:)##; s#\.git/?$##; s#/+$##')
+    OWNER=${SLUG_PATH%%/*}
+    REPO=${SLUG_PATH##*/}
+    if [ -z "$OWNER" ] || [ -z "$REPO" ] || [ "$OWNER" = "$SLUG_PATH" ]; then
+      fail "could not parse owner/repo from repo_url: $REPO_URL"
+    fi
+
+    # Branch- and path-safe slug for the task name.
+    TASK_SLUG=$(printf '%s' "$TASK_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9._/-]+#-#g; s#/+#-#g; s#-+#-#g; s#\.\.+#.#g; s#^[-.]+##; s#[-.]+$##')
+    [ -n "$TASK_SLUG" ] || fail "task_name produced an empty slug: $TASK_NAME"
+
+    ROOT="$WORKSPACES_ROOT/$REPO"
+    CLAIMS="$ROOT/claims"
+    CLAIM="$CLAIMS/$TASK_SLUG.json"
+    mkdir -p "$CLAIMS"
+
+    case "$FORCE" in true|True|1) FORCE=true ;; *) FORCE=false ;; esac
+    if [ -e "$CLAIM" ] && [ "$FORCE" != true ]; then
+      OWNER_RUN=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("run_id",""))' "$CLAIM" 2>/dev/null || true)
+      fail "task '$TASK_SLUG' already claimed (run $OWNER_RUN) at $CLAIM; pass force=true to take it over"
+    fi
+
+    CLAIMED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    TMP="$CLAIM.$$.tmp"
+    python3 - "$TMP" "$TASK_NAME" "$TASK_SLUG" "$REPO_URL" "$OWNER" "$REPO" "$RUN_ID" "$CLAIMED_AT" "$ROOT" <<'PY'
+    import json, sys
+    path, task_name, slug, url, owner, repo, run_id, at, root = sys.argv[1:]
+    json.dump({
+        "status": "claimed",
+        "task_name": task_name,
+        "task_slug": slug,
+        "repo_url": url,
+        "owner": owner,
+        "repo": repo,
+        "run_id": run_id,
+        "claimed_at": at,
+        "root": root,
+    }, open(path, "w"), indent=2)
+    PY
+    if [ "$FORCE" = true ]; then
+      mv -f "$TMP" "$CLAIM"
+    else
+      # noclobber makes the final rename-into-place an atomic create-or-fail.
+      ( set -C; cat "$TMP" > "$CLAIM" ) 2>/dev/null || { rm -f "$TMP"; fail "task '$TASK_SLUG' was claimed concurrently"; }
+      rm -f "$TMP"
+    fi
+
+    echo "claimed $OWNER/$REPO :: $TASK_SLUG -> $CLAIM"
+    python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["claim_path"]=sys.argv[1]; d["forced"]=sys.argv[2]=="true"; print(json.dumps(d))' "$CLAIM" "$FORCE"

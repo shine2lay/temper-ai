@@ -1,0 +1,68 @@
+# EPD task pipeline: does this worktree have a docker stack standee can run?
+#
+# Looks for a compose file (or a standee companion) at the worktree root and
+# reports has_docker for the stack_up / stack_down nodes' conditions. Also
+# translates the worktree path to the host's path, which standee (on the
+# host) needs: the server container mounts the workspaces at /app/workspaces
+# while the host has them at WORKSPACE_DIR; the worker mounts them at the
+# host path already.
+#
+# This and task_stack_up are the two halves of the `environment` stage -- the
+# question and the act. A stage hands the outside world only the output of its
+# LAST node that ran, so both halves emit the SAME shape: when there is no
+# compose file, stack_up is skipped and this output is what the rest of the
+# pipeline reads. Hence the three trailing nulls; keep them in step with
+# task_stack_up's emit or the fields vanish on the no-stack path.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: task_stack_detect
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/sh
+    set -eu
+    WT={{ worktree_path }}
+    REPO={{ repo }}
+    TASK_SLUG={{ task_slug }}
+    KEEP={{ keep | default('false') }}
+    STACK={{ stack | default('true') }}
+    # verify=false skips the browser step (deploy still happens); it needs a
+    # stack, so no compose file means no verify either.
+    PLAN={{ plan | default('true') }}
+    IMPLEMENT={{ implement | default('true') }}
+    VERIFY={{ verify | default('true') }}
+    case "$PLAN" in false|False|0) PLAN=false ;; *) PLAN=true ;; esac
+    case "$IMPLEMENT" in false|False|0) IMPLEMENT=false ;; *) IMPLEMENT=true ;; esac
+    case "$VERIFY" in false|False|0) VERIFY=false ;; *) VERIFY=true ;; esac
+    case "$KEEP" in true|True|1) TEARDOWN=false ;; *) TEARDOWN=true ;; esac
+    case "$STACK" in false|False|0) STACK=false ;; *) STACK=true ;; esac
+
+    fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
+    [ -d "$WT" ] || fail "worktree not found: $WT"
+
+    COMPOSE=""
+    for f in standee.yaml compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
+      if [ -f "$WT/$f" ]; then COMPOSE="$f"; break; fi
+    done
+    HAS_DOCKER=false
+    [ -n "$COMPOSE" ] && [ "$STACK" = true ] && HAS_DOCKER=true
+
+    HOST_WT="$WT"
+    WD=$(printenv WORKSPACE_DIR || true)
+    case "$WT" in
+      /app/workspaces/*)
+        [ -n "$WD" ] || fail "WORKSPACE_DIR not set; cannot map $WT to a host path"
+        HOST_WT="$WD${WT#/app/workspaces}" ;;
+    esac
+
+    PROJECT=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9-]+#-#g; s#-+#-#g; s#^-##; s#-$##')
+    ENV_NAME="$PROJECT-dev-$TASK_SLUG"
+
+    STACK_TEARDOWN=false
+    [ "$HAS_DOCKER" = true ] && [ "$TEARDOWN" = true ] && STACK_TEARDOWN=true
+
+    echo "stack: has_docker=$HAS_DOCKER compose=$COMPOSE host_path=$HOST_WT env=$ENV_NAME teardown=$TEARDOWN verify=$VERIFY"
+    # status/env_name_actual/url are the stack_up half of the shape. Null here:
+    # if this node is the stage's last, nothing was stood up.
+    python3 -c 'import json,sys; print(json.dumps({"has_docker": sys.argv[1]=="true", "compose_file": sys.argv[2], "host_worktree_path": sys.argv[3], "project": sys.argv[4], "env_name": sys.argv[5], "teardown": sys.argv[6]=="true", "stack_teardown": sys.argv[7]=="true", "run_plan": sys.argv[8]=="true", "run_implement": sys.argv[9]=="true", "run_verify": sys.argv[10]=="true", "status": "no_stack", "env_name_actual": None, "url": None}))' \
+      "$HAS_DOCKER" "$COMPOSE" "$HOST_WT" "$PROJECT" "$ENV_NAME" "$TEARDOWN" "$STACK_TEARDOWN" "$PLAN" "$IMPLEMENT" "$VERIFY"

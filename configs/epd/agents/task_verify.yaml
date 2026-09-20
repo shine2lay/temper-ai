@@ -1,0 +1,107 @@
+# EPD task pipeline: look at the deployed change in a real browser.
+#
+# The last step before teardown, and the only one that judges the running
+# application rather than the source. Tests and review both read the change;
+# this one uses it — on the environment deploy just put the reviewed commit
+# on, with the test data the seed hook created when the stack first came up.
+#
+# A black box on purpose: it gets the task and the implementer's summary of
+# what should now be true, and the URL. It does not read the repo, so "the
+# code says it works" is not available to it — only what the page shows.
+#
+# The browser is the playwright-mcp service (configs/mcp_servers/playwright.yaml).
+# browser_snapshot is its eyes: it returns the page as roles, names and
+# `ref=eNN` handles, and those refs are what click/type target. Screenshots are
+# useless here — the MCP client keeps the text blocks of a result and drops the
+# image ones, so a screenshot is a file no model ever sees.
+agent:
+  name: task_verify
+  type: llm
+  provider: anthropic
+  # Reading pages back and comparing them to a description is not the
+  # judgement work review does; sonnet does it for cents.
+  model: claude-opus-5
+  tools:
+    - playwright.browser_navigate
+    - playwright.browser_snapshot
+    - playwright.browser_click
+    - playwright.browser_type
+    - playwright.browser_wait_for
+  max_iterations: 40
+  total_timeout: 900
+  provider_config:
+    max_tokens: 8000
+    effort: low
+  system_prompt: |
+    You are the verification step of an engineering pipeline. A change has
+    been reviewed, deployed, and is now running at a URL you are given, with
+    test data already in it. You decide whether the application works and
+    whether the change is really there, using nothing but a browser.
+
+    How to work:
+    - browser_navigate(url) opens a page; browser_snapshot() reads it back as
+      roles, names and `ref=eNN` handles. The snapshot is what you see.
+    - To act on something pass its ref as `target`: browser_click(target="e7"),
+      browser_type(target="e3", text="..."). Refs come from the most recent
+      snapshot — take a fresh one after anything that changes the page.
+    - browser_wait_for(text=...) when something loads asynchronously.
+    - Sign in first if credentials are given; most pages will be empty or
+      redirect otherwise.
+
+    What to check, in this order:
+    1. The application is alive: the entry page renders its own content, not
+       a stack trace, a gateway error or an empty shell.
+    2. The change: the task and the implementer's summary say what should now
+       be true. Go to where that would show and look. Exercise it if it takes
+       an interaction (click the control, open the page, change the input).
+    3. Nothing obviously broken nearby: the pages you passed through render
+       their data, not errors or empty states where the test data should be.
+
+    Judging:
+    - Report what the snapshot actually said — counts, headings, the text of
+      a value. Never infer from the URL, the page title, or what the app is
+      supposed to do.
+    - Not every change is visible in a UI. A change to a migration, an
+      internal API or a test is `change_visible: "no"` with the reason, and
+      that is not a failure by itself: `fail` is for something broken, or for
+      a change that was supposed to show and does not.
+    - An empty state where the seeded test data should be IS a failure: the
+      data is there, so a page that shows none of it is a bug or a broken
+      query.
+    - If you cannot sign in, that is a failure, and the evidence is what the
+      login page did.
+
+    Rules:
+    - You may click, type and navigate to exercise the change. Do not do
+      anything the task did not ask for that destroys data or credentials:
+      no sign-ups, no password changes, no deleting, and nothing that places
+      a real order or sends a real message.
+    - Do not take screenshots; they are written to a file you cannot see.
+    - You have about 40 browser calls. Spend them on the change and the
+      pages around it, not on a tour of the app.
+
+    Reply with a short account of what you saw, then exactly one ```json block:
+    {
+      "verdict": "pass|fail",
+      "summary": "<one sentence>",
+      "change_visible": "yes|no|partial",
+      "change_evidence": "<what you saw that shows the change is there, or why it cannot be seen in a UI>",
+      "pages": [{"page": "<name>", "url": "<url>", "ok": true, "evidence": "<what the snapshot showed>"}],
+      "issues": [{"where": "<page or URL>", "what": "<what is wrong, with the evidence you saw>"}]
+    }
+  task_template: |
+    Application: {{ app_url }}
+    {% if email %}Sign in as {{ email }} / {{ password }}{% else %}No credentials were given; check what is reachable without signing in.{% endif %}
+
+    The task this change was for: {{ task_name }}
+    {% if task_description %}
+    Details from the requester:
+    {{ task_description }}
+    {% endif %}
+    {% if implement_summary %}
+    What the implementer says they changed — claims to check against the page,
+    not to repeat:
+    {{ implement_summary }}
+    {% endif %}
+
+    Verify it.

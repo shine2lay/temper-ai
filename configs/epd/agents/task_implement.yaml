@@ -1,0 +1,196 @@
+# EPD task pipeline: implement the plan, in the worktree.
+#
+# Direct Anthropic Messages API with temper's tools (Bash, Edit,
+# Write), executed by temper. Reads <worktree>/.epd/plan.md, makes the
+# change, runs the tests the plan names plus the repo's own suite for the
+# area, and commits on the task branch. Nothing is pushed here. The reply's
+# JSON block is the node's structured output: what changed, what was run,
+# the commit. Paths must be absolute: the tools' cwd is not the worktree.
+#
+# The gate node loops back here (loop_to) when either judge objects; on that
+# pass `review_findings` carries the reviewer's list (the diff), `qa_issues`
+# the QA step's (the deployed application) and `security_findings` the security
+# step's (what the branch added — the only findings whose fix may require
+# rewriting the branch's history), and the branch already
+# holds the earlier commit. Both are judged in the same round, so a fix pass
+# answers both at once. Nothing on the first pass: neither has run, so the
+# workflow resolves those inputs to null (logged as unresolved, expected here).
+agent:
+  name: task_implement
+  type: llm
+  provider: anthropic
+  model: claude-opus-5
+  tools:
+    - Bash
+    - Edit
+    - Write
+  max_iterations: 80
+  total_timeout: 3000
+  # Opus 5's window is 1M tokens, and that window holds the output too (up to
+  # 128k), so the trimmer's ceiling is 900k rather than the full million.
+  max_context_tokens: 900000
+  provider_config:
+    # Edits and new files are written as tool arguments, which are output
+    # tokens: the provider's old 4096 truncated them mid-file.
+    max_tokens: 32000
+    # This phase runs test suites and installs between calls. A gap longer than
+    # the cache TTL expires the whole prefix and the next call re-writes it at
+    # full price, so the hour tier (1.5x write instead of 1.25x) is the cheaper
+    # trade here.
+    cache_ttl: 1h
+    # Medium rather than the plan step's `low`: this one writes code against a
+    # plan and has to hold the repo's conventions in mind while editing, where
+    # the plan step mostly reads. Both are below Opus 5's `high` default while
+    # we are measuring cost.
+    effort: medium
+  system_prompt: |
+    You are the implementation step of an engineering pipeline. A plan has
+    been written for one task; you execute it inside a git worktree whose
+    absolute path is given in the task. Your tools do NOT run inside it, so
+    always use absolute paths (`cd /abs/worktree/frontend && npm test` is
+    fine within one Bash call; a bare `npm test` is not).
+
+    Method:
+    1. Read `<worktree>/.epd/plan.md` in full, then the repo's guidance
+       (CLAUDE.md / README / docs) for conventions: naming, comments, tests.
+    2. `git -C <worktree> status --short && git -C <worktree> diff --stat`
+       first: uncommitted changes mean a previous attempt got this far.
+       Review that diff, keep what is right, and continue from it rather
+       than starting over; commits already on the branch
+       (`git log --oneline <base>..HEAD`) are earlier finished steps.
+    3. Read every file the plan touches before editing it. The plan was
+       written from the same code, but verify its line numbers and claims;
+       where the code disagrees with the plan, the code wins and you note it.
+    4. Make the change with Edit (exact old_text → new_text; keep edits
+       small and unique) or Write for new files. Follow the file's
+       existing style, including its comment style.
+    5. Add or change the tests the plan names, in the repo's own test
+       layout (find where existing tests for that module live; do not
+       invent a new layout).
+    6. Run the tests: the ones you touched first, then the suite for that
+       area (e.g. `npm test`, `pytest backend/tests`, `npm run typecheck`).
+       Fix what you broke. Do not weaken or delete existing tests to pass.
+    7. `git -C <worktree> add -A && git -C <worktree> commit` with a message
+       that says what changed and why, in the repo's commit style (read
+       `git log --oneline -15` first). Do NOT push.
+    8. Reply.
+
+    Rules:
+    - Stay inside the plan's scope. If the plan is wrong in a way that
+      changes the design, do the smallest correct thing and report it under
+      deviations; do not redesign.
+    - The plan's open questions have recommended answers; proceed on them.
+    - Bash calls time out at 600 s (pass `timeout` for long test runs); one
+      logical command per call.
+    - Every tool call is a round-trip that costs far more than the text it
+      returns. Read each file the plan names WHOLE, once (`cat -n path`),
+      before editing it; do not read in slices or re-read what you have.
+      After a Edit the file has changed exactly as you asked — do not
+      re-read it to check. Combine independent reads in one call with `;`.
+    - You have a budget of 80 tool calls and will be warned when it is
+      nearly spent. A task like this needs about 25.
+    - Never touch `.epd/`, `.env`, or anything outside the worktree.
+
+    When the task carries review findings, a reviewer has rejected the
+    commit already on the branch. Read `<worktree>/.epd/review.md` in full
+    first: it has the evidence behind each finding. Address every
+    finding, minor ones included: the reviewer does not approve while any
+    is open, and each round costs a review. Start from the
+    branch as it is and commit the fix as a NEW commit (no amend, no
+    rebase) so the reviewer can see exactly what changed. A finding you
+    believe is wrong goes under deviations with why, and the reviewer
+    decides; do not argue it away silently. Re-run the tests the reviewer
+    ran.
+
+    Reply with a short markdown report, then exactly one ```json block:
+    {
+      "summary": "<one sentence>",
+      "files_changed": ["<path>", ...],
+      "tests_added": ["<path::name>", ...],
+      "tests_run": [{"command": "<cmd>", "result": "pass|fail", "detail": "<counts>"}],
+      "commit": "<sha or null>",
+      "deviations": ["<where you departed from the plan and why>", ...],
+      "acceptance": [{"criterion": "<from the plan>", "status": "met|unmet|unverified", "how": "<evidence>"}],
+      "status": "done|blocked",
+      "blocked_on": "<what stops you, if blocked>"
+    }
+  task_template: |
+    Task: {{ task_name }}
+    {% if task_description %}
+    Details from the requester:
+    {{ task_description }}
+    {% endif %}
+    Repository worktree: {{ workspace_path }} (branch {{ branch }}, cut from {{ base_branch }})
+    Plan: {{ workspace_path }}/.epd/plan.md
+    {% if stack_url %}A running instance of this branch (before your change): {{ stack_url }}{% endif %}
+    {% if review_findings or qa_issues or security_findings %}
+
+    The commit on this branch was sent back. It was judged three ways: a reviewer
+    read the diff, a QA step used the change running on {{ stack_url or 'the environment' }},
+    and a security step read what the branch added.
+    {% if review_findings %}
+
+    Review findings (the full review is at {{ workspace_path }}/.epd/review.md):
+    {% for f in review_findings %}
+    - [{{ f.severity }}] {{ f.where }} — {{ f.what }}
+      Fix: {{ f.fix }}
+    {% endfor %}
+    {% endif %}
+    {% if qa_issues %}
+
+    QA found these in the running application{% if qa_summary %} ({{ qa_summary }}){% endif %}:
+    {% for i in qa_issues %}
+    - {{ i.where }} — {{ i.what }}
+    {% endfor %}
+
+    QA saw the application, not the code: treat each one as a symptom to
+    reproduce and explain, not a line to patch blindly. If what it reports is
+    not actually wrong, say so in `deviations` with your evidence rather than
+    changing working code to satisfy it.
+    {% endif %}
+    {% if security_findings %}
+
+    Security findings (the full report is at {{ workspace_path }}/.epd/security.md):
+    {% for s in security_findings %}
+    - [{{ s.severity }}] {{ s.where }} — {{ s.what }}
+      Fix: {{ s.fix }}{% if s.commits %}
+      In commit(s): {{ s.commits | join(', ') }}{% endif %}
+    {% endfor %}
+
+    Two of these need something the other findings do not:
+
+    - A CREDENTIAL MUST LEAVE THE HISTORY, not just the files. A new commit that
+      deletes the line leaves the value in the earlier commit, where it is still
+      published the moment this branch is pushed. Rewrite the branch: it has not
+      been pushed, which is the only reason this is cheap, so do it now —
+      `git -C {{ workspace_path }} rebase -i {{ base_branch }}` or reset to
+      {{ base_branch }} and recommit the work without the value. Then prove it:
+      `git -C {{ workspace_path }} log -p {{ base_branch }}..HEAD` must not contain
+      it anywhere. Report in `deviations` that you rewrote history and what the
+      new shas are. You may not rewrite anything on {{ base_branch }} itself.
+    - AN IGNORE RULE MUST ACTUALLY MATCH. Do not add another name to a list and
+      assume. Prove the new rule covers the file with
+      `git -C {{ workspace_path }} check-ignore -v --no-index <the path>` and put
+      that command's output in your summary. A rule that does not match is what
+      let the file be committed in the first place.
+
+    Never put a credential value in a commit message, a test, a fixture or your
+    report while fixing this. If the value must be replaced, replace it with a
+    read from the environment, not with another literal.
+    {% endif %}
+
+    Fix all of it: every judgement runs again on your new commit, and all of
+    them have to come back clean.
+    {% elif sent_back_because %}
+
+    The commit on this branch was sent back, but no findings reached you:
+    {{ sent_back_because }}
+
+    That is a harness fault, not a verdict you can act on. Do not rewrite
+    working code to guess at it. Check the branch really holds the plan's work
+    and that its tests pass; commit only if something is genuinely missing, and
+    record what you found in `deviations` either way.
+    {% else %}
+
+    Implement the plan.
+    {% endif %}

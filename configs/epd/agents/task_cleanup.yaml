@@ -1,0 +1,123 @@
+# EPD task pipeline, last step: clean up after a task.
+#
+# Reverses task_claim + task_worktree for one task:
+#   1. remove <root>/worktrees/<slug>   (refused if it has uncommitted changes, unless force)
+#   2. delete local branch <slug>       (refused if it has commits not on origin/<slug>
+#                                        nor on origin/<base>, unless force)
+#   3. release the claim                 (claims/<slug>.json -> claims/released/<slug>.<ts>.json)
+# The shared clone <root>/main stays: it is reused by every task on the repo.
+#
+# Idempotent: anything already gone is reported as "absent", never an error.
+# POSIX sh (the Bash tool runs /bin/sh); no dollar-brace env syntax (the
+# config loader rewrites it with the server's env at load time).
+agent:
+  name: task_cleanup
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+
+    REPO_URL={{ repo_url }}
+    TASK_NAME={{ task_name }}
+    FORCE={{ force | default('false') }}
+    RUN_ID={{ run_id | default('') }}
+    WORKSPACES_ROOT={{ workspaces_root | default('') }}
+    [ "$WORKSPACES_ROOT" = None ] && WORKSPACES_ROOT=""
+    [ "$RUN_ID" = None ] && RUN_ID=""
+    case "$FORCE" in true|True|1) FORCE=true ;; *) FORCE=false ;; esac
+
+    fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
+
+    # Same derivations as task_claim, so the two agree on paths.
+    if [ -z "$WORKSPACES_ROOT" ]; then
+      WD=$(printenv WORKSPACE_DIR || true)
+      if [ -d /app/workspaces ]; then
+        WORKSPACES_ROOT=/app/workspaces/repos
+      elif [ -n "$WD" ] && [ -d "$WD" ]; then
+        WORKSPACES_ROOT="$WD/repos"
+      else
+        WORKSPACES_ROOT="$HOME/workspaces/repos"
+      fi
+    fi
+    SLUG_PATH=$(printf '%s' "$REPO_URL" | sed -E 's#^(https?://[^/]+/|git@[^:]+:)##; s#\.git/?$##; s#/+$##')
+    REPO=${SLUG_PATH##*/}
+    [ -n "$REPO" ] || fail "could not parse repo from repo_url: $REPO_URL"
+    TASK_SLUG=$(printf '%s' "$TASK_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9._/-]+#-#g; s#/+#-#g; s#-+#-#g; s#\.\.+#.#g; s#^[-.]+##; s#[-.]+$##')
+    [ -n "$TASK_SLUG" ] || fail "task_name produced an empty slug: $TASK_NAME"
+
+    ROOT="$WORKSPACES_ROOT/$REPO"
+    MAIN="$ROOT/main"
+    WT="$ROOT/worktrees/$TASK_SLUG"
+    CLAIM="$ROOT/claims/$TASK_SLUG.json"
+
+    # --- 1. worktree ---------------------------------------------------------
+    if [ -d "$WT" ]; then
+      if [ -d "$MAIN/.git" ] && git -C "$MAIN" worktree list --porcelain | grep -qx "worktree $WT"; then
+        DIRTY=$(git -C "$WT" status --porcelain --untracked-files=all | wc -l | tr -d ' ')
+        if [ "$DIRTY" != 0 ] && [ "$FORCE" != true ]; then
+          fail "worktree $WT has $DIRTY uncommitted change(s); commit/push them or pass force=true"
+        fi
+        git -C "$MAIN" worktree remove --force "$WT" || fail "git worktree remove failed for $WT"
+        WORKTREE=removed
+      elif [ "$FORCE" = true ]; then
+        rm -rf "$WT"
+        WORKTREE=removed_unregistered
+      else
+        fail "$WT exists but is not a registered worktree of $MAIN; pass force=true to delete it"
+      fi
+    else
+      WORKTREE=absent
+    fi
+    [ -d "$MAIN/.git" ] && git -C "$MAIN" worktree prune || true
+
+    # --- 2. branch -----------------------------------------------------------
+    BRANCH=absent
+    if [ -d "$MAIN/.git" ] && git -C "$MAIN" rev-parse -q --verify "refs/heads/$TASK_SLUG" >/dev/null; then
+      BASE=$(git -C "$MAIN" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)
+      [ -n "$BASE" ] || BASE=$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)
+      SAFE=false
+      if git -C "$MAIN" rev-parse -q --verify "refs/remotes/origin/$TASK_SLUG" >/dev/null \
+         && [ -z "$(git -C "$MAIN" rev-list "origin/$TASK_SLUG..$TASK_SLUG")" ]; then
+        SAFE=true   # everything is on the remote branch
+      elif [ -z "$(git -C "$MAIN" rev-list "origin/$BASE..$TASK_SLUG")" ]; then
+        SAFE=true   # everything is already on the base branch
+      fi
+      if [ "$SAFE" = true ] || [ "$FORCE" = true ]; then
+        git -C "$MAIN" branch -D -q "$TASK_SLUG" || fail "could not delete branch $TASK_SLUG"
+        BRANCH=deleted
+      else
+        AHEAD=$(git -C "$MAIN" rev-list --count "origin/$BASE..$TASK_SLUG")
+        fail "branch $TASK_SLUG has $AHEAD commit(s) not on origin/$TASK_SLUG or origin/$BASE; push them or pass force=true"
+      fi
+    fi
+
+    # --- 3. claim ------------------------------------------------------------
+    RELEASED=""
+    if [ -f "$CLAIM" ]; then
+      mkdir -p "$ROOT/claims/released"
+      TS=$(date -u +%Y%m%dT%H%M%SZ)
+      RELEASED="$ROOT/claims/released/$TASK_SLUG.$TS.json"
+      python3 - "$CLAIM" "$RELEASED" "$RUN_ID" "$WORKTREE" "$BRANCH" <<'PY'
+    import json, os, sys, datetime
+    src, dst, run_id, wt, br = sys.argv[1:]
+    with open(src) as f:
+        claim = json.load(f)
+    claim.update({
+        "status": "released",
+        "released_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "released_by_run": run_id,
+        "cleanup": {"worktree": wt, "branch": br},
+    })
+    with open(dst, "w") as f:
+        json.dump(claim, f, indent=2)
+    os.remove(src)
+    PY
+      CLAIMSTATE=released
+    else
+      CLAIMSTATE=absent
+    fi
+
+    echo "cleanup $REPO :: $TASK_SLUG -> worktree $WORKTREE, branch $BRANCH, claim $CLAIMSTATE"
+    python3 -c 'import json,sys; print(json.dumps({"status":"clean","task_slug":sys.argv[1],"root":sys.argv[2],"worktree":sys.argv[3],"branch":sys.argv[4],"claim":sys.argv[5],"released_claim_path":sys.argv[6]}))' \
+      "$TASK_SLUG" "$ROOT" "$WORKTREE" "$BRANCH" "$CLAIMSTATE" "$RELEASED"

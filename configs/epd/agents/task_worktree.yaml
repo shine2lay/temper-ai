@@ -1,0 +1,121 @@
+# EPD task pipeline, step 2: a worktree for the claimed task.
+#
+# Layout (root = <workspaces>/<repo>, from task_claim):
+#   root/main/               one clone of the repo, reused across runs
+#   root/worktrees/<slug>/   git worktree on branch <slug>, cut from the base branch
+#
+# Idempotent: re-running for the same task reuses the clone and the worktree.
+#
+# Private repos: give them as git@github.com:owner/repo.git; the read-only
+# deploy key mounted at /app/github-deploy (local/github-deploy/setup.sh)
+# is used for ssh URLs. https URLs go unauthenticated (public repos only):
+# tokens cannot arrive via env — the Bash tool strips every *_TOKEN variable,
+# and dollar-brace syntax in this template would be rewritten by the config
+# loader's env substitution, hence none below.
+agent:
+  name: task_worktree
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    #!/bin/sh
+    # POSIX sh: the Bash tool runs scripts through /bin/sh, not bash.
+    set -eu
+
+    REPO_URL={{ repo_url }}
+    ROOT={{ root }}
+    TASK_SLUG={{ task_slug }}
+    CLAIM_PATH={{ claim_path | default('') }}
+    BASE_BRANCH={{ base_branch | default('') }}
+    # An optional workflow input that was not given arrives as Python None.
+    [ "$BASE_BRANCH" = None ] && BASE_BRANCH=""
+    [ "$CLAIM_PATH" = None ] && CLAIM_PATH=""
+
+    fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
+
+    MAIN="$ROOT/main"
+    WT="$ROOT/worktrees/$TASK_SLUG"
+    mkdir -p "$ROOT/worktrees"
+
+    # Credential for private GitHub repos, if the worker has one. Header
+    # config, not URL rewriting, so the token never lands in .git/config.
+    # Never block on a username prompt; fail with git's message instead.
+    export GIT_TERMINAL_PROMPT=0
+    KEYDIR=/app/github-deploy
+    case "$REPO_URL" in
+      git@github.com:*|ssh://git@github.com/*)
+        [ -f "$KEYDIR/id_ed25519" ] || fail "ssh repo_url but no deploy key at $KEYDIR (local/github-deploy/setup.sh owner/repo)"
+        KEY=$(mktemp)
+        trap 'rm -f "$KEY"' EXIT
+        install -m 600 "$KEYDIR/id_ed25519" "$KEY"
+        export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$KEYDIR/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes"
+        ;;
+    esac
+
+    if [ ! -d "$MAIN/.git" ]; then
+      echo "cloning $REPO_URL -> $MAIN"
+      git clone -q "$REPO_URL" "$MAIN" || fail "git clone failed for $REPO_URL"
+      git -C "$MAIN" config user.name "temper-bot"
+      git -C "$MAIN" config user.email "bot@temper.ai"
+      CLONE=fresh
+    else
+      echo "fetching $MAIN"
+      git -C "$MAIN" fetch -q --prune origin || fail "git fetch failed in $MAIN"
+      CLONE=reused
+    fi
+
+    if [ -z "$BASE_BRANCH" ]; then
+      BASE_BRANCH=$(git -C "$MAIN" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)
+      [ -n "$BASE_BRANCH" ] || BASE_BRANCH=$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)
+    fi
+    git -C "$MAIN" rev-parse -q --verify "refs/remotes/origin/$BASE_BRANCH" >/dev/null \
+      || fail "base branch origin/$BASE_BRANCH does not exist"
+
+    if [ -d "$WT" ]; then
+      if git -C "$MAIN" worktree list --porcelain | grep -qx "worktree $WT"; then
+        WORKTREE=reused
+      else
+        fail "$WT exists but is not a registered worktree of $MAIN"
+      fi
+    elif git -C "$MAIN" rev-parse -q --verify "refs/heads/$TASK_SLUG" >/dev/null; then
+      git -C "$MAIN" worktree add -q "$WT" "$TASK_SLUG" || fail "git worktree add failed (existing branch $TASK_SLUG)"
+      WORKTREE=existing_branch
+    else
+      git -C "$MAIN" worktree add -q -b "$TASK_SLUG" "$WT" "origin/$BASE_BRANCH" || fail "git worktree add failed"
+      WORKTREE=created
+    fi
+
+    # .epd/ holds the pipeline's own files (plan, notes) inside the worktree;
+    # info/exclude is per repository, so this covers every worktree of it.
+    grep -qx '.epd/' "$MAIN/.git/info/exclude" 2>/dev/null || echo '.epd/' >> "$MAIN/.git/info/exclude"
+
+    BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD)
+    HEAD=$(git -C "$WT" rev-parse HEAD)
+    BASE_HEAD=$(git -C "$MAIN" rev-parse "origin/$BASE_BRANCH")
+    echo "worktree $WORKTREE: $WT on $BRANCH @ $(printf %.12s "$HEAD") (base origin/$BASE_BRANCH, clone $CLONE)"
+
+    python3 - "$CLAIM_PATH" "$WT" "$MAIN" "$BRANCH" "$BASE_BRANCH" "$HEAD" "$BASE_HEAD" "$WORKTREE" "$CLONE" <<'PY'
+    import json, os, sys
+    claim_path, wt, main, branch, base, head, base_head, wt_state, clone_state = sys.argv[1:]
+    out = {
+        "status": "ready",
+        "worktree_path": wt,
+        "main_repo": main,
+        "branch": branch,
+        "base_branch": base,
+        "head": head,
+        "base_head": base_head,
+        "worktree": wt_state,
+        "clone": clone_state,
+    }
+    if claim_path and os.path.exists(claim_path):
+        with open(claim_path) as f:
+            claim = json.load(f)
+        claim.update({k: v for k, v in out.items() if k != "status"})
+        claim["status"] = "worktree_ready"
+        tmp = claim_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(claim, f, indent=2)
+        os.replace(tmp, claim_path)
+        out["claim_path"] = claim_path
+    print(json.dumps(out))
+    PY

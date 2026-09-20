@@ -1,0 +1,138 @@
+# EPD task pipeline: put the candidate commit on the environment, so the QA
+# step has the change to use and review has it to look at.
+#
+# Runs BEFORE review, not after it: QA and review judge the same round in
+# parallel, and the implementer gets both sets of findings in one go. What is
+# deployed is therefore a candidate, not an approved commit — which is exactly
+# what a throwaway spike is for. On a loop rewind this runs again, so the
+# environment always serves the round being judged, and the last deploy of the
+# run is the commit that ended it.
+#
+# The stack has been up since stack_up, but it was built when the worktree
+# still held the base branch — an agent's live instance to look at while it
+# worked, not the finished change. This re-ups it:
+#
+#   standee up <host worktree> --project <repo> --as <slug> --tier dev --gateway
+#
+# Re-running updates the environment in place (same name, same URL) and
+# rebuilds the images. standee waits for every service to be healthy and rolls
+# back to the previous images if they never are, so a deploy that breaks the
+# stack leaves the old one running rather than nothing. The seed hook does not
+# run again (standee keeps `seeded_at`), so the test data an earlier step put
+# there survives the redeploy — which is what the browser step then reads.
+#
+# The commit check is the point of the stage: deploy a commit, or say why not.
+# A dirty worktree means what is judged is not what is committed — QA would
+# pass on work that lives nowhere, and the next round would start from a
+# different tree than the one the findings describe.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: task_deploy
+  type: script
+  timeout_seconds: 1200
+  script_template: |
+    #!/bin/sh
+    set -eu
+    WT={{ worktree_path }}
+    HOST_WT={{ host_worktree_path }}
+    PROJECT={{ project }}
+    TASK_SLUG={{ task_slug }}
+    # stack_up's name first (what standee really called it, possibly truncated),
+    # the composed one only as a fallback. default('', true) because an unused
+    # input arrives as None, which would otherwise render as the word "None".
+    ENV_NAME={{ env_name_actual | default('', true) or env_name }}
+    TTL={{ ttl | default('') }}
+    HAS_DOCKER={{ has_docker | default('false') }}
+    RUN_VERIFY={{ run_verify | default('true') }}
+    CANDIDATE={{ candidate_commit | default('') }}
+    [ "$TTL" = None ] && TTL=""
+    [ "$CANDIDATE" = None ] && CANDIDATE=""
+    case "$HAS_DOCKER" in true|True|1) HAS_DOCKER=true ;; *) HAS_DOCKER=false ;; esac
+    case "$RUN_VERIFY" in false|False|0) RUN_VERIFY=false ;; *) RUN_VERIFY=true ;; esac
+
+    emit() {
+      python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[1], "url": sys.argv[2], "commit": sys.argv[3], "verify": sys.argv[4]=="true", "detail": sys.argv[5]}))' \
+        "$1" "$2" "$3" "$4" "$5"
+    }
+    fail() { echo "deploy failed: $1" >&2; emit failed "" "$CANDIDATE" false "$1"; exit 1; }
+
+    # No stack to deploy to is not a failure: most repos in this pipeline have
+    # none, and the run should carry on to teardown and cleanup.
+    if [ "$HAS_DOCKER" != true ]; then
+      echo "deploy: no stack for this repo (has_docker=false) — nothing to deploy"
+      emit skipped "" "$CANDIDATE" false "no compose file in the worktree"
+      exit 0
+    fi
+
+    [ -d "$WT" ] || fail "worktree not found: $WT"
+
+    # What is actually about to be built: the worktree is what standee mounts
+    # and builds from, so its HEAD — not the reviewed sha from an input — is
+    # the truth about what ships.
+    HEAD=$(git -C "$WT" rev-parse HEAD)
+    DIRTY=$(git -C "$WT" status --porcelain | head -20)
+    if [ -n "$DIRTY" ]; then
+      echo "$DIRTY" >&2
+      fail "worktree is dirty: the change must be committed before it is judged, or QA and review are looking at work that exists nowhere"
+    fi
+    if [ -n "$CANDIDATE" ]; then
+      case "$HEAD" in
+        "$CANDIDATE"*) : ;;
+        *) fail "HEAD ($HEAD) is not the commit the implementer reported ($CANDIDATE)" ;;
+      esac
+    fi
+
+    KEYDIR=/app/standee-ssh
+    [ -f "$KEYDIR/id_ed25519" ] || fail "no standee ssh key at $KEYDIR (run local/standee-ssh/setup.sh, mount it)"
+    KEY=$(mktemp)
+    trap 'rm -f "$KEY"' EXIT
+    install -m 600 "$KEYDIR/id_ed25519" "$KEY"
+    standee() {
+      ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" -o StrictHostKeyChecking=yes \
+          -o BatchMode=yes -o ConnectTimeout=10 shinelay@host.docker.internal standee "$@"
+    }
+
+    set -- up "$HOST_WT" --project "$PROJECT" --as "$TASK_SLUG" --tier dev --gateway
+    [ -n "$TTL" ] && set -- "$@" --ttl "$TTL"
+    echo "deploying $HEAD to $ENV_NAME: standee $*"
+    OUT=$(standee "$@" 2>&1) || { echo "$OUT"; fail "standee up failed for $ENV_NAME (it rolls back to the previous images; the old build may still be serving)"; }
+    echo "$OUT"
+
+    # The env name and URL come from standee's own report, not from the name we
+    # composed: standee caps an env name at 62 characters, so a long task slug
+    # is truncated and a lookup by the composed name finds nothing.
+    ENV_REPORTED=$(printf '%s\n' "$OUT" | sed -n 's/^env  *\([^ ]*\).*/\1/p' | head -1)
+    URL=$(printf '%s\n' "$OUT" | sed -n 's|^url  *\(https*://[^ ]*\).*|\1|p' | head -1)
+    [ -n "$ENV_REPORTED" ] && ENV_NAME="$ENV_REPORTED"
+    [ -n "$URL" ] || URL=$(standee url "$ENV_NAME" 2>/dev/null | tr -d '\r\n')
+    [ -n "$URL" ] || fail "standee up reported no URL for $ENV_NAME"
+
+    # standee waited for the containers to be healthy; this waits for the app
+    # to answer through the gateway, which is what the browser step will use.
+    echo "probing $URL"
+    CODE=$(python3 - "$URL" <<'PY'
+    import sys, time, urllib.error, urllib.request
+    url, last = sys.argv[1], "no response"
+    for attempt in range(12):
+        try:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                last = str(r.status)
+                if r.status < 500:
+                    break
+        except urllib.error.HTTPError as e:
+            last = str(e.code)
+            if e.code < 500:
+                break
+        except Exception as e:
+            last = type(e).__name__
+        time.sleep(5)
+    print(last)
+    PY
+    )
+    case "$CODE" in
+      ''|*[!0-9]*) fail "$URL did not answer after the deploy ($CODE)" ;;
+      5*) fail "$URL answered $CODE after the deploy" ;;
+    esac
+
+    echo "deployed: $ENV_NAME -> $URL ($HEAD, HTTP $CODE)"
+    emit deployed "$URL" "$HEAD" "$RUN_VERIFY" "HTTP $CODE"

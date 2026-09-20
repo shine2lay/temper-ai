@@ -1,0 +1,99 @@
+workflow:
+  name: epd_report
+  description: |
+    EPD loop, stage 1 of 7: the report. Replaces user research and analytics
+    for a product that has neither yet.
+
+      personas → walk_1 → walk_2 → walk_3 → report
+
+    Three synthetic users, each with a job to be done, use the app at a URL
+    (a dev stack of the branch being measured — main, at the top of a loop)
+    and record where they got stuck. The report ranks that friction with
+    the evidence and writes <bet dir>/report.md. No code is read; no fixes
+    are proposed. The bet stage reads the file.
+
+    The walks run one after another, not in parallel: the browser is one
+    playwright-mcp service, and three agents steering one browser would
+    read each other's pages.
+
+    Isolated: every input is a string or a path. Run it alone against any
+    URL with any goals file to work on the walkers or the report writer.
+  inputs:
+    app_url: {type: string, required: true}
+    email: {type: string, required: true}
+    empty_email: {type: string, required: true}
+    password: {type: string, required: true}
+    goals: {type: string, required: true}
+    profile: {type: string, required: true}
+    last_outcome: {type: string, required: false}
+    bet_id: {type: string, required: true}
+    report_path: {type: string, required: true}
+  outputs:
+    status: report.structured.status
+    report_path: report.structured.report_path
+    jobs_done: report.structured.jobs_done
+    top_items: report.structured.top_items
+    summary: report.structured.summary
+    coverage: personas.structured.coverage
+    walk_1: walk_1.output
+    walk_2: walk_2.output
+    walk_3: walk_3.output
+
+  nodes:
+    - name: personas
+      type: agent
+      agent: epd_personas
+      input_map:
+        profile: input.profile
+        goals: input.goals
+        last_outcome: input.last_outcome
+
+    - name: walk_1
+      type: agent
+      agent: epd_walk
+      depends_on: [personas]
+      input_map:
+        app_url: input.app_url
+        persona: personas.structured.persona_1
+        account: personas.structured.account_1
+        email: input.email
+        empty_email: input.empty_email
+        password: input.password
+
+    - name: walk_2
+      type: agent
+      agent: epd_walk
+      depends_on: [walk_1]
+      input_map:
+        app_url: input.app_url
+        persona: personas.structured.persona_2
+        account: personas.structured.account_2
+        email: input.email
+        empty_email: input.empty_email
+        password: input.password
+
+    - name: walk_3
+      type: agent
+      agent: epd_walk
+      depends_on: [walk_2]
+      input_map:
+        app_url: input.app_url
+        persona: personas.structured.persona_3
+        account: personas.structured.account_3
+        email: input.email
+        empty_email: input.empty_email
+        password: input.password
+
+    - name: report
+      type: agent
+      agent: epd_report
+      depends_on: [walk_3]
+      input_map:
+        report_path: input.report_path
+        bet_id: input.bet_id
+        goals: input.goals
+        coverage: personas.structured.coverage
+        walk_1: walk_1.output
+        walk_2: walk_2.output
+        walk_3: walk_3.output
+        last_outcome: input.last_outcome

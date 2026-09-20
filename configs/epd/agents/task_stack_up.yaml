@@ -1,0 +1,81 @@
+# EPD task pipeline: stand the task's stack up with standee (on the host).
+#
+#   standee up <host worktree> --project <repo> --as <slug> --tier dev --gateway
+#   -> environment <repo>-dev-<slug> at https://<slug>.dev.<repo>.<zone>
+#
+# standee runs on the host; this container reaches it over ssh with the
+# forced-command key from local/standee-ssh (setup.sh), which can run
+# `standee …` and nothing else. Re-running for the same task updates the
+# environment in place (standee's own semantics).
+#
+# The second half of the `environment` stage. A stage exposes only its last
+# node's output, so this one re-emits everything task_stack_detect decided
+# alongside its own result -- the rest of the pipeline reads the pair through
+# this shape. env_name and env_name_actual are deliberately two fields: the
+# first is the name we composed, the second is the one standee really used
+# (it caps a name at 62 characters). Collapsing them brings back the silent
+# no-op teardown.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: task_stack_up
+  type: script
+  timeout_seconds: 900
+  script_template: |
+    #!/bin/sh
+    set -eu
+    HOST_WT={{ host_worktree_path }}
+    PROJECT={{ project }}
+    TASK_SLUG={{ task_slug }}
+    ENV_NAME={{ env_name }}
+    TTL={{ ttl | default('') }}
+    [ "$TTL" = None ] && TTL=""
+
+    # Carried through from task_stack_detect so the stage's output keeps them.
+    COMPOSE_FILE={{ compose_file | default('') }}
+    TEARDOWN={{ teardown | default('true') }}
+    STACK_TEARDOWN={{ stack_teardown | default('true') }}
+    RUN_PLAN={{ run_plan | default('true') }}
+    RUN_IMPLEMENT={{ run_implement | default('true') }}
+    RUN_VERIFY={{ run_verify | default('true') }}
+    norm() { case "$1" in false|False|0) echo false ;; *) echo true ;; esac; }
+    TEARDOWN=$(norm "$TEARDOWN")
+    STACK_TEARDOWN=$(norm "$STACK_TEARDOWN")
+    RUN_PLAN=$(norm "$RUN_PLAN")
+    RUN_IMPLEMENT=$(norm "$RUN_IMPLEMENT")
+    RUN_VERIFY=$(norm "$RUN_VERIFY")
+
+    fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
+
+    KEYDIR=/app/standee-ssh
+    [ -f "$KEYDIR/id_ed25519" ] || fail "no standee ssh key at $KEYDIR (run local/standee-ssh/setup.sh, mount it)"
+    KEY=$(mktemp)
+    trap 'rm -f "$KEY"' EXIT
+    install -m 600 "$KEYDIR/id_ed25519" "$KEY"
+    standee() {
+      ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" -o StrictHostKeyChecking=yes \
+          -o BatchMode=yes -o ConnectTimeout=10 shinelay@host.docker.internal standee "$@"
+    }
+
+    set -- up "$HOST_WT" --project "$PROJECT" --as "$TASK_SLUG" --tier dev --gateway
+    [ -n "$TTL" ] && set -- "$@" --ttl "$TTL"
+    echo "standee $*"
+    OUT=$(standee "$@" 2>&1) || { echo "$OUT"; fail "standee up failed for $ENV_NAME"; }
+    echo "$OUT"
+
+    # Read the env name and URL back out of standee's own report rather than
+    # trusting the name we composed: standee caps an env name at 62 characters,
+    # so a long task slug is silently truncated and every later lookup by the
+    # composed name finds nothing. (That is how this ran for a while with an
+    # empty URL: the implementer got no instance, and deploy could not probe.)
+    ENV_REPORTED=$(printf '%s\n' "$OUT" | sed -n 's/^env  *\([^ ]*\).*/\1/p' | head -1)
+    URL=$(printf '%s\n' "$OUT" | sed -n 's|^url  *\(https*://[^ ]*\).*|\1|p' | head -1)
+    [ -n "$ENV_REPORTED" ] && ENV_NAME="$ENV_REPORTED"
+    [ -n "$URL" ] || URL=$(standee url "$ENV_NAME" 2>/dev/null | tr -d '\r\n')
+    [ -n "$URL" ] || fail "standee up reported no URL for $ENV_NAME"
+    echo "stack up: $ENV_NAME -> $URL"
+    # ENV_NAME started as the composed name and was overwritten above with the
+    # one standee reported; emit the composed one separately so callers that
+    # need each can have it.
+    COMPOSED={{ env_name }}
+    python3 -c 'import json,sys; print(json.dumps({"status": "up", "env_name": sys.argv[1], "env_name_actual": sys.argv[2], "url": sys.argv[3], "has_docker": True, "compose_file": sys.argv[4], "host_worktree_path": sys.argv[5], "project": sys.argv[6], "teardown": sys.argv[7]=="true", "stack_teardown": sys.argv[8]=="true", "run_plan": sys.argv[9]=="true", "run_implement": sys.argv[10]=="true", "run_verify": sys.argv[11]=="true"}))' \
+      "$COMPOSED" "$ENV_NAME" "$URL" "$COMPOSE_FILE" "$HOST_WT" "$PROJECT" "$TEARDOWN" "$STACK_TEARDOWN" "$RUN_PLAN" "$RUN_IMPLEMENT" "$RUN_VERIFY"

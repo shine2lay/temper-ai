@@ -1,0 +1,38 @@
+# EPD task pipeline: tear the task's standee environment down (on the host).
+#
+#   standee down <repo>-dev-<slug> --volumes --images
+#
+# A task environment is disposable: its data and the images built for it go
+# with it. Idempotent: an environment that does not exist is "absent".
+# Same forced-command ssh path as task_stack_up.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: task_stack_down
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -eu
+    ENV_NAME={{ env_name }}
+
+    fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
+
+    KEYDIR=/app/standee-ssh
+    [ -f "$KEYDIR/id_ed25519" ] || fail "no standee ssh key at $KEYDIR (run local/standee-ssh/setup.sh, mount it)"
+    KEY=$(mktemp)
+    trap 'rm -f "$KEY"' EXIT
+    install -m 600 "$KEYDIR/id_ed25519" "$KEY"
+    standee() {
+      ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" -o StrictHostKeyChecking=yes \
+          -o BatchMode=yes -o ConnectTimeout=10 shinelay@host.docker.internal standee "$@"
+    }
+
+    OUT=$(standee down "$ENV_NAME" --volumes --images 2>&1) && STATE=down || {
+      case "$OUT" in
+        *"no environment named"*) STATE=absent ;;
+        *) printf '%s\n' "$OUT"; fail "standee down failed for $ENV_NAME" ;;
+      esac
+    }
+    printf '%s\n' "$OUT"
+    echo "stack down: $ENV_NAME -> $STATE"
+    python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[2], "env_name": sys.argv[1]}))' "$ENV_NAME" "$STATE"

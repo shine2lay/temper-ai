@@ -1,0 +1,47 @@
+workflow:
+  name: epd_measure
+  description: |
+    EPD loop, stage 7 of 7: measure. Replaces the product department's
+    accountability. On the shipped build's URL, one agent checks the bet's
+    invariant, measures the pre-registered threshold the way the bet said,
+    re-walks the friction the bet was meant to remove, looks for regressions
+    nearby, and writes <bet dir>/outcome.md with kept / iterate / killed —
+    and whether the threshold was the right thing to measure at all.
+
+    The next iteration's report stage reads the outcome file.
+  inputs:
+    bet_id: {type: string, required: true}
+    outcome_path: {type: string, required: true}
+    app_url: {type: string, required: true}
+    data_url: {type: string, required: false}
+    email: {type: string, required: true}
+    empty_email: {type: string, required: false}
+    password: {type: string, required: true}
+    bet: {type: string, required: true}
+    report: {type: string, required: true}
+    build_summary: {type: string, required: false}
+  outputs:
+    status: measure.structured.status
+    outcome_path: measure.structured.outcome_path
+    verdict: measure.structured.verdict
+    invariant_holds: measure.structured.invariant_holds
+    threshold_met: measure.structured.threshold_met
+    regressions: measure.structured.regressions
+    right_threshold: measure.structured.right_threshold
+    summary: measure.structured.summary
+
+  nodes:
+    - name: measure
+      type: agent
+      agent: epd_measure
+      input_map:
+        bet_id: input.bet_id
+        outcome_path: input.outcome_path
+        app_url: input.app_url
+        data_url: input.data_url
+        email: input.email
+        empty_email: input.empty_email
+        password: input.password
+        bet: input.bet
+        report: input.report
+        build_summary: input.build_summary

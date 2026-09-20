@@ -1,0 +1,399 @@
+workflow:
+  name: epd_task
+  description: |
+    Implement a task end to end — the workflow that is to replace the
+    engineering/product/design (EPD) hand process. Grows one step at a
+    time. Today:
+
+      1. claim         — atomic claim record at <workspaces>/repos/<repo>/claims/<slug>.json
+      2. worktree      — clone once into <repo>/main, then
+                         git worktree add -b <slug> <repo>/worktrees/<slug>
+      3. environment   — one stage, because the question and the act are one
+                         piece of work: stack_detect asks whether the worktree
+                         has a compose file / standee companion, and stack_up
+                         acts on the answer — standee up (on the host, over a
+                         forced-command ssh key) ->
+                         https://<slug>.dev.<repo>.wai2shine.com
+                         The stage is a sealed scope: what it needs is named in
+                         its input_map, and what it hands back is its last node
+                         that ran (stack_up with a stack, stack_detect without),
+                         so both emit the same shape.
+      5. plan          — task_plan writes <worktree>/.epd/plan.md
+      6. implement     — task_implement makes the change, runs the tests,
+                         commits on the task branch (nothing is pushed)
+      7. review        — task_review, a fresh context: diff vs plan, rules,
+                         test diff, re-runs the tests, verdict. Any finding,
+                         minor included, is request_changes and rewinds to
+                         implement with the findings (max_loops bounds the
+                         rounds); approve = nothing left to fix. Pre-existing
+                         problems outside the task come out as follow_ups.
+      8. deploy        — standee up again on the candidate commit, so the
+                         environment serves the round being judged rather than
+                         the base branch it was built from. Refuses a dirty
+                         worktree. The seed does not run again, so the test data
+                         survives the redeploy.
+      9. verify (QA)   — a browser on that URL: sign in with the test account,
+                         check the application is alive, the change is really
+                         there, and the pages around it still show their data.
+                         Judges the running app; review judges the diff.
+     10. security      — what the branch ADDED, nothing else: a deterministic
+                         scan of the added lines of every commit (not the net
+                         diff — a key committed and later deleted is still
+                         published) for credential shapes and files that should
+                         never be tracked, then a read of the diff for authz,
+                         tenancy, injection and the rest. Rotation goes out as a
+                         human action, because the pipeline cannot rotate a key.
+     11. gate          — the three verdicts become one. Any of them objecting
+                         sends the round back to implement, which receives ALL
+                         the lists and answers them in a single pass.
+     12. stack_down    — unless keep: standee down --volumes --images
+     13. cleanup       — unless keep: remove worktree + branch, release the claim
+
+    Steps 6-11 are the loop: implement → deploy → (review, QA, security) → gate,
+    up to three rounds. Code, behaviour and security are judged on the same
+    commit at the same time, so one fix round answers all three instead of each
+    judge arriving after the last one approved.
+
+    keep=true leaves the worktree, branch, claim and environment in place.
+    plan=false and implement=false skip those nodes so a later step can be
+    tested alone against what an earlier run left in the worktree;
+    verify=false drops deploy and QA, leaving review the only judge.
+  inputs:
+    repo_url:
+      type: string
+      required: true
+    task_name:
+      type: string
+      required: true
+    task_description:
+      type: string
+      required: false
+    base_branch:
+      type: string
+      required: false
+    force:
+      type: boolean
+      required: false
+    keep:
+      type: boolean
+      required: false
+    stack:
+      type: boolean
+      required: false
+    plan:
+      type: boolean
+      required: false
+    implement:
+      type: boolean
+      required: false
+    verify:
+      type: boolean
+      required: false
+    # The test account the seed created on this stack. Optional: an app with no
+    # login is checked signed-out.
+    verify_email:
+      type: string
+      required: false
+    verify_password:
+      type: string
+      required: false
+    stack_ttl:
+      type: string
+      required: false
+    workspaces_root:
+      type: string
+      required: false
+  outputs:
+    task_slug: claim.structured.task_slug
+    claim_path: claim.structured.claim_path
+    worktree_path: worktree.structured.worktree_path
+    branch: worktree.structured.branch
+    base_branch: worktree.structured.base_branch
+    head: worktree.structured.head
+    has_docker: environment.structured.has_docker
+    env_name: environment.structured.env_name_actual
+    stack_url: environment.structured.url
+    plan_summary: plan.structured.summary
+    plan_risk: plan.structured.risk
+    plan_open_questions: plan.structured.open_questions
+    implement_status: implement.structured.status
+    implement_summary: implement.structured.summary
+    implement_commit: implement.structured.commit
+    implement_tests: implement.structured.tests_run
+    implement_deviations: implement.structured.deviations
+    review_verdict: review.structured.verdict
+    review_summary: review.structured.summary
+    review_findings: review.structured.findings
+    review_plan_defects: review.structured.plan_defects
+    review_follow_ups: review.structured.follow_ups
+    review_round: review.structured.round
+    deploy_status: deploy.structured.status
+    deploy_url: deploy.structured.url
+    deploy_commit: deploy.structured.commit
+    verify_verdict: verify.structured.verdict
+    verify_summary: verify.structured.summary
+    verify_change_visible: verify.structured.change_visible
+    verify_change_evidence: verify.structured.change_evidence
+    verify_pages: verify.structured.pages
+    verify_issues: verify.structured.issues
+    security_verdict: security.structured.verdict
+    security_summary: security.structured.summary
+    security_findings: security.structured.findings
+    security_credentials: security.structured.credentials
+    security_checked: security.structured.checked
+    # Rotation and the like: things no round of the loop can discharge, so they
+    # are an output of the run rather than an input to the next round.
+    security_human_actions: security.structured.human_actions
+    security_follow_ups: security.structured.follow_ups
+    verdict: gate.structured.verdict
+    verdict_summary: gate.structured.summary
+    changes_wanted_by: gate.structured.changes_wanted_by
+    stack: stack_down.structured.status
+    cleanup: cleanup.structured.status
+
+  nodes:
+    - name: claim
+      type: agent
+      agent: task_claim
+      input_map:
+        repo_url: input.repo_url
+        task_name: input.task_name
+        force: input.force
+        workspaces_root: input.workspaces_root
+
+    - name: worktree
+      type: agent
+      agent: task_worktree
+      depends_on: [claim]
+      input_map:
+        repo_url: input.repo_url
+        root: claim.structured.root
+        task_slug: claim.structured.task_slug
+        claim_path: claim.structured.claim_path
+        base_branch: input.base_branch
+
+    # The question and the act, together: asking whether this worktree can have
+    # a dev stack is only useful because of what follows from the answer, and
+    # nothing between the two would mean anything on its own.
+    #
+    # A stage is a sealed scope. Its children cannot see the workflow's `input.*`
+    # (silently None) or any node outside, so everything the pair needs is named
+    # here and arrives as a plain variable. Outward, the stage is only its LAST
+    # node that ran -- stack_up when there is a stack, stack_detect when there is
+    # not -- which is why both agents emit the same shape.
+    - name: environment
+      type: stage
+      depends_on: [worktree]
+      input_map:
+        worktree_path: worktree.structured.worktree_path
+        repo: claim.structured.repo
+        task_slug: claim.structured.task_slug
+        keep: input.keep
+        stack: input.stack
+        plan: input.plan
+        implement: input.implement
+        verify: input.verify
+        ttl: input.stack_ttl
+      nodes:
+        - name: stack_detect
+          type: agent
+          agent: task_stack_detect
+          input_map:
+            worktree_path: worktree_path
+            repo: repo
+            task_slug: task_slug
+            keep: keep
+            stack: stack
+            plan: plan
+            implement: implement
+            verify: verify
+
+        - name: stack_up
+          type: agent
+          agent: task_stack_up
+          depends_on: [stack_detect]
+          # Sibling reference: a condition must name a node in the same scope,
+          # which is the whole reason these two cannot be separated now.
+          condition:
+            source: stack_detect.structured.has_docker
+            operator: equals
+            value: true
+          input_map:
+            host_worktree_path: stack_detect.structured.host_worktree_path
+            project: stack_detect.structured.project
+            task_slug: task_slug
+            env_name: stack_detect.structured.env_name
+            ttl: ttl
+            # carried through so the stage's output keeps them
+            compose_file: stack_detect.structured.compose_file
+            teardown: stack_detect.structured.teardown
+            stack_teardown: stack_detect.structured.stack_teardown
+            run_plan: stack_detect.structured.run_plan
+            run_implement: stack_detect.structured.run_implement
+            run_verify: stack_detect.structured.run_verify
+
+    - name: plan
+      type: agent
+      agent: task_plan
+      depends_on: [environment]
+      # plan=false reuses an existing <worktree>/.epd/plan.md (testing the later steps in isolation)
+      condition:
+        source: environment.structured.run_plan
+        operator: equals
+        value: true
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: worktree.structured.branch
+        base_branch: worktree.structured.base_branch
+        stack_url: environment.structured.url
+
+    - name: implement
+      type: agent
+      agent: task_implement
+      depends_on: [plan]
+      # implement=false reviews what an earlier run committed (testing review alone)
+      condition:
+        source: environment.structured.run_implement
+        operator: equals
+        value: true
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: worktree.structured.branch
+        base_branch: worktree.structured.base_branch
+        stack_url: environment.structured.url
+        # null on the first pass (neither judge has run; logged as unresolved);
+        # on a loop rewind the executor serves these from the preserved results
+        review_findings: review.structured.findings
+        qa_issues: verify.structured.issues
+        qa_summary: verify.structured.summary
+        security_findings: security.structured.findings
+        # Why the round came back when no list did (an unreadable verdict)
+        sent_back_because: gate.structured.summary
+
+    - name: review
+      type: agent
+      agent: task_review
+      depends_on: [implement]
+      # No loop of its own any more: review and QA judge the same round and the
+      # gate turns both verdicts into the one the loop runs on.
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: worktree.structured.branch
+        base_branch: worktree.structured.base_branch
+        stack_url: environment.structured.url
+        implement_report: implement.output
+
+    - name: deploy
+      type: agent
+      agent: task_deploy
+      depends_on: [implement]
+      # Before the judges, not after them: the environment has to be running the
+      # candidate for QA to have anything to use. Deploying an unreviewed commit
+      # is what a throwaway spike is for. Skipped when there is no QA step to
+      # serve (verify=false), which leaves the stack_up build in place.
+      condition:
+        source: environment.structured.run_verify
+        operator: equals
+        value: true
+      input_map:
+        worktree_path: worktree.structured.worktree_path
+        host_worktree_path: environment.structured.host_worktree_path
+        project: environment.structured.project
+        task_slug: claim.structured.task_slug
+        env_name: environment.structured.env_name
+        has_docker: environment.structured.has_docker
+        run_verify: environment.structured.run_verify
+        candidate_commit: implement.structured.commit
+        ttl: input.stack_ttl
+        # As above: standee's own name for the environment stack_up created.
+        env_name_actual: environment.structured.env_name_actual
+
+    - name: verify
+      type: agent
+      agent: task_verify
+      depends_on: [deploy]
+      # deploy emits this only when it really deployed AND verify is on, so the
+      # browser agent never runs against a URL that is not serving the change.
+      condition:
+        source: deploy.structured.verify
+        operator: equals
+        value: true
+      input_map:
+        app_url: deploy.structured.url
+        email: input.verify_email
+        password: input.verify_password
+        task_name: input.task_name
+        task_description: input.task_description
+        implement_summary: implement.structured.summary
+
+    - name: security
+      type: agent
+      agent: task_security
+      depends_on: [implement]
+      # No condition, deliberately. The other judges need something of the
+      # world — a stack, a browser, a URL that is serving — and are skipped when
+      # they cannot have it. This one needs the worktree and git, which every
+      # run has, so there is no environmental reason for it not to apply. A flag
+      # to switch it off would be used.
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: worktree.structured.branch
+        base_branch: worktree.structured.base_branch
+        implement_summary: implement.structured.summary
+
+    - name: gate
+      type: agent
+      agent: task_gate
+      depends_on: [review, verify, security]
+      # The only loop in the pipeline. Any judge objecting rewinds to implement,
+      # which receives all three lists and answers them in one pass.
+      # max_loops counts this node's runs: 3 = two fix rounds, then the verdict
+      # stands (silent: the outputs carry it; teardown and cleanup still run).
+      loop_to: implement
+      max_loops: 3
+      on_max_loops: silent
+      loop_condition:
+        source: gate.structured.verdict
+        operator: equals
+        value: request_changes
+      input_map:
+        review_verdict: review.structured.verdict
+        qa_verdict: verify.structured.verdict
+        security_verdict: security.structured.verdict
+        security_human_actions_count: security.structured.human_actions_count
+
+    - name: stack_down
+      type: agent
+      agent: task_stack_down
+      depends_on: [gate]
+      condition:
+        source: environment.structured.stack_teardown
+        operator: equals
+        value: true
+      input_map:
+        # The name standee actually used, not the one stack_detect composed:
+        # standee truncates a name over 62 characters, and tearing down by the
+        # untruncated name leaves the environment running.
+        env_name: environment.structured.env_name_actual
+
+    - name: cleanup
+      type: agent
+      agent: task_cleanup
+      depends_on: [stack_down]
+      condition:
+        source: environment.structured.teardown
+        operator: equals
+        value: true
+      input_map:
+        repo_url: input.repo_url
+        task_name: input.task_name
+        force: input.force
+        workspaces_root: input.workspaces_root

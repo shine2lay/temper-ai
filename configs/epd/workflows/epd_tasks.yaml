@@ -1,0 +1,35 @@
+workflow:
+  name: epd_tasks
+  description: |
+    EPD loop, stage 3 of 7: tasks. Replaces the engineering lead. The signed
+    bet becomes three to ten tasks, each with a boolean acceptance (a
+    command and the output that means pass), ordered so each can be checked
+    with only the ones before it done, the last one being the invariant as a
+    check. Reads the repository (main clone, read only) to name real files.
+    Writes <bet dir>/tasks.json.
+
+    The workspace for this run is the workspaces root, so the agent can read
+    both the bet directory and the repository clone.
+  inputs:
+    bet_id: {type: string, required: true}
+    tasks_path: {type: string, required: true}
+    repo_path: {type: string, required: true}
+    bet: {type: string, required: true}
+    profile: {type: string, required: true}
+  outputs:
+    status: tasks.structured.status
+    tasks_path: tasks.structured.tasks_path
+    task_count: tasks.structured.task_count
+    files: tasks.structured.files
+    blocked_because: tasks.structured.blocked_because
+
+  nodes:
+    - name: tasks
+      type: agent
+      agent: epd_tasks
+      input_map:
+        bet_id: input.bet_id
+        tasks_path: input.tasks_path
+        repo_path: input.repo_path
+        bet: input.bet
+        profile: input.profile

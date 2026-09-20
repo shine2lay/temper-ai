@@ -316,20 +316,13 @@ def _load_configs(config_dir_path: str) -> None:
     from pathlib import Path
 
     from temper_ai.config import ConfigStore
-    from temper_ai.config.importer import import_yaml
+    from temper_ai.config.importer import import_config_tree
 
+    # Same loader as the server and worker: one transaction, skipped files
+    # reported at WARNING (visible at the CLI's default level).
     config_dir = Path(config_dir_path)
     if config_dir.is_dir():
-        store = ConfigStore()
-        for yaml_file in sorted(config_dir.rglob("*.yaml")):
-            # Skip non-config YAMLs (MCP servers, tool definitions)
-            if "mcp_servers" in yaml_file.parts or "tools" in yaml_file.parts:
-                continue
-            try:
-                import_yaml(str(yaml_file), store)
-            except Exception as exc:
-                # F16: log config loading errors instead of silently swallowing
-                logger.debug("Skipped config %s: %s", yaml_file, exc)
+        import_config_tree(config_dir, ConfigStore())
 
 
 def _load_workflow(workflow_name: str, overrides: dict | None = None):
@@ -506,7 +499,7 @@ def _cmd_validate(args) -> None:
     from pathlib import Path
 
     from temper_ai.config import ConfigStore
-    from temper_ai.config.importer import import_yaml
+    from temper_ai.config.importer import import_config_tree
     from temper_ai.database import init_database
 
     init_database()
@@ -515,13 +508,10 @@ def _cmd_validate(args) -> None:
     config_dir = Path(args.config_dir)
     store = ConfigStore()
     if config_dir.is_dir():
-        for yaml_file in sorted(config_dir.rglob("*.yaml")):
-            if "mcp_servers" in yaml_file.parts or "tools" in yaml_file.parts:
-                continue
-            try:
-                import_yaml(str(yaml_file), store)
-            except Exception as exc:
-                logger.debug("Skipped config %s: %s", yaml_file, exc)
+        # A file that fails to parse is reported at WARNING by the loader, so
+        # a broken workflow YAML shows its real error here rather than a bare
+        # "not found" below.
+        import_config_tree(config_dir, store)
 
     from temper_ai.stage.loader import GraphLoader
 

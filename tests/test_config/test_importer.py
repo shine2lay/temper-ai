@@ -51,6 +51,53 @@ class TestImportConfigTree:
     def test_empty_dir_returns_zero(self, store, tmp_path):
         assert import_config_tree(tmp_path, store) == 0
 
+    def test_skipped_file_is_reported_at_warning_level(self, store, tmp_path, caplog):
+        """The CLI runs at WARNING by default; a debug line here is invisible there."""
+        import logging
+
+        broken = tmp_path / "workflows" / "broken.yaml"
+        _write(broken, "workflow:\n  name: [unclosed\n")
+
+        with caplog.at_level(logging.WARNING, logger="temper_ai.config.importer"):
+            import_config_tree(tmp_path, store)
+
+        warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert len(warnings) == 1
+        # The line must be actionable: which file, and why.
+        message = warnings[0].getMessage()
+        assert str(broken) in message
+        assert "YAML parsing failed" in message
+        assert "line 2" in message
+
+    def test_warning_names_the_file_even_when_the_error_does_not(self, store, tmp_path, caplog):
+        """A YAML syntax error happens to embed the path; a missing-name error doesn't.
+
+        The log line must carry the path itself, or this case is unfindable.
+        """
+        import logging
+
+        noname = tmp_path / "workflows" / "anonymous.yaml"
+        _write(noname, "workflow:\n  nodes: []\n")
+
+        with caplog.at_level(logging.WARNING, logger="temper_ai.config.importer"):
+            import_config_tree(tmp_path, store)
+
+        [record] = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert str(noname) in record.getMessage()
+        assert "'name' field" in record.getMessage()
+
+    def test_clean_tree_emits_no_warnings(self, store, tmp_path, caplog):
+        """WARNING must mean something: a healthy boot stays quiet."""
+        import logging
+
+        _write(tmp_path / "agents" / "a.yaml", "agent:\n  name: quiet_a\n  type: llm\n")
+        _write(tmp_path / "mcp_servers" / "x.yaml", "name: x\n")  # skipped by rule, not error
+
+        with caplog.at_level(logging.WARNING, logger="temper_ai.config.importer"):
+            import_config_tree(tmp_path, store)
+
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
 
 class TestImportYaml:
     def test_import_agent_yaml(self, store, tmp_path):

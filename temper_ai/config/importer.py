@@ -92,8 +92,12 @@ def import_config_tree(root: str | Path, store: ConfigStore | None = None) -> in
     ``put`` per file cost a disk sync each time — 6.5s for this repo's tree,
     paid on every server and worker startup.
 
-    A file that fails to parse is skipped and logged, not raised: one bad YAML
-    must not leave the process with no configs at all.
+    A file that fails to parse is skipped and logged at WARNING, not raised:
+    one bad YAML must not leave the process with no configs at all, but it
+    must also be visible. The CLI's default log level is WARNING, so a
+    ``debug`` here (what this used to be) meant ``temper validate`` could
+    swallow a YAML syntax error and report on whatever was left. A database
+    failure is deliberately outside the per-file guard and propagates.
     """
     store = store or ConfigStore()
     parsed: list[dict[str, Any]] = []
@@ -104,7 +108,7 @@ def import_config_tree(root: str | Path, store: ConfigStore | None = None) -> in
         try:
             parsed.append(parse_yaml(yaml_file))
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Skipped config %s: %s", yaml_file, exc)
+            logger.warning("Skipped config %s: %s", yaml_file, exc)
 
     if parsed:
         store.put_many(parsed)

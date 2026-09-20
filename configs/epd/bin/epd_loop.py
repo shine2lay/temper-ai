@@ -387,20 +387,149 @@ def ensure_qa_on_prod() -> bool:
     return True
 
 
-def deploy_prod(ref: str) -> None:
-    """Stand the live product up again from `ref`, backup first.
+# --------------------------------------------------------------------- github --
+#
+# The GitHub side of shipping is four HTTP calls, so it is four HTTP calls: no
+# `gh` binary on the PATH, no login state on this host, nothing to break when
+# systemd hands the unit a minimal environment (which it did, on the first
+# run). The credential is the one the github MCP server uses, resolved by the
+# same contract it publishes (agent-tools lib/github-mcp.mjs): identity to
+# token, first hit wins. `gh auth token` is the one source deliberately left
+# out -- borrowing gh's login would be the same dependency wearing a hat.
 
-    `standee up` on an existing environment updates it in place (same name,
-    same URL, same host port) and keeps the previous images for
-    `standee rollback`; --ref builds from a clean export of the commit, so
-    the working tree of the checkout does not matter. The backup is not
-    optional: master carries migrations and prod holds the owner's book.
+GH_IDENTITY = os.environ.get("EPD_GH_IDENTITY", "epd-loop")
+AGENT_TOOLS_HOME = Path(os.environ.get("AGENT_TOOLS_HOME", Path.home() / ".config" / "agent-tools"))
+
+
+def github_token() -> str:
+    ident = GH_IDENTITY
+    env_key = "GITHUB_TOKEN_" + re.sub(r"[^A-Z0-9]", "_", ident.upper())
+    if os.environ.get(env_key, "").strip():
+        return os.environ[env_key].strip()
+    token_file = AGENT_TOOLS_HOME / "github" / "identities" / ident / "token"
+    if token_file.exists():
+        return token_file.read_text().strip()
+    die(f"no GitHub credential for identity {ident!r}. Put a token in {token_file} "
+        f"(chmod 600) or set {env_key}. This is the same identity the github MCP server "
+        f"resolves, so one file serves both.")
+    raise AssertionError("unreachable")
+
+
+def github(method: str, path: str, body: dict | None = None, allow: tuple[int, ...] = ()):
+    """One GitHub REST call. Returns the parsed body (a dict, or a list for the
+    list endpoints). A status in `allow` comes back as {"_status", "_error"}
+    instead of killing the run -- that is how "the PR already exists" is a
+    fact to act on rather than a failure."""
+    req = urllib.request.Request(
+        f"https://api.github.com{path}",
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Bearer {github_token()}",
+                 "Accept": "application/vnd.github+json",
+                 "X-GitHub-Api-Version": "2022-11-28",
+                 "Content-Type": "application/json",
+                 "User-Agent": "epd-loop"},
+    )
+    log(f"$ github {method} {path}")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:600]
+        if e.code in allow:
+            return {"_status": e.code, "_error": detail}
+        die(f"github {method} {path} → {e.code}: {detail}")
+        raise AssertionError("unreachable")
+
+
+def open_or_find_pr(branch: str, title: str, body: str) -> dict:
+    """The PR for this branch, creating it if it is not there yet. A re-run of
+    ship must not fail because the first attempt already got this far."""
+    owner, repo = GH_REPO.split("/", 1)
+    pr = github("POST", f"/repos/{owner}/{repo}/pulls",
+                {"title": title, "body": body, "head": branch, "base": BASE_BRANCH},
+                allow=(422,))
+    if "_error" not in pr:
+        return pr
+    log(f"a PR for {branch} exists already; using it")
+    existing = github("GET", f"/repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=open")
+    if isinstance(existing, list) and existing:
+        return existing[0]
+    die(f"POST /pulls refused ({pr['_error'][:200]}) and no open PR for {branch} was found")
+    raise AssertionError("unreachable")
+
+
+def trust_main_clone() -> None:
+    """Let this user's git read the pipeline's clone, which the container owns.
+
+    `safe.directory` is *protected* configuration: git reads it from the
+    system and global files only, and ignores it from `-c` on the command
+    line and from the repository's own config -- silently, which is how the
+    first ship died with "detected dubious ownership" despite passing
+    `-c safe.directory=*`. So the entry goes in the global file, once, for
+    this one path: our own clone, written by our own container.
     """
+    have = subprocess.run(["git", "config", "--global", "--get-all", "safe.directory"],
+                          text=True, capture_output=True).stdout.split("\n")
+    # Both: the working tree for ordinary commands, and the gitdir itself,
+    # which is what git resolves to when the clone is used as a remote.
+    for want in (str(MAIN_CLONE), str(MAIN_CLONE / ".git")):
+        if want in have:
+            continue
+        sh(["git", "config", "--global", "--add", "safe.directory", want])
+        log(f"trusted {want} in ~/.gitconfig (the pipeline's clone, owned by the container's user)")
+
+
+def deploy_prod(ref: str) -> None:
+    """Stand the live product up again at `ref`, backup first.
+
+    `standee up` on an existing environment updates it in place: same name,
+    same URL, same host port, previous images kept for `standee rollback`.
+
+    Deliberately WITHOUT --ref. That flag builds from `git archive` into
+    ~/.standee/envs/<env>/src/<short>/ and runs compose there, and this
+    project's compose file is written against its own directory:
+
+        volumes:
+          - ./var:/data          # rollcall.db -- every order ever placed
+        env_file:
+          - path: .env           # master key, session secret, broker keys
+            required: false
+
+    From an export, `./var` is a new empty directory and `.env` does not
+    exist at all (it is gitignored, so `git archive` omits it): the live
+    product would come up with an empty database and no master key. So the
+    deploy runs from the checkout, which the caller has already
+    fast-forwarded to the merged commit -- the tree IS the commit, asserted
+    here rather than assumed.
+    """
+    head = sh(["git", "rev-parse", "HEAD"], cwd=REPO_CHECKOUT).stdout.strip()
+    if head != ref:
+        die(f"{REPO_CHECKOUT} is at {head[:12]}, not the commit being shipped ({ref[:12]})")
+    if sh(["git", "status", "--porcelain"], cwd=REPO_CHECKOUT).stdout.strip():
+        die(f"{REPO_CHECKOUT} has uncommitted changes; the live product is built from this tree")
     ensure_qa_password()  # before `up`: the container reads the env file at start
     sh(["standee", "backup", PROD_ENV])
-    sh(["standee", "up", str(REPO_CHECKOUT), "--tier", "prod", "--host-port", PROD_HOST_PORT,
-        "--ref", ref, "--wait"])
+    sh(["standee", "up", str(REPO_CHECKOUT), "--tier", "prod", "--host-port", PROD_HOST_PORT, "--wait"])
+    assert_prod_kept_its_data()
     wait_for_url(PROD_URL)
+
+
+def assert_prod_kept_its_data() -> None:
+    """The live container must still be mounting the owner's database.
+
+    Cheap, and it tests the exact way a deploy could quietly destroy the
+    product: a compose run from the wrong directory gives every relative
+    bind mount a fresh empty one instead.
+    """
+    want = str((REPO_CHECKOUT / "var").resolve())
+    r = sh(["docker", "inspect", PROD_CONTAINER, "--format",
+            "{{range .Mounts}}{{.Source}}->{{.Destination}} {{end}}"], check=False)
+    mounts = r.stdout.strip()
+    if f"{want}->/data" not in mounts:
+        die(f"the live container is not mounting {want} at /data (mounts: {mounts or 'none'}). "
+            f"Its database would be empty -- `standee rollback {PROD_ENV}`.")
+    log(f"live database still mounted from {want}")
 
 
 # ------------------------------------------------------------------- state --
@@ -680,8 +809,8 @@ def stage_ship(st: dict) -> None:
     host_wt = hpath(wt)
     if not host_wt.exists():
         log(f"note: worktree gone from the host ({host_wt}); its branch is in the clone regardless")
-    sh(["git", "-c", "safe.directory=*", "fetch", "--force", str(MAIN_CLONE), f"{branch}:refs/heads/{branch}"],
-       cwd=REPO_CHECKOUT)
+    trust_main_clone()
+    sh(["git", "fetch", "--force", str(MAIN_CLONE), f"{branch}:refs/heads/{branch}"], cwd=REPO_CHECKOUT)
     sh(["git", "push", "--force-with-lease", "-u", "origin", branch], cwd=REPO_CHECKOUT)
     bet = st["stages"].get("bet") or {}
     body = (
@@ -695,25 +824,23 @@ def stage_ship(st: dict) -> None:
         f"Artifacts: `{bdir}` (report.md, bet.md, tasks.json, build.json).\n"
     )
     write(bdir / "pr.md", body)
-    r = sh(["gh", "pr", "create", "-R", GH_REPO, "--head", branch, "--base", BASE_BRANCH,
-            "--title", f"{bet_id}: {bet.get('title')}", "--body-file", str(bdir / "pr.md")], check=False)
-    pr_url = ""
-    for line in (r.stdout + r.stderr).splitlines():
-        if line.strip().startswith("https://github.com/"):
-            pr_url = line.strip()
-    if not pr_url:
-        r2 = sh(["gh", "pr", "view", branch, "-R", GH_REPO, "--json", "url", "-q", ".url"], check=False)
-        pr_url = r2.stdout.strip()
-    if not pr_url:
-        die("could not open or find the PR")
-    st["stages"]["ship"] = {"pr": pr_url, "branch": branch, "at": dt.datetime.now().isoformat()}
+    pr = open_or_find_pr(branch, f"{bet_id}: {bet.get('title')}", body)
+    pr_url, pr_number = pr.get("html_url"), pr.get("number")
+    if not pr_url or not pr_number:
+        die(f"could not open or find the PR for {branch}")
+    st["stages"]["ship"] = {"pr": pr_url, "pr_number": pr_number, "branch": branch,
+                            "at": dt.datetime.now().isoformat()}
     save_state(st)
     log(f"PR: {pr_url}")
 
     # Merge. No human seat here by the owner's decision: the pipeline's own
     # judges (review, QA, security) are the gate, and the gate node already
     # said approve or this stage would not run.
-    sh(["gh", "pr", "merge", branch, "-R", GH_REPO, "--squash", "--admin"])
+    owner, repo = GH_REPO.split("/", 1)
+    merged = github("PUT", f"/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+                    {"merge_method": "squash",
+                     "commit_title": f"{bet_id}: {bet.get('title')} (#{pr_number})"})
+    log(f"merged PR #{pr_number}: {merged.get('message') or merged.get('sha', '')[:12]}")
     sh(["git", "fetch", "-q", "origin"], cwd=REPO_CHECKOUT)
     sh(["git", "checkout", "-q", BASE_BRANCH], cwd=REPO_CHECKOUT)
     sh(["git", "merge", "--ff-only", f"origin/{BASE_BRANCH}"], cwd=REPO_CHECKOUT)

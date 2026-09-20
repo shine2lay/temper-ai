@@ -65,6 +65,46 @@ improved" and "`epd_measure` v3 asks a different question than v2 did".
 Note: `schema_version` is a different thing — a top-level format pin that temper
 accepts only as `"1.0"`. Do not use it for this.
 
+## GitHub credential
+
+Ship talks to GitHub over plain REST (`urllib`), not the `gh` CLI: an
+unattended unit gets a minimal environment and no login state, and the first
+run proved it by losing `gh` off the PATH. The token is resolved by the same
+contract the github MCP server publishes (`agent-tools lib/github-mcp.mjs`),
+so one credential serves both:
+
+| order | source |
+| ----- | ------ |
+| 1 | `GITHUB_TOKEN_EPD_LOOP` in the environment |
+| 2 | `~/.config/agent-tools/github/identities/epd-loop/token` (mode 600) |
+| 3 | `~/.config/agent-tools/github/identities/epd-loop/app.env` (GitHub App) |
+
+`gh auth token` is deliberately *not* in that list — borrowing gh's login
+would be the same dependency wearing a hat. Set `EPD_GH_IDENTITY` to use a
+different identity. The token needs contents:write and pull-requests:write on
+the repository; `master` carries no branch protection, so an ordinary token
+squash-merges (no admin bypass needed).
+
+When a stage ever needs *judgement* about a PR rather than the mechanical
+merge, the same identity can be handed to an agent as an MCP server —
+`github-mcp epd-loop --profile pr-author` — where the profile, not the model,
+decides what it may do.
+
+## Running it unattended
+
+The driver shells out to `standee`, `gh`, `docker` and `git`. Under
+`systemd-run --user` the PATH is a minimal one that does not include
+`~/.local/bin`, where the first two live, so pass the caller's:
+
+```sh
+systemd-run --user --unit=epd --collect \
+    --working-directory=$HOME/temper-ai --setenv=PATH="$PATH" \
+    sh -c 'exec > /tmp/epd.log 2>&1; python3 ~/temper-ai/configs/epd/bin/epd_loop.py next --keep'
+```
+
+`--working-directory` matters too: a user unit starts in `$HOME`, not the
+directory you launched it from.
+
 ## Layout
 
 ```

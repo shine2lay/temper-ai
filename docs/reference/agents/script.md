@@ -11,6 +11,12 @@ executes via tool_executor (Bash tool), returns stdout as output.
 
 Agent that executes a Jinja-rendered bash script.
 
+`strict_undefined: true` in the agent config turns an undefined reference into a failed node
+instead of a blank. It is opt-in rather than the default because 82 configs use this agent type
+with 26 distinct bare references between them: flipping the default would fail those nodes at run
+time, deep in a pipeline, after the stages before them had already been paid for. New glue — where
+a blank argument is dangerous — should set it.
+
 ## Execution Pipeline
 
 Execute the script agent pipeline.

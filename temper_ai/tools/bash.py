@@ -98,6 +98,7 @@ class Bash(BaseTool):
             cwd,
             compact=self.config.get("compact_output", True),
             max_output_chars=int(self.config.get("max_output_chars") or DEFAULT_MAX_CHARS),
+            extra_env=params.get("env") or None,
         )
 
 
@@ -244,6 +245,7 @@ def _run_subprocess(
     cwd: str | None,
     compact: bool = True,
     max_output_chars: int = DEFAULT_MAX_CHARS,
+    extra_env: dict[str, str] | None = None,
 ) -> "ToolResult":
     """Execute a shell command in a subprocess and return a ToolResult."""
     try:
@@ -254,7 +256,7 @@ def _run_subprocess(
             text=True,
             timeout=timeout,
             cwd=cwd,
-            env=_safe_env(),
+            env=_safe_env(extra_env),
         )
 
         # Hard ceiling first, so a runaway command cannot exhaust memory here.
@@ -290,7 +292,7 @@ def _run_subprocess(
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
 
 
-def _safe_env() -> dict[str, str]:
+def _safe_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     """Build a restricted environment for subprocess execution.
 
     Strips secrets, API keys, and tokens to prevent LLM agents from
@@ -311,4 +313,9 @@ def _safe_env() -> dict[str, str]:
             to_remove.add(key)
     for key in to_remove:
         env.pop(key, None)
+    if extra:
+        # Caller-supplied values, applied after stripping so they are never mistaken for inherited
+        # secrets and removed. This is how script agents pass data to a script: a value in the
+        # environment is data the shell will never parse as code, whoever wrote it.
+        env.update({str(k): str(v) for k, v in extra.items()})
     return env

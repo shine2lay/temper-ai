@@ -12,6 +12,7 @@ from typing import Any
 
 from temper_ai.config import ConfigStore
 from temper_ai.memory import MemoryService
+from temper_ai.stage.gate import GateSignal
 from temper_ai.stage.loader import GraphLoader
 
 
@@ -26,4 +27,4 @@ class AppState:
 
     # Per-execution state (mutated at runtime)
     running: dict[str, threading.Event] = field(default_factory=dict)
-    gates: dict[str, threading.Event] = field(default_factory=dict)
+    gates: dict[str, GateSignal] = field(default_factory=dict)

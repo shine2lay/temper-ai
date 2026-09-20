@@ -570,6 +570,10 @@ def _build_node_execution(node_event: dict, all_events: list[dict]) -> dict:
         "depends_on": data.get("depends_on", []),
         "loop_to": data.get("loop_to"),
         "max_loops": data.get("max_loops"),
+        # A node parked at (or released from) a human gate; the dashboard
+        # opens the gate modal instead of the stage detail for a waiting one.
+        "gate": data.get("gate"),
+        "gate_status": data.get("gate_status"),
         "error_message": data.get("error"),
         "delegated_by": data.get("delegated_by"),
         "delegate_source": data.get("delegate_source"),

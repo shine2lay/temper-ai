@@ -1,0 +1,56 @@
+# Zero-LLM agent: ends its turn with questions for a human.
+#
+# A node that stops at a gate can ask for more than a yes. Anything it
+# leaves in a `questions` array is what the dashboard's gate modal builds
+# its form from, so the human answers the actual decision instead of
+# approving a blank.
+#
+# A question is either a bare string, or an object:
+#   question     the text, the only required field
+#   key          short name for the answer (shown as a heading)
+#   context      one line under the question
+#   options      choices; each is a string, or {label, description, preview}
+#   multi_select true to allow more than one (default: one)
+#
+# An LLM agent asks the same way — this one is a script so the check costs
+# nothing and needs no API key.
+agent:
+  name: gate_smoke_ask
+  type: script
+  timeout_seconds: 10
+  script_template: |
+    #!/bin/bash
+    cat <<'EOF'
+    {
+      "summary": "Two ways to store gate answers. I need a decision before writing the migration.",
+      "questions": [
+        {
+          "key": "storage",
+          "question": "Where should a gate answer live?",
+          "context": "It has to survive a worker restart either way.",
+          "options": [
+            {
+              "label": "On the waiting event",
+              "description": "No migration; the answer rides the event that already exists."
+            },
+            {
+              "label": "Its own table",
+              "description": "Queryable later, but a migration and a second write path.",
+              "preview": "CREATE TABLE gate_responses (\n  event_id TEXT PRIMARY KEY,\n  answers  JSONB NOT NULL\n);"
+            }
+          ]
+        },
+        {
+          "key": "reach",
+          "question": "Which runs should carry answers?",
+          "multi_select": true,
+          "options": [
+            {"label": "In-process", "description": "The dev server itself."},
+            {"label": "Worker", "description": "Polls the database."},
+            {"label": "Per-run container", "description": "Same path as the worker."}
+          ]
+        },
+        "Anything I should not touch while doing this?"
+      ]
+    }
+    EOF

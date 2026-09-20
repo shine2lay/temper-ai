@@ -669,6 +669,8 @@ class TemperTools:
         """Approval gates this run is waiting on."""
         return self._routes.list_gates(execution_id)
 
-    def approve_gate(self, execution_id: str, node_name: str) -> dict:
-        """Release a waiting gate so the run continues."""
-        return self._routes.approve_gate(execution_id, node_name)
+    def approve_gate(self, execution_id: str, node_name: str, response: str = "") -> dict:
+        """Release a waiting gate so the run continues, optionally with a
+        free-text response the gated node receives as ``gate.text``."""
+        body = self._routes.GateApproval(response=response) if response else None
+        return self._routes.approve_gate(execution_id, node_name, body)

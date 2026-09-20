@@ -41,6 +41,9 @@ interface ExecutionState {
   eventLog: EventLogEntry[];
   expandedStages: Set<string>;
   stageDetailId: string | null;
+  /** Node name whose gate modal is open, or null. A gate is asked per node,
+   *  not per stage event: a loop re-gates the same name. */
+  gateNodeName: string | null;
   /** When set, the DAG highlights state at this checkpoint sequence. null = show current/live state. */
   checkpointPreview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null;
 
@@ -54,6 +57,8 @@ interface ExecutionState {
   toggleStageExpanded: (stageName: string) => void;
   openStageDetail: (stageId: string) => void;
   closeStageDetail: () => void;
+  openGate: (nodeName: string) => void;
+  closeGate: () => void;
   setCheckpointPreview: (preview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null) => void;
 }
 
@@ -168,6 +173,7 @@ export const useExecutionStore = create<ExecutionState>()(
     eventLog: [],
     expandedStages: new Set(),
     stageDetailId: null,
+    gateNodeName: null,
     hoveredNodeId: null,
     checkpointPreview: null,
 
@@ -497,6 +503,18 @@ export const useExecutionStore = create<ExecutionState>()(
     closeStageDetail: () =>
       set((state) => {
         state.stageDetailId = null;
+      }),
+
+    openGate: (nodeName) =>
+      set((state) => {
+        state.gateNodeName = nodeName;
+        // The gate is the thing to answer; don't bury it under the detail panel.
+        state.stageDetailId = null;
+      }),
+
+    closeGate: () =>
+      set((state) => {
+        state.gateNodeName = null;
       }),
 
     setCheckpointPreview: (preview) =>

@@ -1,0 +1,36 @@
+workflow:
+  name: gate_smoke
+  description: |
+    Zero-cost check of a human gate that has something to decide. No LLM
+    calls, no API key needed:
+
+      temper run gate_smoke
+      POST /api/runs {"workflow": "gate_smoke"}
+
+    `ask` ends its turn with questions. `decide` is gated, so the run parks
+    and the dashboard opens the gate modal by itself: the plan on top, a
+    form built from its questions below, and the raw output folded away.
+    Answering continues the run and hands `decide` the answers as
+    `gate.text`; `build` runs after it ungated, showing that `gate` belongs
+    to the gated node alone.
+
+    It is also what the end-to-end gate tests run against.
+
+  outputs:
+    decided: decide.output
+
+  nodes:
+    - name: ask
+      type: agent
+      agent: gate_smoke_ask
+
+    - name: decide
+      type: agent
+      agent: gate_smoke_use
+      depends_on: [ask]
+      gate: true
+
+    - name: build
+      type: agent
+      agent: gate_smoke_use
+      depends_on: [decide]

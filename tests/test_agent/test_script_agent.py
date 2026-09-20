@@ -106,6 +106,30 @@ class TestScriptAgentBasic:
         result = agent.run({}, ctx)
         assert result.structured_output == {"key": "value"}
 
+    def test_a_pretty_printed_document_is_read_whole(self):
+        # Scanning lines backwards, the first line that parses used to win —
+        # so a nested one-line object was returned as if it were the document.
+        output = (
+            '{\n'
+            '  "summary": "two ways",\n'
+            '  "options": [\n'
+            '    {"label": "on the event", "description": "no migration"}\n'
+            '  ]\n'
+            '}\n'
+        )
+        agent = ScriptAgent(config={"name": "doc_script", "script_template": "cat doc.json"})
+        result = agent.run({}, _make_context(ToolResult(success=True, result=output)))
+        assert result.structured_output == {
+            "summary": "two ways",
+            "options": [{"label": "on the event", "description": "no migration"}],
+        }
+
+    def test_prose_then_a_json_line_still_takes_the_last_line(self):
+        output = 'working…\nnot {json} at all\n{"key": "value"}\n'
+        agent = ScriptAgent(config={"name": "chatty", "script_template": "./chatty.sh"})
+        result = agent.run({}, _make_context(ToolResult(success=True, result=output)))
+        assert result.structured_output == {"key": "value"}
+
     def test_run_no_json_output(self):
         agent = ScriptAgent(config={
             "name": "text_script",

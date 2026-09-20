@@ -5,6 +5,7 @@ import { AgentCardContent } from './AgentCardContent';
 import type { AgentNodeData } from '@/hooks/useDagElements';
 import { cn } from '@/lib/utils';
 import { STATUS_COLORS } from '@/lib/constants';
+import { useExecutionStore } from '@/store/executionStore';
 
 /**
  * React Flow node for an agent-type node (standalone, not inside a stage).
@@ -17,6 +18,7 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
     dispatchedBy, dispatchedChildren, removedChildren,
   } = data as AgentNodeData;
   const [iterIndex, setIterIndex] = useState(iterations ? iterations.length - 1 : 0);
+  const openGate = useExecutionStore((s) => s.openGate);
   const hasDispatchedChildren = !!(dispatchedChildren && dispatchedChildren.length > 0);
   const hasRemovedChildren = !!(removedChildren && removedChildren.length > 0);
   const isDispatcher = hasDispatchedChildren || hasRemovedChildren;
@@ -29,37 +31,70 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
     const nodeStatus = stage?.status ?? 'skipped';
     const name = stage?.name ?? 'skipped';
     const borderColor = STATUS_COLORS[nodeStatus] ?? stageColor ?? '#6b7280';
+    // A node parked at a gate has not run, so this placeholder is all the
+    // DAG shows for it — which makes it the only way back to the question
+    // after the modal is dismissed. It is a button, not decoration.
+    const isWaitingGate = nodeStatus === 'waiting';
+    const body = (
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            'w-2 h-2 rounded-full',
+            (nodeStatus === 'running' || isWaitingGate) && 'animate-pulse',
+          )}
+          style={{ backgroundColor: borderColor }}
+        />
+        <span
+          className={cn(
+            'text-xs font-medium',
+            isWaitingGate ? 'text-temper-text' : 'text-temper-text-dim',
+          )}
+        >
+          {name}
+        </span>
+        <span
+          className={cn(
+            'text-[9px] px-1 py-px rounded',
+            isWaitingGate
+              ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 font-bold uppercase tracking-wide'
+              : 'bg-temper-surface text-temper-text-dim',
+          )}
+        >
+          {isWaitingGate ? 'answer' : nodeStatus}
+        </span>
+      </div>
+    );
     return (
       <div className="w-[200px]">
         <Handle type="target" position={Position.Left} id="left"
           className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
         <Handle type="source" position={Position.Right} id="right"
           className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
-        <div
-          className={cn(
-            'rounded-lg px-3 py-2 border-2 border-dashed',
-            // A node that is actually working is not faded out, and its
-            // dot pulses like any other live node. Dispatched children
-            // arrive here before their agent record does, so without this
-            // a running child looked identical to a skipped one.
-            nodeStatus === 'running' ? 'opacity-100' : 'opacity-50',
-          )}
-          style={{ borderColor }}
-        >
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                'w-2 h-2 rounded-full',
-                nodeStatus === 'running' && 'animate-pulse',
-              )}
-              style={{ backgroundColor: borderColor }}
-            />
-            <span className="text-xs font-medium text-temper-text-dim">{name}</span>
-            <span className="text-[9px] px-1 py-px rounded bg-temper-surface text-temper-text-dim">
-              {nodeStatus === 'waiting' ? 'awaiting approval' : nodeStatus}
-            </span>
+        {isWaitingGate ? (
+          <button
+            type="button"
+            onClick={() => openGate(name)}
+            title="Waiting for your answer — click to answer"
+            className="w-full rounded-lg px-3 py-2 border-2 border-dashed text-left transition-colors hover:bg-temper-surface"
+            style={{ borderColor }}
+          >
+            {body}
+          </button>
+        ) : (
+          <div
+            className={cn(
+              'rounded-lg px-3 py-2 border-2 border-dashed',
+              // A node that is actually working is not faded out, and its
+              // dot pulses like any other live node. Dispatched children
+              // arrive here before their agent record does, so without this
+              // a running child looked identical to a skipped one.
+              nodeStatus === 'running' ? 'opacity-100' : 'opacity-50',
+            )}
+            style={{ borderColor }}
+          >
+            {body}
           </div>
-        </div>
+        )}
       </div>
     );
   }

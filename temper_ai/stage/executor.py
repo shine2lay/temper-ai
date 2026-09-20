@@ -16,6 +16,7 @@ from temper_ai.observability.event_types import EventType
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.conditions import evaluate_condition
 from temper_ai.stage.exceptions import CancellationError, CyclicDependencyError
+from temper_ai.stage.gate import EMPTY_RESPONSE, GateSignal, build_gate_context
 from temper_ai.stage.node import Node
 
 logger = logging.getLogger(__name__)
@@ -377,9 +378,11 @@ def _execute_single_node(
         # log line is invisible to whoever is looking at the run.
         logger.warning("Node '%s' has unresolved input_map entries: %s", node.name, unresolved)
 
-    # Gate: pause and wait for human approval before executing
+    # Gate: pause and wait for human approval before executing. Whatever
+    # the human said with the approval reaches the node as ``gate``.
     if node.config.gate:
-        _wait_for_gate(node, context, parent_event_id)
+        response = _wait_for_gate(node, context, parent_event_id, node_outputs)
+        resolved = {**resolved, "gate": response or dict(EMPTY_RESPONSE)}
 
     node_event_id = context.event_recorder.record(
         EventType.STAGE_STARTED,
@@ -1271,34 +1274,48 @@ def _drain_batch(
     return batch, next_queue, processed
 
 
-def _wait_for_gate(node: Node, context: ExecutionContext, parent_event_id: str) -> None:
+def _wait_for_gate(
+    node: Node,
+    context: ExecutionContext,
+    parent_event_id: str,
+    node_outputs: dict[str, NodeResult] | None = None,
+) -> dict[str, Any] | None:
     """Pause execution and wait for human approval at a gate node.
 
     Records a ``stage.started`` event with status ``waiting`` (the UI and
-    ``GET /api/runs/{id}/gates`` read it), then blocks until the gate is
-    approved or the workflow is cancelled. Approval arrives one of two ways:
+    ``GET /api/runs/{id}/gates`` read it) carrying ``gate_context`` — the
+    upstream outputs and the questions they asked — then blocks until the
+    gate is approved or the workflow is cancelled. Approval arrives one of
+    two ways:
 
-    - in-process runs: ``POST /approve`` sets the ``threading.Event`` in the
-      shared ``gate_registry``;
+    - in-process runs: ``POST /approve`` sets the ``GateSignal`` in the
+      shared ``gate_registry`` (its ``response`` carries the answer);
     - subprocess/external runs (worker in another process or container):
       the API cannot reach that registry, so it flips the waiting event's
-      status to ``approved`` in the database and the worker polls for it.
-    """
-    import threading
+      status to ``approved`` in the database — with ``gate_response`` in
+      its data — and the worker polls for it.
 
+    Returns the human's response (see :mod:`temper_ai.stage.gate`) or None
+    for a plain approval.
+    """
     gate_registry = context.gate_registry
     if gate_registry is None:
         gate_registry = {}
         logger.info("Node '%s' has gate=true and no in-process gate registry; approval via the database only", node.name)
 
     gate_key = f"{context.run_id}:{node.name}"
-    gate_event = threading.Event()
+    gate_event = GateSignal()
     gate_registry[gate_key] = gate_event
 
-    # Record waiting event so the UI can show the gate
+    # Record waiting event so the UI can show the gate — and what it is about
     waiting_event_id = context.event_recorder.record(
         EventType.STAGE_STARTED,
-        data={**_build_node_event_data(node), "gate": True, "gate_status": "waiting"},
+        data={
+            **_build_node_event_data(node),
+            "gate": True,
+            "gate_status": "waiting",
+            "gate_context": build_gate_context(node.config.depends_on or [], node_outputs or {}),
+        },
         parent_id=parent_event_id,
         execution_id=context.run_id,
         status="waiting",
@@ -1325,12 +1342,26 @@ def _wait_for_gate(node: Node, context: ExecutionContext, parent_event_id: str) 
         except Exception as exc:  # DB hiccup: keep waiting, the in-memory path still works
             logger.warning("Gate: could not read approval state for '%s': %s", node.name, exc)
 
-    # Clean up; mark the waiting event approved so it is not listed twice
+    # Clean up; mark the waiting event approved so it is not listed twice.
+    # The response came either with the in-process signal or with the
+    # database approval — read the event for the latter.
     gate_registry.pop(gate_key, None)
+    response = gate_event.response
+    if response is None:
+        try:
+            persisted = context.event_recorder.event_data(waiting_event_id) or {}
+        except Exception as exc:  # the approval already got through; the answer is best-effort
+            logger.warning("Gate: could not read the response for '%s': %s", node.name, exc)
+            persisted = {}
+        if isinstance(persisted.get("gate_response"), dict):
+            response = persisted["gate_response"]
     context.event_recorder.update_event(
-        waiting_event_id, status="approved", data={"gate_status": "approved"},
+        waiting_event_id,
+        status="approved",
+        data={"gate_status": "approved", **({"gate_response": response} if response else {})},
     )
-    logger.info("Gate: node '%s' approved, continuing", node.name)
+    logger.info("Gate: node '%s' approved%s, continuing", node.name, " with a response" if response else "")
+    return response
 
 
 def _check_cancelled(context: ExecutionContext) -> None:

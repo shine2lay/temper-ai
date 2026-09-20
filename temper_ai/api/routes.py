@@ -30,6 +30,7 @@ from temper_ai.runner._helpers import (
 )
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph
+from temper_ai.stage.gate import normalise_response
 from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
 
@@ -616,8 +617,25 @@ def fork_run(body: ForkRequest):
     return RunResponse(execution_id=new_execution_id, status="running")
 
 
+class GateAnswer(BaseModel):
+    """The human's answer to one question an upstream node asked."""
+
+    id: str
+    question: str = ""
+    selected: list[str] = Field(default_factory=list)
+    custom: str = ""
+
+
+class GateApproval(BaseModel):
+    """What the human sends with an approval. Every field is optional; an
+    empty body is a plain approval, as before."""
+
+    response: str = ""
+    answers: list[GateAnswer] = Field(default_factory=list)
+
+
 @router.post("/api/runs/{execution_id}/approve/{node_name}")
-def approve_gate(execution_id: str, node_name: str):
+def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = None):
     """Approve a gate node, allowing the workflow to continue.
 
     The gate node must be in a 'waiting' state. In-process runs are
@@ -625,6 +643,10 @@ def approve_gate(execution_id: str, node_name: str):
     process/container (subprocess or external mode) cannot see that
     registry, so the waiting event is also marked ``approved`` in the
     database, which the worker polls.
+
+    The optional body carries the human's answers to the questions the
+    previous node asked and/or a free-text response; the gated node
+    receives it as its ``gate`` input (see :mod:`temper_ai.stage.gate`).
     """
     gate_key = f"{execution_id}:{node_name}"
     gate_event = _state().gates.get(gate_key)
@@ -634,24 +656,55 @@ def approve_gate(execution_id: str, node_name: str):
             status_code=404,
             detail=f"No gate waiting for node '{node_name}' in execution '{execution_id}'",
         )
+    response = normalise_response(body.model_dump() if body else None)
+    approved = {"gate_status": "approved", **({"gate_response": response} if response else {})}
     for ev in waiting_events:
-        update_event(ev["id"], status="approved", data={"gate_status": "approved"})
+        update_event(ev["id"], status="approved", data=approved)
     if gate_event is not None:
+        if response is not None:
+            gate_event.response = response
         gate_event.set()
-    return {"status": "approved", "execution_id": execution_id, "node_name": node_name}
+    return {
+        "status": "approved",
+        "execution_id": execution_id,
+        "node_name": node_name,
+        "response": response,
+    }
 
 
 @router.get("/api/runs/{execution_id}/gates")
 def list_gates(execution_id: str):
-    """List all gates currently waiting for approval in an execution."""
+    """List all gates currently waiting for approval in an execution.
+
+    Each gate carries what the human should see: ``upstream`` (the outputs
+    of the nodes the gated node depends on) and ``questions`` (the ones
+    those outputs asked, in the ask_user_question shape), plus the
+    ``event_id`` of the wait so a loop that gates the same node again is a
+    new gate to the dashboard.
+    """
     prefix = f"{execution_id}:"
-    names = {
-        key.split(":", 1)[1]
-        for key in _state().gates
-        if key.startswith(prefix) and not _state().gates[key].is_set()
-    }
-    names.update((ev.get("data") or {}).get("name", "") for ev in _waiting_gate_events(execution_id))
-    waiting = [{"node_name": n, "status": "waiting"} for n in sorted(names) if n]
+    by_name: dict[str, dict] = {}
+    for ev in _waiting_gate_events(execution_id):
+        data = ev.get("data") or {}
+        name = data.get("name", "")
+        if not name:
+            continue
+        gate_context = data.get("gate_context") or {}
+        by_name[name] = {
+            "node_name": name,
+            "status": "waiting",
+            "event_id": ev.get("id"),
+            "upstream": gate_context.get("upstream") or [],
+            "questions": gate_context.get("questions") or [],
+        }
+    for key, signal in _state().gates.items():
+        if key.startswith(prefix) and not signal.is_set():
+            name = key.split(":", 1)[1]
+            by_name.setdefault(
+                name,
+                {"node_name": name, "status": "waiting", "event_id": None, "upstream": [], "questions": []},
+            )
+    waiting = [by_name[n] for n in sorted(by_name)]
     return {"execution_id": execution_id, "gates": waiting}
 
 

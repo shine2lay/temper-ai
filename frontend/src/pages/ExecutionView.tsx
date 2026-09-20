@@ -9,7 +9,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useExecutionStore } from '@/store/executionStore';
 import { WorkflowHeader } from '@/components/layout/WorkflowHeader';
 import { WorkflowSummaryBar } from '@/components/layout/WorkflowSummaryBar';
-import { GateBanner } from '@/components/layout/GateBanner';
+import { GateModal } from '@/components/layout/GateModal';
 import { ViewTabs } from '@/components/layout/ViewTabs';
 import { EventLogPanel } from '@/components/layout/EventLogPanel';
 import { LLMCallsTable } from '@/components/layout/LLMCallsTable';
@@ -117,7 +117,6 @@ export function ExecutionView() {
     <ReactFlowProvider>
       <div className="flex flex-col h-full bg-temper-bg">
         <WorkflowHeader />
-        <GateBanner executionId={workflowId} />
         <WorkflowSummaryBar />
 
         <ViewTabs
@@ -141,6 +140,7 @@ export function ExecutionView() {
         />
         <DetailSheet />
         <StageDetailOverlay />
+        <GateModal executionId={workflowId} />
         {showShortcutHelp && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowShortcutHelp(false)}>
             <div className="bg-temper-panel border border-temper-border rounded-lg p-6 shadow-xl max-w-sm" onClick={e => e.stopPropagation()}>

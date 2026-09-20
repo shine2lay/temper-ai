@@ -224,8 +224,10 @@ def build_server() -> FastMCP:
         return await _off_loop(tools.list_gates, execution_id)
 
     @mcp.tool()
-    async def approve_gate(execution_id: str, node_name: str) -> dict:
-        """Approve a waiting gate so the run continues past it."""
-        return await _off_loop(tools.approve_gate, execution_id, node_name)
+    async def approve_gate(execution_id: str, node_name: str, response: str = "") -> dict:
+        """Approve a waiting gate so the run continues past it. ``response`` is
+        an optional free-text answer to whatever the previous node asked; the
+        gated node receives it as ``gate.text``."""
+        return await _off_loop(tools.approve_gate, execution_id, node_name, response)
 
     return mcp

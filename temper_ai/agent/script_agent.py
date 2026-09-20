@@ -167,11 +167,27 @@ class ScriptAgent(AgentABC):
 
 
 def _extract_json(text: str) -> dict | None:
-    """Extract JSON from the last line of script output."""
+    """Extract JSON from script output: the whole of it, else its last JSON line.
+
+    The whole output comes first because a pretty-printed document is the
+    obvious way to write one and the line scan mis-reads it: scanning
+    backwards, the first *line* that happens to parse wins, so a nested
+    one-line object (``{"label": "..."}``) is returned as if it were the
+    document. Scripts that print prose and end with a JSON line still take
+    the line-scan path below.
+    """
     if not text:
         return None
-    # Try last line first (scripts typically output JSON as the final line)
-    for line in reversed(text.strip().split("\n")):
+    stripped = text.strip()
+    if stripped.startswith("{"):
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    # Scripts typically output JSON as the final line
+    for line in reversed(stripped.split("\n")):
         line = line.strip()
         if line.startswith("{"):
             try:

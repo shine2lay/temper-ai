@@ -1,0 +1,22 @@
+# Zero-LLM agent: shows what a human's answers look like to the next node.
+#
+# The answers arrive as `gate`:
+#   gate.text     the Q/A pairs and any free text, rendered as prose and
+#                 ready to drop straight into a prompt
+#   gate.answers  the same thing structured, one entry per question
+#   gate.response the free-text box on its own
+#
+# Only the *gated* node gets `gate`. Templates are strict, so an agent that
+# might also run ungated has to ask `gate is defined` first — `| default(…)`
+# cannot rescue it, `'gate' is undefined` is raised before the filter runs.
+agent:
+  name: gate_smoke_use
+  type: script
+  timeout_seconds: 10
+  script_template: |
+    #!/bin/bash
+    cat <<'EOF'
+    Proceeding with what the owner decided:
+
+    {% if gate is defined %}{{ gate.text }}{% else %}(this node is not gated — nobody was asked){% endif %}
+    EOF

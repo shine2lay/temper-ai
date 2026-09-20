@@ -94,6 +94,18 @@ class EventRecorder:
         event = get_event(event_id)
         return event.get("status") if event else None
 
+    def event_data(self, event_id) -> dict | None:
+        """Current persisted data of one event, or None when not persisting.
+
+        The companion of :meth:`event_status` for state that carries a
+        payload — the human's response to a gate, written by the API.
+        """
+        if not self._persist:
+            return None
+        from temper_ai.observability.recorder import get_event
+        event = get_event(event_id)
+        return dict(event.get("data") or {}) if event else None
+
     def update_event(self, event_id, status=None, data=None):
         if self._persist:
             from temper_ai.observability.recorder import update_event

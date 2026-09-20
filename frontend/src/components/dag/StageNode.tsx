@@ -39,6 +39,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
 
   const select = useExecutionStore((s) => s.select);
   const openStageDetail = useExecutionStore((s) => s.openStageDetail);
+  const openGate = useExecutionStore((s) => s.openGate);
   const [collapsed, setCollapsed] = useState(false);
   // Default to latest iteration
   const [iterIndex, setIterIndex] = useState(iterationCount - 1);
@@ -63,6 +64,12 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
   const effectiveBorder = dispatchedBy ? '#f59e0b' : borderColor;
   const borderWidth = dispatchedBy ? 3 : 2;
 
+  // A node parked at a human gate is asking a question, so its card opens the
+  // gate rather than the stage detail: the detail panel cannot answer.
+  const isWaitingGate = currentStage.status === 'waiting' && !!currentStage.gate;
+  const activate = () =>
+    isWaitingGate ? openGate(stageName) : openStageDetail(currentStage.id);
+
   return (
     <div
       className="relative rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-temper-accent/50 focus:ring-offset-1 focus:ring-offset-temper-panel"
@@ -75,11 +82,11 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
       role="button"
       tabIndex={0}
       aria-label={`Stage: ${stageName}, status: ${currentStage.status}`}
-      onClick={() => openStageDetail(currentStage.id)}
+      onClick={() => activate()}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          openStageDetail(currentStage.id);
+          activate();
         }
       }}
     >
@@ -130,6 +137,16 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
                 −{removedChildren!.length}
               </span>
             )}
+          </span>
+        )}
+
+        {/* Waiting-gate badge: this node is asking, not working. */}
+        {isWaitingGate && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-sm bg-amber-500/25 text-amber-200 border border-amber-400/60 font-bold uppercase tracking-wide shrink-0"
+            title="Waiting for your approval — click to answer"
+          >
+            ANSWER
           </span>
         )}
 

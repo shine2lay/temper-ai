@@ -57,3 +57,35 @@ class TestEstimateCost:
         cost = estimate_cost("gpt-4", prompt_tokens=1_000_000, completion_tokens=1_000_000)
         # gpt-4: $30/1M input, $60/1M output
         assert cost == round(30.0 + 60.0, 6)
+
+
+class TestCurrentAnthropicRates:
+    """platform.claude.com/docs/en/about-claude/pricing as of 2026-09-19. Fable
+    sat in the table at the Sonnet rate for a while, so every Fable run was
+    under-reported 3-5x; these pin the tiers against the published page."""
+
+    def test_fable_is_twice_opus_and_five_times_sonnet(self):
+        fable = estimate_cost("claude-fable-5-1", prompt_tokens=1_000_000, completion_tokens=1_000_000)
+        opus = estimate_cost("claude-opus-5", prompt_tokens=1_000_000, completion_tokens=1_000_000)
+        sonnet = estimate_cost("claude-sonnet-5", prompt_tokens=1_000_000, completion_tokens=1_000_000)
+        assert fable == 60.0   # $10 in + $50 out
+        assert opus == 30.0    # $5 in + $25 out
+        assert sonnet == 12.0  # $2 in + $10 out
+
+    def test_fable_5_1_reads_cache_at_a_fortieth_where_others_read_at_a_tenth(self):
+        # 1M cached prompt tokens, nothing else: 0.025 x $10 vs 0.1 x $10
+        fable_5_1 = estimate_cost("claude-fable-5-1", prompt_tokens=1_000_000, completion_tokens=0,
+                                  cached_prompt_tokens=1_000_000)
+        fable_5 = estimate_cost("claude-fable-5", prompt_tokens=1_000_000, completion_tokens=0,
+                                cached_prompt_tokens=1_000_000)
+        assert fable_5_1 == 0.25
+        assert fable_5 == 1.0
+
+    def test_the_opus_4_line_is_five_and_twenty_five_from_4_5_up(self):
+        for m in ("claude-opus-4-5-20251101", "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8"):
+            assert estimate_cost(m, prompt_tokens=1_000_000, completion_tokens=0) == 5.0, m
+        # 4.1 and 4 stay at the retired $15
+        assert estimate_cost("claude-opus-4-1", prompt_tokens=1_000_000, completion_tokens=0) == 15.0
+
+    def test_haiku_4_5_is_one_and_five(self):
+        assert estimate_cost("claude-haiku-4-5-20251001", prompt_tokens=1_000_000, completion_tokens=1_000_000) == 6.0

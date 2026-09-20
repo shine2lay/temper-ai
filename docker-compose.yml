@@ -59,7 +59,9 @@ services:
   # --isolated keeps each session's profile in memory: a verify run never inherits
   # the cookies or the logged-in state of the run before it. --no-sandbox because
   # Chromium's own sandbox needs privileges this container deliberately lacks; the
-  # container is the sandbox.
+  # container is the sandbox. --output-dir under /tmp: the image runs as `node`
+  # and /app is root's, so the default (/app/browser-output) failed with EACCES
+  # on nearly every action — noise in every walk's transcript, not a real error.
   playwright-mcp:
     image: mcr.microsoft.com/playwright/mcp:latest
     restart: unless-stopped
@@ -76,7 +78,7 @@ services:
       --port 8931
       --host 0.0.0.0
       --allowed-hosts playwright-mcp:8931,localhost:8931,127.0.0.1:8931
-      --output-dir /app/browser-output
+      --output-dir /tmp/browser-output
     logging:
       driver: "json-file"
       options:

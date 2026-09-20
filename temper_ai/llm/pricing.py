@@ -23,15 +23,22 @@ _MODEL_PRICING: dict[str, tuple[float, float]] = {
     # Prefix match, longest wins: "claude-opus-5" does not start with "claude-opus-4",
     # so every model past the 4 series fell through to _default (3/15) and was
     # mispriced in both directions until listed here.
+    # Rates from platform.claude.com/docs/en/about-claude/pricing, 2026-09-19.
+    # Fable is the top tier at twice Opus; it was listed here at the Sonnet
+    # rate and under-reported every Fable run by 3-5x.
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-fable-5": (10.0, 50.0),
+    "claude-mythos-5": (10.0, 50.0),
     "claude-opus-5": (5.0, 25.0),
-    "claude-sonnet-5": (3.0, 15.0),
-    "claude-fable-5": (3.0, 15.0),
+    "claude-sonnet-5": (2.0, 10.0),
     "claude-opus-4-8": (5.0, 25.0),
-    "claude-opus-4-7": (15.0, 75.0),
-    "claude-opus-4-6": (15.0, 75.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-opus-4-5": (5.0, 25.0),
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-opus-4": (15.0, 75.0),
     "claude-sonnet-4": (3.00, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
     "claude-haiku-4": (0.80, 4.0),
     "claude-haiku-3": (0.25, 1.25),
     # --- Google Gemini ---
@@ -81,6 +88,23 @@ _MODEL_PRICING: dict[str, tuple[float, float]] = {
 CACHE_READ_MULTIPLIER = 0.1
 CACHE_WRITE_MULTIPLIER = 1.25
 
+# Fable 5.1 and Mythos 5.1 read cache at 0.025x base input (the pricing page's
+# footnote); the other models keep the 0.1x above. Prefix-matched like the
+# rates. For an agent run, where nearly every call re-reads the same prefix,
+# this is most of the difference between Fable 5 and 5.1.
+_CACHE_READ_OVERRIDES: dict[str, float] = {
+    "claude-fable-5-1": 0.025,
+    "claude-mythos-5-1": 0.025,
+}
+
+
+def cache_read_multiplier(model: str) -> float:
+    best: str | None = None
+    for key in _CACHE_READ_OVERRIDES:
+        if model.startswith(key) and (best is None or len(key) > len(best)):
+            best = key
+    return _CACHE_READ_OVERRIDES[best] if best else CACHE_READ_MULTIPLIER
+
 
 def estimate_cost(
     model: str,
@@ -105,7 +129,7 @@ def estimate_cost(
         fresh = max(prompt_tokens - cached - written, 0)
         return round(
             (fresh / 1_000_000) * input_rate
-            + (cached / 1_000_000) * input_rate * CACHE_READ_MULTIPLIER
+            + (cached / 1_000_000) * input_rate * cache_read_multiplier(model)
             + (written / 1_000_000) * input_rate * CACHE_WRITE_MULTIPLIER
             + (completion_tokens / 1_000_000) * output_rate,
             6,

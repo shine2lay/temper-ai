@@ -12,6 +12,7 @@ from temper_ai.api.data_service import (
     get_workflow_execution,
     list_workflow_executions,
 )
+from temper_ai.observability.event_types import EventType
 
 
 def _evt(id, type, parent_id=None, execution_id="run-1", status="running", data=None, timestamp="2026-01-01T00:00:00"):
@@ -274,3 +275,78 @@ class TestListWorkflowExecutions:
         mock_get_events.return_value = []
         result = list_workflow_executions()
         assert result == {"runs": [], "total": 0}
+
+
+def _listing_where(started, gates):
+    """Answer the listing's two queries: the runs, then the gates still open."""
+    def _dispatch(*_args, **kwargs):
+        if kwargs.get("event_type") == EventType("stage.started"):
+            return gates if kwargs.get("status") == "waiting" else []
+        return started
+    return _dispatch
+
+
+class TestARunWaitingForAPerson:
+    """The listing is where a person looks, so it must say who is blocked.
+
+    A gated run reported "running" -- identical to one making progress on its
+    own. Nothing in the list said a human was needed, so a parked run sat
+    there until someone happened to open it. The run page had the modal; the
+    page people actually land on never mentioned it.
+    """
+
+    _started = [
+        _evt("wf1", "workflow.started", execution_id="parked", status="running",
+             data={"name": "deploy"}),
+        _evt("wf2", "workflow.started", execution_id="busy", status="running",
+             data={"name": "build"}),
+    ]
+    _gate = [_evt("g1", "stage.started", execution_id="parked", status="waiting",
+                  data={"name": "plan", "gate": True})]
+
+    def _status(self, runs, run_id):
+        return next(r["status"] for r in runs if r["id"] == run_id)
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_it_is_listed_as_waiting_not_running(self, mock_get_events):
+        mock_get_events.side_effect = _listing_where(self._started, self._gate)
+
+        runs = list_workflow_executions()["runs"]
+
+        assert self._status(runs, "parked") == "waiting"
+        assert self._status(runs, "busy") == "running"
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_the_waiting_filter_finds_it_and_running_does_not(self, mock_get_events):
+        mock_get_events.side_effect = _listing_where(self._started, self._gate)
+        waiting = list_workflow_executions(status="waiting")["runs"]
+
+        mock_get_events.side_effect = _listing_where(self._started, self._gate)
+        running = list_workflow_executions(status="running")["runs"]
+
+        assert [r["id"] for r in waiting] == ["parked"]
+        # Someone filtering for "running" is asking what is moving; a run
+        # stopped on a question is not an answer to that.
+        assert [r["id"] for r in running] == ["busy"]
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_a_finished_run_stays_finished(self, mock_get_events):
+        """A leftover gate event must not park a run that already ended."""
+        done = [_evt("wf1", "workflow.started", execution_id="parked",
+                     status="completed", data={"name": "deploy"})]
+        mock_get_events.side_effect = _listing_where(done, self._gate)
+
+        runs = list_workflow_executions()["runs"]
+
+        assert self._status(runs, "parked") == "completed"
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_a_waiting_stage_that_is_not_a_gate_is_ignored(self, mock_get_events):
+        """Only a gate waits on a person; other waits are the machine's own."""
+        not_a_gate = [_evt("s1", "stage.started", execution_id="parked",
+                           status="waiting", data={"name": "plan"})]
+        mock_get_events.side_effect = _listing_where(self._started, not_a_gate)
+
+        runs = list_workflow_executions()["runs"]
+
+        assert self._status(runs, "parked") == "running"

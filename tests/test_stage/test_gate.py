@@ -5,6 +5,7 @@ questions they asked, and whatever they answer reaches the gated node as
 its ``gate`` input.
 """
 
+import json
 import threading
 from pathlib import Path
 
@@ -109,6 +110,42 @@ class TestBuildGateContext:
         assert build_gate_context([], {}) == {"upstream": [], "questions": []}
 
 
+class TestJsonAsModelsAndScriptsActuallyWriteIt:
+    """A raw newline inside a string used to cost the human every question.
+
+    Strict JSON forbids a literal control character in a string, but an agent
+    composing prose writes one constantly, and a script interpolating an
+    earlier answer cannot avoid it. The gate then fell all the way back to
+    'no questions, here is the document' -- a blob of JSON above an Approve
+    button, asking someone to say yes to something it would not explain.
+    """
+
+    def test_a_literal_newline_inside_a_string_still_parses(self):
+        document = '{"summary": "Plan\n\nQ: ship it?", "questions": ["When?"]}'
+
+        questions = questions_from(None, document)
+
+        assert [q["question"] for q in questions] == ["When?"]
+
+    def test_the_prose_is_recovered_too_not_just_the_questions(self):
+        """Otherwise the human is approving an unexplained decision."""
+        document = '{"summary": "Ready:\n\n- one\n- two", "questions": ["Go?"]}'
+
+        shown = summarise_output(document, questions_from(None, document))
+
+        assert shown == "Ready:\n\n- one\n- two"
+        assert "{" not in shown
+
+    def test_a_tab_inside_a_string_is_not_fatal_either(self):
+        document = '{"summary": "col1\tcol2", "questions": ["Go?"]}'
+
+        assert len(questions_from(None, document)) == 1
+
+    def test_genuinely_broken_json_is_still_refused(self):
+        """Tolerating control characters must not mean accepting anything."""
+        assert questions_from(None, '{"questions": ["Go?"') == []
+
+
 class TestFieldNamesAnAgentPlausiblyWrites:
     """A field under an obvious-but-wrong name used to vanish in silence."""
 
@@ -156,6 +193,48 @@ class TestTheShippedExample:
             "id": "q3",
             "question": "Anything I should not touch while doing this?",
         }
+
+
+class TestTheSecondGateInARun:
+    """The gate whose input is the human's own earlier answer.
+
+    Every earlier test built a gate from a hand-written document. The first
+    gate in a run is like that; the second is not -- it carries whatever the
+    previous node made out of the answers, and an answer is free text with
+    newlines and quotes in it. That is where the document stopped parsing,
+    and the human got raw JSON and a bare Approve button.
+    """
+
+    def _document_built_from(self, answer: str) -> str:
+        """What the gated node emits: prose containing the answer, plus a question."""
+        return json.dumps({
+            "summary": f"### Plan\n\n{answer}\n\n---\n\nStaged, nothing touched.",
+            "questions": [{"header": "Migration", "question": "Run it now?"}],
+        })
+
+    def test_an_answer_with_newlines_does_not_cost_the_next_question(self):
+        document = self._document_built_from("Q: How?\n\nA: Canary, 10%\n\nQ: When?\n\nA: tonight")
+
+        questions = questions_from(None, document)
+
+        assert [q["question"] for q in questions] == ["Run it now?"]
+
+    def test_an_answer_with_quotes_does_not_either(self):
+        document = self._document_built_from('He said "ship it" at 5pm')
+
+        assert len(questions_from(None, document)) == 1
+
+    def test_the_human_sees_prose_and_never_the_document(self):
+        """The complaint this came from: "idk what i am approving right now"."""
+        document = self._document_built_from("A: Canary, 10%\n\nA: backup first")
+        outputs = {"plan": NodeResult(status=Status.COMPLETED, output=document)}
+
+        entry = build_gate_context(["plan"], outputs)["upstream"][0]
+
+        assert entry["output"].startswith("### Plan")
+        assert "Canary, 10%" in entry["output"]
+        assert '"questions"' not in entry["output"]
+        assert not entry["output"].lstrip().startswith("{")
 
 
 class TestSummariseOutput:

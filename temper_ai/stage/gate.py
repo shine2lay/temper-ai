@@ -122,12 +122,20 @@ def questions_from(structured: dict[str, Any] | None, text: str | None) -> list[
 
 
 def _as_json_object(text: str | None) -> dict[str, Any] | None:
-    """``text`` when the whole of it is one JSON object, else None."""
+    """``text`` when the whole of it is one JSON object, else None.
+
+    Parsed with ``strict=False`` so a literal newline or tab inside a string
+    still reads. Writing one is routine -- a model composing prose in a
+    ``summary`` field, a script interpolating an earlier answer -- and it is
+    the one failure a human pays for directly: the questions are dropped, and
+    the gate shows a wall of raw JSON above a bare Approve button, which is
+    to say it asks someone to approve something it declined to explain.
+    """
     stripped = (text or "").strip()
     if not stripped.startswith("{"):
         return None
     try:
-        parsed = json.loads(stripped)
+        parsed = json.loads(stripped, strict=False)
     except ValueError:
         return None
     return parsed if isinstance(parsed, dict) else None

@@ -64,10 +64,13 @@ type SortKey = 'time' | 'name' | 'status';
 // ---------------------------------------------------------------------------
 
 const STATUS_ORDER: Record<string, number> = {
-  running: 0,
-  pending: 1,
-  completed: 2,
-  failed: 3,
+  // A run blocked on a person outranks one that is making progress on its
+  // own: it is the only status in this list that cannot advance without you.
+  waiting: 0,
+  running: 1,
+  pending: 2,
+  completed: 3,
+  failed: 4,
 };
 
 const STORAGE_KEY_SEARCH = 'temper-wf-search';
@@ -78,7 +81,7 @@ const STORAGE_KEY_SORT = 'temper-wf-sort';
 const PAGE_SIZE = 50;
 
 /** Status tabs. The value is sent to the API as ?status=; `all` sends none. */
-const STATUS_TABS = ['all', 'running', 'completed', 'failed', 'cancelled', 'pending'] as const;
+const STATUS_TABS = ['all', 'waiting', 'running', 'completed', 'failed', 'cancelled', 'pending'] as const;
 
 /** Threshold in seconds above which a still-running workflow is flagged stale. */
 const STALE_THRESHOLD_S = 30 * 60;
@@ -192,6 +195,9 @@ function WorkflowRow({
           ? 'bg-red-950/10 border-red-500/20 hover:bg-red-950/20'
           : 'bg-temper-panel border-temper-border hover:bg-temper-surface',
         wf.status === 'failed' && !instant && 'border-[var(--badge-failed-border)]/30',
+        // A run that cannot move without you should read as a request, not as
+        // another row in a list of things that are fine.
+        wf.status === 'waiting' && 'bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/15',
       )}
     >
       {/* Checkbox */}
@@ -218,6 +224,14 @@ function WorkflowRow({
       {/* Status + stale badge + cancel */}
       <div className="flex items-center gap-1.5 shrink-0">
         <StatusBadge status={wf.status} />
+        {wf.status === 'waiting' && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-500/40 font-medium"
+            title="This run has stopped to ask you something. Open it to answer."
+          >
+            needs you
+          </span>
+        )}
         {instant && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-dim border border-temper-border font-medium"

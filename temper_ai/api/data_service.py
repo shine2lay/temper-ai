@@ -213,6 +213,26 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     return result
 
 
+def _execution_ids_awaiting_a_human() -> set[str]:
+    """Runs with a gate still waiting for an answer.
+
+    A gate is a ``stage.started`` event left in ``waiting`` with ``gate`` set
+    on its data; it is cleared in place when the gate is answered, so the
+    query is always about the present.
+    """
+    events = get_events(
+        event_type=EventType("stage.started"),
+        status="waiting",
+        limit=500,
+        newest_first=True,
+    )
+    return {
+        eid
+        for ev in events
+        if (ev.get("data") or {}).get("gate") and (eid := ev.get("execution_id"))
+    }
+
+
 def list_workflow_executions(
     limit: int = 20,
     offset: int = 0,
@@ -251,6 +271,13 @@ def list_workflow_executions(
         if prev is None or _completeness(ev) > _completeness(prev):
             by_exec[eid] = ev
 
+    # A run parked on a gate is NOT running -- it is waiting for a person,
+    # and the listing is where that person looks. Without this the two are
+    # indistinguishable in the list ('running', spinner, no affordance), so a
+    # run that is blocked on a human sits there until someone thinks to open
+    # it. One query covers the whole page.
+    awaiting = _execution_ids_awaiting_a_human()
+
     runs = []
     for execution_id, event in by_exec.items():
         data = event.get("data", {})
@@ -260,6 +287,11 @@ def list_workflow_executions(
         run_status = event.get("status", "running")
         if run_status not in ("completed", "failed", "running", "cancelled", "interrupted"):
             run_status = "running"
+        # Only an otherwise-running run can be waiting: a finished run with a
+        # stale gate event is finished, and saying otherwise would park it in
+        # the list forever.
+        if run_status == "running" and execution_id in awaiting:
+            run_status = "waiting"
 
         if status and run_status != status:
             continue

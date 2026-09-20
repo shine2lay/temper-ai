@@ -50,9 +50,12 @@ workflow:
 
     # Where to look at the product, and as whom
     app_url:      {type: string, required: true}   # the stack to walk (the driver brings it up)
+    env_name:     {type: string, required: true}   # what standee calls that stack: each walker seeds its own
+                                                   # tenant in it, because walkers that share one move each
+                                                   # other's book while they are reading it
     measure_url:  {type: string, required: true}   # the build people use, once shipped
     data_url:     {type: string, required: false}  # only if the measured stack has no QA tenant
-    email:        {type: string, required: true}
+    email:        {type: string, required: true}   # the QA pair verify and measure use (the only one prod has)
     empty_email:  {type: string, required: true}
     password:     {type: string, required: true}
     measure_password: {type: string, required: true}
@@ -89,8 +92,7 @@ workflow:
       ref: workflows/epd_report
       input_map:
         app_url: input.app_url
-        email: input.email
-        empty_email: input.empty_email
+        env_name: input.env_name
         password: input.password
         goals: input.goals
         profile: input.profile

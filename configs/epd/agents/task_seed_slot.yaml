@@ -1,0 +1,69 @@
+# EPD report stage: seed one walker's own accounts in the environment it is about to walk.
+#
+#   standee seed <env> -- --slot <n>
+#     -> qa<n>@rollcall.test (a generated covered-call book, scanned) and
+#        qa-empty<n>@rollcall.test (the empty states), password unchanged
+#
+# Why per walker: the walkers run at the same time, and a tenant is not a
+# read-only thing to share. One walker placing an order moves the book another
+# is in the middle of reading, and the second reports that as friction the
+# product caused. So each walker brings its own accounts instead of the
+# environment guessing up front how many testers will turn up -- adding a
+# walker is a node, not a change to how the stack is seeded.
+#
+# Slot 1 is the unnumbered pair (qa@/qa-empty@), which a stack already has from
+# its first `up`; re-seeding it refreshes the book and leaves the password
+# alone, so walker 1 needs no special case.
+#
+# Same forced-command ssh path as task_stack_up/task_stack_down: this container
+# can run `standee …` on the host and nothing else. The command is fixed here in
+# config -- the walker never composes it, and never gets a shell.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: task_seed_slot
+  version: 1
+  type: script
+  timeout_seconds: 420
+  script_template: |
+    #!/bin/sh
+    set -eu
+    ENV_NAME={{ env_name }}
+    SLOT={{ slot }}
+    PASSWORD={{ password }}
+
+    fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
+
+    case "$SLOT" in ''|*[!0-9]*) fail "slot must be a positive integer, got '$SLOT'" ;; esac
+    [ "$SLOT" -ge 1 ] || fail "slot must be 1 or more, got '$SLOT'"
+    [ -n "$ENV_NAME" ] && [ "$ENV_NAME" != None ] || fail "no env_name: a walker can only seed a stack standee knows"
+
+    KEYDIR=/app/standee-ssh
+    [ -f "$KEYDIR/id_ed25519" ] || fail "no standee ssh key at $KEYDIR (run local/standee-ssh/setup.sh, mount it)"
+    KEY=$(mktemp)
+    trap 'rm -f "$KEY"' EXIT
+    install -m 600 "$KEYDIR/id_ed25519" "$KEY"
+    standee() {
+      ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" -o StrictHostKeyChecking=yes \
+          -o BatchMode=yes -o ConnectTimeout=10 shinelay@host.docker.internal standee "$@"
+    }
+
+    # `standee seed` exits non-zero when the seed command fails. That matters here more than anywhere:
+    # the accounts this reports are the ones the walker will try to log in with, and a silent failure
+    # would hand out credentials for tenants that were never created.
+    OUT=$(standee seed "$ENV_NAME" -- --slot "$SLOT" 2>&1) || {
+      printf '%s\n' "$OUT"
+      fail "standee seed failed for $ENV_NAME slot $SLOT"
+    }
+    printf '%s\n' "$OUT"
+
+    # The emails are the seed's own naming (backend/rollcall/tenancy/seed.py: slot 1 keeps the plain
+    # name, later slots number the local part). Read them out of the seed's own report -- its lines are
+    # `created  qa2@rollcall.test  tenant=…` / `refreshed  …` -- rather than composing them here, so the
+    # two namings cannot drift apart. `qa[0-9]*@` cannot match inside `qa-empty2@`: a hyphen is not a digit.
+    EMAIL=$(printf '%s\n' "$OUT" | grep -o 'qa[0-9]*@[^ ]*' | head -1)
+    EMPTY=$(printf '%s\n' "$OUT" | grep -o 'qa-empty[0-9]*@[^ ]*' | head -1)
+    [ -n "$EMAIL" ] && [ -n "$EMPTY" ] || fail "could not read the seeded accounts out of standee seed's output"
+    echo "seeded slot $SLOT: $EMAIL / $EMPTY"
+
+    python3 -c 'import json,sys; print(json.dumps({"status": "seeded", "slot": int(sys.argv[1]), "email": sys.argv[2], "empty_email": sys.argv[3], "password": sys.argv[4]}))' \
+      "$SLOT" "$EMAIL" "$EMPTY" "$PASSWORD"

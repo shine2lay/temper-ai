@@ -10,11 +10,20 @@
 # Same browser as task_verify: playwright-mcp over HTTP. browser_snapshot is
 # the eyes; refs from the latest snapshot are what click/type target.
 # Screenshots are dropped by the MCP client, so they are never taken.
+#
+# A walker is alone in its own environment-within-the-environment: its browser
+# is its own (MCP sessions are keyed by calling agent) and its accounts are its
+# own (its seed node made them, one tenant per walker). So the page in front of
+# it is never another walker's, and the book it reads is never being moved by
+# one. Both used to be shared, and the walkers had to be run one after another
+# to keep them from reading each other's pages.
 agent:
   name: epd_walk
+  # 3: the browser and the accounts are the walker's own, so there is no
+  #    previous session to sign out of.
   # 2: retry a first navigation that fails at the network layer (the stack was
   #    stood up seconds ago); never record a tool error as friction.
-  version: 2
+  version: 3
   type: llm
   provider: anthropic
   model: claude-fable-5-1
@@ -89,7 +98,7 @@ agent:
   task_template: |
     Application: {{ app_url }}
     Sign in as {% if account == "empty" %}{{ empty_email }}{% else %}{{ email }}{% endif %} / {{ password }} (the "{{ account }}" account).
-    If the page in front of you belongs to a previous signed-in session, sign out first.
+    This browser and this account are yours alone: a fresh browser, and a tenant no one else is in.
 
     Who you are and what you are trying to do:
     {{ persona }}

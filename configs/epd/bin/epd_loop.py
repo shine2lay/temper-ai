@@ -735,7 +735,10 @@ def stage_report(st: dict, keep: bool) -> None:
     preflight_login(url)
     out = run_workflow("epd_report", {
         "app_url": url,
-        "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL, "password": QA_PASSWORD,
+        # The walkers seed their own tenants in this stack (one each, or they move each other's book),
+        # so they need the name standee knows it by, not just its URL.
+        "env_name": env,
+        "password": QA_PASSWORD,
         "goals": read(LOOP_DIR / "goals.md"),
         "profile": read(LOOP_DIR / "profile.md"),
         "last_outcome": previous_outcome(bet_id),
@@ -1088,6 +1091,7 @@ def cmd_run(keep: bool) -> None:
         "unfinished": unfinished_business(bet_id),
         "bets_tsv": read(LEDGER),
         "app_url": url,
+        "env_name": env,
         "measure_url": PROD_URL,
         "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL,
         "password": QA_PASSWORD, "measure_password": ensure_qa_password(),

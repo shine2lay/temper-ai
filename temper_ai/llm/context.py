@@ -1,15 +1,16 @@
 """Context policy — what the model may remember once the transcript outgrows the window.
 
-Chosen per agent with ``context_policy:`` in the agent YAML.
+Chosen per agent with ``context_policy:`` in the agent YAML; an agent that
+says nothing gets ``compress``.
 
-``truncate`` (default)
+``truncate``
     The mechanical policy in ``service._enforce_context_limit``: once the
     estimate passes ``max_context_tokens``, window the messages and cut every
     tool result to its first 5000/2000/1000 characters. Silent, and it keeps
-    the wrong half of a build log — but it is what every existing agent gets,
-    so an agent that says nothing keeps it.
+    the wrong half of a build log. It was the default until every agent had
+    to be trusted with a long run; an agent can still ask for it.
 
-``compress``
+``compress`` (default)
     Model-driven, after billion-context-pi. Every user message and tool
     result carries a ref tag the model can see (``m00042``); the model is
     given ``compress`` / ``decompress`` / ``search_context`` /
@@ -58,6 +59,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 CONTEXT_POLICIES = ("truncate", "compress")
+DEFAULT_CONTEXT_POLICY = "compress"
 
 CONTEXT_TOOL_NAMES = ("compress", "decompress", "search_context", "context_status")
 
@@ -163,8 +165,15 @@ class ContextCompressor:
 
     # -- wire view ---------------------------------------------------------
 
-    def prepare(self, messages: list[dict]) -> list[dict]:
-        """Everything that happens between the transcript and the provider call."""
+    def prepare(self, messages: list[dict], *, wrapping_up: bool = False) -> list[dict]:
+        """Everything that happens between the transcript and the provider call.
+
+        ``wrapping_up``: the iteration budget is nearly spent and the model has
+        been told to answer from what it knows. Then the usage nudge is left
+        out — asking for a compress call in the same breath as a final answer
+        costs a turn the budget does not have, and the answer needs no room.
+        What the harness had to hide is still reported.
+        """
         if len(messages) < self._seen:
             raise RuntimeError(
                 "transcript shrank under the compress policy; refs are no longer stable"
@@ -177,7 +186,7 @@ class ContextCompressor:
         ):
             view = self.view(messages)
             est = estimate_messages_tokens(view)
-        self._append_nudge(view, messages, est)
+        self._append_nudge(view, messages, est, ask=not wrapping_up)
         return view
 
     def view(self, messages: list[dict]) -> list[dict]:
@@ -936,7 +945,9 @@ class ContextCompressor:
         m = self._view_message(messages, i, folded_calls)
         return _message_tokens(m) if m is not None else 0
 
-    def _append_nudge(self, view: list[dict], messages: list[dict], est: int) -> None:
+    def _append_nudge(
+        self, view: list[dict], messages: list[dict], est: int, *, ask: bool = True
+    ) -> None:
         """Say what the harness has to say as a message of its own, after the
         latest tool result — not inside it. Models discount instructions found
         in tool output (they are trained to), and one did, every time."""
@@ -949,7 +960,8 @@ class ContextCompressor:
         ranges = self._compressible_ranges(messages)
         compressible = sum(t for _, _, t in ranges)
         if (
-            est >= self.max_context_tokens * NUDGE_AT
+            ask
+            and est >= self.max_context_tokens * NUDGE_AT
             and compressible >= self.max_context_tokens * NUDGE_MIN_COMPRESSIBLE
         ):
             top = ", ".join(f"{ref(s)}–{ref(e)} (~{_fmt(t)})" for s, e, t in ranges[:3])

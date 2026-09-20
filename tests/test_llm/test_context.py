@@ -592,6 +592,20 @@ class TestNudgeAndEviction:
         assert "Largest compressible ranges: m00003–m00012" in note
         assert "Compress consumed ranges before continuing" in note
 
+    def test_no_usage_nudge_while_wrapping_up(self):
+        """Once the iteration budget has told the model to answer, asking it to
+        compress first would spend a turn the budget does not have."""
+        messages = _transcript(turns=6, size=3000)
+        view = ContextCompressor(8_000).prepare(messages, wrapping_up=True)
+        assert view[-1]["role"] == "tool"  # nothing appended
+
+    def test_what_the_harness_hid_is_still_reported_while_wrapping_up(self):
+        messages = _transcript(turns=6, size=3000)  # ~6K of results
+        view = ContextCompressor(4_000).prepare(messages, wrapping_up=True)
+        note = view[-1]["content"]
+        assert note.startswith("[context] The harness hid ")
+        assert "Compress consumed ranges before continuing" not in note
+
     def test_over_the_limit_the_harness_hides_the_oldest_turns_whole(self):
         messages = _transcript(turns=6, size=3000)  # ~6K of results
         c = ContextCompressor(4_000)
@@ -749,6 +763,10 @@ class TestNudgeAndEviction:
         assert 0 < after < before
 
 
+# Any tool at all: the context tools ride along with the agent's own.
+_READ_TOOL = [{"type": "function", "function": {"name": "Read"}}]
+
+
 def _text(content="Done", tokens=100):
     return LLMResponse(
         content=content,
@@ -784,13 +802,38 @@ class TestServiceWiring:
         ):
             LLMService(MockProvider([]), context_policy="evict")
 
-    def test_truncate_is_the_default_and_sends_the_transcript_itself(self):
+    def test_compress_is_the_default(self):
         provider = MockProvider([_text()])
         service = LLMService(provider)
-        messages = [{"role": "user", "content": "hi"}]
-        service.run(messages)
+        service.run(
+            [{"role": "user", "content": "hi"}],
+            tools=[{"type": "function", "function": {"name": "Read"}}],
+        )
 
-        assert service.context_policy == "truncate"
+        assert service.context_policy == "compress"
+        names = [t["function"]["name"] for t in provider.calls[0]["kwargs"]["tools"]]
+        assert "compress" in names
+        assert provider.calls[0]["messages"][0]["content"].endswith("m00001</acp>")
+
+    def test_truncate_sends_the_transcript_itself(self):
+        provider = MockProvider([_text()])
+        service = LLMService(provider, context_policy="truncate")
+        messages = [{"role": "user", "content": "hi"}]
+        tools = [{"type": "function", "function": {"name": "Read"}}]
+        service.run(messages, tools=tools)
+
+        assert provider.calls[0]["messages"] is messages  # no view layer, no tags
+        assert provider.calls[0]["kwargs"]["tools"] is tools  # nothing added
+
+    @pytest.mark.parametrize("tools", [None, []])
+    def test_a_run_without_tools_gets_no_context_tools(self, tools):
+        """One provider call, nothing to compact — and a prompt that never
+        carried tools must not start carrying four."""
+        provider = MockProvider([_text()])
+        service = LLMService(provider)  # compress by default
+        messages = [{"role": "user", "content": "hi"}]
+        service.run(messages, tools=tools)
+
         assert provider.calls[0]["messages"] is messages  # no view layer, no tags
         assert provider.calls[0]["kwargs"].get("tools") is None
 
@@ -844,7 +887,7 @@ class TestServiceWiring:
         ctx = CallContext(execution_id="ctx-1", agent_name="coder")
         result = service.run(
             [{"role": "user", "content": "check a and b"}],
-            tools=[],
+            tools=_READ_TOOL,
             execute_tool=lambda name, args: big,
             context=ctx,
         )
@@ -885,7 +928,7 @@ class TestServiceWiring:
             ]
         )
         service = LLMService(provider, context_policy="compress")
-        result = service.run([{"role": "user", "content": "hi"}])
+        result = service.run([{"role": "user", "content": "hi"}], tools=_READ_TOOL)
 
         assert result.error is None
         assert provider.calls[-1]["messages"][-1]["content"].startswith("Context: ")
@@ -916,7 +959,7 @@ class TestServiceWiring:
             ]
         )
         service = LLMService(provider, context_policy="compress")
-        result = service.run([{"role": "user", "content": "hi"}])
+        result = service.run([{"role": "user", "content": "hi"}], tools=_READ_TOOL)
 
         assert result.error is None
         assert provider.calls[-1]["messages"][-1]["content"].startswith(

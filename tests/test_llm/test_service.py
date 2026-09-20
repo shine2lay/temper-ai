@@ -34,6 +34,10 @@ def _echo_tool(name: str, params: dict) -> str:
     return f"result of {name}"
 
 
+# Any tool at all: under compress the context tools ride along with the agent's own.
+_A_TOOL = [{"type": "function", "function": {"name": "bash"}}]
+
+
 # -- Basic completion (no tools) --
 
 
@@ -614,7 +618,12 @@ class TestMessagesPassed:
             [{"role": "user", "content": "Hi"}], tools=tools,
         )
 
-        assert provider.calls[0]["kwargs"]["tools"] == tools
+        # the agent's tools lead; the default context policy appends its own
+        sent = provider.calls[0]["kwargs"]["tools"]
+        assert sent[: len(tools)] == tools
+        assert [t["function"]["name"] for t in sent[len(tools):]] == [
+            "compress", "decompress", "search_context", "context_status",
+        ]
 
 
 class TestProviderConfigPassthrough:
@@ -806,7 +815,7 @@ class TestContextPolicyIsApplied:
         provider = MockProvider([_make_text_response("ok")])
         service = LLMService(provider, max_context_tokens=500, context_policy="compress")
 
-        service.run(history)
+        service.run(history, tools=_A_TOOL)
 
         assert history[: len(original)] == original, "compress must not drop caller messages"
 
@@ -814,7 +823,33 @@ class TestContextPolicyIsApplied:
         provider = MockProvider([_make_text_response("ok")])
         service = LLMService(provider, max_context_tokens=500, context_policy="compress")
 
-        service.run(self._long_history())
+        service.run(self._long_history(), tools=_A_TOOL)
 
         sent = provider.calls[0]["messages"]
         assert estimate_messages_tokens(sent) <= 500
+
+    def test_the_usage_nudge_yields_to_the_iteration_budget(self):
+        """Once the wrap-up note has told the model to answer, the [context]
+        nudge stays out of the same view: a compress turn is a turn, and the
+        budget has none to spare. What the harness had to hide is still said."""
+        responses = [
+            _make_tool_response([{"id": f"c{i}", "name": "bash", "arguments": '{"command": "x"}'}])
+            for i in range(6)
+        ] + [_make_text_response("ok")]
+        provider = MockProvider(responses)
+        # ~1K tokens a result against a 5K window: past the 60% nudge line by
+        # the fourth call, over the limit itself by the sixth
+        service = LLMService(provider, max_iterations=7, max_context_tokens=5_000)
+        service.run(
+            [{"role": "user", "content": "Do something"}],
+            tools=_A_TOOL, execute_tool=lambda name, params: "z" * 3000,
+        )
+
+        def nudge(call_index: int) -> str:
+            last = provider.calls[call_index]["messages"][-1]
+            return last["content"] if last["role"] == "user" and last["content"].startswith("[context]") else ""
+
+        assert "Compress consumed ranges before continuing" in nudge(3)  # call 4 of 7: room to spend a turn
+        wrapping_up = [nudge(i) for i in range(4, 7)]          # calls 5, 6, 7: told to answer
+        assert not any("before continuing" in n for n in wrapping_up)
+        assert any(n.startswith("[context] The harness hid ") for n in wrapping_up)

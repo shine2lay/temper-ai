@@ -8,6 +8,7 @@ from temper_ai.agent.llm_agent import (
     _extract_structured_output,
     _truncate_input_data,
 )
+from temper_ai.llm.context import DEFAULT_CONTEXT_POLICY
 from temper_ai.llm.models import LLMRunResult
 from temper_ai.llm.service import DEFAULT_MAX_CONTEXT_TOKENS, DEFAULT_MAX_MESSAGES
 from temper_ai.shared.types import ExecutionContext, Status
@@ -162,7 +163,7 @@ class TestLLMAgentRun:
             max_messages=DEFAULT_MAX_MESSAGES,
             total_timeout=DEFAULT_TOTAL_TIMEOUT,
             max_context_tokens=DEFAULT_MAX_CONTEXT_TOKENS,
-            context_policy="truncate",
+            context_policy=DEFAULT_CONTEXT_POLICY,
         )
 
     @patch("temper_ai.agent.llm_agent.LLMService")
@@ -170,11 +171,11 @@ class TestLLMAgentRun:
         mock_service = MockLLMService.return_value
         mock_service.run.return_value = LLMRunResult(output="ok", tokens=0, iterations=1)
 
-        agent = _make_agent({"provider": "vllm", "context_policy": "compress"})
+        agent = _make_agent({"provider": "vllm", "context_policy": "truncate"})
         ctx = _make_context(llm_providers={"vllm": MagicMock()})
         agent.run({"task": "x"}, ctx)
 
-        assert MockLLMService.call_args.kwargs["context_policy"] == "compress"
+        assert MockLLMService.call_args.kwargs["context_policy"] == "truncate"
 
     @patch("temper_ai.agent.llm_agent.LLMService")
     def test_tools_passed_to_llm_service(self, MockLLMService):

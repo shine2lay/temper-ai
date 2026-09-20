@@ -11,6 +11,7 @@ from typing import Any
 
 from temper_ai.llm.context import (
     CONTEXT_POLICIES,
+    DEFAULT_CONTEXT_POLICY,
     ContextCompressor,
     ContextError,
 )
@@ -64,7 +65,7 @@ class LLMService:
         max_messages: int = DEFAULT_MAX_MESSAGES,
         total_timeout: float = 300.0,
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
-        context_policy: str = "truncate",
+        context_policy: str = DEFAULT_CONTEXT_POLICY,
     ) -> None:
         if context_policy not in CONTEXT_POLICIES:
             raise ValueError(
@@ -76,9 +77,9 @@ class LLMService:
         self.total_timeout = total_timeout  # Overall timeout for the entire run loop
         self.max_context_tokens = max_context_tokens
         # What happens when the transcript outgrows max_context_tokens — see
-        # temper_ai.llm.context. "truncate" is the mechanical trim below;
-        # "compress" hands the model ref tags and a compress tool and lets it
-        # write the summaries itself.
+        # temper_ai.llm.context. "compress" (the default) hands the model ref
+        # tags and a compress tool and lets it write the summaries itself;
+        # "truncate" is the mechanical trim below.
         self.context_policy = context_policy
 
     def run(
@@ -96,8 +97,15 @@ class LLMService:
         self._ctx = context or CallContext()
         self._record = self._ctx.event_recorder or record
         self._messages = messages
+        # The context tools ride along with the agent's own. A run without
+        # tools makes one provider call and returns — there is nothing to
+        # compact — and a prompt that never carried tools should not start
+        # carrying four: the model may answer them instead of the task, and a
+        # provider that never saw a tools parameter may not accept one.
         self._compressor = (
-            ContextCompressor(self.max_context_tokens) if self.context_policy == "compress" else None
+            ContextCompressor(self.max_context_tokens)
+            if self.context_policy == "compress" and tools
+            else None
         )
         self._tools = (list(tools or []) + self._compressor.tools()) if self._compressor else tools
         self._execute_tool = execute_tool
@@ -133,6 +141,7 @@ class LLMService:
 
     def _run_iteration(self, iteration: int) -> LLMRunResult | None:
         """Run one iteration of the tool-calling loop. Returns result if done, None to continue."""
+        self._iteration = iteration
         elapsed = time.monotonic() - self._run_start
         if elapsed > self.total_timeout:
             logger.warning("LLM run timeout after %.0fs for '%s'", elapsed, self._ctx.agent_name)
@@ -166,7 +175,6 @@ class LLMService:
         if self._execute_tool is None and any(not self._is_context_tool(tc["name"]) for tc in tool_calls):
             return self._handle_no_executor(iteration, tool_calls)
 
-        self._iteration = iteration
         self._execute_and_inject_tools(tool_calls, llm_event_id)
         self._record_iteration(
             iteration, "tool_calls", len(tool_calls), tool_calls=tool_calls,
@@ -223,7 +231,12 @@ class LLMService:
         ref tags rendered.
         """
         if self._compressor is not None:
-            wire = self._compressor.prepare(self._messages)
+            # Once _nudge_to_finish has told the model to answer, the context
+            # nudge stays quiet: the two would ask for different next turns.
+            wire = self._compressor.prepare(
+                self._messages,
+                wrapping_up=self.max_iterations - self._iteration + 1 <= WRAP_UP_TURNS,
+            )
         else:
             _enforce_context_limit(self._messages, self.max_context_tokens, self.max_messages)
             wire = self._messages

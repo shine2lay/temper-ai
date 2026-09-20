@@ -48,7 +48,7 @@ agent:
   max_iterations: 10        # Tool-calling loop limit
   token_budget: 8000        # Prompt token budget
   max_context_tokens: 100000 # Window the tool-calling loop must stay under
-  context_policy: truncate  # What happens at the window: truncate | compress
+  context_policy: compress  # What happens at the window: compress (default) | truncate
   tools: [Bash, FileWriter] # see tools/
   memory:
     enabled: true
@@ -60,16 +60,12 @@ agent:
 
 A long tool-calling run outgrows `max_context_tokens`. `context_policy`
 chooses what the agent does about it. It is per agent; an agent that says
-nothing gets `truncate`.
+nothing gets `compress`.
 
-**`truncate`** (default) — mechanical. Once the estimate passes the limit,
-the message list is windowed and every tool result is cut to its first
-5000/2000/1000 characters. Silent, and it keeps the wrong half of a build
-log, but it is what every existing agent has always had.
-
-**`compress`** — the model manages its own context. Every user message and
-tool result it sees ends with a ref tag (`<acp tokens="9.3K">m00004</acp>`),
-and it has four extra tools:
+**`compress`** (default) — the model manages its own context. Every user
+message and tool result it sees ends with a ref tag
+(`<acp tokens="9.3K">m00004</acp>`), and it has four extra tools, appended
+after its own:
 
 | Tool | Does |
 |---|---|
@@ -104,6 +100,25 @@ are never put under a harness block. Verified to 1,200 turns (~2,400
 messages) in a 10K window with a scripted model, a fuzzed one and one that
 never compresses: the view never exceeds the limit and every message is
 visible, summarized or hidden exactly once (`tests/test_llm/test_context_longrun.py`).
+
+Two things `compress` does not do. A run without tools makes one provider
+call and returns — there is nothing to compact — so it is sent as it is,
+without the tags, the guidance or the four tools: a prompt that never
+carried tools does not start carrying them. And once the iteration budget's
+wrap-up note has told the model to answer from what it knows (the last
+three turns), the `[context]` usage nudge stays out of the same view: a
+compress call is a turn, and asking for one alongside a final answer costs
+a turn the budget does not have. What the harness had to hide is still
+reported. A compress turn counts against `max_iterations` like any other;
+an agent that reads a lot on a short budget should be given a longer one.
+
+**`truncate`** — mechanical, and what every agent had before `compress`
+became the default. Once the estimate passes the limit, the message list is
+windowed and every tool result is cut to its first 5000/2000/1000
+characters. Silent — the model is not told anything was removed — and it
+keeps the head of each result, which for a build log is the wrong half. It
+also edits the transcript in place. For an agent whose model cannot be
+trusted with the tools, or whose provider does not accept them.
 
 An unknown value fails at construction:
 `context_policy must be one of truncate, compress, not 'evict'`.

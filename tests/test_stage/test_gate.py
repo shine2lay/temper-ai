@@ -6,6 +6,9 @@ its ``gate`` input.
 """
 
 import threading
+from pathlib import Path
+
+import yaml
 
 from temper_ai.shared.types import NodeResult, Status
 from temper_ai.stage import executor as executor_mod
@@ -22,6 +25,8 @@ from temper_ai.stage.gate import (
 )
 
 from .test_executor import _make_agent_node, _make_context
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestQuestionsFrom:
@@ -102,6 +107,55 @@ class TestBuildGateContext:
 
     def test_no_dependencies(self):
         assert build_gate_context([], {}) == {"upstream": [], "questions": []}
+
+
+class TestFieldNamesAnAgentPlausiblyWrites:
+    """A field under an obvious-but-wrong name used to vanish in silence."""
+
+    def test_key_and_context_are_taken_as_header_and_detail(self):
+        q = normalise_question(
+            {"question": "Ship it?", "key": "Release", "context": "Prod is busy."}, 1
+        )
+        assert q is not None
+        assert q["header"] == "Release"
+        assert q["detail"] == "Prod is busy."
+
+    def test_the_real_names_win_over_the_aliases(self):
+        q = normalise_question(
+            {"question": "Ship it?", "header": "Release", "key": "ignored"}, 1
+        )
+        assert q is not None
+        assert q["header"] == "Release"
+
+
+class TestTheShippedExample:
+    """`gate_smoke_ask` is what a user copies. Parse what it actually prints.
+
+    It was committed asking its questions under field names the parser did
+    not read, so every heading and every line of context was dropped — and
+    nothing failed, because no test ever looked at the example itself.
+    """
+
+    def test_every_question_survives_the_parser_intact(self):
+        config = yaml.safe_load(
+            (REPO_ROOT / "configs" / "agents" / "gate_smoke_ask.yaml").read_text()
+        )
+        script = config["agent"]["script_template"]
+        document = script[script.index("{") : script.rindex("}") + 1]
+
+        questions = questions_from(None, document)
+
+        assert [q["header"] for q in questions if "header" in q] == ["Storage", "Reach"]
+        assert all(q["detail"] for q in questions if "detail" in q)
+        # The heading and the context are the difference between a question
+        # a human can answer and one they have to guess at.
+        assert questions[0]["detail"] == "It has to survive a worker restart either way."
+        assert questions[1]["multiSelect"] is True
+        assert any("preview" in opt for opt in questions[0]["options"])
+        assert questions[2] == {
+            "id": "q3",
+            "question": "Anything I should not touch while doing this?",
+        }
 
 
 class TestSummariseOutput:

@@ -137,9 +137,14 @@ def normalise_question(raw: Any, index: int) -> dict[str, Any] | None:
     """One question as the model wrote it → the shape the modal renders.
 
     A bare string is a free-text question. A dict keeps ``id``, ``question``
-    (also accepted as ``text`` / ``prompt``), ``header``, ``detail``,
-    ``options`` (strings or ``{label, description, preview}``) and
-    ``multiSelect`` (also ``multi_select``).
+    (also accepted as ``text`` / ``prompt``), ``header`` (also ``key``),
+    ``detail`` (also ``context``), ``options`` (strings or ``{label,
+    description, preview}``) and ``multiSelect`` (also ``multi_select``).
+
+    The aliases are not decoration: whoever writes these is an agent filling
+    in a JSON object from memory, and a field under the wrong-but-obvious
+    name used to be dropped in silence — the question still rendered, just
+    stripped of the heading and the line of context that made it answerable.
     """
     if isinstance(raw, str):
         text = raw.strip()
@@ -150,10 +155,12 @@ def normalise_question(raw: Any, index: int) -> dict[str, Any] | None:
     if not isinstance(asked, str) or not asked.strip():
         return None
     q: dict[str, Any] = {"id": str(raw.get("id") or f"q{index}"), "question": asked.strip()}
-    for key in ("header", "detail"):
-        value = raw.get(key)
-        if isinstance(value, str) and value.strip():
-            q[key] = value.strip()
+    for field, *aliases in (("header", "key"), ("detail", "context")):
+        for name in (field, *aliases):
+            value = raw.get(name)
+            if isinstance(value, str) and value.strip():
+                q[field] = value.strip()
+                break
     options = []
     for opt in raw.get("options") or []:
         if isinstance(opt, str) and opt.strip():

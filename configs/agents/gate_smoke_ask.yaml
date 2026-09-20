@@ -7,10 +7,10 @@
 #
 # A question is either a bare string, or an object:
 #   question     the text, the only required field
-#   key          short name for the answer (shown as a heading)
-#   context      one line under the question
+#   header       short heading above it        (also accepted: key)
+#   detail       one line under the question   (also accepted: context)
 #   options      choices; each is a string, or {label, description, preview}
-#   multi_select true to allow more than one (default: one)
+#   multi_select true to allow more than one   (default: one)
 #
 # An LLM agent asks the same way — this one is a script so the check costs
 # nothing and needs no API key.
@@ -25,9 +25,9 @@ agent:
       "summary": "Two ways to store gate answers. I need a decision before writing the migration.",
       "questions": [
         {
-          "key": "storage",
+          "header": "Storage",
           "question": "Where should a gate answer live?",
-          "context": "It has to survive a worker restart either way.",
+          "detail": "It has to survive a worker restart either way.",
           "options": [
             {
               "label": "On the waiting event",
@@ -41,8 +41,9 @@ agent:
           ]
         },
         {
-          "key": "reach",
+          "header": "Reach",
           "question": "Which runs should carry answers?",
+          "detail": "Answers have to reach the node wherever it runs.",
           "multi_select": true,
           "options": [
             {"label": "In-process", "description": "The dev server itself."},

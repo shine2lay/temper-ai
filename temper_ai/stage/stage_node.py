@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import replace
+from typing import Any
 
 from temper_ai.shared.types import ExecutionContext, NodeResult
 from temper_ai.stage.executor import execute_graph
@@ -72,19 +73,47 @@ class StageNode(Node):
 
         Without declared inputs: everything flows in (default, no boundary).
         With declared inputs: only mapped fields enter the sub-graph.
+
+        Inputs are declared in one of two shapes, because stages and workflows grew up apart:
+
+            inputs: {goal: goal_text}                      a stage: local name <- source key
+            inputs: {goal: {type: string, required: true}} a workflow: a schema for the same name
+
+        The second shape is a declaration, not a source — the field arrives under its own name, and
+        the parent's ``input_map`` has already put it there. Reading it as a source looked up a dict
+        key and raised ``TypeError: unhashable type: 'dict'``, which is what a referenced workflow
+        used to die of before any of its nodes ran.
+
+        ``gate`` crosses regardless of what is declared. It is not something the parent mapped in; the
+        executor puts it there when a human approves this node, and it carries what they said. A
+        boundary that drops it turns an edited approval into a rubber stamp — the sub-graph runs, and
+        the one thing the person actually contributed is the one thing it cannot see.
         """
         if not self.config.inputs:
             return dict(input_data)
 
-        gated = {}
+        gated: dict[str, Any] = {}
+        missing: list[str] = []
         for local_name, source in self.config.inputs.items():
-            # Source can be a direct key or dot-notation
-            if "." in source:
+            if isinstance(source, dict):
+                gated[local_name] = input_data.get(local_name)
+                if source.get("required") and gated[local_name] is None:
+                    missing.append(local_name)
+            elif "." in source:
                 # Dot notation handled by parent's input resolution
                 # By the time we get here, input_data already has resolved values
                 gated[local_name] = input_data.get(local_name)
             else:
                 gated[local_name] = input_data.get(source)
+        if missing:
+            # Say it here, where the name and the stage are both known. Downstream this is a blank
+            # argument in some agent's prompt, and the run fails somewhere that cannot explain why.
+            raise ValueError(
+                f"Stage '{self.name}' is missing required input(s): {', '.join(sorted(missing))}. "
+                f"Add them to this node's input_map."
+            )
+        if "gate" in input_data and "gate" not in gated:
+            gated["gate"] = input_data["gate"]
         return gated
 
     def _apply_output_gate(self, result: NodeResult) -> NodeResult:

@@ -1,6 +1,7 @@
 workflow:
   name: epd_tasks
-  version: 1
+  # 2: takes the bet as a path, and carries the owner's approval through to the agent.
+  version: 2
   description: |
     EPD loop, stage 3 of 7: tasks. Replaces the engineering lead. The signed
     bet becomes three to ten tasks, each with a boolean acceptance (a
@@ -15,8 +16,12 @@ workflow:
     bet_id: {type: string, required: true}
     tasks_path: {type: string, required: true}
     repo_path: {type: string, required: true}
-    bet: {type: string, required: true}
+    bet_path: {type: string, required: true}
     profile: {type: string, required: true}
+    # What the owner said when they approved the bet, if this ran behind a gate. The executor puts
+    # it there; no caller maps it in. It is optional because this workflow also runs on its own,
+    # where the approval lives in decision.md instead.
+    gate: {type: object, required: false}
   outputs:
     status: tasks.structured.status
     tasks_path: tasks.structured.tasks_path
@@ -32,5 +37,6 @@ workflow:
         bet_id: input.bet_id
         tasks_path: input.tasks_path
         repo_path: input.repo_path
-        bet: input.bet
+        bet_path: input.bet_path
         profile: input.profile
+        gate: input.gate

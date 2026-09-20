@@ -229,7 +229,7 @@ class GraphLoader:
         We detect this by comparing against a fresh default NodeConfig.
         """
         assert nc.ref is not None  # guaranteed by caller # noqa: B101
-        ref_config = self._load_config(nc.ref, "stage")
+        ref_config = self._load_referenced_graph(nc.ref)
         merged_data = dict(ref_config)
 
         # Compare against defaults to find explicitly-set fields
@@ -295,6 +295,54 @@ class GraphLoader:
             raise
         except Exception as exc:
             raise LoaderError(f"Failed to load agent config '{ref}': {exc}") from exc
+
+    def _load_referenced_graph(self, ref: str) -> dict:
+        """Load the config a ``ref`` names, whether it was saved as a stage or as a workflow.
+
+        A stage and a workflow are the same thing described twice: a list of nodes, with declared
+        inputs and outputs. The only difference is which key it was filed under, and that is a
+        statement about how a graph was *first* used, not about what it can be used for. Refusing to
+        reference a workflow forces a copy of a graph that already exists, and the copy is what goes
+        stale — so a pipeline built from proven stages ends up built from drifting duplicates.
+
+        A stage of the same name still wins: that is the type the ref field has always meant, and an
+        existing config must not change meaning because a workflow later took the same name.
+
+        An explicit ``stages/x`` or ``workflows/x`` prefix names the type and is honoured exactly, so
+        a caller who knows which one they mean can say so.
+        """
+        prefix = ref.split("/")[0] if "/" in ref else ""
+        explicit = {"stages": "stage", "stage": "stage", "workflows": "workflow", "workflow": "workflow"}
+        if prefix in explicit:
+            return self._strip_graph_metadata(self._load_config(ref, explicit[prefix]), ref)
+
+        try:
+            return self._strip_graph_metadata(self._load_config(ref, "stage"), ref)
+        except LoaderError as stage_exc:
+            try:
+                return self._strip_graph_metadata(self._load_config(ref, "workflow"), ref)
+            except LoaderError:
+                raise LoaderError(
+                    f"Cannot resolve ref '{ref}': no stage or workflow config by that name. "
+                    f"({stage_exc})"
+                ) from stage_exc
+
+    @staticmethod
+    def _strip_graph_metadata(config: dict, ref: str) -> dict:
+        """Drop the keys a workflow carries and a node has no place for.
+
+        ``version`` and ``description`` are documentation. ``defaults`` is not: it sets the provider
+        and model for the graph's agents, and a node cannot carry it, so referencing such a workflow
+        would quietly run it on different models than running it directly does. Same graph, different
+        answers, no message — so it says so.
+        """
+        config = {k: v for k, v in config.items() if k not in ("version", "description")}
+        if config.pop("defaults", None):
+            logger.warning(
+                "Referenced graph '%s' declares `defaults` (provider/model); these do not apply when it "
+                "is referenced as a node. Set them on the referencing workflow, or on its agents.", ref,
+            )
+        return config
 
     def _load_config(self, ref: str, config_type: str) -> dict:
         """Load a config from the config store."""

@@ -19,6 +19,7 @@ agent:
   model: claude-fable-5-1
   tools:
     - Bash
+    - Read   # the bet is a file the previous stage wrote; fetch it rather than be handed its text
     - Write
   max_iterations: 40
   total_timeout: 1500
@@ -85,7 +86,19 @@ agent:
     Repository (read only; the build stage works on its own branch): {{ repo_path }}
 
     ## The bet
-    {{ bet }}
+    Read it — it is the product decision this decomposition serves:
+
+      {{ bet_path }}
+
+    {% if gate %}
+    ## The owner's approval
+    The bet above is the pitch. This is what the owner said when they signed it, and where the two
+    differ, this wins — it is the later word, and it is a person's:
+
+      {{ gate }}
+
+    If they edited the invariant, the last task's acceptance is THEIR sentence, not the pitch's.
+    {% endif %}
 
     ## Product profile
     {{ profile }}

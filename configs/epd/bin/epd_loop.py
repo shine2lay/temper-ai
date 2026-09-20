@@ -746,6 +746,9 @@ def stage_bet(st: dict) -> None:
     if not (bdir / "bet.md").exists():
         die("epd_bet finished but wrote no bet.md")
     st["stages"]["bet"] = out
+    # Also on disk, beside bet.md. The state file is this driver's private memory; the bet directory is
+    # the record, and ship reads the record — so a ship driven from a workflow node needs no state.
+    write(bdir / "bet.json", json.dumps(out, indent=2, default=str))
     st["status"] = AFTER["bet"]
     save_state(st)
     ledger_upsert(bet_id, title=out.get("title") or "", threshold=out.get("threshold") or "")
@@ -863,14 +866,35 @@ def stage_build(st: dict) -> None:
             f"Fix by hand and `epd_loop.py stage ship --bet {bet_id}`, or leave it.")
 
 
+def artefact(bdir: Path, name: str, st: dict, key: str) -> dict:
+    """A stage's structured result: from the bet directory if it is there, else from this driver's state.
+
+    The two hold the same fields — ``stage_build`` writes ``build.json`` and keeps a subset in state — so
+    preferring the file costs nothing and buys one thing: ship stops needing the driver to have run the
+    earlier stages in this process. A workflow node that writes the same artefacts can then drive it.
+    """
+    p = bdir / f"{name}.json"
+    if p.exists():
+        try:
+            return json.loads(read(p))
+        except ValueError as exc:
+            die(f"{p} is not readable JSON: {exc}")
+    return st["stages"].get(key) or {}
+
+
 def stage_ship(st: dict) -> None:
     bet_id = st["bet_id"]
     bdir = BETS_DIR / bet_id
-    b = st["stages"].get("build") or {}
+    b = artefact(bdir, "build", st, "build")
     branch = b.get("branch")
     wt = b.get("worktree_path")
-    if not branch or not wt:
-        die("no build to ship")
+    if not branch:
+        die(f"no build to ship: neither {bdir / 'build.json'} nor the state file names a branch")
+    if (b.get("verdict") or "approve") != "approve":
+        die(f"refusing to ship {bet_id}: the build's own judges said {b.get('verdict')!r} "
+            f"({b.get('verdict_summary')})")
+    if not wt:
+        log("note: no worktree path recorded; the branch is in the clone regardless")
     # Fetch from the main clone, never from the worktree. A worktree's `.git`
     # is a file holding `gitdir: /app/workspaces/.../main/.git/worktrees/<n>`
     # -- a *container* path, absent on this side of the mount -- so serving
@@ -878,13 +902,12 @@ def stage_ship(st: dict) -> None:
     # how the first full run failed after a clean build. The branch is an
     # ordinary ref in the parent clone, and that is a real repository here.
     # (`safe.directory`: the clone belongs to the container's user.)
-    host_wt = hpath(wt)
-    if not host_wt.exists():
-        log(f"note: worktree gone from the host ({host_wt}); its branch is in the clone regardless")
+    if wt and not hpath(wt).exists():
+        log(f"note: worktree gone from the host ({hpath(wt)}); its branch is in the clone regardless")
     trust_main_clone()
     sh(["git", "fetch", "--force", str(MAIN_CLONE), f"{branch}:refs/heads/{branch}"], cwd=REPO_CHECKOUT)
     sh(["git", "push", "--force-with-lease", "-u", "origin", branch], cwd=REPO_CHECKOUT)
-    bet = st["stages"].get("bet") or {}
+    bet = artefact(bdir, "bet", st, "bet")
     body = (
         f"EPD loop bet **{bet_id}** — {bet.get('title')}\n\n"
         f"**Problem:** {bet.get('problem')}\n\n"
@@ -994,6 +1017,81 @@ def stage_measure(st: dict, keep: bool) -> None:
 
 # ------------------------------------------------------------------- driver --
 
+def cmd_run(keep: bool) -> None:
+    """The whole loop as one temper run: report → bet → [gate] → tasks → build → ship → measure.
+
+    The stage-at-a-time path below still works and is still the way to redo one stage by hand. What
+    this adds is the loop as temper sees it: one run id, one graph, one place where it stopped and
+    why. The sequence used to live here, in Python, which meant the shape of the process was visible
+    only to whoever read this file.
+
+    Two things stay here, because neither is part of the loop's reasoning:
+
+      * The first stack. `report` needs something to walk before the run starts, and standing it up
+        is this side's job (the ssh key that can do it belongs to the host).
+      * Allocating the bet id and its directory, so every artefact the run writes has somewhere to go.
+
+    The gate is temper's, not this script's: the run parks at `tasks` and waits for an approval in
+    the UI. `approve`/`reject` here are for the stage-at-a-time path.
+    """
+    bet_id = open_bet() or new_bet_id()
+    st = load_state(bet_id)
+    bdir = BETS_DIR / bet_id
+    mkdir_shared(bdir)
+    ledger_upsert(bet_id, status="running")
+
+    head = refresh_main()
+    env, url = standee_up(MAIN_CLONE, f"epd-{bet_id}", "12h")
+    st["stages"]["report"] = {"env": env, "url": url, "base_head": head}
+    st["status"] = "running"
+    save_state(st)
+    wait_for_url(url)
+    preflight_login(url)
+
+    log(f"== {bet_id}: the loop, as one run ==")
+    log("   it will stop at `tasks` and wait for you to approve the bet in temper")
+    out = run_workflow("epd_loop", {
+        "bet_id": bet_id,
+        "bet_dir": cpath(bdir),
+        "report_path": cpath(bdir / "report.md"),
+        "bet_path": cpath(bdir / "bet.md"),
+        "tasks_path": cpath(bdir / "tasks.json"),
+        "outcome_path": cpath(bdir / "outcome.md"),
+        "goals": read(LOOP_DIR / "goals.md"),
+        "profile": read(LOOP_DIR / "profile.md"),
+        "last_outcome": previous_outcome(bet_id),
+        "unfinished": unfinished_business(bet_id),
+        "bets_tsv": read(LEDGER),
+        "app_url": url,
+        "measure_url": PROD_URL,
+        "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL,
+        "password": QA_PASSWORD, "measure_password": ensure_qa_password(),
+        "repo_url": REPO_URL,
+        "repo_path": cpath(MAIN_CLONE),
+        "base_branch": BASE_BRANCH,
+        "task_name": f"epd {bet_id}",
+        "task_description": (
+            f"This task is bet {bet_id} of the EPD loop. Read the bet at {cpath(bdir / 'bet.md')} "
+            f"for the product decision the owner signed, and {cpath(bdir / 'tasks.json')} for the "
+            f"engineering decomposition: implement the tasks in order, each is done when its "
+            f"acceptance command gives the expected output. Do nothing listed under no-gos."
+        ),
+        "stack_ttl": "8h",
+    }, workspace=cpath(WORKSPACES / "repos"), timeout=8 * 3600)
+
+    st["stages"]["loop"] = out
+    st["status"] = "measured" if out.get("verdict") else ("shipped" if out.get("shipped") else "stopped")
+    save_state(st)
+    ledger_upsert(bet_id, title=out.get("bet_title") or "", threshold=out.get("bet_threshold") or "",
+                  status=st["status"], outcome=out.get("verdict") or "")
+    log(f"bet:     {out.get('bet_title')}")
+    log(f"build:   {out.get('build_verdict')} — {out.get('implement_commit')}")
+    log(f"ship:    {out.get('shipped')} {out.get('pr') or ''}")
+    log(f"outcome: {out.get('verdict')} — {out.get('outcome_summary')}")
+    if not keep:
+        standee_down(env)
+
+
 def run_stage(name: str, st: dict, keep: bool) -> None:
     if name == "report":
         stage_report(st, keep)
@@ -1068,6 +1166,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
+    r_ = sub.add_parser("run", help="the whole loop as one temper run (gates in the UI)")
+    r_.add_argument("--keep", action="store_true", help="leave the report stack up")
     n = sub.add_parser("next")
     n.add_argument("--until", choices=STAGES)
     n.add_argument("--auto-approve", action="store_true")
@@ -1096,6 +1196,8 @@ def main() -> None:
 
     if args.cmd == "status":
         cmd_status()
+    elif args.cmd == "run":
+        cmd_run(args.keep)
     elif args.cmd == "next":
         cmd_next(args.until, args.auto_approve, args.keep)
     elif args.cmd == "approve":

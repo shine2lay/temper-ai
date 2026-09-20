@@ -28,6 +28,7 @@ agent:
     - playwright.browser_click
     - playwright.browser_type
     - playwright.browser_wait_for
+    - Read   # the bet and the report are files the earlier stages wrote
     - Write
   max_iterations: 45
   total_timeout: 1200
@@ -149,10 +150,14 @@ agent:
     {% if empty_email %}An account with an empty book: {{ empty_email }} / {{ password }}.{% endif %}
 
     ## The bet
-    {{ bet }}
+    Read it — its invariant and threshold are what this measurement decides:
+
+      {{ bet_path }}
 
     ## The report it came from
-    {{ report }}
+    Read it for the friction that was there before the change:
+
+      {{ report_path }}
 
     {% if build_summary %}
     ## What the build stage says it changed (claims to check, not to trust)

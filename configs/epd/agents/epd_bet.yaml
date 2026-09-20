@@ -26,7 +26,12 @@ agent:
   type: llm
   provider: anthropic
   model: claude-fable-5-1
+  # Read, because the report is an artefact the previous stage wrote to disk. Passing its text in
+  # meant something outside the pipeline had to read the file and hand it over, which is exactly the
+  # job that kept the loop from being one workflow. The path is the stage's declared output; the
+  # agent fetches what the path points at.
   tools:
+    - Read
     - Write
   max_iterations: 4
   total_timeout: 900
@@ -119,7 +124,9 @@ agent:
     {% endif %}
 
     ## This iteration's report
-    {{ report }}
+    Read it first — it is the evidence for everything below, and it is a file, not a summary:
+
+      {{ report_path }}
 
     ## Product profile (for what exists; do not design the implementation)
     {{ profile }}

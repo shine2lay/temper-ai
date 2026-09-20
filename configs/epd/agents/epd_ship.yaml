@@ -1,0 +1,119 @@
+# EPD loop: put the approved build in front of real users.
+#
+# Push the branch, open the PR, squash-merge it, back the live stack up, deploy
+# the merge commit, and make sure the QA tenant is still there afterwards.
+#
+# None of that logic is here. It lives in the loop's driver (`epd_loop.py
+# stage ship`), where it was written, tested and used for b001, and this node
+# is the thing that asks for it — because the loop now runs as one workflow
+# and ship sits in the middle of it, between the build and the measurement of
+# what shipped.
+#
+# The asking is deliberately awkward, and that is the design:
+#
+#   * This node runs in the temper container. Ship is a host job — it holds the
+#     GitHub token, the production checkout and standee. So it goes over ssh.
+#   * The key it uses is pinned to a forced command (`epd-ship-only`) that runs
+#     `epd-ship <bet-id>` and nothing else, with the id matched against a literal
+#     pattern. No shell, no flags, no second command. If this key leaks, what
+#     leaks is the ability to ship a bet the pipeline already built and already
+#     approved — not a shell on the host.
+#   * The decision to ship is not made here either. The driver re-checks the
+#     build's own verdict before it pushes anything, so a node wired to the
+#     wrong place cannot ship a rejected build by asking nicely.
+#
+# What this node does contribute is the record: it writes build.json and
+# bet.json into the bet directory, which is the shared mount both sides see, so
+# the host driver reads the same facts the workflow just produced rather than
+# needing to have run those stages itself.
+#
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: epd_ship
+  version: 1
+  type: script
+  timeout_seconds: 2400
+  # A blank here is not a blank field, it is a shifted one: these values are written by position,
+  # so a missing `branch` would record the verdict as the branch. Fail the node instead.
+  strict_undefined: true
+  script_template: |
+    #!/bin/sh
+    set -eu
+
+    BET_ID={{ bet_id }}
+    BET_DIR={{ bet_dir }}
+    KEYDIR=/app/standee-ssh
+    KEY_SRC="$KEYDIR/id_ed25519_ship"
+
+    emit() {
+      python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[1], "detail": sys.argv[2], "pr": sys.argv[3], "merge_sha": sys.argv[4], "prod_url": sys.argv[5]}))' \
+        "$1" "$2" "${3:-}" "${4:-}" "${5:-}"
+    }
+    fail() { echo "ship failed: $1" >&2; emit failed "$1"; exit 1; }
+
+    [ -d "$BET_DIR" ] || fail "bet directory not found: $BET_DIR"
+    [ -f "$KEY_SRC" ] || fail "no epd-ship key at $KEY_SRC (run local/standee-ssh/setup.sh, mount it)"
+
+    # ---- the record ------------------------------------------------------------------
+    # What the earlier stages produced, written where the host driver reads it.
+    #
+    # Every value goes in as its own argv entry and is turned into JSON by json.dump, not by this
+    # file. A bet title is prose an agent wrote: it can hold a quote, a newline, a $(…). None of
+    # that is interpolated into the script text either — ScriptAgent stashes each value in an
+    # environment variable and leaves a reference here — so there is no layer where it is parsed
+    # as code. `default('', true)` because an input that went unused arrives as None, which would
+    # otherwise be recorded as the four-letter word "None".
+    python3 - "$BET_DIR/build.json" \
+      {{ branch }} {{ worktree_path | default('', true) }} {{ verdict }} \
+      {{ verdict_summary | default('', true) }} {{ review_verdict | default('', true) }} \
+      {{ verify_verdict | default('', true) }} {{ security_verdict | default('', true) }} \
+      {{ deploy_url | default('', true) }} {{ implement_commit | default('', true) }} \
+      {{ implement_summary | default('', true) }} <<'PY'
+    import json, sys
+    keys = ["branch", "worktree_path", "verdict", "verdict_summary", "review_verdict",
+            "verify_verdict", "security_verdict", "deploy_url", "implement_commit",
+            "implement_summary"]
+    path, values = sys.argv[1], sys.argv[2:]
+    json.dump(dict(zip(keys, values)), open(path, "w"), indent=2)
+    PY
+
+    python3 - "$BET_DIR/bet.json" \
+      {{ title }} {{ problem | default('', true) }} \
+      {{ invariant | default('', true) }} {{ threshold | default('', true) }} <<'PY'
+    import json, sys
+    keys = ["title", "problem", "invariant", "threshold"]
+    path, values = sys.argv[1], sys.argv[2:]
+    json.dump(dict(zip(keys, values)), open(path, "w"), indent=2)
+    PY
+
+    echo "recorded $BET_DIR/build.json and bet.json"
+
+    # ---- the ask ---------------------------------------------------------------------
+    KEY=$(mktemp)
+    trap 'rm -f "$KEY"' EXIT
+    install -m 600 "$KEY_SRC" "$KEY"
+
+    echo "shipping $BET_ID (the host driver decides whether the build has earned it)"
+    set +e
+    ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" \
+        -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 \
+        shinelay@host.docker.internal "epd-ship $BET_ID" 2>&1 | tee /tmp/ship.log
+    RC=$?
+    set -e
+    [ "$RC" = 0 ] || fail "$(tail -3 /tmp/ship.log | tr '\n' ' ')"
+
+    # ---- what happened ---------------------------------------------------------------
+    # From the state file the driver just wrote, not from parsing its log: the driver
+    # records the PR, the merge commit and the live URL as data, and a log line is prose.
+    python3 - "$BET_DIR/state.json" <<'PY'
+    import json, sys
+    ship = (json.load(open(sys.argv[1])).get("stages") or {}).get("ship") or {}
+    print(json.dumps({
+        "status": "shipped" if ship.get("merged") else "incomplete",
+        "detail": f"PR #{ship.get('pr_number')} squash-merged; {ship.get('prod_env')} runs {(ship.get('merge_sha') or '')[:12]}",
+        "pr": ship.get("pr") or "",
+        "merge_sha": ship.get("merge_sha") or "",
+        "prod_url": ship.get("prod_url") or "",
+        "qa_on_prod": bool(ship.get("prod_qa")),
+    }))
+    PY

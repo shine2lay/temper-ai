@@ -25,6 +25,86 @@ def _mock_config_store(configs=None):
     return store
 
 
+class TestAWorkflowCanBeReferencedAsAStage:
+    """A stage and a workflow are the same thing filed under different keys: nodes, inputs, outputs.
+    Refusing to reference a workflow forces a copy of a graph that already exists, and the copy is
+    what goes stale.
+    """
+
+    @staticmethod
+    def _store(extra=None):
+        configs = {
+            "workflow:parent": {
+                "name": "parent",
+                "nodes": [{"name": "child", "type": "stage", "ref": "proven",
+                           "input_map": {"goal": "input.goal"}}],
+            },
+            "workflow:proven": {
+                "name": "proven",
+                "version": 3,
+                "description": "a real workflow, already in use",
+                "inputs": {"goal": {"type": "string", "required": True}},
+                "outputs": {"answer": "worker.structured.answer"},
+                "nodes": [{"name": "worker", "type": "agent", "agent": "w"}],
+            },
+            "agent:w": {"name": "w", "type": "llm", "provider": "openai", "model": "gpt-4o"},
+        }
+        configs.update(extra or {})
+        return _mock_config_store(configs)
+
+    def test_a_ref_finds_a_workflow_when_no_stage_has_the_name(self):
+        nodes, _ = GraphLoader(self._store()).load_workflow("parent")
+        assert isinstance(nodes[0], StageNode)
+        assert [c.name for c in nodes[0].child_nodes] == ["worker"]
+
+    def test_its_declared_outputs_come_through(self):
+        """Without these the parent cannot read the stage's result, which is the point of referencing it."""
+        nodes, _ = GraphLoader(self._store()).load_workflow("parent")
+        assert nodes[0].config.outputs == {"answer": "worker.structured.answer"}
+
+    def test_a_stage_of_the_same_name_still_wins(self):
+        """`ref` has always meant a stage; an existing config must not change meaning because a
+        workflow later takes the same name."""
+        store = self._store({"stage:proven": {
+            "name": "proven",
+            "nodes": [{"name": "the_stage_one", "type": "agent", "agent": "w"}],
+        }})
+        nodes, _ = GraphLoader(store).load_workflow("parent")
+        assert [c.name for c in nodes[0].child_nodes] == ["the_stage_one"]
+
+    @pytest.mark.parametrize("prefix,expected", [("stages/", "the_stage_one"), ("workflows/", "worker")])
+    def test_an_explicit_prefix_names_the_type(self, prefix, expected):
+        store = self._store({
+            "stage:proven": {"name": "proven",
+                             "nodes": [{"name": "the_stage_one", "type": "agent", "agent": "w"}]},
+            "workflow:parent": {"name": "parent", "nodes": [
+                {"name": "child", "type": "stage", "ref": f"{prefix}proven"}]},
+        })
+        nodes, _ = GraphLoader(store).load_workflow("parent")
+        assert [c.name for c in nodes[0].child_nodes] == [expected]
+
+    def test_a_ref_to_nothing_says_both_were_looked_for(self):
+        store = _mock_config_store({"workflow:parent": {
+            "name": "parent", "nodes": [{"name": "child", "type": "stage", "ref": "absent"}]}})
+        with pytest.raises(LoaderError, match="no stage or workflow config by that name"):
+            GraphLoader(store).load_workflow("parent")
+
+    def test_referenced_defaults_are_dropped_loudly(self, caplog):
+        """A node cannot carry provider/model defaults, so the same graph would run on different
+        models depending on how it was invoked. Silence there is the dangerous part."""
+        store = self._store()
+        store.get.side_effect = lambda n, t: (
+            {"name": "proven", "defaults": {"provider": "anthropic", "model": "opus"},
+             "nodes": [{"name": "worker", "type": "agent", "agent": "w"}]}
+            if (n, t) == ("proven", "workflow") else _mock_config_store({
+                "workflow:parent": {"name": "parent", "nodes": [
+                    {"name": "child", "type": "stage", "ref": "proven"}]},
+                "agent:w": {"name": "w", "type": "llm"},
+            }).get(n, t))
+        GraphLoader(store).load_workflow("parent")
+        assert "defaults" in caplog.text and "proven" in caplog.text
+
+
 class TestGraphLoaderAgentNodes:
     def test_load_agent_node(self):
         store = _mock_config_store({

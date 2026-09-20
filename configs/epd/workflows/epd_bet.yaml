@@ -2,7 +2,9 @@ workflow:
   name: epd_bet
   # 2: takes the last bet's unfinished business, so a half-verified bet is
   #    inherited by the agent that chooses what to do next.
-  version: 2
+  # 3: takes the report as a path and reads it, so the stage can be wired straight to epd_report's
+  #    output instead of needing a driver to read the file in between.
+  version: 3
   description: |
     EPD loop, stage 2 of 7: the bet. Replaces the product department's
     decision. One agent reads the report, the goals, the profile and the
@@ -21,7 +23,7 @@ workflow:
     bet_path: {type: string, required: true}
     goals: {type: string, required: true}
     profile: {type: string, required: true}
-    report: {type: string, required: true}
+    report_path: {type: string, required: true}
     bets_tsv: {type: string, required: true}
     unfinished: {type: string, required: false}
   outputs:
@@ -44,6 +46,6 @@ workflow:
         bet_path: input.bet_path
         goals: input.goals
         profile: input.profile
-        report: input.report
+        report_path: input.report_path
         bets_tsv: input.bets_tsv
         unfinished: input.unfinished

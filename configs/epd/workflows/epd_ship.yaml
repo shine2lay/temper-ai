@@ -1,0 +1,63 @@
+workflow:
+  name: epd_ship
+  version: 1
+  description: |
+    Ship an approved build: push, PR, squash-merge, back up production, deploy, check the QA tenant.
+
+    One node. It exists as a workflow so the loop can reference it the way it references every other
+    stage, and so it can be run on its own when a build was fixed by hand and only needs shipping.
+
+    The work itself is the driver's (`epd_loop.py stage ship`), reached over an ssh key pinned to that
+    one command. See configs/epd/agents/epd_ship.yaml for why it is shaped that way.
+
+  inputs:
+    bet_id:   {type: string, required: true}
+    bet_dir:  {type: string, required: true}   # container path; the host sees the same directory
+
+    # The build being shipped
+    branch:            {type: string, required: true}
+    verdict:           {type: string, required: true}
+    worktree_path:     {type: string, required: false}
+    verdict_summary:   {type: string, required: false}
+    review_verdict:    {type: string, required: false}
+    verify_verdict:    {type: string, required: false}
+    security_verdict:  {type: string, required: false}
+    deploy_url:        {type: string, required: false}
+    implement_commit:  {type: string, required: false}
+    implement_summary: {type: string, required: false}
+
+    # The bet it serves, for the PR body
+    title:     {type: string, required: true}
+    problem:   {type: string, required: false}
+    invariant: {type: string, required: false}
+    threshold: {type: string, required: false}
+
+  outputs:
+    status:     ship.structured.status
+    detail:     ship.structured.detail
+    pr:         ship.structured.pr
+    merge_sha:  ship.structured.merge_sha
+    prod_url:   ship.structured.prod_url
+    qa_on_prod: ship.structured.qa_on_prod
+
+  nodes:
+    - name: ship
+      type: agent
+      agent: epd_ship
+      input_map:
+        bet_id: input.bet_id
+        bet_dir: input.bet_dir
+        branch: input.branch
+        verdict: input.verdict
+        worktree_path: input.worktree_path
+        verdict_summary: input.verdict_summary
+        review_verdict: input.review_verdict
+        verify_verdict: input.verify_verdict
+        security_verdict: input.security_verdict
+        deploy_url: input.deploy_url
+        implement_commit: input.implement_commit
+        implement_summary: input.implement_summary
+        title: input.title
+        problem: input.problem
+        invariant: input.invariant
+        threshold: input.threshold

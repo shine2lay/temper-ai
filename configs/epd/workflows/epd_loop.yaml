@@ -1,0 +1,196 @@
+workflow:
+  name: epd_loop
+  version: 1
+  description: |
+    The EPD loop, as one run.
+
+      report → bet → [OWNER DECIDES] → tasks → build → ship → measure
+
+    Nothing here is new. Each node references a workflow that already exists and is already used on
+    its own; this file is only the wiring between them. That is the point: the loop used to be a
+    sequence a Python driver performed, so the shape of the process lived in a script and only the
+    individual stages were visible to temper. A run showed one stage at a time and could not be
+    resumed across them, the gate was a person reading a terminal, and the order of the work was an
+    implementation detail of a file nobody could see from the UI.
+
+    The five referenced graphs are unchanged and still run standalone — that is what makes them worth
+    referencing, and how each one gets worked on: point epd_report at any URL, epd_bet at any report.
+
+    The owner's gate sits on `tasks`, which is the first node that spends real money on building
+    something. Everything before it is observation and a proposal; nothing is built, branched or
+    shipped until a human approves that node. Reject it and the run stops there, having cost only the
+    walks and the pitch.
+
+    The stages hand each other file paths, not text. Each writes its artefact to the bet directory
+    and the next one reads it — so the wiring stays a few strings, and the evidence is on disk where
+    a person can read it too.
+
+    `ship` is the one node that touches production, and it does not contain the shipping: it asks the
+    host driver to do it, over an ssh key pinned to that single command. The driver re-checks the
+    build's verdict before it pushes, so the decision does not rest on this file being wired right.
+
+    Not here, and deliberately: bringing the first stack up, which the driver does before the run so
+    that `report` has something to walk.
+
+  inputs:
+    # Identity and where the artefacts live
+    bet_id:       {type: string, required: true}
+    bet_dir:      {type: string, required: true}
+    report_path:  {type: string, required: true}
+    bet_path:     {type: string, required: true}
+    tasks_path:   {type: string, required: true}
+    outcome_path: {type: string, required: true}
+
+    # The product's own context
+    goals:        {type: string, required: true}
+    profile:      {type: string, required: true}
+    last_outcome: {type: string, required: false}
+    unfinished:   {type: string, required: false}
+    bets_tsv:     {type: string, required: true}
+
+    # Where to look at the product, and as whom
+    app_url:      {type: string, required: true}   # the stack to walk (the driver brings it up)
+    measure_url:  {type: string, required: true}   # the build people use, once shipped
+    data_url:     {type: string, required: false}  # only if the measured stack has no QA tenant
+    email:        {type: string, required: true}
+    empty_email:  {type: string, required: true}
+    password:     {type: string, required: true}
+    measure_password: {type: string, required: true}
+
+    # What the build stage needs
+    repo_url:     {type: string, required: true}
+    repo_path:    {type: string, required: true}
+    base_branch:  {type: string, required: true}
+    task_name:    {type: string, required: true}
+    task_description: {type: string, required: true}
+    stack_ttl:    {type: string, required: false}
+
+  outputs:
+    report_summary:  report.structured.summary
+    bet_title:       bet.structured.title
+    bet_invariant:   bet.structured.invariant
+    bet_threshold:   bet.structured.threshold
+    task_count:      tasks.structured.task_count
+    branch:          build.structured.branch
+    pr:              ship.structured.pr
+    merge_sha:       ship.structured.merge_sha
+    shipped:         ship.structured.status
+    build_verdict:   build.structured.verdict
+    implement_commit: build.structured.implement_commit
+    deploy_url:      build.structured.deploy_url
+    verdict:         measure.structured.verdict
+    vacuous_criteria: measure.structured.vacuous_criteria
+    outcome_summary: measure.structured.summary
+
+  nodes:
+    # 1 — Three synthetic users walk the product and the friction is ranked. Writes report.md.
+    - name: report
+      type: stage
+      ref: workflows/epd_report
+      input_map:
+        app_url: input.app_url
+        email: input.email
+        empty_email: input.empty_email
+        password: input.password
+        goals: input.goals
+        profile: input.profile
+        last_outcome: input.last_outcome
+        bet_id: input.bet_id
+        report_path: input.report_path
+
+    # 2 — One bet, with a falsifiable invariant and a pre-registered threshold. Writes bet.md.
+    - name: bet
+      type: stage
+      ref: workflows/epd_bet
+      depends_on: [report]
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        goals: input.goals
+        profile: input.profile
+        report_path: report.structured.report_path
+        bets_tsv: input.bets_tsv
+        unfinished: input.unfinished
+
+    # 3 — THE GATE. The owner signs the bet, or rejects it, before anything is built.
+    #     It sits on this node rather than on a node of its own because this is the first one that
+    #     spends: a gate is a question asked before an expense, and putting it here means the run
+    #     pauses having bought only the walks and the pitch.
+    - name: tasks
+      type: stage
+      ref: workflows/epd_tasks
+      depends_on: [bet]
+      gate: true
+      input_map:
+        bet_id: input.bet_id
+        tasks_path: input.tasks_path
+        repo_path: input.repo_path
+        bet_path: bet.structured.bet_path
+        profile: input.profile
+
+    # 4 — The whole build pipeline: claim, worktree, stack, plan, implement, review, QA, security,
+    #     verify, deploy. Its own judges decide its verdict; this node does not second-guess them.
+    - name: build
+      type: stage
+      ref: workflows/epd_task
+      depends_on: [tasks]
+      input_map:
+        repo_url: input.repo_url
+        task_name: input.task_name
+        task_description: input.task_description
+        base_branch: input.base_branch
+        stack_ttl: input.stack_ttl
+        verify_email: input.email
+        verify_password: input.password
+
+    # 5 — Push, PR, squash-merge, back up production, deploy, confirm the QA tenant survived.
+    #     Conditioned on the build's own judges, and the host driver checks the same thing again
+    #     before it pushes: a gate worth having is worth having on both sides of the wire.
+    - name: ship
+      type: stage
+      ref: workflows/epd_ship
+      depends_on: [build]
+      condition:
+        source: build.structured.verdict
+        operator: equals
+        value: approve
+      input_map:
+        bet_id: input.bet_id
+        bet_dir: input.bet_dir
+        branch: build.structured.branch
+        verdict: build.structured.verdict
+        worktree_path: build.structured.worktree_path
+        verdict_summary: build.structured.verdict_summary
+        review_verdict: build.structured.review_verdict
+        verify_verdict: build.structured.verify_verdict
+        security_verdict: build.structured.security_verdict
+        deploy_url: build.structured.deploy_url
+        implement_commit: build.structured.implement_commit
+        implement_summary: build.structured.implement_summary
+        title: bet.structured.title
+        problem: bet.structured.problem
+        invariant: bet.structured.invariant
+        threshold: bet.structured.threshold
+
+    # 6 — Did the bet's invariant hold on the build people actually use? Writes outcome.md.
+    #     Depends on ship, not on build: measuring before the merge measures the old product, and
+    #     the outcome it wrote would enter the next bet's context as evidence about this one.
+    - name: measure
+      type: stage
+      ref: workflows/epd_measure
+      depends_on: [ship]
+      condition:
+        source: ship.structured.status
+        operator: equals
+        value: shipped
+      input_map:
+        bet_id: input.bet_id
+        outcome_path: input.outcome_path
+        app_url: input.measure_url
+        data_url: input.data_url
+        email: input.email
+        empty_email: input.empty_email
+        password: input.measure_password
+        bet_path: bet.structured.bet_path
+        report_path: report.structured.report_path
+        build_summary: build.structured.implement_summary

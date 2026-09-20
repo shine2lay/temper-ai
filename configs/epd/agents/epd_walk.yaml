@@ -12,6 +12,9 @@
 # Screenshots are dropped by the MCP client, so they are never taken.
 agent:
   name: epd_walk
+  # 2: retry a first navigation that fails at the network layer (the stack was
+  #    stood up seconds ago); never record a tool error as friction.
+  version: 2
   type: llm
   provider: anthropic
   model: claude-fable-5-1

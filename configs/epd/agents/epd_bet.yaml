@@ -14,6 +14,11 @@
 # owner has signed, edited or rejected the invariant.
 agent:
   name: epd_bet
+  # Bump when this agent's contract changes -- what it is asked to decide, what
+  # it must write, which tools it may use. Not for typos. The driver stamps the
+  # version that ran into the bet's state.json, so an outcome can be read back
+  # against the agent that produced it.
+  version: 1
   type: llm
   provider: anthropic
   model: claude-fable-5-1

@@ -1,5 +1,7 @@
 workflow:
   name: epd_measure
+  # 2: takes data_url as well as app_url.
+  version: 2
   description: |
     EPD loop, stage 7 of 7: measure. Replaces the product department's
     accountability. On the shipped build's URL, one agent checks the bet's

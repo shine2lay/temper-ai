@@ -32,6 +32,39 @@ front of it. Its most valuable output is not `kept`/`iterate`/`killed` but the
 paragraph headed **"Was this the right threshold"**, which is the only thing in
 the loop that improves the *judgement* rather than the code.
 
+## Versions
+
+Every agent and workflow here carries a `version:` inside its block:
+
+```yaml
+agent:
+  name: epd_measure
+  # 2: two URLs — the live product, plus a data-bearing twin when the live
+  #    server has no QA tenant.
+  # 3: the live server has its own paper QA tenant, so the whole measurement
+  #    happens on the build people actually use; stay inside that account.
+  version: 3
+```
+
+Bump it when the **contract** changes — what the agent is asked to decide, what
+it must write, which tools it may use — and leave a one-line note saying what
+changed. Not for typos or rewording. The loader ignores the field (temper reads
+`agent:`/`workflow:` and the keys it knows), so it costs nothing at runtime.
+
+It is not decoration: the driver reads these before every stage and writes them
+into the bet's `state.json`, so a recorded outcome names the versions that
+produced it:
+
+```json
+"_versions": {"workflow:epd_measure": 2, "agent:epd_measure": 3}
+```
+
+When bet 7 measures better than bet 3, that is the difference between "the loop
+improved" and "`epd_measure` v3 asks a different question than v2 did".
+
+Note: `schema_version` is a different thing — a top-level format pin that temper
+accepts only as `"1.0"`. Do not use it for this.
+
 ## Layout
 
 ```

@@ -8,6 +8,7 @@
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
 agent:
   name: task_stack_down
+  version: 1
   type: script
   timeout_seconds: 300
   script_template: |

@@ -1,5 +1,6 @@
 workflow:
   name: epd_report
+  version: 1
   description: |
     EPD loop, stage 1 of 7: the report. Replaces user research and analytics
     for a product that has neither yet.

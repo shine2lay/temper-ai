@@ -18,6 +18,9 @@
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
 agent:
   name: task_stack_up
+  # 2: the stack name is the task slug truncated to what standee accepts, and
+  #    the safety baseline no longer trips on the word "truncated".
+  version: 2
   type: script
   timeout_seconds: 900
   script_template: |

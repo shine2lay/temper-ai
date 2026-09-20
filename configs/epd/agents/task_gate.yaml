@@ -19,6 +19,9 @@
 # as an empty string or the literal None, and counts as "did not object".
 agent:
   name: task_gate
+  # 2: a minor finding is recorded, not a veto -- only a blocking one holds the
+  #    build.
+  version: 2
   type: script
   timeout_seconds: 30
   script_template: |

@@ -1,5 +1,6 @@
 workflow:
   name: epd_tasks
+  version: 1
   description: |
     EPD loop, stage 3 of 7: tasks. Replaces the engineering lead. The signed
     bet becomes three to ten tasks, each with a boolean acceptance (a

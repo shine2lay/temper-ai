@@ -1,5 +1,6 @@
 workflow:
   name: epd_bet
+  version: 1
   description: |
     EPD loop, stage 2 of 7: the bet. Replaces the product department's
     decision. One agent reads the report, the goals, the profile and the

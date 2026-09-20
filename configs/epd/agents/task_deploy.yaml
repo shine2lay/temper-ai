@@ -28,6 +28,7 @@
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
 agent:
   name: task_deploy
+  version: 1
   type: script
   timeout_seconds: 1200
   script_template: |

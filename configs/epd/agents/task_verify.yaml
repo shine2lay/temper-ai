@@ -16,6 +16,7 @@
 # image ones, so a screenshot is a file no model ever sees.
 agent:
   name: task_verify
+  version: 1
   type: llm
   provider: anthropic
   # Reading pages back and comparing them to a description is not the

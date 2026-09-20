@@ -12,6 +12,7 @@
 # config loader rewrites it with the server's env at load time).
 agent:
   name: task_cleanup
+  version: 1
   type: script
   timeout_seconds: 120
   script_template: |

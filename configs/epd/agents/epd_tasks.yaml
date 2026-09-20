@@ -13,6 +13,7 @@
 # writes <bet dir>/tasks.json.
 agent:
   name: epd_tasks
+  version: 1
   type: llm
   provider: anthropic
   model: claude-fable-5-1

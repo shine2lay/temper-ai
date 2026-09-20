@@ -14,6 +14,7 @@
 # loader's env substitution, hence none below.
 agent:
   name: task_worktree
+  version: 1
   type: script
   timeout_seconds: 600
   script_template: |

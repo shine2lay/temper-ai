@@ -8,6 +8,7 @@
 # seeded data. Judging a real change is epd_task's job.
 workflow:
   name: epd_probe
+  version: 1
   description: |
     Mechanical probe of the deploy + verify stages (no LLM work except the browser check).
 

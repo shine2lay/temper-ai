@@ -1,5 +1,9 @@
 workflow:
   name: epd_task
+  # 2: review, QA and security judge the same candidate in one stage, then a
+  #    gate reconciles them.
+  # 3: the environment stage decides and stands the dev stack up as one step.
+  version: 3
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a

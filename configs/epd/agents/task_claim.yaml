@@ -9,6 +9,7 @@
 # Emits JSON on the last line for the next node.
 agent:
   name: task_claim
+  version: 1
   type: script
   timeout_seconds: 30
   script_template: |

@@ -32,6 +32,9 @@
 # dropped, the tenant filter that went missing, the input concatenated into SQL.
 agent:
   name: task_security
+  # 2: rotation is demanded only for a secret that actually left the machine
+  #    (pushed to a remote), not for one caught in an unpushed commit.
+  version: 2
   type: llm
   provider: anthropic
   # Opus, like review. The asymmetry justifies it: a missed finding here is a

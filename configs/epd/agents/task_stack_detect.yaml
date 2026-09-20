@@ -16,6 +16,7 @@
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
 agent:
   name: task_stack_detect
+  version: 1
   type: script
   timeout_seconds: 30
   script_template: |

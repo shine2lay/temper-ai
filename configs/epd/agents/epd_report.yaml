@@ -11,6 +11,9 @@
 # the node's structured output; the bet stage reads the file.
 agent:
   name: epd_report
+  # 2: harness noise (SSL before the first page, tool errors) is reported in its
+  #    own section and kept out of the friction ranking.
+  version: 2
   type: llm
   provider: anthropic
   model: claude-fable-5-1

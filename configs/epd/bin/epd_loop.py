@@ -58,6 +58,9 @@ from pathlib import Path
 
 API = os.environ.get("TEMPER_API", "http://localhost:8420")
 WORKSPACES = Path(os.environ.get("EPD_WORKSPACES", "/home/shinelay/temper-ai/workspaces"))
+# Where this loop's own configs live, so a run can record which version of each
+# stage produced it.
+CONFIG_DIR = Path(os.environ.get("EPD_CONFIG_DIR", str(Path(__file__).resolve().parent.parent)))
 # The same directory as the temper containers see it. Every path handed to
 # temper (a run's workspace, a file an agent should write) is a container
 # path; every path this script touches itself is a host path. The sandbox
@@ -230,6 +233,38 @@ def wait_for(execution_id: str, timeout: float) -> dict:
     return {"status": "timeout", "id": execution_id}
 
 
+def config_versions(workflow: str) -> dict[str, int]:
+    """The `version:` of the workflow and of every agent it names.
+
+    Read from the YAML rather than parsed with a YAML library: a two-line grep
+    has no dependency, and a wrong answer here costs a wrong label on a
+    recorded outcome, not a wrong action. Caveat worth knowing: temper imports
+    these files at startup, so if one was edited without a restart, the number
+    recorded is the file's, not the server's.
+    """
+    versions: dict[str, int] = {}
+
+    def read(path: Path) -> tuple[int | None, list[str]]:
+        if not path.exists():
+            return None, []
+        text = path.read_text()
+        m = re.search(r"^\s{2}version:\s*(\d+)\s*$", text, re.M)
+        agents = re.findall(r"^\s+agent:\s*(\S+)\s*$", text, re.M)
+        return (int(m.group(1)) if m else None), agents
+
+    # Keys carry the kind: a stage's workflow and its agent usually share a
+    # name (epd_measure the workflow drives epd_measure the agent), and an
+    # untyped key silently kept only the second one.
+    wf_version, agents = read(CONFIG_DIR / "workflows" / f"{workflow}.yaml")
+    if wf_version is not None:
+        versions[f"workflow:{workflow}"] = wf_version
+    for agent in dict.fromkeys(agents):
+        agent_version, _ = read(CONFIG_DIR / "agents" / f"{agent}.yaml")
+        if agent_version is not None:
+            versions[f"agent:{agent}"] = agent_version
+    return versions
+
+
 def rate_limited(run_id: str) -> bool:
     """Did this run fail because the account was rate limited?
 
@@ -258,6 +293,7 @@ def run_workflow(workflow: str, inputs: dict, workspace: str, timeout: float,
             continue
         die(f"{workflow} run {rid} ended {info.get('status')}: {info.get('error_message')}")
     out = {k: unstr(v) for k, v in (info.get("workflow_output") or {}).items()}
+    out["_versions"] = config_versions(workflow)
     out["_run_id"] = rid
     out["_cost_usd"] = info.get("total_cost_usd")
     out["_duration_s"] = info.get("duration_seconds")
@@ -613,7 +649,7 @@ def stage_build(st: dict) -> None:
     }, workspace=cpath(WORKSPACES / "repos"), timeout=4 * 3600)
     write(bdir / "build.json", json.dumps(out, indent=2, default=str))
     st["stages"]["build"] = {k: out.get(k) for k in (
-        "_run_id", "_cost_usd", "_duration_s", "task_slug", "branch", "worktree_path", "head",
+        "_run_id", "_cost_usd", "_duration_s", "_versions", "task_slug", "branch", "worktree_path", "head",
         "env_name", "stack_url", "implement_commit", "implement_summary", "review_verdict",
         "verify_verdict", "security_verdict", "deploy_url", "verdict", "verdict_summary",
         "changes_wanted_by", "security_human_actions")}

@@ -11,6 +11,11 @@
 # Writes <bet dir>/outcome.md. The next iteration's report stage reads it.
 agent:
   name: epd_measure
+  # 2: two URLs -- the live product, plus a data-bearing twin when the live
+  #    server has no QA tenant.
+  # 3: the live server has its own paper QA tenant, so the whole measurement
+  #    happens on the build people actually use; stay inside that account.
+  version: 3
   type: llm
   provider: anthropic
   model: claude-fable-5-1

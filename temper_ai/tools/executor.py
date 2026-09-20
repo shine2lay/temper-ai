@@ -49,6 +49,9 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT = 30
 _MAX_TIMEOUT = 600
 _DEFAULT_WORKERS = 4
+# How long the wrapper waits past a timeout the tool enforces itself, so the tool's
+# own, better-informed error (it can kill what it started) is the one reported.
+_OWN_TIMEOUT_GRACE = 5
 
 
 class _AllTools(Container[str]):
@@ -287,7 +290,16 @@ class ToolExecutor:
         if getattr(tool, 'manages_own_timeout', False):
             return self._execute_direct(tool, tool_name, params, parent_id, execution_id)
 
-        effective_timeout = min(timeout or self.default_timeout, _MAX_TIMEOUT)
+        # A call that names its own timeout gets that long. Bash offers `timeout`
+        # ("default 30, max 600") and enforces it on the subprocess; the wait here
+        # used to be a flat 30s regardless, so a `uv run pytest` asked to run for
+        # 600s came back "timed out after 30s" every time, while the suite kept
+        # running in a pool worker. Three of those and two `sleep`s filled the
+        # run's four workers, and the implementer's `echo hi` timed out behind
+        # them; its `git commit` was still queued when the node gave up.
+        own = _own_timeout(tool, params)
+        asked = timeout or own or self.default_timeout
+        effective_timeout = min(asked, _MAX_TIMEOUT) + (_OWN_TIMEOUT_GRACE if own else 0)
         return self._execute_with_timeout(tool, tool_name, params, effective_timeout, parent_id, execution_id)
 
     def _evaluate_safety_policies(
@@ -453,7 +465,15 @@ class ToolExecutor:
 
         except FutureTimeoutError:
             duration_ms = int((time.monotonic() - start) * 1000)
+            # A call still queued behind busy workers is withdrawn: the caller is
+            # about to be told it did not happen, so it must not happen later.
+            # One already running cannot be stopped from here; it holds its
+            # worker until it ends, which for a tool that enforces its own
+            # timeout is now, and for one that does not is whenever it does.
+            never_started = future.cancel()
             error = f"Tool '{tool_name}' timed out after {timeout}s"
+            if never_started:
+                error += " without starting: the run's tool workers were all busy. Wait for them; do not retry yet."
             record(
                 EventType.TOOL_TIMEOUT,
                 parent_id=parent_id,
@@ -463,6 +483,7 @@ class ToolExecutor:
                     "tool_name": tool_name,
                     "timeout_s": timeout,
                     "duration_ms": duration_ms,
+                    "never_started": never_started,
                 },
             )
             return ToolResult(success=False, result="", error=error)
@@ -538,6 +559,25 @@ def _inside(path: str, root: str) -> bool:
     p = Path(path)
     resolved = (p if p.is_absolute() else base / p).resolve()
     return resolved == base or str(resolved).startswith(str(base) + "/")
+
+
+def _own_timeout(tool: BaseTool, params: dict[str, Any]) -> int | None:
+    """The timeout this call carries, when the tool's schema offers one.
+
+    A tool that puts `timeout` in its parameters is telling the model it will
+    run that long and stop itself after; the wrapper's wait has to be at least
+    that, or the schema is a lie. Absent, unset or nonsense means the wrapper's
+    default applies, as for any tool with no notion of its own.
+    """
+    props = (getattr(tool, "parameters", None) or {}).get("properties") or {}
+    raw = params.get("timeout") if "timeout" in props else None
+    if raw is None:
+        return None
+    try:
+        asked = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return asked if asked > 0 else None
 
 
 def _takes_path(tool: BaseTool) -> bool:

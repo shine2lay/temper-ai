@@ -11,8 +11,9 @@ import logging
 import os
 import re
 import shlex
+import signal
 import subprocess  # noqa: B404
-from typing import Any
+from typing import Any, NamedTuple
 
 from temper_ai.tools._output_compaction import DEFAULT_MAX_CHARS
 from temper_ai.tools._output_compaction import compact as compact_output
@@ -247,17 +248,40 @@ def _run_subprocess(
     max_output_chars: int = DEFAULT_MAX_CHARS,
     extra_env: dict[str, str] | None = None,
 ) -> "ToolResult":
-    """Execute a shell command in a subprocess and return a ToolResult."""
+    """Execute a shell command in a subprocess and return a ToolResult.
+
+    The command runs in its own process group, and a timeout kills the group:
+    the shell, and everything the shell started. Killing only the shell (what
+    `subprocess.run` does) left every `uv run pytest` that outran its timeout
+    running on in the container, and the executor's pool worker waiting on it.
+    """
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             command,
             shell=True,  # noqa: B602
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
             cwd=cwd,
             env=_safe_env(extra_env),
+            start_new_session=True,
         )
+    except Exception as e:
+        return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        return ToolResult(success=False, result="", error=(
+            f"Command timed out after {timeout}s and was killed, with everything it started. "
+            f"Ask for a longer timeout (up to {_MAX_TIMEOUT}s), or, to leave a server running, "
+            "start it with its output redirected (`cmd > log 2>&1 &`) so this call can return."
+        ))
+    except Exception as e:
+        _kill_group(proc)
+        return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
+    try:
+        result = _Completed(out or "", err or "", proc.returncode)
 
         # Hard ceiling first, so a runaway command cannot exhaust memory here.
         stdout = result.stdout[:_MAX_OUTPUT_SIZE] + "\n... (truncated)" if len(result.stdout) > _MAX_OUTPUT_SIZE else result.stdout
@@ -286,10 +310,36 @@ def _run_subprocess(
             )
         return ToolResult(success=True, result=output, metadata={"compacted": bool(notes)})
 
-    except subprocess.TimeoutExpired:
-        return ToolResult(success=False, result="", error=f"Command timed out after {timeout}s")
     except Exception as e:
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
+
+
+class _Completed(NamedTuple):
+    stdout: str
+    stderr: str
+    returncode: int
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    """Kill the command's whole process group, then reap the shell.
+
+    Under `start_new_session` the shell's pid is the group id, and the group
+    outlives the shell: a `cd x && uv run pytest | tail` whose shell has already
+    been killed still has `uv` and `pytest` in it, and they are what was eating
+    the container. A process that put itself in a new session escapes this,
+    which is what a daemon does on purpose.
+    """
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:  # pragma: no cover - not a platform temper runs on
+            proc.kill()
+    except ProcessLookupError:
+        pass
+    try:
+        proc.communicate(timeout=5)
+    except (subprocess.TimeoutExpired, ValueError, OSError):
+        proc.kill()
 
 
 def _safe_env(extra: dict[str, str] | None = None) -> dict[str, str]:

@@ -128,6 +128,76 @@ class TestExecutorTimeout:
         assert finished.wait(timeout=5), "abandoned tool never completed"
         executor.shutdown()
 
+    def test_a_tool_that_names_its_own_timeout_gets_that_long(self):
+        """The wait honours a `timeout` the call carries, when the schema offers one.
+
+        Bash tells the model "default 30, max 600" and enforces it on the
+        subprocess; the wrapper waited a flat 30s regardless, so every
+        `uv run pytest` asked to run for 600s came back "timed out after 30s"
+        while the suite ran on in a pool worker.
+        """
+
+        class Patient(BaseTool):
+            name = "patient"
+            description = "Declares a timeout of its own"
+            parameters = {"type": "object", "properties": {"timeout": {"type": "integer"}}}
+
+            def execute(self, **params: Any) -> ToolResult:
+                time.sleep(TestExecutorTimeout.OVERRUN)
+                return ToolResult(success=True, result="done")
+
+        executor = ToolExecutor(default_timeout=1)
+        executor.register_tools({"patient": Patient(), "slow": SlowTool()})
+
+        result = executor.execute("patient", {"timeout": 3}, allowed_tools=ALL_TOOLS)
+        assert result.success is True, result.error
+
+        # Only when the schema offers it: a stray `timeout` param on a tool
+        # with no such notion changes nothing.
+        result = executor.execute("slow", {"duration": self.OVERRUN, "timeout": 3}, allowed_tools=ALL_TOOLS)
+        assert result.success is False
+        assert "timed out" in result.error.lower()
+        executor.shutdown()
+
+    def test_a_call_that_timed_out_while_queued_never_runs(self):
+        """A timed-out call still waiting for a worker is withdrawn, not run later.
+
+        With every worker busy, the wait ended, the model was told the call did
+        not happen, and then it happened anyway once a worker freed up: a
+        `git commit` the implementer had given up on, landing minutes later, or
+        not, depending on whether the node had ended. Now the model's picture is
+        the true one. The error also says why, so the model waits instead of
+        retrying into the same queue.
+        """
+        ran = threading.Event()
+
+        class Marker(BaseTool):
+            name = "marker"
+            description = "Records that it ran"
+            parameters = {"type": "object", "properties": {}}
+
+            def execute(self, **params: Any) -> ToolResult:
+                ran.set()
+                return ToolResult(success=True, result="ran")
+
+        executor = ToolExecutor(default_timeout=1, max_workers=1)
+        executor.register_tools({"slow": SlowTool(), "marker": Marker()})
+
+        # Occupy the only worker for longer than the queued call's wait.
+        hog = threading.Thread(
+            target=executor.execute, args=("slow", {"duration": 2.5}), kwargs={"allowed_tools": ALL_TOOLS}
+        )
+        hog.start()
+        time.sleep(0.2)
+        result = executor.execute("marker", {}, allowed_tools=ALL_TOOLS)
+        assert result.success is False
+        assert "timed out" in result.error.lower()
+        assert "workers were all busy" in result.error
+
+        hog.join()
+        assert not ran.wait(timeout=1), "a call the model was told timed out ran anyway"
+        executor.shutdown()
+
 
 class TestExecutorErrorHandling:
     def test_tool_exception_caught(self):

@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from temper_ai.agent.exceptions import ToolsNotRegisteredError
 from temper_ai.agent.llm_agent import (
     DEFAULT_TOTAL_TIMEOUT,
     LLMAgent,
@@ -470,3 +473,51 @@ class TestPerAgentToolScope:
         run = _make_agent({"tools": []})._make_tool_executor(ctx)
         assert run("github-full.merge_pull_request", {}).startswith("Error: Tool ")
         assert theirs.calls == []
+
+
+class TestAConfiguredToolThatIsNotThere:
+    """An agent whose tools are missing must not answer anyway.
+
+    This was a warning. A walk agent configured with a browser was given none (its config lived
+    one stage deep, where the binder never looked), and it did not stop: it produced three
+    accounts of using a product it had never loaded, and the run stored them as findings.
+    """
+
+    @staticmethod
+    def _executor(registered: dict):
+        te = MagicMock()
+        te.get_tool = MagicMock(side_effect=lambda n: registered.get(n))
+        te.tool_names = MagicMock(return_value=sorted(registered))
+        return te
+
+    def test_it_refuses_before_the_first_call(self):
+        ctx = _make_context(tool_executor=self._executor({}))
+        agent = _make_agent({"tools": ["playwright.browser_navigate"]})
+        with pytest.raises(ToolsNotRegisteredError, match="playwright.browser_navigate"):
+            agent._get_tools(ctx)
+
+    def test_it_names_the_agent_and_everything_missing(self):
+        ctx = _make_context(tool_executor=self._executor({}))
+        agent = _make_agent({"tools": ["playwright.browser_click", "playwright.browser_type"]})
+        with pytest.raises(ToolsNotRegisteredError) as exc:
+            agent._get_tools(ctx)
+        assert "test_agent" in str(exc.value)
+        assert "playwright.browser_click, playwright.browser_type" in str(exc.value)
+
+    def test_it_says_what_was_registered_instead(self):
+        tool = MagicMock()
+        tool.to_llm_schema = MagicMock(return_value={"function": {"name": "Read"}})
+        ctx = _make_context(tool_executor=self._executor({"Read": tool}))
+        agent = _make_agent({"tools": ["Read", "playwright.browser_snapshot"]})
+        with pytest.raises(ToolsNotRegisteredError, match="Registered here: Read"):
+            agent._get_tools(ctx)
+
+    def test_a_fully_registered_agent_is_untouched(self):
+        tool = MagicMock()
+        tool.to_llm_schema = MagicMock(return_value={"function": {"name": "Read"}})
+        ctx = _make_context(tool_executor=self._executor({"Read": tool}))
+        assert _make_agent({"tools": ["Read"]})._get_tools(ctx) == [{"function": {"name": "Read"}}]
+
+    def test_an_agent_that_asked_for_nothing_is_not_a_failure(self):
+        ctx = _make_context(tool_executor=self._executor({}))
+        assert _make_agent({"tools": []})._get_tools(ctx) == []

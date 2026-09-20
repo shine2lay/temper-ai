@@ -128,9 +128,7 @@ def execute_workflow(
     from temper_ai.tools.mcp_client import mcp_manager
     from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
 
-    agent_configs = [
-        node.agent_config for node in nodes if hasattr(node, "agent_config")
-    ]
+    agent_configs = [cfg for node in nodes for cfg in node.agent_configs()]
     mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
     if mcp_tools:
         run_tool_executor.register_tools(dict(mcp_tools))

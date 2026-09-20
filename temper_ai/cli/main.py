@@ -382,7 +382,7 @@ def _init_mcp_tools(tool_executor, nodes, config_dir: str) -> None:
     )
     future.result(timeout=10)
 
-    agent_configs = [node.agent_config for node in nodes if hasattr(node, "agent_config")]
+    agent_configs = [cfg for node in nodes for cfg in node.agent_configs()]
     mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
     if not mcp_tools:
         return

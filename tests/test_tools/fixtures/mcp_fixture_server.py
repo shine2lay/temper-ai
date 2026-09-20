@@ -14,6 +14,12 @@ from mcp.server.stdio import stdio_server
 
 server: Server = Server("fixture")
 
+# Session state. One stdio session is one of these processes, so what `remember`
+# stores is visible to `recall` in the same session and to no other -- which is
+# how a browser's cookies and current page behave, and what a test asking whether
+# two callers share a session can actually check.
+_REMEMBERED: list[str] = []
+
 
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
@@ -40,6 +46,22 @@ async def list_tools() -> list[types.Tool]:
             },
             annotations=types.ToolAnnotations(readOnlyHint=False, destructiveHint=True),
         ),
+        types.Tool(
+            name="remember",
+            description="Store text in this session.",
+            inputSchema={
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+            annotations=types.ToolAnnotations(readOnlyHint=False),
+        ),
+        types.Tool(
+            name="recall",
+            description="What this session last remembered.",
+            inputSchema={"type": "object", "properties": {}},
+            annotations=types.ToolAnnotations(readOnlyHint=True),
+        ),
     ]
 
 
@@ -53,6 +75,15 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent] | typ
                 isError=True,
             )
         return [types.TextContent(type="text", text=text * int(arguments.get("times", 1)))]
+    if name == "remember":
+        _REMEMBERED.append(str(arguments.get("text", "")))
+        return [types.TextContent(type="text", text="ok")]
+    if name == "recall":
+        return [
+            types.TextContent(
+                type="text", text=_REMEMBERED[-1] if _REMEMBERED else "(nothing)"
+            )
+        ]
     if name == "mutate":
         if arguments.get("fail"):
             return types.CallToolResult(

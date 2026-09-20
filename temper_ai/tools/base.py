@@ -42,6 +42,14 @@ class BaseTool(ABC):
             boundary — it resolves relative to *this* process's cwd — so those
             tools set this False and their path safety belongs to the server
             and its launch configuration. Safety policies still apply either way.
+        per_caller_state: Whether this tool's work carries state that belongs to
+            the caller rather than to the run — an MCP session's browser profile,
+            its logged-in cookies, its current page. The executor is per run and
+            its tools are shared by every node, so such a tool is bound to the
+            calling agent per call (``caller``, see executor._tool_for_caller) and
+            keys its resources by it; when the agent finishes, the executor asks
+            it to release them. Left False, "my browser" means whatever the last
+            agent left open, and two nodes at the same level run concurrently.
     """
 
     name: str = ""
@@ -49,9 +57,17 @@ class BaseTool(ABC):
     parameters: dict[str, Any] = {}
     modifies_state: bool = True
     local_paths: bool = True
+    per_caller_state: bool = False
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
+        # Which agent instance this (copy of the) tool is running for; set by the
+        # executor per call when per_caller_state. Empty means run-wide.
+        self.caller: str = ""
+
+    def release_caller(self, caller: str) -> None:
+        """Free whatever this tool holds for one caller. Default: nothing held."""
+        return None
 
     @abstractmethod
     def execute(self, **params: Any) -> ToolResult:

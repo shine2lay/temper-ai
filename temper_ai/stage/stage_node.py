@@ -35,6 +35,10 @@ class StageNode(Node):
         super().__init__(config)
         self.child_nodes = child_nodes
 
+    def agent_configs(self) -> list[dict]:
+        """Everything the sub-graph will run, however deep it goes."""
+        return [cfg for child in self.child_nodes for cfg in child.agent_configs()]
+
     def run(self, input_data: dict, context: ExecutionContext) -> NodeResult:
         """Execute the sub-graph.
 
@@ -52,6 +56,7 @@ class StageNode(Node):
         gated_input = self._apply_input_gate(input_data)
 
         # 2. Execute sub-graph (same executor, recursive)
+        collected, projected = self._output_languages()
         start = time.monotonic()
         result = execute_graph(
             self.child_nodes,
@@ -59,14 +64,39 @@ class StageNode(Node):
             ctx,
             graph_name=self.name,
             is_workflow=False,
+            workflow_outputs=collected or None,
         )
         result.duration_seconds = time.monotonic() - start
 
         # 3. Output gate
         if self.config.outputs:
-            result = self._apply_output_gate(result)
+            result = self._apply_output_gate(result, projected, bool(collected))
 
         return result
+
+    def _output_languages(self) -> tuple[dict, dict]:
+        """Split declared outputs by which language they are written in.
+
+        `outputs:` means two different things depending on which file it was written in:
+
+            outputs: {verdict: structured.verdict}         a stage: project THIS node's result
+            outputs: {report_path: report.structured.x}    a workflow: collect from ITS nodes
+
+        A stage's sources name fields of a NodeResult; a workflow's name a node inside it. Read
+        the second as the first and every source falls through to "unknown field" -- the stage
+        completes with a full set of keys whose values are all None. Nothing raises: the next
+        stage simply receives nothing, and an agent handed an empty path writes to whatever it
+        decides that means. A referenced workflow's outputs were in the second language, and this
+        is the head of the two-language split: a source whose head names a child node is the
+        sub-graph's own business, and the executor already resolves exactly that.
+        """
+        child = {c.name for c in self.child_nodes}
+        collected: dict = {}
+        projected: dict = {}
+        for name, source in (self.config.outputs or {}).items():
+            target = collected if str(source).split(".")[0] in child else projected
+            target[name] = source
+        return collected, projected
 
     def _apply_input_gate(self, input_data: dict) -> dict:
         """If inputs declared, only pass through declared fields.
@@ -116,21 +146,30 @@ class StageNode(Node):
             gated["gate"] = input_data["gate"]
         return gated
 
-    def _apply_output_gate(self, result: NodeResult) -> NodeResult:
+    def _apply_output_gate(
+        self, result: NodeResult, projected: dict | None = None, collected: bool = False
+    ) -> NodeResult:
         """If outputs declared, only expose declared fields.
 
         Without declared outputs: full result passes through (default).
         With declared outputs: structured_output is filtered to only declared fields.
+
+        `projected` is the subset written in this node's own language (see _output_languages);
+        `collected` says the sub-graph already resolved the rest and put them on the result, so
+        they are kept rather than overwritten.
         """
         if not self.config.outputs:
             return result
 
-        filtered = {}
-        for output_name, source in self.config.outputs.items():
-            filtered[output_name] = _resolve_output_field(result, source)
-
-        # Replace structured_output with filtered fields
-        result.structured_output = filtered
+        sources = self.config.outputs if projected is None else projected
+        filtered = {
+            output_name: _resolve_output_field(result, source)
+            for output_name, source in sources.items()
+        }
+        if collected:
+            result.structured_output = {**(result.structured_output or {}), **filtered}
+        else:
+            result.structured_output = filtered
         return result
 
 

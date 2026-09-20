@@ -49,6 +49,7 @@ import datetime as dt
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -166,6 +167,29 @@ def write(path: Path, text: str) -> None:
 def mkdir_shared(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     os.chmod(path, 0o777)
+
+
+# The loop is started by systemd as often as by a shell, and a user unit gets a
+# minimal environment: no ~/.local/bin, so no `standee`. That has now cost two
+# runs (b002 on the first stage, b003 on the first line), each time discovered
+# only after the stack-up had already begun. The PATH a program needs is part of
+# the program, not of whoever happens to launch it, so state it here -- and say
+# so at the start of a run, rather than at the first use, hours in.
+
+EXTRA_PATH = [str(Path.home() / ".local" / "bin"), "/usr/local/bin", "/usr/bin", "/bin"]
+os.environ["PATH"] = os.pathsep.join(
+    dict.fromkeys([p for p in os.environ.get("PATH", "").split(os.pathsep) if p] + EXTRA_PATH)
+)
+
+
+def require_tools(*names: str) -> None:
+    """Refuse to start when something the run will need is not there."""
+    missing = [n for n in names if not shutil.which(n)]
+    if missing:
+        die(f"not on PATH: {', '.join(missing)}\n"
+            f"PATH is {os.environ['PATH']}\n"
+            f"(a systemd user unit does not inherit a login PATH; "
+            f"EXTRA_PATH in this file is what should have covered it)")
 
 
 def sh(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
@@ -1034,6 +1058,7 @@ def cmd_run(keep: bool) -> None:
     The gate is temper's, not this script's: the run parks at `tasks` and waits for an approval in
     the UI. `approve`/`reject` here are for the stage-at-a-time path.
     """
+    require_tools("standee", "docker", "git", "ssh")
     bet_id = open_bet() or new_bet_id()
     st = load_state(bet_id)
     bdir = BETS_DIR / bet_id
@@ -1077,7 +1102,13 @@ def cmd_run(keep: bool) -> None:
             f"acceptance command gives the expected output. Do nothing listed under no-gos."
         ),
         "stack_ttl": "8h",
-    }, workspace=cpath(WORKSPACES / "repos"), timeout=8 * 3600)
+        # One run is one workspace root, and it has to hold everything the stages write:
+        # the bet's own files under epd/<repo>/bets/<id>, and the worktrees under repos/.
+        # Rooted at repos/ (what the build stage alone needs), the report agent's Write of
+        # an absolute path into the bet dir was outside the root, so the tool relocated it
+        # -- silently, to repos/epd/... -- and the bet dir came out empty while the run
+        # reported success. The union of the stages' roots is their parent.
+    }, workspace=CONTAINER_WORKSPACES, timeout=8 * 3600)
 
     st["stages"]["loop"] = out
     st["status"] = "measured" if out.get("verdict") else ("shipped" if out.get("shipped") else "stopped")
@@ -1093,6 +1124,9 @@ def cmd_run(keep: bool) -> None:
 
 
 def run_stage(name: str, st: dict, keep: bool) -> None:
+    # `ship` arrives here through an sshd forced command, whose environment is
+    # smaller than systemd's; it is the stage that most needs this check.
+    require_tools("standee", "docker", "git")
     if name == "report":
         stage_report(st, keep)
     elif name == "bet":

@@ -691,3 +691,51 @@ class TestGraphLoaderNoStore:
         loader = GraphLoader(config_store=None)
         with pytest.raises(LoaderError, match="no config store"):
             loader.load_workflow("anything")
+
+
+class TestWhatARunMustKnowBeforeItStarts:
+    """MCP tools are bound from the agent configs collected before the first node runs. Collecting
+    them off the top-level list only works for a graph one level deep: a nested agent's `tools:`
+    were never seen, so the tool was never bound, and the agent ran without it."""
+
+    @staticmethod
+    def _store():
+        return _mock_config_store({
+            "workflow:loop": {
+                "name": "loop",
+                "nodes": [
+                    {"name": "report", "type": "stage", "ref": "workflows/reporting"},
+                    {"name": "after", "type": "agent", "agent": "plain"},
+                ],
+            },
+            "workflow:reporting": {
+                "name": "reporting",
+                "nodes": [{"name": "walk", "type": "stage", "ref": "workflows/walking"}],
+            },
+            "workflow:walking": {
+                "name": "walking",
+                "nodes": [{"name": "walk_1", "type": "agent", "agent": "walker"}],
+            },
+            "agent:walker": {
+                "name": "walker", "type": "llm", "provider": "openai", "model": "gpt-4o",
+                "tools": ["playwright.browser_navigate", "playwright.browser_snapshot"],
+            },
+            "agent:plain": {"name": "plain", "type": "llm", "provider": "openai", "model": "gpt-4o"},
+        })
+
+    def test_an_agent_three_levels_down_is_still_collected(self):
+        nodes, _ = GraphLoader(self._store()).load_workflow("loop")
+        collected = [cfg for n in nodes for cfg in n.agent_configs()]
+        assert sorted(c["name"] for c in collected) == ["plain", "walker"]
+
+    def test_its_tools_come_with_it(self):
+        nodes, _ = GraphLoader(self._store()).load_workflow("loop")
+        tools = [t for n in nodes for cfg in n.agent_configs() for t in cfg.get("tools", [])]
+        assert tools == ["playwright.browser_navigate", "playwright.browser_snapshot"]
+
+    def test_the_old_way_of_asking_finds_nothing(self):
+        """Why this needed an interface: the top-level node has no agent of its own."""
+        nodes, _ = GraphLoader(self._store()).load_workflow("loop")
+        stage = nodes[0]
+        assert not hasattr(stage, "agent_config")
+        assert stage.agent_configs(), "but it can say what it will run"

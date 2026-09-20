@@ -23,6 +23,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from temper_ai.tools.executor import _tool_for_caller
 from temper_ai.tools.mcp_client import MCPClientManager, ToolCallOutcome
 from temper_ai.tools.mcp_tool import MCPTool, create_mcp_tools_from_agents
 
@@ -64,6 +65,8 @@ class FakeManager:
         self._outcome = outcome or ToolCallOutcome(text="ok")
         self.meta_calls = 0
         self.calls: list[tuple[str, str, dict]] = []
+        self.callers: list[str] = []
+        self.released: list[str] = []
 
     async def get_tool_meta(self, server, tool):
         self.meta_calls += 1
@@ -71,9 +74,13 @@ class FakeManager:
             raise self._meta_error
         return self._meta
 
-    async def call_tool(self, server, tool, args):
+    async def call_tool(self, server, tool, args, caller=""):
         self.calls.append((server, tool, args))
+        self.callers.append(caller)
         return self._outcome
+
+    async def release(self, caller):
+        self.released.append(caller)
 
 
 def _tool(loop, manager, **kw):
@@ -214,7 +221,7 @@ def test_call_timeout_is_the_tools_own_and_browser_sized(loop):
 
 def test_a_slow_call_times_out_after_the_tools_own_timeout(loop):
     class Slow(FakeManager):
-        async def call_tool(self, server, tool, args):
+        async def call_tool(self, server, tool, args, caller=""):
             await asyncio.sleep(5)
             return ToolCallOutcome(text="late")
 
@@ -246,18 +253,18 @@ def test_manager_reconnects_once_when_the_session_is_dead():
         live.calls += 1
         return ToolCallOutcome(text="back")
 
-    dead_conn = SimpleNamespace(call_tool=dead_call)
-    live_conn = SimpleNamespace(call_tool=live_call)
+    dead_conn = SimpleNamespace(call_tool=dead_call, request_close=lambda: None)
+    live_conn = SimpleNamespace(call_tool=live_call, request_close=lambda: None)
 
     mgr = MCPClientManager()
-    mgr._connections["srv"] = dead_conn
+    mgr._connections[("srv", "")] = dead_conn
     connects: list[str] = []
 
-    async def ensure_connected(name):
-        if name in mgr._connections:
-            return mgr._connections[name]
+    async def ensure_connected(name, caller=""):
+        if (name, caller) in mgr._connections:
+            return mgr._connections[(name, caller)]
         connects.append(name)
-        mgr._connections[name] = live_conn
+        mgr._connections[(name, caller)] = live_conn
         return live_conn
 
     mgr.ensure_connected = ensure_connected  # type: ignore[method-assign]
@@ -269,7 +276,9 @@ def test_manager_reconnects_once_when_the_session_is_dead():
     async def bad_args(tool, args):
         raise McpError(ErrorData(code=-32602, message="Invalid params"))
 
-    mgr._connections["srv"] = SimpleNamespace(call_tool=bad_args)
+    mgr._connections[("srv", "")] = SimpleNamespace(
+        call_tool=bad_args, request_close=lambda: None
+    )
     with pytest.raises(McpError, match="Invalid params"):
         asyncio.run(mgr.call_tool("srv", "thing", {}))
     assert connects == ["srv"]
@@ -277,7 +286,7 @@ def test_manager_reconnects_once_when_the_session_is_dead():
 
 def test_execute_exception_is_a_failure(loop):
     class Boom(FakeManager):
-        async def call_tool(self, *a):
+        async def call_tool(self, *a, **kw):
             raise RuntimeError("pipe closed")
 
     r = _tool(loop, Boom(_meta())).execute(x="1")
@@ -323,14 +332,16 @@ def test_factory_binds_only_configured_servers_and_seeds_from_yaml(loop):
 def with_real_manager(loop):
     """Run a sync test body against an MCPClientManager wired to the fixture server.
 
-    The whole lifecycle — connect, body, stop — runs inside ONE task on the
-    manager's loop (the body on a worker thread via asyncio.to_thread, exactly
-    how agents call tools in production). Connecting and stopping in the same
-    task matters: stdio_client/ClientSession are anyio cancel scopes, and the
-    SDK refuses to exit one from a different task. Production's
-    MCPClientManager.stop() has that exact problem (it runs on whichever task
-    calls it); nobody sees it because process exit swallows the error. Out of
-    scope here, but not masked either.
+    The body runs on a worker thread via asyncio.to_thread and reaches the loop
+    with run_coroutine_threadsafe, exactly how agents call tools in production.
+
+    Connect and stop happen on different tasks here on purpose. stdio_client and
+    ClientSession are anyio cancel scopes and the SDK refuses to exit one from a
+    task other than the one that entered it, so this used to be the arrangement
+    that broke — masked in production only because process exit swallows it. Each
+    session now lives in a holder task of its own (MCPClientManager._open), which
+    is what makes closing one mid-run possible at all; if that regresses, tests
+    using this fixture fail here rather than leaking browsers in a real run.
     """
 
     def run(body):
@@ -345,7 +356,6 @@ def with_real_manager(loop):
                 "command": sys.executable,
                 "args": [str(FIXTURE)],
             }
-            mgr._connect_locks["fixture"] = asyncio.Lock()
             # Pre-connect HERE, in the driver task — same as production's
             # preconnect_mcp_servers before any agent runs. The body's later
             # run_coroutine_threadsafe calls only *use* the open session.
@@ -364,7 +374,7 @@ def with_real_manager(loop):
 def test_real_server_connect_discovers_tools(with_real_manager):
     def body(mgr):
         conn = mgr.get_active_connections()["fixture"]
-        assert sorted(conn.tools) == ["echo", "mutate"]
+        assert sorted(conn.tools) == ["echo", "mutate", "recall", "remember"]
         echo = conn.tools["echo"]
         assert echo.description == "Repeat text N times."
         assert echo.inputSchema["required"] == ["text"]
@@ -417,3 +427,40 @@ def _end_to_end(real_manager):
     unknown = ghost.execute()
     assert unknown.success is False
     assert "unknown tool: ghost" in unknown.result
+
+
+def test_real_server_session_is_per_caller_and_released_with_it(with_real_manager):
+    """Two callers, two sessions: what one leaves behind is not the other's to read.
+
+    The fixture server remembers per session, the way a browser remembers a login
+    and a current page. Keyed by server alone — as it was — both callers land in
+    one session and the second overwrites the first, which is what three walkers
+    sharing one browser did to each other. Release ends one caller's session and
+    leaves the sibling's running, and the next call for the released caller starts
+    from a clean one.
+    """
+
+    def body(mgr):
+        tools = create_mcp_tools_from_agents(
+            mgr, [{"agent": {"tools": ["fixture.remember", "fixture.recall"]}}]
+        )
+        one, two = "run1/report.walk_1", "run1/report.walk_2"
+        remember_1 = _tool_for_caller(tools["fixture.remember"], one)
+        recall_1 = _tool_for_caller(tools["fixture.recall"], one)
+        remember_2 = _tool_for_caller(tools["fixture.remember"], two)
+        recall_2 = _tool_for_caller(tools["fixture.recall"], two)
+
+        assert remember_1.execute(text="alpha").success is True
+        assert remember_2.execute(text="beta").success is True
+        assert recall_1.execute().result == "alpha", "walk_2 wrote into walk_1's session"
+        assert recall_2.execute().result == "beta"
+
+        # one session per caller, plus the shared one the preconnect opened
+        assert sorted(caller for _server, caller in mgr._connections) == ["", one, two]
+
+        recall_1.release_caller(one)
+        assert sorted(caller for _server, caller in mgr._connections) == ["", two]
+        assert recall_2.execute().result == "beta", "releasing walk_1 took walk_2's session"
+        assert recall_1.execute().result == "(nothing)", "a released caller reconnects dirty"
+
+    with_real_manager(body)

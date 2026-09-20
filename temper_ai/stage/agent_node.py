@@ -30,6 +30,9 @@ class AgentNode(Node):
         super().__init__(config)
         self.agent_config = resolved_agent_config
 
+    def agent_configs(self) -> list[dict]:
+        return [self.agent_config]
+
     MAX_RETRIES = 2  # Retry up to 2 times on empty output
 
     def run(self, input_data: dict, context: ExecutionContext) -> NodeResult:

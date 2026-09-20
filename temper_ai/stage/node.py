@@ -30,6 +30,20 @@ class Node(ABC):
         """Execute this node. Returns a uniform NodeResult."""
         ...
 
+    def agent_configs(self) -> list[dict]:
+        """Every agent config this node will run, including nested ones.
+
+        Callers that must know what a run needs *before* it starts -- MCP tool
+        binding is the one that matters -- used to read `node.agent_config` off
+        the top-level list. That is only true of a graph one level deep: a
+        StageNode has no agent of its own, so a nested agent's `tools:` were
+        never bound, and the agent ran with none of them. An agent that asks
+        for a browser and is given nothing does not fail; it writes what it
+        imagines the page said. Asking the node tree instead of the top of it
+        is the difference between a walk and a story about a walk.
+        """
+        return []
+
     @property
     def depends_on(self) -> list[str]:
         """Dependencies — names of nodes that must complete before this one."""

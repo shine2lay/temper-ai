@@ -123,3 +123,65 @@ class TestARequiredInputIsCheckedWhereItIsNamed:
         """`required` means supplied, not truthy: a deliberately empty note must pass."""
         stage = _stage(inputs={"note": {"type": "string", "required": True}})
         assert _run(stage, {"note": ""}) == {"note": ""}
+
+
+class TestOutputsSpeakTwoLanguages:
+    """A referenced workflow's `outputs:` name nodes inside it; a stage's name fields of its own
+    result. Reading the first as the second yields a full set of keys, all None — a silent empty
+    handoff, which is how a downstream agent ends up writing to nowhere."""
+
+    @staticmethod
+    def _stage_with_children(outputs: dict, child_names=("report",)) -> StageNode:
+        children = [MagicMock(name=n) for n in child_names]
+        for c, n in zip(children, child_names, strict=True):
+            c.name = n
+        return StageNode(
+            NodeConfig(name="report", type="stage", outputs=outputs), child_nodes=list(children)
+        )
+
+    def _run_capturing(self, stage: StageNode, sub_result: NodeResult) -> tuple[dict, NodeResult]:
+        passed = {}
+
+        def fake_execute(nodes, input_data, context, **kw):
+            passed.update(kw)
+            return sub_result
+
+        with patch("temper_ai.stage.stage_node.execute_graph", side_effect=fake_execute):
+            result = stage.run({}, _context())
+        return passed, result
+
+    def test_a_workflows_outputs_are_handed_to_the_sub_graph_to_resolve(self):
+        stage = self._stage_with_children({"report_path": "report.structured.report_path"})
+        passed, _ = self._run_capturing(stage, NodeResult(status=Status.COMPLETED, output="ok"))
+        assert passed["workflow_outputs"] == {"report_path": "report.structured.report_path"}
+
+    def test_what_the_sub_graph_resolved_survives_the_boundary(self):
+        """The bug: this came out {'report_path': None} and the next stage got nothing."""
+        stage = self._stage_with_children({"report_path": "report.structured.report_path"})
+        resolved = NodeResult(
+            status=Status.COMPLETED, output="ok",
+            structured_output={"report_path": "/w/bets/b003/report.md"},
+        )
+        _, result = self._run_capturing(stage, resolved)
+        assert result.structured_output == {"report_path": "/w/bets/b003/report.md"}
+
+    def test_a_stages_own_language_still_projects_its_result(self):
+        stage = self._stage_with_children({"verdict": "structured.verdict"})
+        resolved = NodeResult(
+            status=Status.COMPLETED, output="ok",
+            structured_output={"verdict": "approve", "noise": "dropped"},
+        )
+        passed, result = self._run_capturing(stage, resolved)
+        assert passed.get("workflow_outputs") is None
+        assert result.structured_output == {"verdict": "approve"}
+
+    def test_the_two_can_be_mixed_in_one_node(self):
+        stage = self._stage_with_children(
+            {"report_path": "report.structured.report_path", "cost": "cost_usd"}
+        )
+        resolved = NodeResult(
+            status=Status.COMPLETED, output="ok", cost_usd=1.5,
+            structured_output={"report_path": "/w/report.md"},
+        )
+        _, result = self._run_capturing(stage, resolved)
+        assert result.structured_output == {"report_path": "/w/report.md", "cost": 1.5}

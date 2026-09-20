@@ -494,6 +494,31 @@ def _run_node_with_events(
         )
         return NodeResult(status=Status.FAILED, error=str(exc), duration_seconds=duration)
 
+    finally:
+        _release_node_tools(node, context)
+
+
+def _release_node_tools(node: Node, context: ExecutionContext) -> None:
+    """Free per-caller tool state when a node ends — an MCP session, its browser.
+
+    Here rather than in each node class because this is where a node's run
+    finishes whatever kind it is, success or failure. The key is the one the
+    node's own tool calls were bound to (tools/executor.caller_key), so this ends
+    that agent's sessions and nobody else's: a sibling running concurrently keeps
+    its own. Failure to release is logged, never raised — the node's result does
+    not depend on the cleanup.
+    """
+    from temper_ai.tools.executor import caller_key
+
+    release = getattr(getattr(context, "tool_executor", None), "release_caller", None)
+    if release is None:
+        return
+    path = f"{context.node_path}.{node.name}" if context.node_path else node.name
+    try:
+        release(caller_key({"execution_id": context.run_id, "node_path": path}))
+    except Exception as exc:  # noqa: BLE001 — cleanup must not fail a finished node
+        logger.warning("Node '%s': releasing per-caller tool state failed: %s", node.name, exc)
+
 
 def _run_with_timeout(node: Node, resolved: dict, context: ExecutionContext, timeout: int) -> NodeResult:
     """Run a node with a wall-clock timeout. Returns FAILED if timeout exceeded."""

@@ -55,6 +55,12 @@ class MCPTool(BaseTool):
     manages_own_timeout = True
     DEFAULT_CALL_TIMEOUT = 120
 
+    # An MCP session is the caller's, not the run's: it holds the browser profile,
+    # the page that is open, whatever the last call left behind. The executor binds
+    # each call to the agent making it (BaseTool.per_caller_state) and the manager
+    # keys sessions by it, so two agents at the same level do not share a browser.
+    per_caller_state = True
+
     def __init__(
         self,
         server_name: str,
@@ -177,7 +183,9 @@ class MCPTool(BaseTool):
         logger.debug("MCP tool '%s' called with params: %s", self.name, {k: str(v)[:50] for k, v in params.items()})
         try:
             future = asyncio.run_coroutine_threadsafe(
-                self._manager.call_tool(self._server_name, self._tool_name, params),
+                self._manager.call_tool(
+                    self._server_name, self._tool_name, params, caller=self.caller
+                ),
                 self._event_loop,
             )
             outcome = future.result(timeout=self._call_timeout)
@@ -196,6 +204,26 @@ class MCPTool(BaseTool):
             error = f"MCP tool '{self.name}' failed: {e}"
             logger.warning(error)
             return ToolResult(success=False, result="", error=error)
+
+    def release_caller(self, caller: str) -> None:
+        """End that caller's session with this server (its browser, its cwd).
+
+        Called when an agent finishes. Waited on, briefly: a closed browser is
+        the point, and the manager bounds its own teardown. A failure here is
+        logged, never raised — the node's result does not depend on it.
+        """
+        if not caller:
+            return
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._manager.release(caller), self._event_loop
+            )
+            future.result(timeout=15)
+        except Exception as exc:  # noqa: BLE001 — teardown is best effort
+            logger.warning(
+                "MCP '%s': releasing session for %s failed: %s",
+                self._server_name, caller, exc,
+            )
 
 
 def create_mcp_tools_from_agents(

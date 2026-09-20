@@ -30,7 +30,14 @@ ROUTES_FILE = Path(routes.__file__)
 def node_declaring(*tool_names: str):
     """A workflow node whose agent asks for these tools (what the MCP factory reads)."""
     node = MagicMock()
-    node.agent_config = MagicMock(tools=list(tool_names))
+    node.agent_configs.return_value = [{"tools": list(tool_names)}]
+    return node
+
+
+def node_with_no_agent_of_its_own():
+    """A node that runs no agent itself (an empty stage): nothing to collect."""
+    node = MagicMock()
+    node.agent_configs.return_value = []
     return node
 
 
@@ -68,14 +75,51 @@ def test_declared_mcp_tools_are_registered_and_their_server_preconnected(monkeyp
     monkeypatch.setattr(mcp_tool, "create_mcp_tools_from_agents", fake_factory)
     monkeypatch.setattr(routes, "preconnect_mcp_servers", preconnect)
     ex = ToolExecutor()
-    nodes = [node_declaring("playwright.browser_navigate"), MagicMock(spec=[])]  # second: not an agent
+    nodes = [node_declaring("playwright.browser_navigate"), node_with_no_agent_of_its_own()]
 
     routes._register_run_tools(ex, nodes)
 
     assert ex.get_tool("playwright.browser_navigate") is browser
     assert ex.get_tool(next(iter(TOOL_CLASSES))) is not None, "built-ins still there too"
-    assert len(seen["agent_configs"]) == 1, "only nodes that carry an agent_config are consulted"
+    assert len(seen["agent_configs"]) == 1, "a node with no agent of its own contributes nothing"
     assert preconnect.call_args[0][1] == {"playwright.browser_navigate": browser}
+
+
+def test_a_nested_agents_tools_are_registered_too(monkeypatch):
+    """A composed workflow's top-level nodes are stages; the agents are inside them.
+
+    Collected from the top level only, a stage has no ``tools:`` of its own, so an
+    agent nested in one was offered nothing — and an agent whose browser never
+    arrived did not fail, it wrote three walkthroughs of a product it had not
+    loaded. Real nodes here, not mocks: the claim is that the walk goes all the
+    way down.
+    """
+    from temper_ai.stage.agent_node import AgentNode
+    from temper_ai.stage.models import NodeConfig
+    from temper_ai.stage.stage_node import StageNode
+
+    seen: dict = {}
+
+    def fake_factory(manager, agent_configs):
+        seen["agent_configs"] = agent_configs
+        return {}
+
+    import temper_ai.tools.mcp_tool as mcp_tool
+
+    monkeypatch.setattr(mcp_tool, "create_mcp_tools_from_agents", fake_factory)
+    monkeypatch.setattr(routes, "preconnect_mcp_servers", MagicMock())
+
+    walk = AgentNode(NodeConfig(name="walk_1"), {"name": "epd_walk", "tools": ["playwright.browser_navigate"]})
+    bet = AgentNode(NodeConfig(name="bet"), {"name": "epd_bet", "tools": ["Write"]})
+    report = StageNode(NodeConfig(name="report"), [walk])
+    loop = StageNode(NodeConfig(name="loop"), [report, bet])  # a stage inside a stage
+
+    routes._register_run_tools(ToolExecutor(), [loop])
+
+    assert seen["agent_configs"] == [
+        {"name": "epd_walk", "tools": ["playwright.browser_navigate"]},
+        {"name": "epd_bet", "tools": ["Write"]},
+    ], "every agent the run will execute, however deep"
 
 
 def test_a_server_that_will_not_connect_is_a_503_not_a_run_without_tools(monkeypatch):

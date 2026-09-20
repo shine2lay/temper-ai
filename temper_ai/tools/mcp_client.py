@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
@@ -48,9 +49,20 @@ class ToolCallOutcome:
 class MCPServerConnection:
     """A single connected MCP server with its session and advertised tools."""
 
-    def __init__(self, name: str, session: ClientSession, tools: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        name: str,
+        session: ClientSession,
+        tools: dict[str, Any] | None = None,
+        caller: str = "",
+        closer: Callable[[], None] | None = None,
+    ):
         self.name = name
         self.session = session
+        # Which caller this session belongs to (see MCPClientManager._connections),
+        # and how to end it: set by the manager, so closing is the owner's to do.
+        self.caller = caller
+        self._closer = closer
         # name -> mcp.types.Tool, from tools/list at connect time. This is the
         # source of truth for descriptions and input schemas; nothing in YAML
         # needs to (or should) repeat it.
@@ -69,6 +81,11 @@ class MCPServerConnection:
                 break
         self.tools = tools
         return tools
+
+    def request_close(self) -> None:
+        """Ask the task holding this session open to end it."""
+        if self._closer is not None:
+            self._closer()
 
     async def call_tool(self, tool_name: str, arguments: dict) -> ToolCallOutcome:
         """Call a tool on this server. Returns the text content and the server's error verdict."""
@@ -91,15 +108,34 @@ class MCPClientManager:
 
     At startup: loads configs from YAML files (no connections made).
     On first tool call: connects to the server, then executes.
-    Subsequent calls: reuses the existing connection.
+    Subsequent calls by the same caller: reuses that caller's connection.
+
+    A connection is keyed by ``(server, caller)``, not by server. An MCP session
+    is not a stateless pipe: it is a browser profile with its cookies and its
+    current page, a server's notion of "the" working directory, whatever the last
+    call left behind. Keyed by server alone, every agent in a run shared one, and
+    since nodes at the same level run concurrently (see stage/executor.py), three
+    walkers pointed at one browser take turns clobbering each other's page --
+    playwright's ``--isolated`` cannot help, because isolation is per session and
+    there was only ever one session to isolate. Per caller, "my browser" means
+    mine, and `release` at the end of a node ends it instead of leaving it open
+    for whoever runs next.
+
+    The empty caller is the shared session: schema discovery (`get_tool_meta`)
+    and the run's preconnect check use it, neither of which leaves state behind.
     """
 
     def __init__(self):
         self._exit_stack = AsyncExitStack()
         self._server_configs: dict[str, dict] = {}  # name -> config dict
-        self._connections: dict[str, MCPServerConnection] = {}  # name -> live connection
+        # (server, caller) -> live connection. Caller "" is the shared session.
+        self._connections: dict[tuple[str, str], MCPServerConnection] = {}
         self._event_loop: asyncio.AbstractEventLoop | None = None
-        self._connect_locks: dict[str, asyncio.Lock] = {}  # prevent concurrent connects
+        # (server, caller) -> lock, so one session is never opened twice and two
+        # callers opening their own do not queue behind each other.
+        self._connect_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        # (server, caller) -> the task holding that session's contexts open.
+        self._holders: dict[tuple[str, str], asyncio.Task] = {}
 
     @property
     def event_loop(self) -> asyncio.AbstractEventLoop:
@@ -131,7 +167,6 @@ class MCPClientManager:
             name = config.get("name", "unnamed")
             if name not in self._server_configs:
                 self._server_configs[name] = config
-                self._connect_locks[name] = asyncio.Lock()
 
         if self._server_configs:
             logger.info("MCP: %d servers configured (lazy connect)",
@@ -139,13 +174,48 @@ class MCPClientManager:
 
     async def stop(self) -> None:
         """Close all active MCP server connections."""
+        for key in list(self._connections):
+            await self._close(key)
         await self._exit_stack.aclose()
         self._connections.clear()
 
-    async def ensure_connected(self, server_name: str) -> MCPServerConnection:
-        """Connect to a server if not already connected. Returns the connection."""
-        if server_name in self._connections:
-            return self._connections[server_name]
+    async def release(self, caller: str) -> None:
+        """End every session this caller opened.
+
+        Called when an agent finishes (stage/agent_node.py). Nothing will use
+        those sessions again, and a browser left open holds its context, its
+        profile and its memory for the life of the process — a long run would
+        accumulate one per node. The shared session (caller "") is not a
+        caller's to end: it belongs to the run.
+        """
+        if not caller:
+            return
+        for key in [k for k in self._connections if k[1] == caller]:
+            await self._close(key)
+            logger.info("MCP server '%s' released by %s", key[0], caller)
+
+    async def _close(self, key: tuple[str, str]) -> None:
+        """Close one session: ask its holder task to unwind, then wait for it."""
+        connection = self._connections.pop(key, None)
+        holder = self._holders.pop(key, None)
+        if connection is not None:
+            connection.request_close()
+        if holder is None:
+            return
+        try:
+            await asyncio.wait_for(holder, timeout=10)
+        except TimeoutError:
+            logger.warning("MCP session %s did not close within 10s; abandoned", key)
+        except Exception as exc:  # noqa: BLE001 — teardown is best effort
+            logger.warning("MCP session %s closed with an error: %s", key, exc)
+
+    async def ensure_connected(
+        self, server_name: str, caller: str = ""
+    ) -> MCPServerConnection:
+        """Connect this caller's session if it has none. Returns the connection."""
+        key = (server_name, caller)
+        if key in self._connections:
+            return self._connections[key]
 
         if server_name not in self._server_configs:
             raise ValueError(
@@ -153,39 +223,99 @@ class MCPClientManager:
                 f"Available: {sorted(self._server_configs.keys())}"
             )
 
-        lock = self._connect_locks[server_name]
+        # Per key, not per server: the lock exists to stop one session being
+        # opened twice, and two callers opening their own must not queue behind
+        # each other (three walkers starting three browsers start them at once).
+        lock = self._connect_locks.setdefault(key, asyncio.Lock())
         async with lock:
             # Double-check after acquiring lock
-            if server_name in self._connections:
-                return self._connections[server_name]
+            if key in self._connections:
+                return self._connections[key]
 
-            config = self._server_configs[server_name]
-            transport = config.get("transport", "stdio")
-
-            if transport == "stdio":
-                session = await self._connect_stdio(config)
-            elif transport in ("http", "streamable_http"):
-                session = await self._connect_http(config)
-            else:
-                raise ValueError(f"Unknown MCP transport: {transport}")
-
-            connection = MCPServerConnection(server_name, session)
-            # Discover what the server offers as part of connecting. Both the CLI
-            # and the API path pre-connect every server an agent references before
-            # the first agent runs, so by the time a prompt is built the schemas
-            # are a dict lookup away. A server that answers initialize but not
-            # tools/list is unusable as a tool server: fail here, loudly, rather
-            # than hand the model a placeholder schema at prompt time.
-            await asyncio.wait_for(connection.refresh_tools(), timeout=30)
-            self._connections[server_name] = connection
+            connection = await self._open(server_name, caller)
+            self._connections[key] = connection
             logger.info(
-                "MCP server '%s' connected on first use (%d tools advertised)",
-                server_name, len(connection.tools),
+                "MCP server '%s' connected for %s (%d tools advertised)",
+                server_name, caller or "shared use", len(connection.tools),
             )
             return connection
 
+    async def _open(self, server_name: str, caller: str) -> MCPServerConnection:
+        """Open one session, held open by a task of its own.
+
+        The session's contexts — the subprocess pipes or HTTP stream, then the
+        ClientSession — are entered and exited inside a single task on purpose.
+        They are anyio cancel scopes, and anyio refuses to unwind one in a task
+        other than the one that entered it ("Attempted to exit cancel scope in a
+        different task than it was entered in"). Every call into this manager
+        arrives on a task of its own via run_coroutine_threadsafe, so a session
+        entered by whichever call happened to be first could not be closed by any
+        other — which is exactly what releasing a caller's session has to do, at
+        every node boundary. The holder task enters the stack, hands the ready
+        connection back, and then does nothing but wait to be told to unwind.
+        """
+        config = self._server_configs[server_name]
+        transport = config.get("transport", "stdio")
+        loop = asyncio.get_running_loop()
+        ready: asyncio.Future = loop.create_future()
+        finish = asyncio.Event()
+
+        async def hold() -> None:
+            try:
+                async with AsyncExitStack() as stack:
+                    if transport == "stdio":
+                        session = await self._connect_stdio(config, stack)
+                    elif transport in ("http", "streamable_http"):
+                        session = await self._connect_http(config, stack)
+                    else:
+                        raise ValueError(f"Unknown MCP transport: {transport}")
+
+                    def request_unwind() -> None:
+                        """Tell the holder to unwind, from whatever thread asks."""
+                        loop.call_soon_threadsafe(finish.set)
+
+                    connection = MCPServerConnection(
+                        server_name,
+                        session,
+                        caller=caller,
+                        closer=request_unwind,
+                    )
+                    # Discover what the server offers as part of connecting. Both
+                    # the CLI and the API path pre-connect every server an agent
+                    # references before the first agent runs, so by the time a
+                    # prompt is built the schemas are a dict lookup away. A server
+                    # that answers initialize but not tools/list is unusable as a
+                    # tool server: fail here, loudly, rather than hand the model a
+                    # placeholder schema at prompt time.
+                    await asyncio.wait_for(connection.refresh_tools(), timeout=30)
+                    if not ready.done():
+                        ready.set_result(connection)
+                    await finish.wait()
+            except BaseException as exc:
+                if not ready.done():
+                    ready.set_exception(exc)
+                elif not isinstance(exc, asyncio.CancelledError):
+                    logger.warning(
+                        "MCP session '%s' (%s) ended: %s",
+                        server_name, caller or "shared", exc,
+                    )
+                    raise
+
+        task = asyncio.ensure_future(hold())
+        try:
+            connection = await ready
+        except BaseException:
+            task.cancel()
+            raise
+        self._holders[(server_name, caller)] = task
+        return connection
+
     async def get_tool_meta(self, server_name: str, tool_name: str) -> Any | None:
         """The server's own definition (mcp.types.Tool) of one tool, connecting if needed.
+
+        Answered from the shared session: a schema is the same whoever asks, and
+        discovery runs while a prompt is being built, which is not a caller's
+        session to open.
 
         None means the server is up but does not advertise that name — an agent
         YAML typo, a renamed tool, or a profile that excludes it.
@@ -193,8 +323,14 @@ class MCPClientManager:
         connection = await self.ensure_connected(server_name)
         return connection.tools.get(tool_name)
 
-    async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> ToolCallOutcome:
+    async def call_tool(
+        self, server_name: str, tool_name: str, arguments: dict, caller: str = ""
+    ) -> ToolCallOutcome:
         """Connect if needed, then call a tool. The main entry point for MCPTool.
+
+        The call goes to ``caller``'s own session (see the class docstring), so
+        what the last call left behind — the open page, the cwd — is this
+        caller's own and nobody else's.
 
         On connection failure (stale subprocess, broken pipe) or a dead
         session (the streamable-HTTP server no longer knows our session id:
@@ -202,7 +338,7 @@ class MCPClientManager:
         before raising. Without the second case one abandoned browser call
         cost a run every browser call after it, each failing in 2 ms.
         """
-        connection = await self.ensure_connected(server_name)
+        connection = await self.ensure_connected(server_name, caller)
         try:
             return await connection.call_tool(tool_name, arguments)
         except (BrokenPipeError, EOFError, ConnectionError, OSError, McpError) as exc:
@@ -212,11 +348,11 @@ class MCPClientManager:
                 "MCP server '%s' connection failed: %s. Reconnecting...",
                 server_name, exc,
             )
-            self._connections.pop(server_name, None)
-            connection = await self.ensure_connected(server_name)
+            await self._close((server_name, caller))
+            connection = await self.ensure_connected(server_name, caller)
             return await connection.call_tool(tool_name, arguments)
 
-    async def _connect_stdio(self, config: dict) -> ClientSession:
+    async def _connect_stdio(self, config: dict, stack: AsyncExitStack) -> ClientSession:
         # Sanitize env — block dangerous vars that could be injected via MCP YAML config
         raw_env = config.get("env")
         sanitized_env: dict | None
@@ -230,12 +366,12 @@ class MCPClientManager:
             args=config.get("args", []),
             env=sanitized_env,
         )
-        read, write = await self._exit_stack.enter_async_context(stdio_client(params))
-        session = await self._exit_stack.enter_async_context(ClientSession(read, write))
+        read, write = await stack.enter_async_context(stdio_client(params))
+        session = await stack.enter_async_context(ClientSession(read, write))
         await asyncio.wait_for(session.initialize(), timeout=30)
         return session
 
-    async def _connect_http(self, config: dict) -> ClientSession:
+    async def _connect_http(self, config: dict, stack: AsyncExitStack) -> ClientSession:
         """Connect over Streamable HTTP, with optional static headers and OAuth.
 
         Two ways to authenticate, because remote MCP servers split into two
@@ -259,14 +395,14 @@ class MCPClientManager:
         # connection pool for the life of the process.
         http_client = None
         if headers or auth is not None:
-            http_client = await self._exit_stack.enter_async_context(
+            http_client = await stack.enter_async_context(
                 create_mcp_http_client(headers=headers, auth=auth)
             )
 
-        read, write, _ = await self._exit_stack.enter_async_context(
+        read, write, _ = await stack.enter_async_context(
             streamable_http_client(url, http_client=http_client)
         )
-        session = await self._exit_stack.enter_async_context(ClientSession(read, write))
+        session = await stack.enter_async_context(ClientSession(read, write))
         await asyncio.wait_for(session.initialize(), timeout=30)
         return session
 
@@ -279,8 +415,13 @@ class MCPClientManager:
         return self._server_configs.get(server_name, {})
 
     def get_active_connections(self) -> dict[str, MCPServerConnection]:
-        """List only currently connected servers."""
-        return dict(self._connections)
+        """Currently connected servers, by name.
+
+        Sessions are per caller, so a server can hold several at once; this
+        answers the question callers of it actually ask ("is this server up?")
+        with one connection per server. Use ``_connections`` for the full map.
+        """
+        return {server: conn for (server, _caller), conn in self._connections.items()}
 
 
 def _load_mcp_configs(config_dir: str | None = None) -> list[dict]:

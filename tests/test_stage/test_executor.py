@@ -16,6 +16,7 @@ from temper_ai.stage.exceptions import CyclicDependencyError
 from temper_ai.stage.executor import (
     _get_final_output,
     _inject_strategy_context,
+    _release_node_tools,
     _resolve_inputs,
     execute_graph,
     topological_sort,
@@ -1494,3 +1495,54 @@ class TestUnresolvedInputMap:
         )
         assert value == "here"
         assert unresolved == []
+
+
+class TestPerCallerToolRelease:
+    """A node's per-caller tool state (an MCP session, its browser) ends with the node.
+
+    The executor lives for the whole run, so whatever a node opened would stay
+    open until the run ended -- one browser per node -- and the next agent to ask
+    for "the" browser would inherit the last one's pages and logins.
+    """
+
+    def test_release_uses_the_key_the_nodes_own_calls_used(self):
+        from temper_ai.tools.executor import caller_key
+
+        context = _make_context(node_path="report")
+        node = _make_agent_node("walk_1")
+        _release_node_tools(node, context)
+        context.tool_executor.release_caller.assert_called_once_with(
+            caller_key({"execution_id": "run-1", "node_path": "report.walk_1"})
+        )
+
+    def test_a_top_level_node_has_no_parent_in_its_key(self):
+        context = _make_context()
+        _release_node_tools(_make_agent_node("build"), context)
+        context.tool_executor.release_caller.assert_called_once_with("run-1/build")
+
+    def test_every_node_releases_when_the_graph_runs(self):
+        context = _make_context()
+        execute_graph([_make_agent_node("a"), _make_agent_node("b", depends_on=["a"])],
+                      {}, context, graph_name="g")
+        assert sorted(
+            call.args[0] for call in context.tool_executor.release_caller.call_args_list
+        ) == ["run-1/a", "run-1/b"]
+
+    def test_a_failed_node_still_releases(self):
+        """The browser is open either way; cleanup is in a finally for that reason."""
+        context = _make_context()
+        node = _make_agent_node("boom")
+        node.run = MagicMock(side_effect=RuntimeError("node blew up"))
+        execute_graph([node], {}, context, graph_name="g")
+        context.tool_executor.release_caller.assert_called_once_with("run-1/boom")
+
+    def test_a_cleanup_failure_does_not_fail_the_node(self):
+        context = _make_context()
+        context.tool_executor.release_caller.side_effect = RuntimeError("server hung up")
+        result = execute_graph([_make_agent_node("a", output="done")], {}, context, graph_name="g")
+        assert result.status == Status.COMPLETED and result.output == "done"
+
+    def test_an_executor_without_the_hook_is_left_alone(self):
+        """Older/stub executors (and tests) have no release_caller; that is not an error."""
+        context = _make_context(tool_executor=object())
+        _release_node_tools(_make_agent_node("a"), context)  # must not raise

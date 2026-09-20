@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from temper_ai.agent.base import AgentABC
+from temper_ai.agent.exceptions import ToolsNotRegisteredError
 from temper_ai.llm.context import DEFAULT_CONTEXT_POLICY
 from temper_ai.llm.models import CallContext, LLMRunResult
 from temper_ai.llm.prompt_renderer import PromptRenderer
@@ -432,15 +433,28 @@ class LLMAgent(AgentABC):
             return []
 
         schemas = []
+        missing = []
         for name in tool_names:
             tool = te.get_tool(name)
             if tool:
                 schemas.append(tool.to_llm_schema())
             else:
-                logger.warning(
-                    "Tool '%s' configured for agent '%s' but not registered",
-                    name, self.name,
-                )
+                missing.append(name)
+        if missing:
+            # A warning was not enough. An agent that asked for a browser and
+            # was handed nothing still answered: it described three user walks
+            # through a product it had never loaded, in the voice of someone
+            # who had, and the run recorded them as evidence. Whatever is
+            # missing, the agent cannot do the job it was configured to do,
+            # and the cheapest moment to say so is before the first token.
+            raise ToolsNotRegisteredError(
+                f"Agent '{self.name}' is configured with {len(missing)} tool(s) that are "
+                f"not registered: {', '.join(missing)}.\n"
+                f"Registered here: {', '.join(te.tool_names()) or '(none)'}\n"
+                f"An MCP tool (name.tool) is bound from the agent configs a run collects "
+                f"before it starts; a nested agent's tools are only found if the collector "
+                f"walks into stages (Node.agent_configs)."
+            )
         return schemas
 
     def _make_tool_executor(self, context: ExecutionContext, input_data: dict | None = None):
@@ -497,6 +511,11 @@ class LLMAgent(AgentABC):
                     "execution_id": context.run_id,
                     "skip_policies": context.skip_policies,
                     "agent_name": self.name,
+                    # Which instance, not which config: two nodes can run this
+                    # same agent at the same time, and a tool with per-caller
+                    # state (an MCP browser session) must not be shared between
+                    # them. See tools/executor.caller_key.
+                    "node_path": context.node_path,
                 },
             )
             return result.result if result.success else f"Error: {result.error}"

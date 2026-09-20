@@ -140,6 +140,23 @@ class ToolExecutor:
         """Get a registered tool by name. Returns None if not found."""
         return self._tools.get(name)
 
+    def tool_names(self) -> list[str]:
+        """Names of every registered tool — what an agent can actually be given."""
+        return sorted(self._tools)
+
+    def release_caller(self, caller: str) -> None:
+        """Free what the run's tools hold for one finished caller.
+
+        Called at the end of a node (stage/agent_node.py). The executor lives for
+        the whole run, so anything a tool opened per caller — an MCP session, its
+        browser — would otherwise stay open until the run ended, one per node.
+        """
+        if not caller:
+            return
+        for tool in list(self._tools.values()):
+            if getattr(tool, "per_caller_state", False):
+                tool.release_caller(caller)
+
     def register_tools(self, tools: dict[str, BaseTool]) -> None:
         """Register tool instances for this executor."""
         # The run-level workspace is the default every call resolves relative
@@ -258,6 +275,12 @@ class ToolExecutor:
                 if workspace_block is not None:
                     return workspace_block
                 tool = _tool_for(tool, effective)
+
+        # A tool whose state belongs to the caller (an MCP session's browser and
+        # cookies) runs as that caller's own instance, so the resources it opens
+        # are keyed by who opened them and can be freed when they finish.
+        if getattr(tool, "per_caller_state", False):
+            tool = _tool_for_caller(tool, caller_key(ctx))
 
         # Tools that manage their own execution (e.g., Delegate runs sub-agents)
         # skip the timeout wrapper — they handle timeouts internally.
@@ -521,6 +544,33 @@ def _takes_path(tool: BaseTool) -> bool:
     """Whether the tool declares a parameter the sandbox judges (see _PATH_PARAMS)."""
     props = (getattr(tool, "parameters", None) or {}).get("properties") or {}
     return any(key in props for key in _PATH_PARAMS)
+
+
+def caller_key(ctx: dict[str, Any]) -> str:
+    """Who is calling: one agent instance, not one agent config.
+
+    ``run/node.path`` — the node path, because that is what identifies an
+    instance. Three nodes can run the same agent config at the same level (three
+    walkers, all ``epd_walk``), and keyed by agent name they would share the one
+    browser this is here to stop them sharing. The run id keeps two runs in one
+    process apart.
+    """
+    run = str(ctx.get("execution_id") or "-")
+    who = str(ctx.get("node_path") or ctx.get("agent_name") or "-")
+    return f"{run}/{who}"
+
+
+def _tool_for_caller(tool: BaseTool, caller: str) -> BaseTool:
+    """The tool as bound to ``caller``: itself if already bound, else a shallow copy.
+
+    A copy per call for the same reason as _tool_for: the registered instance is
+    shared by every node in the run, and two nodes run at the same time.
+    """
+    if getattr(tool, "caller", "") == caller:
+        return tool
+    clone = copy.copy(tool)
+    clone.caller = caller
+    return clone
 
 
 def _tool_for(tool: BaseTool, workspace: str) -> BaseTool:

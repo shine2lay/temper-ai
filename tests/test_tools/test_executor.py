@@ -674,3 +674,78 @@ class TestToolDeclarationGate:
         ex.run_cost_usd = 1.0  # would trip the budget policy
         result = ex.execute("Echo", {}, allowed_tools=[])
         assert "is not available" in result.error, "refused by the gate, not the budget policy"
+
+
+class SessionTool(BaseTool):
+    """A tool whose state belongs to the caller (an MCP session does this)."""
+
+    name = "session"
+    description = "Holds something per caller"
+    parameters = {"type": "object", "properties": {}}
+    per_caller_state = True
+
+    def __init__(self, config=None):
+        super().__init__(config)
+        self.seen: list[str] = []
+        self.released: list[str] = []
+
+    def execute(self, **params: Any) -> ToolResult:
+        self.seen.append(self.caller)
+        return ToolResult(success=True, result=self.caller)
+
+    def release_caller(self, caller: str) -> None:
+        self.released.append(caller)
+
+
+class TestPerCallerState:
+    """A tool with per-caller state runs as the caller's own instance.
+
+    The executor is per run and its tools are shared by every node; nodes at the
+    same level run concurrently. So "my session" has to mean the calling agent's,
+    and it has to end when that agent does.
+    """
+
+    def _executor(self):
+        tool = SessionTool()
+        plain = EchoTool()
+        ex = ToolExecutor()
+        ex.register_tools({"session": tool, "Echo": plain})
+        return ex, tool, plain
+
+    def test_each_caller_gets_its_own_bound_instance(self):
+        """Three nodes, one agent config: three callers, not one."""
+        ex, tool, _ = self._executor()
+        for node in ("report.walk_1", "report.walk_2"):
+            result = ex.execute(
+                "session", {}, allowed_tools=["session"],
+                context={"execution_id": "run1", "node_path": node, "agent_name": "epd_walk"},
+            )
+            assert result.result == f"run1/{node}"
+        assert tool.seen == ["run1/report.walk_1", "run1/report.walk_2"]
+        assert tool.caller == "", "the registered instance is shared; binding must not mutate it"
+
+    def test_caller_key_identifies_the_instance_not_the_config(self):
+        from temper_ai.tools.executor import caller_key
+
+        base = {"execution_id": "run1", "agent_name": "epd_walk"}
+        keys = {caller_key({**base, "node_path": f"report.walk_{i}"}) for i in (1, 2, 3)}
+        assert len(keys) == 3, "same agent in three nodes must not share one session"
+        assert caller_key({**base, "node_path": "report.walk_1"}) != caller_key(
+            {"execution_id": "run2", "node_path": "report.walk_1"}
+        ), "two runs in one process are different callers"
+        # No node path (a caller that does not report one): the agent name still
+        # separates callers, and something is always returned to key by.
+        assert caller_key(base) == "run1/epd_walk"
+        assert caller_key({}) == "-/-"
+
+    def test_release_reaches_only_per_caller_tools(self):
+        ex, tool, plain = self._executor()
+        ex.release_caller("run1/report.walk_1")
+        assert tool.released == ["run1/report.walk_1"]
+        assert not hasattr(plain, "released"), "a stateless tool is not asked to release"
+
+    def test_release_ignores_an_empty_caller(self):
+        """The shared session belongs to the run, not to any one caller."""
+        ex, tool, _ = self._executor()
+        ex.release_caller("")
+        assert tool.released == []

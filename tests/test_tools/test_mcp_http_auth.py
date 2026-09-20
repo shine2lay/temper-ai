@@ -55,6 +55,9 @@ def captured(monkeypatch):
         async def initialize(self):
             seen["initialized"] = True
 
+        async def list_tools(self, cursor=None):
+            return MagicMock(tools=[], nextCursor=None)
+
     import mcp.client.streamable_http as sh
     import mcp.shared._httpx_utils as hx
 
@@ -68,7 +71,10 @@ def _connect(config):
     async def run():
         manager = MCPClientManager()
         try:
-            return await manager._connect_http(config)
+            # The stack is the caller's now: each session owns one, so it can be
+            # closed on its own when that caller is done (see MCPClientManager._open).
+            async with contextlib.AsyncExitStack() as stack:
+                return await manager._connect_http(config, stack)
         finally:
             await manager.stop()
 
@@ -123,20 +129,51 @@ def test_oauth_provider_is_bound_to_the_configured_server(captured, key):
     assert storage.server_url == "https://mcp.notion.com/mcp"
 
 
-def test_custom_client_is_closed_with_the_manager(captured):
-    """The SDK only closes a client it created, so ours must be on our stack."""
+def test_custom_client_is_closed_with_the_session_that_opened_it(captured):
+    """The SDK only closes a client it created, so ours must be on the session's stack.
+
+    Released per caller, not only at process exit: a run opens a session per node,
+    and an httpx connection pool per node that lives until the run ends is the
+    same leak as a browser per node.
+    """
 
     async def run():
         manager = MCPClientManager()
-        await manager._connect_http(
-            {
-                "name": "tokened",
-                "url": "https://example.com/mcp",
-                "headers": {"Authorization": "Bearer abc123"},
-            }
-        )
+        manager._server_configs["tokened"] = {
+            "name": "tokened",
+            "transport": "http",
+            "url": "https://example.com/mcp",
+            "headers": {"Authorization": "Bearer abc123"},
+        }
+        await manager.ensure_connected("tokened", caller="run1/walk_1")
         client = captured["http_client"]
         client.__aexit__.assert_not_called()
+
+        await manager.release("run1/walk_1")
+        client.__aexit__.assert_called_once()
+        assert manager._connections == {} and manager._holders == {}
+
+    asyncio.run(run())
+
+
+def test_the_shared_session_outlives_a_caller_and_closes_with_the_manager(captured):
+    """Discovery's session belongs to the run: release(caller) must not take it."""
+
+    async def run():
+        manager = MCPClientManager()
+        manager._server_configs["tokened"] = {
+            "name": "tokened",
+            "transport": "http",
+            "url": "https://example.com/mcp",
+            "headers": {"Authorization": "Bearer abc123"},
+        }
+        await manager.ensure_connected("tokened")  # shared: caller ""
+        client = captured["http_client"]
+
+        await manager.release("")
+        client.__aexit__.assert_not_called()
+        assert list(manager._connections) == [("tokened", "")]
+
         await manager.stop()
         client.__aexit__.assert_called_once()
 

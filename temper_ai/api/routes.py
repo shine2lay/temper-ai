@@ -99,7 +99,7 @@ def _register_run_tools(run_tool_executor: ToolExecutor, nodes) -> None:
 
     run_tool_executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
 
-    agent_configs = [node.agent_config for node in nodes if hasattr(node, "agent_config")]
+    agent_configs = [cfg for node in nodes for cfg in node.agent_configs()]
     mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
     if mcp_tools:
         run_tool_executor.register_tools(dict(mcp_tools))

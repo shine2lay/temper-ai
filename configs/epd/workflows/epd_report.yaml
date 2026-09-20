@@ -5,7 +5,9 @@ workflow:
     EPD loop, stage 1 of 7: the report. Replaces user research and analytics
     for a product that has neither yet.
 
-      personas → walk_1 → walk_2 → walk_3 → report
+      personas → walk_1 ┐
+                 walk_2 ├→ report
+                 walk_3 ┘
 
     Three synthetic users, each with a job to be done, use the app at a URL
     (a dev stack of the branch being measured — main, at the top of a loop)
@@ -13,9 +15,13 @@ workflow:
     the evidence and writes <bet dir>/report.md. No code is read; no fixes
     are proposed. The bet stage reads the file.
 
-    The walks run one after another, not in parallel: the browser is one
-    playwright-mcp service, and three agents steering one browser would
-    read each other's pages.
+    The three walks depend only on personas, so they run at the same time —
+    a walker is mostly waiting for a page. They used to be chained because
+    all three shared one browser: an MCP session was keyed by server, so
+    every agent in the run got the same one and concurrent walkers would
+    read each other's pages. Sessions are keyed by calling agent now
+    (tools/mcp_client.py), so each walker gets its own browser and its own
+    cookies, and it is closed when that node ends.
 
     Isolated: every input is a string or a path. Run it alone against any
     URL with any goals file to work on the walkers or the report writer.
@@ -64,7 +70,7 @@ workflow:
     - name: walk_2
       type: agent
       agent: epd_walk
-      depends_on: [walk_1]
+      depends_on: [personas]
       input_map:
         app_url: input.app_url
         persona: personas.structured.persona_2
@@ -76,7 +82,7 @@ workflow:
     - name: walk_3
       type: agent
       agent: epd_walk
-      depends_on: [walk_2]
+      depends_on: [personas]
       input_map:
         app_url: input.app_url
         persona: personas.structured.persona_3
@@ -88,7 +94,7 @@ workflow:
     - name: report
       type: agent
       agent: epd_report
-      depends_on: [walk_3]
+      depends_on: [walk_1, walk_2, walk_3]
       input_map:
         report_path: input.report_path
         bet_id: input.bet_id

@@ -11,6 +11,14 @@ Config:
     forbidden_patterns: ["rm -rf", "DROP TABLE", ...]  # optional, has defaults
     forbidden_regexes: ["/proc/\S+/environ"]           # optional, case-insensitive
 
+A pattern matches the command text case-insensitively as a substring,
+except that a bare word (letters, digits, underscore only: TRUNCATE,
+mkfs) must match a whole word. The first `platform_baseline` blocked
+every epd_task run at stack_up because that agent's script has a
+comment saying a long name is "silently truncated"; "truncated" is not
+a TRUNCATE. Patterns with spaces or punctuation ("rm -rf /", "> /dev/sd")
+keep matching as prefixes/substrings, since that is what they are for.
+
 - **Evaluates on:** `tool_call`
 
 Applies to [Bash](../tools/bash.md) tool commands.

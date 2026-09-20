@@ -23,6 +23,17 @@ PLATFORM_TRIPWIRE_REGEXES = [
     r"/proc/[^/\s]+/environ",  # /proc/1/environ, /proc/<pid>/environ
 ]
 
+_BARE_WORD = re.compile(r"^\w+$")
+
+
+def _pattern_regex(pattern: str) -> re.Pattern[str]:
+    """A forbidden pattern as a regex: substring, or whole word when the
+    pattern is one bare word (see the class docstring)."""
+    escaped = re.escape(pattern)
+    if _BARE_WORD.match(pattern):
+        escaped = rf"(?<!\w){escaped}(?!\w)"
+    return re.compile(escaped, re.IGNORECASE)
+
 
 class ForbiddenOpsPolicy(BasePolicy):
     """Block shell commands matching dangerous patterns.
@@ -31,6 +42,14 @@ class ForbiddenOpsPolicy(BasePolicy):
         type: forbidden_ops
         forbidden_patterns: ["rm -rf", "DROP TABLE", ...]  # optional, has defaults
         forbidden_regexes: ["/proc/\\S+/environ"]           # optional, case-insensitive
+
+    A pattern matches the command text case-insensitively as a substring,
+    except that a bare word (letters, digits, underscore only: TRUNCATE,
+    mkfs) must match a whole word. The first `platform_baseline` blocked
+    every epd_task run at stack_up because that agent's script has a
+    comment saying a long name is "silently truncated"; "truncated" is not
+    a TRUNCATE. Patterns with spaces or punctuation ("rm -rf /", "> /dev/sd")
+    keep matching as prefixes/substrings, since that is what they are for.
     """
 
     action_types = [ActionType.TOOL_CALL]
@@ -59,6 +78,9 @@ class ForbiddenOpsPolicy(BasePolicy):
         self.forbidden_patterns: list[str] = config.get(
             "forbidden_patterns", self.DEFAULT_FORBIDDEN
         )
+        self._pattern_regexes: list[tuple[str, re.Pattern[str]]] = [
+            (pattern, _pattern_regex(pattern)) for pattern in self.forbidden_patterns
+        ]
         self.forbidden_regexes: list[re.Pattern[str]] = [
             re.compile(pattern, re.IGNORECASE)
             for pattern in config.get("forbidden_regexes", [])
@@ -81,8 +103,8 @@ class ForbiddenOpsPolicy(BasePolicy):
 
         command = tool_params.get("command", "")
 
-        for pattern in self.forbidden_patterns:
-            if pattern.lower() in command.lower():
+        for pattern, regex in self._pattern_regexes:
+            if regex.search(command):
                 return PolicyDecision(
                     action="deny",
                     reason=f"Command contains forbidden pattern: '{pattern}'",

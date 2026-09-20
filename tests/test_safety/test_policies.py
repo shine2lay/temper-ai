@@ -128,6 +128,33 @@ class TestForbiddenOpsPolicy:
         assert self._eval(policy, "reboot now").action == "deny"
         assert self._eval(policy, "rm -rf /").action == "allow"  # not in custom list
 
+    def test_a_bare_word_pattern_matches_whole_words_only(self):
+        """The platform baseline blocked every epd_task run at stack_up: that
+        agent's script has a comment about a name being "silently truncated",
+        and TRUNCATE matched inside it."""
+        policy = ForbiddenOpsPolicy({"type": "forbidden_ops"})
+        script = (
+            "OUT=$(standee up . 2>&1)\n"
+            "# standee caps an env name at 62 characters, so a long slug is\n"
+            "# silently truncated and every later lookup finds nothing.\n"
+            "echo \"$OUT\""
+        )
+        assert self._eval(policy, script).action == "allow"
+        assert self._eval(policy, 'echo "output truncated"').action == "allow"
+        # the word itself, in any case and with any punctuation around it
+        assert self._eval(policy, "psql -c 'TRUNCATE users'").action == "deny"
+        assert self._eval(policy, "psql -c 'truncate users;'").action == "deny"
+        assert self._eval(policy, "truncate -s 0 app.log").action == "deny"
+        assert self._eval(policy, "mkfs.ext4 /dev/sdb1").action == "deny"
+        assert self._eval(policy, "unmkfs").action == "allow"
+
+    def test_patterns_with_spaces_or_punctuation_still_match_as_substrings(self):
+        policy = ForbiddenOpsPolicy({"type": "forbidden_ops"})
+        assert self._eval(policy, "rm -rf /tmp/x").action == "deny"      # "rm -rf /" is a prefix
+        assert self._eval(policy, "cat x > /dev/sda").action == "deny"   # "> /dev/sd" is a prefix
+        assert self._eval(policy, "dd if=/dev/zero of=/dev/sda").action == "deny"
+        assert self._eval(policy, "chmod 777 /srv").action == "deny"
+
 
 # --- BudgetPolicy ---
 

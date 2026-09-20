@@ -450,6 +450,14 @@ def mount_frontend(app: FastAPI, dist: Path) -> bool:
 
     from starlette.responses import FileResponse
 
+    # The app shell must be revalidated, never reused blind. Its <script>
+    # names a content-hashed bundle, so a cached shell pins the browser to a
+    # build that has been rebuilt out of existence: the dashboard then looks
+    # stale (or blank) until someone thinks to hard-refresh, and the served
+    # files are not the ones being blamed. Assets are hashed and may be kept
+    # forever; only the shell needs this. ETag keeps revalidation a 304.
+    shell_headers = {"Cache-Control": "no-cache"}
+
     # Serve static assets (JS, CSS, images)
     app.mount("/app/assets", StaticFiles(directory=str(dist / "assets")), name="frontend-assets")
 
@@ -462,11 +470,11 @@ def mount_frontend(app: FastAPI, dist: Path) -> bool:
         if file_path.is_file():
             return FileResponse(str(file_path))
         # Otherwise serve index.html (React Router handles the route)
-        return FileResponse(str(dist / "index.html"))
+        return FileResponse(str(dist / "index.html"), headers=shell_headers)
 
     @app.get("/app")
     async def serve_spa_root():
-        return FileResponse(str(dist / "index.html"))
+        return FileResponse(str(dist / "index.html"), headers=shell_headers)
 
     logger.info("Serving frontend from %s", dist)
     return True

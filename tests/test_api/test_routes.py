@@ -178,3 +178,27 @@ class TestMountFrontend:
         c = TestClient(app)
         assert c.get("/app/runs/123").text == "<html>spa</html>"
         assert c.get("/app/assets/a.js").text == "1"
+
+    def test_the_app_shell_is_never_served_from_cache_blind(self, tmp_path):
+        """A cached shell pins a browser to a bundle that no longer exists.
+
+        The shell names a content-hashed script, so rebuilding the dashboard
+        leaves a browser holding the old shell asking for a file that has
+        been replaced -- the UI looks stale and the server gets blamed.
+        """
+        from fastapi import FastAPI
+
+        from temper_ai.server import mount_frontend
+
+        dist = tmp_path / "dist"
+        (dist / "assets").mkdir(parents=True)
+        (dist / "assets" / "a.js").write_text("1")
+        (dist / "index.html").write_text("<html>spa</html>")
+        app = FastAPI()
+        mount_frontend(app, dist)
+        c = TestClient(app)
+
+        assert c.get("/app").headers["cache-control"] == "no-cache"
+        assert c.get("/app/runs/123").headers["cache-control"] == "no-cache"
+        # Hashed assets are immutable by construction; leave them cacheable.
+        assert "no-cache" not in c.get("/app/assets/a.js").headers.get("cache-control", "")

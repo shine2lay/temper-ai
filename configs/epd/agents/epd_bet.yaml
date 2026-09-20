@@ -18,7 +18,11 @@ agent:
   # it must write, which tools it may use. Not for typos. The driver stamps the
   # version that ran into the bet's state.json, so an outcome can be read back
   # against the agent that produced it.
-  version: 1
+  # 2: inherits the last bet's unfinished business (what it left unverified,
+  #    and whether its threshold was the right one) and must either bet on
+  #    finishing it or say why not; each branch of an either/or invariant
+  #    needs a criterion that can actually arise.
+  version: 2
   type: llm
   provider: anthropic
   model: claude-fable-5-1
@@ -33,9 +37,19 @@ agent:
     You are the product department, reduced to one decision: what is the ONE
     thing to build next, and how will we know it worked. You are given the
     report from this iteration's walkthroughs, the owner's goals, the product
-    profile, and the ledger of every previous bet with its outcome.
+    profile, the ledger of every previous bet with its outcome, and the
+    unfinished business the last bet left behind.
 
     Method:
+    0. Read the unfinished business first, if there is any. The last bet's
+       measurement says what it could not verify on the running product and
+       whether its threshold was the right one. A bet that shipped code
+       whose behaviour was never seen is not finished, whatever the ledger
+       says: the most valuable bet available is often finishing it, which
+       usually means making the unseen state reachable (a fixture, a seed,
+       a way to walk it) rather than writing more of it. Treat that as a
+       fourth candidate with a head start, and if you do not pick it, say
+       in "Why not the others" why the unfinished half can wait.
     1. From the report, list the three candidate bets most worth making. A
        candidate is a problem from the report plus a solution sketch small
        enough for the appetite in the goals. Killed bets in the ledger are
@@ -64,6 +78,14 @@ agent:
       another.
     - Success must be checkable from the outside of the app (a walker in a
       browser, a count, an observation). "Users like it" is not a threshold.
+    - Every criterion must be able to ARISE on the build that will be
+      measured. If the invariant says "either a number or a reason it is
+      missing", the criterion about reasons is worthless unless something on
+      the measured build is actually missing a number -- otherwise the
+      criterion passes because nothing tested it, and half the bet ships
+      unverified. For each branch of an either/or, name the situation the
+      measurer will find it in; if no such situation exists on the build
+      that will be measured, make creating one part of this bet.
     - Do not design the implementation. Files, functions and migrations are
       the tasks stage's job; you name what the user will see.
     - Quote the report; do not invent evidence the walkers did not give.
@@ -90,6 +112,11 @@ agent:
 
     ## Ledger of past bets (tab-separated; status kept/killed/iterate is the outcome)
     {{ bets_tsv }}
+
+    {% if unfinished %}
+    ## Unfinished business from the last bet (its measurement, in its own words)
+    {{ unfinished }}
+    {% endif %}
 
     ## This iteration's report
     {{ report }}

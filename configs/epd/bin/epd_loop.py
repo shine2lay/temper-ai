@@ -439,7 +439,7 @@ def github(method: str, path: str, body: dict | None = None, allow: tuple[int, .
         if e.code in allow:
             return {"_status": e.code, "_error": detail}
         die(f"github {method} {path} → {e.code}: {detail}")
-        raise AssertionError("unreachable")
+        raise AssertionError("unreachable") from e
 
 
 def open_or_find_pr(branch: str, title: str, body: str) -> dict:
@@ -619,12 +619,49 @@ def new_bet_id() -> str:
     return f"b{n:03d}"
 
 
+def previous_bet_id(bet_id: str) -> str | None:
+    """The most recent bet before this one that was actually measured."""
+    rows = [r for r in ledger_rows() if r["bet_id"] != bet_id and r["status"] in TERMINAL - {"rejected"}]
+    return rows[-1]["bet_id"] if rows else None
+
+
 def previous_outcome(bet_id: str) -> str:
     """The outcome of the most recent finished bet before this one."""
-    rows = [r for r in ledger_rows() if r["bet_id"] != bet_id and r["status"] in TERMINAL - {"rejected"}]
-    if not rows:
+    prev = previous_bet_id(bet_id)
+    return read(BETS_DIR / prev / "outcome.md") if prev else ""
+
+
+#: Sections of an outcome that describe work the last bet did not finish. The
+#: bet agent gets these verbatim: a ledger row saying "kept" is not enough to
+#: carry "this shipped but nobody ever saw it run" into the next decision.
+UNFINISHED_SECTIONS = ("Threshold", "Unverified", "Was this the right threshold", "For the next iteration")
+
+
+def unfinished_business(bet_id: str) -> str:
+    """What the previous bet left undone, in its own words.
+
+    b001 shipped both halves of an either/or invariant and could only walk
+    one: the measurement said so in prose, the ledger said "kept", and the
+    agent choosing the next bet saw only the ledger. This is the repair.
+    """
+    prev = previous_bet_id(bet_id)
+    if not prev:
         return ""
-    return read(BETS_DIR / rows[-1]["bet_id"] / "outcome.md")
+    text = read(BETS_DIR / prev / "outcome.md")
+    if not text:
+        return ""
+    wanted, keep, out = {s.lower() for s in UNFINISHED_SECTIONS}, False, [f"From bet {prev}:", ""]
+    for line in text.splitlines():
+        if line.startswith("## "):
+            keep = line[3:].strip().rstrip(":").lower() in wanted
+        if keep:
+            out.append(line)
+    st = load_state(prev)
+    m = st["stages"].get("measure") or {}
+    if m.get("vacuous_criteria"):
+        out += ["", f"({m['vacuous_criteria']} of its success criteria were vacuous: the situation each "
+                    f"described never arose on the measured build, so nothing tested them.)"]
+    return "\n".join(out).strip()
 
 
 # ------------------------------------------------------------------ stages --
@@ -670,6 +707,7 @@ def stage_bet(st: dict) -> None:
         "profile": read(LOOP_DIR / "profile.md"),
         "report": read(bdir / "report.md"),
         "bets_tsv": read(LEDGER),
+        "unfinished": unfinished_business(bet_id),
     }, workspace=cpath(LOOP_DIR), timeout=1800)
     if not (bdir / "bet.md").exists():
         die("epd_bet finished but wrote no bet.md")
@@ -892,11 +930,24 @@ def stage_measure(st: dict, keep: bool) -> None:
     if not (bdir / "outcome.md").exists():
         die("epd_measure finished but wrote no outcome.md")
     verdict = out.get("verdict") or "iterate"
+    # A criterion that could not fail did not pass. The agent is told this,
+    # and the driver holds it to it: a kept verdict with a vacuous criterion
+    # is downgraded here, because the ledger is what the next bet inherits
+    # and it must not be truer than what was seen.
+    vacuous = int(out.get("vacuous_criteria") or 0)
+    if verdict == "kept" and (vacuous or out.get("threshold_met") is False):
+        log(f"measure said kept, but {vacuous} criteria were vacuous / the threshold was not met — recording iterate")
+        verdict = "iterate"
+        out["verdict_downgraded_from"] = "kept"
     st["stages"]["measure"] = out
     st["status"] = verdict if verdict in TERMINAL else "iterate"
     save_state(st)
-    ledger_upsert(bet_id, outcome=f"{verdict}: {out.get('summary') or ''} (right threshold: {out.get('right_threshold')})")
+    note = f" [{vacuous} criteria vacuous]" if vacuous else ""
+    ledger_upsert(bet_id, outcome=f"{verdict}{note}: {out.get('summary') or ''} "
+                                 f"(right threshold: {out.get('right_threshold')})")
     log(f"measure: {verdict} — {out.get('summary')}")
+    if out.get("unverified"):
+        log(f"unverified on the running build: {out['unverified']}")
     if not keep and b.get("env_name"):
         standee_down(b["env_name"])
 

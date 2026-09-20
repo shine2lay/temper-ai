@@ -1,7 +1,9 @@
 workflow:
   name: epd_measure
   # 2: takes data_url as well as app_url.
-  version: 2
+  # 3: carries the per-criterion results out, so a vacuous pass reaches the
+  #    ledger instead of dying in the prose.
+  version: 3
   description: |
     EPD loop, stage 7 of 7: measure. Replaces the product department's
     accountability. On the shipped build's URL, one agent checks the bet's
@@ -28,6 +30,9 @@ workflow:
     verdict: measure.structured.verdict
     invariant_holds: measure.structured.invariant_holds
     threshold_met: measure.structured.threshold_met
+    criteria: measure.structured.criteria
+    vacuous_criteria: measure.structured.vacuous_criteria
+    unverified: measure.structured.unverified
     regressions: measure.structured.regressions
     right_threshold: measure.structured.right_threshold
     summary: measure.structured.summary

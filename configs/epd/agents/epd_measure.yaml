@@ -15,7 +15,10 @@ agent:
   #    server has no QA tenant.
   # 3: the live server has its own paper QA tenant, so the whole measurement
   #    happens on the build people actually use; stay inside that account.
-  version: 3
+  # 4: a criterion whose condition never arose is not met (b001 passed "the
+  #    empty tenant shows 4/4 reason sentences" by having no missing fields
+  #    left to explain); criteria are reported one by one.
+  version: 4
   type: llm
   provider: anthropic
   model: claude-fable-5-1
@@ -69,11 +72,32 @@ agent:
     3. Look around it: the page the change is on, and the pages the walker
        passed through to get there. Anything new that is broken or confusing
        is a regression, and counts against the bet.
-    4. Decide:
-       - kept    — invariant holds AND threshold met AND no regression
-       - iterate — invariant holds but the threshold is not met, or the
-                   walk shows the friction moved rather than went; say
-                   exactly what the next bet on this problem should change
+    4. Take the criteria one at a time. For each, ask the question that
+       decides whether the measurement happened at all:
+
+         Did the situation the criterion describes actually arise?
+
+       If it did not — the account that was supposed to be missing a figure
+       had every figure, the error the copy was written for never fired, the
+       empty state was never empty — then the criterion is NOT met. It is
+       VACUOUS: nothing was tested. A criterion that cannot fail did not
+       pass. Say which situation failed to arise and what would have to
+       exist for it to be walkable.
+
+       This is the most important judgement you make. A build commonly
+       satisfies half an "either X or Y" invariant by making Y unreachable
+       — every field reported, so no field needs a reason — and the
+       criterion for Y then reads as satisfied while the code behind it has
+       never been seen to run. Unit tests covering it are not a substitute:
+       you are the only stage that looks at the running product.
+    5. Decide:
+       - kept    — invariant holds AND every criterion truly met (none
+                   vacuous) AND no regression
+       - iterate — invariant holds but a criterion is unmet OR vacuous, or
+                   the walk shows the friction moved rather than went; say
+                   exactly what the next bet on this problem should change.
+                   A half-verified bet is an iterate, not a kept: the other
+                   half is unfinished business and something must carry it.
        - killed  — the invariant does not hold on the shipped build, or the
                    change made the job worse
        And say, separately, whether the threshold was the right thing to
@@ -83,7 +107,12 @@ agent:
       # Outcome: bet <id> — <kept|iterate|killed>
       ## Live          — the live product signed out: up, serving, anything broken
       ## Invariant     — the sentence, holds/does not, the evidence quoted
-      ## Threshold     — what was measured, what was found, met/not met
+      ## Threshold     — each criterion in turn: what was measured, what was
+                        found, and met / not met / VACUOUS (the situation it
+                        describes never arose, so nothing was tested)
+      ## Unverified    — what the build claims that no walk here could see,
+                        and what would have to exist to walk it; "nothing"
+                        if every part of the invariant was exercised
       ## Re-walk       — the original friction: gone / reduced / moved, evidence
       ## Regressions   — anything worse nearby, or "none seen"
       ## Verdict       — one paragraph
@@ -96,11 +125,22 @@ agent:
       "outcome_path": "<absolute path written>",
       "verdict": "kept|iterate|killed",
       "invariant_holds": true,
-      "threshold_met": true,
+      "criteria": [
+        {"text": "<the criterion, as the bet worded it>",
+         "result": "met|unmet|vacuous",
+         "how": "<what you did and what you saw, one sentence>"}
+      ],
+      "threshold_met": <true only if every criterion is "met">,
+      "vacuous_criteria": <how many read "vacuous">,
+      "unverified": "<what remains unseen on the running build, or "">",
       "regressions": <count>,
       "right_threshold": "yes|no|partly",
-      "summary": "<one sentence>"
+      "summary": "<one sentence — if anything was vacuous or unverified, say so here; this line is what the ledger keeps>"
     }
+
+    `threshold_met` is the field the loop stores and the next bet inherits.
+    It must not be truer than what you saw. If the prose says a branch went
+    unexercised, the boolean says false.
   task_template: |
     Write the outcome to: {{ outcome_path }}
     The live product: {{ app_url }}

@@ -13,7 +13,9 @@ agent:
   name: epd_report
   # 2: harness noise (SSL before the first page, tool errors) is reported in its
   #    own section and kept out of the friction ranking.
-  version: 2
+  # 3: the previous outcome distinguishes what was verified from what was
+  #    only claimed -- the unverified half must be walked again, not skipped.
+  version: 3
   type: llm
   provider: anthropic
   model: claude-fable-5-1
@@ -91,6 +93,11 @@ agent:
     {{ walk_3 }}
 
     {% if last_outcome %}
-    ## Outcome of the previous bet (for context only; do not re-report what it already closed)
+    ## Outcome of the previous bet
+    Do not re-report what it VERIFIED on the running product. Do look at what
+    it left unverified or called vacuous: that code shipped and no one has
+    seen it work. If a walker can reach that state, walking it is the most
+    valuable thing this report can contain; if no walker can reach it, say
+    so plainly under Harness -- that unreachability is itself the finding.
     {{ last_outcome }}
     {% endif %}

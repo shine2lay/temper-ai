@@ -46,6 +46,15 @@ class MCPTool(BaseTool):
     # for MCP is the server's, set when the server is launched.
     local_paths = False
 
+    # The executor's 30 s wrapper is sized for a shell command. A browser
+    # step (navigate, submit a form and wait for the page) can honestly take
+    # longer, and when the wrapper fired on a login submit the run lost its
+    # browser for good (the MCP session died with the abandoned request).
+    # So the call's timeout is this tool's own: the server YAML's
+    # ``timeout`` (seconds), else 120.
+    manages_own_timeout = True
+    DEFAULT_CALL_TIMEOUT = 120
+
     def __init__(
         self,
         server_name: str,
@@ -63,10 +72,20 @@ class MCPTool(BaseTool):
         self._tool_name = tool_name
         self._manager = mcp_manager
         self._event_loop = event_loop
+        self._call_timeout = self._configured_timeout()
         self._discovered = False
         # True once the server said "no such tool" — so the warning fires once
         # per process, not once per prompt.
         self._missing_on_server = False
+
+    def _configured_timeout(self) -> int:
+        configs = getattr(self._manager, "_server_configs", None) or {}
+        config = configs.get(self._server_name) or {}
+        try:
+            value = int(config.get("timeout") or self.DEFAULT_CALL_TIMEOUT)
+        except (TypeError, ValueError):
+            value = self.DEFAULT_CALL_TIMEOUT
+        return max(1, value)
 
     @property
     def llm_name(self) -> str:
@@ -161,7 +180,7 @@ class MCPTool(BaseTool):
                 self._manager.call_tool(self._server_name, self._tool_name, params),
                 self._event_loop,
             )
-            outcome = future.result(timeout=30)
+            outcome = future.result(timeout=self._call_timeout)
             if outcome.is_error:
                 # The server refused or failed the call (bad arguments, tool not
                 # registered under this profile, upstream API error). Report it
@@ -170,7 +189,7 @@ class MCPTool(BaseTool):
                 return ToolResult(success=False, result=outcome.text, error=outcome.text or f"MCP tool '{self.name}' reported an error")
             return ToolResult(success=True, result=outcome.text)
         except TimeoutError:
-            error = f"MCP tool '{self.name}' timed out after 30s"
+            error = f"MCP tool '{self.name}' timed out after {self._call_timeout}s"
             logger.warning(error)
             return ToolResult(success=False, result="", error=error)
         except Exception as e:

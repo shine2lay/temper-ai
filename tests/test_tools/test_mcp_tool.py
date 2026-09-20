@@ -196,6 +196,85 @@ def test_execute_server_error_is_a_failure_with_the_servers_text(loop):
     assert r.error == "Invalid arguments: missing 'x'"
 
 
+def test_call_timeout_is_the_tools_own_and_browser_sized(loop):
+    """The executor's 30 s wrapper fired on a login submit and the run lost
+    its browser for good. An MCP call has its own timeout: the server YAML's
+    ``timeout``, else 120 s; and the executor leaves it alone."""
+    assert MCPTool.manages_own_timeout is True
+    tool = _tool(loop, FakeManager(_meta()))
+    assert tool._call_timeout == 120
+
+    mgr = FakeManager(_meta())
+    mgr._server_configs = {"srv": {"name": "srv", "timeout": 7}}
+    assert _tool(loop, mgr)._call_timeout == 7
+
+    mgr._server_configs = {"srv": {"name": "srv", "timeout": "not a number"}}
+    assert _tool(loop, mgr)._call_timeout == 120
+
+
+def test_a_slow_call_times_out_after_the_tools_own_timeout(loop):
+    class Slow(FakeManager):
+        async def call_tool(self, server, tool, args):
+            await asyncio.sleep(5)
+            return ToolCallOutcome(text="late")
+
+    mgr = Slow(_meta())
+    mgr._server_configs = {"srv": {"name": "srv", "timeout": 1}}
+    r = _tool(loop, mgr).execute(x="1")
+    assert r.success is False
+    assert "timed out after 1s" in r.error
+
+
+def test_manager_reconnects_once_when_the_session_is_dead():
+    """After an abandoned request the streamable-HTTP server forgets the
+    session and every call fails at once with McpError('Session terminated').
+    The manager treats that like a broken pipe: evict, reconnect, retry."""
+    from mcp import McpError
+    from mcp.types import ErrorData
+
+    from temper_ai.tools.mcp_client import MCPClientManager
+
+    dead = SimpleNamespace(calls=0)
+
+    async def dead_call(tool, args):
+        dead.calls += 1
+        raise McpError(ErrorData(code=-32000, message="Session terminated"))
+
+    live = SimpleNamespace(calls=0)
+
+    async def live_call(tool, args):
+        live.calls += 1
+        return ToolCallOutcome(text="back")
+
+    dead_conn = SimpleNamespace(call_tool=dead_call)
+    live_conn = SimpleNamespace(call_tool=live_call)
+
+    mgr = MCPClientManager()
+    mgr._connections["srv"] = dead_conn
+    connects: list[str] = []
+
+    async def ensure_connected(name):
+        if name in mgr._connections:
+            return mgr._connections[name]
+        connects.append(name)
+        mgr._connections[name] = live_conn
+        return live_conn
+
+    mgr.ensure_connected = ensure_connected  # type: ignore[method-assign]
+    out = asyncio.run(mgr.call_tool("srv", "thing", {"x": "1"}))
+    assert out.text == "back"
+    assert dead.calls == 1 and live.calls == 1 and connects == ["srv"]
+
+    # any other McpError is the call's, not the session's: no reconnect
+    async def bad_args(tool, args):
+        raise McpError(ErrorData(code=-32602, message="Invalid params"))
+
+    mgr._connections["srv"] = SimpleNamespace(call_tool=bad_args)
+    with pytest.raises(McpError, match="Invalid params"):
+        asyncio.run(mgr.call_tool("srv", "thing", {}))
+    assert connects == ["srv"]
+
+
 def test_execute_exception_is_a_failure(loop):
     class Boom(FakeManager):
         async def call_tool(self, *a):

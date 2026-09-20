@@ -24,7 +24,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
 
-from mcp import ClientSession, StdioServerParameters
+from mcp import ClientSession, McpError, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,12 @@ class MCPServerConnection:
             if hasattr(block, "text"):
                 parts.append(block.text)
         return ToolCallOutcome(text="\n".join(parts) if parts else "", is_error=bool(result.isError))
+
+
+def _session_is_dead(exc: McpError) -> bool:
+    """An McpError that means the session, not the call, is gone."""
+    text = str(exc).lower()
+    return "session terminated" in text or "session not found" in text
 
 
 class MCPClientManager:
@@ -190,13 +196,18 @@ class MCPClientManager:
     async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> ToolCallOutcome:
         """Connect if needed, then call a tool. The main entry point for MCPTool.
 
-        On connection failure (stale subprocess, broken pipe), evicts the dead
-        connection and reconnects once before raising.
+        On connection failure (stale subprocess, broken pipe) or a dead
+        session (the streamable-HTTP server no longer knows our session id:
+        "Session terminated"), evicts the dead connection and reconnects once
+        before raising. Without the second case one abandoned browser call
+        cost a run every browser call after it, each failing in 2 ms.
         """
         connection = await self.ensure_connected(server_name)
         try:
             return await connection.call_tool(tool_name, arguments)
-        except (BrokenPipeError, EOFError, ConnectionError, OSError) as exc:
+        except (BrokenPipeError, EOFError, ConnectionError, OSError, McpError) as exc:
+            if isinstance(exc, McpError) and not _session_is_dead(exc):
+                raise
             logger.warning(
                 "MCP server '%s' connection failed: %s. Reconnecting...",
                 server_name, exc,

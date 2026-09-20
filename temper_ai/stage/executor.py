@@ -169,7 +169,7 @@ def _run_batches(
 
         if len(remaining) == 1 and len(batch) == 1:
             node = batch[0]
-            result = _execute_single_node(node, input_data, node_outputs, context, graph_event_id, loop_feedback)
+            result = _execute_single_node(node, input_data, node_outputs, context, graph_event_id, loop_feedback, node_map)
             # Handle dynamic spawning if the node produced _spawn
             node_outputs[node.name] = result
             if cp:
@@ -181,7 +181,7 @@ def _run_batches(
                 continue
         else:
             # For parallel batches, only run nodes not already checkpointed
-            results = _execute_parallel_batch(remaining, input_data, node_outputs, context, graph_event_id, loop_feedback)
+            results = _execute_parallel_batch(remaining, input_data, node_outputs, context, graph_event_id, loop_feedback, node_map)
             for node, result in results:
                 node_outputs[node.name] = result
                 if cp:
@@ -350,6 +350,7 @@ def _execute_single_node(
     context: ExecutionContext,
     parent_event_id: str,
     loop_feedback: dict[str, NodeResult] | None = None,
+    node_map: dict[str, Node] | None = None,
 ) -> NodeResult:
     """Execute one node with condition checking and input resolution."""
     skip = _check_dependency_failures(node, node_outputs)
@@ -371,7 +372,7 @@ def _execute_single_node(
             return result
 
     unresolved: list[str] = []
-    resolved = _resolve_inputs(node, input_data, node_outputs, loop_feedback, unresolved)
+    resolved = _resolve_inputs(node, input_data, node_outputs, loop_feedback, unresolved, node_map)
     resolved = _inject_strategy_context(node, resolved, node_outputs)
     if unresolved:
         # Recorded on the node so it reaches the API and the dashboard: a
@@ -542,6 +543,7 @@ def _execute_parallel_batch(
     context: ExecutionContext,
     parent_event_id: str,
     loop_feedback: dict[str, NodeResult] | None = None,
+    node_map: dict[str, Node] | None = None,
 ) -> list[tuple[Node, NodeResult]]:
     """Execute a batch of independent nodes concurrently."""
     results = []
@@ -550,7 +552,7 @@ def _execute_parallel_batch(
         future_to_node = {
             pool.submit(
                 _execute_single_node, node, input_data, node_outputs,
-                context, parent_event_id, loop_feedback
+                context, parent_event_id, loop_feedback, node_map
             ): node
             for node in batch
         }
@@ -1045,6 +1047,7 @@ def _resolve_inputs(
     node_outputs: dict[str, NodeResult],
     loop_feedback: dict[str, NodeResult] | None = None,
     unresolved: list[str] | None = None,
+    node_map: dict[str, Node] | None = None,
 ) -> dict:
     """Resolve input_map for a node.
 
@@ -1080,7 +1083,7 @@ def _resolve_inputs(
 
     resolved = {
         local_name: _resolve_single_input(
-            node.name, local_name, source, input_data, effective_outputs, unresolved,
+            node.name, local_name, source, input_data, effective_outputs, unresolved, node_map,
         )
         for local_name, source in input_map.items()
     }
@@ -1089,6 +1092,39 @@ def _resolve_inputs(
             val_len = len(str(value)) if value else 0
             logger.debug("input_map resolved: %s.%s = %s (%d chars)", node.name, local_name, input_map[local_name], val_len)
     return resolved
+
+
+def _unserved_reason(node_name: str, source_node: str, node_map: dict[str, Node] | None) -> str | None:
+    """Why a source node has no output to give, or None when that is by design.
+
+    Three cases the dashboard used to show as one "(no such node)":
+      * the name is not in the graph: a typo in the wiring; the run should say so;
+      * the node is in the graph and runs *after* this one, i.e. depends on it
+        (directly or through others): a loop-back, which by construction has
+        nothing to give on the first pass and is served from loop feedback on a
+        rewind. Nothing is wrong; listing it made every first pass of the epd
+        implementer show five unresolved inputs;
+      * the node is in the graph and not downstream, yet has not run: it is
+        neither a dependency nor a loop-back, so the wiring is missing a
+        ``depends_on``, and the run should say that too.
+    Without the graph the first wording stands, as before.
+    """
+    if node_map is None:
+        return "no such node"
+    if source_node not in node_map:
+        return "no such node in this graph"
+    seen: set[str] = set()
+    frontier = [source_node]
+    while frontier:
+        name = frontier.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        deps = (node_map[name].config.depends_on or []) if name in node_map else []
+        if node_name in deps:
+            return None
+        frontier.extend(deps)
+    return f"`{source_node}` has not run yet; is it missing from depends_on?"
 
 
 _NODE_REF_HEAD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -1114,6 +1150,7 @@ def _resolve_single_input(
     input_data: dict,
     node_outputs: dict[str, NodeResult],
     unresolved: list[str] | None = None,
+    node_map: dict[str, Node] | None = None,
 ) -> Any:
     """Resolve a single input_map entry from its source reference.
 
@@ -1123,6 +1160,11 @@ def _resolve_single_input(
       any other string                                   — literal passed through
 
     Non-string sources (numbers, bools, lists) are literals by definition.
+
+    ``unresolved`` collects what could not be served, with a reason; given the
+    graph (``node_map``) the reason is exact, and a source that feeds this node
+    only on a loop rewind is not listed at all on the first pass (see
+    ``_unserved_reason``).
     """
     if not isinstance(source, str):
         return source
@@ -1161,12 +1203,16 @@ def _resolve_single_input(
         return value
 
     if source_node not in node_outputs:
-        logger.warning(
-            "Node '%s' input_map '%s': source node '%s' has not produced output yet",
-            node_name, local_name, source_node,
-        )
-        if unresolved is not None:
-            unresolved.append(f"{local_name} \u2190 {source} (no such node)")
+        reason = _unserved_reason(node_name, source_node, node_map)
+        if reason is None:
+            logger.debug(
+                "Node '%s' input_map '%s': '%s' feeds it only on a loop rewind; first pass",
+                node_name, local_name, source_node,
+            )
+        else:
+            logger.warning("Node '%s' input_map '%s' \u2190 %s: %s", node_name, local_name, source, reason)
+            if unresolved is not None:
+                unresolved.append(f"{local_name} \u2190 {source} ({reason})")
         return None
 
     result = node_outputs[source_node]

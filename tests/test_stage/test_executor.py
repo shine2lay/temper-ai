@@ -1496,6 +1496,42 @@ class TestUnresolvedInputMap:
         assert value == "here"
         assert unresolved == []
 
+    def _graph(self):
+        """implement -> review -> gate, with gate looping back to implement."""
+        return {
+            "implement": _make_agent_node("implement"),
+            "review": _make_agent_node("review", depends_on=["implement"]),
+            "gate": _make_agent_node("gate", depends_on=["review"]),
+            "aside": _make_agent_node("aside"),
+        }
+
+    def test_a_loop_back_source_is_not_unresolved_on_the_first_pass(self):
+        """A source that runs after this node, and depends on it, feeds it only on
+        a rewind. Null on the first pass is the design, not a fault: the epd
+        implementer showed five of these on every run."""
+        from temper_ai.stage.executor import _resolve_single_input
+        unresolved: list[str] = []
+        for source in ("review.structured.findings", "gate.structured.summary"):
+            value = _resolve_single_input("implement", "fb", source, {}, {}, unresolved, self._graph())
+            assert value is None
+        assert unresolved == []
+
+    def test_a_typo_is_named_as_such_when_the_graph_is_known(self):
+        from temper_ai.stage.executor import _resolve_single_input
+        unresolved: list[str] = []
+        _resolve_single_input("implement", "fb", "reveiw.structured.findings", {}, {}, unresolved, self._graph())
+        assert unresolved == ["fb \u2190 reveiw.structured.findings (no such node in this graph)"]
+
+    def test_a_source_that_is_neither_dependency_nor_loop_back_points_at_depends_on(self):
+        """`aside` is in the graph but nothing orders it before `implement`; the
+        wiring wants a depends_on, and the message says so."""
+        from temper_ai.stage.executor import _resolve_single_input
+        unresolved: list[str] = []
+        _resolve_single_input("implement", "fb", "aside.structured.x", {}, {}, unresolved, self._graph())
+        assert len(unresolved) == 1
+        assert "`aside` has not run yet" in unresolved[0]
+        assert "depends_on" in unresolved[0]
+
 
 class TestPerCallerToolRelease:
     """A node's per-caller tool state (an MCP session, its browser) ends with the node.

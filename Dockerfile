@@ -134,9 +134,10 @@ RUN groupadd -g 1000 temperai-worker && \
 
 COPY --chown=temperai-worker:temperai-worker entrypoint.sh /app/entrypoint.sh
 
-# /var/run/docker.sock is mounted from host at runtime; user's group
-# membership for it is added via docker-compose `group_add` at deploy
-# time (the host's docker GID isn't known at build time).
+# /var/run/docker.sock is mounted from the host only by the opt-in overlay
+# docker-compose.host-docker.yml, which also adds the user's group
+# membership for it via `group_add` at deploy time (the host's docker GID
+# isn't known at build time).
 
 USER temperai-worker
 

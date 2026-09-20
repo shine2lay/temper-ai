@@ -91,8 +91,12 @@ services:
     ports:
       - "${TEMPER_BIND:-127.0.0.1}:8420:8420"
     volumes:
-      # Hot reload: mount source code over the installed package
-      - ./temper_ai:/app/temper_ai
+      # Hot reload: mount source code over the installed package. Read-only:
+      # the host writes, the container reads. Runs execute in this process
+      # (TEMPER_EXECUTION_MODE=inprocess) and a node's Bash reaches whatever
+      # its uid can write — that must not include the code the next run
+      # executes.
+      - ./temper_ai:/app/temper_ai:ro
       - ./configs:/app/configs:ro
       - ${WORKSPACE_DIR:-./workspaces}:/app/workspaces
       # Serve the locally built dashboard when there is one, so `npm run
@@ -172,24 +176,28 @@ services:
   # with status=queued when TEMPER_EXECUTION_MODE=external; the worker
   # picks them up. Both share the same Postgres + Redis.
   #
-  # Workspaces mounted at the SAME path as the host (instead of /app/workspaces)
-  # so when an agent inside this container runs `docker compose up`, the
-  # host docker daemon resolves the volume paths correctly. Without this
-  # path-equivalent mount, sibling containers get broken volume mounts.
+  # The host's docker socket is NOT mounted here. A node's Bash runs as
+  # this container's uid, and a uid that can reach the socket is root on
+  # the host — so the socket is an opt-in overlay for the runs that need
+  # it (engineer agents bringing a repo's compose stack up), see
+  # docker-compose.host-docker.yml. Workspaces are still mounted at the
+  # SAME path as the host (instead of /app/workspaces) so that, with the
+  # overlay, `docker compose up` from inside resolves volume paths
+  # correctly; without the path-equivalent mount, sibling containers get
+  # broken volume mounts.
   worker:
     build:
       context: .
       target: worker
     restart: unless-stopped
     volumes:
-      # Source code mount for hot-reload of agent / CLI changes
-      - ./temper_ai:/app/temper_ai
+      # Source code mount for hot-reload of agent / CLI changes. Read-only:
+      # each run is a subprocess off this mount, and a node's Bash must not
+      # be able to rewrite the code the next run executes.
+      - ./temper_ai:/app/temper_ai:ro
       - ./configs:/app/configs:ro
-      # Workspaces at host-equivalent path so engineer-agent
-      # `docker compose up` resolves volume mounts correctly through DooD
+      # Workspaces at host-equivalent path, see above
       - ${WORKSPACE_DIR:-./workspaces}:${WORKSPACE_DIR:-./workspaces}
-      # Host docker socket so agents can talk to the host daemon
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       HOME: /home/temperai-worker
       PYTHONDONTWRITEBYTECODE: "1"
@@ -211,11 +219,6 @@ services:
     env_file:
       - path: .env
         required: false
-    # Add the host's docker socket GID so temperai-worker can use the socket
-    # without sudo. Override DOCKER_GID via .env if your host's docker
-    # group has a non-default GID (Linux: `stat -c '%g' /var/run/docker.sock`).
-    group_add:
-      - "${DOCKER_GID:-999}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

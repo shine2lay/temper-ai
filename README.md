@@ -311,6 +311,12 @@ The `temper-ai-worker` service is profile-gated in docker-compose:
 docker compose --profile worker up -d
 ```
 
+The worker does not get the host's docker socket by default — a node's Bash runs as the worker's uid, and a uid that can reach the socket is root on the host. Runs that need it (engineer agents bringing a repository's compose stack up) layer on the opt-in overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.host-docker.yml --profile worker up -d worker
+```
+
 Live LLM token streams flow from the worker via Redis Streams — the dashboard sees chunks the same way regardless of which container produced them. JSONL forensic logs land at `${TEMPER_LOG_DIR}/{execution_id}/events.jsonl` per run.
 
 See [docs/reference/architecture.md](docs/reference/architecture.md) for the full server-and-worker design and when each mode is appropriate.
@@ -331,6 +337,8 @@ safety:
       denied_paths: [".env", "credentials", "/etc/"]
     - type: forbidden_ops
 ```
+
+Every run also gets a platform baseline before its own policies: a `forbidden_ops` that refuses and records a command naming the host docker socket, a mounted credential file or another process's `/proc/<pid>/environ`. It is a tripwire on the command text, not a sandbox — the boundary is the container the run executes in.
 
 See [Safety Policies Reference](docs/reference/policies/index.md).
 

@@ -78,15 +78,17 @@ temper-ai-server-1     FastAPI + dashboard, no engineer toolchain
 temper-ai-worker-1     watch-queue daemon, full engineer toolchain
 ```
 
-For the worker's `temperai-worker` user (UID 1000) to access the host docker socket without sudo:
+The worker does not get the host's docker socket by default: a node's Bash runs as the worker's `temperai-worker` user (UID 1000), and a uid that can reach the socket can start a container with the host's filesystem mounted — root on the host. Runs that need it (engineer agents bringing a repository's compose stack up) layer on the opt-in overlay `docker-compose.host-docker.yml`, which mounts the socket and adds the host's docker group:
 
 ```bash
 # In .env:
 DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
 WORKSPACE_DIR=/absolute/path/to/your/workspaces
+
+docker compose -f docker-compose.yml -f docker-compose.host-docker.yml --profile worker up -d worker
 ```
 
-The path-equivalent workspace mount (host path = container path) is required so engineer agents running `docker compose up` against the host docker daemon resolve volume mounts correctly.
+The path-equivalent workspace mount (host path = container path) is required so engineer agents running `docker compose up` against the host docker daemon resolve volume mounts correctly. The source mounts (`temper_ai/`, `configs/`) are read-only in both containers: a run must not be able to rewrite the code the next run executes.
 
 ## Where the data lives
 

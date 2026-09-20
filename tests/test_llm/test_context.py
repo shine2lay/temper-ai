@@ -599,6 +599,39 @@ class TestNudgeAndEviction:
         view = ContextCompressor(8_000).prepare(messages, wrapping_up=True)
         assert view[-1]["role"] == "tool"  # nothing appended
 
+    def test_prepare_describes_what_it_sent(self):
+        """The event log gets the harness's side: the raw transcript in
+        llm.call.started has no nudge in it and no ref tags."""
+        messages = _transcript(turns=6, size=3000)
+        c = ContextCompressor(1_000_000)
+        assert c.sent is None
+        c.prepare(messages)
+        assert c.sent is not None
+        assert c.sent.nudged is False and c.sent.hid == () and c.sent.blocks == 0
+        assert c.sent.hidden == 0 and c.sent.wrapping_up is False
+        assert c.sent.tokens == pytest.approx(estimate_messages_tokens(c.view(messages)))
+
+        c = ContextCompressor(8_000)
+        c.prepare(messages)
+        assert c.sent is not None and c.sent.nudged is True
+        c.prepare(messages, wrapping_up=True)
+        assert c.sent is not None
+        assert c.sent.nudged is False and c.sent.wrapping_up is True
+
+    def test_sent_names_what_the_harness_hid_on_that_call_only(self):
+        messages = _transcript(turns=6, size=3000)  # ~6K of results
+        c = ContextCompressor(4_000)
+        c.prepare(messages)
+        assert c.sent is not None
+        # two steps of the same block, as the room note says it to the model
+        assert c.sent.hid == ("m00003–m00008 behind b1", "m00009–m00010 behind b1")
+        assert c.sent.blocks == 1 and c.sent.hidden == 8
+        assert c.sent.tokens <= 4_000
+
+        c.prepare(messages)  # nothing new to hide: the block is in place
+        assert c.sent is not None
+        assert c.sent.hid == () and c.sent.blocks == 1
+
     def test_what_the_harness_hid_is_still_reported_while_wrapping_up(self):
         messages = _transcript(turns=6, size=3000)  # ~6K of results
         view = ContextCompressor(4_000).prepare(messages, wrapping_up=True)

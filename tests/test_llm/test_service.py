@@ -463,6 +463,50 @@ class TestServiceObservability:
         assert completed["data"]["has_tool_calls"] is False
         assert completed["data"]["cost_usd"] >= 0
         assert completed["status"] == "completed"
+        # no tools: the compress default did not engage, and the event says so
+        assert completed["data"]["context"] == {"policy": "truncate"}
+
+    def test_llm_call_completed_records_the_harness_side_of_the_call(self):
+        """What the model was sent is not the transcript in llm.call.started:
+        the nudge, the hidden ranges and the view size live only in the wire
+        view. The completed event writes them down, per call, so a query can
+        tell a run that was asked to compress from one that never was."""
+        responses = [
+            _make_tool_response([{"id": f"c{i}", "name": "bash", "arguments": '{"command": "x"}'}])
+            for i in range(4)
+        ] + [_make_text_response("ok")]
+        provider = MockProvider(responses)
+        service = LLMService(provider, max_iterations=10, max_context_tokens=3_000)
+        ctx = CallContext(execution_id="obs-ctx")
+        service.run(
+            [{"role": "user", "content": "Do something"}],
+            tools=_A_TOOL, execute_tool=lambda name, params: "z" * 3000, context=ctx,
+        )
+
+        events = get_events(execution_id="obs-ctx")
+        sent = [e["data"]["context"] for e in events if e["type"] == EventType.LLM_CALL_COMPLETED]
+        assert len(sent) == 5
+        assert all(s["policy"] == "compress" and s["limit"] == 3_000 for s in sent)
+        assert sent[0] == {
+            "policy": "compress", "limit": 3_000, "tokens": sent[0]["tokens"], "nudged": False,
+            "hid": [], "blocks": 0, "hidden": 0, "wrapping_up": False,
+        }
+        assert 0 < sent[0]["tokens"] < 100
+        # ~750 tokens a result: asked at the third call, over the limit by the fifth
+        assert [s["nudged"] for s in sent] == [False, False, True, True, True]
+        assert sent[-1]["hid"] and sent[-1]["blocks"] == 1 and sent[-1]["hidden"] > 0
+        assert sent[-1]["tokens"] <= 3_000
+        assert all(s["wrapping_up"] is False for s in sent)  # 5 of 10 iterations
+
+    def test_truncate_runs_say_so_in_the_event(self):
+        provider = MockProvider([_make_text_response("Hi")])
+        service = LLMService(provider, context_policy="truncate")
+        ctx = CallContext(execution_id="obs-trunc")
+        service.run([{"role": "user", "content": "Hi"}], tools=_A_TOOL, context=ctx)
+
+        events = get_events(execution_id="obs-trunc")
+        completed = [e for e in events if e["type"] == EventType.LLM_CALL_COMPLETED][0]
+        assert completed["data"]["context"] == {"policy": "truncate"}
 
     def test_tool_loop_records_all_events(self):
         responses = [

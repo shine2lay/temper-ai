@@ -142,6 +142,23 @@ class Block:
         return f"{self.id} (tier {self.tier}, {ref(self.start)}–{ref(self.end)})"
 
 
+@dataclass(frozen=True)
+class Sent:
+    """What ``prepare`` put on the wire, for the event log.
+
+    The transcript in ``llm.call.started`` is the raw one; the harness's side
+    of the conversation — the nudge, what it hid, how full the view was — is
+    only in the model's view unless it is written down here.
+    """
+
+    tokens: int  # estimated size of the view, before the [context] note
+    nudged: bool  # the usage ask was in it
+    hid: tuple[str, ...]  # what the harness hid this call: "m00003–m00012 behind b1"
+    blocks: int  # active blocks in the view
+    hidden: int  # transcript messages behind them
+    wrapping_up: bool
+
+
 GUIDANCE = """
 
 ## Context management
@@ -161,7 +178,9 @@ class ContextCompressor:
         self._room_note: str = (
             ""  # what the harness hid since the model last saw a view
         )
+        self._hid: tuple[str, ...] = ()  # … and as ranges, for `sent`
         self._seen = 0  # transcript length last time we looked; it may only grow
+        self.sent: Sent | None = None  # the last view, described
 
     # -- wire view ---------------------------------------------------------
 
@@ -179,6 +198,7 @@ class ContextCompressor:
                 "transcript shrank under the compress policy; refs are no longer stable"
             )
         self._seen = len(messages)
+        self._hid = ()
         view = self.view(messages)
         est = estimate_messages_tokens(view)
         if est > self.max_context_tokens and self._make_room(
@@ -186,7 +206,15 @@ class ContextCompressor:
         ):
             view = self.view(messages)
             est = estimate_messages_tokens(view)
-        self._append_nudge(view, messages, est, ask=not wrapping_up)
+        nudged = self._append_nudge(view, messages, est, ask=not wrapping_up)
+        self.sent = Sent(
+            tokens=est,
+            nudged=nudged,
+            hid=self._hid,
+            blocks=sum(1 for b in self.blocks.values() if b.active),
+            hidden=len(self._hidden_indices()),
+            wrapping_up=wrapping_up,
+        )
         return view
 
     def view(self, messages: list[dict]) -> list[dict]:
@@ -861,6 +889,7 @@ class ContextCompressor:
                 )
                 break
         if hid:
+            self._hid = tuple(hid)
             self._room_note = (
                 f"The harness hid {', '.join(hid)} to stay under the limit; nothing was summarized — "
                 "decompress or search_context can still reach it. Compress consumed ranges yourself "
@@ -947,23 +976,26 @@ class ContextCompressor:
 
     def _append_nudge(
         self, view: list[dict], messages: list[dict], est: int, *, ask: bool = True
-    ) -> None:
+    ) -> bool:
         """Say what the harness has to say as a message of its own, after the
         latest tool result — not inside it. Models discount instructions found
-        in tool output (they are trained to), and one did, every time."""
+        in tool output (they are trained to), and one did, every time.
+
+        Returns whether the usage ask went out."""
         if not view or view[-1].get("role") != "tool":
-            return
+            return False
         notes = []
         if self._room_note:
             notes.append(self._room_note)
             self._room_note = ""
         ranges = self._compressible_ranges(messages)
         compressible = sum(t for _, _, t in ranges)
-        if (
+        nudged = (
             ask
             and est >= self.max_context_tokens * NUDGE_AT
             and compressible >= self.max_context_tokens * NUDGE_MIN_COMPRESSIBLE
-        ):
+        )
+        if nudged:
             top = ", ".join(f"{ref(s)}–{ref(e)} (~{_fmt(t)})" for s, e, t in ranges[:3])
             notes.append(
                 f"{100 * est // max(self.max_context_tokens, 1)}% of the {self.max_context_tokens:,}-token limit used. "
@@ -971,6 +1003,7 @@ class ContextCompressor:
             )
         if notes:
             view.append({"role": "user", "content": "[context] " + " ".join(notes)})
+        return nudged
 
     def _where(self, i: int, hidden: set[int]) -> str:
         if i in hidden:

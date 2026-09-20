@@ -389,7 +389,24 @@ class LLMService:
                   "tool_calls_requested": [{"name": tc.get("name"), "id": tc.get("id")}
                                            for tc in (response.tool_calls or [])] or None,
                   "iteration": iteration, "response_content": response.content,
-                  "reasoning": response.reasoning})
+                  "reasoning": response.reasoning,
+                  "context": self._context_sent()})
+
+    def _context_sent(self) -> dict[str, Any]:
+        """The harness's side of the call just made: which context policy
+        applied and, under compress, what the model was actually sent — how
+        full the view was, whether it was asked to compress, what was hidden.
+        `policy` is the one that applied, so `truncate` also for a compress
+        agent that ran without tools.
+        """
+        if self._compressor is None or self._compressor.sent is None:
+            return {"policy": "truncate"}
+        sent = self._compressor.sent
+        return {
+            "policy": "compress", "limit": self.max_context_tokens, "tokens": sent.tokens,
+            "nudged": sent.nudged, "hid": list(sent.hid), "blocks": sent.blocks,
+            "hidden": sent.hidden, "wrapping_up": sent.wrapping_up,
+        }
 
     def _record_llm_failed(self, iteration: int, exc: Exception) -> None:
         self._record(

@@ -18,12 +18,15 @@ surrounding context rather than guess.
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
+
+_STRAY_CLOSING_BRACE = re.compile(r"\}\s*\}\s*\]\s*$")
 
 
 class Edit(BaseTool):
@@ -80,14 +83,21 @@ class Edit(BaseTool):
         if isinstance(edits, str):
             # claude-haiku-4-5 sends the array JSON-encoded in a string in most
             # calls (11 of 12 in one run, each refused, each a lost iteration).
-            # The intent is unambiguous, so take it.
+            # The intent is unambiguous, so take it. When it does, the string
+            # often ends `}}]` -- one stray brace before the `]` (3 of 3 string
+            # calls in the next run). No array of flat {old_text, new_text}
+            # objects can legitimately end that way, so drop the brace, but
+            # only if the strict parse failed and the repaired text parses.
             try:
                 edits = json.loads(edits)
             except ValueError:
-                return ToolResult(
-                    success=False, result="",
-                    error="edits must be an array of {old_text, new_text} objects (got a string that is not JSON)",
-                )
+                try:
+                    edits = json.loads(_STRAY_CLOSING_BRACE.sub("}]", edits))
+                except ValueError:
+                    return ToolResult(
+                        success=False, result="",
+                        error="edits must be an array of {old_text, new_text} objects (got a string that is not JSON)",
+                    )
         if not isinstance(edits, list) or not edits:
             return ToolResult(success=False, result="", error="edits must be a non-empty array")
 

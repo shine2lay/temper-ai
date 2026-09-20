@@ -178,6 +178,18 @@ class TestEdit:
         assert r.success is True, r.error
         assert "import sys" in (ws / "src" / "app.py").read_text()
 
+    def test_the_stray_closing_brace_haiku_appends_is_dropped(self, ws):
+        """3 of 3 stringified calls in one run ended `}}]` -- one brace too
+        many. No array of flat edit objects can end that way, so it is
+        unambiguous; the repair only runs when the strict parse fails."""
+        import json
+
+        edits = json.dumps([{"old_text": "import os", "new_text": "import sys"}])
+        assert edits.endswith("}]")
+        r = tool(Edit, ws).execute(path="src/app.py", edits=edits[:-1] + "}]")
+        assert r.success is True, r.error
+        assert "import sys" in (ws / "src" / "app.py").read_text()
+
     def test_a_string_that_is_not_json_is_refused_with_the_shape(self, ws):
         r = tool(Edit, ws).execute(path="src/app.py", edits="replace import os with import sys")
         assert r.success is False

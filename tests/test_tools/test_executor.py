@@ -3,6 +3,7 @@
 import tempfile
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -325,6 +326,124 @@ class TestWorkspaceFailsClosed:
         )
         assert result.success is True, result.result
         assert result.result.strip() == str(repo.resolve())
+
+
+class TestScratchDir:
+    """A second root the sandbox allows, for the temporary files nodes want.
+
+    The first stray the fail-closed sandbox refused in production was a
+    reviewer writing a commit message to /tmp. Refused, the model moved the
+    same file outside the workspace through Bash seven seconds later: a
+    refusal alone teaches a model to route around the guardrail. So a run has
+    a scratch directory, and the refusal names it.
+    """
+
+    def _tools(self):
+        from temper_ai.tools.read import Read
+        from temper_ai.tools.write import Write
+        return {"Read": Read(), "Write": Write()}
+
+    def _executor(self, root):
+        ws = root / "ws"
+        ws.mkdir()
+        ex = ToolExecutor(workspace_root=str(ws))
+        ex.register_tools(self._tools())
+        return ex, ws
+
+    def test_the_refusal_names_the_scratch_dir(self, tmp_path, monkeypatch):
+        ex, _ = self._executor(tmp_path)
+        events: list[tuple] = []
+        monkeypatch.setattr(
+            "temper_ai.tools.executor.record", lambda et, **kw: events.append((et, kw)),
+        )
+        stray = tmp_path / "commitmsg.txt"
+        result = ex.execute("Write", {"path": str(stray), "content": "x"}, allowed_tools=ALL_TOOLS)
+        assert result.success is False
+        assert "escapes workspace" in result.error
+        assert not stray.exists()
+        scratch = ex._scratch_dir  # made by the refusal itself, not by asking for it
+        assert scratch is not None
+        assert scratch in result.error  # the node is told where temporary files go
+        assert Path(scratch).is_dir()  # and it exists by the time it is told
+        [(et, data)] = [(et, kw["data"]) for et, kw in events]
+        assert et is EventType.TOOL_BLOCKED
+        assert data["reason"] == "workspace_violation"
+        assert data["scratch_dir"] == scratch
+
+    def test_files_in_scratch_are_allowed(self, tmp_path):
+        ex, _ = self._executor(tmp_path)
+        note = Path(ex.scratch_dir) / "notes" / "commitmsg.txt"
+        w = ex.execute("Write", {"path": str(note), "content": "feat: x"}, allowed_tools=ALL_TOOLS)
+        assert w.success is True, w.error
+        assert note.read_text() == "feat: x"
+        r = ex.execute("Read", {"path": str(note)}, allowed_tools=ALL_TOOLS)
+        assert r.success is True, r.error
+        assert "feat: x" in r.result
+
+    def test_scratch_is_reachable_from_a_node_workspace(self, tmp_path):
+        """A node confined to a worktree inside the run's workspace still has the run's scratch."""
+        ex, ws = self._executor(tmp_path)
+        worktree = ws / "worktrees" / "feat"
+        worktree.mkdir(parents=True)
+        note = Path(ex.scratch_dir) / "diff.txt"
+        w = ex.execute(
+            "Write", {"path": str(note), "content": "d"}, allowed_tools=ALL_TOOLS, workspace=str(worktree),
+        )
+        assert w.success is True, w.error
+        assert note.read_text() == "d"
+
+    def test_scratch_is_per_run(self, tmp_path):
+        """Two executors are two runs; one cannot reach the other's scratch."""
+        one, two = tmp_path / "one", tmp_path / "two"
+        one.mkdir()
+        two.mkdir()
+        ex1, _ = self._executor(one)
+        ex2, _ = self._executor(two)
+        assert ex1.scratch_dir != ex2.scratch_dir
+        into_other = Path(ex2.scratch_dir) / "x.txt"
+        result = ex1.execute("Write", {"path": str(into_other), "content": "x"}, allowed_tools=ALL_TOOLS)
+        assert result.success is False
+        assert not into_other.exists()
+
+    def test_not_made_until_a_path_strays(self, tmp_path):
+        """A run that never strays never gets one — nothing to name, nothing to clean up."""
+        ex, _ = self._executor(tmp_path)
+        ok = ex.execute("Write", {"path": "in.txt", "content": "x"}, allowed_tools=ALL_TOOLS)
+        assert ok.success is True, ok.error
+        assert ex._scratch_dir is None
+        ex.execute("Write", {"path": str(tmp_path / "out.txt"), "content": "x"}, allowed_tools=ALL_TOOLS)
+        assert ex._scratch_dir is not None
+
+    def test_shutdown_removes_it(self, tmp_path):
+        ex, _ = self._executor(tmp_path)
+        scratch = Path(ex.scratch_dir)
+        (scratch / "left.txt").write_text("x")
+        ex.shutdown()
+        assert not scratch.exists()
+
+    def test_a_symlink_out_of_scratch_is_still_outside(self, tmp_path):
+        """Scratch is judged like the workspace: by where a path resolves to."""
+        ex, _ = self._executor(tmp_path)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        link = Path(ex.scratch_dir) / "link"
+        link.symlink_to(elsewhere)
+        result = ex.execute(
+            "Write", {"path": str(link / "x.txt"), "content": "x"}, allowed_tools=ALL_TOOLS,
+        )
+        assert result.success is False
+        assert not (elsewhere / "x.txt").exists()
+
+    def test_no_workspace_means_no_scratch_either(self, tmp_path):
+        """Scratch is a second root of an active sandbox, not a way to run with none."""
+        ex = ToolExecutor()
+        ex.register_tools(self._tools())
+        result = ex.execute(
+            "Write", {"path": str(tmp_path / "x.txt"), "content": "x"}, allowed_tools=ALL_TOOLS,
+        )
+        assert result.success is False
+        assert "no workspace" in result.error
+        assert ex._scratch_dir is None
 
 
 class TestSkipPolicies:

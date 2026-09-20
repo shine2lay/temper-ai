@@ -14,6 +14,14 @@ Every tool call runs in a **workspace**: the node's `workspace_path` input when 
 
 Tools that take a path (`Read`, `Write`, `Edit`, `Grep`, `Glob`) do not run with no workspace at all; the refusal says how to give the node one. `Bash` has no path to judge and is governed by its command allowlist either way, so a script node that *creates* the worktree can run before there is a workspace.
 
+### Scratch directory
+
+Each run has one other place its tools may use: a scratch directory, made the first time a path strays outside the workspace and named in that refusal (`Temporary files belong in this run's scratch directory '/tmp/temper-scratch-…'`). Nearly every stray is a node wanting somewhere for a temporary file — a commit message, a diff to review — and a node told only *no* has been seen put the file there through `Bash` instead. The nodes of one run share it; runs do not. It is removed when the run ends: anything a node wants kept belongs in the workspace.
+
+### What the sandbox is
+
+The path check is a guardrail against a node *straying*, not a boundary against a model that wants out: `Bash` can reach anything the container can, subject only to its allowlist. The boundary that holds against intent is the container the run executes in, plus that allowlist. Do not rest a policy decision on the workspace check alone.
+
 | Name | Description |
 |------|-------------|
 | [`AddNode`](addnode.md) | Add a new node to the running workflow graph. Called during an agent's run to dispatch follow-up work conditionally (use when the decision can't be expressed as a declarative Jinja template over your output). The new node is queued and inserted into the DAG atomically after your agent completes, alongside any `dispatch:` block from your config. Safety caps (max_children_per_dispatch, max_dispatch_depth, etc.) apply to the merged batch. |

@@ -85,12 +85,12 @@ def execute_workflow(
             view can identify the new attempt as a resume. None = fresh run.
 
     Returns:
-        ExecuteResult with terminal status + headline metrics. Caller is
-        responsible for cleanup of per-run resources (cancel_event removal
-        from any global registry, ws_manager.cleanup, tool_executor.shutdown).
-        These cleanup steps are intentionally NOT done here so the runner
-        stays decoupled from the route handler's bookkeeping; the route
-        handler's `finally` block continues to own them in phase 1.
+        ExecuteResult with terminal status + headline metrics. The tool
+        executor is made here and shut down here (its thread pool and scratch
+        directory end with the run; the caller never sees it). Cleanup of the
+        resources the caller does own (cancel_event removal from any global
+        registry, ws_manager.cleanup) is intentionally NOT done here so the
+        runner stays decoupled from the route handler's bookkeeping.
     """
     is_resume = initial_outputs is not None
     op_label = "Resuming" if is_resume else "Starting"
@@ -200,6 +200,10 @@ def execute_workflow(
             status="failed",
             error=str(exc),
         )
+    finally:
+        # The executor is per run: its thread pool and its scratch directory
+        # end with the run. (The API routes and `temper run` do the same.)
+        run_tool_executor.shutdown(wait=False)
 
     logger.info(
         "Workflow '%s' %s: status=%s, cost=$%.4f, tokens=%d",

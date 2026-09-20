@@ -3,6 +3,7 @@
 import pytest
 
 from temper_ai.database import init_database, reset_database
+from temper_ai.tools.executor import ToolExecutor
 
 
 @pytest.fixture(autouse=True)
@@ -12,6 +13,21 @@ def _test_db():
     init_database("sqlite:///:memory:")
     yield
     reset_database()
+
+
+@pytest.fixture(autouse=True)
+def _scratch_dirs_under_pytest_tmp(tmp_path_factory, monkeypatch):
+    """Keep every executor's scratch directory under pytest's own tmp.
+
+    An executor makes its scratch directory the first time a path strays
+    outside the workspace and removes it on shutdown(). Tests make executors
+    by the dozen and rarely shut them down, so left alone the suite would
+    leave one temper-scratch-* in /tmp per straying test, forever. pytest
+    prunes its own tmp tree (last three runs)."""
+    monkeypatch.setattr(
+        ToolExecutor, "_make_scratch_dir",
+        lambda self: str(tmp_path_factory.mktemp("temper-scratch-")),
+    )
 
 
 _CREDENTIAL_ENV = (

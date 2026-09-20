@@ -2,9 +2,25 @@
 
 Handles:
 - Tool lookup from registered instances
-- Workspace path validation (security)
+- Workspace path validation (the sandbox — see below for what it is and is not)
 - Timeout enforcement via ThreadPoolExecutor
 - Observability event recording at every decision point
+
+What the sandbox is
+-------------------
+The path check on Read/Write/Edit/Grep/Glob is a guardrail against a node
+*straying*: a reviewer writing its diff to /tmp because that is where diffs
+go, a Glob judged from wherever the server was started. It is not a boundary
+against a model that wants out. Bash has no path the executor can judge and is
+governed only by its command allowlist, and a model refused a Write outside
+the workspace has been seen `cp` the same file there through Bash seconds
+later. The boundary that holds against intent is the container the run
+executes in, plus that allowlist. Do not describe this sandbox as more than a
+guardrail, and do not let a policy decision rest on it.
+
+Most strays are a node wanting somewhere for a temporary file, so the run has
+a scratch directory: a second root the sandbox allows, named in the refusal
+the moment a node first needs it (see ToolExecutor.scratch_dir).
 
 Future extensibility points:
 - Safety policy validation (action_policies.yaml)
@@ -15,8 +31,11 @@ Future extensibility points:
 
 import copy
 import logging
+import shutil
+import tempfile
+import threading
 import time
-from collections.abc import Collection, Container
+from collections.abc import Callable, Collection, Container
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
@@ -86,9 +105,31 @@ class ToolExecutor:
         self.policy_engine = policy_engine  # SafetyPolicyEngine (optional)
         self._tools: dict[str, BaseTool] = {}
         self._thread_pool = ThreadPoolExecutor(max_workers=max_workers)
+        self._scratch_dir: str | None = None  # made on first need, see scratch_dir
+        self._scratch_lock = threading.Lock()
         # Running cost/token totals for budget policy enforcement
         self.run_cost_usd: float = 0.0
         self.run_tokens: int = 0
+
+    @property
+    def scratch_dir(self) -> str:
+        """This run's scratch directory — the one place outside the workspace its tools may use.
+
+        Made the first time a path strays outside the workspace, and named in
+        that refusal: nearly every stray is a node wanting somewhere for a
+        temporary file, and a node told only "no" has been seen put the file
+        there through Bash instead. A run that never strays never gets one.
+        Per executor, so per run: nodes of one run share it, runs do not.
+        Removed by shutdown() — it is scratch; what a node wants kept belongs
+        in the workspace.
+        """
+        with self._scratch_lock:
+            if self._scratch_dir is None:
+                self._scratch_dir = self._make_scratch_dir()
+            return self._scratch_dir
+
+    def _make_scratch_dir(self) -> str:
+        return tempfile.mkdtemp(prefix="temper-scratch-")
 
     def track_usage(self, cost_usd: float = 0.0, tokens: int = 0) -> None:
         """Update running cost/token totals for budget policy enforcement."""
@@ -128,7 +169,8 @@ class ToolExecutor:
             workspace: The directory THIS caller works in — a node's
                 ``workspace_path`` input, typically a worktree another node
                 made earlier in the run. Defaults to the run's workspace_root.
-                Path parameters must stay inside it, relative ones resolve
+                Path parameters must stay inside it (or inside the run's
+                scratch directory, see scratch_dir), relative ones resolve
                 against it, and Bash/git run in it. It must itself lie inside
                 the run's workspace when the run has one: the value can come
                 from another node's output, and a node must not be able to
@@ -311,12 +353,15 @@ class ToolExecutor:
         parent_id: str | None,
         execution_id: str | None,
     ) -> ToolResult | None:
-        """Check that path params stay within the workspace. Returns blocking ToolResult or None."""
-        path_error = _validate_workspace_paths(params, workspace_root)
+        """Check that path params stay within the workspace (or the run's scratch dir).
+
+        Returns a blocking ToolResult or None.
+        """
+        path_error = _validate_workspace_paths(params, workspace_root, lambda: self.scratch_dir)
         if not path_error:
             return None
         self._record_blocked(tool_name, "workspace_violation", path_error, parent_id, execution_id,
-                             workspace_root=workspace_root)
+                             workspace_root=workspace_root, scratch_dir=self._scratch_dir)
         return ToolResult(success=False, result="", error=path_error)
 
     def _record_blocked(
@@ -408,8 +453,12 @@ class ToolExecutor:
             )
 
     def shutdown(self, wait: bool = True) -> None:
-        """Shut down the thread pool."""
+        """Shut down the thread pool and remove the run's scratch directory, if it made one."""
         self._thread_pool.shutdown(wait=wait)
+        with self._scratch_lock:
+            scratch, self._scratch_dir = self._scratch_dir, None
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
 
     def __enter__(self) -> "ToolExecutor":
         return self
@@ -421,12 +470,19 @@ class ToolExecutor:
 
 
 
-def _validate_workspace_paths(params: dict[str, Any], workspace_root: str) -> str | None:
+def _validate_workspace_paths(
+    params: dict[str, Any],
+    workspace_root: str,
+    scratch: Callable[[], str],
+) -> str | None:
     """Check that path parameters don't escape the workspace. Returns error string or None.
 
     A relative path is judged from the workspace, which is where the tool will
     resolve it — not from this process's cwd, which is wherever the server
-    was started.
+    was started. ``scratch()`` names the run's scratch directory, the one
+    other place a path may be; it is called only for a path that is not in
+    the workspace, which is what makes the directory (see
+    ToolExecutor.scratch_dir), and the refusal tells the node about it.
     """
     for key in _PATH_PARAMS:
         value = params.get(key)
@@ -437,8 +493,16 @@ def _validate_workspace_paths(params: dict[str, Any], workspace_root: str) -> st
             return f"Path in '{key}' contains null byte"
 
         try:
-            if not _inside(value, workspace_root):
-                return f"Path '{value}' escapes workspace root '{workspace_root}'"
+            if _inside(value, workspace_root):
+                continue
+            scratch_dir = scratch()
+            if _inside(value, scratch_dir):
+                continue
+            return (
+                f"Path '{value}' escapes workspace root '{workspace_root}'. "
+                f"Temporary files belong in this run's scratch directory '{scratch_dir}'; "
+                "everything else belongs in the workspace."
+            )
         except (OSError, ValueError):
             return f"Invalid path in '{key}': {value}"
 

@@ -1044,41 +1044,9 @@ def stage_measure(st: dict, keep: bool) -> None:
 
 # ------------------------------------------------------------------- driver --
 
-def cmd_run(keep: bool) -> None:
-    """The whole loop as one temper run: report → bet → [gate] → tasks → build → ship → measure.
-
-    The stage-at-a-time path below still works and is still the way to redo one stage by hand. What
-    this adds is the loop as temper sees it: one run id, one graph, one place where it stopped and
-    why. The sequence used to live here, in Python, which meant the shape of the process was visible
-    only to whoever read this file.
-
-    Two things stay here, because neither is part of the loop's reasoning:
-
-      * The first stack. `report` needs something to walk before the run starts, and standing it up
-        is this side's job (the ssh key that can do it belongs to the host).
-      * Allocating the bet id and its directory, so every artefact the run writes has somewhere to go.
-
-    The gate is temper's, not this script's: the run parks at `tasks` and waits for an approval in
-    the UI. `approve`/`reject` here are for the stage-at-a-time path.
-    """
-    require_tools("standee", "docker", "git", "ssh")
-    bet_id = open_bet() or new_bet_id()
-    st = load_state(bet_id)
-    bdir = BETS_DIR / bet_id
-    mkdir_shared(bdir)
-    ledger_upsert(bet_id, status="running")
-
-    head = refresh_main()
-    env, url = standee_up(MAIN_CLONE, f"epd-{bet_id}", "12h")
-    st["stages"]["report"] = {"env": env, "url": url, "base_head": head}
-    st["status"] = "running"
-    save_state(st)
-    wait_for_url(url)
-    preflight_login(url)
-
-    log(f"== {bet_id}: the loop, as one run ==")
-    log("   it will stop at `tasks` and wait for you to approve the bet in temper")
-    out = run_workflow("epd_loop", {
+def loop_inputs(bet_id: str, bdir: Path, env: str, url: str) -> dict:
+    """Everything the epd_loop workflow is told, from the bet's files and the stack it will walk."""
+    return {
         "bet_id": bet_id,
         "bet_dir": cpath(bdir),
         "report_path": cpath(bdir / "report.md"),
@@ -1106,14 +1074,109 @@ def cmd_run(keep: bool) -> None:
             f"acceptance command gives the expected output. Do nothing listed under no-gos."
         ),
         "stack_ttl": "8h",
-        # One run is one workspace root, and it has to hold everything the stages write:
-        # the bet's own files under epd/<repo>/bets/<id>, and the worktrees under repos/.
-        # Rooted at repos/ (what the build stage alone needs), the report agent's Write of
-        # an absolute path into the bet dir was outside the root, so the tool relocated it
-        # -- silently, to repos/epd/... -- and the bet dir came out empty while the run
-        # reported success. The union of the stages' roots is their parent.
-    }, workspace=CONTAINER_WORKSPACES, timeout=8 * 3600)
+    }
 
+
+# One run is one workspace root, and it has to hold everything the stages write: the bet's own
+# files under epd/<repo>/bets/<id>, and the worktrees under repos/. Rooted at repos/ (what the
+# build stage alone needs), the report agent's Write of an absolute path into the bet dir was
+# outside the root, so the tool relocated it -- silently, to repos/epd/... -- and the bet dir came
+# out empty while the run reported success. The union of the stages' roots is their parent.
+LOOP_WORKSPACE = CONTAINER_WORKSPACES
+
+
+def cmd_run(keep: bool, wait: bool) -> None:
+    """The whole loop as one temper run: report → bet → [gate] → tasks → build → ship → measure.
+
+    The stage-at-a-time path below still works and is still the way to redo one stage by hand. What
+    this adds is the loop as temper sees it: one run id, one graph, one place where it stopped and
+    why. The sequence used to live here, in Python, which meant the shape of the process was visible
+    only to whoever read this file.
+
+    Two things stay here, because neither is part of the loop's reasoning:
+
+      * The first stack. `report` needs something to walk before the run starts, and standing it up
+        is this side's job (the ssh key that can do it belongs to the host).
+      * Allocating the bet id and its directory, so every artefact the run writes has somewhere to go.
+
+    The gate is temper's, not this script's: the run parks at `tasks` and waits for an approval in
+    the UI. `approve`/`reject` here are for the stage-at-a-time path.
+
+    This returns as soon as the run is submitted. The run is temper's from then on -- it parks at
+    the gate for as long as the owner takes -- and a host process sitting on it for hours added
+    nothing but something to keep alive. `collect` does the bookkeeping once temper is done with it.
+    `--wait` is the old blocking form, for a terminal that wants to watch (it is also the only form
+    that re-submits after a rate-limit wall, since re-submitting needs a process still around to do it).
+    """
+    require_tools("standee", "docker", "git", "ssh")
+    bet_id = open_bet() or new_bet_id()
+    st = load_state(bet_id)
+    bdir = BETS_DIR / bet_id
+    mkdir_shared(bdir)
+    ledger_upsert(bet_id, status="running")
+
+    head = refresh_main()
+    env, url = standee_up(MAIN_CLONE, f"epd-{bet_id}", "12h")
+    st["stages"]["report"] = {"env": env, "url": url, "base_head": head}
+    st["status"] = "running"
+    save_state(st)
+    wait_for_url(url)
+    preflight_login(url)
+
+    log(f"== {bet_id}: the loop, as one run ==")
+    log("   it will stop at `tasks` and wait for you to approve the bet in temper")
+    inputs = loop_inputs(bet_id, bdir, env, url)
+    if wait:
+        out = run_workflow("epd_loop", inputs, workspace=LOOP_WORKSPACE, timeout=8 * 3600)
+        finish_loop(st, out, keep)
+        return
+    rid = post_run("epd_loop", inputs, LOOP_WORKSPACE)
+    st["stages"]["loop"] = {"_run_id": rid, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
+    save_state(st)
+    log(f"epd_loop → run {rid}")
+    log("   it is temper's now; `epd_loop.py collect` records the outcome once it is done")
+
+
+def cmd_collect(keep: bool) -> None:
+    """Record what the loop run produced, once temper is done with it.
+
+    Safe to call early: a run still going is reported, not touched. A run that failed is reported
+    with its reason and left in place for `run` to try again (same bet id, the stack redeployed).
+    """
+    bet_id = open_bet()
+    if not bet_id:
+        die("no open bet; nothing to collect")
+    st = load_state(bet_id)
+    loop = st["stages"].get("loop") or {}
+    rid = loop.get("_run_id")
+    if not rid:
+        die(f"{bet_id} has no loop run to collect; `run` first")
+    if loop.get("_collected"):
+        log(f"{bet_id}: run {rid[:8]} already collected ({st['status']})")
+        return
+    info = get_run(rid)
+    status = info.get("status")
+    if status in ("running", "pending"):
+        running = [n["name"] for n in info.get("nodes") or [] if n.get("status") == "running"]
+        log(f"{bet_id}: run {rid[:8]} is still {status} (running={running}, "
+            f"cost=${info.get('total_cost_usd') or 0:.2f}); nothing to collect yet")
+        return
+    if status != "completed":
+        why = "rate limited: the work is fine, the account is not" if rate_limited(rid) else info.get("error_message")
+        die(f"{bet_id}: run {rid} ended {status}: {why}. Fix what needs fixing, then `run` again.")
+    out = {k: unstr(v) for k, v in (info.get("workflow_output") or {}).items()}
+    out["_versions"] = config_versions("epd_loop")
+    out["_run_id"] = rid
+    out["_launched"] = loop.get("_launched")
+    out["_cost_usd"] = info.get("total_cost_usd")
+    out["_duration_s"] = info.get("duration_seconds")
+    finish_loop(st, out, keep)
+
+
+def finish_loop(st: dict, out: dict, keep: bool) -> None:
+    """The bookkeeping after a loop run: state, ledger, the stack it walked."""
+    bet_id = st["bet_id"]
+    out["_collected"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     st["stages"]["loop"] = out
     st["status"] = "measured" if out.get("verdict") else ("shipped" if out.get("shipped") else "stopped")
     save_state(st)
@@ -1123,7 +1186,8 @@ def cmd_run(keep: bool) -> None:
     log(f"build:   {out.get('build_verdict')} — {out.get('implement_commit')}")
     log(f"ship:    {out.get('shipped')} {out.get('pr') or ''}")
     log(f"outcome: {out.get('verdict')} — {out.get('outcome_summary')}")
-    if not keep:
+    env = (st["stages"].get("report") or {}).get("env")
+    if env and not keep:
         standee_down(env)
 
 
@@ -1204,8 +1268,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
-    r_ = sub.add_parser("run", help="the whole loop as one temper run (gates in the UI)")
-    r_.add_argument("--keep", action="store_true", help="leave the report stack up")
+    r_ = sub.add_parser("run", help="the whole loop as one temper run (gates in the UI); returns once submitted")
+    r_.add_argument("--keep", action="store_true", help="leave the report stack up (with --wait)")
+    r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
+    c = sub.add_parser("collect", help="record the outcome of the open bet's loop run, once temper is done")
+    c.add_argument("--keep", action="store_true", help="leave the report stack up")
     n = sub.add_parser("next")
     n.add_argument("--until", choices=STAGES)
     n.add_argument("--auto-approve", action="store_true")
@@ -1235,7 +1302,9 @@ def main() -> None:
     if args.cmd == "status":
         cmd_status()
     elif args.cmd == "run":
-        cmd_run(args.keep)
+        cmd_run(args.keep, args.wait)
+    elif args.cmd == "collect":
+        cmd_collect(args.keep)
     elif args.cmd == "next":
         cmd_next(args.until, args.auto_approve, args.keep)
     elif args.cmd == "approve":

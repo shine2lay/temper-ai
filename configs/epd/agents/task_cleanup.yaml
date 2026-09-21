@@ -7,12 +7,18 @@
 #   3. release the claim                 (claims/<slug>.json -> claims/released/<slug>.<ts>.json)
 # The shared clone <root>/main stays: it is reused by every task on the repo.
 #
+# A refusal touches nothing. Both checks run before either removal: version 1
+# removed the worktree and only then found the branch unpushed, so "refused"
+# had already cost the checkout (b003: the branch survived in the clone, the
+# worktree the ship stage was about to push from did not).
+#
 # Idempotent: anything already gone is reported as "absent", never an error.
 # POSIX sh (the Bash tool runs /bin/sh); no dollar-brace env syntax (the
 # config loader rewrites it with the server's env at load time).
 agent:
   name: task_cleanup
-  version: 1
+  # 2: refuse before removing anything, not between the two removals.
+  version: 2
   type: script
   timeout_seconds: 120
   script_template: |
@@ -52,29 +58,25 @@ agent:
     WT="$ROOT/worktrees/$TASK_SLUG"
     CLAIM="$ROOT/claims/$TASK_SLUG.json"
 
-    # --- 1. worktree ---------------------------------------------------------
+    # --- the checks, before anything is removed --------------------------------
+    WORKTREE=absent
+    REGISTERED=false
     if [ -d "$WT" ]; then
       if [ -d "$MAIN/.git" ] && git -C "$MAIN" worktree list --porcelain | grep -qx "worktree $WT"; then
+        REGISTERED=true
         DIRTY=$(git -C "$WT" status --porcelain --untracked-files=all | wc -l | tr -d ' ')
         if [ "$DIRTY" != 0 ] && [ "$FORCE" != true ]; then
           fail "worktree $WT has $DIRTY uncommitted change(s); commit/push them or pass force=true"
         fi
-        git -C "$MAIN" worktree remove --force "$WT" || fail "git worktree remove failed for $WT"
-        WORKTREE=removed
-      elif [ "$FORCE" = true ]; then
-        rm -rf "$WT"
-        WORKTREE=removed_unregistered
-      else
+      elif [ "$FORCE" != true ]; then
         fail "$WT exists but is not a registered worktree of $MAIN; pass force=true to delete it"
       fi
-    else
-      WORKTREE=absent
     fi
-    [ -d "$MAIN/.git" ] && git -C "$MAIN" worktree prune || true
 
-    # --- 2. branch -----------------------------------------------------------
     BRANCH=absent
+    HAS_BRANCH=false
     if [ -d "$MAIN/.git" ] && git -C "$MAIN" rev-parse -q --verify "refs/heads/$TASK_SLUG" >/dev/null; then
+      HAS_BRANCH=true
       BASE=$(git -C "$MAIN" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)
       [ -n "$BASE" ] || BASE=$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)
       SAFE=false
@@ -84,13 +86,28 @@ agent:
       elif [ -z "$(git -C "$MAIN" rev-list "origin/$BASE..$TASK_SLUG")" ]; then
         SAFE=true   # everything is already on the base branch
       fi
-      if [ "$SAFE" = true ] || [ "$FORCE" = true ]; then
-        git -C "$MAIN" branch -D -q "$TASK_SLUG" || fail "could not delete branch $TASK_SLUG"
-        BRANCH=deleted
-      else
+      if [ "$SAFE" != true ] && [ "$FORCE" != true ]; then
         AHEAD=$(git -C "$MAIN" rev-list --count "origin/$BASE..$TASK_SLUG")
         fail "branch $TASK_SLUG has $AHEAD commit(s) not on origin/$TASK_SLUG or origin/$BASE; push them or pass force=true"
       fi
+    fi
+
+    # --- 1. worktree ---------------------------------------------------------
+    if [ -d "$WT" ]; then
+      if [ "$REGISTERED" = true ]; then
+        git -C "$MAIN" worktree remove --force "$WT" || fail "git worktree remove failed for $WT"
+        WORKTREE=removed
+      else
+        rm -rf "$WT"
+        WORKTREE=removed_unregistered
+      fi
+    fi
+    [ -d "$MAIN/.git" ] && git -C "$MAIN" worktree prune || true
+
+    # --- 2. branch -----------------------------------------------------------
+    if [ "$HAS_BRANCH" = true ]; then
+      git -C "$MAIN" branch -D -q "$TASK_SLUG" || fail "could not delete branch $TASK_SLUG"
+      BRANCH=deleted
     fi
 
     # --- 3. claim ------------------------------------------------------------

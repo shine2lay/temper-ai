@@ -1,6 +1,8 @@
 workflow:
   name: epd_loop
-  version: 2
+  # 3: the build keeps what ship needs. Standalone, epd_task tears its own worktree and branch down
+  #    at the end; here the branch is what the next node pushes, so the build is told to keep it.
+  version: 3
   description: |
     The EPD loop, as one run.
 
@@ -138,6 +140,15 @@ workflow:
 
     # 4 — The whole build pipeline: claim, worktree, stack, plan, implement, review, QA, security,
     #     verify, deploy. Its own judges decide its verdict; this node does not second-guess them.
+    #
+    #     keep: on its own, epd_task ends by removing its worktree and branch and releasing the
+    #     claim -- and refuses the branch when it holds commits that are nowhere else, which in this
+    #     loop is the success case: the commit `ship` is about to push. So the build keeps all of it,
+    #     and its dev stack too, which means the PR the owner is asked to decide on links to a
+    #     running candidate rather than a URL that went down with the gate (the stack's ttl bounds
+    #     the wait). The driver releases the three and takes the stack down when it collects the run.
+    #     force: a claim left by an earlier attempt at the same bet is this bet's own; it does not
+    #     block a retry.
     - name: build
       type: stage
       ref: workflows/epd_task
@@ -150,6 +161,8 @@ workflow:
         stack_ttl: input.stack_ttl
         verify_email: input.email
         verify_password: input.password
+        keep: true
+        force: true
 
     # 5 — Push and open the PR. Conditioned on the build's own judges, and the host driver checks
     #     the same thing again before it pushes: a gate worth having is worth having on both sides

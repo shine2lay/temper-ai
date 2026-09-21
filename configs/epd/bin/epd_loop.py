@@ -1462,7 +1462,7 @@ def in_server(cmd: str) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", "exec", SERVER_CONTAINER, "sh", "-c", cmd], text=True, capture_output=True)
 
 
-def cmd_resume() -> None:
+def cmd_resume(at: str | None = None) -> None:
     """Fork the open bet's failed loop run at its last good stage and run the rest, in temper.
 
     The finished stages come back as checkpoints -- report, bet, the owner's approval, tasks: the
@@ -1471,10 +1471,14 @@ def cmd_resume() -> None:
     failed is "completed" to the run above it, so a resume skips the stage and re-skips everything
     conditioned on it. Forking at the checkpoint before the failed stage is the resume this loop needs.
 
+    ``at`` names the stage to start from instead of the first that failed. The case for it: a build
+    whose only failed node came after its gate (a teardown step) delivered an approved commit, and
+    starting again at `ship` keeps it, where the automatic choice would build it a second time.
+
     The failed attempt's leftovers are cleared first, since the stage starts over: its claim on the
     task (held by a run that is over), and whatever it left uncommitted in the worktree, which is
     kept as a patch beside the bet, so the new attempt starts where the tasks say and not where the
-    old one stopped.
+    old one stopped. Neither is touched when the build is being kept.
     """
     bet_id = open_bet()
     if not bet_id:
@@ -1502,6 +1506,13 @@ def cmd_resume() -> None:
     if not failed:
         die(f"{bet_id}: run {rid[:8]} ended {status} but names no failed stage: {info.get('error_message')!r}")
     stage = min(failed, key=STAGES.index)
+    if at:
+        if at not in STAGES:
+            die(f"--at must be one of {', '.join(STAGES)}")
+        if STAGES.index(at) > STAGES.index(stage):
+            log(f"note: starting at `{at}` although `{stage}` is where the run failed "
+                f"({info.get('error_message')}); what `{stage}` delivered is kept")
+        stage = at
     before = STAGES[STAGES.index(stage) - 1] if STAGES.index(stage) else None
     # A fork lists only the checkpoints it wrote itself; the stages it restored are checkpoints of
     # the run it was forked from. A second resume of the same stage therefore forks the original
@@ -1518,17 +1529,18 @@ def cmd_resume() -> None:
     slug = f"epd-{bet_id}"
     claim = f"{CONTAINER_WORKSPACES}/repos/{REPO_NAME}/claims/{slug}.json"
     wt = f"{CONTAINER_WORKSPACES}/repos/{REPO_NAME}/worktrees/{slug}"
-    r = in_server(f"python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(\"run_id\",\"\"))' {claim} 2>/dev/null")
-    if r.stdout.strip() == rid:
-        in_server(f"rm -f {claim}")
-        log(f"cleared the claim on {slug} held by the failed run")
-    r = in_server(f"git -C {wt} status --porcelain 2>/dev/null | wc -l")
-    if r.returncode == 0 and r.stdout.strip() not in ("", "0"):
-        patch = bdir / f"build-{rid[:8]}.patch"
-        diff = in_server(f"git -C {wt} add -N . && git -C {wt} diff")
-        write(patch, diff.stdout)
-        in_server(f"git -C {wt} reset -q --hard && git -C {wt} clean -qfd")
-        log(f"the failed attempt left {r.stdout.strip()} uncommitted paths in {slug}; kept as {patch.name}, worktree reset")
+    if STAGES.index(stage) <= STAGES.index("build"):
+        r = in_server(f"python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(\"run_id\",\"\"))' {claim} 2>/dev/null")
+        if r.stdout.strip() == rid:
+            in_server(f"rm -f {claim}")
+            log(f"cleared the claim on {slug} held by the failed run")
+        r = in_server(f"git -C {wt} status --porcelain 2>/dev/null | wc -l")
+        if r.returncode == 0 and r.stdout.strip() not in ("", "0"):
+            patch = bdir / f"build-{rid[:8]}.patch"
+            diff = in_server(f"git -C {wt} add -N . && git -C {wt} diff")
+            write(patch, diff.stdout)
+            in_server(f"git -C {wt} reset -q --hard && git -C {wt} clean -qfd")
+            log(f"the failed attempt left {r.stdout.strip()} uncommitted paths in {slug}; kept as {patch.name}, worktree reset")
 
     env, url = (st["stages"].get("report") or {}).get("env", ""), (st["stages"].get("report") or {}).get("url", "")
     log(f"== {bet_id}: resuming at `{stage}` (fork of {source[:8]} after `{before}`, checkpoint {seq}) ==")
@@ -1611,6 +1623,42 @@ def finish_loop(st: dict, out: dict, keep: bool) -> None:
     env = (st["stages"].get("report") or {}).get("env")
     if env and not keep:
         standee_down(env)
+    if shipped in ("shipped", "changes_requested", "closed"):
+        release_task(bet_id)
+
+
+def release_task(bet_id: str) -> None:
+    """Remove the build's worktree and local branch, and release its claim, once the PR is decided.
+
+    The build keeps all three so that `ship` has a branch to push (epd_loop.yaml, the build node);
+    what it pushed is the pull request, which holds every commit whatever the owner did with it, so
+    the local copies are no longer the only ones. Same three steps as task_cleanup, in the same
+    place (the server container, whose paths the clone's worktree records use), without its refusal:
+    after a squash merge the commits are on origin as the PR and nowhere else, and GitHub may have
+    deleted the branch, which task_cleanup would read as unpushed work. A worktree with uncommitted
+    changes is left alone, and said so: whatever put them there is not this driver.
+    """
+    slug = f"epd-{bet_id}"
+    root = f"{CONTAINER_WORKSPACES}/repos/{REPO_NAME}"
+    main, wt, claim = f"{root}/main", f"{root}/worktrees/{slug}", f"{root}/claims/{slug}.json"
+    r = in_server(f"git -C {wt} status --porcelain --untracked-files=all 2>/dev/null | wc -l")
+    if r.returncode == 0 and r.stdout.strip() not in ("", "0"):
+        log(f"note: {slug} has {r.stdout.strip()} uncommitted path(s); the worktree stays")
+        return
+    steps = (
+        f"if [ -d {wt} ]; then git -C {main} worktree remove --force {wt} && echo 'worktree removed'; fi; "
+        f"git -C {main} worktree prune; "
+        f"if git -C {main} rev-parse -q --verify refs/heads/{slug} >/dev/null; then "
+        f"git -C {main} branch -D -q {slug} && echo 'branch deleted'; fi; "
+        f"if [ -f {claim} ]; then mkdir -p {root}/claims/released && "
+        f"mv {claim} {root}/claims/released/{slug}.$(date -u +%Y%m%dT%H%M%SZ).json && echo 'claim released'; fi"
+    )
+    r = in_server(steps)
+    done = ", ".join(r.stdout.strip().splitlines()) if r.stdout.strip() else "nothing to release"
+    if r.returncode != 0:
+        log(f"note: releasing {slug} did not finish ({r.stderr.strip()[:200]}); {done}")
+    else:
+        log(f"released {slug}: {done}")
 
 
 def run_stage(name: str, st: dict, keep: bool) -> None:
@@ -1695,7 +1743,8 @@ def main() -> None:
     r_ = sub.add_parser("run", help="the whole loop as one temper run (gates in the UI); returns once submitted")
     r_.add_argument("--keep", action="store_true", help="leave the report stack up (with --wait)")
     r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
-    sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
+    rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
+    rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
     c = sub.add_parser("collect", help="record the outcome of the open bet's loop run, once temper is done")
     c.add_argument("--keep", action="store_true", help="leave the report stack up")
     n = sub.add_parser("next")
@@ -1730,7 +1779,7 @@ def main() -> None:
     elif args.cmd == "run":
         cmd_run(args.keep, args.wait)
     elif args.cmd == "resume":
-        cmd_resume()
+        cmd_resume(args.at)
     elif args.cmd == "collect":
         cmd_collect(args.keep)
     elif args.cmd == "next":

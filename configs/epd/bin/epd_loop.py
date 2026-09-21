@@ -1491,14 +1491,26 @@ def cmd_resume() -> None:
         die(f"{bet_id}: run {rid[:8]} is still {status}; nothing to resume")
     if status == "completed":
         die(f"{bet_id}: run {rid[:8]} completed; `collect` it")
-    # "2 node(s) failed: build/deploy, build/cleanup" -> the first failed top-level stage.
+    # "2 node(s) failed: build/deploy, build/cleanup" -> the first failed top-level stage. A run
+    # that was interrupted (server restart) or cancelled names none: the stage to redo is then the
+    # first one that did not complete, which is the one that was running.
     failed = re.findall(r"(?:^|[:,]\s*)([a-z_]+)(?:/[a-z_/]+)?", info.get("error_message") or "")
     failed = [f for f in failed if f in STAGES]
+    if not failed:
+        done = {n["name"] for n in info.get("nodes") or [] if n.get("status") == "completed"}
+        failed = [s for s in STAGES if s not in done][:1]
     if not failed:
         die(f"{bet_id}: run {rid[:8]} ended {status} but names no failed stage: {info.get('error_message')!r}")
     stage = min(failed, key=STAGES.index)
     before = STAGES[STAGES.index(stage) - 1] if STAGES.index(stage) else None
+    # A fork lists only the checkpoints it wrote itself; the stages it restored are checkpoints of
+    # the run it was forked from. A second resume of the same stage therefore forks the original
+    # again, at the same point.
+    source = rid
     seqs = [c["sequence"] for c in checkpoints(rid) if c.get("node_name") == before and c.get("status") == "completed"]
+    if before and not seqs and loop.get("_forked_from"):
+        source = loop["_forked_from"]
+        seqs = [c["sequence"] for c in checkpoints(source) if c.get("node_name") == before and c.get("status") == "completed"]
     if before and not seqs:
         die(f"{bet_id}: run {rid[:8]} has no completed checkpoint for `{before}` to fork from")
     seq = max(seqs) if seqs else 0
@@ -1519,10 +1531,11 @@ def cmd_resume() -> None:
         log(f"the failed attempt left {r.stdout.strip()} uncommitted paths in {slug}; kept as {patch.name}, worktree reset")
 
     env, url = (st["stages"].get("report") or {}).get("env", ""), (st["stages"].get("report") or {}).get("url", "")
-    log(f"== {bet_id}: resuming at `{stage}` (fork of {rid[:8]} after `{before}`, checkpoint {seq}) ==")
-    new = fork_run(rid, seq, "epd_loop", loop_inputs(bet_id, bdir, env, url), LOOP_WORKSPACE)
+    log(f"== {bet_id}: resuming at `{stage}` (fork of {source[:8]} after `{before}`, checkpoint {seq}) ==")
+    new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id, bdir, env, url), LOOP_WORKSPACE)
     st["stages"]["loop"] = {"_run_id": new, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-                            "_forked_from": rid, "_fork_sequence": seq}
+                            "_forked_from": source, "_fork_sequence": seq,
+                            "_replaces": rid, "_replaced_because": info.get("error_message") or status}
     save_state(st)
     log(f"epd_loop → run {new}")
     log("   it is temper's now; `epd_loop.py collect` records the outcome once it is done")

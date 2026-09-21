@@ -1358,6 +1358,42 @@ class TestExecuteGraphCore:
         assert result.node_results["a"].status == Status.FAILED
 
 
+class TestCheckpointKeys:
+    """Checkpoints are keyed by node PATH: a stage's children under `stage.child`, top-level
+    nodes bare. Keyed by bare name, a build stage's child `deploy` was restored on a fork as
+    the loop's top-level `deploy` gate, which was then "already done" and never ran."""
+
+    def _run(self, node_path: str, loop=False):
+        cp = MagicMock()
+        cp.load_completed_nodes.return_value = {}
+        ctx = _make_context(node_path=node_path, checkpoint_service=cp)
+        if loop:
+            gate = _make_agent_node("gate", depends_on=["deploy"], loop_to="deploy", max_loops=2,
+                                    structured_output={"verdict": "retry"})
+            gate.config.loop_condition = {"source": "gate.structured.verdict", "operator": "equals", "value": "retry"}
+            nodes = [_make_agent_node("deploy"), gate]
+        else:
+            nodes = [_make_agent_node("deploy")]
+        execute_graph(nodes, {}, ctx, graph_name="g")
+        return cp
+
+    def test_top_level_nodes_are_saved_under_their_bare_name(self):
+        cp = self._run("")
+        assert [c.args[0] for c in cp.save_node_completed.call_args_list] == ["deploy"]
+
+    def test_a_stage_child_is_saved_under_the_stage_path(self):
+        cp = self._run("build")
+        assert [c.args[0] for c in cp.save_node_completed.call_args_list] == ["build.deploy"]
+
+    def test_a_rewind_inside_a_stage_names_the_same_keys(self):
+        cp = self._run("build", loop=True)
+        assert cp.save_loop_rewind.called
+        kw = cp.save_loop_rewind.call_args.kwargs
+        assert kw["trigger_node"] == "build.gate"
+        assert kw["target_node"] == "build.deploy"
+        assert all(n.startswith("build.") for n in kw["cleared_nodes"])
+
+
 class TestWorkflowTerminalStatus:
     """A workflow is only `completed` when nothing inside it failed."""
 

@@ -72,7 +72,12 @@ def execute_graph(
     start_event = EventType.WORKFLOW_STARTED if is_workflow else EventType.STAGE_STARTED
     node_map = {node.name: node for node in nodes}
     batches = topological_sort(nodes)
-    node_outputs: dict[str, NodeResult] = dict(initial_outputs) if initial_outputs else {}
+    # A restore hands over every checkpoint of the run, keyed by node path; this graph takes
+    # only the ones that name its own nodes. A stage child's `build.deploy` is not the
+    # top-level `deploy`, and a stage's total already holds its children's cost.
+    node_outputs: dict[str, NodeResult] = (
+        {k: v for k, v in initial_outputs.items() if k in node_map} if initial_outputs else {}
+    )
     loop_counts: dict[str, int] = defaultdict(int)
     start = time.monotonic()
 
@@ -154,6 +159,12 @@ def _run_batches(
     batch_idx = 0
     loop_feedback: dict[str, NodeResult] = {}
     cp = context.checkpoint_service  # may be None
+    # Checkpoints are keyed by node PATH, not name. A stage's children are checkpointed by
+    # this same loop, one level down, with the same service; keyed by bare name, a child called
+    # `deploy` was restored on a fork as the top-level `deploy`, which was then "already done"
+    # and never ran -- the loop's second gate, skipped without a word. Restore reads only the
+    # names of the graph it is restoring (a top-level node has no dot in its path).
+    cp_prefix = f"{context.node_path}." if context.node_path else ""
 
     while batch_idx < len(batches):
         _check_cancelled(context)
@@ -173,9 +184,12 @@ def _run_batches(
             # Handle dynamic spawning if the node produced _spawn
             node_outputs[node.name] = result
             if cp:
-                cp.save_node_completed(node.name, result)
+                cp.save_node_completed(cp_prefix + node.name, result)
             _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
-            rewind = _handle_loop(node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp, input_data, retired)
+            rewind = _handle_loop(
+                node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp, input_data, retired,
+                checkpoint_prefix=cp_prefix,
+            )
             if rewind is not None:
                 batch_idx = rewind
                 continue
@@ -185,7 +199,7 @@ def _run_batches(
             for node, result in results:
                 node_outputs[node.name] = result
                 if cp:
-                    cp.save_node_completed(node.name, result)
+                    cp.save_node_completed(cp_prefix + node.name, result)
             # Dispatch after ALL parallel nodes complete — mutation to batches is
             # safe only once the current batch is done being iterated.
             for node, result in results:
@@ -953,6 +967,7 @@ def _handle_loop(
     checkpoint_service: Any = None,
     input_data: dict | None = None,
     retired: list[NodeResult] | None = None,
+    checkpoint_prefix: str = "",
 ) -> int | None:
     """Handle loop_to logic. Returns batch index to rewind to, or None.
 
@@ -1022,10 +1037,11 @@ def _handle_loop(
             ]
             # Record the rewind in checkpoint history
             if checkpoint_service:
+                # Same keys the completions were saved under, so a replay clears the right ones.
                 checkpoint_service.save_loop_rewind(
-                    trigger_node=node.name,
-                    target_node=node.loop_to,
-                    cleared_nodes=cleared_nodes,
+                    trigger_node=checkpoint_prefix + node.name,
+                    target_node=checkpoint_prefix + node.loop_to,
+                    cleared_nodes=[checkpoint_prefix + n for n in cleared_nodes],
                     trigger_result=result,
                 )
             # Clear outputs for nodes from target onwards (they'll re-run).

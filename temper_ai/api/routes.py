@@ -599,13 +599,14 @@ def fork_run(body: ForkRequest):
     # Record fork metadata so the data service can link back to the source.
     # Determine top-level node names that were restored.
     from temper_ai.stage.stage_node import StageNode as _StageNode
+    # Checkpoints are keyed by node path: a stage's children as `stage.child`.
     restored_keys = set(restored_outputs.keys())
     restored_top_level: set[str] = set()
     for node in nodes:
         if node.name in restored_keys:
             restored_top_level.add(node.name)
         if isinstance(node, _StageNode) and node.child_nodes:
-            if any(cn.name in restored_keys for cn in node.child_nodes):
+            if any(f"{node.name}.{cn.name}" in restored_keys for cn in node.child_nodes):
                 restored_top_level.add(node.name)
 
     # Store fork metadata as an event so the data service can link to the source.

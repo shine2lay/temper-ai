@@ -292,6 +292,68 @@ class TestModelOutputCannotBecomeACommand:
         assert result.status.value == "failed"
         assert "single quotes" in result.error and "Remove the surrounding single quotes" in result.error
 
+    def test_interpolating_inside_a_quoted_heredoc_is_refused(self, tmp_path):
+        """The b003 gate bug. `python3 - <<'PYEOF'` with `{{ x }}` in the body: the shell expands
+        nothing there, so the Python received the text `$TEMPER_V1` and task_gate judged
+        "temper_v" against "approve" on every build, requesting changes each time."""
+        template = "python3 - <<'PYEOF'\nverdict = \"{{ verdict }}\"\nprint(verdict)\nPYEOF\n"
+        agent = ScriptAgent(config={"name": "gate", "script_template": template})
+        result = agent.run({"verdict": "approve"}, _real_context(tmp_path))
+        assert result.status.value == "failed"
+        assert "quoted heredoc (<<'PYEOF')" in result.error and "| env" in result.error
+
+    def test_the_env_filter_carries_a_value_into_a_quoted_heredoc(self, tmp_path):
+        """The way through: ask for the variable's name and read the environment yourself. The
+        payload is the proof — it arrives whole and runs nothing."""
+        template = (
+            "python3 - <<'PYEOF'\n"
+            "import os\n"
+            "print(os.environ[\"{{ verdict | env }}\"])\n"
+            "PYEOF\n"
+        )
+        agent = ScriptAgent(config={"name": "gate", "script_template": template})
+        payload = "approve'; touch pwned; '$(touch pwned)"
+        result = agent.run({"verdict": payload}, _real_context(tmp_path))
+        assert result.status.value == "completed", result.error
+        assert result.output.strip() == payload
+        assert not (tmp_path / "pwned").exists()
+
+    def test_an_unquoted_heredoc_expands_the_value_and_ignores_quotes_in_the_body(self, tmp_path):
+        """`<<EOF` expands like double quotes: the bare reference is right there, and an apostrophe
+        in the body is data, not an open shell quote that swallows the rest of the script."""
+        template = "cat <<EOF\nit's {{ a }}, \"{{ b }}\"\nEOF\necho {{ c }}\n"
+        agent = ScriptAgent(config={"name": "e", "script_template": template})
+        result = agent.run({"a": "$(touch pwned)", "b": "two words", "c": "after"}, _real_context(tmp_path))
+        assert result.status.value == "completed", result.error
+        assert result.output == "it's $(touch pwned), \"two words\"\nafter\n"
+        assert not (tmp_path / "pwned").exists()
+
+    def test_apostrophes_in_a_quoted_heredoc_body_do_not_poison_what_follows(self, tmp_path):
+        """Before the scanner knew heredocs, `don't` in a Python body opened a single quote and the
+        next interpolation was refused as 'inside single quotes'."""
+        template = "python3 - <<'PYEOF'\nprint(\"don't\")\nPYEOF\necho {{ after }}\n"
+        agent = ScriptAgent(config={"name": "e", "script_template": template})
+        result = agent.run({"after": "ok"}, _real_context(tmp_path))
+        assert result.status.value == "completed", result.error
+        assert result.output == "don't\nok\n"
+
+    def test_a_here_string_is_not_a_heredoc(self):
+        """`<<<` is a word (bash here-string), not a heredoc: the scanner must not wait for a
+        delimiter line that never comes and swallow the rest of the script. Checked on the
+        rendered text because scripts run under /bin/sh, which has no here-strings."""
+        from temper_ai.agent.script_agent import _rewrite_interpolations
+
+        rewritten = _rewrite_interpolations("cat <<< {{ a }}\necho {{ b }}\n", "e")
+        assert rewritten.count("_temper_env_quoted") == 2, rewritten
+
+    def test_the_env_filter_works_inside_single_quotes_too(self, tmp_path):
+        template = "python3 -c 'import os; print(os.environ[\"{{ a | env }}\"])'\n"
+        agent = ScriptAgent(config={"name": "e", "script_template": template})
+        result = agent.run({"a": "it's $(touch pwned)"}, _real_context(tmp_path))
+        assert result.status.value == "completed", result.error
+        assert result.output.strip() == "it's $(touch pwned)"
+        assert not (tmp_path / "pwned").exists()
+
     def test_the_value_is_not_in_the_script_text_at_all(self, tmp_path):
         """The property that makes the rest true — and it keeps secrets out of logged commands."""
         ctx = _make_context(ToolResult(success=True, result=""))

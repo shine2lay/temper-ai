@@ -33,10 +33,24 @@ _JINJA_STMT = re.compile(r"\{%.*?%\}|\{#.*?#\}", re.DOTALL)
 
 BARE_FILTER = "_temper_env_bare"
 QUOTED_FILTER = "_temper_env_quoted"
+ENV_FILTER = "env"
+
+#: `<<EOF`, `<<-EOF`, `<<'EOF'`, `<<"EOF"`, `<<\EOF` -- but not `<<<` (a here-string, which is a word
+#: and expands like one). Group 1 is the quoting, group 2 the delimiter.
+_HEREDOC = re.compile(r"<<-?[ \t]*(?!<)(['\"\\]?)(\w+)['\"]?")
+
+#: The quote states. The two heredoc states are named by what the shell does inside them: an
+#: unquoted body expands `$VAR` the way double quotes do; a quoted body (`<<'EOF'`) expands nothing,
+#: the way single quotes do. A heredoc's delimiter closes it, on a line of its own.
+HEREDOC_EXPANDS = "heredoc"
+HEREDOC_LITERAL = "heredoc-literal"
 
 
-def _quote_state_after(text: str, state: str | None, at_word_start: bool = True) -> tuple[str | None, bool]:
-    """Track shell quoting through literal script text, returning the open quote and word position.
+def _quote_state_after(
+    text: str, state: str | None, at_word_start: bool = True, delimiter: str = "",
+) -> tuple[str | None, bool, str]:
+    """Track shell quoting through literal script text: the open quote, the word position, and the
+    delimiter of the heredoc that is open, if one is.
 
     Counting quote characters is not enough, because three common things are not quotes at all:
 
@@ -46,10 +60,27 @@ def _quote_state_after(text: str, state: str | None, at_word_start: bool = True)
 
     Reading the first as an open quote would refuse a template that is perfectly safe — which it did,
     for `spec_gate` and two others, until this scanner learned the difference.
+
+    And a heredoc body is not shell text at all: it is data, until the delimiter line. Whether the
+    shell expands `$VAR` in it is decided by the delimiter's quoting (`<<EOF` yes, `<<'EOF'` no), so
+    that is what the state records. Without this, `python3 - <<'PYEOF'` read as Python code with an
+    apostrophe here and there, and a value interpolated in it was passed as the reference `$TEMPER_V1`
+    -- which Python, of course, took as a string. task_gate judged "temper_v" against "approve" for
+    a whole afternoon, requesting changes on every build.
     """
     text = _JINJA_STMT.sub("", text)
     i = 0
     while i < len(text):
+        if state in (HEREDOC_EXPANDS, HEREDOC_LITERAL):
+            # Data until a line that is exactly the delimiter (leading tabs allowed, as `<<-` does).
+            nl = text.find("\n", i)
+            line = text[i:] if nl == -1 else text[i:nl]
+            if line.lstrip("\t").rstrip(" \t\r") == delimiter:
+                state, delimiter, at_word_start = None, "", True
+            if nl == -1:
+                return state, True, delimiter
+            i = nl + 1
+            continue
         ch = text[i]
         if state != "'" and ch == "\\":
             i += 2  # a backslash escapes the next character everywhere except inside single quotes
@@ -57,9 +88,23 @@ def _quote_state_after(text: str, state: str | None, at_word_start: bool = True)
         if state is None and ch == "#" and at_word_start:
             nl = text.find("\n", i)
             if nl == -1:
-                return state, True
+                return state, True, delimiter
             i = nl + 1
             at_word_start = True
+            continue
+        if state is None and ch == "<" and (m := _HEREDOC.match(text, i)):
+            # The body starts on the next line; the rest of this line is still shell.
+            pending = (HEREDOC_LITERAL if m.group(1) else HEREDOC_EXPANDS, m.group(2))
+            nl = text.find("\n", m.end())
+            if nl == -1:
+                return pending[0], True, pending[1]
+            tail_state, _, _ = _quote_state_after(text[m.end():nl], None, False)
+            if tail_state is None:
+                state, delimiter = pending
+                i = nl + 1
+                at_word_start = True
+                continue
+            i = m.end()  # a quote opened after the operator: let the ordinary scan handle the line
             continue
         if state is None and ch in "\"'":
             state = ch
@@ -67,7 +112,7 @@ def _quote_state_after(text: str, state: str | None, at_word_start: bool = True)
             state = None
         at_word_start = ch.isspace() or (state is None and ch in ";|&()")
         i += 1
-    return state, at_word_start
+    return state, at_word_start, delimiter
 
 
 def _rewrite_interpolations(template: str, agent_name: str) -> str:
@@ -87,9 +132,18 @@ def _rewrite_interpolations(template: str, agent_name: str) -> str:
     pos = 0
     state: str | None = None
     at_word_start = True
+    delimiter = ""
     for m in _INTERP.finditer(template):
         literal = template[pos:m.start()]
-        state, at_word_start = _quote_state_after(literal, state, at_word_start)
+        state, at_word_start, delimiter = _quote_state_after(literal, state, at_word_start, delimiter)
+        expr = m.group(1).strip()
+        out.append(literal)
+        if _ends_with_env_filter(expr):
+            # The author asked for the variable's *name*, to read the value from the environment
+            # themselves. That works in every context, including the two the shell cannot expand.
+            out.append("{{ " + expr + " }}")
+            pos = m.end()
+            continue
         if state == "'":
             raise ScriptRenderError(
                 f"script for '{agent_name}' interpolates inside single quotes: {m.group(0).strip()!r}. "
@@ -97,12 +151,24 @@ def _rewrite_interpolations(template: str, agent_name: str) -> str:
                 f"receive the variable's name as text. Remove the surrounding single quotes; the "
                 f"value is quoted for you."
             )
-        filt = BARE_FILTER if state == '"' else QUOTED_FILTER
-        out.append(literal)
-        out.append("{{ (" + m.group(1).strip() + ") | " + filt + " }}")
+        if state == HEREDOC_LITERAL:
+            raise ScriptRenderError(
+                f"script for '{agent_name}' interpolates inside a quoted heredoc (<<'{delimiter}'): "
+                f"{m.group(0).strip()!r}. A shell expands nothing there, so the value cannot be "
+                f"passed — the script would receive the reference $TEMPER_Vn as text. Either pass "
+                f"it on the command line (`python3 - {{{{ x }}}} <<'{delimiter}'`, then sys.argv), "
+                f"or read it from the environment by name: os.environ[\"{{{{ x | env }}}}\"]."
+            )
+        filt = BARE_FILTER if state in ('"', HEREDOC_EXPANDS) else QUOTED_FILTER
+        out.append("{{ (" + expr + ") | " + filt + " }}")
         pos = m.end()
     out.append(template[pos:])
     return "".join(out)
+
+
+def _ends_with_env_filter(expr: str) -> bool:
+    """`{{ x | env }}`, `{{ x | default('') | env }}`: the last filter is `env`, no arguments."""
+    return re.search(r"\|\s*" + ENV_FILTER + r"\s*$", expr) is not None
 
 
 class _ValueStash:
@@ -144,6 +210,18 @@ class _ValueStash:
         """For an interpolation already inside double quotes: adding quotes would close them."""
         name = self._stash(value)
         return f"${name}" if name else ""
+
+    def name(self, value: Any) -> str:
+        """`{{ x | env }}`: the variable's name, for a script that reads the environment itself.
+
+        This is the way through the two places the shell expands nothing -- single quotes and a
+        quoted heredoc -- where a reference would arrive as text: `os.environ["{{ x | env }}"]`
+        in a Python heredoc gets the value, whatever it contains. An undefined value renders as
+        a name that is not set, so `os.environ.get(...)` sees None and `[...]` raises, as the
+        author chose.
+        """
+        name = self._stash(value)
+        return name or f"{self.PREFIX}UNDEFINED"
 
 
 def _recording_undefined(sink: list[str]) -> type[Undefined]:
@@ -203,6 +281,7 @@ class ScriptAgent(AgentABC):
             )
             env.filters[QUOTED_FILTER] = stash.quoted
             env.filters[BARE_FILTER] = stash.bare
+            env.filters[ENV_FILTER] = stash.name
             template = env.from_string(template_text)
             # `{{ workspace_path }}` is the documented way for a script to
             # address the run's workspace, but it only ever resolved when a

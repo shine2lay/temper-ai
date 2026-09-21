@@ -17,24 +17,37 @@
 #
 # A judge that did not run (no stack, verify=false, implement skipped) renders
 # as an empty string or the literal None, and counts as "did not object".
+#
+# Values reach the Python through the environment, by name (`| env`): the body
+# is a quoted heredoc, in which the shell expands nothing, so a value written
+# into it would arrive as the text `$TEMPER_V1`. It did, for a whole afternoon
+# (b003): every verdict read as "temper_v", which is not "approve", so every
+# build was sent back for changes it had not been asked for.
 agent:
   name: task_gate
   # 2: a minor finding is recorded, not a veto -- only a blocking one holds the
   #    build.
-  version: 2
+  # 3: verdicts read from the environment by name; the quoted heredoc was
+  #    delivering the variable reference as text (b003: every gate said
+  #    request_changes).
+  version: 3
   type: script
   timeout_seconds: 30
   script_template: |
     python3 - <<'PYEOF'
     import json
+    import os
     import re
+
+    def value(name: str) -> str:
+        return os.environ.get(name, "")
 
     # label, raw verdict, the word that means "fine", the word that means "not fine".
     # A judge is one row. Adding a fourth is adding a row, not editing the logic.
     JUDGES = [
-        ("review", "{{ review_verdict | default('') }}", "approve", "request_changes"),
-        ("QA", "{{ qa_verdict | default('') }}", "pass", "fail"),
-        ("security", "{{ security_verdict | default('') }}", "pass", "fail"),
+        ("review", value("{{ review_verdict | default('') | env }}"), "approve", "request_changes"),
+        ("QA", value("{{ qa_verdict | default('') | env }}"), "pass", "fail"),
+        ("security", value("{{ security_verdict | default('') | env }}"), "pass", "fail"),
     ]
 
 
@@ -68,7 +81,7 @@ agent:
     # them) and must not be silently approved past either, so they ride along in the
     # one line a human actually reads.
     try:
-        human_actions = int("{{ security_human_actions_count | default('0') }}" or 0)
+        human_actions = int(value("{{ security_human_actions_count | default('0') | env }}") or 0)
     except ValueError:
         human_actions = 0
 

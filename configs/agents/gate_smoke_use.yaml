@@ -15,7 +15,7 @@ agent:
   timeout_seconds: 10
   script_template: |
     #!/bin/bash
-    cat <<'EOF'
+    cat <<EOF
     Proceeding with what the owner decided:
 
     {% if gate is defined %}{{ gate.text }}{% else %}(this node is not gated — nobody was asked){% endif %}

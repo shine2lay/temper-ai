@@ -4,23 +4,33 @@ workflow:
   #    inherited by the agent that chooses what to do next.
   # 3: takes the report as a path and reads it, so the stage can be wired straight to epd_report's
   #    output instead of needing a driver to read the file in between.
-  version: 3
+  # 4: writes one to five candidates into pre-made slots instead of one bet to one path. The pick
+  #    moved out of the run and into a file the owner edits (backlog.md).
+  version: 4
   description: |
-    EPD loop, stage 2 of 7: the bet. Replaces the product department's
-    decision. One agent reads the report, the goals, the profile and the
-    ledger of past bets, proposes three candidates, picks one, and writes
-    <bet dir>/bet.md as a pitch with ONE falsifiable invariant and a
-    pre-registered success threshold.
+    EPD loop, stage 2 of the proposal: the bets. Replaces the product
+    department's decision -- or rather, prepares it. One agent reads the
+    report, the goals, the profile and the ledger of past bets, and writes
+    every bet the evidence supports (one to five), each as a pitch with ONE
+    falsifiable invariant and a pre-registered success threshold, each to
+    its own slot under the bets directory, in the order it would build them.
 
-    Ends with status DECIDE, always: the owner signs, edits or rejects the
-    invariant before the tasks stage runs. That gate is the product
-    judgement lever, and it is the only place a human is required.
+    Ends with status DECIDE, always: the owner reads the candidates, edits
+    the ones worth building, and lists them in backlog.md in the order the
+    loop should take them. That file is the product judgement lever, and it
+    is the only place a human is required.
 
-    Isolated: inputs are the texts of the files. Run it alone on any
-    report to work on the product judgement.
+    The slots are directories the driver makes before the run (the
+    container's user cannot make directories the host can then write its
+    records into). The agent fills the first N and leaves the rest; the
+    driver removes the empty ones when it collects the run.
+
+    Isolated: inputs are strings and paths. Run it alone on any report to
+    work on the product judgement.
   inputs:
-    bet_id: {type: string, required: true}
-    bet_path: {type: string, required: true}
+    round_id: {type: string, required: true}
+    bets_dir: {type: string, required: true}    # container path of the bets directory
+    slots: {type: string, required: true}       # bet ids, space-separated, whose directories exist and are empty
     goals: {type: string, required: true}
     profile: {type: string, required: true}
     report_path: {type: string, required: true}
@@ -28,13 +38,8 @@ workflow:
     unfinished: {type: string, required: false}
   outputs:
     status: bet.structured.status
-    bet_path: bet.structured.bet_path
-    title: bet.structured.title
-    problem: bet.structured.problem
-    invariant: bet.structured.invariant
-    threshold: bet.structured.threshold
-    appetite_hours: bet.structured.appetite_hours
     candidates: bet.structured.candidates
+    left_out: bet.structured.left_out
     questions_for_owner: bet.structured.questions_for_owner
 
   nodes:
@@ -42,8 +47,9 @@ workflow:
       type: agent
       agent: epd_bet
       input_map:
-        bet_id: input.bet_id
-        bet_path: input.bet_path
+        round_id: input.round_id
+        bets_dir: input.bets_dir
+        slots: input.slots
         goals: input.goals
         profile: input.profile
         report_path: input.report_path

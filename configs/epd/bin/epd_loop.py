@@ -1,45 +1,54 @@
 #!/usr/bin/env python3
-"""The EPD loop: report → bet → [owner signs] → tasks → build → ship → measure → next.
+"""The EPD loop: propose (report → bets) → [owner picks, on disk] → tasks → build → ship → [owner] → deploy → measure.
 
-The product, design and engineering departments as one loop, one bet at a
-time. Every stage is a function from files to files; this script is only the
-wiring. It keeps the state on disk under
+The product, design and engineering departments as one loop. Every stage is a
+function from files to files; this script is only the wiring, and the keeper
+of the state on disk under
 
     <workspaces>/epd/<repo>/
-        goals.md            the owner writes this; read fresh every iteration
+        goals.md            the owner writes this; read fresh every proposal
         profile.md          what the product is and how the code is laid out
         bets.tsv            the ledger: one row per bet, status and outcome
-        bets/<bet_id>/      report.md  bet.md  decision.md  tasks.json
+        backlog.md          the owner's queue and declines, and the loop's record of acting on
+                            them (lines are annotated, never removed)
+        reports/<round>/    one per proposal: report.md  walk_N.md  round.json
+        bets/<bet_id>/      bet.md  bet.json  decision.md  tasks.json
                             build.json  pr.md  outcome.md  state.json
 
     The agents' files (report.md, bet.md, tasks.json, outcome.md) are written
     by the temper container's user; the owner's decision goes in its own file
     (decision.md) because this script cannot append to theirs.
 
-and drives five temper workflows:
+Two temper runs make one turn of the loop:
 
-    epd_report   personas → three browser walks on a dev stack of main → report.md
-    epd_bet      report + goals + ledger → bet.md  (stops: DECIDE)
-    epd_tasks    bet → tasks.json with boolean acceptance per task
-    epd_task     the existing engineering pipeline: worktree, plan, implement,
-                 review + QA + security on a deployed dev stack, gate
-    epd_measure  invariant + threshold on the shipped build → outcome.md
+    epd_propose  three browser walks on a dev stack of main → report.md; then
+                 one to five candidate bets, each a pitch with a falsifiable
+                 invariant and a pre-registered threshold → bets/<id>/bet.md
+    epd_loop     for one bet off the top of backlog.md: tasks → build (the
+                 engineering pipeline) → ship (PR) → [owner: merge?] → deploy
+                 → measure → outcome.md
 
-plus two host-side steps this script does itself: the dev stack for the
-report (standee) and the ship (push the branch, open the PR).
+Between them the owner reads the candidates, edits the ones worth building
+and lists them in backlog.md in order. `run` does the right thing: a bet in
+the backlog is started; none, and candidates waiting for the owner's word,
+is reported; none at all, and a proposal is run. The report is walked only
+when there is nothing planned -- or on `run --propose`, for more.
 
 Usage:
     epd_loop.py status
-    epd_loop.py next [--until STAGE] [--auto-approve] [--keep]
-    epd_loop.py approve BET [--invariant TEXT] [--note TEXT]
-    epd_loop.py reject BET --why TEXT
-    epd_loop.py stage STAGE --bet BET            # run one stage alone, on its files
-    epd_loop.py down BET                         # tear down the bet's stacks
+    epd_loop.py run [--propose] [--keep] [--wait]   # one temper run: the top bet, or a proposal
+    epd_loop.py collect [--keep]                    # record what the last run produced
+    epd_loop.py resume [--at STAGE]                 # fork a failed loop run at its last good stage
+    epd_loop.py approve BET [--note TEXT]           # put a candidate at the end of backlog.md
+    epd_loop.py reject BET --why TEXT               # turn a candidate down, for the record
+    epd_loop.py next [--until STAGE] [--keep]       # the loop's stages one by one, from here
+    epd_loop.py stage STAGE --bet BET               # run one stage alone, on its files
+    epd_loop.py down BET                            # tear down the bet's stacks
+    epd_loop.py scorecard
 
-STAGE is one of: report bet tasks build ship measure.
-The only place a human is required is between bet and tasks. `next` stops
-there; `approve` signs the invariant (edited or as proposed) and `next`
-carries on. `--auto-approve` is for exercising the wiring, not for real bets.
+STAGE is one of: tasks build ship deploy measure.
+The places a human is required: backlog.md (which bets, in what order) and
+the PR (merge, request changes, close -- in temper's UI or on GitHub).
 """
 
 from __future__ import annotations
@@ -119,22 +128,45 @@ LOOP_DIR = WORKSPACES / "epd" / REPO_NAME
 BETS_DIR = LOOP_DIR / "bets"
 LEDGER = LOOP_DIR / "bets.tsv"
 LEDGER_COLUMNS = ["bet_id", "date", "title", "threshold", "status", "outcome"]
+# The owner's list. One bet id per line, top first; anything else on the line is for the owner.
+BACKLOG = LOOP_DIR / "backlog.md"
+BACKLOG_HEADER = """# Backlog
 
-STAGES = ["report", "bet", "tasks", "build", "ship", "deploy", "measure"]
+Your decisions on the candidate bets, and the loop's record of acting on them. Lines are never
+removed: the loop appends "→ what it did, when" to a line instead, and skips lines it has acted on.
+
+## Queue
+
+One bet id per line, top first; anything after the id is a note, kept with the decision. The loop
+takes the first bet here that is still waiting (`proposed` in bets.tsv). A line here is your
+signature on the invariant as it stands in bets/<id>/bet.md when the loop picks it up -- edit the
+pitch first if it is not quite right. Reorder lines to change the loop's mind. A line here for a
+bet you declined earlier reopens it.
+
+## Declined
+
+One bet id per line, then why. The loop records each as your decision, with the reason, the next
+time it runs (`epd_loop.py reject <id> --why '...'` writes the line for you). Candidates in
+neither list wait.
+"""
+BACKLOG_MARK = "  \u2192 "  # what the loop did with a line, and when; a line with one is done with
+# One proposal = one round: a report and the candidates it produced.
+REPORTS_DIR = LOOP_DIR / "reports"
+SLOTS = 5  # bet directories made before a proposal; the agent fills one to five
+
+STAGES = ["tasks", "build", "ship", "deploy", "measure"]
 TERMINAL = {"rejected", "kept", "iterate", "killed", "closed", "changes_requested"}
+# On file, waiting for the owner's word: not open, not finished.
+WAITING = {"proposed"}
 # status after each stage completes; what `next` does is read off the status
 AFTER = {
-    "report": "reported",
-    "bet": "proposed",
     "tasks": "tasked",
     "build": "built",
     "ship": "pr_opened",
     "deploy": "shipped",
 }
 NEXT_STAGE = {
-    "new": "report",
-    "reported": "bet",
-    "proposed": None,  # the gate: waits for approve/reject
+    "proposed": None,  # waiting in the backlog (or not yet in it)
     "approved": "tasks",
     "tasked": "build",
     "built": "ship",
@@ -165,10 +197,17 @@ def read(path: Path) -> str:
 
 
 def write(path: Path, text: str) -> None:
+    """Write the file whole, replacing one the container's user left there if need be.
+
+    A file the container wrote is not this user's to open for writing; the directory is shared,
+    so a new file put in its place is. That is how the owner's edits to a pitch land, too.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text)
     # the container user (uid 999) has to be able to write next to it
-    os.chmod(path, 0o666)
+    os.chmod(tmp, 0o666)
+    os.replace(tmp, path)
 
 
 def mkdir_shared(path: Path) -> None:
@@ -670,28 +709,44 @@ git rev-parse HEAD
 
 
 def open_bet() -> str | None:
+    """The bet being worked on, if any: picked from the backlog and not finished. Candidates waiting
+    for the owner's word are not open; they are on file."""
     for r in reversed(ledger_rows()):
-        if r["status"] not in TERMINAL:
+        if r["status"] not in TERMINAL and r["status"] not in WAITING:
             return r["bet_id"]
     return None
 
 
-def new_bet_id() -> str:
-    n = len(ledger_rows()) + 1
-    while (BETS_DIR / f"b{n:03d}").exists():
-        n += 1
-    return f"b{n:03d}"
+def waiting_bets() -> list[str]:
+    """Candidates on file that the owner has neither listed in the backlog nor rejected."""
+    return [r["bet_id"] for r in ledger_rows() if r["status"] in WAITING]
 
 
-def previous_bet_id(bet_id: str) -> str | None:
-    """The most recent bet before this one that was actually measured."""
-    rows = [r for r in ledger_rows() if r["bet_id"] != bet_id and r["status"] in TERMINAL - {"rejected"}]
-    return rows[-1]["bet_id"] if rows else None
+def new_bet_ids(n: int) -> list[str]:
+    """The next `n` bet ids, after everything on the ledger or on disk."""
+    ids, k = [], len(ledger_rows()) + 1
+    while len(ids) < n:
+        if not (BETS_DIR / f"b{k:03d}").exists():
+            ids.append(f"b{k:03d}")
+        k += 1
+    return ids
 
 
-def previous_outcome(bet_id: str) -> str:
-    """The outcome of the most recent finished bet before this one."""
-    prev = previous_bet_id(bet_id)
+def previous_bet_id(exclude: str = "") -> str | None:
+    """The most recently measured bet: the one whose outcome was written last.
+
+    By the outcome file's time, not by position on the ledger: ids are handed out five at a time
+    now and taken in the owner's order, so the last row is not the last thing that happened.
+    """
+    done = [r["bet_id"] for r in ledger_rows()
+            if r["bet_id"] != exclude and r["status"] in TERMINAL - {"rejected", "closed", "changes_requested"}]
+    with_outcome = [(b, (BETS_DIR / b / "outcome.md").stat().st_mtime) for b in done if (BETS_DIR / b / "outcome.md").exists()]
+    return max(with_outcome, key=lambda t: t[1])[0] if with_outcome else None
+
+
+def previous_outcome(exclude: str = "") -> str:
+    """The outcome of the most recently measured bet."""
+    prev = previous_bet_id(exclude)
     return read(BETS_DIR / prev / "outcome.md") if prev else ""
 
 
@@ -701,14 +756,14 @@ def previous_outcome(bet_id: str) -> str:
 UNFINISHED_SECTIONS = ("Threshold", "Unverified", "Was this the right threshold", "For the next iteration")
 
 
-def unfinished_business(bet_id: str) -> str:
-    """What the previous bet left undone, in its own words.
+def unfinished_business(exclude: str = "") -> str:
+    """What the last measured bet left undone, in its own words.
 
     b001 shipped both halves of an either/or invariant and could only walk
     one: the measurement said so in prose, the ledger said "kept", and the
     agent choosing the next bet saw only the ledger. This is the repair.
     """
-    prev = previous_bet_id(bet_id)
+    prev = previous_bet_id(exclude)
     if not prev:
         return ""
     text = read(BETS_DIR / prev / "outcome.md")
@@ -721,119 +776,427 @@ def unfinished_business(bet_id: str) -> str:
         if keep:
             out.append(line)
     st = load_state(prev)
-    m = st["stages"].get("measure") or {}
+    m = st["stages"].get("measure") or st["stages"].get("loop") or {}
     if m.get("vacuous_criteria"):
         out += ["", f"({m['vacuous_criteria']} of its success criteria were vacuous: the situation each "
                     f"described never arose on the measured build, so nothing tested them.)"]
     return "\n".join(out).strip()
 
 
-# ------------------------------------------------------------------ stages --
+# ---------------------------------------------------------------- proposal --
+#
+# One proposal is one round: a dev stack of main, three walks, a report, and one to five candidate
+# bets written into slots made ahead of the run. The round's record (reports/<round>/round.json)
+# is this driver's; the report and the pitches are the agents'. Nothing in a round is a decision:
+# the owner decides afterwards, on disk, by listing bets in backlog.md.
 
-def stage_report(st: dict, keep: bool) -> None:
-    bet_id = st["bet_id"]
-    bdir = BETS_DIR / bet_id
-    mkdir_shared(bdir)
+def round_ids() -> list[str]:
+    return sorted(p.name for p in REPORTS_DIR.glob("r[0-9][0-9][0-9]") if p.is_dir())
+
+
+def round_path(round_id: str) -> Path:
+    return REPORTS_DIR / round_id / "round.json"
+
+
+def load_round(round_id: str) -> dict:
+    p = round_path(round_id)
+    return json.loads(p.read_text()) if p.exists() else {"round_id": round_id}
+
+
+def save_round(rd: dict) -> None:
+    write(round_path(rd["round_id"]), json.dumps(rd, indent=2, default=str))
+
+
+def new_round_id() -> str:
+    ids = round_ids()
+    n = int(ids[-1][1:]) + 1 if ids else 1
+    return f"r{n:03d}"
+
+
+def open_round() -> str | None:
+    """A proposal run submitted and not yet collected (and not given up on)."""
+    for rid in reversed(round_ids()):
+        rd = load_round(rid)
+        if rd.get("_run_id") and not rd.get("_collected") and not rd.get("_failed"):
+            return rid
+    return None
+
+
+def report_path_for(bet_id: str) -> Path:
+    """The report a bet came out of: its round's, or (bets before rounds) the one beside it."""
+    bet = json.loads(read(BETS_DIR / bet_id / "bet.json") or "{}")
+    if bet.get("round"):
+        return REPORTS_DIR / bet["round"] / "report.md"
+    return BETS_DIR / bet_id / "report.md"
+
+
+def pitch_fields(path: Path) -> dict:
+    """Title and invariant as they stand in the pitch. The owner edits the file; this is how the
+    edit reaches the record (decision.md, the PR body) without a second place to type it."""
+    text = read(path)
+    out: dict = {}
+    m = re.search(r"^#\s+Bet\s+\S+:\s*(.+?)\s*$", text, re.M) or re.search(r"^#\s+(.+?)\s*$", text, re.M)
+    if m:
+        out["title"] = m.group(1).strip()
+    m = re.search(r"^##\s+Invariant\s*\n(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    if m:
+        body = " ".join(ln.strip() for ln in m.group(1).strip().splitlines() if ln.strip())
+        if body:
+            out["invariant"] = body
+    return out
+
+
+def cmd_propose(keep: bool, wait: bool) -> None:
+    """One proposal, as one temper run: the walks, the report, one to five candidates. No gate.
+
+    Two things stay on this side, because neither is part of the proposal's reasoning: the stack
+    the walkers need (the ssh key that can stand one up belongs to the host) and the slot
+    directories the pitches go into (the container's user cannot make a directory the host can
+    then write its records into). `collect` puts the candidates on the ledger when the run is done;
+    the owner's list is backlog.md.
+    """
+    require_tools("standee", "docker", "git", "ssh")
+    if open_round():
+        die(f"proposal {open_round()} is still out; `collect` it first")
+    round_id = new_round_id()
+    rdir = REPORTS_DIR / round_id
+    mkdir_shared(rdir)
+    slots = new_bet_ids(SLOTS)
+    for b in slots:
+        mkdir_shared(BETS_DIR / b)
     head = refresh_main()
-    env, url = standee_up(MAIN_CLONE, f"epd-{bet_id}", "6h")
-    st["stages"]["report"] = {"env": env, "url": url, "base_head": head}
-    save_state(st)
+    env, url = standee_up(MAIN_CLONE, f"epd-{round_id}", "12h")
+    rd = {"round_id": round_id, "env": env, "url": url, "base_head": head, "slots": slots,
+          "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
+    save_round(rd)
     wait_for_url(url)
     preflight_login(url)
-    out = run_workflow("epd_report", {
+    inputs = {
+        "round_id": round_id,
+        "report_path": cpath(rdir / "report.md"),
+        "bets_dir": cpath(BETS_DIR),
+        "slots": " ".join(slots),
+        "goals": read(LOOP_DIR / "goals.md"),
+        "profile": read(LOOP_DIR / "profile.md"),
+        "last_outcome": previous_outcome(),
+        "unfinished": unfinished_business(),
+        "bets_tsv": read(LEDGER),
         "app_url": url,
         # The walkers seed their own tenants in this stack (one each, or they move each other's book),
         # so they need the name standee knows it by, not just its URL.
         "env_name": env,
         "password": QA_PASSWORD,
-        "goals": read(LOOP_DIR / "goals.md"),
-        "profile": read(LOOP_DIR / "profile.md"),
-        "last_outcome": previous_outcome(bet_id),
-        "bet_id": bet_id,
-        "report_path": cpath(bdir / "report.md"),
-    }, workspace=cpath(LOOP_DIR), timeout=3600)
+    }
+    log(f"== {round_id}: proposal (walks, report, up to {SLOTS} bets into {', '.join(slots)}) ==")
+    if wait:
+        out = run_workflow("epd_propose", inputs, workspace=LOOP_WORKSPACE, timeout=2 * 3600)
+        finish_round(rd, out, keep)
+        return
+    rid = post_run("epd_propose", inputs, LOOP_WORKSPACE)
+    rd["_run_id"] = rid
+    save_round(rd)
+    log(f"epd_propose → run {rid}")
+    log("   it is temper's now; `epd_loop.py collect` puts the candidates on the ledger once it is done")
+
+
+def collect_round(round_id: str, keep: bool) -> bool:
+    """Record what a proposal run produced. True when it was collected (now or before)."""
+    rd = load_round(round_id)
+    if rd.get("_collected"):
+        return True
+    rid = rd["_run_id"]
+    info = get_run(rid)
+    status = info.get("status")
+    if status in ("running", "pending"):
+        running = [n["name"] for n in info.get("nodes") or [] if n.get("status") == "running"]
+        log(f"{round_id}: proposal run {rid[:8]} is still {status} (running={running}, "
+            f"cost=${info.get('total_cost_usd') or 0:.2f}); nothing to collect yet")
+        return False
+    if status != "completed":
+        why = "rate limited: the work is fine, the account is not" if rate_limited(rid) else info.get("error_message")
+        rd["_failed"] = {"status": status, "why": why, "at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
+        prune_slots(rd)
+        save_round(rd)
+        if rd.get("env") and not keep:
+            standee_down(rd["env"])
+        die(f"{round_id}: proposal run {rid} ended {status}: {why}. `run --propose` starts a new one.")
+    out = {k: unstr(v) for k, v in (info.get("workflow_output") or {}).items()}
+    out["_versions"] = config_versions("epd_propose")
+    out["_run_id"] = rid
+    out["_launched"] = rd.get("_launched")
+    out["_cost_usd"] = info.get("total_cost_usd")
+    out["_duration_s"] = info.get("duration_seconds")
+    finish_round(rd, out, keep)
+    return True
+
+
+def prune_slots(rd: dict) -> list[str]:
+    """Remove the slots the agent left empty; return the ones it filled, in slot order."""
+    filled = []
+    for b in rd.get("slots") or []:
+        d = BETS_DIR / b
+        if (d / "bet.md").exists():
+            filled.append(b)
+        elif d.is_dir() and not any(d.iterdir()):
+            d.rmdir()
+    return filled
+
+
+def finish_round(rd: dict, out: dict, keep: bool) -> None:
+    """The bookkeeping after a proposal: the walks and report on disk, one record per candidate,
+    the ledger rows (`proposed`), the stack down. Then the owner's turn."""
+    round_id = rd["round_id"]
+    rdir = REPORTS_DIR / round_id
     for i in (1, 2, 3):
         if out.get(f"walk_{i}"):
-            write(bdir / f"walk_{i}.md", str(out[f"walk_{i}"]))
-    if not (bdir / "report.md").exists():
-        die("epd_report finished but wrote no report.md")
-    st["stages"]["report"].update({k: v for k, v in out.items() if not k.startswith("walk_")})
-    st["status"] = AFTER["report"]
-    save_state(st)
-    log(f"report: {out.get('summary')}")
-    if not keep:
-        standee_down(env)
-
-
-def stage_bet(st: dict) -> None:
-    bet_id = st["bet_id"]
-    bdir = BETS_DIR / bet_id
-    out = run_workflow("epd_bet", {
-        "bet_id": bet_id,
-        "bet_path": cpath(bdir / "bet.md"),
-        "goals": read(LOOP_DIR / "goals.md"),
-        "profile": read(LOOP_DIR / "profile.md"),
-        "report": read(bdir / "report.md"),
-        "bets_tsv": read(LEDGER),
-        "unfinished": unfinished_business(bet_id),
-    }, workspace=cpath(LOOP_DIR), timeout=1800)
-    if not (bdir / "bet.md").exists():
-        die("epd_bet finished but wrote no bet.md")
-    st["stages"]["bet"] = out
-    # Also on disk, beside bet.md. The state file is this driver's private memory; the bet directory is
-    # the record, and ship reads the record — so a ship driven from a workflow node needs no state.
-    write(bdir / "bet.json", json.dumps(out, indent=2, default=str))
-    st["status"] = AFTER["bet"]
-    save_state(st)
-    ledger_upsert(bet_id, title=out.get("title") or "", threshold=out.get("threshold") or "")
+            write(rdir / f"walk_{i}.md", str(out[f"walk_{i}"]))
+    if not (rdir / "report.md").exists():
+        die(f"epd_propose finished but wrote no report.md in {rdir}")
+    filled = prune_slots(rd)
+    listed = {c.get("bet_id"): c for c in (out.get("candidates") or []) if isinstance(c, dict)}
+    for b in listed:
+        if b not in filled:
+            log(f"note: the agent listed {b} but wrote no {BETS_DIR / b / 'bet.md'}; dropped")
+    at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    candidates = []
+    for rank, b in enumerate(filled, 1):
+        c = dict(listed.get(b) or {})
+        c.update(pitch_fields(BETS_DIR / b / "bet.md"))  # the pitch is the record; the JSON is its summary
+        c.update({"bet_id": b, "rank": c.get("rank") or rank, "round": round_id, "at": at,
+                  "_run_id": out.get("_run_id"), "_versions": out.get("_versions")})
+        write(BETS_DIR / b / "bet.json", json.dumps(c, indent=2, default=str))
+        st = {"bet_id": b, "status": "proposed", "round": round_id, "stages": {"bet": c}}
+        save_state(st)
+        ledger_upsert(b, title=c.get("title") or "", threshold=c.get("threshold") or "", status="proposed")
+        candidates.append(c)
+    rd.update({k: v for k, v in out.items() if not k.startswith("walk_") and k != "candidates"})
+    rd["candidates"] = [c["bet_id"] for c in candidates]
+    rd["_collected"] = at
+    save_round(rd)
+    if rd.get("env") and not keep:
+        standee_down(rd["env"])
     print()
-    print(f"=== Bet {bet_id}: {out.get('title')}")
-    print(f"Problem:   {out.get('problem')}")
-    print(f"Invariant: {out.get('invariant')}")
-    print(f"Threshold: {out.get('threshold')}")
-    print(f"Appetite:  {out.get('appetite_hours')} h")
-    for c in out.get("candidates") or []:
-        print(f"Lost:      {c}")
+    print(f"=== {round_id}: {len(candidates)} candidate(s) from {rdir / 'report.md'}")
+    print(f"Report: {out.get('report_summary')}")
+    for c in candidates:
+        print()
+        print(f"{c['bet_id']}  {c.get('title')}")
+        print(f"    invariant: {c.get('invariant')}")
+        print(f"    threshold: {c.get('threshold')}")
+        print(f"    appetite:  {c.get('appetite_hours')} h   why this rank: {c.get('why')}")
+        print(f"    pitch:     {BETS_DIR / c['bet_id'] / 'bet.md'}")
+    for q in out.get("left_out") or []:
+        print(f"left out:  {q}")
     for q in out.get("questions_for_owner") or []:
-        print(f"Question:  {q}")
-    print(f"Pitch:     {bdir / 'bet.md'}")
-    print(f"\nDECIDE — sign it:   epd_loop.py approve {bet_id} [--invariant '...'] [--note '...']")
-    print(f"         or reject: epd_loop.py reject {bet_id} --why '...'")
+        print(f"question:  {q}")
+    print()
+    print("YOUR TURN. Read the pitches, edit the ones worth building, and list them in order in")
+    print(f"    {BACKLOG}")
+    print("(one id per line, top first; or `epd_loop.py approve <id>` to append one). The next `run`")
+    print("takes the top one. `epd_loop.py reject <id> --why '...'` turns one down for good.")
 
 
-def approve(bet_id: str, invariant: str | None, note: str | None) -> None:
+# ----------------------------------------------------------------- backlog --
+#
+# The owner's list: one bet id per line, top first, whatever else they like on the line. It is the
+# only input the loop takes from a person between proposals, and it is a file rather than a gate
+# so the owner can do it in one sitting, in any editor, and change their mind before the loop gets
+# there. A line is the owner's signature on the pitch as it stands in bet.md when the loop picks
+# the bet up: the invariant is re-read from the file at that moment.
+
+BACKLOG_LINE = re.compile(r"^\s*(?:[-*]|\d+[.)])?\s*(b\d{3})\b(.*)$")
+
+
+def ensure_backlog() -> None:
+    if not BACKLOG.exists():
+        write(BACKLOG, BACKLOG_HEADER)
+
+
+def backlog_lines() -> list[tuple[str, str, str, str]]:
+    """(section, bet_id, note, mark) per bet line, in file order.
+
+    Sections are the `##` headings: queue, declined, or other (a heading of the owner's own, such
+    as `## Later`, whose lines the loop leaves alone). Lines above any `##` heading are the queue.
+    `mark` is what the loop appended when it acted on the line; empty means it has not.
+    """
+    section = "queue"
+    out = []
+    for line in read(BACKLOG).splitlines():
+        if line.startswith("## "):
+            h = line[3:].strip().lower()
+            section = "declined" if h.startswith("declin") else "queue" if h.startswith("queue") else "other"
+            continue
+        m = BACKLOG_LINE.match(line)
+        if not m or section == "other":
+            continue
+        rest = m.group(2)
+        note, mark = rest.rsplit(BACKLOG_MARK, 1) if BACKLOG_MARK in rest else (rest, "")
+        out.append((section, m.group(1), note.strip(" -:\u2014\t"), mark.strip()))
+    return out
+
+
+def backlog() -> list[tuple[str, str]]:
+    """(bet_id, note) per queue line the loop has not acted on, top first."""
+    return [(b, note) for section, b, note, mark in backlog_lines() if section == "queue" and not mark]
+
+
+def backlog_mark(section: str, bet_id: str, what: str) -> None:
+    """Append `→ what` to the first unmarked line for bet_id in the section: the loop's receipt."""
+    lines = read(BACKLOG).splitlines()
+    current = "queue"
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            h = line[3:].strip().lower()
+            current = "declined" if h.startswith("declin") else "queue" if h.startswith("queue") else "other"
+            continue
+        m = BACKLOG_LINE.match(line)
+        if current == section and m and m.group(1) == bet_id and BACKLOG_MARK not in line:
+            lines[i] = line.rstrip() + BACKLOG_MARK + what
+            write(BACKLOG, "\n".join(lines) + "\n")
+            return
+
+
+def backlog_append(section: str, line: str) -> None:
+    """Add a line at the end of a section, creating the heading at the end of the file if need be."""
+    lines = read(BACKLOG).splitlines()
+    heading = "## Declined" if section == "declined" else "## Queue"
+    start = next((i for i, ln in enumerate(lines) if ln.startswith("## ") and
+                  ln[3:].strip().lower().startswith("declin" if section == "declined" else "queue")), None)
+    if start is None:
+        lines += ["", heading, "", line]
+    else:
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        lines[end:end] = [line]
+    write(BACKLOG, "\n".join(lines) + "\n")
+
+
+def stamp() -> str:
+    return dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def record_declines() -> None:
+    """Declined lines the owner wrote that the loop has not recorded yet become rejections, with
+    the line's text as the reason. Each gets its receipt; a line the loop cannot act on stays
+    unmarked and is said so, every time, until the owner changes it."""
+    for section, bet_id, why, mark in backlog_lines():
+        if section != "declined" or mark:
+            continue
+        if not (BETS_DIR / bet_id / "bet.md").exists():
+            log(f"Declined names {bet_id}, which has no pitch on file; nothing recorded")
+            continue
+        status = load_state(bet_id)["status"]
+        if status == "rejected":
+            backlog_mark("declined", bet_id, f"already declined; noted {stamp()}")
+            continue
+        if status not in WAITING:
+            log(f"Declined names {bet_id}, which is {status}; a line does not stop a bet under way -- "
+                f"`reject {bet_id} --why ...` once its run is done")
+            continue
+        reject(bet_id, why or "declined in backlog.md (no reason given)", where="backlog")
+
+
+def pick_bet() -> str | None:
+    """Take the top waiting bet from the queue and make it the open one. None if nothing is waiting.
+
+    This is where the owner's approval becomes a record: the line gets its receipt, decision.md
+    is written with the invariant as the pitch has it now, and the decision is logged against the
+    configs that proposed it. A line for a bet that is not waiting is marked and skipped (the
+    file keeps it); a line for a declined bet reopens it.
+    """
+    picked: tuple[str, str] | None = None
+    for bet_id, note in backlog():
+        if not (BETS_DIR / bet_id / "bet.md").exists():
+            log(f"Queue names {bet_id}, which has no pitch on file; skipped")
+            backlog_mark("queue", bet_id, f"skipped {stamp()}: no pitch on file")
+            continue
+        st = load_state(bet_id)
+        if st["status"] == "rejected":
+            log(f"{bet_id} was declined and is listed again: reopened")
+            st["status"] = "proposed"
+            st["stages"].pop("gate", None)
+            save_state(st)
+            ledger_upsert(bet_id, status="proposed", outcome="reopened from the backlog")
+            record_decision(st, "bet", "reopen", note=note, where="backlog")
+        elif st["status"] not in WAITING:
+            log(f"Queue names {bet_id}, which is {st['status']}; skipped")
+            backlog_mark("queue", bet_id, f"skipped {stamp()}: already {st['status']}")
+            continue
+        picked = (bet_id, note)
+        break
+    if not picked:
+        return None
+    bet_id, note = picked
     st = load_state(bet_id)
-    if st["status"] != "proposed":
-        die(f"{bet_id} is {st['status']}, not proposed")
     bdir = BETS_DIR / bet_id
-    signed = invariant or (st["stages"].get("bet") or {}).get("invariant") or ""
-    block = ["## Owner's decision", "", f"Signed on {dt.date.today().isoformat()}.", "",
-             f"**Invariant (signed):** {signed}", ""]
+    bet = json.loads(read(bdir / "bet.json") or "{}")
+    now = pitch_fields(bdir / "bet.md")
+    edited = [k for k in ("title", "invariant") if now.get(k) and now[k] != bet.get(k)]
+    bet.update(now)
+    at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    block = ["## Owner's decision", "", f"Approved on {at[:10]}: listed in backlog.md, taken by the loop at {at}.", "",
+             f"**Invariant (signed):** {bet.get('invariant', '')}", ""]
+    if edited:
+        block += [f"(The owner edited the pitch's {' and '.join(edited)} before the loop took it.)", ""]
     if note:
         block += [f"**Notes:** {note}", ""]
     write(bdir / "decision.md", "\n".join(block))
-    st["stages"]["gate"] = {"invariant": signed, "note": note or "", "at": dt.datetime.now().isoformat()}
+    if edited:
+        write(bdir / "bet.json", json.dumps(bet, indent=2, default=str))
+    st["stages"]["bet"] = bet
+    st["stages"]["gate"] = {"invariant": bet.get("invariant", ""), "note": note, "at": at, "edited": edited}
     st["status"] = "approved"
     save_state(st)
-    record_decision(st, "bet", "approve", note=note or "", where="cli", ref=bet_title(st),
-                    opened_at=(st["stages"].get("bet") or {}).get("at"), decided_at=st["stages"]["gate"]["at"],
-                    run_id=(st["stages"].get("bet") or {}).get("_run_id"))
-    log(f"{bet_id} approved. Next: epd_loop.py next")
+    ledger_upsert(bet_id, title=bet.get("title") or "", threshold=bet.get("threshold") or "")
+    backlog_mark("queue", bet_id, f"taken {stamp()}")
+    record_decision(st, "bet", "approve", note=note, where="backlog", ref=bet.get("title") or "",
+                    opened_at=bet.get("at"), decided_at=at, run_id=bet.get("_run_id"))
+    log(f"{bet_id} taken from the backlog: {bet.get('title')}")
+    return bet_id
 
 
-def reject(bet_id: str, why: str) -> None:
+def approve(bet_id: str, note: str | None) -> None:
+    """Append a candidate to the queue. The same as adding the line by hand."""
     st = load_state(bet_id)
-    if st["status"] != "proposed":
-        die(f"{bet_id} is {st['status']}, not proposed")
-    write(BETS_DIR / bet_id / "decision.md", f"## Owner's decision\n\nRejected on {dt.date.today().isoformat()}: {why}\n")
-    st["stages"]["gate"] = {"rejected": why, "at": dt.datetime.now().isoformat()}
+    if st["status"] not in WAITING | {"rejected"}:
+        die(f"{bet_id} is {st['status']}, not waiting for a decision")
+    ensure_backlog()
+    if bet_id in {b for b, _ in backlog()}:
+        log(f"{bet_id} is already queued in {BACKLOG}")
+        return
+    backlog_append("queue", bet_id + (f"  {note}" if note else ""))
+    log(f"{bet_id} queued at position {len(backlog())}; reorder {BACKLOG} to change it")
+
+
+def reject(bet_id: str, why: str, where: str = "cli") -> None:
+    """Turn a candidate down, for the record: the decision and its reason go in decision.md, the
+    ledger, decisions.jsonl, and under Declined in backlog.md. Nothing is removed; the pitch stays
+    where it was, and a Queue line for it later reopens it. Also for a bet that was picked but has
+    not shipped -- a failed build the owner would rather drop than fix. Not for one with a PR: that
+    is decided on GitHub."""
+    st = load_state(bet_id)
+    if st["status"] not in WAITING | {"approved", "running", "tasked", "built", "build_failed", "stopped"}:
+        die(f"{bet_id} is {st['status']}; nothing to reject")
+    rid = (st["stages"].get("loop") or {}).get("_run_id")
+    if rid and get_run(rid).get("status") in ("running", "pending"):
+        die(f"{bet_id}'s run {rid[:8]} is still going; cancel it in temper first")
+    at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    bet = st["stages"].get("bet") or json.loads(read(BETS_DIR / bet_id / "bet.json") or "{}")
+    write(BETS_DIR / bet_id / "decision.md", f"## Owner's decision\n\nDeclined on {at[:10]}: {why}\n")
+    st["stages"]["gate"] = {"rejected": why, "at": at}
     st["status"] = "rejected"
     save_state(st)
-    record_decision(st, "bet", "reject", note=why, where="cli", ref=bet_title(st),
-                    opened_at=(st["stages"].get("bet") or {}).get("at"), decided_at=st["stages"]["gate"]["at"],
-                    run_id=(st["stages"].get("bet") or {}).get("_run_id"))
-    ledger_upsert(bet_id, outcome=f"rejected: {why}")
-    log(f"{bet_id} rejected. `next` starts a new bet from a fresh report.")
+    ensure_backlog()
+    if not any(s == "declined" and b == bet_id and not mark for s, b, _, mark in backlog_lines()):
+        backlog_append("declined", f"{bet_id}  {why}")
+    backlog_mark("declined", bet_id, f"recorded {stamp()}")
+    # a queue line written before this decline is overtaken by it; only a line written after reopens
+    backlog_mark("queue", bet_id, f"declined {stamp()}")
+    record_decision(st, "bet", "reject", note=why, where=where, ref=bet.get("title") or "",
+                    opened_at=bet.get("at"), decided_at=at, run_id=bet.get("_run_id"))
+    ledger_upsert(bet_id, outcome=f"declined: {why}")
+    log(f"{bet_id} declined: {why}")
 
 
 def stage_tasks(st: dict) -> None:
@@ -956,7 +1319,7 @@ def stage_ship(st: dict) -> None:
         f"Judges on the candidate: review={b.get('review_verdict')}, QA={b.get('verify_verdict')}, "
         f"security={b.get('security_verdict')} → {b.get('verdict')} ({b.get('verdict_summary')}).\n\n"
         f"Dev stack of this branch: {b.get('deploy_url')}\n\n"
-        f"Artifacts: `{bdir}` (report.md, bet.md, tasks.json, build.json).\n"
+        f"Artifacts: `{bdir}` (bet.md, tasks.json, build.json); report: `{report_path_for(bet_id)}`.\n"
     )
     write(bdir / "pr.md", body)
     pr = open_or_find_pr(branch, f"{bet_id}: {bet.get('title')}", body)
@@ -969,9 +1332,7 @@ def stage_ship(st: dict) -> None:
     st["status"] = AFTER["ship"]
     save_state(st)
     log(f"PR: {pr_url}")
-    log("   it stays open until the owner says what happens to it (the loop's second gate)")
-    # The bet gate was answered before any of this was built; the composed run holds the answer.
-    record_bet_decisions(st, (st["stages"].get("loop") or {}).get("_run_id"))
+    log("   it stays open until the owner says what happens to it (the loop's gate)")
 
 
 def pr_decision_from_gate(gate: dict) -> tuple[str, str]:
@@ -1039,7 +1400,6 @@ def stage_deploy(st: dict) -> None:
     log(f"PR #{pr_number}: {decision} ({where}){' -- ' + note if note else ''}")
     # The run this PR came out of: the composed loop's, or the stage-at-a-time build's.
     run_id = (st["stages"].get("loop") or {}).get("_run_id") or (st["stages"].get("build") or {}).get("_run_id")
-    record_bet_decisions(st, (st["stages"].get("loop") or {}).get("_run_id"))
     # Once per PR: a deploy re-run after a failed rollout is the same decision, not a second one.
     if not any(r.get("kind") == "pr" and r.get("ref") == ship.get("pr") for r in load_decisions()):
         record_decision(st, "pr", decision, note=note, answers=gate.get("answers") or [], where=where,
@@ -1146,8 +1506,9 @@ def record_decision(st: dict, kind: str, decision: str, *, note: str = "", answe
     """Append one decision to decisions.jsonl and return the row.
 
     kind      bet | pr
-    decision  approve | reject | merge | request_changes | close
-    where     temper (the gate in the UI) | github (merged/closed there) | cli (approve/reject here)
+    decision  approve | reject | reopen | merge | request_changes | close
+    where     temper (the gate in the UI) | github (merged/closed there) | backlog (a line in
+              backlog.md: queued and taken, declined, or queued again) | cli (reject here)
     ref       what was decided on: the bet title, or the PR url
     upto      the last stage the decision is a verdict on, for the cost figure
     """
@@ -1195,32 +1556,6 @@ def load_decisions() -> list[dict]:
     return rows
 
 
-def record_bet_decisions(st: dict, run_id: str | None) -> int:
-    """Write the bet gate's decision(s) from a temper run into the record; returns how many were new.
-
-    Idempotent on (bet_id, run_id, opened_at): ship and collect both call this, and a stage re-run
-    does not double-count. A gate still waiting is not a decision yet.
-    """
-    if not run_id:
-        return 0
-    seen = {(r.get("bet_id"), r.get("kind"), r.get("run_id"), r.get("opened_at")) for r in load_decisions()}
-    n = 0
-    for g in run_gate_decisions(run_id):
-        if g.get("status") not in ("approved", "rejected") or g.get("node_name") != "tasks":
-            continue
-        if (st["bet_id"], "bet", run_id, g.get("opened_at")) in seen:
-            continue
-        resp = g.get("response") or {}
-        record_decision(
-            st, "bet", "approve" if g["status"] == "approved" else "reject",
-            note=(resp.get("response") or "").strip(), answers=resp.get("answers") or [],
-            opened_at=g.get("opened_at"), decided_at=g.get("decided_at"), run_id=run_id, upto="bet",
-            ref=bet_title(st),
-        )
-        n += 1
-    return n
-
-
 def bet_title(st: dict) -> str:
     for key in ("bet", "loop"):
         d = st.get("stages", {}).get(key) or {}
@@ -1266,6 +1601,10 @@ def scorecard() -> str:
 
     table("bet", "epd_bet", ["approve", "reject"])
     table("pr", "task_implement", ["merge", "request_changes", "close"])
+    waiting = waiting_bets()
+    if waiting:
+        lines.append(f"undecided: {', '.join(waiting)} (proposed, neither in the backlog nor rejected)")
+        lines.append("")
     lines.append("decisions")
     for r in rows:
         when = (r.get("at") or "")[:16].replace("T", " ")
@@ -1319,28 +1658,17 @@ def stage_measure(st: dict, keep: bool) -> None:
         "app_url": url,
         "data_url": data_url,
         "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL, "password": password,
-        "bet": bet_text(bdir),
-        "report": read(bdir / "report.md"),
+        "bet_path": cpath(bdir / "bet.md"),
+        "report_path": cpath(report_path_for(bet_id)),
         "build_summary": b.get("implement_summary") or "",
-    }, workspace=cpath(LOOP_DIR), timeout=2400)
+    }, workspace=LOOP_WORKSPACE, timeout=2400)
     if not (bdir / "outcome.md").exists():
         die("epd_measure finished but wrote no outcome.md")
-    verdict = out.get("verdict") or "iterate"
-    # A criterion that could not fail did not pass. The agent is told this,
-    # and the driver holds it to it: a kept verdict with a vacuous criterion
-    # is downgraded here, because the ledger is what the next bet inherits
-    # and it must not be truer than what was seen.
-    vacuous = int(out.get("vacuous_criteria") or 0)
-    if verdict == "kept" and (vacuous or out.get("threshold_met") is False):
-        log(f"measure said kept, but {vacuous} criteria were vacuous / the threshold was not met — recording iterate")
-        verdict = "iterate"
-        out["verdict_downgraded_from"] = "kept"
+    verdict = settle_verdict(out)
     st["stages"]["measure"] = out
     st["status"] = verdict if verdict in TERMINAL else "iterate"
     save_state(st)
-    note = f" [{vacuous} criteria vacuous]" if vacuous else ""
-    ledger_upsert(bet_id, outcome=f"{verdict}{note}: {out.get('summary') or ''} "
-                                 f"(right threshold: {out.get('right_threshold')})")
+    ledger_upsert(bet_id, outcome=outcome_line(out, verdict))
     log(f"measure: {verdict} — {out.get('summary')}")
     if out.get("unverified"):
         log(f"unverified on the running build: {out['unverified']}")
@@ -1348,24 +1676,49 @@ def stage_measure(st: dict, keep: bool) -> None:
         standee_down(b["env_name"])
 
 
+def settle_verdict(out: dict) -> str:
+    """The verdict the ledger gets, held to what was seen.
+
+    A criterion that could not fail did not pass. The agent is told this, and the driver holds it
+    to it: a kept verdict with a vacuous criterion, or with the threshold not met, is recorded as
+    iterate, because the ledger is what the next proposal inherits and it must not be truer than
+    what was seen. Same rule for a measure run alone and for the composed loop.
+    """
+    verdict = out.get("verdict") or "iterate"
+    vacuous = int(out.get("vacuous_criteria") or 0)
+    if verdict == "kept" and (vacuous or out.get("threshold_met") is False):
+        log(f"measure said kept, but {vacuous} criteria were vacuous / the threshold was not met — recording iterate")
+        out["verdict_downgraded_from"] = "kept"
+        return "iterate"
+    return verdict
+
+
+def outcome_line(out: dict, verdict: str) -> str:
+    vacuous = int(out.get("vacuous_criteria") or 0)
+    note = f" [{vacuous} criteria vacuous]" if vacuous else ""
+    summary = out.get("summary") or out.get("outcome_summary") or ""
+    return f"{verdict}{note}: {summary} (right threshold: {out.get('right_threshold')})"
+
+
 # ------------------------------------------------------------------- driver --
 
-def loop_inputs(bet_id: str, bdir: Path, env: str, url: str) -> dict:
-    """Everything the epd_loop workflow is told, from the bet's files and the stack it will walk."""
+def loop_inputs(bet_id: str) -> dict:
+    """Everything the epd_loop workflow is told, off the bet's files: it starts at `tasks`, on a bet
+    the owner already approved, so there is no stack to walk and nothing to propose."""
+    bdir = BETS_DIR / bet_id
+    bet = json.loads(read(bdir / "bet.json") or "{}")
     return {
         "bet_id": bet_id,
         "bet_dir": cpath(bdir),
-        "report_path": cpath(bdir / "report.md"),
+        "report_path": cpath(report_path_for(bet_id)),
         "bet_path": cpath(bdir / "bet.md"),
         "tasks_path": cpath(bdir / "tasks.json"),
         "outcome_path": cpath(bdir / "outcome.md"),
-        "goals": read(LOOP_DIR / "goals.md"),
+        "title": bet.get("title") or bet_id,
+        "problem": bet.get("problem") or "",
+        "invariant": bet.get("invariant") or "",
+        "threshold": bet.get("threshold") or "",
         "profile": read(LOOP_DIR / "profile.md"),
-        "last_outcome": previous_outcome(bet_id),
-        "unfinished": unfinished_business(bet_id),
-        "bets_tsv": read(LEDGER),
-        "app_url": url,
-        "env_name": env,
         "measure_url": PROD_URL,
         "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL,
         "password": QA_PASSWORD, "measure_password": ensure_qa_password(),
@@ -1391,47 +1744,63 @@ def loop_inputs(bet_id: str, bdir: Path, env: str, url: str) -> dict:
 LOOP_WORKSPACE = CONTAINER_WORKSPACES
 
 
-def cmd_run(keep: bool, wait: bool) -> None:
-    """The whole loop as one temper run: report → bet → [gate] → tasks → build → ship → [gate] → deploy → measure.
+def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
+    """One turn of the loop. What that is depends on what is on disk:
 
-    The stage-at-a-time path below still works and is still the way to redo one stage by hand. What
-    this adds is the loop as temper sees it: one run id, one graph, one place where it stopped and
-    why. The sequence used to live here, in Python, which meant the shape of the process was visible
-    only to whoever read this file.
+      a proposal or a bet still running      -> reported, nothing started
+      one finished and not yet collected     -> collected (the ledger, the stack down), then:
+      --propose, or nothing on file at all   -> a proposal run (walks, report, candidates)
+      a bet in backlog.md                    -> the loop run for the top one: tasks .. measure
+      candidates on file, none in the backlog -> reported: the owner's turn
 
-    Two things stay here, because neither is part of the loop's reasoning:
+    So a scheduler calling `run` every hour turns the loop as fast as the owner's decisions allow,
+    and never past them. The loop run is temper's once submitted: it parks at the PR gate for as
+    long as the owner takes, and a host process sitting on it for hours added nothing but something
+    to keep alive. `--wait` is the blocking form, for a terminal that wants to watch (also the only
+    form that re-submits after a rate-limit wall, since re-submitting needs a process around).
 
-      * The first stack. `report` needs something to walk before the run starts, and standing it up
-        is this side's job (the ssh key that can do it belongs to the host).
-      * Allocating the bet id and its directory, so every artefact the run writes has somewhere to go.
-
-    The gate is temper's, not this script's: the run parks at `tasks` and waits for an approval in
-    the UI. `approve`/`reject` here are for the stage-at-a-time path.
-
-    This returns as soon as the run is submitted. The run is temper's from then on -- it parks at
-    the gate for as long as the owner takes -- and a host process sitting on it for hours added
-    nothing but something to keep alive. `collect` does the bookkeeping once temper is done with it.
-    `--wait` is the old blocking form, for a terminal that wants to watch (it is also the only form
-    that re-submits after a rate-limit wall, since re-submitting needs a process still around to do it).
+    A run that failed is reported and left alone: `resume` forks it at its last good stage, `run
+    --retry` starts the bet over, `reject` drops it. Not retried on its own, since a scheduler
+    would then spend all night on a bet that fails the same way each hour.
     """
     require_tools("standee", "docker", "git", "ssh")
-    bet_id = open_bet() or new_bet_id()
-    st = load_state(bet_id)
-    bdir = BETS_DIR / bet_id
-    mkdir_shared(bdir)
-    ledger_upsert(bet_id, status="running")
+    ensure_backlog()
+    record_declines()
+    rnd = open_round()
+    if rnd and not collect_round(rnd, keep):
+        return
+    bet_id = open_bet()
+    if bet_id:
+        done = collect_bet(bet_id, keep, retry=retry)
+        if done == "retry":
+            start_bet(bet_id, keep, wait)
+            return
+        if done is not True:
+            return
+    if propose:
+        cmd_propose(keep, wait)
+        return
+    bet_id = pick_bet()
+    if bet_id:
+        start_bet(bet_id, keep, wait)
+        return
+    waiting = waiting_bets()
+    if waiting:
+        log(f"nothing in {BACKLOG}; {len(waiting)} candidate(s) waiting for your word: {', '.join(waiting)}")
+        log("   list the ones worth building there, top first (or `run --propose` for more)")
+        return
+    log("no candidates on file; proposing")
+    cmd_propose(keep, wait)
 
-    head = refresh_main()
-    env, url = standee_up(MAIN_CLONE, f"epd-{bet_id}", "12h")
-    st["stages"]["report"] = {"env": env, "url": url, "base_head": head}
+
+def start_bet(bet_id: str, keep: bool, wait: bool) -> None:
+    """Submit the loop run for a bet the owner approved: tasks -> build -> ship -> [PR gate] -> deploy -> measure."""
+    st = load_state(bet_id)
     st["status"] = "running"
     save_state(st)
-    wait_for_url(url)
-    preflight_login(url)
-
     log(f"== {bet_id}: the loop, as one run ==")
-    log("   it will stop at `tasks` and wait for you to approve the bet in temper")
-    inputs = loop_inputs(bet_id, bdir, env, url)
+    log("   it will stop at `deploy` and wait for your word on the PR (temper's UI, or GitHub)")
+    inputs = loop_inputs(bet_id)
     if wait:
         out = run_workflow("epd_loop", inputs, workspace=LOOP_WORKSPACE, timeout=8 * 3600)
         finish_loop(st, out, keep)
@@ -1440,7 +1809,7 @@ def cmd_run(keep: bool, wait: bool) -> None:
     st["stages"]["loop"] = {"_run_id": rid, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
     save_state(st)
     log(f"epd_loop → run {rid}")
-    log("   it is temper's now; `epd_loop.py collect` records the outcome once it is done")
+    log("   it is temper's now; `epd_loop.py run` (or `collect`) records the outcome once it is done")
 
 
 def fork_run(source_run_id: str, sequence: int, workflow: str, inputs: dict, workspace: str) -> str:
@@ -1542,9 +1911,8 @@ def cmd_resume(at: str | None = None) -> None:
             in_server(f"git -C {wt} reset -q --hard && git -C {wt} clean -qfd")
             log(f"the failed attempt left {r.stdout.strip()} uncommitted paths in {slug}; kept as {patch.name}, worktree reset")
 
-    env, url = (st["stages"].get("report") or {}).get("env", ""), (st["stages"].get("report") or {}).get("url", "")
     log(f"== {bet_id}: resuming at `{stage}` (fork of {source[:8]} after `{before}`, checkpoint {seq}) ==")
-    new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id, bdir, env, url), LOOP_WORKSPACE)
+    new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id), LOOP_WORKSPACE)
     st["stages"]["loop"] = {"_run_id": new, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
                             "_forked_from": source, "_fork_sequence": seq,
                             "_replaces": rid, "_replaced_because": info.get("error_message") or status}
@@ -1554,47 +1922,53 @@ def cmd_resume(at: str | None = None) -> None:
 
 
 def cmd_collect(keep: bool) -> None:
-    """Record what the loop run produced, once temper is done with it.
-
-    Safe to call early: a run still going is reported, not touched. A run that failed is reported
-    with its reason and left in place for `run` to try again (same bet id, the stack redeployed).
-    """
+    """Record what the last run produced, once temper is done with it. Safe to call early: a run
+    still going is reported, not touched."""
+    rnd = open_round()
+    if rnd:
+        collect_round(rnd, keep)
+        return
     bet_id = open_bet()
-    if not bet_id:
-        die("no open bet; nothing to collect")
+    if bet_id:
+        collect_bet(bet_id, keep)
+        return
+    log("nothing out: no proposal and no bet running")
+
+
+def collect_bet(bet_id: str, keep: bool, retry: bool = False) -> bool | str:
+    """Record what a bet's loop run produced. True when the bet is settled (collected, now or
+    before); False when it is still running or needs the owner; "retry" when the caller asked to
+    start it over and may."""
     st = load_state(bet_id)
     loop = st["stages"].get("loop") or {}
     rid = loop.get("_run_id")
     if not rid:
-        die(f"{bet_id} has no loop run to collect; `run` first")
+        if retry:
+            return "retry"
+        log(f"{bet_id} is {st['status']} with no loop run: `next` runs its stages here, `run --retry` "
+            f"submits it to temper, `reject` drops it")
+        return False
     if loop.get("_collected"):
-        log(f"{bet_id}: run {rid[:8]} already collected ({st['status']})")
-        return
+        log(f"{bet_id}: run {rid[:8]} already collected ({st['status']}); "
+            + ("`stage measure --bet` when the deploy is done" if st["status"] == "shipped" else
+               "`resume`, `stage <name> --bet`, or `reject` to move it"))
+        return False
     info = get_run(rid)
     status = info.get("status")
     if status in ("running", "pending"):
         running = [n["name"] for n in info.get("nodes") or [] if n.get("status") == "running"]
         log(f"{bet_id}: run {rid[:8]} is still {status} (running={running}, "
             f"cost=${info.get('total_cost_usd') or 0:.2f}); nothing to collect yet")
-        return
-    # Whatever the run's end, the owner's word at its gates is on record. A run cancelled at the
-    # bet gate *is* the decision: the bet was rejected, and the reason given with the cancel is why.
-    record_bet_decisions(st, rid)
-    rejected = [g for g in run_gate_decisions(rid) if g.get("node_name") == "tasks" and g.get("status") == "rejected"]
-    if status != "completed" and rejected:
-        why = ((rejected[-1].get("response") or {}).get("response") or "").strip() or "rejected at the gate"
-        loop["_collected"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-        st["status"] = "rejected"
-        save_state(st)
-        ledger_upsert(bet_id, title=bet_title(st), status="rejected", outcome=f"rejected: {why}")
-        log(f"{bet_id}: rejected at the bet gate -- {why}")
-        env = (st["stages"].get("report") or {}).get("env")
-        if env and not keep:
-            standee_down(env)
-        return
+        return False
     if status != "completed":
         why = "rate limited: the work is fine, the account is not" if rate_limited(rid) else info.get("error_message")
-        die(f"{bet_id}: run {rid} ended {status}: {why}. Fix what needs fixing, then `run` again.")
+        if retry:
+            log(f"{bet_id}: run {rid[:8]} ended {status} ({why}); starting the bet over as asked")
+            return "retry"
+        log(f"{bet_id}: run {rid} ended {status}: {why}")
+        log("   `resume` forks it at its last good stage; `run --retry` starts the bet over; "
+            "`reject <id> --why` drops it. A PR already open is decided on GitHub, then `stage deploy --bet`.")
+        return False
     out = {k: unstr(v) for k, v in (info.get("workflow_output") or {}).items()}
     out["_versions"] = config_versions("epd_loop")
     out["_run_id"] = rid
@@ -1602,27 +1976,38 @@ def cmd_collect(keep: bool) -> None:
     out["_cost_usd"] = info.get("total_cost_usd")
     out["_duration_s"] = info.get("duration_seconds")
     finish_loop(st, out, keep)
+    return True
 
 
 def finish_loop(st: dict, out: dict, keep: bool) -> None:
-    """The bookkeeping after a loop run: state, ledger, the stack it walked."""
+    """The bookkeeping after a loop run: state, ledger, the build's stack, the worktree."""
     bet_id = st["bet_id"]
     out["_collected"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     st["stages"]["loop"] = out
+    bet = st["stages"].get("bet") or json.loads(read(BETS_DIR / bet_id / "bet.json") or "{}")
     shipped = out.get("shipped")  # deploy's status: shipped | changes_requested | closed | None
-    st["status"] = ("measured" if out.get("verdict") else shipped if shipped in ("shipped", "changes_requested", "closed")
-                    else "stopped")
+    verdict = settle_verdict(out) if out.get("verdict") else None
+    if verdict in TERMINAL:
+        st["status"], outcome = verdict, outcome_line(out, verdict)
+    elif shipped in ("changes_requested", "closed"):
+        st["status"], outcome = shipped, None  # deploy wrote the owner's word on the PR
+    elif shipped == "shipped":
+        st["status"], outcome = "shipped", f"shipped as {out.get('merge_sha', '')[:12]}; not measured"
+    else:
+        st["status"], outcome = "stopped", f"stopped after build={out.get('build_verdict')}"
     save_state(st)
-    # No verdict (nothing shipped) leaves the outcome deploy wrote: the owner's word on the PR.
-    ledger_upsert(bet_id, title=out.get("bet_title") or "", threshold=out.get("bet_threshold") or "",
-                  status=st["status"], outcome=out.get("verdict") or None)
-    log(f"bet:     {out.get('bet_title')}")
+    ledger_upsert(bet_id, title=bet.get("title") or "", threshold=bet.get("threshold") or "",
+                  status=st["status"], outcome=outcome)
+    log(f"bet:     {bet.get('title')}")
     log(f"build:   {out.get('build_verdict')} — {out.get('implement_commit')}")
     log(f"ship:    {out.get('shipped')} {out.get('pr') or ''}")
-    log(f"outcome: {out.get('verdict')} — {out.get('outcome_summary')}")
-    env = (st["stages"].get("report") or {}).get("env")
-    if env and not keep:
-        standee_down(env)
+    log(f"outcome: {st['status']} — {out.get('outcome_summary') or ''}")
+    if st["status"] == "shipped":
+        log(f"   measure did not report; `epd_loop.py stage measure --bet {bet_id}` runs it alone")
+    # The build keeps its dev stack up so the PR the owner decides on links to a running candidate;
+    # once the PR is decided (or the run stopped short of one), it has done its job.
+    if out.get("env_name") and not keep:
+        standee_down(str(out["env_name"]))
     if shipped in ("shipped", "changes_requested", "closed"):
         release_task(bet_id)
 
@@ -1665,11 +2050,7 @@ def run_stage(name: str, st: dict, keep: bool) -> None:
     # `ship` arrives here through an sshd forced command, whose environment is
     # smaller than systemd's; it is the stage that most needs this check.
     require_tools("standee", "docker", "git")
-    if name == "report":
-        stage_report(st, keep)
-    elif name == "bet":
-        stage_bet(st)
-    elif name == "tasks":
+    if name == "tasks":
         stage_tasks(st)
     elif name == "build":
         stage_build(st)
@@ -1683,24 +2064,25 @@ def run_stage(name: str, st: dict, keep: bool) -> None:
         die(f"unknown stage {name}")
 
 
-def cmd_next(until: str | None, auto_approve: bool, keep: bool) -> None:
-    bet_id = open_bet() or new_bet_id()
+def cmd_next(until: str | None, keep: bool) -> None:
+    """The open bet's stages one at a time, here, from wherever it is. Takes the top of the backlog
+    when no bet is open. For redoing stages by hand; `run` is the loop."""
+    ensure_backlog()
+    record_declines()
+    bet_id = open_bet() or pick_bet()
+    if not bet_id:
+        waiting = waiting_bets()
+        die(f"nothing in {BACKLOG}" + (f"; {len(waiting)} candidate(s) waiting: {', '.join(waiting)}" if waiting
+                                       else "; no candidates on file -- `run --propose`"))
     st = load_state(bet_id)
-    if st["status"] == "new":
-        mkdir_shared(BETS_DIR / bet_id)
-        ledger_upsert(bet_id, status="new")
     while True:
         status = st["status"]
-        if status == "proposed" and auto_approve:
-            approve(bet_id, None, "auto-approved (wiring exercise)")
-            st = load_state(bet_id)
-            continue
         stage = NEXT_STAGE.get(status)
         if stage is None:
-            if status == "proposed":
-                log(f"{bet_id} is waiting for you: approve or reject (see bets/{bet_id}/bet.md)")
-            elif status in TERMINAL:
-                log(f"{bet_id} is finished ({status}); `next` again starts a new bet")
+            if status in TERMINAL:
+                log(f"{bet_id} is finished ({status})")
+            elif status == "running":
+                log(f"{bet_id} is running in temper ({(st['stages'].get('loop') or {}).get('_run_id', '')[:8]}); `collect` it")
             else:
                 log(f"{bet_id} is {status}; nothing runs automatically from here")
             return
@@ -1716,58 +2098,88 @@ def cmd_next(until: str | None, auto_approve: bool, keep: bool) -> None:
 def cmd_status() -> None:
     rows = ledger_rows()
     if not rows:
-        print("no bets yet")
-        return
+        print("no bets yet; `run` proposes some")
     for r in rows:
         print(f"{r['bet_id']}  {r['date']}  {r['status']:13s}  {r['title'][:60]}")
         if r.get("outcome"):
             print(f"      {r['outcome'][:120]}")
+    titles = {r["bet_id"]: r["title"] for r in rows}
+    ensure_backlog()
+    listed = backlog()
+    print(f"\nqueue ({BACKLOG}):" + ("" if listed else " empty"))
+    for i, (b, note) in enumerate(listed, 1):
+        print(f"  {i}. {b}  {titles.get(b, '?')[:60]}" + (f"  -- {note}" if note else ""))
+    unrecorded = [(b, why) for s, b, why, mark in backlog_lines() if s == "declined" and not mark]
+    if unrecorded:
+        print("declined, not yet recorded (`run` or `next` records them): "
+              + ", ".join(f"{b} ({why})" if why else b for b, why in unrecorded))
+    declined = [r for r in rows if r["status"] == "rejected"]
+    if declined:
+        print("declined:")
+        for r in declined:
+            print(f"  {r['bet_id']}  {r['title'][:50]}  -- {r['outcome'].removeprefix('declined: ').removeprefix('rejected: ')[:80]}")
+    waiting = [b for b in waiting_bets() if b not in {x for x, _ in listed}]
+    if waiting:
+        print(f"waiting for your word (in neither list): {', '.join(waiting)}")
+    rnd = open_round()
+    if rnd:
+        print(f"\nproposal out: {rnd} (run {load_round(rnd).get('_run_id', '')[:8]}); `collect` when it is done")
     b = open_bet()
     if b:
         st = load_state(b)
-        print(f"\nopen bet: {b} ({st['status']}); next stage: {NEXT_STAGE.get(st['status']) or 'waiting on you'}")
+        rid = (st["stages"].get("loop") or {}).get("_run_id", "")
+        print(f"\nopen bet: {b} ({st['status']}" + (f", run {rid[:8]}" if rid else "") + ")"
+              + (f"; next stage here: {NEXT_STAGE[st['status']]}" if NEXT_STAGE.get(st["status"]) else ""))
 
 
-def cmd_down(bet_id: str) -> None:
-    st = load_state(bet_id)
-    for key in ("report", "build"):
-        env = (st["stages"].get(key) or {}).get("env") or (st["stages"].get(key) or {}).get("env_name")
+def cmd_down(what: str) -> None:
+    """Tear down a bet's stacks, or a proposal round's (`r001`)."""
+    if what.startswith("r"):
+        env = load_round(what).get("env")
         if env:
             standee_down(env)
+        return
+    st = load_state(what)
+    for key in ("report", "build", "loop"):
+        env = (st["stages"].get(key) or {}).get("env") or (st["stages"].get(key) or {}).get("env_name")
+        if env:
+            standee_down(str(env))
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
-    r_ = sub.add_parser("run", help="the whole loop as one temper run (gates in the UI); returns once submitted")
-    r_.add_argument("--keep", action="store_true", help="leave the report stack up (with --wait)")
+    r_ = sub.add_parser("run", help="one turn: collect what finished, then the top backlog bet as one temper run, "
+                                    "or a proposal when there is nothing planned; returns once submitted")
+    r_.add_argument("--propose", action="store_true", help="walk the product and write candidates, whatever the backlog holds")
+    r_.add_argument("--retry", action="store_true", help="start the open bet over if its run failed")
+    r_.add_argument("--keep", action="store_true", help="leave the stacks up")
     r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
     rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
     rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
-    c = sub.add_parser("collect", help="record the outcome of the open bet's loop run, once temper is done")
-    c.add_argument("--keep", action="store_true", help="leave the report stack up")
-    n = sub.add_parser("next")
+    c = sub.add_parser("collect", help="record what the last run (proposal or bet) produced, once temper is done")
+    c.add_argument("--keep", action="store_true", help="leave the stacks up")
+    n = sub.add_parser("next", help="the open bet's stages one at a time, here (takes the top backlog bet if none is open)")
     n.add_argument("--until", choices=STAGES)
-    n.add_argument("--auto-approve", action="store_true")
     n.add_argument("--keep", action="store_true", help="leave the stacks up")
-    a = sub.add_parser("approve")
+    a = sub.add_parser("approve", help="append a candidate to backlog.md (same as adding the line yourself)")
     a.add_argument("bet")
-    a.add_argument("--invariant")
     a.add_argument("--note")
-    r = sub.add_parser("reject")
+    r = sub.add_parser("reject", help="turn a candidate down for good")
     r.add_argument("bet")
     r.add_argument("--why", required=True)
-    s = sub.add_parser("stage")
+    s = sub.add_parser("stage", help="run one stage alone, on the bet's files")
     s.add_argument("stage", choices=STAGES)
     s.add_argument("--bet", required=True)
     s.add_argument("--keep", action="store_true")
-    d = sub.add_parser("down")
-    d.add_argument("bet")
+    d = sub.add_parser("down", help="tear down a bet's stacks (b004) or a proposal's (r001)")
+    d.add_argument("what")
     sub.add_parser("scorecard", help="the owner's decisions on bets and PRs, by the config versions that earned them")
     args = ap.parse_args()
 
     mkdir_shared(BETS_DIR)
+    mkdir_shared(REPORTS_DIR)
     if not LEDGER.exists():
         ledger_write([])
     for f in ("goals.md", "profile.md"):
@@ -1777,22 +2189,22 @@ def main() -> None:
     if args.cmd == "status":
         cmd_status()
     elif args.cmd == "run":
-        cmd_run(args.keep, args.wait)
+        cmd_run(args.keep, args.wait, args.propose, args.retry)
     elif args.cmd == "resume":
         cmd_resume(args.at)
     elif args.cmd == "collect":
         cmd_collect(args.keep)
     elif args.cmd == "next":
-        cmd_next(args.until, args.auto_approve, args.keep)
+        cmd_next(args.until, args.keep)
     elif args.cmd == "approve":
-        approve(args.bet, args.invariant, args.note)
+        approve(args.bet, args.note)
     elif args.cmd == "reject":
         reject(args.bet, args.why)
     elif args.cmd == "stage":
         st = load_state(args.bet)
         run_stage(args.stage, st, args.keep)
     elif args.cmd == "down":
-        cmd_down(args.bet)
+        cmd_down(args.what)
     elif args.cmd == "scorecard":
         print(scorecard())
 

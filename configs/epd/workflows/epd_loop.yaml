@@ -2,11 +2,14 @@ workflow:
   name: epd_loop
   # 3: the build keeps what ship needs. Standalone, epd_task tears its own worktree and branch down
   #    at the end; here the branch is what the next node pushes, so the build is told to keep it.
-  version: 3
+  # 4: one bet from the backlog, already approved. The report and the bet moved to epd_propose,
+  #    which writes several candidates for the owner to choose from on disk; this run starts at
+  #    `tasks`, ungated, on the bet the driver took from the top of backlog.md.
+  version: 4
   description: |
-    The EPD loop, as one run.
+    The EPD loop, as one run, for one bet the owner has already approved.
 
-      report → bet → [OWNER DECIDES] → tasks → build → ship (PR) → [OWNER DECIDES] → deploy → measure
+      tasks → build → ship (PR) → [OWNER DECIDES] → deploy → measure
 
     Nothing here is new. Each node references a workflow that already exists and is already used on
     its own; this file is only the wiring between them. That is the point: the loop used to be a
@@ -16,55 +19,58 @@ workflow:
     implementation detail of a file nobody could see from the UI.
 
     The referenced graphs are unchanged and still run standalone — that is what makes them worth
-    referencing, and how each one gets worked on: point epd_report at any URL, epd_bet at any report.
+    referencing, and how each one gets worked on.
 
-    The owner decides twice. The first gate sits on `tasks`, which is the first node that spends real
-    money on building something. Everything before it is observation and a proposal; nothing is
-    built, branched or shipped until a human approves that node. Reject it and the run stops there,
-    having cost only the walks and the pitch. The second gate sits on `deploy`: the build is a pull
-    request by then, and nothing reaches production until the owner says merge -- in the UI, or on
-    GitHub itself. Both decisions are recorded by the driver (decisions.jsonl, `epd_loop.py
-    scorecard`) against the config versions that earned them: they are the measure of whether the
-    loop is getting better that is not the loop grading its own work.
+    Where the bet comes from. The walks and the pitches are a separate run (epd_propose): it writes
+    one to five candidates from one set of walks, and stops. The owner reads them, edits the ones
+    worth building, and lists them in backlog.md in the order the loop should take them. The driver
+    takes the first, records that as the owner's approval of the invariant as it stands in the file,
+    and submits this run for it. So there is no gate on `tasks` any more: the question it asked --
+    is this bet worth building -- was answered before the run was submitted, and a run that parks
+    to ask it again is a run the owner has to come back to. The report is only walked when the
+    backlog is empty (or the owner asks for more): what the proposal buys is the owner's attention
+    in one sitting and the loop working through the list without it.
+
+    The owner decides once in this run, at `deploy`: the build is a pull request by then, and
+    nothing reaches production until the owner says merge -- in the UI, or on GitHub itself. That
+    decision, and the approval that put the bet in the backlog, are recorded by the driver
+    (decisions.jsonl, `epd_loop.py scorecard`) against the config versions that earned them: they
+    are the measure of whether the loop is getting better that is not the loop grading its own work.
 
     The stages hand each other file paths, not text. Each writes its artefact to the bet directory
     and the next one reads it — so the wiring stays a few strings, and the evidence is on disk where
-    a person can read it too.
+    a person can read it too. The bet's own words (title, invariant, threshold) come in as inputs,
+    read off bet.json by the driver, because the node that wrote them is not in this run.
 
     `ship` and `deploy` are the nodes that touch the repository and production, and neither contains
     the work: each asks the host driver to do it, over an ssh key pinned to those two commands. The
     driver re-checks the build's verdict before it pushes, and reads the owner's decision off GitHub
     as well as off the gate, so neither decision rests on this file being wired right.
 
-    Not here, and deliberately: bringing the first stack up, which the driver does before the run so
-    that `report` has something to walk.
-
   inputs:
     # Identity and where the artefacts live
     bet_id:       {type: string, required: true}
     bet_dir:      {type: string, required: true}
-    report_path:  {type: string, required: true}
+    report_path:  {type: string, required: true}   # the report this bet came from (measure reads it)
     bet_path:     {type: string, required: true}
     tasks_path:   {type: string, required: true}
     outcome_path: {type: string, required: true}
 
-    # The product's own context
-    goals:        {type: string, required: true}
-    profile:      {type: string, required: true}
-    last_outcome: {type: string, required: false}
-    unfinished:   {type: string, required: false}
-    bets_tsv:     {type: string, required: true}
+    # The bet's own words, off bet.json (the PR body quotes them)
+    title:        {type: string, required: true}
+    problem:      {type: string, required: false}
+    invariant:    {type: string, required: true}
+    threshold:    {type: string, required: true}
 
-    # Where to look at the product, and as whom
-    app_url:      {type: string, required: true}   # the stack to walk (the driver brings it up)
-    env_name:     {type: string, required: true}   # what standee calls that stack: each walker seeds its own
-                                                   # tenant in it, because walkers that share one move each
-                                                   # other's book while they are reading it
+    # The product's own context
+    profile:      {type: string, required: true}
+
+    # Where to measure, and as whom
     measure_url:  {type: string, required: true}   # the build people use, once shipped
     data_url:     {type: string, required: false}  # only if the measured stack has no QA tenant
     email:        {type: string, required: true}   # the QA pair verify and measure use (the only one prod has)
     empty_email:  {type: string, required: true}
-    password:     {type: string, required: true}
+    password:     {type: string, required: true}   # the QA password on the branch's dev stack (verify)
     measure_password: {type: string, required: true}
 
     # What the build stage needs
@@ -76,10 +82,6 @@ workflow:
     stack_ttl:    {type: string, required: false}
 
   outputs:
-    report_summary:  report.structured.summary
-    bet_title:       bet.structured.title
-    bet_invariant:   bet.structured.invariant
-    bet_threshold:   bet.structured.threshold
     task_count:      tasks.structured.task_count
     branch:          build.structured.branch
     pr:              ship.structured.pr
@@ -89,56 +91,27 @@ workflow:
     build_verdict:   build.structured.verdict
     implement_commit: build.structured.implement_commit
     deploy_url:      build.structured.deploy_url
+    env_name:        build.structured.env_name    # the build's dev stack; the driver takes it down on collect
     verdict:         measure.structured.verdict
+    threshold_met:   measure.structured.threshold_met
     vacuous_criteria: measure.structured.vacuous_criteria
+    right_threshold: measure.structured.right_threshold
     outcome_summary: measure.structured.summary
 
   nodes:
-    # 1 — Three synthetic users walk the product and the friction is ranked. Writes report.md.
-    - name: report
-      type: stage
-      ref: workflows/epd_report
-      input_map:
-        app_url: input.app_url
-        env_name: input.env_name
-        password: input.password
-        goals: input.goals
-        profile: input.profile
-        last_outcome: input.last_outcome
-        bet_id: input.bet_id
-        report_path: input.report_path
-
-    # 2 — One bet, with a falsifiable invariant and a pre-registered threshold. Writes bet.md.
-    - name: bet
-      type: stage
-      ref: workflows/epd_bet
-      depends_on: [report]
-      input_map:
-        bet_id: input.bet_id
-        bet_path: input.bet_path
-        goals: input.goals
-        profile: input.profile
-        report_path: report.structured.report_path
-        bets_tsv: input.bets_tsv
-        unfinished: input.unfinished
-
-    # 3 — THE GATE. The owner signs the bet, or rejects it, before anything is built.
-    #     It sits on this node rather than on a node of its own because this is the first one that
-    #     spends: a gate is a question asked before an expense, and putting it here means the run
-    #     pauses having bought only the walks and the pitch.
+    # 1 — The signed bet becomes tasks with boolean acceptance. Writes tasks.json.
+    #     Ungated: the approval is the line in backlog.md that put this bet here (v4).
     - name: tasks
       type: stage
       ref: workflows/epd_tasks
-      depends_on: [bet]
-      gate: true
       input_map:
         bet_id: input.bet_id
         tasks_path: input.tasks_path
         repo_path: input.repo_path
-        bet_path: bet.structured.bet_path
+        bet_path: input.bet_path
         profile: input.profile
 
-    # 4 — The whole build pipeline: claim, worktree, stack, plan, implement, review, QA, security,
+    # 2 — The whole build pipeline: claim, worktree, stack, plan, implement, review, QA, security,
     #     verify, deploy. Its own judges decide its verdict; this node does not second-guess them.
     #
     #     keep: on its own, epd_task ends by removing its worktree and branch and releasing the
@@ -164,7 +137,7 @@ workflow:
         keep: true
         force: true
 
-    # 5 — Push and open the PR. Conditioned on the build's own judges, and the host driver checks
+    # 3 — Push and open the PR. Conditioned on the build's own judges, and the host driver checks
     #     the same thing again before it pushes: a gate worth having is worth having on both sides
     #     of the wire. It stops at the PR: the owner's word on it is the next node's gate.
     - name: ship
@@ -188,17 +161,17 @@ workflow:
         deploy_url: build.structured.deploy_url
         implement_commit: build.structured.implement_commit
         implement_summary: build.structured.implement_summary
-        title: bet.structured.title
-        problem: bet.structured.problem
-        invariant: bet.structured.invariant
-        threshold: bet.structured.threshold
+        title: input.title
+        problem: input.problem
+        invariant: input.invariant
+        threshold: input.threshold
 
-    # 6 — THE SECOND GATE. The PR is open; the owner says what happens to it. `ship` asked the
-    #     question (Merge / Request changes / Close), this node carries the answer: merge means
-    #     squash-merge, back production up, deploy the merge commit, confirm the QA tenant survived;
-    #     the other two put the note on the PR and end the run. The answer is recorded either way,
-    #     with the note and the configs that earned it -- the owner's verdicts on bets and PRs are
-    #     the measure of the loop that is not the loop grading itself.
+    # 4 — THE GATE. The PR is open; the owner says what happens to it. `ship` asked the question
+    #     (Merge / Request changes / Close), this node carries the answer: merge means squash-merge,
+    #     back production up, deploy the merge commit, confirm the QA tenant survived; the other two
+    #     put the note on the PR and end the run. The answer is recorded either way, with the note
+    #     and the configs that earned it -- the owner's verdicts on bets and PRs are the measure of
+    #     the loop that is not the loop grading itself.
     - name: deploy
       type: stage
       ref: workflows/epd_deploy
@@ -213,9 +186,9 @@ workflow:
         bet_dir: input.bet_dir
         pr: ship.structured.pr
 
-    # 7 — Did the bet's invariant hold on the build people actually use? Writes outcome.md.
+    # 5 — Did the bet's invariant hold on the build people actually use? Writes outcome.md.
     #     Depends on deploy, not on build: measuring before the merge measures the old product, and
-    #     the outcome it wrote would enter the next bet's context as evidence about this one.
+    #     the outcome it wrote would enter the next proposal's context as evidence about this one.
     - name: measure
       type: stage
       ref: workflows/epd_measure
@@ -232,6 +205,6 @@ workflow:
         email: input.email
         empty_email: input.empty_email
         password: input.measure_password
-        bet_path: bet.structured.bet_path
-        report_path: report.structured.report_path
+        bet_path: input.bet_path
+        report_path: input.report_path
         build_summary: build.structured.implement_summary

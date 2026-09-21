@@ -54,6 +54,7 @@ the PR (merge, request changes, close -- in temper's UI or on GitHub).
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import json
 import os
@@ -560,6 +561,97 @@ def open_or_find_pr(branch: str, title: str, body: str) -> dict:
         return existing[0]
     die(f"POST /pulls refused ({pr['_error'][:200]}) and no open PR for {branch} was found")
     raise AssertionError("unreachable")
+
+
+# ----------------------------------------------------------------- screenshots --
+#
+# A change the QA browser could see is shown on the pull request, not only
+# described. The verify agent screenshots each page the change is on, into the
+# browser's output directory (docker-compose.yml bind-mounts it under the
+# workspaces tree, so the files are on this side of the wall); ship moves them
+# into the bet directory, puts them on an orphan branch of the product repo and
+# embeds them in the PR body. An orphan branch rather than the PR branch, so the
+# product's history never carries the pipeline's pictures; the links pin the
+# commit sha, so a later bet's upload cannot move an older PR's images.
+
+BROWSER_OUTPUT = WORKSPACES / "browser-output"
+SHOTS_BRANCH = os.environ.get("EPD_SHOTS_BRANCH", "epd-screenshots")
+SHOT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.png$")
+
+
+def collect_screenshots(bdir: Path, prefix: str, listed) -> list[dict]:
+    """The verify run's screenshots, moved into ``<bet>/screenshots/``: [{page, shows, file, path}].
+
+    The files are the truth -- whatever the browser wrote under the prefix the agent was told to use
+    -- and the agent's own list adds a caption to each. A model-written name is only ever a basename
+    looked up in the output directory, never a path. Moving (not copying) makes a re-run of ship see
+    the same set: the bet directory is the durable record, the output directory is scratch.
+    """
+    dest = bdir / "screenshots"
+    if prefix and BROWSER_OUTPUT.is_dir():
+        for src in sorted(BROWSER_OUTPUT.glob(f"{prefix}-*.png")):
+            if src.is_file() and src.stat().st_size > 0 and SHOT_NAME.match(src.name):
+                dest.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(dest / src.name))
+    if not dest.is_dir():
+        return []
+    if isinstance(listed, str):
+        try:
+            listed = json.loads(listed)
+        except ValueError:
+            listed = []
+    captions: dict[str, dict] = {}
+    for item in listed or []:
+        if isinstance(item, dict) and item.get("file"):
+            captions[Path(str(item["file"])).name] = item
+    out = []
+    for p in sorted(dest.glob("*.png")):
+        cap = captions.get(p.name, {})
+        stem = p.name[len(prefix) + 1:-4] if prefix and p.name.startswith(prefix + "-") else p.stem
+        out.append({"page": str(cap.get("page") or stem.replace("-", " ")).strip(),
+                    "shows": str(cap.get("shows") or "").strip(), "file": p.name, "path": str(p)})
+    return out
+
+
+def publish_screenshots(bet_id: str, shots: list[dict]) -> str:
+    """Commit the screenshots to the repo's screenshot branch; return the PR-body section ("" if none).
+
+    Four to six REST calls through the Git Data API: blobs, a tree on top of the branch's tree (or a
+    fresh one), a commit, the ref. The first upload creates the branch as a root commit -- nothing of
+    the product's history behind it. Image links are ``blob/<sha>/...?raw=true``, which GitHub serves
+    to anyone who can see the repository, private or not.
+    """
+    if not shots:
+        return ""
+    owner, repo = GH_REPO.split("/", 1)
+    base = f"/repos/{owner}/{repo}"
+    ref = github("GET", f"{base}/git/ref/heads/{SHOTS_BRANCH}", allow=(404,))
+    parent = None if "_error" in ref else ref["object"]["sha"]
+    entries = []
+    for s in shots:
+        blob = github("POST", f"{base}/git/blobs",
+                      {"content": base64.b64encode(Path(s["path"]).read_bytes()).decode(), "encoding": "base64"})
+        entries.append({"path": f"{bet_id}/{s['file']}", "mode": "100644", "type": "blob", "sha": blob["sha"]})
+    tree_body: dict = {"tree": entries}
+    if parent:
+        tree_body["base_tree"] = github("GET", f"{base}/git/commits/{parent}")["tree"]["sha"]
+    tree = github("POST", f"{base}/git/trees", tree_body)
+    commit = github("POST", f"{base}/git/commits",
+                    {"message": f"{bet_id}: {len(shots)} screenshot(s) from the QA browser",
+                     "tree": tree["sha"], "parents": [parent] if parent else []})
+    sha = commit["sha"]
+    if parent:
+        github("PATCH", f"{base}/git/refs/heads/{SHOTS_BRANCH}", {"sha": sha, "force": False})
+    else:
+        github("POST", f"{base}/git/refs", {"ref": f"refs/heads/{SHOTS_BRANCH}", "sha": sha})
+    lines = ["## Screenshots", "",
+             f"What the QA browser saw on this branch's dev stack (`{SHOTS_BRANCH}` @ {sha[:7]}).", ""]
+    for s in shots:
+        url = f"https://github.com/{owner}/{repo}/blob/{sha}/{bet_id}/{s['file']}?raw=true"
+        caption = s["page"] + (f" — {s['shows']}" if s.get("shows") else "")
+        lines += [f"**{caption}**", "", f"![{s['page']}]({url})", ""]
+    log(f"screenshots: {len(shots)} on {SHOTS_BRANCH} @ {sha[:7]}")
+    return "\n".join(lines)
 
 
 def trust_main_clone() -> None:
@@ -1258,8 +1350,8 @@ def stage_build(st: dict) -> None:
     st["stages"]["build"] = {k: out.get(k) for k in (
         "_run_id", "_cost_usd", "_duration_s", "_versions", "task_slug", "branch", "worktree_path", "head",
         "env_name", "stack_url", "implement_commit", "implement_summary", "review_verdict",
-        "verify_verdict", "security_verdict", "deploy_url", "verdict", "verdict_summary",
-        "changes_wanted_by", "security_human_actions")}
+        "verify_verdict", "verify_screenshots", "security_verdict", "deploy_url", "verdict",
+        "verdict_summary", "changes_wanted_by", "security_human_actions")}
     verdict = out.get("verdict")
     st["status"] = "built" if verdict == "approve" else "build_failed"
     save_state(st)
@@ -1311,6 +1403,7 @@ def stage_ship(st: dict) -> None:
     sh(["git", "fetch", "--force", str(MAIN_CLONE), f"{branch}:refs/heads/{branch}"], cwd=REPO_CHECKOUT)
     sh(["git", "push", "--force-with-lease", "-u", "origin", branch], cwd=REPO_CHECKOUT)
     bet = artefact(bdir, "bet", st, "bet")
+    shots = collect_screenshots(bdir, b.get("task_slug") or "", b.get("verify_screenshots"))
     body = (
         f"EPD loop bet **{bet_id}** — {bet.get('title')}\n\n"
         f"**Problem:** {bet.get('problem')}\n\n"
@@ -1319,8 +1412,12 @@ def stage_ship(st: dict) -> None:
         f"Judges on the candidate: review={b.get('review_verdict')}, QA={b.get('verify_verdict')}, "
         f"security={b.get('security_verdict')} → {b.get('verdict')} ({b.get('verdict_summary')}).\n\n"
         f"Dev stack of this branch: {b.get('deploy_url')}\n\n"
-        f"Artifacts: `{bdir}` (bet.md, tasks.json, build.json); report: `{report_path_for(bet_id)}`.\n"
+        f"Artifacts: `{bdir}` (bet.md, tasks.json, build.json"
+        f"{', screenshots/' if shots else ''}); report: `{report_path_for(bet_id)}`.\n"
     )
+    shots_md = publish_screenshots(bet_id, shots)
+    if shots_md:
+        body += "\n" + shots_md
     write(bdir / "pr.md", body)
     pr = open_or_find_pr(branch, f"{bet_id}: {bet.get('title')}", body)
     pr_url, pr_number = pr.get("html_url"), pr.get("number")
@@ -1328,6 +1425,7 @@ def stage_ship(st: dict) -> None:
         die(f"could not open or find the PR for {branch}")
     st["stages"]["ship"] = {"pr": pr_url, "pr_number": pr_number, "branch": branch,
                             "title": f"{bet_id}: {bet.get('title')}",
+                            "screenshots": [s["file"] for s in shots],
                             "at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
     st["status"] = AFTER["ship"]
     save_state(st)

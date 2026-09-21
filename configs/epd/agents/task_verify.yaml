@@ -11,12 +11,18 @@
 #
 # The browser is the playwright-mcp service (configs/mcp_servers/playwright.yaml).
 # browser_snapshot is its eyes: it returns the page as roles, names and
-# `ref=eNN` handles, and those refs are what click/type target. Screenshots are
-# useless here — the MCP client keeps the text blocks of a result and drops the
-# image ones, so a screenshot is a file no model ever sees.
+# `ref=eNN` handles, and those refs are what click/type target. A screenshot
+# is no evidence for this agent — the MCP client keeps the text blocks of a
+# result and drops the image ones, so the file is one no model ever sees — but
+# it is evidence for the owner: when the change shows on a page, one picture
+# of that page goes on the pull request. The browser writes them where
+# docker-compose.yml mounts its working directory on the host; the ship stage
+# moves them into the bet directory and puts them in the PR body.
+#
+# 2: screenshots of the pages the change is on, named for the PR.
 agent:
   name: task_verify
-  version: 1
+  version: 2
   type: llm
   provider: anthropic
   # Reading pages back and comparing them to a description is not the
@@ -28,7 +34,8 @@ agent:
     - playwright.browser_click
     - playwright.browser_type
     - playwright.browser_wait_for
-  max_iterations: 40
+    - playwright.browser_take_screenshot
+  max_iterations: 48
   total_timeout: 900
   provider_config:
     max_tokens: 8000
@@ -72,13 +79,27 @@ agent:
     - If you cannot sign in, that is a failure, and the evidence is what the
       login page did.
 
+    Screenshots for the pull request:
+    - When the change shows in the UI (`change_visible` yes or partial), take
+      ONE screenshot of each page where it shows, at most four, once the page
+      is in the state that shows it: signed in, data loaded, the control
+      opened if the change is behind one. The owner sees these on the pull
+      request; you never see them, so read the snapshot first and shoot after.
+    - browser_take_screenshot(filename="<prefix>-<page>.png", scale="css"),
+      where <prefix> is the screenshot prefix you are given and <page> is a
+      short lowercase name in letters, digits and dashes (overview, actions,
+      position-aapl). Always pass the filename: a screenshot without one is
+      lost, and a name without the prefix is not collected.
+    - No screenshots when the change is not visible in a UI, of the login
+      page, or of pages the change is not on. Never judge from a screenshot;
+      the snapshot is what you see.
+
     Rules:
     - You may click, type and navigate to exercise the change. Do not do
       anything the task did not ask for that destroys data or credentials:
       no sign-ups, no password changes, no deleting, and nothing that places
       a real order or sends a real message.
-    - Do not take screenshots; they are written to a file you cannot see.
-    - You have about 40 browser calls. Spend them on the change and the
+    - You have about 45 browser calls. Spend them on the change and the
       pages around it, not on a tour of the app.
 
     Reply with a short account of what you saw, then exactly one ```json block:
@@ -88,11 +109,14 @@ agent:
       "change_visible": "yes|no|partial",
       "change_evidence": "<what you saw that shows the change is there, or why it cannot be seen in a UI>",
       "pages": [{"page": "<name>", "url": "<url>", "ok": true, "evidence": "<what the snapshot showed>"}],
-      "issues": [{"where": "<page or URL>", "what": "<what is wrong, with the evidence you saw>"}]
+      "issues": [{"where": "<page or URL>", "what": "<what is wrong, with the evidence you saw>"}],
+      "screenshots": [{"page": "<name>", "file": "<prefix>-<page>.png", "shows": "<one line: what the picture shows>"}]
     }
+    `screenshots` is [] when you took none.
   task_template: |
     Application: {{ app_url }}
     {% if email %}Sign in as {{ email }} / {{ password }}{% else %}No credentials were given; check what is reachable without signing in.{% endif %}
+    Screenshot prefix: {{ task_slug | default('verify', true) }}
 
     The task this change was for: {{ task_name }}
     {% if task_description %}

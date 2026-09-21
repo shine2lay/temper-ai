@@ -90,6 +90,25 @@ merge, the same identity can be handed to an agent as an MCP server —
 `github-mcp epd-loop --profile pr-author` — where the profile, not the model,
 decides what it may do.
 
+## Screenshots on the PR
+
+A change the owner could see is shown, not only described. The QA browser
+(`task_verify`, the build's verify node) takes one picture of each page the
+change shows on — at most four, after signing in and getting the page into the
+state that shows it — and lists them in its result as `screenshots`
+(`[{page, file, shows}]`). Nothing is taken for a change no UI shows.
+
+The files are named `<task_slug>-<page>.png` and written by the playwright
+container into its working directory, which `docker-compose.yml` mounts from
+`workspaces/browser-output` (a name is resolved against the browser's
+workspace root, and playwright refuses anything outside it). The ship stage on
+the host moves them into `bets/<id>/screenshots/`, commits them to the orphan
+branch `epd-screenshots` of the product repository through the Git Data API
+(one commit per ship; `EPD_SHOTS_BRANCH` renames it) and embeds them in the PR
+body as `blob/<sha>/…?raw=true` links — pinned to the commit, so a later bet
+cannot move an earlier PR's pictures, and served only to someone who can see
+the repository. The product's own history never carries them.
+
 ## Running it unattended
 
 The driver shells out to `standee`, `gh`, `docker` and `git`. Under

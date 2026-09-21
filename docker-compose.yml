@@ -62,12 +62,22 @@ services:
   # container is the sandbox. --output-dir under /tmp: the image runs as `node`
   # and /app is root's, so the default (/app/browser-output) failed with EACCES
   # on nearly every action — noise in every walk's transcript, not a real error.
+  #
+  # working_dir is that same directory, and it is mounted from the host: a
+  # screenshot taken WITH a filename is written relative to the workspace root
+  # (the cwd; --output-dir only names the unnamed ones), and the EPD ship stage
+  # on the host picks the files up from workspaces/browser-output to put them
+  # on the pull request. The host directory must exist and be writable by uid
+  # 1000 (`node`) before `up`; docker would otherwise create it owned by root.
   playwright-mcp:
     image: mcr.microsoft.com/playwright/mcp:latest
     restart: unless-stopped
     init: true
     ports:
       - "${TEMPER_BIND:-127.0.0.1}:${PLAYWRIGHT_MCP_PORT:-8931}:8931"
+    working_dir: /tmp/browser-output
+    volumes:
+      - ${WORKSPACE_DIR:-./workspaces}/browser-output:/tmp/browser-output
     entrypoint: node
     command: >
       /app/cli.js

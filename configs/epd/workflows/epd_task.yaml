@@ -3,7 +3,8 @@ workflow:
   # 2: review, QA and security judge the same candidate in one stage, then a
   #    gate reconciles them.
   # 3: the environment stage decides and stands the dev stack up as one step.
-  version: 3
+  # 4: verify screenshots the pages a visible change is on; `verify_screenshots` lists them for the PR.
+  version: 4
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -39,7 +40,9 @@ workflow:
       9. verify (QA)   — a browser on that URL: sign in with the test account,
                          check the application is alive, the change is really
                          there, and the pages around it still show their data.
-                         Judges the running app; review judges the diff.
+                         Judges the running app; review judges the diff. When
+                         the change shows on a page it takes that page's
+                         picture, for the pull request.
      10. security      — what the branch ADDED, nothing else: a deterministic
                          scan of the added lines of every commit (not the net
                          diff — a key committed and later deleted is still
@@ -140,6 +143,7 @@ workflow:
     verify_change_evidence: verify.structured.change_evidence
     verify_pages: verify.structured.pages
     verify_issues: verify.structured.issues
+    verify_screenshots: verify.structured.screenshots   # [{page, file, shows}] — files under the browser's output dir
     security_verdict: security.structured.verdict
     security_summary: security.structured.summary
     security_findings: security.structured.findings
@@ -335,6 +339,7 @@ workflow:
         task_name: input.task_name
         task_description: input.task_description
         implement_summary: implement.structured.summary
+        task_slug: claim.structured.task_slug   # the screenshot file prefix: one bet's pictures never mix with another's
 
     - name: security
       type: agent

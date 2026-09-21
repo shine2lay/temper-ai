@@ -381,3 +381,101 @@ def test_collect_round_failure_prunes_and_gives_up_on_the_round(L, monkeypatch):
     assert L.open_round() is None, "a failed round is not collected again; `run --propose` starts a new one"
     assert L._calls["standee_down"] == ["epd-r001"]
     assert L.new_round_id() == "r002"
+
+
+# ----------------------------------------------------------------- screenshots --
+
+
+def shot(L, name: str, size: int = 8) -> Path:
+    L.BROWSER_OUTPUT.mkdir(parents=True, exist_ok=True)
+    p = L.BROWSER_OUTPUT / name
+    p.write_bytes(b"\x89PNG" + bytes(size) if size else b"")
+    return p
+
+
+def test_collect_screenshots_moves_the_prefixed_files_and_captions_them(L):
+    bdir = L.BETS_DIR / "b004"
+    bdir.mkdir()
+    shot(L, "b004-book-actions.png")
+    shot(L, "b004-book-position-aapl.png")
+    shot(L, "b005-other-overview.png")          # another bet's: stays
+    shot(L, "b004-book-empty.png", size=0)      # a zero-byte file: not a picture
+    (L.BROWSER_OUTPUT / "page-2026-09-21T04-14-01Z.yml").write_text("x")
+    listed = '[{"page": "Actions", "file": "b004-book-actions.png", "shows": "no roll offered"}]'
+    out = L.collect_screenshots(bdir, "b004-book", listed)
+    assert [s["file"] for s in out] == ["b004-book-actions.png", "b004-book-position-aapl.png"]
+    assert out[0]["page"] == "Actions" and out[0]["shows"] == "no roll offered"
+    assert out[1]["page"] == "position aapl" and out[1]["shows"] == "", "an unlisted file is captioned from its name"
+    assert (bdir / "screenshots" / "b004-book-actions.png").exists()
+    assert not (L.BROWSER_OUTPUT / "b004-book-actions.png").exists(), "moved, not copied"
+    assert (L.BROWSER_OUTPUT / "b005-other-overview.png").exists()
+    assert (L.BROWSER_OUTPUT / "b004-book-empty.png").exists(), "the empty file is left where it was"
+    # a second ship sees the same set from the bet directory
+    again = L.collect_screenshots(bdir, "b004-book", [{"page": "Actions", "file": "../../etc/passwd"}])
+    assert [s["file"] for s in again] == ["b004-book-actions.png", "b004-book-position-aapl.png"]
+
+
+def test_collect_screenshots_is_empty_without_files_or_prefix(L):
+    bdir = L.BETS_DIR / "b004"
+    bdir.mkdir()
+    assert L.collect_screenshots(bdir, "", '[{"file": "x.png"}]') == []
+    assert L.collect_screenshots(bdir, "b004-book", None) == []
+    assert L.collect_screenshots(bdir, "b004-book", "not json") == []
+    assert not (bdir / "screenshots").exists()
+
+
+def test_publish_screenshots_creates_the_branch_then_builds_on_it(L, monkeypatch):
+    bdir = L.BETS_DIR / "b004"
+    (bdir / "screenshots").mkdir(parents=True)
+    png = bdir / "screenshots" / "b004-book-actions.png"
+    png.write_bytes(b"\x89PNGdata")
+    shots = [{"page": "Actions", "shows": "no roll offered", "file": png.name, "path": str(png)}]
+    calls: list[tuple] = []
+    state = {"ref": None, "trees": 0, "commits": 0}
+
+    def fake_github(method, path, body=None, allow=()):
+        calls.append((method, path, body))
+        if path.endswith("/git/ref/heads/epd-screenshots"):
+            return {"_status": 404, "_error": "Not Found"} if state["ref"] is None else {"object": {"sha": state["ref"]}}
+        if path.endswith("/git/blobs"):
+            return {"sha": "blob1"}
+        if path.endswith("/git/commits/c1"):
+            return {"tree": {"sha": "tree1"}}
+        if path.endswith("/git/trees"):
+            state["trees"] += 1
+            return {"sha": f"tree{state['trees']}"}
+        if path.endswith("/git/commits"):
+            state["commits"] += 1
+            return {"sha": f"c{state['commits']}"}
+        if path.endswith("/git/refs"):
+            state["ref"] = body["sha"]
+            return {}
+        if "/git/refs/heads/" in path:
+            state["ref"] = body["sha"]
+            return {}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(L, "github", fake_github)
+    md = L.publish_screenshots("b004", shots)
+    first = [(m, p.rsplit("/", 1)[-1]) for m, p, _ in calls]
+    assert first == [("GET", "epd-screenshots"), ("POST", "blobs"), ("POST", "trees"), ("POST", "commits"), ("POST", "refs")]
+    blob = calls[1][2]
+    assert blob["encoding"] == "base64" and blob["content"] == "iVBOR2RhdGE="
+    tree = calls[2][2]
+    assert "base_tree" not in tree and tree["tree"][0]["path"] == "b004/b004-book-actions.png"
+    assert calls[3][2]["parents"] == [] and calls[4][2]["ref"] == "refs/heads/epd-screenshots"
+    assert "## Screenshots" in md
+    assert "![Actions](https://github.com/shine2lay/rollcall/blob/c1/b004/b004-book-actions.png?raw=true)" in md
+    assert "**Actions — no roll offered**" in md
+
+    calls.clear()
+    L.publish_screenshots("b005", shots)
+    second = [(m, p.rsplit("/", 1)[-1]) for m, p, _ in calls]
+    assert second == [("GET", "epd-screenshots"), ("POST", "blobs"), ("GET", "c1"), ("POST", "trees"), ("POST", "commits"), ("PATCH", "epd-screenshots")]
+    assert calls[3][2]["base_tree"] == "tree1" and calls[4][2]["parents"] == ["c1"]
+    assert calls[5][2] == {"sha": "c2", "force": False}
+
+
+def test_publish_screenshots_without_any_is_silent(L, monkeypatch):
+    monkeypatch.setattr(L, "github", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no call")))
+    assert L.publish_screenshots("b004", []) == ""

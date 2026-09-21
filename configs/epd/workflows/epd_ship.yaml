@@ -1,6 +1,7 @@
 workflow:
   name: epd_ship
-  version: 2
+  # 3: the QA screenshots travel with the build; the driver puts them on the PR.
+  version: 3
   description: |
     Put an approved build in front of the owner: push the branch and open the PR.
 
@@ -30,6 +31,8 @@ workflow:
     deploy_url:        {type: string, required: false}
     implement_commit:  {type: string, required: false}
     implement_summary: {type: string, required: false}
+    task_slug:         {type: string, required: false}   # prefix of the QA browser's screenshot files
+    verify_screenshots: {type: array, required: false}  # [{page, file, shows}] from verify; [] or absent when none
 
     # The bet it serves, for the PR body
     title:     {type: string, required: true}
@@ -61,6 +64,8 @@ workflow:
         deploy_url: input.deploy_url
         implement_commit: input.implement_commit
         implement_summary: input.implement_summary
+        task_slug: input.task_slug
+        verify_screenshots: input.verify_screenshots
         title: input.title
         problem: input.problem
         invariant: input.invariant

@@ -25,6 +25,7 @@ from temper_ai.llm.prompt_renderer import PromptRenderer
 from temper_ai.llm.service import (
     DEFAULT_MAX_CONTEXT_TOKENS,
     DEFAULT_MAX_MESSAGES,
+    WRAP_UP_TURNS,
     LLMService,
 )
 from temper_ai.observability import EventType
@@ -286,6 +287,10 @@ class LLMAgent(AgentABC):
             total_timeout=float(self.config.get("total_timeout", DEFAULT_TOTAL_TIMEOUT)),
             max_context_tokens=self.config.get("max_context_tokens", DEFAULT_MAX_CONTEXT_TOKENS),
             context_policy=self.config.get("context_policy", DEFAULT_CONTEXT_POLICY),
+            # How many turns before max_iterations the model is told to wrap up
+            # (default 3). An agent whose reply must leave a committed worktree
+            # sets this higher: it needs turns to test and commit, not just to answer.
+            wrap_up_turns=int(self.config.get("wrap_up_turns", WRAP_UP_TURNS)),
         )
 
     def _build_call_context(

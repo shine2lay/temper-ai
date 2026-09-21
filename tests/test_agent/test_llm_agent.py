@@ -13,7 +13,11 @@ from temper_ai.agent.llm_agent import (
 )
 from temper_ai.llm.context import DEFAULT_CONTEXT_POLICY
 from temper_ai.llm.models import LLMRunResult
-from temper_ai.llm.service import DEFAULT_MAX_CONTEXT_TOKENS, DEFAULT_MAX_MESSAGES
+from temper_ai.llm.service import (
+    DEFAULT_MAX_CONTEXT_TOKENS,
+    DEFAULT_MAX_MESSAGES,
+    WRAP_UP_TURNS,
+)
 from temper_ai.shared.types import ExecutionContext, Status
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.executor import ALL_TOOLS, ToolExecutor
@@ -167,6 +171,7 @@ class TestLLMAgentRun:
             total_timeout=DEFAULT_TOTAL_TIMEOUT,
             max_context_tokens=DEFAULT_MAX_CONTEXT_TOKENS,
             context_policy=DEFAULT_CONTEXT_POLICY,
+            wrap_up_turns=WRAP_UP_TURNS,
         )
 
     @patch("temper_ai.agent.llm_agent.LLMService")

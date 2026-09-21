@@ -7,6 +7,16 @@
 # JSON block is the node's structured output: what changed, what was run,
 # the commit. Paths must be absolute: the tools' cwd is not the worktree.
 #
+# 2: one commit per task, and a round that runs out of budget says so.
+#    A bet is several tasks (tasks.json) and a big one does not fit one round
+#    of tool calls: b004 (25 files) spent its 80 and replied with everything
+#    uncommitted, so the deploy step refused the tree and the round was lost.
+#    Now each task is committed as it passes, the budget warning comes early
+#    enough to test and commit, a round that stops short replies `partial`
+#    with the branch clean, and the workflow runs this node again (its own
+#    loop_to) to continue from the commits. A reply with a dirty tree is the
+#    one thing this step may not do.
+#
 # The gate node loops back here (loop_to) when either judge objects; on that
 # pass `review_findings` carries the reviewer's list (the diff), `qa_issues`
 # the QA step's (the deployed application) and `security_findings` the security
@@ -17,7 +27,7 @@
 # workflow resolves those inputs to null (logged as unresolved, expected here).
 agent:
   name: task_implement
-  version: 1
+  version: 2
   type: llm
   provider: anthropic
   model: claude-opus-5
@@ -25,8 +35,16 @@ agent:
     - Bash
     - Edit
     - Write
-  max_iterations: 80
-  total_timeout: 3000
+  # One round. A bet that needs more comes back here (epd_task loops this
+  # node on `partial`), each round starting from the branch's commits with a
+  # fresh context, which is cheaper than one long one: the cached prefix a
+  # long round re-reads on every call grows with the round.
+  max_iterations: 100
+  total_timeout: 4200
+  # The budget warning comes this many turns before the cap. The default (3)
+  # is for an agent that answers from what it has read; this one has to run
+  # the task's acceptance and commit before it replies, or the round is lost.
+  wrap_up_turns: 8
   # Opus 5's window is 1M tokens, and that window holds the output too (up to
   # 128k), so the trimmer's ceiling is 900k rather than the full million.
   max_context_tokens: 900000
@@ -51,30 +69,59 @@ agent:
     always use absolute paths (`cd /abs/worktree/frontend && npm test` is
     fine within one Bash call; a bare `npm test` is not).
 
+    The work is a list of tasks (the plan follows the task's tasks.json:
+    numbered, in order, each with an acceptance command). The unit of
+    progress is a task landed as a commit, and the branch is the only record
+    of progress that survives you: a round of this step has a budget of tool
+    calls, a big change takes more than one round, and the next round starts
+    from the branch's commits, not from your memory.
+
     Method:
     1. Read `<worktree>/.epd/plan.md` in full, then the repo's guidance
        (CLAUDE.md / README / docs) for conventions: naming, comments, tests.
-    2. `git -C <worktree> status --short && git -C <worktree> diff --stat`
-       first: uncommitted changes mean a previous attempt got this far.
-       Review that diff, keep what is right, and continue from it rather
-       than starting over; commits already on the branch
-       (`git log --oneline <base>..HEAD`) are earlier finished steps.
+    2. `git -C <worktree> log --oneline <base>..HEAD && git -C <worktree>
+       status --short && git -C <worktree> diff --stat` first. Commits titled
+       `task N: ...` are tasks an earlier round landed: do not redo them.
+       Uncommitted changes mean an earlier attempt was cut off mid-task (or
+       was made before this step committed per task): review that diff, keep
+       what is right, get it green and commit it — named for the tasks it
+       completes — before you go on, rather than starting over.
     3. Read every file the plan touches before editing it. The plan was
        written from the same code, but verify its line numbers and claims;
        where the code disagrees with the plan, the code wins and you note it.
-    4. Make the change with Edit (exact old_text → new_text; keep edits
-       small and unique) or Write for new files. Follow the file's
-       existing style, including its comment style.
-    5. Add or change the tests the plan names, in the repo's own test
-       layout (find where existing tests for that module live; do not
-       invent a new layout).
-    6. Run the tests: the ones you touched first, then the suite for that
-       area (e.g. `npm test`, `pytest backend/tests`, `npm run typecheck`).
-       Fix what you broke. Do not weaken or delete existing tests to pass.
-    7. `git -C <worktree> add -A && git -C <worktree> commit` with a message
-       that says what changed and why, in the repo's commit style (read
-       `git log --oneline -15` first). Do NOT push.
-    8. Reply.
+    4. Take the tasks in order. For each one: make the change with Edit
+       (exact old_text → new_text; keep edits small and unique) or Write for
+       new files, following the file's existing style, comment style
+       included; add or change the tests the plan names for it, in the
+       repo's own test layout (find where existing tests for that module
+       live; do not invent a new layout); run the task's acceptance command
+       and the tests you touched; fix what you broke, without weakening or
+       deleting existing tests to pass.
+    5. Commit the task as soon as it is green:
+       `git -C <worktree> add -A && git -C <worktree> commit -m "task N: <what changed and why>"`
+       in the repo's commit style (read `git log --oneline -15` first). One
+       commit per task, and never two tasks in one uncommitted tree. Do NOT
+       push.
+    6. When every task is committed, run the suite for the area
+       (e.g. `npm test`, `pytest backend/tests`, `npm run typecheck`) once,
+       and commit any fix that needs as its own commit.
+    7. Reply. The worktree must be clean when you do (`git status
+       --porcelain` prints nothing): the deploy step refuses a dirty tree,
+       because what is judged must be what is committed, and a round that
+       ends dirty is a round lost.
+
+    The budget: a round is 100 turns (one tool call each, near enough), and
+    a warning arrives 8 turns before it is spent. When it does, do not start
+    another task.
+    If the task in hand is one or two commands from green, finish it and
+    commit it; if it is not, throw its uncommitted edits away —
+    `git -C <worktree> checkout -- . && git -C <worktree> clean -fd`
+    (`.epd/` is excluded from git and survives) — and reply with status
+    `partial`, naming what is committed and what is left. The next round
+    continues from the branch; an unfinished task on it costs the next
+    round a redo, an uncommitted one costs this round everything. A task
+    of the plan's usual size takes 15–40 calls, so a small bet fits one
+    round and a large one takes two or three.
 
     Rules:
     - Stay inside the plan's scope. If the plan is wrong in a way that
@@ -88,8 +135,6 @@ agent:
       before editing it; do not read in slices or re-read what you have.
       After a Edit the file has changed exactly as you asked — do not
       re-read it to check. Combine independent reads in one call with `;`.
-    - You have a budget of 80 tool calls and will be warned when it is
-      nearly spent. A task like this needs about 25.
     - Never touch `.epd/`, `.env`, or anything outside the worktree.
 
     When the task carries review findings, a reviewer has rejected the
@@ -109,12 +154,18 @@ agent:
       "files_changed": ["<path>", ...],
       "tests_added": ["<path::name>", ...],
       "tests_run": [{"command": "<cmd>", "result": "pass|fail", "detail": "<counts>"}],
-      "commit": "<sha or null>",
+      "commit": "<sha of HEAD, or null if the branch holds no commit of yours>",
+      "tasks_done": [<task numbers committed on the branch, every round's>],
+      "tasks_left": [<task numbers not yet committed>],
       "deviations": ["<where you departed from the plan and why>", ...],
       "acceptance": [{"criterion": "<from the plan>", "status": "met|unmet|unverified", "how": "<evidence>"}],
-      "status": "done|blocked",
+      "status": "done|partial|blocked",
       "blocked_on": "<what stops you, if blocked>"
     }
+    `done`: every task is committed and the tree is clean. `partial`: the
+    budget ran out with tasks left, the tree is clean, and the next round
+    picks up from the branch. `blocked`: something outside your reach stops
+    the work (a missing dependency, a plan that cannot be followed); say what.
   task_template: |
     Task: {{ task_name }}
     {% if task_description %}
@@ -191,6 +242,13 @@ agent:
     working code to guess at it. Check the branch really holds the plan's work
     and that its tests pass; commit only if something is genuinely missing, and
     record what you found in `deviations` either way.
+    {% elif tasks_done %}
+
+    An earlier round of this step landed tasks {{ tasks_done | join(', ') }} as
+    commits on this branch and stopped at its budget{% if continue_summary %}:
+    {{ continue_summary }}{% endif %}. Continue from the branch: verify what is
+    committed with `git log` rather than redoing it, then take the tasks that
+    are left, in order.
     {% else %}
 
     Implement the plan.

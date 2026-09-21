@@ -1568,6 +1568,67 @@ class TestUnresolvedInputMap:
         assert "`aside` has not run yet" in unresolved[0]
         assert "depends_on" in unresolved[0]
 
+    def test_a_node_that_loops_to_itself_may_read_its_previous_round(self):
+        """The first round has nothing to read, by design; not a fault."""
+        from temper_ai.stage.executor import _resolve_single_input
+        graph = self._graph()
+        graph["implement"] = _make_agent_node("implement", loop_to="implement", max_loops=3)
+        unresolved: list[str] = []
+        value = _resolve_single_input("implement", "done", "implement.structured.tasks_done", {}, {}, unresolved, graph)
+        assert value is None
+        assert unresolved == []
+
+    def test_any_other_self_reference_is_a_wiring_mistake(self):
+        from temper_ai.stage.executor import _resolve_single_input
+        unresolved: list[str] = []
+        _resolve_single_input("implement", "done", "implement.structured.tasks_done", {}, {}, unresolved, self._graph())
+        assert unresolved == ["done ← implement.structured.tasks_done (a node cannot read its own output unless it loops to itself)"]
+
+
+class TestSelfLoop:
+    """A node may loop to itself: a round of work that stops short of the whole
+    (the epd implementer's budget runs out before a big bet is done) replies
+    `partial`, and the node runs again with its previous round's output served
+    through its own input_map. The rounds count against max_loops like any loop."""
+
+    def _implement(self, rounds):
+        node = _make_agent_node("implement", loop_to="implement", max_loops=4,
+                                input_map={"tasks_done": "implement.structured.tasks_done"})
+        node.config.loop_condition = {"source": "implement.structured.status", "operator": "equals", "value": "partial"}
+        node.run = MagicMock(side_effect=[
+            NodeResult(status=Status.COMPLETED, output=f"round {i}", structured_output=so,
+                       agent_results=[AgentResult(status=Status.COMPLETED, output="r",
+                                                  tokens=TokenUsage(total_tokens=10), cost_usd=0.01)],
+                       cost_usd=0.01, total_tokens=10)
+            for i, so in enumerate(rounds, 1)
+        ])
+        return node
+
+    def test_partial_rounds_continue_from_the_previous_round(self):
+        implement = self._implement([
+            {"status": "partial", "tasks_done": [1, 2]},
+            {"status": "partial", "tasks_done": [1, 2, 3]},
+            {"status": "done", "tasks_done": [1, 2, 3, 4]},
+        ])
+        review = _make_agent_node("review", depends_on=["implement"],
+                                  input_map={"done": "implement.structured.tasks_done"})
+        result = execute_graph([implement, review], {}, _make_context(), graph_name="g")
+
+        served = [c.args[0]["tasks_done"] for c in implement.run.call_args_list]
+        assert served == [None, [1, 2], [1, 2, 3]]              # each round reads the one before
+        assert result.node_results["implement"].output == "round 3"   # the last round is the node's result
+        assert review.run.call_args.args[0]["done"] == [1, 2, 3, 4]   # and what the judges see
+        assert review.run.call_count == 1                            # they saw it once
+
+    def test_max_loops_bounds_the_rounds(self):
+        implement = self._implement([{"status": "partial", "tasks_done": [i]} for i in range(1, 6)])
+        review = _make_agent_node("review", depends_on=["implement"])
+        result = execute_graph([implement, review], {}, _make_context(), graph_name="g")
+
+        assert implement.run.call_count == 4                         # max_loops counts the node's runs
+        assert result.node_results["implement"].structured_output["status"] == "partial"  # honest
+        assert review.run.call_count == 1                            # the judges still see what there is
+
 
 class TestPerCallerToolRelease:
     """A node's per-caller tool state (an MCP session, its browser) ends with the node.

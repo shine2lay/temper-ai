@@ -4,7 +4,10 @@ workflow:
   #    gate reconciles them.
   # 3: the environment stage decides and stands the dev stack up as one step.
   # 4: verify screenshots the pages a visible change is on; `verify_screenshots` lists them for the PR.
-  version: 4
+  # 5: implement runs in rounds. A round that spends its budget with tasks left replies `partial`
+  #    with its tasks committed and the tree clean, and the node loops on itself to continue from
+  #    the branch (up to four rounds) before anyone judges the work.
+  version: 5
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -25,7 +28,12 @@ workflow:
                          so both emit the same shape.
       5. plan          — task_plan writes <worktree>/.epd/plan.md
       6. implement     — task_implement makes the change, runs the tests,
-                         commits on the task branch (nothing is pushed)
+                         commits on the task branch (nothing is pushed), one
+                         commit per task of the plan. A round has a budget of
+                         tool calls; a bet too big for one round is committed
+                         as far as it got, reported `partial`, and the node
+                         runs again from the branch, fresh context, up to
+                         four rounds. The judges see the whole change once.
       7. review        — task_review, a fresh context: diff vs plan, rules,
                          test diff, re-runs the tests, verdict. Any finding,
                          minor included, is request_changes and rewinds to
@@ -281,6 +289,22 @@ workflow:
         security_findings: security.structured.findings
         # Why the round came back when no list did (an unreadable verdict)
         sent_back_because: gate.structured.summary
+        # On a `partial` round this node loops to itself; the executor then
+        # serves its own previous result here (null on the first round).
+        tasks_done: implement.structured.tasks_done
+        continue_summary: implement.structured.summary
+      # The build's size is the bet's, not the budget's. A round that stops
+      # short with tasks left comes straight back here, on the commits it
+      # made, until the plan is done or four rounds are spent; then the judges
+      # see what there is (and send it back through the gate's own loop if it
+      # is not enough). max_loops counts this node's runs.
+      loop_to: implement
+      max_loops: 4
+      on_max_loops: silent
+      loop_condition:
+        source: implement.structured.status
+        operator: equals
+        value: partial
 
     - name: review
       type: agent

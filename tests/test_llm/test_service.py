@@ -179,6 +179,27 @@ class TestToolCallingLoop:
         assert "[iteration budget]" not in tool_msgs[5]                  # after the cap: nobody will read it
         assert tool_msgs[4].startswith("result of bash")                 # the result itself is intact
 
+    def test_the_warning_comes_as_early_as_the_agent_asks(self):
+        """An agent whose answer is a committed worktree needs more than three
+        turns of notice: it has to run the tests and commit before it replies.
+        Seen live: an implementer warned at three turns left replied with twenty
+        files uncommitted, and the deploy step refused the dirty tree."""
+        responses = [
+            _make_tool_response([{"id": f"c{i}", "name": "bash", "arguments": '{"command": "loop"}'}])
+            for i in range(8)
+        ]
+        provider = MockProvider(responses)
+        service = LLMService(provider, max_iterations=8, wrap_up_turns=6)
+        service.run([{"role": "user", "content": "Do something"}], tools=[], execute_tool=_echo_tool)
+
+        tool_msgs = [m["content"] for m in provider.calls[-1]["messages"] if m["role"] == "tool"]
+        assert "[iteration budget]" not in tool_msgs[0]                  # after iteration 1: 7 turns left
+        assert "6 LLM turns left" in tool_msgs[1]                        # after iteration 2: the first warning
+        assert "Start nothing new" in tool_msgs[1]                        # early: finish what is in hand
+        assert "3 LLM turns left" in tool_msgs[4]
+        assert "produce your final answer now" in tool_msgs[4]           # late: the usual wording
+        assert "last one the iteration budget allows" in tool_msgs[6]
+
     def test_no_executor_returns_error(self):
         """LLM returns tool calls but no executor provided."""
         responses = [

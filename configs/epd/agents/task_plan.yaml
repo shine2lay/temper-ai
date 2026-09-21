@@ -16,9 +16,14 @@
 # as a criterion that the implementer satisfied by editing the test. A
 # plan must name the rules it found and show its design against each one,
 # and must say which existing tests it expects to change and why.
+#
+# 2: when the request carries a task list (tasks.json), the Design section
+#    follows it, one subsection per task in its order and numbering. The
+#    implement step commits one task at a time and may take several rounds;
+#    a plan organised some other way leaves it to guess where a task ends.
 agent:
   name: task_plan
-  version: 1
+  version: 2
   type: llm
   provider: anthropic
   model: claude-opus-5
@@ -127,7 +132,11 @@ agent:
       ## Terms           — each ambiguous term: candidates found, what each measures, the pick and why
       ## Findings        — path:line — what is there today (code AND tests)
       ## Rules           — verbatim, with location
-      ## Design          — the change, step by step, with code sketches
+      ## Design          — the change, step by step, with code sketches. When the request
+                           names a task list (tasks.json), one `### Task N: <title>` per task,
+                           in the list's order and numbering, each ending with its acceptance
+                           command: the implement step lands one task per commit, in this
+                           order, and a round of it may stop between two.
       ## Design vs rules — one line per rule
       ## Copy            — every user-visible string, every branch, exact text
       ## Tests           — to add (name, what it asserts); to change (name, why, new assertion)

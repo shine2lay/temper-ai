@@ -1129,6 +1129,13 @@ def _unserved_reason(node_name: str, source_node: str, node_map: dict[str, Node]
         return "no such node"
     if source_node not in node_map:
         return "no such node in this graph"
+    if source_node == node_name:
+        # A node that loops to itself reads its own previous round this way
+        # (the rewind preserves it as loop feedback); on the first round there
+        # is none, by design. Any other self-reference is a wiring mistake.
+        if node_map[node_name].config.loop_to == node_name:
+            return None
+        return "a node cannot read its own output unless it loops to itself"
     seen: set[str] = set()
     frontier = [source_node]
     while frontier:

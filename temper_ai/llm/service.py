@@ -48,6 +48,7 @@ DEFAULT_MAX_CONTEXT_TOKENS = 120_000  # Conservative default — most models han
 # thing and a large result is not. Overflow is still handled: the context
 # limiter trims tool results further when a run is actually over budget.
 MAX_TOOL_RESULT_CHARS = 200_000  # ~50k tokens
+WRAP_UP_TURNS = 3  # LLM turns left at which the model is told to stop exploring (per agent: wrap_up_turns)
 
 
 class LLMService:
@@ -66,6 +67,7 @@ class LLMService:
         total_timeout: float = 300.0,
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
         context_policy: str = DEFAULT_CONTEXT_POLICY,
+        wrap_up_turns: int = WRAP_UP_TURNS,
     ) -> None:
         if context_policy not in CONTEXT_POLICIES:
             raise ValueError(
@@ -73,6 +75,11 @@ class LLMService:
             )
         self.provider = provider
         self.max_iterations = max_iterations
+        # How many LLM turns before the cap the model is told to wrap up. Three
+        # is enough for a reader to answer from what it has; an agent that must
+        # leave a worktree in a committed state needs room to test and commit,
+        # and says so in its config.
+        self.wrap_up_turns = max(1, int(wrap_up_turns))
         self.max_messages = max_messages
         self.total_timeout = total_timeout  # Overall timeout for the entire run loop
         self.max_context_tokens = max_context_tokens
@@ -235,7 +242,7 @@ class LLMService:
             # nudge stays quiet: the two would ask for different next turns.
             wire = self._compressor.prepare(
                 self._messages,
-                wrapping_up=self.max_iterations - self._iteration + 1 <= WRAP_UP_TURNS,
+                wrapping_up=self.max_iterations - self._iteration + 1 <= self.wrap_up_turns,
             )
         else:
             _enforce_context_limit(self._messages, self.max_context_tokens, self.max_messages)
@@ -317,7 +324,7 @@ class LLMService:
                 "result": tr["result"], "success": tr["success"],
             })
         _inject_tool_results(self._messages, self._response, tool_calls, tool_results)
-        _nudge_to_finish(self._messages, self._iteration, self.max_iterations)
+        _nudge_to_finish(self._messages, self._iteration, self.max_iterations, self.wrap_up_turns)
         # No window here: _enforce_context_limit runs before every provider call
         # and trims by token budget, which is the measure that matters. Trimming
         # by message count after every tool round threw away work the model was
@@ -513,10 +520,9 @@ def _inject_tool_results(
         })
 
 
-WRAP_UP_TURNS = 3  # LLM turns left at which the model is told to stop exploring
-
-
-def _nudge_to_finish(messages: list[dict], iteration: int, max_iterations: int) -> None:
+def _nudge_to_finish(
+    messages: list[dict], iteration: int, max_iterations: int, wrap_up_turns: int = WRAP_UP_TURNS,
+) -> None:
     """Tell the model the iteration budget is nearly spent, on the last tool result.
 
     Without this a model that is still reading at the cap is cut off with no
@@ -524,12 +530,25 @@ def _nudge_to_finish(messages: list[dict], iteration: int, max_iterations: int) 
     40 iterations and 570k tokens and returned nothing). Appended to the tool
     result rather than as a user message so the transcript stays a valid
     tool-call sequence for every provider.
+
+    ``wrap_up_turns`` is how early the first warning comes. The default suits
+    an agent that answers from what it has read; one whose answer is a
+    committed worktree is warned earlier (seen live: an implementer told at
+    three turns left replied with twenty files uncommitted, and the deploy
+    step refused the dirty tree).
     """
     left = max_iterations - iteration  # LLM calls that can still happen
-    if left > WRAP_UP_TURNS or left < 1 or not messages or messages[-1].get("role") != "tool":
+    if left > wrap_up_turns or left < 1 or not messages or messages[-1].get("role") != "tool":
         return
     if left == 1:
         note = "Your next reply is the last one the iteration budget allows. It must be your final answer, with no tool calls."
+    elif left > WRAP_UP_TURNS:
+        # An early warning, asked for by the agent's config: the turns left are
+        # for finishing what is in hand (test, commit), not for starting more.
+        note = (
+            f"You have {left} LLM turns left before the iteration budget ({max_iterations}) is spent. "
+            "Start nothing new; use them to bring what is in hand to a state you can hand over, then reply."
+        )
     else:
         note = (
             f"You have {left} LLM turns left before the iteration budget ({max_iterations}) is spent. "

@@ -1,23 +1,28 @@
-# EPD loop: put the approved build in front of real users.
+# EPD loop: put the approved build in front of the owner, as a pull request.
 #
-# Push the branch, open the PR, squash-merge it, back the live stack up, deploy
-# the merge commit, and make sure the QA tenant is still there afterwards.
+# Push the branch and open the PR. That is where this node stops: the PR is
+# the loop's second gate, and what happens to it -- merge, request changes,
+# close -- is the owner's word, given in the UI on the `deploy` node that
+# follows (configs/epd/agents/epd_deploy.yaml acts on it). Until 2026-09-20
+# this node also merged and deployed; it no longer does, because a PR the
+# loop merges itself is not a decision anyone made, and the owner's decisions
+# are the one measure of the loop that is not the loop grading its own work.
 #
-# None of that logic is here. It lives in the loop's driver (`epd_loop.py
-# stage ship`), where it was written, tested and used for b001, and this node
-# is the thing that asks for it — because the loop now runs as one workflow
-# and ship sits in the middle of it, between the build and the measurement of
-# what shipped.
+# None of the shipping logic is here. It lives in the loop's driver
+# (`epd_loop.py stage ship`), where it was written, tested and used for b001,
+# and this node is the thing that asks for it — because the loop now runs as
+# one workflow and ship sits in the middle of it, between the build and the
+# measurement of what shipped.
 #
 # The asking is deliberately awkward, and that is the design:
 #
 #   * This node runs in the temper container. Ship is a host job — it holds the
 #     GitHub token, the production checkout and standee. So it goes over ssh.
 #   * The key it uses is pinned to a forced command (`epd-ship-only`) that runs
-#     `epd-ship <bet-id>` and nothing else, with the id matched against a literal
-#     pattern. No shell, no flags, no second command. If this key leaks, what
-#     leaks is the ability to ship a bet the pipeline already built and already
-#     approved — not a shell on the host.
+#     `epd-ship <bet-id> [deploy]` and nothing else, with the id matched against
+#     a literal pattern. No shell, no flags, no second command. If this key
+#     leaks, what leaks is the ability to open a PR for a bet the pipeline
+#     already built and already approved — not a shell on the host.
 #   * The decision to ship is not made here either. The driver re-checks the
 #     build's own verdict before it pushes anything, so a node wired to the
 #     wrong place cannot ship a rejected build by asking nicely.
@@ -30,7 +35,7 @@
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
 agent:
   name: epd_ship
-  version: 1
+  version: 2
   type: script
   timeout_seconds: 2400
   # A blank here is not a blank field, it is a shifted one: these values are written by position,
@@ -46,8 +51,8 @@ agent:
     KEY_SRC="$KEYDIR/id_ed25519_ship"
 
     emit() {
-      python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[1], "detail": sys.argv[2], "pr": sys.argv[3], "merge_sha": sys.argv[4], "prod_url": sys.argv[5]}))' \
-        "$1" "$2" "${3:-}" "${4:-}" "${5:-}"
+      python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[1], "detail": sys.argv[2], "pr": sys.argv[3], "pr_number": 0, "questions_for_owner": []}))' \
+        "$1" "$2" "${3:-}"
     }
     fail() { echo "ship failed: $1" >&2; emit failed "$1"; exit 1; }
 
@@ -93,7 +98,7 @@ agent:
     trap 'rm -f "$KEY"' EXIT
     install -m 600 "$KEY_SRC" "$KEY"
 
-    echo "shipping $BET_ID (the host driver decides whether the build has earned it)"
+    echo "opening the PR for $BET_ID (the host driver decides whether the build has earned it)"
     set +e
     ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" \
         -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 \
@@ -102,18 +107,44 @@ agent:
     set -e
     [ "$RC" = 0 ] || fail "$(tail -3 /tmp/ship.log | tr '\n' ' ')"
 
-    # ---- what happened ---------------------------------------------------------------
+    # ---- what happened, and the question ---------------------------------------------
     # From the state file the driver just wrote, not from parsing its log: the driver
-    # records the PR, the merge commit and the live URL as data, and a log line is prose.
-    python3 - "$BET_DIR/state.json" <<'PY'
+    # records the PR as data, and a log line is prose.
+    #
+    # The question is the gate's form. The next node (`deploy`) has gate: true, and the
+    # dashboard renders whatever `questions_for_owner` its upstream -- this node -- asked,
+    # so the owner sees the PR link, the judges' verdicts and the stack to try it on, and
+    # three buttons. The labels are matched exactly by the driver (PR_DECISIONS in
+    # epd_loop.py): change one here, change it there.
+    python3 - "$BET_DIR/state.json" "$BET_DIR/build.json" <<'PY'
     import json, sys
     ship = (json.load(open(sys.argv[1])).get("stages") or {}).get("ship") or {}
+    build = json.load(open(sys.argv[2]))
+    pr, n = ship.get("pr") or "", ship.get("pr_number")
+    verdicts = " · ".join(f"{k.replace('_verdict', '')}: {build.get(k) or '?'}"
+                          for k in ("review_verdict", "verify_verdict", "security_verdict"))
+    detail = (f"{pr}\n\nThe pipeline's own judges said -- {verdicts}. "
+              f"{build.get('verdict_summary') or ''}\n\n"
+              f"Try it: {build.get('deploy_url') or '(no stack url recorded)'} "
+              f"(branch {build.get('branch')}, commit {(build.get('implement_commit') or '')[:12]}).\n\n"
+              f"Merging here squash-merges, backs production up and deploys the merge commit. "
+              f"Requesting changes or closing puts your note on the PR and stops the run; "
+              f"merging or closing on GitHub instead also counts -- GitHub's state wins.")
     print(json.dumps({
-        "status": "shipped" if ship.get("merged") else "incomplete",
-        "detail": f"PR #{ship.get('pr_number')} squash-merged; {ship.get('prod_env')} runs {(ship.get('merge_sha') or '')[:12]}",
-        "pr": ship.get("pr") or "",
-        "merge_sha": ship.get("merge_sha") or "",
-        "prod_url": ship.get("prod_url") or "",
-        "qa_on_prod": bool(ship.get("prod_qa")),
+        "status": "pr_opened" if n else "incomplete",
+        "detail": f"PR #{n} opened; waiting for the owner's decision" if n else "no PR recorded",
+        "pr": pr,
+        "pr_number": n or 0,
+        "questions_for_owner": [{
+            "id": "pr",
+            "header": f"PR #{n}",
+            "question": f"What happens to PR #{n}, {ship.get('title') or ''}?",
+            "detail": detail,
+            "options": [
+                {"label": "Merge", "description": "Squash-merge into master, back production up, deploy, check the QA tenant survived."},
+                {"label": "Request changes", "description": "Not as it stands. Say what in the note: it goes on the PR, and into the next bet's context."},
+                {"label": "Close", "description": "Not this, not with changes. The PR is closed unmerged with your note."},
+            ],
+        }] if n else [],
     }))
     PY

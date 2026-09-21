@@ -1,0 +1,97 @@
+# EPD loop: act on the owner's word about the PR.
+#
+# This node has `gate: true` in the loop. The run parks here after `ship` has
+# opened the PR; the dashboard shows the PR, the judges' verdicts, the stack to
+# try it on, and three buttons -- Merge / Request changes / Close -- with a
+# note. What the owner picks arrives as the `gate` input (temper hands a gated
+# node the human's response under that name), and this node does two things
+# with it: writes it beside the bet as pr-decision.json, and asks the host
+# driver to act on it (`epd_loop.py stage deploy`, over the same pinned ssh
+# key as ship, with `deploy` as the one extra word the key admits).
+#
+# The driver, not this node, decides what the word means, and checks it
+# against GitHub first: an owner who merged or closed the PR there before
+# answering the form has already decided, and GitHub's state wins. Merge means
+# squash-merge, back production up, deploy the merge commit, confirm the QA
+# tenant survived. Request changes and close put the note on the PR and stop
+# the run. Either way the decision is recorded (decisions.jsonl) with the note,
+# the answers, every config's version and the run's cost up to this gate --
+# the record the loop's improvement is measured against.
+#
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: epd_deploy
+  version: 1
+  type: script
+  timeout_seconds: 2400
+  strict_undefined: true
+  script_template: |
+    #!/bin/sh
+    set -eu
+
+    BET_ID={{ bet_id }}
+    BET_DIR={{ bet_dir }}
+    KEYDIR=/app/standee-ssh
+    KEY_SRC="$KEYDIR/id_ed25519_ship"
+
+    emit() {
+      python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[1], "detail": sys.argv[2], "decision": sys.argv[3], "merge_sha": "", "prod_url": "", "qa_on_prod": False}))' \
+        "$1" "$2" "${3:-}"
+    }
+    fail() { echo "deploy failed: $1" >&2; emit failed "$1"; exit 1; }
+
+    [ -d "$BET_DIR" ] || fail "bet directory not found: $BET_DIR"
+    [ -f "$KEY_SRC" ] || fail "no epd-ship key at $KEY_SRC (run local/standee-ssh/setup.sh, mount it)"
+
+    # ---- the owner's word, as data ---------------------------------------------------
+    # `gate` is a dict; `tojson` makes it the one text the driver reads back with json.loads.
+    # It goes through the environment like every other value (ScriptAgent stashes it), so a
+    # note that contains a quote or a $(...) is seven characters of text, not an instruction.
+    python3 - "$BET_DIR/pr-decision.json" {{ gate | tojson }} <<'PY'
+    import json, sys
+    path, raw = sys.argv[1], sys.argv[2]
+    try:
+        gate = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        gate = {"response": raw, "answers": [], "text": raw}
+    if not isinstance(gate, dict):  # run on its own, with no gate: GitHub decides
+        gate = {}
+    json.dump(gate, open(path, "w"), indent=2)
+    picked = [s for a in gate.get("answers") or [] for s in a.get("selected") or []]
+    print(f"owner's word: {', '.join(picked) or '(nothing picked in the form; GitHub decides)'}")
+    PY
+
+    # ---- the ask ---------------------------------------------------------------------
+    KEY=$(mktemp)
+    trap 'rm -f "$KEY"' EXIT
+    install -m 600 "$KEY_SRC" "$KEY"
+
+    echo "acting on the owner's decision for $BET_ID"
+    set +e
+    ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" \
+        -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 \
+        shinelay@host.docker.internal "epd-ship $BET_ID deploy" 2>&1 | tee /tmp/deploy.log
+    RC=$?
+    set -e
+    [ "$RC" = 0 ] || fail "$(tail -3 /tmp/deploy.log | tr '\n' ' ')"
+
+    # ---- what happened ---------------------------------------------------------------
+    python3 - "$BET_DIR/state.json" <<'PY'
+    import json, sys
+    st = json.load(open(sys.argv[1]))
+    ship = (st.get("stages") or {}).get("ship") or {}
+    status = st.get("status") or "incomplete"
+    decision = ship.get("decision") or ""
+    if status == "shipped":
+        detail = f"PR #{ship.get('pr_number')} squash-merged; {ship.get('prod_env')} runs {(ship.get('merge_sha') or '')[:12]}"
+    else:
+        detail = f"PR #{ship.get('pr_number')}: {decision.replace('_', ' ') or status}" + (f" -- {ship.get('note')}" if ship.get("note") else "")
+    print(json.dumps({
+        "status": status,
+        "detail": detail,
+        "decision": decision,
+        "merge_sha": ship.get("merge_sha") or "",
+        "prod_url": ship.get("prod_url") or "",
+        "qa_on_prod": bool(ship.get("prod_qa")),
+    }))
+    PY

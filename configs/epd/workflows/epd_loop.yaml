@@ -1,10 +1,10 @@
 workflow:
   name: epd_loop
-  version: 1
+  version: 2
   description: |
     The EPD loop, as one run.
 
-      report → bet → [OWNER DECIDES] → tasks → build → ship → measure
+      report → bet → [OWNER DECIDES] → tasks → build → ship (PR) → [OWNER DECIDES] → deploy → measure
 
     Nothing here is new. Each node references a workflow that already exists and is already used on
     its own; this file is only the wiring between them. That is the point: the loop used to be a
@@ -13,21 +13,26 @@ workflow:
     resumed across them, the gate was a person reading a terminal, and the order of the work was an
     implementation detail of a file nobody could see from the UI.
 
-    The five referenced graphs are unchanged and still run standalone — that is what makes them worth
+    The referenced graphs are unchanged and still run standalone — that is what makes them worth
     referencing, and how each one gets worked on: point epd_report at any URL, epd_bet at any report.
 
-    The owner's gate sits on `tasks`, which is the first node that spends real money on building
-    something. Everything before it is observation and a proposal; nothing is built, branched or
-    shipped until a human approves that node. Reject it and the run stops there, having cost only the
-    walks and the pitch.
+    The owner decides twice. The first gate sits on `tasks`, which is the first node that spends real
+    money on building something. Everything before it is observation and a proposal; nothing is
+    built, branched or shipped until a human approves that node. Reject it and the run stops there,
+    having cost only the walks and the pitch. The second gate sits on `deploy`: the build is a pull
+    request by then, and nothing reaches production until the owner says merge -- in the UI, or on
+    GitHub itself. Both decisions are recorded by the driver (decisions.jsonl, `epd_loop.py
+    scorecard`) against the config versions that earned them: they are the measure of whether the
+    loop is getting better that is not the loop grading its own work.
 
     The stages hand each other file paths, not text. Each writes its artefact to the bet directory
     and the next one reads it — so the wiring stays a few strings, and the evidence is on disk where
     a person can read it too.
 
-    `ship` is the one node that touches production, and it does not contain the shipping: it asks the
-    host driver to do it, over an ssh key pinned to that single command. The driver re-checks the
-    build's verdict before it pushes, so the decision does not rest on this file being wired right.
+    `ship` and `deploy` are the nodes that touch the repository and production, and neither contains
+    the work: each asks the host driver to do it, over an ssh key pinned to those two commands. The
+    driver re-checks the build's verdict before it pushes, and reads the owner's decision off GitHub
+    as well as off the gate, so neither decision rests on this file being wired right.
 
     Not here, and deliberately: bringing the first stack up, which the driver does before the run so
     that `report` has something to walk.
@@ -76,8 +81,9 @@ workflow:
     task_count:      tasks.structured.task_count
     branch:          build.structured.branch
     pr:              ship.structured.pr
-    merge_sha:       ship.structured.merge_sha
-    shipped:         ship.structured.status
+    pr_decision:     deploy.structured.decision
+    merge_sha:       deploy.structured.merge_sha
+    shipped:         deploy.structured.status
     build_verdict:   build.structured.verdict
     implement_commit: build.structured.implement_commit
     deploy_url:      build.structured.deploy_url
@@ -145,9 +151,9 @@ workflow:
         verify_email: input.email
         verify_password: input.password
 
-    # 5 — Push, PR, squash-merge, back up production, deploy, confirm the QA tenant survived.
-    #     Conditioned on the build's own judges, and the host driver checks the same thing again
-    #     before it pushes: a gate worth having is worth having on both sides of the wire.
+    # 5 — Push and open the PR. Conditioned on the build's own judges, and the host driver checks
+    #     the same thing again before it pushes: a gate worth having is worth having on both sides
+    #     of the wire. It stops at the PR: the owner's word on it is the next node's gate.
     - name: ship
       type: stage
       ref: workflows/epd_ship
@@ -174,15 +180,35 @@ workflow:
         invariant: bet.structured.invariant
         threshold: bet.structured.threshold
 
-    # 6 — Did the bet's invariant hold on the build people actually use? Writes outcome.md.
-    #     Depends on ship, not on build: measuring before the merge measures the old product, and
+    # 6 — THE SECOND GATE. The PR is open; the owner says what happens to it. `ship` asked the
+    #     question (Merge / Request changes / Close), this node carries the answer: merge means
+    #     squash-merge, back production up, deploy the merge commit, confirm the QA tenant survived;
+    #     the other two put the note on the PR and end the run. The answer is recorded either way,
+    #     with the note and the configs that earned it -- the owner's verdicts on bets and PRs are
+    #     the measure of the loop that is not the loop grading itself.
+    - name: deploy
+      type: stage
+      ref: workflows/epd_deploy
+      depends_on: [ship]
+      gate: true
+      condition:
+        source: ship.structured.status
+        operator: equals
+        value: pr_opened
+      input_map:
+        bet_id: input.bet_id
+        bet_dir: input.bet_dir
+        pr: ship.structured.pr
+
+    # 7 — Did the bet's invariant hold on the build people actually use? Writes outcome.md.
+    #     Depends on deploy, not on build: measuring before the merge measures the old product, and
     #     the outcome it wrote would enter the next bet's context as evidence about this one.
     - name: measure
       type: stage
       ref: workflows/epd_measure
-      depends_on: [ship]
+      depends_on: [deploy]
       condition:
-        source: ship.structured.status
+        source: deploy.structured.status
         operator: equals
         value: shipped
       input_map:

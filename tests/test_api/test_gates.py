@@ -5,6 +5,7 @@ it has to carry the upstream output and the questions it asked, not just a
 node name. ``POST /approve`` takes the human's answers back.
 """
 
+import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -171,3 +172,85 @@ class TestApproveGate:
         client.post(f"/api/runs/{RUN}/approve/approve")
 
         assert client.get(f"/api/runs/{RUN}/gates").json()["gates"] == []
+
+    def test_an_approval_is_stamped_with_when_it_was_decided(self, client, state):
+        """How long the owner took is part of the record; the stamp is what makes it computable."""
+        state.gates[f"{RUN}:approve"] = GateSignal()
+        event_id = _record_waiting()
+
+        client.post(f"/api/runs/{RUN}/approve/approve")
+
+        assert get_event(event_id)["data"]["gate_decided_at"]
+
+
+class TestDecisionsRecord:
+    """``GET /api/runs/{id}/decisions``: every gate the run opened and how it was answered.
+
+    ``/gates`` is what is waiting now; this is the record afterwards, for a caller keeping
+    the owner's verdicts over time -- which is why it leaves the upstream outputs out.
+    """
+
+    def test_an_approved_gate_is_listed_with_its_response_and_stamps(self, client, state):
+        state.gates[f"{RUN}:approve"] = GateSignal()
+        _record_waiting(gate_context={"questions": [{"id": "host", "question": "Which host?"}]})
+
+        client.post(f"/api/runs/{RUN}/approve/approve", json={
+            "response": "Go.",
+            "answers": [{"id": "host", "question": "Which host?", "selected": ["spark"], "custom": ""}],
+        })
+        d = client.get(f"/api/runs/{RUN}/decisions").json()
+
+        assert d["execution_id"] == RUN
+        (row,) = d["decisions"]
+        assert row["node_name"] == "approve"
+        assert row["status"] == "approved"
+        assert row["opened_at"] and row["decided_at"]
+        assert row["questions"] == [{"id": "host", "question": "Which host?"}]
+        assert row["response"]["response"] == "Go."
+        assert row["response"]["answers"][0]["selected"] == ["spark"]
+        assert "upstream" not in row and "upstream_output" not in row
+
+    def test_a_waiting_gate_is_listed_as_waiting_with_no_decision(self, client):
+        _record_waiting()
+
+        (row,) = client.get(f"/api/runs/{RUN}/decisions").json()["decisions"]
+
+        assert row["status"] == "waiting"
+        assert row["decided_at"] is None and row["response"] is None
+
+    def test_cancelling_at_a_gate_records_a_rejection_with_the_reason(self, client, state):
+        """Cancel is how the dashboard says no. The gate's own record says so, with why."""
+        state.gates[f"{RUN}:approve"] = GateSignal()
+        state.running[RUN] = cancel = threading.Event()  # an in-process run, parked at the gate
+        event_id = _record_waiting()
+
+        r = client.post(f"/api/runs/{RUN}/cancel", json={"reason": "Not this quarter."})
+
+        assert r.status_code == 200 and cancel.is_set()
+        data = get_event(event_id)
+        assert data["status"] == "rejected"
+        assert data["data"]["gate_status"] == "rejected"
+        assert data["data"]["gate_decided_at"]
+        assert data["data"]["gate_response"]["response"] == "Not this quarter."
+        (row,) = client.get(f"/api/runs/{RUN}/decisions").json()["decisions"]
+        assert row["status"] == "rejected" and row["response"]["text"] == "Not this quarter."
+
+    def test_a_cancel_with_no_body_still_rejects_the_waiting_gate(self, client, state):
+        state.gates[f"{RUN}:approve"] = GateSignal()
+        state.running[RUN] = threading.Event()
+        event_id = _record_waiting()
+
+        client.post(f"/api/runs/{RUN}/cancel")
+
+        data = get_event(event_id)
+        assert data["data"]["gate_status"] == "rejected"
+        assert "gate_response" not in data["data"]
+
+    def test_only_gates_are_listed_and_each_opening_once(self, client):
+        record(EventType.STAGE_STARTED, data={"name": "draft", "type": "agent"}, execution_id=RUN)
+        _record_waiting("approve")
+        _record_waiting("approve")  # a loop that gated the same node twice lists it twice
+
+        rows = client.get(f"/api/runs/{RUN}/decisions").json()["decisions"]
+
+        assert [r["node_name"] for r in rows] == ["approve", "approve"]

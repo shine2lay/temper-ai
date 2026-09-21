@@ -1,11 +1,16 @@
 workflow:
   name: epd_ship
-  version: 1
+  version: 2
   description: |
-    Ship an approved build: push, PR, squash-merge, back up production, deploy, check the QA tenant.
+    Put an approved build in front of the owner: push the branch and open the PR.
 
     One node. It exists as a workflow so the loop can reference it the way it references every other
-    stage, and so it can be run on its own when a build was fixed by hand and only needs shipping.
+    stage, and so it can be run on its own when a build was fixed by hand and only needs a PR.
+
+    It stops at the PR. What happens to it is the owner's word, given at the gate on the loop's
+    `deploy` node (workflows/epd_deploy), which this node's `questions_for_owner` puts in front of
+    them: Merge / Request changes / Close, with a note. Version 1 merged and deployed here, with
+    no one asked.
 
     The work itself is the driver's (`epd_loop.py stage ship`), reached over an ssh key pinned to that
     one command. See configs/epd/agents/epd_ship.yaml for why it is shaped that way.
@@ -33,12 +38,11 @@ workflow:
     threshold: {type: string, required: false}
 
   outputs:
-    status:     ship.structured.status
-    detail:     ship.structured.detail
-    pr:         ship.structured.pr
-    merge_sha:  ship.structured.merge_sha
-    prod_url:   ship.structured.prod_url
-    qa_on_prod: ship.structured.qa_on_prod
+    status:              ship.structured.status        # pr_opened | incomplete | failed
+    detail:              ship.structured.detail
+    pr:                  ship.structured.pr
+    pr_number:           ship.structured.pr_number
+    questions_for_owner: ship.structured.questions_for_owner   # the gate on `deploy` renders these
 
   nodes:
     - name: ship

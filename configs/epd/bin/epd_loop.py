@@ -120,15 +120,16 @@ BETS_DIR = LOOP_DIR / "bets"
 LEDGER = LOOP_DIR / "bets.tsv"
 LEDGER_COLUMNS = ["bet_id", "date", "title", "threshold", "status", "outcome"]
 
-STAGES = ["report", "bet", "tasks", "build", "ship", "measure"]
-TERMINAL = {"rejected", "kept", "iterate", "killed"}
+STAGES = ["report", "bet", "tasks", "build", "ship", "deploy", "measure"]
+TERMINAL = {"rejected", "kept", "iterate", "killed", "closed", "changes_requested"}
 # status after each stage completes; what `next` does is read off the status
 AFTER = {
     "report": "reported",
     "bet": "proposed",
     "tasks": "tasked",
     "build": "built",
-    "ship": "shipped",
+    "ship": "pr_opened",
+    "deploy": "shipped",
 }
 NEXT_STAGE = {
     "new": "report",
@@ -138,8 +139,14 @@ NEXT_STAGE = {
     "tasked": "build",
     "built": "ship",
     "build_failed": None,
+    "pr_opened": None,  # the second gate: waits for the owner's word on the PR
     "shipped": "measure",
 }
+
+# The owner's word on a PR, as the gate offers it. The labels are what the dashboard shows and
+# what comes back selected, so they are matched exactly and not paraphrased anywhere.
+PR_MERGE, PR_CHANGES, PR_CLOSE = "Merge", "Request changes", "Close"
+PR_DECISIONS = {PR_MERGE: "merge", PR_CHANGES: "request_changes", PR_CLOSE: "close"}
 
 
 # ----------------------------------------------------------------- helpers --
@@ -808,6 +815,9 @@ def approve(bet_id: str, invariant: str | None, note: str | None) -> None:
     st["stages"]["gate"] = {"invariant": signed, "note": note or "", "at": dt.datetime.now().isoformat()}
     st["status"] = "approved"
     save_state(st)
+    record_decision(st, "bet", "approve", note=note or "", where="cli", ref=bet_title(st),
+                    opened_at=(st["stages"].get("bet") or {}).get("at"), decided_at=st["stages"]["gate"]["at"],
+                    run_id=(st["stages"].get("bet") or {}).get("_run_id"))
     log(f"{bet_id} approved. Next: epd_loop.py next")
 
 
@@ -819,6 +829,9 @@ def reject(bet_id: str, why: str) -> None:
     st["stages"]["gate"] = {"rejected": why, "at": dt.datetime.now().isoformat()}
     st["status"] = "rejected"
     save_state(st)
+    record_decision(st, "bet", "reject", note=why, where="cli", ref=bet_title(st),
+                    opened_at=(st["stages"].get("bet") or {}).get("at"), decided_at=st["stages"]["gate"]["at"],
+                    run_id=(st["stages"].get("bet") or {}).get("_run_id"))
     ledger_upsert(bet_id, outcome=f"rejected: {why}")
     log(f"{bet_id} rejected. `next` starts a new bet from a fresh report.")
 
@@ -951,33 +964,326 @@ def stage_ship(st: dict) -> None:
     if not pr_url or not pr_number:
         die(f"could not open or find the PR for {branch}")
     st["stages"]["ship"] = {"pr": pr_url, "pr_number": pr_number, "branch": branch,
-                            "at": dt.datetime.now().isoformat()}
-    save_state(st)
-    log(f"PR: {pr_url}")
-
-    # Merge. No human seat here by the owner's decision: the pipeline's own
-    # judges (review, QA, security) are the gate, and the gate node already
-    # said approve or this stage would not run.
-    owner, repo = GH_REPO.split("/", 1)
-    merged = github("PUT", f"/repos/{owner}/{repo}/pulls/{pr_number}/merge",
-                    {"merge_method": "squash",
-                     "commit_title": f"{bet_id}: {bet.get('title')} (#{pr_number})"})
-    log(f"merged PR #{pr_number}: {merged.get('message') or merged.get('sha', '')[:12]}")
-    sh(["git", "fetch", "-q", "origin"], cwd=REPO_CHECKOUT)
-    sh(["git", "checkout", "-q", BASE_BRANCH], cwd=REPO_CHECKOUT)
-    sh(["git", "merge", "--ff-only", f"origin/{BASE_BRANCH}"], cwd=REPO_CHECKOUT)
-    merge_sha = sh(["git", "rev-parse", "HEAD"], cwd=REPO_CHECKOUT).stdout.strip()
-    st["stages"]["ship"].update({"merged": True, "merge_sha": merge_sha})
-    save_state(st)
-    log(f"merged into {BASE_BRANCH} as {merge_sha[:12]}")
-
-    deploy_prod(merge_sha)
-    qa_ok = ensure_qa_on_prod()
-    st["stages"]["ship"].update({"prod_url": PROD_URL, "prod_env": PROD_ENV, "prod_qa": qa_ok,
-                                 "deployed_at": dt.datetime.now().isoformat()})
+                            "title": f"{bet_id}: {bet.get('title')}",
+                            "at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
     st["status"] = AFTER["ship"]
     save_state(st)
-    log(f"live: {PROD_URL} now runs {merge_sha[:12]}")
+    log(f"PR: {pr_url}")
+    log("   it stays open until the owner says what happens to it (the loop's second gate)")
+    # The bet gate was answered before any of this was built; the composed run holds the answer.
+    record_bet_decisions(st, (st["stages"].get("loop") or {}).get("_run_id"))
+
+
+def pr_decision_from_gate(gate: dict) -> tuple[str, str]:
+    """What the owner picked at the PR gate, and the note they wrote: (merge|request_changes|close|'', note).
+
+    The gate response is temper's ``{response, answers: [{question, selected, custom}], text}``.
+    The decision is the selected label of whichever answer picked one of the three; the note is
+    the free text plus anything typed as a custom answer, so nothing the owner wrote is dropped.
+    """
+    decision, notes = "", []
+    for a in gate.get("answers") or []:
+        for label in a.get("selected") or []:
+            if label in PR_DECISIONS and not decision:
+                decision = PR_DECISIONS[label]
+        if (a.get("custom") or "").strip():
+            notes.append(a["custom"].strip())
+    if (gate.get("response") or "").strip():
+        notes.append(gate["response"].strip())
+    return decision, "\n".join(notes)
+
+
+def stage_deploy(st: dict) -> None:
+    """Act on the owner's word about the PR, then put a merged one in front of real users.
+
+    The word comes from ``pr-decision.json`` in the bet directory, which the deploy node writes from
+    the gate response before it asks for this; and it is checked against GitHub, because the owner
+    may have merged or closed the PR there instead of, or before, answering the gate. GitHub's state
+    wins when they disagree -- a PR that is merged is merged, whatever the form said -- and the
+    record says which of the two it was (``where``).
+
+      merge            -> squash-merge (unless GitHub already did), back production up, deploy the
+                          merge commit, check the QA tenant survived. Status ``shipped``.
+      request_changes  -> the note goes on the PR as a comment; the PR stays open and the run ends.
+                          Status ``changes_requested``. (A rewind into the build with the note is
+                          the next thing to build; today the note is the record, and the next bet's
+                          context carries it.)
+      close            -> close the PR unmerged, with the note. Status ``closed``.
+    """
+    bet_id = st["bet_id"]
+    bdir = BETS_DIR / bet_id
+    ship = st["stages"].get("ship") or {}
+    pr_number = ship.get("pr_number")
+    if not pr_number:
+        die(f"{bet_id} has no PR to decide on; `stage ship` first")
+    gate: dict = {}
+    p = bdir / "pr-decision.json"
+    if p.exists():
+        try:
+            gate = json.loads(read(p))
+        except ValueError as exc:
+            die(f"{p} is not readable JSON: {exc}")
+    decision, note = pr_decision_from_gate(gate)
+
+    owner, repo = GH_REPO.split("/", 1)
+    pr = github("GET", f"/repos/{owner}/{repo}/pulls/{pr_number}")
+    where = "temper"
+    if pr.get("merged"):
+        decision, where = "merge", "github"
+    elif pr.get("state") == "closed":
+        decision, where = "close", "github"
+    if not decision:
+        die(f"{bet_id}: no decision on PR #{pr_number} -- neither the gate response ({p}) nor GitHub says")
+    record = {"decision": decision, "where": where, "note": note,
+              "decided_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
+    log(f"PR #{pr_number}: {decision} ({where}){' -- ' + note if note else ''}")
+    # The run this PR came out of: the composed loop's, or the stage-at-a-time build's.
+    run_id = (st["stages"].get("loop") or {}).get("_run_id") or (st["stages"].get("build") or {}).get("_run_id")
+    record_bet_decisions(st, (st["stages"].get("loop") or {}).get("_run_id"))
+    # Once per PR: a deploy re-run after a failed rollout is the same decision, not a second one.
+    if not any(r.get("kind") == "pr" and r.get("ref") == ship.get("pr") for r in load_decisions()):
+        record_decision(st, "pr", decision, note=note, answers=gate.get("answers") or [], where=where,
+                        opened_at=ship.get("at"), decided_at=record["decided_at"], run_id=run_id, upto="ship",
+                        ref=ship.get("pr", ""))
+
+    if decision == "merge":
+        if where == "temper":
+            merged = github("PUT", f"/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+                            {"merge_method": "squash", "commit_title": f"{ship.get('title')} (#{pr_number})"})
+            log(f"merged PR #{pr_number}: {merged.get('message') or merged.get('sha', '')[:12]}")
+        sh(["git", "fetch", "-q", "origin"], cwd=REPO_CHECKOUT)
+        sh(["git", "checkout", "-q", BASE_BRANCH], cwd=REPO_CHECKOUT)
+        sh(["git", "merge", "--ff-only", f"origin/{BASE_BRANCH}"], cwd=REPO_CHECKOUT)
+        merge_sha = sh(["git", "rev-parse", "HEAD"], cwd=REPO_CHECKOUT).stdout.strip()
+        ship.update(record, merged=True, merge_sha=merge_sha)
+        save_state(st)
+        log(f"merged into {BASE_BRANCH} as {merge_sha[:12]}")
+        deploy_prod(merge_sha)
+        qa_ok = ensure_qa_on_prod()
+        ship.update({"prod_url": PROD_URL, "prod_env": PROD_ENV, "prod_qa": qa_ok,
+                     "deployed_at": dt.datetime.now().isoformat()})
+        st["status"] = AFTER["deploy"]
+        save_state(st)
+        log(f"live: {PROD_URL} now runs {merge_sha[:12]}")
+        return
+
+    if where == "temper":
+        body = (f"**Owner's decision at the PR gate: {decision.replace('_', ' ')}.**"
+                + (f"\n\n{note}" if note else ""))
+        github("POST", f"/repos/{owner}/{repo}/issues/{pr_number}/comments", {"body": body})
+        if decision == "close":
+            github("PATCH", f"/repos/{owner}/{repo}/pulls/{pr_number}", {"state": "closed"})
+    ship.update(record, merged=False)
+    st["status"] = "changes_requested" if decision == "request_changes" else "closed"
+    save_state(st)
+    ledger_upsert(bet_id, status=st["status"], outcome=f"pr {decision.replace('_', ' ')}: {note}".strip(": "))
+    log(f"PR #{pr_number} {st['status'].replace('_', ' ')}; nothing shipped")
+
+
+# --- the owner's decisions as a record --------------------------------------------------------
+#
+# Every word the owner gives the loop -- approve or reject a bet, merge / request changes / close a
+# PR -- is a judgement on what the loop produced, and the only one that counts. Kept as one JSON
+# line per decision in decisions.jsonl, the record is what "is the loop getting better" is answered
+# from: read against the config versions that produced each artefact, it says which changes to the
+# agents moved the owner's verdicts, and which did not. The rows carry what the owner asked for:
+# the verbatim note, the answers to the owner questions, every epd config's version, and the run's
+# cost and duration up to the gate.
+
+DECISIONS = LOOP_DIR / "decisions.jsonl"
+
+
+def config_versions_all() -> dict[str, int | str]:
+    """Every epd config's version -- `agent:<name>` and `workflow:<name>` -- read off the yaml files.
+
+    Read at recording time, not at run time: a decision is a verdict on the configs as they stood
+    when they produced the thing decided on, and versions do not change mid-run. (If one is bumped
+    between the run and the decision, the row is off by that bump; the run's own `_versions` in
+    the state file is the tie-breaker.)
+    """
+    out: dict[str, int | str] = {}
+    for kind in ("agent", "workflow"):
+        for p in sorted((CONFIG_DIR / f"{kind}s").glob("*.yaml")):
+            m = re.search(r"^\s+version:\s*['\"]?([^'\"\n]+)", read(p), re.M)
+            v = m.group(1).strip() if m else "?"
+            out[f"{kind}:{p.stem}"] = int(v) if v.isdigit() else v
+    return out
+
+
+def run_gate_decisions(run_id: str) -> list[dict]:
+    """The gates a temper run opened and how each was answered (``GET /api/runs/{id}/decisions``)."""
+    try:
+        with urllib.request.urlopen(f"{API}/api/runs/{run_id}/decisions", timeout=60) as resp:
+            return json.load(resp).get("decisions") or []
+    except Exception as exc:  # noqa: BLE001 -- an older server has no such route; the record is still written
+        log(f"   (no gate decisions from temper for {run_id[:8]}: {exc})")
+        return []
+
+
+def run_cost(run_id: str, upto: str | None = None) -> tuple[float | None, float | None]:
+    """(cost_usd, duration_s) of a temper run, or of its top-level stages up to and including `upto`.
+
+    Up to the gate is what a decision is a verdict on: a bet was proposed for the price of the
+    report and the pitch, whatever the build cost afterwards.
+    """
+    try:
+        d = get_run(run_id)
+    except Exception:  # noqa: BLE001
+        return None, None
+    nodes = {n.get("name"): n for n in d.get("nodes") or []}
+    if upto and upto in STAGES and nodes:
+        wanted = STAGES[: STAGES.index(upto) + 1]
+        picked = [nodes[n] for n in wanted if n in nodes]
+        cost = sum(n.get("cost_usd") or 0 for n in picked)
+        dur = sum(n.get("duration_seconds") or 0 for n in picked)
+        return round(cost, 4), round(dur, 1)
+    return d.get("total_cost_usd"), d.get("duration_seconds")
+
+
+def record_decision(st: dict, kind: str, decision: str, *, note: str = "", answers: list | None = None,
+                    opened_at: str | None = None, decided_at: str | None = None, where: str = "temper",
+                    run_id: str | None = None, upto: str | None = None, ref: str = "") -> dict:
+    """Append one decision to decisions.jsonl and return the row.
+
+    kind      bet | pr
+    decision  approve | reject | merge | request_changes | close
+    where     temper (the gate in the UI) | github (merged/closed there) | cli (approve/reject here)
+    ref       what was decided on: the bet title, or the PR url
+    upto      the last stage the decision is a verdict on, for the cost figure
+    """
+    cost, dur = run_cost(run_id, upto) if run_id else (None, None)
+    seconds = None
+    if opened_at and decided_at:
+        try:
+            a, b = dt.datetime.fromisoformat(opened_at), dt.datetime.fromisoformat(decided_at)
+            if (a.tzinfo is None) != (b.tzinfo is None):
+                a, b = a.replace(tzinfo=None), b.replace(tzinfo=None)
+            seconds = round((b - a).total_seconds(), 1)
+        except ValueError:
+            seconds = None
+    row = {
+        "at": decided_at or dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+        "bet_id": st["bet_id"],
+        "kind": kind,
+        "decision": decision,
+        "where": where,
+        "ref": ref,
+        "note": note,
+        "answers": answers or [],
+        "opened_at": opened_at,
+        "seconds_to_decide": seconds,
+        "run_id": run_id,
+        "run_cost_usd": cost,
+        "run_duration_s": dur,
+        "versions": config_versions_all(),
+    }
+    DECISIONS.parent.mkdir(parents=True, exist_ok=True)
+    with DECISIONS.open("a") as f:
+        f.write(json.dumps(row) + "\n")
+    log(f"recorded: {kind} {decision} on {st['bet_id']} -> {DECISIONS}")
+    return row
+
+
+def load_decisions() -> list[dict]:
+    rows = []
+    for line in read(DECISIONS).splitlines():
+        if line.strip():
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                continue
+    return rows
+
+
+def record_bet_decisions(st: dict, run_id: str | None) -> int:
+    """Write the bet gate's decision(s) from a temper run into the record; returns how many were new.
+
+    Idempotent on (bet_id, run_id, opened_at): ship and collect both call this, and a stage re-run
+    does not double-count. A gate still waiting is not a decision yet.
+    """
+    if not run_id:
+        return 0
+    seen = {(r.get("bet_id"), r.get("kind"), r.get("run_id"), r.get("opened_at")) for r in load_decisions()}
+    n = 0
+    for g in run_gate_decisions(run_id):
+        if g.get("status") not in ("approved", "rejected") or g.get("node_name") != "tasks":
+            continue
+        if (st["bet_id"], "bet", run_id, g.get("opened_at")) in seen:
+            continue
+        resp = g.get("response") or {}
+        record_decision(
+            st, "bet", "approve" if g["status"] == "approved" else "reject",
+            note=(resp.get("response") or "").strip(), answers=resp.get("answers") or [],
+            opened_at=g.get("opened_at"), decided_at=g.get("decided_at"), run_id=run_id, upto="bet",
+            ref=bet_title(st),
+        )
+        n += 1
+    return n
+
+
+def bet_title(st: dict) -> str:
+    for key in ("bet", "loop"):
+        d = st.get("stages", {}).get(key) or {}
+        t = d.get("title") or d.get("bet_title")
+        if t:
+            return t
+    bet = json.loads(read(BETS_DIR / st["bet_id"] / "bet.json") or "{}")
+    return bet.get("title") or ""
+
+
+def scorecard() -> str:
+    """The owner's verdicts, grouped by the config versions that earned them.
+
+    Two tables -- bets (approve / reject) by `epd_bet` version, PRs (merge / request changes /
+    close) by `task_implement` version: the agent whose output each decision is most directly a
+    verdict on -- then every row, oldest first, with the notes and answers. Versions are the axis
+    because they are what changes on purpose between runs; a change that moves the approve or
+    merge rate is one worth keeping.
+    """
+    rows = load_decisions()
+    if not rows:
+        return f"no decisions recorded yet ({DECISIONS})"
+    lines = [f"{len(rows)} decisions in {DECISIONS}", ""]
+
+    def table(kind: str, agent: str, verdicts: list[str]) -> None:
+        by: dict[str, dict[str, int]] = {}
+        for r in rows:
+            if r.get("kind") != kind:
+                continue
+            v = str((r.get("versions") or {}).get(f"agent:{agent}", "?"))
+            by.setdefault(v, {})
+            by[v][r.get("decision", "?")] = by[v].get(r.get("decision", "?"), 0) + 1
+        if not by:
+            return
+        lines.append(f"{kind}s by {agent} version")
+        lines.append("  " + "version".ljust(10) + "".join(v.ljust(18) for v in verdicts) + "rate")
+        for v in sorted(by):
+            counts = by[v]
+            total = sum(counts.values())
+            lines.append("  " + v.ljust(10) + "".join(str(counts.get(x, 0)).ljust(18) for x in verdicts)
+                         + f"{counts.get(verdicts[0], 0)}/{total} {verdicts[0]}")
+        lines.append("")
+
+    table("bet", "epd_bet", ["approve", "reject"])
+    table("pr", "task_implement", ["merge", "request_changes", "close"])
+    lines.append("decisions")
+    for r in rows:
+        when = (r.get("at") or "")[:16].replace("T", " ")
+        secs = r.get("seconds_to_decide")
+        took = f", decided in {secs / 60:.0f} min" if isinstance(secs, (int, float)) else ""
+        cost = r.get("run_cost_usd")
+        cost_s = f", ${cost:.2f} to get there" if isinstance(cost, (int, float)) else ""
+        lines.append(f"  {when}  {r.get('bet_id')}  {r.get('kind'):<3} {r.get('decision'):<16} "
+                     f"({r.get('where')}{took}{cost_s})  {(r.get('ref') or '')[:70]}")
+        for ln in (r.get("note") or "").splitlines():
+            lines.append(f"      | {ln}")
+        for a in r.get("answers") or []:
+            picked = ", ".join(a.get("selected") or [])
+            if a.get("custom"):
+                picked = f"{picked} -- {a['custom']}" if picked else a["custom"]
+            if picked:
+                lines.append(f"      ? {(a.get('question') or a.get('id') or '')[:70]} -> {picked}")
+    return "\n".join(lines)
 
 
 def stage_measure(st: dict, keep: bool) -> None:
@@ -1086,7 +1392,7 @@ LOOP_WORKSPACE = CONTAINER_WORKSPACES
 
 
 def cmd_run(keep: bool, wait: bool) -> None:
-    """The whole loop as one temper run: report → bet → [gate] → tasks → build → ship → measure.
+    """The whole loop as one temper run: report → bet → [gate] → tasks → build → ship → [gate] → deploy → measure.
 
     The stage-at-a-time path below still works and is still the way to redo one stage by hand. What
     this adds is the loop as temper sees it: one run id, one graph, one place where it stopped and
@@ -1246,6 +1552,21 @@ def cmd_collect(keep: bool) -> None:
         log(f"{bet_id}: run {rid[:8]} is still {status} (running={running}, "
             f"cost=${info.get('total_cost_usd') or 0:.2f}); nothing to collect yet")
         return
+    # Whatever the run's end, the owner's word at its gates is on record. A run cancelled at the
+    # bet gate *is* the decision: the bet was rejected, and the reason given with the cancel is why.
+    record_bet_decisions(st, rid)
+    rejected = [g for g in run_gate_decisions(rid) if g.get("node_name") == "tasks" and g.get("status") == "rejected"]
+    if status != "completed" and rejected:
+        why = ((rejected[-1].get("response") or {}).get("response") or "").strip() or "rejected at the gate"
+        loop["_collected"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+        st["status"] = "rejected"
+        save_state(st)
+        ledger_upsert(bet_id, title=bet_title(st), status="rejected", outcome=f"rejected: {why}")
+        log(f"{bet_id}: rejected at the bet gate -- {why}")
+        env = (st["stages"].get("report") or {}).get("env")
+        if env and not keep:
+            standee_down(env)
+        return
     if status != "completed":
         why = "rate limited: the work is fine, the account is not" if rate_limited(rid) else info.get("error_message")
         die(f"{bet_id}: run {rid} ended {status}: {why}. Fix what needs fixing, then `run` again.")
@@ -1263,10 +1584,13 @@ def finish_loop(st: dict, out: dict, keep: bool) -> None:
     bet_id = st["bet_id"]
     out["_collected"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     st["stages"]["loop"] = out
-    st["status"] = "measured" if out.get("verdict") else ("shipped" if out.get("shipped") else "stopped")
+    shipped = out.get("shipped")  # deploy's status: shipped | changes_requested | closed | None
+    st["status"] = ("measured" if out.get("verdict") else shipped if shipped in ("shipped", "changes_requested", "closed")
+                    else "stopped")
     save_state(st)
+    # No verdict (nothing shipped) leaves the outcome deploy wrote: the owner's word on the PR.
     ledger_upsert(bet_id, title=out.get("bet_title") or "", threshold=out.get("bet_threshold") or "",
-                  status=st["status"], outcome=out.get("verdict") or "")
+                  status=st["status"], outcome=out.get("verdict") or None)
     log(f"bet:     {out.get('bet_title')}")
     log(f"build:   {out.get('build_verdict')} — {out.get('implement_commit')}")
     log(f"ship:    {out.get('shipped')} {out.get('pr') or ''}")
@@ -1290,6 +1614,8 @@ def run_stage(name: str, st: dict, keep: bool) -> None:
         stage_build(st)
     elif name == "ship":
         stage_ship(st)
+    elif name == "deploy":
+        stage_deploy(st)
     elif name == "measure":
         stage_measure(st, keep)
     else:
@@ -1376,6 +1702,7 @@ def main() -> None:
     s.add_argument("--keep", action="store_true")
     d = sub.add_parser("down")
     d.add_argument("bet")
+    sub.add_parser("scorecard", help="the owner's decisions on bets and PRs, by the config versions that earned them")
     args = ap.parse_args()
 
     mkdir_shared(BETS_DIR)
@@ -1404,6 +1731,8 @@ def main() -> None:
         run_stage(args.stage, st, args.keep)
     elif args.cmd == "down":
         cmd_down(args.bet)
+    elif args.cmd == "scorecard":
+        print(scorecard())
 
 
 if __name__ == "__main__":

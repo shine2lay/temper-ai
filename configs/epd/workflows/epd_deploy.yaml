@@ -1,0 +1,41 @@
+workflow:
+  name: epd_deploy
+  version: 1
+  description: |
+    Act on the owner's word about the PR the loop opened.
+
+    One node, and in the loop it is the gated one: the run parks in front of it with `ship`'s
+    question -- Merge / Request changes / Close -- and the owner's answer arrives as this node's
+    `gate` input. Merge squash-merges, backs production up, deploys the merge commit and checks the
+    QA tenant survived; the other two put the note on the PR and end the run. GitHub's own state is
+    checked first, so a PR merged or closed there by hand has already been decided.
+
+    Run on its own (no gate), it has no form to read and GitHub decides: merge or close the PR
+    there, then run this.
+
+    The work itself is the driver's (`epd_loop.py stage deploy`), over the same pinned ssh key as
+    ship. See configs/epd/agents/epd_deploy.yaml.
+
+  inputs:
+    bet_id:  {type: string, required: true}
+    bet_dir: {type: string, required: true}   # container path; the host sees the same directory
+    pr:      {type: string, required: false}  # for the record; the driver reads the number off state.json
+
+  outputs:
+    status:     deploy.structured.status      # shipped | changes_requested | closed | failed
+    detail:     deploy.structured.detail
+    decision:   deploy.structured.decision    # merge | request_changes | close
+    merge_sha:  deploy.structured.merge_sha
+    prod_url:   deploy.structured.prod_url
+    qa_on_prod: deploy.structured.qa_on_prod
+
+  nodes:
+    - name: deploy
+      type: agent
+      agent: epd_deploy
+      input_map:
+        bet_id: input.bet_id
+        bet_dir: input.bet_dir
+        # The owner's response to the gate. Temper puts it on the gated node under this name and
+        # it crosses the stage boundary undeclared; mapping it here is what makes it the agent's.
+        gate: input.gate

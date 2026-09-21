@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import AliasChoices, BaseModel, Field
@@ -333,8 +334,16 @@ def get_workflow(execution_id: str):
     return result
 
 
+class CancelRequest(BaseModel):
+    """Optional with a cancel: why. It matters most when the run is parked at
+    a gate, where cancelling *is* the human's answer (a rejection), and a
+    rejection without a reason is a decision nobody can learn from later."""
+
+    reason: str = ""
+
+
 @router.post("/api/runs/{execution_id}/cancel")
-def cancel_run(execution_id: str):
+def cancel_run(execution_id: str, body: CancelRequest | None = None):
     """Cancel a running workflow execution.
 
     Three paths in priority order:
@@ -343,7 +352,18 @@ def cancel_run(execution_id: str):
          the reaper sends SIGTERM (worker writes the cancelled milestone)
       3. Stale run: only an event row exists → mark the workflow.started
          event cancelled (legacy fallback for crashed in-process runs)
+
+    Whichever path, a gate the run is waiting at is marked ``rejected`` first,
+    with the reason as its response: the gate's own record then says how it
+    was answered, the same way an approval does, and ``GET .../decisions``
+    can list the two side by side.
     """
+    reason = (body.reason if body else "").strip()
+    rejected: dict[str, Any] = {"gate_status": "rejected", "gate_decided_at": _now_iso()}
+    if reason:
+        rejected["gate_response"] = {"response": reason, "answers": [], "text": reason}
+    for ev in _waiting_gate_events(execution_id):
+        update_event(ev["id"], status="rejected", data=rejected)
     cancel_event = _state().running.get(execution_id)
     if cancel_event is not None:
         cancel_event.set()
@@ -657,7 +677,8 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
             detail=f"No gate waiting for node '{node_name}' in execution '{execution_id}'",
         )
     response = normalise_response(body.model_dump() if body else None)
-    approved = {"gate_status": "approved", **({"gate_response": response} if response else {})}
+    approved = {"gate_status": "approved", "gate_decided_at": _now_iso(),
+                **({"gate_response": response} if response else {})}
     for ev in waiting_events:
         update_event(ev["id"], status="approved", data=approved)
     if gate_event is not None:
@@ -721,6 +742,46 @@ def _waiting_gate_events(execution_id: str, node_name: str | None = None) -> lis
         if (ev.get("data") or {}).get("gate")
         and (node_name is None or (ev.get("data") or {}).get("name") == node_name)
     ]
+
+
+def _now_iso() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+@router.get("/api/runs/{execution_id}/decisions")
+def list_decisions(execution_id: str):
+    """Every gate this run has opened, and how each was answered.
+
+    ``/gates`` is for the dashboard: what is waiting *now*, with the upstream
+    output to read before deciding. This is the record afterwards: one entry
+    per gate opened, in order, with ``status`` (``waiting`` / ``approved`` /
+    ``rejected``), when it opened and when it was decided, the questions it
+    asked and the ``response`` the human gave (answers and free text; a plain
+    approval has none). A loop that gates the same node twice lists it twice.
+
+    The upstream outputs are left out on purpose: they are large, and the
+    point of this listing is the decisions, which a caller keeping a record
+    of them over time wants to fetch for every run it has ever made.
+    """
+    events = get_events(execution_id=execution_id, event_type=EventType("stage.started"), limit=2000)
+    decisions = []
+    for ev in events:
+        data = ev.get("data") or {}
+        if not data.get("gate"):
+            continue
+        gate_context = data.get("gate_context") or {}
+        decisions.append({
+            "node_name": data.get("name", ""),
+            "event_id": ev.get("id"),
+            "status": data.get("gate_status") or ev.get("status") or "waiting",
+            "opened_at": ev.get("timestamp"),
+            "decided_at": data.get("gate_decided_at"),
+            "questions": gate_context.get("questions") or [],
+            "response": data.get("gate_response"),
+        })
+    return {"execution_id": execution_id, "decisions": decisions}
 
 
 @router.get("/api/runs/{execution_id}/checkpoints")

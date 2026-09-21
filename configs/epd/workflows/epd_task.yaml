@@ -7,7 +7,12 @@ workflow:
   # 5: implement runs in rounds. A round that spends its budget with tasks left replies `partial`
   #    with its tasks committed and the tree clean, and the node loops on itself to continue from
   #    the branch (up to four rounds) before anyone judges the work.
-  version: 5
+  # 6: verify gets the bet's invariant and threshold as text (optional inputs; it had a path it
+  #    could not open) and walks every clause; `verify_threshold_checks` and `verify_unverified`
+  #    carry the result out, and the gate's summary counts the clauses QA could not walk. On a
+  #    round after a send-back verify is told so (`sent_back_because`) and judges the whole
+  #    threshold again, pictures included.
+  version: 6
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -83,6 +88,13 @@ workflow:
     task_description:
       type: string
       required: false
+    # The bet's own words, when the task is a bet of the loop: what QA walks.
+    invariant:
+      type: string
+      required: false
+    threshold:
+      type: string
+      required: false
     base_branch:
       type: string
       required: false
@@ -151,6 +163,8 @@ workflow:
     verify_change_evidence: verify.structured.change_evidence
     verify_pages: verify.structured.pages
     verify_issues: verify.structured.issues
+    verify_threshold_checks: verify.structured.threshold_checks   # [{clause, status: met|unmet|unverified, evidence}]
+    verify_unverified: verify.structured.unverified               # ["<clause>: <why no browser action reaches it>"]
     verify_screenshots: verify.structured.screenshots   # [{page, file, shows}] — files under the browser's output dir
     security_verdict: security.structured.verdict
     security_summary: security.structured.summary
@@ -362,8 +376,13 @@ workflow:
         password: input.verify_password
         task_name: input.task_name
         task_description: input.task_description
+        invariant: input.invariant
+        threshold: input.threshold
         implement_summary: implement.structured.summary
         task_slug: claim.structured.task_slug   # the screenshot file prefix: one bet's pictures never mix with another's
+        # Set on a round after the gate's send-back (served from the loop's feedback; null on
+        # the first round): QA then judges the new commit whole, pictures included.
+        sent_back_because: gate.structured.summary
 
     - name: security
       type: agent
@@ -400,6 +419,7 @@ workflow:
       input_map:
         review_verdict: review.structured.verdict
         qa_verdict: verify.structured.verdict
+        qa_unverified: verify.structured.unverified
         security_verdict: security.structured.verdict
         security_human_actions_count: security.structured.human_actions_count
 

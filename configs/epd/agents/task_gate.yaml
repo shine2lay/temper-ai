@@ -30,7 +30,10 @@ agent:
   # 3: verdicts read from the environment by name; the quoted heredoc was
   #    delivering the variable reference as text (b003: every gate said
   #    request_changes).
-  version: 3
+  # 4: the threshold clauses QA could not walk ride along in the summary, the
+  #    way the security actions do. Not a veto -- nothing the implementer can
+  #    do about a clause no browser reaches -- but not silence either.
+  version: 4
   type: script
   timeout_seconds: 30
   script_template: |
@@ -85,6 +88,17 @@ agent:
     except ValueError:
         human_actions = 0
 
+    # The threshold clauses QA could not walk: a list from the verify agent, read
+    # back as JSON from the environment (`tojson` on the way in), so it is data
+    # whatever punctuation the clauses hold; anything that is not a list is none.
+    try:
+        unverified = json.loads(value("{{ qa_unverified | default([], true) | tojson | env }}") or "[]")
+    except ValueError:
+        unverified = []
+    if not isinstance(unverified, list):
+        unverified = []
+    unverified = [str(u) for u in unverified if str(u).strip()]
+
     if wants:
         verdict = "request_changes"
         summary = f"{' and '.join(wants)} asked for changes"
@@ -98,6 +112,11 @@ agent:
             f" — {human_actions} action(s) still need a human "
             "(see security_human_actions: committing a credential is not undone by removing it)"
         )
+    if unverified:
+        summary += (
+            f" — {len(unverified)} threshold clause(s) QA could not walk "
+            "(see verify_unverified; the owner judges those on the PR)"
+        )
 
     print(json.dumps({
         "verdict": verdict,
@@ -108,5 +127,6 @@ agent:
         "changes_wanted_by": wants,
         "unreadable": unknown,
         "human_actions": human_actions,
+        "qa_unverified": unverified,
     }))
     PYEOF

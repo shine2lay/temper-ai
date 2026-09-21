@@ -36,7 +36,8 @@
 agent:
   name: epd_ship
   # 3: records the screenshot prefix and list, so the driver can put the pictures on the PR.
-  version: 3
+  # 4: records QA's clause-by-clause walk of the threshold, for the PR body.
+  version: 4
   type: script
   timeout_seconds: 2400
   # A blank here is not a blank field, it is a shifted one: these values are written by position,
@@ -68,27 +69,29 @@ agent:
     # that is interpolated into the script text either — ScriptAgent stashes each value in an
     # environment variable and leaves a reference here — so there is no layer where it is parsed
     # as code. `default('', true)` because an input that went unused arrives as None, which would
-    # otherwise be recorded as the four-letter word "None". `verify_screenshots` is a list;
-    # `tojson` makes it the one text that is read back as data, and `[]` when verify took none
-    # or did not run.
+    # otherwise be recorded as the four-letter word "None". `verify_screenshots` and
+    # `verify_threshold_checks` are lists; `tojson` makes each the one text that is read back as
+    # data, and `[]` when verify took none, walked none, or did not run.
     python3 - "$BET_DIR/build.json" \
       {{ branch }} {{ worktree_path | default('', true) }} {{ verdict }} \
       {{ verdict_summary | default('', true) }} {{ review_verdict | default('', true) }} \
       {{ verify_verdict | default('', true) }} {{ security_verdict | default('', true) }} \
       {{ deploy_url | default('', true) }} {{ implement_commit | default('', true) }} \
       {{ implement_summary | default('', true) }} {{ task_slug | default('', true) }} \
-      {{ verify_screenshots | default([], true) | tojson }} <<'PY'
+      {{ verify_screenshots | default([], true) | tojson }} \
+      {{ verify_threshold_checks | default([], true) | tojson }} <<'PY'
     import json, sys
     keys = ["branch", "worktree_path", "verdict", "verdict_summary", "review_verdict",
             "verify_verdict", "security_verdict", "deploy_url", "implement_commit",
             "implement_summary", "task_slug"]
     path, values = sys.argv[1], sys.argv[2:]
     record = dict(zip(keys, values))
-    try:
-        shots = json.loads(values[len(keys)])
-    except (IndexError, ValueError):
-        shots = []
-    record["verify_screenshots"] = shots if isinstance(shots, list) else []
+    for i, name in enumerate(("verify_screenshots", "verify_threshold_checks")):
+        try:
+            items = json.loads(values[len(keys) + i])
+        except (IndexError, ValueError):
+            items = []
+        record[name] = items if isinstance(items, list) else []
     json.dump(record, open(path, "w"), indent=2)
     PY
 

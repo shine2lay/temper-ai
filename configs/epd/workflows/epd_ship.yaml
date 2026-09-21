@@ -1,7 +1,8 @@
 workflow:
   name: epd_ship
   # 3: the QA screenshots travel with the build; the driver puts them on the PR.
-  version: 3
+  # 4: so does QA's clause-by-clause walk of the threshold.
+  version: 4
   description: |
     Put an approved build in front of the owner: push the branch and open the PR.
 
@@ -33,6 +34,7 @@ workflow:
     implement_summary: {type: string, required: false}
     task_slug:         {type: string, required: false}   # prefix of the QA browser's screenshot files
     verify_screenshots: {type: array, required: false}  # [{page, file, shows}] from verify; [] or absent when none
+    verify_threshold_checks: {type: array, required: false}  # [{clause, status, evidence}] from verify; [] or absent
 
     # The bet it serves, for the PR body
     title:     {type: string, required: true}
@@ -66,6 +68,7 @@ workflow:
         implement_summary: input.implement_summary
         task_slug: input.task_slug
         verify_screenshots: input.verify_screenshots
+        verify_threshold_checks: input.verify_threshold_checks
         title: input.title
         problem: input.problem
         invariant: input.invariant

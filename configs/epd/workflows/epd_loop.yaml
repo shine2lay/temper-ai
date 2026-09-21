@@ -6,7 +6,9 @@ workflow:
   #    which writes several candidates for the owner to choose from on disk; this run starts at
   #    `tasks`, ungated, on the bet the driver took from the top of backlog.md.
   # 5: the build's screenshots reach ship, which puts them on the PR.
-  version: 5
+  # 6: the bet's invariant and threshold reach the build, whose QA walks the threshold clause by
+  #    clause; the clause table reaches ship, which puts it on the PR beside the pictures.
+  version: 6
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
@@ -131,6 +133,8 @@ workflow:
         repo_url: input.repo_url
         task_name: input.task_name
         task_description: input.task_description
+        invariant: input.invariant
+        threshold: input.threshold
         base_branch: input.base_branch
         stack_ttl: input.stack_ttl
         verify_email: input.email
@@ -164,6 +168,7 @@ workflow:
         implement_summary: build.structured.implement_summary
         task_slug: build.structured.task_slug
         verify_screenshots: build.structured.verify_screenshots
+        verify_threshold_checks: build.structured.verify_threshold_checks
         title: input.title
         problem: input.problem
         invariant: input.invariant

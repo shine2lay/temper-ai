@@ -315,6 +315,60 @@ def test_run_leaves_a_running_bet_alone_and_reports_a_failed_one(L, monkeypatch,
     assert L._calls["start"] == ["b001"], "--retry starts the same bet over"
 
 
+def _running_bet(L, bet_id: str, run_id: str) -> None:
+    L.approve(bet_id, None)
+    assert L.pick_bet() == bet_id
+    st = L.load_state(bet_id)
+    st["status"] = "running"
+    st["stages"]["loop"] = {"_run_id": run_id}
+    st["stages"]["ship"] = {"pr": f"https://x/pull/{bet_id[-1]}"}
+    L.save_state(st)
+
+
+def test_run_builds_the_next_bet_while_a_pr_waits_for_the_owner(L, monkeypatch, capsys):
+    """A run parked at the deploy gate is the owner's to decide, in his own time; the loop does
+    not idle behind it. b004 sat at its gate with b005 approved and nothing running."""
+    propose(L, bets=("b001", "b002", "b003"), empty=())
+    _running_bet(L, "b001", "run-b001")
+    monkeypatch.setattr(L, "get_run", lambda rid: {"status": "running", "nodes": [{"name": "deploy", "status": "running"}]})
+    parked = {"run-b001": [{"node_name": "deploy", "status": "waiting", "opened_at": "2026-09-21T07:00:38Z"}]}
+    monkeypatch.setattr(L, "run_gate_decisions", lambda rid: parked.get(rid, []))
+    L.approve("b002", None)
+    L.cmd_run(keep=False, wait=False, propose=False, retry=False)
+    assert L._calls["start"] == ["b002"], "the next approved bet starts behind the parked one"
+    assert "b001: run run-b001 is parked at `deploy`" in capsys.readouterr().out
+    assert L.open_bets() == ["b001", "b002"] and L.open_bet() == "b002"
+    # the second one is now running: nothing more starts
+    st = L.load_state("b002")
+    st["stages"]["loop"] = {"_run_id": "run-b002"}
+    L.save_state(st)
+    L.approve("b003", None)
+    L.cmd_run(keep=False, wait=False, propose=False, retry=False)
+    assert L._calls["start"] == ["b002"], "one build at a time"
+    # the second one parks too: two PRs wait, and the loop starts no third
+    parked["run-b002"] = [{"node_name": "deploy", "status": "waiting", "opened_at": "2026-09-21T09:00:00Z"}]
+    L.cmd_run(keep=False, wait=False, propose=False, retry=False)
+    assert L._calls["start"] == ["b002"]
+    assert "2 PR(s) waiting for your word (b001, b002); the loop starts no more" in capsys.readouterr().out
+    assert [b for b, _ in L.backlog()] == ["b003"], "b003 stays queued, unpicked"
+
+
+def test_a_failed_bet_stops_the_loop_even_behind_a_parked_one(L, monkeypatch, capsys):
+    propose(L, bets=("b001", "b002", "b003"), empty=())
+    _running_bet(L, "b001", "run-b001")
+    _running_bet(L, "b002", "run-b002")
+    monkeypatch.setattr(L, "run_gate_decisions",
+                        lambda rid: [{"node_name": "deploy", "status": "waiting"}] if rid == "run-b001" else [])
+    monkeypatch.setattr(L, "get_run", lambda rid: {"status": "running", "nodes": []} if rid == "run-b001"
+                        else {"status": "failed", "error_message": "1 node(s) failed: build"})
+    monkeypatch.setattr(L, "rate_limited", lambda rid: False)
+    L.approve("b003", None)
+    L.cmd_run(keep=False, wait=False, propose=False, retry=False)
+    assert L._calls["start"] == [], "a failed bet needs the owner (or --retry); nothing new starts"
+    out = capsys.readouterr().out
+    assert "b001: run run-b001 is parked" in out and "b002: run run-b002 ended failed" in out
+
+
 # ---------------------------------------------------------------- collect --
 
 
@@ -401,18 +455,51 @@ def test_collect_screenshots_moves_the_prefixed_files_and_captions_them(L):
     shot(L, "b005-other-overview.png")          # another bet's: stays
     shot(L, "b004-book-empty.png", size=0)      # a zero-byte file: not a picture
     (L.BROWSER_OUTPUT / "page-2026-09-21T04-14-01Z.yml").write_text("x")
-    listed = '[{"page": "Actions", "file": "b004-book-actions.png", "shows": "no roll offered"}]'
+    listed = ('[{"page": "Actions", "file": "b004-book-actions.png", "shows": "no roll offered"},'
+              ' {"page": "Position AAPL", "file": "b004-book-position-aapl.png", "shows": "roll working"}]')
     out = L.collect_screenshots(bdir, "b004-book", listed)
     assert [s["file"] for s in out] == ["b004-book-actions.png", "b004-book-position-aapl.png"]
     assert out[0]["page"] == "Actions" and out[0]["shows"] == "no roll offered"
-    assert out[1]["page"] == "position aapl" and out[1]["shows"] == "", "an unlisted file is captioned from its name"
+    assert out[1]["page"] == "Position AAPL" and out[1]["shows"] == "roll working"
     assert (bdir / "screenshots" / "b004-book-actions.png").exists()
     assert not (L.BROWSER_OUTPUT / "b004-book-actions.png").exists(), "moved, not copied"
     assert (L.BROWSER_OUTPUT / "b005-other-overview.png").exists()
     assert (L.BROWSER_OUTPUT / "b004-book-empty.png").exists(), "the empty file is left where it was"
-    # a second ship sees the same set from the bet directory
-    again = L.collect_screenshots(bdir, "b004-book", [{"page": "Actions", "file": "../../etc/passwd"}])
+    # a second ship sees the same set from the bet directory; a name the agent wrote is only ever a
+    # basename looked up there, never a path
+    again = L.collect_screenshots(bdir, "b004-book", [{"page": "Actions", "file": "../../b004-book-actions.png"},
+                                                       {"page": "Position", "file": "/etc/b004-book-position-aapl.png"}])
     assert [s["file"] for s in again] == ["b004-book-actions.png", "b004-book-position-aapl.png"]
+    assert [s["page"] for s in again] == ["Actions", "Position"]
+
+
+def test_collect_screenshots_keeps_an_earlier_rounds_picture_off_the_pr(L):
+    """A build sent back and fixed is judged again, and the last round's list is the set the owner
+    sees. A file the last round did not list is an earlier round's (b004: the fix round's overview
+    replaced the first round's; four files reached the PR with no caption): kept under earlier/
+    for the record, not on the PR."""
+    bdir = L.BETS_DIR / "b004"
+    bdir.mkdir()
+    for name in ("b004-book-actions.png", "b004-book-positions.png", "b004-book-overview.png"):
+        shot(L, name)
+    listed = [{"page": "Overview", "file": "b004-book-overview.png", "shows": "the fixed line"}]
+    out = L.collect_screenshots(bdir, "b004-book", listed)
+    assert [(s["file"], s["shows"]) for s in out] == [("b004-book-overview.png", "the fixed line")]
+    assert sorted(p.name for p in (bdir / "screenshots" / "earlier").iterdir()) == [
+        "b004-book-actions.png", "b004-book-positions.png"]
+    assert [p.name for p in (bdir / "screenshots").glob("*.png")] == ["b004-book-overview.png"]
+
+
+def test_collect_screenshots_with_no_list_counts_every_file(L):
+    """An older verify, or a reply that lost its list: the files are still the truth, each
+    captioned from its name."""
+    bdir = L.BETS_DIR / "b004"
+    bdir.mkdir()
+    shot(L, "b004-book-overview.png")
+    shot(L, "b004-book-position-aapl.png")
+    out = L.collect_screenshots(bdir, "b004-book", None)
+    assert [(s["page"], s["shows"]) for s in out] == [("overview", ""), ("position aapl", "")]
+    assert not (bdir / "screenshots" / "earlier").exists()
 
 
 def test_collect_screenshots_is_empty_without_files_or_prefix(L):
@@ -422,6 +509,33 @@ def test_collect_screenshots_is_empty_without_files_or_prefix(L):
     assert L.collect_screenshots(bdir, "b004-book", None) == []
     assert L.collect_screenshots(bdir, "b004-book", "not json") == []
     assert not (bdir / "screenshots").exists()
+
+
+# ----------------------------------------------------------- threshold walk --
+
+
+def test_threshold_walk_lists_each_clause_with_its_mark_and_evidence(L):
+    """QA's clause-by-clause walk goes on the PR, so the owner reads what was proven and what was
+    not before he merges."""
+    md = L.threshold_walk_md([
+        {"clause": "3 of 3 pages say roll working", "status": "met", "evidence": "saw it on all three"},
+        {"clause": "after cancel 3 of 3 offer the roll again", "status": "unverified", "evidence": "no cancel on the sim"},
+        {"clause": "Scan now adds 0 AAPL recommendations", "status": "UNMET", "evidence": "it added one"},
+    ])
+    assert md.startswith("## The threshold, as QA walked it\n")
+    assert "- ✓ **met** — 3 of 3 pages say roll working  \n  saw it on all three\n" in md
+    assert "- ? **unverified** — after cancel 3 of 3 offer the roll again  \n  no cancel on the sim\n" in md
+    assert "- ✗ **unmet** — Scan now adds 0 AAPL recommendations" in md
+    assert md.endswith("1 clause(s) no browser action reached; they are yours to judge.\n")
+
+
+def test_threshold_walk_is_nothing_when_nothing_was_walked(L):
+    assert L.threshold_walk_md(None) == ""
+    assert L.threshold_walk_md([]) == ""
+    assert L.threshold_walk_md("not json") == ""
+    assert L.threshold_walk_md([{"status": "met"}]) == "", "a row with no clause is nothing"
+    md = L.threshold_walk_md('[{"clause": "c", "status": "met"}]')     # the list may arrive as its JSON text
+    assert "- ✓ **met** — c\n" in md and "yours to judge" not in md
 
 
 def test_publish_screenshots_creates_the_branch_then_builds_on_it(L, monkeypatch):

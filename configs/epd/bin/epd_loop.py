@@ -159,6 +159,10 @@ STAGES = ["tasks", "build", "ship", "deploy", "measure"]
 TERMINAL = {"rejected", "kept", "iterate", "killed", "closed", "changes_requested"}
 # On file, waiting for the owner's word: not open, not finished.
 WAITING = {"proposed"}
+# PRs parked at the loop's gate at once. The loop builds the next bet while one waits for the
+# owner's word -- a candidate is cheap next to the owner's time -- but not past this: every
+# undecided PR is a build the owner has not looked at and a branch the next one may conflict with.
+PARKED_LIMIT = 2
 # status after each stage completes; what `next` does is read off the status
 AFTER = {
     "tasks": "tasked",
@@ -579,6 +583,16 @@ SHOTS_BRANCH = os.environ.get("EPD_SHOTS_BRANCH", "epd-screenshots")
 SHOT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.png$")
 
 
+def as_list(value) -> list:
+    """A list an agent produced, whether it arrived as one or as its JSON text; anything else is []."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return value if isinstance(value, list) else []
+
+
 def collect_screenshots(bdir: Path, prefix: str, listed) -> list[dict]:
     """The verify run's screenshots, moved into ``<bet>/screenshots/``: [{page, shows, file, path}].
 
@@ -586,6 +600,14 @@ def collect_screenshots(bdir: Path, prefix: str, listed) -> list[dict]:
     -- and the agent's own list adds a caption to each. A model-written name is only ever a basename
     looked up in the output directory, never a path. Moving (not copying) makes a re-run of ship see
     the same set: the bet directory is the durable record, the output directory is scratch.
+
+    The list is the last verify round's, and so is the set that goes on the PR: a build sent back
+    and fixed is judged again on the new commit, and the pictures of the commit being shipped are
+    the ones the owner should see. A file on disk the last round did not list is an earlier round's
+    (the browser names a page's picture the same way each round, so a page the later round shot
+    again is already replaced) and is kept under ``earlier/`` for the record, off the PR. With no
+    list at all -- an older verify, or one whose reply lost it -- every file counts, captioned by
+    its name.
     """
     dest = bdir / "screenshots"
     if prefix and BROWSER_OUTPUT.is_dir():
@@ -595,22 +617,41 @@ def collect_screenshots(bdir: Path, prefix: str, listed) -> list[dict]:
                 shutil.move(str(src), str(dest / src.name))
     if not dest.is_dir():
         return []
-    if isinstance(listed, str):
-        try:
-            listed = json.loads(listed)
-        except ValueError:
-            listed = []
     captions: dict[str, dict] = {}
-    for item in listed or []:
+    for item in as_list(listed):
         if isinstance(item, dict) and item.get("file"):
             captions[Path(str(item["file"])).name] = item
     out = []
     for p in sorted(dest.glob("*.png")):
+        if captions and p.name not in captions:
+            earlier = dest / "earlier"
+            earlier.mkdir(exist_ok=True)
+            shutil.move(str(p), str(earlier / p.name))
+            log(f"   screenshot {p.name} is from an earlier round; kept under earlier/, not on the PR")
+            continue
         cap = captions.get(p.name, {})
         stem = p.name[len(prefix) + 1:-4] if prefix and p.name.startswith(prefix + "-") else p.stem
         out.append({"page": str(cap.get("page") or stem.replace("-", " ")).strip(),
                     "shows": str(cap.get("shows") or "").strip(), "file": p.name, "path": str(p)})
     return out
+
+
+def threshold_walk_md(checks) -> str:
+    """The PR-body section for QA's clause-by-clause walk of the threshold ("" when there is none)."""
+    rows = [c for c in as_list(checks) if isinstance(c, dict) and c.get("clause")]
+    if not rows:
+        return ""
+    mark = {"met": "✓", "unmet": "✗", "unverified": "?"}
+    lines = ["## The threshold, as QA walked it", ""]
+    for c in rows:
+        status = str(c.get("status") or "").strip().lower()
+        evidence = str(c.get("evidence") or "").strip()
+        lines.append(f"- {mark.get(status, '?')} **{status or 'unverified'}** — {str(c['clause']).strip()}"
+                     + (f"  \n  {evidence}" if evidence else ""))
+    unverified = [c for c in rows if str(c.get("status") or "").strip().lower() == "unverified"]
+    if unverified:
+        lines += ["", f"{len(unverified)} clause(s) no browser action reached; they are yours to judge."]
+    return "\n".join(lines) + "\n"
 
 
 def publish_screenshots(bet_id: str, shots: list[dict]) -> str:
@@ -800,13 +841,17 @@ git rev-parse HEAD
     return head
 
 
+def open_bets() -> list[str]:
+    """The bets being worked on, oldest first: picked from the backlog and not finished. Candidates
+    waiting for the owner's word are not open; they are on file. More than one is open when the
+    loop built the next while an earlier one's PR waited at the gate."""
+    return [r["bet_id"] for r in ledger_rows() if r["status"] not in TERMINAL and r["status"] not in WAITING]
+
+
 def open_bet() -> str | None:
-    """The bet being worked on, if any: picked from the backlog and not finished. Candidates waiting
-    for the owner's word are not open; they are on file."""
-    for r in reversed(ledger_rows()):
-        if r["status"] not in TERMINAL and r["status"] not in WAITING:
-            return r["bet_id"]
-    return None
+    """The latest open bet: what `resume`, `next` and `stage` act on unless told which."""
+    bets = open_bets()
+    return bets[-1] if bets else None
 
 
 def waiting_bets() -> list[str]:
@@ -1415,6 +1460,9 @@ def stage_ship(st: dict) -> None:
         f"Artifacts: `{bdir}` (bet.md, tasks.json, build.json"
         f"{', screenshots/' if shots else ''}); report: `{report_path_for(bet_id)}`.\n"
     )
+    walk_md = threshold_walk_md(b.get("verify_threshold_checks"))
+    if walk_md:
+        body += "\n" + walk_md
     shots_md = publish_screenshots(bet_id, shots)
     if shots_md:
         body += "\n" + shots_md
@@ -1867,16 +1915,25 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
     rnd = open_round()
     if rnd and not collect_round(rnd, keep):
         return
-    bet_id = open_bet()
-    if bet_id:
+    # Every open bet is looked at: the ones parked at the PR gate are counted and left to the
+    # owner; one still building, or one that failed and needs a hand, means nothing new starts.
+    parked: list[str] = []
+    for bet_id in open_bets():
         done = collect_bet(bet_id, keep, retry=retry)
         if done == "retry":
             start_bet(bet_id, keep, wait)
             return
+        if done == "parked":
+            parked.append(bet_id)
+            continue
         if done is not True:
             return
     if propose:
         cmd_propose(keep, wait)
+        return
+    if len(parked) >= PARKED_LIMIT:
+        log(f"{len(parked)} PR(s) waiting for your word ({', '.join(parked)}); "
+            f"the loop starts no more until one is decided")
         return
     bet_id = pick_bet()
     if bet_id:
@@ -1929,7 +1986,7 @@ def in_server(cmd: str) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", "exec", SERVER_CONTAINER, "sh", "-c", cmd], text=True, capture_output=True)
 
 
-def cmd_resume(at: str | None = None) -> None:
+def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
     """Fork the open bet's failed loop run at its last good stage and run the rest, in temper.
 
     The finished stages come back as checkpoints -- report, bet, the owner's approval, tasks: the
@@ -1947,9 +2004,11 @@ def cmd_resume(at: str | None = None) -> None:
     kept as a patch beside the bet, so the new attempt starts where the tasks say and not where the
     old one stopped. Neither is touched when the build is being kept.
     """
-    bet_id = open_bet()
+    bet_id = bet or open_bet()
     if not bet_id:
         die("no open bet; nothing to resume")
+    if bet and bet not in open_bets():
+        die(f"{bet} is not open (open: {', '.join(open_bets()) or 'none'})")
     st = load_state(bet_id)
     bdir = BETS_DIR / bet_id
     loop = st["stages"].get("loop") or {}
@@ -2026,17 +2085,19 @@ def cmd_collect(keep: bool) -> None:
     if rnd:
         collect_round(rnd, keep)
         return
-    bet_id = open_bet()
-    if bet_id:
-        collect_bet(bet_id, keep)
+    bets = open_bets()
+    if bets:
+        for bet_id in bets:
+            collect_bet(bet_id, keep)
         return
     log("nothing out: no proposal and no bet running")
 
 
 def collect_bet(bet_id: str, keep: bool, retry: bool = False) -> bool | str:
     """Record what a bet's loop run produced. True when the bet is settled (collected, now or
-    before); False when it is still running or needs the owner; "retry" when the caller asked to
-    start it over and may."""
+    before); "parked" when its run is waiting at a gate for the owner's word; "running" when it is
+    still working; False when it failed or needs the owner some other way; "retry" when the caller
+    asked to start it over and may."""
     st = load_state(bet_id)
     loop = st["stages"].get("loop") or {}
     rid = loop.get("_run_id")
@@ -2054,10 +2115,16 @@ def collect_bet(bet_id: str, keep: bool, retry: bool = False) -> bool | str:
     info = get_run(rid)
     status = info.get("status")
     if status in ("running", "pending"):
+        waiting = [d for d in run_gate_decisions(rid) if d.get("status") == "waiting"]
+        if waiting:
+            pr = (st["stages"].get("ship") or {}).get("pr") or ""
+            log(f"{bet_id}: run {rid[:8]} is parked at `{waiting[0].get('node_name')}` since "
+                f"{str(waiting[0].get('opened_at') or '')[:16]} for your word (temper's UI) {pr}")
+            return "parked"
         running = [n["name"] for n in info.get("nodes") or [] if n.get("status") == "running"]
         log(f"{bet_id}: run {rid[:8]} is still {status} (running={running}, "
             f"cost=${info.get('total_cost_usd') or 0:.2f}); nothing to collect yet")
-        return False
+        return "running"
     if status != "completed":
         why = "rate limited: the work is fine, the account is not" if rate_limited(rid) else info.get("error_message")
         if retry:
@@ -2222,8 +2289,7 @@ def cmd_status() -> None:
     rnd = open_round()
     if rnd:
         print(f"\nproposal out: {rnd} (run {load_round(rnd).get('_run_id', '')[:8]}); `collect` when it is done")
-    b = open_bet()
-    if b:
+    for b in open_bets():
         st = load_state(b)
         rid = (st["stages"].get("loop") or {}).get("_run_id", "")
         print(f"\nopen bet: {b} ({st['status']}" + (f", run {rid[:8]}" if rid else "") + ")"
@@ -2256,6 +2322,7 @@ def main() -> None:
     r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
     rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
     rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
+    rs.add_argument("--bet", help="which open bet, when more than one is (default: the latest)")
     c = sub.add_parser("collect", help="record what the last run (proposal or bet) produced, once temper is done")
     c.add_argument("--keep", action="store_true", help="leave the stacks up")
     n = sub.add_parser("next", help="the open bet's stages one at a time, here (takes the top backlog bet if none is open)")
@@ -2289,7 +2356,7 @@ def main() -> None:
     elif args.cmd == "run":
         cmd_run(args.keep, args.wait, args.propose, args.retry)
     elif args.cmd == "resume":
-        cmd_resume(args.at)
+        cmd_resume(args.at, args.bet)
     elif args.cmd == "collect":
         cmd_collect(args.keep)
     elif args.cmd == "next":

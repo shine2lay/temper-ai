@@ -315,6 +315,46 @@ def test_run_leaves_a_running_bet_alone_and_reports_a_failed_one(L, monkeypatch,
     assert L._calls["start"] == ["b001"], "--retry starts the same bet over"
 
 
+def test_measure_alone_finds_what_the_composed_loop_recorded(L, monkeypatch):
+    """`stage measure --bet X` read stages["build"], which the composed loop never writes -- it
+    records under stages["loop"]. So measuring a bet the loop built ran with build_summary=""
+    (measuring a change without being told what it claims to do) and skipped the teardown, since
+    the env_name it looks for was in the dict it did not read. b004 and b005 were both shipped
+    this way."""
+    propose(L, bets=("b001",), empty=())
+    bdir = L.BETS_DIR / "b001"
+    st = L.load_state("b001")
+    st["status"] = "shipped"
+    st["stages"]["loop"] = {"env_name": "rollcall-dev-epd-b001",
+                            "deploy_url": "https://epd-b001.dev.example.com"}
+    st["stages"]["ship"] = {"prod_url": "https://prod.example.com", "prod_qa": True}
+    L.save_state(st)
+    # build.json carries the summary; the loop record carries env_name. Neither has both.
+    (bdir / "build.json").write_text(json.dumps(
+        {"branch": "epd-b001", "implement_summary": "Made the roll say when it fills."}))
+
+    seen: dict = {}
+    monkeypatch.setattr(L, "wait_for_url", lambda *a, **k: None)
+    monkeypatch.setattr(L, "preflight_login", lambda *a, **k: None)
+    monkeypatch.setattr(L, "ensure_qa_password", lambda: "pw")
+    monkeypatch.setattr(L, "standee_down", lambda env: seen.setdefault("down", env))
+    monkeypatch.setattr(L, "ledger_upsert", lambda *a, **k: None)
+
+    def fake_run_workflow(name, inputs, **kw):
+        seen["inputs"] = inputs
+        (bdir / "outcome.md").write_text("# outcome\n")
+        return {"verdict": "kept", "summary": "it held", "threshold_met": True}
+
+    monkeypatch.setattr(L, "run_workflow", fake_run_workflow)
+    L.stage_measure(L.load_state("b001"), keep=False)
+
+    assert seen["inputs"]["build_summary"] == "Made the roll say when it fills.", (
+        "the measurer must be told what the build claims to do"
+    )
+    assert seen["inputs"]["app_url"] == "https://prod.example.com", "shipped means measure on prod"
+    assert seen.get("down") == "rollcall-dev-epd-b001", "the branch stack is reclaimed afterwards"
+
+
 def _running_bet(L, bet_id: str, run_id: str) -> None:
     L.approve(bet_id, None)
     assert L.pick_bet() == bet_id

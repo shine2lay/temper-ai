@@ -1779,7 +1779,14 @@ def scorecard() -> str:
 def stage_measure(st: dict, keep: bool) -> None:
     bet_id = st["bet_id"]
     bdir = BETS_DIR / bet_id
-    b = st["stages"].get("build") or {}
+    # Same read as stage_ship: the bet's own build.json first, then state. The composed loop
+    # records under stages["loop"], not stages["build"], so reading state alone found nothing
+    # for a bet the loop built -- measure then ran with no build_summary (measuring a change
+    # without being told what it claims to do) and skipped the teardown below, because the
+    # env_name it looks for was in the dict it did not read.
+    # The two hold different subsets -- build.json has the summary, the loop record has env_name --
+    # so this is a merge, not a fallback, with the file winning where both speak.
+    b = {**(st["stages"].get("loop") or {}), **artefact(bdir, "build", st, "build")}
     shipped = st["stages"].get("ship") or {}
     stack = b.get("deploy_url") or b.get("stack_url")
     # The live product if it was shipped, else the branch's stack.

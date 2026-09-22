@@ -524,7 +524,7 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     thread = threading.Thread(
         target=_run_workflow_with_checkpoints,
         args=(nodes, original_inputs, context, config.name, execution_id, restored_outputs),
-        kwargs={"resume_metadata": resume_metadata},
+        kwargs={"workflow_outputs": config.outputs, "resume_metadata": resume_metadata},
         daemon=True,
     )
     thread.start()
@@ -631,6 +631,7 @@ def fork_run(body: ForkRequest):
     thread = threading.Thread(
         target=_run_workflow_with_checkpoints,
         args=(nodes, inputs, context, config.name, new_execution_id, restored_outputs),
+        kwargs={"workflow_outputs": config.outputs},
         daemon=True,
     )
     thread.start()
@@ -986,7 +987,7 @@ def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_
 
 def _run_workflow_with_checkpoints(
     nodes, inputs, context, workflow_name, execution_id, restored_outputs,
-    *, resume_metadata: dict | None = None,
+    *, workflow_outputs: dict[str, str] | None = None, resume_metadata: dict | None = None,
 ):
     """Run a workflow with pre-populated node_outputs from checkpoints.
 
@@ -1007,6 +1008,10 @@ def _run_workflow_with_checkpoints(
             graph_name=workflow_name,
             is_workflow=True,
             initial_outputs=restored_outputs,
+            # A resumed or forked run owes the workflow's declared outputs like any
+            # other: without these, `workflow_output` on the finished run is empty
+            # and whoever reads the run to learn what it did reads a blank.
+            workflow_outputs=workflow_outputs,
             resume_metadata=resume_metadata,
         )
         logger.info(

@@ -32,17 +32,24 @@ def execute_graph_with_state(
     graph_name: str = "",
     is_workflow: bool = False,
     initial_outputs: dict[str, NodeResult] | None = None,
+    workflow_outputs: dict[str, str] | None = None,
     resume_metadata: dict | None = None,
 ) -> NodeResult:
     """Execute a graph with pre-populated node_outputs (for resume from checkpoints).
 
     `resume_metadata` flows through to `execute_graph` so the resumed
     workflow.started event carries the link back to the prior attempt.
+
+    `workflow_outputs` does too, and must: a resumed run is the same workflow as the
+    one it resumes, so it owes the same outputs. Without it the run finishes with
+    ``workflow_output`` empty, and anything reading the run for what it did -- a
+    driver recording the outcome, the dashboard -- sees a run that did nothing.
     """
     return execute_graph(
         nodes, input_data, context,
         graph_name=graph_name, is_workflow=is_workflow,
         initial_outputs=initial_outputs,
+        workflow_outputs=workflow_outputs,
         resume_metadata=resume_metadata,
     )
 

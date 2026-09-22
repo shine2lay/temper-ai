@@ -181,6 +181,9 @@ def execute_workflow(
                 graph_name=workflow_name,
                 is_workflow=True,
                 initial_outputs=initial_outputs,
+                # Same workflow, so the same declared outputs: a resumed run that
+                # does not map them finishes reporting nothing about what it did.
+                workflow_outputs=config.outputs,
                 resume_metadata=resume_metadata,
             )
         else:

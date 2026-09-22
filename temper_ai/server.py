@@ -95,10 +95,14 @@ def _init_llm_providers() -> dict:
     if anthropic_key:
         def _make_anthropic():
             from temper_ai.llm.providers.anthropic import DEFAULT_MODEL, AnthropicLLM
-            return AnthropicLLM(
-                model=os.environ.get("ANTHROPIC_MODEL", DEFAULT_MODEL),
-                api_key=anthropic_key,
-            )
+            # The credential is resolved above only to decide whether to bring the
+            # provider up at all; it is deliberately not passed on. The provider
+            # reads the same environment itself, and treats a credential handed to
+            # it as a caller's explicit choice -- "use this one, do not go looking
+            # for siblings" -- which switches off the multi-subscription pool. So
+            # forwarding it here quietly disabled pooling everywhere it matters:
+            # the server is the only thing that builds the production provider.
+            return AnthropicLLM(model=os.environ.get("ANTHROPIC_MODEL", DEFAULT_MODEL))
         _try_init_provider(
             providers, "anthropic", _make_anthropic,
             f"Anthropic provider initialized (auth mode: {anthropic_mode})",

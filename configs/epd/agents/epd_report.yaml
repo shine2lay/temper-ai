@@ -15,10 +15,12 @@ agent:
   #    own section and kept out of the friction ranking.
   # 3: the previous outcome distinguishes what was verified from what was
   #    only claimed -- the unverified half must be walked again, not skipped.
-  version: 3
+  # 4: opus rather than fable -- the subscription's weekly cap is per model family, and fable's
+  #    is the one the loop spends. Same tier, half the price.
+  version: 4
   type: llm
   provider: anthropic
-  model: claude-fable-5-1
+  model: claude-opus-5
   tools:
     - Write
   max_iterations: 4

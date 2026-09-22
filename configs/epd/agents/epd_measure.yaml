@@ -18,10 +18,14 @@ agent:
   # 4: a criterion whose condition never arose is not met (b001 passed "the
   #    empty tenant shows 4/4 reason sentences" by having no missing fields
   #    left to explain); criteria are reported one by one.
-  version: 4
+  # 5: opus rather than fable. The subscription's weekly cap is per model family, and the build
+  #    loops spend fable: both subscriptions were cooled for fable while opus on the same
+  #    account still answered. Measuring is the cheap stage and the one that must not be the
+  #    thing that cannot run, so it goes where the quota is -- and opus is half fable's price.
+  version: 5
   type: llm
   provider: anthropic
-  model: claude-fable-5-1
+  model: claude-opus-5
   tools:
     - playwright.browser_navigate
     - playwright.browser_snapshot

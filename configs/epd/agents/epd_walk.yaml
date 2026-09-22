@@ -23,10 +23,12 @@ agent:
   #    previous session to sign out of.
   # 2: retry a first navigation that fails at the network layer (the stack was
   #    stood up seconds ago); never record a tool error as friction.
-  version: 3
+  # 4: opus rather than fable -- the subscription's weekly cap is per model family, and fable's
+  #    is the one the loop spends. Same tier, half the price.
+  version: 4
   type: llm
   provider: anthropic
-  model: claude-fable-5-1
+  model: claude-opus-5
   tools:
     - playwright.browser_navigate
     - playwright.browser_snapshot

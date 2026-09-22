@@ -87,5 +87,28 @@ class TestCurrentAnthropicRates:
         # 4.1 and 4 stay at the retired $15
         assert estimate_cost("claude-opus-4-1", prompt_tokens=1_000_000, completion_tokens=0) == 15.0
 
+    def test_opus_5_5_is_cheaper_than_opus_5_and_says_so_itself(self):
+        """5.5 undercuts 5: $4/$20 against $5/$25.
+
+        Every other model in this table is at or above its predecessor, so a
+        prefix match onto "claude-opus-5" reads as harmless and over-reports
+        every 5.5 run by 25%. It has to be its own row.
+        """
+        opus_5_5 = estimate_cost("claude-opus-5-5", prompt_tokens=1_000_000, completion_tokens=1_000_000)
+        opus_5 = estimate_cost("claude-opus-5", prompt_tokens=1_000_000, completion_tokens=1_000_000)
+        assert opus_5_5 == 24.0  # $4 in + $20 out
+        assert opus_5_5 < opus_5
+        # Dated releases must land on it too, not fall back to the 5 row.
+        assert estimate_cost("claude-opus-5-5-20260115", prompt_tokens=1_000_000, completion_tokens=0) == 4.0
+
+    def test_opus_5_5_reads_cache_at_a_twentieth_where_opus_5_reads_at_a_tenth(self):
+        """0.05x base, half the usual rate -- and cache reads are most of a long run."""
+        opus_5_5 = estimate_cost("claude-opus-5-5", prompt_tokens=1_000_000, completion_tokens=0,
+                                 cached_prompt_tokens=1_000_000)
+        opus_5 = estimate_cost("claude-opus-5", prompt_tokens=1_000_000, completion_tokens=0,
+                               cached_prompt_tokens=1_000_000)
+        assert opus_5_5 == 0.20
+        assert opus_5 == 0.50
+
     def test_haiku_4_5_is_one_and_five(self):
         assert estimate_cost("claude-haiku-4-5-20251001", prompt_tokens=1_000_000, completion_tokens=1_000_000) == 6.0

@@ -85,8 +85,11 @@ _ANSWER_HEADROOM = 8_000
 #
 # So sending a budget to a Claude 5 model is not a cap, it is a no-op that
 # reads like a cap — the expensive kind of silence.
+# Listed one id at a time rather than by family prefix: which knob a model
+# obeys has already flipped once between generations, and a prefix quietly
+# decides it for a model nobody has measured.
 _ADAPTIVE_EFFORT_MODELS = (
-    "claude-opus-5", "claude-sonnet-5", "claude-fable-5",
+    "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5",
     "claude-opus-4-8", "claude-opus-4-7",
 )
 

@@ -29,6 +29,10 @@ _MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-fable-5-1": (10.0, 50.0),
     "claude-fable-5": (10.0, 50.0),
     "claude-mythos-5": (10.0, 50.0),
+    # Opus 5.5 is CHEAPER than Opus 5 ($4/$20 against $5/$25), so inheriting
+    # by prefix is wrong in the direction that matters: it over-reports every
+    # 5.5 run by 25%. Listed explicitly, never inferred from the family.
+    "claude-opus-5-5": (4.0, 20.0),
     "claude-opus-5": (5.0, 25.0),
     "claude-sonnet-5": (2.0, 10.0),
     "claude-opus-4-8": (5.0, 25.0),
@@ -95,6 +99,10 @@ CACHE_WRITE_MULTIPLIER = 1.25
 _CACHE_READ_OVERRIDES: dict[str, float] = {
     "claude-fable-5-1": 0.025,
     "claude-mythos-5-1": 0.025,
+    # Opus 5.5 reads cache at 0.05x base ($0.20 against $4), half the usual
+    # rate. An agent run re-reads its prefix on nearly every call, so this is
+    # most of what a long run costs.
+    "claude-opus-5-5": 0.05,
 }
 
 

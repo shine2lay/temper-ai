@@ -37,7 +37,9 @@ agent:
   name: epd_ship
   # 3: records the screenshot prefix and list, so the driver can put the pictures on the PR.
   # 4: records QA's clause-by-clause walk of the threshold, for the PR body.
-  version: 4
+  # 5: the gate card, in plain words -- a `summary` the dashboard renders as markdown, a one-line
+  #    `detail`, and what each button does written out under the button.
+  version: 5
   type: script
   timeout_seconds: 2400
   # A blank here is not a blank field, it is a shifted one: these values are written by position,
@@ -126,37 +128,106 @@ agent:
     #
     # The question is the gate's form. The next node (`deploy`) has gate: true, and the
     # dashboard renders whatever `questions_for_owner` its upstream -- this node -- asked,
-    # so the owner sees the PR link, the judges' verdicts and the stack to try it on, and
-    # three buttons. The labels are matched exactly by the driver (PR_DECISIONS in
-    # epd_loop.py): change one here, change it there.
+    # so the owner sees the PR link, the checks, the stack to try it on, and three buttons.
+    # The labels are matched exactly by the driver (PR_DECISIONS in epd_loop.py): change one
+    # here, change it there.
+    #
+    # Where each piece lands on screen (frontend/src/components/layout/GateModal.tsx):
+    #   `summary`  -- rendered as markdown, above the buttons. The brief goes here. It is read
+    #                 out of this node's output by PROSE_KEYS in temper_ai/stage/gate.py, which
+    #                 looks for `summary` and not for `detail`: until v5 the brief was in
+    #                 `detail`, so that panel was empty and everything piled into one line.
+    #   `detail`   -- one plain <p>, no markdown and newlines collapse: one sentence only.
+    #   `preview`  -- markdown, shown when that button is picked. What that choice does goes
+    #                 here, so the owner reads about a choice when he is making it.
+    # Plain words throughout: the reader is the owner deciding, not the pipeline.
     python3 - "$BET_DIR/state.json" "$BET_DIR/build.json" <<'PY'
     import json, sys
     ship = (json.load(open(sys.argv[1])).get("stages") or {}).get("ship") or {}
     build = json.load(open(sys.argv[2]))
     pr, n = ship.get("pr") or "", ship.get("pr_number")
-    verdicts = " · ".join(f"{k.replace('_verdict', '')}: {build.get(k) or '?'}"
-                          for k in ("review_verdict", "verify_verdict", "security_verdict"))
-    detail = (f"{pr}\n\nThe pipeline's own judges said -- {verdicts}. "
-              f"{build.get('verdict_summary') or ''}\n\n"
-              f"Try it: {build.get('deploy_url') or '(no stack url recorded)'} "
-              f"(branch {build.get('branch')}, commit {(build.get('implement_commit') or '')[:12]}).\n\n"
-              f"Merging here squash-merges, backs production up and deploys the merge commit. "
-              f"Requesting changes or closing puts your note on the PR and stops the run; "
-              f"merging or closing on GitHub instead also counts -- GitHub's state wins.")
+    title = ship.get("title") or ""
+
+    # Each check in words a reader does not have to decode: the pipeline's own vocabulary
+    # (approve / request_changes / pass) says what the judge typed, not what it means.
+    SAID = {"approve": "passed", "pass": "passed", "request_changes": "asked for changes",
+            "reject": "said no", "fail": "failed", "blocked": "found a problem"}
+    PASSED = ("approve", "pass")
+    def said(key, name):
+        v = (build.get(key) or "").strip()
+        # A check that did not pass is marked, not just worded differently: this line is
+        # skimmed, and "asked for changes" among two passes is exactly what must not be
+        # skimmed past.
+        return f"{name}: {SAID.get(v, v or 'not run')}" + ("" if v in PASSED else " ⚠")
+    checks = " · ".join([said("review_verdict", "Code review"),
+                         said("verify_verdict", "Clicked through in a browser"),
+                         said("security_verdict", "Security check")])
+
+    # What QA checked, one line per promise the bet made. ✓ met, ✗ not met, ? nothing
+    # reached it -- the last of which is the owner's to judge, so it is worth showing.
+    MARK = {"met": "✓", "unmet": "✗", "unverified": "?"}
+    walked = []
+    for c in (build.get("verify_threshold_checks") or [])[:6]:
+        if isinstance(c, dict) and c.get("clause"):
+            status = str(c.get("status") or "").strip().lower()
+            tail = " — nothing in the app reached this" if status == "unverified" else ""
+            walked.append(f"- {MARK.get(status, '?')} {str(c['clause']).strip()}{tail}")
+
+    what = (build.get("implement_summary") or "").strip()
+    if len(what) > 400:
+        what = what[:400].rsplit(" ", 1)[0] + "… (the rest is on the PR)"
+    url = build.get("deploy_url") or ""
+    where = (f"[{url}]({url})" if url else "no test copy is up any more")
+
+    # The brief. Markdown, and the one panel the owner actually reads before deciding.
+    # Blocks, joined by a blank line: in markdown a single newline is not a line break,
+    # so without the blank line between them the whole card renders as one paragraph.
+    blocks = [f"### PR #{n} — {title}\n\n{pr}"]
+    if what:
+        blocks.append(f"**What it does** — {what}")
+    blocks.append(f"**Checks** — {checks}")
+    blocks.append(f"**Try it yourself** — {where}  \n"
+                  f"branch `{build.get('branch') or '?'}`, "
+                  f"commit `{(build.get('implement_commit') or '')[:12]}`")
+    if walked:
+        blocks.append("**What QA checked**\n\n" + "\n".join(walked))
+    summary = "\n\n".join(blocks)
+
     print(json.dumps({
         "status": "pr_opened" if n else "incomplete",
         "detail": f"PR #{n} opened; waiting for the owner's decision" if n else "no PR recorded",
+        "summary": summary if n else "No PR was opened, so there is nothing to decide.",
         "pr": pr,
         "pr_number": n or 0,
         "questions_for_owner": [{
             "id": "pr",
             "header": f"PR #{n}",
-            "question": f"What happens to PR #{n}, {ship.get('title') or ''}?",
-            "detail": detail,
+            "question": "Do you want this?",
+            "detail": "Pick one below. You can also merge or close it on GitHub instead — "
+                      "whatever you do there is what counts.",
             "options": [
-                {"label": "Merge", "description": "Squash-merge into master, back production up, deploy, check the QA tenant survived."},
-                {"label": "Request changes", "description": "Not as it stands. Say what in the note: it goes on the PR, and into the next bet's context."},
-                {"label": "Close", "description": "Not this, not with changes. The PR is closed unmerged with your note."},
+                {"label": "Merge",
+                 "description": "Yes — put it live.",
+                 "preview": "Then, without asking again:\n\n"
+                            "1. It becomes one commit on `master`.\n"
+                            "2. Production is backed up first.\n"
+                            "3. The merged code goes live.\n"
+                            "4. The test tenant is checked, to see the deploy did not break it.\n"
+                            "5. The promise above is measured on the live site."},
+                {"label": "Request changes",
+                 "description": "Not yet — send it back with a note saying what to fix.",
+                 "preview": "Then:\n\n"
+                            "1. Your note is posted on the PR.\n"
+                            "2. The PR stays open; nothing goes live.\n"
+                            "3. This run stops here.\n"
+                            "4. The next bet is written knowing what you said.\n\n"
+                            "Write the note in the box below — it is the only thing that carries."},
+                {"label": "Close",
+                 "description": "No — drop it.",
+                 "preview": "Then:\n\n"
+                            "1. The PR is closed without merging, with your note on it.\n"
+                            "2. The branch stays, so the work is not lost.\n"
+                            "3. This run stops here."},
             ],
         }] if n else [],
     }))

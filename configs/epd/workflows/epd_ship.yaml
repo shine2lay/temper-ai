@@ -2,7 +2,8 @@ workflow:
   name: epd_ship
   # 3: the QA screenshots travel with the build; the driver puts them on the PR.
   # 4: so does QA's clause-by-clause walk of the threshold.
-  version: 4
+  # 5: exports `summary` -- the gate card's brief, which the dashboard renders as markdown.
+  version: 5
   description: |
     Put an approved build in front of the owner: push the branch and open the PR.
 
@@ -45,6 +46,9 @@ workflow:
   outputs:
     status:              ship.structured.status        # pr_opened | incomplete | failed
     detail:              ship.structured.detail
+    # The brief the owner reads at the gate. Named `summary` because that is what
+    # PROSE_KEYS (temper_ai/stage/gate.py) shows above the buttons; `detail` is not read.
+    summary:             ship.structured.summary
     pr:                  ship.structured.pr
     pr_number:           ship.structured.pr_number
     questions_for_owner: ship.structured.questions_for_owner   # the gate on `deploy` renders these

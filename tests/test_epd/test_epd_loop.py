@@ -336,7 +336,9 @@ def test_run_builds_the_next_bet_while_a_pr_waits_for_the_owner(L, monkeypatch, 
     L.approve("b002", None)
     L.cmd_run(keep=False, wait=False, propose=False, retry=False)
     assert L._calls["start"] == ["b002"], "the next approved bet starts behind the parked one"
-    assert "b001: run run-b001 is parked at `deploy`" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "b001: waiting for you since 2026-09-21T07:00 — merge it, send it back with a note, " \
+           "or close it: https://x/pull/1" in out, "the parked line says what the owner can do"
     assert L.open_bets() == ["b001", "b002"] and L.open_bet() == "b002"
     # the second one is now running: nothing more starts
     st = L.load_state("b002")
@@ -353,6 +355,27 @@ def test_run_builds_the_next_bet_while_a_pr_waits_for_the_owner(L, monkeypatch, 
     assert [b for b, _ in L.backlog()] == ["b003"], "b003 stays queued, unpicked"
 
 
+def test_a_completed_run_that_reports_nothing_does_not_overwrite_what_happened(L, monkeypatch, capsys):
+    """b004's PR was merged, deployed and measured; temper mapped no outputs on the resumed run,
+    and the driver recorded "stopped after build=None" over it. A blank run report is temper's
+    failure to say, not the bet's failure to happen."""
+    propose(L, bets=("b001",), empty=())
+    _running_bet(L, "b001", "run-b001")
+    st = L.load_state("b001")
+    st["status"] = "pr_opened"
+    st["stages"]["ship"] = {"pr": "https://x/pull/1", "pr_number": 1}
+    L.save_state(st)
+    monkeypatch.setattr(L, "get_run", lambda rid: {"status": "completed", "workflow_output": None, "nodes": []})
+    monkeypatch.setattr(L, "run_gate_decisions", lambda rid: [])
+
+    assert L.collect_bet("b001", keep=False, retry=False) is False
+    after = L.load_state("b001")
+    assert after["status"] == "pr_opened", "the bet keeps the status its own files recorded"
+    assert "loop" not in after["stages"] or not after["stages"]["loop"].get("_collected")
+    out = capsys.readouterr().out
+    assert "completed but reported no outputs" in out and "`pr_opened`" in out
+
+
 def test_a_failed_bet_stops_the_loop_even_behind_a_parked_one(L, monkeypatch, capsys):
     propose(L, bets=("b001", "b002", "b003"), empty=())
     _running_bet(L, "b001", "run-b001")
@@ -366,7 +389,7 @@ def test_a_failed_bet_stops_the_loop_even_behind_a_parked_one(L, monkeypatch, ca
     L.cmd_run(keep=False, wait=False, propose=False, retry=False)
     assert L._calls["start"] == [], "a failed bet needs the owner (or --retry); nothing new starts"
     out = capsys.readouterr().out
-    assert "b001: run run-b001 is parked" in out and "b002: run run-b002 ended failed" in out
+    assert "b001: waiting for you" in out and "b002: run run-b002 ended failed" in out
 
 
 # ---------------------------------------------------------------- collect --
@@ -522,11 +545,13 @@ def test_threshold_walk_lists_each_clause_with_its_mark_and_evidence(L):
         {"clause": "after cancel 3 of 3 offer the roll again", "status": "unverified", "evidence": "no cancel on the sim"},
         {"clause": "Scan now adds 0 AAPL recommendations", "status": "UNMET", "evidence": "it added one"},
     ])
-    assert md.startswith("## The threshold, as QA walked it\n")
-    assert "- ✓ **met** — 3 of 3 pages say roll working  \n  saw it on all three\n" in md
-    assert "- ? **unverified** — after cancel 3 of 3 offer the roll again  \n  no cancel on the sim\n" in md
-    assert "- ✗ **unmet** — Scan now adds 0 AAPL recommendations" in md
-    assert md.endswith("1 clause(s) no browser action reached; they are yours to judge.\n")
+    assert md.startswith("## What QA checked\n")
+    assert "- ✓ 3 of 3 pages say roll working  \n  saw it on all three\n" in md, "the mark says it once"
+    assert ("- ? after cancel 3 of 3 offer the roll again (nothing in the app reached this)  \n"
+            "  no cancel on the sim\n") in md, "an unverified clause must not read as a pass"
+    assert "- ✗ Scan now adds 0 AAPL recommendations" in md
+    assert md.endswith("Nothing in the app reached 1 of these, so QA could not say either way. "
+                       "Those are yours to judge.\n")
 
 
 def test_threshold_walk_is_nothing_when_nothing_was_walked(L):
@@ -535,7 +560,7 @@ def test_threshold_walk_is_nothing_when_nothing_was_walked(L):
     assert L.threshold_walk_md("not json") == ""
     assert L.threshold_walk_md([{"status": "met"}]) == "", "a row with no clause is nothing"
     md = L.threshold_walk_md('[{"clause": "c", "status": "met"}]')     # the list may arrive as its JSON text
-    assert "- ✓ **met** — c\n" in md and "yours to judge" not in md
+    assert "- ✓ c\n" in md and "yours to judge" not in md
 
 
 def test_publish_screenshots_creates_the_branch_then_builds_on_it(L, monkeypatch):

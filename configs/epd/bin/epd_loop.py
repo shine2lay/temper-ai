@@ -642,15 +642,20 @@ def threshold_walk_md(checks) -> str:
     if not rows:
         return ""
     mark = {"met": "✓", "unmet": "✗", "unverified": "?"}
-    lines = ["## The threshold, as QA walked it", ""]
+    lines = ["## What QA checked", "", "Each promise this bet made, and whether QA saw it happen:", ""]
     for c in rows:
         status = str(c.get("status") or "").strip().lower()
         evidence = str(c.get("evidence") or "").strip()
-        lines.append(f"- {mark.get(status, '?')} **{status or 'unverified'}** — {str(c['clause']).strip()}"
+        # The mark says it; repeating the word after it ("✓ **met** — …") is the same thing twice.
+        # "unverified" is the exception: it is not a worse ✓ but a different thing, and it reads as
+        # a pass to anyone skimming the column of marks.
+        tail = " (nothing in the app reached this)" if status == "unverified" else ""
+        lines.append(f"- {mark.get(status, '?')} {str(c['clause']).strip()}{tail}"
                      + (f"  \n  {evidence}" if evidence else ""))
     unverified = [c for c in rows if str(c.get("status") or "").strip().lower() == "unverified"]
     if unverified:
-        lines += ["", f"{len(unverified)} clause(s) no browser action reached; they are yours to judge."]
+        lines += ["", f"Nothing in the app reached {len(unverified)} of these, so QA could not say either "
+                      "way. Those are yours to judge."]
     return "\n".join(lines) + "\n"
 
 
@@ -2118,8 +2123,10 @@ def collect_bet(bet_id: str, keep: bool, retry: bool = False) -> bool | str:
         waiting = [d for d in run_gate_decisions(rid) if d.get("status") == "waiting"]
         if waiting:
             pr = (st["stages"].get("ship") or {}).get("pr") or ""
-            log(f"{bet_id}: run {rid[:8]} is parked at `{waiting[0].get('node_name')}` since "
-                f"{str(waiting[0].get('opened_at') or '')[:16]} for your word (temper's UI) {pr}")
+            since = str(waiting[0].get("opened_at") or "")[:16]
+            where = pr or f"temper's UI, at `{waiting[0].get('node_name')}`"
+            log(f"{bet_id}: waiting for you since {since} — merge it, send it back with a note, "
+                f"or close it: {where}")
             return "parked"
         running = [n["name"] for n in info.get("nodes") or [] if n.get("status") == "running"]
         log(f"{bet_id}: run {rid[:8]} is still {status} (running={running}, "
@@ -2135,6 +2142,17 @@ def collect_bet(bet_id: str, keep: bool, retry: bool = False) -> bool | str:
             "`reject <id> --why` drops it. A PR already open is decided on GitHub, then `stage deploy --bet`.")
         return False
     out = {k: unstr(v) for k, v in (info.get("workflow_output") or {}).items()}
+    # A completed run that reports nothing is not a run that did nothing. Temper mapped no
+    # workflow outputs on resumed runs until the fix in temper_ai/stage/executor.py, and the
+    # driver wrote "stopped after build=None" over b004 -- a bet whose PR was merged, deployed
+    # and measured. Recording a false outcome is worse than recording none, and the bet's own
+    # files say what happened: `stage` writes state.json as each stage lands.
+    if not out and any(v for v in (st.get("stages") or {}).values()):
+        log(f"{bet_id}: run {rid[:8]} completed but reported no outputs — leaving the bet as "
+            f"`{st.get('status')}`, which its own files recorded. Nothing is collected from it.")
+        log("   this is temper's, not the work's: check the run in the UI, then "
+            f"`stage <name> --bet {bet_id}` for whatever is genuinely left.")
+        return False
     out["_versions"] = config_versions("epd_loop")
     out["_run_id"] = rid
     out["_launched"] = loop.get("_launched")

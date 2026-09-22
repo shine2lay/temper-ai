@@ -36,7 +36,10 @@ agent:
   name: task_implement
   # 3: answers `qa_unreachable` by building the route to the state a threshold
   #    clause names, instead of the bet shipping with that clause unwalked.
-  version: 3
+  # 4: says what the round is worth -- one round, then the clause ships
+  #    unproven -- so the choice is a rough walkable route over a clean absent
+  #    one, rather than deferring it to a round that will not come.
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5
@@ -226,6 +229,13 @@ agent:
     situation, the page that shows the result. Build the smallest one that
     lets someone with a browser reach it, and say in your summary which
     clause each addition opens up.
+
+    This is the one round you get for it. If the state is still unreachable
+    when you hand back, the clause is accepted as unwalkable and the change
+    ships with it named on the pull request as never shown to hold — so a
+    route you do not build here is a piece of the bet that goes out unproven.
+    A rough way in that a person can actually walk beats a clean one that
+    does not exist.
 
     If a clause genuinely cannot be reached by any build — it names the next
     report, a future round, or a decision only the owner can make — do not

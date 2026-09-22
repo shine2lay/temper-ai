@@ -17,6 +17,7 @@ list that arrives as the text "None" is the bug class that made version 3 necess
 """
 
 import subprocess
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -38,12 +39,15 @@ def node_named(wiring: dict, name: str) -> dict:
     return next(n for n in wiring["workflow"]["nodes"] if n["name"] == name)
 
 
-def gate(**inputs) -> dict:
-    """The gate's decision for these inputs: the real agent, the real script, really run."""
+def gate(workspace=None, run="test", **inputs) -> dict:
+    """The gate's decision for these inputs: the real agent, the real script, really run.
+
+    `workspace` is where the gate keeps its round counter; pass the same one twice to be
+    the second round of a loop, as the engine's rewind would."""
     config = yaml.safe_load(GATE.read_text())["agent"]
     ctx = MagicMock()
-    ctx.run_id, ctx.node_path, ctx.agent_name = "test", "gate", "task_gate"
-    ctx.workspace_path = "/tmp"
+    ctx.run_id, ctx.node_path, ctx.agent_name = run, "gate", "task_gate"
+    ctx.workspace_path = str(workspace) if workspace else tempfile.mkdtemp()
 
     def run(_tool, args, **_kw):
         done = subprocess.run(args["command"], shell=True, capture_output=True,
@@ -83,6 +87,98 @@ class TestAClauseWithNoRouteSendsTheBuildBack:
         time the implementer runs. It can only learn which clauses to open up from here."""
         clauses = ["no cancel control", "no rejected order"]
         assert gate(**PASSED, qa_unverified=clauses)["qa_unverified"] == clauses
+
+
+class TestTheVetoHasAFloor:
+    """A route that cannot be built must not cost the whole bet.
+
+    `on_max_loops: silent` leaves the last verdict standing, and epd_loop.py:1428 reads
+    request_changes as `build_failed`, then :1460 refuses to ship it. So a clause nobody
+    can reach, asked for every round, ends with a reviewed and deployed branch thrown
+    away -- loops spent and nothing mergeable. The veto gets one round, then yields.
+    """
+
+    def test_the_first_round_asks(self, tmp_path):
+        out = gate(workspace=tmp_path, **PASSED | {"qa_verdict": "fail"},
+                   qa_unverified=["No cancel control"])
+        assert out["verdict"] == "request_changes"
+        assert out["gate_round"] == 1
+
+    def test_the_second_round_accepts_and_ships(self, tmp_path):
+        """The implementer had its round and the state is still unreachable. Ship it."""
+        clause = ["No cancel control"]
+        gate(workspace=tmp_path, **PASSED | {"qa_verdict": "fail"}, qa_unverified=clause)
+        out = gate(workspace=tmp_path, **PASSED | {"qa_verdict": "fail"}, qa_unverified=clause)
+        assert out["gate_round"] == 2
+        assert out["verdict"] == "approve", out["summary"]
+        assert out["changes_wanted_by"] == []
+        assert out["qa_accepted_unreachable"] == clause
+
+    def test_what_shipped_unproven_is_named(self, tmp_path):
+        clause = ["No cancel control"]
+        gate(workspace=tmp_path, **PASSED | {"qa_verdict": "fail"}, qa_unverified=clause)
+        out = gate(workspace=tmp_path, **PASSED | {"qa_verdict": "fail"}, qa_unverified=clause)
+        assert "accepted as unwalkable and shipped unproven" in out["summary"]
+        assert "never shown to hold" in out["summary"]
+
+    def test_a_broken_change_is_not_let_through_with_it(self, tmp_path):
+        """QA also walked a clause and it came out wrong. That is a defect, not a missing
+        route, and it keeps every round it has."""
+        for _ in range(3):
+            out = gate(workspace=tmp_path, **PASSED | {"qa_verdict": "fail"},
+                       qa_unverified=["No cancel control"],
+                       qa_unmet=["A rejected order says why: the row stayed blank"])
+        assert out["verdict"] == "request_changes"
+        assert "QA" in out["changes_wanted_by"]
+        assert out["qa_accepted_unreachable"] == []
+
+    def test_a_bug_off_the_threshold_is_not_let_through_either(self, tmp_path):
+        for _ in range(3):
+            out = gate(workspace=tmp_path, **PASSED | {"qa_verdict": "fail"},
+                       qa_unverified=["No cancel control"],
+                       qa_issues=[{"where": "/orders", "what": "The page 500s"}])
+        assert out["verdict"] == "request_changes"
+
+    def test_another_judge_still_holds_the_build(self, tmp_path):
+        """Accepting QA's unreachable clause must not speak for review or security."""
+        for _ in range(3):
+            out = gate(workspace=tmp_path, **PASSED | {"qa_verdict": "fail", "review_verdict": "request_changes"},
+                       qa_unverified=["No cancel control"])
+        assert out["verdict"] == "request_changes"
+        assert out["changes_wanted_by"] == ["review"]
+
+    def test_an_unreadable_qa_verdict_is_not_lifted(self, tmp_path):
+        """Only the word `fail` is lifted. Something nobody can read never consented."""
+        for _ in range(3):
+            out = gate(workspace=tmp_path, **PASSED | {"qa_verdict": "probably"},
+                       qa_unverified=["No cancel control"])
+        assert out["verdict"] == "request_changes"
+        assert "QA" in out["changes_wanted_by"]
+
+    def test_each_run_gets_its_own_budget(self, tmp_path):
+        """A worktree outlives a run; a stale counter would spend the next bet's round."""
+        clause = ["No cancel control"]
+        gate(workspace=tmp_path, run="run-one", **PASSED | {"qa_verdict": "fail"}, qa_unverified=clause)
+        gate(workspace=tmp_path, run="run-one", **PASSED | {"qa_verdict": "fail"}, qa_unverified=clause)
+        fresh = gate(workspace=tmp_path, run="run-two", **PASSED | {"qa_verdict": "fail"}, qa_unverified=clause)
+        assert fresh["gate_round"] == 1
+        assert fresh["verdict"] == "request_changes"
+
+    def test_a_clean_round_is_not_charged_a_round(self, tmp_path):
+        """Counting happens every round either way; what matters is it changes no verdict."""
+        for _ in range(4):
+            out = gate(workspace=tmp_path, **PASSED)
+        assert out["verdict"] == "approve"
+        assert out["gate_round"] == 4
+
+    def test_an_uncountable_round_does_not_throw_the_build_away(self):
+        """Fail open: if the counter cannot be written, the veto is off, because a build
+        lost to an unwritable directory is the exact waste this floor exists to stop."""
+        out = gate(workspace="/proc/nonexistent-and-unwritable",
+                   **PASSED | {"qa_verdict": "fail"}, qa_unverified=["No cancel control"])
+        assert out["gate_round"] is None
+        assert out["verdict"] == "approve"
+        assert "could not count its rounds" in out["summary"]
 
 
 class TestAClauseNoBuildCanSettleStillShips:
@@ -136,9 +232,9 @@ class TestNothingUnwalkedIsStillAnApproval:
 class TestTheWiringMatches:
     """The three files have to agree, or the lists arrive empty and the gate is back to v4."""
 
-    def test_verify_emits_both_lists(self):
+    def test_verify_emits_every_list(self):
         text = VERIFY.read_text()
-        assert '"unverified"' in text and '"out_of_build"' in text
+        assert all(f'"{k}"' in text for k in ("unmet", "unverified", "out_of_build"))
 
     def test_verify_fails_on_a_clause_it_could_not_walk(self):
         """The gate's belt is `unverified` -- but QA's own verdict is the braces, and the
@@ -151,6 +247,19 @@ class TestTheWiringMatches:
         gate_inputs = node_named(wiring, "gate")["input_map"]
         assert gate_inputs["qa_unverified"] == "verify.structured.unverified"
         assert gate_inputs["qa_out_of_build"] == "verify.structured.out_of_build"
+        # Without these two the gate cannot tell a missing route from a broken change,
+        # and lifting QA's fail would let a real defect out.
+        assert gate_inputs["qa_unmet"] == "verify.structured.unmet"
+        assert gate_inputs["qa_issues"] == "verify.structured.issues"
+
+    def test_a_gate_that_does_not_approve_costs_the_whole_bet(self):
+        """The reason the veto needs a floor, pinned to the lines that make it true: the
+        loop reads anything but `approve` as build_failed and then refuses to ship it.
+        If either line changes, re-read whether one round of veto is still the right
+        budget -- the cost of holding out may no longer be the whole branch."""
+        loop = (Path(__file__).resolve().parents[2] / "configs" / "epd" / "bin" / "epd_loop.py").read_text()
+        assert 'st["status"] = "built" if verdict == "approve" else "build_failed"' in loop
+        assert 'refusing to ship {bet_id}: the build\'s own judges said' in loop
 
     def test_the_implementer_reads_the_clauses_from_the_gate(self):
         """Not from verify: on a rewind that output is already cleared."""

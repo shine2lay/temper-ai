@@ -30,6 +30,11 @@
 #    a send-back walks the whole of it again on the new commit and re-takes
 #    the whole set of pictures -- b004's fix round did a render check and one
 #    picture of nothing working, which replaced the one that showed the change.
+# 5: `unmet` is a list of its own, beside `unverified` and `out_of_build`. The
+#    gate needs to know WHY QA failed, not just that it did: a clause that was
+#    walked and came out wrong keeps the build back for every round it has,
+#    while one nobody could reach is given a round and then accepted, and those
+#    two arrive in the same `fail`.
 # 4: a clause it could not walk now fails the verdict, so the gate sends it
 #    back. It used to be reported and shipped: b004 and b005 both went to
 #    production with a clause whose situation never arose on the stack, and
@@ -41,7 +46,7 @@
 #    sentence nobody can walk.
 agent:
   name: task_verify
-  version: 4
+  version: 5
   type: llm
   provider: anthropic
   model: claude-opus-5
@@ -171,14 +176,18 @@ agent:
       "change_visible": "yes|no|partial",
       "change_evidence": "<what you saw that shows the change is there, or why it cannot be seen in a UI>",
       "threshold_checks": [{"clause": "<the clause, in the threshold's words>", "status": "met|unmet|unverified", "evidence": "<what the snapshot showed, or what you tried>"}],
+      "unmet": ["<clause>: <what the snapshot showed instead>", ...],
       "unverified": ["<clause>: <why no browser action reaches it yet, and what route would>", ...],
       "out_of_build": ["<clause>: <the words in it that put it outside this build>", ...],
       "pages": [{"page": "<name>", "url": "<url>", "ok": true, "evidence": "<what the snapshot showed>"}],
       "issues": [{"where": "<page or URL>", "what": "<what is wrong, with the evidence you saw>"}],
       "screenshots": [{"page": "<name>", "file": "<prefix>-<page>.png", "shows": "<one line: what the picture shows>"}]
     }
-    `threshold_checks`, `unverified` and `out_of_build` are [] when no
-    threshold was given; `screenshots` is [] when you took none.
+    `threshold_checks`, `unmet`, `unverified` and `out_of_build` are [] when no
+    threshold was given; `screenshots` is [] when you took none. The three lists
+    are the `threshold_checks` entries of each status, said again on their own:
+    what fails the build is read from them, so a clause missing from its list is
+    a clause nobody acts on.
   task_template: |
     Application: {{ app_url }}
     {% if email %}Sign in as {{ email }} / {{ password }}{% else %}No credentials were given; check what is reachable without signing in.{% endif %}

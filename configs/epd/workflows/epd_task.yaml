@@ -20,7 +20,14 @@ workflow:
   #    gate, since a rewind keeps only the trigger's output) and builds the route to the
   #    state. Clauses no build can settle -- ones naming the next report or an owner
   #    decision -- come out separately as `verify_out_of_build` and still ship.
-  version: 7
+  # 8: that send-back gets a floor. A route that cannot be built would otherwise ask every
+  #    round and leave `request_changes` standing at max_loops, which epd_loop reads as
+  #    build_failed and refuses to ship -- a reviewed, deployed, working branch thrown away
+  #    over a clause nobody can walk. The gate now spends one round asking and then accepts,
+  #    shipping with the clause named as unproven (`accepted_unreachable`). Lifting QA's
+  #    `fail` needs to know why it failed, so `verify_unmet` and `verify_issues` reach the
+  #    gate: a change that is actually broken still keeps its full max_loops.
+  version: 8
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -172,6 +179,7 @@ workflow:
     verify_pages: verify.structured.pages
     verify_issues: verify.structured.issues
     verify_threshold_checks: verify.structured.threshold_checks   # [{clause, status: met|unmet|unverified, evidence}]
+    verify_unmet: verify.structured.unmet                         # ["<clause>: <what the snapshot showed instead>"] — a defect, keeps the build back
     verify_unverified: verify.structured.unverified               # ["<clause>: <no route on this stack yet>"] — these send the build back
     verify_out_of_build: verify.structured.out_of_build           # ["<clause>: <names a future report / an owner decision>"] — noted, not gated
     verify_screenshots: verify.structured.screenshots   # [{page, file, shows}] — files under the browser's output dir
@@ -186,6 +194,8 @@ workflow:
     security_follow_ups: security.structured.follow_ups
     verdict: gate.structured.verdict
     verdict_summary: gate.structured.summary
+    # Clauses that went out never shown to hold, because no route could be built for them
+    accepted_unreachable: gate.structured.qa_accepted_unreachable
     changes_wanted_by: gate.structured.changes_wanted_by
     stack: stack_down.structured.status
     cleanup: cleanup.structured.status
@@ -435,6 +445,9 @@ workflow:
         # A clause with no route yet asks for changes; one no build can settle is a note.
         qa_unverified: verify.structured.unverified
         qa_out_of_build: verify.structured.out_of_build
+        # Why QA failed, so the gate can tell a missing route from a broken change
+        qa_unmet: verify.structured.unmet
+        qa_issues: verify.structured.issues
         security_verdict: security.structured.verdict
         security_human_actions_count: security.structured.human_actions_count
 

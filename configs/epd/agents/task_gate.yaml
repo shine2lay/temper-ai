@@ -43,7 +43,18 @@ agent:
   #    build can settle arrive separately as `qa_out_of_build` and keep the
   #    old behaviour: a note, not a veto, because a fix round spent on "no
   #    confused item in the next report" is a round spent on nothing.
-  version: 5
+  # 6: the send-back in v5 had no floor. A clause whose route cannot be built --
+  #    the implementer tries, the state is still unreachable -- would ask again
+  #    every round, and `on_max_loops: silent` leaves the last verdict standing:
+  #    request_changes, which epd_loop turns into `build_failed` and then refuses
+  #    to ship (bin/epd_loop.py:1428,1460). Working code, reviewed and deployed,
+  #    thrown away over a clause nobody can walk -- worse than v4, which at least
+  #    shipped it. So the veto now has a budget: UNREACHABLE_VETO_ROUNDS rounds to
+  #    ask for the route, after which QA's inability to reach the state is
+  #    accepted and the build goes out with the clause named on the pull request.
+  #    The gate counts its own rounds, because the engine's loop count never
+  #    reaches the node.
+  version: 6
   type: script
   timeout_seconds: 30
   script_template: |
@@ -54,6 +65,13 @@ agent:
 
     def value(name: str) -> str:
         return os.environ.get(name, "")
+
+    # How many rounds an unreachable clause may hold the build. One: the
+    # implementer gets a round to build the route (a control, a fixture, a seed),
+    # and if the state is still unreachable after it, that is the answer -- asking
+    # a third time costs a round and returns the same sentence. A clause that was
+    # WALKED and came out wrong is not this case and keeps its full max_loops.
+    UNREACHABLE_VETO_ROUNDS = 1
 
     # label, raw verdict, the word that means "fine", the word that means "not fine".
     # A judge is one row. Adding a fourth is adding a row, not editing the logic.
@@ -112,12 +130,52 @@ agent:
     unverified = clauses(value("{{ qa_unverified | default([], true) | tojson | env }}"))
     # Outside any build (names a future report, an owner decision): a note only.
     out_of_build = clauses(value("{{ qa_out_of_build | default([], true) | tojson | env }}"))
+    # Walked and wrong. These are a defect in the change, not a missing route.
+    unmet = clauses(value("{{ qa_unmet | default([], true) | tojson | env }}"))
+    # Bugs QA found that are not about the threshold at all.
+    qa_issues = clauses(value("{{ qa_issues | default([], true) | tojson | env }}"))
+
+    # Which round is this? The engine keeps its loop count to itself (executor:
+    # loop_counts is local), so the gate counts its own runs -- one file per run,
+    # under .epd/, which survives the implementer's `git clean` between rounds.
+    # If it cannot be counted the veto is off: an uncountable round must not be
+    # what throws away a reviewed, deployed build.
+    def this_round() -> int | None:
+        workspace = value("{{ workspace_path | default('') | env }}") or "/tmp"
+        run = re.sub(r"[^A-Za-z0-9_-]", "", value("{{ run_id | default('') | env }}")) or "norun"
+        path = os.path.join(workspace, ".epd", f"gate-rounds-{run}")
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            try:
+                with open(path) as f:
+                    seen = int((f.read() or "0").strip() or 0)
+            except (FileNotFoundError, ValueError):
+                seen = 0
+            seen += 1
+            with open(path, "w") as f:
+                f.write(str(seen))
+            return seen
+        except OSError:
+            return None
+
+    round_no = this_round()
+    # The veto is live while there are rounds left in the budget to spend on it.
+    may_veto = round_no is not None and round_no <= UNREACHABLE_VETO_ROUNDS
+    veto_expired = bool(unverified) and not may_veto
 
     # A clause nobody could walk is not a pass. The implementer's job on the way
     # back is the route to it, not more of the feature: the state has to become
     # reachable before anything can say the threshold holds.
-    if unverified and "QA" not in wants:
+    if unverified and may_veto and "QA" not in wants:
         wants.append("QA")
+
+    # Budget spent. QA fails the round for an unreachable clause (task_verify v5),
+    # so accepting one means lifting that `fail` too -- but ONLY when being unable
+    # to reach it was the whole of QA's complaint. A clause walked and wrong
+    # (`unmet`), a bug QA found off the threshold (`issues`), or a verdict nobody
+    # can read is a different objection and keeps the build back.
+    if veto_expired and not unmet and not qa_issues and verdicts["QA"] == "fail":
+        wants = [w for w in wants if w != "QA"]
 
     if wants:
         verdict = "request_changes"
@@ -137,11 +195,23 @@ agent:
             f" — {human_actions} action(s) still need a human "
             "(see security_human_actions: committing a credential is not undone by removing it)"
         )
+    # Accepted means it WENT OUT unproven. A build held back by another judge ships
+    # nothing, so nothing was accepted -- and those clauses go back to the implementer
+    # with the round that is being spent anyway.
+    accepted_unreachable = unverified if (veto_expired and verdict == "approve") else []
+    if accepted_unreachable:
+        summary += (
+            f" — {len(accepted_unreachable)} threshold clause(s) still unreachable after "
+            f"{UNREACHABLE_VETO_ROUNDS} round(s) asking for a route: accepted as unwalkable and "
+            "shipped unproven (see verify_unverified; this clause was never shown to hold)"
+        )
     if out_of_build:
         summary += (
             f" — {len(out_of_build)} threshold clause(s) no build can settle "
             "(see verify_out_of_build; the owner judges those on the PR)"
         )
+    if round_no is None and unverified:
+        summary += " — (gate could not count its rounds; the unreachable-clause veto was off)"
 
     print(json.dumps({
         "verdict": verdict,
@@ -158,5 +228,9 @@ agent:
         # be told which clauses to open up through the gate.
         "qa_unverified": unverified,
         "qa_out_of_build": out_of_build,
+        # Named separately so ship, the PR body and measure can all say which
+        # clauses went out unproven rather than passing.
+        "qa_accepted_unreachable": accepted_unreachable,
+        "gate_round": round_no,
     }))
     PYEOF

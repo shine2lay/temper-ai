@@ -39,7 +39,12 @@ agent:
   # 4: records QA's clause-by-clause walk of the threshold, for the PR body.
   # 5: the gate card, in plain words -- a `summary` the dashboard renders as markdown, a one-line
   #    `detail`, and what each button does written out under the button.
-  version: 5
+  # 6: bet.json is updated, not replaced. It used to be rewritten from the four words this node
+  #    has, which silently dropped the provenance the propose stage put there -- including
+  #    `round`, the only thing that says which report the bet came out of. The measure stage
+  #    looks the report up through that field, so every shipped bet lost the report it was
+  #    meant to be measured against.
+  version: 6
   type: script
   timeout_seconds: 2400
   # A blank here is not a blank field, it is a shifted one: these values are written by position,
@@ -100,10 +105,26 @@ agent:
     python3 - "$BET_DIR/bet.json" \
       {{ title }} {{ problem | default('', true) }} \
       {{ invariant | default('', true) }} {{ threshold | default('', true) }} <<'PY'
-    import json, sys
+    import json, os, sys
     keys = ["title", "problem", "invariant", "threshold"]
     path, values = sys.argv[1], sys.argv[2:]
-    json.dump(dict(zip(keys, values)), open(path, "w"), indent=2)
+    # Update in place. This file was written by the propose stage and carries the bet's
+    # provenance -- bet_id, rank, round, at, _run_id -- none of which this node is given.
+    # Writing a fresh dict here threw all of it away; `round` is how the measure stage finds
+    # the report the bet came from, so measuring a shipped bet looked for a report that was
+    # never there. Only the four words this node actually knows are refreshed, and only when
+    # it has something to say: an empty value is this node lacking the field, not the bet
+    # losing it.
+    record = {}
+    if os.path.exists(path):
+        try:
+            loaded = json.load(open(path))
+            if isinstance(loaded, dict):
+                record = loaded
+        except ValueError:
+            record = {}   # unreadable: rebuild from what we have rather than fail the ship
+    record.update({k: v for k, v in zip(keys, values) if v or k not in record})
+    json.dump(record, open(path, "w"), indent=2)
     PY
 
     echo "recorded $BET_DIR/build.json and bet.json"

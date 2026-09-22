@@ -964,12 +964,34 @@ def open_round() -> str | None:
     return None
 
 
-def report_path_for(bet_id: str) -> Path:
-    """The report a bet came out of: its round's, or (bets before rounds) the one beside it."""
+def round_of(bet_id: str) -> str:
+    """Which proposal round this bet came out of.
+
+    bet.json is the obvious place and the first one asked, but it is not the only record and
+    for a while it was not a reliable one: the ship stage used to rewrite that file from the
+    four words it had, dropping `round` from every bet it shipped. state.json keeps the same
+    fact in two places and no stage overwrites it, so it is asked next. Bets proposed before
+    rounds existed have no round at all, and say so with an empty string."""
     bet = json.loads(read(BETS_DIR / bet_id / "bet.json") or "{}")
     if bet.get("round"):
-        return REPORTS_DIR / bet["round"] / "report.md"
-    return BETS_DIR / bet_id / "report.md"
+        return str(bet["round"])
+    st = json.loads(read(BETS_DIR / bet_id / "state.json") or "{}")
+    return str(st.get("round") or (st.get("stages", {}).get("bet") or {}).get("round") or "")
+
+
+def report_path_for(bet_id: str) -> Path:
+    """The report a bet came out of: its round's, or (bets before rounds) the one beside it.
+
+    Returns the path that should hold the report, whether or not it does; callers that are
+    about to spend a stage on it should check. Where both are possible, an existing file wins
+    over a nominal one -- a bet whose round record went missing still has its own copy."""
+    beside = BETS_DIR / bet_id / "report.md"
+    rnd = round_of(bet_id)
+    if rnd:
+        of_round = REPORTS_DIR / rnd / "report.md"
+        if of_round.exists() or not beside.exists():
+            return of_round
+    return beside
 
 
 def pitch_fields(path: Path) -> dict:
@@ -1810,6 +1832,14 @@ def stage_measure(st: dict, keep: bool) -> None:
         preflight_login(data_url)
     elif qa_on_prod or not on_prod:
         preflight_login(url, password=password)
+    # The measure agent is handed these two as paths and told to read them: the bet is what it
+    # checks, the report is the friction it re-walks. A path to a file that is not there buys a
+    # measurement that quietly skips the re-walk, so it is worth one stat each to find out here.
+    report = report_path_for(bet_id)
+    for what, path in (("bet", bdir / "bet.md"), ("report", report)):
+        if not path.exists():
+            die(f"cannot measure {bet_id}: its {what} should be at {path} and is not"
+                + (f" (round {round_of(bet_id) or 'unknown'})" if what == "report" else ""))
     out = run_workflow("epd_measure", {
         "bet_id": bet_id,
         "outcome_path": cpath(bdir / "outcome.md"),
@@ -1817,7 +1847,7 @@ def stage_measure(st: dict, keep: bool) -> None:
         "data_url": data_url,
         "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL, "password": password,
         "bet_path": cpath(bdir / "bet.md"),
-        "report_path": cpath(report_path_for(bet_id)),
+        "report_path": cpath(report),
         "build_summary": b.get("implement_summary") or "",
     }, workspace=LOOP_WORKSPACE, timeout=2400)
     if not (bdir / "outcome.md").exists():

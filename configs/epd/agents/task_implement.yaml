@@ -25,9 +25,18 @@
 # holds the earlier commit. Both are judged in the same round, so a fix pass
 # answers both at once. Nothing on the first pass: neither has run, so the
 # workflow resolves those inputs to null (logged as unresolved, expected here).
+#
+# `qa_unreachable` is the fourth reason a round comes back, and the only one
+# that is not a defect in the diff: a clause of the success threshold that no
+# browser action reaches, so the bet cannot be shown to hold. It arrives from
+# the gate rather than from QA, because a rewind keeps only the triggering
+# node's output. The work it asks for is a route -- a control, a fixture, a
+# seed -- not more of the feature.
 agent:
   name: task_implement
-  version: 2
+  # 3: answers `qa_unreachable` by building the route to the state a threshold
+  #    clause names, instead of the bet shipping with that clause unwalked.
+  version: 3
   type: llm
   provider: anthropic
   model: claude-opus-5
@@ -175,7 +184,7 @@ agent:
     Repository worktree: {{ workspace_path }} (branch {{ branch }}, cut from {{ base_branch }})
     Plan: {{ workspace_path }}/.epd/plan.md
     {% if stack_url %}A running instance of this branch (before your change): {{ stack_url }}{% endif %}
-    {% if review_findings or qa_issues or security_findings %}
+    {% if review_findings or qa_issues or security_findings or qa_unreachable %}
 
     The commit on this branch was sent back. It was judged three ways: a reviewer
     read the diff, a QA step used the change running on {{ stack_url or 'the environment' }},
@@ -199,6 +208,29 @@ agent:
     reproduce and explain, not a line to patch blindly. If what it reports is
     not actually wrong, say so in `deviations` with your evidence rather than
     changing working code to satisfy it.
+    {% endif %}
+    {% if qa_unreachable %}
+
+    QA could not reach these clauses of the success threshold at all — no
+    browser action on the running application gets to the state each one
+    describes:
+    {% for c in qa_unreachable %}
+    - {{ c }}
+    {% endfor %}
+
+    This is the reason the round came back, and it is your work this time. A
+    clause nobody can walk cannot be shown to hold, so the bet would ship
+    unmeasured; the repair is almost never more of the feature, it is the
+    route to the state: the control that performs the action (a cancel, an
+    undo, a retry), the fixture or seed that puts the account in the
+    situation, the page that shows the result. Build the smallest one that
+    lets someone with a browser reach it, and say in your summary which
+    clause each addition opens up.
+
+    If a clause genuinely cannot be reached by any build — it names the next
+    report, a future round, or a decision only the owner can make — do not
+    invent a route for it. Say so in `deviations`, quoting the words that put
+    it outside this build, and leave it.
     {% endif %}
     {% if security_findings %}
 

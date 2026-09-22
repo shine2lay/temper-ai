@@ -30,9 +30,18 @@
 #    a send-back walks the whole of it again on the new commit and re-takes
 #    the whole set of pictures -- b004's fix round did a render check and one
 #    picture of nothing working, which replaced the one that showed the change.
+# 4: a clause it could not walk now fails the verdict, so the gate sends it
+#    back. It used to be reported and shipped: b004 and b005 both went to
+#    production with a clause whose situation never arose on the stack, and
+#    `measure` then re-discovered exactly that on the live site and recorded
+#    `iterate` -- a whole build, ship, deploy and measure spent learning what
+#    this step already knew before the merge. Clauses no build can settle
+#    ("no confused item in the next report") are separated as `out_of_build`
+#    and still ship, because looping on those is a fix round spent on a
+#    sentence nobody can walk.
 agent:
   name: task_verify
-  version: 3
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5
@@ -90,10 +99,26 @@ agent:
       with what the snapshot showed, `unmet` with what it showed instead, or
       `unverified` with what you tried. `unverified` is for a clause no
       browser action can reach (there is no control for it, the data it
-      needs is not on this stack), never for one you did not get to. The
-      verdict is `fail` when any clause is `unmet`; a clause you could not
-      walk is not a failure, but it is not a pass either, so it is listed in
-      `unverified` and the owner sees it on the pull request.
+      needs is not on this stack), never for one you did not get to.
+    - A clause you could not walk is not a pass, and it does not become one
+      by shipping. Say which of two kinds it is, because they have different
+      repairs:
+        `unverified` -- no route exists on this stack YET, but one could:
+          there is no cancel button, the tenant has no such position, the
+          state needs a fixture or a seed nobody wrote. The repair is to
+          build the route, and it goes back to the implementer.
+        `out_of_build` -- no build could ever satisfy it here, because the
+          clause is not about this stack: it names a future report or round
+          ("no confused item in the next report"), a decision the owner has
+          to make, or something outside the product. Quote the words that
+          make it so. This one ships with a note; nobody can walk it now.
+      When in doubt it is `unverified`. Calling a walkable clause
+      `out_of_build` is how a bet ships unmeasured, which is the failure
+      this split exists to stop.
+    - The verdict is `fail` when any clause is `unmet` OR any clause is
+      `unverified`: in both cases the threshold has not been shown to hold
+      on a running build, and the gate sends it back. `out_of_build` clauses
+      do not fail the verdict; the owner sees them on the pull request.
     - Report what the snapshot actually said — counts, headings, the text of
       a value. Never infer from the URL, the page title, or what the app is
       supposed to do.
@@ -146,13 +171,14 @@ agent:
       "change_visible": "yes|no|partial",
       "change_evidence": "<what you saw that shows the change is there, or why it cannot be seen in a UI>",
       "threshold_checks": [{"clause": "<the clause, in the threshold's words>", "status": "met|unmet|unverified", "evidence": "<what the snapshot showed, or what you tried>"}],
-      "unverified": ["<clause>: <why no browser action reaches it>", ...],
+      "unverified": ["<clause>: <why no browser action reaches it yet, and what route would>", ...],
+      "out_of_build": ["<clause>: <the words in it that put it outside this build>", ...],
       "pages": [{"page": "<name>", "url": "<url>", "ok": true, "evidence": "<what the snapshot showed>"}],
       "issues": [{"where": "<page or URL>", "what": "<what is wrong, with the evidence you saw>"}],
       "screenshots": [{"page": "<name>", "file": "<prefix>-<page>.png", "shows": "<one line: what the picture shows>"}]
     }
-    `threshold_checks` and `unverified` are [] when no threshold was given;
-    `screenshots` is [] when you took none.
+    `threshold_checks`, `unverified` and `out_of_build` are [] when no
+    threshold was given; `screenshots` is [] when you took none.
   task_template: |
     Application: {{ app_url }}
     {% if email %}Sign in as {{ email }} / {{ password }}{% else %}No credentials were given; check what is reachable without signing in.{% endif %}

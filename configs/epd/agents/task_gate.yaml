@@ -33,7 +33,17 @@ agent:
   # 4: the threshold clauses QA could not walk ride along in the summary, the
   #    way the security actions do. Not a veto -- nothing the implementer can
   #    do about a clause no browser reaches -- but not silence either.
-  version: 4
+  # 5: that reasoning was wrong, and it cost two bets. There usually IS
+  #    something the implementer can do about a clause no browser reaches:
+  #    build the route -- a control, a fixture, a seed -- which is what the
+  #    bet stage tells the NEXT round to do a week later. b004 and b005 both
+  #    shipped with an unwalked clause noted in this summary, and `measure`
+  #    then found the same clause unreachable on production and recorded
+  #    `iterate`. So an unwalked clause now asks for changes. The clauses no
+  #    build can settle arrive separately as `qa_out_of_build` and keep the
+  #    old behaviour: a note, not a veto, because a fix round spent on "no
+  #    confused item in the next report" is a round spent on nothing.
+  version: 5
   type: script
   timeout_seconds: 30
   script_template: |
@@ -88,20 +98,35 @@ agent:
     except ValueError:
         human_actions = 0
 
-    # The threshold clauses QA could not walk: a list from the verify agent, read
-    # back as JSON from the environment (`tojson` on the way in), so it is data
+    # The threshold clauses QA could not walk: lists from the verify agent, read
+    # back as JSON from the environment (`tojson` on the way in), so they are data
     # whatever punctuation the clauses hold; anything that is not a list is none.
-    try:
-        unverified = json.loads(value("{{ qa_unverified | default([], true) | tojson | env }}") or "[]")
-    except ValueError:
-        unverified = []
-    if not isinstance(unverified, list):
-        unverified = []
-    unverified = [str(u) for u in unverified if str(u).strip()]
+    def clauses(raw: str) -> list:
+        try:
+            got = json.loads(raw or "[]")
+        except ValueError:
+            return []
+        return [str(c) for c in got if str(c).strip()] if isinstance(got, list) else []
+
+    # No route on this stack yet -- one could be built, so this asks for changes.
+    unverified = clauses(value("{{ qa_unverified | default([], true) | tojson | env }}"))
+    # Outside any build (names a future report, an owner decision): a note only.
+    out_of_build = clauses(value("{{ qa_out_of_build | default([], true) | tojson | env }}"))
+
+    # A clause nobody could walk is not a pass. The implementer's job on the way
+    # back is the route to it, not more of the feature: the state has to become
+    # reachable before anything can say the threshold holds.
+    if unverified and "QA" not in wants:
+        wants.append("QA")
 
     if wants:
         verdict = "request_changes"
         summary = f"{' and '.join(wants)} asked for changes"
+        if unverified:
+            summary += (
+                f" — {len(unverified)} threshold clause(s) no browser action reached: "
+                "build the route to that state (a control, a fixture, a seed) so it can be walked"
+            )
         if unknown:
             summary += f" (unreadable verdict: {', '.join(unknown)} — not treated as approval)"
     else:
@@ -112,10 +137,10 @@ agent:
             f" — {human_actions} action(s) still need a human "
             "(see security_human_actions: committing a credential is not undone by removing it)"
         )
-    if unverified:
+    if out_of_build:
         summary += (
-            f" — {len(unverified)} threshold clause(s) QA could not walk "
-            "(see verify_unverified; the owner judges those on the PR)"
+            f" — {len(out_of_build)} threshold clause(s) no build can settle "
+            "(see verify_out_of_build; the owner judges those on the PR)"
         )
 
     print(json.dumps({
@@ -127,6 +152,11 @@ agent:
         "changes_wanted_by": wants,
         "unreadable": unknown,
         "human_actions": human_actions,
+        # Both lists are re-emitted here because a gate rewind preserves only THIS
+        # node's result (executor: loop_feedback[trigger] = result); verify's own
+        # output is cleared with the rest of the batch, so the implementer can only
+        # be told which clauses to open up through the gate.
         "qa_unverified": unverified,
+        "qa_out_of_build": out_of_build,
     }))
     PYEOF

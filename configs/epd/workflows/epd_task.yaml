@@ -12,7 +12,15 @@ workflow:
   #    carry the result out, and the gate's summary counts the clauses QA could not walk. On a
   #    round after a send-back verify is told so (`sent_back_because`) and judges the whole
   #    threshold again, pictures included.
-  version: 6
+  # 7: a threshold clause QA could not reach sends the build back, instead of shipping with a
+  #    note. The dev stack is stood up so the promise can be checked before the merge, and
+  #    v6 checked it and then let an unwalked clause through: b004 and b005 both reached
+  #    production that way and `measure` recorded `iterate` for exactly the clause QA had
+  #    already reported. The implementer now gets those clauses (`qa_unreachable`, from the
+  #    gate, since a rewind keeps only the trigger's output) and builds the route to the
+  #    state. Clauses no build can settle -- ones naming the next report or an owner
+  #    decision -- come out separately as `verify_out_of_build` and still ship.
+  version: 7
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -164,7 +172,8 @@ workflow:
     verify_pages: verify.structured.pages
     verify_issues: verify.structured.issues
     verify_threshold_checks: verify.structured.threshold_checks   # [{clause, status: met|unmet|unverified, evidence}]
-    verify_unverified: verify.structured.unverified               # ["<clause>: <why no browser action reaches it>"]
+    verify_unverified: verify.structured.unverified               # ["<clause>: <no route on this stack yet>"] — these send the build back
+    verify_out_of_build: verify.structured.out_of_build           # ["<clause>: <names a future report / an owner decision>"] — noted, not gated
     verify_screenshots: verify.structured.screenshots   # [{page, file, shows}] — files under the browser's output dir
     security_verdict: security.structured.verdict
     security_summary: security.structured.summary
@@ -303,6 +312,10 @@ workflow:
         security_findings: security.structured.findings
         # Why the round came back when no list did (an unreadable verdict)
         sent_back_because: gate.structured.summary
+        # The threshold clauses QA could not reach. Read from the GATE, not from
+        # verify: a rewind preserves only the triggering node's result, so verify's
+        # output above is already cleared by the time this node re-runs.
+        qa_unreachable: gate.structured.qa_unverified
         # On a `partial` round this node loops to itself; the executor then
         # serves its own previous result here (null on the first round).
         tasks_done: implement.structured.tasks_done
@@ -419,7 +432,9 @@ workflow:
       input_map:
         review_verdict: review.structured.verdict
         qa_verdict: verify.structured.verdict
+        # A clause with no route yet asks for changes; one no build can settle is a note.
         qa_unverified: verify.structured.unverified
+        qa_out_of_build: verify.structured.out_of_build
         security_verdict: security.structured.verdict
         security_human_actions_count: security.structured.human_actions_count
 

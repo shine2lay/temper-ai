@@ -18,6 +18,15 @@ when every token is cooling the pool says so rather than handing back a
 credential that is certain to fail. Cooldowns live at module scope so they
 are shared by every provider instance in the process.
 
+A cooling is per *model family*, because the subscription's weekly ceiling
+is. Cooling the credential outright is what it used to do, and it cost four
+days: the build loops spent the fable allowance, every slot was marked cooled
+until the weekly reset, and opus -- with its own untouched allowance on the
+same accounts -- was then refused without a request being made. The reverse
+mistake is cheap by comparison: a limit that really is account-wide (the
+shared five-hour window) costs one rejected request per family before that
+family is cooled too.
+
 The Claude Code CLI provider (local/providers/claude_code.py) grew this
 first, for the same reasons; this is that design made provider-agnostic so
 the direct-API providers can have it too.
@@ -45,6 +54,23 @@ MIN_COOLDOWN_S = 5
 # Added to a reset time the provider *did* give, so a clock skew of a few
 # seconds doesn't put the token straight back into a limited state.
 RESET_PAD_S = 30
+
+# Model names that carry their own subscription ceiling. Matched as substrings so
+# a dated or point-released id (claude-opus-4-5-20250101, claude-fable-5-1) lands
+# in the same bucket as the bare name.
+KNOWN_FAMILIES = ("opus", "sonnet", "haiku", "fable")
+# The bucket for a cooling that names no model: it blocks the credential for every
+# family. Used when the caller cannot say which model was refused, where guessing
+# wrong would hand back a credential that is certain to fail.
+ANY_MODEL = "*"
+
+
+def model_family(model: str | None) -> str:
+    """The ceiling a model draws on. Unknown ids get a bucket of their own."""
+    if not model:
+        return ANY_MODEL
+    lowered = model.lower()
+    return next((f for f in KNOWN_FAMILIES if f in lowered), lowered)
 
 
 def tokens_from_env(base: str, extra_suffixes: tuple[str, ...] = ("BACKUP",), limit: int = 10) -> list[str]:
@@ -95,7 +121,9 @@ class TokenPool:
 
     name: str
     tokens: list[str]
-    _cooldown: dict[str, float] = field(default_factory=dict)
+    #: (model family, token) -> when that pairing may be used again. Keyed by family
+    #: because the weekly ceiling is; see the module docstring.
+    _cooldown: dict[tuple[str, str], float] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     #: Slot used by callers that give no sticky key. Chosen once, not per call:
     #: picking randomly each time spreads one conversation across every
@@ -111,27 +139,43 @@ class TokenPool:
         """Slot number, for logging. Never log the token itself."""
         return self.tokens.index(token) if token in self.tokens else -1
 
-    def available(self) -> list[str]:
-        now = time.time()
-        with self._lock:
-            return [t for t in self.tokens if self._cooldown.get(t, 0.0) < now]
+    def _blocked_until(self, token: str, family: str) -> float:
+        """When this token is usable for this family again. Caller holds the lock.
 
-    def soonest_reset(self) -> float | None:
-        now = time.time()
+        Asking about no particular model asks about all of them: the answer covers every
+        ceiling the token is known to be against, so a limited credential never reads as
+        healthy just because the caller did not say what it wanted it for. Asking about one
+        family consults that family and any cooling that named no model, which stands for
+        the whole account.
+        """
+        if family == ANY_MODEL:
+            return max((u for (_, t), u in self._cooldown.items() if t == token), default=0.0)
+        return max(self._cooldown.get((family, token), 0.0),
+                   self._cooldown.get((ANY_MODEL, token), 0.0))
+
+    def available(self, model: str | None = None) -> list[str]:
+        """Tokens usable for this model. Without one, tokens usable for anything."""
+        family, now = model_family(model), time.time()
         with self._lock:
-            pending = [u for u in self._cooldown.values() if u > now]
+            return [t for t in self.tokens if self._blocked_until(t, family) < now]
+
+    def soonest_reset(self, model: str | None = None) -> float | None:
+        family, now = model_family(model), time.time()
+        with self._lock:
+            pending = [u for t in self.tokens if (u := self._blocked_until(t, family)) > now]
         return min(pending) if pending else None
 
-    def pick(self, sticky_key: str | None = None) -> str:
+    def pick(self, sticky_key: str | None = None, model: str | None = None) -> str:
         """The token this call should use.
 
         The sticky key's slot when it is available; any other available slot
         when it is not (a cooled favourite must not stall an entire run);
-        `PoolExhausted` when none is.
+        `PoolExhausted` when none is. Availability is per model: a slot spent
+        on one model family is still the right slot for another.
         """
         if not self.tokens:
             raise PoolExhausted(0, None)
-        available = self.available()
+        available = self.available(model)
 
         if sticky_key and len(self.tokens) > 1:
             idx = int(hashlib.sha256(sticky_key.encode()).hexdigest(), 16) % len(self.tokens)
@@ -148,18 +192,25 @@ class TokenPool:
                 if preferred in available:
                     return preferred
             return random.choice(available)  # noqa: S311 - load spreading, not cryptography
-        raise PoolExhausted(len(self.tokens), self.soonest_reset())
+        raise PoolExhausted(len(self.tokens), self.soonest_reset(model))
 
-    def cool(self, token: str, *, until: float | None = None, reason: str = "rate limit") -> float:
-        """Take a token out of rotation until `until` (default: a fixed wait)."""
+    def cool(self, token: str, *, until: float | None = None, reason: str = "rate limit",
+             model: str | None = None) -> float:
+        """Take a token out of rotation for `model`'s family until `until`.
+
+        Without a model the cooling covers every family, which is the safe reading
+        of a refusal we cannot attribute -- but it is the expensive one, so callers
+        that know which model was refused should say.
+        """
+        family = model_family(model)
         deadline = (until + RESET_PAD_S) if until else (time.time() + DEFAULT_COOLDOWN_S)
         deadline = max(deadline, time.time() + MIN_COOLDOWN_S)
         with self._lock:
-            self._cooldown[token] = deadline
+            self._cooldown[(family, token)] = deadline
         logger.warning(
-            "%s: slot %d cooled (%s) until %s — %d of %d still available",
-            self.name, self.index_of(token), reason, _fmt(deadline),
-            len(self.available()), len(self.tokens),
+            "%s: slot %d cooled for %s (%s) until %s — %d of %d still available for %s",
+            self.name, self.index_of(token), family, reason, _fmt(deadline),
+            len(self.available(model)), len(self.tokens), family,
         )
         return deadline
 

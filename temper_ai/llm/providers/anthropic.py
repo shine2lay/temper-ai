@@ -395,11 +395,11 @@ class AnthropicLLM(BaseLLM):
             self._clients[credential] = client
             return client
 
-    def _credential_for_call(self, kwargs: dict[str, Any]) -> str | None:
+    def _credential_for_call(self, kwargs: dict[str, Any], model: str | None = None) -> str | None:
         """Which subscription this call goes out on (see the module docstring)."""
         if self._pool is None:
             return self.api_key
-        return self._pool.pick(sticky_key_from_kwargs(kwargs))
+        return self._pool.pick(sticky_key_from_kwargs(kwargs), model=model)
 
     def _send(self, create_kwargs: dict[str, Any], kwargs: dict[str, Any], run) -> Any:
         """One request, surviving a subscription limit and a rejected knob.
@@ -409,7 +409,7 @@ class AnthropicLLM(BaseLLM):
         model teaches the process to stop sending it.
         """
         try:
-            return self._call_with_pool(kwargs, run)
+            return self._call_with_pool(kwargs, run, model=create_kwargs.get("model"))
         except Exception as exc:  # noqa: BLE001 - narrowed immediately
             if "temperature" not in create_kwargs or not _temperature_rejected(exc):
                 raise
@@ -420,19 +420,23 @@ class AnthropicLLM(BaseLLM):
             if first:
                 logger.warning("Anthropic: %s rejects temperature; dropping it for this model", model)
             create_kwargs.pop("temperature")
-            return self._call_with_pool(kwargs, run)
+            return self._call_with_pool(kwargs, run, model=model)
 
-    def _call_with_pool(self, kwargs: dict[str, Any], run) -> Any:
+    def _call_with_pool(self, kwargs: dict[str, Any], run, model: str | None = None) -> Any:
         """Run `run(client)`, moving to another subscription on a rate limit.
 
         Attempts are bounded by the pool size: each 429 cools exactly one
         token, so at worst every subscription is tried once and the pool then
         reports itself exhausted instead of spinning.
+
+        The model travels with the call so a refusal cools the credential only for
+        the ceiling it actually hit; the subscription's weekly allowance is per
+        model family, and cooling all of them stops work that had quota left.
         """
         attempts = len(self._pool) if self._pool else 1
         last_error: Exception | None = None
         for _ in range(max(attempts, 1)):
-            credential = self._credential_for_call(kwargs)
+            credential = self._credential_for_call(kwargs, model=model)
             if credential is None:
                 raise RuntimeError("Anthropic provider has no credential configured")
             try:
@@ -440,10 +444,10 @@ class AnthropicLLM(BaseLLM):
             except Exception as exc:  # noqa: BLE001 - re-raised below unless it is a limit
                 if self._pool is None or not _is_rate_limit(exc):
                     raise
-                self._pool.cool(credential, until=_reset_epoch(exc))
+                self._pool.cool(credential, until=_reset_epoch(exc), model=model)
                 last_error = exc
         raise PoolExhausted(len(self._pool) if self._pool else 0,
-                            self._pool.soonest_reset() if self._pool else None) from last_error
+                            self._pool.soonest_reset(model) if self._pool else None) from last_error
 
     def _build_create_kwargs(self, messages: list[dict], **kwargs: Any) -> dict[str, Any]:
         """The ``messages.create`` payload, shaped for the credential in use."""

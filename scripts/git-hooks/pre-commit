@@ -81,8 +81,16 @@ if [ -z "${PRECOMMIT_RUN_DB:-}" ]; then
 fi
 
 echo "Running pytest..."
-# shellcheck disable=SC2086  (word splitting is intentional)
-if ! pytest $PYTEST_ARGS 2>&1 | tail -20; then
+# The tests run without the variables git gives a hook to point it at the
+# repository being committed (GIT_DIR, GIT_INDEX_FILE, ...: the list is
+# `git rev-parse --local-env-vars`). A test that makes a throwaway repo in a temp
+# dir would run its git commands with them. From the main checkout GIT_DIR is the
+# relative `.git`, which happens to resolve inside the temp dir; from a linked
+# worktree it is an absolute path, so the test's `git init`, `git config` and
+# `git commit` land in this repository: core.bare set, the branch being committed
+# moved to the test's commits.
+# shellcheck disable=SC2086,SC2046  (word splitting is intentional)
+if ! (unset $(git rev-parse --local-env-vars); pytest $PYTEST_ARGS) 2>&1 | tail -20; then
     echo ""
     echo -e "$FAIL pytest failed."
     echo "   Bypass: git commit --no-verify"

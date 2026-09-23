@@ -151,6 +151,22 @@ def test_approve_queues_once_and_reject_records_without_removing(L):
     assert marks["b002"].startswith("taken ") and marks["b001"].startswith("declined ")
 
 
+def test_a_duplicate_is_declined_but_not_counted_against_its_pitch(L):
+    propose(L)
+    with pytest.raises(SystemExit):
+        L.reject("b001", "same problem", duplicate_of="b003")  # an empty slot: nothing to duplicate
+    L.reject("b001", "the same empty-account error", duplicate_of="b002")
+    row = {r["bet_id"]: r for r in L.ledger_rows()}["b001"]
+    assert row["status"] == "rejected"
+    assert row["outcome"] == "declined: duplicate of b002: the same empty-account error"
+    decisions = [json.loads(ln) for ln in L.DECISIONS.read_text().splitlines()]
+    assert decisions[-1]["decision"] == "duplicate" and decisions[-1]["bet_id"] == "b001"
+    L.reject("b002", "too broad")
+    card = L.scorecard()
+    assert "0/1 approve" in card, "only the real reject is a verdict on a pitch"
+    assert "duplicate of b002" in card, "the duplicate is still listed with the decisions"
+
+
 def test_declines_written_in_the_file_are_recorded_with_the_reason(L, capsys):
     propose(L)
     L.write(L.BACKLOG, L.BACKLOG_HEADER + "b001  no: the window is a Settings bug\nb077  typo\nb002\n")

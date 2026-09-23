@@ -1375,12 +1375,20 @@ def approve(bet_id: str, note: str | None) -> None:
     log(f"{bet_id} queued at position {len(backlog())}; reorder {BACKLOG} to change it")
 
 
-def reject(bet_id: str, why: str, where: str = "cli") -> None:
+def reject(bet_id: str, why: str, where: str = "cli", duplicate_of: str | None = None) -> None:
     """Turn a candidate down, for the record: the decision and its reason go in decision.md, the
     ledger, decisions.jsonl, and under Declined in backlog.md. Nothing is removed; the pitch stays
     where it was, and a Queue line for it later reopens it. Also for a bet that was picked but has
     not shipped -- a failed build the owner would rather drop than fix. Not for one with a PR: that
-    is decided on GitHub."""
+    is decided on GitHub.
+
+    `duplicate_of` declines it as the same problem as another bet, e.g. two proposal rounds that ran
+    side by side and never saw each other's pitches. It is recorded as `duplicate`, not `reject`:
+    that is no verdict on the pitch, so the scorecard keeps it out of epd_bet's approve rate."""
+    if duplicate_of:
+        if not (BETS_DIR / duplicate_of / "bet.md").exists():
+            die(f"{duplicate_of} has no pitch; a duplicate needs the bet it duplicates")
+        why = f"duplicate of {duplicate_of}: {why}"
     st = load_state(bet_id)
     if st["status"] not in WAITING | {"approved", "running", "tasked", "built", "build_failed", "stopped"}:
         die(f"{bet_id} is {st['status']}; nothing to reject")
@@ -1399,7 +1407,8 @@ def reject(bet_id: str, why: str, where: str = "cli") -> None:
     backlog_mark("declined", bet_id, f"recorded {stamp()}")
     # a queue line written before this decline is overtaken by it; only a line written after reopens
     backlog_mark("queue", bet_id, f"declined {stamp()}")
-    record_decision(st, "bet", "reject", note=why, where=where, ref=bet.get("title") or "",
+    record_decision(st, "bet", "duplicate" if duplicate_of else "reject", note=why, where=where,
+                    ref=bet.get("title") or "",
                     opened_at=bet.get("at"), decided_at=at, run_id=bet.get("_run_id"))
     ledger_upsert(bet_id, outcome=f"declined: {why}")
     log(f"{bet_id} declined: {why}")
@@ -1723,7 +1732,7 @@ def record_decision(st: dict, kind: str, decision: str, *, note: str = "", answe
     """Append one decision to decisions.jsonl and return the row.
 
     kind      bet | pr
-    decision  approve | reject | reopen | merge | request_changes | close
+    decision  approve | reject | duplicate | reopen | merge | request_changes | close
     where     temper (the gate in the UI) | github (merged/closed there) | backlog (a line in
               backlog.md: queued and taken, declined, or queued again) | cli (reject here)
     ref       what was decided on: the bet title, or the PR url
@@ -1800,7 +1809,8 @@ def scorecard() -> str:
     def table(kind: str, agent: str, verdicts: list[str]) -> None:
         by: dict[str, dict[str, int]] = {}
         for r in rows:
-            if r.get("kind") != kind:
+            # a duplicate says two rounds saw the same problem, not that the pitch was bad
+            if r.get("kind") != kind or r.get("decision") == "duplicate":
                 continue
             v = str((r.get("versions") or {}).get(f"agent:{agent}", "?"))
             by.setdefault(v, {})
@@ -2441,6 +2451,7 @@ def main() -> None:
     r = sub.add_parser("reject", help="turn a candidate down for good")
     r.add_argument("bet")
     r.add_argument("--why", required=True)
+    r.add_argument("--duplicate-of", metavar="BET", help="the same problem as BET; not counted as a verdict")
     s = sub.add_parser("stage", help="run one stage alone, on the bet's files")
     s.add_argument("stage", choices=STAGES)
     s.add_argument("--bet", required=True)
@@ -2473,7 +2484,7 @@ def main() -> None:
     elif args.cmd == "approve":
         approve(args.bet, args.note)
     elif args.cmd == "reject":
-        reject(args.bet, args.why)
+        reject(args.bet, args.why, duplicate_of=args.duplicate_of)
     elif args.cmd == "stage":
         st = load_state(args.bet)
         run_stage(args.stage, st, args.keep)

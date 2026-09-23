@@ -10,12 +10,14 @@ To register a custom agent type:
 """
 
 from temper_ai.agent.base import AgentABC
+from temper_ai.agent.jev_agent import JevAgent
 from temper_ai.agent.llm_agent import LLMAgent
 from temper_ai.agent.script_agent import ScriptAgent
 
 AGENT_TYPES: dict[str, type[AgentABC]] = {
     "llm": LLMAgent,
     "script": ScriptAgent,
+    "jev": JevAgent,
 }
 
 
@@ -40,6 +42,7 @@ def register_agent_type(name: str, agent_class: type[AgentABC]):
 
 __all__ = [
     "AgentABC",
+    "JevAgent",
     "LLMAgent",
     "ScriptAgent",
     "AGENT_TYPES",

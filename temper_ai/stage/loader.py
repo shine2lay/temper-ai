@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from temper_ai.agent import AGENT_TYPES
 from temper_ai.config.store import ConfigStore
 from temper_ai.stage.agent_node import AgentNode
 from temper_ai.stage.exceptions import LoaderError, ValidationError
@@ -45,6 +46,25 @@ _WORKFLOW_ONLY_DEFAULTS = {"dispatch", "safety"}
 def _agent_defaults(defaults: dict) -> dict:
     """Filter workflow-level defaults to what's safe to merge into an agent's config."""
     return {k: v for k, v in defaults.items() if k not in _WORKFLOW_ONLY_DEFAULTS}
+
+
+# The LLM settings among workflow defaults and run-wide overrides.
+_LLM_SETTINGS = frozenset({"provider", "model", "temperature", "max_tokens"})
+
+
+def _merge_agent_config(defaults: dict, own: dict, run_overrides: dict) -> dict:
+    """Workflow defaults → the agent's own config (node overrides included) → run-wide overrides.
+
+    Defaults and run-wide overrides name the LLM to use. A jev agent is no LLM but has a `model`
+    of its own, so an agent type that takes no LLM settings is not given them: otherwise
+    `defaults: {model: claude-sonnet-4-6}`, or `temper run --model ...`, is what TypeSafe is asked
+    for as the Jev model. The node's own overrides still apply: they name this agent, not all.
+    """
+    agent_cls = AGENT_TYPES.get(own.get("type") or defaults.get("type") or "llm")
+    if agent_cls is not None and not getattr(agent_cls, "uses_llm_settings", True):
+        defaults = {k: v for k, v in defaults.items() if k not in _LLM_SETTINGS}
+        run_overrides = {k: v for k, v in run_overrides.items() if k not in _LLM_SETTINGS}
+    return {**defaults, **own, **run_overrides}
 
 
 def _is_valid_node_ref_head(head: str) -> bool:
@@ -171,7 +191,9 @@ class GraphLoader:
         defaults = _agent_defaults(self._defaults)
         for agent_ref in nc.agents:
             if isinstance(agent_ref, str):
-                agent_config = {**defaults, **self._load_agent_config(agent_ref), **self._overrides}
+                agent_config = _merge_agent_config(
+                    defaults, self._load_agent_config(agent_ref), self._overrides,
+                )
             elif isinstance(agent_ref, dict):
                 # Inline agent config or ref with overrides
                 if "agent" in agent_ref or "ref" in agent_ref:
@@ -181,9 +203,11 @@ class GraphLoader:
                         k: v for k, v in agent_ref.items()
                         if k not in ("agent", "ref")
                     }
-                    agent_config = {**defaults, **base, **overrides, **self._overrides}
+                    agent_config = _merge_agent_config(
+                        defaults, {**base, **overrides}, self._overrides,
+                    )
                 else:
-                    agent_config = {**defaults, **agent_ref, **self._overrides}
+                    agent_config = _merge_agent_config(defaults, agent_ref, self._overrides)
             else:
                 raise LoaderError(
                     f"Invalid agent entry in stage '{nc.name}': {agent_ref}"
@@ -271,7 +295,9 @@ class GraphLoader:
         # Merge: workflow defaults (lowest) → agent config → node overrides (highest).
         # Workflow-scoped keys (`dispatch`, `safety`) are filtered out — see
         # _WORKFLOW_ONLY_DEFAULTS for why.
-        merged = {**_agent_defaults(self._defaults), **base, **overrides, **self._overrides}
+        merged = _merge_agent_config(
+            _agent_defaults(self._defaults), {**base, **overrides}, self._overrides,
+        )
 
         # Ensure name
         if "name" not in merged:

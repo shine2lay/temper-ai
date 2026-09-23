@@ -158,6 +158,9 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      # `type: jev` agents (TypeSafe AI). Read by temper itself; the Bash tool strips it.
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_BASE_URL: ${TYPESAFE_BASE_URL:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       TEMPER_MEMORY_BACKEND: ${TEMPER_MEMORY_BACKEND:-sql}
@@ -235,6 +238,8 @@ services:
       VLLM_MODEL: ${VLLM_MODEL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      TYPESAFE_BASE_URL: ${TYPESAFE_BASE_URL:-}
     env_file:
       - path: .env
         required: false

@@ -207,7 +207,7 @@ def _referenced_inputs(body: dict, store: Any) -> set[str]:
         except Exception:
             continue
         agent_body = agent_raw.get("agent", agent_raw)
-        for field in ("task_template", "script_template"):
+        for field in ("task_template", "script_template", "state_template"):
             found |= set(_JINJA_VAR.findall(str(agent_body.get(field) or "")))
 
     return {name for name in found if name not in _ENGINE_VARS and name not in mapped}

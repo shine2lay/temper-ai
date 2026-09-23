@@ -97,6 +97,10 @@ def _check_agent(config: dict) -> tuple[list[str], list[str]]:
         )
     if agent_type == "script" and not agent.get("script_template"):
         errors.append("A script agent must have 'script_template'")
+    if agent_type == "jev":
+        from temper_ai.agent.jev_agent import jev_config_errors
+
+        errors.extend(jev_config_errors(agent))
     if agent_type == "llm" and not agent.get("system_prompt") and not agent.get("task_template"):
         warnings.append("Agent has no system_prompt or task_template")
     return errors, warnings

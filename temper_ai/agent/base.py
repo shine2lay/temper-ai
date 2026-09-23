@@ -15,6 +15,12 @@ from temper_ai.shared.types import AgentInterface, AgentResult, ExecutionContext
 class AgentABC(ABC):
     """Minimal base class for all agents."""
 
+    #: Whether the LLM settings among a workflow's `defaults` and the run-wide overrides (CLI
+    #: --provider/--model) are merged into this agent's config: provider, model, temperature,
+    #: max_tokens. An agent type that calls no LLM but reads a key of the same name (JevAgent's
+    #: `model`) sets this False and keeps its own.
+    uses_llm_settings: bool = True
+
     def __init__(self, config: dict):
         self.config = config
         self.name = config["name"]

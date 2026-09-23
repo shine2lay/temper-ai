@@ -33,10 +33,12 @@ agent:
   #    order, instead of picking one. The owner picks, in backlog.md.
   # 4: opus rather than fable -- the subscription's weekly cap is per model family, and fable's
   #    is the one the loop spends. Same tier, half the price.
-  version: 4
+  # 5: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x base
+  #    against 0.1x; same 1M window, 128k output and effort levels.
+  version: 5
   type: llm
   provider: anthropic
-  model: claude-opus-5
+  model: claude-opus-5-5
   # Read, because the report is an artefact the previous stage wrote to disk. Passing its text in
   # meant something outside the pipeline had to read the file and hand it over, which is exactly the
   # job that kept the loop from being one workflow. The path is the stage's declared output; the

@@ -39,10 +39,12 @@ agent:
   # 4: says what the round is worth -- one round, then the clause ships
   #    unproven -- so the choice is a rough walkable route over a clean absent
   #    one, rather than deferring it to a round that will not come.
-  version: 4
+  # 5: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x
+  #    base against 0.1x; same 1M window, 128k output and effort levels.
+  version: 5
   type: llm
   provider: anthropic
-  model: claude-opus-5
+  model: claude-opus-5-5
   tools:
     - Bash
     - Edit
@@ -57,7 +59,7 @@ agent:
   # is for an agent that answers from what it has read; this one has to run
   # the task's acceptance and commit before it replies, or the round is lost.
   wrap_up_turns: 8
-  # Opus 5's window is 1M tokens, and that window holds the output too (up to
+  # Opus 5.5's window is 1M tokens, and that window holds the output too (up to
   # 128k), so the trimmer's ceiling is 900k rather than the full million.
   max_context_tokens: 900000
   provider_config:

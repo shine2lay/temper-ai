@@ -34,7 +34,9 @@ agent:
   name: task_security
   # 2: rotation is demanded only for a secret that actually left the machine
   #    (pushed to a remote), not for one caught in an unpushed commit.
-  version: 2
+  # 3: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x
+  #    base against 0.1x; same 1M window, 128k output and effort levels.
+  version: 3
   type: llm
   provider: anthropic
   # Opus, like review. The asymmetry justifies it: a missed finding here is a
@@ -42,7 +44,7 @@ agent:
   # while the cost of the stage is one more read of a diff review is reading
   # anyway. The deterministic scan carries the secrets; the model is paid for
   # the contextual classes, which are exactly where a cheaper model gets vague.
-  model: claude-opus-5
+  model: claude-opus-5-5
   tools:
     - Bash
     - Read

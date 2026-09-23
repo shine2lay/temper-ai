@@ -49,6 +49,7 @@ def L(tmp_path, monkeypatch):
     (mod.LOOP_DIR / "profile.md").write_text("RollCall: covered calls.\n")
     mod.ledger_write([])
     calls: dict[str, list] = {"standee_down": [], "release_task": [], "propose": [], "start": []}
+    mod._real_cmd_propose = mod.cmd_propose
     monkeypatch.setattr(mod, "standee_down", lambda env: calls["standee_down"].append(env))
     monkeypatch.setattr(mod, "release_task", lambda bet_id: calls["release_task"].append(bet_id))
     monkeypatch.setattr(mod, "require_tools", lambda *names: None)
@@ -481,6 +482,69 @@ def test_finish_loop_records_the_owners_no_on_the_pr(L):
     L.finish_loop(st, {"shipped": "changes_requested", "pr": "https://x/pull/3", "build_verdict": "approve"}, keep=False)
     assert L.ledger_rows()[0]["status"] == "changes_requested"
     assert L.open_bet() is None and L._calls["release_task"] == ["b001"]
+
+
+def proposals_run_here(L, monkeypatch) -> dict:
+    """The real cmd_propose, with the stack, the clone and temper stubbed; returns what they were asked."""
+    seen: dict[str, list] = {"up": [], "runs": []}
+    monkeypatch.setattr(L, "cmd_propose", L._real_cmd_propose)
+    monkeypatch.setattr(L, "refresh_main", lambda: "f52e741")
+    monkeypatch.setattr(L, "wait_for_url", lambda url, timeout=240.0: None)
+    monkeypatch.setattr(L, "preflight_login", lambda url, *a, **k: None)
+
+    def up(source, as_name, ttl):
+        seen["up"].append(as_name)
+        return f"rollcall-dev-{as_name}", f"https://{as_name}.example"
+
+    def post(workflow, inputs, workspace):
+        seen["runs"].append(inputs)
+        return "run-" + inputs["round_id"]
+
+    monkeypatch.setattr(L, "standee_up", up)
+    monkeypatch.setattr(L, "post_run", post)
+    return seen
+
+
+def test_proposals_side_by_side_each_get_their_own_stack_slots_and_run(L, monkeypatch):
+    seen = proposals_run_here(L, monkeypatch)
+    L.cmd_propose_many(3, keep=False)
+    assert L.open_rounds() == ["r001", "r002", "r003"]
+    assert seen["up"] == ["epd-r001", "epd-r002", "epd-r003"]
+    slots = [L.load_round(r)["slots"] for r in L.open_rounds()]
+    assert slots == [[f"b{i:03d}" for i in range(k, k + 5)] for k in (1, 6, 11)], "no slot is handed out twice"
+    assert [r["slots"] for r in seen["runs"]] == [" ".join(s) for s in slots]
+    assert [r["env_name"] for r in seen["runs"]] == ["rollcall-dev-epd-r001", "rollcall-dev-epd-r002", "rollcall-dev-epd-r003"]
+    assert all((L.BETS_DIR / b).is_dir() for s in slots for b in s)
+
+
+def test_a_second_proposal_waits_for_the_first_unless_asked_for_alongside(L, monkeypatch):
+    proposals_run_here(L, monkeypatch)
+    L.cmd_propose(keep=False, wait=False)
+    with pytest.raises(SystemExit):
+        L.cmd_propose(keep=False, wait=False)
+    assert L.open_rounds() == ["r001"], "the refused one made nothing"
+    L.cmd_propose(keep=False, wait=False, alongside=True)
+    assert L.open_rounds() == ["r001", "r002"]
+
+
+def test_every_finished_proposal_is_collected_and_a_running_one_holds_the_loop(L, monkeypatch, capsys):
+    proposals_run_here(L, monkeypatch)
+    L.cmd_propose_many(3, keep=False)
+    for rnd, bet in (("r001", "b001"), ("r003", "b011")):
+        (L.REPORTS_DIR / rnd / "report.md").write_text("# Report\n")
+        (L.BETS_DIR / bet / "bet.md").write_text(PITCH.format(bet_id=bet, title=f"Title of {bet}", invariant="I."))
+    status = {"run-r001": "completed", "run-r002": "running", "run-r003": "completed"}
+    monkeypatch.setattr(L, "get_run", lambda rid: {"status": status[rid], "nodes": [], "workflow_output": {}})
+    L.cmd_run(keep=False, wait=False, propose=False, retry=False)
+    assert L.open_rounds() == ["r002"]
+    assert L.waiting_bets() == ["b001", "b011"]
+    assert L._calls["standee_down"] == ["rollcall-dev-epd-r001", "rollcall-dev-epd-r003"]
+    assert L._calls["start"] == [] and L._calls["propose"] == [], "a proposal still out holds the loop"
+    assert "r002: proposal run run-r002 is still running" in capsys.readouterr().out
+    status["run-r002"] = "completed"
+    (L.REPORTS_DIR / "r002" / "report.md").write_text("# Report\n")
+    L.cmd_collect(keep=False)
+    assert L.open_rounds() == [] and L.waiting_bets() == ["b001", "b011"], "a round with no pitch adds none"
 
 
 def test_collect_round_failure_prunes_and_gives_up_on_the_round(L, monkeypatch):

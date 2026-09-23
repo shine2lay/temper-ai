@@ -955,13 +955,21 @@ def new_round_id() -> str:
     return f"r{n:03d}"
 
 
-def open_round() -> str | None:
-    """A proposal run submitted and not yet collected (and not given up on)."""
-    for rid in reversed(round_ids()):
+def open_rounds() -> list[str]:
+    """Proposal runs submitted and not yet collected (nor given up on), oldest first. Usually one;
+    `propose --count N` puts N out side by side."""
+    out = []
+    for rid in round_ids():
         rd = load_round(rid)
         if rd.get("_run_id") and not rd.get("_collected") and not rd.get("_failed"):
-            return rid
-    return None
+            out.append(rid)
+    return out
+
+
+def open_round() -> str | None:
+    """The latest proposal run submitted and not yet collected (and not given up on)."""
+    rounds = open_rounds()
+    return rounds[-1] if rounds else None
 
 
 def round_of(bet_id: str) -> str:
@@ -1010,7 +1018,7 @@ def pitch_fields(path: Path) -> dict:
     return out
 
 
-def cmd_propose(keep: bool, wait: bool) -> None:
+def cmd_propose(keep: bool, wait: bool, alongside: bool = False) -> None:
     """One proposal, as one temper run: the walks, the report, one to five candidates. No gate.
 
     Two things stay on this side, because neither is part of the proposal's reasoning: the stack
@@ -1018,9 +1026,12 @@ def cmd_propose(keep: bool, wait: bool) -> None:
     directories the pitches go into (the container's user cannot make a directory the host can
     then write its records into). `collect` puts the candidates on the ledger when the run is done;
     the owner's list is backlog.md.
+
+    `alongside`: another proposal may be out, and this one runs beside it (`propose --count`).
+    Each round has its own stack, slots and run, so nothing is shared but the inputs.
     """
     require_tools("standee", "docker", "git", "ssh")
-    if open_round():
+    if open_round() and not alongside:
         die(f"proposal {open_round()} is still out; `collect` it first")
     round_id = new_round_id()
     rdir = REPORTS_DIR / round_id
@@ -1061,6 +1072,22 @@ def cmd_propose(keep: bool, wait: bool) -> None:
     save_round(rd)
     log(f"epd_propose → run {rid}")
     log("   it is temper's now; `epd_loop.py collect` puts the candidates on the ledger once it is done")
+
+
+def cmd_propose_many(count: int, keep: bool) -> None:
+    """`count` proposals side by side, each with its own stack, slots and run; returns once all
+    are submitted.
+
+    `run --propose` is a turn of the loop: it collects first, and a proposal still out or a bet
+    that failed stops it. This is the owner asking for more candidates now, whatever else is out
+    -- a failed bet makes the product's friction no less worth finding. The rounds do not see each
+    other: they start from the same goals, ledger and last outcome, so their candidates can
+    overlap, and the owner sorts that out on disk as with any other pitch.
+    """
+    if count < 1:
+        die("--count must be 1 or more")
+    for _ in range(count):
+        cmd_propose(keep, wait=False, alongside=True)
 
 
 def collect_round(round_id: str, keep: bool) -> bool:
@@ -1956,8 +1983,8 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
     require_tools("standee", "docker", "git", "ssh")
     ensure_backlog()
     record_declines()
-    rnd = open_round()
-    if rnd and not collect_round(rnd, keep):
+    # Every proposal out is collected if it is done; one still running means nothing new starts.
+    if [rnd for rnd in open_rounds() if not collect_round(rnd, keep)]:
         return
     # Every open bet is looked at: the ones parked at the PR gate are counted and left to the
     # owner; one still building, or one that failed and needs a hand, means nothing new starts.
@@ -2125,9 +2152,10 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
 def cmd_collect(keep: bool) -> None:
     """Record what the last run produced, once temper is done with it. Safe to call early: a run
     still going is reported, not touched."""
-    rnd = open_round()
-    if rnd:
-        collect_round(rnd, keep)
+    rounds = open_rounds()
+    if rounds:
+        for rnd in rounds:
+            collect_round(rnd, keep)
         return
     bets = open_bets()
     if bets:
@@ -2343,8 +2371,7 @@ def cmd_status() -> None:
     waiting = [b for b in waiting_bets() if b not in {x for x, _ in listed}]
     if waiting:
         print(f"waiting for your word (in neither list): {', '.join(waiting)}")
-    rnd = open_round()
-    if rnd:
+    for rnd in open_rounds():
         print(f"\nproposal out: {rnd} (run {load_round(rnd).get('_run_id', '')[:8]}); `collect` when it is done")
     for b in open_bets():
         st = load_state(b)
@@ -2377,6 +2404,10 @@ def main() -> None:
     r_.add_argument("--retry", action="store_true", help="start the open bet over if its run failed")
     r_.add_argument("--keep", action="store_true", help="leave the stacks up")
     r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
+    p = sub.add_parser("propose", help="walk the product and write candidates now, whatever else is out; "
+                                       "returns once submitted")
+    p.add_argument("--count", type=int, default=1, help="proposals side by side, each its own stack (default 1)")
+    p.add_argument("--keep", action="store_true", help="leave the stacks up")
     rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
     rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
     rs.add_argument("--bet", help="which open bet, when more than one is (default: the latest)")
@@ -2412,6 +2443,8 @@ def main() -> None:
         cmd_status()
     elif args.cmd == "run":
         cmd_run(args.keep, args.wait, args.propose, args.retry)
+    elif args.cmd == "propose":
+        cmd_propose_many(args.count, args.keep)
     elif args.cmd == "resume":
         cmd_resume(args.at, args.bet)
     elif args.cmd == "collect":

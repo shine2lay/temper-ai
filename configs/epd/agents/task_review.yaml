@@ -3,7 +3,7 @@
 # Direct Anthropic Messages API with temper's tools, executed by temper. A
 # fresh context that has seen neither the planner's nor the implementer's
 # reasoning: it reads the plan, the diff on the branch, and the code around
-# it, re-runs the tests, and returns a verdict. `request_changes` rewinds
+# it, and returns a verdict. `request_changes` rewinds
 # the workflow to the implement node (loop_to), which receives the findings;
 # `approve` lets the pipeline continue and means there is nothing left to
 # fix: every finding, minor ones included, is a request for changes.
@@ -18,11 +18,21 @@
 # a command that was never run. So every claim in the implementer's report
 # is a hypothesis here, checked against the diff and against a command's
 # output, never accepted from the report.
+#
+# It runs no test suites. The test step (task_test) runs the repository's CI
+# checks on the same commit at the same time and its verdict sits beside this
+# one at the gate. A model waiting on a ten-minute suite pays for its context
+# the whole time: b006's reviewer spent its thirty minutes on one run and
+# returned nothing. What a run cannot tell -- whether the tests are the right
+# ones, whether an assertion was loosened to pass -- is still this step's.
 agent:
   name: task_review
   # 2: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x
   #    base against 0.1x; same 1M window, 128k output and effort levels.
-  version: 2
+  # 3: runs no tests, lint, type check or build: the test step runs CI's checks on
+  #    the same commit. With nothing long between calls the prefix stays warm on
+  #    the default five-minute cache, so the hour tier (1.5x writes) is dropped.
+  version: 3
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -38,9 +48,6 @@ agent:
   provider_config:
     # The review file and the reply's JSON are output tokens.
     max_tokens: 32000
-    # Test suites run between calls; the hour tier keeps the prefix warm
-    # across them (see task_implement).
-    cache_ttl: 1h
     # This is judgement work: a diff read against rules and the branches
     # they govern. Medium, like the implement step; the plan step reads at
     # low.
@@ -51,12 +58,21 @@ agent:
     branch of a git worktree whose absolute path is given in the task. You
     decide whether that change is acceptable. Your tools do NOT run inside
     the worktree, so always use absolute paths (`git -C /abs/worktree …`,
-    `cd /abs/worktree/frontend && npm test` within one Bash call).
+    `cd /abs/worktree/frontend && grep -rn …` within one Bash call).
 
     You have not seen the planner's or the implementer's reasoning, and
     that is the point. The implementer's report, if given, is a list of
     claims to verify, not findings to repeat. You change no source files
     and make no commits; you write one file, `<worktree>/.epd/review.md`.
+
+    You run no tests. A separate test step is running the repository's CI
+    checks on this same commit while you read it -- every workflow the
+    repository runs on a pull request: the install, the lint, the whole
+    test suite, the type check, the build -- and comparing what fails with
+    the base branch. Its verdict sits beside yours at the gate, so a test
+    the change breaks goes back to the implementer without you. Your part
+    of testing is what a run cannot tell: whether the tests are the right
+    ones and whether any was bent to pass.
 
     Method:
     1. Read `<worktree>/.epd/plan.md` in full with Read. Note its rules,
@@ -87,25 +103,27 @@ agent:
        deleted or skipped test, or an expected value edited to match new
        output without such an entry, is a blocker. Check the planned tests
        were actually added and assert what the plan said (a test that
-       cannot fail is not a test). Then RUN: the test files the diff
-       touches, then the suite for the area, then the type check or lint
-       the repo uses (read CLAUDE.md / package.json / pyproject for the
-       commands). Record the exact command and counts. The report's counts
-       are not evidence; yours are.
+       cannot fail is not a test: name the change to the code under test
+       that would make it fail, or say that none would). Do not run them,
+       or any suite, lint, type check or build; the test step does, on
+       this commit. The implementer's `tests_run` counts are not evidence
+       either way: leave them to the test step and do not repeat them.
     6. COPY. For every user-visible string in the plan's copy section, find
        it in the diff or the code, exact text, and check each branch the
        plan named (null, zero, fallback) renders what the plan said. A
        label that is right on the happy path and false on another is a
        finding at the line that renders it.
     7. ACCEPTANCE. Take each criterion from the plan and check it with a
-       command or a Read where one exists: met / unmet / unverified, with
+       Read or a grep where one exists: met / unmet / unverified, with
        the evidence. "Unverified" needs the reason it cannot be checked
-       here (needs a browser, needs live data); it is not a way to skip
-       one that a grep would settle. A separate QA step is using this same
-       commit in a real browser on the running instance at the same time,
-       so "unverified: needs a browser" is genuinely covered elsewhere —
-       mark it and move on rather than guessing at behaviour. Everything a
-       command or the source can settle is still yours.
+       here (needs a browser, needs live data, needs a test run); it is
+       not a way to skip one that a grep would settle. A separate QA step
+       is using this same commit in a real browser on the running instance
+       at the same time, and the test step is running its tests, so
+       "unverified: needs a browser" and "unverified: settled by the test
+       run" are genuinely covered elsewhere — mark them and move on rather
+       than guessing at behaviour. Everything the source can settle is
+       still yours.
     8. Write the review to `<worktree>/.epd/review.md` with Write, then
        reply.
 
@@ -128,12 +146,12 @@ agent:
     Severity:
     - blocker: a rule broken; a test weakened or deleted without the plan's
       reason; an acceptance criterion unmet; uncommitted work; a claim in
-      the report that the evidence contradicts (a test command that fails,
-      a commit that is not on the branch).
+      the report that the evidence contradicts (a commit that is not on
+      the branch, a test it names that does not exist).
     - major: planned behaviour missing or wrong on a branch the plan named;
       copy that differs from the plan; an unplanned change that alters
-      behaviour and is not explained; a type check or lint the repo runs
-      that fails.
+      behaviour and is not explained; a planned test missing, or one that
+      cannot fail.
     - minor: a small thing that is nonetheless wrong: a comment or a
       user-facing sentence that misstates what the code does or could
       give the wrong reason; a name that contradicts what it names; a
@@ -159,8 +177,9 @@ agent:
     Rules for you:
     - Do not modify any file other than `.epd/review.md`. No source edits,
       no `git add`/`commit`/`checkout`/`stash`/`reset`; read-only git only.
-    - Running tests is allowed and expected; use `timeout` for long runs.
-      Bash calls time out at 600 s.
+    - Do not run tests, linters, type checkers, builds or installs
+      (`pytest`, `npm test`, `npm run …`, `uv sync`, `tsc`, `ruff`): the
+      test step runs them on this commit. Bash is for git, grep and ls.
     - Every tool call is a round-trip that costs far more than the text it
       returns. Read the plan once, the diff once, each file you need once,
       whole; combine independent git commands in one call with `;`.
@@ -173,7 +192,7 @@ agent:
       ## Verdict         — approve | request_changes, one sentence why
       ## Branch          — commits reviewed, clean/dirty, files vs plan
       ## Rules           — one line per rule: honoured|broken — evidence
-      ## Tests           — weakened/removed assertions (each: planned? reason); commands run with results
+      ## Tests           — weakened/removed assertions (each: planned? reason); planned tests added, what each asserts, can it fail
       ## Copy            — each string, each branch: as planned | differs
       ## Acceptance      — each criterion: met|unmet|unverified — how
       ## Findings        — [severity] path:line — what — fix (every one blocks approve)
@@ -191,8 +210,7 @@ agent:
       "rules": [{"rule": "<from the plan, or 'missed by plan: …'>", "status": "honoured|broken|unverified", "evidence": "<path:line — what the code does with the breaking input>"}],
       "tests": {
         "weakened": [{"test": "<path::name>", "change": "<what changed>", "planned": true, "reason": "<plan's reason or 'none'>"}],
-        "added": [{"test": "<path::name>", "asserts": "<what>", "can_fail": true}],
-        "commands": [{"command": "<cmd>", "result": "pass|fail", "detail": "<counts>"}]
+        "added": [{"test": "<path::name>", "asserts": "<what>", "can_fail": true, "fails_if": "<the change to the code that would make it fail>"}]
       },
       "copy": [{"where": "<path:line>", "branch": "<happy|null|zero|fallback>", "status": "as_planned|differs", "text": "<exact text seen>"}],
       "acceptance": [{"criterion": "<from the plan>", "status": "met|unmet|unverified", "how": "<evidence>"}],

@@ -1,0 +1,582 @@
+# EPD task pipeline: run the repository's own CI checks on the candidate commit.
+#
+# A plain script, not a model. It reads the workflows the repository runs on a pull
+# request (.github/workflows/*.yml triggered by `pull_request`), and runs their `run:`
+# steps -- the install, the lint, the whole test suite, the type check, the build --
+# on the commit the implementer made, the way CI will once the branch is pushed. The
+# gate reads the verdict beside review's, QA's and security's, so a change that
+# breaks a test comes back to the implementer before any pull request exists, and CI
+# is a confirmation rather than the first place the failure shows.
+#
+# Why a script: the reviewer used to run the suites itself, and a model waiting on
+# a ten-minute suite is paying for its context the whole time -- b006's reviewer
+# spent its thirty minutes on one run and returned nothing. A script has no context
+# to pay for and no turn budget to run out of; it has a clock, and it keeps its own
+# well inside the agent's timeout so it always gets to print its answer.
+#
+# Only what the change broke counts. A step that fails is run again on the commit
+# the branch was cut from (the merge-base with the base branch; pytest narrowed to
+# the failing files), and a failure that is there too belongs to the base branch:
+# it is reported, but it does not send the build back, because no fix round on this
+# branch can make master's tests pass.
+#
+# How it runs:
+#   - in a clean detached worktree of the commit under /tmp, never in the task's own
+#     worktree: an install there (`npm ci` deletes node_modules) would pull the floor
+#     out from under the judges reading it at the same time;
+#   - jobs side by side, each job's steps in order, as CI runs them; `uses:` steps
+#     are skipped (this machine is already set up: uv, node, python), and so is any
+#     step this script cannot evaluate faithfully (an `if:`, a `$` + `{{ }}` GitHub
+#     expression, another shell) -- named in the report, never silently;
+#   - a failing install stops its job, as it would in CI; a failing check does not:
+#     the implementer is better served by every failure at once than by CI's
+#     first-failure-stops-the-job;
+#   - in a scrubbed environment: PATH, HOME, locale, CI=true and the workflow's own
+#     `env:` -- none of the server's credentials reach code the implementer wrote.
+#
+# Everything it saw is written to <worktree>/.epd/tests.md, with each step's full
+# output under <worktree>/.epd/tests/ (.epd/ is excluded from git).
+#
+# It fails open. If the step itself cannot run -- no git, a broken workflow file, a
+# crash in this script -- the verdict is `skipped` with the reason in the summary,
+# which the gate prints. A harness fault must not be what sends a build back or
+# throws one away; it is also never silent.
+agent:
+  name: task_test
+  version: 1
+  type: script
+  # The script keeps its own budget (BUDGET, below) inside this, so it prints its
+  # verdict even when a suite hangs. The ceiling for a script agent is 3600 s
+  # (tools/bash.py _SCRIPT_MAX_TIMEOUT).
+  timeout_seconds: 3000
+  # TEMPER_PYTHON is the interpreter temper runs on (set by the script agent), which
+  # has PyYAML; the image's python3 does not. No dollar-brace default here: the config
+  # loader rewrites that syntax with the server's own environment.
+  script_template: |
+    PY=python3
+    [ -n "$TEMPER_PYTHON" ] && PY="$TEMPER_PYTHON"
+    "$PY" - <<'PYEOF'
+    import json
+    import os
+    import re
+    import shlex
+    import shutil
+    import signal
+    import subprocess
+    import sys
+    import tempfile
+    import threading
+    import time
+    import traceback
+    from pathlib import Path
+
+    START = time.monotonic()
+    # Seconds this script allows itself, inside the agent's timeout_seconds (3000):
+    # the candidate's run, the base re-run of whatever failed, and the report.
+    BUDGET = 2700
+    # What travels on in the JSON -- through the gate's environment to the implementer.
+    # One environment variable holds at most 128 KB, and a broken import can fail every
+    # test in a suite, so the lists are capped; the report has all of them.
+    MAX_ITEMS = 40
+    MAX_ITEM_CHARS = 400
+    # A GitHub expression, spelled so the template engine this script is rendered by
+    # does not read it as one of its own.
+    EXPR = "$" + "{" + "{"
+
+
+    def value(name: str) -> str:
+        got = os.environ.get(name, "").strip()
+        return "" if got in ("None", "null") else got
+
+
+    def left() -> float:
+        return BUDGET - (time.monotonic() - START)
+
+
+    WORKTREE = value("{{ workspace_path | default('') | env }}")
+    BASE_BRANCH = value("{{ base_branch | default('') | env }}")
+
+    not_run: list[str] = []      # steps and jobs this script did not run, and why
+    temp_trees: list[str] = []
+
+
+    def emit(verdict: str, summary: str, **extra) -> None:
+        print(json.dumps({"verdict": verdict, "summary": summary, **extra}))
+
+
+    def git(*args: str, cwd: str | None = None) -> str:
+        done = subprocess.run(["git", *args], cwd=cwd or WORKTREE, capture_output=True,
+                              text=True, timeout=180)
+        if done.returncode != 0:
+            raise RuntimeError(f"git {' '.join(args)}: {done.stderr.strip()[:300]}")
+        return done.stdout.strip()
+
+
+    def add_tree(commit: str, tag: str) -> str:
+        path = tempfile.mkdtemp(prefix=f"epd-test-{tag}-")
+        os.rmdir(path)  # `git worktree add` creates it
+        git("worktree", "add", "--detach", "--quiet", path, commit)
+        temp_trees.append(path)
+        return path
+
+
+    def drop_trees() -> None:
+        for path in temp_trees:
+            shutil.rmtree(path, ignore_errors=True)
+        try:
+            git("worktree", "prune")
+        except Exception:
+            pass
+
+
+    # ---------------------------------------------------------------- the workflows
+
+    def flat_env(raw) -> dict:
+        out = {}
+        for k, v in (raw or {}).items() if isinstance(raw, dict) else []:
+            if isinstance(v, bool):
+                v = "true" if v else "false"
+            if v is None or EXPR in str(v):
+                continue
+            out[str(k)] = str(v)
+        return out
+
+
+    def seconds_of(minutes) -> float | None:
+        raw = minutes
+        try:
+            return float(raw) * 60 if raw is not None and EXPR not in str(raw) else None
+        except (TypeError, ValueError):
+            return None
+
+
+    # An install: a failing one leaves nothing for the steps after it to run on.
+    SETUP = re.compile(
+        r"^\s*(?:uv (?:sync|pip install|venv)|pip3? install|python3? -m pip install"
+        r"|poetry install|pdm (?:install|sync)|pipenv (?:install|sync)"
+        r"|npm (?:ci|install|i)\b|pnpm (?:install|i)\b|yarn(?:\s+install)?\s*(?:$|--)"
+        r"|bun install|bundle install|go mod download|cargo fetch|corepack enable)"
+    )
+
+
+    def load_jobs(tree: str) -> list[dict]:
+        import yaml  # temper's own interpreter has it (TEMPER_PYTHON); the image's python3 may not
+
+        folder = Path(tree, ".github", "workflows")
+        files = sorted(list(folder.glob("*.yml")) + list(folder.glob("*.yaml"))) if folder.is_dir() else []
+        docs = []
+        for f in files:
+            try:
+                doc = yaml.safe_load(f.read_text()) or {}
+            except Exception as e:
+                not_run.append(f"{f.name}: not readable YAML ({str(e).splitlines()[0][:120]})")
+                continue
+            if not isinstance(doc, dict):
+                continue
+            # YAML 1.1 reads the bare key `on` as the boolean true.
+            on = doc.get("on", doc.get(True))
+            triggers = on if isinstance(on, (list, dict)) else [on] if on else []
+            if "pull_request" in triggers:
+                docs.append((f.stem, doc))
+        jobs = []
+        for stem, doc in docs:
+            wf_env = flat_env(doc.get("env"))
+            wf_run = (doc.get("defaults") or {}).get("run") or {}
+            for job_id, job in (doc.get("jobs") or {}).items():
+                if not isinstance(job, dict):
+                    continue
+                label = job_id if len(docs) == 1 else f"{stem}/{job_id}"
+                if "uses" in job:
+                    not_run.append(f"{label}: calls another workflow ({job['uses']})")
+                    continue
+                if job.get("if") is not None:
+                    not_run.append(f"{label}: the job has an `if:` this script cannot evaluate")
+                    continue
+                if job.get("services"):
+                    not_run.append(f"{label}: needs service containers ({', '.join(job['services'])})")
+                    continue
+                job_run = (job.get("defaults") or {}).get("run") or {}
+                job_env = {**wf_env, **flat_env(job.get("env"))}
+                steps = []
+                for i, st in enumerate(job.get("steps") or [], 1):
+                    if not isinstance(st, dict) or "uses" in st or not st.get("run"):
+                        continue
+                    run = str(st["run"])
+                    name = str(st.get("name") or run.strip().splitlines()[0])[:80]
+                    where = f"{label} · {name}"
+                    shell = st.get("shell") or job_run.get("shell") or wf_run.get("shell") or "bash"
+                    wd = st.get("working-directory") or job_run.get("working-directory") or wf_run.get("working-directory") or "."
+                    if st.get("if") is not None:
+                        not_run.append(f"{where}: the step has an `if:` this script cannot evaluate")
+                    elif EXPR in run or EXPR in str(wd):
+                        not_run.append(f"{where}: uses a GitHub expression")
+                    elif str(shell).split()[0] not in ("bash", "sh"):
+                        not_run.append(f"{where}: runs in `{shell}`, not a POSIX shell")
+                    else:
+                        steps.append({
+                            "name": name, "where": where, "run": run, "wd": str(wd),
+                            "env": {**job_env, **flat_env(st.get("env"))},
+                            "timeout": seconds_of(st.get("timeout-minutes")),
+                            "setup": bool(SETUP.match(run.strip().splitlines()[0])),
+                            "soft": bool(st.get("continue-on-error")),
+                        })
+                if steps:
+                    jobs.append({"label": label, "steps": steps, "timeout": seconds_of(job.get("timeout-minutes"))})
+        return jobs
+
+
+    # ---------------------------------------------------------------- running a step
+
+    KEEP_ENV = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+                "TMPDIR", "TERM", "XDG_CACHE_HOME", "UV_CACHE_DIR", "NPM_CONFIG_CACHE",
+                "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy")
+
+
+    def step_env(tree: str, extra: dict) -> dict:
+        env = {k: os.environ[k] for k in KEEP_ENV if k in os.environ}
+        env.update({"CI": "true", "GITHUB_WORKSPACE": tree, "RUNNER_TEMP": tempfile.gettempdir(),
+                    "PYTHONDONTWRITEBYTECODE": "1"})
+        env.update(extra)
+        return env
+
+
+    LOGS = Path(WORKTREE or ".", ".epd", "tests")
+
+
+    def run_step(step: dict, tree: str, tag: str, index: int, limit: float, extra_args=()) -> dict:
+        command = step["run"].rstrip()
+        if extra_args:
+            command += " " + " ".join(shlex.quote(a) for a in extra_args)
+        slug = re.sub(r"[^A-Za-z0-9]+", "-", step["where"]).strip("-")[:60]
+        log = LOGS / f"{tag}-{index:02d}-{slug}.log"
+        cwd = os.path.join(tree, step["wd"])
+        started = time.monotonic()
+        code, timed_out = None, False
+        header = f"$ {command}\n# in {step['wd']}, time limit {int(limit)} s\n\n"
+        with open(log, "w") as out:
+            out.write(header)
+            out.flush()
+            try:
+                proc = subprocess.Popen(
+                    ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", command],
+                    cwd=cwd, env=step_env(tree, step["env"]), stdout=out, stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL, start_new_session=True)
+            except OSError as e:
+                out.write(f"could not start: {e}\n")
+                code = 127
+            else:
+                try:
+                    code = proc.wait(timeout=max(1.0, limit))
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                    proc.wait()
+        seconds = round(time.monotonic() - started, 1)
+        text = log.read_text(errors="replace")
+        text = text[len(header):] if text.startswith(header) else text  # the step's own output
+        items = []
+        if timed_out:
+            items = [("timed out", f"did not finish in {int(limit)} s (stopped)")]
+        elif code != 0:
+            items = failures_in(text) or [("exit", f"exited {code}: {last_line(text)}")]
+        return {"step": step, "code": code, "timed_out": timed_out, "seconds": seconds,
+                "log": str(log), "text": text, "items": items, "narrowed": list(extra_args)}
+
+
+    # ---------------------------------------------------------------- reading failures
+
+    ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+    def last_line(text: str) -> str:
+        lines = [ln.strip() for ln in ANSI.sub("", text).splitlines() if ln.strip()]
+        return lines[-1][:200] if lines else "(no output)"
+
+
+    def failures_in(text: str) -> list[tuple[str, str]]:
+        """(key, line) for each failure the output names. The key leaves out line numbers
+        and counts, which move between two commits; the line is what a person reads."""
+        t = ANSI.sub("", text).replace("\r", "")
+        found: list[tuple[str, str]] = []
+        # pytest's short summary (on by default): FAILED|ERROR <node id>[ - message]; a
+        # parametrised id can hold spaces, so the id runs to the first " - " or the end.
+        for m in re.finditer(r"^(FAILED|ERROR) (\S+\.py(?:::.*?)?)(?: - .*)?$", t, re.M):
+            found.append((f"{m.group(1)} {m.group(2)}", m.group(0)))
+        # TypeScript: path(line,col): error TSnnnn: message
+        for m in re.finditer(r"^(\S[^(\n]*)\((\d+),(\d+)\): error (TS\d+): (.*)$", t, re.M):
+            found.append((f"{m.group(1)} {m.group(4)} {m.group(5)}", m.group(0)))
+        # ruff's full format: CODE [*] message, then  --> path:line:col
+        for m in re.finditer(r"^([A-Z]{1,4}\d{2,4}) (?:\[\*\] )?(.*)\n\s*--> (\S+?):(\d+):(\d+)", t, re.M):
+            found.append((f"{m.group(3)} {m.group(1)} {m.group(2)}",
+                          f"{m.group(3)}:{m.group(4)}:{m.group(5)}: {m.group(1)} {m.group(2)}"))
+        # ruff / flake8 concise: path:line:col: CODE message
+        for m in re.finditer(r"^(\S+?\.\w+):(\d+):(\d+): ([A-Z]{1,4}\d{2,4}) (.*)$", t, re.M):
+            found.append((f"{m.group(1)} {m.group(4)} {m.group(5)}", m.group(0)))
+        found += tap_failures(t)
+        if not any(k.startswith("test ") for k, _ in found):
+            # node --test's spec reporter: ✖ name (1.2ms)
+            for m in re.finditer(r"^\s*\u2716 (.+?)(?: \([\d.]+m?s\))?$", t, re.M):
+                if m.group(1).strip() != "failing tests:":
+                    found.append((f"test {m.group(1).strip()}", m.group(0).strip()))
+        seen, out = set(), []
+        for key, line in found:
+            if key not in seen:
+                seen.add(key)
+                out.append((key, line[:MAX_ITEM_CHARS]))
+        return out
+
+
+    def tap_failures(t: str) -> list[tuple[str, str]]:
+        """TAP (node --test when its output is not a terminal): the failing leaves, each
+        named by its chain of subtests. A suite fails because a test in it did, so a
+        failure that is the parent of another is not listed twice."""
+        stack: list[tuple[int, str]] = []
+        fails: list[tuple[list[str], str]] = []
+        lines = t.splitlines()
+        for n, line in enumerate(lines):
+            m = re.match(r"^(\s*)# Subtest: (.*)$", line)
+            if m:
+                depth = len(m.group(1))
+                while stack and stack[-1][0] >= depth:
+                    stack.pop()
+                stack.append((depth, m.group(2).strip()))
+                continue
+            m = re.match(r"^(\s*)not ok \d+ - (.*?)(?:\s+#\s.*)?$", line)
+            if not m:
+                continue
+            depth = len(m.group(1))
+            chain = [name for d, name in stack if d < depth] + [m.group(2).strip()]
+            chain = [c.rsplit("/", 1)[-1] for c in chain]  # a bundle's temp path -> its file name
+            why = ""
+            for k in range(n + 1, min(n + 30, len(lines))):
+                e = re.match(r"^\s*error: (?:[|>]-?)?\s*(.*)$", lines[k])
+                if e:
+                    why = e.group(1).strip("'\" ")
+                    if not why:  # a block scalar: the message starts on the next line
+                        why = next((x.strip() for x in lines[k + 1:k + 6] if x.strip()), "")
+                    break
+                if re.match(r"^\s*(?:ok|not ok) \d+ ", lines[k]):
+                    break
+            while stack and stack[-1][0] >= depth:
+                stack.pop()
+            fails.append((chain, why))
+        leaves = [(c, w) for c, w in fails
+                  if not any(len(o) > len(c) and o[:len(c)] == c for o, _ in fails)]
+        return [("test " + " > ".join(c), " > ".join(c) + (f" -- {w}" if w else "")) for c, w in leaves]
+
+
+    def excerpt(text: str) -> str:
+        t = ANSI.sub("", text)
+        m = re.search(r"^=+ (?:FAILURES|ERRORS) =+$", t, re.M)
+        lines = (t[m.start():] if m else t).splitlines()
+        if m:
+            return "\n".join(lines[:200])
+        return "\n".join(lines[-80:])
+
+
+    # ---------------------------------------------------------------- a job, a run
+
+    def run_jobs(jobs: list[dict], tree: str, tag: str, only=None, narrow=None) -> dict:
+        """Every job at once, each job's steps in order. `only` limits a job to the steps
+        named (by index) plus the installs before them; `narrow` adds arguments to a step."""
+        results: dict = {}
+
+        def one(j: int, job: dict) -> None:
+            job_started = time.monotonic()
+            stop = None
+            for i, step in enumerate(job["steps"]):
+                key = (j, i)
+                wanted = only is None or key in only or (step["setup"] and any(
+                    k[0] == j and k[1] > i for k in only))
+                if not wanted:
+                    continue
+                if stop:
+                    results[key] = {"step": step, "skipped": stop}
+                    continue
+                budget = left() - 45
+                if budget < 20:
+                    results[key] = {"step": step, "skipped": "no time left in the test step's budget"}
+                    continue
+                if job["timeout"]:
+                    job_left = job["timeout"] - (time.monotonic() - job_started)
+                    if job_left <= 0:
+                        results[key] = {"step": step, "skipped": "the job's timeout-minutes ran out"}
+                        continue
+                    budget = min(budget, job_left)
+                if step["timeout"]:
+                    budget = min(budget, step["timeout"])
+                r = run_step(step, tree, tag, j * 100 + i, budget, (narrow or {}).get(key, ()))
+                results[key] = r
+                if r["items"] and step["setup"]:
+                    stop = f"`{step['name']}` failed before it"
+
+        threads = [threading.Thread(target=one, args=(j, job), daemon=True) for j, job in enumerate(jobs)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join(max(1.0, left() + 60))
+        return results
+
+
+    def is_single_pytest(run: str) -> bool:
+        return bool(re.search(r"\bpytest\b", run)) and not re.search(r"[;&|\n]", run.strip())
+
+
+    def fmt(seconds: float) -> str:
+        seconds = int(seconds)
+        return f"{seconds // 60}m{seconds % 60:02d}s" if seconds >= 60 else f"{seconds}s"
+
+
+    # ---------------------------------------------------------------- main
+
+    def main() -> None:
+        if not WORKTREE or not os.path.isdir(WORKTREE):
+            emit("skipped", f"the test step could not run: no worktree at {WORKTREE or '(none given)'}")
+            return
+        LOGS.mkdir(parents=True, exist_ok=True)
+        for old in LOGS.glob("*.log"):
+            old.unlink()
+        head = git("rev-parse", "HEAD")
+        base, base_ref = None, None
+        for ref in ([f"origin/{BASE_BRANCH}", BASE_BRANCH] if BASE_BRANCH else []):
+            try:
+                base = git("merge-base", head, ref)
+                base_ref = ref
+                break
+            except Exception:
+                continue
+        try:
+            git("worktree", "prune")
+        except Exception:
+            pass
+
+        tree = add_tree(head, "head")
+        jobs = load_jobs(tree)
+        report = Path(WORKTREE, ".epd", "tests.md")
+        if not jobs:
+            why = "; ".join(not_run) if not_run else "no workflow in .github/workflows runs on pull_request"
+            summary = f"no CI checks to run on {head[:7]}: {why}"
+            report.write_text(f"# Tests: {head[:7]}\n\n## Verdict\nskipped: {summary}\n")
+            emit("skipped", summary, commit=head, base=base, failures=[], preexisting=[],
+                 checks=[], not_run=not_run, report=str(report), seconds=round(time.monotonic() - START))
+            return
+
+        ran = run_jobs(jobs, tree, "head")
+        failed = {k: r for k, r in ran.items() if r.get("items")}
+
+        # A failure is the change's only if the base does not have it too.
+        base_ran: dict = {}
+        compared = base is not None and base != head
+        if failed and compared:
+            narrow, rerun = {}, set()
+            base_tree = add_tree(base, "base")
+            for key, r in failed.items():
+                step = r["step"]
+                if r["timed_out"]:
+                    continue  # a second full-length wait would not fit; it counts as the change's
+                if is_single_pytest(step["run"]) and all(k.startswith(("FAILED ", "ERROR ")) for k, _ in r["items"]):
+                    files = sorted({k.split(" ", 1)[1].split("::")[0] for k, _ in r["items"]})
+                    files = [f for f in files if os.path.exists(os.path.join(base_tree, step["wd"], f))]
+                    if not files:
+                        continue  # every failing file is new on this branch
+                    narrow[key] = files
+                rerun.add(key)
+            if rerun:
+                base_ran = run_jobs(jobs, base_tree, "base", only=rerun, narrow=narrow)
+
+        new, old, soft = [], [], []
+        for key, r in sorted(failed.items()):
+            step = r["step"]
+            b = base_ran.get(key)
+            base_keys = {k for k, _ in b["items"]} if b and "items" in b and not b.get("timed_out") else None
+            # Tried on the base and got no answer there (its install failed, it ran out of
+            # time): the failure counts as the change's, and says it was not compared.
+            unanswered = b is not None and base_keys is None
+            for k, line in r["items"]:
+                item = {"check": step["where"],
+                        "failure": line + (" (could not be checked on the base)" if unanswered else "")}
+                if step["soft"]:
+                    soft.append(item)
+                elif head == base or (base_keys is not None and k in base_keys):
+                    old.append(item)
+                else:
+                    new.append(item)
+
+        checks = []
+        for (j, i), r in sorted(ran.items()):
+            if "skipped" in r:
+                checks.append({"check": r["step"]["where"], "result": "not run", "why": r["skipped"]})
+            else:
+                result = "timed out" if r["timed_out"] else ("failed" if r["items"] else "passed")
+                checks.append({"check": r["step"]["where"], "result": result, "seconds": r["seconds"],
+                               "log": r["log"]})
+        passed = sum(1 for c in checks if c["result"] == "passed")
+        took = fmt(time.monotonic() - START)
+        where = f"{base_ref} at {base[:7]}" if base else "the base branch (not found)"
+
+        if new:
+            verdict = "fail"
+            summary = (f"{len(new)} failure(s) this change introduced in CI's checks on {head[:7]}, "
+                       f"not on {where}: " + "; ".join(f"{x['check']}: {x['failure']}" for x in new[:3])[:600]
+                       + (" …" if len(new) > 3 else "") + " (see .epd/tests.md)")
+        else:
+            verdict = "pass"
+            summary = f"CI's checks pass on {head[:7]}: {passed} of {len(checks)} in {took}"
+            if old:
+                summary += f"; {len(old)} failure(s) also fail on {where}, so not this change's"
+        if soft:
+            summary += f"; {len(soft)} failure(s) in steps CI lets fail (continue-on-error)"
+        if not_run:
+            summary += f"; {len(not_run)} step(s) not run here (see .epd/tests.md)"
+        if failed and not compared and base is None:
+            summary += "; no base commit to compare with, so every failure counts as this change's"
+
+        # The report: what ran, what failed, and the output behind each failure.
+        md = [f"# Tests: {head[:7]} (base {where})", "", "## Verdict", f"{verdict}: {summary}", "",
+              "## Checks", "", "| check | result | time |", "|---|---|---|"]
+        for c in checks:
+            md.append(f"| {c['check']} | {c['result']}{' — ' + c['why'] if c.get('why') else ''} "
+                      f"| {fmt(c['seconds']) if 'seconds' in c else ''} |")
+        for title, rows in (("Failures this change introduced", new),
+                            (f"Failures that are on {where} too (not this change's)", old),
+                            ("Failures in steps CI lets fail", soft)):
+            if rows:
+                md += ["", f"## {title} ({len(rows)})", ""]
+                md += [f"- {x['check']} — {x['failure']}" for x in rows]
+        if not_run:
+            md += ["", "## Not run here", ""] + [f"- {x}" for x in not_run]
+        for key, r in sorted(failed.items()):
+            md += ["", f"## Output: {r['step']['where']} ({'timed out' if r['timed_out'] else 'exit ' + str(r['code'])})",
+                   "", f"Command (in `{r['step']['wd']}`): `{r['step']['run'].strip()}`", f"Full log: {r['log']}",
+                   "", "```", excerpt(r["text"]), "```"]
+            b = base_ran.get(key)
+            if b and "items" in b:
+                md += ["", f"On the base ({base[:7]}): {'failed' if b['items'] else 'passed'}"
+                       f"{', narrowed to ' + ', '.join(b.get('narrowed', [])) if b.get('narrowed') else ''}"
+                       f" — log {b['log']}"]
+        report.write_text("\n".join(md) + "\n")
+
+        emit(verdict, summary, commit=head, base=base, base_ref=base_ref,
+             failures=new[:MAX_ITEMS], failures_total=len(new),
+             preexisting=old[:MAX_ITEMS // 2], preexisting_total=len(old),
+             nonblocking=soft[:MAX_ITEMS // 2], checks=checks, not_run=not_run,
+             report=str(report), seconds=round(time.monotonic() - START))
+
+
+    try:
+        main()
+    except BaseException as e:  # a harness fault is reported, never a verdict
+        detail = "".join(traceback.format_exception(e))[-3000:]
+        try:
+            Path(WORKTREE, ".epd", "tests.md").write_text(
+                f"# Tests\n\n## Verdict\nskipped: the test step could not run\n\n```\n{detail}\n```\n")
+        except Exception:
+            pass
+        emit("skipped", f"the test step could not run: {type(e).__name__}: {str(e)[:300]}",
+             failures=[], preexisting=[], checks=[], not_run=not_run)
+    finally:
+        drop_trees()
+    PYEOF

@@ -41,7 +41,10 @@ agent:
   #    one, rather than deferring it to a round that will not come.
   # 5: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x
   #    base against 0.1x; same 1M window, 128k output and effort levels.
-  version: 5
+  # 6: a send-back can carry `test_failures`: CI's checks, run on the commit by the
+  #    test step, failing where the base branch passes. The lists now really arrive
+  #    (epd_task v9 routes them through the gate; before it no fix round got any).
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -189,11 +192,12 @@ agent:
     Repository worktree: {{ workspace_path }} (branch {{ branch }}, cut from {{ base_branch }})
     Plan: {{ workspace_path }}/.epd/plan.md
     {% if stack_url %}A running instance of this branch (before your change): {{ stack_url }}{% endif %}
-    {% if review_findings or qa_issues or security_findings or qa_unreachable %}
+    {% if review_findings or qa_issues or security_findings or qa_unreachable or test_failures %}
 
-    The commit on this branch was sent back. It was judged three ways: a reviewer
+    The commit on this branch was sent back. It was judged four ways: a reviewer
     read the diff, a QA step used the change running on {{ stack_url or 'the environment' }},
-    and a security step read what the branch added.
+    a security step read what the branch added, and a test step ran the
+    repository's CI checks on it.
     {% if review_findings %}
 
     Review findings (the full review is at {{ workspace_path }}/.epd/review.md):
@@ -243,6 +247,21 @@ agent:
     report, a future round, or a decision only the owner can make — do not
     invent a route for it. Say so in `deviations`, quoting the words that put
     it outside this build, and leave it.
+    {% endif %}
+    {% if test_failures %}
+
+    CI's checks fail on this commit where they pass on {{ base_branch }} -- what CI
+    would reject the pull request for. The report, with each failing check's command
+    and output, is at {{ workspace_path }}/.epd/tests.md:
+    {% for t in test_failures %}
+    - {{ t.check }} — {{ t.failure }}
+    {% endfor %}
+
+    Reproduce each one with the command the report gives before you change
+    anything, and run it again after. Fix the code; change a test only when the
+    plan changed the behaviour it pins, and say so in `deviations`. The report
+    also lists failures that are on {{ base_branch }} too: those are not yours,
+    leave them.
     {% endif %}
     {% if security_findings %}
 

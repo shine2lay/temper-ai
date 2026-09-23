@@ -1422,8 +1422,8 @@ def stage_build(st: dict) -> None:
     st["stages"]["build"] = {k: out.get(k) for k in (
         "_run_id", "_cost_usd", "_duration_s", "_versions", "task_slug", "branch", "worktree_path", "head",
         "env_name", "stack_url", "implement_commit", "implement_summary", "review_verdict",
-        "verify_verdict", "verify_screenshots", "security_verdict", "deploy_url", "verdict",
-        "verdict_summary", "changes_wanted_by", "security_human_actions")}
+        "verify_verdict", "verify_screenshots", "security_verdict", "test_verdict", "test_summary",
+        "deploy_url", "verdict", "verdict_summary", "changes_wanted_by", "security_human_actions")}
     verdict = out.get("verdict")
     st["status"] = "built" if verdict == "approve" else "build_failed"
     save_state(st)
@@ -1482,8 +1482,10 @@ def stage_ship(st: dict) -> None:
         f"**Invariant (signed):** {(st['stages'].get('gate') or {}).get('invariant') or bet.get('invariant')}\n\n"
         f"**Success threshold:** {bet.get('threshold')}\n\n"
         f"Judges on the candidate: review={b.get('review_verdict')}, QA={b.get('verify_verdict')}, "
-        f"security={b.get('security_verdict')} → {b.get('verdict')} ({b.get('verdict_summary')}).\n\n"
-        f"Dev stack of this branch: {b.get('deploy_url')}\n\n"
+        f"security={b.get('security_verdict')}, tests={b.get('test_verdict')} → {b.get('verdict')} "
+        f"({b.get('verdict_summary')}).\n\n"
+        + (f"CI's checks before the PR: {b.get('test_summary')}\n\n" if b.get("test_summary") else "")
+        + f"Dev stack of this branch: {b.get('deploy_url')}\n\n"
         f"Artifacts: `{bdir}` (bet.md, tasks.json, build.json"
         f"{', screenshots/' if shots else ''}); report: `{report_path_for(bet_id)}`.\n"
     )

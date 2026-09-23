@@ -1,7 +1,8 @@
 # EPD task pipeline: one decision out of several judgements.
 #
 # Review reads the diff, QA uses the running application, security reads what
-# the branch added. They judge the same round at the same time and none of them
+# the branch added, and the test step runs the repository's CI checks on it.
+# They judge the same round at the same time and none of them
 # outranks the others: a change that reads well but does not work is not done,
 # a change that works but leaves a wrong comment behind is not done, and a
 # change that does both while committing a key is certainly not done. This node
@@ -9,11 +10,14 @@
 # gets every list of findings in the same round instead of each judge arriving
 # after the last one approved.
 #
-# It sees only the verdicts — never the findings text. The lists go straight
-# from each judge to the implementer through the workflow's input_map; keeping
-# prose out of a shell template keeps a finding that contains a quote, a
-# backtick or a newline from becoming a shell problem. The one number that does
-# come through is a count, which cannot be anything but digits.
+# It is also the road the findings take back to the implementer. A rewind keeps
+# only the triggering node's result (executor: loop_feedback[trigger] = result)
+# and clears every judge's, so a list the implementer read from a judge arrived
+# as nothing: until v7 no finding ever reached a fix round (b007 and five other
+# runs), and the implementer was told it had been sent back for no reason it
+# could see. So every list comes through here and goes out unchanged. Values
+# reach the script as JSON in the environment, never in the shell text, so a
+# finding with a quote, a backtick or a newline in it is data, not a problem.
 #
 # A judge that did not run (no stack, verify=false, implement skipped) renders
 # as an empty string or the literal None, and counts as "did not object".
@@ -54,7 +58,12 @@ agent:
   #    accepted and the build goes out with the clause named on the pull request.
   #    The gate counts its own rounds, because the engine's loop count never
   #    reaches the node.
-  version: 6
+  # 7: two things. The test step is a fourth judge: CI's checks on the candidate,
+  #    `fail` only for a failure the base branch does not have, `skipped` when it
+  #    could not run at all (a harness fault: noted, never a veto). And every
+  #    judge's list now passes through here to the implementer, because a rewind
+  #    clears the judges' outputs and no finding was reaching a fix round.
+  version: 7
   type: script
   timeout_seconds: 30
   script_template: |
@@ -73,12 +82,17 @@ agent:
     # WALKED and came out wrong is not this case and keeps its full max_loops.
     UNREACHABLE_VETO_ROUNDS = 1
 
-    # label, raw verdict, the word that means "fine", the word that means "not fine".
-    # A judge is one row. Adding a fourth is adding a row, not editing the logic.
+    # label, raw verdict, the word that means "fine", the word that means "not fine",
+    # and the words by which a judge says it did not judge at all. A judge is one row.
+    # Adding one is adding a row, not editing the logic.
     JUDGES = [
-        ("review", value("{{ review_verdict | default('') | env }}"), "approve", "request_changes"),
-        ("QA", value("{{ qa_verdict | default('') | env }}"), "pass", "fail"),
-        ("security", value("{{ security_verdict | default('') | env }}"), "pass", "fail"),
+        ("review", value("{{ review_verdict | default('') | env }}"), "approve", "request_changes", ()),
+        ("QA", value("{{ qa_verdict | default('') | env }}"), "pass", "fail", ()),
+        ("security", value("{{ security_verdict | default('') | env }}"), "pass", "fail", ()),
+        # `skipped`: the test step could not run (no git, an unreadable workflow file,
+        # its own crash). A harness fault must not send a build back, nor throw one
+        # away at max_loops, so it abstains -- and the summary says so.
+        ("tests", value("{{ test_verdict | default('') | env }}"), "pass", "fail", ("skipped",)),
     ]
 
 
@@ -90,12 +104,15 @@ agent:
         return "" if word in ("", "none", "null") else word
 
 
-    verdicts, unknown, wants, ran = {}, [], [], []
-    for label, raw, ok, no in JUDGES:
+    verdicts, unknown, wants, ran, abstained = {}, [], [], [], []
+    for label, raw, ok, no, abstain in JUDGES:
         v = read(raw)
         verdicts[label] = v or None
         if not v:
             continue  # did not run
+        if v in abstain:
+            abstained.append(label)
+            continue
         ran.append(label)
         # A judge that ran and said something nobody recognises has not approved
         # anything: it counts as wanting changes, never as consent. The judges re-run
@@ -132,8 +149,28 @@ agent:
     out_of_build = clauses(value("{{ qa_out_of_build | default([], true) | tojson | env }}"))
     # Walked and wrong. These are a defect in the change, not a missing route.
     unmet = clauses(value("{{ qa_unmet | default([], true) | tojson | env }}"))
+    # The lists each judge wrote for the implementer, kept as they came (objects with
+    # where/what/fix), to go back out unchanged; at most 40 of each; the full lists are
+    # in each judge's report file. No slicing of the LIST on the template side: a slice
+    # of anything but a list is an undefined there, and `tojson` of one stops the gate.
+    # The JSON text is cut at 120,000 characters instead (tojson's output is ASCII): one
+    # environment variable holds at most 128 KB, and a gate that cannot start is a lost
+    # build. A list cut short parses as no list; the judge's report still has it.
+    def listed(raw: str) -> list:
+        try:
+            got = json.loads(raw or "[]")
+        except ValueError:
+            return []
+        return got[:40] if isinstance(got, list) else []
+
+    review_findings = listed(value("{{ (review_findings | default([], true) | tojson)[:120000] | env }}"))
+    security_findings = listed(value("{{ (security_findings | default([], true) | tojson)[:120000] | env }}"))
+    test_failures = listed(value("{{ (test_failures | default([], true) | tojson)[:120000] | env }}"))
     # Bugs QA found that are not about the threshold at all.
-    qa_issues = clauses(value("{{ qa_issues | default([], true) | tojson | env }}"))
+    qa_issue_list = listed(value("{{ (qa_issues | default([], true) | tojson)[:120000] | env }}"))
+    qa_issues = [str(i) for i in qa_issue_list if str(i).strip()]
+    qa_summary = value("{{ qa_summary | default('', true) | env }}")
+    test_summary = value("{{ test_summary | default('', true) | env }}")
 
     # Which round is this? The engine keeps its loop count to itself (executor:
     # loop_counts is local), so the gate counts its own runs -- one file per run,
@@ -212,6 +249,11 @@ agent:
         )
     if round_no is None and unverified:
         summary += " — (gate could not count its rounds; the unreachable-clause veto was off)"
+    if "tests" in abstained:
+        summary += (
+            f" — CI's checks were not run on this commit ({test_summary or 'the test step could not run'}); "
+            "CI on the pull request is the first to run them"
+        )
 
     print(json.dumps({
         "verdict": verdict,
@@ -219,6 +261,7 @@ agent:
         "review_verdict": verdicts["review"],
         "qa_verdict": verdicts["QA"],
         "security_verdict": verdicts["security"],
+        "test_verdict": verdicts["tests"],
         "changes_wanted_by": wants,
         "unreadable": unknown,
         "human_actions": human_actions,
@@ -232,5 +275,12 @@ agent:
         # clauses went out unproven rather than passing.
         "qa_accepted_unreachable": accepted_unreachable,
         "gate_round": round_no,
+        # What the implementer answers on a send-back, for the same reason as the
+        # clause lists above: after the rewind this is the only copy there is.
+        "review_findings": review_findings,
+        "qa_issues": qa_issue_list,
+        "qa_summary": qa_summary,
+        "security_findings": security_findings,
+        "test_failures": test_failures,
     }))
     PYEOF

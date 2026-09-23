@@ -27,7 +27,13 @@ workflow:
   #    shipping with the clause named as unproven (`accepted_unreachable`). Lifting QA's
   #    `fail` needs to know why it failed, so `verify_unmet` and `verify_issues` reach the
   #    gate: a change that is actually broken still keeps its full max_loops.
-  version: 8
+  # 9: two things. A test step (task_test, a script) runs the repository's CI checks on the
+  #    candidate beside the other judges, and fails the round only for what the base branch
+  #    does not fail too; the reviewer stops running suites (task_review v3). And the
+  #    implementer reads every list from the GATE: a rewind keeps only the trigger's result,
+  #    so the judges' own outputs were already cleared and no finding had reached a fix
+  #    round since the gate was introduced -- each one opened on "no findings reached you".
+  version: 9
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -55,7 +61,7 @@ workflow:
                          runs again from the branch, fresh context, up to
                          four rounds. The judges see the whole change once.
       7. review        — task_review, a fresh context: diff vs plan, rules,
-                         test diff, re-runs the tests, verdict. Any finding,
+                         test diff (running them is the test step's), verdict. Any finding,
                          minor included, is request_changes and rewinds to
                          implement with the findings (max_loops bounds the
                          rounds); approve = nothing left to fix. Pre-existing
@@ -71,23 +77,30 @@ workflow:
                          Judges the running app; review judges the diff. When
                          the change shows on a page it takes that page's
                          picture, for the pull request.
-     10. security      — what the branch ADDED, nothing else: a deterministic
+     10. test          — a script, not a model: the repository's own CI checks
+                         (.github/workflows run: steps -- install, lint, the whole
+                         suite, type check, build) on the candidate commit in a
+                         throwaway worktree. What fails is run again on the base
+                         branch, and only a failure the base does not have counts
+                         against the change. Report at <worktree>/.epd/tests.md.
+     11. security      — what the branch ADDED, nothing else: a deterministic
                          scan of the added lines of every commit (not the net
                          diff — a key committed and later deleted is still
                          published) for credential shapes and files that should
                          never be tracked, then a read of the diff for authz,
                          tenancy, injection and the rest. Rotation goes out as a
                          human action, because the pipeline cannot rotate a key.
-     11. gate          — the three verdicts become one. Any of them objecting
+     12. gate          — the four verdicts become one. Any of them objecting
                          sends the round back to implement, which receives ALL
-                         the lists and answers them in a single pass.
-     12. stack_down    — unless keep: standee down --volumes --images
-     13. cleanup       — unless keep: remove worktree + branch, release the claim
+                         the lists -- through the gate, the one result a rewind
+                         keeps -- and answers them in a single pass.
+     13. stack_down    — unless keep: standee down --volumes --images
+     14. cleanup       — unless keep: remove worktree + branch, release the claim
 
-    Steps 6-11 are the loop: implement → deploy → (review, QA, security) → gate,
-    up to three rounds. Code, behaviour and security are judged on the same
-    commit at the same time, so one fix round answers all three instead of each
-    judge arriving after the last one approved.
+    Steps 6-12 are the loop: implement → deploy → (review, QA, security, test) →
+    gate, up to three rounds. Code, behaviour, security and CI's checks are judged
+    on the same commit at the same time, so one fix round answers all of them
+    instead of each judge arriving after the last one approved.
 
     keep=true leaves the worktree, branch, claim and environment in place.
     plan=false and implement=false skip those nodes so a later step can be
@@ -183,6 +196,11 @@ workflow:
     verify_unverified: verify.structured.unverified               # ["<clause>: <no route on this stack yet>"] — these send the build back
     verify_out_of_build: verify.structured.out_of_build           # ["<clause>: <names a future report / an owner decision>"] — noted, not gated
     verify_screenshots: verify.structured.screenshots   # [{page, file, shows}] — files under the browser's output dir
+    test_verdict: test.structured.verdict               # pass | fail | skipped (the step could not run)
+    test_summary: test.structured.summary
+    test_failures: test.structured.failures             # [{check, failure}] -- only what the base branch does not fail
+    test_preexisting: test.structured.preexisting       # failing on the base branch too; not this change's
+    test_report: test.structured.report
     security_verdict: security.structured.verdict
     security_summary: security.structured.summary
     security_findings: security.structured.findings
@@ -314,17 +332,18 @@ workflow:
         branch: worktree.structured.branch
         base_branch: worktree.structured.base_branch
         stack_url: environment.structured.url
-        # null on the first pass (neither judge has run; logged as unresolved);
-        # on a loop rewind the executor serves these from the preserved results
-        review_findings: review.structured.findings
-        qa_issues: verify.structured.issues
-        qa_summary: verify.structured.summary
-        security_findings: security.structured.findings
+        # Every judge's list, read from the GATE. A rewind keeps only the triggering
+        # node's result (loop_feedback[gate]) and clears the judges' own outputs, so
+        # `review.structured.findings` here resolved to nothing on every fix round
+        # there has been. Null on the first pass: the gate has not run yet.
+        review_findings: gate.structured.review_findings
+        qa_issues: gate.structured.qa_issues
+        qa_summary: gate.structured.qa_summary
+        security_findings: gate.structured.security_findings
+        test_failures: gate.structured.test_failures
         # Why the round came back when no list did (an unreadable verdict)
         sent_back_because: gate.structured.summary
-        # The threshold clauses QA could not reach. Read from the GATE, not from
-        # verify: a rewind preserves only the triggering node's result, so verify's
-        # output above is already cleared by the time this node re-runs.
+        # The threshold clauses QA could not reach, from the gate for the same reason.
         qa_unreachable: gate.structured.qa_unverified
         # On a `partial` round this node loops to itself; the executor then
         # serves its own previous result here (null on the first round).
@@ -424,12 +443,24 @@ workflow:
         base_branch: worktree.structured.base_branch
         implement_summary: implement.structured.summary
 
+    # The repository's CI checks on the candidate, as CI will run them on the pull
+    # request. A script, so waiting on a ten-minute suite costs nothing. No condition,
+    # like security: it needs the worktree and git, which every run has.
+    - name: test
+      type: agent
+      agent: task_test
+      depends_on: [implement]
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        base_branch: worktree.structured.base_branch
+
     - name: gate
       type: agent
       agent: task_gate
-      depends_on: [review, verify, security]
-      # The only loop in the pipeline. Any judge objecting rewinds to implement,
-      # which receives all three lists and answers them in one pass.
+      depends_on: [review, verify, security, test]
+      # The judges' loop. Any judge objecting rewinds to implement, which receives
+      # every list -- through this node's result, the one a rewind keeps -- and
+      # answers them in one pass.
       # max_loops counts this node's runs: 3 = two fix rounds, then the verdict
       # stands (silent: the outputs carry it; teardown and cleanup still run).
       loop_to: implement
@@ -450,6 +481,14 @@ workflow:
         qa_issues: verify.structured.issues
         security_verdict: security.structured.verdict
         security_human_actions_count: security.structured.human_actions_count
+        test_verdict: test.structured.verdict
+        # The lists the implementer answers. They pass through the gate because its
+        # result is the only one a rewind keeps.
+        review_findings: review.structured.findings
+        qa_summary: verify.structured.summary
+        security_findings: security.structured.findings
+        test_failures: test.structured.failures
+        test_summary: test.structured.summary
 
     - name: stack_down
       type: agent

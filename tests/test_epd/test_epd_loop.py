@@ -5,11 +5,15 @@ state the driver keeps on disk and the decisions it takes from it. The driver re
 EPD_WORKSPACES at import, so each test imports it fresh into a temporary tree.
 """
 
+import datetime as dt
 import importlib.util
+import io
 import json
 import os
 import stat
+import subprocess
 import sys
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -50,6 +54,9 @@ def L(tmp_path, monkeypatch):
     mod.ledger_write([])
     calls: dict[str, list] = {"standee_down": [], "release_task": [], "propose": [], "start": []}
     mod._real_cmd_propose = mod.cmd_propose
+    mod._real_market_window = mod.market_window
+    monkeypatch.setattr(mod, "market_window", lambda: (True, "the market is open; it closes Thu Sep 24 13:00 PDT",
+                                                        dt.datetime.now(dt.UTC)))
     monkeypatch.setattr(mod, "standee_down", lambda env: calls["standee_down"].append(env))
     monkeypatch.setattr(mod, "release_task", lambda bet_id: calls["release_task"].append(bet_id))
     monkeypatch.setattr(mod, "require_tools", lambda *names: None)
@@ -279,6 +286,15 @@ def test_run_proposes_when_nothing_is_on_file(L):
     assert L._calls["propose"] == [(False, False)] and L._calls["start"] == []
 
 
+def test_run_with_nothing_on_file_and_the_market_shut_says_so_and_is_not_an_error(L, monkeypatch, capsys):
+    at = dt.datetime(2026, 9, 24, 13, 45, tzinfo=dt.UTC)
+    monkeypatch.setattr(L, "market_window", lambda: (False, "the market is shut; it opens Thu Sep 24 06:30 PDT", at))
+    L.cmd_run(keep=False, wait=False, propose=False, retry=False)
+    assert L._calls["propose"] == [] and L._calls["start"] == []
+    out = capsys.readouterr().out
+    assert "no candidates on file, and the market is shut" in out and "`propose --when-open` arms" in out
+
+
 def test_run_waits_for_the_owner_when_candidates_are_not_listed(L, capsys):
     propose(L)
     L.cmd_run(keep=False, wait=False, propose=False, retry=False)
@@ -500,13 +516,20 @@ def test_finish_loop_records_the_owners_no_on_the_pr(L):
     assert L.open_bet() is None and L._calls["release_task"] == ["b001"]
 
 
-def proposals_run_here(L, monkeypatch) -> dict:
-    """The real cmd_propose, with the stack, the clone and temper stubbed; returns what they were asked."""
-    seen: dict[str, list] = {"up": [], "runs": []}
+OPEN = (True, "the market is open; it closes Thu Sep 24 13:00 PDT", None)
+HOLDS = "Cash $98,543.60; equity $99,854.60.\nPositions:\n- F: 100 shares long, average $12.10, now $12.34"
+
+
+def proposals_run_here(L, monkeypatch, market=OPEN) -> dict:
+    """The real cmd_propose, with the stack, the clone, the market and temper stubbed; returns what they were asked."""
+    seen: dict[str, list] = {"up": [], "runs": [], "preflight": [], "armed": []}
     monkeypatch.setattr(L, "cmd_propose", L._real_cmd_propose)
     monkeypatch.setattr(L, "refresh_main", lambda: "f52e741")
     monkeypatch.setattr(L, "wait_for_url", lambda url, timeout=240.0: None)
-    monkeypatch.setattr(L, "preflight_login", lambda url, *a, **k: None)
+    monkeypatch.setattr(L, "preflight_login", lambda url, emails=(), *a, **k: seen["preflight"].append(emails))
+    monkeypatch.setattr(L, "market_window", lambda: market)
+    monkeypatch.setattr(L, "paper_account_state", lambda: HOLDS)
+    monkeypatch.setattr(L, "arm_proposal", lambda at, why, focus, keep: seen["armed"].append((at, why, focus)))
 
     def up(source, as_name, ttl):
         seen["up"].append(as_name)
@@ -521,34 +544,141 @@ def proposals_run_here(L, monkeypatch) -> dict:
     return seen
 
 
-def test_proposals_side_by_side_each_get_their_own_stack_slots_and_run(L, monkeypatch):
+def test_rounds_take_turns_on_the_paper_account_each_with_its_own_stack_slots_and_run(L, monkeypatch, capsys):
     seen = proposals_run_here(L, monkeypatch)
-    L.cmd_propose_many(3, keep=False)
-    assert L.open_rounds() == ["r001", "r002", "r003"]
-    assert seen["up"] == ["epd-r001", "epd-r002", "epd-r003"]
+    L.cmd_propose_many(None, keep=False)
+    run = {"status": "running", "nodes": [{"name": "report", "status": "running"}]}
+    monkeypatch.setattr(L, "get_run", lambda rid: run)
+    with pytest.raises(SystemExit):
+        L.cmd_propose_many(None, keep=False)
+    assert "r001's walkers are still on the paper account" in capsys.readouterr().out
+    assert L.round_ids() == ["r001"] and seen["up"] == ["epd-r001"], "nothing is made while r001 walks"
+    run["nodes"] = [{"name": "report", "status": "completed"}, {"name": "bet", "status": "running"}]
+    L.cmd_propose_many(None, keep=False)
+    assert L.open_rounds() == ["r001", "r002"], "a round writing its bets no longer holds the next one back"
+    assert seen["up"] == ["epd-r001", "epd-r002"]
     slots = [L.load_round(r)["slots"] for r in L.open_rounds()]
-    assert slots == [[f"b{i:03d}" for i in range(k, k + 5)] for k in (1, 6, 11)], "no slot is handed out twice"
+    assert slots == [[f"b{i:03d}" for i in range(k, k + 5)] for k in (1, 6)], "no slot is handed out twice"
     assert [r["slots"] for r in seen["runs"]] == [" ".join(s) for s in slots]
-    assert [r["env_name"] for r in seen["runs"]] == ["rollcall-dev-epd-r001", "rollcall-dev-epd-r002", "rollcall-dev-epd-r003"]
+    assert [r["env_name"] for r in seen["runs"]] == ["rollcall-dev-epd-r001", "rollcall-dev-epd-r002"]
     assert all((L.BETS_DIR / b).is_dir() for s in slots for b in s)
 
 
-def test_each_round_walks_its_own_focus_and_the_rest_walk_where_the_goals_say(L, monkeypatch, capsys):
+def test_the_walkers_sign_in_to_the_paper_login_and_are_told_what_it_holds(L, monkeypatch, capsys):
     seen = proposals_run_here(L, monkeypatch)
-    L.cmd_propose_many(3, keep=False, focuses=["The Screener  and\n Browse", "Settings"])
-    assert [r["focus"] for r in seen["runs"]] == ["The Screener and Browse", "Settings", ""]
-    assert [L.load_round(r).get("focus") for r in L.open_rounds()] == ["The Screener and Browse", "Settings", ""]
+    L.cmd_propose_many(None, keep=False, focuses=["The Screener  and\n Browse", " "])
+    assert seen["preflight"] == [("alpaca@rollcall.test",)], "the login the walkers use is the one checked"
+    run = seen["runs"][0]
+    assert run["paper_email"] == "alpaca@rollcall.test" and run["password"] == L.QA_PASSWORD
+    assert run["account_state"] == HOLDS and run["market"] == OPEN[1]
+    assert run["focus"] == "The Screener and Browse" == L.load_round("r001")["focus"]
     L.cmd_status()
-    assert "focus: Settings" in capsys.readouterr().out
+    assert "focus: The Screener and Browse" in capsys.readouterr().out
 
 
-def test_count_defaults_to_one_round_per_focus_and_never_drops_one(L, monkeypatch):
+def test_more_than_one_round_at_once_is_refused_before_anything_is_made(L, monkeypatch):
     seen = proposals_run_here(L, monkeypatch)
-    L.cmd_propose_many(None, keep=False, focuses=["Analysis", " ", "Screener"])
-    assert [r["focus"] for r in seen["runs"]] == ["Analysis", "Screener"]
+    for count, focuses in ((3, []), (None, ["Analysis", "Screener"]), (1, ["Settings", "Alerts"])):
+        with pytest.raises(SystemExit):
+            L.cmd_propose_many(count, keep=False, focuses=focuses)
+    assert seen["up"] == [] and seen["runs"] == [] and L.round_ids() == []
+
+
+def test_a_shut_market_starts_nothing_and_when_open_arms_the_round_for_the_open(L, monkeypatch, capsys):
+    at = dt.datetime(2026, 9, 24, 13, 45, tzinfo=dt.UTC)
+    shut = (False, "the market is shut; it opens Thu Sep 24 06:30 PDT", at)
+    seen = proposals_run_here(L, monkeypatch, market=shut)
     with pytest.raises(SystemExit):
-        L.cmd_propose_many(1, keep=False, focuses=["Settings", "Alerts"])
-    assert len(seen["runs"]) == 2, "a focus that would be dropped stops the command before any round starts"
+        L.cmd_propose_many(None, keep=False)
+    assert "`propose --when-open` arms the round for" in capsys.readouterr().out
+    L.cmd_propose_many(None, keep=False, focuses=["Settings"], when_open=True)
+    assert seen["armed"] == [(at, shut[1], "Settings")]
+    assert seen["up"] == [] and seen["runs"] == [] and L.round_ids() == [] and not any(L.BETS_DIR.iterdir()), (
+        "no stack, no round, no slot while the market is shut")
+
+
+def test_a_round_needs_the_market_open_with_time_for_three_walks(L, monkeypatch):
+    clock = {"next_open": "2026-09-25T09:30:00-04:00", "next_close": "2026-09-24T16:00:00-04:00"}
+    monkeypatch.setattr(L, "market_clock", lambda: clock)
+    tomorrow = L.when(clock["next_open"]) + dt.timedelta(minutes=L.OPEN_DELAY_MIN)
+
+    clock.update(timestamp="2026-09-24T10:00:00-04:00", is_open=True)
+    ok, why, at = L._real_market_window()
+    assert ok and why.startswith("the market is open; it closes") and at == L.when(clock["timestamp"])
+
+    clock.update(timestamp="2026-09-24T15:30:00-04:00")
+    ok, why, at = L._real_market_window()
+    assert not ok and "30 min from now" in why and at == tomorrow, "half an hour is too little for three walks in turn"
+
+    clock.update(timestamp="2026-09-24T20:00:00-04:00", is_open=False, next_close="2026-09-25T16:00:00-04:00")
+    ok, why, at = L._real_market_window()
+    assert not ok and why.startswith("the market is shut; it opens") and at == tomorrow
+
+
+def test_the_account_state_says_what_it_holds_the_way_a_person_would(L, monkeypatch):
+    answers = {
+        "/v2/account": {"cash": "98543.6", "equity": "99854.6", "buying_power": "397845.2",
+                        "options_buying_power": "99199.1", "options_trading_level": 3},
+        "/v2/positions": [
+            {"symbol": "F", "qty": "100", "side": "long", "asset_class": "us_equity",
+             "avg_entry_price": "12.1", "current_price": "12.34"},
+            {"symbol": "F261023C00012500", "qty": "-1", "side": "short", "asset_class": "us_option",
+             "avg_entry_price": "0.31", "current_price": "0.28"}],
+        "/v2/orders?status=open&nested=true&limit=50": [
+            {"symbol": "PLUG", "side": "buy", "qty": "10", "limit_price": "2.5", "status": "new", "legs": None}],
+    }
+    monkeypatch.setattr(L, "alpaca_paper", lambda path: answers[path])
+    held = L.paper_account_state().splitlines()
+    assert held[0] == ("Cash $98,543.60; equity $99,854.60; buying power $397,845.20; "
+                       "options buying power $99,199.10; options level 3.")
+    assert "- F: 100 shares long, average $12.10, now $12.34" in held
+    assert "- F Oct 23 2026 $12.50 call: 1 contract short, average $0.31, now $0.28" in held
+    assert "- buy 10 PLUG, limit $2.50 (new)" in held
+    answers.update({"/v2/positions": [], "/v2/orders?status=open&nested=true&limit=50": []})
+    assert L.paper_account_state().splitlines()[1:] == ["Positions: none.", "Open orders: none."]
+
+
+def test_the_paper_keys_come_from_the_file_the_stacks_read_and_a_refusal_says_why(L, monkeypatch, tmp_path, capsys):
+    keys = tmp_path / "dev.env"
+    monkeypatch.setattr(L, "PAPER_KEYS_FILE", keys)
+    with pytest.raises(SystemExit):
+        L.paper_keys()
+    keys.write_text("# the paper login\nROLLCALL_DEV_ALPACA_API_KEY='id-for-tests'\n"
+                    "ROLLCALL_DEV_ALPACA_SECRET_KEY = \"not-a-real-one\"\n")  # pragma: allowlist secret
+    assert L.paper_keys() == {"APCA-API-KEY-ID": "id-for-tests", "APCA-API-SECRET-KEY": "not-a-real-one"}
+
+    def refused(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, io.BytesIO(b'{"message": "unauthorized."}'))
+
+    monkeypatch.setattr(L.urllib.request, "urlopen", refused)
+    with pytest.raises(SystemExit):
+        L.market_clock()
+    out = capsys.readouterr().out
+    assert "HTTP 401" in out and "Resetting the paper account makes new ones" in out
+    assert "not-a-real-one" not in out, "a key is never printed"
+
+
+def test_when_open_arms_one_timer_per_open_that_sees_the_same_tree(L, monkeypatch, capsys):
+    ran = []
+
+    def systemd_run(cmd, capture_output, text):
+        ran.append(cmd)
+        if len(ran) == 1:
+            return subprocess.CompletedProcess(cmd, 0, "Running timer as unit: epd-propose.timer", "")
+        return subprocess.CompletedProcess(cmd, 1, "", "Failed to start transient timer unit: Unit already loaded")
+
+    monkeypatch.setattr(L.subprocess, "run", systemd_run)
+    at = dt.datetime(2026, 9, 24, 13, 45, tzinfo=dt.UTC)
+    L.arm_proposal(at, "the market is shut; it opens Thu Sep 24 06:30 PDT", "Settings", keep=False)
+    cmd = ran[0]
+    assert cmd[:3] == ["systemd-run", "--user", f"--unit=epd-propose-{at.astimezone():%Y%m%d-%H%M}"]
+    assert "--on-calendar=2026-09-24 13:45:00 UTC" in cmd
+    assert cmd[-5:] == [str(DRIVER), "propose", "--when-open", "--focus", "Settings"]
+    assert f"--setenv=EPD_WORKSPACES={os.environ['EPD_WORKSPACES']}" in cmd, "the timer's run sees the same tree"
+    assert "the round is armed for" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        L.arm_proposal(at, "the market is shut", "", keep=False)
+    assert "Unit already loaded" in capsys.readouterr().out, "a second round for the same open is refused"
 
 
 def test_a_second_proposal_waits_for_the_first_unless_asked_for_alongside(L, monkeypatch):
@@ -563,7 +693,8 @@ def test_a_second_proposal_waits_for_the_first_unless_asked_for_alongside(L, mon
 
 def test_every_finished_proposal_is_collected_and_a_running_one_holds_the_loop(L, monkeypatch, capsys):
     proposals_run_here(L, monkeypatch)
-    L.cmd_propose_many(3, keep=False)
+    for _ in range(3):
+        L.cmd_propose(keep=False, wait=False, alongside=True)
     for rnd, bet in (("r001", "b001"), ("r003", "b011")):
         (L.REPORTS_DIR / rnd / "report.md").write_text("# Report\n")
         (L.BETS_DIR / bet / "bet.md").write_text(PITCH.format(bet_id=bet, title=f"Title of {bet}", invariant="I."))

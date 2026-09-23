@@ -21,7 +21,9 @@ of the state on disk under
 
 Two temper runs make one turn of the loop:
 
-    epd_propose  three browser walks on a dev stack of main → report.md; then
+    epd_propose  three browser walks, taking turns on the Alpaca paper account
+                 through a dev stack of main while the market is open →
+                 report.md; then
                  one to five candidate bets, each a pitch with a falsifiable
                  invariant and a pre-registered threshold → bets/<id>/bet.md
     epd_loop     for one bet off the top of backlog.md: tasks → build (the
@@ -37,6 +39,7 @@ when there is nothing planned -- or on `run --propose`, for more.
 Usage:
     epd_loop.py status
     epd_loop.py run [--propose] [--keep] [--wait]   # one temper run: the top bet, or a proposal
+    epd_loop.py propose [--focus TEXT] [--when-open] # a proposal now (market hours), or armed for the open
     epd_loop.py collect [--keep]                    # record what the last run produced
     epd_loop.py resume [--at STAGE]                 # fork a failed loop run at its last good stage
     epd_loop.py approve BET [--note TEXT]           # put a candidate at the end of backlog.md
@@ -124,6 +127,24 @@ SERVER_CONTAINER = os.environ.get("EPD_TEMPER_CONTAINER", "temper-ai-server-1")
 QA_EMAIL = os.environ.get("EPD_QA_EMAIL", "qa@rollcall.test")
 QA_EMPTY_EMAIL = os.environ.get("EPD_QA_EMPTY_EMAIL", "qa-empty@rollcall.test")
 QA_PASSWORD = os.environ.get("EPD_QA_PASSWORD", "rollcall-qa")
+
+# A proposal's walkers use the seed's Alpaca paper login instead (seed_alpaca_paper in seed.py: made
+# on a stack's first `up` when the host has the keys). Every walk before it ran on the mock broker,
+# most with the market shut, and five walks in three rounds reported an entry that could not fill as
+# the product's friction (b017): the practice broker fills rolls but not entries, and a real broker
+# takes no entry while the market is shut. The paper account behaves like the owner's broker -- real
+# prices, real fills, a market that is open or not -- so a round walks it only while the market is
+# open, its three walkers take turns, and rounds run one at a time: every walker in every stack
+# trades the same paper book.
+PAPER_EMAIL = os.environ.get("EPD_PAPER_EMAIL", "alpaca@rollcall.test")
+# The paper keys. The dev stacks read the same file when they are stood up (deploy/compose.dev.yaml).
+PAPER_KEYS_FILE = Path(os.environ.get("EPD_PAPER_KEYS_FILE", str(Path.home() / ".config" / "rollcall" / "dev.env")))
+ALPACA_PAPER_API = os.environ.get("EPD_ALPACA_PAPER_API", "https://paper-api.alpaca.markets")
+# The walkers take turns, and a walk may run to its 20-minute limit: this much of the session must be
+# left when a round starts, or the last walker reaches an order ticket after the close.
+MARKET_MIN_LEFT_MIN = int(os.environ.get("EPD_MARKET_MIN_LEFT_MIN", "60"))
+# `propose --when-open` starts the round this long after the open: the first minutes quote the widest.
+OPEN_DELAY_MIN = int(os.environ.get("EPD_OPEN_DELAY_MIN", "15"))
 
 LOOP_DIR = WORKSPACES / "epd" / REPO_NAME
 BETS_DIR = LOOP_DIR / "bets"
@@ -394,7 +415,8 @@ def standee_up(source: Path, as_name: str, ttl: str) -> tuple[str, str]:
     return env, url
 
 
-def preflight_login(url: str, emails: tuple[str, ...] = (QA_EMAIL, QA_EMPTY_EMAIL), password: str = "") -> None:
+def preflight_login(url: str, emails: tuple[str, ...] = (QA_EMAIL, QA_EMPTY_EMAIL), password: str = "",
+                    likely: str = "") -> None:
     """Refuse to spend anything on a stack nobody can sign in to.
 
     A walker that cannot get past the login page produces a walk about the login page: three of them ran
@@ -422,9 +444,9 @@ def preflight_login(url: str, emails: tuple[str, ...] = (QA_EMAIL, QA_EMPTY_EMAI
             except urllib.error.URLError as e:
                 detail = str(e.reason)
             die(f"{email} cannot sign in at {endpoint} ({detail}). The stack is up but unusable — "
-                f"most likely unseeded. Check `standee status` and run `standee seed <env>`; "
+                f"{likely or 'most likely unseeded. Check `standee status` and run `standee seed <env>`'}; "
                 f"nothing was dispatched and nothing was spent.")
-    log(f"preflight: {len(emails)} accounts can sign in")
+    log(f"preflight: {', '.join(emails)} can sign in")
 
 
 def wait_for_url(url: str, timeout: float = 240.0) -> None:
@@ -451,6 +473,123 @@ def wait_for_url(url: str, timeout: float = 240.0) -> None:
             last = str(getattr(e, "reason", e))
         time.sleep(5)
     die(f"{url} did not come up in {timeout:.0f}s (last: {last})")
+
+
+# ------------------------------------------------------- the paper account --
+#
+# A proposal's walkers sign in to the seed's Alpaca paper login (PAPER_EMAIL), so what they meet is a
+# real broker: real prices and fills, and a market that is open or shut. The driver reads the same
+# account directly -- the market clock, to walk only while it is open; the book, so the personas are
+# designed for what the account holds -- with the keys the dev stacks are given. Read-only: nothing
+# here places or changes anything, and the keys are never printed.
+
+def paper_keys() -> dict[str, str]:
+    """The paper account's API headers, from PAPER_KEYS_FILE (the file the dev stacks read)."""
+    found: dict[str, str] = {}
+    for line in read(PAPER_KEYS_FILE).splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            found[k.strip()] = v.strip().strip("'\"")
+    key = found.get("ROLLCALL_DEV_ALPACA_API_KEY", "")
+    secret = found.get("ROLLCALL_DEV_ALPACA_SECRET_KEY", "")
+    if not (key and secret):
+        die(f"no Alpaca paper keys in {PAPER_KEYS_FILE}: a proposal's walkers trade the paper account, and "
+            f"the dev stacks sign in to it with ROLLCALL_DEV_ALPACA_API_KEY and ROLLCALL_DEV_ALPACA_SECRET_KEY "
+            f"from that file")
+    return {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+
+
+def alpaca_paper(path: str):
+    """GET `path` from the paper account's trading API; dies on anything but an answer."""
+    req = urllib.request.Request(ALPACA_PAPER_API.rstrip("/") + path, headers=paper_keys())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as e:
+        refused = (f" -- the keys in {PAPER_KEYS_FILE} were refused. Resetting the paper account makes new "
+                   f"ones: they go in that file, and stacks stood up before it still have the old ones"
+                   if e.code in (401, 403) else "")
+        die(f"Alpaca paper {path}: HTTP {e.code}: {(e.read().decode(errors='replace') or '').strip()[:200]}{refused}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        die(f"Alpaca paper {path}: {getattr(e, 'reason', e)}")
+
+
+def market_clock() -> dict:
+    """Alpaca's clock: is_open, and timestamp / next_open / next_close as ISO times with an offset."""
+    return alpaca_paper("/v2/clock")
+
+
+def when(iso: str) -> dt.datetime:
+    return dt.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+
+
+def local_time(t: dt.datetime) -> str:
+    return t.astimezone().strftime("%a %b %d %H:%M %Z")
+
+
+def market_window() -> tuple[bool, str, dt.datetime]:
+    """Whether a round can walk now; why, or why not; and when it next can.
+
+    The paper account takes orders only while the market is open, and a walker who reaches an order
+    ticket after the close meets a broker that refuses it -- which is how b017 came to be proposed.
+    So a round starts only with MARKET_MIN_LEFT_MIN of the session left. When it cannot start now,
+    the next time it can is the next open plus OPEN_DELAY_MIN: the first minutes quote the widest.
+    """
+    c = market_clock()
+    now, opens, closes = when(c["timestamp"]), when(c["next_open"]), when(c["next_close"])
+    later = opens + dt.timedelta(minutes=OPEN_DELAY_MIN)
+    if not c.get("is_open"):
+        return False, f"the market is shut; it opens {local_time(opens)}", later
+    left = (closes - now).total_seconds() / 60
+    if left < MARKET_MIN_LEFT_MIN:
+        return (False, f"the market closes {local_time(closes)}, {left:.0f} min from now: too little for three "
+                       f"walks in turn (EPD_MARKET_MIN_LEFT_MIN={MARKET_MIN_LEFT_MIN})", later)
+    return True, f"the market is open; it closes {local_time(closes)}", now
+
+
+def contract_name(symbol: str) -> str:
+    """An OCC option symbol as a person says it (F261023C00012500: 'F Oct 23 2026 $12.50 call');
+    anything else as it is."""
+    m = re.fullmatch(r"([A-Z.]{1,6})(\d{2})(\d{2})(\d{2})([CP])(\d{8})", symbol or "")
+    if not m:
+        return symbol
+    root, yy, mm, dd, cp, strike = m.groups()
+    day = dt.date(2000 + int(yy), int(mm), int(dd))
+    return f"{root} {day:%b} {day.day} {day.year} ${int(strike) / 1000:.2f} {'call' if cp == 'C' else 'put'}"
+
+
+def paper_account_state() -> str:
+    """What the paper account holds as the round starts, in a few lines. The personas design jobs for
+    this book (a covered call needs a position the account has), and the report writer can tell a
+    figure a walker read from the one the account had."""
+    def money(v) -> str:
+        return f"${float(v or 0):,.2f}"
+
+    a = alpaca_paper("/v2/account")
+    lines = [f"Cash {money(a.get('cash'))}; equity {money(a.get('equity'))}; buying power "
+             f"{money(a.get('buying_power'))}; options buying power {money(a.get('options_buying_power'))}; "
+             f"options level {a.get('options_trading_level', '?')}."]
+    positions = alpaca_paper("/v2/positions") or []
+    lines.append("Positions:" if positions else "Positions: none.")
+    for p in positions:
+        qty = abs(float(p.get("qty") or 0))
+        if p.get("asset_class") == "us_option":
+            unit = "contract" if qty == 1 else "contracts"
+        else:
+            unit = "share" if qty == 1 else "shares"
+        lines.append(f"- {contract_name(p.get('symbol', ''))}: {qty:g} {unit} {p.get('side', '')}, "
+                     f"average {money(p.get('avg_entry_price'))}, now {money(p.get('current_price'))}")
+    orders = alpaca_paper("/v2/orders?status=open&nested=true&limit=50") or []
+    lines.append("Open orders:" if orders else "Open orders: none.")
+    for o in orders:
+        legs = o.get("legs") or [o]
+        what = " / ".join(" ".join(str(x) for x in (leg.get("side"), leg.get("ratio_qty") or leg.get("qty"),
+                                                    contract_name(leg.get("symbol", ""))) if x)
+                          for leg in legs)
+        price = f", limit {money(o['limit_price'])}" if o.get("limit_price") else ""
+        lines.append(f"- {what}{price} ({o.get('status', '')})")
+    return "\n".join(lines)
 
 
 def standee_down(env: str) -> None:
@@ -1018,7 +1157,51 @@ def pitch_fields(path: Path) -> dict:
     return out
 
 
-def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = "") -> None:
+def rounds_walking() -> list[str]:
+    """Open rounds whose walkers may still be on the paper account: the run's `report` stage (the
+    walks, and the report written from them) has not ended. The bet stage after it reads files, not
+    the account, so a round that has got that far no longer holds the next one back."""
+    busy = []
+    for rnd in open_rounds():
+        info = get_run(load_round(rnd)["_run_id"])
+        if info.get("status") not in ("running", "pending"):
+            continue
+        report = next((n for n in info.get("nodes") or [] if n.get("name") == "report"), {})
+        if report.get("status") not in ("completed", "failed", "skipped", "cancelled"):
+            busy.append(rnd)
+    return busy
+
+
+ARMED_LOG = LOOP_DIR / "propose-when-open.log"
+
+
+def arm_proposal(at: dt.datetime, why: str, focus: str, keep: bool) -> None:
+    """Run `propose --when-open` again at `at`, from a transient systemd timer, and return.
+
+    The unit is named for the minute it fires, so systemd itself refuses a second round armed for
+    the same open: the two would walk the one account at the same time."""
+    unit = f"epd-propose-{at.astimezone():%Y%m%d-%H%M}"
+    argv = [sys.executable, str(Path(__file__).resolve()), "propose", "--when-open"]
+    if focus:
+        argv += ["--focus", focus]
+    if keep:
+        argv.append("--keep")
+    env = {k: v for k, v in os.environ.items() if k == "PATH" or k.startswith(("EPD_", "TEMPER_"))}
+    cmd = ["systemd-run", "--user", f"--unit={unit}",
+           f"--on-calendar={at.astimezone(dt.UTC):%Y-%m-%d %H:%M:%S} UTC", "--timer-property=AccuracySec=1s",
+           f"--working-directory={Path.cwd()}",
+           f"--property=StandardOutput=append:{ARMED_LOG}", f"--property=StandardError=append:{ARMED_LOG}"]
+    cmd += [f"--setenv={k}={v}" for k, v in sorted(env.items())]
+    r = subprocess.run(cmd + argv, capture_output=True, text=True)
+    if r.returncode != 0:
+        die(f"{why}, and the round could not be armed for {local_time(at)}: "
+            f"{(r.stderr or r.stdout).strip()[:300]} (`systemctl --user list-timers 'epd-propose-*'` "
+            f"shows what is armed)")
+    log(f"{why}: the round is armed for {local_time(at)}{f' (focus: {focus})' if focus else ''}")
+    log(f"   {unit}.timer; its output goes to {ARMED_LOG}; `systemctl --user stop {unit}.timer` disarms it")
+
+
+def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = "", when_open: bool = False) -> None:
     """One proposal, as one temper run: the walks, the report, one to five candidates. No gate.
 
     Two things stay on this side, because neither is part of the proposal's reasoning: the stack
@@ -1027,8 +1210,14 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     then write its records into). `collect` puts the candidates on the ledger when the run is done;
     the owner's list is backlog.md.
 
-    `alongside`: another proposal may be out, and this one runs beside it (`propose --count`).
-    Each round has its own stack, slots and run, so nothing is shared but the inputs.
+    The walkers trade the Alpaca paper account (PAPER_EMAIL), so a round starts only while the
+    market is open with MARKET_MIN_LEFT_MIN to spare, and never while another round's walkers are
+    on the account. Nothing is made -- no slot, no stack, no run -- before both are true.
+
+    `alongside`: another proposal may be out, and this one starts once that one's walkers are done.
+
+    `when_open`: if the market is shut, or closes too soon, arm the round for the next open (plus
+    OPEN_DELAY_MIN) instead of refusing.
 
     `focus`: the part of the product this round's walkers stay in (the personas are designed
     inside it). Empty: wherever the goals and the last outcome send them.
@@ -1037,6 +1226,17 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     require_tools("standee", "docker", "git", "ssh")
     if open_round() and not alongside:
         die(f"proposal {open_round()} is still out; `collect` it first")
+    walking = rounds_walking()
+    if walking:
+        die(f"proposal {walking[-1]}'s walkers are still on the paper account: every walker trades that one "
+            f"account, so rounds take turns. Start this one once its walks are done.")
+    ok, why, at = market_window()
+    if not ok:
+        if when_open:
+            arm_proposal(at, why, focus, keep)
+            return
+        die(f"{why}. The walkers trade the Alpaca paper account, which fills orders only while the market "
+            f"is open; nothing was started. `propose --when-open` arms the round for {local_time(at)}.")
     round_id = new_round_id()
     rdir = REPORTS_DIR / round_id
     mkdir_shared(rdir)
@@ -1049,7 +1249,10 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
           "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
     save_round(rd)
     wait_for_url(url)
-    preflight_login(url)
+    preflight_login(url, emails=(PAPER_EMAIL,),
+                    likely=f"the seed makes {PAPER_EMAIL} only when the stack is stood up with the paper keys "
+                           f"in {PAPER_KEYS_FILE}. Check they are there, `standee down` the stack and propose again")
+    account = paper_account_state()
     inputs = {
         "round_id": round_id,
         "report_path": cpath(rdir / "report.md"),
@@ -1061,13 +1264,16 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
         "unfinished": unfinished_business(),
         "bets_tsv": read(LEDGER),
         "app_url": url,
-        # The walkers seed their own tenants in this stack (one each, or they move each other's book),
-        # so they need the name standee knows it by, not just its URL.
         "env_name": env,
+        # All three walkers sign in to the paper login, one after another.
+        "paper_email": PAPER_EMAIL,
         "password": QA_PASSWORD,
+        "account_state": account,
+        "market": why,
         "focus": focus,
     }
     log(f"== {round_id}: proposal (walks, report, up to {SLOTS} bets into {', '.join(slots)}) ==")
+    log(f"   {why}; the walkers take turns on {PAPER_EMAIL} (the Alpaca paper account)")
     if focus:
         log(f"   focus: {focus}")
     if wait:
@@ -1081,26 +1287,27 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     log("   it is temper's now; `epd_loop.py collect` puts the candidates on the ledger once it is done")
 
 
-def cmd_propose_many(count: int | None, keep: bool, focuses: list[str] | tuple[str, ...] = ()) -> None:
-    """`count` proposals side by side, each with its own stack, slots and run; returns once all
-    are submitted.
+def cmd_propose_many(count: int | None, keep: bool, focuses: list[str] | tuple[str, ...] = (),
+                     when_open: bool = False) -> None:
+    """A proposal now, whatever else is out -- or, `when_open`, at the next open if the market is shut.
 
     `run --propose` is a turn of the loop: it collects first, and a proposal still out or a bet
     that failed stops it. This is the owner asking for more candidates now, whatever else is out
-    -- a failed bet makes the product's friction no less worth finding. The rounds do not see each
-    other: they start from the same goals, ledger and last outcome, so without a focus their
-    walkers go to the same pages and their candidates overlap. `focuses` gives round i the i-th
-    one (rounds past the last get none); `count` defaults to one round per focus.
+    -- a failed bet makes the product's friction no less worth finding.
+
+    Rounds used to run side by side (`--count N`, a `--focus` each). Every walker now trades the
+    one Alpaca paper account, and rounds walking at once would move each other's book, so there is
+    one round at a time: asking for more is refused, not quietly cut to one.
     """
     focuses = [f for f in (" ".join(f.split()) for f in focuses) if f]
     if count is None:
         count = len(focuses) or 1
     if count < 1:
         die("--count must be 1 or more")
-    if len(focuses) > count:
-        die(f"{len(focuses)} --focus for {count} round(s): one focus per round at most")
-    for i in range(count):
-        cmd_propose(keep, wait=False, alongside=True, focus=focuses[i] if i < len(focuses) else "")
+    if count > 1 or len(focuses) > 1:
+        die(f"{max(count, len(focuses))} rounds asked for, and rounds take turns now: every walker trades the "
+            f"one Alpaca paper account. Propose one; the next can start once its walks are done.")
+    cmd_propose(keep, wait=False, alongside=True, focus=focuses[0] if focuses else "", when_open=when_open)
 
 
 def collect_round(round_id: str, keep: bool) -> bool:
@@ -1991,7 +2198,8 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
 
       a proposal or a bet still running      -> reported, nothing started
       one finished and not yet collected     -> collected (the ledger, the stack down), then:
-      --propose, or nothing on file at all   -> a proposal run (walks, report, candidates)
+      --propose, or nothing on file at all   -> a proposal run (walks, report, candidates); with
+                                                nothing on file and the market shut, a line saying so
       a bet in backlog.md                    -> the loop run for the top one: tasks .. measure
       candidates on file, none in the backlog -> reported: the owner's turn
 
@@ -2039,6 +2247,11 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
     if waiting:
         log(f"nothing in {BACKLOG}; {len(waiting)} candidate(s) waiting for your word: {', '.join(waiting)}")
         log("   list the ones worth building there, top first (or `run --propose` for more)")
+        return
+    ok, why, at = market_window()
+    if not ok:
+        log(f"no candidates on file, and {why}: the walkers need the market open, so the first turn "
+            f"after {local_time(at)} proposes (`propose --when-open` arms that round now)")
         return
     log("no candidates on file; proposing")
     cmd_propose(keep, wait)
@@ -2431,11 +2644,14 @@ def main() -> None:
     r_.add_argument("--retry", action="store_true", help="start the open bet over if its run failed")
     r_.add_argument("--keep", action="store_true", help="leave the stacks up")
     r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
-    p = sub.add_parser("propose", help="walk the product and write candidates now, whatever else is out; "
-                                       "returns once submitted")
-    p.add_argument("--count", type=int, help="proposals side by side, each its own stack (default: one per --focus, else 1)")
+    p = sub.add_parser("propose", help="walk the product on the Alpaca paper account and write candidates now, "
+                                       "whatever else is out; market hours only; returns once submitted")
+    p.add_argument("--count", type=int, help="rounds to start: 1 (rounds take turns on the one paper account)")
     p.add_argument("--focus", action="append", default=[], metavar="TEXT",
-                   help="the part of the product a round's walkers stay in; once per round, in order")
+                   help="the part of the product the round's walkers stay in")
+    p.add_argument("--when-open", action="store_true",
+                   help="if the market is shut or closes within the hour, arm the round for the next open "
+                        "instead of refusing")
     p.add_argument("--keep", action="store_true", help="leave the stacks up")
     rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
     rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
@@ -2474,7 +2690,7 @@ def main() -> None:
     elif args.cmd == "run":
         cmd_run(args.keep, args.wait, args.propose, args.retry)
     elif args.cmd == "propose":
-        cmd_propose_many(args.count, args.keep, args.focus)
+        cmd_propose_many(args.count, args.keep, args.focus, args.when_open)
     elif args.cmd == "resume":
         cmd_resume(args.at, args.bet)
     elif args.cmd == "collect":

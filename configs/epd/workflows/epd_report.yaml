@@ -1,47 +1,51 @@
 workflow:
   name: epd_report
   # 2: an optional focus, handed to the personas: the part of the product this report is for.
-  version: 2
+  # 3: the walkers take turns on the Alpaca paper account -- one login, real prices and fills, the
+  #    market open -- instead of each seeding a mock-broker tenant of its own. No seed nodes; the
+  #    walks run one after another; the personas and the report are told what the account held.
+  version: 3
   description: |
     EPD loop, stage 1 of 7: the report. Replaces user research and analytics
     for a product that has neither yet.
 
-      personas ┐
-      seed_1 ──┴→ walk_1 ┐
-      seed_2 ───→ walk_2 ├→ report
-      seed_3 ───→ walk_3 ┘
+      personas → walk_1 → walk_2 → walk_3 → report
 
     Three synthetic users, each with a job to be done, use the app at a URL
-    (a dev stack of the branch being measured — main, at the top of a loop)
-    and record where they got stuck. The report ranks that friction with
-    the evidence and writes <bet dir>/report.md. No code is read; no fixes
-    are proposed. The bet stage reads the file.
+    (a dev stack of main) and record where they got stuck. The report ranks
+    that friction with the evidence and writes <bet dir>/report.md. No code is
+    read; no fixes are proposed. The bet stage reads the file.
 
-    The three walks depend only on personas, so they run at the same time —
-    a walker is mostly waiting for a page. They used to be chained because
-    all three shared one browser: an MCP session was keyed by server, so
-    every agent in the run got the same one and concurrent walkers would
-    read each other's pages. Sessions are keyed by calling agent now
-    (tools/mcp_client.py), so each walker gets its own browser and its own
-    cookies, and it is closed when that node ends.
+    The walkers sign in to the paper login (paper_email): an owner connected
+    to a real broker's paper account (Alpaca), with real prices, real fills
+    and a market that is open or shut. Every walk before this one ran on the
+    seed's mock broker, most of them with the market shut, and five walks in
+    three rounds reported as the product's friction an entry the practice
+    broker could not fill (b017). The driver starts a round only while the
+    market is open, with time left for three walks.
 
-    A browser each is not enough: two walkers in one tenant would move each
-    other's book — one places an order while the other is reading its
-    positions — and the second would report that as friction the product
-    caused. So each walker seeds its own tenant first: seed_N runs
-    `standee seed <env> -- --slot N` and reports the accounts it made
-    (qa<N>@ with a scanned book, qa-empty<N>@ with none), and walk_N signs in
-    with those. The seeding is part of the walker's own lane, not a count the
-    environment has to be told when it is stood up — adding a fourth walker is
-    a seed node and a walk node, and nothing else changes.
+    One account means the walkers take turns: walk_2 starts when walk_1 is
+    done, walk_3 when walk_2 is. Two walkers on one book at once would move it
+    under each other -- one places an order while the other reads its
+    positions -- and the second would report that as friction the product
+    caused. Each still gets its own browser (MCP sessions are keyed by calling
+    agent, tools/mcp_client.py). A later walker can find an earlier one's
+    orders: the personas are designed knowing the order they walk in, and the
+    report writer knows it too.
+
+    The personas and the report get what the account held as the round
+    started (account_state, which the driver reads from Alpaca) and when the
+    market closes (market).
 
     Isolated: every input is a string or a path. Run it alone against any dev
-    stack (env_name is what standee calls it) with any goals file to work on
-    the walkers or the report writer.
+    stack that has the paper login, while the market is open, to work on the
+    walkers or the report writer.
   inputs:
     app_url: {type: string, required: true}
-    env_name: {type: string, required: true}   # the standee environment behind app_url: the walkers seed it
+    paper_email: {type: string, required: true}    # the login all three walkers use: the Alpaca paper account
     password: {type: string, required: true}
+    account_state: {type: string, required: true}  # what the paper account held as the round started
+    market: {type: string, required: true}         # "the market is open; it closes <when>"
     goals: {type: string, required: true}
     profile: {type: string, required: true}
     last_outcome: {type: string, required: false}
@@ -68,59 +72,45 @@ workflow:
         goals: input.goals
         last_outcome: input.last_outcome
         focus: input.focus
+        account_state: input.account_state
+        market: input.market
 
-    # Slot N for walker N. These do not depend on personas: the accounts do not depend on who will use
-    # them, so the seeding runs while the personas are being written.
-    - name: seed_1
-      type: agent
-      agent: task_seed_slot
-      input_map: {env_name: input.env_name, slot: "1", password: input.password}
-
-    - name: seed_2
-      type: agent
-      agent: task_seed_slot
-      input_map: {env_name: input.env_name, slot: "2", password: input.password}
-
-    - name: seed_3
-      type: agent
-      agent: task_seed_slot
-      input_map: {env_name: input.env_name, slot: "3", password: input.password}
-
+    # One account, so one walker at a time: each walk waits for the one before it.
     - name: walk_1
       type: agent
       agent: epd_walk
-      depends_on: [personas, seed_1]
+      depends_on: [personas]
       input_map:
         app_url: input.app_url
         persona: personas.structured.persona_1
-        account: personas.structured.account_1
-        email: seed_1.structured.email
-        empty_email: seed_1.structured.empty_email
-        password: seed_1.structured.password
+        turn: "1"
+        email: input.paper_email
+        password: input.password
+        market: input.market
 
     - name: walk_2
       type: agent
       agent: epd_walk
-      depends_on: [personas, seed_2]
+      depends_on: [personas, walk_1]
       input_map:
         app_url: input.app_url
         persona: personas.structured.persona_2
-        account: personas.structured.account_2
-        email: seed_2.structured.email
-        empty_email: seed_2.structured.empty_email
-        password: seed_2.structured.password
+        turn: "2"
+        email: input.paper_email
+        password: input.password
+        market: input.market
 
     - name: walk_3
       type: agent
       agent: epd_walk
-      depends_on: [personas, seed_3]
+      depends_on: [personas, walk_2]
       input_map:
         app_url: input.app_url
         persona: personas.structured.persona_3
-        account: personas.structured.account_3
-        email: seed_3.structured.email
-        empty_email: seed_3.structured.empty_email
-        password: seed_3.structured.password
+        turn: "3"
+        email: input.paper_email
+        password: input.password
+        market: input.market
 
     - name: report
       type: agent
@@ -131,6 +121,8 @@ workflow:
         bet_id: input.bet_id
         goals: input.goals
         coverage: personas.structured.coverage
+        account_state: input.account_state
+        market: input.market
         walk_1: walk_1.output
         walk_2: walk_2.output
         walk_3: walk_3.output

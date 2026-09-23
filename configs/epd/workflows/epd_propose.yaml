@@ -2,13 +2,16 @@ workflow:
   name: epd_propose
   # 2: an optional focus for the walkers. Rounds run side by side (`propose --count N`), and N
   #    rounds walking from the same goals walked the same pages; a focus each spreads them out.
-  version: 2
+  # 3: the walkers take turns on the Alpaca paper account (epd_report v3), so the round is given the
+  #    login, what the account holds and when the market closes; rounds no longer run side by side.
+  version: 3
   description: |
     The proposal half of the EPD loop, as one run.
 
       report → bet → [OWNER DECIDES, on disk]
 
-    Three synthetic users walk a dev stack of main and the friction is ranked (epd_report); from
+    Three synthetic users take turns walking a dev stack of main, signed in to the Alpaca paper
+    account while the market is open, and the friction is ranked (epd_report); from
     that report, the goals and the ledger, the bet stage writes every bet the evidence supports,
     one to five, each with a falsifiable invariant and a pre-registered threshold, each to its own
     slot under the bets directory (epd_bet). Then it stops. There is no gate in this run: the
@@ -46,8 +49,11 @@ workflow:
 
     # Where to look at the product, and as whom
     app_url:      {type: string, required: true}   # the stack to walk (the driver brings it up)
-    env_name:     {type: string, required: true}   # what standee calls that stack: each walker seeds its own tenant
+    env_name:     {type: string, required: false}  # what standee calls that stack; for the record
+    paper_email:  {type: string, required: true}   # the login all three walkers use, one after another
     password:     {type: string, required: true}
+    account_state: {type: string, required: true}  # what the paper account holds as the round starts
+    market:       {type: string, required: true}   # "the market is open; it closes <when>"
 
   outputs:
     report_path:     report.structured.report_path
@@ -68,8 +74,10 @@ workflow:
       ref: workflows/epd_report
       input_map:
         app_url: input.app_url
-        env_name: input.env_name
+        paper_email: input.paper_email
         password: input.password
+        account_state: input.account_state
+        market: input.market
         goals: input.goals
         profile: input.profile
         last_outcome: input.last_outcome

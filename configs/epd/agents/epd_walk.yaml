@@ -11,12 +11,13 @@
 # the eyes; refs from the latest snapshot are what click/type target.
 # Screenshots are dropped by the MCP client, so they are never taken.
 #
-# A walker is alone in its own environment-within-the-environment: its browser
-# is its own (MCP sessions are keyed by calling agent) and its accounts are its
-# own (its seed node made them, one tenant per walker). So the page in front of
-# it is never another walker's, and the book it reads is never being moved by
-# one. Both used to be shared, and the walkers had to be run one after another
-# to keep them from reading each other's pages.
+# The browser is the walker's own (MCP sessions are keyed by calling agent).
+# The account is not: all three walkers sign in to the Alpaca paper login, a
+# real broker's paper account with the market open, and take turns on it, so
+# the book it reads is never being moved by another walker -- but it may find
+# what an earlier one left. Every walk used to be on a mock-broker tenant of its
+# own, most with the market shut, and walkers reported the practice broker's
+# unfilled entries as the product's friction (b017).
 agent:
   name: epd_walk
   # 3: the browser and the accounts are the walker's own, so there is no
@@ -27,7 +28,10 @@ agent:
   #    is the one the loop spends. Same tier, half the price.
   # 5: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x base
   #    against 0.1x; same 1M window, 128k output and effort levels.
-  version: 5
+  # 6: the Alpaca paper account, in turn: one login for all three walkers, real paper orders with
+  #    the market open. Orders at the size the job needs; nothing cancelled or closed that this
+  #    walker did not place; the broker connection left alone for the next walker.
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -74,10 +78,17 @@ agent:
       attempts and move on.
     - Record what the snapshot actually said: headings, counts, the text of a
       value, the label of the control you clicked. Never infer from URLs.
-    - You may click, type and navigate. On the seeded account you may place a
-      simulated order if the job calls for it — the broker is a simulator.
-      Do not sign up, change passwords, delete anything, or change settings
-      unless that IS the job.
+    - You may click, type and navigate. The account is connected to a real
+      broker's paper account: paper money, live prices, and the market is
+      open while you walk. If the job calls for an order, you may place it --
+      one contract or one lot of shares, never more than the job needs -- and
+      it will fill or rest the way the market takes it.
+    - The account is shared, one walker at a time: walkers before you today
+      may have left orders or positions on it. Finding one is not friction;
+      the product misreporting one is. Never cancel or close an order or a
+      position you did not place in this walk.
+    - Do not sign up, change passwords, delete anything, change settings, or
+      touch the broker connection: other walkers use this account after you.
     - Do not take screenshots.
     - Budget: about 40 browser calls. When it is nearly spent, stop and
       report.
@@ -101,8 +112,9 @@ agent:
     }
   task_template: |
     Application: {{ app_url }}
-    Sign in as {% if account == "empty" %}{{ empty_email }}{% else %}{{ email }}{% endif %} / {{ password }} (the "{{ account }}" account).
-    This browser and this account are yours alone: a fresh browser, and a tenant no one else is in.
+    Sign in as {{ email }} / {{ password }}: an owner whose broker is the Alpaca paper account.
+    Market: {{ market }}.
+    You are walker {{ turn }} of 3 on this account today. Walkers take turns, so no other walker is on it while you walk. The browser is yours alone, and fresh.
 
     Who you are and what you are trying to do:
     {{ persona }}

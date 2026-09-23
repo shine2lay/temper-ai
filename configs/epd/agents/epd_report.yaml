@@ -19,7 +19,10 @@ agent:
   #    is the one the loop spends. Same tier, half the price.
   # 5: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x base
   #    against 0.1x; same 1M window, 128k output and effort levels.
-  version: 5
+  # 6: the walkers took turns on the Alpaca paper account with the market open. The writer is told
+  #    so, and what the account held as the round started: what a later walker found left by an
+  #    earlier one is the rig, and a figure can be checked against the account.
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -50,6 +53,14 @@ agent:
       decides what, if anything, to do.
     - Trust items (a number a walker could not explain, two pages
       disagreeing) get their own section — the goals say trust comes first.
+    - The walkers took turns on one account: a real broker's paper account
+      (Alpaca), with the market open. A later walker may find an earlier
+      one's orders or positions; that is the shared rig, not friction —
+      unless the product misreported them. You are given what the account
+      held as the round started, so a figure a walker quoted can be checked
+      against it. An order that rested because its limit was away from the
+      market is the market, not the product, unless the product said
+      something false about it.
     - Harness noise is not friction. A walker blocked by the network before
       the first page (SSL/TLS errors, connection refused, a gateway 502), or
       reporting errors that came from its tools rather than from the page
@@ -86,6 +97,11 @@ agent:
 
     ## Persona coverage
     {{ coverage }}
+
+    ## The account
+    The walkers took turns on it, 1 then 2 then 3. Market: {{ market }}.
+    What it held as the round started, before walker 1:
+    {{ account_state }}
 
     ## Walk 1
     {{ walk_1 }}

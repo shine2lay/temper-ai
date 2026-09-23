@@ -36,6 +36,16 @@ The API key is read from TYPESAFE_API_KEY in temper's own process. Scripts never
 tool strips every *_API_KEY from the environment it gives them. TYPESAFE_BASE_URL overrides the
 endpoint (the same two variables TypeSafe's SDK reads).
 
+What TypeSafe accepts (api.typesafe.ai, 2026-09-23): a choice of 2 to 255 options, a score of 2 to
+10 levels, a noul with instructions or criteria. It refuses more options or levels, but it answers
+a single one, always the same way with confidence 1.0, and it answers an empty state (noul 0.5):
+questions that can only come out one way, or that are about nothing. This agent refuses those
+before anything is sent.
+
+Asked the same thing twice, Jev can differ in the second decimal: twelve identical requests gave
+a noul of 0.80 to 0.83, and the choice did not move. A threshold that sits on the edge of an answer
+can go either way on a re-run.
+
 Agent that answers typed questions about its inputs with TypeSafe AI's Jev model.
 
 ## Execution Pipeline

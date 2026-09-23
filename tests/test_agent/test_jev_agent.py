@@ -122,6 +122,42 @@ class TestTheAnswersAreTheStructuredOutput:
         assert json.loads(result.output) == ANSWERS
         assert result.metadata == {"model": "jev-1.13.0", "request_id": "req-1"}
 
+    def test_a_reply_as_typesafe_sent_it(self):
+        """The whole body api.typesafe.ai sent on 2026-09-23, asked a choice, a noul and a score."""
+        questions = {
+            "severity": QUESTIONS["severity"],
+            "user_visible": {"type": "noul", "instructions": "Would a user notice the problem?"},
+            "real_defect": {
+                "type": "score", "instructions": "How likely is this finding to be a real defect?",
+                "criteria": ["Almost certainly a misreading", "Could go either way", "Almost certainly real"],
+            },
+        }
+        answers = {
+            "severity": {"type": "choice", "choice": "blocking", "confidence": 1.0,
+                         "probabilities": {"blocking": 1.0, "minor": 0.0}},
+            "user_visible": {"type": "noul", "noul": 0.81},
+            "real_defect": {
+                "type": "score", "score": 1.81, "confidence": 0.71,
+                "legend": {"0": "Almost certainly a misreading", "1": "Could go either way",
+                           "2": "Almost certainly real"},
+                "probabilities": {"0": 0.02, "1": 0.15, "2": 0.83},
+            },
+        }
+        api = _TypeSafe(httpx.Response(
+            200,
+            json={"model": "jev-1.13.0", "answers": answers,
+                  "usage": {"input_tokens": 468, "output_tokens": 64}},
+            headers={"x-typesafe-request-id": "req_01a0cea256a173b59f46575c704abd55",
+                     "content-type": "application/json"},
+        ))
+        result = _agent(api, questions=questions).run({"finding": FINDING}, _context())
+
+        assert result.status == Status.COMPLETED, result.error
+        assert result.structured_output == answers
+        assert (result.tokens.prompt_tokens, result.tokens.completion_tokens) == (468, 64)
+        assert result.cost_usd == pytest.approx(468 * 0.042 / 1_000_000)
+        assert result.metadata["request_id"] == "req_01a0cea256a173b59f46575c704abd55"
+
     def test_the_request_is_the_one_typesafe_documents(self):
         api = _TypeSafe(_ok())
         _agent(api).run({"finding": FINDING}, _context())
@@ -211,6 +247,17 @@ class TestTheConfigIsCheckedBeforeAnythingIsSent:
         assert jev_config_errors(_config(questions={"spam": {
             "type": "noul", "criteria": {"true": "Advertising", "false": "A real conversation"}}})) == []
 
+    def test_every_size_typesafe_takes_is_taken(self):
+        # The edges api.typesafe.ai answered on 2026-09-23.
+        taken = {
+            "most_options": {"type": "choice", "criteria": {f"o{i}": "" for i in range(255)}},
+            "two_levels": {"type": "score", "criteria": ["calm", "upset"]},
+            "most_levels": {"type": "score", "criteria": [f"L{i}" for i in range(10)]},
+            "no_instructions": {"type": "choice", "criteria": {"billing": "money", "bug": "a defect"}},
+            "empty_criteria": {"type": "noul", "instructions": "Is it billing?", "criteria": {}},
+        }
+        assert jev_config_errors(_config(questions=taken)) == []
+
     @pytest.mark.parametrize("change, complaint", [
         ({"questions": None}, "must have 'questions'"),
         ({"questions": {}}, "must have 'questions'"),
@@ -221,6 +268,19 @@ class TestTheConfigIsCheckedBeforeAnythingIsSent:
         ({"questions": {"q": {"type": "choice", "criteria": ["a", "b"]}}}, "Choice question 'q' needs 'criteria'"),
         ({"questions": {"q": {"type": "score", "criteria": {"low": "x"}}}}, "Score question 'q' needs 'criteria'"),
         ({"questions": {"q": {"type": "noul", "criteria": "yes if bad"}}}, "Noul question 'q'"),
+        # TypeSafe answers these, always the same way, with confidence 1.0: routing on nothing.
+        ({"questions": {"q": {"type": "choice", "criteria": {"only": "x"}}}},
+         "Choice question 'q' has a single option, so Jev can only answer it one way"),
+        ({"questions": {"q": {"type": "score", "criteria": ["only"]}}},
+         "Score question 'q' has a single level"),
+        # TypeSafe refuses these with a 400 when the node runs; the studio should refuse them first.
+        ({"questions": {"q": {"type": "choice", "criteria": {f"o{i}": "" for i in range(256)}}}},
+         "Choice question 'q' has 256 options; TypeSafe takes at most 255"),
+        ({"questions": {"q": {"type": "score", "criteria": [f"L{i}" for i in range(11)]}}},
+         "Score question 'q' has 11 levels; TypeSafe takes at most 10"),
+        ({"questions": {"q": {"type": "noul"}}}, "Noul question 'q' needs 'instructions'"),
+        ({"questions": {"q": {"type": "noul", "instructions": "", "criteria": {}}}},
+         "Noul question 'q' needs 'instructions'"),
         ({"model": 1.13}, "'model' must be a model name"),
     ])
     def test_an_incomplete_config_is_named_and_nothing_is_sent(self, change, complaint):
@@ -326,6 +386,32 @@ class TestWhatAskingAgainCanFix:
         assert len(api.requests) == 1 and sleeps == []
         assert result.error == (
             "TypeSafe refused the request: 422 body.questions.severity.criteria: Field required (request_id=req-9)"
+        )
+
+    def test_a_state_over_the_token_limit_says_so(self, sleeps):
+        # The body api.typesafe.ai sent for a state of ~40k tokens (2026-09-23): no message in it.
+        api = _TypeSafe(httpx.Response(
+            400, json={"detail": {"error_type": "max_tokens_exceeded"}},
+            headers={"x-typesafe-request-id": "req-5"},
+        ))
+        result = _agent(api).run({"finding": FINDING}, _context())
+
+        assert len(api.requests) == 1 and sleeps == []
+        assert result.error == (
+            "TypeSafe refused the request: 400 max_tokens_exceeded; the state and the longest "
+            "question are over Jev's token limit: give it less state (request_id=req-5)"
+        )
+
+    def test_an_unknown_model_is_named(self, sleeps):
+        api = _TypeSafe(httpx.Response(
+            400, json={"detail": {"error_type": "api_usage_error", "message": "Unknown model: jev-0.0.0"}},
+            headers={"x-typesafe-request-id": "req-6"},
+        ))
+        result = _agent(api, model="jev-0.0.0").run({"finding": FINDING}, _context())
+
+        assert len(api.requests) == 1 and sleeps == []
+        assert result.error == (
+            "TypeSafe refused the request: 400 api_usage_error: Unknown model: jev-0.0.0 (request_id=req-6)"
         )
 
 

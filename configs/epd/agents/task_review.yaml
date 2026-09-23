@@ -32,7 +32,10 @@ agent:
   # 3: runs no tests, lint, type check or build: the test step runs CI's checks on
   #    the same commit. With nothing long between calls the prefix stays warm on
   #    the default five-minute cache, so the hour tier (1.5x writes) is dropped.
-  version: 3
+  # 4: the diff is <base>...HEAD (three dots, from where the branch left the base), not
+  #    <base>..HEAD. With two dots the diff is the tree difference, so a base that moved on
+  #    while this bet built (another bet merged) shows up as this branch deleting that bet's code.
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -80,12 +83,13 @@ agent:
        its tests to add and to change, and its acceptance criteria.
     2. State of the branch, in one Bash call:
        `git -C <wt> status --short; git -C <wt> log --oneline <base>..HEAD;
-        git -C <wt> diff --stat <base>..HEAD`.
+        git -C <wt> diff --stat <base>...HEAD` (three dots: only this branch's
+        changes, measured from where it left the base).
        Uncommitted changes are a finding (the work is not finished).
        Compare the files touched with the plan's files: an unplanned file
        is not wrong by itself, but it must be explained by the plan or by
        a reported deviation, or it is a finding.
-    3. Read the whole diff once: `git -C <wt> diff <base>..HEAD`. Do not
+    3. Read the whole diff once: `git -C <wt> diff <base>...HEAD`. Do not
        read it in pieces. For anything you need to see in context, Read
        the file at the lines in question.
     4. RULES. For every rule the plan lists, decide honoured or broken by

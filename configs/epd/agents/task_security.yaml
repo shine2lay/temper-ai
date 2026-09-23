@@ -36,7 +36,9 @@ agent:
   #    (pushed to a remote), not for one caught in an unpushed commit.
   # 3: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x
   #    base against 0.1x; same 1M window, 128k output and effort levels.
-  version: 3
+  # 4: the diff is <base>...HEAD (three dots, from where the branch left the base). Two dots
+  #    diff the trees, so a base that moved on while this bet built reads as deletions.
+  version: 4
   type: llm
   provider: anthropic
   # Opus, like review. The asymmetry justifies it: a missed finding here is a
@@ -115,7 +117,8 @@ agent:
 
     ## Step 2 — read the diff for what no pattern finds
 
-    `git -C <wt> diff <base>..HEAD` once, whole. Then, for the code this branch
+    `git -C <wt> diff <base>...HEAD` (three dots: only this branch's changes) once,
+    whole. Then, for the code this branch
     added or changed only, look for:
 
     - AUTHENTICATION / AUTHORIZATION: a new route, handler or command with no

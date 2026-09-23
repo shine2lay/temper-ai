@@ -17,9 +17,12 @@
 # Re-running updates the environment in place (same name, same URL) and
 # rebuilds the images. standee waits for every service to be healthy and rolls
 # back to the previous images if they never are, so a deploy that breaks the
-# stack leaves the old one running rather than nothing. The seed hook does not
-# run again (standee keeps `seeded_at`), so the test data an earlier step put
-# there survives the redeploy — which is what the browser step then reads.
+# stack leaves the old one running rather than nothing. Then the seed runs
+# again (`standee seed`), from the candidate's code: the stack was seeded once,
+# at stack_up, from the base branch, so an account or fixture this change adds
+# did not exist for QA (b008's qa-thin@ never did). RollCall's seed is
+# idempotent and refreshes each test account to its known book, so every QA
+# round starts from the same data.
 #
 # The commit check is the point of the stage: deploy a commit, or say why not.
 # A dirty worktree means what is judged is not what is committed — QA would
@@ -28,7 +31,10 @@
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
 agent:
   name: task_deploy
-  version: 1
+  # 2: seeds the stack again after each deploy, from the candidate's code, and
+  #    says so (`seeded`). A seed that fails is a failed deploy: the commit
+  #    ships a seed that does not run.
+  version: 2
   type: script
   timeout_seconds: 1200
   script_template: |
@@ -52,16 +58,16 @@ agent:
     case "$RUN_VERIFY" in false|False|0) RUN_VERIFY=false ;; *) RUN_VERIFY=true ;; esac
 
     emit() {
-      python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[1], "url": sys.argv[2], "commit": sys.argv[3], "verify": sys.argv[4]=="true", "detail": sys.argv[5]}))' \
-        "$1" "$2" "$3" "$4" "$5"
+      python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[1], "url": sys.argv[2], "commit": sys.argv[3], "verify": sys.argv[4]=="true", "detail": sys.argv[5], "seeded": sys.argv[6]=="true"}))' \
+        "$1" "$2" "$3" "$4" "$5" "$6"
     }
-    fail() { echo "deploy failed: $1" >&2; emit failed "" "$CANDIDATE" false "$1"; exit 1; }
+    fail() { echo "deploy failed: $1" >&2; emit failed "" "$CANDIDATE" false "$1" false; exit 1; }
 
     # No stack to deploy to is not a failure: most repos in this pipeline have
     # none, and the run should carry on to teardown and cleanup.
     if [ "$HAS_DOCKER" != true ]; then
       echo "deploy: no stack for this repo (has_docker=false) — nothing to deploy"
-      emit skipped "" "$CANDIDATE" false "no compose file in the worktree"
+      emit skipped "" "$CANDIDATE" false "no compose file in the worktree" false
       exit 0
     fi
 
@@ -135,5 +141,10 @@ agent:
       5*) fail "$URL answered $CODE after the deploy" ;;
     esac
 
-    echo "deployed: $ENV_NAME -> $URL ($HEAD, HTTP $CODE)"
-    emit deployed "$URL" "$HEAD" "$RUN_VERIFY" "HTTP $CODE"
+    # The seed again, from this commit's code, before QA signs in with its accounts.
+    echo "seeding $ENV_NAME again from $HEAD"
+    SEED_OUT=$(standee seed "$ENV_NAME" 2>&1) || { echo "$SEED_OUT"; fail "standee seed failed for $ENV_NAME on $HEAD: the seed this commit ships does not run"; }
+    printf '%s\n' "$SEED_OUT" | tail -15
+
+    echo "deployed: $ENV_NAME -> $URL ($HEAD, HTTP $CODE, seeded again)"
+    emit deployed "$URL" "$HEAD" "$RUN_VERIFY" "HTTP $CODE; seeded again from this commit" true

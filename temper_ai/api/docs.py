@@ -68,13 +68,13 @@ _AGENT_FIELDS: list[dict[str, Any]] = [
     {"name": "name", "type": "string", "default": None, "required": True,
      "description": "Unique agent name.", "constraints": {}},
     {"name": "type", "type": "string", "default": "llm", "required": False,
-     "description": 'Agent type: "llm" (AI-powered) or "script" (bash script).', "constraints": {"enum": ["llm", "script"]}},
+     "description": 'Agent type: "llm" (AI-powered), "script" (bash script) or "jev" (typed questions answered by TypeSafe\'s Jev model).', "constraints": {"enum": ["llm", "script", "jev"]}},
     {"name": "system_prompt", "type": "string", "default": None, "required": False,
      "description": "System prompt that sets the agent's persona and instructions.", "constraints": {}},
     {"name": "task_template", "type": "string", "default": None, "required": False,
      "description": "Jinja2 template for the user message. Variables come from stage inputs.", "constraints": {}},
     {"name": "model", "type": "string", "default": None, "required": False,
-     "description": "LLM model name (e.g. claude-sonnet-4-6, gpt-4o, qwen3-next).", "constraints": {}},
+     "description": "LLM model name (e.g. claude-sonnet-4-6, gpt-4o, qwen3-next); for a jev agent, the Jev model (e.g. jev-1.13.0, default jev-latest).", "constraints": {}},
     {"name": "provider", "type": "string", "default": None, "required": False,
      "description": "LLM provider (anthropic, openai, vllm, ollama, gemini).", "constraints": {}},
     {"name": "max_iterations", "type": "integer", "default": "10", "required": False,
@@ -89,6 +89,10 @@ _AGENT_FIELDS: list[dict[str, Any]] = [
      "description": "JSON schema for structured output extraction from agent response.", "constraints": {}},
     {"name": "memory", "type": "object", "default": None, "required": False,
      "description": "Memory configuration for cross-run persistence.", "constraints": {}},
+    {"name": "state_template", "type": "string | object", "default": None, "required": False,
+     "description": "jev agents: Jinja2 template for the content the questions are about; a mapping renders to an object. Variables come from stage inputs; an undefined one fails the node.", "constraints": {}},
+    {"name": "questions", "type": "object", "default": None, "required": False,
+     "description": "jev agents: questions by name, each {type: noul | choice | score, instructions, criteria}. The answers are the structured output, under the same names (e.g. severity.choice, severity.confidence).", "constraints": {}},
 ]
 
 _TOOL_FIELDS: list[dict[str, Any]] = [

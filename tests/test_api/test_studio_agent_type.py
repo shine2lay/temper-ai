@@ -62,6 +62,22 @@ def test_a_script_agent_without_a_script_is_refused(client):
     assert "script_template" in res.json()["detail"]
 
 
+def test_a_jev_agent_without_questions_is_refused(client):
+    res = client.put(
+        "/api/studio/configs/agent/probe", json=_agent(type="jev", state_template="{{ finding }}")
+    )
+    assert res.status_code == 400
+    assert "must have 'questions'" in res.json()["detail"]
+
+
+def test_a_jev_agent_with_its_questions_is_accepted(client):
+    res = client.put("/api/studio/configs/agent/probe", json=_agent(
+        type="jev", model="jev-1.13.0", state_template="{{ finding }}",
+        questions={"severity": {"type": "choice", "criteria": {"blocking": "x", "minor": "y"}}},
+    ))
+    assert res.status_code == 200
+
+
 def test_a_plugin_registered_type_is_accepted(client):
     """The check reads the live registry, not a fixed list."""
     register_agent_type("plugin_probe", ScriptAgent)

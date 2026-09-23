@@ -213,6 +213,26 @@ class TestDelegateRunsTheAgent:
         assert created[0]["model"] == "agent-model"  # agent overrides
         assert created[0]["timeout"] == 30  # default still inherited
 
+    def test_a_delegated_jev_agent_is_not_given_the_workflows_llm(self, wire):
+        """A jev agent's `model` is the Jev model: the workflow's default LLM model, merged in,
+        would be sent to TypeSafe as one."""
+        rec = FakeRecorder()
+        created = wire(
+            agents={"triage": FakeAgent(), "impl": FakeAgent()},
+            configs={
+                "__workflow__": {"defaults": {"provider": "vllm", "model": "qwen3", "timeout": 30}},
+                "triage": {"name": "triage", "type": "jev"},
+                "impl": {"name": "impl"},
+            },
+        )
+
+        bound(make_ctx(rec)).execute(tasks=[{"agent": "triage"}, {"agent": "impl"}])
+
+        jev, llm = sorted(created, key=lambda c: c["name"] != "triage")
+        assert "model" not in jev and "provider" not in jev
+        assert jev["timeout"] == 30  # what isn't an LLM setting still reaches it
+        assert (llm["provider"], llm["model"]) == ("vllm", "qwen3")
+
     def test_an_unloadable_workflow_does_not_stop_delegation(self, wire):
         rec = FakeRecorder()
         wire(agents={"impl": FakeAgent()}, configs={"impl": {"name": "impl"}}, workflow_raises=True)

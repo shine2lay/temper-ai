@@ -98,7 +98,7 @@ class Delegate(BaseTool):
         # Load agent configs and create agent instances
         from temper_ai.agent import create_agent
         from temper_ai.config import ConfigStore
-        from temper_ai.stage.loader import _unwrap_config
+        from temper_ai.stage.loader import _merge_agent_config, _unwrap_config
 
         config_store = ConfigStore()
         results = []
@@ -122,7 +122,11 @@ class Delegate(BaseTool):
 
             try:
                 raw = config_store.get(agent_ref, "agent")
-                agent_config = {**workflow_defaults, **_unwrap_config(raw, "agent")}
+                # Merged as the loader merges it: an agent type that takes no LLM settings
+                # (jev) is not given the workflow's LLM model as its own.
+                agent_config = _merge_agent_config(
+                    workflow_defaults, _unwrap_config(raw, "agent"), {},
+                )
             except Exception as exc:
                 return {
                     "task_index": idx,

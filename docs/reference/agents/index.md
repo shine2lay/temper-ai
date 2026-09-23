@@ -4,10 +4,11 @@
 
 _Auto-generated from code. Do not edit manually._
 
-Temper AI includes **2 agent types**. Set `type:` in your agent YAML config.
+Temper AI includes **3 agent types**. Set `type:` in your agent YAML config.
 
 | Name | Description |
 |------|-------------|
+| [`jev`](jev.md) | Agent that answers typed questions about its inputs with TypeSafe AI's Jev model. |
 | [`llm`](llm.md) | Agent that uses LLM with Jinja2 prompt templates, tools, and memory. |
 | [`script`](script.md) | Agent that executes a Jinja-rendered bash script. |
 

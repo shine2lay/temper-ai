@@ -241,6 +241,20 @@ def mkdir_shared(path: Path) -> None:
     os.chmod(path, 0o777)
 
 
+def share_bet_dir(bdir: Path) -> None:
+    """Open a bet's directory, and this user's files in it, to the container's user.
+
+    A run's stages write there as uid 999: tasks.json and build.json new, bet.json rewritten where it
+    lies. Anything made here other than by write() and mkdir_shared shuts them out. On 2026-09-23
+    b010's tasks node could not save its list, and its ship node died on build.json, then on bet.json.
+    The container's own files are its already, and not this user's to change.
+    """
+    mkdir_shared(bdir)
+    for p in bdir.iterdir():
+        if p.is_file() and p.stat().st_uid == os.getuid() and p.stat().st_mode & 0o777 != 0o666:
+            os.chmod(p, 0o666)
+
+
 # The loop is started by systemd as often as by a shell, and a user unit gets a
 # minimal environment: no ~/.local/bin, so no `standee`. That has now cost two
 # runs (b002 on the first stage, b003 on the first line), each time discovered
@@ -2261,6 +2275,7 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
 
 def start_bet(bet_id: str, keep: bool, wait: bool) -> None:
     """Submit the loop run for a bet the owner approved: tasks -> build -> ship -> [PR gate] -> deploy -> measure."""
+    share_bet_dir(BETS_DIR / bet_id)  # every bet's run starts here; its stages write in that directory
     st = load_state(bet_id)
     st["status"] = "running"
     save_state(st)
@@ -2380,6 +2395,7 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
             log(f"the failed attempt left {r.stdout.strip()} uncommitted paths in {slug}; kept as {patch.name}, worktree reset")
 
     log(f"== {bet_id}: resuming at `{stage}` (fork of {source[:8]} after `{before}`, checkpoint {seq}) ==")
+    share_bet_dir(bdir)  # the stages that run again write there too
     new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id), LOOP_WORKSPACE)
     st["stages"]["loop"] = {"_run_id": new, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
                             "_forked_from": source, "_fork_sequence": seq,

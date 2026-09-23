@@ -55,6 +55,7 @@ def L(tmp_path, monkeypatch):
     calls: dict[str, list] = {"standee_down": [], "release_task": [], "propose": [], "start": []}
     mod._real_cmd_propose = mod.cmd_propose
     mod._real_market_window = mod.market_window
+    mod._real_start_bet = mod.start_bet
     monkeypatch.setattr(mod, "market_window", lambda: (True, "the market is open; it closes Thu Sep 24 13:00 PDT",
                                                         dt.datetime.now(dt.UTC)))
     monkeypatch.setattr(mod, "standee_down", lambda env: calls["standee_down"].append(env))
@@ -104,6 +105,25 @@ def test_write_replaces_a_file_this_user_cannot_open_for_writing(L, tmp_path):
     assert p.read_text() == "ours"
     assert stat.S_IMODE(p.stat().st_mode) == 0o666
     assert not list(L.LOOP_DIR.glob(".bet.json.*.tmp"))
+
+
+def test_start_bet_opens_the_bet_dir_to_the_container(L, monkeypatch):
+    # b010, 2026-09-23: a bet dir made by a plain mkdir (0o775, files 0o664) let the container's user
+    # write nothing: its tasks node could not save tasks.json, and its ship node died on build.json,
+    # then on bet.json, which it rewrites in place.
+    bdir = L.BETS_DIR / "b050"
+    bdir.mkdir()
+    os.chmod(bdir, 0o775)
+    (bdir / "bet.json").write_text("{}")
+    os.chmod(bdir / "bet.json", 0o664)
+    submitted = []
+    monkeypatch.setattr(L, "loop_inputs", lambda bet_id: {"bet_id": bet_id})
+    monkeypatch.setattr(L, "post_run", lambda wf, inputs, ws: submitted.append(inputs) or "run-1")
+    L._real_start_bet("b050", keep=False, wait=False)
+    assert stat.S_IMODE(bdir.stat().st_mode) == 0o777
+    assert stat.S_IMODE((bdir / "bet.json").stat().st_mode) == 0o666
+    assert submitted == [{"bet_id": "b050"}]
+    assert L.load_state("b050")["stages"]["loop"]["_run_id"] == "run-1"
 
 
 # ---------------------------------------------------------------- backlog --

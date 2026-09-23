@@ -668,6 +668,8 @@ def test_when_open_arms_one_timer_per_open_that_sees_the_same_tree(L, monkeypatc
         return subprocess.CompletedProcess(cmd, 1, "", "Failed to start transient timer unit: Unit already loaded")
 
     monkeypatch.setattr(L.subprocess, "run", systemd_run)
+    monkeypatch.setenv("TEMPER_API", "http://localhost:8420")
+    monkeypatch.setenv("TEMPER_DATABASE_URL", "postgresql://db.invalid/temper")
     at = dt.datetime(2026, 9, 24, 13, 45, tzinfo=dt.UTC)
     L.arm_proposal(at, "the market is shut; it opens Thu Sep 24 06:30 PDT", "Settings", keep=False)
     cmd = ran[0]
@@ -675,6 +677,8 @@ def test_when_open_arms_one_timer_per_open_that_sees_the_same_tree(L, monkeypatc
     assert "--on-calendar=2026-09-24 13:45:00 UTC" in cmd
     assert cmd[-5:] == [str(DRIVER), "propose", "--when-open", "--focus", "Settings"]
     assert f"--setenv=EPD_WORKSPACES={os.environ['EPD_WORKSPACES']}" in cmd, "the timer's run sees the same tree"
+    assert "--setenv=TEMPER_API=http://localhost:8420" in cmd
+    assert not [a for a in cmd if a.startswith("--setenv=TEMPER_DATABASE_URL")], "only what the driver reads"
     assert "the round is armed for" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         L.arm_proposal(at, "the market is shut", "", keep=False)

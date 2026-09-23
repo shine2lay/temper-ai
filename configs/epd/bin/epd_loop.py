@@ -1186,7 +1186,9 @@ def arm_proposal(at: dt.datetime, why: str, focus: str, keep: bool) -> None:
         argv += ["--focus", focus]
     if keep:
         argv.append("--keep")
-    env = {k: v for k, v in os.environ.items() if k == "PATH" or k.startswith(("EPD_", "TEMPER_"))}
+    # Only what this driver reads goes into the unit: a token or a database URL in the caller's
+    # environment has no business in a unit file.
+    env = {k: v for k, v in os.environ.items() if k in ("PATH", "AGENT_TOOLS_HOME", "TEMPER_API") or k.startswith("EPD_")}
     cmd = ["systemd-run", "--user", f"--unit={unit}",
            f"--on-calendar={at.astimezone(dt.UTC):%Y-%m-%d %H:%M:%S} UTC", "--timer-property=AccuracySec=1s",
            f"--working-directory={Path.cwd()}",

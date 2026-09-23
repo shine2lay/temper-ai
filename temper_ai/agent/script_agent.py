@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 import time
 from typing import Any
 
@@ -318,7 +319,10 @@ class ScriptAgent(AgentABC):
             tool_result = context.tool_executor.execute(
                 "Bash",
                 # `env` carries the interpolated values; `command` carries only the author's script.
-                {"command": script, "_skip_allowlist": True, "timeout": timeout, "env": stash.env},
+                # TEMPER_PYTHON is the interpreter temper itself runs on, with its
+                # dependencies (PyYAML among them); the image's `python3` has none.
+                {"command": script, "_skip_allowlist": True, "timeout": timeout,
+                 "env": {**stash.env, "TEMPER_PYTHON": sys.executable}},
                 # A script agent runs the script ITS OWN config declares — the
                 # command is rendered from the template here, not chosen by a
                 # model — so it declares exactly the one tool it uses.

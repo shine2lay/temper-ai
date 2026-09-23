@@ -506,6 +506,13 @@ class LLMAgent(AgentABC):
                     by_llm_name[wire] = tool_name
 
         def execute_tool(tool_name: str, params: dict[str, Any]) -> Any:
+            # A leading underscore marks a parameter the harness sets and a model never
+            # does: `_skip_allowlist` is how a script agent's author-written command
+            # skips the command allowlist and earns the longer script timeout
+            # (tools/bash.py). The schema a model is shown does not offer it, but a
+            # model can still send it, and Bash.execute(**params) would honour it.
+            if isinstance(params, dict):
+                params = {k: v for k, v in params.items() if not str(k).startswith("_")}
             result = te.execute(
                 by_llm_name.get(tool_name, tool_name),
                 params,

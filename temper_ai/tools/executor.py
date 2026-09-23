@@ -48,7 +48,13 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30
 _MAX_TIMEOUT = 600
-_DEFAULT_WORKERS = 4
+# A script agent's own command (`_skip_allowlist`, never a model's -- llm_agent strips
+# `_` parameters from model calls) may run for as long as tools/bash.py allows it.
+_SCRIPT_MAX_TIMEOUT = 3600
+# One pool per run, shared by every node of it. A build's judges run side by side
+# (review, deploy + QA, security, and the test step, which holds a worker for the
+# length of a test suite); four left the next call queued behind them.
+_DEFAULT_WORKERS = 8
 # How long the wrapper waits past a timeout the tool enforces itself, so the tool's
 # own, better-informed error (it can kill what it started) is the one reported.
 _OWN_TIMEOUT_GRACE = 5
@@ -299,7 +305,8 @@ class ToolExecutor:
         # them; its `git commit` was still queued when the node gave up.
         own = _own_timeout(tool, params)
         asked = timeout or own or self.default_timeout
-        effective_timeout = min(asked, _MAX_TIMEOUT) + (_OWN_TIMEOUT_GRACE if own else 0)
+        cap = _SCRIPT_MAX_TIMEOUT if isinstance(params, dict) and params.get("_skip_allowlist") else _MAX_TIMEOUT
+        effective_timeout = min(asked, cap) + (_OWN_TIMEOUT_GRACE if own else 0)
         return self._execute_with_timeout(tool, tool_name, params, effective_timeout, parent_id, execution_id)
 
     def _evaluate_safety_policies(

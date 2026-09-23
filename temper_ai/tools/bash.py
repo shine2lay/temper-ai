@@ -49,6 +49,11 @@ _DEFAULT_ALLOWED_COMMANDS = [
 
 _DEFAULT_TIMEOUT = 30
 _MAX_TIMEOUT = 600
+# An author's script -- a script agent, whose command is its config's and never a
+# model's (`_skip_allowlist`) -- may run a repository's whole test suite, which
+# does not fit in ten minutes. Models keep the 600 s cap: llm_agent strips every
+# `_` parameter from a model's calls, so a model cannot claim this one.
+_SCRIPT_MAX_TIMEOUT = 3600
 _MAX_OUTPUT_SIZE = 256_000  # 256KB
 
 
@@ -75,7 +80,8 @@ class Bash(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         command = params.get("command", "")
-        timeout = min(params.get("timeout", _DEFAULT_TIMEOUT), _MAX_TIMEOUT)
+        cap = _SCRIPT_MAX_TIMEOUT if params.get("_skip_allowlist", False) else _MAX_TIMEOUT
+        timeout = min(params.get("timeout", _DEFAULT_TIMEOUT), cap)
 
         if not command or not command.strip():
             return ToolResult(success=False, result="", error="Empty command")

@@ -17,7 +17,10 @@ agent:
   #    is the one the loop spends. Same tier, half the price.
   # 3: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x base
   #    against 0.1x; same 1M window, 128k output and effort levels.
-  version: 3
+  # 4: takes a focus. Proposals run side by side now, and three rounds designing their walkers
+  #    from the same goals and the same last outcome sent them to the same pages to find the
+  #    same friction; a focus gives each round its own part of the product.
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -44,6 +47,15 @@ agent:
     whatever the goals and the last outcome say is least understood. If a
     previous outcome exists, do not repeat its walks unless it says to.
 
+    If the owner names a focus for this round, all three jobs are done inside
+    it: other rounds are walking the rest of the product at the same time, so
+    a persona that wanders back to the front page to cover the goals walks a
+    page someone else is already walking. Three different jobs within the
+    focus, from three different starting points, and still one on the "empty"
+    account wherever the focus has an empty state (most do: a page with no
+    data yet is part of the job). The goals still decide what counts as
+    friction there.
+
     Each persona brief is one paragraph, written to the walker in the second
     person: who you are, what you already know, what you are trying to get
     done, and how you will know you are done. Concrete: name the figures or
@@ -63,6 +75,11 @@ agent:
     ## Owner's goals
     {{ goals }}
 
+    {% if focus %}
+    ## This round's focus
+    {{ focus }}
+
+    {% endif %}
     {% if last_outcome %}
     ## Outcome of the previous bet
     {{ last_outcome }}

@@ -1,6 +1,7 @@
 workflow:
   name: epd_report
-  version: 1
+  # 2: an optional focus, handed to the personas: the part of the product this report is for.
+  version: 2
   description: |
     EPD loop, stage 1 of 7: the report. Replaces user research and analytics
     for a product that has neither yet.
@@ -46,6 +47,7 @@ workflow:
     last_outcome: {type: string, required: false}
     bet_id: {type: string, required: true}
     report_path: {type: string, required: true}
+    focus: {type: string, required: false}      # what part of the product the walkers stay in; empty = wherever the goals say
   outputs:
     status: report.structured.status
     report_path: report.structured.report_path
@@ -65,6 +67,7 @@ workflow:
         profile: input.profile
         goals: input.goals
         last_outcome: input.last_outcome
+        focus: input.focus
 
     # Slot N for walker N. These do not depend on personas: the accounts do not depend on who will use
     # them, so the seeding runs while the personas are being written.

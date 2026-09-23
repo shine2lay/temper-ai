@@ -517,6 +517,24 @@ def test_proposals_side_by_side_each_get_their_own_stack_slots_and_run(L, monkey
     assert all((L.BETS_DIR / b).is_dir() for s in slots for b in s)
 
 
+def test_each_round_walks_its_own_focus_and_the_rest_walk_where_the_goals_say(L, monkeypatch, capsys):
+    seen = proposals_run_here(L, monkeypatch)
+    L.cmd_propose_many(3, keep=False, focuses=["The Screener  and\n Browse", "Settings"])
+    assert [r["focus"] for r in seen["runs"]] == ["The Screener and Browse", "Settings", ""]
+    assert [L.load_round(r).get("focus") for r in L.open_rounds()] == ["The Screener and Browse", "Settings", ""]
+    L.cmd_status()
+    assert "focus: Settings" in capsys.readouterr().out
+
+
+def test_count_defaults_to_one_round_per_focus_and_never_drops_one(L, monkeypatch):
+    seen = proposals_run_here(L, monkeypatch)
+    L.cmd_propose_many(None, keep=False, focuses=["Analysis", " ", "Screener"])
+    assert [r["focus"] for r in seen["runs"]] == ["Analysis", "Screener"]
+    with pytest.raises(SystemExit):
+        L.cmd_propose_many(1, keep=False, focuses=["Settings", "Alerts"])
+    assert len(seen["runs"]) == 2, "a focus that would be dropped stops the command before any round starts"
+
+
 def test_a_second_proposal_waits_for_the_first_unless_asked_for_alongside(L, monkeypatch):
     proposals_run_here(L, monkeypatch)
     L.cmd_propose(keep=False, wait=False)

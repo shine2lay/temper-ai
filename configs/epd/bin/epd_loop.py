@@ -1018,7 +1018,7 @@ def pitch_fields(path: Path) -> dict:
     return out
 
 
-def cmd_propose(keep: bool, wait: bool, alongside: bool = False) -> None:
+def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = "") -> None:
     """One proposal, as one temper run: the walks, the report, one to five candidates. No gate.
 
     Two things stay on this side, because neither is part of the proposal's reasoning: the stack
@@ -1029,7 +1029,11 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False) -> None:
 
     `alongside`: another proposal may be out, and this one runs beside it (`propose --count`).
     Each round has its own stack, slots and run, so nothing is shared but the inputs.
+
+    `focus`: the part of the product this round's walkers stay in (the personas are designed
+    inside it). Empty: wherever the goals and the last outcome send them.
     """
+    focus = " ".join(focus.split())
     require_tools("standee", "docker", "git", "ssh")
     if open_round() and not alongside:
         die(f"proposal {open_round()} is still out; `collect` it first")
@@ -1041,7 +1045,7 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False) -> None:
         mkdir_shared(BETS_DIR / b)
     head = refresh_main()
     env, url = standee_up(MAIN_CLONE, f"epd-{round_id}", "12h")
-    rd = {"round_id": round_id, "env": env, "url": url, "base_head": head, "slots": slots,
+    rd = {"round_id": round_id, "env": env, "url": url, "base_head": head, "slots": slots, "focus": focus,
           "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
     save_round(rd)
     wait_for_url(url)
@@ -1061,8 +1065,11 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False) -> None:
         # so they need the name standee knows it by, not just its URL.
         "env_name": env,
         "password": QA_PASSWORD,
+        "focus": focus,
     }
     log(f"== {round_id}: proposal (walks, report, up to {SLOTS} bets into {', '.join(slots)}) ==")
+    if focus:
+        log(f"   focus: {focus}")
     if wait:
         out = run_workflow("epd_propose", inputs, workspace=LOOP_WORKSPACE, timeout=2 * 3600)
         finish_round(rd, out, keep)
@@ -1074,20 +1081,26 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False) -> None:
     log("   it is temper's now; `epd_loop.py collect` puts the candidates on the ledger once it is done")
 
 
-def cmd_propose_many(count: int, keep: bool) -> None:
+def cmd_propose_many(count: int | None, keep: bool, focuses: list[str] | tuple[str, ...] = ()) -> None:
     """`count` proposals side by side, each with its own stack, slots and run; returns once all
     are submitted.
 
     `run --propose` is a turn of the loop: it collects first, and a proposal still out or a bet
     that failed stops it. This is the owner asking for more candidates now, whatever else is out
     -- a failed bet makes the product's friction no less worth finding. The rounds do not see each
-    other: they start from the same goals, ledger and last outcome, so their candidates can
-    overlap, and the owner sorts that out on disk as with any other pitch.
+    other: they start from the same goals, ledger and last outcome, so without a focus their
+    walkers go to the same pages and their candidates overlap. `focuses` gives round i the i-th
+    one (rounds past the last get none); `count` defaults to one round per focus.
     """
+    focuses = [f for f in (" ".join(f.split()) for f in focuses) if f]
+    if count is None:
+        count = len(focuses) or 1
     if count < 1:
         die("--count must be 1 or more")
-    for _ in range(count):
-        cmd_propose(keep, wait=False, alongside=True)
+    if len(focuses) > count:
+        die(f"{len(focuses)} --focus for {count} round(s): one focus per round at most")
+    for i in range(count):
+        cmd_propose(keep, wait=False, alongside=True, focus=focuses[i] if i < len(focuses) else "")
 
 
 def collect_round(round_id: str, keep: bool) -> bool:
@@ -1168,6 +1181,8 @@ def finish_round(rd: dict, out: dict, keep: bool) -> None:
         standee_down(rd["env"])
     print()
     print(f"=== {round_id}: {len(candidates)} candidate(s) from {rdir / 'report.md'}")
+    if rd.get("focus"):
+        print(f"Focus: {rd['focus']}")
     print(f"Report: {out.get('report_summary')}")
     for c in candidates:
         print()
@@ -2372,7 +2387,9 @@ def cmd_status() -> None:
     if waiting:
         print(f"waiting for your word (in neither list): {', '.join(waiting)}")
     for rnd in open_rounds():
-        print(f"\nproposal out: {rnd} (run {load_round(rnd).get('_run_id', '')[:8]}); `collect` when it is done")
+        rd = load_round(rnd)
+        print(f"\nproposal out: {rnd} (run {rd.get('_run_id', '')[:8]}); `collect` when it is done"
+              + (f"\n    focus: {rd['focus']}" if rd.get("focus") else ""))
     for b in open_bets():
         st = load_state(b)
         rid = (st["stages"].get("loop") or {}).get("_run_id", "")
@@ -2406,7 +2423,9 @@ def main() -> None:
     r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
     p = sub.add_parser("propose", help="walk the product and write candidates now, whatever else is out; "
                                        "returns once submitted")
-    p.add_argument("--count", type=int, default=1, help="proposals side by side, each its own stack (default 1)")
+    p.add_argument("--count", type=int, help="proposals side by side, each its own stack (default: one per --focus, else 1)")
+    p.add_argument("--focus", action="append", default=[], metavar="TEXT",
+                   help="the part of the product a round's walkers stay in; once per round, in order")
     p.add_argument("--keep", action="store_true", help="leave the stacks up")
     rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
     rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
@@ -2444,7 +2463,7 @@ def main() -> None:
     elif args.cmd == "run":
         cmd_run(args.keep, args.wait, args.propose, args.retry)
     elif args.cmd == "propose":
-        cmd_propose_many(args.count, args.keep)
+        cmd_propose_many(args.count, args.keep, args.focus)
     elif args.cmd == "resume":
         cmd_resume(args.at, args.bet)
     elif args.cmd == "collect":

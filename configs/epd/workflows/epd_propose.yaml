@@ -1,6 +1,8 @@
 workflow:
   name: epd_propose
-  version: 1
+  # 2: an optional focus for the walkers. Rounds run side by side (`propose --count N`), and N
+  #    rounds walking from the same goals walked the same pages; a focus each spreads them out.
+  version: 2
   description: |
     The proposal half of the EPD loop, as one run.
 
@@ -40,6 +42,7 @@ workflow:
     last_outcome: {type: string, required: false}
     unfinished:   {type: string, required: false}
     bets_tsv:     {type: string, required: true}
+    focus:        {type: string, required: false}  # the part of the product this round's walkers stay in; empty = wherever the goals say
 
     # Where to look at the product, and as whom
     app_url:      {type: string, required: true}   # the stack to walk (the driver brings it up)
@@ -72,6 +75,7 @@ workflow:
         last_outcome: input.last_outcome
         bet_id: input.round_id
         report_path: input.report_path
+        focus: input.focus
 
     # 2 — One to five bets, each with a falsifiable invariant and a pre-registered threshold,
     #     each to its own slot, in the order the agent would build them. The owner decides on disk.

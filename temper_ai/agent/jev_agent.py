@@ -29,6 +29,16 @@ them the way it routes on any node's output (`triage.structured.severity.choice`
 The API key is read from TYPESAFE_API_KEY in temper's own process. Scripts never see it: the Bash
 tool strips every *_API_KEY from the environment it gives them. TYPESAFE_BASE_URL overrides the
 endpoint (the same two variables TypeSafe's SDK reads).
+
+What TypeSafe accepts (api.typesafe.ai, 2026-09-23): a choice of 2 to 255 options, a score of 2 to
+10 levels, a noul with instructions or criteria. It refuses more options or levels, but it answers
+a single one, always the same way with confidence 1.0, and it answers an empty state (noul 0.5):
+questions that can only come out one way, or that are about nothing. This agent refuses those
+before anything is sent.
+
+Asked the same thing twice, Jev can differ in the second decimal: twelve identical requests gave
+a noul of 0.80 to 0.83, and the choice did not move. A threshold that sits on the edge of an answer
+can go either way on a re-run.
 """
 
 from __future__ import annotations
@@ -61,6 +71,10 @@ DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
 QUESTION_TYPES = ("noul", "choice", "score")
+
+#: The most options and levels TypeSafe takes (it refuses more with a 400 when the node runs).
+MAX_CHOICE_OPTIONS = 255
+MAX_SCORE_LEVELS = 10
 
 #: $0.042 per million input tokens (typesafe.ai pricing, September 2026). Output tokens are free.
 USD_PER_INPUT_TOKEN = 0.042 / 1_000_000
@@ -103,12 +117,34 @@ def _question_errors(name: str, question: Any) -> list[str]:
     if kind not in QUESTION_TYPES:
         return [f"Question '{name}' has type {kind!r}; a jev question is one of {', '.join(QUESTION_TYPES)}"]
     criteria = question.get("criteria")
-    if kind == "choice" and (not isinstance(criteria, dict) or not criteria):
-        return [f"Choice question '{name}' needs 'criteria': each option's name mapped to when it applies"]
-    if kind == "score" and (not isinstance(criteria, list) or not criteria):
-        return [f"Score question '{name}' needs 'criteria': a list of the levels, lowest first"]
-    if kind == "noul" and criteria is not None and not isinstance(criteria, dict):
+    if kind == "choice":
+        if not isinstance(criteria, dict) or not criteria:
+            return [f"Choice question '{name}' needs 'criteria': each option's name mapped to when it applies"]
+        return _count_errors(name, "Choice", "option", len(criteria), MAX_CHOICE_OPTIONS)
+    if kind == "score":
+        if not isinstance(criteria, list) or not criteria:
+            return [f"Score question '{name}' needs 'criteria': a list of the levels, lowest first"]
+        return _count_errors(name, "Score", "level", len(criteria), MAX_SCORE_LEVELS)
+    if criteria is not None and not isinstance(criteria, dict):
         return [f"Noul question '{name}': 'criteria' must be a mapping with 'true' and/or 'false'"]
+    if not question.get("instructions") and not criteria:
+        return [
+            f"Noul question '{name}' needs 'instructions' (or 'criteria' saying when it is true): "
+            f"TypeSafe refuses one with neither"
+        ]
+    return []
+
+
+def _count_errors(name: str, kind: str, noun: str, count: int, most: int) -> list[str]:
+    # TypeSafe answers a question with a single option or level the same way every time, with
+    # confidence 1.0: a node routing on it routes on nothing, so it is refused here.
+    if count < 2:
+        return [
+            f"{kind} question '{name}' has a single {noun}, so Jev can only answer it one way: "
+            f"give it two or more"
+        ]
+    if count > most:
+        return [f"{kind} question '{name}' has {count} {noun}s; TypeSafe takes at most {most}"]
     return []
 
 
@@ -327,10 +363,13 @@ def _reply(response: httpx.Response, attempts: int) -> tuple[dict, str | None]:
     request_id = response.headers.get(REQUEST_ID_HEADER)
     if not response.is_success:
         tries = f" after {attempts} attempts" if attempts > 1 else ""
+        detail = _error_detail(response)
         hint = f"; check {API_KEY_ENV}" if response.status_code in (401, 403) else ""
+        if detail == "max_tokens_exceeded":
+            hint = "; the state and the longest question are over Jev's token limit: give it less state"
         raise JevError(
             f"TypeSafe refused the request{tries}: {response.status_code} "
-            f"{_error_detail(response)}{hint} (request_id={request_id or '-'})"
+            f"{detail}{hint} (request_id={request_id or '-'})"
         )
     try:
         reply = response.json()
@@ -346,7 +385,8 @@ def _reply(response: httpx.Response, attempts: int) -> tuple[dict, str | None]:
 
 def _error_detail(response: httpx.Response) -> str:
     """TypeSafe's own words: `message`, an error under `detail` ({error_type, message}, as a 401
-    is sent), or the validation errors under `detail` (`loc: msg`)."""
+    is sent, or a bare {error_type}, as a state over the token limit is), or the validation errors
+    under `detail` (`loc: msg`)."""
     try:
         body = response.json()
     except ValueError:
@@ -357,9 +397,13 @@ def _error_detail(response: httpx.Response) -> str:
         detail = body.get("detail")
         if isinstance(detail, str):
             return detail
-        if isinstance(detail, dict) and isinstance(detail.get("message"), str):
+        if isinstance(detail, dict):
             kind = detail.get("error_type")
-            return f"{kind}: {detail['message']}" if isinstance(kind, str) else detail["message"]
+            message = detail.get("message")
+            if isinstance(message, str):
+                return f"{kind}: {message}" if isinstance(kind, str) else message
+            if isinstance(kind, str):
+                return kind
         if isinstance(detail, list):
             parts = [
                 f"{'.'.join(str(p) for p in item.get('loc') or [])}: {item.get('msg', '')}"

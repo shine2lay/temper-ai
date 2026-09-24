@@ -608,6 +608,27 @@ def test_the_walkers_sign_in_to_the_paper_login_and_are_told_what_it_holds(L, mo
     assert "focus: The Screener and Browse" in capsys.readouterr().out
 
 
+def test_a_round_whose_stack_fails_to_stand_up_gives_its_id_and_slots_back(L, monkeypatch):
+    # 2026-09-23 21:45 PT: a gateway reload that hung failed `standee up`; r009 and b047-b051 were left
+    # empty, and the next round would have been r010 with bets from b052.
+    seen = proposals_run_here(L, monkeypatch)
+    good_up = L.standee_up
+
+    def hung(source, as_name, ttl):
+        raise SystemExit("command failed (1): standee up")
+
+    monkeypatch.setattr(L, "standee_up", hung)
+    with pytest.raises(SystemExit):
+        L.cmd_propose(keep=False, wait=False)
+    assert L.round_ids() == [] and not list(L.BETS_DIR.glob("b[0-9][0-9][0-9]")), "nothing left behind"
+    assert seen["runs"] == []
+
+    monkeypatch.setattr(L, "standee_up", good_up)
+    L.cmd_propose(keep=False, wait=False)
+    assert L.round_ids() == ["r001"] and seen["up"] == ["epd-r001"], "the next round takes the id back"
+    assert seen["runs"][0]["slots"].split()[0] == "b001", "and the slots"
+
+
 def test_a_lens_says_who_walks_and_reaches_the_run_the_record_and_the_armed_round(L, monkeypatch, capsys):
     # The owner, 2026-09-23: "from lens of people that doesn't [know] anything about trading".
     shut = (False, "the market is shut; it opens Thu Sep 24 06:30 PDT", None)

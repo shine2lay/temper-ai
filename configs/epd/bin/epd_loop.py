@@ -1387,8 +1387,19 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     slots = new_bet_ids(SLOTS)
     for b in slots:
         mkdir_shared(BETS_DIR / b)
-    head = refresh_main()
-    env, url = standee_up(MAIN_CLONE, f"epd-{round_id}", "12h")
+    try:
+        head = refresh_main()
+        env, url = standee_up(MAIN_CLONE, f"epd-{round_id}", "12h")
+    except BaseException:
+        # Nothing was started, so the round's id and its slots are given back: left behind, the empty
+        # directories would number the next round and its bets past them (2026-09-23 21:45 PT, a
+        # gateway reload that hung left r009 and b047-b051 empty). Only empty ones are removed.
+        for d in (*(BETS_DIR / b for b in slots), rdir):
+            try:
+                d.rmdir()
+            except OSError:
+                pass
+        raise
     rd = {"round_id": round_id, "env": env, "url": url, "base_head": head, "slots": slots, "focus": focus,
           "lens": lens, "market_state": market_state,
           "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}

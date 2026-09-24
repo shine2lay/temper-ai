@@ -146,6 +146,51 @@ MARKET_MIN_LEFT_MIN = int(os.environ.get("EPD_MARKET_MIN_LEFT_MIN", "60"))
 # `propose --when-open` starts the round this long after the open: the first minutes quote the widest.
 OPEN_DELAY_MIN = int(os.environ.get("EPD_OPEN_DELAY_MIN", "15"))
 
+# EPD's own paper accounts (the owner made them 2026-09-23, named "Walk" and "QA"): the walkers trade
+# WALK, and a bet's checks -- the build's QA and the live measure -- use QA. Their keys are in
+# PAPER_KEYS_FILE as ROLLCALL_DEV_ALPACA_API_KEY_<ACCOUNT> / ROLLCALL_DEV_ALPACA_SECRET_KEY_<ACCOUNT>. The
+# unsuffixed pair stays every dev stack's default, because the RollCall chat's spikes share it; EPD moves
+# its own stacks' alpaca@ login onto its own account after the seed (paper_login_on, task_deploy).
+WALK_ACCOUNT = "WALK"
+QA_ACCOUNT = "QA"
+# The owner, 2026-09-23 (m15736): "we have the paper trading account, lets just [use] it for QA instead of
+# stale-seed". A bet about the seed itself keeps the seed's qa@: its state says "qa": "seed".
+QA_ON_PAPER = os.environ.get("EPD_QA_ON_PAPER", "1") != "0"
+# A bet checked on paper starts only when its checks land in the session: its first QA comes about
+# BET_LEAD_MIN into the build, and its last QA, deploy and measure about BET_NEED_MIN.
+BET_LEAD_MIN = int(os.environ.get("EPD_BET_LEAD_MIN", "50"))
+BET_NEED_MIN = int(os.environ.get("EPD_BET_NEED_MIN", "170"))
+# EPD_ANY_TIME=1 starts or resumes such a bet anyway (its checks may meet a shut market).
+ANY_TIME = os.environ.get("EPD_ANY_TIME", "0") == "1"
+# Run inside a stack's rollcall container: alpaca@'s keys from the stack's own environment, so a key
+# never passes through this driver, temper, or a log.
+PAPER_REKEY_SCRIPT = (
+    'set -eu; k=$(printenv ROLLCALL_DEV_ALPACA_API_KEY_{account} || true); '
+    's=$(printenv ROLLCALL_DEV_ALPACA_SECRET_KEY_{account} || true); '
+    '[ -n "$k" ] && [ -n "$s" ] || {{ echo "this stack has no ROLLCALL_DEV_ALPACA_*_{account} keys: they go in '
+    '~/.config/rollcall/dev.env, and a stack reads that file when it is stood up"; exit 3; }}; '
+    'rollcall tenant set-secret {email} alpaca ALPACA_API_KEY "$k"; '
+    'rollcall tenant set-secret {email} alpaca ALPACA_SECRET_KEY "$s"')
+# What the checkers are told about the paper login (verify on the branch's stack, measure on prod).
+PAPER_QA_NOTE = (
+    "That login is a real Alpaca PAPER account (EPD's \"QA\" account), not a seeded book: real quotes, real "
+    "fills, and a market that is open or shut. Other checks use it too, so expect positions and orders you did "
+    "not make, and never cancel, replace or close one you did not place. Place an order only when a clause "
+    "needs one, the smallest that shows it (1 contract, or 100 shares), and cancel what you placed before you "
+    "finish unless the clause needs it working. Check every clause on this login first. The seed's accounts are "
+    "still on this stack (qa@rollcall.test, same password: a generated book on the practice broker): use them "
+    "only for a clause that needs a state a paper book cannot have (history from before the account existed, "
+    "an assignment, an expiry), and name the login in that clause's evidence. A clause that needs the market "
+    "open while it is shut is `unverified`, with \"market shut\" in its evidence.")
+PAPER_MEASURE_NOTE = (
+    "That login is a real Alpaca PAPER account (EPD's \"QA\" account) on the live server: real quotes, real "
+    "fills, and a market that is open or shut. The builds' checks share it, so expect positions and orders "
+    "you did not make, and never cancel, replace or close one you did not place. Place an order only when the "
+    "bet needs one, the smallest that shows it, and cancel it before you finish. The seed's QA login is on this "
+    "server too (qa@rollcall.test, same password: its own generated book on the practice broker): use it only "
+    "for what a paper book cannot show (history from before the account existed, an assignment, an expiry), "
+    "and say which login each finding came from.")
+
 LOOP_DIR = WORKSPACES / "epd" / REPO_NAME
 BETS_DIR = LOOP_DIR / "bets"
 LEDGER = LOOP_DIR / "bets.tsv"
@@ -497,26 +542,26 @@ def wait_for_url(url: str, timeout: float = 240.0) -> None:
 # designed for what the account holds -- with the keys the dev stacks are given. Read-only: nothing
 # here places or changes anything, and the keys are never printed.
 
-def paper_keys() -> dict[str, str]:
-    """The paper account's API headers, from PAPER_KEYS_FILE (the file the dev stacks read)."""
+def paper_keys(account: str = WALK_ACCOUNT) -> dict[str, str]:
+    """One of EPD's paper accounts' API headers, from PAPER_KEYS_FILE (the file the dev stacks read)."""
     found: dict[str, str] = {}
     for line in read(PAPER_KEYS_FILE).splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
             found[k.strip()] = v.strip().strip("'\"")
-    key = found.get("ROLLCALL_DEV_ALPACA_API_KEY", "")
-    secret = found.get("ROLLCALL_DEV_ALPACA_SECRET_KEY", "")
+    key = found.get(f"ROLLCALL_DEV_ALPACA_API_KEY_{account}", "")
+    secret = found.get(f"ROLLCALL_DEV_ALPACA_SECRET_KEY_{account}", "")
     if not (key and secret):
-        die(f"no Alpaca paper keys in {PAPER_KEYS_FILE}: a proposal's walkers trade the paper account, and "
-            f"the dev stacks sign in to it with ROLLCALL_DEV_ALPACA_API_KEY and ROLLCALL_DEV_ALPACA_SECRET_KEY "
-            f"from that file")
+        die(f"no keys for EPD's {account} paper account in {PAPER_KEYS_FILE}: ROLLCALL_DEV_ALPACA_API_KEY_{account} "
+            f"and ROLLCALL_DEV_ALPACA_SECRET_KEY_{account}. The walkers trade the {WALK_ACCOUNT} account and a "
+            f"bet's checks use the {QA_ACCOUNT} one; the dev stacks read the same file when they are stood up")
     return {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
 
 
-def alpaca_paper(path: str):
-    """GET `path` from the paper account's trading API; dies on anything but an answer."""
-    req = urllib.request.Request(ALPACA_PAPER_API.rstrip("/") + path, headers=paper_keys())
+def alpaca_paper(path: str, account: str = WALK_ACCOUNT):
+    """GET `path` from one of EPD's paper accounts' trading API; dies on anything but an answer."""
+    req = urllib.request.Request(ALPACA_PAPER_API.rstrip("/") + path, headers=paper_keys(account))
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.load(resp)
@@ -562,6 +607,51 @@ def market_window() -> tuple[bool, str, dt.datetime]:
     return True, f"the market is open; it closes {local_time(closes)}", now
 
 
+def bet_window() -> tuple[bool, str, dt.datetime]:
+    """Whether a bet checked on paper may start now; why, or why not; and when it next can.
+
+    Its first QA comes about BET_LEAD_MIN into the build and its last QA, deploy and measure about
+    BET_NEED_MIN, and every one of them wants the market open: the open may be at most BET_LEAD_MIN
+    away, and the close must be at least BET_NEED_MIN away.
+    """
+    c = market_clock()
+    now, opens, closes = when(c["timestamp"]), when(c["next_open"]), when(c["next_close"])
+    earliest = opens - dt.timedelta(minutes=BET_LEAD_MIN)
+    if c.get("is_open"):
+        left = (closes - now).total_seconds() / 60
+        if left >= BET_NEED_MIN:
+            return True, f"the market is open; it closes {local_time(closes)}", now
+        return (False, f"the market closes {local_time(closes)}, {left:.0f} min from now: too little for a "
+                       f"build's checks (EPD_BET_NEED_MIN={BET_NEED_MIN})", earliest)
+    if now >= earliest:
+        return True, f"the market opens {local_time(opens)}, within EPD_BET_LEAD_MIN={BET_LEAD_MIN} min", now
+    return False, f"the market is shut; it opens {local_time(opens)}", earliest
+
+
+def require_bet_window(bet_id: str) -> None:
+    """Die unless a bet checked on paper may start now (EPD_ANY_TIME=1 skips this)."""
+    if ANY_TIME or not qa_on_paper(bet_id):
+        return
+    ok, why, at = bet_window()
+    if not ok:
+        die(f"{bet_id} is checked on the {QA_ACCOUNT} paper account, and {why}: start it from "
+            f"{local_time(at)} (EPD_ANY_TIME=1 starts it now anyway)")
+
+
+def paper_login_on(env: str, url: str, account: str) -> None:
+    """Put a dev stack's alpaca@ login on one of EPD's paper accounts. The seed signs it in to the
+    machine's shared account (the unsuffixed pair); the stack also has EPD's pairs, from the same file,
+    so the keys are set from inside it. RollCall keeps a login's broker for the life of its process,
+    so the server restarts after."""
+    r = sh(["standee", "exec", env, "rollcall", "sh", "-c",
+            PAPER_REKEY_SCRIPT.format(account=account, email=PAPER_EMAIL)], check=False)
+    if r.returncode != 0:
+        die(f"could not put {PAPER_EMAIL} on {env} on the {account} paper account (exit {r.returncode}): "
+            f"{((r.stdout or '') + (r.stderr or '')).strip()[-300:]}")
+    sh(["standee", "restart", env, "rollcall"])
+    wait_for_url(url)
+
+
 def contract_name(symbol: str) -> str:
     """An OCC option symbol as a person says it (F261023C00012500: 'F Oct 23 2026 $12.50 call');
     anything else as it is."""
@@ -573,18 +663,18 @@ def contract_name(symbol: str) -> str:
     return f"{root} {day:%b} {day.day} {day.year} ${int(strike) / 1000:.2f} {'call' if cp == 'C' else 'put'}"
 
 
-def paper_account_state() -> str:
+def paper_account_state(account: str = WALK_ACCOUNT) -> str:
     """What the paper account holds as the round starts, in a few lines. The personas design jobs for
     this book (a covered call needs a position the account has), and the report writer can tell a
     figure a walker read from the one the account had."""
     def money(v) -> str:
         return f"${float(v or 0):,.2f}"
 
-    a = alpaca_paper("/v2/account")
+    a = alpaca_paper("/v2/account", account)
     lines = [f"Cash {money(a.get('cash'))}; equity {money(a.get('equity'))}; buying power "
              f"{money(a.get('buying_power'))}; options buying power {money(a.get('options_buying_power'))}; "
              f"options level {a.get('options_trading_level', '?')}."]
-    positions = alpaca_paper("/v2/positions") or []
+    positions = alpaca_paper("/v2/positions", account) or []
     lines.append("Positions:" if positions else "Positions: none.")
     for p in positions:
         qty = abs(float(p.get("qty") or 0))
@@ -594,7 +684,7 @@ def paper_account_state() -> str:
             unit = "share" if qty == 1 else "shares"
         lines.append(f"- {contract_name(p.get('symbol', ''))}: {qty:g} {unit} {p.get('side', '')}, "
                      f"average {money(p.get('avg_entry_price'))}, now {money(p.get('current_price'))}")
-    orders = alpaca_paper("/v2/orders?status=open&nested=true&limit=50") or []
+    orders = alpaca_paper("/v2/orders?status=open&nested=true&limit=50", account) or []
     lines.append("Open orders:" if orders else "Open orders: none.")
     for o in orders:
         legs = o.get("legs") or [o]
@@ -1265,10 +1355,11 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
           "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
     save_round(rd)
     wait_for_url(url)
+    paper_login_on(env, url, WALK_ACCOUNT)
     preflight_login(url, emails=(PAPER_EMAIL,),
                     likely=f"the seed makes {PAPER_EMAIL} only when the stack is stood up with the paper keys "
                            f"in {PAPER_KEYS_FILE}. Check they are there, `standee down` the stack and propose again")
-    account = paper_account_state()
+    account = paper_account_state(WALK_ACCOUNT)
     inputs = {
         "round_id": round_id,
         "report_path": cpath(rdir / "report.md"),
@@ -1681,6 +1772,7 @@ def stage_build(st: dict) -> None:
         f"its acceptance command gives the expected output. Do nothing listed under no-gos.\n\n"
         f"----- bet.md -----\n{bet_md}\n\n----- tasks.json -----\n{tasks}\n"
     )
+    logins = qa_logins(bet_id)
     out = run_workflow("epd_task", {
         "repo_url": REPO_URL,
         "task_name": short,
@@ -1689,8 +1781,10 @@ def stage_build(st: dict) -> None:
         "keep": True,
         "force": True,
         "stack_ttl": "8h",
-        "verify_email": QA_EMAIL,
-        "verify_password": QA_PASSWORD,
+        "verify_email": logins["email"],
+        "verify_password": logins["password"],
+        "verify_login_note": logins["login_note"],
+        "paper_account": logins["paper_account"],
     }, workspace=cpath(WORKSPACES / "repos"), timeout=4 * 3600)
     write(bdir / "build.json", json.dumps(out, indent=2, default=str))
     st["stages"]["build"] = {k: out.get(k) for k in (
@@ -2103,12 +2197,14 @@ def stage_measure(st: dict, keep: bool) -> None:
     if data_url:
         wait_for_url(data_url)
     password = ensure_qa_password() if (on_prod and qa_on_prod) else QA_PASSWORD
+    # On prod, the bet's own measure login: the QA paper account, or the seed's qa@ for a seed bet.
+    logins = qa_logins(bet_id) if (on_prod and qa_on_prod) else {"measure_email": QA_EMAIL, "measure_note": ""}
     # Whichever stack the signed-in checks will use has to admit them, and finding that out costs one
     # request here versus a whole measurement spent describing a login page.
     if data_url:
         preflight_login(data_url)
     elif qa_on_prod or not on_prod:
-        preflight_login(url, password=password)
+        preflight_login(url, emails=(logins["measure_email"], QA_EMPTY_EMAIL), password=password)
     # The measure agent is handed these two as paths and told to read them: the bet is what it
     # checks, the report is the friction it re-walks. A path to a file that is not there buys a
     # measurement that quietly skips the re-walk, so it is worth one stat each to find out here.
@@ -2122,7 +2218,8 @@ def stage_measure(st: dict, keep: bool) -> None:
         "outcome_path": cpath(bdir / "outcome.md"),
         "app_url": url,
         "data_url": data_url,
-        "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL, "password": password,
+        "email": logins["measure_email"], "empty_email": QA_EMPTY_EMAIL, "password": password,
+        "login_note": logins["measure_note"],
         "bet_path": cpath(bdir / "bet.md"),
         "report_path": cpath(report),
         "build_summary": b.get("implement_summary") or "",
@@ -2167,6 +2264,42 @@ def outcome_line(out: dict, verdict: str) -> str:
 
 # ------------------------------------------------------------------- driver --
 
+def qa_on_paper(bet_id: str) -> bool:
+    """Whether a bet's checks use the QA paper account (the default since 2026-09-23) or the seed's qa@
+    book: a bet about the seed itself says "qa": "seed" in its state."""
+    return QA_ON_PAPER and load_state(bet_id).get("qa") != "seed"
+
+
+def qa_logins(bet_id: str) -> dict:
+    """Who a bet's checks sign in as: the build's QA on the branch's stack (`email`, and `paper_account`
+    for the stack's alpaca@ login) and the measure on prod (`measure_email`)."""
+    if qa_on_paper(bet_id):
+        return {"email": PAPER_EMAIL, "empty_email": QA_EMPTY_EMAIL, "password": QA_PASSWORD,
+                "paper_account": QA_ACCOUNT, "login_note": PAPER_QA_NOTE,
+                "measure_email": PAPER_EMAIL, "measure_note": PAPER_MEASURE_NOTE,
+                "measure_password": ensure_qa_password()}
+    return {"email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL, "password": QA_PASSWORD,
+            "paper_account": "", "login_note": "",
+            "measure_email": QA_EMAIL, "measure_note": "",
+            "measure_password": ensure_qa_password()}
+
+
+def require_prod_paper_login(bet_id: str) -> None:
+    """A bet checked on paper is measured on prod as PAPER_EMAIL: find out before its build, not after."""
+    if qa_on_paper(bet_id):
+        preflight_login(PROD_URL, emails=(PAPER_EMAIL,), password=ensure_qa_password(),
+                        likely=f"prod has no {PAPER_EMAIL} on the {QA_ACCOUNT} paper account: "
+                               f"~/epd-autopilot/prod_paper_login.py makes it")
+
+
+def next_waiting() -> str | None:
+    """The bet `pick_bet` would take next: the first line of the Queue still waiting to be built."""
+    for bet_id, _ in backlog():
+        if (BETS_DIR / bet_id / "bet.md").exists() and load_state(bet_id)["status"] in WAITING:
+            return bet_id
+    return None
+
+
 def loop_inputs(bet_id: str) -> dict:
     """Everything the epd_loop workflow is told, off the bet's files: it starts at `tasks`, on a bet
     the owner already approved, so there is no stack to walk and nothing to propose."""
@@ -2185,8 +2318,7 @@ def loop_inputs(bet_id: str) -> dict:
         "threshold": bet.get("threshold") or "",
         "profile": read(LOOP_DIR / "profile.md"),
         "measure_url": PROD_URL,
-        "email": QA_EMAIL, "empty_email": QA_EMPTY_EMAIL,
-        "password": QA_PASSWORD, "measure_password": ensure_qa_password(),
+        **qa_logins(bet_id),
         "repo_url": REPO_URL,
         "repo_path": cpath(MAIN_CLONE),
         "base_branch": BASE_BRANCH,
@@ -2255,6 +2387,9 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
         log(f"{len(parked)} PR(s) waiting for your word ({', '.join(parked)}); "
             f"the loop starts no more until one is decided")
         return
+    nxt = next_waiting()
+    if nxt:
+        require_bet_window(nxt)  # before pick_bet takes it off the Queue
     bet_id = pick_bet()
     if bet_id:
         start_bet(bet_id, keep, wait)
@@ -2275,8 +2410,11 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
 
 def start_bet(bet_id: str, keep: bool, wait: bool) -> None:
     """Submit the loop run for a bet the owner approved: tasks -> build -> ship -> [PR gate] -> deploy -> measure."""
+    require_bet_window(bet_id)
+    require_prod_paper_login(bet_id)
     share_bet_dir(BETS_DIR / bet_id)  # every bet's run starts here; its stages write in that directory
     st = load_state(bet_id)
+    st["qa"] = "paper" if qa_on_paper(bet_id) else "seed"  # how it was checked, for the analysis
     st["status"] = "running"
     save_state(st)
     log(f"== {bet_id}: the loop, as one run ==")
@@ -2346,7 +2484,13 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
     if status in ("running", "pending"):
         die(f"{bet_id}: run {rid[:8]} is still {status}; nothing to resume")
     if status == "completed":
-        die(f"{bet_id}: run {rid[:8]} completed; `collect` it")
+        skipped = {n["name"] for n in info.get("nodes") or [] if n.get("status") == "skipped"}
+        if "ship" not in skipped:
+            die(f"{bet_id}: run {rid[:8]} completed; `collect` it")
+        # The build ended without the judges' approval (at its round cap), so nothing shipped: another
+        # build from the branch is a resume at `build`.
+        at = at or "build"
+    require_bet_window(bet_id)
     # "2 node(s) failed: build/deploy, build/cleanup" -> the first failed top-level stage. A run
     # that was interrupted (server restart) or cancelled names none: the stage to redo is then the
     # first one that did not complete, which is the one that was running.

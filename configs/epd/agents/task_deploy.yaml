@@ -24,6 +24,15 @@
 # idempotent and refreshes each test account to its known book, so every QA
 # round starts from the same data.
 #
+# With `paper_account` (e.g. QA), QA signs in to a real Alpaca paper account
+# rather than the seed's book. The seed signs the stack's paper login
+# (`paper_email`) in to the machine's shared paper account, the unsuffixed
+# ROLLCALL_DEV_ALPACA_* pair, on every seed; so after it, that login's keys are
+# moved to EPD's own account from ROLLCALL_DEV_ALPACA_*_<ACCOUNT>. The stack's
+# container already has those (compose reads the host's dev.env when the stack
+# is stood up), so the keys never pass through this script or its log. RollCall
+# keeps a login's broker for the life of its process: the service restarts.
+#
 # The commit check is the point of the stage: deploy a commit, or say why not.
 # A dirty worktree means what is judged is not what is committed — QA would
 # pass on work that lives nowhere, and the next round would start from a
@@ -34,7 +43,9 @@ agent:
   # 2: seeds the stack again after each deploy, from the candidate's code, and
   #    says so (`seeded`). A seed that fails is a failed deploy: the commit
   #    ships a seed that does not run.
-  version: 2
+  # 3: with paper_account, puts the stack's paper login on that EPD paper
+  #    account after the seed, and restarts the server so it takes the keys.
+  version: 3
   type: script
   timeout_seconds: 1200
   script_template: |
@@ -52,6 +63,10 @@ agent:
     HAS_DOCKER={{ has_docker | default('false') }}
     RUN_VERIFY={{ run_verify | default('true') }}
     CANDIDATE={{ candidate_commit | default('') }}
+    PAPER_ACCOUNT={{ paper_account | default('', true) }}
+    PAPER_EMAIL={{ paper_email | default('', true) }}
+    [ "$PAPER_ACCOUNT" = None ] && PAPER_ACCOUNT=""
+    [ "$PAPER_EMAIL" = None ] && PAPER_EMAIL=""
     [ "$TTL" = None ] && TTL=""
     [ "$CANDIDATE" = None ] && CANDIDATE=""
     case "$HAS_DOCKER" in true|True|1) HAS_DOCKER=true ;; *) HAS_DOCKER=false ;; esac
@@ -72,6 +87,10 @@ agent:
     fi
 
     [ -d "$WT" ] || fail "worktree not found: $WT"
+    if [ -n "$PAPER_ACCOUNT" ]; then
+      case "$PAPER_ACCOUNT" in *[!A-Z]*) fail "paper_account is capital letters only (QA, WALK): $PAPER_ACCOUNT" ;; esac
+      case "$PAPER_EMAIL" in ''|*[!A-Za-z0-9@._+-]*) fail "paper_account $PAPER_ACCOUNT needs a paper_email, an address: $PAPER_EMAIL" ;; esac
+    fi
 
     # What is actually about to be built: the worktree is what standee mounts
     # and builds from, so its HEAD — not the reviewed sha from an input — is
@@ -146,5 +165,41 @@ agent:
     SEED_OUT=$(standee seed "$ENV_NAME" 2>&1) || { echo "$SEED_OUT"; fail "standee seed failed for $ENV_NAME on $HEAD: the seed this commit ships does not run"; }
     printf '%s\n' "$SEED_OUT" | tail -15
 
-    echo "deployed: $ENV_NAME -> $URL ($HEAD, HTTP $CODE, seeded again)"
-    emit deployed "$URL" "$HEAD" "$RUN_VERIFY" "HTTP $CODE; seeded again from this commit" true
+    DETAIL="HTTP $CODE; seeded again from this commit"
+    if [ -n "$PAPER_ACCOUNT" ]; then
+      # Inside the container, from its own environment: the keys are never in this script's output.
+      # One argument with no single quote in it, quoted once more for the ssh forced command, which
+      # splits what it is sent the way a shell would.
+      REKEY='set -eu; k=$(printenv ROLLCALL_DEV_ALPACA_API_KEY_'"$PAPER_ACCOUNT"' || true); s=$(printenv ROLLCALL_DEV_ALPACA_SECRET_KEY_'"$PAPER_ACCOUNT"' || true); if [ -z "$k" ] || [ -z "$s" ]; then echo "this stack has no ROLLCALL_DEV_ALPACA_API_KEY_'"$PAPER_ACCOUNT"' / _SECRET_KEY_'"$PAPER_ACCOUNT"': they go in the host dev.env, which a stack reads when it is stood up"; exit 3; fi; rollcall tenant set-secret '"$PAPER_EMAIL"' alpaca ALPACA_API_KEY "$k"; rollcall tenant set-secret '"$PAPER_EMAIL"' alpaca ALPACA_SECRET_KEY "$s"'
+      echo "putting $PAPER_EMAIL on the $PAPER_ACCOUNT paper account"
+      REKEY_OUT=$(standee exec "$ENV_NAME" rollcall sh -c "'$REKEY'" 2>&1) || { echo "$REKEY_OUT"; fail "could not put $PAPER_EMAIL on the $PAPER_ACCOUNT paper account on $ENV_NAME"; }
+      printf '%s\n' "$REKEY_OUT" | grep '^ok:' || true
+      RESTART_OUT=$(standee restart "$ENV_NAME" rollcall 2>&1) || { echo "$RESTART_OUT"; fail "$ENV_NAME's server did not restart after its paper keys changed"; }
+      CODE=$(python3 - "$URL" <<'PY'
+    import sys, time, urllib.error, urllib.request
+    url, last = sys.argv[1], "no response"
+    for attempt in range(24):
+        try:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                last = str(r.status)
+                if r.status < 500:
+                    break
+        except urllib.error.HTTPError as e:
+            last = str(e.code)
+            if e.code < 500:
+                break
+        except Exception as e:
+            last = type(e).__name__
+        time.sleep(5)
+    print(last)
+    PY
+      )
+      case "$CODE" in
+        ''|*[!0-9]*) fail "$URL did not answer after the restart for the paper keys ($CODE)" ;;
+        5*) fail "$URL answered $CODE after the restart for the paper keys" ;;
+      esac
+      DETAIL="$DETAIL; $PAPER_EMAIL on the $PAPER_ACCOUNT paper account"
+    fi
+
+    echo "deployed: $ENV_NAME -> $URL ($HEAD, $DETAIL)"
+    emit deployed "$URL" "$HEAD" "$RUN_VERIFY" "$DETAIL" true

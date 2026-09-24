@@ -55,9 +55,15 @@ def L(tmp_path, monkeypatch):
     calls: dict[str, list] = {"standee_down": [], "release_task": [], "propose": [], "start": []}
     mod._real_cmd_propose = mod.cmd_propose
     mod._real_market_window = mod.market_window
+    mod._real_bet_window = mod.bet_window
     mod._real_start_bet = mod.start_bet
     monkeypatch.setattr(mod, "market_window", lambda: (True, "the market is open; it closes Thu Sep 24 13:00 PDT",
                                                         dt.datetime.now(dt.UTC)))
+    monkeypatch.setattr(mod, "bet_window", lambda: (True, "the market is open; it closes Thu Sep 24 13:00 PDT",
+                                                     dt.datetime.now(dt.UTC)))
+    monkeypatch.setattr(mod, "require_prod_paper_login", lambda bet_id: None)
+    # No test reads the real paper keys: one that reaches Alpaca without stubbing it dies on "no keys".
+    monkeypatch.setattr(mod, "PAPER_KEYS_FILE", tmp_path / "dev.env")
     monkeypatch.setattr(mod, "standee_down", lambda env: calls["standee_down"].append(env))
     monkeypatch.setattr(mod, "release_task", lambda bet_id: calls["release_task"].append(bet_id))
     monkeypatch.setattr(mod, "require_tools", lambda *names: None)
@@ -542,13 +548,14 @@ HOLDS = "Cash $98,543.60; equity $99,854.60.\nPositions:\n- F: 100 shares long, 
 
 def proposals_run_here(L, monkeypatch, market=OPEN) -> dict:
     """The real cmd_propose, with the stack, the clone, the market and temper stubbed; returns what they were asked."""
-    seen: dict[str, list] = {"up": [], "runs": [], "preflight": [], "armed": []}
+    seen: dict[str, list] = {"up": [], "runs": [], "preflight": [], "armed": [], "paper": []}
     monkeypatch.setattr(L, "cmd_propose", L._real_cmd_propose)
+    monkeypatch.setattr(L, "paper_login_on", lambda env, url, account: seen["paper"].append((env, account)))
     monkeypatch.setattr(L, "refresh_main", lambda: "f52e741")
     monkeypatch.setattr(L, "wait_for_url", lambda url, timeout=240.0: None)
     monkeypatch.setattr(L, "preflight_login", lambda url, emails=(), *a, **k: seen["preflight"].append(emails))
     monkeypatch.setattr(L, "market_window", lambda: market)
-    monkeypatch.setattr(L, "paper_account_state", lambda: HOLDS)
+    monkeypatch.setattr(L, "paper_account_state", lambda account: seen["paper"].append(("book", account)) or HOLDS)
     monkeypatch.setattr(L, "arm_proposal", lambda at, why, focus, keep: seen["armed"].append((at, why, focus)))
 
     def up(source, as_name, ttl):
@@ -581,6 +588,9 @@ def test_rounds_take_turns_on_the_paper_account_each_with_its_own_stack_slots_an
     assert slots == [[f"b{i:03d}" for i in range(k, k + 5)] for k in (1, 6)], "no slot is handed out twice"
     assert [r["slots"] for r in seen["runs"]] == [" ".join(s) for s in slots]
     assert [r["env_name"] for r in seen["runs"]] == ["rollcall-dev-epd-r001", "rollcall-dev-epd-r002"]
+    assert seen["paper"] == [("rollcall-dev-epd-r001", "WALK"), ("book", "WALK"),
+                             ("rollcall-dev-epd-r002", "WALK"), ("book", "WALK")], \
+        "each round walks on the Walk paper account, not the one every dev stack shares, and reads that book"
     assert all((L.BETS_DIR / b).is_dir() for s in slots for b in s)
 
 
@@ -647,7 +657,7 @@ def test_the_account_state_says_what_it_holds_the_way_a_person_would(L, monkeypa
         "/v2/orders?status=open&nested=true&limit=50": [
             {"symbol": "PLUG", "side": "buy", "qty": "10", "limit_price": "2.5", "status": "new", "legs": None}],
     }
-    monkeypatch.setattr(L, "alpaca_paper", lambda path: answers[path])
+    monkeypatch.setattr(L, "alpaca_paper", lambda path, account: answers[path])
     held = L.paper_account_state().splitlines()
     assert held[0] == ("Cash $98,543.60; equity $99,854.60; buying power $397,845.20; "
                        "options buying power $99,199.10; options level 3.")
@@ -663,9 +673,17 @@ def test_the_paper_keys_come_from_the_file_the_stacks_read_and_a_refusal_says_wh
     monkeypatch.setattr(L, "PAPER_KEYS_FILE", keys)
     with pytest.raises(SystemExit):
         L.paper_keys()
-    keys.write_text("# the paper login\nROLLCALL_DEV_ALPACA_API_KEY='id-for-tests'\n"
-                    "ROLLCALL_DEV_ALPACA_SECRET_KEY = \"not-a-real-one\"\n")  # pragma: allowlist secret
-    assert L.paper_keys() == {"APCA-API-KEY-ID": "id-for-tests", "APCA-API-SECRET-KEY": "not-a-real-one"}
+    # The unsuffixed pair is the account every dev stack's seed signs in to: EPD never uses it.
+    keys.write_text("# the paper login\nROLLCALL_DEV_ALPACA_API_KEY='id-shared'\n"
+                    "ROLLCALL_DEV_ALPACA_SECRET_KEY = \"shared-one\"\n")  # pragma: allowlist secret
+    with pytest.raises(SystemExit):
+        L.paper_keys()
+    assert "ROLLCALL_DEV_ALPACA_API_KEY_WALK and ROLLCALL_DEV_ALPACA_SECRET_KEY_WALK" in capsys.readouterr().out
+    keys.write_text(keys.read_text()
+                    + "ROLLCALL_DEV_ALPACA_API_KEY_WALK='id-walk'\nROLLCALL_DEV_ALPACA_SECRET_KEY_WALK=not-a-real-one\n"
+                    + "ROLLCALL_DEV_ALPACA_API_KEY_QA=id-qa\nROLLCALL_DEV_ALPACA_SECRET_KEY_QA='qa-one'\n")  # pragma: allowlist secret
+    assert L.paper_keys() == {"APCA-API-KEY-ID": "id-walk", "APCA-API-SECRET-KEY": "not-a-real-one"}
+    assert L.paper_keys("QA") == {"APCA-API-KEY-ID": "id-qa", "APCA-API-SECRET-KEY": "qa-one"}
 
     def refused(req, timeout):
         raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, io.BytesIO(b'{"message": "unauthorized."}'))
@@ -676,6 +694,95 @@ def test_the_paper_keys_come_from_the_file_the_stacks_read_and_a_refusal_says_wh
     out = capsys.readouterr().out
     assert "HTTP 401" in out and "Resetting the paper account makes new ones" in out
     assert "not-a-real-one" not in out, "a key is never printed"
+
+
+# ------------------------------------------------------------ QA on paper --
+# The owner, 2026-09-23: "we have the paper trading account, lets just [use] it for QA instead of
+# stale-seed". A bet's QA and measure sign in to EPD's "QA" paper account; walks use "Walk".
+
+
+def test_a_bet_checked_on_paper_starts_only_when_its_checks_land_in_the_session(L, monkeypatch):
+    monkeypatch.setattr(L, "BET_LEAD_MIN", 50)
+    monkeypatch.setattr(L, "BET_NEED_MIN", 170)
+    clock = {"next_open": "2026-09-25T09:30:00-04:00", "next_close": "2026-09-24T16:00:00-04:00"}
+    monkeypatch.setattr(L, "market_clock", lambda: clock)
+    earliest = L.when(clock["next_open"]) - dt.timedelta(minutes=50)
+
+    clock.update(timestamp="2026-09-24T10:00:00-04:00", is_open=True)
+    ok, why, at = L._real_bet_window()
+    assert ok and why.startswith("the market is open") and at == L.when(clock["timestamp"])
+
+    clock.update(timestamp="2026-09-24T14:00:00-04:00")
+    ok, why, at = L._real_bet_window()
+    assert not ok and "120 min from now" in why and at == earliest, "its last QA and measure would meet the close"
+
+    clock.update(timestamp="2026-09-24T20:00:00-04:00", is_open=False, next_close="2026-09-25T16:00:00-04:00")
+    ok, why, at = L._real_bet_window()
+    assert not ok and why.startswith("the market is shut; it opens") and at == earliest
+
+    clock.update(timestamp="2026-09-25T08:45:00-04:00")
+    ok, why, at = L._real_bet_window()
+    assert ok and "within EPD_BET_LEAD_MIN=50 min" in why, "its first QA comes after the open"
+
+
+def test_a_paper_bet_waits_for_the_session_and_a_seed_bet_or_any_time_does_not(L, monkeypatch, capsys):
+    shut_until = dt.datetime(2026, 9, 24, 12, 40, tzinfo=dt.UTC)
+    monkeypatch.setattr(L, "bet_window", lambda: (False, "the market is shut; it opens Thu Sep 24 06:30 PDT", shut_until))
+    with pytest.raises(SystemExit):
+        L.require_bet_window("b001")
+    out = capsys.readouterr().out
+    assert "b001 is checked on the QA paper account, and the market is shut" in out and "EPD_ANY_TIME=1" in out
+    (L.BETS_DIR / "b002").mkdir()
+    L.save_state({"bet_id": "b002", "status": "approved", "stages": {}, "qa": "seed"})
+    L.require_bet_window("b002")  # a bet about the seed is checked on the seed's book, at any hour
+    monkeypatch.setattr(L, "ANY_TIME", True)
+    L.require_bet_window("b001")
+
+
+def test_a_bet_is_checked_on_the_qa_paper_account_unless_it_is_about_the_seed(L, monkeypatch):
+    monkeypatch.setattr(L, "ensure_qa_password", lambda: "pw")
+    propose(L, bets=("b001", "b002"), empty=())
+    paper = L.loop_inputs("b001")
+    assert (paper["email"], paper["paper_account"], paper["measure_email"]) == (L.PAPER_EMAIL, "QA", L.PAPER_EMAIL)
+    assert (paper["login_note"], paper["measure_note"]) == (L.PAPER_QA_NOTE, L.PAPER_MEASURE_NOTE)
+    assert "never cancel, replace or close one you did not place" in paper["login_note"], "other checks share it"
+    st = L.load_state("b002")
+    st["qa"] = "seed"
+    L.save_state(st)
+    seed = L.loop_inputs("b002")
+    assert (seed["email"], seed["paper_account"], seed["measure_email"]) == (L.QA_EMAIL, "", L.QA_EMAIL)
+    assert seed["login_note"] == seed["measure_note"] == ""
+    monkeypatch.setattr(L, "QA_ON_PAPER", False)
+    assert L.loop_inputs("b001")["email"] == L.QA_EMAIL, "EPD_QA_ON_PAPER=0 puts every bet back on the seed"
+
+
+def test_a_stack_login_goes_on_an_epd_paper_account_from_inside_the_stack(L, monkeypatch, capsys):
+    ran, waited = [], []
+    answer = {"code": 0}
+
+    def sh(cmd, cwd=None, check=True):
+        ran.append(cmd)
+        return subprocess.CompletedProcess(cmd, answer["code"], "no ROLLCALL_DEV_ALPACA_*_WALK keys\n", "")
+
+    monkeypatch.setattr(L, "sh", sh)
+    monkeypatch.setattr(L, "wait_for_url", lambda url, timeout=240.0: waited.append(url))
+    L.paper_login_on("rollcall-dev-epd-r009", "https://epd-r009.example", "WALK")
+    rekey, restart = ran
+    assert rekey[:6] == ["standee", "exec", "rollcall-dev-epd-r009", "rollcall", "sh", "-c"] and len(rekey) == 7
+    script = rekey[6]
+    assert "printenv ROLLCALL_DEV_ALPACA_API_KEY_WALK" in script and "printenv ROLLCALL_DEV_ALPACA_SECRET_KEY_WALK" in script
+    assert f"rollcall tenant set-secret {L.PAPER_EMAIL} alpaca ALPACA_API_KEY \"$k\"" in script, \
+        "the keys are read inside the stack: none passes through the driver"
+    assert restart == ["standee", "restart", "rollcall-dev-epd-r009", "rollcall"], \
+        "RollCall keeps a login's broker for the life of its process"
+    assert waited == ["https://epd-r009.example"]
+    answer["code"] = 3
+    ran.clear()
+    with pytest.raises(SystemExit):
+        L.paper_login_on("rollcall-dev-epd-r009", "https://epd-r009.example", "WALK")
+    assert len(ran) == 1, "no restart when the keys could not be set"
+    assert "could not put alpaca@rollcall.test on rollcall-dev-epd-r009 on the WALK paper account (exit 3)" \
+        in capsys.readouterr().out
 
 
 def test_when_open_arms_one_timer_per_open_that_sees_the_same_tree(L, monkeypatch, capsys):

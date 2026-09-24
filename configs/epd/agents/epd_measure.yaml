@@ -24,7 +24,9 @@ agent:
   #    thing that cannot run, so it goes where the quota is -- and opus is half fable's price.
   # 6: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x base
   #    against 0.1x; same 1M window, 128k output and effort levels.
-  version: 6
+  # 7: `login_note` says what the login is when it is not the seed's book: a real Alpaca paper
+  #    account on the live server, shared with the builds' checks, with a market that shuts.
+  version: 7
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -151,8 +153,8 @@ agent:
   task_template: |
     Write the outcome to: {{ outcome_path }}
     The live product: {{ app_url }}
-    {% if data_url %}The live server has no QA tenant, so sign in on this instead — the same commit, with test accounts: {{ data_url }}{% else %}The account below is a QA tenant on the live server itself: paper adapters, its own book. Sign in there.{% endif %}
-    Sign in as {{ email }} / {{ password }} (seeded book).
+    {% if data_url %}The live server has no QA tenant, so sign in on this instead — the same commit, with test accounts: {{ data_url }}{% elif login_note %}The account below is a QA login on the live server itself. Sign in there.{% else %}The account below is a QA tenant on the live server itself: paper adapters, its own book. Sign in there.{% endif %}
+    {% if login_note %}Sign in as {{ email }} / {{ password }}. {{ login_note }}{% else %}Sign in as {{ email }} / {{ password }} (seeded book).{% endif %}
     {% if empty_email %}An account with an empty book: {{ empty_email }} / {{ password }}.{% endif %}
 
     ## The bet

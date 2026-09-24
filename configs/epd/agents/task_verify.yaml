@@ -48,7 +48,9 @@ agent:
   name: task_verify
   # 6: Opus 5.5 rather than Opus 5 -- $4/$20 a million against $5/$25, cache reads at 0.05x
   #    base against 0.1x; same 1M window, 128k output and effort levels.
-  version: 6
+  # 7: `login_note` says what the login is when it is not the seed's book: a real Alpaca paper
+  #    account, shared with other checks, with a market that opens and shuts.
+  version: 7
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -193,6 +195,7 @@ agent:
   task_template: |
     Application: {{ app_url }}
     {% if email %}Sign in as {{ email }} / {{ password }}{% else %}No credentials were given; check what is reachable without signing in.{% endif %}
+    {% if login_note %}{{ login_note }}{% endif %}
     Screenshot prefix: {{ task_slug | default('verify', true) }}
 
     The task this change was for: {{ task_name }}

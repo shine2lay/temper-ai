@@ -8,7 +8,12 @@ workflow:
   # 5: the build's screenshots reach ship, which puts them on the PR.
   # 6: the bet's invariant and threshold reach the build, whose QA walks the threshold clause by
   #    clause; the clause table reaches ship, which puts it on the PR beside the pictures.
-  version: 6
+  # 7: QA and measure can sign in to a real Alpaca paper account instead of the seed's book (the
+  #    owner, 2026-09-23: "we have the paper trading account, lets just [use] it for QA instead of
+  #    stale-seed"). The build's deploy puts the stack's paper login on `paper_account`, and QA and
+  #    measure are each told what that login is (`login_note`, `measure_note`); measure signs in as
+  #    `measure_email`, which on prod is not the build's QA login when the bet is about the seed.
+  version: 7
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
@@ -71,10 +76,14 @@ workflow:
     # Where to measure, and as whom
     measure_url:  {type: string, required: true}   # the build people use, once shipped
     data_url:     {type: string, required: false}  # only if the measured stack has no QA tenant
-    email:        {type: string, required: true}   # the QA pair verify and measure use (the only one prod has)
+    email:        {type: string, required: true}   # who verify signs in as, on the branch's dev stack
     empty_email:  {type: string, required: true}
     password:     {type: string, required: true}   # the QA password on the branch's dev stack (verify)
+    measure_email: {type: string, required: true}  # who measure signs in as, on measure_url
     measure_password: {type: string, required: true}
+    paper_account: {type: string, required: false} # EPD's paper account the stack's paper login goes on (QA); none: the seed's book
+    login_note:   {type: string, required: false}  # what verify is told about its login
+    measure_note: {type: string, required: false}  # what measure is told about its login
 
     # What the build stage needs
     repo_url:     {type: string, required: true}
@@ -139,6 +148,8 @@ workflow:
         stack_ttl: input.stack_ttl
         verify_email: input.email
         verify_password: input.password
+        verify_login_note: input.login_note
+        paper_account: input.paper_account
         keep: true
         force: true
 
@@ -210,9 +221,10 @@ workflow:
         outcome_path: input.outcome_path
         app_url: input.measure_url
         data_url: input.data_url
-        email: input.email
+        email: input.measure_email
         empty_email: input.empty_email
         password: input.measure_password
+        login_note: input.measure_note
         bet_path: input.bet_path
         report_path: input.report_path
         build_summary: build.structured.implement_summary

@@ -33,7 +33,10 @@ workflow:
   #    implementer reads every list from the GATE: a rewind keeps only the trigger's result,
   #    so the judges' own outputs were already cleared and no finding had reached a fix
   #    round since the gate was introduced -- each one opened on "no findings reached you".
-  version: 9
+  # 10: QA can sign in to a real Alpaca paper account (epd_loop v7): the deploy puts the stack's
+  #     paper login (verify_email) on `paper_account` after its seed, and QA is told what that
+  #     login is (`verify_login_note`). Without them, QA signs in to the seed's book as before.
+  version: 10
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -150,6 +153,15 @@ workflow:
       type: string
       required: false
     verify_password:
+      type: string
+      required: false
+    # What QA is told about that account (a paper account is shared, and has a market that shuts).
+    verify_login_note:
+      type: string
+      required: false
+    # One of the owner's EPD paper accounts ("QA"): the deploy moves verify_email's broker keys
+    # onto it after the seed, which signs that login in to the machine's shared paper account.
+    paper_account:
       type: string
       required: false
     stack_ttl:
@@ -401,6 +413,8 @@ workflow:
         ttl: input.stack_ttl
         # As above: standee's own name for the environment stack_up created.
         env_name_actual: environment.structured.env_name_actual
+        paper_account: input.paper_account
+        paper_email: input.verify_email
 
     - name: verify
       type: agent
@@ -416,6 +430,7 @@ workflow:
         app_url: deploy.structured.url
         email: input.verify_email
         password: input.verify_password
+        login_note: input.verify_login_note
         task_name: input.task_name
         task_description: input.task_description
         invariant: input.invariant

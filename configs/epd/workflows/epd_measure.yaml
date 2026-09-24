@@ -5,7 +5,8 @@ workflow:
   #    ledger instead of dying in the prose.
   # 4: bet and report arrive as paths and are read by the agent, so this stage can be wired directly
   #    to the stages that produced them.
-  version: 4
+  # 5: `login_note` says what the login is when it is not the seed's book (a real paper account).
+  version: 5
   description: |
     EPD loop, stage 7 of 7: measure. Replaces the product department's
     accountability. On the shipped build's URL, one agent checks the bet's
@@ -23,6 +24,7 @@ workflow:
     email: {type: string, required: true}
     empty_email: {type: string, required: false}
     password: {type: string, required: true}
+    login_note: {type: string, required: false}
     bet_path: {type: string, required: true}
     report_path: {type: string, required: true}
     build_summary: {type: string, required: false}
@@ -51,6 +53,7 @@ workflow:
         email: input.email
         empty_email: input.empty_email
         password: input.password
+        login_note: input.login_note
         bet_path: input.bet_path
         report_path: input.report_path
         build_summary: input.build_summary

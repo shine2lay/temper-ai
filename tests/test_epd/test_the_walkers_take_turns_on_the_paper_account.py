@@ -60,6 +60,36 @@ def test_the_proposal_hands_the_round_the_login_the_account_and_the_market():
     assert all(given[k]["required"] for k in ("paper_email", "account_state", "market"))
 
 
+def test_every_node_hears_whether_the_market_is_shut():
+    # An after-the-close round (`propose --after-close`) walks with the market shut and places no orders.
+    n = nodes("epd_report")
+    for name in ("personas", "walk_1", "walk_2", "walk_3", "report"):
+        assert n[name]["input_map"]["market_state"] == "input.market_state", name
+    assert nodes("epd_propose")["report"]["input_map"]["market_state"] == "input.market_state"
+    assert not workflow("epd_report")["inputs"]["market_state"]["required"], "open unless told otherwise"
+
+
+def test_after_the_close_the_walkers_place_no_orders_and_a_shut_market_is_not_friction():
+    walk = {"app_url": "https://x", "persona": "You review the day.", "turn": "1",
+            "email": "alpaca@rollcall.test", "password": "rollcall-qa", "market": "shut until Thu 06:30"}
+    system, task = render("epd_walk", **walk, market_state="shut")
+    assert "Place no orders" in task and "you may place it" not in task
+    assert "market is open while you walk" not in system + task, "the system prompt no longer says it is open"
+    _, task = render("epd_walk", **walk)
+    assert "The market is open while you walk" in task and "Place no orders" not in task, "open by default"
+
+    _, task = render("epd_personas", profile="p", goals="g", focus="", last_outcome="",
+                     account_state=HOLDS, market="shut until Thu 06:30", market_state="shut")
+    assert "The market is shut for this whole round" in task and "getting ready for tomorrow" in task
+    _, task = render("epd_report", report_path="/r.md", bet_id="r009", goals="g", coverage="c",
+                     walk_1="w1", walk_2="w2", walk_3="w3", last_outcome="", account_state=HOLDS,
+                     market="shut until Thu 06:30", market_state="shut")
+    assert "This round walked after the close" in task and "none of that is friction" in task
+    _, task = render("epd_report", report_path="/r.md", bet_id="r009", goals="g", coverage="c",
+                     walk_1="w1", walk_2="w2", walk_3="w3", last_outcome="", account_state=HOLDS, market=MARKET)
+    assert "after the close" not in task
+
+
 def test_the_walker_signs_in_to_the_paper_login_and_knows_it_is_taking_a_turn():
     system, task = render("epd_walk", app_url="https://epd-r009.example", persona="You hold 100 F.",
                           turn="2", email="alpaca@rollcall.test", password="rollcall-qa", market=MARKET)

@@ -40,6 +40,7 @@ Usage:
     epd_loop.py status
     epd_loop.py run [--propose] [--keep] [--wait]   # one temper run: the top bet, or a proposal
     epd_loop.py propose [--focus TEXT] [--when-open] # a proposal now (market hours), or armed for the open
+    epd_loop.py propose --after-close [--focus TEXT] # a proposal with the market shut: no orders
     epd_loop.py collect [--keep]                    # record what the last run produced
     epd_loop.py resume [--at STAGE]                 # fork a failed loop run at its last good stage
     epd_loop.py approve BET [--note TEXT]           # put a candidate at the end of backlog.md
@@ -605,6 +606,22 @@ def market_window() -> tuple[bool, str, dt.datetime]:
         return (False, f"the market closes {local_time(closes)}, {left:.0f} min from now: too little for three "
                        f"walks in turn (EPD_MARKET_MIN_LEFT_MIN={MARKET_MIN_LEFT_MIN})", later)
     return True, f"the market is open; it closes {local_time(closes)}", now
+
+
+def after_close_window() -> tuple[bool, str]:
+    """Whether an after-the-close round may walk now, and what its walkers are told about the market.
+
+    The owner, 2026-09-23 evening, asked for walks that night: "theres alot to improve from ux
+    perspective". A walker after the close meets last-close prices and a broker that fills nothing,
+    which is how b017 came to be proposed; so this round's walkers are told the market is shut and
+    place no orders, and its jobs are the ones a person does with the market shut. With the market
+    open it is refused: an ordinary round, whose walkers can trade, is the one to run then.
+    """
+    c = market_clock()
+    if c.get("is_open"):
+        return False, f"the market is open until {local_time(when(c['next_close']))}: run an ordinary round"
+    return True, (f"shut until {local_time(when(c['next_open']))}: prices are the last close, and nothing "
+                  f"would fill before then")
 
 
 def bet_window() -> tuple[bool, str, dt.datetime]:
@@ -1307,7 +1324,8 @@ def arm_proposal(at: dt.datetime, why: str, focus: str, keep: bool) -> None:
     log(f"   {unit}.timer; its output goes to {ARMED_LOG}; `systemctl --user stop {unit}.timer` disarms it")
 
 
-def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = "", when_open: bool = False) -> None:
+def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = "", when_open: bool = False,
+                after_close: bool = False) -> None:
     """One proposal, as one temper run: the walks, the report, one to five candidates. No gate.
 
     Two things stay on this side, because neither is part of the proposal's reasoning: the stack
@@ -1327,6 +1345,9 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
 
     `focus`: the part of the product this round's walkers stay in (the personas are designed
     inside it). Empty: wherever the goals and the last outcome send them.
+
+    `after_close`: walk now, with the market shut (after_close_window): every node is told
+    (market_state "shut"), the walkers place no orders, and the jobs are the evening's.
     """
     focus = " ".join(focus.split())
     require_tools("standee", "docker", "git", "ssh")
@@ -1336,13 +1357,20 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     if walking:
         die(f"proposal {walking[-1]}'s walkers are still on the paper account: every walker trades that one "
             f"account, so rounds take turns. Start this one once its walks are done.")
-    ok, why, at = market_window()
-    if not ok:
-        if when_open:
-            arm_proposal(at, why, focus, keep)
-            return
-        die(f"{why}. The walkers trade the Alpaca paper account, which fills orders only while the market "
-            f"is open; nothing was started. `propose --when-open` arms the round for {local_time(at)}.")
+    if after_close:
+        ok, why = after_close_window()
+        if not ok:
+            die(f"{why}; nothing was started")
+    else:
+        ok, why, at = market_window()
+        if not ok:
+            if when_open:
+                arm_proposal(at, why, focus, keep)
+                return
+            die(f"{why}. The walkers trade the Alpaca paper account, which fills orders only while the market "
+                f"is open; nothing was started. `propose --when-open` arms the round for {local_time(at)}; "
+                f"`propose --after-close` walks now, with the market shut and no orders.")
+    market_state = "shut" if after_close else "open"
     round_id = new_round_id()
     rdir = REPORTS_DIR / round_id
     mkdir_shared(rdir)
@@ -1352,6 +1380,7 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     head = refresh_main()
     env, url = standee_up(MAIN_CLONE, f"epd-{round_id}", "12h")
     rd = {"round_id": round_id, "env": env, "url": url, "base_head": head, "slots": slots, "focus": focus,
+          "market_state": market_state,
           "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
     save_round(rd)
     wait_for_url(url)
@@ -1377,10 +1406,12 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
         "password": QA_PASSWORD,
         "account_state": account,
         "market": why,
+        "market_state": market_state,
         "focus": focus,
     }
     log(f"== {round_id}: proposal (walks, report, up to {SLOTS} bets into {', '.join(slots)}) ==")
-    log(f"   {why}; the walkers take turns on {PAPER_EMAIL} (the Alpaca paper account)")
+    log(f"   {why}; the walkers take turns on {PAPER_EMAIL} (the Alpaca paper account)"
+        + ("; after the close: they place no orders" if after_close else ""))
     if focus:
         log(f"   focus: {focus}")
     if wait:
@@ -1395,7 +1426,7 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
 
 
 def cmd_propose_many(count: int | None, keep: bool, focuses: list[str] | tuple[str, ...] = (),
-                     when_open: bool = False) -> None:
+                     when_open: bool = False, after_close: bool = False) -> None:
     """A proposal now, whatever else is out -- or, `when_open`, at the next open if the market is shut.
 
     `run --propose` is a turn of the loop: it collects first, and a proposal still out or a bet
@@ -1414,7 +1445,10 @@ def cmd_propose_many(count: int | None, keep: bool, focuses: list[str] | tuple[s
     if count > 1 or len(focuses) > 1:
         die(f"{max(count, len(focuses))} rounds asked for, and rounds take turns now: every walker trades the "
             f"one Alpaca paper account. Propose one; the next can start once its walks are done.")
-    cmd_propose(keep, wait=False, alongside=True, focus=focuses[0] if focuses else "", when_open=when_open)
+    if when_open and after_close:
+        die("--when-open waits for the market; --after-close walks with it shut: one or the other")
+    cmd_propose(keep, wait=False, alongside=True, focus=focuses[0] if focuses else "", when_open=when_open,
+                after_close=after_close)
 
 
 def collect_round(round_id: str, keep: bool) -> bool:
@@ -2807,13 +2841,17 @@ def main() -> None:
     r_.add_argument("--keep", action="store_true", help="leave the stacks up")
     r_.add_argument("--wait", action="store_true", help="block until the run ends and collect it here")
     p = sub.add_parser("propose", help="walk the product on the Alpaca paper account and write candidates now, "
-                                       "whatever else is out; market hours only; returns once submitted")
+                                       "whatever else is out; market hours only, unless --after-close; returns once "
+                                       "submitted")
     p.add_argument("--count", type=int, help="rounds to start: 1 (rounds take turns on the one paper account)")
     p.add_argument("--focus", action="append", default=[], metavar="TEXT",
                    help="the part of the product the round's walkers stay in")
     p.add_argument("--when-open", action="store_true",
                    help="if the market is shut or closes within the hour, arm the round for the next open "
                         "instead of refusing")
+    p.add_argument("--after-close", action="store_true",
+                   help="walk now with the market shut: the walkers are told so and place no orders, and the "
+                        "jobs are the ones done after the close (refused while the market is open)")
     p.add_argument("--keep", action="store_true", help="leave the stacks up")
     rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
     rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
@@ -2852,7 +2890,7 @@ def main() -> None:
     elif args.cmd == "run":
         cmd_run(args.keep, args.wait, args.propose, args.retry)
     elif args.cmd == "propose":
-        cmd_propose_many(args.count, args.keep, args.focus, args.when_open)
+        cmd_propose_many(args.count, args.keep, args.focus, args.when_open, args.after_close)
     elif args.cmd == "resume":
         cmd_resume(args.at, args.bet)
     elif args.cmd == "collect":

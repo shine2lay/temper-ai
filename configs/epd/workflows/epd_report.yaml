@@ -4,7 +4,9 @@ workflow:
   # 3: the walkers take turns on the Alpaca paper account -- one login, real prices and fills, the
   #    market open -- instead of each seeding a mock-broker tenant of its own. No seed nodes; the
   #    walks run one after another; the personas and the report are told what the account held.
-  version: 3
+  # 4: market_state, for an after-the-close round ("shut"): every node is told, the walkers place no
+  #    orders, and the jobs are the ones a person does with the market shut.
+  version: 4
   description: |
     EPD loop, stage 1 of 7: the report. Replaces user research and analytics
     for a product that has neither yet.
@@ -46,6 +48,7 @@ workflow:
     password: {type: string, required: true}
     account_state: {type: string, required: true}  # what the paper account held as the round started
     market: {type: string, required: true}         # "the market is open; it closes <when>"
+    market_state: {type: string, required: false}  # "shut": an after-the-close round, no orders; else the market is open
     goals: {type: string, required: true}
     profile: {type: string, required: true}
     last_outcome: {type: string, required: false}
@@ -74,6 +77,7 @@ workflow:
         focus: input.focus
         account_state: input.account_state
         market: input.market
+        market_state: input.market_state
 
     # One account, so one walker at a time: each walk waits for the one before it.
     - name: walk_1
@@ -87,6 +91,7 @@ workflow:
         email: input.paper_email
         password: input.password
         market: input.market
+        market_state: input.market_state
 
     - name: walk_2
       type: agent
@@ -99,6 +104,7 @@ workflow:
         email: input.paper_email
         password: input.password
         market: input.market
+        market_state: input.market_state
 
     - name: walk_3
       type: agent
@@ -111,6 +117,7 @@ workflow:
         email: input.paper_email
         password: input.password
         market: input.market
+        market_state: input.market_state
 
     - name: report
       type: agent
@@ -123,6 +130,7 @@ workflow:
         coverage: personas.structured.coverage
         account_state: input.account_state
         market: input.market
+        market_state: input.market_state
         walk_1: walk_1.output
         walk_2: walk_2.output
         walk_3: walk_3.output

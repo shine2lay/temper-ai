@@ -4,7 +4,9 @@ workflow:
   #    rounds walking from the same goals walked the same pages; a focus each spreads them out.
   # 3: the walkers take turns on the Alpaca paper account (epd_report v3), so the round is given the
   #    login, what the account holds and when the market closes; rounds no longer run side by side.
-  version: 3
+  # 4: market_state, handed to epd_report v4: "shut" is an after-the-close round, whose walkers
+  #    place no orders (`propose --after-close`).
+  version: 4
   description: |
     The proposal half of the EPD loop, as one run.
 
@@ -54,6 +56,7 @@ workflow:
     password:     {type: string, required: true}
     account_state: {type: string, required: true}  # what the paper account holds as the round starts
     market:       {type: string, required: true}   # "the market is open; it closes <when>"
+    market_state: {type: string, required: false}  # "shut": an after-the-close round, whose walkers place no orders
 
   outputs:
     report_path:     report.structured.report_path
@@ -78,6 +81,7 @@ workflow:
         password: input.password
         account_state: input.account_state
         market: input.market
+        market_state: input.market_state
         goals: input.goals
         profile: input.profile
         last_outcome: input.last_outcome

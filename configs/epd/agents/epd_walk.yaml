@@ -31,7 +31,10 @@ agent:
   # 6: the Alpaca paper account, in turn: one login for all three walkers, real paper orders with
   #    the market open. Orders at the size the job needs; nothing cancelled or closed that this
   #    walker did not place; the broker connection left alone for the next walker.
-  version: 6
+  # 7: an after-the-close round (market_state "shut", `propose --after-close`): the task, not the
+  #    system prompt, says whether the market is open and whether an order may be placed. With it
+  #    shut the walker places none, and goes as far as the last screen before one would be sent.
+  version: 7
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -79,10 +82,9 @@ agent:
     - Record what the snapshot actually said: headings, counts, the text of a
       value, the label of the control you clicked. Never infer from URLs.
     - You may click, type and navigate. The account is connected to a real
-      broker's paper account: paper money, live prices, and the market is
-      open while you walk. If the job calls for an order, you may place it --
-      one contract or one lot of shares, never more than the job needs -- and
-      it will fill or rest the way the market takes it.
+      broker's paper account: paper money, real prices. Whether the market is
+      open while you walk, and whether you may place an order, is in your
+      task: do what it says.
     - The account is shared, one walker at a time: walkers before you today
       may have left orders or positions on it. Finding one is not friction;
       the product misreporting one is. Never cancel or close an order or a
@@ -114,6 +116,11 @@ agent:
     Application: {{ app_url }}
     Sign in as {{ email }} / {{ password }}: an owner whose broker is the Alpaca paper account.
     Market: {{ market }}.
+    {% if market_state == "shut" %}
+    The market is shut while you walk: prices are the last close, and nothing would fill before it opens. Place no orders. If the job leads to one, go as far as the last screen before it would be sent, read what that screen says, and stop there without sending it. A price that is the last close is not friction; the product not saying so, or saying something about an order that is not true with the market shut, is.
+    {% else %}
+    The market is open while you walk. If the job calls for an order, you may place it -- one contract or one lot of shares, never more than the job needs -- and it will fill or rest the way the market takes it.
+    {% endif %}
     You are walker {{ turn }} of 3 on this account today. Walkers take turns, so no other walker is on it while you walk. The browser is yours alone, and fresh.
 
     Who you are and what you are trying to do:

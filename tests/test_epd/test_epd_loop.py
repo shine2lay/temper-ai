@@ -601,6 +601,7 @@ def test_the_walkers_sign_in_to_the_paper_login_and_are_told_what_it_holds(L, mo
     run = seen["runs"][0]
     assert run["paper_email"] == "alpaca@rollcall.test" and run["password"] == L.QA_PASSWORD
     assert run["account_state"] == HOLDS and run["market"] == OPEN[1]
+    assert run["market_state"] == "open" == L.load_round("r001")["market_state"]
     assert run["focus"] == "The Screener and Browse" == L.load_round("r001")["focus"]
     L.cmd_status()
     assert "focus: The Screener and Browse" in capsys.readouterr().out
@@ -625,6 +626,29 @@ def test_a_shut_market_starts_nothing_and_when_open_arms_the_round_for_the_open(
     assert seen["armed"] == [(at, shut[1], "Settings")]
     assert seen["up"] == [] and seen["runs"] == [] and L.round_ids() == [] and not any(L.BETS_DIR.iterdir()), (
         "no stack, no round, no slot while the market is shut")
+
+
+def test_an_after_close_round_walks_now_with_the_market_shut_and_every_node_is_told(L, monkeypatch, capsys):
+    # The owner, 2026-09-23 evening: walks that night; "theres alot to improve from ux perspective".
+    shut = (False, "the market is shut; it opens Thu Sep 24 06:30 PDT", None)
+    seen = proposals_run_here(L, monkeypatch, market=shut)
+    clock = {"is_open": False, "timestamp": "2026-09-23T21:10:00-07:00",
+             "next_open": "2026-09-24T09:30:00-04:00", "next_close": "2026-09-24T16:00:00-04:00"}
+    monkeypatch.setattr(L, "market_clock", lambda: clock)
+    L.cmd_propose_many(None, keep=False, focuses=["UX after the close"], after_close=True)
+    run = seen["runs"][0]
+    assert run["market_state"] == "shut" == L.load_round("r001")["market_state"]
+    assert run["market"].startswith("shut until ") and "prices are the last close" in run["market"]
+    assert seen["paper"][0] == ("rollcall-dev-epd-r001", "WALK") and seen["armed"] == []
+    assert "after the close: they place no orders" in capsys.readouterr().out
+
+    clock["is_open"] = True
+    with pytest.raises(SystemExit):
+        L.cmd_propose_many(None, keep=False, after_close=True)
+    assert "the market is open until" in capsys.readouterr().out, "with the market open, walk an ordinary round"
+    with pytest.raises(SystemExit):
+        L.cmd_propose_many(None, keep=False, when_open=True, after_close=True)
+    assert len(seen["runs"]) == 1 and L.round_ids() == ["r001"]
 
 
 def test_a_round_needs_the_market_open_with_time_for_three_walks(L, monkeypatch):

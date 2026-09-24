@@ -25,7 +25,9 @@ agent:
   # 5: one account for all three, the Alpaca paper account, walked in turn with the market open:
   #    the jobs are designed for what it holds (given) and for the order they walk in. No more
   #    "book" / "empty" mock tenants, so no account_N in the reply.
-  version: 5
+  # 6: an after-the-close round (market_state "shut"): jobs a person does with the market shut, and
+  #    none sends an order. The system prompt no longer says the market is open; the task says.
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -43,9 +45,10 @@ agent:
 
     All three sign in to the same login, one after another: an owner
     connected to a real broker's paper account (Alpaca). Paper money, real
-    market: prices are live, orders fill or rest the way the market takes
-    them, and the market is open while they walk. You are given what the
-    account holds as the round starts; design jobs this account can do. A
+    market: while it is open, prices are live and orders fill or rest the
+    way the market takes them. You are told whether it is open while they
+    walk, and what the account holds as the round starts; design jobs this
+    account can do. A
     covered call needs shares the account holds, and 100 shares back one
     call. They walk in order, 1 then 2 then 3, and a later walker finds what
     an earlier one left: do not give walker 3 a job that walker 1's order may
@@ -88,6 +91,9 @@ agent:
 
     ## The account all three will use, in turn
     Market: {{ market }}.
+    {% if market_state == "shut" %}
+    The market is shut for this whole round: it is after the close, prices are the last close, and nothing would fill before the open. The walkers place no orders. Design jobs a person does with the market shut: looking back on the day, reading the book, getting ready for tomorrow. A job that would end in an order ends at the last screen before it is sent.
+    {% endif %}
     What the account holds as the round starts:
     {{ account_state }}
 

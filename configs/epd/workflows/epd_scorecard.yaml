@@ -1,0 +1,44 @@
+workflow:
+  name: epd_scorecard
+  version: 1
+  description: |
+    The stage scorecard: three judges grade every stage of one shipped bet
+    (walk, bet, plan, build, review, QA, gate, live check), each from the same
+    evidence pack, at the same time, none seeing another.
+
+      judge_1 | judge_2 | judge_3
+
+    The owner (2026-09-24) wanted to be able to tell whether the bet, the
+    plan, the implementation, QA and the rest were each any good, with three
+    judges a bet for the spread and the consensus. The pack is built outside
+    temper (~/epd-autopilot/scorecard/pack.py) and the three replies are
+    tallied there too; this workflow only runs the judges.
+  inputs:
+    bet_id: {type: string, required: true}
+    pack: {type: string, required: true}  # the evidence pack, Markdown
+  outputs:
+    judge_1: judge_1.output
+    judge_2: judge_2.output
+    judge_3: judge_3.output
+
+  nodes:
+    - name: judge_1
+      type: agent
+      agent: epd_judge
+      input_map:
+        bet_id: input.bet_id
+        pack: input.pack
+
+    - name: judge_2
+      type: agent
+      agent: epd_judge
+      input_map:
+        bet_id: input.bet_id
+        pack: input.pack
+
+    - name: judge_3
+      type: agent
+      agent: epd_judge
+      input_map:
+        bet_id: input.bet_id
+        pack: input.pack

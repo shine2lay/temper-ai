@@ -6,7 +6,9 @@ workflow:
   #    login, what the account holds and when the market closes; rounds no longer run side by side.
   # 4: market_state, handed to epd_report v4: "shut" is an after-the-close round, whose walkers
   #    place no orders (`propose --after-close`).
-  version: 4
+  # 5: an optional lens (`propose --lens`), handed to epd_report v5 and epd_bet v5: who walks, when
+  #    the owner asks for someone other than the profile's user.
+  version: 5
   description: |
     The proposal half of the EPD loop, as one run.
 
@@ -48,6 +50,7 @@ workflow:
     unfinished:   {type: string, required: false}
     bets_tsv:     {type: string, required: true}
     focus:        {type: string, required: false}  # the part of the product this round's walkers stay in; empty = wherever the goals say
+    lens:         {type: string, required: false}  # who walks, instead of the profile's user; empty = the profile's user
 
     # Where to look at the product, and as whom
     app_url:      {type: string, required: true}   # the stack to walk (the driver brings it up)
@@ -88,6 +91,7 @@ workflow:
         bet_id: input.round_id
         report_path: input.report_path
         focus: input.focus
+        lens: input.lens
 
     # 2 — One to five bets, each with a falsifiable invariant and a pre-registered threshold,
     #     each to its own slot, in the order the agent would build them. The owner decides on disk.
@@ -104,3 +108,4 @@ workflow:
         report_path: report.structured.report_path
         bets_tsv: input.bets_tsv
         unfinished: input.unfinished
+        lens: input.lens

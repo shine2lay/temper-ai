@@ -556,7 +556,8 @@ def proposals_run_here(L, monkeypatch, market=OPEN) -> dict:
     monkeypatch.setattr(L, "preflight_login", lambda url, emails=(), *a, **k: seen["preflight"].append(emails))
     monkeypatch.setattr(L, "market_window", lambda: market)
     monkeypatch.setattr(L, "paper_account_state", lambda account: seen["paper"].append(("book", account)) or HOLDS)
-    monkeypatch.setattr(L, "arm_proposal", lambda at, why, focus, keep: seen["armed"].append((at, why, focus)))
+    monkeypatch.setattr(L, "arm_proposal", lambda at, why, focus, keep, lens="": seen["armed"].append(
+        (at, why, focus) + ((lens,) if lens else ())))
 
     def up(source, as_name, ttl):
         seen["up"].append(as_name)
@@ -605,6 +606,31 @@ def test_the_walkers_sign_in_to_the_paper_login_and_are_told_what_it_holds(L, mo
     assert run["focus"] == "The Screener and Browse" == L.load_round("r001")["focus"]
     L.cmd_status()
     assert "focus: The Screener and Browse" in capsys.readouterr().out
+
+
+def test_a_lens_says_who_walks_and_reaches_the_run_the_record_and_the_armed_round(L, monkeypatch, capsys):
+    # The owner, 2026-09-23: "from lens of people that doesn't [know] anything about trading".
+    shut = (False, "the market is shut; it opens Thu Sep 24 06:30 PDT", None)
+    seen = proposals_run_here(L, monkeypatch, market=shut)
+    clock = {"is_open": False, "timestamp": "2026-09-23T21:40:00-07:00",
+             "next_open": "2026-09-24T09:30:00-04:00", "next_close": "2026-09-24T16:00:00-04:00"}
+    monkeypatch.setattr(L, "market_clock", lambda: clock)
+    L.cmd_propose_many(None, keep=False, focuses=["The Glossary"], after_close=True,
+                       lens="people who know\n nothing  about trading")
+    run = seen["runs"][0]
+    assert run["lens"] == "people who know nothing about trading" == L.load_round("r001")["lens"]
+    assert run["focus"] == "The Glossary"
+    assert "lens: people who know nothing about trading" in capsys.readouterr().out
+    L.cmd_status()
+    assert "lens: people who know nothing about trading" in capsys.readouterr().out
+
+    L.cmd_propose_many(None, keep=False, after_close=True)
+    assert seen["runs"][1]["lens"] == "" == L.load_round("r002")["lens"], "no lens: the profile's user walks"
+
+    at = dt.datetime(2026, 9, 24, 13, 45, tzinfo=dt.UTC)
+    monkeypatch.setattr(L, "market_window", lambda: (False, "the market is shut", at))
+    L.cmd_propose_many(None, keep=False, focuses=["Settings"], when_open=True, lens="a newcomer")
+    assert seen["armed"] == [(at, "the market is shut", "Settings", "a newcomer")], "an armed round keeps it"
 
 
 def test_more_than_one_round_at_once_is_refused_before_anything_is_made(L, monkeypatch):
@@ -834,6 +860,9 @@ def test_when_open_arms_one_timer_per_open_that_sees_the_same_tree(L, monkeypatc
     with pytest.raises(SystemExit):
         L.arm_proposal(at, "the market is shut", "", keep=False)
     assert "Unit already loaded" in capsys.readouterr().out, "a second round for the same open is refused"
+    ran.clear()
+    L.arm_proposal(at, "shut", "Settings", keep=False, lens="a newcomer")
+    assert ran[0][-7:] == [str(DRIVER), "propose", "--when-open", "--focus", "Settings", "--lens", "a newcomer"]
 
 
 def test_a_second_proposal_waits_for_the_first_unless_asked_for_alongside(L, monkeypatch):

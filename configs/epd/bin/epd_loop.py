@@ -41,6 +41,7 @@ Usage:
     epd_loop.py run [--propose] [--keep] [--wait]   # one temper run: the top bet, or a proposal
     epd_loop.py propose [--focus TEXT] [--when-open] # a proposal now (market hours), or armed for the open
     epd_loop.py propose --after-close [--focus TEXT] # a proposal with the market shut: no orders
+    epd_loop.py propose ... --lens TEXT              # who walks, instead of the profile's user
     epd_loop.py collect [--keep]                    # record what the last run produced
     epd_loop.py resume [--at STAGE]                 # fork a failed loop run at its last good stage
     epd_loop.py approve BET [--note TEXT]           # put a candidate at the end of backlog.md
@@ -1296,7 +1297,7 @@ def rounds_walking() -> list[str]:
 ARMED_LOG = LOOP_DIR / "propose-when-open.log"
 
 
-def arm_proposal(at: dt.datetime, why: str, focus: str, keep: bool) -> None:
+def arm_proposal(at: dt.datetime, why: str, focus: str, keep: bool, lens: str = "") -> None:
     """Run `propose --when-open` again at `at`, from a transient systemd timer, and return.
 
     The unit is named for the minute it fires, so systemd itself refuses a second round armed for
@@ -1305,6 +1306,8 @@ def arm_proposal(at: dt.datetime, why: str, focus: str, keep: bool) -> None:
     argv = [sys.executable, str(Path(__file__).resolve()), "propose", "--when-open"]
     if focus:
         argv += ["--focus", focus]
+    if lens:
+        argv += ["--lens", lens]
     if keep:
         argv.append("--keep")
     # Only what this driver reads goes into the unit: a token or a database URL in the caller's
@@ -1325,7 +1328,7 @@ def arm_proposal(at: dt.datetime, why: str, focus: str, keep: bool) -> None:
 
 
 def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = "", when_open: bool = False,
-                after_close: bool = False) -> None:
+                after_close: bool = False, lens: str = "") -> None:
     """One proposal, as one temper run: the walks, the report, one to five candidates. No gate.
 
     Two things stay on this side, because neither is part of the proposal's reasoning: the stack
@@ -1348,8 +1351,15 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
 
     `after_close`: walk now, with the market shut (after_close_window): every node is told
     (market_state "shut"), the walkers place no orders, and the jobs are the evening's.
+
+    `lens`: who walks, when the owner asks for someone other than the user the profile describes --
+    2026-09-23: "from lens of people that doesn't [know] anything about trading". Every persona is
+    that kind of person and knows only what the lens allows; the walkers, the report and the bet
+    writer are told, so a word such a person cannot follow counts as friction and not as "the
+    owner knows that". Empty: the profile's user.
     """
     focus = " ".join(focus.split())
+    lens = " ".join(lens.split())
     require_tools("standee", "docker", "git", "ssh")
     if open_round() and not alongside:
         die(f"proposal {open_round()} is still out; `collect` it first")
@@ -1365,7 +1375,7 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
         ok, why, at = market_window()
         if not ok:
             if when_open:
-                arm_proposal(at, why, focus, keep)
+                arm_proposal(at, why, focus, keep, lens)
                 return
             die(f"{why}. The walkers trade the Alpaca paper account, which fills orders only while the market "
                 f"is open; nothing was started. `propose --when-open` arms the round for {local_time(at)}; "
@@ -1380,7 +1390,7 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     head = refresh_main()
     env, url = standee_up(MAIN_CLONE, f"epd-{round_id}", "12h")
     rd = {"round_id": round_id, "env": env, "url": url, "base_head": head, "slots": slots, "focus": focus,
-          "market_state": market_state,
+          "lens": lens, "market_state": market_state,
           "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
     save_round(rd)
     wait_for_url(url)
@@ -1408,12 +1418,15 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
         "market": why,
         "market_state": market_state,
         "focus": focus,
+        "lens": lens,
     }
     log(f"== {round_id}: proposal (walks, report, up to {SLOTS} bets into {', '.join(slots)}) ==")
     log(f"   {why}; the walkers take turns on {PAPER_EMAIL} (the Alpaca paper account)"
         + ("; after the close: they place no orders" if after_close else ""))
     if focus:
         log(f"   focus: {focus}")
+    if lens:
+        log(f"   lens: {lens}")
     if wait:
         out = run_workflow("epd_propose", inputs, workspace=LOOP_WORKSPACE, timeout=2 * 3600)
         finish_round(rd, out, keep)
@@ -1426,7 +1439,7 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
 
 
 def cmd_propose_many(count: int | None, keep: bool, focuses: list[str] | tuple[str, ...] = (),
-                     when_open: bool = False, after_close: bool = False) -> None:
+                     when_open: bool = False, after_close: bool = False, lens: str = "") -> None:
     """A proposal now, whatever else is out -- or, `when_open`, at the next open if the market is shut.
 
     `run --propose` is a turn of the loop: it collects first, and a proposal still out or a bet
@@ -1448,7 +1461,7 @@ def cmd_propose_many(count: int | None, keep: bool, focuses: list[str] | tuple[s
     if when_open and after_close:
         die("--when-open waits for the market; --after-close walks with it shut: one or the other")
     cmd_propose(keep, wait=False, alongside=True, focus=focuses[0] if focuses else "", when_open=when_open,
-                after_close=after_close)
+                after_close=after_close, lens=lens)
 
 
 def collect_round(round_id: str, keep: bool) -> bool:
@@ -1531,6 +1544,8 @@ def finish_round(rd: dict, out: dict, keep: bool) -> None:
     print(f"=== {round_id}: {len(candidates)} candidate(s) from {rdir / 'report.md'}")
     if rd.get("focus"):
         print(f"Focus: {rd['focus']}")
+    if rd.get("lens"):
+        print(f"Lens: {rd['lens']}")
     print(f"Report: {out.get('report_summary')}")
     for c in candidates:
         print()
@@ -2808,7 +2823,8 @@ def cmd_status() -> None:
     for rnd in open_rounds():
         rd = load_round(rnd)
         print(f"\nproposal out: {rnd} (run {rd.get('_run_id', '')[:8]}); `collect` when it is done"
-              + (f"\n    focus: {rd['focus']}" if rd.get("focus") else ""))
+              + (f"\n    focus: {rd['focus']}" if rd.get("focus") else "")
+              + (f"\n    lens: {rd['lens']}" if rd.get("lens") else ""))
     for b in open_bets():
         st = load_state(b)
         rid = (st["stages"].get("loop") or {}).get("_run_id", "")
@@ -2852,6 +2868,9 @@ def main() -> None:
     p.add_argument("--after-close", action="store_true",
                    help="walk now with the market shut: the walkers are told so and place no orders, and the "
                         "jobs are the ones done after the close (refused while the market is open)")
+    p.add_argument("--lens", default="", metavar="TEXT",
+                   help="who walks, instead of the user the profile describes (every persona is that kind of "
+                        "person); the walkers, the report and the bet writer are told")
     p.add_argument("--keep", action="store_true", help="leave the stacks up")
     rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
     rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
@@ -2890,7 +2909,7 @@ def main() -> None:
     elif args.cmd == "run":
         cmd_run(args.keep, args.wait, args.propose, args.retry)
     elif args.cmd == "propose":
-        cmd_propose_many(args.count, args.keep, args.focus, args.when_open, args.after_close)
+        cmd_propose_many(args.count, args.keep, args.focus, args.when_open, args.after_close, args.lens)
     elif args.cmd == "resume":
         cmd_resume(args.at, args.bet)
     elif args.cmd == "collect":

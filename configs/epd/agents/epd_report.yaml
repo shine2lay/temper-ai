@@ -24,7 +24,10 @@ agent:
   #    earlier one is the rig, and a figure can be checked against the account.
   # 7: an after-the-close round (market_state "shut"): the task says so, and a shut market, a
   #    last-close price or nothing filling is not friction; the product not saying so is.
-  version: 7
+  # 8: a lens (`propose --lens`): who walked, when the owner asked for someone other than the
+  #    profile's user. What such a person could not follow is friction, even where the profile's
+  #    user would know it, and the report says at the top who walked.
+  version: 8
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -100,6 +103,11 @@ agent:
 
     ## Persona coverage
     {{ coverage }}
+    {% if lens %}
+
+    ## Who walked (the owner's lens)
+    The owner asked for this round to be walked by {{ lens }}, and every walker was such a person. A word, a figure or a step such a person could not follow where they met it is friction here, even where the user the profile describes would know it. Say in the report's first lines who walked, so the bets written from it know.
+    {% endif %}
 
     ## The account
     The walkers took turns on it, 1 then 2 then 3. Market: {{ market }}.

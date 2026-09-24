@@ -6,7 +6,10 @@ workflow:
   #    walks run one after another; the personas and the report are told what the account held.
   # 4: market_state, for an after-the-close round ("shut"): every node is told, the walkers place no
   #    orders, and the jobs are the ones a person does with the market shut.
-  version: 4
+  # 5: lens, when the owner asks who walks (2026-09-23: "from lens of people that doesn't [know]
+  #    anything about trading"): the personas are all that kind of person, and the walkers and the
+  #    report are told, so a walker does not fill a gap from what the model knows.
+  version: 5
   description: |
     EPD loop, stage 1 of 7: the report. Replaces user research and analytics
     for a product that has neither yet.
@@ -55,6 +58,7 @@ workflow:
     bet_id: {type: string, required: true}
     report_path: {type: string, required: true}
     focus: {type: string, required: false}      # what part of the product the walkers stay in; empty = wherever the goals say
+    lens: {type: string, required: false}       # who walks, instead of the profile's user; empty = the profile's user
   outputs:
     status: report.structured.status
     report_path: report.structured.report_path
@@ -75,6 +79,7 @@ workflow:
         goals: input.goals
         last_outcome: input.last_outcome
         focus: input.focus
+        lens: input.lens
         account_state: input.account_state
         market: input.market
         market_state: input.market_state
@@ -92,6 +97,7 @@ workflow:
         password: input.password
         market: input.market
         market_state: input.market_state
+        lens: input.lens
 
     - name: walk_2
       type: agent
@@ -105,6 +111,7 @@ workflow:
         password: input.password
         market: input.market
         market_state: input.market_state
+        lens: input.lens
 
     - name: walk_3
       type: agent
@@ -118,6 +125,7 @@ workflow:
         password: input.password
         market: input.market
         market_state: input.market_state
+        lens: input.lens
 
     - name: report
       type: agent
@@ -135,3 +143,4 @@ workflow:
         walk_2: walk_2.output
         walk_3: walk_3.output
         last_outcome: input.last_outcome
+        lens: input.lens

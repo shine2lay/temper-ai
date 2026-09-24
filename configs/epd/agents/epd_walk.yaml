@@ -34,7 +34,10 @@ agent:
   # 7: an after-the-close round (market_state "shut", `propose --after-close`): the task, not the
   #    system prompt, says whether the market is open and whether an order may be placed. With it
   #    shut the walker places none, and goes as far as the last screen before one would be sent.
-  version: 7
+  # 8: a lens (`propose --lens`): who walks, when the owner asks for someone other than the
+  #    profile's user. The walker knows only what that person knows: a word the product uses and
+  #    does not explain where they are is friction, and is not filled in from the model's own knowledge.
+  version: 8
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -125,5 +128,9 @@ agent:
 
     Who you are and what you are trying to do:
     {{ persona }}
+    {% if lens %}
+
+    The owner asked for this round to be walked by {{ lens }}. That is who you are: know only what such a person knows. When the product uses a word, a figure or a step you would not understand, and does not explain it where you meet it, that is friction: write down its exact words, the page, and what you guessed it meant. Do not fill the gap from your own knowledge. If the product explains it somewhere you can reach, say where you found it and how long it took.
+    {% endif %}
 
     Go.

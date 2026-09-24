@@ -98,6 +98,45 @@ def test_the_walker_signs_in_to_the_paper_login_and_knows_it_is_taking_a_turn():
     assert "simulator" not in system and "Never cancel or close an order or a" in system
 
 
+LENS = "people who know nothing about trading"
+
+
+def test_a_lens_reaches_every_node_that_decides_who_walks_or_what_they_found():
+    # The owner, 2026-09-23: "from lens of people that doesn't [know] anything about trading".
+    n = nodes("epd_report")
+    for name in ("personas", "walk_1", "walk_2", "walk_3", "report"):
+        assert n[name]["input_map"]["lens"] == "input.lens", name
+    assert nodes("epd_propose")["report"]["input_map"]["lens"] == "input.lens"
+    assert nodes("epd_propose")["bet"]["input_map"]["lens"] == "input.lens"
+    assert nodes("epd_bet")["bet"]["input_map"]["lens"] == "input.lens"
+
+
+def test_the_lens_makes_every_persona_that_person_and_every_walker_knows_only_what_they_know():
+    system, task = render("epd_personas", profile="RollCall", goals="Trust first.", focus="The Glossary",
+                          last_outcome="", account_state=HOLDS, market=MARKET, lens=LENS)
+    assert 'the\nlens replaces "at least one is the primary user"' in system
+    assert f"## Who walks this round (the owner's lens)\n{LENS}" in task
+    _, plain = render("epd_personas", profile="RollCall", goals="Trust first.", focus="", last_outcome="",
+                      account_state=HOLDS, market=MARKET)
+    assert "Who walks this round" not in plain
+
+    _, walk = render("epd_walk", app_url="https://r.example", persona="You have never traded.", turn="1",
+                     email="alpaca@rollcall.test", password="rollcall-qa", market=MARKET, market_state="shut",
+                     lens=LENS)
+    assert f"walked by {LENS}. That is who you are" in walk and "Do not fill the gap from your own knowledge" in walk
+    _, walk = render("epd_walk", app_url="https://r.example", persona="p", turn="1", email="e", password="p",
+                     market=MARKET)
+    assert "That is who you are" not in walk
+
+    _, report = render("epd_report", report_path="/r/report.md", bet_id="r009", goals="g", coverage="c",
+                       walk_1="w1", walk_2="w2", walk_3="w3", last_outcome="", account_state=HOLDS,
+                       market=MARKET, lens=LENS)
+    assert f"walked by {LENS}, and every walker was such a person" in report
+    _, bet = render("epd_bet", round_id="r009", bets_dir="/b", slots="b047", goals="g", bets_tsv="",
+                    unfinished="", report_path="/r/report.md", profile="p", lens=LENS)
+    assert f"walked by {LENS}. Write its bets for that person too" in bet
+
+
 def test_the_personas_are_designed_for_what_the_account_holds():
     system, task = render("epd_personas", profile="RollCall", goals="Trust first.", focus="",
                           last_outcome="", account_state=HOLDS, market=MARKET)

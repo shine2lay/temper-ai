@@ -6,7 +6,9 @@ workflow:
   #    output instead of needing a driver to read the file in between.
   # 4: writes one to five candidates into pre-made slots instead of one bet to one path. The pick
   #    moved out of the run and into a file the owner edits (backlog.md).
-  version: 4
+  # 5: takes the round's lens (who walked, when the owner asked for someone other than the
+  #    profile's user), so the bets are written for that person too.
+  version: 5
   description: |
     EPD loop, stage 2 of the proposal: the bets. Replaces the product
     department's decision -- or rather, prepares it. One agent reads the
@@ -36,6 +38,7 @@ workflow:
     report_path: {type: string, required: true}
     bets_tsv: {type: string, required: true}
     unfinished: {type: string, required: false}
+    lens: {type: string, required: false}       # who walked, instead of the profile's user; empty = the profile's user
   outputs:
     status: bet.structured.status
     candidates: bet.structured.candidates
@@ -55,3 +58,4 @@ workflow:
         report_path: input.report_path
         bets_tsv: input.bets_tsv
         unfinished: input.unfinished
+        lens: input.lens

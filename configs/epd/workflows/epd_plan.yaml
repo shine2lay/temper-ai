@@ -5,7 +5,11 @@ workflow:
   #    second findings were right and nothing applied them: they were two of the new plan's three
   #    minor problems. `rounds` says how many passes the lead made.
   # 3: the description only: wired into epd_loop v8.
-  version: 3
+  # 4: lead also depends on design, and check on docs. The engine carries a failure only two steps
+  #    down: a skip caused by a skip does not say "failed", so the node after it runs. On b013
+  #    (2026-09-25) the design failed, the engineers and docs were skipped, and the lead still
+  #    ran with every docs input null. It wrote a BLOCKED plan, then a 7-task plan with no design.
+  version: 4
   description: |
     EPD loop, plan stage: a pitch becomes the build's tasks. An architect
     designs the change, four engineers check the design in their own areas,
@@ -146,7 +150,8 @@ workflow:
     - name: lead
       type: agent
       agent: epd_plan_lead
-      depends_on: [docs]
+      # design is named so a failed design stops the lead (see version 4)
+      depends_on: [docs, design]
       input_map:
         bet_id: input.bet_id
         gate: input.gate
@@ -175,7 +180,8 @@ workflow:
     - name: check
       type: agent
       agent: epd_plan_check
-      depends_on: [lead]
+      # docs is named so a failed engineer stops the check, not only the lead (see version 4)
+      depends_on: [lead, docs]
       # max_loops counts the revises: the first two rewind to docs, so the lead
       # is handed its draft with the issues. The rewind goes to docs, not lead,
       # because docs reads the draft back and counts the round. Round 3 is the

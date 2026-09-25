@@ -380,6 +380,12 @@ class TestPerAgentMaxTokens:
     def _provider(self, monkeypatch, n=3):
         from temper_ai.llm.providers import anthropic as mod
 
+        # Every other token name is set empty, not deleted: once any test in the process has run the
+        # CLI's load_dotenv(override=False), the real .env refills a missing name (its _BACKUP token
+        # made this pool 4, not 3, under xdist). See tests/test_llm/test_pool_is_live_in_the_server.py.
+        for name in ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN_BACKUP",
+                     *[f"CLAUDE_CODE_OAUTH_TOKEN_{i}" for i in range(2, 10)]):
+            monkeypatch.setenv(name, "")
         for i in range(n):
             monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN" if i == 0 else f"CLAUDE_CODE_OAUTH_TOKEN_{i+1}",
                                f"sk-ant-oat-{i}")

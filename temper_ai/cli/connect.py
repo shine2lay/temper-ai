@@ -112,6 +112,11 @@ async def _run_login(config: dict, *, manual: bool = False) -> None:
 def cmd_connections(args: Any) -> int:
     """Show every configured HTTP MCP server and whether it is authorized."""
     from temper_ai.tools.mcp_auth import DatabaseTokenStore, oauth_configured
+    from temper_ai.tools.oauth_client_credentials import (
+        ClientCredentials,
+        ClientCredentialsError,
+        client_credentials_configured,
+    )
 
     servers = _http_servers()
     if not servers:
@@ -123,6 +128,13 @@ def cmd_connections(args: Any) -> int:
     width = max(len(name) for name in servers)
     for name in sorted(servers):
         config = servers[name]
+        if client_credentials_configured(config):
+            try:
+                ClientCredentials.from_config(config)
+                print(f"  {name:<{width}}  client credentials (its own app identity; no login)")
+            except ClientCredentialsError as exc:
+                print(f"  {name:<{width}}  not configured — {exc}")
+            continue
         if not oauth_configured(config):
             status = "no auth required"
             if config.get("headers"):

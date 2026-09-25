@@ -1,0 +1,23 @@
+workflow:
+  name: linear_reply
+  description: |
+    Read a Linear issue and its comments, and reply with one comment as
+    temper. Started by the linear_reply trigger (label "temper" added to an
+    issue), or by hand:
+      temper run linear_reply --input issue_id=ENG-123
+  inputs:
+    issue_id:
+      type: string
+      required: true
+    identifier:
+      type: string
+      required: false
+  outputs:
+    reply: reply.output
+  nodes:
+    - name: reply
+      type: agent
+      agent: linear_reply
+      input_map:
+        issue_id: input.issue_id
+        identifier: input.identifier

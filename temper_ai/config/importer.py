@@ -82,7 +82,7 @@ def import_yaml(file_path: str | Path, store: ConfigStore | None = None) -> dict
 
 
 # Subdirectories holding YAMLs that are not workflow/stage/agent configs.
-NON_CONFIG_DIRS = ("mcp_servers", "tools")
+NON_CONFIG_DIRS = ("mcp_servers", "tools", "triggers")
 
 
 def import_config_tree(root: str | Path, store: ConfigStore | None = None) -> int:

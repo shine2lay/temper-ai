@@ -374,21 +374,33 @@ class MCPClientManager:
     async def _connect_http(self, config: dict, stack: AsyncExitStack) -> ClientSession:
         """Connect over Streamable HTTP, with optional static headers and OAuth.
 
-        Two ways to authenticate, because remote MCP servers split into two
-        camps. ``headers`` covers servers that take a long-lived API token.
+        Three ways to authenticate, because remote MCP servers differ.
+        ``headers`` covers servers that take a long-lived API token.
         ``auth: oauth`` covers servers that require an authorization code
         flow: the grant is obtained once by ``temper connect <server>`` and
         stored, and the provider here refreshes it without a human present.
         A run never opens a browser — see ``interactive`` in mcp_auth.
+        ``auth: client_credentials`` gives temper an identity of its own (an
+        app, not a person) from a client id and secret; see
+        oauth_client_credentials.
         """
         from mcp.client.streamable_http import streamable_http_client
         from mcp.shared._httpx_utils import create_mcp_http_client
 
         from temper_ai.tools.mcp_auth import build_oauth_provider, oauth_configured
+        from temper_ai.tools.oauth_client_credentials import (
+            ClientCredentials,
+            ClientCredentialsAuth,
+            client_credentials_configured,
+        )
 
         url = config["url"]
         headers = config.get("headers") or None
-        auth = build_oauth_provider(config) if oauth_configured(config) else None
+        auth: Any = None
+        if oauth_configured(config):
+            auth = build_oauth_provider(config)
+        elif client_credentials_configured(config):
+            auth = ClientCredentialsAuth(ClientCredentials.from_config(config))
 
         # streamable_http_client only closes a client it created itself, so a
         # client we pass in has to go on our own stack or it leaks the

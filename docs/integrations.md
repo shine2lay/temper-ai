@@ -17,6 +17,10 @@ them.
 | `transport: stdio` | The integration ships a local server you run as a subprocess | Usually an API token in `env:` |
 | `transport: http` + `headers:` | Remote server that takes a long-lived API token | Static header, from the environment |
 | `transport: http` + `auth: oauth` | Remote server behind an authorization flow | Authorized once, stored, refreshed automatically |
+| `transport: http` + `auth: client_credentials` | Remote server where temper should act as its own app, not as a person | Client id and secret from the environment; no login |
+
+Linear uses the last kind, and also sends temper webhooks that start
+workflows: see [linear.md](linear.md).
 
 ### stdio
 

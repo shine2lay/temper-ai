@@ -1,0 +1,31 @@
+# Linear — hosted MCP server, as temper's own Linear app.
+#
+# Not `auth: oauth` like Notion: that would make every change show as the
+# person who ran `temper connect`, and the webhook handler could then not
+# tell temper's own comments from theirs. The client-credentials grant gives
+# temper an identity of its own ("Temper" in Linear), with no browser and no
+# refresh token; see temper_ai/tools/oauth_client_credentials.py.
+#
+# Setup (once, by a Linear workspace admin): Settings > API > OAuth
+# applications > New. Name it Temper, turn on "Client credentials", and put
+# the client id and secret in .env as LINEAR_CLIENT_ID / LINEAR_CLIENT_SECRET.
+# `temper linear check` then says who temper acts as and lists these tools.
+#
+# `scope` must match LINEAR_SCOPE (default read,write) used by the webhook
+# handler: Linear revokes every token an app holds when one is requested
+# with a different scope, so the two share one token instead.
+#
+# Agents reach it with tools named `linear.<tool>`: linear.get_issue,
+# linear.list_issues, linear.list_comments, linear.save_comment,
+# linear.save_issue (create or update), ... Linear renames tools now and then
+# (update_issue became save_issue in 2026); `temper linear check` shows the
+# current list.
+mcp_server:
+  name: linear
+  transport: http
+  url: https://mcp.linear.app/mcp
+  auth: client_credentials
+  token_url: https://api.linear.app/oauth/token
+  client_id: ${LINEAR_CLIENT_ID:}
+  client_secret: ${LINEAR_CLIENT_SECRET:}
+  scope: ${LINEAR_SCOPE:read,write}

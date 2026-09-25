@@ -119,6 +119,45 @@ def test_oauth_config_attaches_an_httpx_auth(captured, key):
     assert captured["http_client"] is not None
 
 
+def test_client_credentials_config_attaches_the_app_token_auth(captured):
+    from temper_ai.tools.oauth_client_credentials import ClientCredentialsAuth
+
+    _connect(
+        {
+            "name": "linear",
+            "url": "https://mcp.linear.app/mcp",
+            "auth": "client_credentials",
+            "token_url": "https://api.linear.app/oauth/token",
+            "client_id": "id-1",
+            "client_secret": "secret-1",
+            "scope": "read,write",
+        }
+    )
+
+    assert isinstance(captured["auth"], ClientCredentialsAuth)
+    assert captured["auth"].creds.client_id == "id-1"
+    assert captured["auth"].creds.scope == "read,write"
+    assert captured["http_client"] is not None
+
+
+def test_client_credentials_without_the_secrets_fails_before_connecting(captured):
+    """Unset env vars must not turn into an anonymous connection that reads as a bad token."""
+    from temper_ai.tools.oauth_client_credentials import ClientCredentialsError
+
+    with pytest.raises(ClientCredentialsError, match="client_id, client_secret"):
+        _connect(
+            {
+                "name": "linear",
+                "url": "https://mcp.linear.app/mcp",
+                "auth": "client_credentials",
+                "token_url": "https://api.linear.app/oauth/token",
+                "client_id": "",
+                "client_secret": "",
+            }
+        )
+    assert "url" not in captured
+
+
 def test_oauth_provider_is_bound_to_the_configured_server(captured, key):
     _connect(
         {"name": "notion", "url": "https://mcp.notion.com/mcp", "auth": "oauth"}

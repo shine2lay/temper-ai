@@ -103,6 +103,11 @@ def main() -> None:
         "--debug", action="store_true", help="Enable debug logging"
     )
 
+    # -- temper linear check / issue / comment --
+    from temper_ai.cli.linear import add_parser as add_linear_parser
+
+    add_linear_parser(subparsers)
+
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
@@ -169,6 +174,9 @@ def main() -> None:
     elif args.command == "disconnect":
         from temper_ai.cli.connect import cmd_disconnect
         sys.exit(cmd_disconnect(args))
+    elif args.command == "linear":
+        from temper_ai.cli.linear import cmd_linear
+        sys.exit(cmd_linear(args))
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

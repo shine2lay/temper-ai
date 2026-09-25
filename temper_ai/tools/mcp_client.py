@@ -425,7 +425,14 @@ class MCPClientManager:
 
 
 def _load_mcp_configs(config_dir: str | None = None) -> list[dict]:
-    """Load MCP server configs from configs/mcp_servers/*.yaml files."""
+    """Load MCP server configs from configs/mcp_servers/*.yaml files.
+
+    Then from ``configs/mcp_servers/local/*.yaml``, the gitignored directory
+    for servers that belong to one machine rather than to the project -- a
+    bridge to the operator's own browser, say. They come after the tracked
+    files, and the first config to claim a name keeps it, so a local file
+    adds servers but cannot quietly replace a tracked one.
+    """
     from pathlib import Path
 
     import yaml
@@ -441,7 +448,8 @@ def _load_mcp_configs(config_dir: str | None = None) -> list[dict]:
         return []
 
     servers = []
-    for yaml_file in sorted(mcp_dir.glob("*.yaml")):
+    yaml_files = sorted(mcp_dir.glob("*.yaml")) + sorted((mcp_dir / "local").glob("*.yaml"))
+    for yaml_file in yaml_files:
         try:
             with open(yaml_file) as f:
                 raw = yaml.safe_load(f)

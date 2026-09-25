@@ -1,0 +1,205 @@
+workflow:
+  name: epd_plan
+  # 2: the lead gets a last pass. When the check sends the plan back a second time, the lead applies
+  #    those issues too, and no check follows (round 3). In the b019 test (2026-09-25) the check's
+  #    second findings were right and nothing applied them: they were two of the new plan's three
+  #    minor problems. `rounds` says how many passes the lead made.
+  # 3: the description only: wired into epd_loop v8.
+  version: 3
+  description: |
+    EPD loop, plan stage: a pitch becomes the build's tasks. An architect
+    designs the change, four engineers check the design in their own areas,
+    a lead writes the tasks and the plan they follow, and a check reads the
+    code before the build starts.
+
+      design  ->  frontend | backend | numbers | qa  ->  docs  ->  lead  ->  check
+                  (check says revise: back to docs; after the second revise the lead
+                   makes a last pass and the check is skipped)
+
+    Replaces the one-agent tasks stage (workflows/epd_tasks.yaml) as the
+    `tasks` node of epd_loop (v8, 2026-09-25). It writes tasks.json in the
+    same schema, so the loop and the build read it
+    unchanged, and plan.md beside the design and the engineers' docs in
+    plan_dir. The owner's shape (2026-09-24): multi-lens, "from different
+    engineers' points of view", or "one system architect design the high
+    level -> multi agent figure out what needs to change"; every agent reads
+    one tight knowledge folder (kb_dir, the repo's .temper/) holding the
+    codebase map and the prior decisions.
+
+    Why: in the stage scorecard of the first 29 shipped bets (2026-09-24) the
+    plan was good on 12 and had a problem on 17: places no task covered (9),
+    wrong facts about the code (8), designs that broke an existing path (8),
+    states QA could not reach (7), decisions left to the implementer (5),
+    tests that could not fail or match (5).
+
+    The lead has only Write (the pitch writer's lesson: given Read, a writer
+    re-surveys the code the reviewers already read). `docs` is a script that
+    hands it the pitch, the knowledge folder's core, the design and the four
+    docs as text. The check rewinds to `docs`, not to `lead`, so the second
+    pass also hands the lead its own first draft to fix.
+
+    Tested first after the fact on shipped bets (from b019, 2026-09-25), each
+    with the code at its build's base and the knowledge folder as it stood
+    then, and graded against the plan that bet was built from. In the loop it
+    reads a snapshot of origin/<base> the driver makes when the run starts.
+
+    Isolated: inputs are strings and paths. plan_dir and the directory of
+    tasks_path must be writable by the container's user.
+  inputs:
+    bet_id: {type: string, required: true}
+    bet_path: {type: string, required: true}      # the pitch
+    gate: {type: string, required: false}         # the owner's approval, when there was one
+    repo_path: {type: string, required: true}     # the code at the commit the build starts from
+    kb_dir: {type: string, required: true}        # the knowledge folder: <repo>/.temper
+    profile: {type: string, required: true}       # product profile, for the lead
+    tasks_path: {type: string, required: true}    # where the tasks are written (the build reads it)
+    plan_dir: {type: string, required: true}      # design.md, frontend/backend/numbers/qa.md, plan.md
+    reach: {type: string, required: false}        # what the live checkers can reach, Markdown
+    qa_config_path: {type: string, required: false}
+    measure_config_path: {type: string, required: false}
+  outputs:
+    status: lead.structured.status
+    tasks_path: lead.structured.tasks_path
+    task_count: lead.structured.task_count
+    files: lead.structured.files
+    blocked_because: lead.structured.blocked_because
+    plan_path: lead.structured.plan_path
+    # null after a last pass (round 3): the check was skipped, and its second verdict was "revise"
+    verdict: check.structured.verdict
+    issues: check.structured.issues
+    summary: check.structured.summary
+    rounds: docs.structured.round
+
+  nodes:
+    - name: design
+      type: agent
+      agent: epd_plan_architect
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        gate: input.gate
+        kb_dir: input.kb_dir
+        repo_path: input.repo_path
+        plan_dir: input.plan_dir
+
+    - name: frontend
+      type: agent
+      agent: epd_plan_frontend
+      depends_on: [design]
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        gate: input.gate
+        kb_dir: input.kb_dir
+        repo_path: input.repo_path
+        plan_dir: input.plan_dir
+
+    - name: backend
+      type: agent
+      agent: epd_plan_backend
+      depends_on: [design]
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        gate: input.gate
+        kb_dir: input.kb_dir
+        repo_path: input.repo_path
+        plan_dir: input.plan_dir
+
+    - name: numbers
+      type: agent
+      agent: epd_plan_numbers
+      depends_on: [design]
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        gate: input.gate
+        kb_dir: input.kb_dir
+        repo_path: input.repo_path
+        plan_dir: input.plan_dir
+
+    - name: qa
+      type: agent
+      agent: epd_plan_qa
+      depends_on: [design]
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        gate: input.gate
+        kb_dir: input.kb_dir
+        repo_path: input.repo_path
+        plan_dir: input.plan_dir
+        reach: input.reach
+        qa_config_path: input.qa_config_path
+        measure_config_path: input.measure_config_path
+
+    - name: docs
+      type: agent
+      agent: epd_plan_docs
+      depends_on: [frontend, backend, numbers, qa]
+      input_map:
+        bet_path: input.bet_path
+        kb_dir: input.kb_dir
+        plan_dir: input.plan_dir
+        tasks_path: input.tasks_path
+
+    - name: lead
+      type: agent
+      agent: epd_plan_lead
+      depends_on: [docs]
+      input_map:
+        bet_id: input.bet_id
+        gate: input.gate
+        profile: input.profile
+        tasks_path: input.tasks_path
+        plan_dir: input.plan_dir
+        pitch: docs.structured.pitch
+        core: docs.structured.core
+        design: docs.structured.design
+        frontend: docs.structured.frontend
+        backend: docs.structured.backend
+        numbers: docs.structured.numbers
+        qa: docs.structured.qa
+        previous_tasks: docs.structured.previous_tasks
+        previous_plan: docs.structured.previous_plan
+        round: docs.structured.round
+        # an engineer's reply, for when its doc was not written
+        frontend_out: frontend.output
+        backend_out: backend.output
+        numbers_out: numbers.output
+        qa_out: qa.output
+        # null on the first pass; set when the check sent the plan back
+        check_verdict: check.structured.verdict
+        check_issues: check.structured.issues
+
+    - name: check
+      type: agent
+      agent: epd_plan_check
+      depends_on: [lead]
+      # max_loops counts the revises: the first two rewind to docs, so the lead
+      # is handed its draft with the issues. The rewind goes to docs, not lead,
+      # because docs reads the draft back and counts the round. Round 3 is the
+      # lead's last pass: this node is skipped then, so nothing loops again.
+      condition:
+        source: docs.structured.round
+        operator: not_equals
+        value: 3
+      loop_to: docs
+      max_loops: 3
+      on_max_loops: silent
+      loop_condition:
+        source: check.structured.verdict
+        operator: equals
+        value: revise
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        gate: input.gate
+        kb_dir: input.kb_dir
+        repo_path: input.repo_path
+        plan_dir: input.plan_dir
+        tasks_path: input.tasks_path
+        reach: input.reach
+        check_round: docs.structured.round
+        lead_status: lead.structured.status
+        lead_blocked: lead.structured.blocked_because

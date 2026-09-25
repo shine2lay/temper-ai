@@ -122,6 +122,10 @@ PROD_HOST_PORT = os.environ.get("EPD_PROD_HOST_PORT", "8020")
 # stands its stack up from here and the tasks stage reads it, so the loop
 # never depends on the state of the owner's checkout.
 MAIN_CLONE = WORKSPACES / "repos" / REPO_NAME / "main"
+# What the plan stage reads (epd_loop v8): a detached worktree of origin/<base> per bet, made when its
+# run starts (plan_snapshot), so a bet plans against the commit its build starts from, with the
+# knowledge folder (.temper/) of that commit, and not against MAIN_CLONE, which anything may move.
+PLANS_DIR = WORKSPACES / "repos" / REPO_NAME / "plans"
 SERVER_CONTAINER = os.environ.get("EPD_TEMPER_CONTAINER", "temper-ai-server-1")
 
 # The seed's test accounts (backend/rollcall/tenancy/seed.py). The dev tier's
@@ -162,6 +166,9 @@ QA_ON_PAPER = os.environ.get("EPD_QA_ON_PAPER", "1") != "0"
 # BET_LEAD_MIN into the build, and its last QA, deploy and measure about BET_NEED_MIN.
 BET_LEAD_MIN = int(os.environ.get("EPD_BET_LEAD_MIN", "50"))
 BET_NEED_MIN = int(os.environ.get("EPD_BET_NEED_MIN", "170"))
+# The plan stage runs first and needs no market: 1 h 48 min on b019 (2026-09-25), before its last
+# pass was added. A run that plans starts that much earlier; one resumed at `build` does not plan.
+PLAN_MIN = int(os.environ.get("EPD_PLAN_MIN", "120"))
 # EPD_ANY_TIME=1 starts or resumes such a bet anyway (its checks may meet a shut market).
 ANY_TIME = os.environ.get("EPD_ANY_TIME", "0") == "1"
 # Run inside a stack's rollcall container: alpaca@'s keys from the stack's own environment, so a key
@@ -195,6 +202,9 @@ PAPER_MEASURE_NOTE = (
 
 LOOP_DIR = WORKSPACES / "epd" / REPO_NAME
 BETS_DIR = LOOP_DIR / "bets"
+# What QA and measure can reach on the stacks and on prod, for the plan stage (its criteria and
+# proof name only what a checker can get to). Kept by hand when logins or pages change.
+REACH_PATH = LOOP_DIR / "reach.md"
 LEDGER = LOOP_DIR / "bets.tsv"
 LEDGER_COLUMNS = ["bet_id", "date", "title", "threshold", "status", "outcome"]
 # The owner's list. One bet id per line, top first; anything else on the line is for the owner.
@@ -625,32 +635,37 @@ def after_close_window() -> tuple[bool, str]:
                   f"would fill before then")
 
 
-def bet_window() -> tuple[bool, str, dt.datetime]:
+def bet_window(plan: bool = True) -> tuple[bool, str, dt.datetime]:
     """Whether a bet checked on paper may start now; why, or why not; and when it next can.
 
     Its first QA comes about BET_LEAD_MIN into the build and its last QA, deploy and measure about
     BET_NEED_MIN, and every one of them wants the market open: the open may be at most BET_LEAD_MIN
-    away, and the close must be at least BET_NEED_MIN away.
+    away, and the close must be at least BET_NEED_MIN away. A run that starts with the plan stage
+    (``plan``) reaches the build PLAN_MIN later, so both are PLAN_MIN longer.
     """
+    lead = BET_LEAD_MIN + (PLAN_MIN if plan else 0)
+    need = BET_NEED_MIN + (PLAN_MIN if plan else 0)
     c = market_clock()
     now, opens, closes = when(c["timestamp"]), when(c["next_open"]), when(c["next_close"])
-    earliest = opens - dt.timedelta(minutes=BET_LEAD_MIN)
+    earliest = opens - dt.timedelta(minutes=lead)
     if c.get("is_open"):
         left = (closes - now).total_seconds() / 60
-        if left >= BET_NEED_MIN:
+        if left >= need:
             return True, f"the market is open; it closes {local_time(closes)}", now
         return (False, f"the market closes {local_time(closes)}, {left:.0f} min from now: too little for a "
-                       f"build's checks (EPD_BET_NEED_MIN={BET_NEED_MIN})", earliest)
+                       f"{'plan and a ' if plan else ''}build's checks ({need} min: EPD_BET_NEED_MIN={BET_NEED_MIN}"
+                       f"{f' + EPD_PLAN_MIN={PLAN_MIN}' if plan else ''})", earliest)
     if now >= earliest:
-        return True, f"the market opens {local_time(opens)}, within EPD_BET_LEAD_MIN={BET_LEAD_MIN} min", now
+        return True, f"the market opens {local_time(opens)}, within {lead} min", now
     return False, f"the market is shut; it opens {local_time(opens)}", earliest
 
 
-def require_bet_window(bet_id: str) -> None:
-    """Die unless a bet checked on paper may start now (EPD_ANY_TIME=1 skips this)."""
+def require_bet_window(bet_id: str, plan: bool = True) -> None:
+    """Die unless a bet checked on paper may start now (EPD_ANY_TIME=1 skips this). ``plan``: the run
+    starts with the plan stage (a new run, or a resume at `tasks`)."""
     if ANY_TIME or not qa_on_paper(bet_id):
         return
-    ok, why, at = bet_window()
+    ok, why, at = bet_window(plan)
     if not ok:
         die(f"{bet_id} is checked on the {QA_ACCOUNT} paper account, and {why}: start it from "
             f"{local_time(at)} (EPD_ANY_TIME=1 starts it now anyway)")
@@ -1105,6 +1120,47 @@ git rev-parse HEAD
     head = r.stdout.strip().splitlines()[-1]
     log(f"{MAIN_CLONE} at {head[:12]} (origin/{BASE_BRANCH})")
     return head
+
+
+def plan_snapshot(bet_id: str) -> Path:
+    """A fresh detached worktree of origin/<base> for the bet's plan stage to read; its path.
+
+    Made in the server container, like refresh_main, and made again on every call: a bet that plans
+    again plans against what its build would start from now. The planners' knowledge folder is the
+    one in it (.temper/), so the code and the knowledge they read are the same commit's."""
+    snap = PLANS_DIR / f"epd-{bet_id}"
+    script = f"""set -e
+export GIT_TERMINAL_PROMPT=0
+KEY=$(mktemp); trap 'rm -f "$KEY"' EXIT
+install -m 600 /app/github-deploy/id_ed25519 "$KEY"
+export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=/app/github-deploy/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes"
+MAIN={cpath(MAIN_CLONE)}
+SNAP={cpath(snap)}
+git -C "$MAIN" fetch -q --prune origin
+git -C "$MAIN" worktree remove --force "$SNAP" 2>/dev/null || rm -rf "$SNAP"
+git -C "$MAIN" worktree prune
+mkdir -p {cpath(PLANS_DIR)}
+git -C "$MAIN" worktree add -q --detach "$SNAP" origin/{BASE_BRANCH}
+git -C "$SNAP" rev-parse HEAD
+"""
+    r = sh(["docker", "exec", "-i", SERVER_CONTAINER, "sh", "-c", script])
+    head = r.stdout.strip().splitlines()[-1]
+    if not (snap / ".temper" / "README.md").exists():
+        die(f"{bet_id}: origin/{BASE_BRANCH} ({head[:12]}) has no .temper/ knowledge folder for the plan "
+            f"stage to read; merge it first (RUNBOOK: the knowledge folder)")
+    log(f"plan snapshot for {bet_id}: {snap} at {head[:12]} (origin/{BASE_BRANCH})")
+    return snap
+
+
+def drop_plan_snapshot(bet_id: str) -> None:
+    """Remove the bet's plan snapshot, once its run is over (the plan itself stays in the bet dir)."""
+    snap = cpath(PLANS_DIR / f"epd-{bet_id}")
+    r = in_server(f"if [ -d {snap} ]; then git -C {cpath(MAIN_CLONE)} worktree remove --force {snap} "
+                  f"&& echo removed; fi; git -C {cpath(MAIN_CLONE)} worktree prune")
+    if r.returncode != 0:
+        log(f"note: the plan snapshot {snap} was not removed: {r.stderr.strip()[:200]}")
+    elif r.stdout.strip():
+        log(f"plan snapshot for {bet_id} removed")
 
 
 def open_bets() -> list[str]:
@@ -2360,12 +2416,36 @@ def next_waiting() -> str | None:
     return None
 
 
-def loop_inputs(bet_id: str) -> dict:
+def loop_inputs(bet_id: str, planning: bool = True) -> dict:
     """Everything the epd_loop workflow is told, off the bet's files: it starts at `tasks`, on a bet
-    the owner already approved, so there is no stack to walk and nothing to propose."""
+    the owner already approved, so there is no stack to walk and nothing to propose.
+
+    `tasks` is the plan stage (v8). It reads the bet's plan snapshot, which start_bet (or a resume
+    at `tasks`) makes: the paths here are only where it is. ``planning``: the run starts at `tasks`.
+    A bet the old stage planned (epd_tasks, before v8) that is resumed at build or later has no
+    plan-stage plan, so its build writes its own plan, as it did then."""
     bdir = BETS_DIR / bet_id
     bet = json.loads(read(bdir / "bet.json") or "{}")
-    return {
+    snap = PLANS_DIR / f"epd-{bet_id}"
+    staged = planning or (bdir / "plan" / "plan.md").exists()
+    if staged:
+        described = (
+            f"This task is bet {bet_id} of the EPD loop. Read the bet at {cpath(bdir / 'bet.md')} "
+            f"for the product decision the owner signed. The plan stage planned it: .epd/plan.md in "
+            f"your worktree is the plan, and .epd/plan/ holds the notes it was made from (design.md, "
+            f"frontend.md, backend.md, numbers.md, qa.md: read the ones your task touches). "
+            f"{cpath(bdir / 'tasks.json')} is its tasks: implement them in order, each is done when its "
+            f"acceptance command gives the expected output. Do nothing listed under no-gos. The "
+            f"repository's .temper/ folder is what the planners knew about the codebase."
+        )
+    else:
+        described = (
+            f"This task is bet {bet_id} of the EPD loop. Read the bet at {cpath(bdir / 'bet.md')} "
+            f"for the product decision the owner signed, and {cpath(bdir / 'tasks.json')} for the "
+            f"engineering decomposition: implement the tasks in order, each is done when its "
+            f"acceptance command gives the expected output. Do nothing listed under no-gos."
+        )
+    inputs = {
         "bet_id": bet_id,
         "bet_dir": cpath(bdir),
         "report_path": cpath(report_path_for(bet_id)),
@@ -2379,18 +2459,22 @@ def loop_inputs(bet_id: str) -> dict:
         "profile": read(LOOP_DIR / "profile.md"),
         "measure_url": PROD_URL,
         **qa_logins(bet_id),
+        "approval": read(bdir / "decision.md"),
+        "kb_dir": cpath(snap / ".temper"),
+        "build_plan": not staged,
+        "reach": read(REACH_PATH),
+        "qa_config_path": "/app/configs/epd/agents/task_verify.yaml",
+        "measure_config_path": "/app/configs/epd/agents/epd_measure.yaml",
         "repo_url": REPO_URL,
-        "repo_path": cpath(MAIN_CLONE),
+        "repo_path": cpath(snap),
         "base_branch": BASE_BRANCH,
         "task_name": f"epd {bet_id}",
-        "task_description": (
-            f"This task is bet {bet_id} of the EPD loop. Read the bet at {cpath(bdir / 'bet.md')} "
-            f"for the product decision the owner signed, and {cpath(bdir / 'tasks.json')} for the "
-            f"engineering decomposition: implement the tasks in order, each is done when its "
-            f"acceptance command gives the expected output. Do nothing listed under no-gos."
-        ),
+        "task_description": described,
         "stack_ttl": "8h",
     }
+    if staged:
+        inputs["plan_dir"] = cpath(bdir / "plan")
+    return inputs
 
 
 # One run is one workspace root, and it has to hold everything the stages write: the bet's own
@@ -2473,6 +2557,8 @@ def start_bet(bet_id: str, keep: bool, wait: bool) -> None:
     require_bet_window(bet_id)
     require_prod_paper_login(bet_id)
     share_bet_dir(BETS_DIR / bet_id)  # every bet's run starts here; its stages write in that directory
+    plan_snapshot(bet_id)  # before the state says running: without the snapshot there is no run
+    mkdir_shared(BETS_DIR / bet_id / "plan")
     st = load_state(bet_id)
     st["qa"] = "paper" if qa_on_paper(bet_id) else "seed"  # how it was checked, for the analysis
     st["status"] = "running"
@@ -2547,10 +2633,15 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
         skipped = {n["name"] for n in info.get("nodes") or [] if n.get("status") == "skipped"}
         if "ship" not in skipped:
             die(f"{bet_id}: run {rid[:8]} completed; `collect` it")
+        if "build" in skipped and not at:
+            # epd_loop v8: the plan stage said BLOCKED, so nothing was built. Building now would skip
+            # again; the owner's answer (or a new pitch) is what unblocks it.
+            out = info.get("workflow_output") or {}
+            die(f"{bet_id}: the plan stage said BLOCKED: {out.get('blocked_because')!r}. `collect` it, and "
+                f"take the question to the owner; `resume --at tasks` plans it again")
         # The build ended without the judges' approval (at its round cap), so nothing shipped: another
         # build from the branch is a resume at `build`.
         at = at or "build"
-    require_bet_window(bet_id)
     # "2 node(s) failed: build/deploy, build/cleanup" -> the first failed top-level stage. A run
     # that was interrupted (server restart) or cancelled names none: the stage to redo is then the
     # first one that did not complete, which is the one that was running.
@@ -2569,6 +2660,7 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
             log(f"note: starting at `{at}` although `{stage}` is where the run failed "
                 f"({info.get('error_message')}); what `{stage}` delivered is kept")
         stage = at
+    require_bet_window(bet_id, plan=stage == "tasks")
     before = STAGES[STAGES.index(stage) - 1] if STAGES.index(stage) else None
     # A fork lists only the checkpoints it wrote itself; the stages it restored are checkpoints of
     # the run it was forked from. A second resume of the same stage therefore forks the original
@@ -2600,7 +2692,10 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
 
     log(f"== {bet_id}: resuming at `{stage}` (fork of {source[:8]} after `{before}`, checkpoint {seq}) ==")
     share_bet_dir(bdir)  # the stages that run again write there too
-    new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id), LOOP_WORKSPACE)
+    if stage == "tasks":
+        plan_snapshot(bet_id)  # planning again: against what the build would start from now
+        mkdir_shared(bdir / "plan")
+    new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id, planning=stage == "tasks"), LOOP_WORKSPACE)
     st["stages"]["loop"] = {"_run_id": new, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
                             "_forked_from": source, "_fork_sequence": seq,
                             "_replaces": rid, "_replaced_because": info.get("error_message") or status}
@@ -2703,9 +2798,12 @@ def finish_loop(st: dict, out: dict, keep: bool) -> None:
         st["status"], outcome = shipped, None  # deploy wrote the owner's word on the PR
     elif shipped == "shipped":
         st["status"], outcome = "shipped", f"shipped as {out.get('merge_sha', '')[:12]}; not measured"
+    elif out.get("plan_status") == "BLOCKED":
+        st["status"], outcome = "stopped", f"plan BLOCKED: {out.get('blocked_because')}"
     else:
         st["status"], outcome = "stopped", f"stopped after build={out.get('build_verdict')}"
     save_state(st)
+    drop_plan_snapshot(bet_id)  # the plan is in the bet dir; a resume at `tasks` makes a new snapshot
     ledger_upsert(bet_id, title=bet.get("title") or "", threshold=bet.get("threshold") or "",
                   status=st["status"], outcome=outcome)
     log(f"bet:     {bet.get('title')}")

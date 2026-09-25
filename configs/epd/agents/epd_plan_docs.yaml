@@ -1,0 +1,60 @@
+# EPD loop, plan stage: hand the lead everything it reads, as text.
+#
+# The lead writes the tasks without tools to read files, as the pitch writer does (owner, 2026-09-24:
+# "can you not give read tool to the writer?"; given Read, the pitch writer re-surveyed the code for 40+
+# minutes after its reviewers had). A workflow input can only carry a path, so this step reads the files
+# and returns their text. No model: it costs nothing.
+#
+# When the check sends the plan back it rewinds to THIS node (workflows/epd_plan.yaml), so the lead's
+# own previous tasks and plan are read again and handed back with the check's issues: the lead fixes
+# its draft instead of writing a new one from nothing. A draft counts only if it is newer than this
+# run's design, so a tasks.json left by an earlier attempt at the bet is never passed off as the lead's.
+#
+# 2: counts the rounds (plan_dir/.round, reset by a newer design). Round 3 is the lead's last pass:
+# it applies the second check's issues and no check follows (the b019 test, 2026-09-25: the check's
+# last findings were right and nothing applied them).
+agent:
+  name: epd_plan_docs
+  version: 2
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/bash
+    PITCH="{{ bet_path }}" KB="{{ kb_dir }}" DESIGN="{{ plan_dir }}/design.md" DOCS="{{ plan_dir }}" \
+    TASKS="{{ tasks_path }}" PLAN="{{ plan_dir }}/plan.md" python3 -c '
+    import json, os, pathlib, sys
+
+    def read(p):
+        p = pathlib.Path(p)
+        return p.read_text() if p.is_file() else ""
+
+    env = os.environ
+    pitch, design = read(env["PITCH"]), read(env["DESIGN"])
+    if not pitch.strip():
+        sys.exit("no pitch at " + repr(env["PITCH"]))
+    if not design.strip():
+        sys.exit("the architect wrote no design at " + repr(env["DESIGN"]))
+    kb = pathlib.Path(env["KB"])
+    core = "\n\n".join(f"=== core/{n}\n" + read(kb / "core" / n) for n in ("map.md", "decisions.md", "gotchas.md") if (kb / "core" / n).is_file())
+    docs = pathlib.Path(env["DOCS"])
+    since = pathlib.Path(env["DESIGN"]).stat().st_mtime
+
+    def draft(p):
+        p = pathlib.Path(p)
+        return p.read_text() if p.is_file() and p.stat().st_mtime > since else ""
+
+    previous_tasks, previous_plan = draft(env["TASKS"]), draft(env["PLAN"])
+    counter = docs / ".round"
+    try:
+        n = int(counter.read_text().strip()) + 1 if counter.stat().st_mtime > since else 1
+    except (OSError, ValueError):
+        n = 1
+    counter.write_text(str(n))
+    print(json.dumps({
+        "pitch": pitch, "core": core, "design": design,
+        **{role: read(docs / f"{role}.md") for role in ("frontend", "backend", "numbers", "qa")},
+        "previous_tasks": previous_tasks, "previous_plan": previous_plan,
+        # 1 the first time; 2 when the check sent the plan back (the check's second look);
+        # 3 when it sent it back again (the lead's last pass: no check follows)
+        "round": n,
+    }))'

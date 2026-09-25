@@ -52,15 +52,20 @@ def L(tmp_path, monkeypatch):
     (mod.LOOP_DIR / "goals.md").write_text("Ship the roll job.\n")
     (mod.LOOP_DIR / "profile.md").write_text("RollCall: covered calls.\n")
     mod.ledger_write([])
-    calls: dict[str, list] = {"standee_down": [], "release_task": [], "propose": [], "start": []}
+    calls: dict[str, list] = {"standee_down": [], "release_task": [], "propose": [], "start": [],
+                              "plan_snapshot": [], "drop_plan_snapshot": []}
     mod._real_cmd_propose = mod.cmd_propose
     mod._real_market_window = mod.market_window
     mod._real_bet_window = mod.bet_window
     mod._real_start_bet = mod.start_bet
     monkeypatch.setattr(mod, "market_window", lambda: (True, "the market is open; it closes Thu Sep 24 13:00 PDT",
                                                         dt.datetime.now(dt.UTC)))
-    monkeypatch.setattr(mod, "bet_window", lambda: (True, "the market is open; it closes Thu Sep 24 13:00 PDT",
-                                                     dt.datetime.now(dt.UTC)))
+    monkeypatch.setattr(mod, "bet_window", lambda plan=True: (True, "the market is open; it closes Thu Sep 24 13:00 PDT",
+                                                              dt.datetime.now(dt.UTC)))
+    # The plan stage's snapshot of origin/<base> is made in the server container.
+    monkeypatch.setattr(mod, "plan_snapshot", lambda bet_id: calls["plan_snapshot"].append(bet_id)
+                        or mod.PLANS_DIR / f"epd-{bet_id}")
+    monkeypatch.setattr(mod, "drop_plan_snapshot", lambda bet_id: calls["drop_plan_snapshot"].append(bet_id))
     monkeypatch.setattr(mod, "require_prod_paper_login", lambda bet_id: None)
     # No test reads the real paper keys: one that reaches Alpaca without stubbing it dies on "no keys".
     monkeypatch.setattr(mod, "PAPER_KEYS_FILE", tmp_path / "dev.env")
@@ -128,6 +133,9 @@ def test_start_bet_opens_the_bet_dir_to_the_container(L, monkeypatch):
     L._real_start_bet("b050", keep=False, wait=False)
     assert stat.S_IMODE(bdir.stat().st_mode) == 0o777
     assert stat.S_IMODE((bdir / "bet.json").stat().st_mode) == 0o666
+    # epd_loop v8: the plan stage reads a snapshot of origin/<base> and writes its plan in the bet dir
+    assert L._calls["plan_snapshot"] == ["b050"]
+    assert stat.S_IMODE((bdir / "plan").stat().st_mode) == 0o777
     assert submitted == [{"bet_id": "b050"}]
     assert L.load_state("b050")["stages"]["loop"]["_run_id"] == "run-1"
 
@@ -542,6 +550,19 @@ def test_finish_loop_records_the_owners_no_on_the_pr(L):
     assert L.open_bet() is None and L._calls["release_task"] == ["b001"]
 
 
+def test_finish_loop_says_why_a_blocked_plan_built_nothing(L):
+    # epd_loop v8: the plan stage's lead says BLOCKED (the pitch can't be built as written), so build,
+    # ship, deploy and measure are skipped. The ledger says why; the plan snapshot is dropped.
+    propose(L)
+    L.approve("b001", None)
+    L.pick_bet()
+    st = L.load_state("b001")
+    L.finish_loop(st, {"plan_status": "BLOCKED", "blocked_because": "no checker can reach the fill"}, keep=False)
+    row = L.ledger_rows()[0]
+    assert row["status"] == "stopped" and row["outcome"] == "plan BLOCKED: no checker can reach the fill"
+    assert L._calls["drop_plan_snapshot"] == ["b001"]
+
+
 OPEN = (True, "the market is open; it closes Thu Sep 24 13:00 PDT", None)
 HOLDS = "Cash $98,543.60; equity $99,854.60.\nPositions:\n- F: 100 shares long, average $12.10, now $12.34"
 
@@ -775,30 +796,80 @@ def test_the_paper_keys_come_from_the_file_the_stacks_read_and_a_refusal_says_wh
 def test_a_bet_checked_on_paper_starts_only_when_its_checks_land_in_the_session(L, monkeypatch):
     monkeypatch.setattr(L, "BET_LEAD_MIN", 50)
     monkeypatch.setattr(L, "BET_NEED_MIN", 170)
+    monkeypatch.setattr(L, "PLAN_MIN", 120)
     clock = {"next_open": "2026-09-25T09:30:00-04:00", "next_close": "2026-09-24T16:00:00-04:00"}
     monkeypatch.setattr(L, "market_clock", lambda: clock)
     earliest = L.when(clock["next_open"]) - dt.timedelta(minutes=50)
 
+    # A run resumed at `build` or later does not plan: its checks are BET_LEAD_MIN / BET_NEED_MIN away.
     clock.update(timestamp="2026-09-24T10:00:00-04:00", is_open=True)
-    ok, why, at = L._real_bet_window()
+    ok, why, at = L._real_bet_window(plan=False)
     assert ok and why.startswith("the market is open") and at == L.when(clock["timestamp"])
 
     clock.update(timestamp="2026-09-24T14:00:00-04:00")
-    ok, why, at = L._real_bet_window()
+    ok, why, at = L._real_bet_window(plan=False)
     assert not ok and "120 min from now" in why and at == earliest, "its last QA and measure would meet the close"
 
     clock.update(timestamp="2026-09-24T20:00:00-04:00", is_open=False, next_close="2026-09-25T16:00:00-04:00")
-    ok, why, at = L._real_bet_window()
+    ok, why, at = L._real_bet_window(plan=False)
     assert not ok and why.startswith("the market is shut; it opens") and at == earliest
 
     clock.update(timestamp="2026-09-25T08:45:00-04:00")
+    ok, why, at = L._real_bet_window(plan=False)
+    assert ok and "within 50 min" in why, "its first QA comes after the open"
+
+
+def test_a_run_that_plans_first_may_start_earlier_and_must_start_earlier(L, monkeypatch):
+    # epd_loop v8: the plan stage runs before the build and needs no market, so a new run (or a
+    # resume at `tasks`) reaches its first QA PLAN_MIN later: it may start that much before the open,
+    # and it needs that much more of the session left.
+    monkeypatch.setattr(L, "BET_LEAD_MIN", 50)
+    monkeypatch.setattr(L, "BET_NEED_MIN", 170)
+    monkeypatch.setattr(L, "PLAN_MIN", 120)
+    clock = {"next_open": "2026-09-25T09:30:00-04:00", "next_close": "2026-09-24T16:00:00-04:00"}
+    monkeypatch.setattr(L, "market_clock", lambda: clock)
+
+    clock.update(timestamp="2026-09-24T12:00:00-04:00", is_open=True)  # 240 min to the close
+    assert L._real_bet_window(plan=False)[0], "a build alone fits"
     ok, why, at = L._real_bet_window()
-    assert ok and "within EPD_BET_LEAD_MIN=50 min" in why, "its first QA comes after the open"
+    assert not ok and "290 min" in why and "EPD_PLAN_MIN=120" in why, "a plan and a build don't"
+    assert at == L.when(clock["next_open"]) - dt.timedelta(minutes=170)
+
+    clock.update(timestamp="2026-09-25T07:30:00-04:00", is_open=False, next_close="2026-09-25T16:00:00-04:00")
+    ok, why, at = L._real_bet_window()
+    assert ok and "within 170 min" in why, "it plans while the market is shut"
+    ok, _, at = L._real_bet_window(plan=False)
+    assert not ok and at == L.when(clock["next_open"]) - dt.timedelta(minutes=50)
+
+
+def test_the_plan_stage_gets_a_snapshot_and_the_build_gets_its_plan(L, monkeypatch):
+    monkeypatch.setattr(L, "ensure_qa_password", lambda: "pw")
+    propose(L, bets=("b001",), empty=())
+    (L.BETS_DIR / "b001" / "decision.md").write_text("approved: yes\n")
+    (L.LOOP_DIR / "reach.md").write_text("# What the checkers can reach\n")
+    new = L.loop_inputs("b001")
+    snap = L.cpath(L.PLANS_DIR / "epd-b001")
+    assert (new["repo_path"], new["kb_dir"]) == (snap, snap + "/.temper"), "code and knowledge: one commit"
+    assert new["plan_dir"] == L.cpath(L.BETS_DIR / "b001" / "plan") and new["build_plan"] is False
+    assert (new["approval"], new["reach"]) == ("approved: yes\n", "# What the checkers can reach\n")
+    assert ".epd/plan.md in your worktree is the plan" in new["task_description"]
+
+    # A bet the old stage (epd_tasks) planned, resumed at build: its build writes its own plan.
+    old = L.loop_inputs("b001", planning=False)
+    assert "plan_dir" not in old and old["build_plan"] is True
+    assert ".epd/plan.md" not in old["task_description"]
+
+    # One the plan stage planned, resumed at build: the build works to that plan.
+    (L.BETS_DIR / "b001" / "plan").mkdir()
+    (L.BETS_DIR / "b001" / "plan" / "plan.md").write_text("# Plan\n")
+    again = L.loop_inputs("b001", planning=False)
+    assert again["plan_dir"] == new["plan_dir"] and again["build_plan"] is False
 
 
 def test_a_paper_bet_waits_for_the_session_and_a_seed_bet_or_any_time_does_not(L, monkeypatch, capsys):
     shut_until = dt.datetime(2026, 9, 24, 12, 40, tzinfo=dt.UTC)
-    monkeypatch.setattr(L, "bet_window", lambda: (False, "the market is shut; it opens Thu Sep 24 06:30 PDT", shut_until))
+    monkeypatch.setattr(L, "bet_window", lambda plan=True: (False, "the market is shut; it opens Thu Sep 24 06:30 PDT",
+                                                            shut_until))
     with pytest.raises(SystemExit):
         L.require_bet_window("b001")
     out = capsys.readouterr().out

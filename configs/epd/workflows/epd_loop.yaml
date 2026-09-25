@@ -13,11 +13,19 @@ workflow:
   #    stale-seed"). The build's deploy puts the stack's paper login on `paper_account`, and QA and
   #    measure are each told what that login is (`login_note`, `measure_note`); measure signs in as
   #    `measure_email`, which on prod is not the build's QA login when the bet is about the seed.
-  version: 7
+  # 8: `tasks` is the plan stage (epd_plan): an architect's design, four engineers' notes, a lead's
+  #    plan and tasks, and a check, over a snapshot of the code at origin/<base> and the knowledge
+  #    folder in it (.temper/). Tested against old plans on past bets (2026-09-25) before it was
+  #    wired in. The build gets the plan (plan_dir, plan=false) instead of writing its own, and
+  #    runs only when the lead says COMPLETE: a BLOCKED plan skips build, ship, deploy and measure.
+  #    The node keeps its name so the driver's stages, pokes and resumes are unchanged. A bet the
+  #    old stage (epd_tasks) planned, resumed at build or later, builds as it did: the driver sends
+  #    build_plan true and no plan_dir, and the build writes its own plan.
+  version: 8
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
-      tasks → build → ship (PR) → [OWNER DECIDES] → deploy → measure
+      tasks (plan) → build → ship (PR) → [OWNER DECIDES] → deploy → measure
 
     Nothing here is new. Each node references a workflow that already exists and is already used on
     its own; this file is only the wiring between them. That is the point: the loop used to be a
@@ -85,9 +93,18 @@ workflow:
     login_note:   {type: string, required: false}  # what verify is told about its login
     measure_note: {type: string, required: false}  # what measure is told about its login
 
+    # What the plan stage needs
+    approval:     {type: string, required: false}  # the owner's approval (decision.md), when there is one
+    kb_dir:       {type: string, required: true}   # the knowledge folder, <repo_path>/.temper
+    plan_dir:     {type: string, required: false}  # where the plan stage writes design, notes, plan.md
+    build_plan:   {type: boolean, required: false} # true: the build writes its own plan (a bet planned before v8)
+    reach:        {type: string, required: false}  # what the live checkers can reach, Markdown
+    qa_config_path: {type: string, required: false}
+    measure_config_path: {type: string, required: false}
+
     # What the build stage needs
     repo_url:     {type: string, required: true}
-    repo_path:    {type: string, required: true}
+    repo_path:    {type: string, required: true}   # the plan's snapshot of origin/<base>; the build clones its own
     base_branch:  {type: string, required: true}
     task_name:    {type: string, required: true}
     task_description: {type: string, required: true}
@@ -95,6 +112,11 @@ workflow:
 
   outputs:
     task_count:      tasks.structured.task_count
+    plan_status:     tasks.structured.status      # COMPLETE, or BLOCKED (then nothing else ran)
+    blocked_because: tasks.structured.blocked_because
+    plan_path:       tasks.structured.plan_path
+    plan_verdict:    tasks.structured.verdict     # the check's last verdict; null after the lead's last pass
+    plan_rounds:     tasks.structured.rounds
     branch:          build.structured.branch
     pr:              ship.structured.pr
     pr_decision:     deploy.structured.decision
@@ -111,17 +133,25 @@ workflow:
     outcome_summary: measure.structured.summary
 
   nodes:
-    # 1 — The signed bet becomes tasks with boolean acceptance. Writes tasks.json.
-    #     Ungated: the approval is the line in backlog.md that put this bet here (v4).
+    # 1 — The signed bet becomes a plan and tasks with boolean acceptance. Writes plan_dir/plan.md
+    #     (beside the design and the engineers' notes) and tasks.json. Ungated: the approval is the
+    #     line in backlog.md that put this bet here (v4). The plan stage (v8) reads the code at a
+    #     snapshot the driver makes of origin/<base> when the run is submitted.
     - name: tasks
       type: stage
-      ref: workflows/epd_tasks
+      ref: workflows/epd_plan
       input_map:
         bet_id: input.bet_id
-        tasks_path: input.tasks_path
-        repo_path: input.repo_path
         bet_path: input.bet_path
+        gate: input.approval
+        repo_path: input.repo_path
+        kb_dir: input.kb_dir
         profile: input.profile
+        tasks_path: input.tasks_path
+        plan_dir: input.plan_dir
+        reach: input.reach
+        qa_config_path: input.qa_config_path
+        measure_config_path: input.measure_config_path
 
     # 2 — The whole build pipeline: claim, worktree, stack, plan, implement, review, QA, security,
     #     verify, deploy. Its own judges decide its verdict; this node does not second-guess them.
@@ -134,10 +164,16 @@ workflow:
     #     the wait). The driver releases the three and takes the stack down when it collects the run.
     #     force: a claim left by an earlier attempt at the same bet is this bet's own; it does not
     #     block a retry.
+    #     plan (false) and plan_dir: the build works to the plan stage's plan (at .epd/plan.md in its
+    #     worktree) instead of writing its own. A BLOCKED plan has nothing to build.
     - name: build
       type: stage
       ref: workflows/epd_task
       depends_on: [tasks]
+      condition:
+        source: tasks.structured.status
+        operator: equals
+        value: COMPLETE
       input_map:
         repo_url: input.repo_url
         task_name: input.task_name
@@ -150,6 +186,8 @@ workflow:
         verify_password: input.password
         verify_login_note: input.login_note
         paper_account: input.paper_account
+        plan: input.build_plan
+        plan_dir: input.plan_dir
         keep: true
         force: true
 

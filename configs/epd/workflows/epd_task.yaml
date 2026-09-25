@@ -36,7 +36,11 @@ workflow:
   # 10: QA can sign in to a real Alpaca paper account (epd_loop v7): the deploy puts the stack's
   #     paper login (verify_email) on `paper_account` after its seed, and QA is told what that
   #     login is (`verify_login_note`). Without them, QA signs in to the seed's book as before.
-  version: 10
+  # 11: plan_dir. A plan made before the build (epd_loop v8's plan stage, epd_plan) reaches the
+  #     worktree step, which puts its plan.md at <worktree>/.epd/plan.md and the engineers' notes
+  #     in <worktree>/.epd/plan/; with plan=false the build's own plan step is skipped and every
+  #     later step reads that plan, as it would have read task_plan's.
+  version: 11
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -55,7 +59,8 @@ workflow:
                          its input_map, and what it hands back is its last node
                          that ran (stack_up with a stack, stack_detect without),
                          so both emit the same shape.
-      5. plan          — task_plan writes <worktree>/.epd/plan.md
+      5. plan          — task_plan writes <worktree>/.epd/plan.md (plan=false with
+                         plan_dir: the worktree step copied a plan made earlier)
       6. implement     — task_implement makes the change, runs the tests,
                          commits on the task branch (nothing is pushed), one
                          commit per task of the plan. A round has a budget of
@@ -140,6 +145,10 @@ workflow:
       required: false
     plan:
       type: boolean
+      required: false
+    # A plan made before the build: a directory holding plan.md (and the notes it was made from).
+    plan_dir:
+      type: string
       required: false
     implement:
       type: boolean
@@ -250,6 +259,7 @@ workflow:
         task_slug: claim.structured.task_slug
         claim_path: claim.structured.claim_path
         base_branch: input.base_branch
+        plan_dir: input.plan_dir
 
     # The question and the act, together: asking whether this worktree can have
     # a dev stack is only useful because of what follows from the answer, and
@@ -315,7 +325,8 @@ workflow:
       type: agent
       agent: task_plan
       depends_on: [environment]
-      # plan=false reuses an existing <worktree>/.epd/plan.md (testing the later steps in isolation)
+      # plan=false reuses the <worktree>/.epd/plan.md that is there: the one the worktree step
+      # copied from plan_dir, or an earlier run's (testing the later steps in isolation)
       condition:
         source: environment.structured.run_plan
         operator: equals

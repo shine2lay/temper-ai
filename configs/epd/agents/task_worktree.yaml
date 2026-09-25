@@ -6,6 +6,11 @@
 #
 # Idempotent: re-running for the same task reuses the clone and the worktree.
 #
+# 2: plan_dir. A plan made before the build (the EPD loop's plan stage) is put where the build's
+#    own plan step would have written it: plan.md at <worktree>/.epd/plan.md, and the engineers'
+#    notes it was made from beside it in <worktree>/.epd/plan/. Copied on every run, so a resumed
+#    build reads the plan the loop holds now, not what an earlier attempt left.
+#
 # Private repos: give them as git@github.com:owner/repo.git; the read-only
 # deploy key mounted at /app/github-deploy (local/github-deploy/setup.sh)
 # is used for ssh URLs. https URLs go unauthenticated (public repos only):
@@ -14,7 +19,7 @@
 # loader's env substitution, hence none below.
 agent:
   name: task_worktree
-  version: 1
+  version: 2
   type: script
   timeout_seconds: 600
   script_template: |
@@ -27,9 +32,11 @@ agent:
     TASK_SLUG={{ task_slug }}
     CLAIM_PATH={{ claim_path | default('') }}
     BASE_BRANCH={{ base_branch | default('') }}
+    PLAN_DIR={{ plan_dir | default('') }}
     # An optional workflow input that was not given arrives as Python None.
     [ "$BASE_BRANCH" = None ] && BASE_BRANCH=""
     [ "$CLAIM_PATH" = None ] && CLAIM_PATH=""
+    [ "$PLAN_DIR" = None ] && PLAN_DIR=""
 
     fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
 
@@ -89,14 +96,24 @@ agent:
     # info/exclude is per repository, so this covers every worktree of it.
     grep -qx '.epd/' "$MAIN/.git/info/exclude" 2>/dev/null || echo '.epd/' >> "$MAIN/.git/info/exclude"
 
+    PLAN=none
+    if [ -n "$PLAN_DIR" ]; then
+      [ -f "$PLAN_DIR/plan.md" ] || fail "plan_dir $PLAN_DIR has no plan.md"
+      mkdir -p "$WT/.epd/plan"
+      cp "$PLAN_DIR"/*.md "$WT/.epd/plan/"
+      cp "$PLAN_DIR/plan.md" "$WT/.epd/plan.md"
+      PLAN=copied
+      echo "plan: $PLAN_DIR -> $WT/.epd/plan.md (+ $(ls "$WT/.epd/plan" | tr '\n' ' '))"
+    fi
+
     BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD)
     HEAD=$(git -C "$WT" rev-parse HEAD)
     BASE_HEAD=$(git -C "$MAIN" rev-parse "origin/$BASE_BRANCH")
     echo "worktree $WORKTREE: $WT on $BRANCH @ $(printf %.12s "$HEAD") (base origin/$BASE_BRANCH, clone $CLONE)"
 
-    python3 - "$CLAIM_PATH" "$WT" "$MAIN" "$BRANCH" "$BASE_BRANCH" "$HEAD" "$BASE_HEAD" "$WORKTREE" "$CLONE" <<'PY'
+    python3 - "$CLAIM_PATH" "$WT" "$MAIN" "$BRANCH" "$BASE_BRANCH" "$HEAD" "$BASE_HEAD" "$WORKTREE" "$CLONE" "$PLAN" <<'PY'
     import json, os, sys
-    claim_path, wt, main, branch, base, head, base_head, wt_state, clone_state = sys.argv[1:]
+    claim_path, wt, main, branch, base, head, base_head, wt_state, clone_state, plan = sys.argv[1:]
     out = {
         "status": "ready",
         "worktree_path": wt,
@@ -107,6 +124,7 @@ agent:
         "base_head": base_head,
         "worktree": wt_state,
         "clone": clone_state,
+        "plan": plan,
     }
     if claim_path and os.path.exists(claim_path):
         with open(claim_path) as f:

@@ -1,0 +1,42 @@
+workflow:
+  name: epd_plan_grade
+  version: 1
+  description: |
+    The plan stage's test, not part of the loop: grade one plan written by
+    epd_plan against what happened to the plan the loop actually built for
+    the same pitch (the stage judges' reasons, the evidence pack and the
+    files the merge changed), and score both on the judges' plan rubric.
+    Run by ~/epd-autopilot/plan/plan_test.py.
+  inputs:
+    bet_id: {type: string, required: true}
+    pitch_path: {type: string, required: true}
+    gate: {type: string, required: false}
+    old_tasks_path: {type: string, required: true}
+    new_tasks_path: {type: string, required: true}
+    new_plan_dir: {type: string, required: true}
+    pack_path: {type: string, required: true}
+    code_dir: {type: string, required: true}
+    places: {type: string, required: true}   # the merge's files and which each plan named
+    judges: {type: string, required: true}
+    stage: {type: string, required: true}    # JSON: the architect's, lead's and check's replies
+  outputs:
+    summary: grade.structured.summary
+    score_old: grade.structured.score_old
+    score_new: grade.structured.score_new
+
+  nodes:
+    - name: grade
+      type: agent
+      agent: epd_plan_grade
+      input_map:
+        bet_id: input.bet_id
+        pitch_path: input.pitch_path
+        gate: input.gate
+        old_tasks_path: input.old_tasks_path
+        new_tasks_path: input.new_tasks_path
+        new_plan_dir: input.new_plan_dir
+        pack_path: input.pack_path
+        code_dir: input.code_dir
+        places: input.places
+        judges: input.judges
+        stage: input.stage

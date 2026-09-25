@@ -169,8 +169,21 @@ export function ExecutionDAG() {
   // changes, computed.nodes stays referentially stable) doesn't
   // re-call setNodes — that triggers React Flow to re-measure node
   // dimensions, which in turn jitters layout slightly.
+  //
+  // Each node keeps the size React Flow last measured for it. A node object
+  // without `measured` is one React Flow has never seen: it drops the
+  // node's handle positions and draws none of its edges until a
+  // ResizeObserver measures it again -- so every status change blanked
+  // every edge for a frame or more. With `measured` it reuses the handles,
+  // and still re-measures any node whose size really changed.
   useEffect(() => {
-    setNodes(computed.nodes);
+    setNodes((prev) => {
+      const measured = new Map(prev.map((n) => [n.id, n.measured]));
+      return computed.nodes.map((n) => {
+        const m = measured.get(n.id);
+        return m?.width && m?.height ? { ...n, measured: m } : n;
+      });
+    });
   }, [computed.nodes, setNodes]);
   useEffect(() => {
     setEdges(computed.edges);

@@ -44,6 +44,9 @@ interface ExecutionState {
   /** Node name whose gate modal is open, or null. A gate is asked per node,
    *  not per stage event: a loop re-gates the same name. */
   gateNodeName: string | null;
+  /** Node name -> the dispatcher that added it. `dispatch.applied` arrives
+   *  before the added nodes start, so the relationship waits here for them. */
+  dispatchedByName: Map<string, string>;
   /** When set, the DAG highlights state at this checkpoint sequence. null = show current/live state. */
   checkpointPreview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null;
 
@@ -68,6 +71,69 @@ function _nodeAgents(node: NodeExecution): AgentExecution[] {
   return node.agents || [];
 }
 
+const TERMINAL = new Set(['completed', 'failed', 'skipped', 'cancelled', 'timeout']);
+
+/** Every node in the tree, parents before their children. */
+function _allNodes(nodes: NodeExecution[] | undefined): NodeExecution[] {
+  const out: NodeExecution[] = [];
+  const walk = (list: NodeExecution[] | undefined) => {
+    for (const n of list ?? []) {
+      out.push(n);
+      walk(n.child_nodes);
+    }
+  };
+  walk(nodes);
+  return out;
+}
+
+/**
+ * The nodes the store keeps: the top level plus every node added at
+ * runtime, lifted out of the dispatcher the API nests it in, in the order
+ * dispatched. Live events add dispatched nodes at the top level, so a REST
+ * refresh has to give the same shape: when it didn't, the counts dropped to
+ * the one top-level node and the DAG redrew from a different tree.
+ */
+function _liftDispatched(nodes: NodeExecution[] | undefined): NodeExecution[] {
+  const out: NodeExecution[] = [];
+  const seen = new Set<string>();
+  const visit = (node: NodeExecution) => {
+    const children = node.child_nodes ?? [];
+    const lifted = children.filter((c) => c.dispatched_by);
+    const kept = children.filter((c) => !c.dispatched_by);
+    if (!seen.has(node.id)) {
+      seen.add(node.id);
+      out.push(lifted.length === 0 ? node : { ...node, child_nodes: kept.length > 0 ? kept : undefined });
+    }
+    for (const child of lifted) visit(child);
+  };
+  for (const n of nodes ?? []) visit(n);
+  return out;
+}
+
+/** A snapshot is older than the live events it may overlap: it can report
+ *  running a node the WS already closed. Keep the later truth. */
+function _keepFinished<
+  T extends { status?: string; end_time?: string | null; duration_seconds?: number | null },
+>(prev: T | undefined, next: T): T {
+  if (prev && TERMINAL.has(prev.status ?? '') && !TERMINAL.has(next.status ?? '')) {
+    return {
+      ...next,
+      status: prev.status,
+      end_time: next.end_time ?? prev.end_time,
+      duration_seconds: next.duration_seconds ?? prev.duration_seconds,
+    };
+  }
+  return next;
+}
+
+/** Fields of a completion or update that describe the thing, not the event. */
+function _outcome(data: Record<string, unknown>): Record<string, unknown> {
+  const { event_id: _e, parent_id: _p, ...rest } = data;
+  void _e;
+  void _p;
+  return rest;
+}
+
 /** Build a full chronological event log from a workflow snapshot. */
 function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
   const events: EventLogEntry[] = [];
@@ -81,7 +147,7 @@ function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
     });
   }
 
-  for (const node of workflow.nodes ?? []) {
+  for (const node of _allNodes(workflow.nodes)) {
     const nodeLabel = node.name || node.id;
 
     if (node.start_time) {
@@ -174,12 +240,15 @@ export const useExecutionStore = create<ExecutionState>()(
     expandedStages: new Set(),
     stageDetailId: null,
     gateNodeName: null,
+    dispatchedByName: new Map(),
     hoveredNodeId: null,
     checkpointPreview: null,
 
     applySnapshot: (workflow) =>
       set((state) => {
-        state.selection = null;
+        const prevStages = state.stages;
+        const prevAgents = state.agents;
+        const stillActive = !TERMINAL.has(workflow.status ?? '');
 
         if (!state.workflow) {
           const snapshotEvents = _buildSnapshotEvents(workflow);
@@ -197,7 +266,11 @@ export const useExecutionStore = create<ExecutionState>()(
         state.llmCalls = new Map();
         state.toolCalls = new Map();
 
-        for (const node of workflow.nodes ?? []) {
+        for (const node of _allNodes(workflow.nodes)) {
+          if (node.dispatched_by) state.dispatchedByName.set(node.name, node.dispatched_by);
+        }
+
+        for (const node of _liftDispatched(workflow.nodes)) {
           // Normalize: ensure .agents is always an array (for agent-type nodes, move .agent into .agents)
           const normalizedNode = { ...node };
           if (node.type === 'agent' && node.agent && (!node.agents || node.agents.length === 0)) {
@@ -209,9 +282,14 @@ export const useExecutionStore = create<ExecutionState>()(
           normalizedNode.loop_to = normalizedNode.loop_to ?? undefined;
           normalizedNode.max_loops = normalizedNode.max_loops ?? undefined;
           // Store in stages map (backward compat with components)
-          state.stages.set(normalizedNode.id, normalizedNode);
-          for (const agent of _nodeAgents(normalizedNode)) {
-            state.agents.set(agent.id, agent);
+          state.stages.set(normalizedNode.id, _keepFinished(prevStages.get(normalizedNode.id), normalizedNode));
+        }
+
+        // Agents of every node, nested ones included: the agents map is
+        // looked up by id and counted, it is not what the DAG draws from.
+        for (const node of _allNodes(workflow.nodes)) {
+          for (const agent of _nodeAgents(node)) {
+            state.agents.set(agent.id, _keepFinished(prevAgents.get(agent.id), agent));
             for (const llm of agent.llm_calls ?? []) {
               const llmCopy = { ...llm, agent_id: agent.id, agent_execution_id: agent.id };
               state.llmCalls.set(llmCopy.id, llmCopy);
@@ -220,6 +298,30 @@ export const useExecutionStore = create<ExecutionState>()(
               state.toolCalls.set(tool.id, { ...tool });
             }
           }
+        }
+
+        // A poll can be taken just before a node starts and land just
+        // after its live start event: keep what the WS added until a
+        // snapshot catches up, or the node blinks out for a poll.
+        if (stillActive) {
+          for (const [id, stage] of prevStages) {
+            if (!state.stages.has(id)) state.stages.set(id, stage);
+          }
+          for (const [id, agent] of prevAgents) {
+            if (!state.agents.has(id)) state.agents.set(id, agent);
+          }
+        }
+
+        // A refresh every few seconds used to drop whatever the user had
+        // clicked. Keep it while the thing it points at still exists.
+        const sel = state.selection;
+        if (sel && sel.type !== 'workflow') {
+          const exists =
+            (sel.type === 'stage' && state.stages.has(sel.id))
+            || (sel.type === 'agent' && state.agents.has(sel.id))
+            || (sel.type === 'llmCall' && state.llmCalls.has(sel.id))
+            || (sel.type === 'toolCall' && state.toolCalls.has(sel.id));
+          if (!exists) state.selection = null;
         }
 
         // Seed streamingContent for running agents so the LiveStreamBar
@@ -283,11 +385,15 @@ export const useExecutionStore = create<ExecutionState>()(
           case 'stage_start':
           case 'stage.started': {
             const stageId = (data.stage_id ?? data.event_id ?? msg.stage_id) as string;
+            const name = (data.name ?? '') as string;
+            const dispatcher = state.dispatchedByName.get(name);
             const nodeData = {
               ...data,
               id: data.id ?? stageId,
-              name: data.name ?? '',
+              name,
               type: data.type ?? 'agent',
+              start_time: data.start_time ?? msg.timestamp,
+              ...(dispatcher ? { dispatched_by: dispatcher } : {}),
             } as unknown as NodeExecution;
             const existing = state.stages.get(stageId);
             if (existing) {
@@ -325,13 +431,16 @@ export const useExecutionStore = create<ExecutionState>()(
               Object.assign(existingAgent, agentData);
             } else {
               state.agents.set(agentId, agentData);
-              // Try to add to parent node
-              const parentStageId = data.stage_id as string | undefined;
+              // Try to add to parent node. The event names its node by
+              // parent_id (the node's start event); without the link a
+              // node started live had no agent and drew as an empty pill.
+              const parentStageId = (data.stage_id ?? data.parent_id) as string | undefined;
               if (parentStageId) {
                 const parentStage = state.stages.get(parentStageId);
                 if (parentStage) {
                   if (parentStage.type === 'agent') {
                     parentStage.agent = agentData;
+                    parentStage.agents = [agentData];
                   } else {
                     if (!parentStage.agents) parentStage.agents = [];
                     const exists = parentStage.agents.some((a) => a.id === agentId);
@@ -347,9 +456,21 @@ export const useExecutionStore = create<ExecutionState>()(
           case 'agent_output':
           case 'agent.completed':
           case 'agent.failed': {
-            const aid = (data.agent_id ?? data.event_id ?? msg.agent_id) as string;
+            // A completion is an event of its own; parent_id is the start
+            // event, which is the agent's id. Looking the agent up by the
+            // completion's own id found nothing, so an agent started live
+            // stayed running until a refresh.
+            const parentId = data.parent_id as string | undefined;
+            const aid = (data.agent_id
+              ?? (parentId && state.agents.has(parentId) ? parentId : undefined)
+              ?? data.event_id ?? msg.agent_id) as string;
             const agent = state.agents.get(aid);
-            if (agent) Object.assign(agent, data);
+            if (agent) {
+              Object.assign(agent, _outcome(data));
+              if (!agent.end_time && msg.event_type !== 'agent_output') {
+                agent.end_time = msg.timestamp ?? new Date().toISOString();
+              }
+            }
             if (msg.event_type.includes('end') || msg.event_type.includes('completed') || msg.event_type.includes('failed')) {
               // Don't delete — keep the streamed content around so the user
               // can still scroll through the LLM trace after the agent
@@ -357,6 +478,52 @@ export const useExecutionStore = create<ExecutionState>()(
               // stops and the UI can render it as a completed transcript.
               const entry = state.streamingContent.get(aid);
               if (entry) entry.done = true;
+            }
+            break;
+          }
+
+          case 'event.updated': {
+            // How the engine closes a node (and the run): an update of its
+            // start event. Unhandled, a node started live stayed running
+            // until the next snapshot -- at the end of the run.
+            const eid = data.event_id as string | undefined;
+            if (!eid) break;
+            const outcome = _outcome(data);
+            if (outcome.status == null) delete outcome.status;
+            const ended = TERMINAL.has((outcome.status ?? '') as string);
+            const at = msg.timestamp ?? new Date().toISOString();
+            const stage = state.stages.get(eid);
+            if (stage) {
+              Object.assign(stage, outcome);
+              if (ended && !stage.end_time) stage.end_time = at;
+            }
+            const agent = state.agents.get(eid);
+            if (agent) {
+              Object.assign(agent, outcome);
+              if (ended && !agent.end_time) agent.end_time = at;
+            }
+            if (state.workflow && state.workflow.id === eid) {
+              Object.assign(state.workflow, outcome);
+            }
+            break;
+          }
+
+          case 'dispatch.applied': {
+            const dispatcher = data.dispatcher as string | undefined;
+            const added = ((data.added ?? []) as unknown[]).filter(
+              (n): n is string => typeof n === 'string',
+            );
+            if (!dispatcher || added.length === 0) break;
+            // The added nodes start after this event: remember the link
+            // for their start, and stamp any that are already here.
+            for (const name of added) state.dispatchedByName.set(name, dispatcher);
+            for (const stage of state.stages.values()) {
+              if (stage.name === dispatcher) {
+                const kids = stage.dispatched_children ?? [];
+                stage.dispatched_children = [...kids, ...added.filter((n) => !kids.includes(n))];
+              } else if (added.includes(stage.name) && !stage.dispatched_by) {
+                stage.dispatched_by = dispatcher;
+              }
             }
             break;
           }
@@ -462,7 +629,11 @@ export const useExecutionStore = create<ExecutionState>()(
         state.toolCalls = new Map();
         state.streamingContent = new Map();
         state.eventLog = [];
-        state.selection = { type: 'workflow', id: '' };
+        state.dispatchedByName = new Map();
+        // Nothing selected. This was `{ type: 'workflow' }`, which the first
+        // snapshot used to wipe; now that a refresh keeps the selection, it
+        // opened Workflow Details over the canvas on every page load.
+        state.selection = null;
         state.wsStatus = { connected: false, reconnectAttempt: 0, lastHeartbeat: null, wsError: null };
       }),
 

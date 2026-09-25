@@ -74,10 +74,19 @@ class EventRecorder:
                 event_id=eid,
             )
 
+        # parent_id goes out with the event: it is the only thing tying an
+        # agent to the stage it runs in, and a completion to the agent it
+        # closes (a completion is a new event with its own id). Without it a
+        # live view can place neither until it refetches the whole run.
         self._notifier.notify_event(
             self._execution_id,
             str(event_type),
-            {**(data or {}), "event_id": eid, "status": status},
+            {
+                **(data or {}),
+                "event_id": eid,
+                "status": status,
+                **({"parent_id": parent_id} if parent_id else {}),
+            },
         )
 
         return eid

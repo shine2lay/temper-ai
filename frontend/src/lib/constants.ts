@@ -48,7 +48,10 @@ export const EDGE_COLORS = {
 
 /* Layout constants for the DAG (matching flowchart.js) */
 export const LAYOUT = {
-  AGENT_WIDTH: 220,
+  // The one width an agent card has: the card is drawn at it and the layout
+  // reserves it. Two numbers for this drifted apart (220 laid out, 280
+  // drawn) and ate the gap between columns.
+  AGENT_CARD_WIDTH: 280,
   AGENT_HEIGHT: 160,  // Increased — cards include IN/OUT sections, source tags, output previews
   AGENT_GAP_Y: 16,
   // Gaps double as edge "freeway lanes" — smoothstep elbows route through

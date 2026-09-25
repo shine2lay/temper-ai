@@ -103,7 +103,11 @@ export interface BuildOptions {
 // is available yet. Once nodes have measured.{width,height}, those win.
 // ---------------------------------------------------------------------------
 
-const LEAF_AGENT_W = LAYOUT.AGENT_WIDTH;
+// The width the card is drawn at, not an estimate of it. The layout once
+// reserved 220 for a card drawn 280 wide, so 60 of the 80 units promised
+// between columns sat under the card and a fan-out's edges all bent inside
+// the 20 that were left.
+const LEAF_AGENT_W = LAYOUT.AGENT_CARD_WIDTH;
 const LEAF_AGENT_H = LAYOUT.AGENT_HEIGHT;
 const HEADER_H = LAYOUT.STAGE_HEADER_HEIGHT + LAYOUT.STAGE_METRICS_HEIGHT;
 const PAD = LAYOUT.STAGE_PAD_X;
@@ -369,6 +373,10 @@ const ROOT_OPTIONS: LayoutOptions = {
   // sit at the vertical center of its source nodes).
   'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
   'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+  // Keep nodes in the order they were given unless that costs a crossing.
+  // Siblings with no edges between them -- a dispatcher's children -- are
+  // otherwise shuffled freely, and a, b, c came out c, a, b.
+  'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
   'elk.padding': '[top=60,left=20,bottom=20,right=20]',
   // Without this, disconnected parts of a graph are laid out on top of
   // each other at the padding origin rather than side by side.
@@ -400,6 +408,7 @@ const FRAGMENT_OPTIONS: LayoutOptions = {
   'elk.spacing.edgeEdge': '28',
   'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
   'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+  'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
   // Bigger right padding gives the last node-column inside a stage
   // container some breathing room to its parent's right border —
   // otherwise the leader/last-column visually slams the edge.
@@ -427,30 +436,37 @@ const elk = new ELK();
  */
 function hoistDispatchedChildren(nodes: NodeExecution[]): NodeExecution[] {
   const out: NodeExecution[] = [];
-  for (const node of nodes) {
+  const placed = new Set<string>();
+
+  // Each node is emitted once, already stripped of the children lifted out
+  // of it. Emitting a dispatched child as-is and stripping it on the way
+  // down drew a dispatcher's dispatcher twice -- once lifted, once still
+  // inside its parent's box with its own children -- so every level of
+  // dispatch doubled the edges below it and nested a container per round.
+  const visit = (node: NodeExecution): void => {
     const children = node.child_nodes ?? [];
     const dispatched = children.filter((c) => (c as NodeExecution).dispatched_by);
-    if (dispatched.length === 0) {
-      out.push(node);
-      continue;
-    }
     const kept = children.filter((c) => !(c as NodeExecution).dispatched_by);
-    out.push({ ...node, child_nodes: kept.length > 0 ? kept : undefined } as NodeExecution);
+    if (!placed.has(node.id)) {
+      placed.add(node.id);
+      out.push(
+        dispatched.length === 0
+          ? node
+          : ({ ...node, child_nodes: kept.length > 0 ? kept : undefined } as NodeExecution),
+      );
+    }
     for (const child of dispatched) {
       const parentName = (child as NodeExecution).dispatched_by ?? node.name;
-      out.push({
+      visit({
         ...(child as NodeExecution),
         depends_on: (child.depends_on ?? []).length > 0
           ? child.depends_on
           : [parentName as string],
       } as NodeExecution);
     }
-    // A dispatched child may itself have dispatched: recurse.
-    const nested = hoistDispatchedChildren(dispatched);
-    for (const n of nested) {
-      if (!out.some((existing) => existing.id === n.id)) out.push(n);
-    }
-  }
+  };
+
+  for (const node of nodes) visit(node);
   return out;
 }
 

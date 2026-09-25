@@ -36,6 +36,22 @@ class TestEventRecorder:
         assert args[0][0] == "exec-1"  # execution_id
         assert args[0][1] == "test.event"  # event_type
 
+    def test_record_tells_listeners_the_parent(self):
+        # A live view places an agent in its stage, and closes an agent on
+        # its completion (a separate event with its own id), by parent_id.
+        notifier = MagicMock()
+        recorder = EventRecorder("exec-1", notifier=notifier, persist=False)
+        recorder.record("agent.completed", data={"x": 1}, parent_id="agent-evt")
+        payload = notifier.notify_event.call_args[0][2]
+        assert payload["parent_id"] == "agent-evt"
+        assert payload["x"] == 1
+
+    def test_record_without_a_parent_sends_no_parent_id(self):
+        notifier = MagicMock()
+        recorder = EventRecorder("exec-1", notifier=notifier, persist=False)
+        recorder.record("workflow.started")
+        assert "parent_id" not in notifier.notify_event.call_args[0][2]
+
     def test_record_without_notifier(self):
         recorder = EventRecorder("exec-1", notifier=None, persist=False)
         event_id = recorder.record("test.event")

@@ -4,7 +4,7 @@ import type { NodeProps } from '@xyflow/react';
 import { AgentCardContent } from './AgentCardContent';
 import type { AgentNodeData } from '@/hooks/useDagElements';
 import { cn } from '@/lib/utils';
-import { STATUS_COLORS } from '@/lib/constants';
+import { LAYOUT, STATUS_COLORS } from '@/lib/constants';
 import { useExecutionStore } from '@/store/executionStore';
 
 /**
@@ -65,7 +65,9 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
       </div>
     );
     return (
-      <div className="w-[200px]">
+      // data-name/data-status: what the card shows, for the browser checks
+      // that compare the canvas with the run (frontend/dispatch_live_check.mjs).
+      <div className="w-[200px]" data-testid="agent-pill" data-name={name} data-status={nodeStatus}>
         <Handle type="target" position={Position.Left} id="left"
           className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
         <Handle type="source" position={Position.Right} id="right"
@@ -104,7 +106,16 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
   const hasIterations = iterations && iterations.length > 1;
 
   return (
-    <div className={`min-w-[250px] max-w-[350px] w-[280px] ${isDelegate ? 'relative' : ''}`}>
+    // Width from the layout's constant, not a class: the layout reserves
+    // exactly this much, and a card wider than its slot eats the gap the
+    // edges route through.
+    <div
+      data-testid="agent-card"
+      data-name={stage?.name ?? displayAgent.agent_name}
+      data-status={displayAgent.status}
+      className={isDelegate ? 'relative' : undefined}
+      style={{ width: LAYOUT.AGENT_CARD_WIDTH }}
+    >
       {/* Handles for edges */}
       <Handle type="target" position={Position.Left} id="left"
         className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />

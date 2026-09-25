@@ -10,15 +10,22 @@ const POLL_INTERVAL_MS = 5_000;
  * Build a fingerprint of the structural data that matters for the DAG.
  * Only when this changes do we need to re-apply the snapshot.
  */
-function snapshotFingerprint(wf: WorkflowExecution): string {
+export function snapshotFingerprint(wf: WorkflowExecution): string {
   const parts: string[] = [wf.status];
-  for (const node of wf.nodes ?? []) {
-    const agentKeys = (node.agents ?? []).map(
-      (a) => `${a.agent_name}:${a.status}`,
-    );
-    if (node.agent) agentKeys.push(`${node.agent.agent_name}:${node.agent.status}`);
-    parts.push(`${node.name}:${node.status}:${node.type}:[${agentKeys.join(',')}]`);
-  }
+  // The whole tree, not the top level: the API nests a dispatcher's
+  // children inside it, so a run whose work all happens in dispatched
+  // nodes looked unchanged from its first poll to its last.
+  const walk = (nodes: WorkflowExecution['nodes'] | undefined, depth: number) => {
+    for (const node of nodes ?? []) {
+      const agentKeys = (node.agents ?? []).map(
+        (a) => `${a.agent_name}:${a.status}`,
+      );
+      if (node.agent) agentKeys.push(`${node.agent.agent_name}:${node.agent.status}`);
+      parts.push(`${depth}:${node.name}:${node.status}:${node.type}:[${agentKeys.join(',')}]`);
+      walk(node.child_nodes, depth + 1);
+    }
+  };
+  walk(wf.nodes, 0);
   return parts.join('|');
 }
 

@@ -1,0 +1,24 @@
+# EPD loop, bet stage: hand the pitch writer its previous version when the check sent it back.
+#
+# workflows/epd_pitch.yaml loops check -> writer on "revise". Temper keeps only the check's output
+# across a loop rewind, and the writer has no tools to read files, so until v3 of the workflow the
+# writer rewrote the pitch from scratch on every pass without seeing what it had written. On the test
+# of 2026-09-24/25 the check still said "revise" after both passes on 20 of 21 bets: each rewrite fixed
+# the listed issues and made new ones, and three bets kept a "too big for one walk" issue the check
+# had flagged. This step reads the pitch file the last pass wrote, so the writer edits it instead.
+#
+# On the first pass there is no verdict yet and it returns "", even if a file is there (a retried run
+# writes to the same folder). No model: it costs nothing.
+agent:
+  name: epd_pitch_previous
+  version: 1
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/bash
+    OUT="{{ out_path | default('', true) }}" VERDICT="{{ check_verdict | default('', true) }}" python3 -c '
+    import json, os, pathlib
+
+    p = pathlib.Path(os.environ["OUT"])
+    sent_back = os.environ["VERDICT"] == "revise"
+    print(json.dumps({"pitch": p.read_text() if sent_back and p.is_file() else ""}))'

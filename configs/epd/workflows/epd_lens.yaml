@@ -1,0 +1,142 @@
+workflow:
+  name: epd_lens
+  version: 1
+  description: |
+    EPD loop, the pitch review: four reviewers read an approved pitch before
+    it is planned, a fixer revises it from their findings, and a check
+    decides whether the revision can go to planning.
+
+      lens_reach | lens_code | lens_break | lens_fit  ->  fix  ->  check
+                                                   (check says revise: fix once more)
+
+    Why: the stage scorecard of the first 29 shipped bets (2026-09-24) found
+    the bet stage the weakest. 19 of 29 pitches had a problem: criteria no
+    checker could reach, criteria a broken build would pass, promises with no
+    criterion, parts of the pitch that contradicted each other, and wrong
+    facts about the app. Each lens asks one of those questions and gets the
+    inputs that question needs:
+    - reach: the checkers' sheet and their own instructions, and the code
+      and seed at the build's base;
+    - code: the code;
+    - break: the pitch and its walk report only;
+    - fit: the pitch and the owner's decision only.
+
+    First run on those 29 pitches, after the fact, by
+    ~/epd-autopilot/lens/run.py, each with the code at its build's base and
+    the practice-era sheet. Not yet wired into epd_loop.
+
+    Isolated: inputs are strings and paths. The fixer writes the revised
+    pitch to out_path, whose directory must be writable by the container's
+    user.
+  inputs:
+    bet_id: {type: string, required: true}
+    pitch_path: {type: string, required: true}
+    decision_path: {type: string, required: false}   # "" when the owner decided nothing beyond approving
+    report_path: {type: string, required: false}     # the walk report the bet came from
+    code_dir: {type: string, required: true}         # the product's code at the commit the build starts from
+    reach: {type: string, required: true}            # what the checkers can reach, Markdown
+    qa_config_path: {type: string, required: true}   # task_verify's agent config
+    measure_config_path: {type: string, required: true}  # epd_measure's agent config
+    out_path: {type: string, required: true}         # where the revised pitch is written
+  outputs:
+    verdict: check.structured.verdict
+    summary: check.structured.summary
+    revised_path: fix.structured.revised_path
+    threshold: fix.structured.threshold
+    owner_questions: fix.structured.owner_questions
+
+  nodes:
+    - name: lens_reach
+      type: agent
+      agent: epd_lens_reach
+      input_map:
+        bet_id: input.bet_id
+        pitch_path: input.pitch_path
+        decision_path: input.decision_path
+        code_dir: input.code_dir
+        reach: input.reach
+        qa_config_path: input.qa_config_path
+        measure_config_path: input.measure_config_path
+
+    - name: lens_code
+      type: agent
+      agent: epd_lens_code
+      input_map:
+        bet_id: input.bet_id
+        pitch_path: input.pitch_path
+        decision_path: input.decision_path
+        report_path: input.report_path
+        code_dir: input.code_dir
+
+    - name: lens_break
+      type: agent
+      agent: epd_lens_break
+      input_map:
+        bet_id: input.bet_id
+        pitch_path: input.pitch_path
+        report_path: input.report_path
+
+    - name: lens_fit
+      type: agent
+      agent: epd_lens_fit
+      input_map:
+        bet_id: input.bet_id
+        pitch_path: input.pitch_path
+        decision_path: input.decision_path
+
+    - name: fix
+      type: agent
+      agent: epd_pitch_fix
+      depends_on: [lens_reach, lens_code, lens_break, lens_fit]
+      input_map:
+        bet_id: input.bet_id
+        pitch_path: input.pitch_path
+        decision_path: input.decision_path
+        report_path: input.report_path
+        code_dir: input.code_dir
+        reach: input.reach
+        out_path: input.out_path
+        reach_criteria: lens_reach.structured.criteria
+        reach_findings: lens_reach.structured.findings
+        code_findings: lens_code.structured.findings
+        code_places: lens_code.structured.places
+        break_findings: lens_break.structured.findings
+        fit_findings: lens_fit.structured.findings
+        # null on the first pass; set when the check sent the revision back
+        check_verdict: check.structured.verdict
+        check_unresolved: check.structured.unresolved
+        check_new_problems: check.structured.new_problems
+
+    - name: check
+      type: agent
+      agent: epd_pitch_check
+      depends_on: [fix]
+      # max_loops counts this node's runs: 2 = one more fix after a "revise",
+      # then the verdict stands (silent: the outputs carry it).
+      loop_to: fix
+      max_loops: 2
+      on_max_loops: silent
+      loop_condition:
+        source: check.structured.verdict
+        operator: equals
+        value: revise
+      input_map:
+        bet_id: input.bet_id
+        pitch_path: input.pitch_path
+        revised_path: input.out_path
+        decision_path: input.decision_path
+        code_dir: input.code_dir
+        reach: input.reach
+        qa_config_path: input.qa_config_path
+        measure_config_path: input.measure_config_path
+        reach_findings: lens_reach.structured.findings
+        code_findings: lens_code.structured.findings
+        break_findings: lens_break.structured.findings
+        fit_findings: lens_fit.structured.findings
+        fix_threshold: fix.structured.threshold
+        fix_changes: fix.structured.changes
+        fix_rejected: fix.structured.rejected
+        fix_left: fix.structured.left
+        fix_test_data: fix.structured.test_data_added
+        fix_not_claimed: fix.structured.not_claimed
+        fix_owner_questions: fix.structured.owner_questions

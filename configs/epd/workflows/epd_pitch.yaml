@@ -1,0 +1,183 @@
+workflow:
+  name: epd_pitch
+  version: 3
+  description: |
+    EPD loop, bet stage: one problem from the walks becomes a pitch. Three
+    reviewers read the problem first, a writer writes the pitch from their
+    findings, and a check decides whether it can be built.
+
+      lens_reach | lens_code | lens_break | inputs  ->  previous  ->  write  ->  check
+                              (check says revise: the writer edits its pitch, up to twice more)
+
+    v3 (2026-09-25): on the test of v2 the check still said "revise" after
+    both passes on 20 of 21 bets, because the writer rewrote the pitch blind
+    each time (temper keeps only the check's output across a loop rewind)
+    and made new issues while fixing the old. `previous` reads the pitch the
+    last pass wrote, so the writer edits it; three passes instead of two;
+    the check's last issues are an output, for the stage after it.
+
+    The writer has no tools to read files, only Write (v2, 2026-09-24: owner
+    "can you not give read tool to the writer?"; given Read, it re-surveyed
+    the code for 40+ minutes after the lenses had). `inputs` is a script that
+    hands it the problem and the walk report as text; the lenses' findings
+    carry file:line; the check reads the code.
+
+    The owner's shape for it (2026-09-24): "i want to stay out of this loop,
+    we'll do retro to shore it up.. so walk -> do different lenses -> write
+    the pitch based on finding". Nobody approves the pitch; the writer records
+    the calls the owner might have made, for the retro.
+
+    Why: the stage scorecard of the first 29 shipped bets (2026-09-24) found
+    the bet stage the weakest. 19 of 29 pitches had criteria no checker could
+    reach, criteria a broken build would pass, promises with no criterion,
+    parts that contradicted each other, or wrong facts about the app. The
+    pitch writer (epd_bet) worked from the walk report and a profile alone.
+    Each lens answers one of those questions with the inputs it needs:
+    - reach: the checkers' sheet, their own instructions, the code and the
+      seed: where the problem can be checked, and what test data it needs;
+    - code: the code: is it real, why, every place it shows, the size;
+    - break: the problem's words only: how a fix could look done and not be.
+    Whether the pitch agrees with itself is the check's job, once it exists.
+
+    First run on the problems behind the 29 shipped bets, after the fact, by
+    ~/epd-autopilot/lens/run.py, each with the code at its build's base and
+    the practice-era sheet. Not yet wired into epd_loop.
+
+    Isolated: inputs are strings and paths. The writer writes the pitch to
+    out_path, whose directory must be writable by the container's user.
+  inputs:
+    bet_id: {type: string, required: true}
+    problem_path: {type: string, required: true}     # the problem from the walks: title, "Found by", Problem
+    report_path: {type: string, required: false}     # the walk report it came from
+    goals: {type: string, required: true}
+    profile: {type: string, required: true}
+    code_dir: {type: string, required: true}         # the product's code at the commit the build starts from
+    reach: {type: string, required: true}            # what the checkers can reach, Markdown
+    qa_config_path: {type: string, required: true}   # task_verify's agent config
+    measure_config_path: {type: string, required: true}  # epd_measure's agent config
+    out_path: {type: string, required: true}         # where the pitch is written
+  outputs:
+    verdict: check.structured.verdict
+    summary: check.structured.summary
+    issues: check.structured.issues
+    status: write.structured.status
+    pitch_path: write.structured.pitch_path
+    threshold: write.structured.threshold
+    calls: write.structured.calls
+
+  nodes:
+    - name: lens_reach
+      type: agent
+      agent: epd_lens_reach
+      input_map:
+        bet_id: input.bet_id
+        problem_path: input.problem_path
+        report_path: input.report_path
+        code_dir: input.code_dir
+        reach: input.reach
+        qa_config_path: input.qa_config_path
+        measure_config_path: input.measure_config_path
+
+    - name: lens_code
+      type: agent
+      agent: epd_lens_code
+      input_map:
+        bet_id: input.bet_id
+        problem_path: input.problem_path
+        report_path: input.report_path
+        code_dir: input.code_dir
+
+    - name: lens_break
+      type: agent
+      agent: epd_lens_break
+      input_map:
+        bet_id: input.bet_id
+        problem_path: input.problem_path
+        report_path: input.report_path
+
+    - name: inputs
+      type: agent
+      agent: epd_pitch_inputs
+      input_map:
+        problem_path: input.problem_path
+        report_path: input.report_path
+
+    # The pitch the last pass wrote, once the check has sent it back ("" on the first pass). The
+    # check loops back here, not to `write`, so this runs again before each rewrite.
+    - name: previous
+      type: agent
+      agent: epd_pitch_previous
+      depends_on: [inputs]
+      input_map:
+        out_path: input.out_path
+        check_verdict: check.structured.verdict
+
+    - name: write
+      type: agent
+      agent: epd_pitch_write
+      depends_on: [lens_reach, lens_code, lens_break, inputs, previous]
+      input_map:
+        bet_id: input.bet_id
+        problem: inputs.structured.problem
+        report: inputs.structured.report
+        goals: input.goals
+        profile: input.profile
+        reach: input.reach
+        out_path: input.out_path
+        reach_situations: lens_reach.structured.situations
+        reach_moving: lens_reach.structured.moving_targets
+        reach_cannot: lens_reach.structured.cannot_check
+        code_real: lens_code.structured.real
+        code_cause: lens_code.structured.cause
+        code_claims: lens_code.structured.claims
+        code_places: lens_code.structured.places
+        code_relies_on: lens_code.structured.relies_on
+        code_pinned: lens_code.structured.pinned
+        code_size: lens_code.structured.size
+        break_must: lens_break.structured.must_be_true
+        break_fakes: lens_break.structured.fakes
+        break_undecidable: lens_break.structured.undecidable
+        # null on the first pass; set when the check sent the pitch back
+        check_verdict: check.structured.verdict
+        check_issues: check.structured.issues
+        previous: previous.structured.pitch
+
+    - name: check
+      type: agent
+      agent: epd_pitch_check
+      depends_on: [write]
+      # max_loops counts this node's runs: 3 = up to two more writes after a
+      # "revise", then the verdict stands (silent: the outputs carry it).
+      loop_to: previous
+      max_loops: 3
+      on_max_loops: silent
+      loop_condition:
+        source: check.structured.verdict
+        operator: equals
+        value: revise
+      input_map:
+        bet_id: input.bet_id
+        problem_path: input.problem_path
+        pitch_path: input.out_path
+        report_path: input.report_path
+        code_dir: input.code_dir
+        reach: input.reach
+        qa_config_path: input.qa_config_path
+        measure_config_path: input.measure_config_path
+        reach_situations: lens_reach.structured.situations
+        reach_cannot: lens_reach.structured.cannot_check
+        code_real: lens_code.structured.real
+        code_places: lens_code.structured.places
+        code_relies_on: lens_code.structured.relies_on
+        code_pinned: lens_code.structured.pinned
+        code_size: lens_code.structured.size
+        break_fakes: lens_break.structured.fakes
+        write_status: write.structured.status
+        write_why_no_bet: write.structured.why_no_bet
+        write_threshold: write.structured.threshold
+        write_test_data: write.structured.test_data_added
+        write_not_claimed: write.structured.not_claimed
+        write_not_followed: write.structured.not_followed
+        write_calls: write.structured.calls
+        write_walk: write.structured.walk
+        write_fixes: write.structured.fixes

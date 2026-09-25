@@ -1,0 +1,23 @@
+# EPD loop, bet stage: hand the pitch writer the problem and the walk report as text.
+#
+# The writer has no tools to read files (owner, 2026-09-24: "can you not give read tool to the
+# writer?"): given Read, v1 re-surveyed the code for 40+ minutes after the lenses had. Everything it
+# needs is pasted into its task, and a workflow input can only carry a path, so this step reads the
+# two files and returns their text. No model: it costs nothing.
+agent:
+  name: epd_pitch_inputs
+  version: 1
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/bash
+    PROBLEM="{{ problem_path | default('') }}" REPORT="{{ report_path | default('') }}" python3 -c '
+    import json, os, pathlib, sys
+
+    def read(p):
+        return pathlib.Path(p).read_text() if p and pathlib.Path(p).is_file() else ""
+
+    problem = read(os.environ["PROBLEM"])
+    if not problem.strip():
+        sys.exit("no problem text at " + repr(os.environ["PROBLEM"]))
+    print(json.dumps({"problem": problem, "report": read(os.environ["REPORT"])}))'

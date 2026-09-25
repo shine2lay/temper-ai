@@ -1,0 +1,36 @@
+workflow:
+  name: epd_pitch_grade
+  version: 1
+  description: |
+    The bet stage's test, not part of the loop: grade one pitch written by
+    epd_pitch against what happened to the pitch the loop actually built for
+    the same problem (the stage judges' reasons and the evidence pack), and
+    score both on the judges' bet-stage rubric. Run by
+    ~/epd-autopilot/lens/run.py.
+  inputs:
+    bet_id: {type: string, required: true}
+    problem_path: {type: string, required: true}
+    old_pitch_path: {type: string, required: true}
+    new_pitch_path: {type: string, required: true}
+    pack_path: {type: string, required: true}
+    code_dir: {type: string, required: true}
+    judges: {type: string, required: true}
+    stage: {type: string, required: true}   # JSON: the lenses', the writer's and the check's replies
+  outputs:
+    summary: grade.structured.summary
+    score_old: grade.structured.score_old
+    score_new: grade.structured.score_new
+
+  nodes:
+    - name: grade
+      type: agent
+      agent: epd_pitch_grade
+      input_map:
+        bet_id: input.bet_id
+        problem_path: input.problem_path
+        old_pitch_path: input.old_pitch_path
+        new_pitch_path: input.new_pitch_path
+        pack_path: input.pack_path
+        code_dir: input.code_dir
+        judges: input.judges
+        stage: input.stage

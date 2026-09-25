@@ -1,0 +1,34 @@
+workflow:
+  name: epd_lens_grade
+  version: 1
+  description: |
+    The pitch review's test, not part of the loop: one grader compares one
+    bet's pitch review (workflows/epd_lens.yaml) with what actually happened
+    to the bet -- the three stage judges' bet-stage reasons and the evidence
+    pack (~/epd-autopilot/scorecard). It says which known problems the review
+    caught and fixed, and whether each of its other findings was real.
+    Posted by ~/epd-autopilot/lens/run.py, after every review has finished, so
+    no reviewer could have read a pack.
+  inputs:
+    bet_id: {type: string, required: true}
+    pitch_path: {type: string, required: true}
+    revised_path: {type: string, required: true}
+    pack_path: {type: string, required: true}
+    code_dir: {type: string, required: true}
+    judges: {type: string, required: true}   # the three judges' bet-stage score, reason and evidence
+    review: {type: string, required: true}   # JSON: the lenses' findings, the fixer's reply, the check
+  outputs:
+    summary: grade.structured.summary
+
+  nodes:
+    - name: grade
+      type: agent
+      agent: epd_lens_grade
+      input_map:
+        bet_id: input.bet_id
+        pitch_path: input.pitch_path
+        revised_path: input.revised_path
+        pack_path: input.pack_path
+        code_dir: input.code_dir
+        judges: input.judges
+        review: input.review

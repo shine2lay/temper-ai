@@ -287,7 +287,7 @@ export function ExecutionDAG() {
         onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
         onNodeMouseLeave={() => setHoveredNodeId(null)}
         fitView
-        minZoom={0.1}
+        minZoom={DAG_FIT_MIN_ZOOM}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
         nodesDraggable

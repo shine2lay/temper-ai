@@ -18,12 +18,15 @@
 //   width    the drawing is no wider than MAX_WIDTH (flow units)
 //   covered  nothing sits over the middle of the canvas (a panel nobody
 //            opened covered it on every load, and no other check noticed)
+//   fits     every card is inside the canvas (one sample of grace while the
+//            fit animates); a graph wider than the window zooms out
 //   blink    counted on every animation frame, not per sample: the number
 //            of edges never drops while the number of cards holds (edges
 //            vanished for a frame or more on each status change, and a
 //            once-a-second sample only caught it by luck)
 //   console  no errors in the page console
 // Screenshots at SHOTS seconds and at the end: /tmp/live_<TAG>_<s>s.png
+// VIEWPORT=1312x760 sizes the browser window (default 1600x1000).
 import { chromium, request as pwRequest } from '@playwright/test';
 
 const BASE = process.env.BASE ?? 'https://temper-dev.wai2shine.com';
@@ -33,6 +36,7 @@ const INPUTS = JSON.parse(process.env.INPUTS ?? '{"items":["alpha","bravo","char
 const SHOTS = (process.env.SHOTS ?? '3,9,17,31,45').split(',').map(Number);
 const MAX_WIDTH = Number(process.env.MAX_WIDTH ?? 3600);
 const TAG = process.env.TAG ?? WORKFLOW;
+const [VW, VH] = (process.env.VIEWPORT ?? '1600x1000').split('x').map(Number);
 const TERMINAL = new Set(['completed', 'failed', 'skipped', 'cancelled', 'timeout']);
 
 const api = await pwRequest.newContext({ baseURL: API });
@@ -62,7 +66,7 @@ async function truth() {
 }
 
 const browser = await chromium.launch();
-const page = await (await browser.newContext({ viewport: { width: 1600, height: 1000 } })).newPage();
+const page = await (await browser.newContext({ viewport: { width: VW, height: VH } })).newPage();
 const consoleErrors = [];
 page.on('pageerror', (e) => consoleErrors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -112,15 +116,27 @@ function readPage() {
     };
     const rf = document.querySelector('.react-flow');
     let covered = null;
+    const outside = [];
+    let zoom = null;
     if (rf) {
       const r = rf.getBoundingClientRect();
+      for (const el of document.querySelectorAll('.react-flow__node')) {
+        const b = el.getBoundingClientRect();
+        if (b.left < r.left - 1 || b.right > r.right + 1 || b.top < r.top - 1 || b.bottom > r.bottom + 1) {
+          const card = el.querySelector('[data-name]');
+          outside.push(card?.getAttribute('data-name') ?? el.getAttribute('data-id'));
+        }
+      }
+      const vp = document.querySelector('.react-flow__viewport');
+      const zm = /scale\(\s*([\d.]+)\s*\)/.exec(vp?.style.transform ?? '');
+      zoom = zm ? Number(zm[1]) : null;
       const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
       if (hit && !rf.contains(hit)) {
         const over = hit.closest('[role="dialog"], aside, section') ?? hit;
         covered = (over.innerText ?? over.tagName).split('\n')[0].slice(0, 40);
       }
     }
-    return { cards, edges, stages: frac('Stages'), agents: frac('Agents'), covered };
+    return { cards, edges, stages: frac('Stages'), agents: frac('Agents'), covered, outside, zoom };
   });
 }
 
@@ -204,6 +220,15 @@ while (true) {
 
   if (view.covered) fail('covered', `canvas covered by "${view.covered}"`);
 
+  // fits (one sample of grace: the fit waits 120ms, then animates 300ms)
+  if (view.outside.length) {
+    const key = 'fits';
+    if (prevBad.has(key)) {
+      fail('fits', `${view.outside.length} card(s) outside the canvas at zoom ${view.zoom}: ${view.outside.slice(0, 4).join(', ')}`);
+    }
+    bad.add(key);
+  }
+
   // width
   const xs = view.cards.filter((c) => Number.isFinite(c.x));
   if (xs.length) {
@@ -215,7 +240,8 @@ while (true) {
   const running = view.cards.filter((c) => c.status === 'running').map((c) => c.name);
   console.log(`@${t.toFixed(1)}s api=${api1.status} nodes=${api1.nodes.size} cards=${view.cards.length} edges=${view.edges.length}`
     + ` stages=${view.stages ? `${view.stages.done}/${view.stages.total}` : '-'}`
-    + ` agents=${view.agents ? `${view.agents.done}/${view.agents.total}` : '-'} running=[${running.join(',')}]`);
+    + ` agents=${view.agents ? `${view.agents.done}/${view.agents.total}` : '-'} zoom=${view.zoom?.toFixed(2) ?? '-'}`
+    + ` running=[${running.join(',')}]`);
 
   while (shotsLeft.length && t >= shotsLeft[0]) {
     await page.screenshot({ path: `/tmp/live_${TAG}_${shotsLeft.shift()}s.png` });
@@ -233,7 +259,7 @@ if (drops.length) console.log(`blink: ${drops.length} frames where edges dropped
 if (consoleErrors.length) fail('console', consoleErrors.slice(0, 3).join(' | '));
 
 console.log(`\nrun ${lastApi.status}, ${lastApi.nodes.size} nodes, ${lastApi.agents} agents`);
-for (const check of ['status', 'present', 'edges', 'blink', 'counts', 'width', 'covered', 'console']) {
+for (const check of ['status', 'present', 'edges', 'blink', 'counts', 'width', 'covered', 'fits', 'console']) {
   const list = failures.get(check);
   console.log(`${list ? 'FAIL' : 'ok  '} ${check}${list ? `\n       ${list.join('\n       ')}` : ''}`);
 }

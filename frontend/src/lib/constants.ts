@@ -80,11 +80,13 @@ export const WS_MAX_DELAY_MS = 30000;
  *  (a dropped network does not always produce an onclose event). */
 export const WS_STALE_AFTER_MS = 75000;
 
-/** Floor for fit-to-view. A 22-node fan-out fits at 20% zoom, where cards
- *  are 57px wide and their text renders at about 3px — technically visible,
- *  unreadable in practice. Below this the graph is shown at a legible size
- *  and the user pans instead. */
-export const DAG_FIT_MIN_ZOOM = 0.45;
+/** Floor for fit-to-view, and the furthest a user can zoom out. Fit shows
+ *  the whole graph however wide it gets: the owner would rather see all of
+ *  it at once and zoom in than find parts cut off at both ends. The cost is
+ *  known: a 22-node fan-out fits at about 20%, where card text is about 3px.
+ *  (It was 0.45 from 4fa493de until 2026-09-24, which kept text legible
+ *  and left the user to pan.) */
+export const DAG_FIT_MIN_ZOOM = 0.1;
 export const WS_BACKOFF_MULTIPLIER = 2;
 export const WS_MAX_RECONNECT_ATTEMPTS = 20;
 

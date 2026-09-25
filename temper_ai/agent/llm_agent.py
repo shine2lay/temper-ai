@@ -20,6 +20,7 @@ from typing import Any
 from temper_ai.agent.base import AgentABC
 from temper_ai.agent.exceptions import ToolsNotRegisteredError
 from temper_ai.llm.context import DEFAULT_CONTEXT_POLICY
+from temper_ai.llm.fallback import parse_fallback
 from temper_ai.llm.models import CallContext, LLMRunResult
 from temper_ai.llm.prompt_renderer import PromptRenderer
 from temper_ai.llm.service import (
@@ -53,6 +54,10 @@ class LLMAgent(AgentABC):
         # workflow fail on an install without an OpenAI key.
         self.provider = config.get("provider") or None
         self.model = config.get("model") or None
+        # Where a call goes when this agent's model is out of capacity
+        # (temper_ai.llm.fallback). A malformed list fails here, before any
+        # call is made, rather than on the day a limit is finally hit.
+        self.fallbacks = parse_fallback(config.get("fallback"))
         self.max_iterations = config.get("max_iterations", 10)
         # Default to None (no budget enforcement) rather than 8000. The 8000
         # default was silently truncating LLM inputs to ~1000 chars per field
@@ -291,6 +296,10 @@ class LLMAgent(AgentABC):
             # (default 3). An agent whose reply must leave a committed worktree
             # sets this higher: it needs turns to test and commit, not just to answer.
             wrap_up_turns=int(self.config.get("wrap_up_turns", WRAP_UP_TURNS)),
+            fallbacks=self.fallbacks,
+            # A fallback names its provider; an unconfigured one raises KeyError,
+            # and the service passes that entry over.
+            resolve_llm=context.get_llm,
         )
 
     def _build_call_context(

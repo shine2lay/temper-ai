@@ -49,6 +49,8 @@ agent:
   token_budget: 8000        # Prompt token budget
   max_context_tokens: 100000 # Window the tool-calling loop must stay under
   context_policy: compress  # What happens at the window: compress (default) | truncate
+  fallback:                 # Where calls go when the model is out of capacity
+    - claude-sonnet-5
   tools: [Bash, FileWriter] # see tools/
   memory:
     enabled: true
@@ -128,6 +130,75 @@ window, claude-haiku-4-5): `compress` finished in 6 iterations with one
 model-written summary and nothing hidden by the harness, 56K tokens total;
 all four answers correct, two of them from the model's own summary after the
 raw content was gone.
+
+## Fallback
+
+When the agent's model is out of capacity, the call goes to the next entry
+of `fallback`, and so on down the list. An entry is a model name, which
+stays on the agent's provider, or a mapping that can change the provider
+and its settings:
+
+```yaml
+agent:
+  provider: anthropic
+  model: claude-opus-5-5
+  provider_config: {effort: max}
+  fallback:
+    - claude-sonnet-5              # same provider; provider_config still applies
+    - provider: openai             # another provider; its own settings only
+      model: gpt-5.6-luna
+      provider_config: {effort: medium}
+```
+
+**What counts as out of capacity:**
+- a 429 (rate or usage limit);
+- a 529 (Anthropic overloaded);
+- Anthropic's 400 for an API account out of credit;
+- a token pool with every subscription cooling;
+- the same failures when a provider reports them as text, e.g. the Codex
+  transport's `HTTP 429`.
+
+Anything else is raised as before: a bad request, an auth failure or a
+timeout would fail the same way on the next model, or is a fault worth
+seeing. With no list, a limit fails the call as it always did.
+
+**What moves with the call:**
+- The whole transcript and the tools go to the new model.
+- On the agent's own provider, the agent's `provider_config` still applies,
+  with the entry's laid over it key by key.
+- On another provider only the entry's `provider_config` is sent. The
+  agent's was written for a provider it is no longer talking to.
+- An entry without `model` uses that provider's default model.
+
+**Which entries are passed over.** An entry is skipped, and the skip
+recorded with its reason, when:
+- its provider isn't configured on this server;
+- the agent has tools and the provider can't offer them;
+- it names the model already in use.
+
+**How long a move lasts.** For the rest of the run, not the turn. Switching
+back would throw away the new model's warm prompt cache, and the limit
+behind the move resets in hours or days. The agent's next run starts on its
+own model again.
+
+**Where a pooled provider fits.** Its own rollover comes first: an Anthropic
+call that is rate limited moves to the next pooled subscription. The list
+takes over when that has run out, which in practice means one model
+family's weekly allowance spent on every account at once. A provider
+without a pool retries a 429 itself a few times (a few seconds) before the
+list is used.
+
+**The record.** Each move is an `llm.fallback` event carrying `from`, `to`,
+`reason`, `skipped` and `remaining`. When the list runs out, the event has
+status `failed` and `to: null`, and the last limit is raised. The failed
+call's `llm.call.failed` names the model that failed. Each
+`llm.call.started` names the model actually asked.
+
+A workflow can give every agent the same list with `defaults: {fallback:
+[...]}`. An agent's own `fallback` replaces it. Agents that call no LLM
+(Jev, script) aren't given it. A malformed list fails when the agent is
+loaded, e.g. `fallback[0] has unknown key(s) modle; allowed: provider,
+model, provider_config`, not on the day a limit is finally hit.
 
 ## Related
 

@@ -48,6 +48,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _env(name: str, default: str) -> str:
+    """An environment setting, with an empty value read as unset.
+
+    docker-compose passes `OPENAI_MODEL: ${OPENAI_MODEL:-}`, which sets the
+    variable to "" when the host leaves it out, and os.environ.get(name,
+    default) then returns "" rather than the default: every call that named
+    no model of its own -- a fallback entry that names only a provider, say --
+    was sent model "" and refused.
+    """
+    return os.environ.get(name) or default
+
+
 def _init_llm_providers() -> dict:
     """Initialize LLM providers from environment.
 
@@ -68,8 +80,8 @@ def _init_llm_providers() -> dict:
             from temper_ai.llm.providers.openai_codex import DEFAULT_CODEX_MODEL
             default_model = DEFAULT_CODEX_MODEL if openai_mode == "oauth" else "gpt-4o-mini"
             return OpenAILLM(
-                model=os.environ.get("OPENAI_MODEL", default_model),
-                base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                model=_env("OPENAI_MODEL", default_model),
+                base_url=_env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
                 api_key=openai_key,
             )
         _try_init_provider(providers, "openai", _make_openai, f"OpenAI provider initialized (auth mode: {openai_mode})")
@@ -78,14 +90,14 @@ def _init_llm_providers() -> dict:
     if vllm_url:
         def _make_vllm():
             from temper_ai.llm.providers.vllm import VllmLLM
-            return VllmLLM(model=os.environ.get("VLLM_MODEL", "default"), base_url=vllm_url)
+            return VllmLLM(model=_env("VLLM_MODEL", "default"), base_url=vllm_url)
         _try_init_provider(providers, "vllm", _make_vllm, f"vLLM provider initialized at {vllm_url}")
 
     ollama_url = os.environ.get("OLLAMA_BASE_URL")
     if ollama_url:
         def _make_ollama():
             from temper_ai.llm.providers.ollama import OllamaLLM
-            return OllamaLLM(model=os.environ.get("OLLAMA_MODEL", "llama3.2"), base_url=ollama_url)
+            return OllamaLLM(model=_env("OLLAMA_MODEL", "llama3.2"), base_url=ollama_url)
         _try_init_provider(providers, "ollama", _make_ollama, f"Ollama provider initialized at {ollama_url}")
 
     # Either an API key or an OAuth token brings the provider up; the provider
@@ -102,7 +114,7 @@ def _init_llm_providers() -> dict:
             # for siblings" -- which switches off the multi-subscription pool. So
             # forwarding it here quietly disabled pooling everywhere it matters:
             # the server is the only thing that builds the production provider.
-            return AnthropicLLM(model=os.environ.get("ANTHROPIC_MODEL", DEFAULT_MODEL))
+            return AnthropicLLM(model=_env("ANTHROPIC_MODEL", DEFAULT_MODEL))
         _try_init_provider(
             providers, "anthropic", _make_anthropic,
             f"Anthropic provider initialized (auth mode: {anthropic_mode})",
@@ -113,7 +125,7 @@ def _init_llm_providers() -> dict:
         def _make_gemini():
             from temper_ai.llm.providers.gemini import GeminiLLM
             return GeminiLLM(
-                model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+                model=_env("GEMINI_MODEL", "gemini-2.5-flash"),
                 api_key=gemini_key,
             )
         _try_init_provider(providers, "gemini", _make_gemini, "Gemini provider initialized")

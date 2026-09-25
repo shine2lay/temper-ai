@@ -7,6 +7,7 @@ Records events at every level: LLM calls, tool calls, and iteration summaries.
 import json
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 
 from temper_ai.llm.context import (
@@ -18,6 +19,7 @@ from temper_ai.llm.context import (
 from temper_ai.llm.context import (
     estimate_messages_tokens as _estimate_messages_tokens,
 )
+from temper_ai.llm.fallback import FallbackTarget, is_capacity_error
 from temper_ai.llm.models import CallContext, LLMResponse, LLMRunResult
 from temper_ai.llm.pricing import estimate_cost
 from temper_ai.llm.provider_tools import make_provider_tool_recorder
@@ -68,12 +70,25 @@ class LLMService:
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
         context_policy: str = DEFAULT_CONTEXT_POLICY,
         wrap_up_turns: int = WRAP_UP_TURNS,
+        fallbacks: list[FallbackTarget] | None = None,
+        resolve_llm: Callable[[str], BaseLLM] | None = None,
     ) -> None:
         if context_policy not in CONTEXT_POLICIES:
             raise ValueError(
                 f"context_policy must be one of {', '.join(CONTEXT_POLICIES)}, not {context_policy!r}"
             )
         self.provider = provider
+        # The agent's own provider, which `provider` returns to at the start of
+        # every run: a fallback lasts for the run it was needed in.
+        self._own_provider = provider
+        # Where a call goes when the model in use is out of capacity, in order
+        # (see temper_ai.llm.fallback). `resolve_llm` turns a provider name into
+        # the configured provider; without it only the agent's own provider can
+        # be fallen back to.
+        self.fallbacks = list(fallbacks or [])
+        self._resolve_llm = resolve_llm
+        self._active_fallback: FallbackTarget | None = None
+        self._fallback_queue: list[FallbackTarget] = []
         self.max_iterations = max_iterations
         # How many LLM turns before the cap the model is told to wrap up. Three
         # is enough for a reader to answer from what it has; an agent that must
@@ -124,6 +139,9 @@ class LLMService:
         self._run_start = time.monotonic()
         self._budget_check = budget_check
         self._usage_tracker = None
+        self.provider = self._own_provider
+        self._active_fallback = None
+        self._fallback_queue = list(self.fallbacks)
 
         for iteration in range(1, self.max_iterations + 1):
             # Check budget before each LLM call
@@ -203,9 +221,20 @@ class LLMService:
              the full input rate — over-estimates when cache hits are common,
              but is the best we can do when the provider doesn't report cost.
         """
-        event_id = self._record_llm_started(iteration)
+        while True:
+            event_id = self._record_llm_started(iteration)
+            try:
+                response = self._invoke_provider(llm_event_id=event_id)
+            except Exception as e:  # noqa: BLE001
+                self._record_llm_failed(iteration, e)
+                if is_capacity_error(e) and self._fall_back(e):
+                    continue  # the same call, to the next model on the list
+                raise
+            return self._account_for(event_id, response, iteration)
+
+    def _account_for(self, event_id: str, response: LLMResponse, iteration: int) -> tuple[str, LLMResponse, float]:
+        """Price a completed call and record it. Returns (event_id, response, cost)."""
         try:
-            response = self._invoke_provider(llm_event_id=event_id)
             raw = response.raw_response or {}
             provider_cost = raw.get("total_cost_usd")
             def estimate() -> float:
@@ -260,8 +289,9 @@ class LLMService:
             kwargs["tools"] = self._tools
         if self._ctx.cwd:
             kwargs["cwd"] = self._ctx.cwd
-        if self._ctx.model:
-            kwargs["model"] = self._ctx.model
+        model = self._requested_model()
+        if model:
+            kwargs["model"] = model
         if self._ctx.session_id:
             kwargs["session_id"] = self._ctx.session_id
         # Forward (execution_id, agent_name) for provider-side token-pool
@@ -277,9 +307,8 @@ class LLMService:
         # Forward any provider-specific config from the agent YAML. Opaque to
         # the service — each provider reads whichever keys it understands and
         # ignores the rest. Named kwargs above win on collision.
-        if self._ctx.provider_config:
-            for key, value in self._ctx.provider_config.items():
-                kwargs.setdefault(key, value)
+        for key, value in self._provider_config().items():
+            kwargs.setdefault(key, value)
         # A provider that executes tools itself (Claude Code runs Bash,
         # WebSearch and every MCP server it is given inside its own process)
         # reports each one through this callback, and it lands in the event
@@ -297,6 +326,95 @@ class LLMService:
         if self._stream_callback:
             return self.provider.stream(wire, on_chunk=self._stream_callback, **kwargs)
         return self.provider.complete(wire, **kwargs)
+
+    # -- fallback -----------------------------------------------------------
+
+    def _requested_model(self) -> str | None:
+        """The model this call asks for; None leaves it to the provider's default.
+
+        On a fallback it is the entry's model, never the agent's: the agent's
+        model is the one that just ran out, and on another provider it would
+        not even exist.
+        """
+        if self._active_fallback is not None:
+            return self._active_fallback.model
+        return self._ctx.model
+
+    def _model_in_use(self) -> str:
+        return self._requested_model() or self.provider.model
+
+    def _provider_config(self) -> dict[str, Any]:
+        """The provider_config for this call.
+
+        On the agent's own provider it is the agent's, with the active
+        fallback's laid over it. On another provider it is the fallback's
+        alone: the agent's was written for a provider it is no longer
+        talking to, and a key both understand -- `effort`, say -- need not
+        mean the same thing to both.
+        """
+        fallback = self._active_fallback
+        config: dict[str, Any] = {}
+        if self.provider is self._own_provider:
+            config.update(self._ctx.provider_config or {})
+        if fallback is not None and fallback.provider_config:
+            config.update(fallback.provider_config)
+        return config
+
+    def _fall_back(self, exc: Exception) -> bool:
+        """Move to the next usable entry of the fallback list. False when none is left.
+
+        An entry is passed over when its provider is not configured here, or
+        when the agent works with tools and the provider cannot offer them --
+        running on would "succeed" without doing the work -- or when it names
+        the model already in use. The move lasts for the rest of this run:
+        switching back would cost the new model's warm prompt cache, and the
+        limit that caused it resets in hours or days, not between turns.
+        """
+        was = {"provider": self.provider.provider_name, "model": self._model_in_use()}
+        skipped: list[dict[str, str]] = []
+        while self._fallback_queue:
+            target = self._fallback_queue.pop(0)
+            label = target.describe(self._own_provider.provider_name)
+            try:
+                llm = self._own_provider if target.provider is None else self._resolve(target.provider)
+            except KeyError as missing:
+                skipped.append({"fallback": label, "reason": f"provider not configured: {missing}"})
+                continue
+            if self._tools and not getattr(llm, "SUPPORTS_TOOLS", True):
+                skipped.append({"fallback": label, "reason": "provider cannot offer tools"})
+                continue
+            if llm is self.provider and (target.model or llm.model) == was["model"]:
+                skipped.append({"fallback": label, "reason": "already in use"})
+                continue
+            self.provider, self._active_fallback = llm, target
+            now = {"provider": llm.provider_name, "model": self._model_in_use()}
+            logger.warning("'%s': %s/%s is out of capacity, falling back to %s/%s: %s",
+                           self._ctx.agent_name, was["provider"], was["model"],
+                           now["provider"], now["model"], str(exc)[:200])
+            self._record_fallback(was, now, exc, skipped)
+            return True
+        logger.error("'%s': %s/%s is out of capacity and no fallback is left%s",
+                     self._ctx.agent_name, was["provider"], was["model"],
+                     f" ({len(skipped)} passed over)" if skipped else "")
+        if self.fallbacks:
+            self._record_fallback(was, None, exc, skipped)
+        return False
+
+    def _resolve(self, provider_name: str) -> BaseLLM:
+        if self._resolve_llm is None:
+            raise KeyError(provider_name)
+        return self._resolve_llm(provider_name)
+
+    def _record_fallback(self, was: dict, now: dict | None, exc: Exception,
+                         skipped: list[dict[str, str]]) -> None:
+        self._record(
+            EventType.LLM_FALLBACK, parent_id=self._ctx.agent_event_id,
+            execution_id=self._ctx.execution_id,
+            status="completed" if now else "failed",
+            data={"agent_name": self._ctx.agent_name, "node_path": self._ctx.node_path,
+                  "iteration": self._iteration, "from": was, "to": now,
+                  "reason": str(exc)[:500], "error_type": type(exc).__name__,
+                  "skipped": skipped, "remaining": len(self._fallback_queue)})
 
     def _is_context_tool(self, name: str) -> bool:
         return self._compressor is not None and self._compressor.handles(name)
@@ -374,7 +492,7 @@ class LLMService:
             EventType.LLM_CALL_STARTED, parent_id=self._ctx.agent_event_id,
             execution_id=self._ctx.execution_id, status="running",
             data={"agent_name": self._ctx.agent_name, "node_path": self._ctx.node_path,
-                  "model": self.provider.model, "provider": self.provider.provider_name,
+                  "model": self._model_in_use(), "provider": self.provider.provider_name,
                   "temperature": self.provider.temperature, "max_tokens": self.provider.max_tokens,
                   "iteration": iteration, "message_count": len(self._messages),
                   "messages": self._messages,
@@ -419,7 +537,7 @@ class LLMService:
         self._record(
             EventType.LLM_CALL_FAILED, parent_id=self._ctx.agent_event_id,
             execution_id=self._ctx.execution_id, status="failed",
-            data={"model": self.provider.model, "provider": self.provider.provider_name,
+            data={"model": self._model_in_use(), "provider": self.provider.provider_name,
                   "iteration": iteration, "error_type": type(exc).__name__,
                   "error": str(exc)[:500], "agent_name": self._ctx.agent_name})
 

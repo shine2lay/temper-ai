@@ -12,6 +12,7 @@ from temper_ai.agent.llm_agent import (
     _truncate_input_data,
 )
 from temper_ai.llm.context import DEFAULT_CONTEXT_POLICY
+from temper_ai.llm.fallback import FallbackTarget
 from temper_ai.llm.models import LLMRunResult
 from temper_ai.llm.service import (
     DEFAULT_MAX_CONTEXT_TOKENS,
@@ -172,7 +173,29 @@ class TestLLMAgentRun:
             max_context_tokens=DEFAULT_MAX_CONTEXT_TOKENS,
             context_policy=DEFAULT_CONTEXT_POLICY,
             wrap_up_turns=WRAP_UP_TURNS,
+            fallbacks=[],
+            resolve_llm=ctx.get_llm,
         )
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_the_fallback_list_reaches_the_service(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.return_value = LLMRunResult(output="ok", tokens=0, iterations=1)
+
+        agent = _make_agent({"provider": "vllm", "fallback": [
+            "qwen3-small", {"provider": "openai", "model": "gpt-5.6-luna"}]})
+        ctx = _make_context(llm_providers={"vllm": MagicMock()})
+        agent.run({"task": "x"}, ctx)
+
+        assert MockLLMService.call_args.kwargs["fallbacks"] == [
+            FallbackTarget(model="qwen3-small"),
+            FallbackTarget(provider="openai", model="gpt-5.6-luna"),
+        ]
+
+    def test_a_malformed_fallback_list_fails_when_the_agent_is_loaded(self):
+        """Not on the day a limit is finally hit."""
+        with pytest.raises(ValueError, match=r"fallback\[0\] has unknown key\(s\) modle"):
+            _make_agent({"provider": "vllm", "fallback": [{"modle": "x"}]})
 
     @patch("temper_ai.agent.llm_agent.LLMService")
     def test_context_policy_is_the_agents_choice(self, MockLLMService):

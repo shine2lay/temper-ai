@@ -67,6 +67,17 @@ def test_one_subscription_needs_no_pool(monkeypatch):
     assert llm.api_key == TOKEN_A, "and it still uses the one token there is"
 
 
+def test_an_empty_model_variable_means_the_default_model(monkeypatch):
+    """docker-compose passes `ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}`, so the variable is
+    present but empty whenever the host leaves it out. Read as a model name, every call
+    that named none of its own -- a fallback entry naming only a provider -- went out
+    with model "" and was refused."""
+    from temper_ai.llm.providers.anthropic import DEFAULT_MODEL
+
+    llm = _build(monkeypatch, CLAUDE_CODE_OAUTH_TOKEN=TOKEN_A)  # ANTHROPIC_MODEL=""
+    assert llm is not None and llm.model == DEFAULT_MODEL
+
+
 def test_an_api_key_still_wins_and_does_not_pool_oauth(monkeypatch):
     """API key is the provider's native credential and takes precedence; OAuth pooling is
     for subscriptions, so a key-mode provider must not quietly start spending them."""

@@ -449,6 +449,24 @@ class TestGraphLoaderDefaults:
         assert stage.child_nodes[1].agent_config["provider"] == "openai"
         assert stage.child_nodes[1].agent_config["temperature"] == 0.7
 
+    def test_a_workflow_fallback_list_reaches_llm_agents_only(self):
+        store = _mock_config_store({
+            "workflow:test": {
+                "name": "test",
+                "defaults": {"fallback": ["claude-sonnet-5"]},
+                "nodes": [
+                    {"name": "a", "type": "agent", "agent": "agents/a"},
+                    {"name": "j", "type": "agent", "agent": "agents/j"},
+                ],
+            },
+            "agent:a": {"name": "a", "type": "llm"},
+            "agent:j": {"name": "j", "type": "jev", "model": "typesafe"},
+        })
+        nodes, _ = GraphLoader(store).load_workflow("test")
+
+        assert nodes[0].agent_config["fallback"] == ["claude-sonnet-5"]
+        assert "fallback" not in nodes[1].agent_config
+
     def test_no_defaults_works(self):
         store = _mock_config_store({
             "workflow:test": {

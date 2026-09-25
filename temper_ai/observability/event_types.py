@@ -35,6 +35,9 @@ class EventType(StrEnum):
     LLM_MAX_ITERATIONS = "llm.max_iterations"
     LLM_NO_EXECUTOR = "llm.no_executor"
     LLM_RETRY = "llm.retry"
+    # A model out of capacity handed the call to the next entry of the agent's
+    # fallback list (temper_ai.llm.fallback); status failed when none was left.
+    LLM_FALLBACK = "llm.fallback"
 
     # Tool calls (from LLM service layer)
     TOOL_CALL_STARTED = "tool.call.started"

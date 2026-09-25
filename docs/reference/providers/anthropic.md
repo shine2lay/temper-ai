@@ -37,6 +37,11 @@ is retried on another; the sticky agent then loses its warm cache, which is
 why failover is a fallback and not the normal path. See
 ``temper_ai.llm.token_pool``.
 
+A call can instead name its token (``token: wai2shine``, by the account set in
+``<VARIABLE>_ACCOUNT`` or by the variable itself). It then goes out on that
+token only: a limit there is not retried on another account but raised as
+``TokenCooling``, and the agent's fallback list says where to go next.
+
 Anthropic treats a bare bearer request from a third-party client
 differently from one that identifies as its own tooling. What identification
 to send — if any — is a policy decision that does not belong in this file.

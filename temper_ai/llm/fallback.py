@@ -20,6 +20,22 @@ for when that has run out -- in practice the weekly allowance of one model
 family spent on every account at once, which a rollover between accounts
 cannot fix and which, before this, failed the node.
 
+An entry -- and the agent itself -- can also name the token it goes out on,
+which takes the rotation out of it: the list then says which account is spent
+in which order.
+
+    agent:
+      model: claude-opus-5-5
+      token: aungshine                 # this account and no other
+      fallback:
+        - {model: claude-opus-5-5, token: wai2shine}
+        - claude-sonnet-5              # no token: any account, as the pool picks
+
+A token is named by its account (`CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT=wai2shine`
+in the environment) or by the variable that holds it; never by the token
+itself. An entry does not inherit the agent's token: one without a `token`
+rotates across the pool.
+
 Only a capacity failure moves down the list. A bad request, an auth failure or
 a timeout would fail the same way on the next model, or is a fault worth
 seeing, so it is raised as before.
@@ -27,6 +43,7 @@ seeing, so it is raised as before.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -57,31 +74,61 @@ _CAPACITY_TEXT = (
     "http 529",
 )
 
-_ENTRY_KEYS = frozenset({"provider", "model", "provider_config"})
+_ENTRY_KEYS = frozenset({"provider", "model", "provider_config", "token"})
+
+# What a token's name may look like: an account ("wai2shine", an email) or an
+# environment variable. A credential is longer than this and fails it.
+_TOKEN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@+-]{0,63}")
+
+
+def parse_token(raw: Any, where: str = "token") -> str | None:
+    """A `token:` setting as the name it gives, or ValueError saying what is wrong.
+
+    The value is never quoted back: the likeliest way to get it wrong is to
+    paste the credential itself (or `${VARIABLE}`, which the config loader
+    expands into one), and the error must not carry it into the event log.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError(f"{where} must be a token's name")
+    name = raw.strip()
+    if name.startswith("sk-") or not _TOKEN_NAME.fullmatch(name):
+        raise ValueError(
+            f"{where} must name the token -- its account, or the variable that holds it -- "
+            f"not be the token itself"
+        )
+    return name
 
 
 @dataclass(frozen=True)
 class FallbackTarget:
     """One entry of an agent's fallback list.
 
-    `provider` None is the agent's own provider; `model` None is the default
-    model of whichever provider that is. `provider_config` is laid over the
-    agent's own, key by key, so an entry states only what differs.
+    `provider` None is the agent's own provider; `model` None is the agent's
+    own model there -- an entry that names only a token is the same model on
+    another account -- and the default model of any other provider.
+    `provider_config` is laid over the
+    agent's own, key by key, so an entry states only what differs. `token`
+    None rotates across the provider's tokens; the agent's is not inherited.
     """
 
     provider: str | None = None
     model: str | None = None
     provider_config: dict[str, Any] | None = None
+    token: str | None = None
 
     def describe(self, own_provider: str) -> str:
-        return f"{self.provider or own_provider}/{self.model or 'default model'}"
+        where = f"{self.provider or own_provider}/{self.model or 'default model'}"
+        return f"{where} on {self.token}" if self.token else where
 
 
 def parse_fallback(raw: Any) -> list[FallbackTarget]:
     """An agent's `fallback:` setting as targets, or ValueError saying what is wrong.
 
     Each entry is a model name (same provider) or a mapping of `provider`,
-    `model` and `provider_config`, of which `provider` or `model` must be given.
+    `model`, `provider_config` and `token`, of which `provider`, `model` or
+    `token` must be given.
     """
     if raw is None:
         return []
@@ -103,21 +150,23 @@ def parse_fallback(raw: Any) -> list[FallbackTarget]:
         if unknown:
             raise ValueError(
                 f"{where} has unknown key(s) {', '.join(unknown)}; "
-                f"allowed: provider, model, provider_config"
+                f"allowed: provider, model, provider_config, token"
             )
         provider, model = entry.get("provider"), entry.get("model")
         config = entry.get("provider_config")
         for key, value in (("provider", provider), ("model", model)):
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{where}.{key} must be a non-empty string")
-        if not provider and not model:
-            raise ValueError(f"{where} names neither a provider nor a model")
+        token = parse_token(entry.get("token"), f"{where}.token")
+        if not provider and not model and not token:
+            raise ValueError(f"{where} names no provider, model or token")
         if config is not None and not isinstance(config, dict):
             raise ValueError(f"{where}.provider_config must be a mapping")
         targets.append(FallbackTarget(
             provider=provider.strip() if provider else None,
             model=model.strip() if model else None,
             provider_config=dict(config) if config else None,
+            token=token,
         ))
     return targets
 

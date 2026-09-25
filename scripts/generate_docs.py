@@ -681,13 +681,45 @@ seeing. With no list, a limit fails the call as it always did.
   with the entry's laid over it key by key.
 - On another provider only the entry's `provider_config` is sent. The
   agent's was written for a provider it is no longer talking to.
-- An entry without `model` uses that provider's default model.
+- An entry without `model` uses the agent's model on the agent's own
+  provider, and the provider's default model on any other.
+
+**Naming the token.** The agent and each entry can name the token their
+calls go out on. The calls then use that token and no other: a limit on it
+goes straight to the next entry, rather than to another account. The list
+then decides which account is spent, and in what order:
+
+```yaml
+agent:
+  provider: anthropic
+  model: claude-opus-5-5
+  token: aungshine                 # this account only
+  fallback:
+    - token: wai2shine             # the same model on another account
+    - {model: claude-opus-5-5, token: shinelay}
+    - claude-sonnet-5              # no token: any account, as the pool picks
+```
+
+- A token is named by its account, set beside it in the environment
+  (`CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT=wai2shine`), or by the name of the
+  variable that holds it (`CLAUDE_CODE_OAUTH_TOKEN_2`). It is never
+  written into the config itself; a value that looks like a credential is
+  refused.
+- An entry doesn't inherit the agent's token. Without one it rotates across
+  the pool as usual.
+- A name that no token has fails the run before its first call, listing
+  the names there are.
+- Only the Anthropic provider has named tokens today. A `token` on any
+  other provider fails the same way.
+- The pool still hears about a limit on a named token, so the calls that
+  rotate stop landing on it too.
 
 **Which entries are passed over.** An entry is skipped, and the skip
 recorded with its reason, when:
 - its provider isn't configured on this server;
 - the agent has tools and the provider can't offer them;
-- it names the model already in use.
+- it names the model and token already in use;
+- its token is already known to be rate limited for its model.
 
 **How long a move lasts.** For the rest of the run, not the turn. Switching
 back would throw away the new model's warm prompt cache, and the limit
@@ -702,16 +734,19 @@ without a pool retries a 429 itself a few times (a few seconds) before the
 list is used.
 
 **The record.** Each move is an `llm.fallback` event carrying `from`, `to`,
-`reason`, `skipped` and `remaining`. When the list runs out, the event has
-status `failed` and `to: null`, and the last limit is raised. The failed
-call's `llm.call.failed` names the model that failed. Each
-`llm.call.started` names the model actually asked.
+`reason`, `skipped` and `remaining`; `from` and `to` name the token when
+there is one. When the list runs out, the event has status `failed` and
+`to: null`, and the last limit is raised. The failed call's
+`llm.call.failed` names the model (and token) that failed. Each
+`llm.call.started` names the model actually asked, and the token it was
+pinned to.
 
 A workflow can give every agent the same list with `defaults: {fallback:
-[...]}`. An agent's own `fallback` replaces it. Agents that call no LLM
-(Jev, script) aren't given it. A malformed list fails when the agent is
+[...]}`, or put them all on one account with `defaults: {token: ...}`. An
+agent's own setting replaces the workflow's. Agents that call no LLM (Jev,
+script) aren't given either. A malformed list fails when the agent is
 loaded, e.g. `fallback[0] has unknown key(s) modle; allowed: provider,
-model, provider_config`, not on the day a limit is finally hit.
+model, provider_config, token`, not on the day a limit is finally hit.
 """
 
 
@@ -788,8 +823,10 @@ class AgentsSection(DocSection):
             lines.append("  token_budget: 8000        # Prompt token budget")
             lines.append("  max_context_tokens: 100000 # Window the tool-calling loop must stay under")
             lines.append("  context_policy: compress  # What happens at the window: compress (default) | truncate")
+            lines.append("  token: aungshine          # Pin calls to one account (Anthropic); default rotates")
             lines.append("  fallback:                 # Where calls go when the model is out of capacity")
             lines.append("    - claude-sonnet-5")
+            lines.append("    - {model: claude-opus-5-5, token: wai2shine}")
             lines.append("  tools: [Bash, FileWriter] # see tools/")
             lines.append("  memory:")
             lines.append("    enabled: true")

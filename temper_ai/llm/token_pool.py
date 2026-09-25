@@ -27,6 +27,17 @@ mistake is cheap by comparison: a limit that really is account-wide (the
 shared five-hour window) costs one rejected request per family before that
 family is cooled too.
 
+A token can also be asked for by name, which takes it out of the rotation for
+that call: an agent or a fallback entry that says `token: wai2shine` goes out
+on that account and no other (see temper_ai.llm.fallback). The name is the
+account's, set beside the token in the environment --
+
+    CLAUDE_CODE_OAUTH_TOKEN_2=sk-ant-oat01-...
+    CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT=wai2shine
+
+-- or the variable's own name when no account is given. The account name also
+stands in for "slot 2" in what the pool logs.
+
 The Claude Code CLI provider (local/providers/claude_code.py) grew this
 first, for the same reasons; this is that design made provider-agnostic so
 the direct-API providers can have it too.
@@ -73,15 +84,46 @@ def model_family(model: str | None) -> str:
     return next((f for f in KNOWN_FAMILIES if f in lowered), lowered)
 
 
-def tokens_from_env(base: str, extra_suffixes: tuple[str, ...] = ("BACKUP",), limit: int = 10) -> list[str]:
+# Beside a token's variable, the account it belongs to: CLAUDE_CODE_OAUTH_TOKEN_2
+# is named by CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT. Not a secret.
+ACCOUNT_SUFFIX = "_ACCOUNT"
+
+
+@dataclass(frozen=True)
+class NamedToken:
+    """One configured token: the variable it came from and the account it is."""
+
+    variable: str
+    token: str
+    account: str | None = None
+
+    @property
+    def label(self) -> str:
+        """What logs and events call it. Never the token."""
+        return self.account or self.variable
+
+
+def named_tokens_from_env(base: str, extra_suffixes: tuple[str, ...] = ("BACKUP",),
+                          limit: int = 10) -> list[NamedToken]:
     """Every token configured under `base`: BASE, BASE_BACKUP, BASE_2..BASE_9.
 
-    Order is stable and duplicates are dropped, so the same env produces the
-    same slot for the same sticky key on every process start.
+    Order is stable and duplicates are dropped (the first variable holding a
+    token keeps it), so the same env produces the same slot for the same
+    sticky key on every process start.
     """
     names = [base, *[f"{base}_{s}" for s in extra_suffixes], *[f"{base}_{i}" for i in range(2, limit)]]
-    found = [(os.environ.get(n) or "").strip() for n in names]
-    return list(dict.fromkeys(t for t in found if t))
+    found: dict[str, NamedToken] = {}
+    for name in names:
+        token = (os.environ.get(name) or "").strip()
+        if token and token not in found:
+            account = (os.environ.get(name + ACCOUNT_SUFFIX) or "").strip() or None
+            found[token] = NamedToken(variable=name, token=token, account=account)
+    return list(found.values())
+
+
+def tokens_from_env(base: str, extra_suffixes: tuple[str, ...] = ("BACKUP",), limit: int = 10) -> list[str]:
+    """The tokens of `named_tokens_from_env`, without their names."""
+    return [n.token for n in named_tokens_from_env(base, extra_suffixes, limit)]
 
 
 def sticky_key_from_kwargs(kwargs: dict) -> str | None:
@@ -111,6 +153,23 @@ class PoolExhausted(RuntimeError):
         super().__init__(f"token pool exhausted — all {size} tokens cooling; soonest reset {when}")
 
 
+class TokenCooling(PoolExhausted):
+    """The one token a call was pinned to is out for this model.
+
+    A PoolExhausted because it means the same thing to the caller -- no
+    capacity here, go elsewhere -- only the pool it speaks for is one token.
+    """
+
+    def __init__(self, label: str, model: str | None, reset_at: float | None, detail: str = ""):
+        RuntimeError.__init__(
+            self,
+            f"token {label} is rate limited for {model_family(model)}"
+            f" until {_fmt(reset_at) if reset_at else 'unknown'}" + (f": {detail}" if detail else ""),
+        )
+        self.reset_at = reset_at
+        self.label = label
+
+
 def _fmt(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%d %H:%MZ")
 
@@ -121,6 +180,9 @@ class TokenPool:
 
     name: str
     tokens: list[str]
+    #: What each token is called in logs, by position (its account name). Slots
+    #: without one are called "slot N".
+    labels: list[str] = field(default_factory=list)
     #: (model family, token) -> when that pairing may be used again. Keyed by family
     #: because the weekly ceiling is; see the module docstring.
     _cooldown: dict[tuple[str, str], float] = field(default_factory=dict)
@@ -138,6 +200,19 @@ class TokenPool:
     def index_of(self, token: str) -> int:
         """Slot number, for logging. Never log the token itself."""
         return self.tokens.index(token) if token in self.tokens else -1
+
+    def label_of(self, token: str) -> str:
+        """The token's account name, or its slot number. Never the token itself."""
+        idx = self.index_of(token)
+        if 0 <= idx < len(self.labels) and self.labels[idx]:
+            return self.labels[idx]
+        return f"slot {idx}"
+
+    def cooling_until(self, token: str, model: str | None = None) -> float | None:
+        """When this token is usable for this model again; None when it is now."""
+        with self._lock:
+            until = self._blocked_until(token, model_family(model))
+        return until if until > time.time() else None
 
     def _blocked_until(self, token: str, family: str) -> float:
         """When this token is usable for this family again. Caller holds the lock.
@@ -183,7 +258,8 @@ class TokenPool:
             if preferred in available:
                 return preferred
             logger.warning(
-                "%s: sticky slot %d is cooling — failing over, prompt cache will be cold", self.name, idx,
+                "%s: sticky %s is cooling — failing over, prompt cache will be cold",
+                self.name, self.label_of(preferred),
             )
 
         if available:
@@ -208,8 +284,8 @@ class TokenPool:
         with self._lock:
             self._cooldown[(family, token)] = deadline
         logger.warning(
-            "%s: slot %d cooled for %s (%s) until %s — %d of %d still available for %s",
-            self.name, self.index_of(token), family, reason, _fmt(deadline),
+            "%s: %s cooled for %s (%s) until %s — %d of %d still available for %s",
+            self.name, self.label_of(token), family, reason, _fmt(deadline),
             len(self.available(model)), len(self.tokens), family,
         )
         return deadline

@@ -20,7 +20,7 @@ from typing import Any
 from temper_ai.agent.base import AgentABC
 from temper_ai.agent.exceptions import ToolsNotRegisteredError
 from temper_ai.llm.context import DEFAULT_CONTEXT_POLICY
-from temper_ai.llm.fallback import parse_fallback
+from temper_ai.llm.fallback import parse_fallback, parse_token
 from temper_ai.llm.models import CallContext, LLMRunResult
 from temper_ai.llm.prompt_renderer import PromptRenderer
 from temper_ai.llm.service import (
@@ -58,6 +58,9 @@ class LLMAgent(AgentABC):
         # (temper_ai.llm.fallback). A malformed list fails here, before any
         # call is made, rather than on the day a limit is finally hit.
         self.fallbacks = parse_fallback(config.get("fallback"))
+        # The one token this agent's calls go out on -- an account name, or
+        # the variable holding it -- instead of the provider's rotation.
+        self.token = parse_token(config.get("token"))
         self.max_iterations = config.get("max_iterations", 10)
         # Default to None (no budget enforcement) rather than 8000. The 8000
         # default was silently truncating LLM inputs to ~1000 chars per field
@@ -297,6 +300,7 @@ class LLMAgent(AgentABC):
             # sets this higher: it needs turns to test and commit, not just to answer.
             wrap_up_turns=int(self.config.get("wrap_up_turns", WRAP_UP_TURNS)),
             fallbacks=self.fallbacks,
+            token=self.token,
             # A fallback names its provider; an unconfigured one raises KeyError,
             # and the service passes that entry over.
             resolve_llm=context.get_llm,

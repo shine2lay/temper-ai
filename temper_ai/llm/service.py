@@ -8,6 +8,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from temper_ai.llm.context import (
@@ -29,6 +30,13 @@ from temper_ai.llm.tool_execution import ToolExecutorFn, execute_tool_calls
 from temper_ai.observability import EventType, record
 
 logger = logging.getLogger(__name__)
+
+
+def _describe(where: dict[str, str]) -> str:
+    """provider/model, and the token when the calls are pinned to one."""
+    text = f"{where['provider']}/{where['model']}"
+    return f"{text} on {where['token']}" if where.get("token") else text
+
 
 DEFAULT_MAX_ITERATIONS = 10
 # A backstop against unbounded growth, not the working limit: `max_context_tokens`
@@ -72,6 +80,7 @@ class LLMService:
         wrap_up_turns: int = WRAP_UP_TURNS,
         fallbacks: list[FallbackTarget] | None = None,
         resolve_llm: Callable[[str], BaseLLM] | None = None,
+        token: str | None = None,
     ) -> None:
         if context_policy not in CONTEXT_POLICIES:
             raise ValueError(
@@ -87,8 +96,12 @@ class LLMService:
         # be fallen back to.
         self.fallbacks = list(fallbacks or [])
         self._resolve_llm = resolve_llm
+        # The one token the agent's own calls go out on (`token:` in its
+        # config), taking them out of the provider's rotation. None rotates.
+        self._own_token = token
         self._active_fallback: FallbackTarget | None = None
         self._fallback_queue: list[FallbackTarget] = []
+        self._check_tokens()
         self.max_iterations = max_iterations
         # How many LLM turns before the cap the model is told to wrap up. Three
         # is enough for a reader to answer from what it has; an agent that must
@@ -309,6 +322,12 @@ class LLMService:
         # ignores the rest. Named kwargs above win on collision.
         for key, value in self._provider_config().items():
             kwargs.setdefault(key, value)
+        # The token the call is pinned to, if any. Set after provider_config so
+        # a `token` there cannot pin a call that _check_tokens never saw.
+        kwargs.pop("token", None)
+        token = self._requested_token()
+        if token:
+            kwargs["token"] = token
         # A provider that executes tools itself (Claude Code runs Bash,
         # WebSearch and every MCP server it is given inside its own process)
         # reports each one through this callback, and it lands in the event
@@ -330,18 +349,65 @@ class LLMService:
     # -- fallback -----------------------------------------------------------
 
     def _requested_model(self) -> str | None:
-        """The model this call asks for; None leaves it to the provider's default.
-
-        On a fallback it is the entry's model, never the agent's: the agent's
-        model is the one that just ran out, and on another provider it would
-        not even exist.
-        """
+        """The model this call asks for; None leaves it to the provider's default."""
         if self._active_fallback is not None:
-            return self._active_fallback.model
+            return self._entry_model(self._active_fallback, self.provider)
         return self._ctx.model
+
+    def _entry_model(self, target: FallbackTarget, llm: BaseLLM) -> str | None:
+        """The model a fallback entry asks for on `llm`, the provider it resolved to.
+
+        The entry's own, when it names one. Otherwise, on the agent's own
+        provider, the agent's model -- an entry naming only a token is the same
+        model on another account -- and on any other provider its default: the
+        agent's model would not exist there.
+        """
+        if target.model:
+            return target.model
+        return self._ctx.model if llm is self._own_provider else None
 
     def _model_in_use(self) -> str:
         return self._requested_model() or self.provider.model
+
+    def _requested_token(self) -> str | None:
+        """The token this call is pinned to; None lets the provider rotate.
+
+        On a fallback it is the entry's, never the agent's: the agent's account
+        is typically the one that just ran out.
+        """
+        if self._active_fallback is not None:
+            return self._active_fallback.token
+        return self._own_token
+
+    def _where(self) -> dict[str, str]:
+        """Where calls are going now, for events and logs. Names a token, never holds one."""
+        where = {"provider": self.provider.provider_name, "model": self._model_in_use()}
+        token = self._requested_token()
+        if token:
+            where["token"] = token
+        return where
+
+    def _check_tokens(self) -> None:
+        """Refuse to start on a token name that cannot mean anything.
+
+        A misspelt account would otherwise surface only when a limit is hit --
+        for a fallback entry possibly days in, and then as an entry passed
+        over. An entry whose provider is not configured here is left to be
+        passed over when it is reached, as before.
+        """
+        if self._own_token:
+            self._own_provider.check_token(self._own_token)
+        for i, target in enumerate(self.fallbacks):
+            if not target.token:
+                continue
+            try:
+                llm = self._own_provider if target.provider is None else self._resolve(target.provider)
+            except KeyError:
+                continue
+            try:
+                llm.check_token(target.token)
+            except ValueError as e:
+                raise ValueError(f"fallback[{i}]: {e}") from None
 
     def _provider_config(self) -> dict[str, Any]:
         """The provider_config for this call.
@@ -366,11 +432,12 @@ class LLMService:
         An entry is passed over when its provider is not configured here, or
         when the agent works with tools and the provider cannot offer them --
         running on would "succeed" without doing the work -- or when it names
-        the model already in use. The move lasts for the rest of this run:
+        the model and token already in use, or a token already known to be
+        limited for its model. The move lasts for the rest of this run:
         switching back would cost the new model's warm prompt cache, and the
         limit that caused it resets in hours or days, not between turns.
         """
-        was = {"provider": self.provider.provider_name, "model": self._model_in_use()}
+        was = self._where()
         skipped: list[dict[str, str]] = []
         while self._fallback_queue:
             target = self._fallback_queue.pop(0)
@@ -383,18 +450,28 @@ class LLMService:
             if self._tools and not getattr(llm, "SUPPORTS_TOOLS", True):
                 skipped.append({"fallback": label, "reason": "provider cannot offer tools"})
                 continue
-            if llm is self.provider and (target.model or llm.model) == was["model"]:
+            model = self._entry_model(target, llm) or llm.model
+            # From here the entry is named by what it would actually ask for:
+            # one that names only a token is the agent's model, not a default.
+            label = _describe({"provider": llm.provider_name, "model": model, "token": target.token or ""})
+            if llm is self.provider and model == was["model"] and target.token == was.get("token"):
                 skipped.append({"fallback": label, "reason": "already in use"})
                 continue
+            if target.token:
+                until = llm.token_cooling_until(target.token, model)
+                if until:
+                    when = datetime.fromtimestamp(until, tz=UTC).strftime("%Y-%m-%d %H:%MZ")
+                    skipped.append({"fallback": label,
+                                    "reason": f"{target.token} is rate limited for {model} until {when}"})
+                    continue
             self.provider, self._active_fallback = llm, target
-            now = {"provider": llm.provider_name, "model": self._model_in_use()}
-            logger.warning("'%s': %s/%s is out of capacity, falling back to %s/%s: %s",
-                           self._ctx.agent_name, was["provider"], was["model"],
-                           now["provider"], now["model"], str(exc)[:200])
+            now = self._where()
+            logger.warning("'%s': %s is out of capacity, falling back to %s: %s",
+                           self._ctx.agent_name, _describe(was), _describe(now), str(exc)[:200])
             self._record_fallback(was, now, exc, skipped)
             return True
-        logger.error("'%s': %s/%s is out of capacity and no fallback is left%s",
-                     self._ctx.agent_name, was["provider"], was["model"],
+        logger.error("'%s': %s is out of capacity and no fallback is left%s",
+                     self._ctx.agent_name, _describe(was),
                      f" ({len(skipped)} passed over)" if skipped else "")
         if self.fallbacks:
             self._record_fallback(was, None, exc, skipped)
@@ -493,6 +570,7 @@ class LLMService:
             execution_id=self._ctx.execution_id, status="running",
             data={"agent_name": self._ctx.agent_name, "node_path": self._ctx.node_path,
                   "model": self._model_in_use(), "provider": self.provider.provider_name,
+                  "token": self._requested_token(),
                   "temperature": self.provider.temperature, "max_tokens": self.provider.max_tokens,
                   "iteration": iteration, "message_count": len(self._messages),
                   "messages": self._messages,
@@ -538,6 +616,7 @@ class LLMService:
             EventType.LLM_CALL_FAILED, parent_id=self._ctx.agent_event_id,
             execution_id=self._ctx.execution_id, status="failed",
             data={"model": self._model_in_use(), "provider": self.provider.provider_name,
+                  "token": self._requested_token(),
                   "iteration": iteration, "error_type": type(exc).__name__,
                   "error": str(exc)[:500], "agent_name": self._ctx.agent_name})
 

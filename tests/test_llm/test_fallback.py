@@ -86,7 +86,7 @@ class TestParseFallback:
         ([""], "empty model name"),
         ([3], "model name or a mapping"),
         ([{"modle": "x"}], "unknown key(s) modle"),
-        ([{"provider_config": {"a": 1}}], "neither a provider nor a model"),
+        ([{"provider_config": {"a": 1}}], "names no provider, model or token"),
         ([{"model": ""}], "model must be a non-empty string"),
         ([{"model": "m", "provider_config": "high"}], "provider_config must be a mapping"),
     ])

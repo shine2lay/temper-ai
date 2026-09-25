@@ -49,9 +49,10 @@ def _agent_defaults(defaults: dict) -> dict:
 
 
 # The LLM settings among workflow defaults and run-wide overrides. `fallback`
-# (temper_ai.llm.fallback) is one: a workflow can give every agent the same
-# list, and an agent that calls no LLM must not be handed it.
-_LLM_SETTINGS = frozenset({"provider", "model", "temperature", "max_tokens", "fallback"})
+# and `token` (temper_ai.llm.fallback) are among them: a workflow can give
+# every agent the same list, or put all of them on one account, and an agent
+# that calls no LLM must not be handed either.
+_LLM_SETTINGS = frozenset({"provider", "model", "temperature", "max_tokens", "fallback", "token"})
 
 
 def _merge_agent_config(defaults: dict, own: dict, run_overrides: dict) -> dict:

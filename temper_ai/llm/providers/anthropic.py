@@ -31,6 +31,11 @@ is retried on another; the sticky agent then loses its warm cache, which is
 why failover is a fallback and not the normal path. See
 ``temper_ai.llm.token_pool``.
 
+A call can instead name its token (``token: wai2shine``, by the account set in
+``<VARIABLE>_ACCOUNT`` or by the variable itself). It then goes out on that
+token only: a limit there is not retried on another account but raised as
+``TokenCooling``, and the agent's fallback list says where to go next.
+
 Anthropic treats a bare bearer request from a third-party client
 differently from one that identifies as its own tooling. What identification
 to send — if any — is a policy decision that does not belong in this file.
@@ -52,10 +57,12 @@ from typing import Any, Protocol
 from temper_ai.llm.models import LLMResponse, LLMStreamChunk
 from temper_ai.llm.providers.base import BaseLLM, StreamCallback
 from temper_ai.llm.token_pool import (
+    NamedToken,
     PoolExhausted,
+    TokenCooling,
     TokenPool,
+    named_tokens_from_env,
     sticky_key_from_kwargs,
-    tokens_from_env,
 )
 
 logger = logging.getLogger(__name__)
@@ -364,10 +371,19 @@ class AnthropicLLM(BaseLLM):
         # provider is actually using one: an explicitly passed credential (a
         # test's, a caller's) is the one to use, not a hint to go looking for
         # siblings of it in the environment.
-        pooled: list[str] = []
+        named: list[NamedToken] = []
         if self.auth_mode == "oauth" and not (api_key or "").strip():
-            pooled = [t for t in tokens_from_env(OAUTH_TOKEN_ENV) if t.startswith(OAUTH_TOKEN_PREFIX)]
-        self._pool = TokenPool(name="anthropic-oauth", tokens=pooled) if len(pooled) > 1 else None
+            named = [n for n in named_tokens_from_env(OAUTH_TOKEN_ENV) if n.token.startswith(OAUTH_TOKEN_PREFIX)]
+        pooled = [n.token for n in named]
+        self._pool = (TokenPool(name="anthropic-oauth", tokens=pooled, labels=[n.label for n in named])
+                      if len(pooled) > 1 else None)
+        # What `token:` may name: each token's account, and its variable.
+        self._named: dict[str, NamedToken] = {}
+        for n in named:
+            for key in (n.account, n.variable):
+                if key and self._named.setdefault(key, n) is not n:
+                    logger.warning("Anthropic: two tokens are called %r; `token: %s` means %s",
+                                   key, key, self._named[key].variable)
 
         self._client = self._client_for(credential) if credential else None
         logger.info(
@@ -397,6 +413,51 @@ class AnthropicLLM(BaseLLM):
             client = self._anthropic.Anthropic(**client_kwargs)
             self._clients[credential] = client
             return client
+
+    # -- named tokens (see BaseLLM) -----------------------------------------
+
+    def _named_token(self, name: str) -> NamedToken:
+        found = self._named.get(name)
+        if found is not None:
+            return found
+        if not self._named:
+            raise ValueError(f"no Anthropic token is called {name!r}: this provider is not using "
+                             f"pooled subscriptions (auth mode {self.auth_mode})")
+        known = ", ".join(sorted({n.label for n in self._named.values()}))
+        raise ValueError(f"no Anthropic token is called {name!r}; the tokens are {known}")
+
+    def check_token(self, name: str) -> None:
+        self._named_token(name)
+
+    def token_cooling_until(self, name: str, model: str | None = None) -> float | None:
+        found = self._named.get(name)
+        if found is None or self._pool is None:
+            return None
+        return self._pool.cooling_until(found.token, model)
+
+    def _call_pinned(self, name: str, run, model: str | None) -> Any:
+        """Run `run(client)` on the one token the call names, with no rotation.
+
+        The call asked for this account, so a limit on it is not retried on
+        another: it is raised as TokenCooling -- a capacity failure -- and the
+        agent's fallback list decides where to go next. The token is still
+        cooled in the pool, so the calls that do rotate stop landing on it, and
+        a token already known to be cooling is refused without a request.
+        """
+        entry = self._named_token(name)
+        if self._pool is not None:
+            until = self._pool.cooling_until(entry.token, model)
+            if until:
+                raise TokenCooling(entry.label, model, until)
+        try:
+            return run(self._client_for(entry.token))
+        except Exception as exc:  # noqa: BLE001 - re-raised below unless it is a limit
+            if not _is_rate_limit(exc):
+                raise
+            reset = _reset_epoch(exc)
+            if self._pool is not None:
+                reset = self._pool.cool(entry.token, until=reset, model=model)
+            raise TokenCooling(entry.label, model, reset, detail=str(exc)[:200]) from exc
 
     def _credential_for_call(self, kwargs: dict[str, Any], model: str | None = None) -> str | None:
         """Which subscription this call goes out on (see the module docstring)."""
@@ -435,7 +496,11 @@ class AnthropicLLM(BaseLLM):
         The model travels with the call so a refusal cools the credential only for
         the ceiling it actually hit; the subscription's weekly allowance is per
         model family, and cooling all of them stops work that had quota left.
+
+        A call that names its token goes out on that one only (_call_pinned).
         """
+        if kwargs.get("token"):
+            return self._call_pinned(kwargs["token"], run, model)
         attempts = len(self._pool) if self._pool else 1
         last_error: Exception | None = None
         for _ in range(max(attempts, 1)):

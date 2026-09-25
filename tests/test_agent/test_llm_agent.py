@@ -174,6 +174,7 @@ class TestLLMAgentRun:
             context_policy=DEFAULT_CONTEXT_POLICY,
             wrap_up_turns=WRAP_UP_TURNS,
             fallbacks=[],
+            token=None,
             resolve_llm=ctx.get_llm,
         )
 
@@ -196,6 +197,21 @@ class TestLLMAgentRun:
         """Not on the day a limit is finally hit."""
         with pytest.raises(ValueError, match=r"fallback\[0\] has unknown key\(s\) modle"):
             _make_agent({"provider": "vllm", "fallback": [{"modle": "x"}]})
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_the_agents_token_reaches_the_service(self, MockLLMService):
+        MockLLMService.return_value.run.return_value = LLMRunResult(output="ok", tokens=0, iterations=1)
+        agent = _make_agent({"provider": "anthropic", "token": "wai2shine",
+                             "fallback": [{"token": "aungshine"}]})
+        agent.run({"task": "x"}, _make_context(llm_providers={"anthropic": MagicMock()}))
+
+        assert MockLLMService.call_args.kwargs["token"] == "wai2shine"
+        assert MockLLMService.call_args.kwargs["fallbacks"] == [FallbackTarget(token="aungshine")]
+
+    def test_a_credential_where_a_token_name_belongs_fails_when_the_agent_is_loaded(self):
+        with pytest.raises(ValueError, match="not be the token itself") as err:
+            _make_agent({"provider": "anthropic", "token": "sk-ant-oat01-secret"})
+        assert "sk-ant-oat01-secret" not in str(err.value)
 
     @patch("temper_ai.agent.llm_agent.LLMService")
     def test_context_policy_is_the_agents_choice(self, MockLLMService):

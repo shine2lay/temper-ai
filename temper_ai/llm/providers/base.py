@@ -76,6 +76,20 @@ class BaseLLM(ABC):
     def provider_name(self) -> str:
         return self.PROVIDER_NAME
 
+    # -- named tokens -------------------------------------------------------
+    # An agent or a fallback entry can pin its calls to one credential by name
+    # (`token: wai2shine`), which the service passes as the `token` kwarg. A
+    # provider that holds several credentials overrides these; the rest have
+    # one, so no name can mean anything to them.
+
+    def check_token(self, name: str) -> None:
+        """Raise ValueError unless a call can be pinned to the token called `name`."""
+        raise ValueError(f"the {self.provider_name} provider has no named tokens, so `token: {name}` cannot apply")
+
+    def token_cooling_until(self, name: str, model: str | None = None) -> float | None:
+        """When the named token can take a call for `model` again; None when it can now."""
+        return None
+
     def _get_client(self) -> httpx.Client:
         if self._http_client is None:
             self._http_client = httpx.Client(

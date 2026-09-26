@@ -300,6 +300,30 @@ def list_workflows(limit: int = 20, offset: int = 0, status: str | None = None):
     return list_workflow_executions(limit=limit, offset=offset, status=status)
 
 
+# Registered before /api/workflows/{execution_id}, which would otherwise
+# take "search" for an execution id.
+@router.get("/api/workflows/search")
+def search_workflow_configs(q: str = "", limit: int = 10):
+    """Workflow configs matching the words of ``q``, best first.
+
+    Matches each workflow's name, description, and input names and
+    descriptions; a word in the name ranks highest. An empty ``q`` lists
+    every workflow. ``undescribed`` names the workflows with no
+    description, which only a search by name can find.
+    """
+    from temper_ai.config.search import search_workflows
+
+    return search_workflows(q, limit=min(max(limit, 1), 500))
+
+
+@router.get("/api/slack/status")
+def slack_status():
+    """Whether this server runs Slack, and how its socket and notices are doing."""
+    from temper_ai.integrations.slack.service import status
+
+    return status()
+
+
 @router.get("/api/workflows/{execution_id}")
 def get_workflow(execution_id: str):
     """Get full workflow execution hierarchy."""

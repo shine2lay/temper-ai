@@ -127,6 +127,11 @@ def execute_graph(
             batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id,
             retired,
         )
+        # A stop that lands while a step is running kills that step, which then
+        # ends failed. With no batch after it to notice the stop, the run would
+        # be reported failed too, when nothing broke and someone stopped it.
+        if _stopped_mid_step(context, node_outputs):
+            raise CancellationError("Workflow cancelled by user")
         return _build_final_result(
             nodes, node_outputs, input_data, start, graph_event_id, context, workflow_outputs,
             is_workflow=is_workflow, retired=retired,
@@ -1604,6 +1609,14 @@ def _check_cancelled(context: ExecutionContext) -> None:
     """Raise CancellationError if the workflow has been cancelled."""
     if context.cancel_event and context.cancel_event.is_set():
         raise CancellationError("Workflow cancelled by user")
+
+
+def _stopped_mid_step(context: ExecutionContext, node_outputs: dict[str, NodeResult]) -> bool:
+    """The run was stopped and a step did not complete: the stop, not the
+    step, is why the run is over."""
+    if not (context.cancel_event and context.cancel_event.is_set()):
+        return False
+    return any(r.status in (Status.FAILED, Status.CANCELLED) for r in node_outputs.values())
 
 
 FAILURE_TAIL_LINES = 3

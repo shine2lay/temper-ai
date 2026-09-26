@@ -323,6 +323,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             logger.warning("Trigger scheduler failed to start: %s", e)
 
+    # Slack: commands and buttons in, notices out. Needs SLACK_BOT_TOKEN and
+    # SLACK_APP_TOKEN; off with TEMPER_SLACK=0 (only one process may hold
+    # the app's socket). Starting does no network I/O, so a Slack outage or
+    # a bad token cannot hold the server up.
+    slack_service = None
+    try:
+        from temper_ai.integrations.slack.service import start_slack
+        slack_service = start_slack()
+    except Exception as e:
+        logger.warning("Slack failed to start: %s", e)
+
     logger.info("Temper AI server ready")
 
     # The /mcp endpoint needs its session manager running for the life of
@@ -331,6 +342,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
 
     # Shutdown
+    if slack_service is not None:
+        from temper_ai.integrations.slack.service import stop_slack
+        stop_slack()
     if trigger_scheduler is not None:
         trigger_scheduler.stop()
     if reaper is not None:

@@ -108,6 +108,11 @@ def main() -> None:
 
     add_linear_parser(subparsers)
 
+    # -- temper slack check --
+    from temper_ai.cli.slack import add_parser as add_slack_parser
+
+    add_slack_parser(subparsers)
+
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
@@ -177,6 +182,9 @@ def main() -> None:
     elif args.command == "linear":
         from temper_ai.cli.linear import cmd_linear
         sys.exit(cmd_linear(args))
+    elif args.command == "slack":
+        from temper_ai.cli.slack import cmd_slack
+        sys.exit(cmd_slack(args))
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

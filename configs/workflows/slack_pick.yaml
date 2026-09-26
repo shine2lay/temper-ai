@@ -1,0 +1,37 @@
+workflow:
+  name: slack_pick
+  description: |
+    Pick the workflow a Slack message asks for, and its inputs, for
+    @temper in Slack. Proposes only: the Slack side shows the pick with
+    Start/Cancel buttons and starts nothing until a person confirms.
+    Started by temper's Slack integration, not by hand.
+  inputs:
+    request:
+      type: string
+      required: true
+      description: What the person wrote, without the @temper mention
+    conversation:
+      type: string
+      required: false
+      description: Earlier messages of the Slack thread, oldest first
+    candidates:
+      type: string
+      required: true
+      description: The best search matches, with descriptions and input specs
+    catalog:
+      type: string
+      required: true
+      description: One line per workflow
+  outputs:
+    workflow: pick.structured.workflow
+    inputs: pick.structured.inputs
+    question: pick.structured.question
+  nodes:
+    - name: pick
+      type: agent
+      agent: slack_pick
+      input_map:
+        request: input.request
+        conversation: input.conversation
+        candidates: input.candidates
+        catalog: input.catalog

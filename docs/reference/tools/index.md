@@ -4,7 +4,7 @@
 
 _Auto-generated from code. Do not edit manually._
 
-Temper AI includes **17 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
+Temper AI includes **20 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
 
 Tool execution is gated by [safety policies](../policies/index.md) — see [File Access](../policies/file_access.md) and [Forbidden Ops](../policies/forbidden_ops.md).
 
@@ -38,6 +38,9 @@ Which container that is depends on the worker's `TEMPER_SPAWNER`. With `docker`,
 | [`QueryRunState`](queryrunstate.md) | Return the state of nodes in the current workflow run. Returns a JSON list of nodes with their status ('running', 'completed', 'failed') and, for completed nodes, their output and structured_output. Use this to discover what upstream nodes have produced before making decisions — e.g. before dispatching new work based on earlier agents' results. Outputs are truncated by default; pass truncate_chars=0 to disable. |
 | [`Read`](read.md) | Read the contents of a text file. Output is capped at 2000 lines or 50KB (whichever comes first); when a file is longer the result ends with the offset to continue from. Use offset/limit to read a specific range instead of the whole file. Prefer this over running `cat` through Bash: that returns the entire file and can exhaust the context in one call. |
 | [`RemoveNode`](removenode.md) | Remove a still-pending node from the running workflow graph. Called during an agent's run when the agent determines a downstream node shouldn't execute (e.g., a placeholder that turned out unnecessary). The target is marked SKIPPED; any further-downstream nodes whose input_map refs it will cascade to skipped too. Only pending nodes can be removed — already-started nodes are unaffected. |
+| [`SlackPost`](slackpost.md) | Post a new message in Slack, as the temper bot, to a channel or person the Slack config allows. Returns the message's channel and ts (use them with SlackReply). |
+| [`SlackReadThread`](slackreadthread.md) | Read a Slack thread (its first message and the replies, oldest first) in a channel or DM the Slack config allows, or a thread temper opened for a run. |
+| [`SlackReply`](slackreply.md) | Reply in a Slack thread, as the temper bot. The thread is the ts of its first message, in a channel or DM the Slack config allows, or a thread temper opened for a run. |
 | [`WebFetch`](webfetch.md) | Fetch a web page and return its readable text — scripts, styles, nav and footers removed. Use this to read documentation, articles and API pages. JSON responses are returned formatted. Output is capped (default 30k characters) and says so when truncated. Use the http tool instead when you need the raw body, headers or a non-GET method. |
 | [`WebSearch`](websearch.md) | Search the web. Returns titles, URLs, and snippets for the query. |
 | [`Write`](write.md) | Write content to a file, creating parent directories as needed. Overwrites by default; set append=true to add to the end instead. To change part of an existing file use Edit, which does not require rewriting the whole file. |

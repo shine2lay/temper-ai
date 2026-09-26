@@ -78,7 +78,8 @@ def build_server() -> FastMCP:
         instructions=(
             "Run and inspect temper multi-agent workflows.\n\n"
             "Start with list_workflows to see what can be run and which "
-            "inputs it declares. run_workflow returns immediately with an "
+            "inputs it declares, or search_workflows to find one by what "
+            "it does. run_workflow returns immediately with an "
             "execution_id; use wait_for_run to block until it finishes.\n\n"
             "Inspection is deliberately layered so a run's full transcript "
             "never lands in your context by accident: get_run gives status "
@@ -101,6 +102,16 @@ def build_server() -> FastMCP:
         return await _off_loop(
             tools.list_workflows, name_contains=name_contains, limit=limit
         )
+
+    @mcp.tool()
+    async def search_workflows(query: str, limit: int = 10) -> dict:
+        """Find workflows by what they do, best match first.
+
+        Matches the words of ``query`` against each workflow's name,
+        description and inputs, e.g. "reply to a linear issue". Use it
+        when you know the job but not the workflow's name.
+        """
+        return await _off_loop(tools.search_workflows, query, limit=limit)
 
     @mcp.tool()
     async def get_workflow(name: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:

@@ -17,6 +17,7 @@ from temper_ai.tools.loader import load_tools
 from temper_ai.tools.query_run_state import QueryRunState
 from temper_ai.tools.read import Read
 from temper_ai.tools.remove_node import RemoveNode
+from temper_ai.tools.slack import SlackPost, SlackReadThread, SlackReply
 from temper_ai.tools.web_fetch import WebFetch
 from temper_ai.tools.web_search import WebSearch
 from temper_ai.tools.write import Write
@@ -43,6 +44,9 @@ TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "QueryRunState": QueryRunState,
     "Read": Read,
     "RemoveNode": RemoveNode,
+    "SlackPost": SlackPost,
+    "SlackReadThread": SlackReadThread,
+    "SlackReply": SlackReply,
     "WebFetch": WebFetch,
     "WebSearch": WebSearch,
     "Write": Write,

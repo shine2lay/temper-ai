@@ -312,6 +312,30 @@ class TemperTools:
             )
         return result
 
+    def search_workflows(self, query: str, limit: int = 10) -> dict:
+        """Workflows that do what ``query`` describes, best first.
+
+        Matches names, descriptions and inputs (see temper_ai.config.search).
+        Each result carries a one-line summary and its declared inputs.
+        """
+        from temper_ai.config.search import first_line, search_workflows
+
+        found = search_workflows(query, limit=limit)
+        return {
+            "query": found["query"],
+            "results": [
+                {
+                    "name": r["name"],
+                    "summary": first_line(r["description"], 160) or "(no description)",
+                    "inputs": r["inputs"],
+                    "score": r["score"],
+                }
+                for r in found["results"]
+            ],
+            "total": found["total"],
+            "undescribed": len(found["undescribed"]),
+        }
+
     def get_workflow(self, name: str, max_chars: int = DEFAULT_MAX_CHARS) -> dict:
         """One workflow's definition: its inputs, shape, and which models it uses.
 

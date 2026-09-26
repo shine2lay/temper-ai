@@ -1,0 +1,30 @@
+# Where temper's Slack notices go. This tracked file documents the format
+# and sends nothing; the real routing goes in configs/slack/local/slack.yaml
+# (git-ignored, since it names people's Slack ids), which is used instead
+# when it exists. Changes are picked up without a restart.
+#
+# A destination is {channel: ..., dm: ...}: channel is a channel id (C...)
+# or #name (the bot must be in a private channel to post there); dm is a
+# user id (U...). Either may be a list. "off" sends nothing.
+#
+# Kinds:
+#   gate      a gate is waiting for an answer: the notice has Approve / Reject
+#   stuck     a running run has written no event for stuck_after
+#   failed    a run failed
+#   finished  a run ended any other way (completed, cancelled)
+# Every notice about a run goes in one thread per destination; a run started
+# from Slack keeps its notices in the thread it was started in.
+slack:
+  # dashboard_url: https://temper.example.com   # run links in messages
+  stuck_after: 45m
+  notify:
+    gate: off
+    stuck: off
+    failed: off
+    finished: off
+  # Per workflow; replaces the default for the kinds it names.
+  workflows:
+    slack_pick: off           # the @temper picker itself: never a notice
+  # Where the agent tools (SlackPost, SlackReply, SlackReadThread) may post
+  # and read; nowhere else. Threads temper opened for a run are allowed too.
+  agents: []

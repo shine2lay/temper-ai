@@ -17,8 +17,10 @@ def _test_db():
 
 @pytest.fixture(autouse=True)
 def _no_trigger_scheduler(monkeypatch):
-    """A test server must not fire the repo's schedules in the background."""
+    """A test server must not fire the repo's schedules in the background,
+    nor connect to Slack."""
     monkeypatch.setenv("TEMPER_TRIGGER_SCHEDULER", "0")
+    monkeypatch.setenv("TEMPER_SLACK", "0")
 
 
 @pytest.fixture(autouse=True)

@@ -1561,6 +1561,43 @@ class TestWorkflowTerminalStatus:
         assert result.status == Status.CANCELLED
         assert ctx.event_recorder.update_event.call_args.kwargs["status"] == "cancelled"
 
+    def test_a_stop_that_kills_the_last_running_step_ends_the_run_cancelled(self):
+        # The stop reaches the running step (its command is killed), so the step
+        # ends failed -- and no later batch is left to look at the stop flag.
+        import threading
+
+        cancel = threading.Event()
+        a = _make_agent_node("a", status=Status.FAILED, output="")
+        a.run.side_effect = lambda *args, **kw: (cancel.set(), a.run.return_value)[1]
+        ctx = _make_context(cancel_event=cancel)
+
+        result = execute_graph([a], {}, ctx, graph_name="wf", is_workflow=True)
+
+        assert result.status == Status.CANCELLED
+        assert ctx.event_recorder.update_event.call_args.kwargs["status"] == "cancelled"
+
+    def test_a_step_that_fails_on_its_own_still_fails_the_run(self):
+        import threading
+
+        a = _make_agent_node("a", status=Status.FAILED, output="")
+        ctx = _make_context(cancel_event=threading.Event())
+
+        result = execute_graph([a], {}, ctx, graph_name="wf", is_workflow=True)
+
+        assert result.status == Status.FAILED
+
+    def test_a_stop_after_every_step_completed_changes_nothing(self):
+        import threading
+
+        cancel = threading.Event()
+        a = _make_agent_node("a")
+        a.run.side_effect = lambda *args, **kw: (cancel.set(), a.run.return_value)[1]
+        ctx = _make_context(cancel_event=cancel)
+
+        result = execute_graph([a], {}, ctx, graph_name="wf", is_workflow=True)
+
+        assert result.status == Status.COMPLETED
+
     def test_workflow_started_records_inputs_and_workspace(self):
         a = _make_agent_node("a")
         ctx = _make_context(workspace_path="/tmp/ws")

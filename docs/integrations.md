@@ -20,7 +20,9 @@ them.
 | `transport: http` + `auth: client_credentials` | Remote server where temper should act as its own app, not as a person | Client id and secret from the environment; no login |
 
 Linear uses the last kind, and also sends temper webhooks that start
-workflows: see [linear.md](linear.md).
+workflows: see [linear.md](linear.md). Slack is not an MCP server: temper
+runs its own Slack bot for commands, notices and gate buttons; see
+[slack.md](slack.md).
 
 ### stdio
 

@@ -24,6 +24,12 @@ class EventType(StrEnum):
     AGENT_STARTED = "agent.started"
     AGENT_COMPLETED = "agent.completed"
     AGENT_FAILED = "agent.failed"
+    # An agent's almost-JSON answer: parsed after escaping stray quotes
+    # (repaired), or after one more turn asking for corrected JSON (retry;
+    # status failed when that did not parse either). data.parse_error is the
+    # original json error, so how often answers need saving can be counted.
+    AGENT_OUTPUT_REPAIRED = "agent.output.repaired"
+    AGENT_OUTPUT_RETRY = "agent.output.retry"
 
     # LLM calls
     LLM_CALL_STARTED = "llm.call.started"

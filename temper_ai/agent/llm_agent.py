@@ -270,19 +270,91 @@ class LLMAgent(AgentABC):
                 tokens=llm_result.tokens,
             )
 
-        structured = _extract_structured_output(llm_result.output)
+        structured, parse_error, repaired = _extract_structured_output_detailed(llm_result.output)
+        cost, tokens, iterations = llm_result.cost, llm_result.tokens, llm_result.iterations
+        metadata: dict = {}
+        if repaired:
+            self._record_output_event(
+                context, agent_event_id, EventType.AGENT_OUTPUT_REPAIRED,
+                "completed", parse_error, "repaired",
+            )
+        elif structured is None and parse_error and not llm_result.error:
+            # Almost-JSON the quote repair could not save: one more turn to
+            # correct it, rather than an answer silently stored as null.
+            retry_msgs = list(messages) + [
+                {"role": "assistant", "content": llm_result.output},
+                {"role": "user", "content": (
+                    f"Your last answer wasn't valid JSON: `{parse_error}`. "
+                    "Reply with only the corrected JSON."
+                )},
+            ]
+            retry_result: LLMRunResult = llm_service.run(
+                messages=retry_msgs,
+                tools=None,
+                execute_tool=None,
+                context=call_context,
+                budget_check=budget_check,
+            )
+            if context.tool_executor and hasattr(context.tool_executor, 'track_usage'):
+                context.tool_executor.track_usage(
+                    cost_usd=retry_result.cost,
+                    tokens=retry_result.tokens,
+                )
+            cost += retry_result.cost
+            tokens += retry_result.tokens
+            iterations += retry_result.iterations
+            retried, retry_error, _ = (
+                (None, retry_result.error, False) if retry_result.error
+                else _extract_structured_output_detailed(retry_result.output)
+            )
+            if retried is not None:
+                structured = retried
+                self._record_output_event(
+                    context, agent_event_id, EventType.AGENT_OUTPUT_RETRY,
+                    "completed", parse_error, "retry_ok",
+                )
+            else:
+                metadata["structured_parse_error"] = retry_error or parse_error
+                self._record_output_event(
+                    context, agent_event_id, EventType.AGENT_OUTPUT_RETRY,
+                    "failed", parse_error, "retry_failed",
+                )
         memories_formed = self._store_memories(llm_result.output, context)
 
         return AgentResult(
             status=Status.FAILED if llm_result.error else Status.COMPLETED,
             output=llm_result.output,
             structured_output=structured,
-            tokens=TokenUsage(total_tokens=llm_result.tokens),
-            cost_usd=llm_result.cost,
+            tokens=TokenUsage(total_tokens=tokens),
+            cost_usd=cost,
             memories_formed=memories_formed,
             error=llm_result.error,
-            llm_calls=llm_result.iterations,
+            llm_calls=iterations,
             tool_calls=len(llm_result.tool_calls),
+            metadata=metadata,
+        )
+
+    def _record_output_event(
+        self,
+        context: ExecutionContext,
+        agent_event_id: str,
+        event_type: EventType,
+        status: str,
+        parse_error: str | None,
+        outcome: str,
+    ) -> None:
+        """Record a repair or retry of the agent's JSON answer, with the original parse error."""
+        logger.warning(
+            "Agent '%s': structured output %s (parse error: %s)", self.name, outcome, parse_error,
+        )
+        if not context.event_recorder:
+            return
+        context.event_recorder.record(
+            event_type,
+            parent_id=agent_event_id,
+            execution_id=context.run_id,
+            status=status,
+            data={"agent_name": self.name, "parse_error": parse_error, "outcome": outcome},
         )
 
     def _build_llm_service(self, context: ExecutionContext) -> LLMService:
@@ -574,48 +646,122 @@ def _extract_structured_output(text: str) -> dict | None:
     1. Parse entire text as JSON
     2. Extract from ```json ... ``` code blocks
     3. Find first { ... } or [ ... ] in the text
+    4. The same three again after escaping stray quotes inside strings
+    """
+    return _extract_structured_output_detailed(text)[0]
+
+
+def _extract_structured_output_detailed(text: str) -> tuple[dict | None, str | None, bool]:
+    """Extract a JSON dict from LLM output, saying why when it cannot.
+
+    Returns ``(parsed, parse_error, repaired)``. ``parse_error`` is the last
+    ``json.loads`` message when the text looked like JSON and did not parse
+    (None when there was nothing JSON-shaped to try, or when it parsed).
+    ``repaired`` is True when the dict came back only after
+    ``_repair_unescaped_quotes``. The b012 checker wrote
+    ``"notes": "total shows "−$120.00" not +$120"``, and dropping the whole
+    answer for two quotes ended its loop without a verdict.
     """
     if not text:
-        return None
+        return None, None, False
 
-    parsed = _try_parse_json(text)
-    if parsed is not None:
-        return parsed
+    candidates = _json_candidates(text)
+    errors: list[str] = []
+    for candidate in candidates:
+        parsed = _try_parse_json(candidate, errors)
+        if parsed is not None:
+            return parsed, None, False
+    if not errors:
+        # Valid JSON that is not a dict (e.g. a list), or nothing JSON-shaped.
+        return None, None, False
 
-    parsed = _try_parse_code_block(text)
-    if parsed is not None:
-        return parsed
+    for candidate in candidates:
+        repaired = _repair_unescaped_quotes(candidate)
+        if repaired == candidate:
+            continue
+        parsed = _try_parse_json(repaired, [])
+        if parsed is not None:
+            return parsed, errors[0], True
+    return None, errors[-1], False
 
-    return _try_parse_first_brace(text)
+
+def _json_candidates(text: str) -> list[str]:
+    """The substrings that look like a JSON object: whole text, fence body, first balanced brace.
+
+    Only these count as "looked like JSON": prose with no object in it has no
+    parse error to report, and must not cost a retry turn.
+    """
+    found = [text, _code_block_body(text), _first_brace_span(text)]
+    return [c for c in found if c is not None and c.strip().startswith("{")]
 
 
-def _try_parse_json(text: str) -> dict | None:
-    """Try parsing the entire text as JSON dict."""
+def _repair_unescaped_quotes(s: str) -> str:
+    """Escape straight quotes inside JSON strings that do not close them.
+
+    Inside a string, a ``"`` closes it only when the next non-space character
+    is one of ``, : } ]`` or the end of the text; any other ``"`` is taken as
+    part of the value and becomes ``\\"``. Existing ``\\`` escapes are kept.
+    This is the only repair: trailing commas, single quotes and the like are
+    left for the retry turn.
+    """
+    out: list[str] = []
+    in_string = False
+    i = 0
+    n = len(s)
+    while i < n:
+        ch = s[i]
+        if not in_string:
+            if ch == '"':
+                in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            out.append(s[i : i + 2])
+            i += 2
+            continue
+        if ch == '"':
+            rest = s[i + 1 :].lstrip()
+            if not rest or rest[0] in ",:}]":
+                in_string = False
+                out.append(ch)
+            else:
+                out.append('\\"')
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _try_parse_json(text: str, errors: list[str] | None = None) -> dict | None:
+    """Try parsing the entire text as JSON dict; a decode error is appended to ``errors``."""
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             return parsed
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError as exc:
+        if errors is not None:
+            errors.append(str(exc))
+    except TypeError:
         pass
     return None
+
+
+def _code_block_body(text: str) -> str | None:
+    """The body of the first markdown ```json ... ``` code block, if any."""
+    code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    return code_block.group(1) if code_block else None
 
 
 def _try_parse_code_block(text: str) -> dict | None:
     """Try extracting JSON from a markdown ```json ... ``` code block."""
-    code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
-    if not code_block:
-        return None
-    try:
-        parsed = json.loads(code_block.group(1))
-        if isinstance(parsed, dict):
-            return parsed
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return None
+    body = _code_block_body(text)
+    return _try_parse_json(body) if body is not None else None
 
 
-def _try_parse_first_brace(text: str) -> dict | None:
-    """Try extracting the first balanced {...} substring and parsing it as JSON."""
+def _first_brace_span(text: str) -> str | None:
+    """The first balanced {...} substring of the text, if any."""
     brace_start = text.find("{")
     if brace_start < 0:
         return None
@@ -627,9 +773,15 @@ def _try_parse_first_brace(text: str) -> dict | None:
         elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                return _try_parse_json(text[brace_start : i + 1])
+                return text[brace_start : i + 1]
 
     return None
+
+
+def _try_parse_first_brace(text: str) -> dict | None:
+    """Try extracting the first balanced {...} substring and parsing it as JSON."""
+    span = _first_brace_span(text)
+    return _try_parse_json(span) if span is not None else None
 
 
 def _truncate_input_data(input_data: dict[str, Any], max_value_len: int = 200_000) -> dict[str, Any]:

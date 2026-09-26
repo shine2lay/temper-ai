@@ -176,3 +176,5 @@ From the shell, as the app: `temper linear comment ENG-123 < reply.md`.
   public) lists the last 50 deliveries and what became of each: the runs
   started, "no trigger matched", "ignored: temper's own change", or the error.
   The server log has the same.
+
+Test note from the Linear draft pull request test (ROA-12); this pull request is closed without merging.

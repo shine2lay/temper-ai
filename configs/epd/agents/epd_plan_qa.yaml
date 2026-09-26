@@ -10,7 +10,14 @@
 agent:
   name: epd_plan_qa
   # 2: max_tokens 64000 (the architect's call ran out at 32000 before any text on b013, 2026-09-25)
-  version: 2
+  # 3 (2026-09-26, queue task 4, "faster"): max_iterations 50 -> 30, and every file asked for in one
+  #    turn. On the 29-bet plan test every engineer used 48 of its 50 steps, one or two files a turn.
+  #    Also how a test and its acceptance must run, from the graders' findings on the 25 graded plans:
+  #    12 had a proof that could not fail (a test reading source text, a whole suite or a file prefix
+  #    that passes today, an assertion true by construction), 5 an acceptance that fails on the base
+  #    anyway (typecheck, a clock-dependent suite test, a browser on the build host), and 12 left a
+  #    criterion's state out of a checker's reach (proved by a unit test only, no seed).
+  version: 3
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -19,7 +26,7 @@ agent:
     - Grep
     - Glob
     - Write
-  max_iterations: 50
+  max_iterations: 30
   total_timeout: 3000
   wrap_up_turns: 4
   max_context_tokens: 900000
@@ -35,25 +42,36 @@ agent:
 
     Read the knowledge folder's core/ first (map, decisions, gotchas), then topics/testing.md
     (logins, seeds, reaching a state), then the pitch and the design, and what the checkers can do
-    if you are given it. Then, for each numbered criterion and the invariant:
+    if you are given it. Ask for every file you need in one turn (several Read, Grep and Glob calls
+    in one reply, not one a turn), and read each file once. Then, for each numbered criterion and
+    the invariant:
     1. Live reach. The login, the page, the starting state, and how a checker gets to that state on
        a fresh dev stack: the seed, a fixture, a route. Whether the state survives the scheduled
        scan, a restart and a reseed (a reseed reaches the running server only after its port cache
        is cleared). Whether the checker can get back to the state after using it once. If it cannot
-       be reached, say what the build must add.
+       be reached, say what the build must add: a row or a login in the QA seed, not a switch that
+       stays live in production. A criterion proved only by a unit test is not reached.
     2. The test. The test that proves it: file, name, what it asserts, and why it fails on today's
        code (a test that already passes proves nothing). It must check the criterion itself, not a
        proxy (a count, a status code) and not a state it set up by hand that the real path never
-       produces.
+       produces. A frontend test renders the component (renderToStaticMarkup, as the existing tests
+       do); a test that reads a source file as text, or asserts what is true by construction,
+       proves nothing.
     3. The acceptance command. The exact command, run from the repository root, and the output that
-       means pass. It must be able to match: pytest prints "N passed", not the test's name.
+       means pass. It must be able to match: pytest prints "N passed", not the test's name. It runs
+       the task's own test file alone, named in full: `uv run pytest -q backend/tests/<file>.py`, or
+       `npm --prefix frontend test -- <file>.test.ts` (the runner takes every file whose name
+       contains the argument, so a prefix runs other tasks' files too). Never the whole suite or
+       typecheck (they can already fail on the base for reasons outside the bet, and a suite that
+       passes today proves nothing), and no browser or served app: the build's tests run without one.
     4. What moves. Existing tests whose assertions the change moves (grep them), and what a seed
        change moves for other tests and for the qa@ account's totals.
     5. The words to see. The exact text a live checker should find, taken from the design or the
        pitch, so a working build is not failed for a paraphrase.
 
-    Be exact: path::symbol or file:line, and test names. Report only what changes what gets built or
-    checked. Do not redesign the change: if the design cannot be proved, say why.
+    Be exact: path::symbol or file:line, and test names. Report only what the criteria and the
+    invariant need; anything else is one line under a last heading, Not needed, and the lead leaves
+    it out. Do not redesign the change: if the design cannot be proved, say why.
 
     Write your findings to the doc path you are given (Markdown, one section per criterion), then
     reply with one sentence and exactly one ```json block:

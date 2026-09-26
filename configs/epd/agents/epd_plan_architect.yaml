@@ -19,7 +19,16 @@ agent:
   #    took 300-370k output tokens (thinking included), ~75 s a step. The step limit ends a run
   #    gracefully (wrap_up_turns) and the clock does not, so the clock must never bind first:
   #    60 steps at ~90 s fit in 90 minutes.
-  version: 3
+  # 4 (2026-09-26, queue task 4, "faster"): effort high -> medium, max_iterations 60 -> 40, and every
+  #    file asked for in one turn. The architect is the stage's longest step (34 runs: median 35 min,
+  #    max 84 on b023) and used 49-58 of its 60 steps on every bet, one or two files a turn, each step
+  #    ~40-90 s of output at ~95 tokens/s. temper runs all the tool calls of one reply, so the same
+  #    reading takes fewer steps. The timeout stays at 5400: 40 steps at ~90 s fit, so the clock still
+  #    never binds first. Also rules for the problems graders found in 3 or more of the 25 graded plans
+  #    (~/epd-autopilot/plan/results.md): work no criterion needs (16 plans), a place left saying the
+  #    old thing (12), proof that cannot fail or that fails on the base anyway (12 and 5), the pitch's
+  #    literal words overridden (5).
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -28,13 +37,13 @@ agent:
     - Grep
     - Glob
     - Write
-  max_iterations: 60
-  total_timeout: 5400  # a time limit ends the node with no answer; 60 steps at ~90 s fit
+  max_iterations: 40
+  total_timeout: 5400  # a time limit ends the node with no answer; 40 steps at ~90 s fit
   wrap_up_turns: 4
   max_context_tokens: 900000
   provider_config:
     max_tokens: 64000
-    effort: high
+    effort: medium
   system_prompt: |
     You design the change for one product bet, before engineers break it into tasks.
 
@@ -49,7 +58,8 @@ agent:
        core/gotchas.md (traps that already bit a bet). Read a topic file only when the work touches
        it (topics/figures.md for any money figure, topics/testing.md for logins and test data).
        They are dense on purpose; trust them, and check a line in the code only when your design
-       rests on it.
+       rests on it. Ask for every file you need in one turn (several Read, Grep and Glob calls in
+       one reply, not one a turn), and read each file once.
     2. Read the pitch. Where the owner's approval says something different, the approval wins.
     3. Find where the change goes in the code: for every figure, state or sentence the criteria
        name, the ONE place it comes from, and the path from there to the screen (store or adapter,
@@ -60,11 +70,26 @@ agent:
        exact words for each state the criteria name. Reuse what exists before adding anything.
     5. Say how each criterion will be proved: a test (which file, what it asserts, and why it fails
        on today's code) and where a live checker sees it (the login, the page, the starting state).
+       The test runs the real code: a frontend test renders the component (renderToStaticMarkup, as
+       the existing tests do); a test that reads a source file as text, or asserts what is true by
+       construction, proves nothing. Each test file runs alone, named in full, never the whole suite
+       or typecheck, which can already fail on the base for reasons outside the bet. Where no seeded
+       login starts in the state a criterion needs, say what the QA seed must add, and how a checker
+       gets the state back after using it once; never a switch that stays live in production.
     6. Hold the design against core/decisions.md and core/gotchas.md: name each line it touches and
        say how it is honoured.
 
-    Stay inside the pitch: its no-gos are out. Be exact: cite path::symbol or file:line. Keep the
-    design to what an engineer needs; it is a design, not the tasks.
+    Stay inside the pitch: its no-gos are out. Change only what the criteria and the invariant need,
+    plus every place that would otherwise contradict the change (a sibling screen, a comment, a copy
+    helper, a QA script's selector): making the app agree with itself is in scope, adding behaviour
+    is not. A neighbouring bug, a refactor, a wider rule for other pages, tenants or brokers, or a
+    new setting goes under Risks as a note for the owner, not into the design. Where the pitch or the
+    owner's approval says something literally (a sentence to show, "no new API", "stays as it is
+    today", which control a checker uses), follow it even where you see a better way, and put the
+    better way under Risks.
+
+    Be exact: cite path::symbol or file:line. Keep the design to what an engineer needs; it is a
+    design, not the tasks.
 
     Write the design to the design path you are given, in Markdown with these sections: Approach
     (one paragraph), Decisions (each: the decision, why, the code it rests on), Data flow, States

@@ -8,7 +8,12 @@
 agent:
   name: epd_plan_backend
   # 2: max_tokens 64000 (the architect's call ran out at 32000 before any text on b013, 2026-09-25)
-  version: 2
+  # 3 (2026-09-26, queue task 4, "faster"): max_iterations 50 -> 30, and every file asked for in one
+  #    turn. On the 29-bet plan test every engineer used 48 of its 50 steps, one or two files a turn,
+  #    and the slowest of the four held the stage up to 32 min. What no criterion needs goes under Not
+  #    needed (work no criterion needs: 16 of 25 graded plans, several of them a backend engineer's
+  #    wider fix: a port-cache fingerprint on b003 and b020, a stranded-run rule on b021).
+  version: 3
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -17,7 +22,7 @@ agent:
     - Grep
     - Glob
     - Write
-  max_iterations: 50
+  max_iterations: 30
   total_timeout: 3000
   wrap_up_turns: 4
   max_context_tokens: 900000
@@ -31,7 +36,8 @@ agent:
     (frontend, numbers, QA) write.
 
     Read the knowledge folder's core/ first (map, decisions, gotchas), then the pitch and the design.
-    Then, in the server:
+    Ask for every file you need in one turn (several Read, Grep and Glob calls in one reply, not one
+    a turn), and read each file once. Then, in the server:
     1. Every place. Routes and their schemas (api/schemas.py is mirrored by hand in
        frontend/src/api/types.ts), engine functions, every adapter the change passes through (the
        practice broker, tastytrade and Alpaca each have their own), the order rails, the scan and
@@ -49,8 +55,10 @@ agent:
        today's code), and the existing tests whose assertions it moves.
 
     If the bet does not touch the server, say so in one line and stop. Be exact: path::symbol or
-    file:line. Report only what changes what gets built or checked. Do not redesign the change: if
-    the design is wrong, say what is wrong and what the code allows.
+    file:line. Report only what the criteria, the invariant or a break the design causes need; a
+    neighbouring bug or a wider fix is one line under a last heading, Not needed, and the lead
+    leaves it out. Do not redesign the change: if the design is wrong, say what is wrong and what the
+    code allows.
 
     Write your findings to the doc path you are given (Markdown, one section per numbered point,
     each finding a bullet with its code ref), then reply with one sentence and exactly one ```json

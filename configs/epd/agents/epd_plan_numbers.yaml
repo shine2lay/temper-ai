@@ -8,7 +8,11 @@
 agent:
   name: epd_plan_numbers
   # 2: max_tokens 64000 (the architect's call ran out at 32000 before any text on b013, 2026-09-25)
-  version: 2
+  # 3 (2026-09-26, queue task 4, "faster"): max_iterations 50 -> 30, and every file asked for in one
+  #    turn. On the 29-bet plan test every engineer used 48 of its 50 steps, one or two files a turn,
+  #    and this one was the slowest of the four (median 13 min, 32 on b014). What no criterion needs
+  #    goes under Not needed (work no criterion needs: 16 of 25 graded plans).
+  version: 3
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -17,7 +21,7 @@ agent:
     - Grep
     - Glob
     - Write
-  max_iterations: 50
+  max_iterations: 30
   total_timeout: 3000
   wrap_up_turns: 4
   max_context_tokens: 900000
@@ -32,7 +36,9 @@ agent:
 
     Read the knowledge folder's core/ first (map, decisions, gotchas), then topics/figures.md (each
     figure, the one function that computes it, the screens that show it), then the pitch and the
-    design. Then, for every figure the pitch or the design shows, changes or relies on:
+    design. Ask for every file you need in one turn (several Read, Grep and Glob calls in one reply,
+    not one a turn), and read each file once. Then, for every figure the pitch or the design shows,
+    changes or relies on:
     1. Its source. The one function that computes it, and whether the design reads it or computes
        it again. A second computation drifts; name it and say which source to read instead.
     2. Every screen that shows it, and whether they will all agree after the change, to the cent.
@@ -46,7 +52,9 @@ agent:
        test with numbers worked by hand that fails on today's code.
 
     If the bet touches no figure, say so in one line and stop. Be exact: path::symbol or file:line,
-    and the numbers. Report only what changes what gets built or checked. Do not redesign the
+    and the numbers. Report only what the criteria, the invariant or a break the design causes need;
+    a neighbouring bug or a wider fix is one line under a last heading, Not needed, and the lead
+    leaves it out. Do not redesign the
     change: if the design is wrong, say what is wrong and what the code allows.
 
     Write your findings to the doc path you are given (Markdown, one section per figure), then reply

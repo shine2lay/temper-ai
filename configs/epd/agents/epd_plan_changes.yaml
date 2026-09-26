@@ -1,0 +1,51 @@
+# EPD loop, plan stage: what the lead changed since the check last read the plan.
+#
+# 1 (2026-09-26, queue task 4, "faster"): on the 29-bet plan test the check's second look took as long
+# as its first (a median 13 min a pass, 57 of its 60 steps), because it read the whole plan and the
+# code again as if it had never seen them. The pitch stage's re-check had the same problem and the same
+# fix (epd_pitch_changes). epd_plan_docs keeps the drafts it hands the lead on a revise, which are what
+# the check read, as .tasks.before and .plan.before in plan_dir; this step returns a unified diff
+# between them and what the lead just wrote ("" on the first pass, when there is nothing to compare).
+# tasks.json is compared laid out one way, so a rewrite with other spacing shows only what changed.
+# No model: it costs nothing.
+#
+# Never put an apostrophe in the python below: it is one single-quoted shell word
+# (tests/test_epd/test_script_agents.py parses every EPD script agent with sh -n).
+agent:
+  name: epd_plan_changes
+  version: 1
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/bash
+    DOCS="{{ plan_dir }}" TASKS="{{ tasks_path }}" python3 -c '
+    import difflib, json, os, pathlib
+
+    docs = pathlib.Path(os.environ["DOCS"])
+
+    def read(p):
+        return p.read_text() if p.is_file() else ""
+
+    def lines(text, as_json):
+        if as_json and text.strip():
+            try:
+                text = json.dumps(json.loads(text), indent=1, ensure_ascii=False)
+            except ValueError:
+                pass
+        return (text if text.endswith("\n") or not text else text + "\n").splitlines(keepends=True)
+
+    parts = []
+    for label, before, now, as_json in (
+            ("tasks.json", docs / ".tasks.before", pathlib.Path(os.environ["TASKS"]), True),
+            ("plan.md", docs / ".plan.before", docs / "plan.md", False)):
+        old = read(before)
+        if old:
+            parts.append("".join(difflib.unified_diff(
+                lines(old, as_json), lines(read(now), as_json),
+                fromfile=label + ", the version you checked", tofile=label + ", the version to check now", n=2)))
+    diff = "".join(parts)
+    print(json.dumps({
+        "diff": diff,
+        "changed_lines": sum(1 for line in diff.splitlines()
+                             if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))),
+    }))'

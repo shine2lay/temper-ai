@@ -9,16 +9,22 @@ workflow:
   #    down: a skip caused by a skip does not say "failed", so the node after it runs. On b013
   #    (2026-09-25) the design failed, the engineers and docs were skipped, and the lead still
   #    ran with every docs input null. It wrote a BLOCKED plan, then a 7-task plan with no design.
-  version: 4
+  # 5 (2026-09-26, queue task 4, "faster"): the check's second look starts from its previous issues
+  #    (docs passes them on) and a diff of what the lead changed (the new `changes` step, free), with a
+  #    budget of about 20 tool calls. On the 29-bet test a second look took as long as the first (a
+  #    median 13 min a pass), and the whole stage took a median 63 min, up to 142 (b014). The agents
+  #    were cut too: the architect to medium effort and 40 steps, the engineers to 30, the check to 40.
+  version: 5
   description: |
     EPD loop, plan stage: a pitch becomes the build's tasks. An architect
     designs the change, four engineers check the design in their own areas,
     a lead writes the tasks and the plan they follow, and a check reads the
     code before the build starts.
 
-      design  ->  frontend | backend | numbers | qa  ->  docs  ->  lead  ->  check
+      design  ->  frontend | backend | numbers | qa  ->  docs  ->  lead  ->  changes  ->  check
                   (check says revise: back to docs; after the second revise the lead
-                   makes a last pass and the check is skipped)
+                   makes a last pass and the check is skipped; the check's second look
+                   starts from its issues and the diff `changes` makes)
 
     Replaces the one-agent tasks stage (workflows/epd_tasks.yaml) as the
     `tasks` node of epd_loop (v8, 2026-09-25). It writes tasks.json in the
@@ -146,6 +152,9 @@ workflow:
         kb_dir: input.kb_dir
         plan_dir: input.plan_dir
         tasks_path: input.tasks_path
+        # null on the first pass; the issues of the check that sent the plan back, passed on to its
+        # second look
+        check_issues: check.structured.issues
 
     - name: lead
       type: agent
@@ -177,11 +186,20 @@ workflow:
         check_verdict: check.structured.verdict
         check_issues: check.structured.issues
 
+    # What the lead changed since the check last read the plan ("" on the first pass). Free.
+    - name: changes
+      type: agent
+      agent: epd_plan_changes
+      depends_on: [lead]
+      input_map:
+        plan_dir: input.plan_dir
+        tasks_path: input.tasks_path
+
     - name: check
       type: agent
       agent: epd_plan_check
       # docs is named so a failed engineer stops the check, not only the lead (see version 4)
-      depends_on: [lead, docs]
+      depends_on: [lead, docs, changes]
       # max_loops counts the revises: the first two rewind to docs, so the lead
       # is handed its draft with the issues. The rewind goes to docs, not lead,
       # because docs reads the draft back and counts the round. Round 3 is the
@@ -207,5 +225,8 @@ workflow:
         tasks_path: input.tasks_path
         reach: input.reach
         check_round: docs.structured.round
+        last_issues: docs.structured.issues
+        changes: changes.structured.diff
+        changed_lines: changes.structured.changed_lines
         lead_status: lead.structured.status
         lead_blocked: lead.structured.blocked_because

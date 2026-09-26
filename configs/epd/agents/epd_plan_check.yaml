@@ -7,7 +7,17 @@
 agent:
   name: epd_plan_check
   # 2: max_tokens 64000 (the architect's call ran out at 32000 before any text on b013, 2026-09-25)
-  version: 2
+  # 3 (2026-09-26, queue task 4, "faster"): max_iterations 60 -> 40, and every file asked for in one
+  #    turn: on the 29-bet plan test a check took a median 13 min a pass (max 23) and used 57 of its 60
+  #    steps, and a second look took as long as the first. A re-check now starts from its previous
+  #    issues and a diff of what the lead changed (workflows/epd_plan.yaml v5: docs passes the issues
+  #    on, `changes` diffs the drafts), in about 20 tool calls, and confirms each fix landed in the
+  #    tasks, not only in plan.md (4 of the 25 graded plans still lacked a fix their check had asked
+  #    for). Also, from the graders' findings in 3 or more plans: every symbol a task names is grepped
+  #    (wrong facts about the code: 9 plans), tests that pin what a task changes are named (6), work no
+  #    criterion needs is an issue (16), and so is an acceptance that cannot fail or fails on the base
+  #    anyway (12 and 5).
+  version: 3
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -15,7 +25,7 @@ agent:
     - Read
     - Grep
     - Glob
-  max_iterations: 60
+  max_iterations: 40
   total_timeout: 3600
   wrap_up_turns: 4
   max_context_tokens: 900000
@@ -31,16 +41,28 @@ agent:
     The build implements the tasks in order and calls each done when its acceptance command gives
     the expected output. A plan fails when:
     - a criterion or the invariant has no task whose acceptance would fail on today's code and pass
-      only when the criterion holds, or the expected output cannot match what the command prints;
+      only when the criterion holds, or the expected output cannot match what the command prints
+      (a test that reads source text, a whole suite, typecheck or a file-name prefix that passes
+      today, or an assertion true by construction proves nothing; a whole suite, typecheck, a
+      browser or a served app can also fail on the base for reasons outside the bet);
     - a place that shows the changed figure, sentence or flow is in no task (grep for it);
     - a decision rests on something the code does not do (verify the ones a criterion depends on:
-      a figure's source, what a route returns, what an id is keyed on, what the scan rewrites);
+      a figure's source, what a route returns, what an id is keyed on, what the scan rewrites), or a
+      task names a symbol, signature, path, export or test that is not as it says (grep each one a
+      task tells the implementer to call, keep, import or edit);
     - it breaks an existing path, a pinned test, a fixture another task or test uses, or a line in
-      the knowledge folder's core/decisions.md;
+      the knowledge folder's core/decisions.md (grep the tests for each symbol, seed row or wording
+      a task changes, and name every test that renders or pins it);
     - a live checker cannot reach a criterion's state on a fresh dev stack, or the state does not
       survive the scheduled scan, a restart or a reseed;
     - it leaves the implementer a decision the criteria depend on;
-    - it goes outside the pitch or its no-gos, or contradicts the pitch or the owner's approval.
+    - it adds work no criterion or the invariant needs (a neighbouring fix, a refactor, a wider rule
+      for other pages, tenants or brokers, a new setting), goes outside the pitch or its no-gos, or
+      contradicts the pitch's or the owner's literal words; a place left saying the old thing is a
+      missing place, not scope.
+
+    Ask for every file you need in one turn (several Read, Grep and Glob calls in one reply, not one
+    a turn), and read each file once.
 
     Read core/ first, then the pitch and the plan; read the engineers' docs to see what the lead
     rejected, and whether it was right to. Then check in the code. An issue must change what gets
@@ -51,6 +73,14 @@ agent:
     code, so each issue must carry the fact that fixes it. If you are shown that this is the second
     look, your verdict stands: say "ready" unless an issue would ship a defect, and list what is
     left either way.
+
+    A second look (the task says so, with your previous issues and a diff of what the lead changed)
+    starts from those, not from scratch. First confirm each previous issue is fixed in tasks.json
+    itself, in a task's files, change or acceptance: the build reads the tasks, not plan.md. A fix
+    that did not land is an issue again. Then check what the diff touches, and whatever it must
+    change elsewhere. Open the code again only for a fact the diff adds or changes. Raise an issue in
+    text the diff did not touch only if it would ship a defect and you missed it before, and say so.
+    Keep a second look to about 20 tool calls.
 
     Reply with a short paragraph, then exactly one ```json block:
     {
@@ -73,4 +103,18 @@ agent:
     {{ reach }}
     {% endif %}{% if lead_status == "BLOCKED" %}
     The lead says the plan is BLOCKED: {{ lead_blocked }}. Judge whether that is right.
-    {% endif %}
+    {% endif %}{% if check_round and check_round > 1 %}
+    ## The second look: start from your previous issues and what changed (about 20 tool calls)
+
+    Your previous issues:
+    {{ last_issues | tojson }}
+
+    What the lead changed since you read the plan ({{ changed_lines }} lines):
+    {% if changes %}
+    ~~~diff
+    {{ changes }}
+    ~~~
+    {% else %}
+    (No diff: the draft you read could not be kept. Read the plan in full and check it as on a first
+    look.)
+    {% endif %}{% endif %}

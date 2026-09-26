@@ -18,15 +18,23 @@
 # single-quoted shell word, so they ended the quote and /bin/sh stopped: `Syntax error: ")"
 # unexpected` (b021, 2026-09-25, after $16.76 of design and engineers). Never put a ' in the python
 # below; tests/test_epd/test_script_agents.py parses every EPD script agent with sh -n.
+#
+# 4 (2026-09-26, queue task 4, "faster"): on a revise it also keeps the drafts it hands back, which
+# are what the check read, as .tasks.before and .plan.before in plan_dir, and passes the check's issues
+# on as `issues` ([] on the first pass). The check's second look starts from those issues and a diff of
+# what the lead changed (epd_plan_changes) instead of reading everything again: on the 29-bet test a
+# second look took as long as the first (13 min median a pass, 57 of 60 steps). A first pass removes
+# .before files an earlier attempt left.
 agent:
   name: epd_plan_docs
-  version: 3
+  version: 4
   type: script
   timeout_seconds: 30
   script_template: |
     #!/bin/bash
     PITCH="{{ bet_path }}" KB="{{ kb_dir }}" DESIGN="{{ plan_dir }}/design.md" DOCS="{{ plan_dir }}" \
-    TASKS="{{ tasks_path }}" PLAN="{{ plan_dir }}/plan.md" python3 -c '
+    TASKS="{{ tasks_path }}" PLAN="{{ plan_dir }}/plan.md" \
+    ISSUES="{{ check_issues | default(none, true) | tojson }}" python3 -c '
     import json, os, pathlib, sys
 
     def read(p):
@@ -55,6 +63,17 @@ agent:
     except (OSError, ValueError):
         n = 1
     counter.write_text(str(n))
+    # the drafts handed back are what the check read: keep them, so its second look reads what changed
+    for name, text in ((".tasks.before", previous_tasks), (".plan.before", previous_plan)):
+        before = docs / name
+        if n > 1 and text:
+            before.write_text(text)
+        elif before.exists():
+            before.unlink()
+    try:
+        issues = json.loads(env["ISSUES"] or "null") if n > 1 else None
+    except ValueError:
+        issues = None
     print(json.dumps({
         "pitch": pitch, "core": core, "design": design,
         **{role: read(docs / f"{role}.md") for role in ("frontend", "backend", "numbers", "qa")},
@@ -62,4 +81,6 @@ agent:
         # 1 the first time; 2 when the check sent the plan back (its second look);
         # 3 when it sent it back again (the last pass by the lead: no check follows)
         "round": n,
+        # the issues of the check that sent the plan back, for its second look ([] on the first pass)
+        "issues": issues if isinstance(issues, list) else [],
     }))'

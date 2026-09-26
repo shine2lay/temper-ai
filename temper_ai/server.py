@@ -27,6 +27,7 @@ from temper_ai.api.hooks import router as hooks_router
 from temper_ai.api.routes import init_app_state
 from temper_ai.api.routes import router as api_router
 from temper_ai.api.studio import router as studio_router
+from temper_ai.api.triggers import router as triggers_router
 from temper_ai.config import ConfigStore
 from temper_ai.database import init_database, reset_database
 from temper_ai.mcp import build_server as _build_mcp_server
@@ -309,6 +310,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "TEMPER_API_TOKEN to require a token."
         )
 
+    # Schedules, run-finished and stuck-run triggers. Off with
+    # TEMPER_TRIGGER_SCHEDULER=0 (a second server on the same database must
+    # not fire them twice; the per-occasion unique row stops a double start,
+    # but one scheduler is the clear arrangement).
+    trigger_scheduler = None
+    if os.environ.get("TEMPER_TRIGGER_SCHEDULER", "1").strip().lower() not in ("0", "false", "off", "no"):
+        try:
+            from temper_ai.triggers.scheduler import start_scheduler
+            trigger_scheduler = start_scheduler()
+        except Exception as e:
+            logger.warning("Trigger scheduler failed to start: %s", e)
+
     logger.info("Temper AI server ready")
 
     # The /mcp endpoint needs its session manager running for the life of
@@ -317,6 +330,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
 
     # Shutdown
+    if trigger_scheduler is not None:
+        trigger_scheduler.stop()
     if reaper is not None:
         reaper.stop()
     try:
@@ -396,6 +411,7 @@ app.include_router(api_router)
 app.include_router(studio_router)
 app.include_router(docs_router)
 app.include_router(hooks_router)
+app.include_router(triggers_router)
 
 # -- MCP --
 # Agents drive temper through the same functions the REST API uses.

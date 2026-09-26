@@ -16,6 +16,12 @@ def _test_db():
 
 
 @pytest.fixture(autouse=True)
+def _no_trigger_scheduler(monkeypatch):
+    """A test server must not fire the repo's schedules in the background."""
+    monkeypatch.setenv("TEMPER_TRIGGER_SCHEDULER", "0")
+
+
+@pytest.fixture(autouse=True)
 def _scratch_dirs_under_pytest_tmp(tmp_path_factory, monkeypatch):
     """Keep every executor's scratch directory under pytest's own tmp.
 

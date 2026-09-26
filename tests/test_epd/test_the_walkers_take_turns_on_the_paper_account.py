@@ -108,7 +108,7 @@ def test_a_lens_reaches_every_node_that_decides_who_walks_or_what_they_found():
         assert n[name]["input_map"]["lens"] == "input.lens", name
     assert nodes("epd_propose")["report"]["input_map"]["lens"] == "input.lens"
     assert nodes("epd_propose")["bet"]["input_map"]["lens"] == "input.lens"
-    assert nodes("epd_bet")["bet"]["input_map"]["lens"] == "input.lens"
+    assert nodes("epd_bet")["problems"]["input_map"]["lens"] == "input.lens"
 
 
 def test_the_lens_makes_every_persona_that_person_and_every_walker_knows_only_what_they_know():
@@ -132,9 +132,9 @@ def test_the_lens_makes_every_persona_that_person_and_every_walker_knows_only_wh
                        walk_1="w1", walk_2="w2", walk_3="w3", last_outcome="", account_state=HOLDS,
                        market=MARKET, lens=LENS)
     assert f"walked by {LENS}, and every walker was such a person" in report
-    _, bet = render("epd_bet", round_id="r009", bets_dir="/b", slots="b047", goals="g", bets_tsv="",
-                    unfinished="", report_path="/r/report.md", profile="p", lens=LENS)
-    assert f"walked by {LENS}. Write its bets for that person too" in bet
+    _, problems = render("epd_problems", round_id="r009", bets_dir="/b", slots="b047", goals="g", bets_tsv="",
+                         no_bets="", unfinished="", report_path="/r/report.md", profile="p", lens=LENS)
+    assert f"walked by {LENS}. Say so in each problem" in problems
 
 
 def test_the_personas_are_designed_for_what_the_account_holds():

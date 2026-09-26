@@ -1,0 +1,142 @@
+# EPD loop, proposal: the round's problems, one per slot, each handed to the pitch stage.
+#
+# Before (epd_bet v6) one agent read the report and wrote one to five pitches itself, and chose
+# which problems made a bet. The pitch stage (workflows/epd_pitch) writes pitches a build can trust:
+# three lenses, a writer, two checks and a last pass. On 8 past bets, on the same grader, its pitches
+# scored 32 against 25 for the pitches epd_bet shipped (and 29 for the stage's own v3), with a new
+# blocking problem on 1 bet against 8 (~/epd-autopilot/lens/results-v5.md). That missed the bar
+# of none; the owner switched anyway, 2026-09-26: "its still strictly better than other version
+# so i'd say use it". So this agent no longer writes
+# pitches and no longer chooses: every problem in the report that is not already on file goes to the
+# pitch stage (the owner, 2026-09-25: every non-duplicate problem is pitched, at most 4 at once).
+# Whether a problem is real enough for a bet is the pitch writer's call (its no_bet).
+#
+# 1: first version (queue task 3, 2026-09-26).
+agent:
+  name: epd_problems
+  version: 1
+  description: >-
+    The round's problems: every problem in the walk report that is not already on file as a bet,
+    each written to its own slot as problem.md, then one pitch stage per problem, at most 4 at once.
+  type: llm
+  provider: anthropic
+  model: claude-opus-5-5
+  # Read/Glob/Grep: the report is a file, and a problem that looks like one on file is checked
+  # against that bet's pitch, not its title. Write: each problem to its slot.
+  tools:
+    - Read
+    - Glob
+    - Grep
+    - Write
+  max_iterations: 30
+  total_timeout: 1500
+  provider_config:
+    max_tokens: 32000
+    effort: medium
+  system_prompt: |
+    You sort one round's evidence into problems. Three synthetic users walked the product, and a
+    report ranked what got in their way. Each problem you list goes to its own pitch stage, where
+    three lenses read the code and a writer turns it into a bet, or says it is not real. You do not
+    judge whether a problem is worth a bet, how big it is, or whether it can be checked: the pitch
+    stage does. You decide two things only: what the separate problems are, and which of them are
+    already on file.
+
+    Method:
+    1. Read the report, whole. Then the walks it names, where the report's words are not enough to
+       say what a walker saw. Every friction item is a problem, the small ones too.
+    2. Merge two items only when they are one problem: the same thing wrong, seen on two pages or
+       by two walkers. Two different things wrong on one page are two problems.
+    3. A problem is already on file when a bet in the ledger with status proposed, approved, open,
+       building, shipped or kept covers the same thing wrong. Read that bet's pitch
+       (`<bets dir>/<id>/bet.md`) before you decide: a title can sound the same and fix something
+       else. If the report shows the problem changed since that bet (it came back after the bet
+       shipped, or on a page the bet did not touch), it is not a duplicate: say what changed in the
+       problem. A killed or rejected bet's problem is not on file: it is a problem again. A problem
+       the pitch stage already found not real (the no-bet list, with its reasons) is on file too,
+       unless the report shows something that answers the reason given.
+    4. If there is unfinished business from the last measured bet (what its measurement could not
+       see), that is a problem too, unless a bet on file already covers it.
+    5. Order the problems as the report ranks them (blocked before confused before slowed), then by
+       how many walkers hit it.
+    6. Write each problem to its slot, `<bets dir>/<slot id>/problem.md`, first problem in the first
+       slot, in this shape:
+
+         # <the problem in a few words: what is wrong, not the fix>
+
+         **Found by <n> walk(s) in round <round>:** <round> W1, <round> W3 (or "the last measured
+         bet's measurement, <bet id>")
+
+         ## Problem
+         <What the walkers saw, in their words: quote the report and the walks, with the page,
+         the login, the numbers and what they expected. The report's severity and item number.
+         If the owner named who walked (the lens), say so here.>
+
+       Nothing else: no solution, no invariant, no threshold, no size. Those are the pitch stage's.
+       Quote; do not invent evidence the walkers did not give.
+    7. More problems than slots: the rest go in left_out as "no slot left", in order.
+
+    Reply with a short paragraph, then exactly one ```json block:
+    {
+      "problems": [
+        {"bet_id": "<slot id>", "title": "<the problem's title>", "found_by": "<round W1, W2>",
+         "severity": "<blocked | confused | slowed | trust | ...>", "item": "<the report's item number(s)>"}
+      ],
+      "left_out": ["<problem> — <duplicate of bNNN (status): why it is the same thing wrong | no bet in bNNN: why its reason still holds | no slot left>"],
+      "questions_for_owner": ["<question — recommended answer>"]
+    }
+    `problems` lists only slots you wrote, in slot order, with no gaps.
+  task_template: |
+    Round: {{ round_id }}
+
+    ## Slots
+    Write each problem to `<bets dir>/<slot id>/problem.md`, first problem first.
+    Bets directory: {{ bets_dir }}
+    Slot ids, in order: {{ slots }}
+
+    ## The report
+    Read it first, whole: {{ report_path }}
+    The walks it summarizes are next to it (walk_1.md, walk_2.md, walk_3.md), once the round is
+    collected; during the round, the report quotes them.
+
+    ## Ledger of past bets (tab-separated; status proposed means on file waiting for the owner)
+    {{ bets_tsv }}
+
+    {% if no_bets %}
+    ## Problems the pitch stage found not real (no pitch written; each slot keeps problem.md and no_bet.md)
+    {{ no_bets }}
+    {% endif %}
+    {% if unfinished %}
+    ## Unfinished business from the last measured bet (its measurement, in its own words)
+    {{ unfinished }}
+    {% endif %}
+    {% if lens %}
+    ## Who walked (the owner's lens)
+    The owner asked for this round to be walked by {{ lens }}. Say so in each problem.
+    {% endif %}
+    List the problems and write each to its slot.
+
+  # One pitch stage per problem, at most 4 at once: the fifth waits for the first, and so on. A
+  # pitch stage that fails does not hold up the one queued behind it (run_after_failure); the
+  # driver reports the failed one when it collects the round.
+  dispatch:
+    - op: add
+      for_each: structured.problems
+      as: p
+      node:
+        name: "pitch_{{ p.bet_id }}"
+        type: stage
+        ref: workflows/epd_pitch
+        depends_on: |
+          {%- if i >= 4 -%}["pitch_{{ structured.problems[i - 4].bet_id }}"]{%- else -%}["problems"]{%- endif -%}
+        run_after_failure: true
+        input_map:
+          bet_id: "{{ p.bet_id }}"
+          problem_path: "{{ input.bets_dir }}/{{ p.bet_id }}/problem.md"
+          out_path: "{{ input.bets_dir }}/{{ p.bet_id }}/bet.md"
+          report_path: input.report_path
+          goals: input.goals
+          profile: input.profile
+          code_dir: input.code_dir
+          reach: input.reach
+          qa_config_path: input.qa_config_path
+          measure_config_path: input.measure_config_path

@@ -51,6 +51,7 @@ def L(tmp_path, monkeypatch):
     mod.REPORTS_DIR.mkdir()
     (mod.LOOP_DIR / "goals.md").write_text("Ship the roll job.\n")
     (mod.LOOP_DIR / "profile.md").write_text("RollCall: covered calls.\n")
+    (mod.LOOP_DIR / "reach.md").write_text("# What the checkers can reach\n")
     mod.ledger_write([])
     calls: dict[str, list] = {"standee_down": [], "release_task": [], "propose": [], "start": [],
                               "plan_snapshot": [], "drop_plan_snapshot": []}
@@ -66,6 +67,10 @@ def L(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "plan_snapshot", lambda bet_id: calls["plan_snapshot"].append(bet_id)
                         or mod.PLANS_DIR / f"epd-{bet_id}")
     monkeypatch.setattr(mod, "drop_plan_snapshot", lambda bet_id: calls["drop_plan_snapshot"].append(bet_id))
+    # So is the pitch stage's copy of the code at the round's commit.
+    calls["code_snapshot"] = []
+    monkeypatch.setattr(mod, "code_snapshot", lambda head: calls["code_snapshot"].append(head)
+                        or mod.CODE_DIR / head[:12])
     monkeypatch.setattr(mod, "require_prod_paper_login", lambda bet_id: None)
     # The token pool is the live server's; no test asks it.
     mod._real_require_models = getattr(mod, "require_models", None)
@@ -610,7 +615,8 @@ def test_rounds_take_turns_on_the_paper_account_each_with_its_own_stack_slots_an
     assert L.open_rounds() == ["r001", "r002"], "a round writing its bets no longer holds the next one back"
     assert seen["up"] == ["epd-r001", "epd-r002"]
     slots = [L.load_round(r)["slots"] for r in L.open_rounds()]
-    assert slots == [[f"b{i:03d}" for i in range(k, k + 5)] for k in (1, 6)], "no slot is handed out twice"
+    assert slots == [[f"b{i:03d}" for i in range(k, k + L.SLOTS)] for k in (1, 1 + L.SLOTS)], \
+        "no slot is handed out twice"
     assert [r["slots"] for r in seen["runs"]] == [" ".join(s) for s in slots]
     assert [r["env_name"] for r in seen["runs"]] == ["rollcall-dev-epd-r001", "rollcall-dev-epd-r002"]
     assert seen["paper"] == [("rollcall-dev-epd-r001", "WALK"), ("book", "WALK"),
@@ -1006,6 +1012,142 @@ def test_collect_round_failure_prunes_and_gives_up_on_the_round(L, monkeypatch):
     assert L.open_round() is None, "a failed round is not collected again; `run --propose` starts a new one"
     assert L._calls["standee_down"] == ["epd-r001"]
     assert L.new_round_id() == "r002"
+
+
+# ------------------------------------------------------- the pitch stage (epd_bet v6) --
+
+STAGE_PITCH = """# Bet {bet_id}: The chart opens on figures
+
+**Found by 1 walk in round r001:** r001 W1
+
+## Problem
+
+The chart waits 5 seconds
+on a blank page.
+
+More detail.
+
+## Appetite
+
+6 hours for one engineer. Cut the tooltip first.
+
+## Invariant
+
+The chart shows figures
+within 1 s.
+
+## Success
+
+**Threshold:** (1) qa@'s /analysis shows figures in 1 s; (2) the live check sees the same.
+
+**When and where:** QA on the dev stack.
+"""
+
+
+def pitch_round(L, monkeypatch, status="completed", error=None, pitch=STAGE_PITCH, **b001_out):
+    """r001 as the pitch stage leaves it: b001 pitched, b002 no bet, b003's stage failed, b004 empty."""
+    (L.REPORTS_DIR / "r001").mkdir()
+    (L.REPORTS_DIR / "r001" / "report.md").write_text("# Report\n")
+    slots = ["b001", "b002", "b003", "b004"]
+    for b in slots:
+        (L.BETS_DIR / b).mkdir()
+    for b in slots[:3]:
+        (L.BETS_DIR / b / "problem.md").write_text(f"# Problem of {b}\n\n## Problem\nIt is slow.\n")
+    (L.BETS_DIR / "b001" / "bet.md").write_text(pitch.format(bet_id="b001"))
+
+    def write(b, at, **out):
+        return {"agent_name": "epd_pitch_write", "start_time": at, "input_data": {"bet_id": b}, "structured_output": out}
+
+    run = {"status": status, "error_message": error, "nodes": [
+        {"name": "report", "status": "completed"},
+        {"name": "bet", "status": status, "agents": [
+            {"agent_name": "epd_problems", "status": "completed"},
+            write("b002", "2026-09-26T10:00:00", status="written"),
+            write("b002", "2026-09-26T10:20:00", status="no_bet", why_no_bet="the first draw is already 0.2 s"),
+            write("b001", "2026-09-26T10:05:00", status="written", **b001_out),
+        ]}],
+        "workflow_output": {"candidates": [{"bet_id": b, "title": f"Problem of {b}", "found_by": "r001 W1"}
+                                           for b in slots[:3]],
+                            "report_summary": "slow", "walk_1": "w1"}}
+    monkeypatch.setattr(L, "get_run", lambda rid: run)
+    L.save_round({"round_id": "r001", "env": "epd-r001", "slots": slots, "_run_id": "run-r001"})
+
+
+def test_a_round_from_the_pitch_stage_records_its_pitches_no_bets_and_failed_stages(L, monkeypatch, capsys):
+    pitch_round(L, monkeypatch)
+    assert L.collect_round("r001", keep=False)
+    rows = {r["bet_id"]: r for r in L.ledger_rows()}
+    assert set(rows) == {"b001"}, "only a pitch goes on the ledger"
+    assert rows["b001"]["title"] == "The chart opens on figures"
+    assert rows["b001"]["threshold"] == "(1) qa@'s /analysis shows figures in 1 s; (2) the live check sees the same."
+    bet = json.loads((L.BETS_DIR / "b001" / "bet.json").read_text())
+    assert bet["invariant"] == "The chart shows figures within 1 s." and bet["appetite_hours"] == 6
+    assert bet["problem"] == "The chart waits 5 seconds on a blank page." and bet["found_by"] == "r001 W1"
+    no_bet = (L.BETS_DIR / "b002" / "no_bet.md").read_text()
+    assert no_bet.startswith("# Problem of b002\n") and "the first draw is already 0.2 s" in no_bet, \
+        "the writer's last word counts, not its first draft"
+    assert (L.BETS_DIR / "b003" / "problem.md").exists() and not (L.BETS_DIR / "b003" / "no_bet.md").exists()
+    assert not (L.BETS_DIR / "b004").exists(), "an empty slot is removed"
+    rd = L.load_round("r001")
+    assert (rd["candidates"], rd["no_bets"], rd["pitch_failed"]) == (["b001"], ["b002"], ["b003"])
+    out = capsys.readouterr().out
+    assert "no bet:    b002" in out and "FAILED:    b003" in out and "found by: r001 W1" in out
+    assert L.no_bets_on_file() == "- b002: Problem of b002 -- no bet: the first draw is already 0.2 s"
+    assert L.new_bet_ids(2) == ["b004", "b005"], "a no-bet's and a failed stage's slots stay taken"
+
+
+@pytest.mark.parametrize("line", [
+    "Threshold: (1) qa@'s /analysis shows figures in 1 s; (2) the live check sees the same.",
+    "**Threshold:**\n(1) qa@'s /analysis shows figures in 1 s;\n(2) the live check sees the same.",
+    "**Threshold**: (1) qa@'s /analysis shows figures in 1 s; (2) the live check sees the same.",
+])
+def test_the_threshold_is_read_however_the_writer_marked_it(L, line):
+    # The writers put it bold or plain, and some on the next line (r018's trial b084: plain).
+    pitch = STAGE_PITCH.replace("**Threshold:** (1) qa@'s /analysis shows figures in 1 s; (2) the live check "
+                                "sees the same.", line).format(bet_id="b001")
+    (L.BETS_DIR / "b001").mkdir()
+    (L.BETS_DIR / "b001" / "bet.md").write_text(pitch)
+    assert L.pitch_fields(L.BETS_DIR / "b001" / "bet.md")["threshold"] == \
+        "(1) qa@'s /analysis shows figures in 1 s; (2) the live check sees the same."
+
+
+def test_a_pitch_with_no_threshold_line_gets_its_writers_threshold(L, monkeypatch):
+    pitch = STAGE_PITCH.replace("**Threshold:** (1) qa@'s /analysis shows figures in 1 s; (2) the live check "
+                                "sees the same.\n\n", "")
+    pitch_round(L, monkeypatch, pitch=pitch, threshold="(1) figures in 1 s on qa@")
+    assert L.collect_round("r001", keep=False)
+    assert json.loads((L.BETS_DIR / "b001" / "bet.json").read_text())["threshold"] == "(1) figures in 1 s on qa@"
+    assert L.ledger_rows()[0]["threshold"] == "(1) figures in 1 s on qa@"
+
+
+def test_a_failed_pitch_stage_does_not_lose_the_rest_of_the_round(L, monkeypatch):
+    pitch_round(L, monkeypatch, status="failed", error="1 node(s) failed: pitch_b003")
+    assert L.collect_round("r001", keep=False)
+    assert [r["bet_id"] for r in L.ledger_rows()] == ["b001"]
+    assert L.load_round("r001")["pitch_failed"] == ["b003"] and not L.load_round("r001").get("_failed")
+
+
+def test_a_proposal_hands_the_pitch_stage_the_code_the_reach_sheet_and_the_no_bets(L, monkeypatch):
+    (L.BETS_DIR / "b001").mkdir()
+    (L.BETS_DIR / "b001" / "no_bet.md").write_text("# Old problem\n\nRound r000.\n\n## Why no bet\n\nnot real\n")
+    seen = proposals_run_here(L, monkeypatch)
+    L.cmd_propose(keep=False, wait=False)
+    run = seen["runs"][0]
+    assert L._calls["code_snapshot"] == ["f52e741"]
+    assert run["code_dir"] == L.cpath(L.CODE_DIR / "f52e741")
+    assert run["reach"] == "# What the checkers can reach\n"
+    assert run["qa_config_path"] == "/app/configs/epd/agents/task_verify.yaml"
+    assert run["measure_config_path"] == "/app/configs/epd/agents/epd_measure.yaml"
+    assert run["no_bets"] == "- b001: Old problem -- no bet: not real"
+    assert run["slots"].split() == [f"b{i:03d}" for i in range(2, 2 + L.SLOTS)]
+
+
+def test_a_proposal_without_the_reach_sheet_starts_nothing(L, monkeypatch):
+    seen = proposals_run_here(L, monkeypatch)
+    (L.LOOP_DIR / "reach.md").unlink()
+    with pytest.raises(SystemExit):
+        L.cmd_propose(keep=False, wait=False)
+    assert seen["up"] == [] and L.round_ids() == [] and not list(L.BETS_DIR.iterdir())
 
 
 # ----------------------------------------------------------------- screenshots --

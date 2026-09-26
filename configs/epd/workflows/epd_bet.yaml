@@ -6,29 +6,37 @@ workflow:
   #    output instead of needing a driver to read the file in between.
   # 4: writes one to five candidates into pre-made slots instead of one bet to one path. The pick
   #    moved out of the run and into a file the owner edits (backlog.md).
-  # 5: takes the round's lens (who walked, when the owner asked for someone other than the
+  # 5: takes the round's lens (who walks, when the owner asked for someone other than the
   #    profile's user), so the bets are written for that person too.
-  version: 5
+  # 6: the pitch stage writes the pitches (queue task 3, 2026-09-26). One agent (epd_problems) lists
+  #    every problem in the report that is not already on file, one per slot, and each goes through
+  #    workflows/epd_pitch (three lenses, a writer, two checks and a last pass), at most 4 at once.
+  #    Before, one agent (epd_bet) wrote one to five pitches itself and chose which problems made a
+  #    bet. On 8 past bets the pitch stage's pitches scored 32 against the shipped ones' 25, with a
+  #    new blocking problem on 1 bet against 8 (~/epd-autopilot/lens/results-v5.md); the owner
+  #    switched on that, 2026-09-26. The owner, 2026-09-25: every non-duplicate problem is
+  #    pitched. So the stage takes what the pitch stage needs: the code at the round's commit, the
+  #    reach sheet and the checkers' configs, and the problems already judged not real (no_bets).
+  version: 6
   description: |
-    EPD loop, stage 2 of the proposal: the bets. Replaces the product
-    department's decision -- or rather, prepares it. One agent reads the
-    report, the goals, the profile and the ledger of past bets, and writes
-    every bet the evidence supports (one to five), each as a pitch with ONE
-    falsifiable invariant and a pre-registered success threshold, each to
-    its own slot under the bets directory, in the order it would build them.
+    EPD loop, stage 2 of the proposal: the bets. Prepares the product department's decision.
 
-    Ends with status DECIDE, always: the owner reads the candidates, edits
-    the ones worth building, and lists them in backlog.md in the order the
-    loop should take them. That file is the product judgement lever, and it
-    is the only place a human is required.
+    One agent (epd_problems) reads the report and the ledger of past bets and writes every problem
+    the walkers hit that is not already on file, each to its own slot (problem.md). Each problem
+    then goes through the pitch stage (workflows/epd_pitch), which reads the code, writes a pitch
+    with ONE falsifiable invariant and a pre-registered threshold to the slot (bet.md), checks it
+    twice and makes a last pass -- or finds the problem is not real and writes no pitch. At most
+    4 pitch stages run at once; one that fails does not stop the others.
 
-    The slots are directories the driver makes before the run (the
-    container's user cannot make directories the host can then write its
-    records into). The agent fills the first N and leaves the rest; the
-    driver removes the empty ones when it collects the run.
+    Ends without a decision: the owner reads the candidates and lists the ones worth building in
+    backlog.md in the order the loop should take them.
 
-    Isolated: inputs are strings and paths. Run it alone on any report to
-    work on the product judgement.
+    The slots are directories the driver makes before the run (the container's user cannot make
+    directories the host can then write its records into). The driver removes the empty ones, and
+    records a slot with a problem and no pitch as a no-bet (or a failed pitch stage), when it
+    collects the run.
+
+    Isolated: inputs are strings and paths. Run it alone on any report.
   inputs:
     round_id: {type: string, required: true}
     bets_dir: {type: string, required: true}    # container path of the bets directory
@@ -37,18 +45,27 @@ workflow:
     profile: {type: string, required: true}
     report_path: {type: string, required: true}
     bets_tsv: {type: string, required: true}
+    no_bets: {type: string, required: false}    # problems the pitch stage found not real, with its reasons
     unfinished: {type: string, required: false}
     lens: {type: string, required: false}       # who walked, instead of the profile's user; empty = the profile's user
+    # What the pitch stage reads
+    code_dir: {type: string, required: true}             # the product's code at the round's commit
+    reach: {type: string, required: true}                # what the checkers can reach, Markdown (the live sheet)
+    qa_config_path: {type: string, required: true}       # task_verify's agent config
+    measure_config_path: {type: string, required: true}  # epd_measure's agent config
   outputs:
-    status: bet.structured.status
-    candidates: bet.structured.candidates
-    left_out: bet.structured.left_out
-    questions_for_owner: bet.structured.questions_for_owner
+    # one per slot written, in slot order: bet_id, title, found_by, severity, item. Whether a slot
+    # got a pitch is on disk (bet.md), and why not is in the run (its pitch stage's writer).
+    candidates: problems.structured.problems
+    left_out: problems.structured.left_out
+    questions_for_owner: problems.structured.questions_for_owner
 
   nodes:
-    - name: bet
+    # Dispatches pitch_<slot id> (workflows/epd_pitch) for every problem it writes. The pitch
+    # stages' code_dir, reach and config paths come straight from this workflow's inputs.
+    - name: problems
       type: agent
-      agent: epd_bet
+      agent: epd_problems
       input_map:
         round_id: input.round_id
         bets_dir: input.bets_dir
@@ -57,5 +74,6 @@ workflow:
         profile: input.profile
         report_path: input.report_path
         bets_tsv: input.bets_tsv
+        no_bets: input.no_bets
         unfinished: input.unfinished
         lens: input.lens

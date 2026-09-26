@@ -231,7 +231,13 @@ neither list wait.
 BACKLOG_MARK = "  \u2192 "  # what the loop did with a line, and when; a line with one is done with
 # One proposal = one round: a report and the candidates it produced.
 REPORTS_DIR = LOOP_DIR / "reports"
-SLOTS = 5  # bet directories made before a proposal; the agent fills one to five
+# Bet directories made before a proposal. epd_bet v6 sends every problem not on file through the pitch
+# stage, one slot each (the owner, 2026-09-25: every non-duplicate problem is pitched); rounds r014-r018
+# listed 9-14 items each, duplicates included. More problems than slots go to left_out as "no slot
+# left". (Before v6 one agent filled one to five.)
+SLOTS = 12
+# The product's code at a round's commit, one read-only copy per commit, for the pitch stage's readers.
+CODE_DIR = LOOP_DIR / "code"
 
 STAGES = ["tasks", "build", "ship", "deploy", "measure"]
 TERMINAL = {"rejected", "kept", "iterate", "killed", "closed", "changes_requested"}
@@ -1380,20 +1386,79 @@ def report_path_for(bet_id: str) -> Path:
     return beside
 
 
+def pitch_section(text: str, heading: str) -> str:
+    """The body of a `## <heading>` section of a pitch, up to the next `##`; empty when it has none."""
+    m = re.search(rf"^##\s+{heading}\s*\n(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    return m.group(1).strip() if m else ""
+
+
 def pitch_fields(path: Path) -> dict:
     """Title and invariant as they stand in the pitch. The owner edits the file; this is how the
-    edit reaches the record (decision.md, the PR body) without a second place to type it."""
+    edit reaches the record (decision.md, the PR body) without a second place to type it.
+
+    A pitch from the pitch stage (epd_bet v6) is the whole record: its run returns no threshold,
+    problem or appetite beside it, so those are read here too, when the pitch has them -- the
+    threshold from the paragraph that starts `Threshold:` under Success (bold or not; the writers
+    write both, and some put the text on the next line), the problem's first paragraph, and the
+    appetite's first number of hours."""
     text = read(path)
     out: dict = {}
     m = re.search(r"^#\s+Bet\s+\S+:\s*(.+?)\s*$", text, re.M) or re.search(r"^#\s+(.+?)\s*$", text, re.M)
     if m:
         out["title"] = m.group(1).strip()
-    m = re.search(r"^##\s+Invariant\s*\n(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    body = " ".join(ln.strip() for ln in pitch_section(text, "Invariant").splitlines() if ln.strip())
+    if body:
+        out["invariant"] = body
+    m = re.search(r"^[ \t]*(?:\*\*)?Threshold(?:\*\*)?[ \t]*:[ \t]*(?:\*\*)?(.*?)(?=\n[ \t]*\n|\Z)",
+                  pitch_section(text, r"Success\b.*?"), re.M | re.S | re.I)
+    if m and m.group(1).strip():
+        out["threshold"] = " ".join(m.group(1).split())
+    problem = pitch_section(text, "Problem").split("\n\n")[0].strip()
+    if problem:
+        out["problem"] = " ".join(problem.split())
+    m = re.search(r"(\d+(?:\.\d+)?)\s*hours?\b", pitch_section(text, "Appetite"))
     if m:
-        body = " ".join(ln.strip() for ln in m.group(1).strip().splitlines() if ln.strip())
-        if body:
-            out["invariant"] = body
+        out["appetite_hours"] = float(m.group(1)) if "." in m.group(1) else int(m.group(1))
     return out
+
+
+def code_snapshot(head: str) -> Path:
+    """The product's code at `head`, extracted once per commit under CODE_DIR; its path.
+
+    What the pitch stage's lenses and checks read (epd_bet v6): the code a build of the round's bets
+    would start from, without .git, so nothing in it moves while they read. Extracted in the server
+    container from MAIN_CLONE (its user's clone, like refresh_main). A partial copy from a failed
+    extraction is never used: the copy is made beside the target and renamed into place."""
+    snap = CODE_DIR / head[:12]
+    if snap.is_dir():
+        return snap
+    mkdir_shared(CODE_DIR)
+    script = f"""set -e
+SNAP={cpath(snap)}
+rm -rf "$SNAP.part"; mkdir -p "$SNAP.part"
+git -C {cpath(MAIN_CLONE)} archive {head} | tar -x -C "$SNAP.part"
+mv "$SNAP.part" "$SNAP"
+"""
+    sh(["docker", "exec", "-i", SERVER_CONTAINER, "sh", "-c", script])
+    if not snap.is_dir():
+        die(f"the code at {head[:12]} was not extracted to {snap}")
+    log(f"code at {head[:12]} for the pitch stage: {snap}")
+    return snap
+
+
+def no_bets_on_file() -> str:
+    """The problems the pitch stage found not real, one line each: slot, title and its reason.
+
+    epd_problems treats them as on file, so a problem judged not real is not pitched again every
+    round unless the report answers the reason."""
+    lines = []
+    for d in sorted(BETS_DIR.glob("b[0-9][0-9][0-9]")):
+        if (d / "no_bet.md").exists():
+            text = read(d / "no_bet.md")
+            m = re.search(r"^#\s+(.+?)\s*$", text, re.M)
+            why = pitch_section(text, "Why no bet")
+            lines.append(f"- {d.name}: {m.group(1) if m else '(untitled)'} -- no bet: {' '.join(why.split())}")
+    return "\n".join(lines)
 
 
 def rounds_walking() -> list[str]:
@@ -1446,7 +1511,7 @@ def arm_proposal(at: dt.datetime, why: str, focus: str, keep: bool, lens: str = 
 
 def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = "", when_open: bool = False,
                 after_close: bool = False, lens: str = "") -> None:
-    """One proposal, as one temper run: the walks, the report, one to five candidates. No gate.
+    """One proposal, as one temper run: the walks, the report, a pitch per problem not on file. No gate.
 
     Two things stay on this side, because neither is part of the proposal's reasoning: the stack
     the walkers need (the ssh key that can stand one up belongs to the host) and the slot
@@ -1478,6 +1543,9 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     focus = " ".join(focus.split())
     lens = " ".join(lens.split())
     require_tools("standee", "docker", "git", "ssh")
+    if not read(REACH_PATH).strip():
+        die(f"{REACH_PATH} is missing or empty: the pitch stage's checkers are planned from it (what they can "
+            f"reach, as whom, when). Write it first (RUNBOOK: the reach sheet); nothing was started")
     if open_round() and not alongside:
         die(f"proposal {open_round()} is still out; `collect` it first")
     walking = rounds_walking()
@@ -1506,6 +1574,7 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
         mkdir_shared(BETS_DIR / b)
     try:
         head = refresh_main()
+        code = code_snapshot(head)
         env, url = standee_up(MAIN_CLONE, f"epd-{round_id}", "12h")
     except BaseException:
         # Nothing was started, so the round's id and its slots are given back: left behind, the empty
@@ -1537,6 +1606,13 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
         "last_outcome": previous_outcome(),
         "unfinished": unfinished_business(),
         "bets_tsv": read(LEDGER),
+        "no_bets": no_bets_on_file(),
+        # What the pitch stage reads (epd_bet v6): the code the round's bets would be built from, and
+        # the same reach sheet and checker configs the plan stage is given.
+        "code_dir": cpath(code),
+        "reach": read(REACH_PATH),
+        "qa_config_path": "/app/configs/epd/agents/task_verify.yaml",
+        "measure_config_path": "/app/configs/epd/agents/epd_measure.yaml",
         "app_url": url,
         "env_name": env,
         # All three walkers sign in to the paper login, one after another.
@@ -1548,7 +1624,8 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
         "focus": focus,
         "lens": lens,
     }
-    log(f"== {round_id}: proposal (walks, report, up to {SLOTS} bets into {', '.join(slots)}) ==")
+    log(f"== {round_id}: proposal (walks, report, a pitch stage per problem, up to {SLOTS}, "
+        f"into {slots[0]}-{slots[-1]}) ==")
     log(f"   {why}; the walkers take turns on {PAPER_EMAIL} (the Alpaca paper account)"
         + ("; after the close: they place no orders" if after_close else ""))
     if focus:
@@ -1556,7 +1633,8 @@ def cmd_propose(keep: bool, wait: bool, alongside: bool = False, focus: str = ""
     if lens:
         log(f"   lens: {lens}")
     if wait:
-        out = run_workflow("epd_propose", inputs, workspace=LOOP_WORKSPACE, timeout=2 * 3600)
+        # the walks, then up to SLOTS pitch stages, 4 at once, each about half an hour
+        out = run_workflow("epd_propose", inputs, workspace=LOOP_WORKSPACE, timeout=5 * 3600)
         finish_round(rd, out, keep)
         return
     rid = post_run("epd_propose", inputs, LOOP_WORKSPACE)
@@ -1605,7 +1683,12 @@ def collect_round(round_id: str, keep: bool) -> bool:
         log(f"{round_id}: proposal run {rid[:8]} is still {status} (running={running}, "
             f"cost=${info.get('total_cost_usd') or 0:.2f}); nothing to collect yet")
         return False
-    if status != "completed":
+    if status == "failed" and pitches_were_started(info):
+        # One pitch stage failing fails the run, but the report and every other pitch are done: they
+        # are collected, and the failed one is reported with its problem kept in its slot.
+        log(f"{round_id}: proposal run {rid[:8]} ended failed ({info.get('error_message')}), after its report and "
+            f"its problems were done; collecting the pitches it wrote")
+    elif status != "completed":
         why = "rate limited: the work is fine, the account is not" if rate_limited(rid) else info.get("error_message")
         rd["_failed"] = {"status": status, "why": why, "at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
         prune_slots(rd)
@@ -1621,6 +1704,61 @@ def collect_round(round_id: str, keep: bool) -> bool:
     out["_duration_s"] = info.get("duration_seconds")
     finish_round(rd, out, keep)
     return True
+
+
+def run_agents(nodes) -> list[dict]:
+    """Every agent record in a run's node tree (the API nests a stage's under it)."""
+    out = []
+    for n in nodes or []:
+        out += [a for a in [n.get("agent"), *(n.get("agents") or [])] if isinstance(a, dict)]
+        out += run_agents(n.get("child_nodes"))
+    return out
+
+
+def pitches_were_started(info: dict) -> bool:
+    """A proposal run whose walks, report and problem list all finished (epd_bet v6): what failed after
+    that was a pitch stage, and the rest of the round is worth collecting."""
+    nodes = {n.get("name"): n for n in info.get("nodes") or []}
+    if (nodes.get("report") or {}).get("status") != "completed":
+        return False
+    return any(a.get("agent_name") == "epd_problems" and a.get("status") == "completed"
+               for a in run_agents([nodes.get("bet") or {}]))
+
+
+def pitch_writes(run_id: str | None) -> dict[str, dict]:
+    """Each slot's last pitch writer reply in a proposal run: {bet_id: its structured output}."""
+    if not run_id:
+        return {}
+    last: dict[str, tuple[str, dict]] = {}
+    for a in run_agents(get_run(run_id).get("nodes")):
+        so, given = a.get("structured_output"), a.get("input_data")
+        if a.get("agent_name") != "epd_pitch_write" or not isinstance(so, dict) or not isinstance(given, dict):
+            continue
+        b, at = given.get("bet_id"), str(a.get("start_time") or "")
+        if b and (b not in last or at >= last[b][0]):
+            last[b] = (at, so)
+    return {b: so for b, (_, so) in last.items()}
+
+
+def unpitched_slots(rd: dict, out: dict) -> tuple[list[str], list[str]]:
+    """The slots with a problem and no pitch, as (no bets, failed): the pitch stage found the problem
+    not real, or did not finish. A no-bet's reason goes to no_bet.md beside its problem, where the
+    next round's problem list reads it (no_bets_on_file)."""
+    left = [b for b in rd.get("slots") or []
+            if (BETS_DIR / b / "problem.md").exists() and not (BETS_DIR / b / "bet.md").exists()]
+    writes = pitch_writes(out.get("_run_id")) if left else {}
+    no_bets, failed = [], []
+    for b in left:
+        w = writes.get(b) or {}
+        if w.get("status") != "no_bet":
+            failed.append(b)
+            continue
+        m = re.search(r"^#\s+(.+?)\s*$", read(BETS_DIR / b / "problem.md"), re.M)
+        write(BETS_DIR / b / "no_bet.md",
+              f"# {m.group(1) if m else b}\n\nRound {rd['round_id']}: the pitch stage wrote no pitch for this "
+              f"problem (problem.md).\n\n## Why no bet\n\n{w.get('why_no_bet') or '(no reason given)'}\n")
+        no_bets.append(b)
+    return no_bets, failed
 
 
 def prune_slots(rd: dict) -> list[str]:
@@ -1646,15 +1784,20 @@ def finish_round(rd: dict, out: dict, keep: bool) -> None:
     if not (rdir / "report.md").exists():
         die(f"epd_propose finished but wrote no report.md in {rdir}")
     filled = prune_slots(rd)
+    no_bets, failed = unpitched_slots(rd, out)
     listed = {c.get("bet_id"): c for c in (out.get("candidates") or []) if isinstance(c, dict)}
     for b in listed:
-        if b not in filled:
+        if b not in filled and b not in no_bets + failed:
             log(f"note: the agent listed {b} but wrote no {BETS_DIR / b / 'bet.md'}; dropped")
     at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     candidates = []
+    writes: dict | None = None
     for rank, b in enumerate(filled, 1):
         c = dict(listed.get(b) or {})
         c.update(pitch_fields(BETS_DIR / b / "bet.md"))  # the pitch is the record; the JSON is its summary
+        if not c.get("threshold"):  # a pitch whose Success does not start with a Threshold line: its writer's own
+            writes = pitch_writes(out.get("_run_id")) if writes is None else writes
+            c["threshold"] = str((writes.get(b) or {}).get("threshold") or "")
         c.update({"bet_id": b, "rank": c.get("rank") or rank, "round": round_id, "at": at,
                   "_run_id": out.get("_run_id"), "_versions": out.get("_versions")})
         write(BETS_DIR / b / "bet.json", json.dumps(c, indent=2, default=str))
@@ -1664,6 +1807,7 @@ def finish_round(rd: dict, out: dict, keep: bool) -> None:
         candidates.append(c)
     rd.update({k: v for k, v in out.items() if not k.startswith("walk_") and k != "candidates"})
     rd["candidates"] = [c["bet_id"] for c in candidates]
+    rd["no_bets"], rd["pitch_failed"] = no_bets, failed
     rd["_collected"] = at
     save_round(rd)
     if rd.get("env") and not keep:
@@ -1680,8 +1824,15 @@ def finish_round(rd: dict, out: dict, keep: bool) -> None:
         print(f"{c['bet_id']}  {c.get('title')}")
         print(f"    invariant: {c.get('invariant')}")
         print(f"    threshold: {c.get('threshold')}")
-        print(f"    appetite:  {c.get('appetite_hours')} h   why this rank: {c.get('why')}")
+        if c.get("why"):
+            print(f"    appetite:  {c.get('appetite_hours')} h   why this rank: {c.get('why')}")
+        else:
+            print(f"    appetite:  {c.get('appetite_hours')} h   found by: {c.get('found_by')}")
         print(f"    pitch:     {BETS_DIR / c['bet_id'] / 'bet.md'}")
+    for b in no_bets:
+        print(f"no bet:    {b}  the pitch stage found the problem not real: {BETS_DIR / b / 'no_bet.md'}")
+    for b in failed:
+        print(f"FAILED:    {b}  its pitch stage did not finish; the problem is in {BETS_DIR / b / 'problem.md'}")
     for q in out.get("left_out") or []:
         print(f"left out:  {q}")
     for q in out.get("questions_for_owner") or []:

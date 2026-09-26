@@ -8,7 +8,11 @@ workflow:
   #    place no orders (`propose --after-close`).
   # 5: an optional lens (`propose --lens`), handed to epd_report v5 and epd_bet v5: who walks, when
   #    the owner asks for someone other than the profile's user.
-  version: 5
+  # 6: the bets come from the pitch stage (epd_bet v6): every problem in the report that is not on
+  #    file goes through workflows/epd_pitch, at most 4 at once (queue task 3, 2026-09-26). So the
+  #    round is given what that stage reads: the code at the round's commit (code_dir), the live
+  #    reach sheet, the checkers' configs, and the problems it already found not real (no_bets).
+  version: 6
   description: |
     The proposal half of the EPD loop, as one run.
 
@@ -16,9 +20,10 @@ workflow:
 
     Three synthetic users take turns walking a dev stack of main, signed in to the Alpaca paper
     account while the market is open, and the friction is ranked (epd_report); from
-    that report, the goals and the ledger, the bet stage writes every bet the evidence supports,
-    one to five, each with a falsifiable invariant and a pre-registered threshold, each to its own
-    slot under the bets directory (epd_bet). Then it stops. There is no gate in this run: the
+    that report, the goals and the ledger, the bet stage sends every problem not already on file
+    through the pitch stage, which writes a pitch with a falsifiable invariant and a pre-registered
+    threshold to the problem's own slot under the bets directory, or finds the problem not real
+    (epd_bet). Then it stops. There is no gate in this run: the
     decision is made on disk, where the owner reads the candidates, edits the ones worth building
     and lists them in backlog.md in the order the loop should take them. The loop (epd_loop) takes
     them from the top, one run per bet, and runs this proposal only when the backlog is empty --
@@ -51,6 +56,13 @@ workflow:
     bets_tsv:     {type: string, required: true}
     focus:        {type: string, required: false}  # the part of the product this round's walkers stay in; empty = wherever the goals say
     lens:         {type: string, required: false}  # who walks, instead of the profile's user; empty = the profile's user
+    no_bets:      {type: string, required: false}  # problems the pitch stage found not real, with its reasons
+
+    # What the pitch stage reads (epd_bet v6)
+    code_dir:     {type: string, required: true}   # the product's code at the round's commit, read-only
+    reach:        {type: string, required: true}   # what the checkers can reach (the live reach sheet)
+    qa_config_path: {type: string, required: true}       # task_verify's agent config
+    measure_config_path: {type: string, required: true}  # epd_measure's agent config
 
     # Where to look at the product, and as whom
     app_url:      {type: string, required: true}   # the stack to walk (the driver brings it up)
@@ -93,8 +105,8 @@ workflow:
         focus: input.focus
         lens: input.lens
 
-    # 2 — One to five bets, each with a falsifiable invariant and a pre-registered threshold,
-    #     each to its own slot, in the order the agent would build them. The owner decides on disk.
+    # 2 — One pitch per problem not on file, each with a falsifiable invariant and a pre-registered
+    #     threshold, each to its own slot, in the report's order. The owner decides on disk.
     - name: bet
       type: stage
       ref: workflows/epd_bet
@@ -107,5 +119,10 @@ workflow:
         profile: input.profile
         report_path: report.structured.report_path
         bets_tsv: input.bets_tsv
+        no_bets: input.no_bets
         unfinished: input.unfinished
         lens: input.lens
+        code_dir: input.code_dir
+        reach: input.reach
+        qa_config_path: input.qa_config_path
+        measure_config_path: input.measure_config_path

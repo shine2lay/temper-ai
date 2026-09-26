@@ -6,6 +6,7 @@ the same topological level run concurrently via ThreadPoolExecutor.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from collections import defaultdict, deque
@@ -14,7 +15,7 @@ from typing import Any
 
 from temper_ai.observability.event_types import EventType
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
-from temper_ai.stage.conditions import evaluate_condition
+from temper_ai.stage.conditions import evaluate_condition, source_value
 from temper_ai.stage.exceptions import CancellationError, CyclicDependencyError
 from temper_ai.stage.gate import EMPTY_RESPONSE, GateSignal, build_gate_context
 from temper_ai.stage.node import Node
@@ -193,7 +194,8 @@ def _run_batches(
             if cp:
                 cp.save_node_completed(cp_prefix + node.name, result)
             _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
-            rewind = _handle_loop(
+            # A loop that could not read its verdict fails as it stands: no other pass.
+            rewind = None if result.metadata.get(NO_LOOP_VERDICT) else _handle_loop(
                 node, result, node_outputs, loop_counts, loop_feedback, batches, node_map, cp, input_data, retired,
                 checkpoint_prefix=cp_prefix,
             )
@@ -431,7 +433,61 @@ def _execute_single_node(
         status="running",
     )
 
-    return _run_node_with_events(node, resolved, context, node_event_id)
+    result = _run_node_with_events(node, resolved, context, node_event_id)
+    no_verdict = _loop_verdict_missing(node, result, {**node_outputs, node.name: result})
+    if no_verdict:
+        logger.warning("Node '%s' fails: %s", node.name, no_verdict)
+        result.status = Status.FAILED
+        result.error = no_verdict
+        result.metadata[NO_LOOP_VERDICT] = True
+        context.event_recorder.update_event(node_event_id, status="failed", data={"error": no_verdict})
+    no_file = _required_file_missing(node, result, input_data, {**node_outputs, node.name: result}, node_map)
+    if no_file:
+        logger.warning("Node '%s' fails: %s", node.name, no_file)
+        result.status = Status.FAILED
+        result.error = no_file
+        context.event_recorder.update_event(node_event_id, status="failed", data={"error": no_file})
+    return result
+
+
+def _required_file_missing(
+    node: Node,
+    result: NodeResult,
+    input_data: dict,
+    node_outputs: dict[str, NodeResult],
+    node_map: dict[str, Node] | None = None,
+) -> str | None:
+    """Why a completed node fails for a file it had to write and did not; None if it wrote them.
+
+    ``required_files`` lists them: each entry is a source, resolved like an input_map
+    entry (``input.tasks_path``, ``plan.structured.plan_path``), or ``{path: <source>,
+    when: <condition>}`` for a file owed only in some outcomes (a plan owes its tasks
+    only when it did not stop as BLOCKED). b010 on 2026-09-22: the tasks stage completed
+    without writing tasks.json, its one output, and the run went on as if it had.
+    """
+    wanted = getattr(node.config, "required_files", None)
+    if not wanted or result.status != Status.COMPLETED:
+        return None
+    for entry in wanted:
+        source, when = (entry.get("path"), entry.get("when")) if isinstance(entry, dict) else (entry, None)
+        if when:
+            try:
+                if not evaluate_condition(when, node_outputs):
+                    continue
+            except Exception as exc:
+                return f"it cannot tell whether it owes {source}: {exc}"
+        path = _resolve_single_input(node.name, "required_files", source, input_data, node_outputs,
+                                     node_map=node_map)
+        if not isinstance(path, str) or not path.strip():
+            return f"it completed without saying where {source} is"
+        if not os.path.isfile(path.strip()):
+            return f"it completed without writing {path.strip()} ({source})"
+    return None
+
+
+# Set on a node that failed because its loop could not read its verdict (see
+# _loop_verdict_missing): the loop does not go round again for it.
+NO_LOOP_VERDICT = "no_loop_verdict"
 
 
 # The step a failure started from, at the end of every skip reason this module
@@ -1004,6 +1060,33 @@ def _enforce_caps_and_build(
     state.parents[built.name] = dispatcher_name
     state.fingerprints[built.name] = child_fp
     state.dispatched_count += 1
+
+
+def _loop_verdict_missing(
+    node: Node, result: NodeResult, node_outputs: dict[str, NodeResult],
+) -> str | None:
+    """Why a completed node's loop cannot tell whether to go round again; None if it can.
+
+    A loop_condition whose source is missing (or cannot be read at all) used to evaluate
+    as "do not loop", so the loop ended as if its verdict had said stop, and the run went
+    on to complete. b012 on 2026-09-25: the check's JSON did not parse, its verdict was
+    missing, and the write/check loop stopped after one pass. Now the node fails, without
+    another pass, and a failure travels down the graph like any other. The `exists`
+    operator asks whether the value is there, so a missing value is its answer.
+    """
+    condition = node.loop_condition
+    if not (node.loop_to and condition and result.status == Status.COMPLETED):
+        return None
+    if condition.get("operator", "equals") == "exists":
+        return None
+    source = condition.get("source")
+    try:
+        value = source_value(condition, node_outputs)
+    except Exception as exc:
+        return f"its loop cannot tell whether to go round again: {exc}"
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return f"it gave no {source}, so its loop cannot tell whether to go round again"
+    return None
 
 
 def _handle_loop(

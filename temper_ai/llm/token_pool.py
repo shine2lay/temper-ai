@@ -174,6 +174,10 @@ def _fmt(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%d %H:%MZ")
 
 
+def _iso(epoch: float) -> str:
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat(timespec="seconds")
+
+
 @dataclass
 class TokenPool:
     """Interchangeable credentials for one provider, with sticky assignment."""
@@ -289,6 +293,31 @@ class TokenPool:
             len(self.available(model)), len(self.tokens), family,
         )
         return deadline
+
+    def state(self) -> dict[str, dict]:
+        """What the pool can serve now, per model family (GET /api/pools). Labels and times, never a token.
+
+        Every known family is listed, and any other one something cooled. Per family: the slots,
+        each with ``cooling_until`` (ISO UTC; None when it can be used now), how many are
+        ``available``, and ``soonest_reset``, the earliest cooling to end (None when none is on).
+        A caller about to start long work asks this first: with no slot available for its model
+        the work stops at its first call (b009 on 2026-09-24, "token pool exhausted").
+        """
+        now = time.time()
+        with self._lock:
+            others = sorted({f for f, _ in self._cooldown} - set(KNOWN_FAMILIES) - {ANY_MODEL})
+            out: dict[str, dict] = {}
+            for family in (*KNOWN_FAMILIES, *others):
+                untils = [self._blocked_until(t, family) for t in self.tokens]
+                pending = [u for u in untils if u > now]
+                out[family] = {
+                    "size": len(self.tokens),
+                    "available": len(untils) - len(pending),
+                    "soonest_reset": _iso(min(pending)) if pending else None,
+                    "slots": [{"label": self.label_of(t), "cooling_until": _iso(u) if u > now else None}
+                              for t, u in zip(self.tokens, untils, strict=True)],
+                }
+        return out
 
     def clear_cooldowns(self) -> None:
         with self._lock:

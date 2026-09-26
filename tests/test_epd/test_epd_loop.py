@@ -67,6 +67,9 @@ def L(tmp_path, monkeypatch):
                         or mod.PLANS_DIR / f"epd-{bet_id}")
     monkeypatch.setattr(mod, "drop_plan_snapshot", lambda bet_id: calls["drop_plan_snapshot"].append(bet_id))
     monkeypatch.setattr(mod, "require_prod_paper_login", lambda bet_id: None)
+    # The token pool is the live server's; no test asks it.
+    mod._real_require_models = getattr(mod, "require_models", None)
+    monkeypatch.setattr(mod, "require_models", lambda what: None, raising=False)
     # No test reads the real paper keys: one that reaches Alpaca without stubbing it dies on "no keys".
     monkeypatch.setattr(mod, "PAPER_KEYS_FILE", tmp_path / "dev.env")
     monkeypatch.setattr(mod, "standee_down", lambda env: calls["standee_down"].append(env))

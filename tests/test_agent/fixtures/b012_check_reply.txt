@@ -1,0 +1,39 @@
+The six criteria do reach their states on the qa@ and qa-empty@ seed, but three problems would change what gets built or how it is checked, so this goes back for revision. First, criterion 1 and the threshold ask for a To close figure "above $0.00". The page prints the buyback as a negative amount, so a working build fails as written. Second, criterion 2 looks for the "held from before" tag on the Per ticker rows, and those rows have no such tag. Third, once the call is counted, the journey's "call you are short" block will appear and say the call sold for $0.00. The pitch does not handle that, and no criterion checks it. There is also one smaller gap: the Solution misses one of the "does not know … strike" sentences.
+
+```json
+{
+  "verdict": "revise",
+  "issues": [
+    {
+      "where": "criterion 1",
+      "kind": "wrong_fact",
+      "what": "The To close cell prints the buyback as a negative amount, so on a working build it reads "−$120.00", "−$2.00" and so on. A checker told to find a figure "above $0.00" can fail a correct build, and the threshold has the same wording.",
+      "evidence": "Pitch: "To close is a dollar figure above $0.00"; threshold: "show a To close figure above $0.00". Code: Analysis.tsx:573 `<Money v={-r.buyback} />`; format.ts:50 `if (n < 0) return `−$${abs}``. The tile does the same at Analysis.tsx:499-506 (`Money v={-book.buybackTotal}`).",
+      "fix": "Require a dollar figure that is not $0.00 (the page shows it as a cost, with a minus sign), in both criterion 1 and the threshold. Keep criterion 3's sum comparison on those same signed figures."
+    },
+    {
+      "where": "criterion 2",
+      "kind": "wrong_fact",
+      "what": "The "held from before" tag is only drawn in the banked table ("What this book has banked"). The Per ticker rows show just the ticker button, so "6 of 6 Per ticker rows are still tagged" can never hold, and a working build fails. The K8 catch depends on this check.",
+      "evidence": "Pitch: "6 of 6 Per ticker rows are still tagged \"held from before\"". Code: the tag is at Analysis.tsx:445, inside the banked table's tbody (Analysis.tsx:437-465). The Per ticker row cell at Analysis.tsx:562-566 has only the button.",
+      "fix": "Name the table: "6 of 6 rows of the 'What this book has banked' table are tagged 'held from before'". Make the threshold's "6 of 6 rows still 'held from before'" match."
+    },
+    {
+      "where": "solution",
+      "kind": "gap",
+      "what": "Once a pre-start-date call is counted, the row's contracts goes to 1. That turns on the journey's "The call you are short right now" block. It prints what the call sold for from openLegGross, which is the replay's open-leg premium and $0.00 here. So the fix puts "You sold the … $255 call for $0.00. That is not $0.00 off the cost basis" next to the 255C legs row at $4.10. That is a new disagreement on the same page, on all 5 names and in the drawer. No criterion rules it out.",
+      "evidence": "PositionJourney.tsx:257-260 `{row.contracts > 0 && … You sold {callWords} for <b>{fmtMoney(row.openLegGross)}</b>`; analysis.ts:476-481 (contracts = open_option_legs, openLegGross = open_leg_premium); engine/analysis.py:765 (open_leg_premium sums only replayed open legs). The pitch's no-go keeps collected at $0.00 but says nothing about this block.",
+      "fix": "In the Solution, say what the 'call you are short' block reads for a call held from before the start date: drop the "sold for" clause, or say what it sold for is not counted. Add to criteria 4 and 5 that the journey does not contain "for $0.00"."
+    },
+    {
+      "where": "solution",
+      "kind": "gap",
+      "what": "The pitch rewrites the server's "does not know its strike" sentence because it is false. It misses the client's own copy of that claim in epochWhy, which the at-expiry tile shows when every open name is refused. That is exactly the case of a real owner whose covered names all predate the start date. The build would leave it in place.",
+      "evidence": "Analysis.tsx:106 "already had a call open on ${when}, sold before that day, and RollCall does not know ${one ? "its" : "their"} strike" (reached via whyNoTotal(book.rows, false), Analysis.tsx:524). Pitch: "Changed because the problem demands it: the at-expiry refusal reason and the start-date sentence."",
+      "fix": "Add Analysis.tsx epochWhy's at-expiry branch to the Solution's rewording, or name it in the no-gos with a reason. It cannot be seen on the seed book, where AMD resolves, so it needs a frontend unit test rather than a walk criterion."
+    }
+  ],
+  "threshold_matches": true,
+  "summary": "Revise: criteria 1 and 2 misread how the page shows the To close figure and where the \"held from before\" tag is, so each would fail a working build; and counting the call exposes a \"sold for $0.00\" journey line that neither the Solution nor any criterion covers."
+}
+```

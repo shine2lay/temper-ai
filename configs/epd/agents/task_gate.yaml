@@ -63,7 +63,14 @@ agent:
   #    could not run at all (a harness fault: noted, never a veto). And every
   #    judge's list now passes through here to the implementer, because a rewind
   #    clears the judges' outputs and no finding was reaching a fix round.
-  version: 7
+  # 8: a build that never built does not pass (gap 16: b009 on 09-24, where "token
+  #    pool exhausted" killed plan; implement and every judge were skipped, and
+  #    "nothing judged this round" approved it, so ship put the old PR in front of
+  #    the owner). The NODE fails -- not a verdict the loop could rewind on -- when
+  #    implement reported nothing (it failed or was skipped), when the worktree has
+  #    no .epd/plan.md (the plan step failed or was skipped and none was handed in),
+  #    or when no judge ran at all.
+  version: 8
   type: script
   timeout_seconds: 30
   script_template: |
@@ -104,6 +111,24 @@ agent:
         return "" if word in ("", "none", "null") else word
 
 
+    def unbuilt(reasons: list) -> None:
+        """Stop here: the node fails, so the run ends failed instead of shipping nothing."""
+        import sys
+        sys.stderr.write("the build did not build, so nothing can pass the gate: " + "; ".join(reasons) + "\n")
+        sys.exit(1)
+
+
+    worktree = value("{{ worktree_path | default('') | env }}").strip()
+    missing = []
+    if not read(value("{{ implement_status | default('') | env }}")):
+        missing.append("the implement step reported nothing (it failed or was skipped)")
+    if not (worktree and os.path.isfile(os.path.join(worktree, ".epd", "plan.md"))):
+        missing.append(f"there is no plan at {worktree or '(no worktree)'}/.epd/plan.md "
+                       "(the plan step failed or was skipped, and none was handed in)")
+    if missing:
+        unbuilt(missing)
+
+
     verdicts, unknown, wants, ran, abstained = {}, [], [], [], []
     for label, raw, ok, no, abstain in JUDGES:
         v = read(raw)
@@ -123,6 +148,8 @@ agent:
         elif v != ok:
             unknown.append(f"{label}={v}")
             wants.append(label)
+    if not ran:
+        unbuilt(["no judge ran: " + ", ".join(f"{k} {v or 'did not run'}" for k, v in verdicts.items())])
 
     # Things no round of the loop can discharge — rotating a credential that was
     # committed, above all. They must not block the loop (the implementer cannot do
@@ -226,7 +253,7 @@ agent:
             summary += f" (unreadable verdict: {', '.join(unknown)} — not treated as approval)"
     else:
         verdict = "approve"
-        summary = f"{' and '.join(ran)} approved" if ran else "nothing judged this round"
+        summary = f"{' and '.join(ran)} approved"  # some judge ran: none did stopped above
     if human_actions:
         summary += (
             f" — {human_actions} action(s) still need a human "

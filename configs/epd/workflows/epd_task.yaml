@@ -40,7 +40,13 @@ workflow:
   #     worktree step, which puts its plan.md at <worktree>/.epd/plan.md and the engineers' notes
   #     in <worktree>/.epd/plan/; with plan=false the build's own plan step is skipped and every
   #     later step reads that plan, as it would have read task_plan's.
-  version: 11
+  # 12 (2026-09-25, the loop reports its own failures):
+  #   - `branch` after implement: a worktree the implementer left detached goes back on its
+  #     branch, and the build stops unless HEAD is the commit the implementer reported (gap 14:
+  #     b022's implementer left HEAD on master, and the test step passed master).
+  #   - the gate gets implement's status and the worktree, and fails the run when nothing was
+  #     built: implement failed or was skipped, there is no plan, or no judge ran (gap 16).
+  version: 12
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -112,7 +118,8 @@ workflow:
 
     keep=true leaves the worktree, branch, claim and environment in place.
     plan=false and implement=false skip those nodes so a later step can be
-    tested alone against what an earlier run left in the worktree;
+    tested alone against what an earlier run left in the worktree (with
+    implement=false the gate then fails the run: nothing was built in it);
     verify=false drops deploy and QA, leaving review the only judge.
   inputs:
     repo_url:
@@ -385,10 +392,23 @@ workflow:
         operator: equals
         value: partial
 
+    # Every step after this one reads the worktree as the implementer's commit. An implementer
+    # that stashed and checked something else out (b022: `git checkout -q 88b7615 --`, detached on
+    # master) would have review, tests and QA judge the wrong code, so: back on the branch if
+    # HEAD is detached, and stop unless HEAD is the commit implement reported.
+    - name: branch
+      type: agent
+      agent: task_branch_check
+      depends_on: [implement]
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        branch: worktree.structured.branch
+        commit: implement.structured.commit
+
     - name: review
       type: agent
       agent: task_review
-      depends_on: [implement]
+      depends_on: [branch]
       # No loop of its own any more: review and QA judge the same round and the
       # gate turns both verdicts into the one the loop runs on.
       input_map:
@@ -403,7 +423,7 @@ workflow:
     - name: deploy
       type: agent
       agent: task_deploy
-      depends_on: [implement]
+      depends_on: [branch]
       # Before the judges, not after them: the environment has to be running the
       # candidate for QA to have anything to use. Deploying an unreviewed commit
       # is what a throwaway spike is for. Skipped when there is no QA step to
@@ -455,7 +475,7 @@ workflow:
     - name: security
       type: agent
       agent: task_security
-      depends_on: [implement]
+      depends_on: [branch]
       # No condition, deliberately. The other judges need something of the
       # world — a stack, a browser, a URL that is serving — and are skipped when
       # they cannot have it. This one needs the worktree and git, which every
@@ -475,7 +495,7 @@ workflow:
     - name: test
       type: agent
       agent: task_test
-      depends_on: [implement]
+      depends_on: [branch]
       input_map:
         workspace_path: worktree.structured.worktree_path
         base_branch: worktree.structured.base_branch
@@ -497,6 +517,10 @@ workflow:
         operator: equals
         value: request_changes
       input_map:
+        # Was anything built? Nothing implemented, no plan in the worktree, or no judge: the
+        # gate fails the run instead of approving "nothing judged this round" (v8).
+        implement_status: implement.structured.status
+        worktree_path: worktree.structured.worktree_path
         review_verdict: review.structured.verdict
         qa_verdict: verify.structured.verdict
         # A clause with no route yet asks for changes; one no build can settle is a note.

@@ -47,6 +47,21 @@ def evaluate_condition(
     return _apply_operator(actual, operator, expected)
 
 
+def source_value(condition: dict, node_outputs: dict[str, NodeResult]) -> object:
+    """The value a condition's source names, before any operator is applied.
+
+    Raises:
+        ConditionError: If the condition has no source or it can't be resolved.
+    """
+    source = condition.get("source")
+    if not source:
+        raise ConditionError("Condition missing 'source' field")
+    try:
+        return _resolve_source(source, node_outputs)
+    except (KeyError, TypeError) as exc:
+        raise ConditionError(f"Cannot resolve condition source '{source}': {exc}") from exc
+
+
 def _resolve_source(source: str, node_outputs: dict[str, NodeResult]) -> object:
     """Resolve a dot-notation source path to a value.
 

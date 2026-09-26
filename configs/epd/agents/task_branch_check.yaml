@@ -1,0 +1,52 @@
+# EPD task pipeline: after implement, before anything judges the worktree.
+#
+# Every later step -- review, tests, security, deploy, QA -- reads the worktree as
+# the implementer's commit. An implementer that stashes and checks something else
+# out leaves them judging the wrong code: b022's ran `git stash -q; git checkout -q
+# 88b7615 --`, left HEAD detached on master and reported cfc9aef, and the test step
+# passed master before deploy noticed (gap 14, 2026-09-24). So:
+#   - HEAD not on the build's branch (detached, or on another branch): check the
+#     branch out again. It still points at the commits the implementer made.
+#   - Then HEAD must be the commit implement reported, or the build stops here and
+#     says which commit it found instead.
+# No commit reported (implement skipped, or it committed nothing): only the branch
+# is put right; the gate decides what an empty report means.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: task_branch_check
+  version: 1
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -eu
+    WT={{ workspace_path }}
+    BRANCH={{ branch }}
+    COMMIT={{ commit | default('', true) }}
+    [ "$COMMIT" = None ] && COMMIT=""
+
+    emit() {
+      python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[1], "head": sys.argv[2], "detail": sys.argv[3]}))' \
+        "$1" "$2" "$3"
+    }
+    fail() { echo "branch check failed: $1" >&2; emit failed "" "$1"; exit 1; }
+
+    [ -d "$WT" ] || fail "worktree not found: $WT"
+    [ -n "$BRANCH" ] || fail "no branch was given for $WT"
+    NOTE=""
+    ON=$(git -C "$WT" symbolic-ref -q --short HEAD || true)
+    if [ "$ON" != "$BRANCH" ]; then
+      WAS=$(git -C "$WT" rev-parse --short HEAD)
+      [ -n "$ON" ] && WHERE="on $ON at $WAS" || WHERE="detached at $WAS"
+      git -C "$WT" checkout -q "$BRANCH" 2>&1 || fail "the worktree was $WHERE, and $BRANCH could not be checked out again"
+      NOTE="the worktree was $WHERE; $BRANCH is checked out again. "
+      echo "$NOTE"
+    fi
+    HEAD=$(git -C "$WT" rev-parse HEAD)
+    if [ -n "$COMMIT" ]; then
+      WANT=$(git -C "$WT" rev-parse -q --verify "$COMMIT^{commit}" 2>/dev/null) \
+        || fail "$NOTE""the implementer reported $COMMIT, which is not a commit in this worktree"
+      [ "$HEAD" = "$WANT" ] || fail "$NOTE""$BRANCH is at $HEAD, not at the commit the implementer reported ($COMMIT)"
+    fi
+    echo "$BRANCH is at $HEAD"
+    emit ok "$HEAD" "$NOTE$BRANCH is at $HEAD"

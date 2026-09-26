@@ -19,9 +19,13 @@
 # the record the loop's improvement is measured against.
 #
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
+#
+# 2 (2026-09-25): the driver's exit code is ssh's, not tee's. `ssh ... | tee` gave `$?` = tee's 0, so
+#   a deploy the driver refused (b023: GitHub would not merge a PR that conflicts with master)
+#   still ended "completed" with status pr_opened, and measure was skipped without a word.
 agent:
   name: epd_deploy
-  version: 1
+  version: 2
   type: script
   timeout_seconds: 2400
   strict_undefined: true
@@ -67,11 +71,15 @@ agent:
     install -m 600 "$KEY_SRC" "$KEY"
 
     echo "acting on the owner's decision for $BET_ID"
+    # POSIX sh has no PIPESTATUS: ssh writes its own exit code, so tee's 0 cannot stand in for it.
+    RCFILE=$(mktemp)
+    echo 1 > "$RCFILE"
     set +e
-    ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" \
+    { ssh -i "$KEY" -o IdentitiesOnly=yes -o UserKnownHostsFile="$KEYDIR/known_hosts" \
         -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 \
-        shinelay@host.docker.internal "epd-ship $BET_ID deploy" 2>&1 | tee /tmp/deploy.log
-    RC=$?
+        shinelay@host.docker.internal "epd-ship $BET_ID deploy" 2>&1; echo $? > "$RCFILE"; } | tee /tmp/deploy.log
+    RC=$(cat "$RCFILE")
+    rm -f "$RCFILE"
     set -e
     [ "$RC" = 0 ] || fail "$(tail -3 /tmp/deploy.log | tr '\n' ' ')"
 

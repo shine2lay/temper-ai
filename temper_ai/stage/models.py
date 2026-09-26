@@ -60,6 +60,11 @@ class NodeConfig:
     # what happened. Its own condition still applies; if that skips it, the failure goes on
     # down to the nodes after it.
     run_after_failure: bool = False
+    # Files the node must have written when it completes, or it fails: each a source
+    # resolved like an input_map entry ("input.tasks_path"), or {path: <source>, when:
+    # <condition>} for a file owed only in some outcomes. A step that says it completed
+    # without its one output (b010's tasks stage, no tasks.json) no longer passes.
+    required_files: list | None = None
 
     # Timeout, gates, and policy overrides
     timeout_seconds: int | None = None  # Wall-clock timeout for this node (default: no limit)
@@ -90,8 +95,8 @@ class NodeConfig:
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "type", "agent", "strategy", "strategy_config", "agents",
         "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops",
-        "loop_condition", "on_max_loops", "run_after_failure", "timeout_seconds", "gate", "skip_policies",
-        "input_map", "inputs", "outputs",
+        "loop_condition", "on_max_loops", "run_after_failure", "required_files", "timeout_seconds", "gate",
+        "skip_policies", "input_map", "inputs", "outputs",
         "task_template",
         "system_prompt", "role", "model", "provider", "temperature",
         "max_tokens", "token_budget", "tools", "memory",
@@ -131,6 +136,7 @@ class NodeConfig:
             loop_condition=data.get("loop_condition"),
             on_max_loops=data.get("on_max_loops", "silent"),
             run_after_failure=bool(data.get("run_after_failure", False)),
+            required_files=data.get("required_files"),
             timeout_seconds=data.get("timeout_seconds"),
             gate=data.get("gate", False),
             skip_policies=data.get("skip_policies"),

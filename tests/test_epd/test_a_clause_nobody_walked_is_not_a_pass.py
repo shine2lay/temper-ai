@@ -43,7 +43,15 @@ def gate(workspace=None, run="test", **inputs) -> dict:
     """The gate's decision for these inputs: the real agent, the real script, really run.
 
     `workspace` is where the gate keeps its round counter; pass the same one twice to be
-    the second round of a loop, as the engine's rewind would."""
+    the second round of a loop, as the engine's rewind would. The round is a built one
+    (implement reported, a plan in the worktree) unless the inputs say otherwise: since
+    v8 a round where nothing was built fails the gate instead of reaching a verdict."""
+    if "worktree_path" not in inputs:
+        worktree = Path(tempfile.mkdtemp())
+        (worktree / ".epd").mkdir()
+        (worktree / ".epd" / "plan.md").write_text("# Plan\n")
+        inputs["worktree_path"] = str(worktree)
+    inputs.setdefault("implement_status", "complete")
     config = yaml.safe_load(GATE.read_text())["agent"]
     ctx = MagicMock()
     ctx.run_id, ctx.node_path, ctx.agent_name = run, "gate", "task_gate"

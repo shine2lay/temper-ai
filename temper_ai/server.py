@@ -24,6 +24,7 @@ from temper_ai.api.app_state import AppState
 from temper_ai.api.auth import TokenAuthMiddleware, auth_enabled
 from temper_ai.api.docs import router as docs_router
 from temper_ai.api.hooks import router as hooks_router
+from temper_ai.api.pools import router as pools_router
 from temper_ai.api.routes import init_app_state
 from temper_ai.api.routes import router as api_router
 from temper_ai.api.studio import router as studio_router
@@ -412,6 +413,7 @@ app.include_router(studio_router)
 app.include_router(docs_router)
 app.include_router(hooks_router)
 app.include_router(triggers_router)
+app.include_router(pools_router)
 
 # -- MCP --
 # Agents drive temper through the same functions the REST API uses.

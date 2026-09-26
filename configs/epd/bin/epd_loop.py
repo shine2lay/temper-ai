@@ -486,6 +486,13 @@ def standee_up(source: Path, as_name: str, ttl: str) -> tuple[str, str]:
     return env, url
 
 
+# A 502/503/504, or no answer at all, is the app behind the proxy restarting, not a login that
+# fails: b061's start on 2026-09-25 met b044's prod deploy and died on one 502. Tried again
+# every PREFLIGHT_RESTART_WAIT seconds, PREFLIGHT_RESTART_TRIES times: about a minute.
+PREFLIGHT_RESTART_WAIT = 10
+PREFLIGHT_RESTART_TRIES = 6
+
+
 def preflight_login(url: str, emails: tuple[str, ...] = (QA_EMAIL, QA_EMPTY_EMAIL), password: str = "",
                     likely: str = "") -> None:
     """Refuse to spend anything on a stack nobody can sign in to.
@@ -500,19 +507,32 @@ def preflight_login(url: str, emails: tuple[str, ...] = (QA_EMAIL, QA_EMPTY_EMAI
     for email in emails:
         body = json.dumps({"email": email, "password": password or QA_PASSWORD}).encode()
         req = urllib.request.Request(endpoint, data=body, headers={"Content-Type": "application/json"})
-        for attempt in range(3):
+        limited = restarting = 0
+        while True:
             try:
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     if resp.status < 400:
                         break
                     detail = f"HTTP {resp.status}"
             except urllib.error.HTTPError as e:
-                # 429 is the endpoint working and rate-limiting us; anything else is a real answer.
-                if e.code == 429 and attempt < 2:
+                # 429 is the endpoint working and rate-limiting us; 502-504 is the app restarting
+                # behind the proxy; anything else is a real answer.
+                if e.code == 429 and limited < 2:
+                    limited += 1
                     time.sleep(20)
+                    continue
+                if e.code in (502, 503, 504) and restarting < PREFLIGHT_RESTART_TRIES:
+                    restarting += 1
+                    log(f"preflight: {endpoint} answered HTTP {e.code} (restarting?); again in {PREFLIGHT_RESTART_WAIT} s")
+                    time.sleep(PREFLIGHT_RESTART_WAIT)
                     continue
                 detail = f"HTTP {e.code}: {(e.read().decode(errors='replace') or '').strip()[:200]}"
             except urllib.error.URLError as e:
+                if restarting < PREFLIGHT_RESTART_TRIES:
+                    restarting += 1
+                    log(f"preflight: no answer from {endpoint} ({e.reason}); again in {PREFLIGHT_RESTART_WAIT} s")
+                    time.sleep(PREFLIGHT_RESTART_WAIT)
+                    continue
                 detail = str(e.reason)
             die(f"{email} cannot sign in at {endpoint} ({detail}). The stack is up but unusable — "
                 f"{likely or 'most likely unseeded. Check `standee status` and run `standee seed <env>`'}; "
@@ -658,6 +678,47 @@ def bet_window(plan: bool = True) -> tuple[bool, str, dt.datetime]:
     if now >= earliest:
         return True, f"the market opens {local_time(opens)}, within {lead} min", now
     return False, f"the market is shut; it opens {local_time(opens)}", earliest
+
+
+# Every EPD agent runs on an opus model, so its slots decide whether a run can start.
+MODEL_FAMILY = "opus"
+
+
+def require_models(what: str) -> None:
+    """Die when the server knows every pooled slot for the loop's model is cooled.
+
+    A run started then stops at its first model call: b009 started with every opus slot rate
+    limited on 2026-09-24, and its plan step died on "token pool exhausted" (gap 17). The server
+    is where the pool learns of each refusal, so it is asked (GET /api/pools); an older server
+    that cannot say is not held against the start.
+    """
+    try:
+        with urllib.request.urlopen(f"{API}/api/pools", timeout=30) as resp:
+            pools = json.load(resp).get("pools") or []
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
+        log("the server does not report its token pool (no /api/pools); starting without that check")
+        return
+    for pool in pools:
+        fam = (pool.get("families") or {}).get(MODEL_FAMILY)
+        if not fam or fam.get("available") or not fam.get("soonest_reset"):
+            continue
+        when = lambda iso: local_time(dt.datetime.fromisoformat(iso))  # noqa: E731
+        slots = "; ".join(f"{s['label']} until {when(s['cooling_until'])}"
+                          for s in fam.get("slots") or [] if s.get("cooling_until"))
+        die(f"every {MODEL_FAMILY} slot of {pool.get('provider')} is rate limited ({slots}), so {what} would "
+            f"stop at its first model call; nothing was started. The first slot is back at "
+            f"{when(fam['soonest_reset'])}")
+
+
+def ready_to_start(bet_id: str) -> None:
+    """Every check a bet's run must pass before anything is changed for it: its window, prod's paper
+    login and the model pool. Before pick_bet, so a start refused here keeps its place in the Queue
+    (gap 19: b061's preflight met a 502 after pick_bet had already taken its line)."""
+    require_bet_window(bet_id)
+    require_prod_paper_login(bet_id)
+    require_models(f"{bet_id}'s run")
 
 
 def require_bet_window(bet_id: str, plan: bool = True) -> None:
@@ -2013,6 +2074,18 @@ def pr_decision_from_gate(gate: dict) -> tuple[str, str]:
     return decision, "\n".join(notes)
 
 
+def refuse_merge(owner: str, repo: str, pr_number, refused: dict) -> None:
+    """GitHub would not squash-merge the PR: say why, and stop. A conflict is named as one, because
+    the fix is a person's (merge the base into the branch, re-run its checks, resume): this never
+    merges the base in itself, which would change the code after it was reviewed (gap 5, b023)."""
+    pr = github("GET", f"/repos/{owner}/{repo}/pulls/{pr_number}")
+    said = f"GitHub said {refused['_status']}: {refused.get('_error', '')[:300]}"
+    if pr.get("mergeable") is False or pr.get("mergeable_state") == "dirty":
+        die(f"PR #{pr_number} conflicts with {BASE_BRANCH}, so it was not merged ({said}). Merge "
+            f"{BASE_BRANCH} into its branch by hand, let the checks run, then deploy again")
+    die(f"PR #{pr_number} was not merged ({said}; mergeable_state {pr.get('mergeable_state')!r})")
+
+
 def stage_deploy(st: dict) -> None:
     """Act on the owner's word about the PR, then put a merged one in front of real users.
 
@@ -2068,7 +2141,10 @@ def stage_deploy(st: dict) -> None:
     if decision == "merge":
         if where == "temper":
             merged = github("PUT", f"/repos/{owner}/{repo}/pulls/{pr_number}/merge",
-                            {"merge_method": "squash", "commit_title": f"{ship.get('title')} (#{pr_number})"})
+                            {"merge_method": "squash", "commit_title": f"{ship.get('title')} (#{pr_number})"},
+                            allow=(405, 409))
+            if merged.get("_status"):
+                refuse_merge(owner, repo, pr_number, merged)
             log(f"merged PR #{pr_number}: {merged.get('message') or merged.get('sha', '')[:12]}")
         sh(["git", "fetch", "-q", "origin"], cwd=REPO_CHECKOUT)
         sh(["git", "checkout", "-q", BASE_BRANCH], cwd=REPO_CHECKOUT)
@@ -2533,7 +2609,7 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
         return
     nxt = next_waiting()
     if nxt:
-        require_bet_window(nxt)  # before pick_bet takes it off the Queue
+        ready_to_start(nxt)  # before pick_bet takes it off the Queue
     bet_id = pick_bet()
     if bet_id:
         start_bet(bet_id, keep, wait)
@@ -2554,8 +2630,7 @@ def cmd_run(keep: bool, wait: bool, propose: bool, retry: bool) -> None:
 
 def start_bet(bet_id: str, keep: bool, wait: bool) -> None:
     """Submit the loop run for a bet the owner approved: tasks -> build -> ship -> [PR gate] -> deploy -> measure."""
-    require_bet_window(bet_id)
-    require_prod_paper_login(bet_id)
+    ready_to_start(bet_id)
     share_bet_dir(BETS_DIR / bet_id)  # every bet's run starts here; its stages write in that directory
     plan_snapshot(bet_id)  # before the state says running: without the snapshot there is no run
     mkdir_shared(BETS_DIR / bet_id / "plan")
@@ -2661,6 +2736,7 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
                 f"({info.get('error_message')}); what `{stage}` delivered is kept")
         stage = at
     require_bet_window(bet_id, plan=stage == "tasks")
+    require_models(f"resuming {bet_id} at `{stage}`")
     before = STAGES[STAGES.index(stage) - 1] if STAGES.index(stage) else None
     # A fork lists only the checkpoints it wrote itself; the stages it restored are checkpoints of
     # the run it was forked from. A second resume of the same stage therefore forks the original

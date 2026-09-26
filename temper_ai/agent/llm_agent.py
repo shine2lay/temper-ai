@@ -271,19 +271,68 @@ class LLMAgent(AgentABC):
             )
 
         structured = _extract_structured_output(llm_result.output)
+        error = llm_result.error
+        cost, tokens, calls = llm_result.cost, llm_result.tokens, llm_result.iterations
+        # A reply that ends in a JSON object is the agent's answer, and a step or loop
+        # downstream reads it. When even the repair cannot read it, the model gets one more
+        # turn to write it again; if that fails too the agent fails, rather than completing
+        # with no answer (b012, 2026-09-25: the check's verdict went missing, and its
+        # write/check loop ended after one pass as if the verdict had said stop).
+        if structured is None and not error and _reply_tried_json(llm_result.output):
+            again = self._ask_for_valid_json(llm_service, llm_result.output, call_context, budget_check)
+            if context.tool_executor and hasattr(context.tool_executor, 'track_usage'):
+                context.tool_executor.track_usage(cost_usd=again.cost, tokens=again.tokens)
+            cost, tokens, calls = cost + again.cost, tokens + again.tokens, calls + again.iterations
+            structured = None if again.error else _extract_structured_output(again.output)
+            if structured is None:
+                why = again.error or "its second reply did not parse either"
+                error = ("the reply ends in JSON that does not parse, even after a repair and "
+                         f"one more turn asking for it again ({why})")
+                logger.warning("Agent '%s': %s", self.name, error)
         memories_formed = self._store_memories(llm_result.output, context)
 
         return AgentResult(
-            status=Status.FAILED if llm_result.error else Status.COMPLETED,
+            status=Status.FAILED if error else Status.COMPLETED,
             output=llm_result.output,
             structured_output=structured,
-            tokens=TokenUsage(total_tokens=llm_result.tokens),
-            cost_usd=llm_result.cost,
+            tokens=TokenUsage(total_tokens=tokens),
+            cost_usd=cost,
             memories_formed=memories_formed,
-            error=llm_result.error,
-            llm_calls=llm_result.iterations,
+            error=error,
+            llm_calls=calls,
             tool_calls=len(llm_result.tool_calls),
         )
+
+    def _ask_for_valid_json(
+        self,
+        llm_service: LLMService,
+        reply: str,
+        call_context: CallContext,
+        budget_check: Any,
+    ) -> LLMRunResult:
+        """One more model call, with no tools, asking for the reply's JSON again, valid.
+
+        The request stands alone -- the whole reply is quoted in it -- because the
+        conversation may hold tool calls, which a call without tools cannot carry.
+        """
+        ask = (
+            "The reply below ends in a JSON object that does not parse as JSON"
+            f"{': ' + _json_error(reply) if _json_error(reply) else ''}.\n"
+            "Reply again with only that JSON object: the same keys and the same content, but "
+            'valid JSON, with every double quote inside a string escaped as \\" and no '
+            "line breaks inside strings. No prose and no code fence.\n\n"
+            f"<reply>\n{reply}\n</reply>"
+        )
+        logger.info("Agent '%s': its reply's JSON did not parse; asking once more", self.name)
+        try:
+            return llm_service.run(
+                messages=[{"role": "user", "content": ask}],
+                tools=None,
+                context=call_context,
+                budget_check=budget_check,
+            )
+        except Exception as exc:  # the first reply stands; the agent fails with the reason
+            return LLMRunResult(output="", error=f"the second call failed: {exc}")
 
     def _build_llm_service(self, context: ExecutionContext) -> LLMService:
         """Instantiate the LLMService for this agent's provider."""
@@ -575,6 +624,7 @@ def _extract_structured_output(text: str) -> dict | None:
     1. Parse entire text as JSON
     2. Extract from ```json ... ``` code blocks
     3. Find first { ... } or [ ... ] in the text
+    4. Repair the JSON the reply ends in (see _repair_json), then parse it
     """
     if not text:
         return None
@@ -587,7 +637,130 @@ def _extract_structured_output(text: str) -> dict | None:
     if parsed is not None:
         return parsed
 
-    return _try_parse_first_brace(text)
+    parsed = _try_parse_first_brace(text)
+    if parsed is not None:
+        return parsed
+
+    return _try_repair(text)
+
+
+def _json_candidates(text: str) -> list[str]:
+    """Where a reply's JSON object may be: its ```json block, then first `{` to last `}`."""
+    found = []
+    block = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if block and block.group(1).lstrip().startswith("{"):
+        found.append(block.group(1))
+    start, end = text.find("{"), text.rfind("}")
+    if 0 <= start < end:
+        found.append(text[start : end + 1])
+    return found
+
+
+def _reply_tried_json(text: str) -> bool:
+    """Does the reply end in a JSON object, the way an agent gives its answer?
+
+    True when its last thing is a ```json (or bare ```) block holding an object, or when
+    it ends in `}` and has an object key in it. Prose that merely quotes some JSON
+    mid-reply, or ends in a list, is not an answer given as JSON.
+    """
+    tail = (text or "").rstrip()
+    if tail.endswith("```"):
+        blocks = re.findall(r"```(?:json)?[ \t]*\n(.*?)```", tail, re.DOTALL)
+        return bool(blocks) and blocks[-1].lstrip().startswith("{")
+    return tail.endswith("}") and re.search(r'\{\s*"', tail) is not None
+
+
+def _json_error(text: str) -> str:
+    """Why the reply's JSON does not parse, as json.loads says it ("" when it does)."""
+    for candidate in _json_candidates(text or ""):
+        try:
+            json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            return str(exc)
+        except TypeError:
+            continue
+    return ""
+
+
+def _try_repair(text: str) -> dict | None:
+    """Parse the reply's JSON object after repairing it (see _repair_json)."""
+    for candidate in _json_candidates(text):
+        parsed = _try_parse_json(_repair_json(candidate))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+# Where a string may end, by what it is: what JSON can go on with after its closing quote.
+# A key is followed by its colon. A value in an object is followed by the object's end (and
+# after that, a comma, another end or nothing), or by a comma and the next key -- a quoted
+# string AND its colon, which is what tells `"reads "-$120.00", "-$2.00" and so on"` (still
+# inside the string) from the next key, and `"their"} strike"` (code quoted in a string)
+# from the object's end. An item in a list is followed the same way by the list's end or a
+# comma and the next item.
+_STRING_ENDS = {
+    "key": re.compile(r"\s*:"),
+    "value": re.compile(r'\s*(?:}\s*(?:[,}\]]|$)|$|,\s*(?:}|"(?:[^"\\\n]|\\.)*"\s*:))'),
+    "item": re.compile(r'\s*(?:]\s*(?:[,}\]]|$)|$|,\s*(?:["{\[\]\-\d]|true\b|false\b|null\b))'),
+}
+_CLOSES_NEXT = re.compile(r"\s*[}\]]")
+_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def _repair_json(text: str) -> str:
+    """Fix what models get wrong in the JSON they write, as far as it can be told.
+
+    - A straight double quote inside a string that the model did not escape, as in
+      "what": "it reads "-$120.00", "-$2.00" and so on" (b012's check, 2026-09-25).
+      A quote ends the string only where JSON could go on after it (_STRING_ENDS);
+      any other quote inside a string is escaped.
+    - A raw line break or tab inside a string.
+    - A comma just before a closing brace or bracket.
+    """
+    out: list[str] = []
+    stack: list[str] = []  # the open objects and lists, "{" or "["
+    expect_key = False  # in an object: is the next string a key?
+    role = ""  # the open string's role (_STRING_ENDS); "" outside strings
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if role:
+            if c == "\\":
+                out.append(text[i : i + 2])
+                i += 2
+                continue
+            if c == '"':
+                if _STRING_ENDS[role].match(text, i + 1):
+                    role = ""
+                    out.append(c)
+                else:
+                    out.append('\\"')
+            else:
+                out.append(_ESCAPES.get(c, c))
+        elif c == '"':
+            in_object = bool(stack) and stack[-1] == "{"
+            role = ("key" if expect_key else "value") if in_object else "item"
+            out.append(c)
+        elif c in "{[":
+            stack.append(c)
+            expect_key = c == "{"
+            out.append(c)
+        elif c in "}]":
+            if stack:
+                stack.pop()
+            expect_key = False
+            out.append(c)
+        elif c == ":":
+            expect_key = False
+            out.append(c)
+        elif c == ",":
+            if not _CLOSES_NEXT.match(text, i + 1):  # else a trailing comma, dropped
+                expect_key = bool(stack) and stack[-1] == "{"
+                out.append(c)
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def _try_parse_json(text: str) -> dict | None:

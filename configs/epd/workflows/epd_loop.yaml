@@ -21,7 +21,9 @@ workflow:
   #    The node keeps its name so the driver's stages, pokes and resumes are unchanged. A bet the
   #    old stage (epd_tasks) planned, resumed at build or later, builds as it did: the driver sends
   #    build_plan true and no plan_dir, and the build writes its own plan.
-  version: 8
+  # 9: `tasks` fails when its plan says COMPLETE but no tasks.json is at tasks_path (gap 11: b010's
+  #    tasks stage completed without writing it, its one output). required_files is the engine's.
+  version: 9
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
@@ -140,6 +142,11 @@ workflow:
     - name: tasks
       type: stage
       ref: workflows/epd_plan
+      # The build reads the tasks: a plan that says COMPLETE and wrote none fails here, rather
+      # than a build starting from nothing. A BLOCKED plan owes none.
+      required_files:
+        - path: input.tasks_path
+          when: {source: tasks.structured.status, operator: equals, value: COMPLETE}
       input_map:
         bet_id: input.bet_id
         bet_path: input.bet_path

@@ -45,9 +45,14 @@ agent:
   #    ships a seed that does not run.
   # 3: with paper_account, puts the stack's paper login on that EPD paper
   #    account after the seed, and restarts the server so it takes the keys.
-  version: 3
+  # 4: `standee up` tries again, three times, 20 s, 40 s and 80 s apart, when it
+  #    fails on a network or registry error (gap 13: one Docker Hub `TLS
+  #    handshake timeout` fetching docker/dockerfile:1 killed b009's round-2
+  #    deploy). Any other failure still stops it at once. Timeout 1200 -> 1800 s
+  #    for the waits and the extra builds.
+  version: 4
   type: script
-  timeout_seconds: 1200
+  timeout_seconds: 1800
   script_template: |
     #!/bin/sh
     set -eu
@@ -121,7 +126,19 @@ agent:
     set -- up "$HOST_WT" --project "$PROJECT" --as "$TASK_SLUG" --tier dev --gateway
     [ -n "$TTL" ] && set -- "$@" --ttl "$TTL"
     echo "deploying $HEAD to $ENV_NAME: standee $*"
-    OUT=$(standee "$@" 2>&1) || { echo "$OUT"; fail "standee up failed for $ENV_NAME (it rolls back to the previous images; the old build may still be serving)"; }
+    # A network or registry error is worth another try; anything else is a real failure.
+    TRANSIENT='TLS handshake timeout|i/o timeout|connection reset by peer|connection refused|no such host|temporary failure in name resolution|toomanyrequests|too many requests|service unavailable|bad gateway|gateway time-?out|unexpected EOF|request canceled|failed to resolve source metadata|failed to do request|context deadline exceeded'
+    WAITS=$(printenv EPD_DEPLOY_RETRY_WAITS || echo "20 40 80")
+    for WAIT in $WAITS last; do
+      if OUT=$(standee "$@" 2>&1); then break; fi
+      if [ "$WAIT" = last ] || ! printf '%s\n' "$OUT" | grep -qiE "$TRANSIENT"; then
+        echo "$OUT"
+        fail "standee up failed for $ENV_NAME (it rolls back to the previous images; the old build may still be serving)"
+      fi
+      echo "standee up hit a network or registry error; trying again in $WAIT s:"
+      printf '%s\n' "$OUT" | grep -iE "$TRANSIENT" | head -2
+      sleep "$WAIT"
+    done
     echo "$OUT"
 
     # The env name and URL come from standee's own report, not from the name we

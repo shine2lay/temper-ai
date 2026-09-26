@@ -203,7 +203,9 @@ class TestTheFixRoundReadsOnlyWhatARewindKeeps:
         assert "test" in node_named(w, "gate")["depends_on"]
         step = node_named(w, "test")
         assert step["agent"] == "task_test"
-        assert step["depends_on"] == ["implement"]
+        # After implement, by way of the branch check (v12): it tests the implementer's commit.
+        assert step["depends_on"] == ["branch"]
+        assert node_named(w, "branch")["depends_on"] == ["implement"]
         assert "condition" not in step  # like security: it needs only git and the worktree
 
     def test_every_field_the_loop_records_is_one_the_workflow_puts_out(self):

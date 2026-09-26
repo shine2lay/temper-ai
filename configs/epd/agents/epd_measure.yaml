@@ -26,7 +26,13 @@ agent:
   #    against 0.1x; same 1M window, 128k output and effort levels.
   # 7: `login_note` says what the login is when it is not the seed's book: a real Alpaca paper
   #    account on the live server, shared with the builds' checks, with a market that shuts.
-  version: 7
+  # 8: the measure reaches what the criteria ask (queue task 5; 7 of 8 live measures on 2026-09-25
+  #    said "iterate", mostly for want of these): `browser_resize` for a criterion about a phone
+  #    (390x844, then back); the seed's state logins for a criterion that needs that state; and a
+  #    criterion marked "(after the close)" is `waits_for_close` while the market is open (`market`
+  #    says which, from the broker's clock), listed in `waits_for_close`, and the driver measures
+  #    the bet again after the close.
+  version: 8
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -36,6 +42,7 @@ agent:
     - playwright.browser_click
     - playwright.browser_type
     - playwright.browser_wait_for
+    - playwright.browser_resize   # phone-width criteria (8)
     - Read   # the bet and the report are files the earlier stages wrote
     - Write
   max_iterations: 45
@@ -63,6 +70,27 @@ agent:
     as roles/names/refs, browser_click / browser_type on refs from the
     latest snapshot, browser_wait_for for async loads. Sign in on the URL
     that has the accounts. Do not take screenshots. About 35 browser calls.
+    A criterion about a phone (a phone screen, phone width, 390 px):
+    browser_resize(width=390, height=844), measure it, then
+    browser_resize(width=1280, height=720) before anything else. For "above
+    the fold", browser_snapshot(boxes=true) gives each element's box in CSS
+    pixels: above the fold is a box that ends within 844.
+    A criterion that needs an account in some state: the server has a QA
+    login for each, same password as yours. Sign in as the one it names or
+    needs, measure it, sign back in as your own, and name the login in what
+    you record: qa-noscan@rollcall.test (never scanned or screened: no book
+    yet, no scan, no screen has run), qa-oneclose@rollcall.test (exactly one
+    recorded close), qa-two@rollcall.test (entries of up to 2 contracts, a
+    margin debt), qa-setaside@rollcall.test (a finished screen with more
+    than 50 set-aside stocks), qa-brake@rollcall.test (the uncovered-shares
+    brake refuses every entry), qa-nobroker@rollcall.test (no broker
+    connected), qa-keyless@rollcall.test (Alpaca chosen, no keys saved).
+    Never press Scan or Refresh on qa-noscan@, qa-oneclose@ or qa-setaside@.
+    A criterion marked "(after the close)" is about what the app shows with
+    the market shut. While the market is open, do not measure it: its result
+    is `waits_for_close`, it goes in `waits_for_close`, and the driver
+    measures the bet again after the close. With the market shut, measure it
+    like any other.
     An error from a tool rather than from a page (a permission denied, an
     MCP error) is the rig, not the product: retry once, and never record it
     as a finding.
@@ -136,12 +164,13 @@ agent:
       "invariant_holds": true,
       "criteria": [
         {"text": "<the criterion, as the bet worded it>",
-         "result": "met|unmet|vacuous",
+         "result": "met|unmet|vacuous|waits_for_close",
          "how": "<what you did and what you saw, one sentence>"}
       ],
       "threshold_met": <true only if every criterion is "met">,
       "vacuous_criteria": <how many read "vacuous">,
       "unverified": "<what remains unseen on the running build, or "">",
+      "waits_for_close": ["<each criterion marked (after the close) left for the after-close measure>"],
       "regressions": <count>,
       "right_threshold": "yes|no|partly",
       "summary": "<one sentence — if anything was vacuous or unverified, say so here; this line is what the ledger keeps>"
@@ -156,6 +185,7 @@ agent:
     {% if data_url %}The live server has no QA tenant, so sign in on this instead — the same commit, with test accounts: {{ data_url }}{% elif login_note %}The account below is a QA login on the live server itself. Sign in there.{% else %}The account below is a QA tenant on the live server itself: paper adapters, its own book. Sign in there.{% endif %}
     {% if login_note %}Sign in as {{ email }} / {{ password }}. {{ login_note }}{% else %}Sign in as {{ email }} / {{ password }} (seeded book).{% endif %}
     {% if empty_email %}An account with an empty book: {{ empty_email }} / {{ password }}.{% endif %}
+    {% if market %}The market is {{ market }} now (the broker's clock).{% else %}Read whether the market is open from the app's own session line.{% endif %}
 
     ## The bet
     Read it — its invariant and threshold are what this measurement decides:

@@ -50,7 +50,13 @@ agent:
   #    base against 0.1x; same 1M window, 128k output and effort levels.
   # 7: `login_note` says what the login is when it is not the seed's book: a real Alpaca paper
   #    account, shared with other checks, with a market that opens and shuts.
-  version: 7
+  # 8: QA reaches what the criteria ask (queue task 5; 7 of 8 live checks on 2026-09-25 said
+  #    "iterate", mostly for want of these): `browser_resize` for a clause about a phone (390x844,
+  #    then back to 1280x720); the seed's state logins (never scanned, one close, 2 contracts, over
+  #    50 set aside, a refusing brake, no broker, no keys) for a clause that needs that state; and a
+  #    clause marked "(after the close)" is `waits_for_close` while the market is open -- it does not
+  #    fail the build, and the loop measures it again after the close.
+  version: 8
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -61,6 +67,7 @@ agent:
     - playwright.browser_type
     - playwright.browser_wait_for
     - playwright.browser_take_screenshot
+    - playwright.browser_resize   # phone-width clauses (8)
   # A threshold is several clauses and the second half of one is often a
   # reversal (cancel, undo, sign out) that has to be walked after the first;
   # the budget is for the whole threshold, not a tour.
@@ -84,6 +91,33 @@ agent:
     - browser_wait_for(text=...) when something loads asynchronously.
     - Sign in first if credentials are given; most pages will be empty or
       redirect otherwise.
+    - A clause about a phone (a phone screen, phone width, 390 px):
+      browser_resize(width=390, height=844), walk the clause, then
+      browser_resize(width=1280, height=720) before anything else. For "above
+      the fold" or "on the first screen", browser_snapshot(boxes=true) gives
+      each element's box in CSS pixels: it is above the fold when the box
+      ends within 844.
+    - A clause that needs an account in some state: the stack has a QA login
+      for each, same password as yours. Sign in as the one the clause names
+      or needs, walk that clause, then sign back in as your own, and name the
+      login in the clause's evidence:
+        qa-noscan@rollcall.test: never scanned or screened (no book yet, no
+          scan, no screen has run);
+        qa-oneclose@rollcall.test: exactly one recorded close;
+        qa-two@rollcall.test: entries of up to 2 contracts, with a margin debt;
+        qa-setaside@rollcall.test: a finished screen with more than 50
+          set-aside stocks;
+        qa-brake@rollcall.test: the uncovered-shares brake refuses every entry;
+        qa-nobroker@rollcall.test: no broker connected;
+        qa-keyless@rollcall.test: Alpaca chosen, no keys saved.
+      Never press Scan or Refresh on qa-noscan@, qa-oneclose@ or
+      qa-setaside@: their state is what the next walker needs too.
+    - A clause marked "(after the close)" is about what the app shows with the
+      market shut. The app says which it is ("the market is open", "The market
+      is shut", "The market opens again ..."). While the market is open, do
+      not walk it: its status is `waits_for_close`, with the line you saw as
+      evidence; the loop checks it again after the close. With the market
+      shut, walk it like any other clause.
 
     What to check, in this order:
     1. The application is alive: the entry page renders its own content, not
@@ -128,6 +162,7 @@ agent:
       `unverified`: in both cases the threshold has not been shown to hold
       on a running build, and the gate sends it back. `out_of_build` clauses
       do not fail the verdict; the owner sees them on the pull request.
+      Nor do `waits_for_close` clauses: they are walked after the close.
     - Report what the snapshot actually said — counts, headings, the text of
       a value. Never infer from the URL, the page title, or what the app is
       supposed to do.
@@ -179,16 +214,17 @@ agent:
       "summary": "<one sentence>",
       "change_visible": "yes|no|partial",
       "change_evidence": "<what you saw that shows the change is there, or why it cannot be seen in a UI>",
-      "threshold_checks": [{"clause": "<the clause, in the threshold's words>", "status": "met|unmet|unverified", "evidence": "<what the snapshot showed, or what you tried>"}],
+      "threshold_checks": [{"clause": "<the clause, in the threshold's words>", "status": "met|unmet|unverified|waits_for_close", "evidence": "<what the snapshot showed, or what you tried>"}],
       "unmet": ["<clause>: <what the snapshot showed instead>", ...],
       "unverified": ["<clause>: <why no browser action reaches it yet, and what route would>", ...],
       "out_of_build": ["<clause>: <the words in it that put it outside this build>", ...],
+      "waits_for_close": ["<clause>: <the line that said the market is open>", ...],
       "pages": [{"page": "<name>", "url": "<url>", "ok": true, "evidence": "<what the snapshot showed>"}],
       "issues": [{"where": "<page or URL>", "what": "<what is wrong, with the evidence you saw>"}],
       "screenshots": [{"page": "<name>", "file": "<prefix>-<page>.png", "shows": "<one line: what the picture shows>"}]
     }
-    `threshold_checks`, `unmet`, `unverified` and `out_of_build` are [] when no
-    threshold was given; `screenshots` is [] when you took none. The three lists
+    `threshold_checks`, `unmet`, `unverified`, `out_of_build` and `waits_for_close`
+    are [] when no threshold was given; `screenshots` is [] when you took none. The lists
     are the `threshold_checks` entries of each status, said again on their own:
     what fails the build is read from them, so a clause missing from its list is
     a clause nobody acts on.

@@ -23,7 +23,10 @@ workflow:
   #    build_plan true and no plan_dir, and the build writes its own plan.
   # 9: `tasks` fails when its plan says COMPLETE but no tasks.json is at tasks_path (gap 11: b010's
   #    tasks stage completed without writing it, its one output). required_files is the engine's.
-  version: 9
+  # 10: `waits_for_close` out: the criteria marked "(after the close)" that the measure left while
+  #    the market was open; `collect` flags the bet and the driver measures it again after the
+  #    close (queue task 5).
+  version: 10
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
@@ -133,6 +136,7 @@ workflow:
     vacuous_criteria: measure.structured.vacuous_criteria
     right_threshold: measure.structured.right_threshold
     outcome_summary: measure.structured.summary
+    waits_for_close: measure.structured.waits_for_close
 
   nodes:
     # 1 — The signed bet becomes a plan and tasks with boolean acceptance. Writes plan_dir/plan.md

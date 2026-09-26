@@ -6,7 +6,10 @@ workflow:
   # 4: bet and report arrive as paths and are read by the agent, so this stage can be wired directly
   #    to the stages that produced them.
   # 5: `login_note` says what the login is when it is not the seed's book (a real paper account).
-  version: 5
+  # 6: `market` (open/shut, from the broker's clock) in, `waits_for_close` out: a criterion marked
+  #    "(after the close)" waits while the market is open, and the driver measures again after the
+  #    close (queue task 5).
+  version: 6
   description: |
     EPD loop, stage 7 of 7: measure. Replaces the product department's
     accountability. On the shipped build's URL, one agent checks the bet's
@@ -25,6 +28,7 @@ workflow:
     empty_email: {type: string, required: false}
     password: {type: string, required: true}
     login_note: {type: string, required: false}
+    market: {type: string, required: false}   # "open" or "shut"; absent, the agent reads the app
     bet_path: {type: string, required: true}
     report_path: {type: string, required: true}
     build_summary: {type: string, required: false}
@@ -37,6 +41,7 @@ workflow:
     criteria: measure.structured.criteria
     vacuous_criteria: measure.structured.vacuous_criteria
     unverified: measure.structured.unverified
+    waits_for_close: measure.structured.waits_for_close
     regressions: measure.structured.regressions
     right_threshold: measure.structured.right_threshold
     summary: measure.structured.summary
@@ -54,6 +59,7 @@ workflow:
         empty_email: input.empty_email
         password: input.password
         login_note: input.login_note
+        market: input.market
         bet_path: input.bet_path
         report_path: input.report_path
         build_summary: input.build_summary

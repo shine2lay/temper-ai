@@ -55,9 +55,16 @@
 #   the wait", and the check agreed; the old build had added a /load-check page that QA read (390 px
 #   timed), and the whole-page Loading state reads without timing. Hard to check means: add a
 #   readout, pick a state that shows, or claim less.
+#
+# v6 (2026-09-26, queue task 5):
+# - A criterion that can only be read with the market shut ends with "(after the close)". The
+#   checkers walk mostly in market hours; on 2026-09-25 such criteria came back unverified (b050's
+#   shut session line, b049's one close seen while shut). Now QA and the live check skip a marked
+#   criterion while the market is open, and the driver measures the bet again after the close.
+#   The logins for each state and the phone size are in the reach sheet (What the checkers can reach).
 agent:
   name: epd_pitch_write
-  version: 5
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -160,6 +167,12 @@ agent:
       dismissals, orders, settings): QA walks the same dev stack once per build round, up to three
       times, and the live check walks production after the owner has used it. Reset it in the
       criterion's first step, or start from something a walk cannot change.
+    - The market is open 9:30-16:00 ET on trading days, and the checkers walk when the build is
+      ready, mostly while it is open. A criterion that can only be read with the market shut (the
+      shut session line, last-close prices, what a ticket or page says after hours) ends with
+      "(after the close)": the checkers skip it while the market is open, and the live check
+      measures it again after the close. A criterion that needs the market open (a fill, a working
+      order, live quotes) says so.
     - One walk each: a checker walks all its criteria in one go, within the budget in What the
       checkers can reach. Count the browser calls: signing in about 4, switching login about 4, a
       page visit about 2, a click, fill, disclosure or read about 1. Keep QA under 45 and the live

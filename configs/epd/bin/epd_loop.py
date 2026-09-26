@@ -43,6 +43,8 @@ Usage:
     epd_loop.py propose --after-close [--focus TEXT] # a proposal with the market shut: no orders
     epd_loop.py propose ... --lens TEXT              # who walks, instead of the profile's user
     epd_loop.py collect [--keep]                    # record what the last run produced
+    epd_loop.py after-close [--keep]                # measure again, with the market shut, the bets
+                                                    # whose "(after the close)" criteria waited for it
     epd_loop.py resume [--at STAGE]                 # fork a failed loop run at its last good stage
     epd_loop.py approve BET [--note TEXT]           # put a candidate at the end of backlog.md
     epd_loop.py reject BET --why TEXT               # turn a candidate down, for the record
@@ -661,6 +663,84 @@ def after_close_window() -> tuple[bool, str]:
                   f"would fill before then")
 
 
+# The owner's rule (queue task 5, 2026-09-26): a criterion that can only be read with the market shut
+# is marked "(after the close)" in the pitch. QA and the measure leave it while the market is open
+# (`waits_for_close`), and the driver measures the bet again after the close, instead of the clause
+# coming back unverified (b049's one close seen while shut, b050's shut session line, 2026-09-25).
+AFTER_CLOSE_DELAY_MIN = int(os.environ.get("EPD_AFTER_CLOSE_DELAY_MIN", "5"))
+AFTER_CLOSE_LOG = LOOP_DIR / "after-close.log"
+
+
+def market_now() -> str:
+    """"open" or "shut" by the broker's clock, which the measure is told; "" when the clock cannot be
+    read, and the measure then reads the app's own session line."""
+    try:
+        return "open" if market_clock().get("is_open") else "shut"
+    except SystemExit:  # alpaca_paper dies on a refused or unreachable clock; the measure need not
+        return ""
+
+
+def waits_for_close(out: dict) -> list[str]:
+    """The criteria marked "(after the close)" that a measure left because the market was open."""
+    return [str(c).strip() for c in as_list(out.get("waits_for_close")) if str(c).strip()]
+
+
+def after_close_time() -> dt.datetime:
+    """When to measure again: AFTER_CLOSE_DELAY_MIN after the session's close (13:05 PT on a full day;
+    the clock's next_close covers the early closes), or in two minutes when the market is shut already.
+    Without a clock, 13:05 here, today or tomorrow: `after-close` checks the market itself anyway."""
+    try:
+        c = market_clock()
+    except SystemExit:
+        c = {}
+    if c.get("is_open") and c.get("next_close"):
+        return when(c["next_close"]) + dt.timedelta(minutes=AFTER_CLOSE_DELAY_MIN)
+    if c:
+        return dt.datetime.now(dt.UTC) + dt.timedelta(minutes=2)
+    now = dt.datetime.now().astimezone()
+    at = now.replace(hour=13, minute=AFTER_CLOSE_DELAY_MIN, second=0, microsecond=0)
+    return at if at > now else at + dt.timedelta(days=1)
+
+
+def arm_after_close(at: dt.datetime) -> None:
+    """Run `after-close` at `at` from a transient systemd timer, as arm_proposal arms a round. The unit
+    is named for the minute, so a second bet flagged the same day finds the measure armed already.
+    Failing to arm is logged, not fatal: the first measure is recorded, and `after-close` can be run
+    by hand."""
+    unit = f"epd-after-close-{at.astimezone():%Y%m%d-%H%M}"
+    argv = [sys.executable, str(Path(__file__).resolve()), "after-close"]
+    env = {k: v for k, v in os.environ.items() if k in ("PATH", "AGENT_TOOLS_HOME", "TEMPER_API") or k.startswith("EPD_")}
+    cmd = ["systemd-run", "--user", f"--unit={unit}",
+           f"--on-calendar={at.astimezone(dt.UTC):%Y-%m-%d %H:%M:%S} UTC", "--timer-property=AccuracySec=1s",
+           f"--working-directory={Path.cwd()}",
+           f"--property=StandardOutput=append:{AFTER_CLOSE_LOG}", f"--property=StandardError=append:{AFTER_CLOSE_LOG}"]
+    cmd += [f"--setenv={k}={v}" for k, v in sorted(env.items())]
+    r = subprocess.run(cmd + argv, capture_output=True, text=True)
+    err = (r.stderr or r.stdout).strip()
+    if r.returncode != 0 and "already" not in err:
+        log(f"could not arm the after-close measure for {local_time(at)}: {err[:300]}; "
+            f"run `epd_loop.py after-close` after the close")
+        return
+    log(f"the after-close measure is armed for {local_time(at)} ({unit}.timer; its output goes to {AFTER_CLOSE_LOG})")
+
+
+def note_waits_for_close(st: dict, out: dict) -> None:
+    """Flag a bet whose measure left criteria for the close, and arm the measure after it."""
+    waiting = waits_for_close(out)
+    if not waiting:
+        return
+    st["after_close"] = {"due": True, "criteria": waiting,
+                         "since": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
+    save_state(st)
+    log(f"{st['bet_id']}: {len(waiting)} criteria wait for the close; `after-close` measures it again then")
+    arm_after_close(after_close_time())
+
+
+def bets_waiting_for_close() -> list[str]:
+    return [d.name for d in sorted(BETS_DIR.glob("b[0-9][0-9][0-9]"))
+            if (load_state(d.name).get("after_close") or {}).get("due")]
+
+
 def bet_window(plan: bool = True) -> tuple[bool, str, dt.datetime]:
     """Whether a bet checked on paper may start now; why, or why not; and when it next can.
 
@@ -984,7 +1064,7 @@ def threshold_walk_md(checks) -> str:
     rows = [c for c in as_list(checks) if isinstance(c, dict) and c.get("clause")]
     if not rows:
         return ""
-    mark = {"met": "✓", "unmet": "✗", "unverified": "?"}
+    mark = {"met": "✓", "unmet": "✗", "unverified": "?", "waits_for_close": "⏳"}
     lines = ["## What QA checked", "", "Each promise this bet made, and whether QA saw it happen:", ""]
     for c in rows:
         status = str(c.get("status") or "").strip().lower()
@@ -992,7 +1072,9 @@ def threshold_walk_md(checks) -> str:
         # The mark says it; repeating the word after it ("✓ **met** — …") is the same thing twice.
         # "unverified" is the exception: it is not a worse ✓ but a different thing, and it reads as
         # a pass to anyone skimming the column of marks.
-        tail = " (nothing in the app reached this)" if status == "unverified" else ""
+        tail = (" (nothing in the app reached this)" if status == "unverified" else
+                " (needs the market shut: measured on the live build after the close)"
+                if status == "waits_for_close" else "")
         lines.append(f"- {mark.get(status, '?')} {str(c['clause']).strip()}{tail}"
                      + (f"  \n  {evidence}" if evidence else ""))
     unverified = [c for c in rows if str(c.get("status") or "").strip().lower() == "unverified"]
@@ -2512,7 +2594,9 @@ def scorecard() -> str:
     return "\n".join(lines)
 
 
-def stage_measure(st: dict, keep: bool) -> None:
+def stage_measure(st: dict, keep: bool, market: str = "") -> dict:
+    """Measure the bet on the live build; `market` ("open"/"shut", "" to let the agent read the app)
+    decides whether its "(after the close)" criteria are measured or wait. Returns the measure's output."""
     bet_id = st["bet_id"]
     bdir = BETS_DIR / bet_id
     # Same read as stage_ship: the bet's own build.json first, then state. The composed loop
@@ -2563,6 +2647,7 @@ def stage_measure(st: dict, keep: bool) -> None:
         "data_url": data_url,
         "email": logins["measure_email"], "empty_email": QA_EMPTY_EMAIL, "password": password,
         "login_note": logins["measure_note"],
+        "market": market,
         "bet_path": cpath(bdir / "bet.md"),
         "report_path": cpath(report),
         "build_summary": b.get("implement_summary") or "",
@@ -2577,8 +2662,42 @@ def stage_measure(st: dict, keep: bool) -> None:
     log(f"measure: {verdict} — {out.get('summary')}")
     if out.get("unverified"):
         log(f"unverified on the running build: {out['unverified']}")
+    note_waits_for_close(st, out)
     if not keep and b.get("env_name"):
         standee_down(b["env_name"])
+    return out
+
+
+def cmd_after_close(keep: bool) -> None:
+    """Measure again, with the market shut, each bet whose measure left criteria for the close."""
+    due = bets_waiting_for_close()
+    if not due:
+        log("no bet is waiting for the close")
+        return
+    ok, why = after_close_window()
+    if not ok:
+        log(f"{', '.join(due)} wait for the close, but {why}")
+        arm_after_close(after_close_time())
+        return
+    for bet_id in due:
+        st = load_state(bet_id)
+        bdir = BETS_DIR / bet_id
+        ship = st["stages"].setdefault("ship", {})
+        if not ship.get("prod_url") and (st["stages"].get("loop") or {}).get("shipped") == "shipped":
+            # The composed loop measured on prod (its measure_url) without recording it where
+            # stage_measure looks; the measure after the close goes to the same place.
+            ship.update({"prod_url": PROD_URL, "prod_qa": True})
+        if (bdir / "outcome.md").exists():
+            # The market-hours measure stays beside the new one: it saw what needs the market open.
+            write(bdir / "outcome-open.md", read(bdir / "outcome.md"))
+        log(f"{bet_id}: measuring again with the market shut "
+            f"({len(st['after_close'].get('criteria') or [])} criteria waited for it)")
+        out = stage_measure(st, keep, market="shut")
+        if not waits_for_close(out):
+            st = load_state(bet_id)
+            st["after_close"] = {**st.get("after_close", {}), "due": False,
+                                 "measured": dt.datetime.now(dt.UTC).isoformat(timespec="seconds")}
+            save_state(st)
 
 
 def settle_verdict(out: dict) -> str:
@@ -2601,6 +2720,8 @@ def settle_verdict(out: dict) -> str:
 def outcome_line(out: dict, verdict: str) -> str:
     vacuous = int(out.get("vacuous_criteria") or 0)
     note = f" [{vacuous} criteria vacuous]" if vacuous else ""
+    if waits_for_close(out):
+        note += f" [{len(waits_for_close(out))} wait for the close]"
     summary = out.get("summary") or out.get("outcome_summary") or ""
     return f"{verdict}{note}: {summary} (right threshold: {out.get('right_threshold')})"
 
@@ -3039,6 +3160,7 @@ def finish_loop(st: dict, out: dict, keep: bool) -> None:
     log(f"outcome: {st['status']} — {out.get('outcome_summary') or ''}")
     if st["status"] == "shipped":
         log(f"   measure did not report; `epd_loop.py stage measure --bet {bet_id}` runs it alone")
+    note_waits_for_close(st, out)
     # The build keeps its dev stack up so the PR the owner decides on links to a running candidate;
     # once the PR is decided (or the run stopped short of one), it has done its job.
     if out.get("env_name") and not keep:
@@ -3094,7 +3216,7 @@ def run_stage(name: str, st: dict, keep: bool) -> None:
     elif name == "deploy":
         stage_deploy(st)
     elif name == "measure":
-        stage_measure(st, keep)
+        stage_measure(st, keep, market=market_now())
     else:
         die(f"unknown stage {name}")
 
@@ -3166,6 +3288,9 @@ def cmd_status() -> None:
         rid = (st["stages"].get("loop") or {}).get("_run_id", "")
         print(f"\nopen bet: {b} ({st['status']}" + (f", run {rid[:8]}" if rid else "") + ")"
               + (f"; next stage here: {NEXT_STAGE[st['status']]}" if NEXT_STAGE.get(st["status"]) else ""))
+    waiting_close = bets_waiting_for_close()
+    if waiting_close:
+        print(f"\nwaiting for the close (`after-close` measures them again): {', '.join(waiting_close)}")
 
 
 def cmd_down(what: str) -> None:
@@ -3213,6 +3338,9 @@ def main() -> None:
     rs.add_argument("--bet", help="which open bet, when more than one is (default: the latest)")
     c = sub.add_parser("collect", help="record what the last run (proposal or bet) produced, once temper is done")
     c.add_argument("--keep", action="store_true", help="leave the stacks up")
+    ac = sub.add_parser("after-close", help="measure again, with the market shut, each bet whose criteria marked "
+                                             "(after the close) waited for it (refused while the market is open)")
+    ac.add_argument("--keep", action="store_true", help="leave the stacks up")
     n = sub.add_parser("next", help="the open bet's stages one at a time, here (takes the top backlog bet if none is open)")
     n.add_argument("--until", choices=STAGES)
     n.add_argument("--keep", action="store_true", help="leave the stacks up")
@@ -3250,6 +3378,8 @@ def main() -> None:
         cmd_resume(args.at, args.bet)
     elif args.cmd == "collect":
         cmd_collect(args.keep)
+    elif args.cmd == "after-close":
+        cmd_after_close(args.keep)
     elif args.cmd == "next":
         cmd_next(args.until, args.keep)
     elif args.cmd == "approve":

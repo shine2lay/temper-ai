@@ -1308,3 +1308,163 @@ def test_publish_screenshots_creates_the_branch_then_builds_on_it(L, monkeypatch
 def test_publish_screenshots_without_any_is_silent(L, monkeypatch):
     monkeypatch.setattr(L, "github", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no call")))
     assert L.publish_screenshots("b004", []) == ""
+
+
+# Criteria that need the market shut (queue task 5, the owner's rule): a criterion marked "(after the
+# close)" waits while the market is open, and the driver measures the bet again after the close.
+
+OPEN_CLOCK = {"is_open": True, "timestamp": "2026-09-28T10:00:00-04:00",
+              "next_open": "2026-09-29T09:30:00-04:00", "next_close": "2026-09-28T16:00:00-04:00"}
+SHUT_CLOCK = {"is_open": False, "timestamp": "2026-09-28T17:00:00-04:00",
+              "next_open": "2026-09-29T09:30:00-04:00", "next_close": "2026-09-29T16:00:00-04:00"}
+WAITING = ["5. the header reads 'The market is shut' (after the close)"]
+
+
+def _shipped_by_the_loop(L, monkeypatch, bet_id="b001") -> list:
+    """A bet the composed loop shipped and measured in market hours, as collect leaves it, with the
+    measure's outside world stubbed. Returns the list the after-close measure is armed into."""
+    propose(L, bets=(bet_id,), empty=())
+    st = L.load_state(bet_id)
+    st["status"] = "iterate"
+    st["stages"]["loop"] = {"shipped": "shipped", "env_name": f"rollcall-dev-epd-{bet_id}"}
+    L.save_state(st)
+    (L.BETS_DIR / bet_id / "outcome.md").write_text("# Outcome: market hours\n")
+    monkeypatch.setattr(L, "wait_for_url", lambda *a, **k: None)
+    monkeypatch.setattr(L, "preflight_login", lambda *a, **k: None)
+    monkeypatch.setattr(L, "ensure_qa_password", lambda: "pw")
+    monkeypatch.setattr(L, "standee_down", lambda env: None)
+    armed: list = []
+    monkeypatch.setattr(L, "arm_after_close", lambda at: armed.append(at))
+    return armed
+
+
+def test_a_measure_that_leaves_criteria_for_the_close_flags_the_bet_and_arms_the_next(L, monkeypatch):
+    armed = _shipped_by_the_loop(L, monkeypatch)
+    st = L.load_state("b001")
+    st["stages"]["ship"] = {"prod_url": "https://prod.example.com", "prod_qa": True}
+    L.save_state(st)
+    seen: dict = {}
+
+    def fake_run_workflow(name, inputs, **kw):
+        seen["inputs"] = inputs
+        (L.BETS_DIR / "b001" / "outcome.md").write_text("# outcome\n")
+        return {"verdict": "iterate", "summary": "4 of 5 met; 1 waits for the close", "threshold_met": False,
+                "waits_for_close": WAITING}
+
+    monkeypatch.setattr(L, "run_workflow", fake_run_workflow)
+    monkeypatch.setattr(L, "market_clock", lambda: OPEN_CLOCK)
+    out = L.stage_measure(L.load_state("b001"), keep=False, market=L.market_now())
+
+    assert seen["inputs"]["market"] == "open", "the measure is told the market is open"
+    assert out["waits_for_close"] == WAITING
+    st = L.load_state("b001")
+    assert st["after_close"]["due"] is True and st["after_close"]["criteria"] == WAITING
+    assert armed == [dt.datetime(2026, 9, 28, 20, 5, tzinfo=dt.UTC)], "five minutes after the close"
+    row = {r["bet_id"]: r for r in L.ledger_rows()}["b001"]
+    assert "[1 wait for the close]" in row["outcome"]
+
+
+def test_collect_flags_a_bet_whose_criteria_wait_for_the_close(L, monkeypatch):
+    propose(L)
+    L.approve("b001", None)
+    L.pick_bet()
+    armed: list = []
+    monkeypatch.setattr(L, "arm_after_close", lambda at: armed.append(at))
+    monkeypatch.setattr(L, "after_close_time", lambda: dt.datetime(2026, 9, 28, 20, 5, tzinfo=dt.UTC))
+    L.finish_loop(L.load_state("b001"), {
+        "verdict": "iterate", "vacuous_criteria": 0, "threshold_met": False, "shipped": "shipped",
+        "merge_sha": "abc", "outcome_summary": "4 of 5; 1 waits for the close", "waits_for_close": WAITING,
+    }, keep=False)
+    assert L.bets_waiting_for_close() == ["b001"]
+    assert armed == [dt.datetime(2026, 9, 28, 20, 5, tzinfo=dt.UTC)]
+    assert "[1 wait for the close]" in {r["bet_id"]: r for r in L.ledger_rows()}["b001"]["outcome"]
+
+
+def test_a_measure_with_nothing_waiting_flags_nothing(L, monkeypatch):
+    propose(L)
+    L.approve("b001", None)
+    L.pick_bet()
+    monkeypatch.setattr(L, "arm_after_close", lambda at: (_ for _ in ()).throw(AssertionError("armed")))
+    L.finish_loop(L.load_state("b001"), {"verdict": "kept", "vacuous_criteria": 0, "threshold_met": True,
+                                          "shipped": "shipped", "merge_sha": "abc", "outcome_summary": "s",
+                                          "waits_for_close": []}, keep=False)
+    assert L.bets_waiting_for_close() == []
+    assert "wait for the close" not in L.ledger_rows()[0]["outcome"]
+
+
+def test_after_close_measures_again_once_the_market_is_shut(L, monkeypatch):
+    armed = _shipped_by_the_loop(L, monkeypatch)
+    st = L.load_state("b001")
+    st["after_close"] = {"due": True, "criteria": WAITING, "since": "2026-09-28T17:30:00+00:00"}
+    L.save_state(st)
+    measured = []
+
+    def fake_stage_measure(st, keep, market=""):
+        measured.append((st["bet_id"], market, st["stages"]["ship"].get("prod_url")))
+        return {"verdict": "kept", "waits_for_close": []}
+
+    monkeypatch.setattr(L, "stage_measure", fake_stage_measure)
+    monkeypatch.setattr(L, "market_clock", lambda: OPEN_CLOCK)
+    monkeypatch.setattr(L, "after_close_window",
+                        lambda: (False, "the market is open until Mon Sep 28 13:00 PDT: run an ordinary round"))
+    L.cmd_after_close(keep=False)
+    assert measured == [] and len(armed) == 1, "not while the market is open: armed again for the close"
+    assert L.bets_waiting_for_close() == ["b001"]
+
+    monkeypatch.setattr(L, "after_close_window", lambda: (True, "shut until Tue Sep 29 06:30 PDT"))
+    L.cmd_after_close(keep=False)
+    assert measured == [("b001", "shut", L.PROD_URL)], "the composed loop measured on prod; so does this"
+    assert (L.BETS_DIR / "b001" / "outcome-open.md").read_text() == "# Outcome: market hours\n", (
+        "the market-hours measure is kept beside the new one")
+    st = L.load_state("b001")
+    assert st["after_close"]["due"] is False and st["after_close"]["measured"]
+    L.cmd_after_close(keep=False)
+    assert len(measured) == 1, "measured once"
+
+
+def test_arm_after_close_arms_one_timer_per_minute(L, monkeypatch, capsys):
+    ran = []
+
+    def systemd_run(cmd, capture_output, text):
+        ran.append(cmd)
+        if len(ran) == 1:
+            return subprocess.CompletedProcess(cmd, 0, "Running timer as unit: epd-after-close.timer", "")
+        return subprocess.CompletedProcess(cmd, 1, "", "Failed to start transient timer unit: Unit "
+                                           "epd-after-close.timer was already loaded or has a fragment file.")
+
+    monkeypatch.setattr(L.subprocess, "run", systemd_run)
+    at = dt.datetime(2026, 9, 28, 20, 5, tzinfo=dt.UTC)
+    L.arm_after_close(at)
+    assert ran[0][:3] == ["systemd-run", "--user", f"--unit=epd-after-close-{at.astimezone():%Y%m%d-%H%M}"]
+    assert "--on-calendar=2026-09-28 20:05:00 UTC" in ran[0]
+    assert ran[0][-2:] == [str(DRIVER), "after-close"]
+    L.arm_after_close(at)  # a second bet flagged the same day: the measure is armed already
+    assert capsys.readouterr().out.count("the after-close measure is armed for") == 2
+
+
+def test_after_close_time_is_just_after_the_close(L, monkeypatch):
+    monkeypatch.setattr(L, "market_clock", lambda: OPEN_CLOCK)
+    assert L.after_close_time() == dt.datetime(2026, 9, 28, 20, 5, tzinfo=dt.UTC)
+    monkeypatch.setattr(L, "market_clock", lambda: SHUT_CLOCK)
+    soon = L.after_close_time() - dt.datetime.now(dt.UTC)
+    assert dt.timedelta(minutes=1) < soon <= dt.timedelta(minutes=2), "shut already: in two minutes"
+    monkeypatch.setattr(L, "market_clock", lambda: L.die("Alpaca paper /v2/clock: HTTP 401"))
+    at = L.after_close_time()
+    assert (at.hour, at.minute) == (13, 5) and at > dt.datetime.now().astimezone(), "no clock: 13:05 here"
+
+
+def test_market_now_says_open_or_shut_and_nothing_without_a_clock(L, monkeypatch):
+    monkeypatch.setattr(L, "market_clock", lambda: OPEN_CLOCK)
+    assert L.market_now() == "open"
+    monkeypatch.setattr(L, "market_clock", lambda: SHUT_CLOCK)
+    assert L.market_now() == "shut"
+    monkeypatch.setattr(L, "market_clock", lambda: L.die("Alpaca paper /v2/clock: HTTP 401"))
+    assert L.market_now() == "", "the measure then reads the app's session line"
+
+
+def test_threshold_walk_marks_a_clause_that_waits_for_the_close(L):
+    md = L.threshold_walk_md([{"clause": "the header reads 'The market is shut' (after the close)",
+                               "status": "waits_for_close", "evidence": "the session line said the market is open"}])
+    assert ("- ⏳ the header reads 'The market is shut' (after the close) (needs the market shut: measured on "
+            "the live build after the close)  \n  the session line said the market is open\n") in md
+    assert "Nothing in the app reached" not in md, "waiting for the close is not unverified"

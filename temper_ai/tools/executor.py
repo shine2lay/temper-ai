@@ -119,6 +119,24 @@ class ToolExecutor:
         # Running cost/token totals for budget policy enforcement
         self.run_cost_usd: float = 0.0
         self.run_tokens: int = 0
+        self._cancel_event: Any = None
+
+    @property
+    def cancel_event(self) -> Any:
+        """The run's cancel flag (a threading.Event), or None.
+
+        Once it is set no tool call starts, and a tool that can be stopped
+        part-way (``cancellable``: Bash) is stopped. Set by
+        ExecutionContext.__post_init__ when the run's context is built; the
+        tools registered before or after both get it.
+        """
+        return self._cancel_event
+
+    @cancel_event.setter
+    def cancel_event(self, event: Any) -> None:
+        self._cancel_event = event
+        for tool in self._tools.values():
+            _give_cancel_event(tool, event)
 
     @property
     def scratch_dir(self) -> str:
@@ -175,6 +193,8 @@ class ToolExecutor:
             for tool in tools.values():
                 if hasattr(tool, 'config') and isinstance(tool.config, dict):
                     tool.config["workspace_root"] = self.workspace_root
+        for tool in tools.values():
+            _give_cancel_event(tool, self._cancel_event)
         self._tools.update(tools)
 
     def execute(
@@ -230,6 +250,11 @@ class ToolExecutor:
         ctx = context or {}
         parent_id = ctx.get("parent_id")
         execution_id = ctx.get("execution_id")
+
+        if self._cancel_event is not None and self._cancel_event.is_set():
+            return ToolResult(success=False, result="", error=(
+                f"Cancelled: the run was stopped, so '{tool_name}' did not run."
+            ))
 
         if tool_name not in allowed_tools:
             # Checked before the registry lookup on purpose: "you may not" must
@@ -591,6 +616,17 @@ def _takes_path(tool: BaseTool) -> bool:
     """Whether the tool declares a parameter the sandbox judges (see _PATH_PARAMS)."""
     props = (getattr(tool, "parameters", None) or {}).get("properties") or {}
     return any(key in props for key in _PATH_PARAMS)
+
+
+def _give_cancel_event(tool: BaseTool, event: Any) -> None:
+    """Hand the run's cancel flag to a tool that can stop part-way.
+
+    On the registered instance, which belongs to this run alone (the executor
+    is per run); the per-call copies _tool_for and _tool_for_caller make are
+    shallow, so they carry it.
+    """
+    if getattr(tool, "cancellable", False):
+        tool.cancel_event = event  # type: ignore[attr-defined]
 
 
 def caller_key(ctx: dict[str, Any]) -> str:

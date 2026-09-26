@@ -114,6 +114,17 @@ class ExecutionContext:
     dispatch_limits: Any = None  # DispatchLimits — per-workflow safety caps. Resolved from workflow defaults by routes/CLI; None means use module defaults.
     dispatch_state: Any = None  # DispatchRunState — per-run bookkeeping for cap enforcement. Seeded by executor on first dispatch.
 
+    def __post_init__(self) -> None:
+        # The run's tool executor learns the run's cancel flag here: every run
+        # builds its context once (API, worker, CLI) and every node runs on a
+        # copy of it. A stopped run then starts no tool call and kills a
+        # command still running (see ToolExecutor.cancel_event). Only an
+        # executor that has the attribute and no flag yet is given one.
+        te = self.tool_executor
+        if self.cancel_event is not None and te is not None \
+                and getattr(te, "cancel_event", False) is None:
+            te.cancel_event = self.cancel_event
+
     def get_llm(self, provider: str | None) -> Any:
         """Get an LLM provider by name, or the default one.
 

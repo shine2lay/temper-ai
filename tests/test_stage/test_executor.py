@@ -1572,6 +1572,115 @@ class TestWorkflowTerminalStatus:
         assert start.kwargs["data"]["workspace_path"] == "/tmp/ws"
 
 
+# --- A failure is carried all the way down ---
+
+
+class TestAFailureReachesEveryStepAfterIt:
+    """A failure used to stop the two steps after it and no more.
+
+    The second step down was skipped with "Dependency 'b' was skipped", a reason
+    that did not say failed, so the third took it for a condition's skip and ran,
+    on inputs that were never made. In epd_task that was the gate judging a build
+    whose plan had failed (b009, 2026-09-24).
+    """
+
+    def test_no_step_runs_however_far_down(self):
+        a = _make_agent_node("a", status=Status.FAILED)
+        chain = [_make_agent_node(n, depends_on=[d]) for n, d in
+                 (("b", "a"), ("c", "b"), ("d", "c"), ("e", "d"))]
+
+        result = execute_graph([a, *chain], {}, _make_context(), graph_name="wf", is_workflow=True)
+
+        for node in chain:
+            node.run.assert_not_called()
+        assert result.node_results["b"].error == "Dependency 'a' failed"
+        assert result.node_results["e"].error == "Dependency 'd' was skipped because 'a' failed"
+        assert result.status == Status.FAILED
+
+    def test_the_epd_task_shape(self):
+        """plan fails: the judges and the gate do not run, and the teardown still does."""
+        plan = _make_agent_node("plan", status=Status.FAILED)
+        implement = _make_agent_node("implement", depends_on=["plan"])
+        judges = [_make_agent_node(n, depends_on=["implement"]) for n in ("review", "test")]
+        gate = _make_agent_node("gate", depends_on=["review", "test"])
+        stack_down = _make_agent_node("stack_down", depends_on=["gate"])
+        stack_down.config.run_after_failure = True
+        cleanup = _make_agent_node("cleanup", depends_on=["stack_down"])
+        cleanup.config.run_after_failure = True
+
+        execute_graph([plan, implement, *judges, gate, stack_down, cleanup], {}, _make_context(),
+                      graph_name="wf", is_workflow=True)
+
+        for node in (implement, *judges, gate):
+            node.run.assert_not_called()
+        stack_down.run.assert_called_once()
+        cleanup.run.assert_called_once()
+
+    def test_a_step_skipped_by_its_condition_is_still_not_a_failure(self):
+        a = _make_agent_node("a", structured_output={"go": False})
+        b = _make_agent_node("b", depends_on=["a"],
+                             condition={"source": "a.structured.go", "operator": "equals", "value": True})
+        c = _make_agent_node("c", depends_on=["b"])
+        d = _make_agent_node("d", depends_on=["c"])
+
+        execute_graph([a, b, c, d], {}, _make_context(), graph_name="wf", is_workflow=True)
+
+        b.run.assert_not_called()
+        c.run.assert_called_once()
+        d.run.assert_called_once()
+
+    def test_a_step_that_ran_after_the_failure_lets_the_next_one_run(self):
+        a = _make_agent_node("a", status=Status.FAILED)
+        b = _make_agent_node("b", depends_on=["a"])
+        report = _make_agent_node("report", depends_on=["b"])
+        report.config.run_after_failure = True
+        after = _make_agent_node("after", depends_on=["report"])
+
+        execute_graph([a, b, report, after], {}, _make_context(), graph_name="wf", is_workflow=True)
+
+        report.run.assert_called_once()
+        after.run.assert_called_once()
+
+    def test_a_run_after_failure_step_its_condition_skips_passes_the_failure_on(self):
+        a = _make_agent_node("a", status=Status.FAILED, structured_output={"teardown": False})
+        teardown = _make_agent_node(
+            "teardown", depends_on=["a"],
+            condition={"source": "a.structured.teardown", "operator": "equals", "value": True},
+        )
+        teardown.config.run_after_failure = True
+        after = _make_agent_node("after", depends_on=["teardown"])
+        ctx = _make_context()
+
+        result = execute_graph([a, teardown, after], {}, ctx, graph_name="wf", is_workflow=True)
+
+        teardown.run.assert_not_called()
+        after.run.assert_not_called(), "the failure was lost at a step its condition skipped"
+        assert result.node_results["after"].error == "Dependency 'teardown' was skipped because 'a' failed"
+        reasons = [c.kwargs["data"].get("skip_reason") for c in ctx.event_recorder.record.call_args_list]
+        assert "condition not met; Dependency 'a' failed" in reasons
+
+    def test_a_skip_restored_from_a_checkpoint_still_carries_the_failure(self):
+        """A checkpoint keeps a skip's status and reason, not its metadata: the reason is the record."""
+        from temper_ai.stage.executor import _check_dependency_failures
+
+        node = _make_agent_node("gate", depends_on=["review"])
+        restored = {"review": NodeResult(status=Status.SKIPPED,
+                                          error="Dependency 'implement' was skipped because 'plan' failed")}
+
+        skip = _check_dependency_failures(node, restored)
+
+        assert skip is not None
+        assert skip.error == "Dependency 'review' was skipped because 'plan' failed"
+
+    def test_a_removed_node_is_not_a_failure(self):
+        from temper_ai.stage.executor import _check_dependency_failures
+
+        node = _make_agent_node("b", depends_on=["a"])
+        tombstone = {"a": NodeResult(status=Status.SKIPPED, error="removed by dispatch from 'x'")}
+
+        assert _check_dependency_failures(node, tombstone) is None
+
+
 # --- Final Output Selection ---
 
 

@@ -13,6 +13,7 @@ import re
 import shlex
 import signal
 import subprocess  # noqa: B404
+import time
 from typing import Any, NamedTuple
 
 from temper_ai.tools._output_compaction import DEFAULT_MAX_CHARS
@@ -83,6 +84,12 @@ class Bash(BaseTool):
         "required": ["command"],
     }
     modifies_state = True
+    # The run's cancel flag, handed over by the ToolExecutor (see
+    # ToolExecutor.cancel_event): a command still running when the run is
+    # stopped is killed rather than waited out, which for a test suite or a
+    # deploy that waits on CI could be half an hour.
+    cancellable = True
+    cancel_event: Any = None
 
     def execute(self, **params: Any) -> ToolResult:
         command = params.get("command", "")
@@ -112,6 +119,7 @@ class Bash(BaseTool):
             compact=self.config.get("compact_output", True) and not params.get("_raw_output", False),
             max_output_chars=int(self.config.get("max_output_chars") or DEFAULT_MAX_CHARS),
             extra_env=params.get("env") or None,
+            cancel_event=self.cancel_event,
         )
 
 
@@ -259,6 +267,7 @@ def _run_subprocess(
     compact: bool = True,
     max_output_chars: int = DEFAULT_MAX_CHARS,
     extra_env: dict[str, str] | None = None,
+    cancel_event: Any = None,
 ) -> "ToolResult":
     """Execute a shell command in a subprocess and return a ToolResult.
 
@@ -266,6 +275,7 @@ def _run_subprocess(
     the shell, and everything the shell started. Killing only the shell (what
     `subprocess.run` does) left every `uv run pytest` that outran its timeout
     running on in the container, and the executor's pool worker waiting on it.
+    A run that is cancelled while the command runs kills the group the same way.
     """
     try:
         proc = subprocess.Popen(
@@ -281,7 +291,13 @@ def _run_subprocess(
     except Exception as e:
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
     try:
-        out, err = proc.communicate(timeout=timeout)
+        out, err = _wait(proc, timeout, cancel_event)
+    except _Cancelled:
+        _kill_group(proc)
+        return ToolResult(success=False, result="", error=(
+            "Cancelled: the run was stopped while this command was running. "
+            "It was killed, with everything it started."
+        ))
     except subprocess.TimeoutExpired:
         _kill_group(proc)
         return ToolResult(success=False, result="", error=(
@@ -330,6 +346,34 @@ class _Completed(NamedTuple):
     stdout: str
     stderr: str
     returncode: int
+
+
+class _Cancelled(Exception):
+    """The run was cancelled while a command was running."""
+
+
+_CANCEL_POLL_S = 0.5
+
+
+def _wait(proc: subprocess.Popen, timeout: float, cancel_event: Any) -> tuple[str, str]:
+    """``proc.communicate(timeout)``, looking at the run's cancel flag meanwhile.
+
+    communicate() may be called again after a TimeoutExpired without losing
+    output, so it is called in short slices; the last slice raises
+    TimeoutExpired as one long call would.
+    """
+    if cancel_event is None:
+        return proc.communicate(timeout=timeout)
+    deadline = time.monotonic() + timeout
+    while True:
+        if cancel_event.is_set():
+            raise _Cancelled
+        remaining = deadline - time.monotonic()
+        try:
+            return proc.communicate(timeout=max(0.0, min(_CANCEL_POLL_S, remaining)))
+        except subprocess.TimeoutExpired:
+            if time.monotonic() >= deadline:
+                raise
 
 
 def _kill_group(proc: subprocess.Popen) -> None:

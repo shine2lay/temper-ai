@@ -158,6 +158,8 @@ workflow:
       type: agent
       agent: task_stack_down
       depends_on: [verify]
+      # A failed probe still has a stack to take down (see epd_task's stack_down).
+      run_after_failure: true
       condition:
         source: stack_detect.structured.stack_teardown
         operator: equals
@@ -169,6 +171,8 @@ workflow:
       type: agent
       agent: task_cleanup
       depends_on: [stack_down]
+      # Refuses rather than lose uncommitted or unpushed work (see epd_task's cleanup).
+      run_after_failure: true
       condition:
         source: stack_detect.structured.teardown
         operator: equals

@@ -59,6 +59,7 @@ DEFAULT_MAX_CONTEXT_TOKENS = 120_000  # Conservative default — most models han
 # limiter trims tool results further when a run is actually over budget.
 MAX_TOOL_RESULT_CHARS = 200_000  # ~50k tokens
 WRAP_UP_TURNS = 3  # LLM turns left at which the model is told to stop exploring (per agent: wrap_up_turns)
+CANCELLED_ERROR = "Cancelled: the run was stopped"
 
 
 class LLMService:
@@ -157,6 +158,16 @@ class LLMService:
         self._fallback_queue = list(self.fallbacks)
 
         for iteration in range(1, self.max_iterations + 1):
+            # A stopped run makes no further calls. Checked here, before every
+            # call, and not only between nodes: an agent that keeps calling
+            # tools can run for an hour, and until it ended on its own the only
+            # way to stop it was to restart the server, which kills every run.
+            if self._ctx.cancel_event is not None and self._ctx.cancel_event.is_set():
+                logger.info("'%s' stopped before call %d: the run was cancelled",
+                            self._ctx.agent_name, iteration)
+                output = extract_final_answer(self._response) if self._response else ""
+                return self._build_result(iteration - 1, output=output, error=CANCELLED_ERROR)
+
             # Check budget before each LLM call
             if self._budget_check:
                 denial = self._budget_check()

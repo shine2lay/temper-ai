@@ -328,6 +328,7 @@ class LLMAgent(AgentABC):
             # provider. Agent YAML opts in via `provider_config: {...}`.
             # Core doesn't know what keys mean — the provider does.
             provider_config=self.config.get("provider_config"),
+            cancel_event=context.cancel_event,
         )
 
     def _recall_memories(self, context: ExecutionContext) -> list[str]:

@@ -520,6 +520,10 @@ workflow:
       type: agent
       agent: task_stack_down
       depends_on: [gate]
+      # A failed build still has a stack to take down. A failure used to stop only
+      # the two steps after it, so this ran by accident after most of them (and not
+      # after the gate's own); now a failure reaches every step after it.
+      run_after_failure: true
       condition:
         source: environment.structured.stack_teardown
         operator: equals
@@ -534,6 +538,9 @@ workflow:
       type: agent
       agent: task_cleanup
       depends_on: [stack_down]
+      # Releases the claim after a failed build too. It touches nothing it would
+      # lose: a dirty worktree or an unpushed branch makes it refuse.
+      run_after_failure: true
       condition:
         source: environment.structured.teardown
         operator: equals

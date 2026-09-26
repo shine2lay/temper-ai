@@ -53,10 +53,12 @@ class NodeConfig:
     #   "ship_with_open_issues" — proceed but append unresolved issues to .context/KNOWN_ISSUES.md
     #   "fail"                  — mark node FAILED and cascade downstream skip
     on_max_loops: str = "silent"
-    # Run even when a dependency failed (or was skipped because something upstream failed),
-    # instead of being skipped with it. For the node that has to report the outcome either
-    # way -- a failed build still owes someone a comment. It reads `<dep>.status` and
-    # `<dep>.error` to say what happened; its own condition still applies.
+    # Run even when a dependency failed (or was skipped because something upstream failed,
+    # however far up), instead of being skipped with it. For the node that has to report the
+    # outcome or clean up either way -- a failed build still owes someone a comment, and its
+    # test stack still has to come down. It reads `<dep>.status` and `<dep>.error` to say
+    # what happened. Its own condition still applies; if that skips it, the failure goes on
+    # down to the nodes after it.
     run_after_failure: bool = False
 
     # Timeout, gates, and policy overrides

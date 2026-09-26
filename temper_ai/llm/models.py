@@ -76,3 +76,7 @@ class CallContext:
     # matching provider reads them. Lets gitignored providers (e.g. Claude Code
     # in local/) add features without naming them in core.
     provider_config: dict | None = None
+    # The run's cancel flag (a threading.Event), checked before every model
+    # call. Checked only between nodes, a stopped run went on paying for an
+    # agent's calls until that agent finished on its own.
+    cancel_event: Any = None

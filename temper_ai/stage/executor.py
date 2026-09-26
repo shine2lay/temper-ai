@@ -374,20 +374,34 @@ def _execute_single_node(
     node_map: dict[str, Node] | None = None,
 ) -> NodeResult:
     """Execute one node with condition checking and input resolution."""
-    skip = _check_dependency_failures(node, node_outputs)
-    if skip is not None:
-        _record_skipped_node(node, context, parent_event_id, skip.error or "dependency failed")
-        return skip
+    upstream_failure = _check_dependency_failures(node, node_outputs)
+    if upstream_failure is not None and not getattr(node.config, "run_after_failure", False):
+        logger.warning("Node '%s' skipped — %s", node.name, upstream_failure.error)
+        _record_skipped_node(node, context, parent_event_id, upstream_failure.error or "dependency failed")
+        return upstream_failure
+    if upstream_failure is not None:
+        logger.info("Node '%s' runs after a failure upstream (run_after_failure): %s",
+                    node.name, upstream_failure.error)
 
     if node.condition:
         try:
             if not evaluate_condition(node.condition, node_outputs):
                 logger.info("Node '%s' skipped — condition not met", node.name)
+                if upstream_failure is not None:
+                    # It would have run to deal with the failure, and its own
+                    # condition said no: the failure goes on down, so a node
+                    # after it is not run as if nothing had gone wrong.
+                    _record_skipped_node(node, context, parent_event_id,
+                                         f"condition not met; {upstream_failure.error}")
+                    return upstream_failure
                 result = NodeResult(status=Status.SKIPPED)
                 _record_skipped_node(node, context, parent_event_id, "condition not met")
                 return result
         except Exception as exc:
             logger.warning("Condition evaluation failed for '%s': %s", node.name, exc)
+            if upstream_failure is not None:
+                _record_skipped_node(node, context, parent_event_id, f"{exc}; {upstream_failure.error}")
+                return upstream_failure
             result = NodeResult(status=Status.SKIPPED, error=str(exc))
             _record_skipped_node(node, context, parent_event_id, str(exc))
             return result
@@ -420,40 +434,56 @@ def _execute_single_node(
     return _run_node_with_events(node, resolved, context, node_event_id)
 
 
+# The step a failure started from, at the end of every skip reason this module
+# writes for a failure: "Dependency 'plan' failed", "Dependency 'gate' was
+# skipped because 'plan' failed".
+_ROOT_FAILURE = re.compile(r"'([^']+)' failed$")
+
+
+def _skipped_for_failure(result: NodeResult) -> bool:
+    """A skip caused by a failure upstream, as against one a condition chose.
+
+    Told apart by the reason, the one part of a skip a checkpoint keeps: every
+    reason this module writes for a failure ends "... failed", however far down
+    the skip is. It used not to past the second step ("Dependency 'b' was
+    skipped"), so the third step after a failure took the skip for a
+    condition's and ran, on inputs that were never made.
+    """
+    return result.status == Status.SKIPPED and "failed" in (result.error or "")
+
+
+def _failure_skip(dep_name: str, dep_result: NodeResult) -> NodeResult:
+    """The skip for a node whose dependency failed, or was skipped for a failure."""
+    if dep_result.status == Status.FAILED:
+        return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' failed")
+    match = _ROOT_FAILURE.search(dep_result.error or "")
+    root = f"'{match.group(1)}'" if match else "a step upstream"
+    return NodeResult(status=Status.SKIPPED,
+                      error=f"Dependency '{dep_name}' was skipped because {root} failed")
+
+
 def _check_dependency_failures(
     node: Node,
     node_outputs: dict[str, NodeResult],
 ) -> NodeResult | None:
-    """Return a SKIPPED NodeResult if any dependency failed or was skipped, else None.
+    """The SKIPPED result a failure upstream calls for, or None when nothing upstream failed.
 
-    A node with ``run_after_failure`` is never skipped here: it exists to report what
-    happened upstream, and a failure upstream is the case it most needs to report.
+    A failure is carried all the way down: a node is skipped when a dependency
+    failed, or was itself skipped because of a failure, however many steps up.
+    A dependency skipped by its own condition is not a failure, and the node runs.
+
+    The caller decides what to do with it: a node with ``run_after_failure``
+    runs anyway (it is there to report or clean up after what happened), and
+    passes the failure on down only if its own condition then skips it.
     """
-    if getattr(node.config, "run_after_failure", False):
-        failed = [
-            name for name in node.depends_on
-            if (res := node_outputs.get(name)) is not None
-            and (res.status == Status.FAILED or (res.status == Status.SKIPPED and "failed" in (res.error or "")))
-        ]
-        if failed:
-            logger.info("Node '%s' runs after the failure of %s (run_after_failure)", node.name, failed)
-        return None
     for dep_name in node.depends_on:
         dep_result = node_outputs.get(dep_name)
-        if dep_result and dep_result.status == Status.FAILED:
-            logger.warning("Node '%s' skipped — dependency '%s' failed", node.name, dep_name)
-            return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' failed")
-        if dep_result and dep_result.status == Status.SKIPPED:
-            # Don't cascade skip when the dependency (or its ancestor) was
-            # intentionally skipped via a condition. Only cascade when the
-            # skip was caused by an actual failure upstream.
-            skip_reason = dep_result.error or ""
-            if "failed" in skip_reason:
-                logger.warning("Node '%s' skipped — dependency '%s' was skipped due to failure", node.name, dep_name)
-                return NodeResult(status=Status.SKIPPED, error=f"Dependency '{dep_name}' was skipped")
-            # Condition-based skip or cascade from condition skip — proceed
-            logger.info("Node '%s' — dependency '%s' was conditionally skipped, proceeding", node.name, dep_name)
+        if dep_result is None:
             continue
+        if dep_result.status == Status.FAILED or _skipped_for_failure(dep_result):
+            return _failure_skip(dep_name, dep_result)
+        if dep_result.status == Status.SKIPPED:
+            logger.info("Node '%s' — dependency '%s' was conditionally skipped, proceeding", node.name, dep_name)
     return None
 
 

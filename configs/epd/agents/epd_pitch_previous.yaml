@@ -9,16 +9,53 @@
 #
 # On the first pass there is no verdict yet and it returns "", even if a file is there (a retried run
 # writes to the same folder). No model: it costs nothing.
+#
+# 2 (2026-09-26, queue task 3): counts the rounds, as epd_plan_docs does for the plan stage. Round 3
+# is the writer's last pass: it applies the second check's issues and no check follows. v4 of the
+# workflow ran three full checks, and on 4 of 8 re-tested bets (b015 b019 b020 b021) nothing applied
+# the last check's issues. The counter is a hidden file beside the pitch (.<name>.round), reset by a
+# first pass. It also keeps the version it hands back as .<name>.before, so the check after the
+# rewrite reads what changed (epd_pitch_changes), and passes the check's last issues on to the
+# re-check, which starts from them.
+#
+# Never put an apostrophe in the python below: it is one single-quoted shell word
+# (tests/test_epd/test_script_agents.py parses every EPD script agent with sh -n).
 agent:
   name: epd_pitch_previous
-  version: 1
+  version: 2
   type: script
   timeout_seconds: 30
   script_template: |
     #!/bin/bash
-    OUT="{{ out_path | default('', true) }}" VERDICT="{{ check_verdict | default('', true) }}" python3 -c '
+    OUT="{{ out_path | default('', true) }}" VERDICT="{{ check_verdict | default('', true) }}" \
+    ISSUES="{{ check_issues | default(none, true) | tojson }}" python3 -c '
     import json, os, pathlib
 
     p = pathlib.Path(os.environ["OUT"])
     sent_back = os.environ["VERDICT"] == "revise"
-    print(json.dumps({"pitch": p.read_text() if sent_back and p.is_file() else ""}))'
+    counter = p.parent / ("." + p.name + ".round")
+    before = p.parent / ("." + p.name + ".before")
+    if sent_back:
+        try:
+            n = int(counter.read_text().strip()) + 1
+        except (OSError, ValueError):
+            n = 2
+    else:
+        n = 1
+    counter.write_text(str(n))
+    pitch = p.read_text() if sent_back and p.is_file() else ""
+    if pitch:
+        before.write_text(pitch)
+    elif before.exists():
+        before.unlink()
+    try:
+        issues = json.loads(os.environ["ISSUES"] or "null") if sent_back else None
+    except ValueError:
+        issues = None
+    print(json.dumps({
+        "pitch": pitch,
+        # 1 the first time; 2 when the check sent the pitch back (its second look);
+        # 3 when it sent it back again (the last pass by the writer: no check follows)
+        "round": n,
+        "issues": issues if isinstance(issues, list) else [],
+    }))'

@@ -2,7 +2,8 @@
 #
 # The last step of workflows/epd_pitch.yaml: three lenses read the problem, epd_pitch_write wrote the
 # pitch from their findings, and this agent decides whether it can be built. On "revise" the workflow
-# sends it back to the writer once. The owner is not in this loop, so there is no one to hand a pitch
+# sends it back to the writer; after the second "revise" the writer makes a last pass and this check
+# does not run again (workflow v4). The owner is not in this loop, so there is no one to hand a pitch
 # to: the check's list is the writer's to fix.
 #
 # It also carries what the "fit" lens checked when the lenses read a finished pitch (v1-v2, 2026-09-24):
@@ -19,9 +20,23 @@
 # calls, checks the walkers' own situation, added actions, test data mechanisms and state an earlier
 # walk leaves, and on a re-check first confirms the writer's fixes of its previous issues. Up to three
 # passes now (max_loops 3 in the workflow), and the writer edits its previous version.
+#
+# v5 (2026-09-26, queue task 3):
+# - A no-bet must survive the check. On b016 v4's writer wrote no bet because no checker could time
+#   the wait, and this check agreed ("the only way to make a criterion fail on an unchanged build is a
+#   40-second delay"). The grader found it wrong three ways: the old build had added a /load-check
+#   page that timed the page at 390 px and QA read it; the whole-page Loading state and the value
+#   history's own region read without timing; and the first load also waits on /api/settings. Now
+#   each reason is tested against the code and what a build could add, and a wrong one is an issue.
+# - A re-check starts from its previous issues and the diff of what the writer changed (the workflow's
+#   `changes` step), with a budget of about 20 tool calls. v4's re-checks took as long as first checks
+#   (7-22 min each: b019 21.3, b015 22.3), re-reading everything. max_iterations cannot be set per
+#   round, so the budget is in the prompt.
+# - Ask for every file in one turn: temper runs all tool calls of one reply, so batching cuts turns.
+# - The workflow skips this check on round 3 (the writer's last pass), so it runs at most twice.
 agent:
   name: epd_pitch_check
-  version: 4
+  version: 5
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -89,12 +104,26 @@ agent:
        QA over 45 or the live check over 25 is an issue (too_big): say which criteria to leave to
        QA alone, merge or cut.
     10. Nothing left on a page the change touches contradicts what the change makes it say.
-    If the writer lists fixes of your previous issues, this is a re-check: first confirm each fix
-    (the issue is gone, and the fix broke nothing else); a fix that did not land is an issue again.
-    Then check the whole pitch as on a first pass. Do not reverse something you asked for before
-    unless it was wrong, and then say so in the issue.
-    If the writer wrote no pitch because the problem is not real, confirm it in the code: "ready" if
-    it holds, "revise" (write the pitch) if it does not.
+    A re-check (the task says so, with your previous issues and the diff of what the writer changed)
+    starts from those, not from scratch. First confirm each previous issue: gone, and its fix broke
+    nothing else; a fix that did not land is an issue again (not_fixed). Then check what the diff
+    touches, and whatever it must change elsewhere (the threshold, the invariant, the count of
+    criteria, the walks, Sources and calls). Open the code again only for a fact the diff adds or
+    changes. Raise an issue in text the diff did not touch only if it is blocking and you missed it
+    before, and say so. Do not reverse something you asked for before unless it was wrong, and then
+    say so in the issue. Keep a re-check to about 20 tool calls.
+
+    If the writer wrote no pitch (status no_bet), test each reason it gives. The only good reason is
+    that the problem is not real at this commit (a walker misread the page, or only the practice
+    data causes it): confirm that in the code. A reason about checking is wrong when a build within
+    the appetite could add what a checker reads (a page or readout that shows a timing or a source;
+    an earlier build added a load-check page QA read), when the state shows without timing (a
+    loading screen, which region holds what), or when part of the problem can be checked and the
+    rest can go under what is not claimed. "A build that changed nothing would pass" means the
+    criteria need rewriting, never that the bet should go. Also check every fact the reason states,
+    in the code (what the page waits on, what shows while it waits). "ready" only if every reason
+    holds; otherwise "revise", with one issue per wrong reason (kind wrong_fact, where "problem"):
+    the evidence, and what the pitch should check instead.
 
     verdict:
     - "ready": nothing blocking remains.
@@ -105,7 +134,9 @@ agent:
     Be exact: quote the pitch and cite file:line. Do not rewrite the pitch, and do not ask for
     polish: an issue is worth listing when it would change what gets built or checked. Go through
     every criterion and list it under "criteria", fine or not, so that nothing is skipped; say what
-    is fine nowhere else. Read only the files named in the task and the code directory.
+    is fine nowhere else. Read only the files named in the task and the code directory. Ask for
+    every file you need in one turn (several Read, Grep and Glob calls in one reply, not one a turn),
+    and read each file once.
 
     Reply with a short paragraph, then exactly one ```json block:
     {
@@ -171,7 +202,26 @@ agent:
     findings not followed: {{ write_not_followed | tojson }}
     calls made without the owner: {{ write_calls | tojson }}
     the walks, as the writer counts them: {{ write_walk | tojson }}
-    {% if write_fixes %}
+    {% if check_round and check_round > 1 %}
+
+    ## This is a re-check: start from your previous issues and what changed (about 20 tool calls)
+
+    Your previous issues:
+    {{ last_issues | tojson }}
+
+    What the writer says it did about each:
+    {{ write_fixes | tojson }}
+
+    What the writer changed since you read the pitch ({{ changed_lines }} lines):
+    {% if changes %}
+    ~~~diff
+    {{ changes }}
+    ~~~
+    {% else %}
+    (No diff: the last pass wrote no pitch, or the version before could not be read. Read the pitch
+    in full and check it as on a first pass.)
+    {% endif %}
+    {% elif write_fixes %}
 
     ## This is a re-check
 

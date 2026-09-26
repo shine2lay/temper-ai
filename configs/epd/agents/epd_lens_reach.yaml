@@ -13,9 +13,13 @@
 # can actually get to, from their sheet, their own instructions and the code (the seed above all).
 #
 # v1-v2 (2026-09-24) reviewed a written pitch; v3 maps the problem before the pitch is written.
+#
+# v4 (2026-09-26, queue task 3, "faster"): ask for every file needed in one turn. temper runs all the
+# tool calls of one reply, and on the v3 test this lens was the slowest step before the writer
+# (median 11.9 min, max 45) reading one file a turn at a growing context.
 agent:
   name: epd_lens_reach
-  version: 3
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -70,7 +74,9 @@ agent:
     Be exact. Cite file:line for what the code or the seed does, and the sheet or the checker's
     instructions for what a checker can do. Never guess what the seed makes: read it. Do not propose
     the solution or judge whether the problem is worth fixing: map what can be checked.
-    Read only the files named in the task and the code directory.
+    Read only the files named in the task and the code directory. Ask for every file you need in
+    one turn (several Read, Grep and Glob calls in one reply, not one a turn), and read each file
+    once.
 
     Reply with a short paragraph, then exactly one ```json block:
     {

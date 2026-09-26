@@ -1,13 +1,20 @@
 workflow:
   name: epd_pitch
-  version: 3
+  # 4 (2026-09-26, queue task 3): two checks and a last pass, as epd_plan v2 does. `previous` counts
+  #   the rounds; round 3 is the writer's last pass: it applies the second check's issues and the
+  #   check is skipped. v3 ran three full checks, and on 4 of the 8 re-tested bets (b015 b019 b020
+  #   b021) nothing applied the last check's issues. A re-check starts from its own previous issues
+  #   and the diff `changes` makes (v3's re-checks took 7-22 min, as long as a first check).
+  #   `rounds` says how many passes the writer made; after a last pass the check's outputs are null.
+  version: 4
   description: |
     EPD loop, bet stage: one problem from the walks becomes a pitch. Three
     reviewers read the problem first, a writer writes the pitch from their
     findings, and a check decides whether it can be built.
 
-      lens_reach | lens_code | lens_break | inputs  ->  previous  ->  write  ->  check
-                              (check says revise: the writer edits its pitch, up to twice more)
+      lens_reach | lens_code | lens_break | inputs  ->  previous  ->  write  ->  changes  ->  check
+                  (check says revise: the writer edits its pitch; after the second revise the
+                   writer makes a last pass and the check is skipped)
 
     v3 (2026-09-25): on the test of v2 the check still said "revise" after
     both passes on 20 of 21 bets, because the writer rewrote the pitch blind
@@ -41,7 +48,8 @@ workflow:
 
     First run on the problems behind the 29 shipped bets, after the fact, by
     ~/epd-autopilot/lens/run.py, each with the code at its build's base and
-    the practice-era sheet. Not yet wired into epd_loop.
+    the practice-era sheet. In the rounds the sheet is the live one, the
+    loop's reach.md (epd_loop.py REACH_PATH).
 
     Isolated: inputs are strings and paths. The writer writes the pitch to
     out_path, whose directory must be writable by the container's user.
@@ -57,6 +65,8 @@ workflow:
     measure_config_path: {type: string, required: true}  # epd_measure's agent config
     out_path: {type: string, required: true}         # where the pitch is written
   outputs:
+    # null after a last pass (rounds 3): the check was skipped, and its second verdict was "revise";
+    # the writer applied those issues in its last pass
     verdict: check.structured.verdict
     summary: check.structured.summary
     issues: check.structured.issues
@@ -64,6 +74,7 @@ workflow:
     pitch_path: write.structured.pitch_path
     threshold: write.structured.threshold
     calls: write.structured.calls
+    rounds: previous.structured.round
 
   nodes:
     - name: lens_reach
@@ -111,6 +122,7 @@ workflow:
       input_map:
         out_path: input.out_path
         check_verdict: check.structured.verdict
+        check_issues: check.structured.issues
 
     - name: write
       type: agent
@@ -141,13 +153,26 @@ workflow:
         check_verdict: check.structured.verdict
         check_issues: check.structured.issues
         previous: previous.structured.pitch
+        round: previous.structured.round
+
+    # What the writer changed since the check last read the pitch ("" on the first pass). Free.
+    - name: changes
+      type: agent
+      agent: epd_pitch_changes
+      depends_on: [write]
+      input_map:
+        out_path: input.out_path
 
     - name: check
       type: agent
       agent: epd_pitch_check
-      depends_on: [write]
-      # max_loops counts this node's runs: 3 = up to two more writes after a
-      # "revise", then the verdict stands (silent: the outputs carry it).
+      depends_on: [write, changes]
+      # The first two revises rewind to previous, which hands the writer its draft and counts the
+      # round. Round 3 is the writer's last pass: this node is skipped then, so nothing loops again.
+      condition:
+        source: previous.structured.round
+        operator: not_equals
+        value: 3
       loop_to: previous
       max_loops: 3
       on_max_loops: silent
@@ -156,6 +181,10 @@ workflow:
         operator: equals
         value: revise
       input_map:
+        check_round: previous.structured.round
+        last_issues: previous.structured.issues
+        changes: changes.structured.diff
+        changed_lines: changes.structured.changed_lines
         bet_id: input.bet_id
         problem_path: input.problem_path
         pitch_path: input.out_path

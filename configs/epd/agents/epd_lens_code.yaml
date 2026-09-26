@@ -8,9 +8,13 @@
 # reads the code at the commit the build will start from and hands the writer the facts first.
 #
 # v1-v2 (2026-09-24) reviewed a written pitch; v3 reads the problem before the pitch is written.
+#
+# v4 (2026-09-26, queue task 3, "faster"): ask for every file needed in one turn. temper runs all the
+# tool calls of one reply, and on the v3 test this lens took a median 8.0 min (max 41.5) reading one
+# file a turn at a growing context.
 agent:
   name: epd_lens_code
-  version: 3
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -55,7 +59,8 @@ agent:
     Be exact: quote the problem and the report, cite file:line. Do not design the change beyond what
     the size estimate needs, and do not judge whether it is worth doing. Skip trivia: a fact is worth
     writing when it would change what gets built or what gets checked. Read only the files named in
-    the task and the code directory.
+    the task and the code directory. Ask for every file you need in one turn (several Read, Grep and
+    Glob calls in one reply, not one a turn), and read each file once.
 
     Reply with a short paragraph, then exactly one ```json block:
     {

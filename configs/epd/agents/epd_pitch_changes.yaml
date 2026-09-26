@@ -1,0 +1,36 @@
+# EPD loop, bet stage: what the writer changed since the check last read the pitch.
+#
+# 1 (2026-09-26, queue task 3, "faster"): on the v4 test a re-check took as long as the first check
+# (11-22 min each: b019 21.3, b021 20.2, b015 22.3), because it read the whole pitch and the code again
+# as if it had never seen them. The re-check now starts from its own previous issues and the change:
+# epd_pitch_previous keeps the version it handed the writer as .<name>.before, and this step returns a
+# unified diff between it and the pitch the writer just wrote ("" on the first pass, when there is
+# nothing to compare). No model: it costs nothing.
+#
+# Never put an apostrophe in the python below: it is one single-quoted shell word
+# (tests/test_epd/test_script_agents.py parses every EPD script agent with sh -n).
+agent:
+  name: epd_pitch_changes
+  version: 1
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/bash
+    OUT="{{ out_path | default('', true) }}" python3 -c '
+    import difflib, json, os, pathlib
+
+    p = pathlib.Path(os.environ["OUT"])
+    before = p.parent / ("." + p.name + ".before")
+    old = before.read_text() if before.is_file() else ""
+    new = p.read_text() if p.is_file() else ""
+    diff = ""
+    if old:
+        diff = "".join(difflib.unified_diff(
+            old.splitlines(keepends=True), new.splitlines(keepends=True),
+            fromfile="the version you checked", tofile="the version to check now", n=2))
+    print(json.dumps({
+        "diff": diff,
+        "changed_lines": sum(1 for line in diff.splitlines()
+                             if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))),
+        "no_pitch": not new.strip(),
+    }))'

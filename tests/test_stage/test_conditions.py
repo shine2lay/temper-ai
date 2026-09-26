@@ -157,3 +157,57 @@ class TestEvaluateCondition:
                 {"source": "nonexistent.output", "operator": "equals", "value": "x"},
                 node_outputs,
             )
+
+
+class TestStrict:
+    """ROA-5: a loop condition whose structured field is missing fails, and says why."""
+
+    def test_missing_field_raises_with_parse_error(self, node_outputs):
+        node_outputs["check"] = NodeResult(
+            status=Status.COMPLETED,
+            output='{"verdict": FAIL oops',
+            metadata={"structured_parse_error": "Expecting value: line 1 column 13 (char 12)"},
+        )
+        cond = {"source": "check.structured.verdict", "operator": "equals", "value": "FAIL"}
+        with pytest.raises(ConditionError) as exc:
+            evaluate_condition(cond, node_outputs, strict=True)
+        assert str(exc.value) == (
+            "field 'verdict' not found in structured output: "
+            "Expecting value: line 1 column 13 (char 12)"
+        )
+
+    def test_empty_structured_without_parse_error(self, node_outputs):
+        cond = {"source": "no_structured.structured.verdict", "operator": "equals", "value": "x"}
+        with pytest.raises(
+            ConditionError,
+            match="field 'verdict' not found in structured output: structured output is empty",
+        ):
+            evaluate_condition(cond, node_outputs, strict=True)
+
+    def test_key_missing(self, node_outputs):
+        cond = {"source": "review.structured.nested.gone", "operator": "equals", "value": "x"}
+        with pytest.raises(
+            ConditionError, match="field 'nested.gone' not found in structured output: key missing",
+        ):
+            evaluate_condition(cond, node_outputs, strict=True)
+
+    def test_present_field_and_explicit_null_pass(self, node_outputs):
+        node_outputs["check"] = NodeResult(
+            status=Status.COMPLETED, structured_output={"verdict": None},
+        )
+        assert evaluate_condition(
+            {"source": "review.structured.verdict", "value": "PASS"}, node_outputs, strict=True,
+        ) is True
+        assert evaluate_condition(
+            {"source": "check.structured.verdict", "value": "FAIL"}, node_outputs, strict=True,
+        ) is False
+
+    def test_exists_not_strict(self, node_outputs):
+        cond = {"source": "no_structured.structured.verdict", "operator": "not_exists"}
+        assert evaluate_condition(cond, node_outputs, strict=True) is True
+        cond = {"source": "review.structured.gone", "operator": "exists"}
+        assert evaluate_condition(cond, node_outputs, strict=True) is False
+
+    def test_non_strict_unchanged(self, node_outputs):
+        cond = {"source": "no_structured.structured.verdict", "operator": "equals", "value": "x"}
+        assert evaluate_condition(cond, node_outputs) is False

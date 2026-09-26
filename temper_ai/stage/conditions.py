@@ -17,12 +17,19 @@ from temper_ai.stage.exceptions import ConditionError
 def evaluate_condition(
     condition: dict,
     node_outputs: dict[str, NodeResult],
+    *,
+    strict: bool = False,
 ) -> bool:
     """Evaluate a condition against node outputs.
 
     Args:
         condition: Condition dict with "source", "operator", "value" keys.
         node_outputs: Completed node results keyed by node name.
+        strict: A ``node.structured.<field>`` that is not there raises
+            ConditionError instead of resolving to None (``exists`` and
+            ``not_exists`` still ask the question). Loop conditions are
+            strict: a check whose verdict was lost ended its loop as if it
+            had passed (ROA-5).
 
     Returns:
         True if condition is met, False otherwise.
@@ -38,6 +45,8 @@ def evaluate_condition(
         raise ConditionError("Condition missing 'source' field")
 
     try:
+        if strict and operator not in ("exists", "not_exists"):
+            _resolve_structured_strict(source, node_outputs)
         actual = _resolve_source(source, node_outputs)
     except (KeyError, TypeError) as exc:
         raise ConditionError(
@@ -93,6 +102,28 @@ def _resolve_structured_field(result: NodeResult, subkeys: list[str]) -> object:
         else:
             return None
     return value
+
+
+def _resolve_structured_strict(source: str, node_outputs: dict[str, NodeResult]) -> None:
+    """Raise ConditionError when a ``node.structured.a.b`` source names a field that is not there.
+
+    The message says why: the agent's parse error when its answer did not
+    parse as JSON, else "structured output is empty" or "key missing". An
+    explicit null is an answer and passes. Other sources are left alone.
+    """
+    parts = source.split(".")
+    if len(parts) < 3 or parts[1] != "structured" or parts[0] not in node_outputs:
+        return
+    result = node_outputs[parts[0]]
+    dotted = ".".join(parts[2:])
+    if result.structured_output is None:
+        reason = (result.metadata or {}).get("structured_parse_error") or "structured output is empty"
+        raise ConditionError(f"field '{dotted}' not found in structured output: {reason}")
+    value: object = result.structured_output
+    for key in parts[2:]:
+        if not isinstance(value, dict) or key not in value:
+            raise ConditionError(f"field '{dotted}' not found in structured output: key missing")
+        value = value[key]
 
 
 def _apply_operator(actual: object, operator: str, expected: object) -> bool:

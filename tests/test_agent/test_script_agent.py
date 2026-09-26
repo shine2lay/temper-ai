@@ -198,6 +198,19 @@ class TestScriptAgentBasic:
         params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1]
         # The _skip_allowlist flag should be passed
         assert params.get("_skip_allowlist") is True
+        # ... and the output is not compacted for a model: code reads it
+        assert params.get("_raw_output") is True
+
+    def test_json_that_does_not_parse_is_reported(self, caplog):
+        agent = ScriptAgent(config={"name": "cut", "script_template": "echo x"})
+        ctx = _make_context(ToolResult(success=True, result='{"pitch": "cut here'))
+        with caplog.at_level("WARNING"):
+            result = agent.run({}, ctx)
+        assert result.structured_output is None
+        assert "printed JSON that does not parse" in caplog.text
+        done = [c for c in ctx.event_recorder.record.call_args_list if c.kwargs.get("data", {}).get("agent_name") == "cut"
+                and "has_structured_output" in c.kwargs["data"]]
+        assert done and "does not parse" in done[-1].kwargs["data"]["structured_output_error"]
 
 
 # ------------------------------------------------------------------------------------------
@@ -381,3 +394,13 @@ class TestModelOutputCannotBecomeACommand:
         agent = ScriptAgent(config={"name": "toucher", "script_template": "touch {{ name }}"})
         agent.run({"name": "proof"}, _real_context(tmp_path))
         assert (tmp_path / "proof").exists()
+
+
+def test_a_long_json_output_reaches_the_next_node_whole(tmp_path):
+    """The EPD plan stage's hand-off prints about 130,000 characters of JSON on one line. Through the
+    real Bash tool it was compacted to 40,050 for a model's context, never parsed, and the lead ran
+    without any of it (2026-09-25)."""
+    agent = ScriptAgent(config={"name": "handoff", "script_template":
+                                "python3 -c 'import json; print(json.dumps({\"design\": \"x\" * 150000, \"round\": 1}))'"})
+    result = agent.run({}, _real_context(tmp_path))
+    assert result.structured_output == {"design": "x" * 150_000, "round": 1}

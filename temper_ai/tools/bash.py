@@ -55,6 +55,12 @@ _MAX_TIMEOUT = 600
 # `_` parameter from a model's calls, so a model cannot claim this one.
 _SCRIPT_MAX_TIMEOUT = 3600
 _MAX_OUTPUT_SIZE = 256_000  # 256KB
+# Compaction (tools/_output_compaction.py) cuts output to about 40,000 characters, for a model's
+# context. A script agent's output is read by code instead: its last JSON is the node's structured
+# output. So it passes `_raw_output` (a `_` parameter, which a model can never send) and gets the
+# whole of it, up to _MAX_OUTPUT_SIZE. Compacted, the EPD plan stage's hand-off (epd_plan_docs, about
+# 130,000 characters of JSON on one line) was cut at 40,050 and never parsed, so its lead ran
+# without the pitch, the design, the knowledge core or its own draft (2026-09-25).
 
 
 class Bash(BaseTool):
@@ -103,7 +109,7 @@ class Bash(BaseTool):
             command,
             timeout,
             cwd,
-            compact=self.config.get("compact_output", True),
+            compact=self.config.get("compact_output", True) and not params.get("_raw_output", False),
             max_output_chars=int(self.config.get("max_output_chars") or DEFAULT_MAX_CHARS),
             extra_env=params.get("env") or None,
         )

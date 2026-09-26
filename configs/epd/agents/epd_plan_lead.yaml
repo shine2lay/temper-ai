@@ -8,9 +8,14 @@
 #
 # 2: a third pass (round 3) applies the second check's issues, with no check after it; max_tokens
 # 64000 (the pitch writer's first call ran out at 32000 before any text, 2026-09-25).
+#
+# 3: blocked_because is always in the reply, empty unless BLOCKED: the check reads it, and a missing
+# field showed on every check as an unresolved input. (Also 2026-09-25: until the engine stopped
+# compacting script output, every lead so far ran without epd_plan_docs' text: no pitch, core,
+# design or previous draft, only the engineers' replies; see temper_ai/tools/bash.py _raw_output.)
 agent:
   name: epd_plan_lead
-  version: 2
+  version: 3
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -87,7 +92,7 @@ agent:
       "plan_path": "<path written>",
       "task_count": 0,
       "files": ["<every file any task touches>"],
-      "blocked_because": "<only when BLOCKED: what in the pitch cannot be turned into a checkable task>"
+      "blocked_because": "<when BLOCKED: what in the pitch cannot be turned into a checkable task; else \"\">"
     }
   task_template: |
     Bet {{ bet_id }}.

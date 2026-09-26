@@ -38,6 +38,17 @@ class TestBash:
         assert r.success is False
         assert "Empty command" in r.error
 
+    def test_long_output_is_compacted_for_a_model(self):
+        # python3 is not on the model's allowlist; the script flag is what lets it run here
+        r = self.bash.execute(command="python3 -c 'print(\"x\" * 100000)'", _skip_allowlist=True)
+        assert r.success is True and len(r.result) == 40_050  # what every EPD plan hand-off came to
+
+    def test_raw_output_is_whole(self):
+        # A script agent's output is read by code (its JSON), so it asks for all of it.
+        r = self.bash.execute(command="python3 -c 'print(\"x\" * 100000)'", _skip_allowlist=True,
+                              _raw_output=True)
+        assert r.success is True and r.result.strip() == "x" * 100_000
+
     def test_timeout(self):
         bash = Bash(config={"allowed_commands": ["sleep"]})
         r = bash.execute(command="sleep 10", timeout=1)

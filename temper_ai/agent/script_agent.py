@@ -321,7 +321,9 @@ class ScriptAgent(AgentABC):
                 # `env` carries the interpolated values; `command` carries only the author's script.
                 # TEMPER_PYTHON is the interpreter temper itself runs on, with its
                 # dependencies (PyYAML among them); the image's `python3` has none.
-                {"command": script, "_skip_allowlist": True, "timeout": timeout,
+                # `_raw_output`: the output is read by code (its JSON is the structured output), so
+                # it is not compacted for a model's context the way a model's own calls are.
+                {"command": script, "_skip_allowlist": True, "_raw_output": True, "timeout": timeout,
                  "env": {**stash.env, "TEMPER_PYTHON": sys.executable}},
                 # A script agent runs the script ITS OWN config declares — the
                 # command is rendered from the template here, not chosen by a
@@ -349,6 +351,12 @@ class ScriptAgent(AgentABC):
 
             # Extract structured output from script's JSON output (if any)
             structured = _extract_json(output)
+            if structured is None and output.lstrip().startswith("{"):
+                # Every node that reads this one's fields would see "no structured output": say why here.
+                logger.warning(
+                    "Script agent '%s' printed JSON that does not parse (%d chars): its structured "
+                    "output is empty", self.name, len(output),
+                )
 
             return AgentResult(
                 status=status,
@@ -408,6 +416,7 @@ class ScriptAgent(AgentABC):
         """Emit AGENT_COMPLETED or AGENT_FAILED event after script execution."""
         _record = context.event_recorder.record if context.event_recorder else _default_record
         structured = _extract_json(output)
+        unparsed = structured is None and output.lstrip().startswith("{")
         _record(
             EventType.AGENT_COMPLETED if tool_result.success else EventType.AGENT_FAILED,
             parent_id=agent_event_id,
@@ -419,6 +428,8 @@ class ScriptAgent(AgentABC):
                 "output_length": len(output),
                 "structured_output": structured,
                 "has_structured_output": structured is not None,
+                **({"structured_output_error": f"the script printed JSON that does not parse "
+                                               f"({len(output)} chars)"} if unparsed else {}),
                 "duration_seconds": duration,
                 "error": tool_result.error,
                 **({"undefined_refs": undefined_refs} if undefined_refs else {}),

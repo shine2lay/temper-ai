@@ -646,7 +646,8 @@ def _extract_structured_output(text: str) -> dict | None:
     1. Parse entire text as JSON
     2. Extract from ```json ... ``` code blocks
     3. Find first { ... } or [ ... ] in the text
-    4. The same three again after escaping stray quotes inside strings
+    4. The same three again after escaping stray quotes inside strings and
+       dropping trailing commas
     """
     return _extract_structured_output_detailed(text)[0]
 
@@ -658,7 +659,7 @@ def _extract_structured_output_detailed(text: str) -> tuple[dict | None, str | N
     ``json.loads`` message when the text looked like JSON and did not parse
     (None when there was nothing JSON-shaped to try, or when it parsed).
     ``repaired`` is True when the dict came back only after
-    ``_repair_unescaped_quotes``. The b012 checker wrote
+    ``_repair_json``. The b012 checker wrote
     ``"notes": "total shows "−$120.00" not +$120"``, and dropping the whole
     answer for two quotes ended its loop without a verdict.
     """
@@ -676,7 +677,7 @@ def _extract_structured_output_detailed(text: str) -> tuple[dict | None, str | N
         return None, None, False
 
     for candidate in candidates:
-        repaired = _repair_unescaped_quotes(candidate)
+        repaired = _repair_json(candidate)
         if repaired == candidate:
             continue
         parsed = _try_parse_json(repaired, [])
@@ -695,14 +696,54 @@ def _json_candidates(text: str) -> list[str]:
     return [c for c in found if c is not None and c.strip().startswith("{")]
 
 
+def _repair_json(s: str) -> str:
+    """The cheap structural repairs, in order: stray quotes, then trailing commas.
+
+    Quotes go first: a stray quote puts the string boundaries in the wrong
+    place, and the comma scan relies on them.
+    """
+    return _strip_trailing_commas(_repair_unescaped_quotes(s))
+
+
+def _strip_trailing_commas(s: str) -> str:
+    """Drop a comma outside strings whose next non-space character is ``}`` or ``]``.
+
+    ``{"verdict": "pass",}`` becomes ``{"verdict": "pass"}``. Commas inside string
+    values are kept, which is why this scans rather than using a regex.
+    """
+    out: list[str] = []
+    in_string = False
+    i = 0
+    n = len(s)
+    while i < n:
+        ch = s[i]
+        if in_string:
+            if ch == "\\" and i + 1 < n:
+                out.append(s[i : i + 2])
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == ",":
+            rest = s[i + 1 :].lstrip()
+            if rest and rest[0] in "}]":
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _repair_unescaped_quotes(s: str) -> str:
     """Escape straight quotes inside JSON strings that do not close them.
 
     Inside a string, a ``"`` closes it only when the next non-space character
     is one of ``, : } ]`` or the end of the text; any other ``"`` is taken as
     part of the value and becomes ``\\"``. Existing ``\\`` escapes are kept.
-    This is the only repair: trailing commas, single quotes and the like are
-    left for the retry turn.
+    Trailing commas are handled by ``_strip_trailing_commas``; single quotes
+    and the like are left for the retry turn.
     """
     out: list[str] = []
     in_string = False

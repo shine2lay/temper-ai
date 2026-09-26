@@ -384,9 +384,32 @@ class TestStructuredRepair:
     def test_valid_json_escaped_quotes_untouched(self):
         assert _extract_structured_output(r'{"a": "say \"hi\""}') == {"a": 'say "hi"'}
 
-    def test_trailing_comma_not_repaired(self):
-        # The repair escapes quotes and nothing else (scope note on ROA-5).
-        assert _extract_structured_output('{"a": 1,}') is None
+    def test_trailing_comma_repaired(self):
+        assert _extract_structured_output('{"a": 1,}') == {"a": 1}
+        assert _extract_structured_output('{"a": [1, 2,],}') == {"a": [1, 2]}
+
+    def test_trailing_comma_comma_in_string_kept(self):
+        assert _extract_structured_output('{"a": "x, }", "b": 1,}') == {"a": "x, }", "b": 1}
+
+    def test_quotes_and_trailing_comma_together(self):
+        parsed = _extract_structured_output('{"notes": "shows "x" here", }')
+        assert parsed == {"notes": 'shows "x" here'}
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_trailing_comma_repair_records_event_no_retry(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.return_value = LLMRunResult(output='{"verdict": "pass",}', tokens=10, iterations=1)
+
+        ctx = _make_context()
+        result = _make_agent().run({"task": "check"}, ctx)
+
+        assert result.structured_output == {"verdict": "pass"}
+        assert mock_service.run.call_count == 1
+        events = _recorded(ctx, EventType.AGENT_OUTPUT_REPAIRED)
+        assert len(events) == 1
+        assert events[0].kwargs["data"]["outcome"] == "repaired"
+        assert "Expecting" in events[0].kwargs["data"]["parse_error"]
+        assert _recorded(ctx, EventType.AGENT_OUTPUT_RETRY) == []
 
     def test_repair_in_code_block(self):
         text = f"Verdict:\n```json\n{B012_ANSWER}\n```\n"

@@ -10,16 +10,19 @@
 #    own plan step would have written it: plan.md at <worktree>/.epd/plan.md, and the engineers'
 #    notes it was made from beside it in <worktree>/.epd/plan/. Copied on every run, so a resumed
 #    build reads the plan the loop holds now, not what an earlier attempt left.
+# 3: a repo's own deploy key (<owner>/<repo>/id_ed25519) before the shared one.
 #
 # Private repos: give them as git@github.com:owner/repo.git; the read-only
 # deploy key mounted at /app/github-deploy (local/github-deploy/setup.sh)
-# is used for ssh URLs. https URLs go unauthenticated (public repos only):
+# is used for ssh URLs. GitHub allows a deploy key on one repository only, so
+# a repo's own key at /app/github-deploy/<owner>/<repo>/id_ed25519 is used
+# when there is one, and the shared id_ed25519 otherwise. https URLs go unauthenticated (public repos only):
 # tokens cannot arrive via env — the Bash tool strips every *_TOKEN variable,
 # and dollar-brace syntax in this template would be rewritten by the config
 # loader's env substitution, hence none below.
 agent:
   name: task_worktree
-  version: 2
+  version: 3
   type: script
   timeout_seconds: 600
   script_template: |
@@ -51,10 +54,16 @@ agent:
     KEYDIR=/app/github-deploy
     case "$REPO_URL" in
       git@github.com:*|ssh://git@github.com/*)
-        [ -f "$KEYDIR/id_ed25519" ] || fail "ssh repo_url but no deploy key at $KEYDIR (local/github-deploy/setup.sh owner/repo)"
+        SLUG=$(printf '%s' "$REPO_URL" | sed -e 's#^git@github.com:##' -e 's#^ssh://git@github.com/##' -e 's#\.git$##')
+        KEYFILE="$KEYDIR/id_ed25519"
+        case "$SLUG" in
+          */*/*|*..*|'') ;;  # not a plain owner/repo: the shared key
+          */*) [ -f "$KEYDIR/$SLUG/id_ed25519" ] && KEYFILE="$KEYDIR/$SLUG/id_ed25519" ;;
+        esac
+        [ -f "$KEYFILE" ] || fail "ssh repo_url but no deploy key at $KEYDIR (local/github-deploy/setup.sh owner/repo)"
         KEY=$(mktemp)
         trap 'rm -f "$KEY"' EXIT
-        install -m 600 "$KEYDIR/id_ed25519" "$KEY"
+        install -m 600 "$KEYFILE" "$KEY"
         export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$KEYDIR/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes"
         ;;
     esac

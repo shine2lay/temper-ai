@@ -9,9 +9,16 @@ The raw bytes are what is signed; re-serialising parsed JSON would not match.
 
 Temper's own. Temper writes to Linear as an app (a client-credentials
 token, see tools.oauth_client_credentials), so its changes carry the app
-user as their actor. Asking Linear who that is (``viewer``) with the same
-token tells them apart from a person's. Without that check, a rule on
-comments would fire on the comment its own workflow just wrote, forever.
+user as their actor, and its comments carry it as their author (``userId``;
+seen live: the app user is a user, 98b67e5f... "Temper- Roamee"). Asking
+Linear who that is (``viewer``) with the same token tells them apart from a
+person's. Without that check, a rule on comments would fire on the comment
+its own workflow just wrote, forever.
+
+A comment's issue. A Comment delivery names its issue (``issueId``) but not
+the issue's labels or team, so ``has_label`` and ``team`` could never hold
+for one. ``enrich`` asks Linear for them and puts them at ``data.issue``,
+where those keys look when the event itself is not an issue.
 
 Matching. A rule's ``on:`` for Linear takes these keys, all optional,
 each a value or a list (any of):
@@ -19,9 +26,12 @@ each a value or a list (any of):
     type:         Issue, Comment, IssueLabel, Project, Cycle, ...  (Linear-Event)
     action:       create, update, remove
     team:         team key, e.g. ENG (the issue's team, or the comment's issue's)
-    has_label:    the issue carries one of these labels now
+    has_label:    the issue carries one of these labels now (for a comment:
+                  the issue it is on)
     label_added:  one of these labels was just put on the issue (on create:
                   it was created with it). Fires once, not on every later edit.
+    actor_type:   who did it: user (a person), or Linear's name for an
+                  integration or app. ``user`` keeps a bot's comments out.
 
 Label and team names compare case-insensitively. An unknown key is an
 error in the rule rather than a filter that silently never applies.
@@ -59,7 +69,7 @@ TOKEN_URL = "https://api.linear.app/oauth/token"  # noqa: S105 - a URL, not a se
 GRAPHQL_URL = "https://api.linear.app/graphql"
 MAX_AGE_S = 60.0
 
-ON_KEYS = frozenset({"type", "action", "team", "has_label", "label_added"})
+ON_KEYS = frozenset({"type", "action", "team", "has_label", "label_added", "actor_type"})
 
 
 def signing_secret() -> str | None:
@@ -143,6 +153,59 @@ def actor_id(event: dict[str, Any]) -> str | None:
     return None
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def actor_type(event: dict[str, Any]) -> str | None:
+    actor = event.get("actor")
+    if isinstance(actor, dict) and actor.get("type"):
+        return str(actor["type"])
+    return None
+
+
+def is_own(event: dict[str, Any], me: str) -> bool:
+    """Whether temper's app user made this change: its actor, or the comment's author."""
+    if actor_id(event) == me:
+        return True
+    if str(event.get("type", "")).lower() != "comment":
+        return False
+    data = _as_dict(event.get("data"))
+    user = _as_dict(data.get("user"))
+    return me in {str(data.get("userId") or ""), str(user.get("id") or "")}
+
+
+_ISSUE_QUERY = """
+query($id: String!) {
+  issue(id: $id) { id identifier title url labels { nodes { id name } } team { key } }
+}
+"""
+
+
+def needs_issue(event: dict[str, Any]) -> bool:
+    """A Comment delivery whose issue's labels and team are not in it."""
+    if str(event.get("type", "")).lower() != "comment":
+        return False
+    data = _as_dict(event.get("data"))
+    issue = _as_dict(data.get("issue"))
+    return bool(data.get("issueId") or issue.get("id")) and not isinstance(issue.get("labels"), list)
+
+
+def enrich(event: dict[str, Any], creds: ClientCredentials | None = None) -> dict[str, Any]:
+    """Put a comment's issue (identifier, labels, team) at ``data.issue``. Raises if Linear can't say."""
+    if not needs_issue(event):
+        return event
+    data = event["data"]
+    known = data.get("issue") if isinstance(data.get("issue"), dict) else {}
+    issue_id = str(data.get("issueId") or known.get("id"))
+    found = graphql(_ISSUE_QUERY, {"id": issue_id}, creds=creds).get("issue")
+    if not isinstance(found, dict):
+        raise RuntimeError(f"Linear has no issue {issue_id}")
+    labels = (found.get("labels") or {}).get("nodes") or []
+    data["issue"] = {**known, **{k: v for k, v in found.items() if k != "labels"}, "labels": labels}
+    return event
+
+
 # --- matching ---------------------------------------------------------------------------------
 
 
@@ -161,6 +224,8 @@ def _wanted(value: Any) -> set[str]:
 
 def _labels(data: dict[str, Any]) -> list[dict[str, Any]]:
     labels = data.get("labels")
+    if not isinstance(labels, list) and isinstance(data.get("issue"), dict):
+        labels = data["issue"].get("labels")  # a comment: its issue's labels (see enrich)
     return [label for label in labels if isinstance(label, dict)] if isinstance(labels, list) else []
 
 
@@ -209,5 +274,7 @@ def matches(on: dict[str, Any], event: dict[str, Any]) -> bool:
     if "team" in on and (_team_key(data) or "") not in _wanted(on["team"]):
         return False
     if "has_label" in on and not (label_names(data) & _wanted(on["has_label"])):
+        return False
+    if "actor_type" in on and (actor_type(event) or "").lower() not in _wanted(on["actor_type"]):
         return False
     return not ("label_added" in on and not (added_label_names(event) & _wanted(on["label_added"])))

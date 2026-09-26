@@ -17,6 +17,12 @@ the API, and not reachable from the internet -- and in the log.
 Linear retries a delivery it thinks failed, with the same
 ``Linear-Delivery`` id, so ids already handled are remembered and a retry
 of one is acknowledged without starting anything twice.
+
+One issue, one run of a workflow at a time. A rule whose inputs name an
+``issue_id`` does not start its workflow for an issue whose last run of
+that workflow is still going: two runs working one issue would build on the
+same branch at once. The skipped event is recorded; the comment it carried
+is still in the thread for the next run to read.
 """
 
 from __future__ import annotations
@@ -75,6 +81,10 @@ class _SeenDeliveries:
 _seen = _SeenDeliveries()
 _recent: deque[dict[str, Any]] = deque(maxlen=RECENT_MAX)
 _recent_lock = threading.Lock()
+# (workflow, issue id) -> the execution id of the last run a rule started for it
+_issue_runs: dict[tuple[str, str], str] = {}
+_issue_lock = threading.Lock()
+_ACTIVE = frozenset({"pending", "queued", "running", "waiting"})
 
 
 def _record(delivery: str, event: dict[str, Any]) -> dict[str, Any]:
@@ -87,6 +97,8 @@ def _record(delivery: str, event: dict[str, Any]) -> dict[str, Any]:
         "action": event.get("action"),
         "url": event.get("url"),
         "actor": actor.get("name") or actor.get("id"),
+        "actor_id": actor.get("id"),
+        "actor_type": actor.get("type"),
         "outcome": "received",
         "runs": [],
     }
@@ -149,11 +161,29 @@ def dispatch(
     return record
 
 
+def _wants_comments(triggers: list[Trigger]) -> bool:
+    for trigger in triggers:
+        kind = trigger.on.get("type")
+        kinds = kind if isinstance(kind, (list, tuple, set)) else [kind]
+        if any(str(k).strip().lower() == "comment" for k in kinds if k is not None):
+            return True
+    return False
+
+
 def _dispatch(event: dict[str, Any], record: dict[str, Any], config_dir: str | Path | None) -> None:
+    triggers = [t for t in load_triggers(config_dir, source=linear.SOURCE) if t.enabled]
+    if linear.needs_issue(event) and _wants_comments(triggers):
+        # A comment names its issue but not the issue's labels: ask, or match nothing
+        # (a rule on labelled issues must not fire for an issue it cannot see).
+        try:
+            linear.enrich(event)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not read the issue of Linear comment %s: %s", record.get("delivery"), exc)
+            record["outcome"] = f"skipped: could not read the comment's issue ({exc})"
+            return
+
     matched: list[Trigger] = []
-    for trigger in load_triggers(config_dir, source=linear.SOURCE):
-        if not trigger.enabled:
-            continue
+    for trigger in triggers:
         try:
             if linear.matches(trigger.on, event):
                 matched.append(trigger)
@@ -174,7 +204,17 @@ def _dispatch(event: dict[str, Any], record: dict[str, Any], config_dir: str | P
         entry: dict[str, Any] = {"trigger": trigger.name, "workflow": trigger.workflow}
         try:
             inputs = render_inputs(trigger, event)
-            response = start_run(RunRequest(workflow=trigger.workflow, inputs=inputs))
+            issue = str(inputs.get("issue_id") or "").strip()
+            key = (trigger.workflow, issue)
+            with _issue_lock:
+                going = _run_still_going(_issue_runs.get(key)) if issue else None
+                if going:
+                    entry["skipped"] = f"{trigger.workflow} run {going[:8]} for this issue is still going"
+                    record["runs"].append(entry)
+                    continue
+                response = start_run(RunRequest(workflow=trigger.workflow, inputs=inputs))
+                if issue:
+                    _issue_runs[key] = response.execution_id
             entry["execution_id"] = response.execution_id
         except HTTPException as exc:
             entry["error"] = str(exc.detail)
@@ -184,9 +224,12 @@ def _dispatch(event: dict[str, Any], record: dict[str, Any], config_dir: str | P
 
     started = [r for r in record["runs"] if "execution_id" in r]
     failed = [r for r in record["runs"] if "error" in r]
+    busy = [r for r in record["runs"] if "skipped" in r]
     parts = []
     if started:
         parts.append("started " + ", ".join(f"{r['workflow']} {r['execution_id'][:8]}" for r in started))
+    if busy:
+        parts.append("skipped " + "; ".join(f"{r['trigger']}: {r['skipped']}" for r in busy))
     if failed:
         parts.append("failed " + "; ".join(f"{r['trigger']}: {r['error']}" for r in failed))
     record["outcome"] = " / ".join(parts)
@@ -210,7 +253,7 @@ def _drop_own_changes(event: dict[str, Any], matched: list[Trigger]) -> str | No
                 f"skipped: {linear.CLIENT_ID_ENV}/{linear.CLIENT_SECRET_ENV} are not set, so "
                 "temper cannot tell its own changes apart (set ignore_self: false to fire anyway)"
             )
-        elif linear.actor_id(event) == me:
+        elif linear.is_own(event, me):
             reason = "ignored: temper's own change"
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not ask Linear who temper's app user is: %s", exc)
@@ -221,8 +264,31 @@ def _drop_own_changes(event: dict[str, Any], matched: list[Trigger]) -> str | No
     return None if matched else reason
 
 
+def _run_still_going(execution_id: str | None) -> str | None:
+    """The id back if that run has not finished yet; None if it has, or is unknown."""
+    if not execution_id:
+        return None
+    from temper_ai.api.routes import _state, get_workflow
+
+    try:
+        if execution_id in _state().running:
+            return execution_id
+    except Exception:  # noqa: BLE001, S110 - no app state (tests, CLI): ask the database
+        pass
+    try:
+        status = str(get_workflow(execution_id).get("status") or "").lower()
+    except HTTPException:
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not tell whether run %s is still going: %s", execution_id, exc)
+        return None
+    return execution_id if status in _ACTIVE else None
+
+
 def reset_state() -> None:
     """Forget deliveries and history (tests)."""
     _seen.clear()
     with _recent_lock:
         _recent.clear()
+    with _issue_lock:
+        _issue_runs.clear()

@@ -1,0 +1,121 @@
+workflow:
+  name: linear_work
+  description: |
+    Work a Linear issue, from the label to a pull request. Started by the
+    linear_work trigger (label "temper" added) and linear_work_comment (a
+    person's reply on a labelled issue), or by hand:
+      temper run linear_work --input issue_id=ROA-5
+
+      1. triage  — reads the issue and its thread and decides. Unclear, or no
+                   `repo:` label: asks on the issue and stops. A question that
+                   needs no code: answers it and stops. Nothing asked of
+                   temper: stops without a word. Clear work: moves the issue to
+                   In Progress, says so on it, and writes the brief.
+      2. repo    — the `repo:` label's repository: its clone URL and the
+                   branch work is cut from (roamee: staging; temper-ai:
+                   master). A script, so a name the model made up stops here.
+      3. build   — epd_task: worktree on branch linear-<issue>, plan,
+                   implement, review, security, the repo's CI checks, the gate
+                   and its fix rounds. No stack and no browser QA. keep=true, so
+                   a later reply on the issue continues on the same branch.
+      4. report  — opens the pull request (a draft when the gate still has
+                   objections), comments its link on the issue, and moves the
+                   issue to In Review. When there is nothing to push, says on
+                   the issue what went wrong. Runs after a failed build too:
+                   the issue is owed an answer either way.
+
+    It never merges, never pushes a protected branch, and changes nothing on
+    the issue but its state (LinearMoveIssue) and its comments.
+  inputs:
+    issue_id:
+      type: string
+      required: true
+    identifier:
+      type: string
+      required: false
+    comment_id:
+      type: string
+      required: false
+  outputs:
+    decision: triage.structured.decision
+    repo: repo.structured.repo
+    branch: build.structured.branch
+    verdict: build.structured.verdict
+    pr_url: report.structured.pr_url
+    outcome: report.structured.outcome
+  nodes:
+    - name: triage
+      type: agent
+      agent: linear_triage
+      input_map:
+        issue_id: input.issue_id
+        identifier: input.identifier
+        comment_id: input.comment_id
+
+    - name: repo
+      type: agent
+      agent: linear_repo
+      depends_on: [triage]
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
+      input_map:
+        repo: triage.structured.repo
+        identifier: triage.structured.identifier
+
+    - name: build
+      type: stage
+      ref: workflows/epd_task
+      depends_on: [repo]
+      input_map:
+        repo_url: repo.structured.repo_url
+        base_branch: repo.structured.base_branch
+        task_name: repo.structured.task_name
+        task_description: triage.structured.brief
+        # A later reply continues on this branch and PR; a claim left by an
+        # earlier run on the same issue is this issue's own.
+        keep: true
+        force: true
+        # No dev stack and no browser QA: review, security and the repo's own
+        # CI checks are the judges.
+        stack: false
+        verify: false
+        plan: true
+        implement: true
+
+    - name: report
+      type: agent
+      agent: linear_report
+      depends_on: [build]
+      # After a failed repo or build step too: the requester is owed an answer.
+      run_after_failure: true
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
+      input_map:
+        issue_id: input.issue_id
+        identifier: triage.structured.identifier
+        title: triage.structured.title
+        repo: repo.structured.repo
+        repo_error: repo.error
+        build_status: build.status
+        build_error: build.error
+        worktree_path: build.structured.worktree_path
+        branch: build.structured.branch
+        base_branch: build.structured.base_branch
+        implement_status: build.structured.implement_status
+        implement_summary: build.structured.implement_summary
+        implement_commit: build.structured.implement_commit
+        review_verdict: build.structured.review_verdict
+        review_summary: build.structured.review_summary
+        review_findings: build.structured.review_findings
+        test_verdict: build.structured.test_verdict
+        test_summary: build.structured.test_summary
+        test_failures: build.structured.test_failures
+        security_verdict: build.structured.security_verdict
+        security_summary: build.structured.security_summary
+        security_human_actions: build.structured.security_human_actions
+        verdict: build.structured.verdict
+        verdict_summary: build.structured.verdict_summary

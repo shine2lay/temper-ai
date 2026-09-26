@@ -424,7 +424,20 @@ def _check_dependency_failures(
     node: Node,
     node_outputs: dict[str, NodeResult],
 ) -> NodeResult | None:
-    """Return a SKIPPED NodeResult if any dependency failed or was skipped, else None."""
+    """Return a SKIPPED NodeResult if any dependency failed or was skipped, else None.
+
+    A node with ``run_after_failure`` is never skipped here: it exists to report what
+    happened upstream, and a failure upstream is the case it most needs to report.
+    """
+    if getattr(node.config, "run_after_failure", False):
+        failed = [
+            name for name in node.depends_on
+            if (res := node_outputs.get(name)) is not None
+            and (res.status == Status.FAILED or (res.status == Status.SKIPPED and "failed" in (res.error or "")))
+        ]
+        if failed:
+            logger.info("Node '%s' runs after the failure of %s (run_after_failure)", node.name, failed)
+        return None
     for dep_name in node.depends_on:
         dep_result = node_outputs.get(dep_name)
         if dep_result and dep_result.status == Status.FAILED:
@@ -1251,6 +1264,10 @@ def _resolve_single_input(
         return result.output
     if field == "status":
         return result.status
+    if field == "error":
+        # Why the node failed or was skipped (None when it did not): what a
+        # run_after_failure node reports.
+        return result.error
     if field == "structured" and len(parts) >= 3:
         if not result.structured_output:
             if unresolved is not None:
@@ -1287,7 +1304,7 @@ def _resolve_single_input(
 
     logger.warning(
         "Node '%s' input_map '%s': unknown field '%s' on source '%s' "
-        "(expected 'output', 'structured', 'status', or a child node name)",
+        "(expected 'output', 'structured', 'status', 'error', or a child node name)",
         node_name, local_name, field, source_node,
     )
     return None

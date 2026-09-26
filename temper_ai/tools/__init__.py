@@ -8,9 +8,11 @@ from temper_ai.tools.delegate import Delegate
 from temper_ai.tools.edit import Edit
 from temper_ai.tools.executor import ToolExecutor
 from temper_ai.tools.git import Git
+from temper_ai.tools.github_pr import OpenPullRequest
 from temper_ai.tools.glob import Glob
 from temper_ai.tools.grep import Grep
 from temper_ai.tools.http import Http
+from temper_ai.tools.linear_state import LinearMoveIssue
 from temper_ai.tools.loader import load_tools
 from temper_ai.tools.query_run_state import QueryRunState
 from temper_ai.tools.read import Read
@@ -36,6 +38,8 @@ TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "Glob": Glob,
     "Grep": Grep,
     "http": Http,
+    "LinearMoveIssue": LinearMoveIssue,
+    "OpenPullRequest": OpenPullRequest,
     "QueryRunState": QueryRunState,
     "Read": Read,
     "RemoveNode": RemoveNode,

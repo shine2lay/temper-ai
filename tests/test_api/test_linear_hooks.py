@@ -240,6 +240,143 @@ class TestDispatch:
         assert record["outcome"] == "error: disk gone"
 
 
+COMMENT_RULE = """
+trigger:
+  name: work_comment
+  source: linear
+  on:
+    type: Comment
+    action: create
+    has_label: temper
+    actor_type: user
+  workflow: linear_work
+  inputs:
+    issue_id: "{{ data.issueId }}"
+    identifier: "{{ data.issue.identifier }}"
+    comment_id: "{{ data.id }}"
+"""
+
+
+def _comment(**overrides):
+    event = {
+        "type": "Comment",
+        "action": "create",
+        "actor": {"id": "person-1", "name": "Ada", "type": "user"},
+        "data": {"id": "com-1", "body": "go ahead", "issueId": "iss-1", "userId": "person-1"},
+        "webhookTimestamp": int(time.time() * 1000),
+    }
+    event.update(overrides)
+    return event
+
+
+@pytest.fixture
+def comment_rule(tmp_path, monkeypatch):
+    folder = tmp_path / "triggers"
+    folder.mkdir()
+    (folder / "work_comment.yaml").write_text(COMMENT_RULE)
+    monkeypatch.setattr(linear, "app_user_id", lambda: "temper-app")
+    asked = []
+
+    def fake_graphql(query, variables=None, creds=None):
+        asked.append(variables)
+        labels = [{"id": "l1", "name": "temper"}] if variables["id"] == "iss-1" else []
+        return {"issue": {"id": variables["id"], "identifier": "ROA-5", "title": "t",
+                          "labels": {"nodes": labels}, "team": {"key": "ROA"}}}
+
+    monkeypatch.setattr(linear, "graphql", fake_graphql)
+    return {"root": tmp_path, "asked": asked}
+
+
+class TestComments:
+    """A person's comment on a `temper` issue continues the work; temper's own never does."""
+
+    def test_a_person_s_comment_on_a_labelled_issue_starts_the_work(self, comment_rule, started):
+        event = _comment()
+        record = hooks.dispatch(event, _record(event), config_dir=comment_rule["root"])
+        assert started == [("linear_work", {"issue_id": "iss-1", "identifier": "ROA-5", "comment_id": "com-1"})]
+        assert comment_rule["asked"] == [{"id": "iss-1"}]
+        assert record["outcome"].startswith("started linear_work")
+
+    def test_a_comment_on_an_unlabelled_issue_starts_nothing(self, comment_rule, started):
+        event = _comment(data={"id": "com-2", "body": "hi", "issueId": "iss-9", "userId": "person-1"})
+        record = hooks.dispatch(event, _record(event), config_dir=comment_rule["root"])
+        assert started == []
+        assert record["outcome"] == "no trigger matched"
+
+    def test_temper_s_own_comment_starts_nothing(self, comment_rule, started):
+        # As Linear sent it on 2026-09-26: the app user is a user, so actor_type alone
+        # does not tell; the author's id does.
+        event = _comment(actor={"id": "temper-app", "name": "Temper- Roamee", "type": "user"},
+                         data={"id": "com-3", "body": "Plan...", "issueId": "iss-1", "userId": "temper-app"})
+        record = hooks.dispatch(event, _record(event), config_dir=comment_rule["root"])
+        assert started == []
+        assert record["outcome"] == "ignored: temper's own change"
+
+    def test_a_comment_authored_by_temper_is_its_own_whoever_the_actor_is(self, comment_rule, started):
+        event = _comment(actor={"id": "someone-else", "type": "user"},
+                         data={"id": "com-4", "body": "x", "issueId": "iss-1", "userId": "temper-app"})
+        hooks.dispatch(event, _record(event), config_dir=comment_rule["root"])
+        assert started == []
+
+    def test_an_integration_s_comment_starts_nothing(self, comment_rule, started):
+        event = _comment(actor={"id": "gh", "name": "GitHub", "type": "integration"})
+        record = hooks.dispatch(event, _record(event), config_dir=comment_rule["root"])
+        assert started == []
+        assert record["outcome"] == "no trigger matched"
+
+    def test_when_linear_cannot_say_whose_issue_nothing_starts(self, comment_rule, started, monkeypatch):
+        def down(*args, **kwargs):
+            raise RuntimeError("503 from api.linear.app")
+
+        monkeypatch.setattr(linear, "graphql", down)
+        event = _comment()
+        record = hooks.dispatch(event, _record(event), config_dir=comment_rule["root"])
+        assert started == []
+        assert record["outcome"].startswith("skipped: could not read the comment's issue")
+
+    def test_no_comment_rule_no_lookup(self, rules, started, monkeypatch):
+        rules("reply")  # an Issue rule only
+        monkeypatch.setattr(linear, "graphql", lambda *a, **k: pytest.fail("asked Linear for nothing"))
+        event = _comment()
+        record = hooks.dispatch(event, _record(event), config_dir=rules.root)
+        assert record["outcome"] == "no trigger matched"
+
+
+class TestOneRunPerIssue:
+    def test_a_second_event_while_the_run_is_going_is_skipped(self, comment_rule, started, monkeypatch):
+        going = {"exec-1-0000"}
+        monkeypatch.setattr(hooks, "_run_still_going", lambda eid: eid if eid in going else None)
+        first = _comment()
+        hooks.dispatch(first, _record(first), config_dir=comment_rule["root"])
+        second = _comment(data={"id": "com-5", "body": "also this", "issueId": "iss-1", "userId": "person-1"})
+        record = hooks.dispatch(second, _record(second), config_dir=comment_rule["root"])
+        assert len(started) == 1
+        assert record["outcome"] == "skipped work_comment: linear_work run exec-1-0 for this issue is still going"
+
+        going.clear()  # the first run finished
+        third = _comment(data={"id": "com-6", "body": "now?", "issueId": "iss-1", "userId": "person-1"})
+        hooks.dispatch(third, _record(third), config_dir=comment_rule["root"])
+        assert len(started) == 2
+
+    def test_an_unknown_run_is_not_going(self, monkeypatch):
+        from temper_ai.api import routes
+
+        def not_found(execution_id):
+            raise HTTPException(status_code=404, detail="not found")
+
+        monkeypatch.setattr(routes, "get_workflow", not_found)
+        assert hooks._run_still_going("nope") is None
+        assert hooks._run_still_going(None) is None
+
+    def test_a_run_the_database_says_is_running_is_going(self, monkeypatch):
+        from temper_ai.api import routes
+
+        monkeypatch.setattr(routes, "get_workflow", lambda eid: {"status": "running"})
+        assert hooks._run_still_going("abc") == "abc"
+        monkeypatch.setattr(routes, "get_workflow", lambda eid: {"status": "completed"})
+        assert hooks._run_still_going("abc") is None
+
+
 class TestSeenDeliveries:
     def test_forgets_after_a_day_and_when_full(self):
         seen = hooks._SeenDeliveries(capacity=2, ttl_s=10)

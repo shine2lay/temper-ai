@@ -10,9 +10,41 @@ Linear ──webhook──▶ https://hooks.<zone>/api/hooks/linear ──▶ tr
                     (the only public path)                 configs/triggers/    agents use linear.* tools
 ```
 
-The first workflow: put the label **temper** on an issue, and temper reads it
-with its comments and replies with one comment (`configs/triggers/linear_reply.yaml`,
-`configs/workflows/linear_reply.yaml`, `configs/agents/linear_reply.yaml`).
+## Working an issue
+
+Put the label **temper** on an issue, and a label saying which repository:
+**repo:roamee** or **repo:temper-ai**. Temper works it, and stops at a pull
+request (`configs/workflows/linear_work.yaml`):
+
+1. **triage** reads the issue and its thread. Unclear, or no `repo:` label:
+   it asks on the issue and stops. Clear: moves the issue to *In Progress*,
+   says so, and writes the brief.
+2. **repo** looks the label up in a fixed table (roamee: branch from
+   `staging`, over its read-only deploy key; temper-ai: from `master`). A
+   repository not in the table stops here.
+3. **build** is `epd_task`: a worktree on branch `linear-<issue>`, plan,
+   implement, review, security, the repository's CI checks, and the gate's fix
+   rounds. No dev stack and no browser QA.
+4. **report** opens the pull request (a draft when the gate still has
+   objections), comments its link, and moves the issue to *In Review*. If there
+   is nothing to push, it says on the issue what went wrong. It runs after a
+   failed build too.
+
+**Reply on the issue** to continue: an answer to temper's question starts the
+work, a change request updates the same branch and pull request, a question
+gets an answer, and a comment that asks nothing of temper gets nothing. Any
+person's comment on a `temper` issue starts a run; temper's own never do.
+While a run for the issue is still going, a comment starts nothing (one run per
+issue at a time); the next run reads it.
+
+It **never merges**, and never pushes `main`, `master` or `staging`: the push
+and the pull request are temper's `OpenPullRequest` tool, not an agent's shell,
+with the token in `TEMPER_GITHUB_TOKEN`. On the issue it only comments and
+moves the state (`LinearMoveIssue`). A run on code costs a few dollars, so it
+only runs when a person labels or replies.
+
+`linear_reply` (read the issue, reply with a plan, no code) is still there to
+run by hand: `temper run linear_reply --input issue_id=ROA-5`.
 
 ## Setup
 
@@ -35,6 +67,12 @@ Once, by a Linear workspace admin:
    ```
    LINEAR_WEBHOOK_SECRET=...
    ```
+
+   For [working issues](#working-an-issue): the labels `temper`,
+   `repo:roamee` and `repo:temper-ai`; a GitHub token that can push and open
+   pull requests on those repositories, as `TEMPER_GITHUB_TOKEN`; and for a
+   private repository, its own read-only deploy key
+   (`local/github-deploy/setup.sh owner/repo`).
 
 3. **Restart temper** so the server and worker read the new variables
    (`docker compose up -d server worker`; this ends runs in progress).
@@ -64,7 +102,7 @@ changed rule works from the next event, with no restart.
 
 ```yaml
 trigger:
-  name: linear_reply
+  name: linear_work
   source: linear
   on:                        # every key optional; each a value or a list (any of)
     type: Issue              # Issue, Comment, IssueLabel, Project, Cycle, ...
@@ -72,15 +110,19 @@ trigger:
     team: ENG                # the issue's team key (a comment's: its issue's)
     has_label: temper        # the issue carries the label now (true on every edit)
     label_added: temper      # the label was just put on (or the issue created with it); fires once
-  workflow: linear_reply
+    actor_type: user         # who did it: user (a person) or integration, oauthClient, ...
+  workflow: linear_work
   ignore_self: true          # default: skip changes temper made itself
   enabled: true
   inputs:                    # workflow input -> template over the delivery
     issue_id: "{{ data.id }}"
     identifier: "{{ data.identifier }}"
-    title: "{{ data.title }}"
-    url: "{{ url }}"
 ```
+
+- A Comment delivery names its issue but not the issue's labels or team, so
+  for a Comment temper asks Linear for them first and puts the issue at
+  `data.issue` (`data.issue.identifier`, `data.issue.labels`): that is what
+  `has_label` and `team` read for a comment.
 
 - Labels and team keys compare case-insensitively. An unknown key under `on:`
   is an error in the rule, not a filter that never applies.
@@ -109,7 +151,7 @@ The server is `configs/mcp_servers/linear.yaml` (`https://mcp.linear.app/mcp`,
 `auth: client_credentials`). Temper gets a token for the app with the client
 id and secret — no browser login, no refresh token — and renews it before it
 expires. Linear renames tools now and then; `temper linear check` lists the
-current ones and says if one `linear_reply` needs is gone.
+current ones and says if one the Linear agents need is gone.
 
 The scope is `read,write` (`LINEAR_SCOPE` overrides it). The MCP server and
 the webhook's self-check must ask for the **same** scope: Linear revokes every

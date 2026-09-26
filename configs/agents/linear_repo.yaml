@@ -1,0 +1,39 @@
+# linear_work, step 2: the repository a `repo:` label names, from a fixed table.
+#
+# The triage agent reads the label; this turns its answer into the clone URL and
+# the branch work is cut from. A table, not the model's own words, so a repo it
+# made up (or mistyped) fails here instead of reaching git. The branch is named
+# after the issue (linear-roa-5), so every run on one issue works on one branch
+# and a later reply continues the same pull request.
+#
+# roamee is private: the ssh URL uses its read-only deploy key
+# (local/github-deploy/setup.sh shine2lay/roamee). temper-ai is public.
+agent:
+  name: linear_repo
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/sh
+    set -eu
+    REPO={{ repo | default('') }}
+    IDENT={{ identifier | default('') }}
+    [ "$REPO" = None ] && REPO=""
+    [ "$IDENT" = None ] && IDENT=""
+
+    fail() { echo "{\"status\": \"failed\", \"error\": \"$1\"}"; exit 1; }
+
+    case "$REPO" in
+      roamee|shine2lay/roamee)
+        FULL=shine2lay/roamee; URL=git@github.com:shine2lay/roamee.git; BASE=staging ;;
+      temper-ai|shine2lay/temper-ai)
+        FULL=shine2lay/temper-ai; URL=https://github.com/shine2lay/temper-ai.git; BASE=master ;;
+      *)
+        fail "no repository is set up for '$REPO' (known: roamee, temper-ai)" ;;
+    esac
+
+    # ROA-5 -> linear-roa-5 (task_claim makes it a branch- and path-safe slug)
+    case "$IDENT" in
+      *[!A-Za-z0-9-]*|'') fail "issue identifier '$IDENT' is not like ROA-5" ;;
+    esac
+    python3 -c 'import json,sys; print(json.dumps({"status": "ready", "repo": sys.argv[1], "repo_url": sys.argv[2], "base_branch": sys.argv[3], "task_name": "linear " + sys.argv[4]}))' \
+      "$FULL" "$URL" "$BASE" "$IDENT"

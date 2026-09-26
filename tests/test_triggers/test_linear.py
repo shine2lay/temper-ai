@@ -165,3 +165,55 @@ class TestActor:
         assert config["scope"] == "${LINEAR_SCOPE:" + linear.DEFAULT_SCOPE + "}"
         assert config["token_url"] == linear.TOKEN_URL
         assert linear.app_credentials().scope == linear.DEFAULT_SCOPE
+
+
+def _comment(user="person-1", actor="person-1", actor_type="user", issue=None):
+    data = {"id": "com-1", "body": "hi", "issueId": "iss-1", "userId": user}
+    if issue is not None:
+        data["issue"] = issue
+    return {"type": "Comment", "action": "create", "actor": {"id": actor, "type": actor_type}, "data": data}
+
+
+class TestOwnComments:
+    def test_the_author_or_the_actor(self):
+        assert linear.is_own(_comment(user="me", actor="someone"), "me")
+        assert linear.is_own(_comment(user="someone", actor="me"), "me")
+        assert not linear.is_own(_comment(), "me")
+
+    def test_user_id_only_counts_on_a_comment(self):
+        issue = _issue()
+        issue["data"]["userId"] = "me"  # not an author field on an issue
+        assert not linear.is_own(issue, "me")
+
+
+class TestCommentsIssue:
+    def test_a_comment_needs_its_issue_an_issue_does_not(self):
+        assert linear.needs_issue(_comment())
+        assert not linear.needs_issue(_comment(issue={"id": "iss-1", "labels": []}))
+        assert not linear.needs_issue(_issue())
+
+    def test_enrich_puts_labels_and_team_where_the_rules_look(self, monkeypatch):
+        def fake(query, variables=None, creds=None):
+            assert variables == {"id": "iss-1"}
+            return {"issue": {"id": "iss-1", "identifier": "ROA-5", "title": "t", "url": "u",
+                              "labels": {"nodes": [{"id": "l1", "name": "Temper"}]}, "team": {"key": "ROA"}}}
+
+        monkeypatch.setattr(linear, "graphql", fake)
+        event = linear.enrich(_comment(issue={"id": "iss-1", "title": "old"}))
+        assert event["data"]["issue"]["identifier"] == "ROA-5"
+        assert linear.matches({"type": "Comment", "has_label": "temper", "team": "roa"}, event)
+        assert not linear.matches({"type": "Comment", "has_label": "bug"}, event)
+
+    def test_an_issue_linear_does_not_know_is_an_error(self, monkeypatch):
+        monkeypatch.setattr(linear, "graphql", lambda *a, **k: {"issue": None})
+        with pytest.raises(RuntimeError, match="no issue iss-1"):
+            linear.enrich(_comment())
+
+
+class TestActorType:
+    def test_people_not_integrations(self):
+        assert linear.matches({"type": "Comment", "actor_type": "user"}, _comment())
+        assert not linear.matches({"type": "Comment", "actor_type": "user"}, _comment(actor_type="integration"))
+        no_actor = _comment()
+        no_actor.pop("actor")
+        assert not linear.matches({"actor_type": "user"}, no_actor)

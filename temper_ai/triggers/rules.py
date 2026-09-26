@@ -4,16 +4,15 @@ One YAML file per rule in ``configs/triggers/`` (and the gitignored
 ``configs/triggers/local/`` for rules that belong to one installation)::
 
     trigger:
-      name: linear_reply
+      name: linear_work
       source: linear
       on:                       # what the source matches; see triggers.linear
         type: Issue
         label_added: temper
-      workflow: linear_reply
+      workflow: linear_work
       inputs:                   # workflow input -> template over the event
         issue_id: "{{ data.id }}"
-        title: "{{ data.title }}"
-        url: "{{ url }}"
+        identifier: "{{ data.identifier }}"
 
 Rules are read from disk on every delivery, not cached, so adding or
 changing one takes effect on the next event without a restart. The files

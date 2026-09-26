@@ -53,6 +53,11 @@ class NodeConfig:
     #   "ship_with_open_issues" — proceed but append unresolved issues to .context/KNOWN_ISSUES.md
     #   "fail"                  — mark node FAILED and cascade downstream skip
     on_max_loops: str = "silent"
+    # Run even when a dependency failed (or was skipped because something upstream failed),
+    # instead of being skipped with it. For the node that has to report the outcome either
+    # way -- a failed build still owes someone a comment. It reads `<dep>.status` and
+    # `<dep>.error` to say what happened; its own condition still applies.
+    run_after_failure: bool = False
 
     # Timeout, gates, and policy overrides
     timeout_seconds: int | None = None  # Wall-clock timeout for this node (default: no limit)
@@ -83,7 +88,7 @@ class NodeConfig:
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "type", "agent", "strategy", "strategy_config", "agents",
         "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops",
-        "loop_condition", "on_max_loops", "timeout_seconds", "gate", "skip_policies",
+        "loop_condition", "on_max_loops", "run_after_failure", "timeout_seconds", "gate", "skip_policies",
         "input_map", "inputs", "outputs",
         "task_template",
         "system_prompt", "role", "model", "provider", "temperature",
@@ -123,6 +128,7 @@ class NodeConfig:
             max_loops=data.get("max_loops", 1),
             loop_condition=data.get("loop_condition"),
             on_max_loops=data.get("on_max_loops", "silent"),
+            run_after_failure=bool(data.get("run_after_failure", False)),
             timeout_seconds=data.get("timeout_seconds"),
             gate=data.get("gate", False),
             skip_policies=data.get("skip_policies"),

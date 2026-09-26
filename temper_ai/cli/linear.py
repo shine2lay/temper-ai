@@ -54,7 +54,8 @@ mutation Comment($input: CommentCreateInput!) {
 }
 """
 
-# What the linear_reply agent calls. `check` says whether the server has them,
+# What the Linear agents call (linear_triage, linear_report, linear_reply).
+# `check` says whether the server has them,
 # since Linear has renamed tools before (update_issue became save_issue).
 REPLY_TOOLS = ("get_issue", "list_comments", "save_comment")
 MCP_SERVER = "linear"

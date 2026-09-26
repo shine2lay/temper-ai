@@ -1,0 +1,26 @@
+# A person's comment on an issue labelled "temper" continues the work: an
+# answer to temper's question starts the change, a change request updates the
+# pull request, a question about it gets a reply. Temper decides which from the
+# thread (agents/linear_triage.yaml); a comment that asks nothing of it gets no
+# reply.
+#
+# Only people's comments (actor_type: user), and never temper's own: its app
+# user is also a "user" to Linear, so the handler's self-check (ignore_self,
+# on by default) compares the author with temper's app user id.
+#
+# While a linear_work run for the issue is still going, a comment starts
+# nothing (one run per issue at a time; the handler records it as skipped).
+# The comment stays in the thread, and the next run reads it.
+trigger:
+  name: linear_work_comment
+  source: linear
+  on:
+    type: Comment
+    action: create
+    has_label: temper
+    actor_type: user
+  workflow: linear_work
+  inputs:
+    issue_id: "{{ data.issueId }}"
+    identifier: "{{ data.issue.identifier }}"
+    comment_id: "{{ data.id }}"

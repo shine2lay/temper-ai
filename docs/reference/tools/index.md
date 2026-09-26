@@ -4,7 +4,7 @@
 
 _Auto-generated from code. Do not edit manually._
 
-Temper AI includes **16 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
+Temper AI includes **17 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
 
 Tool execution is gated by [safety policies](../policies/index.md) — see [File Access](../policies/file_access.md) and [Forbidden Ops](../policies/forbidden_ops.md).
 
@@ -33,6 +33,7 @@ Which container that is depends on the worker's `TEMPER_SPAWNER`. With `docker`,
 | [`Edit`](edit.md) | Edit a file by exact string replacement. Pass several disjoint edits in one call — they are applied together or not at all. Each old_text must appear exactly once (include surrounding lines to make it unique) unless replace_all is set. Use Write to create a file or replace it wholesale. |
 | [`Glob`](glob.md) | Find files by name pattern, e.g. '**/*.py' or 'src/**/test_*.ts'. Returns up to 200 paths (raise with limit), newest first. Skips anything the repo's .gitignore excludes, plus .git, node_modules, __pycache__, virtualenvs and build output. Use Grep to search file contents. |
 | [`Grep`](grep.md) | Search file contents with a regular expression. Returns 'path:line: text' for up to 200 matches (raise with limit), then reports how many were omitted. Skips anything the repo's .gitignore excludes, plus .git, node_modules, __pycache__, virtualenvs and build output. Prefer this over running grep through Bash: that output is unbounded. |
+| [`LinearMoveIssue`](linearmoveissue.md) | Move a Linear issue to another workflow state, e.g. 'In Progress' when you start work and 'In Review' when its pull request is open. Changes the issue's state and nothing else. |
 | [`OpenPullRequest`](openpullrequest.md) | Push the branch checked out in a task's git worktree to GitHub and open a pull request for it into `base`. Returns the PR's URL. If a PR for the branch is already open, pushes the new commits and returns that PR. It never merges, never force-pushes, and refuses protected branches (main, master, staging, ...). |
 | [`QueryRunState`](queryrunstate.md) | Return the state of nodes in the current workflow run. Returns a JSON list of nodes with their status ('running', 'completed', 'failed') and, for completed nodes, their output and structured_output. Use this to discover what upstream nodes have produced before making decisions — e.g. before dispatching new work based on earlier agents' results. Outputs are truncated by default; pass truncate_chars=0 to disable. |
 | [`Read`](read.md) | Read the contents of a text file. Output is capped at 2000 lines or 50KB (whichever comes first); when a file is longer the result ends with the offset to continue from. Use offset/limit to read a specific range instead of the whole file. Prefer this over running `cat` through Bash: that returns the entire file and can exhaust the context in one call. |

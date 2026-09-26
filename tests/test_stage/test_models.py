@@ -13,6 +13,13 @@ class TestNodeConfig:
         assert nc.depends_on == []
         assert nc.agent is None
         assert nc.nodes is None
+        assert nc.run_after_failure is False
+
+    def test_run_after_failure_is_a_known_field(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            nc = NodeConfig.from_dict({"name": "report", "type": "agent", "run_after_failure": True})
+        assert nc.run_after_failure is True
+        assert "run_after_failure" not in caplog.text
 
     def test_from_dict_agent_with_ref(self):
         nc = NodeConfig.from_dict({

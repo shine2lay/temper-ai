@@ -1,0 +1,21 @@
+# Put the label "temper" on a Linear issue and temper works it: it reads the
+# issue, asks on the issue if it is unclear, and otherwise makes the change and
+# opens a pull request (never merges). See workflows/linear_work.yaml.
+#
+# Fires once, when the label is added (or the issue is created with it), not
+# on every later edit of a labelled issue. temper's own changes never fire it
+# (ignore_self defaults to true). A reply on the issue is the other trigger,
+# linear_work_comment.yaml.
+#
+# Linear must be sending Issue and Comment events to POST /api/hooks/linear,
+# signed with LINEAR_WEBHOOK_SECRET; see docs/linear.md.
+trigger:
+  name: linear_work
+  source: linear
+  on:
+    type: Issue
+    label_added: temper
+  workflow: linear_work
+  inputs:
+    issue_id: "{{ data.id }}"
+    identifier: "{{ data.identifier }}"

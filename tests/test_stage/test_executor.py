@@ -1443,6 +1443,71 @@ class TestWorkflowTerminalStatus:
 
         assert result.status == Status.COMPLETED
 
+    def test_a_failed_dependency_skips_the_node_after_it(self):
+        a = _make_agent_node("a", status=Status.FAILED, output="boom")
+        b = _make_agent_node("b", depends_on=["a"])
+        ctx = _make_context()
+
+        execute_graph([a, b], {}, ctx, graph_name="wf", is_workflow=True)
+
+        b.run.assert_not_called()
+
+    def test_run_after_failure_runs_and_can_read_why(self):
+        a = _make_agent_node("a", status=Status.FAILED, output="boom")
+        a.run.return_value.error = "tests failed: 3"
+        report = _make_agent_node(
+            "report", depends_on=["a"],
+            input_map={"build_status": "a.status", "build_error": "a.error"},
+        )
+        report.config.run_after_failure = True
+        ctx = _make_context()
+
+        execute_graph([a, report], {}, ctx, graph_name="wf", is_workflow=True)
+
+        report.run.assert_called_once()
+        inputs = report.run.call_args.args[0]
+        assert inputs["build_status"] == Status.FAILED
+        assert inputs["build_error"] == "tests failed: 3"
+
+    def test_run_after_failure_also_runs_past_a_skip_caused_by_a_failure(self):
+        a = _make_agent_node("a", status=Status.FAILED, output="boom")
+        b = _make_agent_node("b", depends_on=["a"])
+        report = _make_agent_node("report", depends_on=["b"])
+        report.config.run_after_failure = True
+        ctx = _make_context()
+
+        execute_graph([a, b, report], {}, ctx, graph_name="wf", is_workflow=True)
+
+        b.run.assert_not_called()
+        report.run.assert_called_once()
+
+    def test_run_after_failure_still_obeys_its_own_condition(self):
+        triage = _make_agent_node("triage", structured_output={"decision": "ask"})
+        build = _make_agent_node(
+            "build", depends_on=["triage"],
+            condition={"source": "triage.structured.decision", "operator": "equals", "value": "go"},
+        )
+        report = _make_agent_node(
+            "report", depends_on=["build"],
+            condition={"source": "triage.structured.decision", "operator": "equals", "value": "go"},
+        )
+        report.config.run_after_failure = True
+        ctx = _make_context()
+
+        execute_graph([triage, build, report], {}, ctx, graph_name="wf", is_workflow=True)
+
+        build.run.assert_not_called()
+        report.run.assert_not_called()
+
+    def test_error_of_a_node_that_did_not_fail_is_none(self):
+        a = _make_agent_node("a")
+        b = _make_agent_node("b", depends_on=["a"], input_map={"why": "a.error"})
+        ctx = _make_context()
+
+        execute_graph([a, b], {}, ctx, graph_name="wf", is_workflow=True)
+
+        assert b.run.call_args.args[0]["why"] is None
+
     def test_cancellation_reports_cancelled(self):
         import threading
 

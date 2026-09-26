@@ -10,6 +10,8 @@ button's ``value`` at most 2000, a message at most 50 blocks.
 from __future__ import annotations
 
 import json
+import re
+from datetime import UTC, datetime
 from typing import Any
 
 SECTION_MAX = 2900
@@ -45,6 +47,25 @@ def clip(text: Any, limit: int) -> str:
 
 def short(execution_id: str | None) -> str:
     return (execution_id or "")[:8]
+
+
+def when(moment: Any) -> str:
+    """A moment shown in each reader's own time zone.
+
+    Slack's date token does the converting; the UTC text after the ``|``
+    is what shows wherever Slack cannot draw it (notifications, old clients).
+    temper stores times as UTC, with or without the offset.
+    """
+    text = str(moment or "")
+    if not text:
+        return ""
+    try:
+        at = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return esc(text[:16].replace("T", " "))
+    at = at if at.tzinfo else at.replace(tzinfo=UTC)
+    fallback = at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    return f"<!date^{int(at.timestamp())}^{{date_short_pretty}} {{time}}|{fallback}>"
 
 
 def duration(seconds: Any) -> str:
@@ -195,7 +216,7 @@ def stuck(run: dict[str, Any], idle_minutes: int, last_event_at: str, where: lis
     at = f" in *{esc(', '.join(where))}*" if where else ""
     blocks = [section(
         f":warning: {run_header(workflow, execution_id, url)} has had no new event for "
-        f"*{idle_minutes} min*{at} (status {esc(run.get('status'))}, last event {esc(last_event_at[:16].replace('T', ' '))} UTC)."),
+        f"*{idle_minutes} min*{at} (status {esc(run.get('status'))}, last event {when(last_event_at)})."),
         {"type": "actions", "elements": [
             button("Stop run", STOP, {"run": execution_id}, style="danger",
                    confirm=confirm_dialog("Stop this run?", f"{esc(workflow)} {short(execution_id)} will be cancelled.",
@@ -222,11 +243,58 @@ def ended(summary: dict[str, Any], url: str = "") -> dict[str, Any]:
         blocks.append(context(f":raised_hand: {stopped}"))
     elif reason:
         blocks.append(section(f">{esc(clip(reason, 1500))}"))
-    output = summary.get("output")
-    if status == "completed" and output:
-        shown = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False)
-        blocks.append(context(esc(clip(shown, 600))))
+    shown = output_gist(summary.get("output")) if status == "completed" else ""
+    if shown:
+        blocks.append(context(esc(shown)))
     return {"text": text, "blocks": blocks}
+
+
+# The fields of a structured output that hold a sentence written for a person.
+READABLE_KEYS = ("summary", "message", "result", "answer", "reply", "text")
+# A readable field inside JSON text; its value may run to the end, cut short.
+_READABLE_FIELD = re.compile(r'"(' + "|".join(READABLE_KEYS) + r')"\s*:\s*"((?:[^"\\]|\\.)*)("?)')
+# What temper's clipping appends to text it cut (temper_ai/mcp/tools.py _clip).
+_TRUNCATED_NOTE = re.compile(r"\s*\[truncated \d+ more characters[^\]]*\]\s*$")
+
+
+def output_gist(output: Any, limit: int = 600) -> str:
+    """What a finished notice shows of a run's output: its words, never raw JSON.
+
+    Plain text shows as it is. A structured output -- a dict, or a JSON
+    document that arrives as text, cut short or not -- shows its summary-like
+    field when it has one, and nothing otherwise: the whole output is one
+    click away in temper.
+    """
+    if isinstance(output, str):
+        text = output.strip()
+        if not text.startswith(("{", "[")):
+            return clip(text, limit)
+        try:
+            output = json.loads(text)
+        except ValueError:
+            # JSON cut short on the way here: its summary is usually near the top.
+            found = _READABLE_FIELD.search(_TRUNCATED_NOTE.sub("", text))
+            if not found:
+                return ""
+            words = _unescape(found.group(2)).strip()
+            cut = not found.group(3)
+            return clip(words + ("…" if cut and words else ""), limit)
+    if isinstance(output, dict):
+        for key in READABLE_KEYS:
+            value = output.get(key)
+            if isinstance(value, str) and value.strip():
+                return clip(value.strip(), limit)
+    return ""
+
+
+def _unescape(raw: str) -> str:
+    """A JSON string's body as text, even when it was cut mid-escape."""
+    for end in (len(raw), len(raw) - 1, len(raw) - 5):
+        try:
+            return json.loads(f'"{raw[:max(end, 0)]}"')
+        except ValueError:
+            continue
+    return raw
 
 
 # -- answers to commands ------------------------------------------------------------
@@ -265,7 +333,7 @@ def recent_runs(runs: list[dict[str, Any]], dashboard: Any = None) -> dict[str, 
         st = str(r.get("status") or "?")
         url = dashboard(r["id"]) if dashboard else ""
         lines.append(f"{STATUS_EMOJI.get(st, '')} {run_header(str(r.get('workflow_name') or '?'), r['id'], url)} "
-                     f"{esc(st)} · started {esc(str(r.get('start_time') or '')[:16].replace('T', ' '))} UTC")
+                     f"{esc(st)} · started {when(r.get('start_time'))}")
     return {"text": f"{len(runs)} runs", "blocks": [section("\n".join(lines))]}
 
 

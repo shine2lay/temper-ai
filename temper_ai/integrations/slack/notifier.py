@@ -150,9 +150,10 @@ def close_stuck(client: SlackClient, execution_id: str, workflow: str, status: s
     if not pairs:
         return
     emoji = blocks.STATUS_EMOJI.get(status, ":grey_question:")
-    text = f"{workflow} ({blocks.short(execution_id)}) went quiet, then ended {status}"
+    # "ended (cancelled)", not "ended cancelled": reads right for every status (QA, 2026-09-26).
+    text = f"{workflow} ({blocks.short(execution_id)}) went quiet, then ended ({status})"
     body = [blocks.section(f"{emoji} {blocks.run_header(workflow, execution_id, url)} went quiet for a "
-                           f"while; it has since ended *{blocks.esc(status)}*.")]
+                           f"while; it has since ended (*{blocks.esc(status)}*).")]
     for pair in pairs:
         channel, _, ts = pair.partition(":")
         try:

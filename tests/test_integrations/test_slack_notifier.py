@@ -221,7 +221,8 @@ class TestStuck:
         clock.now = _minutes(41)
         notifier.tick()
         closed = [u for u in slack.updates if u["ts"] == quiet["ts"]]
-        assert closed and "went quiet, then ended completed" in closed[-1]["text"]
+        assert closed and "went quiet, then ended (completed)" in closed[-1]["text"]
+        assert "it has since ended (*completed*)." in str(closed[-1]["blocks"])
         assert not any(b.get("type") == "actions" for b in closed[-1]["blocks"])
         before = len(slack.updates)
         clock.now = _minutes(45)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from temper_ai.config.search import search_workflows
@@ -182,3 +184,45 @@ class TestHowRunsRead:
         assert blocks.gist("First sentence is long enough to stop at here. " + "x " * 80) == \
             "First sentence is long enough to stop at here."
         assert blocks.gist(None) == ""
+
+    # An EPD pitch's finished notice pasted its output as raw JSON (QA, 2026-09-26).
+    PITCH = {"verdict": "ready", "summary": 'Both issues are fixed: "criterion 2" now reads right.',
+             "issues": [], "pitch_path": "/x/bet.md"}
+
+    def test_a_finished_notice_shows_the_outputs_summary_not_its_json(self):
+        done = blocks.ended({"workflow": "epd_pitch", "execution_id": "4bd82ef2-aaaa", "status": "completed",
+                             "output": self.PITCH})
+        shown = done["blocks"][-1]["elements"][0]["text"]
+        assert shown == 'Both issues are fixed: "criterion 2" now reads right.'
+        assert "verdict" not in json.dumps(done["blocks"])
+
+    def test_json_that_arrives_as_text_reads_the_same_even_when_cut_short(self):
+        text = json.dumps(self.PITCH)
+        assert blocks.output_gist(text) == self.PITCH["summary"]
+        # temper clips long outputs to text and says so; the summary's start still shows.
+        cut = text[:60] + "\n\n[truncated 999 more characters — raise max_chars to see them]"
+        assert blocks.output_gist(cut) == 'Both issues are fixed: "cr…'
+        # Cut before any summary: nothing, rather than a broken fragment of JSON.
+        assert blocks.output_gist('{"verdict": "ready", "iss') == ""
+
+    def test_output_without_words_for_a_person_shows_nothing(self):
+        assert blocks.output_gist({"verdict": "ready", "issues": []}) == ""
+        assert blocks.output_gist([1, 2]) == "" and blocks.output_gist(None) == ""
+        assert blocks.output_gist({"summary": "  ", "message": "sent"}) == "sent"
+        done = blocks.ended({"workflow": "w", "execution_id": "e", "status": "completed",
+                             "output": {"verdict": "ready"}})
+        assert len(done["blocks"]) == 1  # just the header line
+
+    def test_times_show_in_the_readers_own_time_zone(self):
+        # /temper status listed "started 2026-09-26 16:57 UTC" to a reader in PT (QA, 2026-09-26).
+        naive = blocks.when("2026-09-26T16:57:00.123456")  # temper stores UTC without an offset
+        assert naive == "<!date^1790441820^{date_short_pretty} {time}|2026-09-26 16:57 UTC>"
+        assert blocks.when("2026-09-26T09:57:00-07:00") == naive
+        assert blocks.when("2026-09-26T16:57:00Z") == naive
+        assert blocks.when(None) == "" and blocks.when("not a time") == "not a time"
+        listed = blocks.recent_runs([{"id": "e02afb50-x", "workflow_name": "trigger_probe", "status": "running",
+                                      "start_time": "2026-09-26T16:57:00"}])
+        assert "started <!date^1790441820^{date_short_pretty} {time}|2026-09-26 16:57 UTC>" in json.dumps(listed)
+
+    def test_plain_text_output_still_shows_as_it_is(self):
+        assert blocks.output_gist("All done: 3 files written.") == "All done: 3 files written."

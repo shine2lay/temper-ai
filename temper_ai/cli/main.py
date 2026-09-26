@@ -505,6 +505,12 @@ def _cmd_validate(args) -> None:
 
     from pathlib import Path
 
+    # SQLite does not create a missing parent directory; without this a fresh
+    # checkout (no data/) fails to connect before anything is validated.
+    db_url = os.environ["TEMPER_DATABASE_URL"]
+    if db_url.startswith("sqlite:///") and db_url != "sqlite:///:memory:":
+        Path(db_url[len("sqlite:///"):]).parent.mkdir(parents=True, exist_ok=True)
+
     from temper_ai.config import ConfigStore
     from temper_ai.config.importer import import_config_tree
     from temper_ai.database import init_database

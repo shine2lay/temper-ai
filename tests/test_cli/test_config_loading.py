@@ -65,3 +65,30 @@ class TestValidateSurfacesYamlErrors:
         messages = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
         assert any(str(broken) in m and "YAML parsing failed" in m for m in messages)
         assert "Validation failed" in capsys.readouterr().err
+
+    def test_valid_workflow_prints_valid_and_nodes(self, tmp_path, capsys, monkeypatch):
+        _write(
+            tmp_path / "agents" / "echo.yaml",
+            "agent:\n  name: val_echo\n  type: script\n  script: echo '{}'\n",
+        )
+        _write(
+            tmp_path / "workflows" / "val_wf.yaml",
+            "workflow:\n"
+            "  name: val_wf\n"
+            "  nodes:\n"
+            "    - name: first\n"
+            "      type: agent\n"
+            "      agent: val_echo\n"
+            "    - name: second\n"
+            "      type: agent\n"
+            "      agent: val_echo\n"
+            "      depends_on: [first]\n",
+        )
+        monkeypatch.setattr("temper_ai.server._init_llm_providers", lambda: {})
+
+        _cmd_validate(SimpleNamespace(workflow="val_wf", config_dir=str(tmp_path), input=[]))
+
+        out = capsys.readouterr().out
+        assert "Workflow 'val_wf' is valid" in out
+        assert "Nodes: 2" in out
+        assert out.index("first (agent)") < out.index("second (agent)")

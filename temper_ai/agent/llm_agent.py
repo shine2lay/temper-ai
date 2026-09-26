@@ -754,12 +754,6 @@ def _code_block_body(text: str) -> str | None:
     return code_block.group(1) if code_block else None
 
 
-def _try_parse_code_block(text: str) -> dict | None:
-    """Try extracting JSON from a markdown ```json ... ``` code block."""
-    body = _code_block_body(text)
-    return _try_parse_json(body) if body is not None else None
-
-
 def _first_brace_span(text: str) -> str | None:
     """The first balanced {...} substring of the text, if any."""
     brace_start = text.find("{")
@@ -776,12 +770,6 @@ def _first_brace_span(text: str) -> str | None:
                 return text[brace_start : i + 1]
 
     return None
-
-
-def _try_parse_first_brace(text: str) -> dict | None:
-    """Try extracting the first balanced {...} substring and parsing it as JSON."""
-    span = _first_brace_span(text)
-    return _try_parse_json(span) if span is not None else None
 
 
 def _truncate_input_data(input_data: dict[str, Any], max_value_len: int = 200_000) -> dict[str, Any]:

@@ -1394,6 +1394,45 @@ class TestCheckpointKeys:
         assert all(n.startswith("build.") for n in kw["cleared_nodes"])
 
 
+class TestLoopConditionMissingField:
+    """ROA-5: a check whose JSON verdict was lost ended its loop as if it had passed.
+    A loop condition on a structured field that is not there now fails the node."""
+
+    def test_loop_condition_missing_field_fails_node(self):
+        write = _make_agent_node("write")
+        check = _make_agent_node("check", depends_on=["write"], loop_to="write", max_loops=3,
+                                 output='{"verdict": FAIL oops')
+        check.run.return_value.metadata = {
+            "structured_parse_error": "Expecting value: line 1 column 13 (char 12)",
+        }
+        check.config.loop_condition = {"source": "check.structured.verdict", "operator": "equals", "value": "FAIL"}
+        after = _make_agent_node("after", depends_on=["check"])
+
+        result = execute_graph([write, check, after], {}, _make_context(), graph_name="g",
+                               is_workflow=True)
+
+        gate = result.node_results["check"]
+        assert gate.status == Status.FAILED
+        assert gate.error == (
+            "field 'verdict' not found in structured output: "
+            "Expecting value: line 1 column 13 (char 12)"
+        )
+        assert write.run.call_count == 1   # no rewind
+        assert check.run.call_count == 1
+        assert after.run.call_count == 0   # the fail-cascade skips what depends on the check
+        assert result.status == Status.FAILED
+
+    def test_present_verdict_still_loops(self):
+        write = _make_agent_node("write")
+        check = _make_agent_node("check", depends_on=["write"], loop_to="write", max_loops=2,
+                                 structured_output={"verdict": "FAIL"})
+        check.config.loop_condition = {"source": "check.structured.verdict", "operator": "equals", "value": "FAIL"}
+
+        execute_graph([write, check], {}, _make_context(), graph_name="g")
+
+        assert write.run.call_count == 2
+
+
 class TestWorkflowTerminalStatus:
     """A workflow is only `completed` when nothing inside it failed."""
 

@@ -140,3 +140,19 @@ def test_no_retry_when_first_attempt_succeeds(create_agent):
 
     assert agent.run.call_count == 1
     assert result.output == "done"
+
+
+@patch("temper_ai.stage.agent_node.time.sleep", lambda _s: None)
+@patch("temper_ai.stage.agent_node.create_agent")
+def test_metadata_reaches_the_node_result(create_agent):
+    """An unparseable answer's parse error travels on to the executor's loop condition."""
+    agent = MagicMock()
+    agent.name = "n1"
+    res = _result(output='{"verdict": FAIL oops')
+    res.metadata = {"structured_parse_error": "Expecting value: line 1 column 13 (char 12)"}
+    agent.run.return_value = res
+    create_agent.return_value = agent
+
+    result = _make_node().run({}, _make_context())
+
+    assert result.metadata == {"structured_parse_error": "Expecting value: line 1 column 13 (char 12)"}

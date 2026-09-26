@@ -89,6 +89,8 @@ class AgentNode(Node):
                     total_tokens=result.tokens.total_tokens,
                     duration_seconds=duration,
                     error=result.error,
+                    # An unparseable answer's parse error, for a loop condition to name.
+                    metadata=dict(result.metadata),
                 )
             except Exception as exc:
                 if attempt < self.MAX_RETRIES:
@@ -118,6 +120,7 @@ class AgentNode(Node):
                 total_tokens=last_result.tokens.total_tokens,
                 duration_seconds=duration,
                 error=last_result.error,
+                metadata=dict(last_result.metadata),
             )
         return NodeResult(
             status=Status.FAILED,

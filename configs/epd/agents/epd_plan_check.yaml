@@ -17,7 +17,15 @@ agent:
   #    (wrong facts about the code: 9 plans), tests that pin what a task changes are named (6), work no
   #    criterion needs is an issue (16), and so is an acceptance that cannot fail or fails on the base
   #    anyway (12 and 5).
-  version: 3
+  # 4 (2026-09-26, queue task 4, step 7): the 3-bet test of v3 (~/epd-autopilot/plan/results-fast.md)
+  #    kept the scores (12 -> 12) but added two blocking problems, both from this agent, neither from
+  #    the step caps. b019: the second look found a new wrong fact (`.order_id`; the field is
+  #    broker_order_id) and still said "ready" ("costs at most a round"), so no one applied its fix. A
+  #    second look now says "revise" whenever an issue is left, so the lead's last pass applies it
+  #    (about 3 min; there is still no third look). b014: the scope rule cut the RiskStrip tooltip change
+  #    as Overview-only, but RiskStrip is pinned on /analysis too, so the plan left a second transfer
+  #    statement there. Work is out of scope only after a grep of every place its code shows or is called.
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -59,7 +67,9 @@ agent:
     - it adds work no criterion or the invariant needs (a neighbouring fix, a refactor, a wider rule
       for other pages, tenants or brokers, a new setting), goes outside the pitch or its no-gos, or
       contradicts the pitch's or the owner's literal words; a place left saying the old thing is a
-      missing place, not scope.
+      missing place, not scope. Before you call a change out of scope, grep every place the code it
+      touches is rendered or called: a change that shows on a page, state or figure a criterion or
+      the invariant covers is needed, even when the task names another page.
 
     Ask for every file you need in one turn (several Read, Grep and Glob calls in one reply, not one
     a turn), and read each file once.
@@ -69,10 +79,10 @@ agent:
     built or checked: no style notes.
 
     Verdict: "ready" when nothing above would cost the build a round or ship a defect; otherwise
-    "revise", and the plan goes back to the lead once with your issues. The lead cannot read the
-    code, so each issue must carry the fact that fixes it. If you are shown that this is the second
-    look, your verdict stands: say "ready" unless an issue would ship a defect, and list what is
-    left either way.
+    "revise", and the plan goes back to the lead with your issues. The lead cannot read the code,
+    so each issue must carry the fact that fixes it. On the second look, say "revise" if any issue
+    is left, however small: the lead then makes a last pass with your issues, and there is no third
+    look. Say "ready" only when nothing is left.
 
     A second look (the task says so, with your previous issues and a diff of what the lead changed)
     starts from those, not from scratch. First confirm each previous issue is fixed in tasks.json

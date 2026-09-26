@@ -116,6 +116,7 @@ class TestEnds:
     def test_per_workflow_off_and_quiet_workflows(self, notifier, slack, ops, clock):
         ops.add_run("run-n", "noisy", "completed", _minutes(1), _minutes(2))
         ops.add_run("run-p", "slack_pick", "failed", _minutes(1), _minutes(2))
+        ops.add_run("run-a", "repo_answer", "completed", _minutes(1), _minutes(2))
         clock.now = _minutes(3)
         assert notifier.tick() == [] and slack.posts == []
 

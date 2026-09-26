@@ -109,6 +109,7 @@ class FakeOps:
         self.alive: set[str] = set()
         self.activity: dict[str, datetime] = {}
         self.outputs: dict[tuple[str, str], dict[str, Any]] = {}
+        self.agent_texts: dict[tuple[str, str], str] = {}
         self.start_error: str | None = None
         self._ids = itertools.count(1)
         self.on_start: Any = None
@@ -202,6 +203,9 @@ class FakeOps:
 
     def structured_output(self, execution_id: str, node: str) -> dict[str, Any] | None:
         return self.outputs.get((execution_id, node))
+
+    def agent_output(self, execution_id: str, node: str) -> str:
+        return self.agent_texts.get((execution_id, node), "")
 
     def last_activity(self, execution_id: str) -> Any:
         return self.activity.get(execution_id)

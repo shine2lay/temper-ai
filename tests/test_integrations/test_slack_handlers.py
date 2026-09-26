@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import pytest
 
 from temper_ai.integrations.slack import store
+from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
 from temper_ai.integrations.slack.blocks import APPROVE, CANCEL, CONFIRM, REJECT, STOP
 from temper_ai.integrations.slack.config import ConfigWatcher
 from temper_ai.integrations.slack.handlers import Handler
@@ -17,6 +18,7 @@ from temper_ai.integrations.slack.socket import SocketMode
 from temper_ai.triggers.scheduler import claim, settle
 
 from .conftest import OTHER, OWNER
+from .test_slack_answer import finish
 
 CHANNEL = "C0ASKED01"
 NOW = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)
@@ -40,7 +42,8 @@ def picker() -> FakePicker:
 
 @pytest.fixture
 def handler(slack, ops, slack_config, picker) -> Handler:
-    return Handler(slack, ConfigWatcher(), ops, picker=picker, bot_user="UBOT")
+    return Handler(slack, ConfigWatcher(), ops, picker=picker, bot_user="UBOT",
+                   answerer=Answerer(ops, timeout_s=0, sleep=lambda _s: None))
 
 
 def slash(handler: Handler, text: str, user: str = OWNER, channel: str = CHANNEL) -> None:
@@ -257,6 +260,66 @@ class TestMentions:
     def test_a_bare_mention_gets_help(self, handler, slack, picker):
         mention(handler, "<@UBOT>")
         assert picker.asked == [] and "/temper" in str(slack.posts[0]["blocks"])
+
+
+ANSWER = "Looking.\n<answer>*Yes.* `backend/trips/routes.py` serves `/ics`.</answer>"
+
+
+class TestQuestions:
+    def test_ask_answers_in_the_channel_for_everyone(self, handler, slack, ops):
+        finish(ops, ANSWER)
+        slash(handler, "ask can roamee's app export a trip?")
+        assert ops.started == [(ANSWER_WORKFLOW, {"question": "can roamee's app export a trip?", "conversation": ""})]
+        first, last = slack.responses[0], slack.responses[-1]
+        assert first["response_type"] == "ephemeral" and "Reading the code" in first["text"]
+        assert last["response_type"] == "in_channel"
+        shown = json.dumps(last["blocks"])
+        assert "backend/trips/routes.py" in shown and f"<@{OWNER}> asked" in shown and "Looking." not in shown
+        assert [a["action"] for a in store.actions()].count("ask") == 1
+
+    def test_run_repo_answer_is_the_same_as_ask(self, handler, slack, ops):
+        ops.entries.append({"name": ANSWER_WORKFLOW, "description": "Answer a question about the repos.",
+                            "inputs": {"question": {"type": "string", "required": True},
+                                       "conversation": {"type": "string", "required": False}}})
+        finish(ops, ANSWER)
+        slash(handler, 'run repo_answer question="does rollcall trade crypto?"')
+        assert ops.started[0][1]["question"] == "does rollcall trade crypto?"
+        assert slack.responses[-1]["response_type"] == "in_channel" and slack.posts == []  # no run thread
+
+    def test_a_failed_answer_is_told_only_to_the_asker(self, handler, slack, ops):
+        finish(ops, status="failed", why="failed at answer: out of credit")
+        slash(handler, "ask where are alerts sent?")
+        last = slack.responses[-1]
+        assert last["response_type"] == "ephemeral" and "out of credit" in last["text"]
+
+    def test_ask_without_a_question_starts_nothing(self, handler, slack, ops):
+        slash(handler, "ask")
+        assert ops.started == [] and "Ask what?" in said(slack)
+
+    def test_a_question_in_plain_words_is_answered_in_place(self, handler, slack, ops, picker):
+        picker.result = Pick(workflow=ANSWER_WORKFLOW, inputs={"question": "Can roamee export a trip?"})
+        finish(ops, ANSWER)
+        mention(handler, "<@UBOT> can it export a trip?")
+        assert ops.started == [(ANSWER_WORKFLOW, {"question": "Can roamee export a trip?", "conversation": ""})]
+        placeholder, answer = slack.posts[0], slack.updates[-1]
+        assert answer["ts"] == placeholder["ts"] and slack.buttons(answer) == []
+        assert "backend/trips/routes.py" in json.dumps(answer["blocks"])
+
+    def test_a_question_in_a_thread_carries_the_conversation(self, handler, slack, ops, picker):
+        picker.result = Pick(workflow=ANSWER_WORKFLOW, inputs={})  # no rewrite: the words as sent
+        finish(ops, ANSWER)
+        slack.threads[(CHANNEL, "1790000100.000001")] = [
+            {"ts": "1790000100.000001", "user": OWNER, "text": "<@UBOT> tell me about roamee trips"}]
+        mention(handler, "<@UBOT> can they be exported?", ts="1790000100.000003", thread_ts="1790000100.000001",
+                event_id="Ev5")
+        question, conversation = ops.started[0][1]["question"], ops.started[0][1]["conversation"]
+        assert question == "can they be exported?" and "roamee trips" in conversation
+
+    def test_a_failed_answer_in_a_thread_says_so_there(self, handler, slack, ops, picker):
+        picker.result = Pick(workflow=ANSWER_WORKFLOW, inputs={"question": "q?"})
+        finish(ops, status="failed", why="boom")
+        mention(handler, "<@UBOT> q?")
+        assert "boom" in slack.updates[-1]["text"]
 
 
 class FakeSocket:

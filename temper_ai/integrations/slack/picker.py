@@ -45,6 +45,17 @@ def _spec(entry: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def wait_for(ops: Any, execution_id: str, timeout_s: float, poll_s: float = POLL_S,
+             sleep: Any = time.sleep) -> dict[str, Any]:
+    """Poll a run until it ends or ``timeout_s`` passes; its last summary."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        summary = ops.summary(execution_id)
+        if str(summary.get("status") or "running") in END or time.monotonic() >= deadline:
+            return summary
+        sleep(poll_s)
+
+
 def check(pick: Pick, catalog: list[dict[str, Any]]) -> Pick:
     """Hold the pick to what the workflow really takes."""
     if not pick.workflow:
@@ -91,14 +102,8 @@ class Picker:
                                  for e in catalog),
         }
         execution_id = self.ops.start(PICK_WORKFLOW, inputs)
-        deadline = time.monotonic() + self.timeout_s
-        status = "running"
-        while time.monotonic() < deadline:
-            summary = self.ops.summary(execution_id)
-            status = str(summary.get("status") or "running")
-            if status in END:
-                break
-            self._sleep(self.poll_s)
+        summary = wait_for(self.ops, execution_id, self.timeout_s, self.poll_s, self._sleep)
+        status = str(summary.get("status") or "running")
         if status != "completed":
             raise OpsError(f"I couldn't work out a workflow (the pick run {execution_id[:8]} is {status}).")
         out = self.ops.structured_output(execution_id, PICK_NODE)

@@ -404,15 +404,68 @@ def proposal(workflow: str, inputs: dict[str, Any], reason: str, entry: dict[str
     return {"text": text, "blocks": blocks}
 
 
+# An answer longer than this many sections is cut; the run page has it all.
+ANSWER_SECTIONS = 12
+
+
+def chunks(text: str, size: int = SECTION_MAX) -> list[str]:
+    """``text`` in pieces of at most ``size``, cut between paragraphs where it can."""
+    out: list[str] = []
+    current = ""
+    for para in text.split("\n\n"):
+        while len(para) > size:  # one paragraph too long for a section
+            cut = para.rfind("\n", 0, size)
+            cut = cut if cut > size // 2 else size
+            if current:
+                out.append(current)
+                current = ""
+            out.append(para[:cut])
+            para = para[cut:].lstrip("\n")
+        joined = f"{current}\n\n{para}" if current else para
+        if len(joined) > size:
+            out.append(current)
+            current = para
+        else:
+            current = joined
+    if current.strip():
+        out.append(current)
+    return [c for c in out if c.strip()]
+
+
+def answer(text: str, execution_id: str, url: str = "", seconds: Any = None, usd: Any = None,
+           question: str = "", by: str = "") -> dict[str, Any]:
+    """An answer about the repos: who asked what, the answer, what it took.
+
+    The answer is the model's text, so it is escaped: it can't ping
+    ``<!channel>`` or anyone else.
+    """
+    first = next((line.strip(" *_") for line in text.splitlines() if line.strip(" *_")), "")
+    blocks: list[dict[str, Any]] = []
+    if question:
+        asker = f"<@{by}> asked" if by else "Asked"
+        blocks.append(context(f":mag: {asker}: _{esc(clip(question, 500))}_"))
+    pieces = chunks(esc(text))
+    if len(pieces) > ANSWER_SECTIONS:
+        pieces = pieces[:ANSWER_SECTIONS]
+        pieces[-1] += "\n_(cut short here; the whole answer is on the run's page)_"
+    blocks.extend(section(p) for p in pieces)
+    bits = [b for b in (duration(seconds), cost(usd)) if b]
+    blocks.append(context(f"Read the code in {run_ref(execution_id, url)}" + (f" · {' · '.join(bits)}" if bits else "")))
+    return {"text": clip(esc(first) or "An answer about the code", 300), "blocks": blocks}
+
+
 HELP = (
     "*/temper* — talk to temper without opening it\n"
+    "• `/temper ask <question>` — what rollcall, roamee or temper-ai can do, and where in the code; "
+    "I read the code and answer here\n"
     "• `/temper search <words>` — find a workflow by what it does\n"
     "• `/temper list` — every workflow, with its inputs\n"
     "• `/temper run <workflow> key=value …` — start a run; I post a thread for it\n"
     "• `/temper status [run id]` — one run, or the runs going now\n"
     "• `/temper stop <run id>` — cancel a run\n"
     "Or just say what you want: `@temper grade the plan for b022` (or DM me). "
-    "I pick a workflow and ask before starting it.\n"
+    "I pick a workflow and ask before starting it. A question about the code gets an answer: "
+    "`@temper can roamee export a trip?`\n"
     "Values with spaces go in quotes: `topic=\"weekly summary\"`. A run id can be its first 8 characters."
 )
 

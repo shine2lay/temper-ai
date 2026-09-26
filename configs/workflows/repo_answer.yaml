@@ -1,0 +1,42 @@
+workflow:
+  name: repo_answer
+  description: |
+    Answers a question about what one of the owner's apps can do, where a
+    feature lives, or how something works in its code: rollcall (trading
+    assistant), roamee (travel planner) and temper-ai (temper itself).
+
+    1. repos  — refreshes a read-only copy of each repository from GitHub
+                (at most every 10 minutes) and says which commit it holds.
+    2. answer — reads the repo's capability notes, then its code when the
+                notes don't say, and answers in a few Slack-sized lines,
+                naming the files it read.
+
+    Read-only: it changes nothing anywhere. @temper and `/temper ask` in
+    Slack start it and post the answer themselves.
+  inputs:
+    question:
+      type: string
+      required: true
+      description: The question, in plain words.
+    conversation:
+      type: string
+      required: false
+      description: Earlier messages of the Slack thread, oldest first, for context.
+  outputs:
+    answer: answer.output
+    repos: repos.structured.summary
+  nodes:
+    - name: repos
+      type: agent
+      agent: repo_copies
+
+    - name: answer
+      type: agent
+      agent: repo_answer
+      depends_on: [repos]
+      input_map:
+        question: input.question
+        conversation: input.conversation
+        repos: repos.structured.summary
+        # Read, Grep and Glob are confined to the copies' folder.
+        workspace_path: repos.structured.workspace

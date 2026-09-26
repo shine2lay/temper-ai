@@ -14,10 +14,12 @@ Slack ◀──websocket (Socket Mode, outgoing)──▶ temper server ──�
 
 ## Commands
 
-`/temper` is exact and uses no model:
+`/temper` is exact: no model works out what you meant (only `ask` uses one,
+to read the code):
 
 | Command | What it does |
 |---|---|
+| `/temper ask <question>` | Answers a question about the code of rollcall, roamee or temper-ai, in the channel for everyone there. See below. |
 | `/temper search <words>` | Workflows whose name, description or inputs match, with their inputs. Name matches first. |
 | `/temper list` | Every workflow; ones with no description are flagged. |
 | `/temper run <workflow> key=value …` | Starts a run and opens its thread in this conversation. Values are checked against the workflow's inputs first; quotes work (`msg="two words"`). |
@@ -34,6 +36,30 @@ thread and it carries on from there.
 
 The same search is `GET /api/workflows/search?q=…` and the MCP tool
 `search_workflows`.
+
+## Questions about the code
+
+`/temper ask can roamee export a trip?`, or the same question to @temper in
+plain words (the pick tells a question from a request to run something, and
+answers a question straight away, with no button). The `repo_answer`
+workflow does the reading:
+
+1. `repos` (script) keeps a read-only shallow copy of each repository at
+   GitHub's latest: rollcall `master`, roamee `staging`, temper-ai
+   `master`, fetched at most every 10 minutes, under
+   `/app/workspaces/readonly/`. The list is in
+   `configs/agents/repo_copies.yaml`.
+2. `answer` (Sonnet, medium effort, Read/Grep/Glob only, 20 steps, 5
+   minutes) reads each repo's capability notes (`.temper/`) first, then the
+   code when they don't settle it, and treats the code as the truth when a
+   doc disagrees. It ends with the commits it read (`Read: roamee staging
+   abc1234`).
+
+An answer takes 10 s to a minute or two and costs about 3–25 cents (plus 1–2
+cents for the pick with @temper). It never changes anything, and anyone in the
+workspace may ask about any of the three repos. Questions about temper's own
+runs go to `/temper status` instead. `repo_answer` runs post no notices; the
+answer is the message.
 
 ## Notices
 

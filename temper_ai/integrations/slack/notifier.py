@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 TICK_S = 15.0
 GATE, STUCK, END = "slack:gate", "slack:stuck", "slack:end"
 # Runs Slack itself starts to answer people: never worth a notice.
-QUIET_WORKFLOWS = frozenset({"slack_pick"})
+QUIET_WORKFLOWS = frozenset({"slack_pick", "repo_answer"})
 FAILED_STATES = ("failed", "interrupted")
 FINISHED_STATES = ("completed", "cancelled")
 # A gate or run older than switching Slack on by more than this is history.

@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from temper_ai.integrations.slack import blocks, store
+from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
 from temper_ai.integrations.slack.client import SlackClient, SlackError
 from temper_ai.integrations.slack.commands import Command, coerce_inputs, parse
 from temper_ai.integrations.slack.config import ConfigWatcher
@@ -37,12 +38,15 @@ SEEN_MAX = 500
 class Handler:
     def __init__(self, client: SlackClient, config: ConfigWatcher, ops: TemperOps | None = None,
                  poster: RunPoster | None = None, picker: Picker | None = None, bot_user: str = "",
-                 workers: int = 4) -> None:
+                 answerer: Answerer | None = None, workers: int = 8) -> None:
         self.client = client
         self.config = config
         self.ops = ops or TemperOps()
         self.poster = poster or RunPoster(client)
         self.picker = picker or Picker(self.ops)
+        # An answer holds its thread for a minute or more; there are enough
+        # threads that a few questions at once don't hold up the commands.
+        self.answerer = answerer or Answerer(self.ops)
         self.bot_user = bot_user
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="slack-handler")
         self._seen: OrderedDict[str, None] = OrderedDict()
@@ -141,6 +145,18 @@ class Handler:
             reply({"text": self.stop(eid, user, name)})
         elif cmd.verb == "run":
             self.run(cmd, user, name, channel, reply)
+        elif cmd.verb == "ask":
+            self.ask(cmd.query, user, name, reply)
+
+    def ask(self, question: str, user: str, name: str, reply: Any) -> None:
+        """``/temper ask``: read the code, answer in the channel for everyone there."""
+        reply({"text": "Reading the code…", "blocks": [blocks.context(
+            f":mag: Reading the code to answer _{blocks.esc(blocks.clip(question, 300))}_ — about a minute.")]})
+        store.log_action(user, name, "ask", None, question[:500])
+        got = self.answerer.answer(question)
+        message = blocks.answer(got.text, got.execution_id, self.config.get().run_url(got.execution_id),
+                                got.seconds, got.cost_usd, question=question, by=user)
+        reply({**message, "response_type": "in_channel"})
 
     def run(self, cmd: Command, user: str, name: str, channel: str, reply: Any) -> None:
         entry = next((e for e in self.ops.catalog() if e["name"] == cmd.workflow), None)
@@ -153,6 +169,10 @@ class Handler:
             reply({"text": "Not started", "blocks": [
                 blocks.section(f":warning: Not started: {blocks.esc('; '.join(problems))}"),
                 blocks.context(blocks.workflow_line(entry))]})
+            return
+        if cmd.workflow == ANSWER_WORKFLOW:
+            # Its answer is the point, and a run thread would never show it.
+            self.ask(str(inputs.get("question") or ""), user, name, reply)
             return
         eid = self.ops.start(cmd.workflow, inputs)
         store.log_action(user, name, "run", eid, f"{cmd.workflow} {json.dumps(inputs)[:500]}")
@@ -327,7 +347,8 @@ class Handler:
         thread = str(event.get("thread_ts") or event.get("ts") or "")
         text = _MENTION.sub("", str(event.get("text") or "")).strip()
         if not text or text.lower() in ("help", "hi", "hello", "?"):
-            message = blocks.help_message("Tell me what you want run, in plain words, and I'll suggest a workflow.")
+            message = blocks.help_message("Tell me what you want run, in plain words, and I'll suggest a workflow. "
+                                          "Or ask what rollcall, roamee or temper-ai can do.")
             self.client.post(channel, message["text"], message["blocks"], thread_ts=thread)
             return
         placeholder = self.client.post(channel, "Looking for the right workflow…", thread_ts=thread)
@@ -347,6 +368,9 @@ class Handler:
         except OpsError as exc:
             self.client.update(channel, pts, str(exc), [blocks.section(f":warning: {blocks.esc(exc)}")])
             return
+        if pick.workflow == ANSWER_WORKFLOW:
+            self.answer_in_thread(channel, pts, str(pick.inputs.get("question") or text), conversation)
+            return
         if not pick.workflow or pick.question and pick.problems:
             answer = pick.question or "I couldn't find a workflow that does that."
             if pick.workflow:
@@ -360,3 +384,16 @@ class Handler:
         entry = next((e for e in self.ops.catalog() if e["name"] == pick.workflow), None)
         proposal = blocks.proposal(pick.workflow, pick.inputs, pick.reason, entry, user, pick.execution_id[:8])
         self.client.update(channel, pts, proposal["text"], proposal["blocks"])
+
+    def answer_in_thread(self, channel: str, ts: str, question: str, conversation: str) -> None:
+        """A question in plain words: answered in place of the placeholder, no button to press."""
+        self.client.update(channel, ts, "Reading the code…", [
+            blocks.context(":mag: That's a question about the code; reading it to answer — about a minute.")])
+        try:
+            got = self.answerer.answer(question, conversation)
+        except OpsError as exc:
+            self.client.update(channel, ts, str(exc), [blocks.section(f":warning: {blocks.esc(exc)}")])
+            return
+        message = blocks.answer(got.text, got.execution_id, self.config.get().run_url(got.execution_id),
+                                got.seconds, got.cost_usd)
+        self.client.update(channel, ts, message["text"], message["blocks"])

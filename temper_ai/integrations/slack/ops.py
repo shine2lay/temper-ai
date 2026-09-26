@@ -171,6 +171,21 @@ class TemperOps:
 
     def structured_output(self, execution_id: str, node: str) -> dict[str, Any] | None:
         """The last structured output of ``node``'s agents, if any."""
+        for agent in reversed(self._agents(execution_id, node)):
+            out = agent.get("structured_output")
+            if isinstance(out, dict):
+                return out
+        return None
+
+    def agent_output(self, execution_id: str, node: str) -> str:
+        """The text ``node``'s last agent answered with ('' if none)."""
+        for agent in reversed(self._agents(execution_id, node)):
+            out = agent.get("output")
+            if isinstance(out, str) and out.strip():
+                return out
+        return ""
+
+    def _agents(self, execution_id: str, node: str) -> list[dict[str, Any]]:
         from temper_ai.api.data_service import get_workflow_execution
 
         run = get_workflow_execution(execution_id) or {}
@@ -179,13 +194,9 @@ class TemperOps:
             n = stack.pop(0)
             if n.get("name") == node:
                 agents = ([n["agent"]] if n.get("agent") else []) + (n.get("agents") or [])
-                for agent in reversed(agents):
-                    out = (agent or {}).get("structured_output")
-                    if isinstance(out, dict):
-                        return out
-                return None
+                return [a for a in agents if isinstance(a, dict)]
             stack.extend(n.get("child_nodes") or [])
-        return None
+        return []
 
     def last_activity(self, execution_id: str) -> Any:
         from temper_ai.triggers.scheduler import _last_activity

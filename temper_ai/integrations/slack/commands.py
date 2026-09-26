@@ -1,5 +1,6 @@
 """``/temper …``: the exact commands, parsed without an LLM.
 
+    /temper ask <question>
     /temper run <workflow> key=value …
     /temper status [run id]
     /temper stop <run id>
@@ -18,7 +19,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Any
 
-VERBS = ("run", "status", "stop", "list", "search", "help")
+VERBS = ("ask", "run", "status", "stop", "list", "search", "help")
 ALIASES = {"start": "run", "cancel": "stop", "ls": "list", "find": "search", "runs": "status", "?": "help"}
 
 # Slack turns straight quotes into curly ones on some keyboards, and wraps
@@ -47,6 +48,14 @@ def parse(text: str) -> Command:
     text = clean(text)
     if not text:
         return Command("help")
+    # A question is prose: taken as typed, not split like key=value words
+    # (an apostrophe would read as an unclosed quote).
+    first = text.split(None, 1)
+    if first[0].lower() == "ask":
+        question = first[1].strip() if len(first) > 1 else ""
+        if not question:
+            return Command("ask", error="Ask what? e.g. `/temper ask can roamee export a trip?`")
+        return Command("ask", query=question)
     try:
         words = shlex.split(text)
     except ValueError as exc:

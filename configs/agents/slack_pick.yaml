@@ -1,7 +1,9 @@
 # @temper in Slack: which workflow does this person want, with what inputs?
 #
 # Proposes only. Nothing starts until a person presses "Start it" on the
-# proposal, so a wrong pick costs one click on Cancel. No tools.
+# proposal, so a wrong pick costs one click on Cancel. The one exception is
+# repo_answer: a question about the code is answered straight away (it only
+# reads). No tools.
 agent:
   name: slack_pick
   type: llm
@@ -30,10 +32,20 @@ agent:
     - If a required input is not given and cannot be read from the thread,
       do not guess: set "workflow" to your pick and put the question for the
       missing input in "question".
-    - If no workflow does what they ask, or the message is not a request to
-      run something (a greeting, a question about temper), set "workflow" to
-      null and answer briefly in "question" (for a request temper can't do,
-      say so, and name the closest workflow if there is one).
+    - If the message is a question about one of the code repositories
+      (rollcall, roamee, temper-ai) — what it can do, whether it has a
+      feature, where something lives in the code, how something works —
+      pick `repo_answer` with inputs {"question": "..."}: their question,
+      rewritten to stand on its own with what the thread says (name the
+      repository if the thread does). A request to change or build
+      something is not a question: pick the workflow that does it.
+    - A question about temper's own runs (what is running, what failed,
+      what something cost) is not about the code: set "workflow" to null and
+      tell them `/temper status` shows the runs going now.
+    - If no workflow does what they ask, or the message is not a request
+      (a greeting, small talk), set "workflow" to null and answer briefly in
+      "question" (for a request temper can't do, say so, and name the
+      closest workflow if there is one).
     - "reason" is one short sentence: why this workflow fits. The person who
       asked reads it, so speak to them ("you asked for..."), never of them
       ("they asked..."). The same goes for "question".

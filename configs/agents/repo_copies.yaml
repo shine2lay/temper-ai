@@ -1,0 +1,111 @@
+# repo_answer, step 1: an up-to-date, read-only copy of every repository
+# temper answers questions about, one folder each under
+# /app/workspaces/readonly/.
+#
+# Each copy is a shallow clone of the repo's main branch. It is fetched again
+# only when it is more than 10 minutes old, so an answer describes the repo as
+# it is now without a fetch on every question. One lock per repo: two
+# questions at once never fetch the same copy together. A fetch that fails
+# keeps the last copy and says so (the answer names the commit it read); a
+# repo that was never copied is reported missing, and the run fails only when
+# no copy exists at all.
+#
+# The table below is the list of repos. rollcall and roamee are private and use
+# their read-only deploy keys (local/github-deploy/setup.sh owner/repo);
+# temper-ai is public.
+agent:
+  name: repo_copies
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    python3 - <<'PY'
+    import fcntl, json, os, shutil, subprocess, tempfile, time
+    from pathlib import Path
+
+    ROOT = Path("/app/workspaces/readonly")
+    KEYDIR = Path("/app/github-deploy")
+    MAX_AGE = 600  # seconds
+    REPOS = [
+        # name, clone URL, branch, deploy key under KEYDIR (None: public), what it is
+        ("rollcall", "git@github.com:shine2lay/rollcall.git", "master", "id_ed25519",
+         "the owner's trading assistant: watches a brokerage book of covered calls, recommends rolls, alerts, trades"),
+        ("roamee", "git@github.com:shine2lay/roamee.git", "staging", "shine2lay/roamee/id_ed25519",
+         "Roamee, a map-first AI travel planner: FastAPI backend (concierge, research pipeline, trips) and React frontend"),
+        ("temper-ai", "https://github.com/shine2lay/temper-ai.git", "master", None,
+         "temper itself: the engine that runs agent workflows, its dashboard, API, CLI, and the Slack and Linear integrations"),
+    ]
+
+
+    def git(*args, cwd=None, env=None):
+        r = subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=300)
+        if r.returncode:
+            said = (r.stderr or r.stdout).strip().splitlines()
+            raise RuntimeError(said[-1] if said else "git %s exited %d" % (args[0], r.returncode))
+        return r.stdout.strip()
+
+
+    def refresh(name, url, branch, key, where):
+        env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+        keyfile = None
+        try:
+            if key:
+                fd, keyfile = tempfile.mkstemp()
+                os.write(fd, (KEYDIR / key).read_bytes())
+                os.close(fd)
+                os.chmod(keyfile, 0o600)
+                env["GIT_SSH_COMMAND"] = (
+                    "ssh -i %s -o IdentitiesOnly=yes -o UserKnownHostsFile=%s/known_hosts "
+                    "-o StrictHostKeyChecking=yes -o BatchMode=yes" % (keyfile, KEYDIR))
+            if (where / ".git").is_dir():
+                git("fetch", "-q", "--depth", "1", "origin", branch, cwd=where, env=env)
+                git("reset", "-q", "--hard", "FETCH_HEAD", cwd=where, env=env)
+                git("clean", "-qfdx", cwd=where, env=env)
+            else:
+                fresh = ROOT / (".%s.new" % name)
+                shutil.rmtree(fresh, ignore_errors=True)
+                git("clone", "-q", "--depth", "1", "--single-branch", "--branch", branch, url, str(fresh), env=env)
+                fresh.rename(where)
+        finally:
+            if keyfile:
+                os.unlink(keyfile)
+
+
+    ROOT.mkdir(parents=True, exist_ok=True)
+    report = []
+    for name, url, branch, key, about in REPOS:
+        where = ROOT / name
+        stamp = ROOT / (".%s.fetched" % name)
+        entry = {"name": name, "branch": branch, "about": about}
+        with open(ROOT / (".%s.lock" % name), "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            young = stamp.exists() and time.time() - stamp.stat().st_mtime < MAX_AGE
+            if young and (where / ".git").is_dir():
+                entry["copy"] = "fresh"
+            else:
+                try:
+                    refresh(name, url, branch, key, where)
+                    stamp.touch()
+                    entry["copy"] = "refreshed"
+                except Exception as exc:  # keep the last copy, and say so
+                    entry["copy"] = "not refreshed (%s)" % exc
+        if (where / ".git").is_dir():
+            entry["commit"], entry["date"] = git("log", "-1", "--format=%h|%cs", cwd=where).split("|")
+            entry["notes"] = (where / ".temper").is_dir()
+        else:
+            entry["missing"] = True
+        report.append(entry)
+
+    lines = []
+    for e in report:
+        if e.get("missing"):
+            lines.append("- %s/: MISSING, no copy could be made (%s)" % (e["name"], e["copy"]))
+            continue
+        notes = "has capability notes in .temper/" if e["notes"] else "no capability notes: read the code"
+        stale = "" if e["copy"] in ("fresh", "refreshed") else "; WARNING: " + e["copy"] + ", so this copy may be old"
+        lines.append("- %s/: %s. Branch %s at commit %s (%s); %s%s"
+                     % (e["name"], e["about"], e["branch"], e["commit"], e["date"], notes, stale))
+    have = [e for e in report if not e.get("missing")]
+    print(json.dumps({"status": "ready" if have else "failed", "workspace": str(ROOT),
+                      "summary": "\n".join(lines), "repos": report}))
+    raise SystemExit(0 if have else 1)
+    PY

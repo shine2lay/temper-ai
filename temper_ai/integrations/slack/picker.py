@@ -10,6 +10,7 @@ person confirms first.
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -43,6 +44,32 @@ def _spec(entry: dict[str, Any]) -> str:
         desc = f" — {spec['description']}" if spec.get("description") else ""
         lines.append(f"- input `{name}` ({', '.join(bits)}){desc}")
     return "\n".join(lines)
+
+
+def candidates_for(ops: Any, catalog: list[dict[str, Any]], request: str,
+                   conversation: str = "") -> list[dict[str, Any]]:
+    """The workflows whose full description and inputs the picker reads.
+
+    A reply in a thread often says little on its own ("<a PR link>"), so the
+    thread counts too: every workflow it already named comes first (the one
+    temper proposed a message ago), then the best matches for the reply, then
+    for the whole thread. Without the thread, the picker named code_review
+    from memory, didn't see its inputs, and asked again instead of offering
+    Start (2026-09-26).
+    """
+    found = list(ops.search(request, limit=TOP).get("results") or [])
+    if conversation:
+        named = [e for e in catalog
+                 if re.search(rf"(?<![\w-]){re.escape(e['name'])}(?![\w-])", conversation)]
+        thread = ops.search(f"{conversation}\n{request}", limit=TOP).get("results") or []
+        found = named + found + list(thread)
+    seen: set[str] = set()
+    out = []
+    for e in found:
+        if e.get("name") != PICK_WORKFLOW and e.get("name") not in seen:
+            seen.add(e["name"])
+            out.append(e)
+    return out[:TOP]
 
 
 def wait_for(ops: Any, execution_id: str, timeout_s: float, poll_s: float = POLL_S,
@@ -92,8 +119,7 @@ class Picker:
         catalog = [e for e in self.ops.catalog() if e.get("name") != PICK_WORKFLOW]
         if not catalog:
             raise OpsError("temper has no workflows to pick from.")
-        found = self.ops.search(request, limit=TOP).get("results") or []
-        found = [e for e in found if e.get("name") != PICK_WORKFLOW]
+        found = candidates_for(self.ops, catalog, request, conversation)
         inputs = {
             "request": request,
             "conversation": conversation,

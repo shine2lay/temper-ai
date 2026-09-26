@@ -19,6 +19,7 @@ from temper_ai.llm.service import (
     DEFAULT_MAX_MESSAGES,
     WRAP_UP_TURNS,
 )
+from temper_ai.observability import EventType
 from temper_ai.shared.types import ExecutionContext, Status
 from temper_ai.tools.base import BaseTool, ToolResult
 from temper_ai.tools.executor import ALL_TOOLS, ToolExecutor
@@ -363,6 +364,146 @@ class TestExtractStructuredOutput:
     def test_list_not_returned(self):
         """Only dicts are returned as structured output."""
         assert _extract_structured_output("[1, 2, 3]") is None
+
+
+B012_ANSWER = '{"verdict": "FAIL", "notes": "total shows "−$120.00" not +$120"}'
+
+
+def _recorded(ctx, event_type):
+    return [c for c in ctx.event_recorder.record.call_args_list if c.args[0] == event_type]
+
+
+class TestStructuredRepair:
+    """ROA-5: an almost-JSON answer is repaired or retried, never dropped silently."""
+
+    def test_b012_unescaped_quotes_repaired(self):
+        parsed = _extract_structured_output(B012_ANSWER)
+        assert parsed["verdict"] == "FAIL"
+        assert parsed["notes"] == 'total shows "−$120.00" not +$120'
+
+    def test_valid_json_escaped_quotes_untouched(self):
+        assert _extract_structured_output(r'{"a": "say \"hi\""}') == {"a": 'say "hi"'}
+
+    def test_trailing_comma_repaired(self):
+        assert _extract_structured_output('{"a": 1,}') == {"a": 1}
+        assert _extract_structured_output('{"a": [1, 2,],}') == {"a": [1, 2]}
+
+    def test_trailing_comma_comma_in_string_kept(self):
+        assert _extract_structured_output('{"a": "x, }", "b": 1,}') == {"a": "x, }", "b": 1}
+
+    def test_quotes_and_trailing_comma_together(self):
+        parsed = _extract_structured_output('{"notes": "shows "x" here", }')
+        assert parsed == {"notes": 'shows "x" here'}
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_trailing_comma_repair_records_event_no_retry(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.return_value = LLMRunResult(output='{"verdict": "pass",}', tokens=10, iterations=1)
+
+        ctx = _make_context()
+        result = _make_agent().run({"task": "check"}, ctx)
+
+        assert result.structured_output == {"verdict": "pass"}
+        assert mock_service.run.call_count == 1
+        events = _recorded(ctx, EventType.AGENT_OUTPUT_REPAIRED)
+        assert len(events) == 1
+        assert events[0].kwargs["data"]["outcome"] == "repaired"
+        assert "Expecting" in events[0].kwargs["data"]["parse_error"]
+        assert _recorded(ctx, EventType.AGENT_OUTPUT_RETRY) == []
+
+    def test_repair_in_code_block(self):
+        text = f"Verdict:\n```json\n{B012_ANSWER}\n```\n"
+        assert _extract_structured_output(text)["verdict"] == "FAIL"
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_repair_records_event(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.return_value = LLMRunResult(output=B012_ANSWER, tokens=10, iterations=1)
+
+        ctx = _make_context()
+        result = _make_agent().run({"task": "check"}, ctx)
+
+        assert result.structured_output["verdict"] == "FAIL"
+        assert mock_service.run.call_count == 1
+        events = _recorded(ctx, EventType.AGENT_OUTPUT_REPAIRED)
+        assert len(events) == 1
+        assert events[0].kwargs["status"] == "completed"
+        assert "Expecting" in events[0].kwargs["data"]["parse_error"]
+        assert events[0].kwargs["data"]["outcome"] == "repaired"
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_retry_turn_recovers(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.side_effect = [
+            LLMRunResult(output='{"verdict": FAIL oops', tokens=10, cost=0.01, iterations=1),
+            LLMRunResult(output='{"verdict":"PASS"}', tokens=5, cost=0.02, iterations=1),
+        ]
+
+        ctx = _make_context()
+        result = _make_agent().run({"task": "check"}, ctx)
+
+        assert result.structured_output == {"verdict": "PASS"}
+        assert result.output == '{"verdict": FAIL oops'
+        assert mock_service.run.call_count == 2
+        retry_msgs = mock_service.run.call_args_list[1].kwargs["messages"]
+        assert retry_msgs[-2] == {"role": "assistant", "content": '{"verdict": FAIL oops'}
+        assert retry_msgs[-1]["role"] == "user"
+        assert retry_msgs[-1]["content"].startswith("Your last answer wasn't valid JSON: `Expecting value")
+        assert retry_msgs[-1]["content"].endswith("Reply with only the corrected JSON.")
+        assert mock_service.run.call_args_list[1].kwargs["tools"] is None
+        # The retry's spend counts.
+        assert result.tokens.total_tokens == 15
+        assert result.cost_usd == pytest.approx(0.03)
+        assert result.llm_calls == 2
+        events = _recorded(ctx, EventType.AGENT_OUTPUT_RETRY)
+        assert len(events) == 1
+        assert events[0].kwargs["status"] == "completed"
+        assert events[0].kwargs["data"]["parse_error"].startswith("Expecting value")
+        assert events[0].kwargs["data"]["outcome"] == "retry_ok"
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_retry_failure_sets_metadata(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.side_effect = [
+            LLMRunResult(output='{"verdict": FAIL oops', tokens=10, iterations=1),
+            LLMRunResult(output='{"verdict": still broken', tokens=5, iterations=1),
+        ]
+
+        ctx = _make_context()
+        result = _make_agent().run({"task": "check"}, ctx)
+
+        assert result.structured_output is None
+        assert mock_service.run.call_count == 2
+        assert result.metadata["structured_parse_error"].startswith("Expecting value")
+        events = _recorded(ctx, EventType.AGENT_OUTPUT_RETRY)
+        assert len(events) == 1
+        assert events[0].kwargs["status"] == "failed"
+        assert events[0].kwargs["data"]["outcome"] == "retry_failed"
+        assert events[0].kwargs["data"]["parse_error"]
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_plain_text_no_retry(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.return_value = LLMRunResult(output="no json here", tokens=10, iterations=1)
+
+        ctx = _make_context()
+        result = _make_agent().run({"task": "check"}, ctx)
+
+        assert result.structured_output is None
+        assert mock_service.run.call_count == 1
+        assert result.metadata == {}
+        assert not _recorded(ctx, EventType.AGENT_OUTPUT_RETRY)
+
+    @patch("temper_ai.agent.llm_agent.LLMService")
+    def test_failed_call_no_retry(self, MockLLMService):
+        mock_service = MockLLMService.return_value
+        mock_service.run.return_value = LLMRunResult(
+            output='{"verdict": FAIL', error="Rate limit exceeded", iterations=1,
+        )
+
+        _make_agent().run({"task": "check"}, _make_context())
+
+        assert mock_service.run.call_count == 1
 
 
 class TestTruncateInputData:

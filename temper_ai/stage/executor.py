@@ -15,7 +15,11 @@ from typing import Any
 from temper_ai.observability.event_types import EventType
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.conditions import evaluate_condition
-from temper_ai.stage.exceptions import CancellationError, CyclicDependencyError
+from temper_ai.stage.exceptions import (
+    CancellationError,
+    ConditionError,
+    CyclicDependencyError,
+)
 from temper_ai.stage.gate import EMPTY_RESPONSE, GateSignal, build_gate_context
 from temper_ai.stage.node import Node
 
@@ -1010,7 +1014,20 @@ def _handle_loop(
         should_loop = True
     elif node.loop_condition and result.status == Status.COMPLETED:
         try:
-            should_loop = evaluate_condition(node.loop_condition, node_outputs)
+            should_loop = evaluate_condition(
+                node.loop_condition, node_outputs, strict=True,
+            )
+        except ConditionError as exc:
+            # The field the loop reads is not there (a check whose JSON
+            # answer did not parse). Stopping the loop here looked like a
+            # pass; fail the node instead, without a rewind, so the
+            # downstream fail-cascade applies.
+            logger.error(
+                "Loop condition for '%s' cannot be decided: %s", node.name, exc,
+            )
+            result.status = Status.FAILED
+            result.error = str(exc)
+            return None
         except Exception as exc:
             logger.warning(
                 "Loop condition evaluation failed for '%s': %s", node.name, exc,

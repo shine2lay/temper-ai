@@ -1783,6 +1783,33 @@ class TestUnresolvedInputMap:
         assert value == "here"
         assert unresolved == []
 
+    def test_a_source_its_own_condition_skipped_is_not_unresolved(self):
+        """epd_task's `final` reads the last pass, which runs only after some builds. A step
+        its condition skipped has nothing to give by design, so every other build would
+        show a warning for inputs nobody could have made."""
+        from temper_ai.shared.types import NodeResult, Status
+        from temper_ai.stage.executor import _resolve_single_input
+        unresolved: list[str] = []
+        value = _resolve_single_input(
+            "final", "fix_commit", "minors_fix.structured.commit", {},
+            {"minors_fix": NodeResult(status=Status.SKIPPED)}, unresolved,
+        )
+        assert value is None
+        assert unresolved == []
+
+    def test_a_source_skipped_for_a_failure_is_still_unresolved(self):
+        """A skip with an error -- a failure upstream, or a condition that could not be
+        evaluated -- means the input was meant to be there, so it is still listed."""
+        from temper_ai.shared.types import NodeResult, Status
+        from temper_ai.stage.executor import _resolve_single_input
+        for error in ("Dependency 'minors' failed", "condition source not found"):
+            unresolved: list[str] = []
+            _resolve_single_input(
+                "final", "fix_commit", "minors_fix.structured.commit", {},
+                {"minors_fix": NodeResult(status=Status.SKIPPED, error=error)}, unresolved,
+            )
+            assert unresolved and "no structured output" in unresolved[0], error
+
     def _graph(self):
         """implement -> review -> gate, with gate looping back to implement."""
         return {

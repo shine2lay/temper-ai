@@ -1,0 +1,145 @@
+# EPD task pipeline: the build's verdict, after the last pass if there was one.
+#
+# Until epd_task v13 the build's verdict was the gate's. v13 adds a last pass (task_minors
+# decides it): when the gate's rounds are spent and review asked only for small changes,
+# the implementer fixes exactly those, CI's checks run again and a reviewer reads only that
+# commit. This node says what the build's answer is:
+#   - no pass: the gate's verdict and summary, word for word, and round 3's review and
+#     test verdicts. A build the gate approved is unchanged by v13.
+#   - a pass: approve only when the implementer reported `done` with a NEW commit, the
+#     tests passed on it and the review of it approved. Anything short of that keeps the
+#     gate's request_changes, and the summary says what the pass did not clear.
+# `commit` is the branch's head for the pull request: the pass's commit when it made one.
+# It runs after a failure too, so the build's outputs are always this node's; a gate that
+# never gave a verdict (it failed) gives none here either.
+agent:
+  name: task_final
+  version: 1
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    python3 - <<'PYEOF'
+    import json
+    import os
+    import re
+
+
+    def value(name: str) -> str:
+        return os.environ.get(name, "")
+
+
+    def text(raw: str):
+        """A value as it came, or None: what did not run renders as '' or 'None'."""
+        raw = (raw or "").strip()
+        return None if raw in ("", "None", "null") else raw
+
+
+    def word(raw: str) -> str:
+        w = re.sub(r"[^a-z_]", "", str(raw).strip().lower())
+        return "" if w in ("", "none", "null") else w
+
+
+    def listed(raw: str) -> list:
+        try:
+            got = json.loads(raw or "[]")
+        except ValueError:
+            return []
+        return got if isinstance(got, list) else []
+
+
+    gate_verdict = text(value("{{ gate_verdict | default('') | env }}"))
+    gate_summary = text(value("{{ gate_summary | default('') | env }}")) or ""
+    gate_wants = listed(value("{{ gate_changes_wanted_by | default([], true) | tojson | env }}"))
+    gate_round = text(value("{{ gate_round | default('') | env }}"))
+    implement_commit = text(value("{{ implement_commit | default('') | env }}"))
+    round_review = text(value("{{ review_verdict | default('') | env }}"))
+    round_test = text(value("{{ test_verdict | default('') | env }}"))
+    round_test_summary = text(value("{{ test_summary | default('') | env }}"))
+    round_test_failures = listed(value("{{ (test_failures | default([], true) | tojson)[:120000] | env }}"))
+
+    took = value("{{ took | default(false, true) | tojson | env }}").strip() == "true"
+    minors_reason = text(value("{{ minors_reason | default('') | env }}"))
+    asked = listed(value("{{ (pass_findings | default([], true) | tojson)[:120000] | env }}"))
+    fix_status = word(value("{{ fix_status | default('') | env }}"))
+    fix_commit = text(value("{{ fix_commit | default('') | env }}"))
+    fix_deviations = listed(value("{{ (fix_deviations | default([], true) | tojson)[:120000] | env }}"))
+    pass_test = text(value("{{ pass_test_verdict | default('') | env }}"))
+    pass_test_summary = text(value("{{ pass_test_summary | default('') | env }}"))
+    pass_test_failures = listed(value("{{ (pass_test_failures | default([], true) | tojson)[:120000] | env }}"))
+    pass_review = text(value("{{ pass_review_verdict | default('') | env }}"))
+    pass_review_summary = text(value("{{ pass_review_summary | default('') | env }}"))
+    pass_open = listed(value("{{ (pass_review_findings | default([], true) | tojson)[:120000] | env }}"))
+    pass_earlier = listed(value("{{ (pass_earlier_findings | default([], true) | tojson)[:120000] | env }}"))
+
+    out = {
+        "verdict": gate_verdict,
+        "summary": gate_summary,
+        "changes_wanted_by": gate_wants,
+        "commit": implement_commit,
+        "review_verdict": round_review,
+        "test_verdict": round_test,
+        "test_summary": round_test_summary,
+        "test_failures": round_test_failures,
+        "last_pass": {"ran": False, "reason": minors_reason},
+    }
+
+    if gate_verdict is None:
+        # The gate failed or never ran: there is no verdict to give, as before v13.
+        out["summary"] = gate_summary or None
+    elif not took:
+        if gate_verdict == "request_changes" and minors_reason:
+            out["summary"] = f"{gate_summary} — {minors_reason}"
+    else:
+        new_commit = bool(fix_commit) and fix_commit != implement_commit
+        why_not = []
+        if fix_status != "done" or not new_commit:
+            why_not.append("the implementer " + ("made no new commit" if not new_commit else f"reported {fix_status or 'nothing'}"))
+        if word(pass_test or "") != "pass":
+            why_not.append(f"CI's checks on it did not pass ({pass_test or 'did not run'}"
+                           f"{': ' + pass_test_summary if pass_test_summary else ''})")
+        if word(pass_review or "") != "approve":
+            still = [f"{f.get('where', '?')}: {f.get('what', '')}" for f in pass_open if isinstance(f, dict)]
+            why_not.append(f"the review of it said {pass_review or 'nothing'}"
+                           f"{' (' + '; '.join(still[:5]) + ')' if still else ''}")
+        n = len(asked)
+        # The gate's notes after its first clause (a human action, clauses the owner judges, CI not
+        # run) still belong on the pull request.
+        notes = gate_summary.split(" — ", 1)[1] if " — " in gate_summary else ""
+        if not why_not:
+            out["verdict"] = "approve"
+            out["changes_wanted_by"] = []
+            out["summary"] = (
+                f"approved after a last pass: review's {f'round {gate_round}' if gate_round else 'last round'} "
+                f"asked only for {n} small change(s); commit {fix_commit[:8]} made them, CI's checks passed "
+                "on it and a review of that commit approved it (the dev stack and QA's pictures show the "
+                "commit before the pass)" + (f" — {notes}" if notes else ""))
+        else:
+            out["verdict"] = "request_changes"
+            wants = ["review"] if (fix_status != "done" or not new_commit or word(pass_review or "") != "approve") else []
+            if word(pass_test or "") != "pass":
+                wants.append("tests")
+            out["changes_wanted_by"] = wants
+            out["summary"] = (f"{gate_summary} — a last pass on review's {n} small finding(s) did not clear "
+                              "them: " + "; ".join(why_not))
+        if fix_commit:
+            out["commit"] = fix_commit
+        out["review_verdict"] = pass_review
+        out["test_verdict"] = pass_test
+        out["test_summary"] = pass_test_summary
+        out["test_failures"] = pass_test_failures
+        out["last_pass"] = {
+            "ran": True,
+            "reason": minors_reason,
+            "asked": n,
+            "commit": fix_commit,
+            "implement_status": fix_status or None,
+            "deviations": fix_deviations,
+            "test_verdict": pass_test,
+            "review_verdict": pass_review,
+            "review_summary": pass_review_summary,
+            "earlier_findings": pass_earlier,
+            "open": pass_open,
+        }
+
+    print(json.dumps(out))
+    PYEOF

@@ -1,0 +1,177 @@
+{
+ "_about": "The gate's output at the end of round 3 for the four builds that needed a hand fix on 2026-09-25 (task_gate v8, read from each run's agent.completed event). b037 and b056: review's findings all minor, every other judge passing. b047: a blocker among them. b055: a blocker and a major.",
+ "b037": {
+  "run": "236615dd-9b33-4d59-abfd-47bb780b4589",
+  "gate": {
+   "verdict": "request_changes",
+   "summary": "review asked for changes",
+   "review_verdict": "request_changes",
+   "qa_verdict": "pass",
+   "security_verdict": "pass",
+   "test_verdict": "pass",
+   "changes_wanted_by": ["review"],
+   "unreadable": [],
+   "human_actions": 0,
+   "qa_unverified": [],
+   "qa_out_of_build": [],
+   "qa_accepted_unreachable": [],
+   "gate_round": 3,
+   "review_findings": [
+    {
+     "fix": "Reword the comment: the tag is statementRequirementTag(...), meaning the basis tag, or 'as {house} states it' when the statement's figure differs from RollCall's model",
+     "severity": "minor",
+     "what": "The BrokerStatement doc comment says `requirementTag` is `requirementSourceTag(acct.maintBasis, house).text`, but the only caller (:1576) now passes statementRequirementTag(...), which gives 'as {house} states it' when the statement differs from the model",
+     "where": "frontend/src/pages/Overview.tsx:984-985"
+    },
+    {
+     "fix": "Move statedApartFromModel, statementRequirementTag and their comment above the 'MARGIN EXCESS' doc block",
+     "severity": "minor",
+     "what": "The new functions and their doc comment were inserted between MarginExcessBig's 'MARGIN EXCESS —' doc comment and MarginExcessBig, so that comment now precedes another comment and statedApartFromModel and no longer documents its function",
+     "where": "frontend/src/pages/Overview.tsx:511-533"
+    }
+   ],
+   "qa_issues": [
+    {
+     "what": "Glossary prose still uses a lowercase 'cushion' without one of the two names: the Protection term's Why says 'The premium is your cushion', and 'Target delta band' says 're-centred by the cushion'. Neither is a figure label, but they blur the two-names rule.",
+     "where": "/glossary"
+    }
+   ],
+   "qa_summary": "Every cushion figure across Glossary, Settings, Actions, Overview, entry preview, /positions/AAPL and the AAPL roll preview is named Margin cushion, Price cushion or Gain over basis with identical formulas; qa@ AAPL Price cushion agrees at 4.6% across page, row and roll preview; PLTR 40.0% and SOFI '—' with reason; qa-empty@ shows the no-positions sentence on Actions and Overview.",
+   "security_findings": [],
+   "test_failures": []
+  }
+ },
+ "b055": {
+  "run": "9a6e570c-52b0-451d-9cbd-77df2f55dd3f",
+  "gate": {
+   "verdict": "request_changes",
+   "summary": "review asked for changes",
+   "review_verdict": "request_changes",
+   "qa_verdict": "pass",
+   "security_verdict": "pass",
+   "test_verdict": "pass",
+   "changes_wanted_by": ["review"],
+   "unreadable": [],
+   "human_actions": 0,
+   "qa_unverified": [],
+   "qa_out_of_build": [],
+   "qa_accepted_unreachable": [],
+   "gate_round": 3,
+   "review_findings": [
+    {
+     "fix": "git checkout master -- frontend/tests/fixtures/b013_qa_analysis.json and commit; do not commit the fixture after a local pytest run",
+     "severity": "blocker",
+     "what": "87d6fa6 rewrites the b013 expected-output fixture again (PLTR counted true→false, profit_at_expiry '900.00'→null, state '1 leg'→'0 legs'); git diff master HEAD on it is +42/−34 again after 4109870 had emptied it; not in the report's files_changed",
+     "where": "frontend/tests/fixtures/b013_qa_analysis.json:329-374,814-859"
+    },
+    {
+     "fix": "Add a descriptions-only mode to MockFundamentals (e.g. company_only: true in ALPACA_FUNDAMENTALS): earnings() returns {}, ratings() returns RatingSummary.not_available(sym, as_of=now, source='mock', note='no fundamentals provider/key configured'). Extend test_the_paper_login_describes_companies_without_a_finnhub_key to assert both, and correct the seed.py:585-589 comment.",
+     "severity": "major",
+     "what": "The Alpaca paper login gets the whole MockFundamentals port. (a) earnings() answers every real symbol none_known('the mock calendar lists no report in the next 120 days', asked=True), stored by sync.py:273/merge_reports and shown at PositionDetail.tsx:406 and in the Screener's reportNote; before, there was no calendar. (b) ratings() returns Consensus.NA with note=None and available=True, so screener.py:684 shows 'rating: n/a (provider has no data for this symbol)' instead of 'no fundamentals provider/key configured'. This contradicts the report's 'exactly as it did without a key'.",
+     "where": "backend/rollcall/tenancy/seed.py:590"
+    }
+   ],
+   "qa_issues": [
+    {
+     "what": "The price paragraph under the heading (ref f6e250) came back empty, while KO/COKE/INTC/BAC show a price and a change since the previous close. Minor, and not part of the threshold.",
+     "where": "https://epd-b055.dev.rollcall.wai2shine.com/browse/KOF"
+    },
+    {
+     "what": "The browser logged 1 console error on the first page load. The snapshot does not say what it was, and nothing looked broken.",
+     "where": "login page"
+    }
+   ],
+   "qa_summary": "On the Alpaca paper login, searching Coca-Cola in Browse lists KO and COKE with descriptions, KO opens directly, a made-up name gets the new no-match sentence, the KO/COKE/INTC/BAC pages each describe the company, and KOF shows the no-description reason.",
+   "security_findings": [],
+   "test_failures": []
+  }
+ },
+ "b056": {
+  "run": "d1a41da9-5fee-47d3-8f2b-11c7b9d29533",
+  "gate": {
+   "verdict": "request_changes",
+   "summary": "review asked for changes",
+   "review_verdict": "request_changes",
+   "qa_verdict": "pass",
+   "security_verdict": "pass",
+   "test_verdict": "pass",
+   "changes_wanted_by": ["review"],
+   "unreadable": [],
+   "human_actions": 0,
+   "qa_unverified": [],
+   "qa_out_of_build": [],
+   "qa_accepted_unreachable": [],
+   "gate_round": 3,
+   "review_findings": [
+    {
+     "fix": "Delete lines 922-923 or rewrite them to describe the new behaviour",
+     "severity": "minor",
+     "what": "Stale comment: 'ONE boost is worth naming … past one it is a count' contradicts the new code (names up to two; past two counts ringed checks and names preferences) and the new comment at :924-926",
+     "where": "frontend/src/lib/screener.ts:922-923"
+    },
+    {
+     "fix": "In the fallback, truncate toward the correct side (Math.floor(ivPct*100)/100 for fail, Math.ceil for pass) and add a 0.29996 test case",
+     "severity": "minor",
+     "what": "`[0,1,2].find(reads) ?? 2` falls back to round-to-nearest at 2 decimals, so iv_atm 0.29996 against a 30% floor prints 'only a 30.00% swing …, under the 30% you ask for', the contradiction QA reported",
+     "where": "frontend/src/lib/screener.ts:648"
+    }
+   ],
+   "qa_issues": [
+    {
+     "what": "SOFI's line prints the price as '$16.7' where it should say '$16.70' (the other lines use two decimals, e.g. '$12.74'). Cosmetic.",
+     "where": "/screener set-aside list"
+    }
+   ],
+   "qa_summary": "Every Screener check now reads as one plain sentence, identical in the row captions, the set-aside lines, Settings and the no-run QA screen, and every threshold clause holds on the running build.",
+   "security_findings": [],
+   "test_failures": []
+  }
+ },
+ "b047": {
+  "run": "fdf72648-d093-46d3-85f7-8d10362da431",
+  "gate": {
+   "verdict": "request_changes",
+   "summary": "review asked for changes",
+   "review_verdict": "request_changes",
+   "qa_verdict": "pass",
+   "security_verdict": "pass",
+   "test_verdict": "pass",
+   "changes_wanted_by": ["review"],
+   "unreadable": [],
+   "human_actions": 0,
+   "qa_unverified": [],
+   "qa_out_of_build": [],
+   "qa_accepted_unreachable": [],
+   "gate_round": 3,
+   "review_findings": [
+    {
+     "fix": "Return this_login_is_live when money?.kind==='real' regardless of allowLive; reword not_reachable to claim only what is true (Alpaca live cannot be read; 'not reachable from this login'); change the test to expect this_login_is_live for liveBranch(false,{kind:'real',broker:'tastytrade'})",
+     "severity": "blocker",
+     "what": "liveBranch returns not_reachable on !allowLive before checking money; tastytrade prod is read without ROLLCALL_ALLOW_LIVE (tastytrade_account.py:484) and overview_money returns kind 'real' (overview.py:897), so the page records a reachable live branch as not reachable and says 'no login on it can read a real-money account', which is false; b047_money_check.test.ts asserts liveBranch(false,{kind:'real'})==='not_reachable'",
+     "where": "frontend/src/pages/MoneyCheck.tsx:22-26,31"
+    },
+    {
+     "fix": "Guard on `overview && overview.money !== undefined && overview.money?.kind !== \"made_up\"` and update the source-shape assertion",
+     "severity": "minor",
+     "what": "guard `overview?.money && …` renders nothing for money: null, while the plan's copy, MoneySentence and chipMoney treat null as the not-known sentence",
+     "where": "frontend/src/pages/Overview.tsx:1442"
+    },
+    {
+     "fix": "Assert the text before the example list lacks 'This is real money' for non-real money, or rename",
+     "severity": "minor",
+     "what": "name promises a 'never claims real money' check that no assertion makes",
+     "where": "frontend/tests/b047_money_check.test.ts (quotes this login's own sentence, and never claims real money for it)"
+    }
+   ],
+   "qa_issues": [
+    {
+     "what": "The browser tool had no way to resize to 390px, so the first-screen placement was only confirmed at 1280px (sentence at y≈173, directly under the h1).",
+     "where": "all Overview pages"
+    }
+   ],
+   "qa_summary": "All four accounts show the right money sentence under the Overview heading and in the header tag, the keyless account's Connection link works, the Glossary covers practice and paper, the login page names no broker, and /money-check records the live branch as not reachable.",
+   "security_findings": [],
+   "test_failures": []
+  }
+ }
+}

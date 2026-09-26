@@ -1393,7 +1393,13 @@ def _resolve_single_input(
         return _failure_reason(result)
     if field == "structured" and len(parts) >= 3:
         if not result.structured_output:
-            if unresolved is not None:
+            # A node its own condition skipped has nothing to give, by design, like a loop-back
+            # on the first pass: a step that reads an optional one (epd_task's `final` reads the
+            # last pass, which runs only after some builds) would otherwise show it on every run.
+            # A skip for a failure, or for a condition that could not be evaluated, carries an
+            # error and is still listed.
+            skipped_by_condition = result.status == Status.SKIPPED and not result.error
+            if unresolved is not None and not skipped_by_condition:
                 unresolved.append(f"{local_name} \u2190 {source} (node produced no structured output)")
             return None
         structured_value: Any = result.structured_output

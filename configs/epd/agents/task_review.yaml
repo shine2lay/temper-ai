@@ -35,7 +35,11 @@ agent:
   # 4: the diff is <base>...HEAD (three dots, from where the branch left the base), not
   #    <base>..HEAD. With two dots the diff is the tree difference, so a base that moved on
   #    while this bet built (another bet merged) shows up as this branch deleting that bet's code.
-  version: 4
+  # 5: a last-pass mode (epd_task v13, `minors_review`). After the gate's rounds are spent on
+  #    small findings alone, the implementer fixes just those in one commit; this reads only
+  #    that commit (`last_pass_since`..HEAD), says of each finding fixed or open, and writes
+  #    .epd/review-last-pass.md, leaving the last round's review.md as it was.
+  version: 5
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -139,6 +143,24 @@ agent:
     is listed under findings again. A fix that introduced a new problem
     is a new finding. Overwrite the file with the new round.
 
+    Last pass: when the task says LAST PASS, the branch has had every
+    round of review already. Your last round asked only for small changes,
+    and the implementer has committed one fix for exactly those. Judge only
+    that fix: `git -C <wt> log --oneline <since>..HEAD; git -C <wt> diff
+    <since>..HEAD` (two dots; <since> is given in the task), not the whole
+    branch and not the plan again. For each listed finding say fixed, with
+    the lines of the diff that fix it, or open. Anything else the fix
+    changed -- another file, a behaviour, a test loosened -- is a new
+    finding, rated as below; so are uncommitted changes. Approve only when
+    every listed finding is fixed and there is no new finding. Write
+    `<worktree>/.epd/review-last-pass.md` (sections: Verdict, Commits,
+    Listed findings -- each fixed|open with evidence, New findings), not
+    review.md, which keeps the last round's review. Reply with the JSON
+    below: the listed findings under `earlier_findings`, only open and new
+    ones under `findings`, the rule/test/copy/acceptance lists empty
+    unless the fix touched them, and `review_path` the last-pass file. A
+    last pass needs about five tool calls.
+
     The verdict:
     - `approve` only when `findings` is empty. Approve means there is
       nothing left for the implementer to do on this branch.
@@ -179,7 +201,8 @@ agent:
     someone must decide, and the branch does not merge as it is.
 
     Rules for you:
-    - Do not modify any file other than `.epd/review.md`. No source edits,
+    - Do not modify any file other than `.epd/review.md` (on a last pass,
+      `.epd/review-last-pass.md`). No source edits,
       no `git add`/`commit`/`checkout`/`stash`/`reset`; read-only git only.
     - Do not run tests, linters, type checkers, builds or installs
       (`pytest`, `npm test`, `npm run …`, `uv sync`, `tsc`, `ruff`): the
@@ -234,6 +257,22 @@ agent:
     Repository worktree: {{ workspace_path }} (branch {{ branch }}, cut from {{ base_branch }})
     Plan: {{ workspace_path }}/.epd/plan.md
     {% if stack_url %}A running instance of this branch: {{ stack_url }}{% endif %}
+    {% if last_pass_findings %}
+
+    LAST PASS. Review only what was committed since {{ last_pass_since }}:
+      git -C {{ workspace_path }} diff {{ last_pass_since }}..HEAD
+    It was to fix these findings from your last round (at {{ workspace_path }}/.epd/review.md):
+    {% for f in last_pass_findings %}
+    - [{{ f.severity }}] {{ f.where }} — {{ f.what }}
+      Fix asked: {{ f.fix }}
+    {% endfor %}
+    {% if implement_report %}
+    The implementer's report on it — claims to verify:
+    {{ implement_report }}
+    {% endif %}
+
+    Review that fix.
+    {% else %}
     {% if implement_report %}
     The implementer's report — claims to verify, not findings to repeat:
     {{ implement_report }}
@@ -242,3 +281,4 @@ agent:
     {% endif %}
 
     Review the change.
+    {% endif %}

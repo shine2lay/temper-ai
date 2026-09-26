@@ -46,7 +46,16 @@ workflow:
   #     b022's implementer left HEAD on master, and the test step passed master).
   #   - the gate gets implement's status and the worktree, and fails the run when nothing was
   #     built: implement failed or was skipped, there is no plan, or no judge ran (gap 16).
-  version: 12
+  # 13 (2026-09-26, the owner's rule for small findings: "One more fix pass on just those,
+  #     then ship"): a last pass after the gate's loop. When the rounds are spent, review is
+  #     the only judge still asking, and every one of its findings is minor (or a nit), the
+  #     implementer fixes exactly those in one commit (minors_fix), the branch is checked,
+  #     CI's checks run again (minors_test) and a reviewer reads only that commit
+  #     (minors_review). `final` makes the build's verdict: approve if all of that held,
+  #     else the gate's. The verdict and the fields ship reads now come from `final`. On
+  #     2026-09-25 four builds needed a hand fix at this point (RETRO gap 9); b037 and b056
+  #     qualify, b047 and b055 (a blocker, a major) do not.
+  version: 13
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -108,6 +117,13 @@ workflow:
                          sends the round back to implement, which receives ALL
                          the lists -- through the gate, the one result a rewind
                          keeps -- and answers them in a single pass.
+     12a. last pass    — once the rounds are spent: if review alone still asks,
+                         and only for small things, with QA, security and the
+                         tests passing, the implementer fixes just those in one
+                         commit, the tests run again and a reviewer reads that
+                         commit alone (minors, minors_fix, minors_branch,
+                         minors_test, minors_review). No redeploy: QA judged
+                         the commit before. `final` gives the build's verdict.
      13. stack_down    — unless keep: standee down --volumes --images
      14. cleanup       — unless keep: remove worktree + branch, release the claim
 
@@ -201,10 +217,12 @@ workflow:
     plan_open_questions: plan.structured.open_questions
     implement_status: implement.structured.status
     implement_summary: implement.structured.summary
-    implement_commit: implement.structured.commit
+    # The branch's head for the pull request: the last pass's commit when it made one (v13).
+    implement_commit: final.structured.commit
     implement_tests: implement.structured.tests_run
     implement_deviations: implement.structured.deviations
-    review_verdict: review.structured.verdict
+    # From `final` (v13): the last pass's review and tests when it ran, round 3's otherwise.
+    review_verdict: final.structured.review_verdict
     review_summary: review.structured.summary
     review_findings: review.structured.findings
     review_plan_defects: review.structured.plan_defects
@@ -224,9 +242,9 @@ workflow:
     verify_unverified: verify.structured.unverified               # ["<clause>: <no route on this stack yet>"] — these send the build back
     verify_out_of_build: verify.structured.out_of_build           # ["<clause>: <names a future report / an owner decision>"] — noted, not gated
     verify_screenshots: verify.structured.screenshots   # [{page, file, shows}] — files under the browser's output dir
-    test_verdict: test.structured.verdict               # pass | fail | skipped (the step could not run)
-    test_summary: test.structured.summary
-    test_failures: test.structured.failures             # [{check, failure}] -- only what the base branch does not fail
+    test_verdict: final.structured.test_verdict         # pass | fail | skipped (the step could not run)
+    test_summary: final.structured.test_summary
+    test_failures: final.structured.test_failures       # [{check, failure}] -- only what the base branch does not fail
     test_preexisting: test.structured.preexisting       # failing on the base branch too; not this change's
     test_report: test.structured.report
     security_verdict: security.structured.verdict
@@ -238,11 +256,15 @@ workflow:
     # are an output of the run rather than an input to the next round.
     security_human_actions: security.structured.human_actions
     security_follow_ups: security.structured.follow_ups
-    verdict: gate.structured.verdict
-    verdict_summary: gate.structured.summary
+    # The build's verdict: the gate's, or approve after a last pass that cleared review's
+    # small findings (v13). Ship runs on this.
+    verdict: final.structured.verdict
+    verdict_summary: final.structured.summary
     # Clauses that went out never shown to hold, because no route could be built for them
     accepted_unreachable: gate.structured.qa_accepted_unreachable
-    changes_wanted_by: gate.structured.changes_wanted_by
+    changes_wanted_by: final.structured.changes_wanted_by
+    # {ran, reason, asked, commit, test_verdict, review_verdict, open, ...}: what the last pass did
+    last_pass: final.structured.last_pass
     stack: stack_down.structured.status
     cleanup: cleanup.structured.status
 
@@ -540,10 +562,126 @@ workflow:
         test_failures: test.structured.failures
         test_summary: test.structured.summary
 
+    # ---- The last pass (v13). A node after the gate runs once, when the gate's loop has ended,
+    # so a request_changes seen here has spent max_loops. task_minors applies the owner's rule
+    # and says whether to take the pass; every step of the pass carries the same condition,
+    # because a step whose dependency was skipped by its condition still runs.
+    - name: minors
+      type: agent
+      agent: task_minors
+      depends_on: [gate]
+      input_map:
+        gate_verdict: gate.structured.verdict
+        changes_wanted_by: gate.structured.changes_wanted_by
+        unreadable: gate.structured.unreadable
+        review_verdict: gate.structured.review_verdict
+        qa_verdict: gate.structured.qa_verdict
+        security_verdict: gate.structured.security_verdict
+        test_verdict: gate.structured.test_verdict
+        qa_unverified: gate.structured.qa_unverified
+        review_findings: gate.structured.review_findings
+        gate_round: gate.structured.gate_round
+
+    # The implementer, given only review's small findings (`last_pass` picks its template).
+    - name: minors_fix
+      type: agent
+      agent: task_implement
+      depends_on: [minors]
+      condition:
+        source: minors.structured.take
+        operator: equals
+        value: true
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: worktree.structured.branch
+        base_branch: worktree.structured.base_branch
+        stack_url: environment.structured.url
+        review_findings: minors.structured.findings
+        last_pass: minors.structured.take
+
+    # As after implement: on the branch, and HEAD is the commit the pass reported.
+    - name: minors_branch
+      type: agent
+      agent: task_branch_check
+      depends_on: [minors_fix]
+      condition:
+        source: minors.structured.take
+        operator: equals
+        value: true
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        branch: worktree.structured.branch
+        commit: minors_fix.structured.commit
+
+    # CI's checks again, on the pass's commit: the same step as the rounds'.
+    - name: minors_test
+      type: agent
+      agent: task_test
+      depends_on: [minors_branch]
+      condition:
+        source: minors.structured.take
+        operator: equals
+        value: true
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        base_branch: worktree.structured.base_branch
+
+    # A reviewer reads only the pass's commit: round 3's commit..HEAD.
+    - name: minors_review
+      type: agent
+      agent: task_review
+      depends_on: [minors_branch]
+      condition:
+        source: minors.structured.take
+        operator: equals
+        value: true
+      input_map:
+        workspace_path: worktree.structured.worktree_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: worktree.structured.branch
+        base_branch: worktree.structured.base_branch
+        implement_report: minors_fix.output
+        last_pass_findings: minors.structured.findings
+        last_pass_since: implement.structured.commit
+
+    # The build's verdict. It runs whether or not the pass did, and after a failure too, so the
+    # workflow's outputs always come from here (a gate that failed gives no verdict, as before).
+    - name: final
+      type: agent
+      agent: task_final
+      depends_on: [minors_test, minors_review]
+      run_after_failure: true
+      input_map:
+        gate_verdict: gate.structured.verdict
+        gate_summary: gate.structured.summary
+        gate_changes_wanted_by: gate.structured.changes_wanted_by
+        gate_round: gate.structured.gate_round
+        implement_commit: implement.structured.commit
+        review_verdict: review.structured.verdict
+        test_verdict: test.structured.verdict
+        test_summary: test.structured.summary
+        test_failures: test.structured.failures
+        took: minors.structured.take
+        minors_reason: minors.structured.reason
+        pass_findings: minors.structured.findings
+        fix_status: minors_fix.structured.status
+        fix_commit: minors_fix.structured.commit
+        fix_deviations: minors_fix.structured.deviations
+        pass_test_verdict: minors_test.structured.verdict
+        pass_test_summary: minors_test.structured.summary
+        pass_test_failures: minors_test.structured.failures
+        pass_review_verdict: minors_review.structured.verdict
+        pass_review_summary: minors_review.structured.summary
+        pass_review_findings: minors_review.structured.findings
+        pass_earlier_findings: minors_review.structured.earlier_findings
+
     - name: stack_down
       type: agent
       agent: task_stack_down
-      depends_on: [gate]
+      depends_on: [final]
       # A failed build still has a stack to take down. A failure used to stop only
       # the two steps after it, so this ran by accident after most of them (and not
       # after the gate's own); now a failure reaches every step after it.

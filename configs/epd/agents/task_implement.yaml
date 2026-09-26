@@ -44,7 +44,10 @@ agent:
   # 6: a send-back can carry `test_failures`: CI's checks, run on the commit by the
   #    test step, failing where the base branch passes. The lists now really arrive
   #    (epd_task v9 routes them through the gate; before it no fix round got any).
-  version: 6
+  # 7: a last pass (epd_task v13, `minors_fix`). When the gate's rounds are spent and review
+  #    asked only for small changes, this agent gets just those (`last_pass`) and fixes
+  #    exactly them in one commit; a reviewer then reads only that commit.
+  version: 7
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -192,7 +195,24 @@ agent:
     Repository worktree: {{ workspace_path }} (branch {{ branch }}, cut from {{ base_branch }})
     Plan: {{ workspace_path }}/.epd/plan.md
     {% if stack_url %}A running instance of this branch (before your change): {{ stack_url }}{% endif %}
-    {% if review_findings or qa_issues or security_findings or qa_unreachable or test_failures %}
+    {% if last_pass %}
+
+    LAST PASS. The judges went round three times on this branch. QA, security and
+    CI's checks now pass; the reviewer's last round asked only for these small
+    changes (the full review is at {{ workspace_path }}/.epd/review.md):
+    {% for f in review_findings %}
+    - [{{ f.severity }}] {{ f.where }} — {{ f.what }}
+      Fix: {{ f.fix }}
+    {% endfor %}
+
+    Fix exactly these and nothing else: no other file, no refactor, no tidy-up
+    nearby, no new test unless a finding asks for one. Commit the fix as ONE new
+    commit on the branch (no amend, no rebase) and leave the tree clean. CI's
+    checks then run again on your commit, and a reviewer reads only your commit:
+    each finding above must be fixed by it, and anything else it changes counts
+    against it. A finding you believe is wrong goes under `deviations` with your
+    evidence, and its code stays as it is. Reply `done` once the commit is in.
+    {% elif review_findings or qa_issues or security_findings or qa_unreachable or test_failures %}
 
     The commit on this branch was sent back. It was judged four ways: a reviewer
     read the diff, a QA step used the change running on {{ stack_url or 'the environment' }},

@@ -1,0 +1,124 @@
+# EPD task pipeline: does a build that ran out of rounds get one more pass for small findings?
+#
+# The gate's loop judges a build three times. On 2026-09-25 four builds (b037, b055, b056,
+# b047) spent all three and ended with review still asking for changes, and each needed a
+# hand fix before it could reach the owner's merge gate. Two of them (b037, b056) were held
+# back only by small things -- a comment the change left stale, rounding in a fallback --
+# with QA, security and CI's checks all passing.
+#
+# The owner's rule (2026-09-25): "One more fix pass on just those, then ship." This node
+# decides whether a build qualifies; epd_task's minors_* nodes are the pass and `final`
+# turns its outcome into the build's verdict. It runs once, after the gate's loop has
+# ended (a node after the gate does), so a gate still saying request_changes here has
+# spent its rounds. It takes the pass only when ALL of these hold:
+#   - review is the only judge that asked for changes, and every verdict was readable;
+#   - QA, security and the tests each said `pass`: not skipped, not missing, and not a
+#     QA fail the gate lifted for a clause nobody could reach; QA left no clause unwalked;
+#   - every review finding is small, severity `minor` or `nit` (review writes minor; nit
+#     is the owner's word, taken too). One blocker or one major refuses the pass;
+#   - the list is whole: the gate keeps at most 40 findings, so 40 may be a cut list.
+# Anything else stops the build as before, and `reason` says why.
+#
+# Values reach the script through the environment by name (`| env`), as in the gate: the
+# body is a quoted heredoc, so a finding with a quote or a newline in it is data.
+agent:
+  name: task_minors
+  version: 1
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    python3 - <<'PYEOF'
+    import json
+    import os
+    import re
+
+    SMALL = ("minor", "nit")
+    GATE_KEEPS = 40  # task_gate cuts each list at 40 items
+
+
+    def value(name: str) -> str:
+        return os.environ.get(name, "")
+
+
+    def word(raw) -> str:
+        """A verdict or a severity is a bare word; anything else is reduced to its letters."""
+        w = re.sub(r"[^a-z_]", "", str(raw).strip().lower())
+        return "" if w in ("", "none", "null") else w
+
+
+    def listed(raw: str):
+        """A list from JSON, or None when it cannot be read (the gate cuts long JSON text)."""
+        try:
+            got = json.loads(raw or "[]")
+        except ValueError:
+            return None
+        if got is None:
+            return []
+        return got if isinstance(got, list) else None
+
+
+    verdict = word(value("{{ gate_verdict | default('') | env }}"))
+    wanted = listed(value("{{ changes_wanted_by | default([], true) | tojson | env }}")) or []
+    unreadable = listed(value("{{ unreadable | default([], true) | tojson | env }}")) or []
+    judges = {
+        "review": word(value("{{ review_verdict | default('') | env }}")),
+        "QA": word(value("{{ qa_verdict | default('') | env }}")),
+        "security": word(value("{{ security_verdict | default('') | env }}")),
+        "the tests": word(value("{{ test_verdict | default('') | env }}")),
+    }
+    unwalked = listed(value("{{ (qa_unverified | default([], true) | tojson)[:120000] | env }}")) or []
+    findings = listed(value("{{ (review_findings | default([], true) | tojson)[:120000] | env }}"))
+    gate_round = value("{{ gate_round | default('') | env }}").strip()
+    gate_round = int(gate_round) if gate_round.isdigit() else None
+
+    refused = []
+    if verdict == "request_changes":
+        if [str(w) for w in wanted] != ["review"]:
+            refused.append("changes were wanted by " + (", ".join(str(w) for w in wanted) or "no judge named")
+                           + ", not by review alone")
+        if unreadable:
+            refused.append("a verdict could not be read (" + ", ".join(str(u) for u in unreadable) + ")")
+        if judges["review"] != "request_changes":
+            refused.append(f"review's verdict was {judges['review'] or 'missing'}")
+        for label in ("QA", "security", "the tests"):
+            if judges[label] != "pass":
+                refused.append(f"{label} did not pass ({judges[label] or 'did not run'})")
+        if unwalked:
+            refused.append(f"QA could not walk {len(unwalked)} threshold clause(s)")
+        if findings is None:
+            refused.append("review's findings could not be read")
+        elif not findings:
+            refused.append("review asked for changes but listed no finding")
+        else:
+            big = [word(f.get("severity", "")) if isinstance(f, dict) else "" for f in findings]
+            big = [s or "unrated" for s in big if s not in SMALL]
+            if big:
+                counts = ", ".join(f"{big.count(s)} {s}" for s in sorted(set(big)))
+                refused.append(f"not every finding is small ({counts} among {len(findings)})")
+            if len(findings) >= GATE_KEEPS:
+                refused.append(f"review listed {len(findings)} findings and the gate keeps at most "
+                               f"{GATE_KEEPS}, so the list may be cut")
+
+    take = verdict == "request_changes" and not refused
+    if take:
+        reason = (f"review asked only for {len(findings)} small change(s) after the last round"
+                  f"{f' (round {gate_round})' if gate_round else ''}, and QA, security and the tests "
+                  "passed: one more fix pass on just those")
+    elif verdict == "approve":
+        reason = "the gate approved: no last pass needed"
+    elif verdict == "request_changes":
+        reason = "no last pass: " + "; ".join(refused)
+    elif verdict:
+        reason = f"no last pass: the gate's verdict was {verdict}"
+    else:
+        reason = "no last pass: the gate gave no verdict"
+
+    print(json.dumps({
+        "take": take,
+        # Only what the pass is to fix; nothing when there is no pass.
+        "findings": findings if take else [],
+        "reason": reason,
+        "refused_because": [] if take else refused,
+        "gate_round": gate_round,
+    }))
+    PYEOF

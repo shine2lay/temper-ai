@@ -1268,6 +1268,11 @@ def _resolve_single_input(
         # Why the node failed or was skipped (None when it did not): what a
         # run_after_failure node reports.
         return result.error
+    if field == "failure":
+        # What actually went wrong, when .error only names the step (a stage's
+        # is "1 node(s) failed: worktree", and a script's "Command exited with
+        # code 1"). None when nothing under the node failed.
+        return _failure_reason(result)
     if field == "structured" and len(parts) >= 3:
         if not result.structured_output:
             if unresolved is not None:
@@ -1304,7 +1309,7 @@ def _resolve_single_input(
 
     logger.warning(
         "Node '%s' input_map '%s': unknown field '%s' on source '%s' "
-        "(expected 'output', 'structured', 'status', 'error', or a child node name)",
+        "(expected 'output', 'structured', 'status', 'error', 'failure', or a child node name)",
         node_name, local_name, field, source_node,
     )
     return None
@@ -1486,6 +1491,31 @@ def _check_cancelled(context: ExecutionContext) -> None:
     """Raise CancellationError if the workflow has been cancelled."""
     if context.cancel_event and context.cancel_event.is_set():
         raise CancellationError("Workflow cancelled by user")
+
+
+FAILURE_TAIL_LINES = 3
+FAILURE_MAX_CHARS = 600
+
+
+def _failure_reason(result: NodeResult, path: str = "") -> str | None:
+    """The first step that failed under a node: its path, its error and the last lines it printed.
+
+    A stage's own error only names the failed steps, and a script's only gives its exit code; the
+    reason (git's "Could not resolve host", a test's assertion) is at the end of the output. For a
+    node that has to tell a person what went wrong. None when nothing under the node failed.
+    """
+    for name, child in (result.node_results or {}).items():
+        found = _failure_reason(child, f"{path}/{name}" if path else name)
+        if found:
+            return found
+    if result.status != Status.FAILED:
+        return None
+    lines = [ln.strip() for ln in (result.output or "").splitlines() if ln.strip()]
+    tail = [ln for ln in lines if ln not in ("STDOUT:", "STDERR:")][-FAILURE_TAIL_LINES:]
+    reason = ": ".join(p for p in (path, result.error or "failed") if p)
+    if tail:
+        reason += " -- " + " | ".join(tail)
+    return reason if len(reason) <= FAILURE_MAX_CHARS else reason[: FAILURE_MAX_CHARS - 3] + "..."
 
 
 def _failed_node_names(node_outputs: dict[str, NodeResult], prefix: str = "") -> list[str]:

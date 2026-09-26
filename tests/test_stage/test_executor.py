@@ -1499,6 +1499,46 @@ class TestWorkflowTerminalStatus:
         build.run.assert_not_called()
         report.run.assert_not_called()
 
+    def test_failure_gives_the_failed_steps_reason_not_just_its_name(self):
+        worktree = NodeResult(
+            status=Status.FAILED, error="Command exited with code 1",
+            output="STDOUT:\n\nSTDERR:\ncloning\nfatal: unable to access the repo\nCould not resolve host: github.com\n",
+        )
+        stage = _make_agent_node("build", status=Status.FAILED)
+        stage.run.return_value.error = "1 node(s) failed: worktree"
+        stage.run.return_value.node_results = {
+            "claim": NodeResult(status=Status.COMPLETED, output="ok"), "worktree": worktree,
+        }
+        report = _make_agent_node(
+            "report", depends_on=["build"],
+            input_map={"build_error": "build.error", "why": "build.failure"},
+        )
+        report.config.run_after_failure = True
+
+        execute_graph([stage, report], {}, _make_context(), graph_name="wf", is_workflow=True)
+
+        inputs = report.run.call_args.args[0]
+        assert inputs["build_error"] == "1 node(s) failed: worktree"
+        assert inputs["why"] == ("worktree: Command exited with code 1 -- cloning | fatal: unable to"
+                                 " access the repo | Could not resolve host: github.com")
+
+    def test_failure_of_a_step_that_failed_on_its_own_is_its_error(self):
+        a = _make_agent_node("a", status=Status.FAILED, output="")
+        a.run.return_value.error = "Stage 'a' is missing required input(s): repo_url"
+        b = _make_agent_node("b", depends_on=["a"], input_map={"why": "a.failure"})
+        b.config.run_after_failure = True
+
+        execute_graph([a, b], {}, _make_context(), graph_name="wf", is_workflow=True)
+
+        assert b.run.call_args.args[0]["why"] == "Stage 'a' is missing required input(s): repo_url"
+
+    def test_failure_is_none_when_nothing_failed_and_bounded_when_long(self):
+        from temper_ai.stage.executor import FAILURE_MAX_CHARS, _failure_reason
+
+        assert _failure_reason(NodeResult(status=Status.COMPLETED, output="fine")) is None
+        long = _failure_reason(NodeResult(status=Status.FAILED, error="x", output="y" * 5000))
+        assert len(long) == FAILURE_MAX_CHARS and long.endswith("...")
+
     def test_error_of_a_node_that_did_not_fail_is_none(self):
         a = _make_agent_node("a")
         b = _make_agent_node("b", depends_on=["a"], input_map={"why": "a.error"})

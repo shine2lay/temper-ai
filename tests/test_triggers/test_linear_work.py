@@ -6,6 +6,7 @@ run by /bin/sh as the Bash tool runs it: it is the one step that turns the model
 clone URL, so a repository it made up has to stop there.
 """
 
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -89,6 +90,45 @@ class TestAReply:
 
     def test_the_first_reply_only_rule_is_gone(self):
         assert not (ROOT / "configs" / "triggers" / "linear_reply.yaml").exists()
+
+
+class TestTriageStatesTheRealBaseBranches:
+    """Triage answers "which branch do you work from?" out of its prompt: it must match the table.
+
+    Without the facts it guessed ("main", on a branch named like Linear's), and the table in
+    linear_repo is what the build really uses. A drift between the two is a wrong answer.
+    """
+
+    def test_each_repo_base_in_the_table_is_the_one_triage_states(self):
+        script = yaml.safe_load((ROOT / "configs" / "agents" / "linear_repo.yaml").read_text())[
+            "agent"]["script_template"]
+        table = dict(re.findall(r"FULL=shine2lay/([\w-]+);[^\n]*BASE=(\w+)", script))
+        assert table == {"roamee": "staging", "temper-ai": "master"}
+        prompt = yaml.safe_load((ROOT / "configs" / "agents" / "linear_triage.yaml").read_text())[
+            "agent"]["system_prompt"]
+        stated = " ".join(prompt.split())
+        for repo, base in table.items():
+            assert re.search(rf"{repo}: (work is )?cut from `{base}`", stated), repo
+
+
+# ---- the workflow -------------------------------------------------------------------------------
+
+WORKFLOW = ROOT / "configs" / "workflows" / "linear_work.yaml"
+GO = {"source": "triage.structured.decision", "operator": "equals", "value": "go"}
+
+
+class TestOnlyGoGoesPastTriage:
+    """An ask, an answer or a none from triage ends the run there.
+
+    The engine skips a node for its own condition only: a node whose dependency was skipped still
+    runs. So each step after triage carries the go condition itself. Without it on the build, every
+    question triage asked started the build with no repository and marked the run failed.
+    """
+
+    @pytest.mark.parametrize("step", ["repo", "build", "report"])
+    def test_each_step_after_triage_runs_only_on_go(self, step):
+        nodes = {n["name"]: n for n in yaml.safe_load(WORKFLOW.read_text())["workflow"]["nodes"]}
+        assert nodes[step].get("condition") == GO
 
 
 # ---- the repo step ------------------------------------------------------------------------------

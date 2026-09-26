@@ -68,6 +68,13 @@ workflow:
       type: stage
       ref: workflows/epd_task
       depends_on: [repo]
+      # Its own condition too: a node whose dependency was skipped by a
+      # condition still runs, so without this an "ask" started the build with
+      # no repository and failed the whole run.
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
       input_map:
         repo_url: repo.structured.repo_url
         base_branch: repo.structured.base_branch
@@ -100,8 +107,10 @@ workflow:
         title: triage.structured.title
         repo: repo.structured.repo
         repo_error: repo.error
+        repo_failure: repo.failure
         build_status: build.status
         build_error: build.error
+        build_failure: build.failure
         worktree_path: build.structured.worktree_path
         branch: build.structured.branch
         base_branch: build.structured.base_branch

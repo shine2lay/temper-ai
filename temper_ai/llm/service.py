@@ -151,6 +151,10 @@ class LLMService:
         self._total_cost = 0.0
         self._response: LLMResponse | None = None
         self._run_start = time.monotonic()
+        # The wall clock is a budget like the iteration cap, measured in turns
+        # at the pace of the slowest one so far (see _turns_left).
+        self._turn_start = self._run_start
+        self._slowest_turn = 0.0
         self._budget_check = budget_check
         self._usage_tracker = None
         self.provider = self._own_provider
@@ -191,10 +195,12 @@ class LLMService:
     def _run_iteration(self, iteration: int) -> LLMRunResult | None:
         """Run one iteration of the tool-calling loop. Returns result if done, None to continue."""
         self._iteration = iteration
-        elapsed = time.monotonic() - self._run_start
+        now = time.monotonic()
+        elapsed = now - self._run_start
         if elapsed > self.total_timeout:
             logger.warning("LLM run timeout after %.0fs for '%s'", elapsed, self._ctx.agent_name)
             return self._build_result(iteration - 1, error=f"LLM run timed out after {elapsed:.0f}s")
+        self._turn_start = now
 
         llm_event_id, self._response, iter_cost = self._call_llm(iteration)
         self._total_tokens += self._response.total_tokens or 0
@@ -295,7 +301,7 @@ class LLMService:
             # nudge stays quiet: the two would ask for different next turns.
             wire = self._compressor.prepare(
                 self._messages,
-                wrapping_up=self.max_iterations - self._iteration + 1 <= self.wrap_up_turns,
+                wrapping_up=self._turns_left(self._iteration - 1)[0] <= self.wrap_up_turns,
             )
         else:
             _enforce_context_limit(self._messages, self.max_context_tokens, self.max_messages)
@@ -530,11 +536,38 @@ class LLMService:
                 "result": tr["result"], "success": tr["success"],
             })
         _inject_tool_results(self._messages, self._response, tool_calls, tool_results)
-        _nudge_to_finish(self._messages, self._iteration, self.max_iterations, self.wrap_up_turns)
+        self._slowest_turn = max(self._slowest_turn, time.monotonic() - self._turn_start)
+        left, budget, limit = self._turns_left(self._iteration)
+        _nudge_to_finish(self._messages, left, self.wrap_up_turns, budget, limit)
         # No window here: _enforce_context_limit runs before every provider call
         # and trims by token budget, which is the measure that matters. Trimming
         # by message count after every tool round threw away work the model was
         # nowhere near out of room to keep.
+
+    def _turns_left(self, done: int) -> tuple[int, str, str]:
+        """LLM calls that can still happen after ``done`` of them: (calls, budget, its limit).
+
+        Two budgets end a run. The iteration cap counts calls; the wall clock
+        (total_timeout) counts seconds, and ends the run with no answer at all.
+        The clock is turned into calls at the pace of the slowest turn so far
+        (one call plus its tools), so a run near its clock is told to wrap up
+        exactly as one near its cap is. Seen live: a reviewer at effort max
+        took up to 8.7 minutes a call; at its 4-hour clock it had about 17
+        calls left of 120, and it writes its review only at the end.
+        """
+        left = self.max_iterations - done
+        iterations = (left, "iteration budget", str(self.max_iterations))
+        if self._slowest_turn <= 0:
+            return iterations
+        time_left = self.total_timeout - (time.monotonic() - self._run_start)
+        # Under a turn left, the next call is still made (the clock is checked
+        # before a call, never during one), so it is the one to answer in.
+        by_clock = max(1, int(time_left // self._slowest_turn)) if time_left > 0 else 0
+        if by_clock >= left:
+            return iterations
+        limit = (f"{self.total_timeout / 60:.0f} min, at {self._slowest_turn / 60:.1f} min "
+                 "for the slowest turn so far")
+        return by_clock, "time budget", limit
 
     def _context_tool_runner(self, tc: dict) -> ToolExecutorFn:
         """An executor for one context tool call, bound to this transcript."""
@@ -729,9 +762,14 @@ def _inject_tool_results(
 
 
 def _nudge_to_finish(
-    messages: list[dict], iteration: int, max_iterations: int, wrap_up_turns: int = WRAP_UP_TURNS,
+    messages: list[dict], left: int, wrap_up_turns: int = WRAP_UP_TURNS,
+    budget: str = "iteration budget", limit: str = "",
 ) -> None:
-    """Tell the model the iteration budget is nearly spent, on the last tool result.
+    """Tell the model its budget is nearly spent, on the last tool result.
+
+    ``left`` is the LLM calls that can still happen, and ``budget`` the one
+    that binds: the iteration cap, or the wall clock counted in turns
+    (LLMService._turns_left).
 
     Without this a model that is still reading at the cap is cut off with no
     answer at all — the whole exploration is lost (seen live: a planner spent
@@ -745,24 +783,24 @@ def _nudge_to_finish(
     three turns left replied with twenty files uncommitted, and the deploy
     step refused the dirty tree).
     """
-    left = max_iterations - iteration  # LLM calls that can still happen
     if left > wrap_up_turns or left < 1 or not messages or messages[-1].get("role") != "tool":
         return
+    spent = f"the {budget} ({limit})" if limit else f"the {budget}"
     if left == 1:
-        note = "Your next reply is the last one the iteration budget allows. It must be your final answer, with no tool calls."
+        note = f"Your next reply is the last one the {budget} allows. It must be your final answer, with no tool calls."
     elif left > WRAP_UP_TURNS:
         # An early warning, asked for by the agent's config: the turns left are
         # for finishing what is in hand (test, commit), not for starting more.
         note = (
-            f"You have {left} LLM turns left before the iteration budget ({max_iterations}) is spent. "
+            f"You have {left} LLM turns left before {spent} is spent. "
             "Start nothing new; use them to bring what is in hand to a state you can hand over, then reply."
         )
     else:
         note = (
-            f"You have {left} LLM turns left before the iteration budget ({max_iterations}) is spent. "
+            f"You have {left} LLM turns left before {spent} is spent. "
             "Stop exploring and produce your final answer now, from what you already know."
         )
-    messages[-1]["content"] = f"{messages[-1]['content']}\n\n[iteration budget] {note}"
+    messages[-1]["content"] = f"{messages[-1]['content']}\n\n[{budget}] {note}"
 
 
 def _enforce_context_limit(messages: list[dict], max_tokens: int, max_messages: int) -> None:

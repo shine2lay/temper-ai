@@ -770,9 +770,10 @@ class TestTotalTimeout:
     def _clock(self, monkeypatch, readings):
         """Drive the service's clock by hand so the test is fast and exact.
 
-        service.py calls time.monotonic() twice: once for _run_start (line
-        109) and once per iteration for the elapsed check (line 136). The
-        last reading repeats if the loop asks for more.
+        service.py reads time.monotonic() once for _run_start, then at the
+        start of every turn (the elapsed check) and after its tools (the
+        turn's length, and the time left). The last reading repeats if the
+        loop asks for more.
         """
         ticks = iter(readings)
         last = [readings[-1]]
@@ -819,6 +820,59 @@ class TestTotalTimeout:
 
         assert result.error is None
         assert result.output == "Done"
+
+    def test_a_slow_run_is_told_to_answer_before_its_clock(self, monkeypatch):
+        """The clock is counted in turns at the pace of the slowest one, so a run
+        near total_timeout is warned exactly as one near its iteration cap is.
+        Seen live: a reviewer at effort max took up to 8.7 minutes a call, and
+        its 4-hour clock, far inside its 120-call cap, would have ended it with
+        no review at all: the clock returns no answer."""
+        now = [0.0]
+        monkeypatch.setattr(service_mod.time, "monotonic", lambda: now[0])
+
+        def slow_tool(name: str, params: dict) -> str:
+            now[0] += 100.0  # every turn takes 100 s
+            return f"result of {name}"
+
+        provider = MockProvider(
+            [_make_tool_response([{"id": f"c{i}", "name": "bash", "arguments": "{}"}]) for i in range(9)]
+            + [_make_text_response("the review")]
+        )
+        # 1000 s at 100 s a turn: ten turns fit, far inside the 50-call cap.
+        service = LLMService(provider, max_iterations=50, total_timeout=1000.0, wrap_up_turns=3)
+        result = service.run([{"role": "user", "content": "go"}], tools=[], execute_tool=slow_tool)
+
+        tool_msgs = [m["content"] for m in provider.calls[-1]["messages"] if m["role"] == "tool"]
+        assert len(tool_msgs) == 9
+        assert "budget]" not in tool_msgs[5]                             # after turn 6 (600 s): four fit
+        assert "[time budget] You have 3 LLM turns left" in tool_msgs[6]  # after turn 7: three fit
+        assert "1000 s" not in tool_msgs[6] and "17 min" in tool_msgs[6]  # the clock, in minutes
+        assert "2 LLM turns left" in tool_msgs[7]
+        assert "last one the time budget allows" in tool_msgs[8]          # after turn 9: one fits
+        assert "[iteration budget]" not in "".join(tool_msgs)            # 41 calls were left on the cap
+        assert result.error is None                                       # the tenth call is made
+        assert result.output == "the review"
+
+    def test_the_first_budget_to_run_out_is_the_one_named(self, monkeypatch):
+        """Control: a fast run near its iteration cap is warned by the cap,
+        with the cap's own wording, whatever its clock says."""
+        now = [0.0]
+        monkeypatch.setattr(service_mod.time, "monotonic", lambda: now[0])
+
+        def quick_tool(name: str, params: dict) -> str:
+            now[0] += 1.0
+            return f"result of {name}"
+
+        provider = MockProvider(
+            [_make_tool_response([{"id": f"c{i}", "name": "bash", "arguments": "{}"}]) for i in range(6)]
+        )
+        service = LLMService(provider, max_iterations=6, total_timeout=1000.0)
+        service.run([{"role": "user", "content": "go"}], tools=[], execute_tool=quick_tool)
+
+        tool_msgs = [m["content"] for m in provider.calls[-1]["messages"] if m["role"] == "tool"]
+        assert "3 LLM turns left before the iteration budget (6) is spent" in tool_msgs[2]
+        assert "last one the iteration budget allows" in tool_msgs[4]
+        assert "[time budget]" not in "".join(tool_msgs)
 
 
 # -- The context policy is actually applied --

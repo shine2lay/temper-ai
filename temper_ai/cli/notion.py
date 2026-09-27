@@ -10,12 +10,15 @@ notion`` trigger rule names a real table and property; the webhook
 the verification token Notion sent, to paste back into Notion); the notify
 file's Notion places; and whether the owner's own Notion sign-in (the MCP
 grant, used by agents that declare notion.* tools) is connected. Exit 1 if
-anything is wrong. Tokens are never printed; the verification token is
-shown because the owner has to paste it into Notion.
+anything is wrong. Tokens are never printed. The verification token is
+shown only while the owner still needs it (to paste into Notion and into
+NOTION_WEBHOOK_SECRET); once that secret holds it, the check only says so,
+because it is the key that signs every event.
 """
 
 from __future__ import annotations
 
+import hmac
 import os
 import sys
 from typing import Any
@@ -27,6 +30,24 @@ from temper_ai.cli.slack import DEFAULT_SERVER, _server_get
 PUBLIC_HOOK = "https://hooks.wai2shine.com/api/hooks/notion"
 WRITABLE = {"title", "rich_text", "number", "select", "multi_select", "status", "date", "url", "email",
             "phone_number", "checkbox", "people", "relation"}
+
+
+def _verification_line(token_sent: str | None, secret: str | None) -> tuple[bool | None, str]:
+    """The check's line for the verification token Notion sent.
+
+    The token is the webhook's signing key. It is printed only while it still
+    has to be pasted somewhere: before NOTION_WEBHOOK_SECRET is set, or when
+    Notion sent a new one that the secret doesn't hold yet.
+    """
+    if not token_sent:
+        return None, "verification token: none received yet (make the webhook subscription in Notion)"
+    if not secret:
+        return True, (f"verification token Notion sent: {token_sent} (paste it into Notion, and into "
+                      "~/temper-ai/.env as NOTION_WEBHOOK_SECRET)")
+    if hmac.compare_digest(token_sent.encode(), secret.encode()):
+        return True, "verification token Notion sent: NOTION_WEBHOOK_SECRET holds it (not shown)"
+    return False, (f"verification token Notion sent is not NOTION_WEBHOOK_SECRET: {token_sent} (a new "
+                   "subscription? Put it in ~/temper-ai/.env and restart temper)")
 
 
 def check(server: str = DEFAULT_SERVER, public_url: str = PUBLIC_HOOK) -> int:
@@ -136,9 +157,7 @@ def check(server: str = DEFAULT_SERVER, public_url: str = PUBLIC_HOOK) -> int:
         if not _init_db():
             raise RuntimeError("temper's database was not found")
         vt = store.get_state("verification_token")
-        line(None if not vt else True,
-             f"verification token Notion sent: {vt}" if vt else
-             "verification token: none received yet (make the webhook subscription in Notion)")
+        line(*_verification_line(vt, rules.signing_secret()))
         events = store.recent_events(5)
         for ev in events:
             print(f"       event {str(ev.get('at') or '')[:16]} {ev.get('type')}: {ev.get('outcome')}")

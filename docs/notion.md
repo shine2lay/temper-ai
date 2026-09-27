@@ -53,13 +53,17 @@ them, and the page a run was started from. Nothing deletes or archives.
    standee gateway route add hooks.wai2shine.com 127.0.0.1:8420 --only /api/hooks/notion --public
    ```
 
+   `--only` sets the whole list of public paths, so if the host already serves
+   others (Linear's `/api/hooks/linear`), name them all in one `--only`.
+
    In the integration's *Webhooks* tab: URL
    `https://hooks.wai2shine.com/api/hooks/notion`, events *Page* (created,
    properties updated, content updated) and *Comment* (created). Notion posts
    a verification token; `temper notion check` shows it. Paste it into Notion
    to verify, and put it in `.env` as `NOTION_WEBHOOK_SECRET=...` (every event
    is signed with it; unsigned or wrongly signed events are refused). Restart
-   when idle.
+   when idle. From then on the check only says the secret holds the token,
+   and shows a token again only if Notion sends a different one.
 6. `temper notion check` (in the server container:
    `docker exec -w /app temper-ai-server-1 /app/.venv/bin/temper notion check`)
    should be all `ok`.

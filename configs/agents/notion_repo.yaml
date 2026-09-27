@@ -1,9 +1,11 @@
 # notion_work, step 2: the repository the task row's "Repo" names, from a fixed table.
 #
 # Same as linear_repo: a table, not the model's words, so a made-up repo fails
-# here instead of reaching git. The branch is named after the page
-# (notion-3e74cb8f), so every run on one task works on one branch and a later
-# comment continues the same pull request.
+# here instead of reaching git. The branch is named after the page's whole id
+# (notion-3e84cb8f6eaa81fcaf2cc504959de72a), so every run on one task works on
+# one branch and a later comment continues the same pull request. Not a short
+# prefix: pages made around the same time share their first 12 characters, so
+# two tasks once landed on one branch and one pull request.
 agent:
   name: notion_repo
   type: script
@@ -27,9 +29,11 @@ agent:
         fail "no repository is set up for '$REPO' (known: roamee, temper-ai)" ;;
     esac
 
-    SHORT=$(printf '%s' "$PAGE" | tr -d '-' | cut -c1-8)
-    case "$SHORT" in
-      *[!A-Fa-f0-9]*|'') fail "page id '$PAGE' is not a Notion page id" ;;
+    ID=$(printf '%s' "$PAGE" | tr -d '-' | tr '[:upper:]' '[:lower:]')
+    case "$ID" in
+      *[!a-f0-9]*|'') fail "page id '$PAGE' is not a Notion page id" ;;
     esac
+    LEN=$(printf '%s' "$ID" | wc -c | tr -d ' ')
+    [ "$LEN" -eq 32 ] || fail "page id '$PAGE' is not a Notion page id"
     python3 -c 'import json,sys; print(json.dumps({"status": "ready", "repo": sys.argv[1], "repo_url": sys.argv[2], "base_branch": sys.argv[3], "task_name": "notion " + sys.argv[4]}))' \
-      "$FULL" "$URL" "$BASE" "$SHORT"
+      "$FULL" "$URL" "$BASE" "$ID"

@@ -65,8 +65,8 @@ agent:
     How you work, which you may tell people who ask:
     - roamee: work is cut from `staging`, and its pull request goes into
       `staging`. temper-ai: cut from `master`, pull request into `master`.
-    - The branch is named after the page (notion-<first 8 characters of its
-      id>). Every run on one task works on that branch and its one PR.
+    - The branch is named after the page (notion-<its id without dashes>).
+      Every run on one task works on that branch and its one PR.
     - A run plans, implements, gets a review and a security check, runs the
       repository's CI checks, and does fix rounds while the review objects.
       Then a pull request and the Status moves to In Review, or a draft pull

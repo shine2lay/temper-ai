@@ -12,6 +12,7 @@ future OAuth integration.
 import asyncio
 import logging
 import sys
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -28,10 +29,22 @@ def _http_servers() -> dict[str, dict]:
     return servers
 
 
-def _init_db() -> None:
+def _init_db() -> bool:
+    """Open temper's own database, or say why not.
+
+    Grants must land where the server reads them, so on the host this finds
+    the compose database and refuses rather than use the engine's default.
+    """
+    from temper_ai.database.locate import DatabaseNotFound, resolve_host_database_url
     from temper_ai.database.session import init_database
 
-    init_database()
+    try:
+        url = resolve_host_database_url()
+    except DatabaseNotFound as exc:
+        print(str(exc), file=sys.stderr)
+        return False
+    init_database(url)
+    return True
 
 
 def cmd_connect(args: Any) -> int:
@@ -59,7 +72,8 @@ def cmd_connect(args: Any) -> int:
         )
         return 1
 
-    _init_db()
+    if not _init_db():
+        return 1
 
     port = find_free_port(int(config.get("callback_port", args.port)))
     config = {**config, "callback_port": port}
@@ -109,8 +123,41 @@ async def _run_login(config: dict, *, manual: bool = False) -> None:
                 print(f"Verified: server advertises {len(page.tools)} tool(s).")
 
 
+def pin_key(env_file: Path) -> int:
+    """Copy this machine's sealing key into an env file, without showing it.
+
+    Grants sealed by `temper connect` on the host use ~/.temper/secret.key;
+    the server reads TEMPER_SECRET_KEY. Pinning makes both agree and keeps the
+    server's key across container rebuilds. An existing, different value is
+    left alone, since grants may already be sealed with it.
+    """
+    from temper_ai.tools.mcp_auth import (
+        SECRET_KEY_ENV_VAR,
+        _load_or_create_key,
+        key_fingerprint,
+    )
+
+    key = _load_or_create_key().decode()
+    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    prefix = f"{SECRET_KEY_ENV_VAR}="
+    current = [line[len(prefix):].strip() for line in lines if line.startswith(prefix)]
+    if current:
+        same = current[-1] == key
+        print(f"{env_file} already has {SECRET_KEY_ENV_VAR} "
+              f"({'the same key' if same else 'a different key, left unchanged'}).")
+        return 0 if same else 1
+    lines.append(f"{prefix}{key}")
+    env_file.write_text("\n".join(lines) + "\n")
+    print(f"Pinned sealing key {key_fingerprint(key.encode())} into {env_file}. "
+          "Recreate the server and worker to use it.")
+    return 0
+
+
 def cmd_connections(args: Any) -> int:
     """Show every configured HTTP MCP server and whether it is authorized."""
+    if getattr(args, "pin_key", None):
+        return pin_key(Path(args.pin_key))
+
     from temper_ai.tools.mcp_auth import DatabaseTokenStore, oauth_configured
     from temper_ai.tools.oauth_client_credentials import (
         ClientCredentials,
@@ -123,7 +170,8 @@ def cmd_connections(args: Any) -> int:
         print("No HTTP MCP servers configured (configs/mcp_servers/*.yaml).")
         return 0
 
-    _init_db()
+    if not _init_db():
+        return 1
 
     width = max(len(name) for name in servers)
     for name in sorted(servers):
@@ -156,7 +204,8 @@ def cmd_disconnect(args: Any) -> int:
     """Forget a stored grant."""
     from temper_ai.tools.mcp_auth import DatabaseTokenStore
 
-    _init_db()
+    if not _init_db():
+        return 1
     store = DatabaseTokenStore(args.server)
     if store.delete():
         print(f"Disconnected '{args.server}'. The stored grant has been deleted.")

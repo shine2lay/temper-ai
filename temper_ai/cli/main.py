@@ -94,6 +94,11 @@ def main() -> None:
     connections_parser.add_argument(
         "--debug", action="store_true", help="Enable debug logging"
     )
+    connections_parser.add_argument(
+        "--pin-key", metavar="ENV_FILE",
+        help="Write this machine's sealing key into ENV_FILE as TEMPER_SECRET_KEY "
+             "(never printed), so the server reads grants sealed here",
+    )
 
     disconnect_parser = subparsers.add_parser(
         "disconnect", help="Forget a stored MCP authorization"

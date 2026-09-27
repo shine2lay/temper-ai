@@ -34,9 +34,16 @@
 #   round, so the budget is in the prompt.
 # - Ask for every file in one turn: temper runs all tool calls of one reply, so batching cuts turns.
 # - The workflow skips this check on round 3 (the writer's last pass), so it runs at most twice.
+#
+# v6 (2026-09-27, queue task 13): a problem about remembered data needs one walk on a used account
+# (item 11). b020's blocking problem survived v5: every criterion it wrote started from a fresh account,
+# so a build that gets remembered data wrong still passes. The old bug, "5 under the price floor" opening
+# 9 stocks after a quick screen, showed only on qa@, which had a history to read back. Remembered data
+# means counts, lists, history, or anything a later visit reads back. Only such problems get the extra
+# walk (the owner: don't widen it); a check that asks for it elsewhere is wrong.
 agent:
   name: epd_pitch_check
-  version: 5
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -104,6 +111,15 @@ agent:
        QA over 45 or the live check over 25 is an issue (too_big): say which criteria to leave to
        QA alone, merge or cut.
     10. Nothing left on a page the change touches contradicts what the change makes it say.
+    11. Remembered data. If the problem is about something the app remembers and a later visit reads
+        back (a count, a list, a history, a record of what an earlier scan, screen or action did), at
+        least one criterion walks it on an account that has already been used: a login the reach sheet
+        shows with that history, such as qa@ after its scans (or qa-oneclose@ where the sheet lists
+        it), not a fresh, empty or just-reset one, and reads the remembered thing back there. A build
+        that gets remembered data wrong can pass on a fresh account, where there is nothing to
+        remember (b020: every criterion started from a fresh account, while its build opened 9 stocks
+        under "5 under the price floor" on qa@). No such criterion is an issue (kind gap). If the
+        problem is not about remembered data, do not ask for such a walk.
     A re-check (the task says so, with your previous issues and the diff of what the writer changed)
     starts from those, not from scratch. First confirm each previous issue: gone, and its fix broke
     nothing else; a fix that did not land is an issue again (not_fixed). Then check what the diff

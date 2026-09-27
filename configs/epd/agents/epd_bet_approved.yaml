@@ -1,0 +1,38 @@
+# EPD loop run, first box: the bet as the owner approved it (queue task 15, 2026-09-27).
+#
+# The owner, 2026-09-27: "just put each in a stage so there's boundary". The loop run started at its
+# planning box, so the graph showed no line between writing the bet and planning it. This box shows
+# the approved pitch (bet.md) and the owner's approval (decision.md, as the driver hands it in) and
+# does nothing else: no model, no files written, and it costs nothing. The next box, `plan`, reads
+# the same bet_path and approval as before.
+#
+# It fails only when the bet file is not there, which the plan would fail on anyway.
+agent:
+  name: epd_bet_approved
+  version: 1
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/bash
+    BET="{{ bet_path | default('') }}" APPROVAL="{{ approval | default('') }}" \
+    BET_ID="{{ bet_id | default('') }}" TITLE="{{ title | default('') }}" \
+    INVARIANT="{{ invariant | default('') }}" THRESHOLD="{{ threshold | default('') }}" python3 -c '
+    import json, os, pathlib, re, sys
+
+    p = pathlib.Path(os.environ["BET"])
+    if not p.is_file():
+        sys.exit("no approved bet at " + repr(str(p)))
+    pitch = p.read_text()
+    approval = os.environ["APPROVAL"].strip()
+    when = re.search(r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?", approval)
+    print(json.dumps({
+        "bet_id": os.environ["BET_ID"],
+        "title": os.environ["TITLE"],
+        "invariant": os.environ["INVARIANT"],
+        "threshold": os.environ["THRESHOLD"],
+        "approved": bool(approval),
+        "approved_at": when.group(0) if when else None,
+        "approval": approval,
+        "bet_path": str(p),
+        "pitch": pitch,
+    }))'

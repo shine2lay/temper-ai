@@ -95,7 +95,11 @@ def execute_graph(
     loop_feedback: dict[str, NodeResult] = {}
     if isinstance(restore, Restore):
         prefix = f"{context.node_path}." if context.node_path else ""
-        claimed = restore.claim(prefix, {name: list(node.depends_on) for name, node in node_map.items()})
+        claimed = restore.claim(
+            prefix,
+            {name: list(node.depends_on) for name, node in node_map.items()},
+            _renamed_from(node_map),
+        )
         node_outputs, loop_feedback = claimed.outputs, claimed.loop_feedback
         loop_counts.update(claimed.loop_counts)
         if claimed.reset and context.checkpoint_service is not None:
@@ -105,9 +109,10 @@ def execute_graph(
             logger.info("Resume of '%s': %s had finished and run again (a failure at or before them)",
                         graph_name, ", ".join(claimed.reset))
     else:
-        node_outputs = (
-            {k: v for k, v in initial_outputs.items() if k in node_map} if initial_outputs else {}
-        )
+        old_names = {old: name for name, olds in _renamed_from(node_map).items() for old in olds}
+        node_outputs = {old_names[k]: v for k, v in (initial_outputs or {}).items() if k in old_names}
+        # a result under the node's own name is the later word
+        node_outputs.update({k: v for k, v in (initial_outputs or {}).items() if k in node_map})
     start = time.monotonic()
 
     start_data: dict = {"name": graph_name, "node_count": len(nodes)}
@@ -182,6 +187,15 @@ def execute_graph(
             cost_usd=sum(r.cost_usd for r in (*node_outputs.values(), *retired)),
             total_tokens=sum(r.total_tokens for r in (*node_outputs.values(), *retired)),
         )
+
+def _renamed_from(node_map: dict[str, Node]) -> dict[str, list[str]]:
+    """Each renamed node's earlier names (NodeConfig.renamed_from), for what a resume restores."""
+    return {
+        name: list(olds)
+        for name, node in node_map.items()
+        if (olds := getattr(getattr(node, "config", None), "renamed_from", None))
+    }
+
 
 def _run_batches(
     batches: list[list[Node]],

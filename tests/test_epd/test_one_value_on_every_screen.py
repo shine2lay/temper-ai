@@ -153,10 +153,10 @@ class TestTheWiring:
     def test_the_loop_hands_it_to_the_build_and_the_measure(self):
         loop = wiring("epd_loop")
         build = node(loop, "build")["input_map"]
-        assert build["same_value"] == "tasks.structured.same_value"
+        assert build["same_value"] == "plan.structured.same_value"  # the plan box, `tasks` before v13
         assert (build["before_url"], build["before_email"], build["before_password"]) == (
             "input.measure_url", "input.before_email", "input.measure_password"), "production, as qa@"
-        assert node(loop, "measure")["input_map"]["same_value"] == "tasks.structured.same_value"
+        assert node(loop, "measure")["input_map"]["same_value"] == "plan.structured.same_value"
         assert node(loop, "ship")["input_map"]["same_value_noted"] == "build.structured.same_value_noted"
         assert "before_email" in loop["inputs"]
 

@@ -107,7 +107,7 @@ def test_a_lens_reaches_every_node_that_decides_who_walks_or_what_they_found():
     for name in ("personas", "walk_1", "walk_2", "walk_3", "report"):
         assert n[name]["input_map"]["lens"] == "input.lens", name
     assert nodes("epd_propose")["report"]["input_map"]["lens"] == "input.lens"
-    assert nodes("epd_propose")["bet"]["input_map"]["lens"] == "input.lens"
+    assert nodes("epd_propose")["pitches"]["input_map"]["lens"] == "input.lens"  # `bet` before v7
     assert nodes("epd_bet")["problems"]["input_map"]["lens"] == "input.lens"
 
 

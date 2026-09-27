@@ -40,11 +40,19 @@ workflow:
   #    the run stops for the owner. The build then starts from the master of that moment and its task
   #    description says which files changed there since the plan. The plan stage is told what the
   #    other live bets change (`live_bets`), so it can reuse or keep clear of their work.
-  version: 12
+  # 13 (2026-09-27, queue task 15): each part of the run is its own box, so the graph shows where
+  #    the bet ends and planning begins (the owner: "just put each in a stage so there's
+  #    boundary"). A first box, `bet`, shows the approved pitch and the owner's approval: a script,
+  #    no model (agents/epd_bet_approved). The plan stage's box is called `plan`, not `tasks`: temper
+  #    has no display name for a node, so the node is renamed, and `renamed_from: [tasks]` lets a
+  #    run from before the rename resume or fork without planning again (the engine reads its
+  #    checkpoints under the old name). The driver reads both names in old runs and states. No box
+  #    does anything different: only the graph's shape and the names changed.
+  version: 13
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
-      tasks (plan) → build → ship (PR) → [OWNER DECIDES] → deploy → measure
+      bet → plan → turn → build → ship (PR) → [OWNER DECIDES] → deploy → measure
 
     Nothing here is new. Each node references a workflow that already exists and is already used on
     its own; this file is only the wiring between them. That is the point: the loop used to be a
@@ -132,12 +140,12 @@ workflow:
     live_bets:    {type: string, required: false}  # the other bets being built: id, title, the files their plans change (Markdown)
 
   outputs:
-    task_count:      tasks.structured.task_count
-    plan_status:     tasks.structured.status      # COMPLETE, or BLOCKED (then nothing else ran)
-    blocked_because: tasks.structured.blocked_because
-    plan_path:       tasks.structured.plan_path
-    plan_verdict:    tasks.structured.verdict     # the check's last verdict; null after the lead's last pass
-    plan_rounds:     tasks.structured.rounds
+    task_count:      plan.structured.task_count
+    plan_status:     plan.structured.status       # COMPLETE, or BLOCKED (then nothing else ran)
+    blocked_because: plan.structured.blocked_because
+    plan_path:       plan.structured.plan_path
+    plan_verdict:    plan.structured.verdict      # the check's last verdict; null after the lead's last pass
+    plan_rounds:     plan.structured.rounds
     branch:          build.structured.branch
     pr:              ship.structured.pr
     pr_decision:     deploy.structured.decision
@@ -155,18 +163,36 @@ workflow:
     waits_for_close: measure.structured.waits_for_close
 
   nodes:
-    # 1 — The signed bet becomes a plan and tasks with boolean acceptance. Writes plan_dir/plan.md
+    # 0 	ed The bet as the owner approved it (v13): the pitch (bet.md) and the owner's approval
+    #     (decision.md). A script, no model: it shows them and changes nothing, so the graph has a
+    #     box where the bet ends and the plan begins. A run from before v13 has no such box; on a
+    #     resume it runs once, for nothing.
+    - name: bet
+      type: agent
+      agent: epd_bet_approved
+      input_map:
+        bet_id: input.bet_id
+        bet_path: input.bet_path
+        approval: input.approval
+        title: input.title
+        invariant: input.invariant
+        threshold: input.threshold
+
+    # 1 — The plan (`tasks` before v13): the signed bet becomes a plan and tasks with boolean acceptance. Writes plan_dir/plan.md
     #     (beside the design and the engineers' notes) and tasks.json. Ungated: the approval is the
     #     line in backlog.md that put this bet here (v4). The plan stage (v8) reads the code at a
     #     snapshot the driver makes of origin/<base> when the run is submitted.
-    - name: tasks
+    - name: plan
+      # its name before v13; a run from before the rename resumes without planning again
+      renamed_from: [tasks]
       type: stage
       ref: workflows/epd_plan
+      depends_on: [bet]
       # The build reads the tasks: a plan that says COMPLETE and wrote none fails here, rather
       # than a build starting from nothing. A BLOCKED plan owes none.
       required_files:
         - path: input.tasks_path
-          when: {source: tasks.structured.status, operator: equals, value: COMPLETE}
+          when: {source: plan.structured.status, operator: equals, value: COMPLETE}
       input_map:
         bet_id: input.bet_id
         bet_path: input.bet_path
@@ -191,9 +217,9 @@ workflow:
     - name: turn
       type: agent
       agent: epd_turn
-      depends_on: [tasks]
+      depends_on: [plan]
       condition:
-        source: tasks.structured.status
+        source: plan.structured.status
         operator: equals
         value: COMPLETE
       loop_to: turn
@@ -226,7 +252,7 @@ workflow:
       ref: workflows/epd_task
       depends_on: [turn]
       condition:
-        source: tasks.structured.status
+        source: plan.structured.status
         operator: equals
         value: COMPLETE
       input_map:
@@ -246,7 +272,7 @@ workflow:
         plan_dir: input.plan_dir
         # One value on every screen (v11): the plan's list, and production to read it on before
         # this change where the build's screens differ (read only).
-        same_value: tasks.structured.same_value
+        same_value: plan.structured.same_value
         before_url: input.measure_url
         before_email: input.before_email
         before_password: input.measure_password
@@ -329,4 +355,4 @@ workflow:
         bet_path: input.bet_path
         report_path: input.report_path
         build_summary: build.structured.implement_summary
-        same_value: tasks.structured.same_value
+        same_value: plan.structured.same_value

@@ -16,6 +16,7 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0])
 import epd_loop as L  # noqa: E402
 
 bet_id, stage, run_id = sys.argv[1:4]
+stage = L.stage_named(stage)  # `tasks` is the plan stage's name before epd_loop v13
 info = L.get_run(run_id)
 if info.get("status") != "completed":
     L.die(f"run {run_id} is {info.get('status')}, not completed")
@@ -26,14 +27,14 @@ out["_duration_s"] = info.get("duration_seconds")
 
 st = L.load_state(bet_id)
 bdir = L.BETS_DIR / bet_id
-if stage == "tasks":
+if stage == "plan":
     if out.get("status") == "BLOCKED":
-        L.die(f"tasks BLOCKED: {out.get('blocked_because')}")
+        L.die(f"plan BLOCKED: {out.get('blocked_because')}")
     if not (bdir / "tasks.json").exists():
         L.die("no tasks.json")
-    st["stages"]["tasks"] = out
-    st["status"] = L.AFTER["tasks"]
+    st["stages"]["plan"] = out
+    st["status"] = L.AFTER["plan"]
     L.save_state(st)
-    L.log(f"adopted {run_id[:8]} as tasks: {out.get('task_count')} tasks, {len(out.get('files') or [])} files")
+    L.log(f"adopted {run_id[:8]} as plan: {out.get('task_count')} tasks, {len(out.get('files') or [])} files")
 else:
-    L.die(f"adopt is only written for the tasks stage so far, not {stage}")
+    L.die(f"adopt is only written for the plan stage so far, not {stage}")

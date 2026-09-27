@@ -242,7 +242,22 @@ SLOTS = 12
 # The product's code at a round's commit, one read-only copy per commit, for the pitch stage's readers.
 CODE_DIR = LOOP_DIR / "code"
 
-STAGES = ["tasks", "build", "ship", "deploy", "measure"]
+STAGES = ["plan", "build", "ship", "deploy", "measure"]
+# The plan stage's box was called `tasks` until epd_loop v13 (queue task 15, 2026-09-27: each part of
+# the run in its own box, named for what it does). Runs, checkpoints, state files and commands from
+# before still say `tasks`; they are read as `plan`.
+OLD_STAGE_NAMES = {"tasks": "plan"}
+
+
+def stage_named(name: str | None) -> str | None:
+    """A stage's name as it is now, whatever it was called when it was recorded."""
+    return OLD_STAGE_NAMES.get(name, name) if name else name
+
+
+def old_names(stage: str) -> set[str]:
+    """Every name a stage's box has had, its current one first among them."""
+    return {stage} | {old for old, new in OLD_STAGE_NAMES.items() if new == stage}
+
 TERMINAL = {"rejected", "kept", "iterate", "killed", "closed", "changes_requested"}
 # On file, waiting for the owner's word: not open, not finished.
 WAITING = {"proposed"}
@@ -252,14 +267,14 @@ WAITING = {"proposed"}
 PARKED_LIMIT = 2
 # status after each stage completes; what `next` does is read off the status
 AFTER = {
-    "tasks": "tasked",
+    "plan": "tasked",
     "build": "built",
     "ship": "pr_opened",
     "deploy": "shipped",
 }
 NEXT_STAGE = {
     "proposed": None,  # waiting in the backlog (or not yet in it)
-    "approved": "tasks",
+    "approved": "plan",
     "tasked": "build",
     "built": "ship",
     "build_failed": None,
@@ -1272,7 +1287,12 @@ def state_path(bet_id: str) -> Path:
 
 def load_state(bet_id: str) -> dict:
     p = state_path(bet_id)
-    return json.loads(p.read_text()) if p.exists() else {"bet_id": bet_id, "status": "new", "stages": {}}
+    st = json.loads(p.read_text()) if p.exists() else {"bet_id": bet_id, "status": "new", "stages": {}}
+    stages = st.setdefault("stages", {})
+    for old, new in OLD_STAGE_NAMES.items():  # a state saved before the rename (epd_loop v13)
+        if old in stages and new not in stages:
+            stages[new] = stages.pop(old)
+    return st
 
 
 def save_state(st: dict) -> None:
@@ -2097,7 +2117,8 @@ def pitches_were_started(info: dict) -> bool:
     if (nodes.get("report") or {}).get("status") != "completed":
         return False
     return any(a.get("agent_name") == "epd_problems" and a.get("status") == "completed"
-               for a in run_agents([nodes.get("bet") or {}]))
+               # the box is `pitches` since epd_propose v7, `bet` in a round from before
+               for a in run_agents([nodes.get("pitches") or nodes.get("bet") or {}]))
 
 
 def pitch_writes(run_id: str | None) -> dict[str, dict]:
@@ -2446,8 +2467,8 @@ def stage_tasks(st: dict) -> None:
         die(f"tasks BLOCKED: {out.get('blocked_because')}")
     if not (bdir / "tasks.json").exists():
         die("epd_tasks finished but wrote no tasks.json")
-    st["stages"]["tasks"] = out
-    st["status"] = AFTER["tasks"]
+    st["stages"]["plan"] = out
+    st["status"] = AFTER["plan"]
     save_state(st)
     log(f"tasks: {out.get('task_count')} tasks touching {len(out.get('files') or [])} files")
 
@@ -2755,7 +2776,8 @@ def run_cost(run_id: str, upto: str | None = None) -> tuple[float | None, float 
         d = get_run(run_id)
     except Exception:  # noqa: BLE001
         return None, None
-    nodes = {n.get("name"): n for n in d.get("nodes") or []}
+    nodes = {stage_named(n.get("name")): n for n in d.get("nodes") or []}
+    upto = stage_named(upto)
     if upto and upto in STAGES and nodes:
         wanted = STAGES[: STAGES.index(upto) + 1]
         picked = [nodes[n] for n in wanted if n in nodes]
@@ -2963,6 +2985,11 @@ def stage_measure(st: dict, keep: bool, market: str = "") -> dict:
     note_waits_for_close(st, out)
     if not keep and b.get("env_name"):
         standee_down(b["env_name"])
+    # The PR is merged and the bet measured on prod, so the build's worktree, local branch and claim
+    # have done their job. `collect` releases them (finish_loop); a measure run here, by hand or after
+    # the close, left them behind (RETRO gap 7: b005, b015, b020, b021, b023 and b024 piled up).
+    # release_task leaves a worktree with uncommitted changes alone, and a second call finds nothing.
+    release_task(bet_id)
     return out
 
 
@@ -3291,7 +3318,7 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
     if status in ("running", "pending"):
         die(f"{bet_id}: run {rid[:8]} is still {status}; nothing to resume")
     if status == "completed":
-        skipped = {n["name"] for n in info.get("nodes") or [] if n.get("status") == "skipped"}
+        skipped = {stage_named(n["name"]) for n in info.get("nodes") or [] if n.get("status") == "skipped"}
         if "ship" not in skipped:
             die(f"{bet_id}: run {rid[:8]} completed; `collect` it")
         if "build" in skipped and not at:
@@ -3299,7 +3326,7 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
             # again; the owner's answer (or a new pitch) is what unblocks it.
             out = info.get("workflow_output") or {}
             die(f"{bet_id}: the plan stage said BLOCKED: {out.get('blocked_because')!r}. `collect` it, and "
-                f"take the question to the owner; `resume --at tasks` plans it again")
+                f"take the question to the owner; `resume --at plan` plans it again")
         # The build ended without the judges' approval (at its round cap), so nothing shipped: another
         # build from the branch is a resume at `build`.
         at = at or "build"
@@ -3307,13 +3334,14 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
     # that was interrupted (server restart) or cancelled names none: the stage to redo is then the
     # first one that did not complete, which is the one that was running.
     failed = re.findall(r"(?:^|[:,]\s*)([a-z_]+)(?:/[a-z_/]+)?", info.get("error_message") or "")
-    failed = [f for f in failed if f in STAGES]
+    failed = [stage_named(f) for f in failed if stage_named(f) in STAGES]
     if not failed:
-        done = {n["name"] for n in info.get("nodes") or [] if n.get("status") == "completed"}
+        done = {stage_named(n["name"]) for n in info.get("nodes") or [] if n.get("status") == "completed"}
         failed = [s for s in STAGES if s not in done][:1]
     if not failed:
         die(f"{bet_id}: run {rid[:8]} ended {status} but names no failed stage: {info.get('error_message')!r}")
     stage = min(failed, key=STAGES.index)
+    at = stage_named(at)
     if at:
         if at not in STAGES:
             die(f"--at must be one of {', '.join(STAGES)}")
@@ -3321,23 +3349,25 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
             log(f"note: starting at `{at}` although `{stage}` is where the run failed "
                 f"({info.get('error_message')}); what `{stage}` delivered is kept")
         stage = at
-    require_bet_window(bet_id, plan=stage == "tasks")
+    require_bet_window(bet_id, plan=stage == "plan")
     require_models(f"resuming {bet_id} at `{stage}`")
     before = STAGES[STAGES.index(stage) - 1] if STAGES.index(stage) else None
     source = rid
     own = checkpoints(rid)
-    go_on = bool(own) and not asked_at and status != "completed" and stage != "tasks"
+    go_on = bool(own) and not asked_at and status != "completed" and stage != "plan"
     if go_on:
         seq = max(c["sequence"] for c in own)
     else:
         # A fork lists only the checkpoints it wrote itself; the stages it restored are checkpoints
         # of the run it was forked from. A second resume of the same stage therefore forks the
         # original again, at the same point.
-        seqs = [c["sequence"] for c in own if c.get("node_name") == before and c.get("status") == "completed"]
+        # a run from before epd_loop v13 checkpointed the plan as `tasks`
+        names = old_names(before) if before else set()
+        seqs = [c["sequence"] for c in own if c.get("node_name") in names and c.get("status") == "completed"]
         if before and not seqs and loop.get("_forked_from"):
             source = loop["_forked_from"]
             seqs = [c["sequence"] for c in checkpoints(source)
-                    if c.get("node_name") == before and c.get("status") == "completed"]
+                    if c.get("node_name") in names and c.get("status") == "completed"]
         if before and not seqs:
             die(f"{bet_id}: run {rid[:8]} has no completed checkpoint for `{before}` to fork from")
         seq = max(seqs) if seqs else 0
@@ -3364,16 +3394,16 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
     else:
         log(f"== {bet_id}: resuming at `{stage}` (fork of {source[:8]} after `{before}`, checkpoint {seq}) ==")
     share_bet_dir(bdir)  # the stages that run again write there too
-    if stage == "tasks":
+    if stage == "plan":
         plan_snapshot(bet_id)  # planning again: against what the build would start from now
         mkdir_shared(bdir / "plan")
     # A resume is the owner's go: a bet that waited for another (`turn`) starts a new 24 h wait.
     (bdir / "turn.json").unlink(missing_ok=True)
-    if stage in ("tasks", "build") and not go_on:
+    if stage in ("plan", "build") and not go_on:
         # at its plan or its build it goes to the back of the line, as a retry does (start_bet);
         # after the build, or going on with it, it keeps its place, so later bets still wait for it
         st["plan_started"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
-    new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id, planning=stage == "tasks"), LOOP_WORKSPACE)
+    new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id, planning=stage == "plan"), LOOP_WORKSPACE)
     st["stages"]["loop"] = {"_run_id": new, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
                             "_forked_from": source, "_fork_sequence": seq, "_went_on": go_on,
                             "_replaces": rid, "_replaced_because": info.get("error_message") or status}
@@ -3546,7 +3576,8 @@ def run_stage(name: str, st: dict, keep: bool) -> None:
     # `ship` arrives here through an sshd forced command, whose environment is
     # smaller than systemd's; it is the stage that most needs this check.
     require_tools("standee", "docker", "git")
-    if name == "tasks":
+    name = stage_named(name)
+    if name == "plan":
         stage_tasks(st)
     elif name == "build":
         stage_build(st)
@@ -3585,7 +3616,7 @@ def cmd_next(until: str | None, keep: bool) -> None:
         log(f"== {bet_id}: {stage} ==")
         run_stage(stage, st, keep)
         st = load_state(bet_id)
-        if until and stage == until:
+        if until and stage == stage_named(until):
             return
         if st["status"] in TERMINAL:
             return
@@ -3673,7 +3704,8 @@ def main() -> None:
                         "person); the walkers, the report and the bet writer are told")
     p.add_argument("--keep", action="store_true", help="leave the stacks up")
     rs = sub.add_parser("resume", help="fork the open bet's failed loop run at its last good stage and run the rest")
-    rs.add_argument("--at", choices=STAGES, help="start from this stage instead of the first that failed")
+    rs.add_argument("--at", choices=STAGES + list(OLD_STAGE_NAMES),
+                    help="start from this stage instead of the first that failed (`tasks` is `plan`'s old name)")
     rs.add_argument("--bet", help="which open bet, when more than one is (default: the latest)")
     c = sub.add_parser("collect", help="record what the last run (proposal or bet) produced, once temper is done")
     c.add_argument("--keep", action="store_true", help="leave the stacks up")
@@ -3681,7 +3713,7 @@ def main() -> None:
                                              "(after the close) waited for it (refused while the market is open)")
     ac.add_argument("--keep", action="store_true", help="leave the stacks up")
     n = sub.add_parser("next", help="the open bet's stages one at a time, here (takes the top backlog bet if none is open)")
-    n.add_argument("--until", choices=STAGES)
+    n.add_argument("--until", choices=STAGES + list(OLD_STAGE_NAMES))
     n.add_argument("--keep", action="store_true", help="leave the stacks up")
     a = sub.add_parser("approve", help="append a candidate to backlog.md (same as adding the line yourself)")
     a.add_argument("bet")
@@ -3691,7 +3723,7 @@ def main() -> None:
     r.add_argument("--why", required=True)
     r.add_argument("--duplicate-of", metavar="BET", help="the same problem as BET; not counted as a verdict")
     s = sub.add_parser("stage", help="run one stage alone, on the bet's files")
-    s.add_argument("stage", choices=STAGES)
+    s.add_argument("stage", choices=STAGES + list(OLD_STAGE_NAMES))
     s.add_argument("--bet", required=True)
     s.add_argument("--keep", action="store_true")
     d = sub.add_parser("down", help="tear down a bet's stacks (b004) or a proposal's (r001)")

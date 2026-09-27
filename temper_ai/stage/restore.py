@@ -23,6 +23,9 @@ A node that was finished but runs again gets a ``node_reset`` checkpoint (the ex
 as the graph claims), so its old result does not come back on a later resume if this one stops
 before the node finishes again.
 
+A node renamed in the workflow file (``renamed_from``) claims what its checkpoints left under its
+old names: a resume loads the workflow as it is now, and the checkpoints name nodes as they were.
+
 A claim takes its entries away, so a stage restores only on its first run in the resumed process.
 If a loop later sends the run back through that stage, the stage starts over, as it does in a run
 that never stopped. For the same reason, a node restored as finished takes its children's entries
@@ -66,10 +69,19 @@ class Restore:
         self._failed = set(failed)
         self._lock = threading.Lock()
 
-    def claim(self, prefix: str, depends_on: Mapping[str, Sequence[str]]) -> Claimed:
+    def claim(
+        self,
+        prefix: str,
+        depends_on: Mapping[str, Sequence[str]],
+        renamed_from: Mapping[str, Sequence[str]] | None = None,
+    ) -> Claimed:
         """The graph at ``prefix`` ("" for the top level, else its path and a dot) takes what is
-        kept for its nodes, given as each node's name and what it depends on."""
+        kept for its nodes, given as each node's name and what it depends on. ``renamed_from``:
+        a node's earlier names, whose entries become its own when it has none of its own."""
         with self._lock:
+            for name, olds in (renamed_from or {}).items():
+                for old in olds:
+                    self._rename(f"{prefix}{old}", f"{prefix}{name}")
             outputs: dict[str, NodeResult] = {}
             for key in [k for k in self._outputs if _own(k, prefix, depends_on)]:
                 outputs[key[len(prefix):]] = self._outputs.pop(key)
@@ -108,6 +120,35 @@ class Restore:
                         del kept[key]
                 self._failed = {p for p in self._failed if not p.startswith(below)}
             return Claimed(outputs, counts, feedback, reset)
+
+    def _rename(self, old: str, new: str) -> None:
+        """Move the entries at path ``old`` and inside it to ``new``, unless ``new`` has its own
+        (a run resumed since the rename wrote under the new name, and that is the later word)."""
+        def moved(key: str) -> str | None:
+            if key == old:
+                return new
+            return new + key[len(old):] if key.startswith(f"{old}.") else None
+
+        mine = f"{new}."
+        taken = any(k == new or k.startswith(mine) for k in (*self._outputs, *self._loops, *self._failed))
+        outputs = {k: to for k in self._outputs if (to := moved(k)) is not None}
+        for key, to in outputs.items():
+            result = self._outputs.pop(key)
+            if not taken:
+                self._outputs[to] = result
+        loops = {k: to for k in self._loops if (to := moved(k)) is not None}
+        for key, to in loops.items():
+            loop = self._loops.pop(key)
+            if not taken:
+                self._loops[to] = loop
+        for loop in self._loops.values():
+            target = moved(str(loop.get("target") or ""))
+            if target is not None:
+                loop["target"] = target
+        failed = {p: to for p in self._failed if (to := moved(p)) is not None}
+        self._failed -= set(failed)
+        if not taken:
+            self._failed |= set(failed.values())
 
     def _failed_at(self, path: str) -> bool:
         """Whether the node at ``path``, or a step anywhere inside it, failed last time."""

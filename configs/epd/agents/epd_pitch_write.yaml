@@ -62,9 +62,15 @@
 #   shut session line, b049's one close seen while shut). Now QA and the live check skip a marked
 #   criterion while the market is open, and the driver measures the bet again after the close.
 #   The logins for each state and the phone size are in the reach sheet (What the checkers can reach).
+#
+# v7 (2026-09-27, queue task 13): a problem about remembered data (counts, lists, history, anything a
+# later visit reads back) gets at least one criterion on an account that has already been used. b020's
+# pitch kept its blocking problem through v6: all its criteria started from a fresh account, where a
+# build that gets remembered data wrong still passes. The check (epd_pitch_check v6, item 11) now asks
+# for it; this rule tells the writer first. Other problems get no extra walk.
 agent:
   name: epd_pitch_write
-  version: 6
+  version: 7
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -156,6 +162,11 @@ agent:
     - The walkers' own situation is walked again: at least one criterion starts where they hit the
       problem (the same kind of login, page and state), so the code path they hit runs. If no
       checker can get there, say in Success that the problem itself is not re-walked, and why.
+    - If the problem is about something the app remembers and a later visit reads back (a count, a
+      list, a history), at least one criterion walks it on an account that has already been used,
+      such as qa@ after its scans (the reach sheet says which logins have that history), not a fresh
+      or just-reset one, and reads the remembered thing back. A build that gets it wrong can pass
+      where there is nothing to remember. Other problems need no such walk.
     - Every action the change adds or alters (a button, link, menu item or form, above all one that
       places, changes or cancels an order or sends anything to the broker) has a criterion that
       performs it and reads its result, on the account the reach map gives for it. If no checker

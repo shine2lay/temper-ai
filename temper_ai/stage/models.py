@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,11 @@ class NodeConfig:
     # <condition>} for a file owed only in some outcomes. A step that says it completed
     # without its one output (b010's tasks stage, no tasks.json) no longer passes.
     required_files: list | None = None
+    # The names this node had before (a rename in the workflow file). A resume or fork loads
+    # the workflow as it is now, and a run's checkpoints name nodes as they were: without
+    # this, a renamed node that had finished would run again under its new name (the EPD
+    # loop's `tasks`, now `plan`: an hour of planning and a different plan).
+    renamed_from: list[str] | None = None
 
     # Timeout, gates, and policy overrides
     timeout_seconds: int | None = None  # Wall-clock timeout for this node (default: no limit)
@@ -95,8 +101,8 @@ class NodeConfig:
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "type", "agent", "strategy", "strategy_config", "agents",
         "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops",
-        "loop_condition", "on_max_loops", "run_after_failure", "required_files", "timeout_seconds", "gate",
-        "skip_policies", "input_map", "inputs", "outputs",
+        "loop_condition", "on_max_loops", "run_after_failure", "required_files", "renamed_from",
+        "timeout_seconds", "gate", "skip_policies", "input_map", "inputs", "outputs",
         "task_template",
         "system_prompt", "role", "model", "provider", "temperature",
         "max_tokens", "token_budget", "tools", "memory",
@@ -137,6 +143,7 @@ class NodeConfig:
             on_max_loops=data.get("on_max_loops", "silent"),
             run_after_failure=bool(data.get("run_after_failure", False)),
             required_files=data.get("required_files"),
+            renamed_from=_names(data.get("renamed_from")),
             timeout_seconds=data.get("timeout_seconds"),
             gate=data.get("gate", False),
             skip_policies=data.get("skip_policies"),
@@ -154,6 +161,15 @@ class NodeConfig:
             tools=data.get("tools"),
             memory=data.get("memory"),
         )
+
+
+def _names(value: Any) -> list[str] | None:
+    """`renamed_from` as written: one old name, or a list of them."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [value]
+    return [str(v) for v in value]
 
 
 @dataclass

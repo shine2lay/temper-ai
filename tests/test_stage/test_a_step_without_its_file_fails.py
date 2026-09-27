@@ -67,5 +67,9 @@ def test_the_loop_workflow_owes_its_tasks_when_the_plan_is_complete():
 
     loop = yaml.safe_load(
         (Path(__file__).resolve().parents[2] / "configs/epd/workflows/epd_loop.yaml").read_text())
-    tasks = next(n for n in loop["workflow"]["nodes"] if n["name"] == "tasks")
-    assert tasks["required_files"] == [OWED_WHEN_COMPLETE]
+    # the plan box, called `tasks` before epd_loop v13 (queue task 15)
+    plan = next(n for n in loop["workflow"]["nodes"] if n["name"] == "plan")
+    assert plan["required_files"] == [{
+        "path": "input.tasks_path",
+        "when": {"source": "plan.structured.status", "operator": "equals", "value": "COMPLETE"},
+    }]

@@ -41,7 +41,8 @@ def test_the_bet_stage_is_one_agent_that_lists_the_problems():
 
 
 def test_the_proposal_passes_the_bet_stage_everything_the_pitch_stage_reads():
-    bet = next(n for n in workflow("epd_propose")["nodes"] if n["name"] == "bet")
+    # the box is `pitches` since epd_propose v7 (queue task 15), `bet` before
+    bet = next(n for n in workflow("epd_propose")["nodes"] if n["name"] == "pitches")
     assert bet["ref"] == "workflows/epd_bet"
     assert required("epd_bet") <= set(bet["input_map"]), f"missing {required('epd_bet') - set(bet['input_map'])}"
     for k in ("code_dir", "reach", "qa_config_path", "measure_config_path", "no_bets"):

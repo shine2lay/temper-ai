@@ -423,9 +423,10 @@ class TestTheWiring:
     def test_the_turn_node_sits_between_the_plan_and_the_build(self):
         nodes = {n["name"]: n for n in self.loop()["nodes"]}
         turn = nodes["turn"]
-        assert turn["agent"] == "epd_turn" and turn["depends_on"] == ["tasks"]
+        # the plan box, called `tasks` before epd_loop v13 (queue task 15)
+        assert turn["agent"] == "epd_turn" and turn["depends_on"] == ["plan"]
         assert turn["condition"] == {
-            "source": "tasks.structured.status",
+            "source": "plan.structured.status",
             "operator": "equals",
             "value": "COMPLETE",
         }
@@ -461,8 +462,8 @@ class TestTheWiring:
         assert "EPD_TURN_DESCRIPTION={{ task_description }}" in agent["script_template"]
 
     def test_the_other_live_bets_reach_the_plan_lead(self):
-        tasks = next(n for n in self.loop()["nodes"] if n["name"] == "tasks")
-        assert tasks["input_map"]["live_bets"] == "input.live_bets"
+        plan_box = next(n for n in self.loop()["nodes"] if n["name"] == "plan")
+        assert plan_box["input_map"]["live_bets"] == "input.live_bets"
         assert "live_bets" in self.loop()["inputs"]
         plan = yaml.safe_load((WORKFLOWS / "epd_plan.yaml").read_text())["workflow"]
         assert "live_bets" in plan["inputs"]

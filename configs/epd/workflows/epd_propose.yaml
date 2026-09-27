@@ -12,11 +12,17 @@ workflow:
   #    file goes through workflows/epd_pitch, at most 4 at once (queue task 3, 2026-09-26). So the
   #    round is given what that stage reads: the code at the round's commit (code_dir), the live
   #    reach sheet, the checkers' configs, and the problems it already found not real (no_bets).
-  version: 6
+  # 7 (2026-09-27, queue task 15): the box that holds the problem list and the pitches is called
+  #    `pitches`, not `bet`. The loop run's first box is now `bet` (the approved bet, epd_loop v13),
+  #    so the one name meant two things; in this run the box reads what it is: the problem list,
+  #    then one box per pitch (`pitch_<bet id>`, added as the list is made). The owner: "just put
+  #    each in a stage so there's boundary". `renamed_from: [bet]` lets a round from before the
+  #    rename resume without writing its pitches again. Nothing it does changed.
+  version: 7
   description: |
     The proposal half of the EPD loop, as one run.
 
-      report → bet → [OWNER DECIDES, on disk]
+      report → pitches (the problem list, then one box per pitch) → [OWNER DECIDES, on disk]
 
     Three synthetic users take turns walking a dev stack of main, signed in to the Alpaca paper
     account while the market is open, and the friction is ranked (epd_report); from
@@ -80,9 +86,9 @@ workflow:
     walk_1:          report.structured.walk_1
     walk_2:          report.structured.walk_2
     walk_3:          report.structured.walk_3
-    candidates:      bet.structured.candidates
-    left_out:        bet.structured.left_out
-    questions_for_owner: bet.structured.questions_for_owner
+    candidates:      pitches.structured.candidates
+    left_out:        pitches.structured.left_out
+    questions_for_owner: pitches.structured.questions_for_owner
 
   nodes:
     # 1 — Three synthetic users walk the product and the friction is ranked. Writes report.md.
@@ -107,7 +113,9 @@ workflow:
 
     # 2 — One pitch per problem not on file, each with a falsifiable invariant and a pre-registered
     #     threshold, each to its own slot, in the report's order. The owner decides on disk.
-    - name: bet
+    - name: pitches
+      # its name before v7; a round from before the rename resumes without writing its pitches again
+      renamed_from: [bet]
       type: stage
       ref: workflows/epd_bet
       depends_on: [report]

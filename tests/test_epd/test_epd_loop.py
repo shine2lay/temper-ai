@@ -430,6 +430,39 @@ def test_measure_alone_finds_what_the_composed_loop_recorded(L, monkeypatch):
     assert seen.get("down") == "rollcall-dev-epd-b001", "the branch stack is reclaimed afterwards"
 
 
+def test_a_measure_run_alone_releases_the_worktree(L, monkeypatch):
+    """RETRO gap 7: `collect` releases a bet's worktree, local branch and claim (finish_loop), but a
+    measure run by hand never did, so worktrees of measured bets piled up (b005, b015, b020, b021,
+    b023, b024). Once the live check has run, the build's copies have done their job."""
+    propose(L, bets=("b001",), empty=())
+    bdir = L.BETS_DIR / "b001"
+    st = L.load_state("b001")
+    st["status"] = "shipped"
+    st["stages"]["loop"] = {"env_name": "rollcall-dev-epd-b001", "deploy_url": "https://epd-b001.dev.example.com"}
+    st["stages"]["ship"] = {"prod_url": "https://prod.example.com", "prod_qa": True}
+    L.save_state(st)
+    monkeypatch.setattr(L, "wait_for_url", lambda *a, **k: None)
+    monkeypatch.setattr(L, "preflight_login", lambda *a, **k: None)
+    monkeypatch.setattr(L, "ensure_qa_password", lambda: "pw")
+    monkeypatch.setattr(L, "ledger_upsert", lambda *a, **k: None)
+
+    released_while_measuring: list = []
+
+    def fake_run_workflow(name, inputs, **kw):
+        released_while_measuring.append(list(L._calls["release_task"]))
+        (bdir / "outcome.md").write_text("# outcome\n")
+        return {"verdict": "iterate", "summary": "3 of 4", "threshold_met": False}
+
+    monkeypatch.setattr(L, "run_workflow", fake_run_workflow)
+    L.stage_measure(L.load_state("b001"), keep=False)
+    assert released_while_measuring == [[]], "the worktree stays until the live check has run"
+    assert L._calls["release_task"] == ["b001"], "the measure releases the build's worktree afterwards"
+
+    # the measure after the close runs the same stage again: still one bet, nothing new to hold
+    L.stage_measure(L.load_state("b001"), keep=True)
+    assert L._calls["release_task"] == ["b001", "b001"], "a second measure finds nothing and says so"
+
+
 def _running_bet(L, bet_id: str, run_id: str) -> None:
     L.approve(bet_id, None)
     assert L.pick_bet() == bet_id

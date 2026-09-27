@@ -194,6 +194,26 @@ class TestEnds:
         assert "boom" in str(failed[0]["blocks"])
         assert notifier.tick() == []
 
+    def test_a_run_resumed_after_a_restart_is_not_failed(self, notifier, slack, ops, clock):
+        # A restart marks the waiting run interrupted; it is resumed a moment later.
+        ops.add_run("run-r", "trigger_probe", "interrupted", _minutes(1))
+        clock.now = _minutes(2)
+        assert notifier.tick() == []
+        ops.add_run("run-r", "trigger_probe", "running", _minutes(2))
+        clock.now = _minutes(10)
+        assert notifier.tick() == [] and slack.posts == []
+
+    def test_a_run_still_interrupted_after_a_while_failed(self, notifier, slack, ops, clock):
+        ops.add_run("run-i", "trigger_probe", "interrupted", _minutes(1))
+        clock.now = _minutes(2)
+        assert notifier.tick() == []
+        clock.now = _minutes(6)
+        assert notifier.tick() == []
+        clock.now = _minutes(7)
+        sent = notifier.tick()
+        assert sorted((s["execution_id"], s["kind"]) for s in sent) == [("run-i", "failed"), ("run-i", "failed")]
+        assert notifier.tick() == []
+
     def test_per_workflow_off_and_quiet_workflows(self, notifier, slack, ops, clock):
         ops.add_run("run-n", "noisy", "completed", _minutes(1), _minutes(2))
         ops.add_run("run-p", "slack_pick", "failed", _minutes(1), _minutes(2))

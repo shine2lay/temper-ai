@@ -52,6 +52,10 @@ FINISHED_STATES = ("completed", "cancelled")
 ENDED = FAILED_STATES + FINISHED_STATES
 # A gate or run older than switching notify on by more than this is history.
 LOOKBACK = timedelta(minutes=2)
+# A restart marks every unfinished run "interrupted"; the ones parked on a
+# question are resumed a moment later. Only a run still interrupted this long
+# after it was first seen that way has really failed.
+INTERRUPTED_GRACE = timedelta(minutes=5)
 WORKFLOW_CACHE_S = 60.0
 
 
@@ -123,6 +127,7 @@ class Notifier:
         self._tick_lock = threading.Lock()
         self._workflow_blocks: dict[str, tuple[float, Block | None]] = {}
         self._migrated = False
+        self._interrupted_at: dict[str, datetime] = {}
         self.last_tick_at: str | None = None
         self.last_error: str | None = None
         self.sent = 0
@@ -473,6 +478,8 @@ class Notifier:
     def _ends(self, cfg: NotifyConfig, now: datetime, since: datetime,
               runs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
+        for gone in [e for e in self._interrupted_at if (runs.get(e) or {}).get("status") != "interrupted"]:
+            del self._interrupted_at[gone]
         for run in runs.values():
             status = run.get("status")
             if status not in ENDED:
@@ -484,6 +491,8 @@ class Notifier:
             key = f"end:{eid}@{run.get('end_time') or run.get('start_time')}"
             if store.has_copies(key):
                 continue
+            if status == "interrupted" and now - self._interrupted_at.setdefault(eid, now) < INTERRUPTED_GRACE:
+                continue  # it may be resumed in a moment
             kind = "failed" if status in FAILED_STATES else "finished"
             workflow = str(run.get("workflow_name") or "")
             targets = self.targets(cfg, kind, workflow, eid)

@@ -1,0 +1,132 @@
+workflow:
+  name: notion_work
+  description: |
+    Work a Notion task, from the status to a pull request. Set a task row's
+    Status to "Temper" and temper reads it, asks on the page if it is unclear,
+    and otherwise makes the change in the repository its Repo property names
+    (roamee or temper-ai) and opens a pull request. Started by the notion_work
+    trigger (the status set) and notion_work_comment (a person's comment on a
+    page temper worked), or by hand:
+      temper run notion_work --input page_id=<page id>
+
+      1. triage  — reads the page and its comments and decides. Unclear, or no
+                   Repo: asks on the page and stops. A question that needs no
+                   code: answers it and stops. Clear work: sets the status to
+                   In Progress, says so on the page, and writes the brief.
+      2. repo    — the Repo's clone URL and base branch, from a fixed table.
+      3. build   — epd_task on branch notion-<page id>: plan, implement,
+                   review, security, CI checks and fix rounds. keep=true, so a
+                   later comment continues on the same branch.
+      4. report  — opens the pull request (draft if objections are left),
+                   comments its link on the page and sets the status to In
+                   Review. Runs after a failed build too.
+
+    It never merges, never pushes a protected branch, and changes nothing in
+    Notion but this row's status and its comments.
+  inputs:
+    page_id:
+      type: string
+      required: true
+    comment_id:
+      type: string
+      required: false
+    page_url:
+      type: string
+      required: false
+    table:
+      type: string
+      required: false
+    status_property:
+      type: string
+      required: false
+    repo_property:
+      type: string
+      required: false
+  outputs:
+    decision: triage.structured.decision
+    repo: repo.structured.repo
+    branch: build.structured.branch
+    verdict: build.structured.verdict
+    pr_url: report.structured.pr_url
+    outcome: report.structured.outcome
+  nodes:
+    - name: triage
+      type: agent
+      agent: notion_triage
+      input_map:
+        page_id: input.page_id
+        comment_id: input.comment_id
+        table: input.table
+        status_property: input.status_property
+        repo_property: input.repo_property
+
+    - name: repo
+      type: agent
+      agent: notion_repo
+      depends_on: [triage]
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
+      input_map:
+        repo: triage.structured.repo
+        page_id: input.page_id
+
+    - name: build
+      type: stage
+      ref: workflows/epd_task
+      depends_on: [repo]
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
+      input_map:
+        repo_url: repo.structured.repo_url
+        base_branch: repo.structured.base_branch
+        task_name: repo.structured.task_name
+        task_description: triage.structured.brief
+        keep: true
+        force: true
+        stack: false
+        verify: false
+        plan: true
+        implement: true
+
+    - name: report
+      type: agent
+      agent: notion_report
+      depends_on: [build]
+      run_after_failure: true
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
+      input_map:
+        page_id: input.page_id
+        page_url: triage.structured.page_url
+        title: triage.structured.title
+        table: input.table
+        status_property: input.status_property
+        repo: repo.structured.repo
+        repo_error: repo.error
+        repo_failure: repo.failure
+        build_status: build.status
+        build_error: build.error
+        build_failure: build.failure
+        worktree_path: build.structured.worktree_path
+        branch: build.structured.branch
+        base_branch: build.structured.base_branch
+        implement_status: build.structured.implement_status
+        implement_summary: build.structured.implement_summary
+        implement_commit: build.structured.implement_commit
+        review_verdict: build.structured.review_verdict
+        review_summary: build.structured.review_summary
+        review_findings: build.structured.review_findings
+        test_verdict: build.structured.test_verdict
+        test_summary: build.structured.test_summary
+        test_failures: build.structured.test_failures
+        security_verdict: build.structured.security_verdict
+        security_summary: build.structured.security_summary
+        security_human_actions: build.structured.security_human_actions
+        verdict: build.structured.verdict
+        verdict_summary: build.structured.verdict_summary

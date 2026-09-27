@@ -1,0 +1,23 @@
+# A person's comment on a task page temper has worked continues the work: an
+# answer to temper's question starts the change, a change request updates the
+# pull request, a question gets a reply (agents/notion_triage.yaml decides).
+#
+# Only people's comments, never temper's own, and only on pages temper has
+# already worked (has_run). While a run for the page is going, a comment starts
+# nothing; the next run reads it. A reply that answers a question a waiting
+# run asked on the page answers that question instead (see docs/notion.md).
+trigger:
+  name: notion_work_comment
+  source: notion
+  on:
+    event: comment
+    table: tasks
+    has_run: true
+  workflow: notion_work
+  inputs:
+    page_id: "{{ page.id }}"
+    page_url: "{{ page.url }}"
+    comment_id: "{{ comment.id }}"
+    table: tasks
+    status_property: Status
+    repo_property: Repo

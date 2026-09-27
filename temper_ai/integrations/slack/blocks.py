@@ -554,8 +554,8 @@ def answer(text: str, execution_id: str, url: str = "", seconds: Any = None, usd
 
 HELP = (
     "*/temper* — talk to temper without opening it\n"
-    "• `/temper ask <question>` — what rollcall, roamee or temper-ai can do, and where in the code; "
-    "I read the code and answer here\n"
+    "• `/temper ask <question>` — what rollcall, roamee or temper-ai can do, and where in the code, "
+    "or what the team's Notion pages say; I read them and answer here\n"
     "• `/temper search <words>` — find a workflow by what it does\n"
     "• `/temper list` — every workflow, with its inputs\n"
     "• `/temper run <workflow> key=value …` — start a run; I post a thread for it\n"

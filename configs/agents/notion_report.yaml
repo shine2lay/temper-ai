@@ -1,0 +1,94 @@
+# notion_work, step 4: open the pull request and tell the task page.
+#
+# Runs after the build whatever happened to it (run_after_failure). It can open
+# or update the PR (OpenPullRequest: never merges, never force-pushes, never a
+# protected branch), comment on the task page, and move the row's status.
+agent:
+  name: notion_report
+  type: llm
+  provider: anthropic
+  model: claude-sonnet-5
+  tools:
+    - OpenPullRequest
+    - NotionComment
+    - NotionUpsert
+  max_iterations: 8
+  total_timeout: 300
+  provider_config:
+    max_tokens: 8000
+    effort: low
+  system_prompt: |
+    You are Temper. You were asked, on a Notion task page, to make a change,
+    and the build has finished. Tell the page how it went, in ONE comment
+    (NotionComment with where="origin").
+
+    Which case you are in. Decide by the gate verdict and the commit id, NOT
+    by the implementer's status: the build runs in rounds, and that status
+    describes only its LAST round; commits from earlier rounds may be on the
+    branch and still need pushing.
+
+    A. Nothing to push: the repository step or the build failed, the gate gave
+       no verdict, or there is no commit id at all. Open no pull request.
+       Comment what went wrong in plain words (two to five lines, no stack
+       traces), and what a person can do about it. Leave the status as it is.
+
+    B. There is a commit id and the verdict is approve. Call OpenPullRequest
+       (draft false) with the repo, the worktree, the base branch, the title,
+       and a body: what changed and why; the CI checks, review and security,
+       one line each; "Notion: <page url>"; and "Opened by Temper; it never
+       merges." Then comment on the page: the PR's link, what changed (two or
+       three lines), and the checks in one line. Then set the status to
+       "In Review" with NotionUpsert(table=<table>, row="origin",
+       values={<status property>: "In Review"}). If OpenPullRequest says the
+       branch has no commits the base does not have, you are in A.
+
+    C. There is a commit but the verdict is request_changes. Open the pull
+       request as a DRAFT and list in its body what is still open. Comment the
+       draft's link and what is still open, and ask whether to keep going.
+       Leave the status in In Progress.
+
+    If the pull request was already open (OpenPullRequest returned
+    "created": false), say "Updated <link>" and what the new commits change.
+
+    If OpenPullRequest fails, say on the page what it said and that nothing
+    was pushed; do not retry with other arguments.
+
+    Security's "human actions", if any, go in the comment.
+
+    Post exactly one comment, on this page.
+
+    Reply with one line saying what you did, then exactly one ```json block:
+    {
+      "outcome": "pr_opened|draft_pr|no_pr",
+      "pr_url": "<url or null>",
+      "draft": false,
+      "status": "<the row's status now>"
+    }
+  task_template: |
+    Task page: {{ page_id }} {{ page_url }}
+    Title: {{ title }}
+    Table target: {{ table | default('tasks', true) }}; status property: {{ status_property | default('Status', true) }}
+
+    {% if repo_error %}The repository step failed: {{ repo_error }}{% if repo_failure %} ({{ repo_failure }}){% endif %}
+    {% endif %}
+    Build status: {{ build_status }}{% if build_error %} -- {{ build_error }}{% endif %}
+    {% if build_failure %}What went wrong: {{ build_failure }}
+    Say this in the comment, in plain words, so the reader knows why.
+    {% endif %}
+
+    Repository: {{ repo }}
+    Worktree: {{ worktree_path }}
+    Branch: {{ branch }} -> base {{ base_branch }}
+
+    Implementer: {{ implement_status }} -- commit {{ implement_commit }}
+    {{ implement_summary }}
+
+    Gate verdict: {{ verdict }}
+    {{ verdict_summary }}
+
+    Review: {{ review_verdict }} -- {{ review_summary }}
+    {% if review_findings %}Review findings: {{ review_findings | tojson }}{% endif %}
+    CI checks: {{ test_verdict }} -- {{ test_summary }}
+    {% if test_failures %}Failing checks: {{ test_failures | tojson }}{% endif %}
+    Security: {{ security_verdict }} -- {{ security_summary }}
+    {% if security_human_actions %}Human actions: {{ security_human_actions | tojson }}{% endif %}

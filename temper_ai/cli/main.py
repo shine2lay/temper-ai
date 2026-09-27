@@ -123,6 +123,11 @@ def main() -> None:
 
     add_telegram_parser(subparsers)
 
+    # -- temper notion check --
+    from temper_ai.cli.notion import add_parser as add_notion_parser
+
+    add_notion_parser(subparsers)
+
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
@@ -198,6 +203,9 @@ def main() -> None:
     elif args.command == "telegram":
         from temper_ai.cli.telegram import cmd_telegram
         sys.exit(cmd_telegram(args))
+    elif args.command == "notion":
+        from temper_ai.cli.notion import cmd_notion
+        sys.exit(cmd_notion(args))
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

@@ -354,6 +354,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("Telegram failed to start: %s", e)
 
+    # Notion: events arrive at /api/hooks/notion; notices go out as page
+    # comments. Needs NOTION_TOKEN; off with TEMPER_NOTION=0.
+    notion_service = None
+    try:
+        from temper_ai.integrations.notion.service import start_notion
+        notion_service = start_notion()
+    except Exception as e:
+        logger.warning("Notion failed to start: %s", e)
+
     logger.info("Temper AI server ready")
 
     # The /mcp endpoint needs its session manager running for the life of
@@ -362,6 +371,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
 
     # Shutdown
+    if notion_service is not None:
+        from temper_ai.integrations.notion.service import stop_notion
+        stop_notion()
     if telegram_service is not None:
         from temper_ai.integrations.telegram.service import stop_telegram
         stop_telegram()

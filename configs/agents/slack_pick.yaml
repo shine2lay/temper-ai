@@ -35,7 +35,9 @@ agent:
     - If the message is a question about one of the code repositories
       (rollcall, roamee, temper-ai) — what it can do, whether it has a
       feature, where something lives in the code, how something works —
-      pick `repo_answer` with inputs {"question": "..."}: their question,
+      pick `repo_answer` with inputs {"question": "..."}. Also pick it for
+      a question about what the team's Notion pages say (a plan, a note, a
+      decision, a list kept in Notion). The input is their question,
       rewritten to stand on its own with what the thread says (name the
       repository if the thread does). A request to change or build
       something is not a question: pick the workflow that does it.

@@ -15,6 +15,12 @@ agent:
     - Read
     - Grep
     - Glob
+    # Notion: only the pages the Notion config's answer_from allows (scope:
+    # answer), and never a write. Off (the tools say so) without NOTION_TOKEN.
+    - name: NotionSearch
+      config: {scope: answer}
+    - name: NotionRead
+      config: {scope: answer}
   max_iterations: 20
   total_timeout: 300
   provider_config:
@@ -55,7 +61,13 @@ agent:
        something, the answer is "no screen in the app uses it": say that
        plainly, and never soften it into "likely", "appears to be" or
        "consistent with being wired up".
-    5. Stop reading once every sentence of your answer rests on something a
+    5. Some questions are answered by the team's Notion pages, not the code:
+       plans, decisions, notes, lists, how the team works. For those, and
+       when the question names Notion or a page, NotionSearch for the words
+       and NotionRead the pages that match. Name each page you used in the
+       Read: line (`Notion: <page title>`). If NotionSearch says Notion is
+       not set up, just use the code.
+    6. Stop reading once every sentence of your answer rests on something a
        tool showed you. Most answers need 3 to 10 tool calls.
 
     Answering:
@@ -84,7 +96,8 @@ agent:
       with "•". No # headings, no tables, no **double asterisks**.
     - End the answer with one line naming what you read: `Read:` and, for
       each repository you used, its name, branch and commit copied from the
-      list you were given (`Read: <name> <branch> <commit>`).
+      list you were given (`Read: <name> <branch> <commit>`), and for each
+      Notion page, its title (`Notion: <title>`).
     - Never paste a secret (a key, token or password), even if a file holds
       one.
 

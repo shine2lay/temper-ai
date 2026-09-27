@@ -285,6 +285,75 @@ def _run_still_going(execution_id: str | None) -> str | None:
     return execution_id if status in _ACTIVE else None
 
 
+# -- Notion ------------------------------------------------------------------------------
+
+NOTION_PATH = "/api/hooks/notion"
+NOTION_TOKEN_KEY = "verification_token"  # noqa: S105 - a state key, not a secret
+
+
+@router.post(NOTION_PATH)
+async def notion_webhook(request: Request, background: BackgroundTasks) -> dict[str, Any]:
+    """Notion's events (see triggers.notion). The one-time verification
+    request is kept so ``temper notion check`` can show its token; every
+    other delivery must be signed with ``NOTION_WEBHOOK_SECRET``."""
+    from temper_ai.integrations.notion import store as notion_store
+    from temper_ai.triggers import notion
+
+    raw = await request.body()
+    try:
+        event = json.loads(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="The body is not JSON.") from exc
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="The body is not a JSON object.")
+    if set(event) == {"verification_token"}:
+        notion_store.set_state(NOTION_TOKEN_KEY, str(event["verification_token"])[:200])
+        logger.warning("Notion sent a webhook verification token; `temper notion check` shows it. "
+                       "Paste it into Notion, and into %s in .env.", notion.SECRET_ENV)
+        return {"ok": True}
+    secret = notion.signing_secret()
+    if secret is None:
+        raise HTTPException(status_code=503, detail=f"Notion webhooks are off: {notion.SECRET_ENV} is not set.")
+    if not notion.verify_signature(raw, request.headers.get("x-notion-signature"), secret):
+        raise HTTPException(status_code=401, detail="X-Notion-Signature does not match the body.")
+    event_id = str(event.get("id") or "").strip()
+    if not event_id:
+        raise HTTPException(status_code=400, detail="The event has no id.")
+    authors = ",".join(f"{a['type']}:{a['id'][:8]}" for a in notion.authors(event))
+    if not notion_store.record_event(event_id, str(event.get("type") or ""),
+                                     str((event.get("entity") or {}).get("id") or ""), notion.page_of(event),
+                                     authors):
+        return {"ok": True, "duplicate": True}
+    background.add_task(notion_dispatch, event)
+    return {"ok": True}
+
+
+@router.get(NOTION_PATH + "/recent")
+def notion_recent() -> dict[str, Any]:
+    """The last Notion events and what became of each, newest first."""
+    from temper_ai.integrations.notion import store as notion_store
+
+    return {"events": notion_store.recent_events()}
+
+
+def notion_dispatch(event: dict[str, Any]) -> str:
+    from temper_ai.integrations.notion import store as notion_store
+    from temper_ai.integrations.notion.service import service
+
+    svc = service()
+    try:
+        outcome = svc.handle(event) if svc is not None else "skipped: Notion is off (NOTION_TOKEN not set)"
+    except Exception as exc:  # noqa: BLE001 - a background task has no caller to raise to
+        logger.exception("Notion event %s failed", event.get("id"))
+        outcome = f"error: {exc}"
+    logger.info("Notion event %s (%s): %s", event.get("id"), event.get("type"), outcome)
+    try:
+        notion_store.set_outcome(str(event.get("id") or ""), outcome)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not record Notion event %s: %s", event.get("id"), exc)
+    return outcome
+
+
 def reset_state() -> None:
     """Forget deliveries and history (tests)."""
     _seen.clear()

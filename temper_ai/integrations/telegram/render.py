@@ -230,7 +230,7 @@ def render(notice: Notice, zone: str) -> str:
 
 HELP = (
     "<b>Temper</b>: talk to temper without opening it\n"
-    "• /ask &lt;question&gt;: what rollcall, roamee or temper-ai can do, and where in the code\n"
+    "• /ask &lt;question&gt;: what rollcall, roamee or temper-ai can do, and where in the code, or what the Notion pages say\n"
     "• /search &lt;words&gt;: find a workflow by what it does\n"
     "• /list: every workflow, with its inputs\n"
     "• /run &lt;workflow&gt; key=value …: start a run; its notices reply to its first message\n"

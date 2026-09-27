@@ -12,6 +12,7 @@ format and sends nothing. Changes are picked up without a restart::
         slack:    {slack: {dm: U0123ABCD}}
         runs:     {slack: {channel: "#temper-runs"}}
         telegram: {telegram: 123456789}           # a chat id
+        qa-page:  {notion: qa}                    # a Notion page target (or page id)
       defaults:                 # every run, unless its workflow says otherwise
         question: origin        # back where the run was started from
         failed:   [origin, telegram]
@@ -50,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 KINDS = ("question", "stuck", "failed", "finished")
 ORIGIN = "origin"
-VIAS = ("slack", "telegram")
+VIAS = ("slack", "telegram", "notion")
 DEFAULT_STUCK_AFTER = timedelta(minutes=45)
 DEFAULT_ZONE = "America/Los_Angeles"
 BLOCK_KEYS = set(KINDS) | {"quiet_hours", "nudge"}
@@ -60,6 +61,7 @@ _PLACE_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
 _SLACK_CHANNEL = re.compile(r"^(?:[CG][A-Z0-9]{6,}|D[A-Z0-9]{6,}|#[a-z0-9][a-z0-9._-]{0,79})$")
 _SLACK_USER = re.compile(r"^[UW][A-Z0-9]{6,}$")
 _TELEGRAM_CHAT = re.compile(r"^-?\d{1,20}$")
+_NOTION_PAGE = re.compile(r"^[A-Za-z0-9_./:-]{1,200}$")
 _CLOCK = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
@@ -314,13 +316,18 @@ def parse_place(name: str, value: Any) -> Place:
         raise NotifyConfigError(f"{where}: a place name is lower-case letters, digits, - and _ (not origin)")
     if not isinstance(value, dict) or len(value) != 1:
         raise NotifyConfigError(f"{where}: expected {{slack: {{dm: U…}}}}, {{slack: {{channel: C…}}}} "
-                                "or {telegram: <chat id>}")
+                                "{telegram: <chat id>} or {notion: <page target or id>}")
     via, spec = next(iter(value.items()))
     if via == "telegram":
         target = str(spec).strip()
         if not _TELEGRAM_CHAT.match(target):
             raise NotifyConfigError(f"{where}.telegram: {spec!r} is not a chat id (a number)")
         return Place(name, "telegram", target)
+    if via == "notion":
+        target = str(spec or "").strip()
+        if not _NOTION_PAGE.match(target):
+            raise NotifyConfigError(f"{where}.notion: {spec!r} is not a Notion target name or page id")
+        return Place(name, "notion", target)
     if via == "slack":
         if not isinstance(spec, dict) or len(spec) != 1 or next(iter(spec)) not in ("dm", "channel"):
             raise NotifyConfigError(f"{where}.slack: expected {{dm: U…}} or {{channel: C…/#name}}")

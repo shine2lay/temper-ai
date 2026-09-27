@@ -1,0 +1,27 @@
+# Which Notion pages and tables temper uses, by name. An example: copy it to
+# configs/notion/local/notion.yaml (git-ignored) and put the real ids there.
+# Changes are picked up without a restart. See docs/notion.md.
+#
+# notion:
+#   targets:
+#     qa:                          # a page: agents may write under it
+#       page: <page id or URL>
+#     tasks:                       # a table that starts work (triggers/notion_work.yaml)
+#       table: <database id or URL>
+#       key: Name                  # the property that identifies a row
+#     crm:                         # a table kept up to date (workflows/notion_crm_update.yaml)
+#       table: <database id or URL>
+#       key: Company
+#       fields:                    # what agents call a field -> the column
+#         company: Company
+#         website: Website
+#         industry: Industry
+#         employees: Employees
+#   answer_from: all               # what @temper / ask may read: all shared pages, or a list
+#   zone: America/Los_Angeles
+#
+# Places for notices and questions (configs/notify) name a page target:
+#   places: {qa-page: {notion: qa}}
+notion:
+  targets: {}
+  answer_from: all

@@ -4,7 +4,7 @@
 
 _Auto-generated from code. Do not edit manually._
 
-Temper AI includes **21 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
+Temper AI includes **26 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
 
 Tool execution is gated by [safety policies](../policies/index.md) — see [File Access](../policies/file_access.md) and [Forbidden Ops](../policies/forbidden_ops.md).
 
@@ -34,6 +34,11 @@ Which container that is depends on the worker's `TEMPER_SPAWNER`. With `docker`,
 | [`Glob`](glob.md) | Find files by name pattern, e.g. '**/*.py' or 'src/**/test_*.ts'. Returns up to 200 paths (raise with limit), newest first. Skips anything the repo's .gitignore excludes, plus .git, node_modules, __pycache__, virtualenvs and build output. Use Grep to search file contents. |
 | [`Grep`](grep.md) | Search file contents with a regular expression. Returns 'path:line: text' for up to 200 matches (raise with limit), then reports how many were omitted. Skips anything the repo's .gitignore excludes, plus .git, node_modules, __pycache__, virtualenvs and build output. Prefer this over running grep through Bash: that output is unbounded. |
 | [`LinearMoveIssue`](linearmoveissue.md) | Move a Linear issue to another workflow state, e.g. 'In Progress' when you start work and 'In Review' when its pull request is open. Changes the issue's state and nothing else. |
+| [`NotionComment`](notioncomment.md) | Comment on a Notion page as temper: `origin` (the page this run started from), a page target name, or a page id/URL that is a target, under one, or a row of a table target. |
+| [`NotionRead`](notionread.md) | Read a Notion page or table row as text (title, row properties, body including tables), or a table's columns and rows. `what` is a target name from the Notion config, `origin` (the page this run started from), a page/table id, or a Notion URL. |
+| [`NotionSearch`](notionsearch.md) | Search Notion pages and tables shared with temper by title. Returns each match's title, kind (page or table), id and url; read one with NotionRead. |
+| [`NotionUpsert`](notionupsert.md) | Create or update a row in a Notion table target (e.g. a CRM). The row is found by the target's key field: if a row has that key it is updated, otherwise a new row is created, so running again never makes duplicates. `values` maps field names (from the config) or column names to values; omit a field to leave it as is. With `row` (`origin`, or a row's id/URL in that table) that row is updated instead and no key is needed: e.g. move the Status of the task this run was started from. |
+| [`NotionWrite`](notionwrite.md) | Write to Notion as temper: create a new page under a page, or append text to a page. `where` is a page target name, `origin`, or a page id/URL that is a target or under one. Text is Markdown-ish (# headings, - bullets, 1. numbers, - [ ] to-dos, > quotes, ``` code). |
 | [`OpenPullRequest`](openpullrequest.md) | Push the branch checked out in a task's git worktree to GitHub and open a pull request for it into `base`. Returns the PR's URL. If a PR for the branch is already open, pushes the new commits and returns that PR. It never merges, never force-pushes, and refuses protected branches (main, master, staging, ...). |
 | [`QueryRunState`](queryrunstate.md) | Return the state of nodes in the current workflow run. Returns a JSON list of nodes with their status ('running', 'completed', 'failed') and, for completed nodes, their output and structured_output. Use this to discover what upstream nodes have produced before making decisions — e.g. before dispatching new work based on earlier agents' results. Outputs are truncated by default; pass truncate_chars=0 to disable. |
 | [`Read`](read.md) | Read the contents of a text file. Output is capped at 2000 lines or 50KB (whichever comes first); when a file is longer the result ends with the offset to continue from. Use offset/limit to read a specific range instead of the whole file. Prefer this over running `cat` through Bash: that returns the entire file and can exhaust the context in one call. |

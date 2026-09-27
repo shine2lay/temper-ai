@@ -32,7 +32,8 @@ says so and loses its Stop button.
 A **route** is:
 
 - `origin`: back where the run was started, as a reply in that Slack thread
-  or under the run's first message in that Telegram chat;
+  or under the run's first message in that Telegram chat, or as a comment
+  on the Notion page the run was started from ([notion.md](notion.md));
 - a **place name** from the notify file (`slack`, `telegram`, `team` …);
 - a list of those: `[origin, telegram]`;
 - `off`.
@@ -84,6 +85,7 @@ notify:
     runs:     {slack: {channel: C0123ABCD}}    # a channel id, or "#name"
     telegram: {telegram: 123456789}            # a Telegram chat id
     team:     {telegram: -1001234567890}       # a group (negative id)
+    qa-page:  {notion: qa}                     # a Notion page target (comments)
 
   defaults:                  # every run, unless something closer says otherwise
     question: origin
@@ -129,7 +131,7 @@ them off there.
 
 - `GET /api/notify/status`: whether the loop runs, which places are on,
   how many messages were sent and held, and the file in use.
-- `temper slack check`, `temper telegram check`: the file's places and
+- `temper slack check`, `temper telegram check`, `temper notion check`: the file's places and
   routes, every workflow's own `notify:`, and whether the server sends there.
 
 ## Rules

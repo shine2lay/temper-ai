@@ -14,6 +14,13 @@ from temper_ai.tools.grep import Grep
 from temper_ai.tools.http import Http
 from temper_ai.tools.linear_state import LinearMoveIssue
 from temper_ai.tools.loader import load_tools
+from temper_ai.tools.notion import (
+    NotionComment,
+    NotionRead,
+    NotionSearch,
+    NotionUpsert,
+    NotionWrite,
+)
 from temper_ai.tools.query_run_state import QueryRunState
 from temper_ai.tools.read import Read
 from temper_ai.tools.remove_node import RemoveNode
@@ -41,6 +48,11 @@ TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "Grep": Grep,
     "http": Http,
     "LinearMoveIssue": LinearMoveIssue,
+    "NotionComment": NotionComment,
+    "NotionRead": NotionRead,
+    "NotionSearch": NotionSearch,
+    "NotionUpsert": NotionUpsert,
+    "NotionWrite": NotionWrite,
     "OpenPullRequest": OpenPullRequest,
     "QueryRunState": QueryRunState,
     "Read": Read,

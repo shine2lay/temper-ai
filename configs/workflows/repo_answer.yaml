@@ -3,13 +3,15 @@ workflow:
   description: |
     Answers a question about what one of the owner's apps can do, where a
     feature lives, or how something works in its code: rollcall (trading
-    assistant), roamee (travel planner) and temper-ai (temper itself).
+    assistant), roamee (travel planner) and temper-ai (temper itself), or
+    about what the team's Notion pages say (plans, notes, decisions, lists).
 
     1. repos  — refreshes a read-only copy of each repository from GitHub
                 (at most every 10 minutes) and says which commit it holds.
     2. answer — reads the repo's capability notes, then its code when the
-                notes don't say, and answers in a few Slack-sized lines,
-                naming the files it read.
+                notes don't say, and the Notion pages shared for answers
+                when the question is about them; answers in a few
+                Slack-sized lines, naming the files and pages it read.
 
     Read-only: it changes nothing anywhere. @temper and `/temper ask` in
     Slack start it and post the answer themselves.

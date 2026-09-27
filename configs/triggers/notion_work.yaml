@@ -1,0 +1,27 @@
+# Set a task row's Status to "Temper" in the Notion table named "tasks" (a
+# table target in configs/notion/local/notion.yaml) and temper works it: it
+# reads the page, asks there if it is unclear, and otherwise makes the change
+# and opens a pull request (never merges). See workflows/notion_work.yaml.
+#
+# Fires once, when the status is set (or the row is created with it), not on
+# every later edit. Temper's own changes never fire it, and while a run for
+# the page is going nothing else starts for it. A comment on the page is the
+# other trigger, notion_work_comment.yaml.
+#
+# Notion must be sending page and comment events to POST /api/hooks/notion;
+# see docs/notion.md.
+trigger:
+  name: notion_work
+  source: notion
+  on:
+    event: row
+    table: tasks
+    property: Status
+    value: Temper
+  workflow: notion_work
+  inputs:
+    page_id: "{{ page.id }}"
+    page_url: "{{ page.url }}"
+    table: tasks
+    status_property: Status
+    repo_property: Repo

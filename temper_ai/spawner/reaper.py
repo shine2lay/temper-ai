@@ -1,10 +1,15 @@
 """Reaper — background task that detects dead workers and updates rows.
 
-Runs on the server side. Periodically:
-  1. Loads WorkflowRun rows where status='running' AND spawner_kind set
+Runs next to whatever spawns the runs (the server in subprocess mode, the
+worker's watch-queue in external mode). Periodically:
+  1. Loads WorkflowRun rows where status='running' AND spawner_kind set,
+     plus 'queued' rows already handed to a process or box that has not
+     started the run yet
   2. For each, asks the spawner if the process is alive
   3. If not alive AND row is still 'running', marks it 'orphaned' so the
-     UI doesn't show a perpetual spinner on a worker that vanished
+     UI doesn't show a perpetual spinner on a worker that vanished (and
+     ends the run's event the same way); a handed-over row whose box is
+     gone before it started the run is marked 'failed' (or 'cancelled')
   4. Honors cancel_requested by sending SIGTERM (cooperative); escalates
      to SIGKILL after a grace period if the worker still hasn't exited
 
@@ -24,6 +29,7 @@ from datetime import UTC, datetime, timedelta
 from sqlmodel import select
 
 from temper_ai.database import get_session
+from temper_ai.observability.reconcile import INTERRUPTED, settle_run_event
 from temper_ai.runner.models import WorkflowRun
 from temper_ai.spawner.base import Spawner, SpawnerError
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
@@ -34,6 +40,9 @@ logger = logging.getLogger(__name__)
 # Grace period between SIGTERM and SIGKILL escalation. Worker has this
 # long to finish the current node + write a clean cancelled milestone.
 DEFAULT_KILL_GRACE_SECONDS = 30
+
+# spawner_handle while a watcher is claiming a row, before its box exists.
+CLAIMING = "claiming"
 
 
 class Reaper:
@@ -86,23 +95,38 @@ class Reaper:
         """One reap pass. Public so tests can drive it deterministically."""
         rows = self._load_live_rows()
         for row in rows:
-            self._process_row(row)
+            try:
+                self._process_row(row)
+            except Exception as exc:  # noqa: BLE001 - one bad row must not stop the rest
+                logger.exception("Reaper: %s failed (continuing): %s", row["execution_id"], exc)
 
     # -- Internals ----------------------------------------------------------
 
     def _load_live_rows(self) -> list[dict]:
         """Read just the columns we need, snapshot to dicts, release the
         session before doing slow ops (signal calls, OS polls)."""
+        from sqlalchemy import and_, or_
+        from sqlmodel import col
+
         with get_session() as session:
             rows = session.exec(
                 select(WorkflowRun).where(
-                    WorkflowRun.status == "running",
-                    WorkflowRun.spawner_kind.is_not(None),  # type: ignore[union-attr]
+                    col(WorkflowRun.spawner_kind).is_not(None),
+                    or_(
+                        col(WorkflowRun.status) == "running",
+                        # Handed to a box that has not started the run yet.
+                        and_(
+                            col(WorkflowRun.status) == "queued",
+                            col(WorkflowRun.spawner_handle).is_not(None),
+                            col(WorkflowRun.spawner_handle) != CLAIMING,
+                        ),
+                    ),
                 ),
             ).all()
             return [
                 {
                     "execution_id": r.execution_id,
+                    "status": r.status,
                     "spawner_kind": r.spawner_kind,
                     "spawner_handle": r.spawner_handle,
                     "cancel_requested": r.cancel_requested,
@@ -136,7 +160,23 @@ class Reaper:
             self._mark_orphaned(execution_id, reason=f"bad handle: {exc}")
             return
 
-        alive = self._spawner.is_alive(handle)
+        try:
+            alive = self._spawner.is_alive(handle)
+        except SpawnerError as exc:
+            # Can't tell (the docker daemon hiccupped, say): look again next tick
+            # rather than bury a run that may be fine.
+            logger.warning("Reaper: can't tell whether %s is alive: %s", execution_id, exc)
+            return
+
+        if row.get("status") == "queued":
+            # Its box is still starting the run: the run marks its row
+            # running within seconds. A box that is gone without doing that
+            # died on the way up, and never will.
+            if row["cancel_requested"] and alive:
+                self._honor_cancel(execution_id, handle)
+            elif not alive:
+                self._end_unstarted(execution_id, cancelled=bool(row["cancel_requested"]))
+            return
 
         # Cancellation flow first — even if alive, we may need to signal
         if row["cancel_requested"] and alive:
@@ -183,18 +223,37 @@ class Reaper:
                 )
             # Whether the kill succeeded or not, mark cancelled so the
             # UI doesn't keep waiting on a process we've given up on.
-            self._mark_status(execution_id, "cancelled")
+            if self._mark_status(execution_id, "cancelled"):
+                settle_run_event(execution_id, "cancelled", "Cancelled: stopped by force.")
             self._termed_at.pop(execution_id, None)
 
     def _mark_orphaned(self, execution_id: str, *, reason: str) -> None:
         """Best-effort terminal write. Idempotent — if the row is already
         terminal, the WHERE clause matches nothing."""
-        self._mark_status(
+        if self._mark_status(
             execution_id,
             "orphaned",
             error={"message": f"reaped: {reason}", "kind": "orphaned"},
-        )
+        ):
+            # The dashboard and the notify loop read the run's event, not its row.
+            settle_run_event(
+                execution_id, INTERRUPTED,
+                f"Interrupted: the run's worker stopped before it finished ({reason}).",
+            )
         logger.warning("Reaped %s as orphaned: %s", execution_id, reason)
+
+    def _end_unstarted(self, execution_id: str, *, cancelled: bool) -> None:
+        """A handed-over run whose box is gone before the run started."""
+        if cancelled:
+            ended = self._mark_status(execution_id, "cancelled", from_status="queued")
+        else:
+            ended = self._mark_status(
+                execution_id, "failed", from_status="queued",
+                error={"message": "The run's box stopped before the run started.", "kind": "spawn"},
+            )
+        self._termed_at.pop(execution_id, None)
+        if ended:
+            logger.warning("Reaper: %s's box stopped before the run started", execution_id)
 
     def _mark_status(
         self,
@@ -202,21 +261,24 @@ class Reaper:
         status: str,
         *,
         error: dict | None = None,
-    ) -> None:
+        from_status: str = "running",
+    ) -> bool:
+        """End a row still in ``from_status``; False when the worker already ended it."""
         with get_session() as session:
             row = session.exec(
                 select(WorkflowRun).where(
                     WorkflowRun.execution_id == execution_id,
                 ),
             ).first()
-            if row is None or row.status != "running":
+            if row is None or row.status != from_status:
                 # Race: worker beat us to the terminal write. Fine.
-                return
+                return False
             row.status = status
             row.completed_at = datetime.now(UTC)
             if error is not None:
                 row.error = error
             session.add(row)
+            return True
 
 
 def _sleep(seconds: float) -> None:

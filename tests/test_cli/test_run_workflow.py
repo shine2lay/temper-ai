@@ -273,6 +273,110 @@ def test_signal_handlers_set_cancel_event():
         signal.signal(signal.SIGINT, prev_int)
 
 
+# --- Resumes and forks queued for a box -----------------------------------
+# The server queues them like new runs (spawner_metadata["start"]); the box
+# restores the checkpoints before the run begins.
+
+def _queue(execution_id: str, start: str | None) -> None:
+    with get_session() as session:
+        session.add(WorkflowRun(
+            execution_id=execution_id,
+            workflow_name="test_workflow",
+            workspace_path="/tmp/test_workspace",
+            inputs={"key": "value"},
+            status="queued",
+            spawner_metadata={"start": start} if start else {},
+        ))
+
+
+def _save(execution_id: str, node: str) -> int:
+    from temper_ai.checkpoint.service import CheckpointService
+    from temper_ai.stage.executor import NodeResult, Status
+
+    service = CheckpointService(execution_id)
+    service.save_node_completed(node, NodeResult(status=Status.COMPLETED, output=f"{node} done"))
+    return service.get_latest_sequence()
+
+
+def _run(execution_id: str) -> tuple[int, dict]:
+    """Run the CLI with the engine faked; (exit code, what the engine was given)."""
+    with (
+        patch("temper_ai.runner.bootstrap.bootstrap_runner_context_from_env"),
+        patch(
+            "temper_ai.runner.execute.execute_workflow",
+            return_value=ExecuteResult(exit_code=0, status="completed"),
+        ) as engine,
+    ):
+        rc = cmd_run_workflow(_make_args(execution_id))
+    return rc, (engine.call_args.kwargs if engine.called else {})
+
+
+def test_a_new_run_restores_nothing(isolated_db):
+    _queue("exec-new", None)
+    rc, given = _run("exec-new")
+    assert rc == 0
+    assert (given["initial_outputs"], given["resume_metadata"]) == (None, None)
+    assert given["replay_dispatch_history"] is False
+
+
+def test_a_queued_resume_goes_on_from_its_checkpoints(isolated_db):
+    import datetime as dt
+
+    from temper_ai.observability.models import Event
+
+    _save("exec-resume", "plan")
+    with get_session() as session:
+        session.add(Event(
+            id="ev-first-attempt", type="workflow.started", execution_id="exec-resume",
+            status="interrupted", data={},
+            timestamp=dt.datetime.now(dt.UTC).replace(tzinfo=None),
+        ))
+    _queue("exec-resume", "resume")
+
+    rc, given = _run("exec-resume")
+
+    assert rc == 0
+    assert given["initial_outputs"]["plan"].output == "plan done"
+    assert given["resume_metadata"] == {
+        "resume_of": "ev-first-attempt",
+        "restored_node_names": ["plan"],
+        "replayed_dispatches": [],
+    }
+    assert given["replay_dispatch_history"] is True
+    assert _read_row("exec-resume")["status"] == "completed"
+
+
+def test_a_queued_fork_starts_from_the_source_up_to_the_fork_point(isolated_db):
+    from temper_ai.checkpoint.service import CheckpointService
+
+    fork_at = _save("exec-source", "plan")
+    _save("exec-source", "build")
+    CheckpointService.fork("exec-source", fork_at, "exec-fork")  # done by the server
+    _queue("exec-fork", "fork")
+
+    rc, given = _run("exec-fork")
+
+    assert rc == 0
+    assert set(given["initial_outputs"]) == {"plan"}
+    assert given["resume_metadata"] is None
+    assert given["replay_dispatch_history"] is False
+
+
+def test_a_resume_that_cannot_restore_fails_its_run_without_starting_it(isolated_db):
+    _queue("exec-broken", "resume")
+    with patch(
+        "temper_ai.checkpoint.service.CheckpointService.reconstruct",
+        side_effect=RuntimeError("checkpoints unreadable"),
+    ):
+        rc, given = _run("exec-broken")
+
+    assert rc == 2
+    assert given == {}
+    row = _read_row("exec-broken")
+    assert row["status"] == "failed"
+    assert "resume failed: checkpoints unreadable" in row["error"]["message"]
+
+
 # --- Argument parsing surface (smoke) ------------------------------------
 
 def test_subcommand_registered_in_main_parser():

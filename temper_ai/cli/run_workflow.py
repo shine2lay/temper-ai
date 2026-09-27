@@ -65,6 +65,19 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         )
         return 2
 
+    # --- Resume or fork? --------------------------------------------------------
+    # The server queues resumes and forks too (spawner_metadata["start"]), so
+    # they run in a box like any other run. Both restore from checkpoints; a
+    # resume also links to the attempt it continues and replays its dispatches.
+    # Worked out before this attempt writes its own workflow.started event.
+    start = (run_row.get("spawner_metadata") or {}).get("start")
+    try:
+        initial_outputs, resume_metadata = _restored_state(execution_id, start)
+    except Exception as exc:
+        logger.exception("Could not restore %s for its %s: %s", execution_id, start, exc)
+        _safe_mark_failed(execution_id, f"{start} failed: {exc}")
+        return 2
+
     # --- Mark running ---------------------------------------------------------
     # The handle the reaper polls: our PID under the subprocess spawner, our
     # container's name when the docker spawner put us in one (a PID would
@@ -119,6 +132,9 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             runner_ctx=runner_ctx,
             notifier=notifier,
             cancel_event=cancel_event,
+            initial_outputs=initial_outputs,
+            resume_metadata=resume_metadata,
+            replay_dispatch_history=start == "resume",
         )
     except Exception as exc:
         # execute_workflow already catches its own exceptions and returns
@@ -159,6 +175,29 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     return result.exit_code
 
 
+def _restored_state(
+    execution_id: str, start: str | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """(initial_outputs, resume_metadata) for a queued resume or fork.
+
+    A fresh run gets (None, None). A fork's checkpoints were copied under its
+    new id by the server, so both kinds restore the same way.
+    """
+    if start not in ("resume", "fork"):
+        return None, None
+    from temper_ai.checkpoint.service import CheckpointService
+    initial_outputs = CheckpointService(execution_id).reconstruct()
+    if start == "fork":
+        return initial_outputs, None
+    from temper_ai.runner.resume import find_latest_workflow_event
+    previous = find_latest_workflow_event(execution_id)
+    return initial_outputs, {
+        "resume_of": previous["id"] if previous else None,
+        "restored_node_names": sorted(initial_outputs),
+        "replayed_dispatches": [],
+    }
+
+
 # --- WorkflowRun row helpers -------------------------------------------------
 
 def _load_run_row(execution_id: str) -> dict[str, Any] | None:
@@ -186,6 +225,7 @@ def _load_run_row(execution_id: str) -> dict[str, Any] | None:
             "inputs": row.inputs,
             "status": row.status,
             "attempts": row.attempts,
+            "spawner_metadata": dict(row.spawner_metadata or {}),
         }
 
 

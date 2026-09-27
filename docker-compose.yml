@@ -169,6 +169,10 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-}
       TEMPER_MEMORY_BACKEND: ${TEMPER_MEMORY_BACKEND:-sql}
+      # Where a run's own scripts reach this server's API (the EPD and
+      # capmap drivers). A run in a box of its own (TEMPER_SPAWNER=docker)
+      # can't use localhost; the compose name works from here too.
+      TEMPER_API: ${TEMPER_API:-http://server:8420}
     env_file:
       - path: .env
         required: false
@@ -231,6 +235,17 @@ services:
       # needs the socket on the *worker* (docker-compose.host-docker.yml):
       # that is what it spawns with.
       TEMPER_SPAWNER: ${TEMPER_SPAWNER:-subprocess}
+      # `docker` only. Which container each run's box is a copy of: empty is
+      # the worker itself; the server's container (e.g. temper-ai-server-1)
+      # gives a run exactly what it had when it ran inside the server. Read
+      # again for every run, so a recreated server passes on a new key.
+      TEMPER_DOCKER_TEMPLATE_CONTAINER: ${TEMPER_DOCKER_TEMPLATE_CONTAINER:-}
+      # `own`: a run sees only its own workspace. `all`: the whole
+      # workspaces tree, where runs share folders (repos, readonly, ...).
+      TEMPER_DOCKER_WORKSPACES: ${TEMPER_DOCKER_WORKSPACES:-own}
+      # What the box runs, when not `uv run python -m temper_ai.cli.main
+      # run-workflow` (the server image: `.venv/bin/python -m ...`).
+      TEMPER_DOCKER_RUN_COMMAND: ${TEMPER_DOCKER_RUN_COMMAND:-}
       # Workspace path string the server writes into WorkflowRun rows must
       # match what the worker can resolve — same value on both sides.
       WORKSPACE_DIR: ${WORKSPACE_DIR:-./workspaces}

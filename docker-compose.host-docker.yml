@@ -6,7 +6,9 @@
 #
 #   TEMPER_SPAWNER=docker      The worker uses the socket for one thing:
 #                              starting a sibling container per run (see
-#                              temper_ai/spawner/docker_spawner.py). Runs
+#                              temper_ai/spawner/docker_spawner.py), a copy
+#                              of the worker or of the container named by
+#                              TEMPER_DOCKER_TEMPLATE_CONTAINER. Runs
 #                              execute in those containers and never see
 #                              the socket. This is the sandbox; use it.
 #

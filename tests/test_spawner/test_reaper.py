@@ -191,6 +191,129 @@ def test_dead_worker_with_cancel_requested_marked_orphaned(isolated_db, fake_spa
     fake_spawner.kill.assert_not_called()
 
 
+# --- Runs in boxes ---------------------------------------------------------
+# The dashboard, Slack and the notify loop read the run's workflow.started
+# event, not its row: when the reaper ends a run, it ends that event too.
+
+def _open_event(execution_id: str, status: str = "running") -> str:
+    from temper_ai.observability.models import Event
+
+    with get_session() as session:
+        session.add(Event(
+            id=f"ev-{execution_id}", type="workflow.started", execution_id=execution_id,
+            status=status, data={}, timestamp=datetime.now(UTC).replace(tzinfo=None),
+        ))
+    return f"ev-{execution_id}"
+
+
+def _event(event_id: str) -> tuple[str, dict]:
+    from temper_ai.observability.models import Event
+
+    with get_session() as session:
+        event = session.get(Event, event_id)
+        return event.status, dict(event.data or {})
+
+
+def test_a_box_that_died_mid_run_ends_its_event_too(isolated_db, fake_spawner):
+    _insert_run("box-dead", spawner_kind="docker", spawner_handle="temper-run-box-dead")
+    event_id = _open_event("box-dead")
+    fake_spawner.is_alive.return_value = False
+
+    Reaper(fake_spawner, interval_seconds=0.01).tick()
+
+    assert _read_status("box-dead") == "orphaned"
+    status, data = _event(event_id)
+    assert status == "interrupted"
+    assert "stopped before it finished" in data["error"]
+
+
+def test_a_run_that_ended_itself_keeps_its_own_event(isolated_db, fake_spawner):
+    _insert_run("box-done", spawner_kind="docker", spawner_handle="temper-run-box-done")
+    event_id = _open_event("box-done", status="completed")
+    fake_spawner.is_alive.return_value = False
+
+    Reaper(fake_spawner, interval_seconds=0.01).tick()
+
+    assert _event(event_id)[0] == "completed"
+
+
+def test_a_stop_that_needed_force_ends_the_event_as_cancelled(isolated_db, fake_spawner):
+    _insert_run("box-stuck", spawner_kind="docker", spawner_handle="temper-run-box-stuck",
+                cancel_requested=True)
+    event_id = _open_event("box-stuck", status="waiting")
+    fake_spawner.is_alive.return_value = True
+
+    reaper = Reaper(fake_spawner, interval_seconds=0.01, kill_grace_seconds=0)
+    reaper.tick()
+    reaper._termed_at["box-stuck"] = datetime.now(UTC) - timedelta(seconds=60)
+    reaper.tick()
+
+    assert _read_status("box-stuck") == "cancelled"
+    assert _event(event_id)[0] == "cancelled"
+
+
+def test_a_box_that_died_before_starting_its_run_fails_it(isolated_db, fake_spawner):
+    _insert_run("box-early", status="queued", spawner_kind="docker",
+                spawner_handle="temper-run-box-early")
+    fake_spawner.is_alive.return_value = False
+
+    Reaper(fake_spawner, interval_seconds=0.01).tick()
+
+    assert _read_status("box-early") == "failed"
+    assert _read_error("box-early")["kind"] == "spawn"
+
+
+def test_a_run_stopped_before_its_box_started_it_is_cancelled(isolated_db, fake_spawner):
+    _insert_run("box-stop", status="queued", spawner_kind="docker",
+                spawner_handle="temper-run-box-stop", cancel_requested=True)
+    fake_spawner.is_alive.return_value = False
+
+    Reaper(fake_spawner, interval_seconds=0.01).tick()
+
+    assert _read_status("box-stop") == "cancelled"
+
+
+def test_a_box_still_starting_is_left_to_start(isolated_db, fake_spawner):
+    _insert_run("box-starting", status="queued", spawner_kind="docker",
+                spawner_handle="temper-run-box-starting")
+    fake_spawner.is_alive.return_value = True
+
+    Reaper(fake_spawner, interval_seconds=0.01).tick()
+
+    assert _read_status("box-starting") == "queued"
+    fake_spawner.kill.assert_not_called()
+
+
+def test_a_claim_with_no_box_yet_is_the_watchers_not_the_reapers(isolated_db, fake_spawner):
+    _insert_run("claiming", status="queued", spawner_kind="docker", spawner_handle="claiming")
+
+    Reaper(fake_spawner, interval_seconds=0.01).tick()
+
+    fake_spawner.is_alive.assert_not_called()
+    assert _read_status("claiming") == "queued"
+
+
+def test_a_docker_that_does_not_answer_buries_nothing(isolated_db, fake_spawner):
+    _insert_run("box-unsure", spawner_kind="docker", spawner_handle="temper-run-box-unsure")
+    event_id = _open_event("box-unsure")
+    fake_spawner.is_alive.side_effect = SpawnerError("Cannot connect to the Docker daemon")
+
+    Reaper(fake_spawner, interval_seconds=0.01).tick()
+
+    assert _read_status("box-unsure") == "running"
+    assert _event(event_id)[0] == "running"
+
+
+def test_one_bad_row_does_not_stop_the_rest(isolated_db, fake_spawner):
+    _insert_run("row-a", spawner_kind="docker", spawner_handle="temper-run-row-a")
+    _insert_run("row-b", spawner_kind="docker", spawner_handle="temper-run-row-b")
+    fake_spawner.is_alive.side_effect = [RuntimeError("surprise"), False]
+
+    Reaper(fake_spawner, interval_seconds=0.01).tick()
+
+    assert sorted([_read_status("row-a"), _read_status("row-b")]) == ["orphaned", "running"]
+
+
 # --- Lifecycle ---------------------------------------------------------
 
 def test_start_and_stop_thread(isolated_db, fake_spawner):

@@ -27,6 +27,14 @@ class SpawnerError(Exception):
     """
 
 
+class SpawnerBusy(SpawnerError):
+    """The spawner can't start a run right now, but may in a moment.
+
+    The watcher puts the run back in the queue instead of failing it: say
+    the container runs are copied from is being recreated.
+    """
+
+
 class Spawner(ABC):
     """Backend-agnostic interface for starting workflow runner processes.
 

@@ -15,8 +15,10 @@ uses a different quota.
 
 A token that answers "rate limited" is cooled until its reset and skipped;
 when every token is cooling the pool says so rather than handing back a
-credential that is certain to fail. Cooldowns live at module scope so they
-are shared by every provider instance in the process.
+credential that is certain to fail. Coolings are shared by every pool of
+the same name, in this process and in every other temper process (the
+server, each run's box) through Redis -- see temper_ai.llm.shared_cooldowns;
+without Redis each pool keeps its own.
 
 A cooling is per *model family*, because the subscription's weekly ceiling
 is. Cooling the credential outright is what it used to do, and it cost four
@@ -53,6 +55,8 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+
+from temper_ai.llm import shared_cooldowns
 
 logger = logging.getLogger(__name__)
 
@@ -212,8 +216,19 @@ class TokenPool:
             return self.labels[idx]
         return f"slot {idx}"
 
+    def _sync(self) -> None:
+        """Take in the coolings other processes found; a longer local one stays."""
+        found = shared_cooldowns.for_tokens(self.name, self.tokens)
+        if not found:
+            return
+        with self._lock:
+            for key, until in found.items():
+                if until > self._cooldown.get(key, 0.0):
+                    self._cooldown[key] = until
+
     def cooling_until(self, token: str, model: str | None = None) -> float | None:
         """When this token is usable for this model again; None when it is now."""
+        self._sync()
         with self._lock:
             until = self._blocked_until(token, model_family(model))
         return until if until > time.time() else None
@@ -234,11 +249,13 @@ class TokenPool:
 
     def available(self, model: str | None = None) -> list[str]:
         """Tokens usable for this model. Without one, tokens usable for anything."""
+        self._sync()
         family, now = model_family(model), time.time()
         with self._lock:
             return [t for t in self.tokens if self._blocked_until(t, family) < now]
 
     def soonest_reset(self, model: str | None = None) -> float | None:
+        self._sync()
         family, now = model_family(model), time.time()
         with self._lock:
             pending = [u for t in self.tokens if (u := self._blocked_until(t, family)) > now]
@@ -287,6 +304,7 @@ class TokenPool:
         deadline = max(deadline, time.time() + MIN_COOLDOWN_S)
         with self._lock:
             self._cooldown[(family, token)] = deadline
+        shared_cooldowns.push(self.name, family, token, deadline)
         logger.warning(
             "%s: %s cooled for %s (%s) until %s — %d of %d still available for %s",
             self.name, self.label_of(token), family, reason, _fmt(deadline),
@@ -303,6 +321,7 @@ class TokenPool:
         A caller about to start long work asks this first: with no slot available for its model
         the work stops at its first call (b009 on 2026-09-24, "token pool exhausted").
         """
+        self._sync()
         now = time.time()
         with self._lock:
             others = sorted({f for f, _ in self._cooldown} - set(KNOWN_FAMILIES) - {ANY_MODEL})
@@ -320,5 +339,7 @@ class TokenPool:
         return out
 
     def clear_cooldowns(self) -> None:
+        """Forget every cooling, here and for every other process."""
         with self._lock:
             self._cooldown.clear()
+        shared_cooldowns.clear(self.name)

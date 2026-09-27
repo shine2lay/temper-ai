@@ -29,6 +29,12 @@ from temper_ai.runner._helpers import (
     build_dispatch_limits,
     preconnect_mcp_servers,
 )
+from temper_ai.runner.resume import (
+    apply_dispatch_history_on_resume as _apply_dispatch_history_on_resume,
+)
+from temper_ai.runner.resume import (
+    find_latest_workflow_event as _find_latest_workflow_event,
+)
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.gate import normalise_response
@@ -161,8 +167,7 @@ def start_run(body: RunRequest):
     #             (temper watch-queue, in the worker container) picks it up
     #             and spawns the worker. Solves the toolchain problem —
     #             worker container has pytest/npm/docker-cli baked in.
-    import os as _os
-    mode = _os.environ.get("TEMPER_EXECUTION_MODE", "inprocess").lower()
+    mode = _execution_mode()
     if mode == "subprocess":
         return _start_run_subprocess(execution_id, body, config)
     if mode == "external":
@@ -237,19 +242,91 @@ def _start_run_external(
     Same WorkflowRun row contract as subprocess mode; the watcher reads
     workflow_name + workspace_path + inputs and runs `temper run-workflow`.
     """
+    _queue_run(execution_id, config.name, body.workspace_path, body.inputs)
+    return RunResponse(execution_id=execution_id, status="queued")
+
+
+def _execution_mode() -> str:
+    """inprocess (default), subprocess or external: where runs execute."""
+    import os
+    return os.environ.get("TEMPER_EXECUTION_MODE", "inprocess").lower()
+
+
+def _queue_run(
+    execution_id: str,
+    workflow_name: str,
+    workspace_path: str | None,
+    inputs: dict | None,
+    start: str | None = None,
+) -> None:
+    """Queue a run for the worker, which starts it in its own box.
+
+    ``start`` is how the box begins: a fresh run (None), or ``resume`` /
+    ``fork`` from the run's checkpoints (read by ``temper run-workflow``).
+    A resumed run keeps its row: a finished one goes back to queued. One
+    that is still queued or running is refused, so a run never has two
+    boxes.
+    """
+    from sqlmodel import select
+
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+
+    metadata = {"start": start} if start else {}
+    with get_session() as session:
+        row = session.exec(
+            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+        ).first()
+        if row is None:
+            session.add(WorkflowRun(
+                execution_id=execution_id,
+                workflow_name=workflow_name,
+                workspace_path=workspace_path or "",
+                inputs=inputs or {},
+                status="queued",
+                spawner_metadata=metadata,
+            ))
+            return
+        if row.status in ("queued", "running"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Execution '{execution_id}' is already {row.status}",
+            )
+        row.workflow_name = workflow_name
+        row.workspace_path = workspace_path or ""
+        row.inputs = inputs or {}
+        row.status = "queued"
+        row.spawner_kind = None
+        row.spawner_handle = None
+        row.spawner_metadata = metadata
+        row.cancel_requested = False
+        row.started_at = None
+        row.completed_at = None
+        row.result = None
+        row.error = None
+        session.add(row)
+
+
+def _run_row(execution_id: str) -> dict | None:
+    """The run's WorkflowRun row as a plain dict, or None (runs in a box have one)."""
+    from sqlmodel import select
+
     from temper_ai.database import get_session
     from temper_ai.runner.models import WorkflowRun
 
     with get_session() as session:
-        session.add(WorkflowRun(
-            execution_id=execution_id,
-            workflow_name=config.name,
-            workspace_path=body.workspace_path or "",
-            inputs=body.inputs or {},
-            status="queued",
-        ))
-
-    return RunResponse(execution_id=execution_id, status="queued")
+        row = session.exec(
+            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+        ).first()
+        if row is None:
+            return None
+        return {
+            "workflow_name": row.workflow_name,
+            "workspace_path": row.workspace_path or None,
+            "inputs": row.inputs,
+            "status": row.status,
+            "error": row.error,
+        }
 
 
 def _start_run_subprocess(
@@ -368,29 +445,47 @@ def get_workflow(execution_id: str):
         # fraction of a second POST /api/runs handed back an id that this
         # endpoint answered 404 for. Anything that started a run and polled
         # immediately — an agent over MCP, a script — saw "not found" for a
-        # run that was about to exist.
+        # run that was about to exist. A run queued for a box has no events
+        # until the box starts it, a few seconds later; its row stands in.
         if execution_id in _state().running:
-            return {
-                "id": execution_id,
-                "workflow_name": None,
-                "status": "running",
-                "start_time": None,
-                "end_time": None,
-                "duration_seconds": None,
-                "nodes": [],
-                "total_tokens": 0,
-                "total_cost_usd": 0.0,
-                "total_llm_calls": 0,
-                "total_tool_calls": 0,
-                "input_data": None,
-                "workspace_path": None,
-                "output_data": None,
-                "workflow_output": None,
-                "error_message": None,
-                "fork_source": None,
-            }
+            return _run_placeholder(execution_id, "running")
+        row = _run_row(execution_id)
+        if row is not None:
+            return _run_placeholder(execution_id, row["status"], row)
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+    if _execution_mode() == "external" and result.get("status") not in _ACTIVE_STATUSES:
+        # A resume waiting for its box still shows the attempt before it.
+        row = _run_row(execution_id)
+        if row is not None and row["status"] in ("queued", "running"):
+            result["status"] = row["status"]
     return result
+
+
+_ACTIVE_STATUSES = ("pending", "queued", "running", "waiting")
+
+
+def _run_placeholder(execution_id: str, status: str, row: dict | None = None) -> dict:
+    """What GET /api/workflows/{id} says about a run with no events yet."""
+    row = row or {}
+    return {
+        "id": execution_id,
+        "workflow_name": row.get("workflow_name"),
+        "status": status,
+        "start_time": None,
+        "end_time": None,
+        "duration_seconds": None,
+        "nodes": [],
+        "total_tokens": 0,
+        "total_cost_usd": 0.0,
+        "total_llm_calls": 0,
+        "total_tool_calls": 0,
+        "input_data": row.get("inputs"),
+        "workspace_path": row.get("workspace_path"),
+        "output_data": None,
+        "workflow_output": None,
+        "error_message": (row.get("error") or {}).get("message"),
+        "fork_source": None,
+    }
 
 
 class CancelRequest(BaseModel):
@@ -523,6 +618,13 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         or (result.get("input_data") or {}).get("workspace_path")
     )
 
+    if _execution_mode() == "external":
+        # Its box restores the checkpoints and replays the dispatches
+        # (temper run-workflow), the same steps as below.
+        _queue_run(execution_id, config.name, workspace,
+                   result.get("input_data") or {}, start="resume")
+        return RunResponse(execution_id=execution_id, status="queued")
+
     from temper_ai.safety import PolicyEngine
     policy_engine = PolicyEngine.for_run(config.safety)
 
@@ -623,6 +725,13 @@ def fork_run(body: ForkRequest):
         body.source_execution_id, body.sequence, new_execution_id, len(restored_outputs),
     )
 
+    if _execution_mode() == "external":
+        # The checkpoints are already copied under the new id; its box
+        # restores them (temper run-workflow).
+        _record_fork_metadata(new_execution_id, body, restored_outputs, nodes)
+        _queue_run(new_execution_id, config.name, body.workspace_path,
+                   body.inputs or {}, start="fork")
+        return RunResponse(execution_id=new_execution_id, status="queued")
 
     from temper_ai.safety import PolicyEngine
     policy_engine = PolicyEngine.for_run(config.safety)
@@ -655,10 +764,30 @@ def fork_run(body: ForkRequest):
 
     bind_delegate_tool(run_tool_executor, context)
 
-    # Record fork metadata so the data service can link back to the source.
-    # Determine top-level node names that were restored.
+    _record_fork_metadata(new_execution_id, body, restored_outputs, nodes)
+
+    inputs = body.inputs or {}
+    thread = threading.Thread(
+        target=_run_workflow_with_checkpoints,
+        args=(nodes, inputs, context, config.name, new_execution_id, restored_outputs),
+        kwargs={"workflow_outputs": config.outputs},
+        daemon=True,
+    )
+    thread.start()
+
+    return RunResponse(execution_id=new_execution_id, status="running")
+
+
+def _record_fork_metadata(new_execution_id: str, body: ForkRequest, restored_outputs: dict, nodes) -> None:
+    """Store a fork.metadata event so the data service can link the fork to its source."""
+    import uuid as _uuid
+
+    from temper_ai.observability.models import Event as _Event
+    from temper_ai.observability.recorder import _db_write_with_retry
     from temper_ai.stage.stage_node import StageNode as _StageNode
-    # Checkpoints are keyed by node path: a stage's children as `stage.child`.
+
+    # The top-level node names that were restored. Checkpoints are keyed by
+    # node path: a stage's children as `stage.child`.
     restored_keys = set(restored_outputs.keys())
     restored_top_level: set[str] = set()
     for node in nodes:
@@ -668,11 +797,6 @@ def fork_run(body: ForkRequest):
             if any(f"{node.name}.{cn.name}" in restored_keys for cn in node.child_nodes):
                 restored_top_level.add(node.name)
 
-    # Store fork metadata as an event so the data service can link to the source.
-    import uuid as _uuid
-
-    from temper_ai.observability.models import Event as _Event
-    from temper_ai.observability.recorder import _db_write_with_retry
     fork_event = _Event(
         id=str(_uuid.uuid4()),
         type="fork.metadata",
@@ -685,17 +809,6 @@ def fork_run(body: ForkRequest):
         },
     )
     _db_write_with_retry(lambda s: s.add(fork_event))
-
-    inputs = body.inputs or {}
-    thread = threading.Thread(
-        target=_run_workflow_with_checkpoints,
-        args=(nodes, inputs, context, config.name, new_execution_id, restored_outputs),
-        kwargs={"workflow_outputs": config.outputs},
-        daemon=True,
-    )
-    thread.start()
-
-    return RunResponse(execution_id=new_execution_id, status="running")
 
 
 class GateAnswer(BaseModel):
@@ -877,110 +990,6 @@ def _build_notifier(execution_id: str, workflow_name: str):
     )
 
 
-def _find_latest_workflow_event(execution_id: str) -> dict | None:
-    """Return the most recent `workflow.started` event for the given run, or
-    None if none exists. Used during resume to stamp the new workflow event
-    with `data.resume_of` pointing back to the prior attempt.
-    """
-    from temper_ai.observability.event_types import EventType
-    from temper_ai.observability.recorder import get_events
-    candidates = get_events(
-        execution_id=execution_id,
-        event_type=EventType.WORKFLOW_STARTED,
-        limit=100,
-    )
-    if not candidates:
-        return None
-    # Latest by timestamp wins.
-    return max(candidates, key=lambda e: e.get("timestamp") or "")
-
-
-def _apply_dispatch_history_on_resume(
-    checkpoint_svc, graph_loader, nodes, context,
-) -> list[str]:
-    """Rebuild the DAG + DispatchRunState from saved dispatch_applied events.
-
-    Called before executor restart during resume. For each persisted dispatch:
-      - materialize every added node via GraphLoader._resolve_node and insert
-        it into `nodes` so the executor sees it alongside the original YAML
-      - re-populate DispatchRunState (depths, parents, fingerprints,
-        dispatched_count) so post-resume dispatches still respect caps
-
-    op=remove targets are already handled by reconstruct() which marks them
-    SKIPPED in the restored node_outputs.
-
-    Returns: list of dispatcher names whose state was replayed (for resume
-    metadata stamping on the new workflow.started event).
-    """
-    from temper_ai.stage.dispatch_limits import DispatchRunState
-    from temper_ai.stage.models import NodeConfig
-
-    history = checkpoint_svc.reconstruct_dispatch_history()
-    if not history:
-        return []
-
-    # Seed the state if the context doesn't have one yet — on resume, no
-    # dispatch has fired in this executor process, so state starts empty.
-    if context.dispatch_state is None:
-        context.dispatch_state = DispatchRunState()
-    state = context.dispatch_state
-
-    existing_names = {n.name for n in nodes}
-    replayed_dispatchers: list[str] = []
-    for event in history:
-        dispatcher_name = event["dispatcher_name"]
-        # Record dispatcher's own fingerprint + depth so cycle/depth walks
-        # work on post-resume dispatches.
-        state.fingerprints.setdefault(
-            dispatcher_name,
-            event["dispatcher_fingerprint"],
-        )
-        dispatcher_depth = event["dispatcher_depth"]
-
-        for node_dict in event["added_nodes"]:
-            name = node_dict.get("name")
-            if not isinstance(name, str):
-                logger.warning(
-                    "dispatch_applied entry for '%s' has a node without a "
-                    "name — skipping restore of that node", dispatcher_name,
-                )
-                continue
-            if name in existing_names:
-                # Name already in DAG (shouldn't happen, but be defensive)
-                continue
-            try:
-                nc = NodeConfig.from_dict(node_dict)
-                built = graph_loader._resolve_node(nc)
-            except Exception as exc:  # noqa: BLE001
-                logger.error(
-                    "Resume: failed to re-materialize dispatched node '%s' "
-                    "(from dispatcher '%s'): %s",
-                    name, dispatcher_name, exc,
-                )
-                continue
-            nodes.append(built)
-            existing_names.add(name)
-            # Rebuild state so future dispatches from this node see correct depth etc.
-            new_depth = dispatcher_depth + 1
-            state.depths[name] = new_depth
-            state.parents[name] = dispatcher_name
-            # Compute the restored child's fingerprint identically to how
-            # the original run did — see _enforce_caps_and_build.
-            from temper_ai.stage.dispatch_limits import fingerprint_node
-            agent_ref = node_dict.get("agent") or name
-            state.fingerprints[name] = fingerprint_node(
-                agent_ref, node_dict.get("input_map") or {},
-            )
-        state.dispatched_count += event["dispatched_count_delta"]
-        if dispatcher_name not in replayed_dispatchers:
-            replayed_dispatchers.append(dispatcher_name)
-
-    logger.info(
-        "Resume: replayed %d dispatch_applied event(s); DAG now has %d nodes, "
-        "dispatched_count=%d",
-        len(history), len(nodes), state.dispatched_count,
-    )
-    return replayed_dispatchers
 
 
 @router.get("/api/mcp-servers")

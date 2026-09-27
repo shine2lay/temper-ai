@@ -13,8 +13,9 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from temper_ai.spawner.base import SpawnerError
+from temper_ai.spawner.base import SpawnerBusy, SpawnerError
 from temper_ai.spawner.docker_spawner import (
+    TEMPLATE_GRACE_SECONDS,
     DockerSpawner,
     Mount,
     Template,
@@ -204,13 +205,112 @@ class TestRunContainer:
         assert cmd[cmd.index("--cpus") + 1] == "2"
         assert cmd[cmd.index("--pids-limit") + 1] == "512"
 
-    def test_the_template_is_read_once(self, workspace):
-        docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), "")]})
+    def test_the_template_is_read_again_for_every_run(self, workspace):
+        """A template container recreated with a new key or image passes it
+        to the next run, without restarting the worker."""
+        recreated = _inspect_json(Config={"Image": "temper-ai-server:new", "Env": ["KEY=new"]})
+        docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), ""), (0, recreated, "")]})
         spawner = _spawner(docker, str(workspace))
         spawner.spawn("exec-1")
         spawner.spawn("exec-2")
-        assert len(docker.commands("inspect")) == 1
-        assert len(docker.commands("run")) == 2
+        assert len(docker.commands("inspect")) == 2
+        first, second = docker.commands("run")
+        assert "temper-ai-worker" in first
+        assert "temper-ai-server:new" in second and "KEY=new" in _envs(second)
+
+    def test_a_template_being_recreated_leaves_the_last_look_standing(self, workspace):
+        gone = (1, "", "Error: No such object: worker-self")
+        docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), ""), gone]})
+        spawner = _spawner(docker, str(workspace))
+        spawner.spawn("exec-1")
+        spawner.spawn("exec-2")
+        first, second = docker.commands("run")
+        assert first[first.index("temper-ai-worker"):][:1] == second[second.index("temper-ai-worker"):][:1]
+
+    def test_with_no_look_yet_a_run_waits_for_the_template_then_fails(self, workspace):
+        now = [1000.0]
+        down = [(1, "", "Error: No such object: worker-self")] * 3
+        docker = FakeDocker(answers={"inspect": list(down)})
+        spawner = _spawner(docker, str(workspace), clock=lambda: now[0])
+        with pytest.raises(SpawnerBusy):
+            spawner.spawn("exec-1")
+        now[0] += TEMPLATE_GRACE_SECONDS - 1
+        with pytest.raises(SpawnerBusy):
+            spawner.spawn("exec-1")
+        now[0] += 2
+        with pytest.raises(SpawnerError) as failed:
+            spawner.spawn("exec-1")
+        assert not isinstance(failed.value, SpawnerBusy)
+        assert docker.commands("run") == []
+
+    def test_the_run_command_can_be_the_template_images_own_python(self, workspace, monkeypatch):
+        monkeypatch.setenv("TEMPER_DOCKER_RUN_COMMAND", ".venv/bin/python -m temper_ai.cli.main run-workflow")
+        docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), "")]})
+        _spawner(docker, str(workspace)).spawn("exec-1")
+        cmd = _run_cmd(docker)
+        assert cmd[cmd.index("temper-ai-worker"):] == [
+            "temper-ai-worker", ".venv/bin/python", "-m", "temper_ai.cli.main", "run-workflow",
+            "--execution-id", "exec-1",
+        ]
+
+    def test_claude_home_is_a_writable_tmpfs_around_the_credentials(self, workspace):
+        """Docker would make ~/.claude root-owned for the credentials file, and
+        the Claude CLI could not save the sessions a node's next turn resumes."""
+        docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), "")]})
+        _spawner(docker, str(workspace)).spawn("exec-1")
+        cmd = _run_cmd(docker)
+        tmpfs = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "--tmpfs"]
+        assert tmpfs == ["/home/temperai-worker/.claude:mode=1777"]
+        # before the credentials mount inside it, which must still be there
+        creds = next(m for m in _mounts(cmd) if m.endswith(".credentials.json,readonly")
+                     or ".credentials.json" in m)
+        assert cmd.index("--tmpfs") < cmd.index(creds)
+
+
+class TestAllWorkspaces:
+    """TEMPER_DOCKER_WORKSPACES=all: runs see the whole workspaces tree, as
+    runs inside the server always have (they share repos, readonly, ...)."""
+
+    @staticmethod
+    def _server_like(tmp_path) -> tuple[str, str]:
+        host = tmp_path / "workspaces"
+        (host / "repos").mkdir(parents=True)
+        info = _inspect_json(Mounts=[
+            {"Type": "bind", "Source": "/src/temper_ai", "Destination": "/app/temper_ai", "RW": False},
+            {"Type": "bind", "Source": str(host), "Destination": "/app/workspaces", "RW": True},
+            {"Type": "bind", "Source": str(host), "Destination": str(host), "RW": True},
+            {"Type": "bind", "Source": "/var/run/docker.sock", "Destination": "/var/run/docker.sock", "RW": True},
+        ])
+        return str(host), info
+
+    def test_the_whole_tree_at_both_paths_and_no_socket(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TEMPER_DOCKER_WORKSPACES", "all")
+        host, info = self._server_like(tmp_path)
+        docker = FakeDocker(answers={"inspect": [(0, info, "")]})
+        _spawner(docker, f"{host}/repos").spawn("exec-1")
+        mounts = _mounts(_run_cmd(docker))
+        assert f"type=bind,source={host},target=/app/workspaces" in mounts
+        assert f"type=bind,source={host},target={host}" in mounts
+        assert not any("docker.sock" in m for m in mounts)
+        # the run's own workspace is inside the tree: not mounted a second time
+        assert not any(f"target={host}/repos" in m for m in mounts)
+
+    def test_a_workspace_named_by_its_path_in_the_container_is_fine(self, tmp_path, monkeypatch):
+        """Many runs name /app/workspaces itself, which is no host path."""
+        monkeypatch.setenv("TEMPER_DOCKER_WORKSPACES", "all")
+        _host, info = self._server_like(tmp_path)
+        docker = FakeDocker(answers={"inspect": [(0, info, "")]})
+        _spawner(docker, "/app/workspaces").spawn("exec-1")
+        assert len(docker.commands("run")) == 1
+
+    def test_own_is_the_default_and_keeps_runs_apart(self, tmp_path):
+        host, info = self._server_like(tmp_path)
+        run_ws = tmp_path / "workspaces" / "repos"
+        docker = FakeDocker(answers={"inspect": [(0, info, "")]})
+        _spawner(docker, str(run_ws)).spawn("exec-1")
+        mounts = _mounts(_run_cmd(docker))
+        assert f"type=bind,source={host},target={host}" not in mounts
+        assert f"type=bind,source={run_ws},target={run_ws}" in mounts
 
 
 # --- The workspace mounts ---------------------------------------------------
@@ -296,6 +396,12 @@ class TestLivenessAndKill:
     def test_kill_of_a_gone_container_is_not_an_error(self, stderr):
         docker = FakeDocker(answers={"kill": [(1, "", stderr)]})
         _spawner(docker, None).kill(_handle())  # no raise
+
+    def test_a_docker_that_does_not_answer_is_not_a_dead_run(self):
+        """The reaper must not bury a run because the daemon hiccupped."""
+        docker = FakeDocker(answers={"inspect": [(1, "", "Cannot connect to the Docker daemon")]})
+        with pytest.raises(SpawnerError, match="Cannot connect"):
+            _spawner(docker, None).is_alive(_handle())
 
     def test_kill_failing_for_another_reason_raises(self):
         docker = FakeDocker(answers={"kill": [(1, "", "permission denied while trying to connect to the Docker daemon")]})

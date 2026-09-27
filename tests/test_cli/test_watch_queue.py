@@ -49,7 +49,7 @@ def _reset_spawner():
     reset_spawner()
 
 
-def _enqueue(execution_id: str, *, workflow_name: str = "wf", inputs: dict | None = None):
+def _enqueue(execution_id: str, *, workflow_name: str = "wf", inputs: dict | None = None, **fields):
     with get_session() as session:
         session.add(WorkflowRun(
             execution_id=execution_id,
@@ -57,6 +57,7 @@ def _enqueue(execution_id: str, *, workflow_name: str = "wf", inputs: dict | Non
             workspace_path="/tmp/ws",
             inputs=inputs or {},
             status="queued",
+            **fields,
         ))
 
 
@@ -183,6 +184,113 @@ def test_scan_claims_with_the_spawners_kind(isolated_db):
 
 
 # --- Race safety ------------------------------------------------------
+
+# --- Runs in boxes: Stop, a busy spawner, restarts ------------------------
+
+def _box_for(eid: str) -> ProcessHandle:
+    return ProcessHandle(
+        kind=SpawnerKind.docker, handle=f"temper-run-{eid}",
+        metadata={"execution_id": eid, "container": f"temper-run-{eid}"},
+    )
+
+
+def _metadata(execution_id: str) -> dict:
+    with get_session() as session:
+        row = session.exec(
+            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+        ).one()
+        return dict(row.spawner_metadata or {})
+
+
+def test_a_run_stopped_while_it_waits_never_gets_a_box(isolated_db):
+    _enqueue("stopped", cancel_requested=True)
+    spawner = _fake_spawner(SpawnerKind.docker)
+
+    assert _scan_and_dispatch(spawner) == 0
+
+    spawner.spawn.assert_not_called()
+    assert _read("stopped")["status"] == "cancelled"
+
+
+def test_a_spawner_that_cannot_start_a_box_yet_leaves_the_run_queued(isolated_db):
+    from temper_ai.spawner.base import SpawnerBusy
+
+    _enqueue("early")
+    spawner = _fake_spawner(SpawnerKind.docker)
+    spawner.spawn.side_effect = SpawnerBusy("the template is being recreated")
+
+    assert _scan_and_dispatch(spawner) == 0
+    assert _read("early") == {
+        "status": "queued", "spawner_kind": None, "spawner_handle": None, "error": None,
+    }
+
+    spawner.spawn.side_effect = _box_for
+    assert _scan_and_dispatch(spawner) == 1
+    assert _read("early")["spawner_handle"] == "temper-run-early"
+
+
+def test_the_box_handle_keeps_how_the_box_is_to_start(isolated_db):
+    """The box reads spawner_metadata['start'] (resume or fork) as it starts."""
+    _enqueue("resumed", spawner_metadata={"start": "resume"})
+    spawner = _fake_spawner(SpawnerKind.docker)
+    spawner.spawn.side_effect = _box_for
+
+    _scan_and_dispatch(spawner)
+
+    assert _metadata("resumed") == {
+        "start": "resume", "execution_id": "resumed", "container": "temper-run-resumed",
+    }
+
+
+def test_a_claim_a_restart_cut_short_goes_back_in_the_queue(isolated_db):
+    from temper_ai.cli.watch_queue import _requeue_stuck_claims
+
+    _enqueue("cut-short")
+    _claim_row("cut-short", "docker")
+    spawner = _fake_spawner(SpawnerKind.docker)
+    spawner.is_alive.return_value = False
+
+    assert _requeue_stuck_claims(spawner) == 1
+
+    assert _read("cut-short")["spawner_kind"] is None
+    assert spawner.is_alive.call_args.args[0].metadata == {"execution_id": "cut-short"}
+    spawner.spawn.side_effect = _box_for
+    assert _scan_and_dispatch(spawner) == 1
+
+
+def test_a_claim_whose_box_came_up_after_all_is_left_to_it(isolated_db):
+    from temper_ai.cli.watch_queue import _requeue_stuck_claims
+
+    _enqueue("came-up")
+    _claim_row("came-up", "docker")
+    spawner = _fake_spawner(SpawnerKind.docker)
+    spawner.is_alive.return_value = True
+
+    assert _requeue_stuck_claims(spawner) == 0
+    assert _read("came-up")["spawner_handle"] == "claiming"
+
+
+def test_a_claim_is_left_alone_when_docker_cannot_say(isolated_db):
+    from temper_ai.cli.watch_queue import _requeue_stuck_claims
+
+    _enqueue("unsure")
+    _claim_row("unsure", "docker")
+    spawner = _fake_spawner(SpawnerKind.docker)
+    spawner.is_alive.side_effect = SpawnerError("Cannot connect to the Docker daemon")
+
+    assert _requeue_stuck_claims(spawner) == 0
+    assert _read("unsure")["spawner_handle"] == "claiming"
+
+
+def test_another_kinds_claims_are_not_this_watchers(isolated_db):
+    from temper_ai.cli.watch_queue import _requeue_stuck_claims
+
+    _enqueue("theirs")
+    _claim_row("theirs", "subprocess")
+
+    assert _requeue_stuck_claims(_fake_spawner(SpawnerKind.docker)) == 0
+    assert _read("theirs")["spawner_kind"] == "subprocess"
+
 
 def test_two_concurrent_claims_only_one_wins(isolated_db):
     """Claim is atomic: two threads racing on the same row → exactly one wins.

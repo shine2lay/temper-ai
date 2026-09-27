@@ -67,6 +67,7 @@ def execute_workflow(
     cancel_event: threading.Event | None = None,
     initial_outputs: dict[str, Any] | None = None,
     resume_metadata: dict[str, Any] | None = None,
+    replay_dispatch_history: bool = False,
 ) -> ExecuteResult:
     """Run one workflow end-to-end.
 
@@ -83,6 +84,10 @@ def execute_workflow(
         initial_outputs: pre-populated node_outputs for resume. None = fresh run.
         resume_metadata: passed through to the WORKFLOW_STARTED event so the
             view can identify the new attempt as a resume. None = fresh run.
+        replay_dispatch_history: on a resume, put back the nodes the run's
+            dispatchers added before it stopped (and their caps), the way the
+            server's resume route does. Its ``replayed_dispatches`` go into
+            ``resume_metadata``.
 
     Returns:
         ExecuteResult with terminal status + headline metrics. The tool
@@ -172,6 +177,17 @@ def execute_workflow(
 
     # Bind Delegate tool so agents can spawn sub-agents
     bind_delegate_tool(run_tool_executor, context)
+
+    if replay_dispatch_history:
+        from temper_ai.runner.resume import apply_dispatch_history_on_resume
+        replayed = apply_dispatch_history_on_resume(
+            checkpoint_svc=checkpoint_svc,
+            graph_loader=runner_ctx.graph_loader,
+            nodes=nodes,
+            context=context,
+        )
+        if resume_metadata is not None:
+            resume_metadata = {**resume_metadata, "replayed_dispatches": replayed}
 
     # --- Execute (the real workflow engine) ---
     try:

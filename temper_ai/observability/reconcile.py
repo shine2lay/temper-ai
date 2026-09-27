@@ -13,9 +13,12 @@ runs sitting at "running" for nineteen hours.
 
 Scope, deliberately narrow:
 
-* Only ``inprocess`` execution. With an external worker pool the server is
-  not the thing running the workflow, so a server restart says nothing about
-  whether the run is alive, and marking it dead would be a lie.
+* Only runs that lived in a server process. With ``inprocess`` execution
+  that is every run. With ``external`` the worker starts each run in a box
+  of its own that outlives the server, and such a run always has a queued
+  or running WorkflowRun row; only a run without one (left from a server
+  that ran it itself, before the switch to boxes) is buried. ``subprocess``
+  workers are left alone.
 * Only runs that started before this process did. A run started by *this*
   server is by definition not an orphan.
 * The status used is ``interrupted``, which the read path already
@@ -36,6 +39,43 @@ NON_TERMINAL = ("running", "queued", "waiting")
 INTERRUPTED = "interrupted"
 
 
+def settle_run_event(execution_id: str, status: str, message: str) -> int:
+    """End a run's ``workflow.started`` event when its box is gone.
+
+    A run in its own box writes its own end. When the box dies first (killed,
+    out of memory, the host restarted) or is killed after a Stop, the reaper
+    ends the run's WorkflowRun row, and this does the same for the event the
+    dashboard, Slack and the notify loop read. Only an event that is still
+    open is changed. Returns how many changed; never raises.
+    """
+    try:
+        from sqlmodel import select
+
+        from temper_ai.database.session import get_session
+        from temper_ai.observability.models import Event
+
+        with get_session() as session:
+            events: Any = session.exec(
+                select(Event).where(
+                    Event.type == "workflow.started",
+                    Event.execution_id == execution_id,
+                    Event.status.in_(NON_TERMINAL),  # type: ignore[union-attr]
+                )
+            ).all()
+            for event in events:
+                event.status = status
+                data = dict(event.data or {})
+                data.setdefault("error", message)
+                event.data = data
+                session.add(event)
+            if events:
+                session.commit()
+            return len(events)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Could not end the run event of %s: %s", execution_id, exc)
+        return 0
+
+
 def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
     """Mark non-terminal runs from a previous process as interrupted.
 
@@ -47,8 +87,8 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
         return 0
 
     mode = os.environ.get("TEMPER_EXECUTION_MODE", "inprocess").lower()
-    if mode != "inprocess":
-        # An external worker outlives this process; its runs are not ours to bury.
+    if mode not in ("inprocess", "external"):
+        # A subprocess worker may outlive this process; its runs are not ours to bury.
         logger.info("Orphan reconciliation skipped: execution mode is %s", mode)
         return 0
 
@@ -69,6 +109,10 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
                     Event.timestamp < cutoff,
                 )
             ).all()
+            if mode == "external":
+                # A run in a box goes on without this server: not ours to bury.
+                in_boxes = _runs_in_boxes(session, {e.execution_id for e in rows if e.execution_id})
+                rows = [e for e in rows if e.execution_id not in in_boxes]
 
             for event in rows:
                 event.status = INTERRUPTED
@@ -94,3 +138,20 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Orphan reconciliation failed (continuing startup): %s", exc)
         return 0
+
+
+def _runs_in_boxes(session: Any, execution_ids: set[str]) -> set[str]:
+    """Which of these runs the worker has queued or started in a box."""
+    if not execution_ids:
+        return set()
+    from sqlmodel import select
+
+    from temper_ai.runner.models import WorkflowRun
+
+    rows: Any = session.exec(
+        select(WorkflowRun.execution_id).where(
+            WorkflowRun.execution_id.in_(execution_ids),  # type: ignore[attr-defined]
+            WorkflowRun.status.in_(("queued", "running")),  # type: ignore[attr-defined]
+        )
+    ).all()
+    return set(rows)

@@ -84,9 +84,48 @@ def test_ignores_events_that_are_not_runs(now):
         assert s.get(Event, eid).status == "running"
 
 
-def test_does_nothing_with_an_external_worker(now, monkeypatch):
-    """The worker outlives this process; its runs are not ours to bury."""
+def _queue_row(session, execution_id: str, status: str) -> None:
+    from temper_ai.runner.models import WorkflowRun
+
+    session.add(WorkflowRun(
+        execution_id=execution_id, workflow_name="w", workspace_path="", status=status,
+    ))
+
+
+@pytest.mark.parametrize("row_status", ["queued", "running"])
+def test_leaves_a_run_the_worker_has_in_a_box_alone(now, monkeypatch, row_status):
+    """A run in a box outlives this server; it is not ours to bury."""
     monkeypatch.setenv("TEMPER_EXECUTION_MODE", "external")
+    with get_session() as s:
+        eid = _run(s, status="running", minutes_ago=30)
+        _queue_row(s, s.get(Event, eid).execution_id, row_status)
+        s.commit()
+
+    assert reconcile_interrupted_runs(started_before=now) == 0
+
+    with get_session() as s:
+        assert s.get(Event, eid).status == "running"
+
+
+def test_with_boxes_a_run_the_server_ran_itself_is_still_buried(now, monkeypatch):
+    """Left from before the switch to boxes: no queue row, so nothing runs it."""
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "external")
+    with get_session() as s:
+        lost = _run(s, status="running", minutes_ago=30)
+        ended = _run(s, status="waiting", minutes_ago=31)
+        _queue_row(s, s.get(Event, ended).execution_id, "completed")
+        s.commit()
+
+    assert reconcile_interrupted_runs(started_before=now) == 2
+
+    with get_session() as s:
+        assert s.get(Event, lost).status == "interrupted"
+        assert s.get(Event, ended).status == "interrupted"
+
+
+def test_does_nothing_with_a_subprocess_worker(now, monkeypatch):
+    """A subprocess worker may outlive this process; its runs are not ours."""
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "subprocess")
     with get_session() as s:
         eid = _run(s, status="running", minutes_ago=30)
         s.commit()

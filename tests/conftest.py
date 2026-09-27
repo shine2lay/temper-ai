@@ -16,6 +16,19 @@ def _test_db():
 
 
 @pytest.fixture(autouse=True)
+def _no_shared_rate_limits():
+    """Rate-limit coolings are shared through Redis when TEMPER_REDIS_URL is
+    set. A test must neither read nor clear a real Redis's list, nor leave
+    its own coolings for the next test: sharing starts off in every test,
+    and the tests of sharing turn it on over a fake Redis."""
+    from temper_ai.llm import shared_cooldowns
+
+    shared_cooldowns.use(shared_cooldowns.SharedCooldowns(None))
+    yield
+    shared_cooldowns.use(None)
+
+
+@pytest.fixture(autouse=True)
 def _no_trigger_scheduler(monkeypatch):
     """A test server must not fire the repo's schedules in the background,
     nor connect to Slack."""

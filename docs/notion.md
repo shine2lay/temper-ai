@@ -114,6 +114,8 @@ time: a change while one is going starts nothing (the recent list says
 "skipped"). `GET /api/hooks/notion/recent` (API token) lists the last events
 and what became of each.
 
+A rule fires only on a person's change, never on temper's own.
+
 ## Workflows
 
 - `notion_work` — the Linear way, for a Notion task row: triage (asks on the

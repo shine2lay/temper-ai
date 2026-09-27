@@ -1643,6 +1643,178 @@ def cmd_turn(bet_id: str) -> None:
                       "master_moved": sorted(moved or []), "task_description": desc}))
 
 
+# ---- the merge nudge (queue task 12) ------------------------------------------------------------
+# A bet that shares files with an earlier one waits in its `turn` node until that bet's PR is merged
+# or closed. On past bets most of that waiting would have been on the owner's merge gate (one PR
+# waited two days). So when a bet has waited NUDGE_AFTER_H hours on a PR at the gate, the owner gets
+# a Slack message naming the PR and the bets behind it: once per PR, then every NUDGE_EVERY_H hours
+# while bets still wait on it. A script on the host (`nudge`, a timer): the turn node runs in the
+# container, where temper's Bash tool keeps every *_TOKEN out of a script's reach, rightly.
+NUDGE_AFTER_H = float(os.environ.get("EPD_NUDGE_AFTER_H", "2"))
+NUDGE_EVERY_H = float(os.environ.get("EPD_NUDGE_EVERY_H", "24"))
+# A turn.json that says waiting but was not checked for this long belongs to a run that is gone.
+NUDGE_FRESH_MIN = float(os.environ.get("EPD_NUDGE_FRESH_MIN", "30"))
+NUDGES = LOOP_DIR / "nudges.json"  # PR number -> {first, last, bet}: what the owner was told, and when
+# The same Slack as temper's restart notices (temper-deploy): temper's bot, the owner's DM.
+OWNER_SLACK_DM = os.environ.get("EPD_OWNER_SLACK_DM", "U0BDD2J0DAQ")
+TEMPER_ENV = Path(os.environ.get("EPD_TEMPER_ENV", Path(__file__).resolve().parents[3] / ".env"))
+
+
+def at_the_gate(info: dict) -> dict | None:
+    """A bet's PR waiting at the owner's merge gate (its ship record: pr, pr_number, title, at), or
+    None: no PR yet, or merged, or the bet is no longer at the gate."""
+    if info.get("status") != "pr_opened":
+        return None
+    ship = ((info.get("state") or {}).get("stages") or {}).get("ship") or {}
+    return ship if ship.get("pr_number") and not ship.get("merged") else None
+
+
+def nudges_due(waits: dict[str, dict], bets: dict[str, dict], sent: dict,
+               now: dt.datetime) -> tuple[list[dict], dict]:
+    """Which PRs to tell the owner about now. Pure, so the tests drive it.
+
+    `waits`: bet id -> its turn.json, for bets waiting now. `bets`: bet id -> {status, state, title}
+    (bets_in_line). `sent`: nudges.json. A waiting bet counts for a PR from the later of its wait's
+    start and the PR's opening; it needs NUDGE_AFTER_H hours of that. One message per PR, whatever
+    the number of bets behind it; again after NUDGE_EVERY_H hours. Returns the messages (pr, pr_number,
+    bet, title, waiting: [{bet_id, hours, files}]) and the record to keep: only PRs bets still wait on,
+    so a PR that stops holding anyone is forgotten."""
+    groups: dict[str, dict] = {}
+    for b, rec in sorted(waits.items()):
+        since = parse_time(rec.get("since"))
+        if since is None:
+            continue
+        for blk in rec.get("blockers") or []:
+            ship = at_the_gate(bets.get(blk.get("bet_id"), {}))
+            if not ship:
+                continue  # still building or planning: nothing for the owner to do
+            start = max(since, parse_time(ship.get("at")) or since)
+            hours = (now - start).total_seconds() / 3600
+            if hours < NUDGE_AFTER_H:
+                continue
+            key = str(ship["pr_number"])
+            g = groups.setdefault(key, {"pr": ship.get("pr") or "", "pr_number": ship["pr_number"],
+                                        "bet": blk["bet_id"], "title": ship.get("title") or blk.get("title") or "",
+                                        "waiting": []})
+            g["waiting"].append({"bet_id": b, "hours": hours, "files": list(blk.get("files") or [])})
+    due, keep = [], {}
+    stamp = now.isoformat(timespec="seconds")
+    for key, g in groups.items():
+        last = parse_time((sent.get(key) or {}).get("last"))
+        if last is None or (now - last).total_seconds() / 3600 >= NUDGE_EVERY_H:
+            due.append(g)
+            keep[key] = {"first": (sent.get(key) or {}).get("first") or stamp, "last": stamp, "bet": g["bet"]}
+        else:
+            keep[key] = sent[key]
+    return due, keep
+
+
+def parse_time(value) -> dt.datetime | None:
+    """An ISO time as written here (UTC, with or without the offset), or None."""
+    if not value:
+        return None
+    try:
+        t = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=dt.UTC)
+
+
+def nudge_text(g: dict) -> str:
+    """The owner's message for one PR: which PR, and who waits on it for what."""
+    def hours(h: float) -> str:
+        return f"{h:.0f} h" if h < 48 else f"{h / 24:.0f} days"
+
+    def files(fs: list[str]) -> str:
+        return ", ".join(fs[:3]) + (f" and {len(fs) - 3} more" if len(fs) > 3 else "")
+
+    n = len(g["waiting"])
+    who = "; ".join(f"{w['bet_id']}, for {hours(w['hours'])} (both change {files(w['files'])})"
+                    for w in g["waiting"])
+    return (f"{n} bet{'s' if n > 1 else ''} wait{'' if n > 1 else 's'} on PR #{g['pr_number']} at your merge gate: "
+            f"{g['title'] or g['bet']}\nWaiting: {who}.\nMerge or close it and they build on the new master: "
+            f"{g['pr']}")
+
+
+def tell_owner(text: str) -> bool:
+    """A Slack DM to the owner from temper's bot, as temper-deploy sends its notices. False (and a
+    log line) when it could not be sent; it never stops the caller."""
+    token = ""
+    for line in read(TEMPER_ENV).splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip() == "SLACK_BOT_TOKEN":
+            token = value.strip().strip('"').strip("'")
+    if not token or not OWNER_SLACK_DM:
+        log(f"no Slack token in {TEMPER_ENV} or no owner id: not sent")
+        return False
+
+    def slack(method: str, **fields):
+        req = urllib.request.Request(f"https://slack.com/api/{method}", data=json.dumps(fields).encode(),
+                                     headers={"Authorization": f"Bearer {token}",
+                                              "Content-Type": "application/json; charset=utf-8"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            reply = json.load(resp)
+        if not reply.get("ok"):
+            raise RuntimeError(reply.get("error", "unknown Slack error"))
+        return reply
+
+    try:
+        channel = slack("conversations.open", users=OWNER_SLACK_DM)["channel"]["id"]
+        slack("chat.postMessage", channel=channel, text=text, unfurl_links=False)
+        return True
+    except Exception as exc:  # noqa: BLE001 - a failed DM is logged and tried again next time
+        log(f"Slack DM failed: {exc}")
+        return False
+
+
+def waiting_now(now: dt.datetime) -> dict[str, dict]:
+    """Bet id -> turn.json, for the bets whose `turn` node is waiting now: not cleared, and checked
+    within NUDGE_FRESH_MIN minutes (the node looks every 5), so a stopped run's record is left out."""
+    out = {}
+    for record in sorted(BETS_DIR.glob("b*/turn.json")):
+        try:
+            rec = json.loads(read(record) or "{}")
+        except ValueError:
+            continue
+        checked = parse_time(rec.get("checked"))
+        if rec.get("cleared") or not rec.get("since") or checked is None:
+            continue
+        if (now - checked).total_seconds() / 60 <= NUDGE_FRESH_MIN:
+            out[record.parent.name] = rec
+    return out
+
+
+def cmd_nudge(test: bool = False) -> None:
+    """Tell the owner about PRs at his merge gate that bets have waited on (see nudges_due). With
+    `test`, send one message saying what a nudge looks like, and record nothing."""
+    if test:
+        text = ("Test of the merge nudge (queue task 12). When a bet has waited 2 hours on a PR at your merge "
+                "gate, you get a message like this, naming the PR and the bets behind it, then one a day while "
+                "they still wait. Nothing is waiting now.")
+        log("sent" if tell_owner(text) else "not sent")
+        return
+    now = dt.datetime.now(dt.UTC)
+    waits = waiting_now(now)
+    try:
+        sent = json.loads(read(NUDGES) or "{}")
+    except ValueError:
+        sent = {}
+    if not waits and not sent:
+        return
+    due, keep = nudges_due(waits, bets_in_line(), sent, now)
+    for g in due:
+        if tell_owner(nudge_text(g)):
+            log(f"told the owner: PR #{g['pr_number']} holds {', '.join(w['bet_id'] for w in g['waiting'])}")
+        else:  # not sent: keep the old record, so the next run tries again
+            key = str(g["pr_number"])
+            if key in sent:
+                keep[key] = sent[key]
+            else:
+                keep.pop(key, None)
+    if keep != sent:
+        write(NUDGES, json.dumps(keep, indent=2))
+
+
 def new_bet_ids(n: int) -> list[str]:
     """The next `n` bet ids, after everything on the ledger or on disk."""
     ids, k = [], len(ledger_rows()) + 1
@@ -3733,6 +3905,9 @@ def main() -> None:
                                     "bets that started first and change the same files, then say what "
                                     "master changed since the plan")
     t.add_argument("--bet", required=True)
+    nd = sub.add_parser("nudge", help="on the host (a timer): tell the owner on Slack about a PR at his merge "
+                                       "gate that bets have waited 2 hours on; once per PR, then daily")
+    nd.add_argument("--test", action="store_true", help="send one test message and record nothing")
     args = ap.parse_args()
 
     if args.cmd == "turn":
@@ -3757,6 +3932,8 @@ def main() -> None:
         cmd_resume(args.at, args.bet)
     elif args.cmd == "collect":
         cmd_collect(args.keep)
+    elif args.cmd == "nudge":
+        cmd_nudge(args.test)
     elif args.cmd == "after-close":
         cmd_after_close(args.keep)
     elif args.cmd == "next":

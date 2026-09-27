@@ -7,13 +7,15 @@ the answer is ``{"ok": true, "result": ...}`` or ``{"ok": false,
 Flood control answers 429 with ``parameters.retry_after`` seconds: short
 waits are waited out and the call is tried again. Text over 4096
 characters is split into several messages. The token is never logged:
-errors name the method, never the URL.
+errors name the method, never the URL, and httpx's own log of each
+request (which shows the URL, token and all) has the token taken out.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from typing import Any
 
@@ -25,6 +27,37 @@ API = "https://api.telegram.org"
 TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
 TEXT_MAX = 4096
 RETRY_MAX_S = 30.0
+
+_TOKEN_IN_URL = re.compile(r"/bot\d+:[A-Za-z0-9_-]+")
+
+
+class HideToken(logging.Filter):
+    """httpx logs every request at INFO with its URL, and a Bot API URL holds
+    the bot token. Take the token out of such lines, and drop the long-poll
+    requests (one every 30 s, all day) altogether."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            text = record.getMessage()
+        except Exception:  # a broken record: leave it to logging
+            return True
+        if "/bot" not in text:
+            return True
+        if "/getUpdates" in text and record.levelno < logging.WARNING:
+            return False
+        record.msg, record.args = _TOKEN_IN_URL.sub("/bot<token>", text), None
+        return True
+
+
+def hide_token_in_logs() -> None:
+    """Put the filter on httpx's loggers (once per process)."""
+    for name in ("httpx", "httpcore"):
+        target = logging.getLogger(name)
+        if not any(isinstance(f, HideToken) for f in target.filters):
+            target.addFilter(HideToken())
+
+
+hide_token_in_logs()
 
 
 def bot_token() -> str:

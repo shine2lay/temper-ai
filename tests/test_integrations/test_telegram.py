@@ -408,6 +408,25 @@ class TestPoller:
         assert service.start_telegram() is None
 
 
+class TestTokenNeverLogged:
+    def test_httpx_request_lines_lose_the_token_and_polls_are_dropped(self, caplog):
+        import logging
+
+        from temper_ai.integrations.telegram import client
+
+        client.hide_token_in_logs()   # twice is harmless
+        fake = "123456:ABCdef_ghi-JKL"
+        log = logging.getLogger("httpx")
+        with caplog.at_level(logging.INFO, logger="httpx"):
+            for method in ("sendMessage", "getUpdates"):
+                log.info('HTTP Request: %s %s "%s"', "POST", f"https://api.telegram.org/bot{fake}/{method}",
+                         "HTTP/1.1 200 OK")
+            log.info("HTTP Request: GET https://example.com/other")
+        assert fake not in caplog.text and "getUpdates" not in caplog.text
+        assert "api.telegram.org/bot<token>/sendMessage" in caplog.text and "example.com/other" in caplog.text
+        assert sum(isinstance(f, client.HideToken) for f in log.filters) == 1
+
+
 # -- the agent tool --------------------------------------------------------------------------
 
 

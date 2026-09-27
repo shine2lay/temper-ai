@@ -63,7 +63,14 @@ agent:
   # 10: qa-fresh@ joins the logins (the empty book, never scanned, from the RollCall seed), and
   #    qa-noscan@ is said to hold qa@'s positions. b031's next re-measure (run e7302cc3) found
   #    qa-noscan@ holds 8 positions, so no login was empty and never scanned: 2 criteria stayed open.
-  version: 10
+  # 11 (2026-09-26, queue task 7, "one value on every screen"): the plan lists each figure or
+  #    verdict the bet changes that shows on more than one screen (`same_value`), and QA reads every
+  #    listed screen on the build. Where they differ, it reads the same screens on production
+  #    (`before_url`, as `before_email`, read only), so a difference this build caused can be told
+  #    from one that was there before (`same_value_checks`); the gate applies the owner's rule to
+  #    that. Most defects the live checks found were two screens disagreeing (F084, F087, F105).
+  #    max_iterations 64 -> 74 for the production side.
+  version: 11
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -78,7 +85,7 @@ agent:
   # A threshold is several clauses and the second half of one is often a
   # reversal (cancel, undo, sign out) that has to be walked after the first;
   # the budget is for the whole threshold, not a tour.
-  max_iterations: 64
+  max_iterations: 74
   total_timeout: 1500
   provider_config:
     max_tokens: 8000
@@ -151,6 +158,21 @@ agent:
        true; go to where that would show and look.
     3. Nothing obviously broken nearby: the pages you passed through render
        their data, not errors or empty states where the test data should be.
+    4. One value on every screen, when the task lists figures that show on
+       more than one screen: read each listed screen on this build (as the
+       login it names, else yours) and compare. A figure reads the same
+       when it is the same number to the precision both screens show (80%
+       and 80.0% agree; 80.0% and 75.1% do not) or the same verdict (a
+       status of "Fine" beside advice to roll this one is two verdicts).
+       Record each figure in `same_value_checks`: build `agree`, `differ`,
+       or `unread` (no listed screen could be brought to show it: say why).
+       Only where the build's screens differ, read the same screens on
+       production (the before side you are given: sign in, open the pages,
+       read, nothing else; never press Scan or Refresh, send or cancel an
+       order, or change a setting there), and record before `agree`,
+       `differ`, `new` (a screen that differs on the build is not on
+       production: this change adds it) or `unread` (say why); elsewhere
+       before is `not_read`. Give each side's values as {screen, value}.
 
     Judging:
     - Each clause of the threshold gets a line in `threshold_checks`: `met`
@@ -178,6 +200,12 @@ agent:
       on a running build, and the gate sends it back. `out_of_build` clauses
       do not fail the verdict; the owner sees them on the pull request.
       Nor do `waits_for_close` clauses: they are walked after the close.
+    - A listed figure that differs on this build and agrees on production,
+      or differs on a screen this change adds, is a defect this change
+      caused: the verdict is `fail`. One that differs on production too was
+      there before, and one whose production side you could not read has
+      no known cause: neither fails the verdict or goes in `issues`;
+      `same_value_checks` carries them, and the owner sees them.
     - Report what the snapshot actually said — counts, headings, the text of
       a value. Never infer from the URL, the page title, or what the app is
       supposed to do.
@@ -220,8 +248,9 @@ agent:
       is the test. Do not do anything the threshold did not ask for that
       destroys data or credentials: no sign-ups, no password changes, no
       deleting, and nothing that places a real order or sends a real message.
-    - You have about 60 browser calls. Spend them on the threshold and the
-      pages around it, not on a tour of the app.
+    - You have about 60 browser calls, and about 10 more when a listed
+      figure differs and you read production. Spend them on the threshold,
+      the listed screens and the pages around them, not on a tour of the app.
 
     Reply with a short account of what you saw, then exactly one ```json block:
     {
@@ -234,12 +263,14 @@ agent:
       "unverified": ["<clause>: <why no browser action reaches it yet, and what route would>", ...],
       "out_of_build": ["<clause>: <the words in it that put it outside this build>", ...],
       "waits_for_close": ["<clause>: <the line that said the market is open>", ...],
+      "same_value_checks": [{"what": "<the figure, as the list names it>", "build": "agree|differ|unread", "build_values": [{"screen": "<route: where on the page>", "value": "<as shown>"}], "before": "agree|differ|new|unread|not_read", "before_values": [{"screen": "...", "value": "..."}], "note": "<why a side is unread; else \"\">"}],
       "pages": [{"page": "<name>", "url": "<url>", "ok": true, "evidence": "<what the snapshot showed>"}],
       "issues": [{"where": "<page or URL>", "what": "<what is wrong, with the evidence you saw>"}],
       "screenshots": [{"page": "<name>", "file": "<prefix>-<page>.png", "shows": "<one line: what the picture shows>"}]
     }
     `threshold_checks`, `unmet`, `unverified`, `out_of_build` and `waits_for_close`
-    are [] when no threshold was given; `screenshots` is [] when you took none. The lists
+    are [] when no threshold was given; `same_value_checks` is [] when no figures
+    were listed; `screenshots` is [] when you took none. The lists
     are the `threshold_checks` entries of each status, said again on their own:
     what fails the build is read from them, so a clause missing from its list is
     a clause nobody acts on.
@@ -257,6 +288,16 @@ agent:
     {% if threshold %}
     The success threshold, pre-registered — walk every clause of it:
     {{ threshold }}
+    {% endif %}
+    {% if same_value %}
+    One value on every screen. The plan lists these figures, each shown on more
+    than one screen; each must read the same on every screen listed:
+    {% if same_value is string %}{{ same_value }}
+    {% else %}{% for f in same_value %}- {{ f.what }}{% if f.source %} (from {{ f.source }}){% endif %}
+    {% for s in (f.screens or []) %}    - {{ s.route }}{% if s.where %}: {{ s.where }}{% endif %}{% if s.login %} (as {{ s.login }}){% endif %}
+    {% endfor %}{% endfor %}{% endif %}
+    {% if before_url %}The before side, only where the build's screens differ: production at {{ before_url }},
+    signed in as {{ before_email }} / {{ before_password }}. Read only.{% else %}No production URL was given: where the build's screens differ, the before side is `unread`.{% endif %}
     {% endif %}
     {% if task_description %}
     Details from the requester:

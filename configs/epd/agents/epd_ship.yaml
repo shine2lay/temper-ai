@@ -44,7 +44,10 @@ agent:
   #    `round`, the only thing that says which report the bet came out of. The measure stage
   #    looks the report up through that field, so every shipped bet lost the report it was
   #    meant to be measured against.
-  version: 6
+  # 7 (2026-09-26, queue task 7, "one value on every screen"): records `same_value_noted` (the
+  #    figures that read differently on two screens, which the gate found this build did not
+  #    cause), and the card lists them: the owner judges those, since they did not stop the build.
+  version: 7
   type: script
   timeout_seconds: 2400
   # A blank here is not a blank field, it is a shifted one: these values are written by position,
@@ -86,14 +89,15 @@ agent:
       {{ deploy_url | default('', true) }} {{ implement_commit | default('', true) }} \
       {{ implement_summary | default('', true) }} {{ task_slug | default('', true) }} \
       {{ verify_screenshots | default([], true) | tojson }} \
-      {{ verify_threshold_checks | default([], true) | tojson }} <<'PY'
+      {{ verify_threshold_checks | default([], true) | tojson }} \
+      {{ same_value_noted | default([], true) | tojson }} <<'PY'
     import json, sys
     keys = ["branch", "worktree_path", "verdict", "verdict_summary", "review_verdict",
             "verify_verdict", "security_verdict", "deploy_url", "implement_commit",
             "implement_summary", "task_slug"]
     path, values = sys.argv[1], sys.argv[2:]
     record = dict(zip(keys, values))
-    for i, name in enumerate(("verify_screenshots", "verify_threshold_checks")):
+    for i, name in enumerate(("verify_screenshots", "verify_threshold_checks", "same_value_noted")):
         try:
             items = json.loads(values[len(keys) + i])
         except (IndexError, ValueError):
@@ -212,6 +216,13 @@ agent:
                   f"commit `{(build.get('implement_commit') or '')[:12]}`")
     if walked:
         blocks.append("**What QA checked**\n\n" + "\n".join(walked))
+    # A figure that reads differently on two screens, which this change did not cause (it was
+    # like that on production, or production could not be read): it did not stop the build,
+    # so the owner is the one who sees it.
+    noted = [str(x).strip() for x in (build.get("same_value_noted") or []) if str(x).strip()][:6]
+    if noted:
+        blocks.append("**Same figure, different screens** (not caused by this change, so it did not "
+                      "stop it)\n\n" + "\n".join(f"- {x}" for x in noted))
     summary = "\n\n".join(blocks)
 
     print(json.dumps({

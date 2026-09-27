@@ -3,7 +3,9 @@ workflow:
   # 3: the QA screenshots travel with the build; the driver puts them on the PR.
   # 4: so does QA's clause-by-clause walk of the threshold.
   # 5: exports `summary` -- the gate card's brief, which the dashboard renders as markdown.
-  version: 5
+  # 6 (2026-09-26, queue task 7): `same_value_noted`, the figures that read differently on two
+  #    screens without this build having caused it, goes in build.json, on the card and on the PR.
+  version: 6
   description: |
     Put an approved build in front of the owner: push the branch and open the PR.
 
@@ -35,6 +37,7 @@ workflow:
     implement_summary: {type: string, required: false}
     task_slug:         {type: string, required: false}   # prefix of the QA browser's screenshot files
     verify_screenshots: {type: array, required: false}  # [{page, file, shows}] from verify; [] or absent when none
+    same_value_noted: {type: array, required: false}  # ["<figure (screens and values)>: <why it is not this build's>"] from the gate (v6)
     verify_threshold_checks: {type: array, required: false}  # [{clause, status, evidence}] from verify; [] or absent
 
     # The bet it serves, for the PR body
@@ -73,6 +76,7 @@ workflow:
         task_slug: input.task_slug
         verify_screenshots: input.verify_screenshots
         verify_threshold_checks: input.verify_threshold_checks
+        same_value_noted: input.same_value_noted
         title: input.title
         problem: input.problem
         invariant: input.invariant

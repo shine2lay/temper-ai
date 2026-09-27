@@ -55,7 +55,13 @@ workflow:
   #     else the gate's. The verdict and the fields ship reads now come from `final`. On
   #     2026-09-25 four builds needed a hand fix at this point (RETRO gap 9); b037 and b056
   #     qualify, b047 and b055 (a blocker, a major) do not.
-  version: 13
+  # 14 (2026-09-26, queue task 7, "one value on every screen"): `same_value` in (the plan's figures
+  #     that show on more than one screen, each with every screen) reaches verify, with the before
+  #     side (`before_url`, `before_email`, `before_password`: production, read only). Verify's
+  #     `same_value_checks` reach the gate, which fails the round only for a difference this build
+  #     caused and notes one that was there before (the owner's rule). `verify_same_value`,
+  #     `same_value_caused` and `same_value_noted` come out; ship puts the noted ones on the PR.
+  version: 14
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -196,6 +202,20 @@ workflow:
     paper_account:
       type: string
       required: false
+    # The plan's figures that show on more than one screen, each with every screen (tasks.json
+    # `same_value`), and where QA reads them before this change: production, read only (v14).
+    same_value:
+      type: array
+      required: false
+    before_url:
+      type: string
+      required: false
+    before_email:
+      type: string
+      required: false
+    before_password:
+      type: string
+      required: false
     stack_ttl:
       type: string
       required: false
@@ -242,6 +262,11 @@ workflow:
     verify_unverified: verify.structured.unverified               # ["<clause>: <no route on this stack yet>"] — these send the build back
     verify_out_of_build: verify.structured.out_of_build           # ["<clause>: <names a future report / an owner decision>"] — noted, not gated
     verify_screenshots: verify.structured.screenshots   # [{page, file, shows}] — files under the browser's output dir
+    # One value on every screen (v14): what QA compared, what this build caused (it went back),
+    # and what it did not (noted on the PR, not failed).
+    verify_same_value: verify.structured.same_value_checks
+    same_value_caused: gate.structured.same_value_caused
+    same_value_noted: gate.structured.same_value_noted
     test_verdict: final.structured.test_verdict         # pass | fail | skipped (the step could not run)
     test_summary: final.structured.test_summary
     test_failures: final.structured.test_failures       # [{check, failure}] -- only what the base branch does not fail
@@ -493,6 +518,12 @@ workflow:
         # Set on a round after the gate's send-back (served from the loop's feedback; null on
         # the first round): QA then judges the new commit whole, pictures included.
         sent_back_because: gate.structured.summary
+        # The plan's figures shown on more than one screen, and production to read them on
+        # before this change where the build's screens differ (v14).
+        same_value: input.same_value
+        before_url: input.before_url
+        before_email: input.before_email
+        before_password: input.before_password
 
     - name: security
       type: agent
@@ -551,6 +582,8 @@ workflow:
         # Why QA failed, so the gate can tell a missing route from a broken change
         qa_unmet: verify.structured.unmet
         qa_issues: verify.structured.issues
+        # Screens that should show one value, compared on the build and on production (v14)
+        qa_same_value: verify.structured.same_value_checks
         security_verdict: security.structured.verdict
         security_human_actions_count: security.structured.human_actions_count
         test_verdict: test.structured.verdict

@@ -1059,6 +1059,39 @@ def collect_screenshots(bdir: Path, prefix: str, listed) -> list[dict]:
     return out
 
 
+def same_value_of(bdir: Path) -> list:
+    """The plan's figures that show on more than one screen (tasks.json `same_value`, queue task 7):
+    each figure or verdict the bet changes, with every screen that shows it. QA compares those
+    screens on the build, and the measure on prod. [] for a plan without the list."""
+    try:
+        got = json.loads(read(bdir / "tasks.json") or "{}").get("same_value")
+    except (ValueError, AttributeError):
+        return []
+    return [f for f in got if isinstance(f, dict)] if isinstance(got, list) else []
+
+
+def same_value_inputs(bdir: Path) -> dict:
+    """The build's same-value inputs: the plan's list, and production as the before side (qa@, read
+    only), where QA reads the same screens when the build's disagree. Nothing when the list is empty."""
+    listed = same_value_of(bdir)
+    if not listed:
+        return {}
+    return {"same_value": listed, "before_url": PROD_URL, "before_email": QA_EMAIL,
+            "before_password": ensure_qa_password()}
+
+
+def same_value_md(noted) -> str:
+    """The PR-body section for figures that read differently on two screens without this build having
+    caused it (the gate's `same_value_noted`); "" when there are none."""
+    rows = [str(n).strip() for n in as_list(noted) if str(n).strip()]
+    if not rows:
+        return ""
+    return "\n".join(["## Same figure, different screens", "",
+                      "QA found these figures reading differently on two screens. This change did not "
+                      "cause them, so they did not stop it; they are yours to judge:", ""]
+                     + [f"- {r}" for r in rows]) + "\n"
+
+
 def threshold_walk_md(checks) -> str:
     """The PR-body section for QA's clause-by-clause walk of the threshold ("" when there is none)."""
     rows = [c for c in as_list(checks) if isinstance(c, dict) and c.get("clause")]
@@ -2195,6 +2228,7 @@ def stage_build(st: dict) -> None:
         "verify_password": logins["password"],
         "verify_login_note": logins["login_note"],
         "paper_account": logins["paper_account"],
+        **same_value_inputs(bdir),
     }, workspace=cpath(WORKSPACES / "repos"), timeout=4 * 3600)
     write(bdir / "build.json", json.dumps(out, indent=2, default=str))
     st["stages"]["build"] = {k: out.get(k) for k in (
@@ -2270,6 +2304,9 @@ def stage_ship(st: dict) -> None:
     walk_md = threshold_walk_md(b.get("verify_threshold_checks"))
     if walk_md:
         body += "\n" + walk_md
+    noted_md = same_value_md(b.get("same_value_noted"))
+    if noted_md:
+        body += "\n" + noted_md
     shots_md = publish_screenshots(bet_id, shots)
     if shots_md:
         body += "\n" + shots_md
@@ -2651,6 +2688,7 @@ def stage_measure(st: dict, keep: bool, market: str = "") -> dict:
         "bet_path": cpath(bdir / "bet.md"),
         "report_path": cpath(report),
         "build_summary": b.get("implement_summary") or "",
+        "same_value": same_value_of(bdir),
     }, workspace=LOOP_WORKSPACE, timeout=2400)
     if not (bdir / "outcome.md").exists():
         die("epd_measure finished but wrote no outcome.md")
@@ -2806,6 +2844,8 @@ def loop_inputs(bet_id: str, planning: bool = True) -> dict:
         "threshold": bet.get("threshold") or "",
         "profile": read(LOOP_DIR / "profile.md"),
         "measure_url": PROD_URL,
+        # QA reads the plan's same-value screens on measure_url as qa@ where the build's disagree.
+        "before_email": QA_EMAIL,
         **qa_logins(bet_id),
         "approval": read(bdir / "decision.md"),
         "kb_dir": cpath(snap / ".temper"),

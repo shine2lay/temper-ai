@@ -70,7 +70,18 @@ agent:
   #    implement reported nothing (it failed or was skipped), when the worktree has
   #    no .epd/plan.md (the plan step failed or was skipped and none was handed in),
   #    or when no judge ran at all.
-  version: 8
+  # 9 (2026-09-26, queue task 7, "one value on every screen"): QA compares the screens the plan
+  #    lists for each figure or verdict the bet changes (`qa_same_value`: verify's
+  #    same_value_checks), and this applies the owner's rule to them: "Fail it if the bet caused
+  #    the difference; if it was there before, only note it." A figure that reads differently on
+  #    two screens of the build and the same on production, or differently on a screen the build
+  #    adds, is caused: QA wants changes, and the difference reaches the implementer with QA's
+  #    issues. One that differs on production too is noted (`same_value_noted`), and so is one
+  #    whose production side could not be read; a QA `fail` with nothing else behind it is lifted
+  #    for those. Most defects the live checks found were two screens disagreeing: b028's four
+  #    drop-to-call figures on one ticket (F084), b030's "Fine" beside "roll this" (F087), b037's
+  #    Margin cushion 80.0% on Actions and 75.1% in the entry preview (F105).
+  version: 9
   type: script
   timeout_seconds: 30
   script_template: |
@@ -199,6 +210,45 @@ agent:
     qa_summary = value("{{ qa_summary | default('', true) | env }}")
     test_summary = value("{{ test_summary | default('', true) | env }}")
 
+    # One value on every screen (v9). For each figure the plan lists, QA read the listed screens
+    # on the build and, where they differed, the same screens on production (read only):
+    # {what, build: agree|differ|unread, build_values: [{screen, value}],
+    #  before: agree|differ|new|unread|not_read, before_values}. Caused: the build's screens
+    # differ, and production's agree or a differing screen is new (the build adds it). Noted:
+    # production's differ too (it was there before), or production was not read (the cause is
+    # unknown; the owner judges it on the PR). Anything else is not acted on.
+    def word(raw) -> str:
+        return re.sub(r"[^a-z_]", "", str(raw or "").strip().lower())
+
+    def shown(c: dict, side: str) -> str:
+        values = c.get(f"{side}_values")
+        values = [v for v in values if isinstance(v, dict)] if isinstance(values, list) else []
+        return "; ".join(f"{str(v.get('screen') or '?').strip()}: {str(v.get('value') or '?').strip()}"
+                         for v in values) or "values not given"
+
+    same_value = [c for c in listed(value("{{ (qa_same_value | default([], true) | tojson)[:120000] | env }}"))
+                  if isinstance(c, dict) and word(c.get("build")) == "differ"]
+    own_qa_issues = bool(qa_issues)
+    caused, noted = [], []
+    for c in same_value:
+        what = str(c.get("what") or "a figure").strip()
+        before = word(c.get("before"))
+        if before in ("agree", "new"):
+            caused.append(c)
+            why = ("a screen this build adds shows another value" if before == "new" else
+                   f"on production these screens agree ({shown(c, 'before')}), so this build caused it")
+            issue = f"{what} reads differently on two screens ({shown(c, 'build')}): {why}"
+            # To the implementer with QA's own issues: the gate's result is what a rewind keeps.
+            qa_issue_list.append({"where": "; ".join(str(v.get("screen") or "") for v in
+                                                      (c.get("build_values") or []) if isinstance(v, dict)),
+                                  "what": issue})
+            qa_issues.append(issue)
+        elif before == "differ":
+            noted.append(f"{what} ({shown(c, 'build')}): it already differs on production "
+                         f"({shown(c, 'before')}), so this build did not cause it")
+        else:
+            noted.append(f"{what} ({shown(c, 'build')}): production was not read, so the cause is unknown")
+
     # Which round is this? The engine keeps its loop count to itself (executor:
     # loop_counts is local), so the gate counts its own runs -- one file per run,
     # under .epd/, which survives the implementer's `git clean` between rounds.
@@ -241,6 +291,16 @@ agent:
     if veto_expired and not unmet and not qa_issues and verdicts["QA"] == "fail":
         wants = [w for w in wants if w != "QA"]
 
+    # A difference this build caused is QA's objection, whatever QA's own verdict said.
+    if caused and "QA" not in wants:
+        wants.append("QA")
+    # A QA `fail` that nothing else explains -- no clause walked and wrong, none unwalked, no
+    # issue of its own, nothing caused -- was for a difference that was there before, or whose
+    # cause is unknown: noted, not failed.
+    if (noted and not caused and not unmet and not unverified and not own_qa_issues
+            and verdicts["QA"] == "fail"):
+        wants = [w for w in wants if w != "QA"]
+
     if wants:
         verdict = "request_changes"
         summary = f"{' and '.join(wants)} asked for changes"
@@ -254,6 +314,12 @@ agent:
     else:
         verdict = "approve"
         summary = f"{' and '.join(ran)} approved"  # some judge ran: none did stopped above
+    if caused:
+        summary += (f" — {len(caused)} figure(s) read differently on two screens of this build and "
+                    "not on production: this build caused it")
+    if noted:
+        summary += (f" — {len(noted)} figure(s) read differently on two screens, not caused by this "
+                    "build: noted, not failed (see same_value_noted)")
     if human_actions:
         summary += (
             f" — {human_actions} action(s) still need a human "
@@ -309,5 +375,9 @@ agent:
         "qa_summary": qa_summary,
         "security_findings": security_findings,
         "test_failures": test_failures,
+        # One value on every screen (v9): what this build caused (it went back with QA's
+        # issues), and what it did not (noted on the PR, not failed).
+        "same_value_caused": caused,
+        "same_value_noted": noted,
     }))
     PYEOF

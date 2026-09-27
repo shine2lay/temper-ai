@@ -26,7 +26,12 @@ workflow:
   # 10: `waits_for_close` out: the criteria marked "(after the close)" that the measure left while
   #    the market was open; `collect` flags the bet and the driver measures it again after the
   #    close (queue task 5).
-  version: 10
+  # 11 (2026-09-26, queue task 7, "one value on every screen"): the plan's `same_value` list (each
+  #    figure or verdict the bet changes that shows on more than one screen, with every screen)
+  #    reaches the build's QA, with production as the before side (measure_url, `before_email`,
+  #    measure_password; read only), and the measure. The differences the build did not cause
+  #    (`same_value_noted`) reach ship, which puts them on the PR.
+  version: 11
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
@@ -96,6 +101,7 @@ workflow:
     measure_password: {type: string, required: true}
     paper_account: {type: string, required: false} # EPD's paper account the stack's paper login goes on (QA); none: the seed's book
     login_note:   {type: string, required: false}  # what verify is told about its login
+    before_email: {type: string, required: false}  # who QA reads the plan's same-value screens as on measure_url (qa@), where the build's differ
     measure_note: {type: string, required: false}  # what measure is told about its login
 
     # What the plan stage needs
@@ -199,6 +205,12 @@ workflow:
         paper_account: input.paper_account
         plan: input.build_plan
         plan_dir: input.plan_dir
+        # One value on every screen (v11): the plan's list, and production to read it on before
+        # this change where the build's screens differ (read only).
+        same_value: tasks.structured.same_value
+        before_url: input.measure_url
+        before_email: input.before_email
+        before_password: input.measure_password
         keep: true
         force: true
 
@@ -229,6 +241,7 @@ workflow:
         task_slug: build.structured.task_slug
         verify_screenshots: build.structured.verify_screenshots
         verify_threshold_checks: build.structured.verify_threshold_checks
+        same_value_noted: build.structured.same_value_noted
         title: input.title
         problem: input.problem
         invariant: input.invariant
@@ -277,3 +290,4 @@ workflow:
         bet_path: input.bet_path
         report_path: input.report_path
         build_summary: build.structured.implement_summary
+        same_value: tasks.structured.same_value

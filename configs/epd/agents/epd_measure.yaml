@@ -43,7 +43,12 @@ agent:
   #    (max_iterations 45 -> 60), and a criterion never reached is vacuous, not unmet. b031's
   #    re-measure (run f5a2747e, 2026-09-26) met 4 criteria on qa-fresh@, qa-empty@ and qa-nobroker@,
   #    ran out of calls before signing in as qa@, and recorded that criterion as unmet.
-  version: 11
+  # 12 (2026-09-26, queue task 7, "one value on every screen"): the plan's `same_value` list (each
+  #    figure or verdict the bet changes that shows on more than one screen, with every screen) is
+  #    compared on the live product. Differences go in outcome.md's "One value on every screen" and
+  #    the reply's `same_value`. It reports them: QA already judged whether the build caused one.
+  #    max_iterations 60 -> 66 for the extra screens.
+  version: 12
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -56,7 +61,7 @@ agent:
     - playwright.browser_resize   # phone-width criteria (8)
     - Read   # the bet and the report are files the earlier stages wrote
     - Write
-  max_iterations: 60
+  max_iterations: 66
   total_timeout: 1200
   provider_config:
     max_tokens: 8000
@@ -131,6 +136,14 @@ agent:
     3. Look around it: the page the change is on, and the pages the walker
        passed through to get there. Anything new that is broken or confusing
        is a regression, and counts against the bet.
+       When the task lists figures that show on more than one screen, read
+       each listed screen (as the login it names, else yours) and compare: the
+       same number to the precision both show (80% and 80.0% agree; 80.0%
+       and 75.1% do not), the same verdict ("Fine" beside advice to roll is
+       two). A difference is a finding: name the figure and each screen's
+       value. It does not decide the verdict by itself (QA judged whether the
+       build caused it), but one on a figure this bet changed goes in "For
+       the next iteration". About 3 browser calls a screen.
     4. Take the criteria one at a time. For each, ask the question that
        decides whether the measurement happened at all:
 
@@ -175,6 +188,8 @@ agent:
                         if every part of the invariant was exercised
       ## Re-walk       — the original friction: gone / reduced / moved, evidence
       ## Regressions   — anything worse nearby, or "none seen"
+      ## One value on every screen: each listed figure, agree or differ, with each
+                        screen's value; "nothing listed" when the task lists none
       ## Verdict       — one paragraph
       ## Was this the right threshold — one paragraph
       ## For the next iteration — one to three lines the next report/bet should know
@@ -194,6 +209,7 @@ agent:
       "vacuous_criteria": <how many read "vacuous">,
       "unverified": "<what remains unseen on the running build, or "">",
       "waits_for_close": ["<each criterion marked (after the close) left for the after-close measure>"],
+      "same_value": [{"what": "<a listed figure>", "result": "agree|differ|unread", "values": [{"screen": "<route: where>", "value": "<as shown>"}]}],
       "regressions": <count>,
       "right_threshold": "yes|no|partly",
       "summary": "<one sentence — if anything was vacuous or unverified, say so here; this line is what the ledger keeps>"
@@ -223,6 +239,14 @@ agent:
     {% if build_summary %}
     ## What the build stage says it changed (claims to check, not to trust)
     {{ build_summary }}
+    {% endif %}
+    {% if same_value %}
+    ## Figures that show on more than one screen (from the plan)
+    Each must read the same on every screen listed:
+    {% if same_value is string %}{{ same_value }}
+    {% else %}{% for f in same_value %}- {{ f.what }}{% if f.source %} (from {{ f.source }}){% endif %}
+    {% for s in (f.screens or []) %}    - {{ s.route }}{% if s.where %}: {{ s.where }}{% endif %}{% if s.login %} (as {{ s.login }}){% endif %}
+    {% endfor %}{% endfor %}{% endif %}
     {% endif %}
 
     Measure it.

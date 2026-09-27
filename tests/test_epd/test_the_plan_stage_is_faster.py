@@ -90,7 +90,7 @@ def test_every_reader_asks_for_its_files_in_one_turn():
 def test_the_second_look_is_wired_to_the_issues_and_the_diff():
     wf = yaml.safe_load(WORKFLOW.read_text())["workflow"]
     nodes = {n["name"]: n for n in wf["nodes"]}
-    assert wf["version"] == 5
+    assert wf["version"] >= 5, "the second look came in v5"
     assert nodes["docs"]["input_map"]["check_issues"] == "check.structured.issues"
     assert nodes["changes"]["agent"] == "epd_plan_changes" and nodes["changes"]["depends_on"] == ["lead"]
     check = nodes["check"]

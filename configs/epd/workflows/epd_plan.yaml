@@ -14,7 +14,10 @@ workflow:
   #    budget of about 20 tool calls. On the 29-bet test a second look took as long as the first (a
   #    median 13 min a pass), and the whole stage took a median 63 min, up to 142 (b014). The agents
   #    were cut too: the architect to medium effort and 40 steps, the engineers to 30, the check to 40.
-  version: 5
+  # 6 (2026-09-26, queue task 7, "one value on every screen"): `same_value` out, the lead's list of
+  #    each figure or verdict the bet changes that shows on more than one screen, with every screen
+  #    (also in tasks.json). epd_loop hands it to the build's QA and to the measure.
+  version: 6
   description: |
     EPD loop, plan stage: a pitch becomes the build's tasks. An architect
     designs the change, four engineers check the design in their own areas,
@@ -74,6 +77,7 @@ workflow:
     files: lead.structured.files
     blocked_because: lead.structured.blocked_because
     plan_path: lead.structured.plan_path
+    same_value: lead.structured.same_value   # [{what, source, screens: [{route, where, login}]}] (v6)
     # null after a last pass (round 3): the check was skipped, and its second verdict was "revise"
     verdict: check.structured.verdict
     issues: check.structured.issues

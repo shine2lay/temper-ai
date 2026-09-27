@@ -9,7 +9,10 @@ workflow:
   # 6: `market` (open/shut, from the broker's clock) in, `waits_for_close` out: a criterion marked
   #    "(after the close)" waits while the market is open, and the driver measures again after the
   #    close (queue task 5).
-  version: 6
+  # 7 (2026-09-26, queue task 7, "one value on every screen"): `same_value` in (the plan's figures
+  #    that show on more than one screen, each with every screen) and out (what the measure saw on
+  #    each); outcome.md gets a section for it.
+  version: 7
   description: |
     EPD loop, stage 7 of 7: measure. Replaces the product department's
     accountability. On the shipped build's URL, one agent checks the bet's
@@ -32,6 +35,7 @@ workflow:
     bet_path: {type: string, required: true}
     report_path: {type: string, required: true}
     build_summary: {type: string, required: false}
+    same_value: {type: array, required: false}   # [{what, source, screens: [{route, where, login}]}] from the plan (v7)
   outputs:
     status: measure.structured.status
     outcome_path: measure.structured.outcome_path
@@ -42,6 +46,7 @@ workflow:
     vacuous_criteria: measure.structured.vacuous_criteria
     unverified: measure.structured.unverified
     waits_for_close: measure.structured.waits_for_close
+    same_value: measure.structured.same_value   # [{what, result: agree|differ|unread, values}] (v7)
     regressions: measure.structured.regressions
     right_threshold: measure.structured.right_threshold
     summary: measure.structured.summary
@@ -63,3 +68,4 @@ workflow:
         bet_path: input.bet_path
         report_path: input.report_path
         build_summary: input.build_summary
+        same_value: input.same_value

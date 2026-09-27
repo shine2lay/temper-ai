@@ -32,7 +32,18 @@ agent:
   #    criterion marked "(after the close)" is `waits_for_close` while the market is open (`market`
   #    says which, from the broker's clock), listed in `waits_for_close`, and the driver measures
   #    the bet again after the close.
-  version: 8
+  # 9: the state logins are said to be on the practice broker (connected), and a criterion that
+  #    names qa-empty@ or qa@ in a state that login has lost (the scheduler scans it at boot) is
+  #    measured on the state login that has that state. b031's re-measure (run c5b66389, 2026-09-26)
+  #    looked for a connected, never-scanned tenant, missed qa-noscan@, and left 2 criteria open.
+  # 10: qa-fresh@ joins the logins (the empty book, never scanned, from the RollCall seed), and
+  #    qa-noscan@ is said to hold qa@'s positions. b031's next re-measure (run e7302cc3) found
+  #    qa-noscan@ holds 8 positions, so no login was empty and never scanned: 2 criteria stayed open.
+  # 11: signing in as another login costs browser calls, so the budget grows by about 6 a login
+  #    (max_iterations 45 -> 60), and a criterion never reached is vacuous, not unmet. b031's
+  #    re-measure (run f5a2747e, 2026-09-26) met 4 criteria on qa-fresh@, qa-empty@ and qa-nobroker@,
+  #    ran out of calls before signing in as qa@, and recorded that criterion as unmet.
+  version: 11
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -45,7 +56,7 @@ agent:
     - playwright.browser_resize   # phone-width criteria (8)
     - Read   # the bet and the report are files the earlier stages wrote
     - Write
-  max_iterations: 45
+  max_iterations: 60
   total_timeout: 1200
   provider_config:
     max_tokens: 8000
@@ -69,23 +80,34 @@ agent:
     How to work: browser_navigate(url), browser_snapshot() to read the page
     as roles/names/refs, browser_click / browser_type on refs from the
     latest snapshot, browser_wait_for for async loads. Sign in on the URL
-    that has the accounts. Do not take screenshots. About 35 browser calls.
+    that has the accounts. Do not take screenshots. About 35 browser calls,
+    plus about 6 for each other login you sign in as: count the logins the
+    criteria need before you start, so that every criterion is measured.
     A criterion about a phone (a phone screen, phone width, 390 px):
     browser_resize(width=390, height=844), measure it, then
     browser_resize(width=1280, height=720) before anything else. For "above
     the fold", browser_snapshot(boxes=true) gives each element's box in CSS
     pixels: above the fold is a box that ends within 844.
     A criterion that needs an account in some state: the server has a QA
-    login for each, same password as yours. Sign in as the one it names or
-    needs, measure it, sign back in as your own, and name the login in what
-    you record: qa-noscan@rollcall.test (never scanned or screened: no book
-    yet, no scan, no screen has run), qa-oneclose@rollcall.test (exactly one
+    login for each, same password as yours, all on the practice broker
+    (connected, with broker figures) unless said otherwise. Sign in as the
+    one it needs, measure it, sign back in as your own, and name the login
+    in what you record. A criterion may name qa-empty@ or qa@ in a state
+    that login no longer has (the scheduler scans every other login at boot
+    and every minute, so "right after the seed, never scanned" is gone by
+    the time you look): measure it on the state login that has that state,
+    and say so. The logins: qa-noscan@rollcall.test (connected, qa@'s
+    positions, never scanned or screened: broker figures, but no book yet,
+    no scan, no screen has run), qa-fresh@rollcall.test (connected, an empty
+    book, never scanned or screened: a new trader's first login, the state
+    "qa-empty@ right after the seed" means), qa-oneclose@rollcall.test (exactly one
     recorded close), qa-two@rollcall.test (entries of up to 2 contracts, a
     margin debt), qa-setaside@rollcall.test (a finished screen with more
     than 50 set-aside stocks), qa-brake@rollcall.test (the uncovered-shares
     brake refuses every entry), qa-nobroker@rollcall.test (no broker
     connected), qa-keyless@rollcall.test (Alpaca chosen, no keys saved).
-    Never press Scan or Refresh on qa-noscan@, qa-oneclose@ or qa-setaside@.
+    Never press Scan or Refresh on qa-noscan@, qa-fresh@, qa-oneclose@ or
+    qa-setaside@.
     A criterion marked "(after the close)" is about what the app shows with
     the market shut. While the market is open, do not measure it: its result
     is `waits_for_close`, it goes in `waits_for_close`, and the driver
@@ -119,7 +141,8 @@ agent:
        empty state was never empty — then the criterion is NOT met. It is
        VACUOUS: nothing was tested. A criterion that cannot fail did not
        pass. Say which situation failed to arise and what would have to
-       exist for it to be walkable.
+       exist for it to be walkable. A criterion you never got to is
+       vacuous too, never unmet: unmet means you measured it and it failed.
 
        This is the most important judgement you make. A build commonly
        satisfies half an "either X or Y" invariant by making Y unreachable

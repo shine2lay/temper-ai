@@ -56,7 +56,14 @@ agent:
   #    50 set aside, a refusing brake, no broker, no keys) for a clause that needs that state; and a
   #    clause marked "(after the close)" is `waits_for_close` while the market is open -- it does not
   #    fail the build, and the loop measures it again after the close.
-  version: 8
+  # 9: the state logins are said to be on the practice broker (connected), and a clause that names
+  #    qa-empty@ or qa@ in a state that login has lost (the scheduler scans it at boot) is walked on
+  #    the state login that has that state. b031's re-measure (run c5b66389, 2026-09-26) looked for
+  #    a connected, never-scanned tenant, missed qa-noscan@, and left 2 criteria open.
+  # 10: qa-fresh@ joins the logins (the empty book, never scanned, from the RollCall seed), and
+  #    qa-noscan@ is said to hold qa@'s positions. b031's next re-measure (run e7302cc3) found
+  #    qa-noscan@ holds 8 positions, so no login was empty and never scanned: 2 criteria stayed open.
+  version: 10
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -98,11 +105,19 @@ agent:
       each element's box in CSS pixels: it is above the fold when the box
       ends within 844.
     - A clause that needs an account in some state: the stack has a QA login
-      for each, same password as yours. Sign in as the one the clause names
-      or needs, walk that clause, then sign back in as your own, and name the
-      login in the clause's evidence:
-        qa-noscan@rollcall.test: never scanned or screened (no book yet, no
-          scan, no screen has run);
+      for each, same password as yours, all on the practice broker
+      (connected, with broker figures) unless said otherwise. Sign in as the
+      one the clause needs, walk that clause, then sign back in as your own,
+      and name the login in the clause's evidence. A clause may name
+      qa-empty@ or qa@ in a state that login no longer has (the scheduler
+      scans every other login at boot and every minute, so "right after the
+      seed, never scanned" is gone by the time you look): walk it on the
+      state login that has that state, and say so. The logins:
+        qa-noscan@rollcall.test: connected, qa@'s positions, never scanned or
+          screened (broker figures, but no book yet, no scan, no screen has run);
+        qa-fresh@rollcall.test: connected, an empty book, never scanned or
+          screened: a new trader's first login, the state "qa-empty@ right
+          after the seed" means;
         qa-oneclose@rollcall.test: exactly one recorded close;
         qa-two@rollcall.test: entries of up to 2 contracts, with a margin debt;
         qa-setaside@rollcall.test: a finished screen with more than 50
@@ -110,7 +125,7 @@ agent:
         qa-brake@rollcall.test: the uncovered-shares brake refuses every entry;
         qa-nobroker@rollcall.test: no broker connected;
         qa-keyless@rollcall.test: Alpaca chosen, no keys saved.
-      Never press Scan or Refresh on qa-noscan@, qa-oneclose@ or
+      Never press Scan or Refresh on qa-noscan@, qa-fresh@, qa-oneclose@ or
       qa-setaside@: their state is what the next walker needs too.
     - A clause marked "(after the close)" is about what the app shows with the
       market shut. The app says which it is ("the market is open", "The market

@@ -1,0 +1,23 @@
+{
+  "about": "A slash command (/temper ...) as Socket Mode delivers it, token removed. Filled by temper_ai/integrations/slack/fakes.py; the test entry sets response_url and trigger_id.",
+  "from": "Slack's Socket Mode shape for slash_commands (no real /temper command has reached the event inbox yet)",
+  "envelope": {
+    "envelope_id": "",
+    "payload": {
+      "team_id": "T0TEAM",
+      "team_domain": "",
+      "channel_id": "C0CHANNEL",
+      "channel_name": "",
+      "user_id": "U0OWNER",
+      "user_name": "",
+      "command": "/temper",
+      "text": "",
+      "api_app_id": "A0APP",
+      "is_enterprise_install": "false",
+      "response_url": "",
+      "trigger_id": ""
+    },
+    "type": "slash_commands",
+    "accepts_response_payload": true
+  }
+}

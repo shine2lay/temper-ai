@@ -1,0 +1,24 @@
+{
+  "about": "A button click (block_actions) as Socket Mode delivers it, token removed. Filled by temper_ai/integrations/slack/fakes.py from the real message and its button; the test entry sets response_url and trigger_id.",
+  "from": "Slack's Socket Mode shape for block_actions (no real click has reached the event inbox yet)",
+  "envelope": {
+    "envelope_id": "",
+    "payload": {
+      "type": "block_actions",
+      "user": {"id": "U0OWNER", "username": "", "name": "", "team_id": "T0TEAM"},
+      "api_app_id": "A0APP",
+      "container": {"type": "message", "message_ts": "", "channel_id": "C0CHANNEL", "is_ephemeral": false},
+      "trigger_id": "",
+      "team": {"id": "T0TEAM", "domain": ""},
+      "enterprise": null,
+      "is_enterprise_install": false,
+      "channel": {"id": "C0CHANNEL", "name": ""},
+      "message": {},
+      "state": {"values": {}},
+      "response_url": "",
+      "actions": []
+    },
+    "type": "interactive",
+    "accepts_response_payload": false
+  }
+}

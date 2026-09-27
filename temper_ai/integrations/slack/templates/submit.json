@@ -1,0 +1,20 @@
+{
+  "about": "A form sent (view_submission) as Socket Mode delivers it, token removed. Filled by temper_ai/integrations/slack/fakes.py from the form the test entry kept for a fake Answer click.",
+  "from": "Slack's Socket Mode shape for view_submission (no real form has reached the event inbox yet)",
+  "envelope": {
+    "envelope_id": "",
+    "payload": {
+      "type": "view_submission",
+      "team": {"id": "T0TEAM", "domain": ""},
+      "user": {"id": "U0OWNER", "username": "", "name": "", "team_id": "T0TEAM"},
+      "api_app_id": "A0APP",
+      "trigger_id": "",
+      "view": {},
+      "response_urls": [],
+      "is_enterprise_install": false,
+      "enterprise": null
+    },
+    "type": "interactive",
+    "accepts_response_payload": true
+  }
+}

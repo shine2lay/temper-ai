@@ -37,6 +37,14 @@ PUBLIC_PATHS = ("/api/health", "/api/runtime-config", "/api/hooks/linear", "/api
 # request it then makes for actual data goes through the check below.
 PUBLIC_PREFIXES = ("/app", "/assets", "/favicon")
 
+# A fake Slack event's response link (api/slack_test.py). Temper calls it
+# back the way it calls Slack's own response_url: with no token, as Slack's
+# needs none. The route itself lets only the server's own calls (from
+# 127.0.0.1) in without the test entry's secret, and keeps answers only for
+# a fake of the last hour, named by 24 random hex characters; the rest of
+# /api/test/slack stays behind the token.
+FAKE_REPLIES_PREFIX = "/api/test/slack/replies/"
+
 TOKEN_ENV_VAR = "TEMPER_API_TOKEN"  # noqa: S105 - name, not a secret
 TOKEN_FILE_ENV_VAR = "TEMPER_API_TOKENS_FILE"  # noqa: S105 - name, not a secret
 
@@ -160,6 +168,8 @@ def _presented_token(scope: dict) -> str | None:
 
 def _is_public(path: str) -> bool:
     if path in PUBLIC_PATHS:
+        return True
+    if path.startswith(FAKE_REPLIES_PREFIX):
         return True
     return any(path == prefix or path.startswith(prefix + "/") for prefix in PUBLIC_PREFIXES)
 

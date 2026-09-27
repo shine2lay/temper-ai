@@ -31,6 +31,9 @@ API = "https://slack.com/api"
 BOT_TOKEN_ENV = "SLACK_BOT_TOKEN"
 APP_TOKEN_ENV = "SLACK_APP_TOKEN"
 MAX_RETRY_AFTER_S = 30.0
+# A fake click's trigger id (the Slack test entry, see door.py); a real one
+# is digits and never starts with this.
+TEST_TRIGGER = "test."
 
 # What the app needs (the manifest asks for these; `temper slack check` compares).
 REQUIRED_SCOPES = (
@@ -125,7 +128,15 @@ class SlackClient:
 
     def open_view(self, trigger_id: str, view: dict[str, Any]) -> dict[str, Any]:
         """Open a form (modal) for the person who just clicked; ``trigger_id``
-        comes with the click and lasts 3 seconds."""
+        comes with the click and lasts 3 seconds.
+
+        A fake click from the test entry has no trigger that works; its form
+        is still sent to Slack to check, and kept for a fake submission.
+        """
+        if trigger_id.startswith(TEST_TRIGGER):
+            from temper_ai.integrations.slack import door
+
+            return door.open_view(self, trigger_id, view)
         return self.call("views.open", trigger_id=trigger_id, view=view)
 
     def update(self, channel: str, ts: str, text: str, blocks: list[dict] | None = None) -> dict[str, Any]:
@@ -134,6 +145,13 @@ class SlackClient:
 
     def replies(self, channel: str, ts: str, limit: int = 100) -> list[dict[str, Any]]:
         data = self.call("conversations.replies", channel=channel, ts=ts, limit=limit)
+        return list(data.get("messages") or [])
+
+    def history(self, channel: str, oldest: str | None = None, latest: str | None = None,
+                inclusive: bool = False, limit: int = 100) -> list[dict[str, Any]]:
+        """A channel's top-level messages between two ts, newest first."""
+        data = self.call("conversations.history", channel=channel, oldest=oldest, latest=latest,
+                         inclusive=inclusive or None, limit=limit)
         return list(data.get("messages") or [])
 
     def open_dm(self, user: str) -> str:

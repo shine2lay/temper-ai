@@ -19,6 +19,9 @@ directory, so the workflow-config importer passes it by.)::
       agents:                   # where the Slack agent tools may post; nowhere else
         - dm: U0123ABCD
         - channel: C0456EFGH
+      test_door:                # the private test entry (docs/slack.md); false turns it off
+        channel: "#temper-qa"   # the only channel fake events may name
+        user: U0123ABCD         # who fake events come from (default: the first agents dm)
 
 A destination is a channel and/or a DM: ``channel`` is a channel id
 (``C…``/``G…``) or ``#name``; ``dm`` is a user id (``U…``/``W…``). Either
@@ -26,6 +29,9 @@ may be a list. ``off`` (or ``false``/``null``) sends nothing.
 
 "finished" is every end but failure (completed, cancelled); a failed run
 gets the "failed" notice instead, never both.
+
+``test_door`` is on unless it is ``false``; it still needs its own secret
+(``TEMPER_SLACK_TEST_TOKEN``) or the API token before it takes anything.
 """
 
 from __future__ import annotations
@@ -68,6 +74,17 @@ class Destination:
 
 
 NOWHERE = Destination()
+DEFAULT_TEST_CHANNEL = "#temper-qa"
+
+
+@dataclass(frozen=True)
+class DoorSettings:
+    """The Slack test entry (POST /api/test/slack): on or off, which
+    channel fakes may name, and whose Slack user they act as."""
+
+    on: bool = True
+    channel: str = DEFAULT_TEST_CHANNEL
+    user: str = ""
 
 
 @dataclass
@@ -77,6 +94,7 @@ class SlackConfig:
     notify: dict[str, Destination] = field(default_factory=dict)
     workflows: dict[str, dict[str, Destination]] = field(default_factory=dict)
     agents: Destination = NOWHERE
+    test_door: DoorSettings = field(default_factory=DoorSettings)
     path: str = ""
 
     def route(self, kind: str, workflow: str | None) -> Destination:
@@ -92,6 +110,11 @@ class SlackConfig:
 
     def agent_may_post(self, channel: str) -> bool:
         return channel in self.agents.channels or channel in self.agents.users
+
+    def test_user(self) -> str:
+        """Who fake Slack events come from: ``test_door.user``, else the
+        first person the agent tools may DM (the owner)."""
+        return self.test_door.user or next(iter(self.agents.users), "")
 
 
 def default_config_dir() -> Path:
@@ -159,7 +182,7 @@ def parse_config(raw: Any, path: str = "") -> SlackConfig:
         return SlackConfig(path=path)
     if not isinstance(body, dict):
         raise SlackConfigError("expected a mapping under 'slack:'")
-    unknown = set(body) - {"dashboard_url", "stuck_after", "notify", "workflows", "agents"}
+    unknown = set(body) - {"dashboard_url", "stuck_after", "notify", "workflows", "agents", "test_door"}
     if unknown:
         raise SlackConfigError(f"unknown key(s) under slack: {', '.join(sorted(unknown))}")
     cfg = SlackConfig(path=path)
@@ -186,7 +209,31 @@ def parse_config(raw: Any, path: str = "") -> SlackConfig:
         channels += dest.channels
         users += dest.users
     cfg.agents = Destination(channels=tuple(channels), users=tuple(users))
+    cfg.test_door = parse_door(body.get("test_door", True))
     return cfg
+
+
+def parse_door(value: Any) -> DoorSettings:
+    """``test_door``: true/false, or {on, channel, user}."""
+    if value is None or isinstance(value, bool):
+        return DoorSettings(on=value is not False)
+    if isinstance(value, str) and value.strip().lower() in _OFF:
+        return DoorSettings(on=False)
+    if not isinstance(value, dict):
+        raise SlackConfigError(f"test_door: expected true, false or {{channel: ..., user: ...}}, got {value!r}")
+    unknown = set(value) - {"on", "channel", "user"}
+    if unknown:
+        raise SlackConfigError(f"test_door: unknown key(s) {', '.join(sorted(unknown))} (use on, channel, user)")
+    on = value.get("on", True)
+    if not isinstance(on, bool):
+        raise SlackConfigError(f"test_door.on: expected true or false, got {on!r}")
+    channel = str(value.get("channel") or DEFAULT_TEST_CHANNEL).strip()
+    if not _CHANNEL.match(channel) or channel.startswith("D"):
+        raise SlackConfigError(f"test_door.channel: {channel!r} is not a channel id (C…) or #name")
+    user = str(value.get("user") or "").strip()
+    if user and not _USER.match(user):
+        raise SlackConfigError(f"test_door.user: {user!r} is not a user id (U…)")
+    return DoorSettings(on=on, channel=channel, user=user)
 
 
 def load_config(config_dir: str | Path | None = None) -> SlackConfig:

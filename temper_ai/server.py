@@ -28,6 +28,7 @@ from temper_ai.api.hooks import router as hooks_router
 from temper_ai.api.pools import router as pools_router
 from temper_ai.api.routes import init_app_state
 from temper_ai.api.routes import router as api_router
+from temper_ai.api.slack_test import router as slack_test_router
 from temper_ai.api.studio import router as studio_router
 from temper_ai.api.triggers import router as triggers_router
 from temper_ai.config import ConfigStore
@@ -480,6 +481,7 @@ app.include_router(studio_router)
 app.include_router(docs_router)
 app.include_router(hooks_router)
 app.include_router(events_router)
+app.include_router(slack_test_router)
 app.include_router(triggers_router)
 app.include_router(pools_router)
 

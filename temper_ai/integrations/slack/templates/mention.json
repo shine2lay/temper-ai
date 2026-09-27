@@ -1,0 +1,36 @@
+{
+  "about": "An @temper message (app_mention) as Socket Mode delivers it, token removed. Filled by temper_ai/integrations/slack/fakes.py; its ts is a real message the bot posted, so temper's answer has a thread to go in.",
+  "from": "the envelope and event_callback shell of real Slack events in the event inbox (Sep 27), ids replaced; the app_mention event itself follows Slack's shape",
+  "envelope": {
+    "envelope_id": "",
+    "payload": {
+      "team_id": "T0TEAM",
+      "context_team_id": "T0TEAM",
+      "context_enterprise_id": null,
+      "api_app_id": "A0APP",
+      "event": {
+        "type": "app_mention",
+        "user": "U0OWNER",
+        "ts": "",
+        "client_msg_id": "",
+        "text": "",
+        "team": "T0TEAM",
+        "blocks": [],
+        "channel": "C0CHANNEL",
+        "event_ts": ""
+      },
+      "type": "event_callback",
+      "event_id": "",
+      "event_time": 0,
+      "authorizations": [
+        {"enterprise_id": null, "team_id": "T0TEAM", "user_id": "U0BOT", "is_bot": true, "is_enterprise_install": false}
+      ],
+      "is_ext_shared_channel": false,
+      "event_context": ""
+    },
+    "type": "events_api",
+    "accepts_response_payload": false,
+    "retry_attempt": 0,
+    "retry_reason": ""
+  }
+}

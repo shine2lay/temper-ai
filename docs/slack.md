@@ -174,6 +174,125 @@ Once, by a Slack workspace admin:
    workflows with no description, which search and @temper can only find by
    name.
 
+## Testing without the browser
+
+Slack blocks automated browsers, so temper's Slack flows are tested
+through a private **test entry** on temper's server instead. It takes fake
+Slack events (a `/temper` command, a button click, a form being sent, an
+@temper message) and handles them exactly like real ones. What temper posts
+lands in Slack for real, in the test channel (#temper-qa), and the checks
+read it back through Slack's API.
+
+```
+temper slack e2e                  # the whole check set, pass/fail with times and cost
+temper slack fake command ask what does gate_smoke do? --wait
+```
+
+Run them where the bot token and the entry's secret are set, which is the
+server container:
+
+```
+docker exec -w /app temper-ai-server-1 /app/.venv/bin/temper slack e2e
+```
+
+### The check set
+
+`temper slack e2e` runs these in the test channel, one after another, and
+prints PASS or FAIL for each, with its time and cost. It exits 1 if any
+fails. `--only form,stop` runs some of them.
+
+| Check | What it does, and what must happen |
+|---|---|
+| `ask` | `/temper ask …`: the answer is posted in the channel for everyone. |
+| `mention` | "@temper what does … do?": the answer appears in its thread. |
+| `form` | `/temper run notify_probe`. Its question comes with Answer, Approve and Reject. A click on Answer builds the form, and Slack accepts its blocks. Sending the form answers the question, the run finishes with those answers, and the question says who approved it. |
+| `approve` | A second notify_probe: Approve moves it on, and it finishes. |
+| `reject` | A third: Reject stops it, and the notice says who rejected it. |
+| `stop` | A fourth, waiting at its question: the check posts a "quiet run" notice in its thread, and a click on its Stop button stops the run. |
+
+`ask` and `mention` cost what two answers cost (see
+[Questions about the code](#questions-about-the-code)). notify_probe uses
+no model, so the four runs cost nothing. The whole set takes a few minutes.
+
+### One fake at a time
+
+`temper slack fake` sends one fake event. With `--wait` it prints what came
+of it: temper's replies, the forms it built, its event in the inbox, and the
+messages in its thread.
+
+```
+temper slack fake command run notify_probe --wait
+temper slack fake mention what does gate_smoke do? --wait
+temper slack fake click <message ts> approve --thread <thread ts> --wait
+temper slack fake click <message ts> answer --thread <thread ts> --wait
+temper slack fake submit <the Answer click's fake id> --pick q0=1 --wait
+```
+
+A click needs the ts of a message temper posted in the test channel (and of
+its thread, when it is a reply). The click is built from that message as
+Slack's API returns it, so it carries the button temper really posted.
+`submit` sends the form an Answer click built, filled in by `--pick`
+(`q0=1` picks option 1 of question 0, `q1=0,2` picks two, `q2c=text`
+types an answer, `response=text` fills the last box). Without `--pick`,
+it fills it in the way the check set does.
+
+### How a fake is handled
+
+A fake goes where a real event goes. It is saved in the
+[event inbox](reference/architecture.md#events-from-outside-the-inbox),
+marked as a test (its delivery is `test:<id>`, and
+`temper events list --source slack` shows it), and it can be replayed like
+any other event. Then it goes to the same handler the Slack socket uses.
+Only what a fake can't have is swapped:
+
+- **Who.** A fake always acts as the owner (`test_door.user`, else the first
+  `dm` under `agents:`), whatever it says. Nothing is ever posted as the
+  owner: a fake @temper message is hung on a message the bot posts first.
+- **The reply link.** Slack's `response_url` exists only for a real command
+  or click. A fake's link points back at temper's server, which keeps what
+  temper answers there for an hour. An answer meant for everyone is posted
+  in the channel by the bot, as Slack itself would.
+- **The form.** A form opens only from a real click, whose trigger lasts 3
+  seconds. A fake click's form is still sent to Slack, which checks the
+  form's blocks before the trigger, so "invalid trigger" means Slack
+  accepted the blocks. The form is kept, so a fake submission can send it.
+
+**What it can't show:** that the form really pops up in Slack. That needs a
+real click. Everything before it (which form, with valid blocks) and after
+it (sending it, the run carrying on) is checked.
+
+The fakes are built from templates in
+`temper_ai/integrations/slack/templates/`, with no tokens in them. The
+@temper one is shaped on real events from the inbox. The command, click and
+form ones follow Slack's documented shape, because no real one had reached
+the inbox yet when they were written.
+
+### Turning it on and off
+
+The entry takes nothing until it has a secret. Set it once in
+`~/temper-ai/.env`, then recreate the server:
+
+```
+TEMPER_SLACK_TEST_TOKEN=<a long random string>
+```
+
+Its routes are under `/api/test/slack` (`GET` says whether it is on, `POST`
+takes a fake, `GET /api/test/slack/fakes/<id>` shows what came of one).
+Every call needs the secret, as `X-Temper-Test-Token`, or temper's API
+token when one is set. The one exception is a fake's reply link, which
+temper's server calls itself from inside, as it calls Slack's (the link only
+works for an hour). The entry is never on the public hook address. It only
+takes fakes for the test channel, and in `configs/slack/local/slack.yaml`:
+
+```yaml
+slack:
+  test_door: false            # off
+  # or:
+  test_door:
+    channel: "#temper-qa"     # the only channel fakes may use (the default)
+    user: U0123456789         # who fakes act as (default: the first agents dm)
+```
+
 ## Rules
 
 - **Anyone in the workspace can act.** Every start, stop, gate answer and

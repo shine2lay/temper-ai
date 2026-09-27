@@ -1,7 +1,17 @@
-"""``temper slack check``: is temper's Slack app set up and working?
+"""``temper slack``: is temper's Slack app set up and working, and do its
+flows work?
 
     temper slack check [--server URL]
+    temper slack fake command|mention|click|submit ... [--wait [SECONDS]]
+    temper slack e2e [--only ask,mention,form,approve,reject,stop]
 
+``fake`` and ``e2e`` go through the server's Slack test entry (see
+temper_ai/integrations/slack/door.py and docs/slack.md, "Testing without
+the browser"); run them where SLACK_BOT_TOKEN and TEMPER_SLACK_TEST_TOKEN
+are set, e.g. ``docker exec -w /app temper-ai-server-1 /app/.venv/bin/temper
+slack e2e``.
+
+``check``
 Checks, in order: both tokens are set; the bot token works (who it is, which
 workspace, whether it has every scope the manifest asks for); the app-level
 token can open a Socket Mode connection; the Slack config file parses; the
@@ -13,8 +23,10 @@ by what they do). Exit 1 if anything is wrong.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import time
 from typing import Any
 
 import httpx
@@ -129,8 +141,88 @@ def check(server: str = DEFAULT_SERVER) -> int:
     return 1 if problems else 0
 
 
+def _tester(server: str) -> Any:
+    from temper_ai.integrations.slack.client import SlackClient, bot_token
+    from temper_ai.integrations.slack.e2e import Door, Tester
+
+    bot = bot_token()
+    if not bot:
+        raise RuntimeError("SLACK_BOT_TOKEN is not set here; run it in the server container: "
+                           "docker exec -w /app temper-ai-server-1 /app/.venv/bin/temper slack ...")
+    return Tester(Door(server), SlackClient(bot))
+
+
+def fake(args: Any) -> int:
+    """``temper slack fake``: one fake Slack event, and (``--wait``) what came of it."""
+    from temper_ai.integrations.slack import fakes
+    from temper_ai.integrations.slack.e2e import (
+        ACTIONS,
+        E2EError,
+        follow,
+        message_line,
+        picks_for,
+        slack_ts,
+    )
+
+    t = _tester(args.server)
+    since = slack_ts(time.time() - 1)
+    text = " ".join(getattr(args, "text", None) or []).strip()
+    thread, clicked = "", None
+    if args.kind == "command":
+        envelope = fakes.command(t.where, text, name=args.name)
+    elif args.kind == "mention":
+        ts = args.ts or str(t.slack.post(t.where.channel, f":test_tube: a fake @temper message: {text}")["ts"])
+        envelope = fakes.mention(t.where, text, ts, thread_ts=args.thread or "")
+        thread = args.thread or ts
+    elif args.kind == "click":
+        clicked = t.message(args.ts, args.thread or "")
+        if clicked is None:
+            raise E2EError(f"no message {args.ts} in {t.where.channel_name}"
+                           + ("" if args.thread else " (a reply in a thread needs --thread)"))
+        envelope = fakes.click(t.where, clicked, ACTIONS.get(args.button, args.button))
+        thread = args.thread or args.ts
+    else:
+        forms = t.door.fake(args.fake).get("forms") or []
+        if not forms:
+            raise E2EError(f"fake {args.fake} opened no form (it has to be an Answer click)")
+        view = forms[-1]["view"]
+        picks = dict(p.split("=", 1) for p in args.pick) if args.pick else picks_for(view)[0]
+        envelope = fakes.submit(t.where, view, picks)
+        thread = args.thread or ""
+        print(f"form filled in: {json.dumps(picks, ensure_ascii=False)}")
+    sent = t.door.send(envelope)
+    print(f"fake {sent['fake']} ({sent['kind']}) sent; inbox event {sent.get('event_id')}")
+    if args.wait:
+        follow(t, sent["fake"], args.wait, thread, since)
+        if clicked is not None:
+            now = t.message(args.ts, args.thread or "")
+            if now is not None:
+                print("the clicked message now:")
+                print(message_line(now, t.where))
+    return 0
+
+
+def e2e(args: Any) -> int:
+    """``temper slack e2e``: the whole Slack check set, in the test channel."""
+    from temper_ai.integrations.slack.e2e import CHECKS, summary
+
+    only = [n.strip() for n in (args.only or "").split(",") if n.strip()]
+    unknown = [n for n in only if n not in CHECKS]
+    if unknown:
+        raise ValueError(f"no check {', '.join(unknown)} (they are: {', '.join(CHECKS)})")
+    t = _tester(args.server)
+    print(f"Slack checks in {t.where.channel_name} ({t.where.channel}), as {t.where.user}, through {args.server}")
+    results = t.run(only or None)
+    print(summary(results))
+    return 0 if results and all(r.ok for r in results) else 1
+
+
 def cmd_slack(args: Any) -> int:
     try:
+        if args.action == "fake":
+            return fake(args)
+        if args.action == "e2e":
+            return e2e(args)
         return check(args.server)
     except Exception as exc:  # noqa: BLE001 - the message is the whole point of a CLI error
         print(f"temper slack {args.action}: {exc}", file=sys.stderr)
@@ -138,8 +230,38 @@ def cmd_slack(args: Any) -> int:
 
 
 def add_parser(subparsers: Any) -> None:
-    parser = subparsers.add_parser("slack", help="Check temper's Slack app setup")
+    server = os.environ.get("TEMPER_SERVER_URL", DEFAULT_SERVER)
+    parser = subparsers.add_parser("slack", help="Check temper's Slack app setup, and test its Slack flows")
     sub = parser.add_subparsers(dest="action", required=True)
     chk = sub.add_parser("check", help="tokens, scopes, the socket, the notice routing, undescribed workflows")
-    chk.add_argument("--server", default=os.environ.get("TEMPER_SERVER_URL", DEFAULT_SERVER),
+    chk.add_argument("--server", default=server,
                      help=f"the temper server to ask about its socket (default {DEFAULT_SERVER})")
+
+    fk = sub.add_parser("fake", help="send temper one fake Slack event through its test entry")
+    kinds = fk.add_subparsers(dest="kind", required=True)
+    cmd = kinds.add_parser("command", help="/temper <text>, typed in the test channel")
+    cmd.add_argument("text", nargs="+", help='what follows /temper, e.g. "ask what does gate_smoke do?"')
+    cmd.add_argument("--name", default="/temper", help="the command (default /temper)")
+    men = kinds.add_parser("mention", help="@temper <text>: hung on a message the bot posts, unless --ts")
+    men.add_argument("text", nargs="+")
+    men.add_argument("--ts", help="the message it is (one in the test channel)")
+    men.add_argument("--thread", help="the thread it is in, if it is a reply")
+    clk = kinds.add_parser("click", help="click a button on a message temper posted in the test channel")
+    clk.add_argument("ts", help="the message's ts")
+    clk.add_argument("button", help="answer, approve, reject, stop, confirm, cancel, or an action id")
+    clk.add_argument("--thread", help="the thread's first message, when the message is a reply")
+    sbm = kinds.add_parser("submit", help="send the form a fake Answer click opened")
+    sbm.add_argument("fake", help="the Answer click's fake id")
+    sbm.add_argument("--pick", action="append", default=[], metavar="BLOCK=VALUE",
+                     help="q0=1 picks option 1 of question 0; q1=0,2 two options; q2c=text types; "
+                          "response=text; without any, the e2e's picks")
+    sbm.add_argument("--thread", help="a thread to print after --wait (the run's)")
+    for kind in (cmd, men, clk, sbm):
+        kind.add_argument("--server", default=server, help=f"the temper server (default {DEFAULT_SERVER})")
+        kind.add_argument("--wait", nargs="?", type=float, const=480.0, default=0.0, metavar="SECONDS",
+                          help="print what temper does with it (replies, forms, its inbox event, the thread), "
+                               "for up to SECONDS (default 480)")
+
+    run = sub.add_parser("e2e", help="run the whole Slack check set in the test channel (pass/fail, times, cost)")
+    run.add_argument("--only", help="a comma list of: ask, mention, form, approve, reject, stop")
+    run.add_argument("--server", default=server, help=f"the temper server (default {DEFAULT_SERVER})")

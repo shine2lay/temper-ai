@@ -148,6 +148,11 @@ def stop_slack() -> None:
         _service = None
 
 
+def running() -> SlackService | None:
+    """The Slack service of this process, if it started."""
+    return _service
+
+
 def status() -> dict[str, Any]:
     if _service is not None:
         return _service.status()

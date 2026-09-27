@@ -222,6 +222,8 @@ class TestWhatTheAgentsAreTold:
         check_prompt = yaml.safe_load((AGENTS / "epd_plan_check.yaml").read_text())["agent"]["system_prompt"]
         assert "same_value (in tasks.json) misses a screen" in check_prompt
         assert "| same_value\"" in check_prompt
+        # v6: the live test's plans missed "Can you afford it?", which works the figure out in other code
+        assert "by what the figure means, in its words" in " ".join(check_prompt.split())
 
 
 def write_tasks(L, bet_id: str, same_value) -> None:  # noqa: N803 (the fixture's name)

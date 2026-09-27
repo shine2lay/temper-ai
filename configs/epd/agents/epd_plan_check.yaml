@@ -30,7 +30,12 @@ agent:
   #    checked for completeness by grepping where the figure's source is rendered. QA compares the
   #    listed screens on the build and the live check on prod, so a missing screen is a screen
   #    nobody compares (F084, F087 and F105 were each a second screen showing another value).
-  version: 5
+  # 6 (2026-09-27, queue task 7, its live test): the check also greps by what the figure means, in
+  #    its words. b028's and b037's new plans listed the screens reached from each figure's source,
+  #    but not "Can you afford it?", whose lines headroom.py works out with its own arithmetic ("the
+  #    market would have to fall N%", "your cushion stays at N%"). Those were the known second screens
+  #    (F084, F105), and QA on production still read 71.1% there against 73.7%.
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -76,9 +81,14 @@ agent:
       touches is rendered or called: a change that shows on a page, state or figure a criterion or
       the invariant covers is needed, even when the task names another page;
     - same_value (in tasks.json) misses a screen that shows a figure or verdict the bet changes or
-      adds, or names a screen that does not show it: grep where the figure's source is rendered
-      (the API field, the helper, the component), and count a line that restates it in other
-      words.
+      adds, or names a screen that does not show it. Grep two ways: where the figure's source is
+      rendered (the API field, the helper, the component), and by what the figure means, in its
+      words: its label and the sentences that give it as a number (for drop to call, "margin call"
+      and "would have to fall"; for a cushion, "cushion" and "stays at"), in frontend/src and in
+      the backend's copy. A line that works the same figure out in other code (another function,
+      another formula) is the likeliest to disagree: b028's ticket gave drop to call from
+      account_effect.py and, in "Can you afford it?", from headroom.py. Count it, and a line that
+      restates the figure in other words.
 
     Ask for every file you need in one turn (several Read, Grep and Glob calls in one reply, not one
     a turn), and read each file once.

@@ -10,6 +10,10 @@ In a group the bot only reads commands, messages that mention it and
 replies to its own messages (it is told everything, but ignores the rest).
 Anyone in an allowed group may act; every action is recorded with who did
 it (``store.log_action``).
+
+Every update is saved in the event inbox before the poller moves on
+(poller.py), and handled from there (``handle_saved``): if handling fails or
+a restart cuts it off, the inbox tries again.
 """
 
 from __future__ import annotations
@@ -22,6 +26,8 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from temper_ai.integrations.inbox import service as inbox
+from temper_ai.integrations.inbox.store import Event
 from temper_ai.integrations.notify import service as notify
 from temper_ai.integrations.notify import store as notify_store
 from temper_ai.integrations.notify.config import ConfigWatcher as NotifyWatcher
@@ -43,6 +49,7 @@ GOING = ("running", "waiting", "queued")
 MEMBER = ("creator", "administrator", "member", "restricted")
 GROUPS = ("group", "supergroup")
 SEEN_MAX = 500
+SOURCE = "telegram"
 HI = ("help", "hi", "hello", "hey", "?", "start")
 
 # What the bot's command menu shows (setMyCommands).
@@ -55,6 +62,19 @@ COMMANDS = [
     ("stop", "Cancel a run: /stop <run id>"),
     ("help", "What I can do"),
 ]
+
+
+def describe(update: dict[str, Any]) -> tuple[str, str]:
+    """(kind, chat) of an update, for the inbox: ("message /run", "-100123")."""
+    for kind in ("message", "callback_query", "my_chat_member"):
+        part = update.get(kind)
+        if isinstance(part, dict):
+            msg = part.get("message") if kind == "callback_query" else part
+            chat = str(((msg or {}).get("chat") or {}).get("id") or "")
+            text = str(part.get("text") or "") if kind == "message" else ""
+            word = text.split(maxsplit=1)[0] if text.startswith("/") else ""
+            return (f"{kind} {word}".strip(), chat)
+    return ("update", "")
 
 
 def display_name(user: dict[str, Any] | None) -> str:
@@ -85,7 +105,7 @@ class Handler:
         self.notify_config = notify_config or NotifyWatcher()
         self.sender = sender or TelegramSender(client, config)
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="telegram-handler")
-        self._seen: OrderedDict[str, None] = OrderedDict()
+        self._seen: OrderedDict[str, int | None] = OrderedDict()
         self._lock = threading.Lock()
         self._copy_locks: dict[int, threading.Lock] = {}
         self.handled = 0
@@ -93,8 +113,28 @@ class Handler:
 
     # -- entry points ---------------------------------------------------------------
 
-    def submit(self, update: dict[str, Any]) -> None:
-        self._pool.submit(self._safe, update)
+    def submit(self, item: dict[str, Any] | int) -> None:
+        """Handle an update: its inbox event id once saved, or the update itself."""
+        if isinstance(item, int):
+            self._pool.submit(self._process_saved, item)
+        else:
+            self._pool.submit(self._safe, item)
+
+    def _process_saved(self, event_id: int) -> None:
+        try:
+            inbox.process(event_id)
+        except Exception:  # noqa: BLE001 - e.g. the database blinked; the inbox's sweeper tries again
+            logger.exception("Telegram: event %s could not be handled", event_id)
+
+    def handle_saved(self, event: Event) -> str:
+        """The inbox's handler for Telegram; raises if it failed, to be tried again."""
+        try:
+            self.handle(event.payload)
+        except Exception as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            raise
+        self.handled += 1
+        return f"handled {describe(event.payload)[0]}"
 
     def shutdown(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -118,12 +158,15 @@ class Handler:
             self.press(update["callback_query"])
 
     def _first_time(self, key: str) -> bool:
+        """False for something seen before, but True again for the inbox
+        retrying the same event."""
         if not key:
             return True
+        me = inbox.current_event_id()
         with self._lock:
             if key in self._seen:
-                return False
-            self._seen[key] = None
+                return me is not None and self._seen[key] == me
+            self._seen[key] = me
             while len(self._seen) > SEEN_MAX:
                 self._seen.popitem(last=False)
             return True

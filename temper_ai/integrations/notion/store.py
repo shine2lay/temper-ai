@@ -5,13 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
 from temper_ai.integrations.notion.client import normalize_id
 from temper_ai.integrations.notion.models import (
     NotionComment,
-    NotionEvent,
     NotionRun,
     NotionState,
 )
@@ -65,36 +63,7 @@ def runs_for_page(page_id: str) -> list[str]:
         return [r.execution_id for r in rows]
 
 
-# -- events ----------------------------------------------------------------------
-
-def record_event(event_id: str, type: str, entity_id: str = "", page_id: str = "",
-                 author: str = "") -> bool:
-    """Remember an event; False if it was seen before (a redelivery)."""
-    with _session() as session:
-        session.add(NotionEvent(id=event_id, type=type, entity_id=entity_id,
-                                page_id=normalize_id(page_id) if page_id else "", author=author))
-        try:
-            session.commit()
-            return True
-        except IntegrityError:
-            session.rollback()
-            return False
-
-
-def set_outcome(event_id: str, outcome: str) -> None:
-    with _session() as session:
-        row = session.get(NotionEvent, event_id)
-        if row is not None:
-            row.outcome = outcome[:500]
-            session.add(row)
-            session.commit()
-
-
-def recent_events(limit: int = 50) -> list[dict[str, Any]]:
-    with _session() as session:
-        rows = session.exec(select(NotionEvent).order_by(col(NotionEvent.at).desc()).limit(limit)).all()
-        return [{"id": r.id, "at": r.at.isoformat(), "type": r.type, "entity": r.entity_id,
-                 "page": r.page_id, "author": r.author, "outcome": r.outcome} for r in rows]
+# Notion's events are kept in the event inbox (integrations.inbox).
 
 
 # -- comments temper posted ------------------------------------------------------

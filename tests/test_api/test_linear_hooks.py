@@ -1,7 +1,8 @@
 """POST /api/hooks/linear: the one public path, and what a delivery starts.
 
 Pinned: nothing unsigned, stale or tampered gets past the handler; a retry of
-a delivery starts nothing twice; temper's own changes never start a
+a delivery starts nothing twice; one that came before the secret was set is
+kept and handled once it is, if genuine; temper's own changes never start a
 workflow (and when temper cannot tell, a guarded rule does not fire); and
 the rest of the API stays behind the token.
 """
@@ -17,6 +18,8 @@ from starlette.testclient import TestClient
 
 from temper_ai.api import hooks
 from temper_ai.api.auth import TokenAuthMiddleware
+from temper_ai.integrations.inbox import service as inbox
+from temper_ai.integrations.inbox import store as inbox_store
 from temper_ai.triggers import linear
 
 SECRET = "whsec-test"  # noqa: S105
@@ -83,16 +86,53 @@ def client():
 
 
 class TestTheDoor:
-    def test_off_until_a_secret_is_set(self, client, dispatched, monkeypatch):
+    def test_before_the_secret_is_set_a_delivery_is_kept_not_handled(self, client, dispatched, monkeypatch):
         monkeypatch.delenv(linear.SIGNING_SECRET_ENV)
-        assert _post(client, _event()).status_code == 503
+        kept = _post(client, _event(), delivery="early")
+        assert kept.status_code == 202, kept.text
+        assert kept.json()["held"] is True
+        forged = _post(client, _event(), secret="guess", delivery="forged")
+        assert forged.status_code == 202
         assert dispatched == []
+        assert client.post(hooks.LINEAR_PATH, content=b"{}").status_code == 401  # no signature: refused
+        kept_rows = inbox_store.listing(source="linear", status="unverified")
+        assert len(kept_rows) == 2
+        assert all(r.payload == {} and r.raw for r in kept_rows)  # the body is kept as it came, unread
+
+        sweeper = inbox.Sweeper(run=inbox.process)
+        assert sweeper.sweep_once()["checked"] == 0  # still no secret: they wait
+        monkeypatch.setenv(linear.SIGNING_SECRET_ENV, SECRET)
+        got = sweeper.sweep_once()
+        assert (got["checked"], got["dropped"]) == (1, 1)
+        assert [e["data"]["id"] for e in dispatched] == ["iss-1"]
+        assert inbox_store.find("linear", "early").status == "done"
+        assert inbox_store.find("linear", "forged") is None
+
+    def test_a_kept_delivery_is_judged_fresh_as_of_when_it_came(self, client, dispatched, monkeypatch):
+        monkeypatch.delenv(linear.SIGNING_SECRET_ENV)
+        assert _post(client, _event(), delivery="early").status_code == 202
+        monkeypatch.setenv(linear.SIGNING_SECRET_ENV, SECRET)
+        monkeypatch.setattr(time, "time", lambda: 10**10)  # the secret was set long after
+        assert inbox.Sweeper(run=inbox.process).sweep_once()["checked"] == 1
+        assert len(dispatched) == 1
 
     def test_a_genuine_delivery_is_accepted_and_handed_on(self, client, dispatched):
         response = _post(client, _event())
         assert response.status_code == 200, response.text
-        assert response.json() == {"ok": True, "delivery": "d-1"}
+        body = response.json()
+        assert (body["ok"], body["delivery"]) == (True, "d-1")
         assert [e["data"]["id"] for e in dispatched] == ["iss-1"]
+        row = inbox_store.get(body["event"])
+        assert (row.source, row.kind, row.subject, row.status) == ("linear", "Issue.create", "ENG-1", "done")
+
+    def test_a_delivery_that_cannot_be_saved_is_not_answered_got_it(self, client, dispatched, monkeypatch):
+        def down(*args, **kwargs):
+            raise RuntimeError("database gone")
+
+        monkeypatch.setattr(inbox_store, "save", down)
+        response = _post(client, _event())
+        assert response.status_code == 500  # Linear sends it again later
+        assert dispatched == []
 
     def test_wrong_secret(self, client, dispatched):
         assert _post(client, _event(), secret="guess").status_code == 401
@@ -178,7 +218,7 @@ class TestDispatch:
         monkeypatch.setattr(linear, "app_user_id", lambda: "temper-app")
         record = hooks.dispatch(_event(), _record(_event()), config_dir=rules.root)
         assert started == [("linear_reply", {"issue_id": "iss-1"})]
-        assert record["runs"] == [{"trigger": "reply", "workflow": "linear_reply",
+        assert record["runs"] == [{"trigger": "reply", "workflow": "linear_reply", "issue": "iss-1",
                                    "execution_id": "exec-1-0000"}]
         assert record["outcome"].startswith("started linear_reply exec-1-0")
 
@@ -376,13 +416,67 @@ class TestOneRunPerIssue:
         monkeypatch.setattr(routes, "get_workflow", lambda eid: {"status": "completed"})
         assert hooks._run_still_going("abc") is None
 
+    def test_after_a_restart_the_inbox_remembers_the_issue_s_run(self, comment_rule, started, monkeypatch, client):
+        going = {"exec-1-0000"}
+        monkeypatch.setattr(hooks, "_run_still_going", lambda eid: eid if eid in going else None)
+        monkeypatch.setattr(hooks, "load_triggers",
+                            lambda config_dir=None, source=None: _load(comment_rule["root"], source))
+        assert _post(client, _comment(), delivery="c-1").status_code == 200
+        hooks.reset_state()  # a restart: the memory of which run works which issue is gone
+        second = _comment(data={"id": "com-5", "body": "more", "issueId": "iss-1", "userId": "person-1"})
+        assert _post(client, second, delivery="c-2").status_code == 200
+        assert len(started) == 1
+        assert inbox_store.find("linear", "c-2").outcome.startswith("skipped work_comment")
 
-class TestSeenDeliveries:
-    def test_forgets_after_a_day_and_when_full(self):
-        seen = hooks._SeenDeliveries(capacity=2, ttl_s=10)
-        assert seen.first_time("a", now=0)
-        assert not seen.first_time("a", now=5)
-        assert seen.first_time("a", now=20)  # expired
-        assert seen.first_time("b", now=21)
-        assert seen.first_time("c", now=22)  # full: "a" dropped
-        assert seen.first_time("a", now=23)
+
+def _load(root, source):
+    from temper_ai.triggers.rules import load_triggers
+
+    return load_triggers(root, source=source)
+
+
+class TestTheInbox:
+    """A delivery handled from the inbox: tried again when a rule fails to start,
+    never starting a run twice."""
+
+    def test_a_rule_that_failed_to_start_is_tried_again_without_redoing_the_others(
+            self, client, rules, monkeypatch):
+        from temper_ai.api import routes
+
+        runs = []
+        broken = {"linear_fix"}
+
+        def fake_start(body):
+            if body.workflow in broken:
+                raise HTTPException(status_code=400, detail=f"workflow config '{body.workflow}' not found")
+            runs.append(body.workflow)
+            return routes.RunResponse(execution_id=f"exec-{len(runs)}-0000", status="running")
+
+        monkeypatch.setattr(routes, "_start_run", fake_start)  # start_run itself notes the run on the event
+        monkeypatch.setattr(hooks, "_run_still_going", lambda eid: None)
+        monkeypatch.setattr(linear, "app_user_id", lambda: "temper-app")
+        monkeypatch.setattr(hooks, "load_triggers", lambda config_dir=None, source=None: _load(rules.root, source))
+        rules("a_reply")
+        rules("b_fix", workflow="linear_fix")
+
+        body = _post(client, _event(), delivery="d-9").json()
+        row = inbox_store.get(body["event"])
+        assert row.status == "failed" and row.tries == 1
+        assert "workflow config 'linear_fix' not found" in row.error
+        assert row.started == [{"workflow": "linear_reply", "execution_id": "exec-1-0000"}]
+        assert runs == ["linear_reply"]
+
+        broken.clear()  # the rule is fixed
+        assert inbox.process(row.id, now=row.next_try_at) == "done"
+        assert runs == ["linear_reply", "linear_fix"]  # the first run was not started again
+        row = inbox_store.get(row.id)
+        assert [s["workflow"] for s in row.started] == ["linear_reply", "linear_fix"]
+        assert row.outcome.startswith("started linear_reply exec-1-0")
+
+    def test_the_recent_list_reads_the_inbox(self, client, dispatched):
+        assert _post(client, _event(), delivery="r-1").status_code == 200
+        assert _post(client, _event(action="update"), delivery="r-2").status_code == 200
+        recent = client.get(hooks.LINEAR_PATH + "/recent").json()["deliveries"]
+        assert [(d["delivery"], d["action"], d["status"]) for d in recent] == [
+            ("r-2", "update", "done"), ("r-1", "create", "done")]
+        assert recent[0]["actor"] == "Ada"

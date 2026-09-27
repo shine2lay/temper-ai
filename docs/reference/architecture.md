@@ -118,6 +118,28 @@ line N+1:  {"kind":"footer","ts":...,"reason":"cleanup"}
 
 Missing footer line = the run was interrupted before clean shutdown. Append-mode opens — re-running with the same execution_id appends rather than clobbering, supporting resume semantics.
 
+## Events from outside (the inbox)
+
+Everything temper receives from outside is saved in Postgres, in the `inbox_events` table, before temper tells the sender it got it. It is handled from that row (`temper_ai/integrations/inbox/`). This covers Linear and Notion webhooks, Slack envelopes and Telegram updates.
+
+| Source | Saved before | Delivery id (unique per source) |
+| --- | --- | --- |
+| Linear | the 200 answer (after the signature check) | `Linear-Delivery` |
+| Notion | the 200 answer (after the signature check) | the event's `id` |
+| Slack | the Socket Mode ack | `msg:<channel>:<ts>` for messages, else the envelope id |
+| Telegram | the `getUpdates` offset moves | `update_id` |
+
+- **Statuses.** `new` → `handling` → `done` / `skipped`, or `failed` and back to `handling` at its next try, and `gave_up` after the fifth failure. Slack items over 30 minutes old become `expired`, because their answer link has lapsed. Events that came before their signing key was set are `unverified` until checked.
+- **Once.** The same delivery id is one row, so a re-sent event is noticed and not handled twice. Each status change is one UPDATE guarded by the status it expects, so two threads never take the same event.
+- **Runs start once.** `start_run` writes each run on the event being handled the moment it starts. A retried event that already started a run doesn't start it again. Linear, whose one delivery can start several rules, starts only the ones that didn't start yet.
+- **Retries.** A sweeper thread in the server runs every 15 s. It retries failed rows after 1 min, 5 min, 30 min and 2 h, then gives up. It also takes rows a restart left in `new` or `handling`, and checks `unverified` rows once their key is set (genuine ones are handled, the rest deleted).
+- **Clean-up.** Once an hour, done, skipped and expired rows older than 14 days are deleted, and failed, given-up and unverified ones after 30.
+- **Looking at it.** `temper events list [--source] [--status] [--since 2h]`, `temper events show ID` and `temper events replay ID` (API: `GET /api/events`, `GET /api/events/{id}`, `POST /api/events/{id}/replay`). Replay refuses an event that already started a run, and says which run. `GET /api/hooks/linear/recent` and `/api/hooks/notion/recent` read the same table.
+- **While the server itself is down**, nothing reaches the inbox. The senders cover that gap:
+  - Linear and Notion send unanswered webhooks again.
+  - Slack retries events such as mentions and DMs. A slash command or click made while temper is down fails in Slack at once, so the person sees it and can try again.
+  - Telegram keeps updates for up to 24 hours until temper asks for them.
+
 ## Spawner abstraction
 
 `temper_ai/spawner/` defines a `Spawner` ABC with `spawn(execution_id) → ProcessHandle`, `is_alive(handle) → bool`, `kill(handle, force=False)`, and a class-level `kind` the watcher stamps into `WorkflowRun.spawner_kind` when it claims a row. `get_spawner()` reads `$TEMPER_SPAWNER` and returns the right one; a future `K8sJobSpawner` (per-run pod) drops in without touching routes.

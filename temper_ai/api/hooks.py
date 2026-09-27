@@ -1,22 +1,26 @@
 """Incoming webhooks: an event somewhere else starts a workflow here.
 
-``POST /api/hooks/linear`` is the one address the internet may reach (the
-gateway forwards that exact path and nothing else), so it authenticates
-itself: the API token cannot be asked of Linear, and instead every delivery
-must carry Linear's signature over its exact bytes and be under a minute
-old. See triggers.linear.
+``POST /api/hooks/linear`` and ``POST /api/hooks/notion`` are the addresses
+the internet may reach (the gateway forwards those exact paths and nothing
+else), so they authenticate themselves: the API token cannot be asked of
+Linear or Notion, and instead every delivery must carry the sender's
+signature over its exact bytes (Linear's must also be under a minute old).
+See triggers.linear and triggers.notion.
 
-Linear gives up on a delivery that takes more than five seconds to answer,
-and starting a run can take longer than that (loading the workflow,
-connecting its MCP servers). So the handler only checks the delivery and
-answers; matching rules and starting runs happen after the response, in the
-background. What became of each delivery is kept in memory for
-``GET /api/hooks/linear/recent`` -- behind the API token like the rest of
-the API, and not reachable from the internet -- and in the log.
+Every checked delivery is saved in the event inbox (integrations.inbox)
+before temper answers, and handled from there after the answer. Linear
+gives up on a delivery that takes more than five seconds to answer, and
+starting a run can take longer than that. If handling fails, or a restart
+cuts it off, the inbox tries again, so nothing that was answered "got it"
+is lost. What became of each delivery is on its row: ``temper events
+list``, and ``GET /api/hooks/linear/recent`` and ``/notion/recent`` (behind
+the API token, like the rest of the API).
 
-Linear retries a delivery it thinks failed, with the same
-``Linear-Delivery`` id, so ids already handled are remembered and a retry
-of one is acknowledged without starting anything twice.
+A delivery sent again (Linear and Notion retry what they think failed) has
+the same id, so it is answered without being handled twice. One that comes
+before its signing key is set is kept unchecked (up to 256 KB each and 500
+in all) and checked once the key is there: handled if it is genuine,
+dropped if not. One with no signature at all is refused.
 
 One issue, one run of a workflow at a time. A rule whose inputs name an
 ``issue_id`` does not start its workflow for an issue whose last run of
@@ -27,17 +31,18 @@ is still in the thread for the next run to read.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import threading
-import time
-from collections import OrderedDict, deque
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi.responses import JSONResponse
 
+from temper_ai.integrations.inbox import service as inbox
+from temper_ai.integrations.inbox import store as inbox_store
 from temper_ai.triggers import linear
 from temper_ai.triggers.rules import Trigger, load_triggers, render_inputs
 
@@ -46,103 +51,144 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 LINEAR_PATH = "/api/hooks/linear"
+LINEAR = "linear"
+NOTION = "notion"
 RECENT_MAX = 50
-DELIVERY_MEMORY = 4096
-DELIVERY_TTL_S = 24 * 3600.0  # Linear's last retry comes 6 h after the first attempt
-
-
-class _SeenDeliveries:
-    """Delivery ids handled recently, oldest dropped first."""
-
-    def __init__(self, capacity: int = DELIVERY_MEMORY, ttl_s: float = DELIVERY_TTL_S) -> None:
-        self._ids: OrderedDict[str, float] = OrderedDict()
-        self._capacity = capacity
-        self._ttl_s = ttl_s
-        self._lock = threading.Lock()
-
-    def first_time(self, delivery: str, now: float | None = None) -> bool:
-        now = time.time() if now is None else now
-        with self._lock:
-            while self._ids:
-                oldest, seen_at = next(iter(self._ids.items()))
-                if now - seen_at <= self._ttl_s and len(self._ids) < self._capacity:
-                    break
-                self._ids.pop(oldest)
-            if delivery in self._ids:
-                return False
-            self._ids[delivery] = now
-            return True
-
-    def clear(self) -> None:
-        with self._lock:
-            self._ids.clear()
-
-
-_seen = _SeenDeliveries()
-_recent: deque[dict[str, Any]] = deque(maxlen=RECENT_MAX)
-_recent_lock = threading.Lock()
 # (workflow, issue id) -> the execution id of the last run a rule started for it
 _issue_runs: dict[tuple[str, str], str] = {}
 _issue_lock = threading.Lock()
 _ACTIVE = frozenset({"pending", "queued", "running", "waiting"})
 
 
-def _record(delivery: str, event: dict[str, Any]) -> dict[str, Any]:
-    raw_actor = event.get("actor")
-    actor: dict[str, Any] = raw_actor if isinstance(raw_actor, dict) else {}
-    record: dict[str, Any] = {
-        "delivery": delivery,
-        "received_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "type": event.get("type"),
-        "action": event.get("action"),
-        "url": event.get("url"),
-        "actor": actor.get("name") or actor.get("id"),
-        "actor_id": actor.get("id"),
-        "actor_type": actor.get("type"),
-        "outcome": "received",
-        "runs": [],
-    }
-    with _recent_lock:
-        _recent.append(record)
-    return record
+def _save(source: str, delivery: str, kind: str, subject: str, event: dict[str, Any]) -> tuple[Any, bool]:
+    try:
+        return inbox.receive(source, delivery, kind=kind, subject=subject, payload=event)
+    except Exception as exc:
+        # Not "got it": the sender tries again later.
+        logger.exception("Could not save %s delivery %s", source, delivery)
+        raise HTTPException(status_code=500, detail="temper could not save the event; send it again") from exc
+
+
+def _hold(source: str, delivery: str, raw: bytes, signature: str, env: str) -> JSONResponse:
+    """Keep a signed event that came before the signing key was set."""
+    status, message = inbox.hold(source, delivery, raw, signature)
+    if status != 202:
+        raise HTTPException(status_code=status, detail=f"{env} is not set, and {message}.")
+    logger.warning("%s event %s kept unchecked: %s is not set yet", source.title(), delivery, env)
+    return JSONResponse({"ok": True, "held": True, "detail": f"{env} is not set: {message}"}, status_code=202)
+
+
+# -- Linear ------------------------------------------------------------------------------
+
+
+def _linear_kind(event: dict[str, Any]) -> str:
+    return ".".join(str(p) for p in (event.get("type"), event.get("action")) if p)
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _linear_subject(event: dict[str, Any]) -> str:
+    """The issue an event is about, for lists."""
+    data = _dict(event.get("data"))
+    if event.get("type") == "Issue":
+        return str(data.get("identifier") or data.get("id") or "")
+    issue = _dict(data.get("issue"))
+    return str(issue.get("identifier") or issue.get("id") or data.get("issueId") or "")
 
 
 @router.post(LINEAR_PATH)
-async def linear_webhook(request: Request, background: BackgroundTasks) -> dict[str, Any]:
+async def linear_webhook(request: Request, background: BackgroundTasks) -> Any:
+    raw = await request.body()
+    signature = request.headers.get("linear-signature") or ""
+    if not signature:
+        raise HTTPException(status_code=401, detail="There is no Linear-Signature.")
+    delivery = request.headers.get("linear-delivery", "").strip() or "sha256:" + hashlib.sha256(raw).hexdigest()[:32]
     secret = linear.signing_secret()
     if secret is None:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Linear webhooks are off: {linear.SIGNING_SECRET_ENV} is not set.",
-        )
-    raw = await request.body()
-    if not linear.verify_signature(raw, request.headers.get("linear-signature"), secret):
+        return _hold(LINEAR, delivery, raw, signature, linear.SIGNING_SECRET_ENV)
+    if not linear.verify_signature(raw, signature, secret):
         raise HTTPException(status_code=401, detail="Linear-Signature does not match the body.")
+    event = _json_object(raw)
+    if not linear.is_fresh(event):
+        raise HTTPException(status_code=401, detail="webhookTimestamp is more than a minute away.")
+
+    row, new = _save(LINEAR, delivery, _linear_kind(event), _linear_subject(event), event)
+    if not new:
+        logger.info("Linear delivery %s: a retry of one already received", delivery)
+        return {"ok": True, "delivery": delivery, "duplicate": True}
+    background.add_task(inbox.process, row.id)
+    return {"ok": True, "delivery": delivery, "event": row.id}
+
+
+def _json_object(raw: bytes) -> dict[str, Any]:
     try:
         event = json.loads(raw)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="The body is not JSON.") from exc
     if not isinstance(event, dict):
         raise HTTPException(status_code=400, detail="The body is not a JSON object.")
-    if not linear.is_fresh(event):
-        raise HTTPException(status_code=401, detail="webhookTimestamp is more than a minute away.")
+    return event
 
-    delivery = request.headers.get("linear-delivery", "").strip()
-    record = _record(delivery, event)
-    if delivery and not _seen.first_time(delivery):
-        record["outcome"] = "ignored: this delivery was already received"
-        logger.info("Linear delivery %s: a retry of one already handled", delivery)
-        return {"ok": True, "delivery": delivery, "duplicate": True}
 
-    background.add_task(dispatch, event, record)
-    return {"ok": True, "delivery": delivery}
+def _check_linear(ev: inbox_store.Event) -> tuple[dict[str, Any], str, str] | None:
+    """A kept Linear event, checked now that the key may be set (judged as of when it came)."""
+    secret = linear.signing_secret()
+    if secret is None:
+        return None
+    raw = ev.raw.encode()
+    if not linear.verify_signature(raw, ev.signature or None, secret):
+        raise inbox.Bad("Linear-Signature does not match the body")
+    try:
+        event = json.loads(raw)
+    except ValueError as exc:
+        raise inbox.Bad("the body is not JSON") from exc
+    if not isinstance(event, dict):
+        raise inbox.Bad("the body is not a JSON object")
+    if not linear.is_fresh(event, now=ev.received_at.timestamp()):
+        raise inbox.Bad("webhookTimestamp was more than a minute from when it came")
+    return event, _linear_kind(event), _linear_subject(event)
+
+
+def _record_of(ev: inbox_store.Event) -> dict[str, Any]:
+    """One delivery the way /recent shows it."""
+    event = ev.payload
+    raw_actor = event.get("actor")
+    actor: dict[str, Any] = raw_actor if isinstance(raw_actor, dict) else {}
+    return {
+        "event": ev.id,
+        "delivery": ev.delivery,
+        "received_at": ev.received_at.isoformat(timespec="seconds"),
+        "type": event.get("type"),
+        "action": event.get("action"),
+        "url": event.get("url"),
+        "actor": actor.get("name") or actor.get("id"),
+        "actor_id": actor.get("id"),
+        "actor_type": actor.get("type"),
+        "status": ev.status,
+        "outcome": ev.outcome or ev.error or ev.status,
+        "runs": list(ev.result.get("runs") or []),
+    }
 
 
 @router.get(LINEAR_PATH + "/recent")
 def linear_recent() -> dict[str, Any]:
     """The last deliveries and what became of each, newest first."""
-    with _recent_lock:
-        return {"deliveries": [dict(r) for r in reversed(_recent)]}
+    return {"deliveries": [_record_of(ev) for ev in inbox_store.listing(source=LINEAR, limit=RECENT_MAX)]}
+
+
+def _handle_linear(ev: inbox_store.Event) -> inbox.Outcome:
+    record = _record_of(ev)
+    record["outcome"], record["runs"] = "received", []
+    dispatch(ev.payload, record)
+    outcome = str(record.get("outcome") or "handled")
+    if outcome.startswith("error:") or any("error" in r for r in record["runs"]):
+        # Kept and tried again after a wait; what did start is noted on the event and not started twice.
+        raise inbox.Retry(outcome)
+    out = inbox.outcome(outcome)
+    out.extra["runs"] = record["runs"]
+    return out
 
 
 def dispatch(
@@ -151,7 +197,7 @@ def dispatch(
     """Match one verified delivery against the Linear rules and start their workflows."""
     try:
         _dispatch(event, record, config_dir)
-    except Exception as exc:  # noqa: BLE001 - a background task has no caller to raise to
+    except Exception as exc:  # noqa: BLE001 - recorded, and the inbox tries again
         logger.exception("Linear delivery %s failed", record.get("delivery"))
         record["outcome"] = f"error: {exc}"
     logger.info(
@@ -200,14 +246,23 @@ def _dispatch(event: dict[str, Any], record: dict[str, Any], config_dir: str | P
 
     from temper_ai.api.routes import RunRequest, start_run
 
+    # Runs this event started on an earlier try: not started again.
+    earlier = {s.get("workflow"): s.get("execution_id") for s in inbox.already_started()}
     for trigger in matched:
         entry: dict[str, Any] = {"trigger": trigger.name, "workflow": trigger.workflow}
         try:
+            if trigger.workflow in earlier:
+                entry["execution_id"] = str(earlier[trigger.workflow])
+                entry["earlier"] = True
+                record["runs"].append(entry)
+                continue
             inputs = render_inputs(trigger, event)
             issue = str(inputs.get("issue_id") or "").strip()
             key = (trigger.workflow, issue)
+            if issue:
+                entry["issue"] = issue
             with _issue_lock:
-                going = _run_still_going(_issue_runs.get(key)) if issue else None
+                going = _run_still_going(_issue_runs.get(key) or _last_issue_run(*key)) if issue else None
                 if going:
                     entry["skipped"] = f"{trigger.workflow} run {going[:8]} for this issue is still going"
                     record["runs"].append(entry)
@@ -233,6 +288,20 @@ def _dispatch(event: dict[str, Any], record: dict[str, Any], config_dir: str | P
     if failed:
         parts.append("failed " + "; ".join(f"{r['trigger']}: {r['error']}" for r in failed))
     record["outcome"] = " / ".join(parts)
+
+
+def _last_issue_run(workflow: str, issue: str) -> str | None:
+    """The last run of ``workflow`` a Linear event started for ``issue``, from the
+    inbox (the memory above is empty after a restart)."""
+    try:
+        for ev in inbox_store.listing(source=LINEAR, limit=200):
+            for run in ev.result.get("runs") or []:
+                if (isinstance(run, dict) and run.get("workflow") == workflow and run.get("issue") == issue
+                        and run.get("execution_id")):
+                    return str(run["execution_id"])
+    except Exception as exc:  # noqa: BLE001 - no database: the memory alone decides
+        logger.warning("Could not look up the last run for issue %s: %s", issue, exc)
+    return None
 
 
 def _drop_own_changes(event: dict[str, Any], matched: list[Trigger]) -> str | None:
@@ -292,7 +361,7 @@ NOTION_TOKEN_KEY = "verification_token"  # noqa: S105 - a state key, not a secre
 
 
 @router.post(NOTION_PATH)
-async def notion_webhook(request: Request, background: BackgroundTasks) -> dict[str, Any]:
+async def notion_webhook(request: Request, background: BackgroundTasks) -> Any:
     """Notion's events (see triggers.notion). The one-time verification
     request is kept so ``temper notion check`` can show its token; every
     other delivery must be signed with ``NOTION_WEBHOOK_SECRET``."""
@@ -300,64 +369,91 @@ async def notion_webhook(request: Request, background: BackgroundTasks) -> dict[
     from temper_ai.triggers import notion
 
     raw = await request.body()
-    try:
-        event = json.loads(raw)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="The body is not JSON.") from exc
-    if not isinstance(event, dict):
-        raise HTTPException(status_code=400, detail="The body is not a JSON object.")
+    event = _json_object(raw)
     if set(event) == {"verification_token"}:
         notion_store.set_state(NOTION_TOKEN_KEY, str(event["verification_token"])[:200])
         logger.warning("Notion sent a webhook verification token; `temper notion check` shows it. "
                        "Paste it into Notion, and into %s in .env.", notion.SECRET_ENV)
         return {"ok": True}
-    secret = notion.signing_secret()
-    if secret is None:
-        raise HTTPException(status_code=503, detail=f"Notion webhooks are off: {notion.SECRET_ENV} is not set.")
-    if not notion.verify_signature(raw, request.headers.get("x-notion-signature"), secret):
-        raise HTTPException(status_code=401, detail="X-Notion-Signature does not match the body.")
+    signature = request.headers.get("x-notion-signature") or ""
+    if not signature:
+        raise HTTPException(status_code=401, detail="There is no X-Notion-Signature.")
     event_id = str(event.get("id") or "").strip()
     if not event_id:
         raise HTTPException(status_code=400, detail="The event has no id.")
-    authors = ",".join(f"{a['type']}:{a['id'][:8]}" for a in notion.authors(event))
-    if not notion_store.record_event(event_id, str(event.get("type") or ""),
-                                     str((event.get("entity") or {}).get("id") or ""), notion.page_of(event),
-                                     authors):
+    secret = notion.signing_secret()
+    if secret is None:
+        return _hold(NOTION, event_id, raw, signature, notion.SECRET_ENV)
+    if not notion.verify_signature(raw, signature, secret):
+        raise HTTPException(status_code=401, detail="X-Notion-Signature does not match the body.")
+    row, new = _save(NOTION, event_id, str(event.get("type") or ""), notion.page_of(event), event)
+    if not new:
         return {"ok": True, "duplicate": True}
-    background.add_task(notion_dispatch, event)
-    return {"ok": True}
+    background.add_task(inbox.process, row.id)
+    return {"ok": True, "event": row.id}
+
+
+def _check_notion(ev: inbox_store.Event) -> tuple[dict[str, Any], str, str] | None:
+    from temper_ai.triggers import notion
+
+    secret = notion.signing_secret()
+    if secret is None:
+        return None
+    raw = ev.raw.encode()
+    if not notion.verify_signature(raw, ev.signature or None, secret):
+        raise inbox.Bad("X-Notion-Signature does not match the body")
+    try:
+        event = json.loads(raw)
+    except ValueError as exc:
+        raise inbox.Bad("the body is not JSON") from exc
+    if not isinstance(event, dict) or str(event.get("id") or "") != ev.delivery:
+        raise inbox.Bad("the body is not the event it said it was")
+    return event, str(event.get("type") or ""), notion.page_of(event)
 
 
 @router.get(NOTION_PATH + "/recent")
 def notion_recent() -> dict[str, Any]:
     """The last Notion events and what became of each, newest first."""
-    from temper_ai.integrations.notion import store as notion_store
+    from temper_ai.triggers import notion
 
-    return {"events": notion_store.recent_events()}
+    out = []
+    for ev in inbox_store.listing(source=NOTION, limit=RECENT_MAX):
+        event = ev.payload
+        authors = ",".join(f"{a['type']}:{a['id'][:8]}" for a in notion.authors(event)) if event else ""
+        out.append({"id": ev.delivery, "event": ev.id, "at": ev.received_at.isoformat(timespec="seconds"),
+                    "type": ev.kind, "entity": str((event.get("entity") or {}).get("id") or ""),
+                    "page": ev.subject, "author": authors, "status": ev.status,
+                    "outcome": ev.outcome or ev.error or ev.status})
+    return {"events": out}
 
 
 def notion_dispatch(event: dict[str, Any]) -> str:
-    from temper_ai.integrations.notion import store as notion_store
+    """Do what one verified Notion event asks; the outcome in a few words.
+    Raises if it went wrong, and the inbox tries again."""
     from temper_ai.integrations.notion.service import service
 
     svc = service()
-    try:
-        outcome = svc.handle(event) if svc is not None else "skipped: Notion is off (NOTION_TOKEN not set)"
-    except Exception as exc:  # noqa: BLE001 - a background task has no caller to raise to
-        logger.exception("Notion event %s failed", event.get("id"))
-        outcome = f"error: {exc}"
+    outcome = svc.handle(event) if svc is not None else "skipped: Notion is off (NOTION_TOKEN not set)"
     logger.info("Notion event %s (%s): %s", event.get("id"), event.get("type"), outcome)
-    try:
-        notion_store.set_outcome(str(event.get("id") or ""), outcome)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not record Notion event %s: %s", event.get("id"), exc)
     return outcome
 
 
+def _handle_notion(ev: inbox_store.Event) -> inbox.Outcome:
+    from temper_ai.integrations.notion.service import only_failed
+
+    outcome = str(notion_dispatch(ev.payload) or "handled")
+    if only_failed(outcome):
+        raise inbox.Retry(outcome)
+    return inbox.outcome(outcome)
+
+
+inbox.register(LINEAR, _handle_linear, redo_safe=True)
+inbox.register_checker(LINEAR, _check_linear)
+inbox.register(NOTION, _handle_notion)
+inbox.register_checker(NOTION, _check_notion)
+
+
 def reset_state() -> None:
-    """Forget deliveries and history (tests)."""
-    _seen.clear()
-    with _recent_lock:
-        _recent.clear()
+    """Forget which runs were started for which issue (tests)."""
     with _issue_lock:
         _issue_runs.clear()

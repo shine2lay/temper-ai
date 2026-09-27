@@ -132,6 +132,24 @@ def start_run(body: RunRequest):
     modes, the response shape is identical: returns execution_id + status,
     and the caller polls GET /api/workflows/{id} or watches the WebSocket.
     """
+    response = _start_run(body)
+    _note_event_run(body.workflow, response.execution_id)
+    return response
+
+
+def _note_event_run(workflow: str, execution_id: str) -> None:
+    """If an event from outside (Linear, Notion, Slack, Telegram) is being
+    handled on this thread and it started this run, write that on the event,
+    so a retry of the event never starts the run twice."""
+    try:
+        from temper_ai.integrations.inbox import service as inbox
+
+        inbox.note_run(workflow, execution_id)
+    except Exception:  # noqa: BLE001 - the run started either way
+        logger.exception("Could not note run %s on the event that started it", execution_id)
+
+
+def _start_run(body: RunRequest) -> RunResponse:
     execution_id = str(uuid.uuid4())
 
     notify_block = None

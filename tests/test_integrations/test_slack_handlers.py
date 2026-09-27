@@ -435,6 +435,105 @@ class TestSocket:
         sock = SocketMode(lambda: "wss://x", boom, connect=lambda url: ws)
         assert sock.run_once() is True and [m["envelope_id"] for m in ws.sent] == ["E1", "E2"]
 
+    def test_each_envelope_is_saved_before_its_ack(self):
+        ws = FakeSocket([{"type": "hello"},
+                         {"type": "slash_commands", "envelope_id": "E1", "payload": {"text": "list"}},
+                         {"type": "slash_commands", "envelope_id": "E2", "payload": {"text": "list"}},
+                         {"type": "slash_commands", "envelope_id": "E3", "payload": {"text": "list"}},
+                         {"type": "disconnect"}])
+        acked_when_saved: list[int] = []
+
+        def accept(envelope: dict):
+            acked_when_saved.append(len(ws.sent))
+            if envelope["envelope_id"] == "E2":
+                return None  # had it already: acked, not handled again
+            if envelope["envelope_id"] == "E3":
+                raise RuntimeError("database gone")  # handled unsaved rather than lost
+            return 7
+
+        got: list = []
+        sock = SocketMode(lambda: "wss://x", got.append, connect=lambda url: ws, accept=accept)
+        assert sock.run_once() is True
+        assert acked_when_saved == [0, 1, 2]
+        assert [m["envelope_id"] for m in ws.sent] == ["E1", "E2", "E3"]
+        assert got[0] == 7 and got[1]["envelope_id"] == "E3" and len(got) == 2
+
+
+class TestInbox:
+    """Envelopes kept in the event inbox and handled from there."""
+
+    @pytest.fixture
+    def saved(self, handler):
+        from temper_ai.integrations.inbox import service as inbox
+        from temper_ai.integrations.slack.handlers import EXPIRES_S
+
+        inbox.register("slack", handler.handle_saved, expires_after_s=EXPIRES_S)
+        yield inbox
+        inbox.unregister("slack")
+
+    def test_kept_without_the_token_and_a_message_is_one_event(self):
+        from temper_ai.integrations.inbox import store as inbox_store
+        from temper_ai.integrations.slack.service import SlackService
+
+        slash_env = {"type": "slash_commands", "envelope_id": "E1",
+                     "payload": {"command": "/temper", "text": "ask why", "token": "legacy-secret",
+                                 "channel_id": CHANNEL}}
+        event_id = SlackService.save(slash_env)
+        row = inbox_store.get(event_id)
+        assert (row.delivery, row.kind, row.subject) == ("env:E1", "/temper ask", CHANNEL)
+        assert "token" not in row.payload["payload"] and "legacy-secret" not in json.dumps(row.payload)
+        assert SlackService.save(slash_env) is None  # Slack sent it again
+
+        event = {"type": "app_mention", "channel": "D1", "ts": "1790000100.000001", "text": "hi"}
+        first = SlackService.save({"type": "events_api", "envelope_id": "E2",
+                                   "payload": {"event_id": "Ev1", "event": event}})
+        again = SlackService.save({"type": "events_api", "envelope_id": "E3",  # the same message as a DM
+                                   "payload": {"event_id": "Ev2", "event": {**event, "type": "message"}}})
+        assert first and again is None
+
+    def test_handled_from_the_inbox(self, saved, handler, slack):
+        from temper_ai.integrations.slack.service import SlackService
+
+        event_id = SlackService.save({"type": "slash_commands", "envelope_id": "E1", "payload": {
+            "command": "/temper", "text": "help", "user_id": OWNER, "channel_id": CHANNEL,
+            "response_url": "https://hooks.slack.test/r"}})
+        assert saved.process(event_id) == "done"
+        assert saved.store.get(event_id).outcome == "handled /temper help"
+        assert slack.responses  # it answered
+
+    def test_a_failed_message_is_tried_again_not_taken_for_a_repeat(self, saved, handler, monkeypatch):
+        from temper_ai.integrations.slack.service import SlackService
+
+        calls = []
+
+        def flaky(event):
+            calls.append(event["text"])
+            if len(calls) == 1:
+                raise RuntimeError("slack blinked")
+
+        monkeypatch.setattr(handler, "message", flaky)
+        event_id = SlackService.save({"type": "events_api", "envelope_id": "E1", "payload": {
+            "event_id": "Ev1", "event": {"type": "app_mention", "channel": CHANNEL, "ts": "1.1", "text": "hi"}}})
+        assert saved.process(event_id) == "failed"
+        row = saved.store.get(event_id)
+        assert saved.process(event_id, now=row.next_try_at) == "done"
+        assert calls == ["hi", "hi"]
+
+    def test_an_envelope_over_30_minutes_old_expires_instead(self, saved, handler, slack):
+        from datetime import timedelta
+
+        from temper_ai.integrations.inbox import store as inbox_store
+
+        old, _ = inbox_store.save("slack", "env:E9", kind="/temper help", status="failed", payload={
+            "type": "slash_commands", "payload": {"command": "/temper", "text": "help", "user_id": OWNER,
+                                                  "channel_id": CHANNEL, "response_url": "https://x"}},
+            received_at=datetime.now(UTC) - timedelta(minutes=31))
+        assert saved.process(old.id) == "expired"
+        assert not slack.responses
+        assert saved.store.get(old.id).outcome == "expired: not handled within 30 min"
+        ok, why = saved.replay(old.id)
+        assert not ok and "expired" in why
+
 
 class TestService:
     def test_off_in_tests_and_without_tokens(self, monkeypatch):

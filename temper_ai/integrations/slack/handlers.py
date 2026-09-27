@@ -1,9 +1,12 @@
 """What temper does with what Slack sends: slash commands, button clicks,
 mentions and DMs.
 
-The socket loop acks every envelope at once (Slack wants it within 3 s)
-and hands it here on a small thread pool, so a slow command never delays
-the next ack. Answers go back through the Web API and response_url.
+The socket loop saves every envelope in the event inbox, acks it at once
+(Slack wants it within 3 s) and hands it here on a small thread pool, so a
+slow command never delays the next ack. The inbox tries again if handling
+fails or a restart cuts it off (``handle_saved``), unless the envelope is
+over 30 minutes old: its reply link has expired by then. Answers go back
+through the Web API and response_url.
 
 Anyone in the workspace may act; every action is recorded with who did it
 (``store.log_action``).
@@ -19,6 +22,8 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from temper_ai.integrations.inbox import service as inbox
+from temper_ai.integrations.inbox.store import Event
 from temper_ai.integrations.notify import service as notify
 from temper_ai.integrations.notify import store as notify_store
 from temper_ai.integrations.notify.notice import Decision
@@ -35,6 +40,55 @@ logger = logging.getLogger(__name__)
 GOING = ("running", "waiting", "queued")
 _MENTION = re.compile(r"<@[UW][A-Z0-9]+(?:\|[^>]*)?>")
 SEEN_MAX = 500
+SOURCE = "slack"
+EXPIRES_S = 30 * 60   # a response_url works for 30 minutes
+
+
+def _payload(envelope: dict[str, Any]) -> dict[str, Any]:
+    payload = envelope.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def describe(envelope: dict[str, Any]) -> str:
+    """What an envelope is, in a few words: "/temper ask", "click answer", "app_mention"."""
+    kind, payload = envelope.get("type"), _payload(envelope)
+    if kind == "slash_commands":
+        word = str(payload.get("text") or "").split(maxsplit=1)[:1]
+        return " ".join([str(payload.get("command") or "/?")] + word)
+    if kind == "interactive":
+        if payload.get("type") == "block_actions":
+            actions = payload.get("actions") or [{}]
+            return f"click {(actions[0] or {}).get('action_id') or '?'}"
+        if payload.get("type") == "view_submission":
+            return f"form {(payload.get('view') or {}).get('callback_id') or '?'}"
+        return f"interactive {payload.get('type')}"
+    if kind == "events_api":
+        event = payload.get("event") or {}
+        return str(event.get("type") or "event")
+    return str(kind or "envelope")
+
+
+def inbox_key(envelope: dict[str, Any]) -> tuple[str, str, str]:
+    """(delivery, kind, subject) for the inbox. A message is keyed by its
+    channel and time, so a retry, or the same message arriving as both a
+    mention and a DM, is one event."""
+    payload = _payload(envelope)
+    kind = describe(envelope)
+    if envelope.get("type") == "events_api":
+        event = payload.get("event") or {}
+        channel, ts = event.get("channel"), event.get("ts")
+        if channel and ts:
+            return f"msg:{channel}:{ts}", kind, str(channel)
+        if payload.get("event_id"):
+            return f"ev:{payload['event_id']}", kind, str(channel or "")
+    channel = payload.get("channel_id") or (payload.get("channel") or {}).get("id") or ""
+    return f"env:{envelope.get('envelope_id')}", kind, str(channel)
+
+
+def without_token(envelope: dict[str, Any]) -> dict[str, Any]:
+    """The envelope as kept: Slack's old verification token dropped."""
+    payload = {k: v for k, v in _payload(envelope).items() if k != "token"}
+    return {**envelope, "payload": payload}
 
 
 class Handler:
@@ -50,15 +104,36 @@ class Handler:
         self.answerer = answerer or Answerer(self.ops)
         self.bot_user = bot_user
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="slack-handler")
-        self._seen: OrderedDict[str, None] = OrderedDict()
+        self._seen: OrderedDict[str, int | None] = OrderedDict()
         self._lock = threading.Lock()
         self.handled = 0
         self.last_error: str | None = None
 
     # -- entry points ---------------------------------------------------------
 
-    def submit(self, envelope: dict[str, Any]) -> None:
-        self._pool.submit(self._safe, envelope)
+    def submit(self, item: dict[str, Any] | int) -> None:
+        """Handle an envelope: its inbox event id once saved, or the envelope
+        itself when it could not be saved."""
+        if isinstance(item, int):
+            self._pool.submit(self._process_saved, item)
+        else:
+            self._pool.submit(self._safe, item)
+
+    def _process_saved(self, event_id: int) -> None:
+        try:
+            inbox.process(event_id)
+        except Exception:  # noqa: BLE001 - e.g. the database blinked; the inbox's sweeper tries again
+            logger.exception("Slack: event %s could not be handled", event_id)
+
+    def handle_saved(self, event: Event) -> str:
+        """The inbox's handler for Slack; raises if it failed, to be tried again."""
+        try:
+            self.handle(event.payload)
+        except Exception as exc:
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            raise
+        self.handled += 1
+        return f"handled {describe(event.payload)}"
 
     def shutdown(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -87,14 +162,16 @@ class Handler:
                 self.message(event)
 
     def _first_time(self, key: str) -> bool:
-        """False for an envelope Slack sent again (a retry) or a message seen
-        twice (a mention in a DM arrives as app_mention and message.im)."""
+        """False for an envelope Slack sent again (a retry), a message seen
+        twice (a mention in a DM arrives as app_mention and message.im) or a
+        double click. True again for the inbox retrying the same event."""
         if not key or key.endswith(":None"):
             return True
+        me = inbox.current_event_id()
         with self._lock:
             if key in self._seen:
-                return False
-            self._seen[key] = None
+                return me is not None and self._seen[key] == me
+            self._seen[key] = me
             while len(self._seen) > SEEN_MAX:
                 self._seen.popitem(last=False)
             return True

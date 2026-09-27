@@ -13,8 +13,11 @@ Slack sends each envelope to ONE of an app's open connections, so exactly
 one process may hold the socket: the server, and only one server
 (``TEMPER_SLACK=0`` on any other).
 
-The ack is sent here, in the reading thread, before any work; the handler
-runs on its own pool and answers through the Web API.
+Each envelope is saved in the event inbox (``accept``), then acked, here in
+the reading thread, before any work; the handler runs on its own pool and
+answers through the Web API. Saving first means an envelope Slack was told
+temper got is never lost to a restart or a crash; if saving fails, it is
+handled unsaved rather than dropped.
 """
 
 from __future__ import annotations
@@ -41,10 +44,14 @@ def _connect(url: str) -> Any:
 
 
 class SocketMode:
-    def __init__(self, open_url: Callable[[], str], on_envelope: Callable[[dict[str, Any]], None],
-                 connect: Callable[[str], Any] = _connect, sleep: Callable[[float], Any] | None = None) -> None:
+    def __init__(self, open_url: Callable[[], str], on_envelope: Callable[[Any], None],
+                 connect: Callable[[str], Any] = _connect, sleep: Callable[[float], Any] | None = None,
+                 accept: Callable[[dict[str, Any]], Any] | None = None) -> None:
+        """``accept`` runs before the ack and returns what ``on_envelope`` gets
+        after it (None: nothing, e.g. an envelope already had)."""
         self._open_url = open_url
         self._on_envelope = on_envelope
+        self._accept = accept
         self._connect = connect
         self._stop = threading.Event()
         self._sleep = sleep or self._stop.wait
@@ -112,12 +119,20 @@ class SocketMode:
                     return True
                 envelope_id = msg.get("envelope_id")
                 if envelope_id:
+                    started = time.monotonic()
+                    item: Any = msg
+                    if self._accept is not None:
+                        try:
+                            item = self._accept(msg)
+                        except Exception:  # noqa: BLE001 - handled unsaved rather than lost
+                            logger.exception("Slack socket: could not save a %s envelope; handling it unsaved",
+                                             kind)
                     ws.send(json.dumps({"envelope_id": envelope_id}))
                     self.envelopes += 1
                     self.last_envelope_at = datetime.now(UTC).isoformat(timespec="seconds")
-                    started = time.monotonic()
                     try:
-                        self._on_envelope(msg)
+                        if item is not None:
+                            self._on_envelope(item)
                     except Exception:  # noqa: BLE001
                         logger.exception("Slack socket: could not hand off a %s envelope", kind)
                     if time.monotonic() - started > 1:

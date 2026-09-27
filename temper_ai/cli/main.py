@@ -128,6 +128,11 @@ def main() -> None:
 
     add_notion_parser(subparsers)
 
+    # -- temper events list / show / replay --
+    from temper_ai.cli.events import add_parser as add_events_parser
+
+    add_events_parser(subparsers)
+
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
@@ -206,6 +211,9 @@ def main() -> None:
     elif args.command == "notion":
         from temper_ai.cli.notion import cmd_notion
         sys.exit(cmd_notion(args))
+    elif args.command == "events":
+        from temper_ai.cli.events import cmd_events
+        sys.exit(cmd_events(args))
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

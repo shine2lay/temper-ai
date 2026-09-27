@@ -186,7 +186,8 @@ def calls_named(fn: ast.FunctionDef) -> set[str]:
 def test_every_run_path_that_builds_an_executor_registers_through_the_helper():
     builders = functions_building_a_tool_executor()
 
-    assert {"start_run", "resume_run", "fork_run"} <= set(builders), (
+    # start_run's work is in _start_run (start_run only adds the note on the event that started it).
+    assert {"_start_run", "resume_run", "fork_run"} <= set(builders), (
         f"expected the three run paths to build executors; found {sorted(builders)}"
     )
     for name, fn in builders.items():

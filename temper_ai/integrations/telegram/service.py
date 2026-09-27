@@ -1,7 +1,8 @@
 """Temper's Telegram bot, put together and run by the server.
 
     poller (Telegram -> temper): commands, plain messages, button presses,
-      being added to groups (handlers.py)
+      being added to groups (handlers.py); each update is saved in the event
+      inbox first, so none is lost to a restart or an error
     sender (temper -> Telegram): the notify layer's questions and notices
       (temper_ai/integrations/notify decides what goes where)
 
@@ -19,6 +20,7 @@ import os
 import threading
 from typing import Any
 
+from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.notify import service as notify
 from temper_ai.integrations.telegram import store
 from temper_ai.integrations.telegram.client import (
@@ -27,7 +29,7 @@ from temper_ai.integrations.telegram.client import (
     bot_token,
 )
 from temper_ai.integrations.telegram.config import ConfigWatcher
-from temper_ai.integrations.telegram.handlers import COMMANDS, Handler
+from temper_ai.integrations.telegram.handlers import COMMANDS, SOURCE, Handler, describe
 from temper_ai.integrations.telegram.poller import Poller
 from temper_ai.integrations.telegram.sender import TelegramSender
 
@@ -98,9 +100,23 @@ class TelegramService:
             self.client.set_commands(COMMANDS)
         except TelegramError as exc:
             logger.info("Telegram: could not set the command menu: %s", exc)
-        self.poller = Poller(self.client, self.handler.submit)
+        inbox.register(SOURCE, self.handler.handle_saved)
+        self.poller = Poller(self.client, self.handler.submit, accept=self.save, skip=self.save_skipped)
         self.poller.start()
         logger.info("Telegram: polling as @%s", self.bot.get("username"))
+
+    @staticmethod
+    def save(update: dict[str, Any]) -> int | None:
+        """Keep an update in the inbox before the offset moves: its event id,
+        or None if it was kept before (Telegram sent it again)."""
+        kind, chat = describe(update)
+        event, new = inbox.receive(SOURCE, str(update.get("update_id")), kind=kind, subject=chat, payload=update)
+        return event.id if new else None
+
+    @staticmethod
+    def save_skipped(update: dict[str, Any], why: str) -> None:
+        kind, chat = describe(update)
+        inbox.receive(SOURCE, str(update.get("update_id")), kind=kind, subject=chat, payload=update, skipped=why)
 
     def stop(self) -> None:
         self._stopped.set()
@@ -108,6 +124,7 @@ class TelegramService:
         if self.poller is not None:
             self.poller.stop()
         if self.handler is not None:
+            inbox.unregister(SOURCE, self.handler.handle_saved)
             self.handler.shutdown()
 
     def status(self) -> dict[str, Any]:

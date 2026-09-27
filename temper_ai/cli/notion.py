@@ -148,7 +148,7 @@ def check(server: str = DEFAULT_SERVER, public_url: str = PUBLIC_HOOK) -> int:
 
     line(bool(rules.signing_secret()) or None,
          f"{rules.SECRET_ENV} is " + ("set" if rules.signing_secret() else
-                                      "not set: events are refused until it is (it is the verification "
+                                      "not set: events are kept unchecked until it is (it is the verification "
                                       "token below)"))
     try:
         from temper_ai.cli.connect import _init_db
@@ -158,15 +158,17 @@ def check(server: str = DEFAULT_SERVER, public_url: str = PUBLIC_HOOK) -> int:
             raise RuntimeError("temper's database was not found")
         vt = store.get_state("verification_token")
         line(*_verification_line(vt, rules.signing_secret()))
-        events = store.recent_events(5)
-        for ev in events:
-            print(f"       event {str(ev.get('at') or '')[:16]} {ev.get('type')}: {ev.get('outcome')}")
+        from temper_ai.integrations.inbox import store as inbox_store
+
+        for ev in inbox_store.listing(source="notion", limit=5):
+            print(f"       event {ev.id} {ev.received_at.isoformat()[:16]} {ev.kind}: "
+                  f"{ev.status}{' - ' + ev.outcome if ev.outcome else ''}")
     except Exception as exc:  # noqa: BLE001
         line(False, f"events store: {exc}")
 
     try:
         resp = httpx.post(public_url, content=b"{}", timeout=10)
-        # A body with no signature: 401 (checked) or 503 (secret not set) means the route reaches temper.
+        # A body with no signature is refused (401): that answer means the route reaches temper.
         reach = resp.status_code in (400, 401, 503)
         line(reach, f"public route {public_url}: HTTP {resp.status_code}"
                     + ("" if reach else " (expected temper's 401; add the gateway route, see docs/notion.md)"))

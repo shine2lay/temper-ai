@@ -2,9 +2,8 @@
 
 ``notion_runs``: a run started from (or reporting to) a Notion page, so its
 notices become comments there, a reply comment reaches it, and only one run
-per page goes at a time. ``notion_events``: webhook events seen, what was
-done with each (for ``/api/hooks/notion/recent`` and to drop repeats).
-``notion_comments``: comments temper posted, so its own comments never start
+per page goes at a time. (Webhook events themselves are kept in the event
+inbox, integrations.inbox.) ``notion_comments``: comments temper posted, so its own comments never start
 anything. ``notion_state``: small values (the webhook verification token).
 """
 
@@ -31,18 +30,6 @@ class NotionRun(SQLModel, table=True):
     # The comment thread temper's messages about this run go in.
     discussion_id: str = ""
     created_at: datetime = Field(default_factory=_now)
-
-
-class NotionEvent(SQLModel, table=True):
-    __tablename__ = "notion_events"
-
-    id: str = Field(primary_key=True)          # Notion's event id
-    at: datetime = Field(default_factory=_now, index=True)
-    type: str = ""
-    entity_id: str = ""
-    page_id: str = ""
-    author: str = ""                           # person:<id> | bot:<id>
-    outcome: str = ""                          # started <run> | skipped: <why> | answered <run> | ...
 
 
 class NotionComment(SQLModel, table=True):

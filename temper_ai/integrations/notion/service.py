@@ -139,6 +139,13 @@ class NotionService:
         return None
 
 
+def only_failed(outcome: str) -> bool:
+    """True when the rules that matched all failed to start (``start_rules``'s
+    outcome), so the event is worth trying again later."""
+    parts = [p.strip() for p in outcome.split(" / ")]
+    return any(" failed: " in f" {p}" for p in parts) and not any(p.startswith("started ") for p in parts)
+
+
 def service() -> NotionService | None:
     return _service
 

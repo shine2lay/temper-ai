@@ -61,8 +61,10 @@ them, and the page a run was started from. Nothing deletes or archives.
    properties updated, content updated) and *Comment* (created). Notion posts
    a verification token; `temper notion check` shows it. Paste it into Notion
    to verify, and put it in `.env` as `NOTION_WEBHOOK_SECRET=...` (every event
-   is signed with it; unsigned or wrongly signed events are refused). Restart
-   when idle. From then on the check only says the secret holds the token,
+   is signed with it; unsigned or wrongly signed events are refused). Events
+   that come before the secret is set are kept unchecked (at most 500, of up
+   to 256 KB each) and checked once it is: genuine ones are handled, the rest
+   deleted. Restart when idle. From then on the check only says the secret holds the token,
    and shows a token again only if Notion sends a different one.
 6. `temper notion check` (in the server container:
    `docker exec -w /app temper-ai-server-1 /app/.venv/bin/temper notion check`)
@@ -112,9 +114,19 @@ trigger:
 Templates see `page` (`id`, `url`, `title`, `properties`), `comment` (`id`,
 `text`, `discussion_id`) and `event`. Notion's events only say *what*
 changed, so temper reads the page before matching. One run per page at a
-time: a change while one is going starts nothing (the recent list says
-"skipped"). `GET /api/hooks/notion/recent` (API token) lists the last events
-and what became of each.
+time: a change while one is going starts nothing (its event says
+"skipped").
+
+Every event is saved in temper's event inbox before temper answers Notion,
+then handled from there
+([architecture](reference/architecture.md#events-from-outside-the-inbox)).
+The same event sent twice is one event and starts one run. If a rule fails to
+start its workflow, the event is tried again after 1 min, 5 min, 30 min and
+2 h, then given up. An event a restart cut off is picked up when the server
+is back, and a run it already started is not started again.
+`temper events list --source notion` lists events and what became of each;
+`temper events show ID` and `temper events replay ID` show one and handle it
+again. `GET /api/hooks/notion/recent` (API token) still lists the last 50.
 
 ## Workflows
 

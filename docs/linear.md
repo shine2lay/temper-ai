@@ -92,7 +92,11 @@ API and dashboard stay tailnet-only:
 standee gateway route add hooks.wai2shine.com 127.0.0.1:8420 --only /api/hooks/linear --public
 ```
 
-Until `LINEAR_WEBHOOK_SECRET` is set the path answers 503 and does nothing.
+Until `LINEAR_WEBHOOK_SECRET` is set, deliveries are kept unchecked (at most
+500, of up to 256 KB each) and answered 202, but nothing runs. Once the secret
+is set (and the server restarted), each is checked: a genuine one is handled
+(its freshness judged by when it came), anything else is deleted. A delivery
+with no signature at all is refused with 401.
 
 ## Rules
 
@@ -164,15 +168,27 @@ From the shell, as the app: `temper linear comment ENG-123 < reply.md`.
 - **Genuine.** `Linear-Signature` must be the HMAC-SHA256 of the exact body
   under `LINEAR_WEBHOOK_SECRET` (compared in constant time), and the body's
   `webhookTimestamp` within a minute of now. Otherwise 401, and nothing runs.
-- **Once.** Linear retries with the same `Linear-Delivery` id; ids seen in
-  the last 24 h are acknowledged without starting anything again.
+- **Kept first.** A delivery that checks out is saved in temper's event
+  inbox ([architecture](reference/architecture.md#events-from-outside-the-inbox))
+  before temper answers 200, and handled from there. If handling fails (say a
+  rule names a workflow that isn't there), it is tried again after 1 min,
+  5 min, 30 min and 2 h, then given up. If a restart cuts it off, it is picked
+  up again when the server is back. If the delivery can't be saved, temper
+  answers 500 and Linear sends it again.
+- **Once.** Linear retries with the same `Linear-Delivery` id, which the inbox
+  already has, so nothing starts again. A run is written on its delivery the
+  moment it starts, so a retry starts only the rules that didn't start yet;
+  one run per workflow and issue still holds after a restart.
 - **Fast.** Linear gives up after 5 s, so the handler answers as soon as the
-  delivery checks out; matching rules and starting runs happen after.
+  delivery is saved; matching rules and starting runs happen after.
 - **Not its own.** With `ignore_self` (the default) a change whose actor is
   the app itself is skipped. If temper cannot tell (the app is not set up, or
   Linear does not answer), a guarded rule does not fire — a missed event is
   cheaper than a loop.
-- **Visible.** `GET /api/hooks/linear/recent` (behind the API token, not
-  public) lists the last 50 deliveries and what became of each: the runs
-  started, "no trigger matched", "ignored: temper's own change", or the error.
-  The server log has the same.
+- **Visible.** `temper events list --source linear` lists deliveries and what
+  became of each: the runs started, "no trigger matched", "ignored: temper's
+  own change", or the error and when it's tried next. `temper events show ID`
+  shows one with its body, and `temper events replay ID` handles it again
+  (it never starts a run the delivery already started).
+  `GET /api/hooks/linear/recent` (behind the API token, not public) still
+  lists the last 50. The server log has the same.

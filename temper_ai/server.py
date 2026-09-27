@@ -23,6 +23,7 @@ from starlette.responses import Response
 from temper_ai.api.app_state import AppState
 from temper_ai.api.auth import TokenAuthMiddleware, auth_enabled
 from temper_ai.api.docs import router as docs_router
+from temper_ai.api.events import router as events_router
 from temper_ai.api.hooks import router as hooks_router
 from temper_ai.api.pools import router as pools_router
 from temper_ai.api.routes import init_app_state
@@ -337,6 +338,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("Notify failed to start: %s", e)
 
+    # Event inbox: every event from Linear, Notion, Slack and Telegram is
+    # saved before it is handled; this sweeper retries the ones that failed,
+    # picks up the ones a restart cut off, and deletes old ones.
+    inbox_started = False
+    try:
+        from temper_ai.integrations.inbox.service import start_inbox
+        start_inbox()
+        inbox_started = True
+    except Exception as e:
+        logger.warning("Event inbox failed to start: %s", e)
+
     slack_service = None
     try:
         from temper_ai.integrations.slack.service import start_slack
@@ -380,6 +392,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if slack_service is not None:
         from temper_ai.integrations.slack.service import stop_slack
         stop_slack()
+    if inbox_started:
+        from temper_ai.integrations.inbox.service import stop_inbox
+        stop_inbox()
     if notify_started:
         from temper_ai.integrations.notify.service import stop_notify
         stop_notify()
@@ -464,6 +479,7 @@ app.include_router(api_router)
 app.include_router(studio_router)
 app.include_router(docs_router)
 app.include_router(hooks_router)
+app.include_router(events_router)
 app.include_router(triggers_router)
 app.include_router(pools_router)
 

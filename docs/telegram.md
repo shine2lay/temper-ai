@@ -110,7 +110,14 @@ reads can't talk it into messaging anyone else.
   "409 Conflict". Run any other server on the same bot with
   `TEMPER_TELEGRAM=0`. Tests run with it off.
 - Messages sent while temper was down for more than 10 minutes are skipped,
-  not acted on late.
+  not acted on late (they are kept in the event inbox as "skipped").
+- **Nothing Telegram sends is lost.** Each update is saved in temper's event
+  inbox before temper tells Telegram it has it, then handled from there
+  ([architecture](reference/architecture.md#events-from-outside-the-inbox)).
+  If saving fails, Telegram sends the same updates again on the next poll. If
+  handling fails or a restart cuts it off, it is tried again, and a run it
+  already started is not started twice.
+  `temper events list --source telegram` shows what came and what became of it.
 - Every start, stop, answer and pick is logged with the Telegram user
   (table `telegram_actions`).
 - A missing or bad token, or Telegram being down, never stops the server from

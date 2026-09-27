@@ -19,6 +19,7 @@ import os
 import threading
 from typing import Any
 
+from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.notify import service as notify
 from temper_ai.integrations.slack.client import (
     SlackClient,
@@ -27,7 +28,13 @@ from temper_ai.integrations.slack.client import (
     bot_token,
 )
 from temper_ai.integrations.slack.config import ConfigWatcher
-from temper_ai.integrations.slack.handlers import Handler
+from temper_ai.integrations.slack.handlers import (
+    EXPIRES_S,
+    SOURCE,
+    Handler,
+    inbox_key,
+    without_token,
+)
 from temper_ai.integrations.slack.ops import TemperOps
 from temper_ai.integrations.slack.sender import SlackSender
 from temper_ai.integrations.slack.socket import SocketMode
@@ -63,11 +70,20 @@ class SlackService:
         self.ops = ops or TemperOps()
         self.sender = SlackSender(self.client)
         self.handler = Handler(self.client, self.config, self.ops)
-        self.socket = SocketMode(self.client.open_socket_url, self.handler.submit)
+        self.socket = SocketMode(self.client.open_socket_url, self.handler.submit, accept=self.save)
         self.bot: dict[str, Any] = {}
         self.auth_error: str | None = None
 
+    @staticmethod
+    def save(envelope: dict[str, Any]) -> int | None:
+        """Keep an envelope in the inbox before it is acked: its event id, or
+        None if Slack sent it before (a retry, or a mention that is also a DM)."""
+        delivery, kind, subject = inbox_key(envelope)
+        event, new = inbox.receive(SOURCE, delivery, kind=kind, subject=subject, payload=without_token(envelope))
+        return event.id if new else None
+
     def start(self) -> None:
+        inbox.register(SOURCE, self.handler.handle_saved, expires_after_s=EXPIRES_S)
         threading.Thread(target=self._who_am_i, name="slack-auth", daemon=True).start()
         self.socket.start()
         notify.register(self.sender)
@@ -84,6 +100,7 @@ class SlackService:
     def stop(self) -> None:
         self.socket.stop()
         notify.unregister(self.sender.via)
+        inbox.unregister(SOURCE, self.handler.handle_saved)
         self.handler.shutdown()
 
     def status(self) -> dict[str, Any]:

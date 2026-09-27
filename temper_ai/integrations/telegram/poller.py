@@ -5,10 +5,13 @@ so it needs no public web address. Only one process may do this for a bot
 at a time: a second one gets "409 Conflict", which is reported (``temper
 telegram check``) and retried slowly rather than fought over.
 
-The last update handled is remembered in the database, so a restart does
-not see the same message twice. Messages that waited more than 10 minutes
-(temper was down) are skipped rather than acted on late; being added to or
-removed from a chat is always handled.
+Each update is saved in the event inbox (``accept``) before temper tells
+Telegram it has it (by moving the offset, which is remembered in the
+database), and only then handed on. If saving fails, the offset stays put
+and Telegram sends the same updates again on the next poll; one already
+saved is noticed as a repeat and not handled twice. Messages that waited
+more than 10 minutes (temper was down) are kept as skipped rather than
+acted on late; being added to or removed from a chat is always handled.
 """
 
 from __future__ import annotations
@@ -40,9 +43,16 @@ def _age_s(update: dict[str, Any], now: float) -> float:
 
 class Poller:
     def __init__(self, client: TelegramClient, submit: Any, *, timeout: int = POLL_TIMEOUT_S,
-                 clock: Any = time.time, sleep: Any = None) -> None:
+                 clock: Any = time.time, sleep: Any = None, accept: Any = None,
+                 skip: Any = None) -> None:
+        """``accept(update)`` saves an update and returns what ``submit`` is
+        handed (its event id), or None for a repeat; ``skip(update, why)``
+        keeps a note of one too old to act on. Without ``accept`` updates
+        are handed on as they are."""
         self.client = client
         self.submit = submit
+        self.accept = accept
+        self.skip = skip
         self.timeout = timeout
         self._clock = clock
         self._stop = threading.Event()
@@ -94,8 +104,8 @@ class Poller:
 
     def poll_once(self) -> int:
         """One getUpdates; returns how many updates were handed on."""
-        saved = store.get_state(OFFSET_KEY)
-        offset = int(saved) if saved else None
+        stored = store.get_state(OFFSET_KEY)
+        offset = int(stored) if stored else None
         updates = self.client.get_updates(offset, timeout=self.timeout, allowed=ALLOWED)
         self.last_poll_at = datetime.now(UTC).isoformat()
         self.conflict = False
@@ -105,17 +115,31 @@ class Poller:
             return 0
         now = self._clock()
         top = max([offset or 0] + [int(u.get("update_id") or 0) + 1 for u in updates])
-        # Remembered before the updates are acted on: a crash loses them
-        # rather than doing them twice.
-        store.set_state(OFFSET_KEY, str(top))
-        handed = 0
+        # Saved first, then the offset moves, then they are handled: a crash
+        # after saving leaves them in the inbox, which picks them up again.
+        saved: list[Any] = []
+        failed: Exception | None = None
         for update in updates:
-            if _age_s(update, now) > STALE_S:
-                self.skipped += 1
-                logger.info("Telegram: skipped update %s (sent %.0f min ago)", update.get("update_id"),
-                            _age_s(update, now) / 60)
-                continue
-            self.submit(update)
-            handed += 1
-        self.received += handed
-        return handed
+            age = _age_s(update, now)
+            try:
+                if age > STALE_S:
+                    self.skipped += 1
+                    logger.info("Telegram: skipped update %s (sent %.0f min ago)", update.get("update_id"),
+                                age / 60)
+                    if self.skip is not None:
+                        self.skip(update, f"skipped: sent {age / 60:.0f} min before temper got it")
+                    continue
+                item = self.accept(update) if self.accept is not None else update
+            except Exception as exc:  # noqa: BLE001 - e.g. the database is down: Telegram sends them again
+                failed = exc
+                break
+            if item is not None:
+                saved.append(item)
+        if failed is None:
+            store.set_state(OFFSET_KEY, str(top))
+        for item in saved:
+            self.submit(item)
+        self.received += len(saved)
+        if failed is not None:
+            raise failed
+        return len(saved)

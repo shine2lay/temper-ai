@@ -182,6 +182,15 @@ Once, by a Slack workspace admin:
 - **Only one process may hold the socket**, because Slack hands each event to
   any one open connection. Run any other server on the same app with
   `TEMPER_SLACK=0`. Tests run with it off.
+- **Nothing Slack sends is lost.** Each command, click, form, mention and DM
+  is saved in temper's event inbox before temper tells Slack it got it (still
+  well within Slack's 3 seconds), then handled from there
+  ([architecture](reference/architecture.md#events-from-outside-the-inbox)).
+  If handling fails or a restart cuts it off, it is tried again, but not once
+  it is over 30 minutes old: Slack's link to answer it has expired by then,
+  so it is marked "expired". A run it started is never started twice.
+  Slack's old verification token is dropped before saving.
+  `temper events list --source slack` shows what came and what became of it.
 - A missing or bad token, or Slack being down, never stops the server from
   starting. The bot just stays off, and `/api/slack/status` says why.
 - Slack starts, stops and answers gates. Nothing merges or deploys from Slack.

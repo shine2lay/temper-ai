@@ -389,6 +389,77 @@ class TestPoller:
         assert poller.skipped == 1 and store.get_state("offset") == "13"
         assert poller.poll_once() == 0 and len(got) == 2
 
+    def test_updates_are_saved_before_the_offset_moves_then_handed_on(self, telegram):
+        from temper_ai.integrations.inbox import store as inbox_store
+        from temper_ai.integrations.telegram.service import TelegramService
+
+        now = time.time()
+        telegram.updates = [
+            {"update_id": 10, "message": {"date": int(now - 3600), "text": "old", "chat": {"id": 5}}},
+            {"update_id": 11, "message": {"date": int(now), "text": "/run demo", "chat": {"id": 5}}},
+        ]
+        offsets_when_saved = []
+
+        def accept(update):
+            offsets_when_saved.append(store.get_state("offset"))
+            return TelegramService.save(update)
+
+        got: list = []
+        poller = Poller(telegram, got.append, timeout=0, accept=accept,   # type: ignore[arg-type]
+                        skip=TelegramService.save_skipped)
+        assert poller.poll_once() == 1
+        assert offsets_when_saved == [None]  # saved while Telegram still thought temper didn't have it
+        assert store.get_state("offset") == "12"
+        [row] = [inbox_store.get(i) for i in got]
+        assert (row.delivery, row.kind, row.subject, row.status) == ("11", "message /run", "5", "new")
+        old = inbox_store.find("telegram", "10")
+        assert old.status == "skipped" and old.outcome.startswith("skipped: sent 60 min")
+
+    def test_if_saving_fails_the_offset_stays_and_telegram_sends_them_again(self, telegram):
+        from temper_ai.integrations.telegram.service import TelegramService
+
+        telegram.updates = [{"update_id": 11, "message": {"date": int(time.time()), "text": "hi"}},
+                            {"update_id": 12, "message": {"date": int(time.time()), "text": "there"}}]
+        down = {"yes": True}
+
+        def accept(update):
+            if down["yes"] and update["update_id"] == 12:
+                raise RuntimeError("database gone")
+            return TelegramService.save(update)
+
+        got: list = []
+        poller = Poller(telegram, got.append, timeout=0, accept=accept)   # type: ignore[arg-type]
+        with pytest.raises(RuntimeError, match="database gone"):
+            poller.poll_once()
+        assert store.get_state("offset") is None and len(got) == 1  # 11 was saved, so it is handled
+        down["yes"] = False
+        assert poller.poll_once() == 1  # both came again; 11 is noticed as a repeat
+        assert len(got) == 2 and len(set(got)) == 2 and store.get_state("offset") == "13"
+
+    def test_a_saved_update_is_handled_from_the_inbox_and_retried(self, bot, telegram, monkeypatch):
+        from temper_ai.integrations.inbox import service as inbox
+        from temper_ai.integrations.telegram.service import TelegramService
+
+        inbox.register("telegram", bot.handle_saved)
+        calls = []
+
+        def flaky(message):
+            calls.append(message["text"])
+            if len(calls) == 1:
+                raise RuntimeError("telegram blinked")
+
+        monkeypatch.setattr(bot, "message", flaky)
+        try:
+            event_id = TelegramService.save({"update_id": 30, "message": {"text": "hello", "chat": {"id": 5}}})
+            assert inbox.process(event_id) == "failed"
+            row = inbox.store.get(event_id)
+            assert row.error == "RuntimeError: telegram blinked"
+            assert inbox.process(event_id, now=row.next_try_at) == "done"  # not blocked as a repeat
+            assert calls == ["hello", "hello"]
+            assert inbox.store.get(event_id).outcome == "handled message"
+        finally:
+            inbox.unregister("telegram")
+
     def test_a_second_process_is_reported_not_fought(self):
         class Busy:
             def get_updates(self, *a, **k):

@@ -66,6 +66,8 @@ them, and the page a run was started from. Nothing deletes or archives.
 
 `TEMPER_NOTION=0` turns it all off.
 
+The Temper QA page is only for tests; nothing in it is real.
+
 ## Agent tools
 
 | tool | does |

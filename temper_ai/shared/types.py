@@ -113,6 +113,7 @@ class ExecutionContext:
     graph_loader: Any = None  # GraphLoader — used by dispatch to materialize dispatched node dicts into Node instances. Set by routes/CLI before execute_graph.
     dispatch_limits: Any = None  # DispatchLimits — per-workflow safety caps. Resolved from workflow defaults by routes/CLI; None means use module defaults.
     dispatch_state: Any = None  # DispatchRunState — per-run bookkeeping for cap enforcement. Seeded by executor on first dispatch.
+    restore: Any = None  # Restore — a resume's checkpoints, claimed graph by graph (top level and every stage). Set by the executor on a resume; shared by every node's copy.
 
     def __post_init__(self) -> None:
         # The run's tool executor learns the run's cancel flag here: every run

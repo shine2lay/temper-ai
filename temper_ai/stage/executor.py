@@ -19,6 +19,7 @@ from temper_ai.stage.conditions import evaluate_condition, source_value
 from temper_ai.stage.exceptions import CancellationError, CyclicDependencyError
 from temper_ai.stage.gate import EMPTY_RESPONSE, GateSignal, build_gate_context
 from temper_ai.stage.node import Node
+from temper_ai.stage.restore import Restore
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +84,37 @@ def execute_graph(
     # A restore hands over every checkpoint of the run, keyed by node path; this graph takes
     # only the ones that name its own nodes. A stage child's `build.deploy` is not the
     # top-level `deploy`, and a stage's total already holds its children's cost.
-    node_outputs: dict[str, NodeResult] = (
-        {k: v for k, v in initial_outputs.items() if k in node_map} if initial_outputs else {}
-    )
+    # The rest stay with the run's Restore for the stages to claim when they start, so a stage
+    # that was running when the run stopped goes on from its own last finished step
+    # (stage/restore.py).
+    if is_workflow and initial_outputs is not None and not isinstance(getattr(context, "restore", None), Restore):
+        state = _resume_state(context)
+        context.restore = Restore(initial_outputs, state.get("loops"), state.get("failed") or ())
+    restore = getattr(context, "restore", None)
     loop_counts: dict[str, int] = defaultdict(int)
+    loop_feedback: dict[str, NodeResult] = {}
+    if isinstance(restore, Restore):
+        prefix = f"{context.node_path}." if context.node_path else ""
+        claimed = restore.claim(prefix, {name: list(node.depends_on) for name, node in node_map.items()})
+        node_outputs, loop_feedback = claimed.outputs, claimed.loop_feedback
+        loop_counts.update(claimed.loop_counts)
+        if claimed.reset and context.checkpoint_service is not None:
+            for name in claimed.reset:
+                context.checkpoint_service.save_node_reset(prefix + name)
+        if claimed.reset:
+            logger.info("Resume of '%s': %s had finished and run again (a failure at or before them)",
+                        graph_name, ", ".join(claimed.reset))
+    else:
+        node_outputs = (
+            {k: v for k, v in initial_outputs.items() if k in node_map} if initial_outputs else {}
+        )
     start = time.monotonic()
 
     start_data: dict = {"name": graph_name, "node_count": len(nodes)}
+    if node_outputs and not is_workflow:
+        # What this stage kept from before the resume and will not run again. A workflow's
+        # are in its resume_metadata.
+        start_data["restored_node_names"] = sorted(node_outputs)
     if is_workflow:
         # The request that started the run, so a resume or fork can rebuild
         # the same inputs (before this, resume re-ran nodes with {} inputs)
@@ -125,7 +150,7 @@ def execute_graph(
     try:
         _run_batches(
             batches, node_map, input_data, node_outputs, loop_counts, context, graph_event_id,
-            retired,
+            retired, loop_feedback,
         )
         # A stop that lands while a step is running kills that step, which then
         # ends failed. With no batch after it to notice the stop, the run would
@@ -167,10 +192,16 @@ def _run_batches(
     context: ExecutionContext,
     graph_event_id: str,
     retired: list[NodeResult] | None = None,
+    loop_feedback: dict[str, NodeResult] | None = None,
 ) -> None:
-    """Iterate through topological batches, handling single-node loops and parallel execution."""
+    """Iterate through topological batches, handling single-node loops and parallel execution.
+
+    ``loop_feedback`` is what each loop's trigger said when it last sent the graph back; a
+    resume hands it over so a pass that was interrupted still reads it.
+    """
     batch_idx = 0
-    loop_feedback: dict[str, NodeResult] = {}
+    if loop_feedback is None:
+        loop_feedback = {}
     cp = context.checkpoint_service  # may be None
     # Checkpoints are keyed by node PATH, not name. A stage's children are checkpointed by
     # this same loop, one level down, with the same service; keyed by bare name, a child called
@@ -219,6 +250,23 @@ def _run_batches(
             for node, result in results:
                 _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
         batch_idx += 1
+
+
+def _resume_state(context: ExecutionContext) -> dict[str, Any]:
+    """The resumed run's loops and failed steps as its checkpoints left them
+    (CheckpointService.resume_state), or none when the run keeps no checkpoints or they cannot be
+    read: then its loops start over, and only what the finished results leave out runs again."""
+    read = getattr(context.checkpoint_service, "resume_state", None)
+    if read is None:
+        return {}
+    try:
+        state = read()
+    except Exception:
+        logger.warning("Could not read the loops and failed steps for the resume of '%s'",
+                       context.run_id, exc_info=True)
+        return {}
+    return state if isinstance(state, dict) else {}
+
 
 def _build_final_result(
     nodes: list[Node],

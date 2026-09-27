@@ -162,9 +162,17 @@ def get_workflow_execution(execution_id: str) -> dict | None:
             if source:
                 for src_node in source.get("nodes", []):
                     src_name = src_node.get("name", "")
-                    if src_name in restored_names and src_name not in current_node_names:
+                    if src_name not in restored_names:
+                        continue
+                    if src_name not in current_node_names:
                         src_node["restored_from_fork"] = True
                         nodes.insert(0, src_node)
+                        continue
+                    # A stage that went on from its own last finished step: the steps it kept
+                    # ran in the source, and show beside the ones this run did.
+                    for i, node in enumerate(nodes):
+                        if node.get("name") == src_name:
+                            nodes[i] = _merge_node_recursive(latest=node, older=src_node)
 
     # Calculate aggregates. Summing only top-level nodes missed every
     # dynamically dispatched child (they hang under the dispatcher, whose

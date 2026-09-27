@@ -138,6 +138,11 @@ class CheckpointService:
             },
         )
 
+    def save_node_reset(self, node_name: str) -> None:
+        """A resume runs a node again that had finished (a failure at or before it; see
+        stage/restore.py): its old result no longer stands, on this resume or any later one."""
+        self._save(event_type="node_reset", node_name=node_name, status="reset")
+
     def save_loop_rewind(
         self,
         trigger_node: str,
@@ -151,6 +156,10 @@ class CheckpointService:
             "target_node": target_node,
             "cleared_nodes": cleared_nodes,
         }
+        if trigger_result is not None:
+            # The trigger's result is the loop's feedback on a resume (reconstruct_loops); the row's
+            # own status says "rewind", so the result's is kept here.
+            metadata["trigger_status"] = trigger_result.status.value
         self._save(
             event_type="loop_rewind",
             node_name=trigger_node,
@@ -193,6 +202,19 @@ class CheckpointService:
         """
         history = self._load_full_history(up_to_sequence)
         return self._replay(history)
+
+    def resume_state(self, up_to_sequence: int | None = None) -> dict[str, Any]:
+        """What a resume goes on with besides the finished results (stage/restore.py).
+
+        - ``loops``: per loop trigger's path, ``count``, how many times it sent the run back;
+          ``target``, the path it sent it back to; ``feedback``, what the trigger said the last
+          time, which the target reads on its next pass. Without these a resumed loop starts its
+          rounds over, and a fix round interrupted by a restart runs without the findings it was
+          sent back with.
+        - ``failed``: the paths whose last attempt failed, or was skipped because a step before
+          it failed. They run again, and so does what finished after them.
+        """
+        return self._replay_resume(self._load_full_history(up_to_sequence))
 
     def _load_full_history(self, up_to_sequence: int | None = None) -> list[Checkpoint]:
         """Load checkpoint history, following parent chain for forks."""
@@ -269,10 +291,18 @@ class CheckpointService:
             if cp.event_type == "node_completed" and cp.status == "completed" and cp.node_name:
                 node_outputs[cp.node_name] = _checkpoint_to_node_result(cp)
 
+            elif cp.event_type == "node_reset" and cp.node_name:
+                # Its insides stay: a stage run again goes on from its own last finished step.
+                node_outputs.pop(cp.node_name, None)
+
             elif cp.event_type == "loop_rewind":
                 cleared = (cp.metadata_ or {}).get("cleared_nodes", [])
                 for name in cleared:
                     node_outputs.pop(name, None)
+                    # A cleared stage runs again from its first step, so its children's results
+                    # belong to the pass the rewind threw away, not to the next one.
+                    for key in [k for k in node_outputs if k.startswith(f"{name}.")]:
+                        del node_outputs[key]
 
             elif cp.event_type == "dispatch_applied":
                 # op=remove targets are recorded so the executor doesn't try
@@ -291,6 +321,49 @@ class CheckpointService:
             # the node_completed entry for the parent stage holds the aggregated result
 
         return node_outputs
+
+    @staticmethod
+    def _replay_resume(history: list[Checkpoint]) -> dict[str, Any]:
+        """Replay the history for resume_state.
+
+        A rewind clears what it sends back through, and what is inside it: a stage run again
+        starts from its first step, and its loops start their rounds over, as they do in a run
+        that never stopped. A loop's own count survives the rewinds it makes, since the executor
+        keeps it for the whole graph.
+        """
+        loops: dict[str, dict[str, Any]] = {}
+        last_failed: dict[str, bool] = {}
+        for cp in history:
+            if cp.event_type == "node_completed" and cp.node_name:
+                last_failed[cp.node_name] = cp.status == Status.FAILED.value or (
+                    # a skip because of a failure says so: "... failed" (stage/executor.py)
+                    cp.status == Status.SKIPPED.value and "failed" in (cp.error or "")
+                )
+                continue
+            if cp.event_type != "loop_rewind":
+                continue
+            meta = cp.metadata_ or {}
+            for name in meta.get("cleared_nodes", []):
+                last_failed.pop(name, None)
+                for kept in (loops, last_failed):
+                    for key in [k for k in kept if k.startswith(f"{name}.")]:
+                        del kept[key]
+            trigger = meta.get("trigger_node") or cp.node_name
+            if not trigger:
+                continue
+            status = meta.get("trigger_status") or (
+                Status.FAILED.value if cp.error else Status.COMPLETED.value
+            )
+            entry = loops.setdefault(trigger, {"count": 0})
+            entry["count"] += 1
+            entry["target"] = meta.get("target_node") or ""
+            entry["feedback"] = NodeResult(
+                status=Status(status),
+                output=cp.output or "",
+                structured_output=cp.structured_output,
+                error=cp.error,
+            )
+        return {"loops": loops, "failed": sorted(p for p, bad in last_failed.items() if bad)}
 
     def reconstruct_dispatch_history(
         self, up_to_sequence: int | None = None,

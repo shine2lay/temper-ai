@@ -3254,20 +3254,27 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
     """Fork the open bet's failed loop run at its last good stage and run the rest, in temper.
 
     The finished stages come back as checkpoints -- report, bet, the owner's approval, tasks: the
-    expensive and the human parts -- and the stage that failed runs again whole, in a run temper
-    records as a fork of the old one. Temper's own resume would not do: a stage whose inner node
-    failed is "completed" to the run above it, so a resume skips the stage and re-skips everything
-    conditioned on it. Forking at the checkpoint before the failed stage is the resume this loop needs.
+    expensive and the human parts -- in a run temper records as a fork of the old one, so the old
+    run and its events stay as they were.
 
     ``at`` names the stage to start from instead of the first that failed. The case for it: a build
     whose only failed node came after its gate (a teardown step) delivered an approved commit, and
     starting again at `ship` keeps it, where the automatic choice would build it a second time.
 
-    The failed attempt's leftovers are cleared first, since the stage starts over: its claim on the
-    task (held by a run that is over), and whatever it left uncommitted in the worktree, which is
-    kept as a patch beside the bet, so the new attempt starts where the tasks say and not where the
-    old one stopped. Neither is touched when the build is being kept.
+    A run that stopped before it finished (a failed step, a restart, a Stop) goes on from where it
+    stopped instead, when no ``at`` is named and the stage is the build or later: the fork is at
+    its latest checkpoint, and temper runs again only what did not finish, inside the build too.
+    A build interrupted in its review keeps its commits and its finished judges; one whose stack
+    deploy failed deploys again and goes on (temper-ai, queue task 9). A build that ended at its
+    round cap (the run completed) builds again whole, and so does the plan stage, which plans
+    against a new snapshot.
+
+    The failed attempt's leftovers are cleared first: whatever it left uncommitted in the worktree,
+    which is kept as a patch beside the bet, so the step that runs again starts from what was
+    committed. When the build starts over, its claim on the task goes too (held by a run that is
+    over); a build that goes on keeps it. Neither is touched when the build is being kept.
     """
+    asked_at = at
     bet_id = bet or open_bet()
     if not bet_id:
         die("no open bet; nothing to resume")
@@ -3317,24 +3324,30 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
     require_bet_window(bet_id, plan=stage == "tasks")
     require_models(f"resuming {bet_id} at `{stage}`")
     before = STAGES[STAGES.index(stage) - 1] if STAGES.index(stage) else None
-    # A fork lists only the checkpoints it wrote itself; the stages it restored are checkpoints of
-    # the run it was forked from. A second resume of the same stage therefore forks the original
-    # again, at the same point.
     source = rid
-    seqs = [c["sequence"] for c in checkpoints(rid) if c.get("node_name") == before and c.get("status") == "completed"]
-    if before and not seqs and loop.get("_forked_from"):
-        source = loop["_forked_from"]
-        seqs = [c["sequence"] for c in checkpoints(source) if c.get("node_name") == before and c.get("status") == "completed"]
-    if before and not seqs:
-        die(f"{bet_id}: run {rid[:8]} has no completed checkpoint for `{before}` to fork from")
-    seq = max(seqs) if seqs else 0
+    own = checkpoints(rid)
+    go_on = bool(own) and not asked_at and status != "completed" and stage != "tasks"
+    if go_on:
+        seq = max(c["sequence"] for c in own)
+    else:
+        # A fork lists only the checkpoints it wrote itself; the stages it restored are checkpoints
+        # of the run it was forked from. A second resume of the same stage therefore forks the
+        # original again, at the same point.
+        seqs = [c["sequence"] for c in own if c.get("node_name") == before and c.get("status") == "completed"]
+        if before and not seqs and loop.get("_forked_from"):
+            source = loop["_forked_from"]
+            seqs = [c["sequence"] for c in checkpoints(source)
+                    if c.get("node_name") == before and c.get("status") == "completed"]
+        if before and not seqs:
+            die(f"{bet_id}: run {rid[:8]} has no completed checkpoint for `{before}` to fork from")
+        seq = max(seqs) if seqs else 0
 
     slug = f"epd-{bet_id}"
     claim = f"{CONTAINER_WORKSPACES}/repos/{REPO_NAME}/claims/{slug}.json"
     wt = f"{CONTAINER_WORKSPACES}/repos/{REPO_NAME}/worktrees/{slug}"
     if STAGES.index(stage) <= STAGES.index("build"):
         r = in_server(f"python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(\"run_id\",\"\"))' {claim} 2>/dev/null")
-        if r.stdout.strip() == rid:
+        if r.stdout.strip() == rid and not go_on:
             in_server(f"rm -f {claim}")
             log(f"cleared the claim on {slug} held by the failed run")
         r = in_server(f"git -C {wt} status --porcelain 2>/dev/null | wc -l")
@@ -3345,20 +3358,24 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
             in_server(f"git -C {wt} reset -q --hard && git -C {wt} clean -qfd")
             log(f"the failed attempt left {r.stdout.strip()} uncommitted paths in {slug}; kept as {patch.name}, worktree reset")
 
-    log(f"== {bet_id}: resuming at `{stage}` (fork of {source[:8]} after `{before}`, checkpoint {seq}) ==")
+    if go_on:
+        log(f"== {bet_id}: going on with `{stage}` from its last finished step (fork of {source[:8]} "
+            f"at its latest checkpoint, {seq}) ==")
+    else:
+        log(f"== {bet_id}: resuming at `{stage}` (fork of {source[:8]} after `{before}`, checkpoint {seq}) ==")
     share_bet_dir(bdir)  # the stages that run again write there too
     if stage == "tasks":
         plan_snapshot(bet_id)  # planning again: against what the build would start from now
         mkdir_shared(bdir / "plan")
     # A resume is the owner's go: a bet that waited for another (`turn`) starts a new 24 h wait.
     (bdir / "turn.json").unlink(missing_ok=True)
-    if stage in ("tasks", "build"):
+    if stage in ("tasks", "build") and not go_on:
         # at its plan or its build it goes to the back of the line, as a retry does (start_bet);
-        # after the build it keeps its place, so later bets still wait for its PR
+        # after the build, or going on with it, it keeps its place, so later bets still wait for it
         st["plan_started"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id, planning=stage == "tasks"), LOOP_WORKSPACE)
     st["stages"]["loop"] = {"_run_id": new, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
-                            "_forked_from": source, "_fork_sequence": seq,
+                            "_forked_from": source, "_fork_sequence": seq, "_went_on": go_on,
                             "_replaces": rid, "_replaced_because": info.get("error_message") or status}
     save_state(st)
     log(f"epd_loop → run {new}")

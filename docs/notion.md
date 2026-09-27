@@ -77,7 +77,9 @@ them, and the page a run was started from. Nothing deletes or archives.
 | `NotionComment` | a comment on a page |
 
 A target is a name from the config, `origin` (the page the run started from),
-or a page id/URL that is a target or under one. With tool config
+or a page id/URL that is a target or under one. The tools also take a page's
+or table's exact title (case and spacing ignored); if several pages share it,
+the tool lists them with their ids. With tool config
 `{scope: answer}` (as `repo_answer` uses) search and read are limited to
 `answer_from`. Property values are converted to the column's type (title,
 text, number, select, multi-select, status, date, URL, email, phone,

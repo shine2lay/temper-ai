@@ -12,8 +12,8 @@ targets (``configs/notion/local/notion.yaml``), pages under a target page,
 rows of a target table, and the page this run was started from. There is
 no delete or archive.
 
-A target is named ("crm"), or given as a page id or Notion URL. With the
-tool option ``scope: answer`` (as repo_answer uses), search and read are
+A target is named ("crm"), or given as a page id, a Notion URL or the page's
+exact title. With the tool option ``scope: answer`` (as repo_answer uses), search and read are
 limited to the config's ``answer_from`` pages.
 
 - **Modifies state:** Yes
@@ -22,7 +22,7 @@ limited to the config's ``answer_from`` pages.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `where` | string | Yes | Page target name, origin, id or URL |
+| `where` | string | Yes | Page target name, origin, id, URL or exact title |
 | `mode` | `new_page` \| `append` | Yes | new_page: a child page titled `title`; append: add to the page |
 | `title` | string | No | The new page's title (new_page) |
 | `text` | string | Yes | The content |

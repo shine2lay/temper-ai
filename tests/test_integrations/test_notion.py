@@ -303,6 +303,47 @@ def test_tools_write_upsert_comment_read_search(tools, fake):
     assert found.success and "Temper QA" in found.result
 
 
+def test_tools_take_a_page_title(tools, fake):
+    fake.blocks[fake.root] = [{"type": "paragraph", "paragraph": {"rich_text": [{"plain_text": "marigold"}]}}]
+    read = tools.NotionRead().execute(what="  temper   qa ")
+    assert read.success, read.error
+    assert "marigold" in read.result
+    said = tools.NotionComment().execute(where="Temper QA", text="by title")
+    assert said.success and json.loads(said.result)["page_id"] == fake.root
+    # A title that isn't a target is still only readable, not writable.
+    assert tools.NotionRead().execute(what="Private").success
+    assert not tools.NotionComment().execute(where="Private", text="x").success
+
+
+def test_page_title_none_or_several(tools, fake):
+    missing = tools.NotionRead().execute(what="No Such Page")
+    assert not missing.success and "no page or table titled" in missing.error
+    near = tools.NotionRead().execute(what="Temper")
+    assert not near.success and "close matches" in near.error and fake.root in near.error
+    twin = _id()
+    fake.pages[twin] = {**fake.pages[fake.root], "id": twin}
+    both = tools.NotionRead().execute(what="Temper QA")
+    assert not both.success and "2 pages" in both.error and twin in both.error
+
+
+def test_answer_scope_title_skips_pages_it_may_not_read(tools, fake, cfg, monkeypatch):
+    twin = _id()
+    fake.pages[twin] = {**fake.pages[fake.other], "id": twin,
+                        "properties": fake.pages[fake.root]["properties"]}  # also "Temper QA"
+    monkeypatch.setattr(type(cfg), "answer_ids", lambda self: [fake.root])
+    read = tools.NotionRead({"scope": "answer"}).execute(what="Temper QA")
+    assert read.success, read.error
+
+
+def test_ids_from_notion_links():
+    raw = "3e74cb8f6eaa801b96c5ceefb5206616"
+    want = "3e74cb8f-6eaa-801b-96c5-ceefb5206616"
+    for link in (f"https://www.notion.so/Temper-QA-{raw}?pvs=4", f"https://x.notion.site/Temper-QA-{raw}",
+                 f"https://www.notion.com/p/Temper-QA-{raw}", raw.upper()):
+        assert normalize_id(link) == want
+    assert normalize_id("Temper QA") == "Temper QA"
+
+
 def test_tools_refuse_pages_outside_targets(tools, fake):
     assert not tools.NotionComment().execute(where=fake.other, text="x").success
     assert not tools.NotionWrite().execute(where=fake.other, mode="append", text="x").success

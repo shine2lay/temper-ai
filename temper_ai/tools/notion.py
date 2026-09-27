@@ -6,20 +6,22 @@ targets (``configs/notion/local/notion.yaml``), pages under a target page,
 rows of a target table, and the page this run was started from. There is
 no delete or archive.
 
-A target is named ("crm"), or given as a page id or Notion URL. With the
-tool option ``scope: answer`` (as repo_answer uses), search and read are
+A target is named ("crm"), or given as a page id, a Notion URL or the page's
+exact title. With the tool option ``scope: answer`` (as repo_answer uses), search and read are
 limited to the config's ``answer_from`` pages.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from temper_ai.tools.base import BaseTool, ToolResult
 
 MAX_TEXT = 20000
 ORIGIN = "origin"
+_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
 def _fail(error: str) -> ToolResult:
@@ -66,22 +68,61 @@ class _NotionTool(BaseTool):
     def _answer_scope(self) -> bool:
         return str(self.config.get("scope") or "") == "answer"
 
-    def _resolve_page(self, where: str) -> str:
-        """A target name, ``origin``, a page id or URL -> a page id."""
+    def _find(self, client: Any, where: str) -> tuple[str, str]:
+        """A target name, ``origin``, an id, a URL or an exact title -> (id, kind).
+
+        kind is "page", "table", or "" for a bare id or URL (not looked up).
+        """
         from temper_ai.integrations.notion.client import normalize_id
 
         where = str(where or "").strip()
+        if not where:
+            raise ValueError("say which page: a target name, origin, an id, a URL or its exact title")
         if where == ORIGIN:
             pages = self._run_pages()
             if not pages:
                 raise ValueError("this run was not started from a Notion page, so it has no origin")
-            return pages[0]
+            return pages[0], "page"
         target = self._cfg().target(where)
         if target is not None:
-            if target.is_table:
-                raise ValueError(f"{where} is a table; use NotionUpsert for its rows")
-            return target.page
-        return normalize_id(where)
+            return (target.table, "table") if target.is_table else (target.page, "page")
+        pid = normalize_id(where)
+        if _ID.fullmatch(pid):
+            return pid, ""
+        return self._by_title(client, where)
+
+    def _by_title(self, client: Any, title: str) -> tuple[str, str]:
+        """The one page or table with this title (case and spacing ignored)."""
+        from temper_ai.integrations.notion.client import normalize_id
+        from temper_ai.integrations.notion.content import title_of
+
+        def plain(text: str) -> str:
+            return " ".join(text.split()).casefold()
+
+        results = client.search(" ".join(title.split()), limit=20)
+        exact = [r for r in results if plain(title_of(r)) == plain(title)]
+        if self._answer_scope():
+            exact = [r for r in exact if not self._may_read(client, str(r.get("id")))]
+        if len(exact) == 1:
+            found = exact[0]
+            kind = "table" if found.get("object") in ("data_source", "database") else "page"
+            return normalize_id(str(found.get("id"))), kind
+
+        def listed(rows: list[dict[str, Any]]) -> str:
+            return "; ".join(f"{title_of(r) or '(untitled)'} = {r.get('id')}" for r in rows[:5])
+
+        if exact:
+            raise ValueError(f"{len(exact)} pages are titled {title!r}; give one's id: {listed(exact)}")
+        if results:
+            raise ValueError(f"no page is titled exactly {title!r}; close matches: {listed(results)}")
+        raise ValueError(f"no page or table titled {title!r} is shared with temper (NotionSearch lists what is)")
+
+    def _resolve_page(self, where: str, client: Any = None) -> str:
+        """A target name, ``origin``, a page id, URL or exact title -> a page id."""
+        pid, kind = self._find(client if client is not None else self._client(), where)
+        if kind == "table":
+            raise ValueError(f"{where} is a table; use NotionUpsert for its rows")
+        return pid
 
     def _may_read(self, client: Any, page_id: str) -> str:
         if not self._answer_scope():
@@ -139,11 +180,12 @@ class NotionRead(_NotionTool):
     name = "NotionRead"
     description = ("Read a Notion page or table row as text (title, row properties, body including tables), "
                    "or a table's columns and rows. `what` is a target name from the Notion config, `origin` "
-                   "(the page this run started from), a page/table id, or a Notion URL.")
+                   "(the page this run started from), a page/table id, a Notion URL, or the exact title of "
+                   "a page or table shared with temper.")
     parameters = {
         "type": "object",
         "properties": {
-            "what": {"type": "string", "description": "Target name, origin, id or URL"},
+            "what": {"type": "string", "description": "Target name, origin, id, URL or exact title"},
             "rows": {"type": "integer", "description": "For a table: at most this many rows (default 50)"},
             "comments": {"type": "boolean", "description": "For a page: also list its comments (who, id, text)"},
         },
@@ -171,18 +213,26 @@ class NotionRead(_NotionTool):
             if target is not None and target.is_table:
                 text = table_text(client, client.data_source_for(target.table), limit=rows)
             else:
-                pid = self._resolve_page(what) if target is None else target.page
+                pid, kind = self._find(client, what)
                 why = self._may_read(client, pid)
                 if why:
                     return _fail(why)
-                try:
-                    text = page_text(client, pid)
-                    if params.get("comments") in (True, "true", "True", 1):
-                        text += "\n\n" + comments_text(client, pid)
-                except NotionError as exc:
-                    if not exc.not_found:
-                        raise
-                    text = table_text(client, client.data_source_for(normalize_id(pid)), limit=rows)
+                if kind == "table":
+                    text = table_text(client, client.data_source_for(pid), limit=rows)
+                else:
+                    try:
+                        text = page_text(client, pid)
+                        if params.get("comments") in (True, "true", "True", 1):
+                            text += "\n\n" + comments_text(client, pid)
+                    except NotionError as exc:
+                        # An id that isn't a page may be a table (Notion says 400 or 404).
+                        if exc.status not in (400, 404):
+                            raise
+                        try:
+                            source = client.data_source_for(normalize_id(pid))
+                        except NotionError:
+                            raise exc from None
+                        text = table_text(client, source, limit=rows)
         except Exception as exc:  # noqa: BLE001
             return _fail(f"{type(exc).__name__}: {exc}")
         if len(text) > MAX_TEXT:
@@ -198,7 +248,7 @@ class NotionWrite(_NotionTool):
     parameters = {
         "type": "object",
         "properties": {
-            "where": {"type": "string", "description": "Page target name, origin, id or URL"},
+            "where": {"type": "string", "description": "Page target name, origin, id, URL or exact title"},
             "mode": {"type": "string", "enum": ["new_page", "append"],
                      "description": "new_page: a child page titled `title`; append: add to the page"},
             "title": {"type": "string", "description": "The new page's title (new_page)"},
@@ -224,7 +274,7 @@ class NotionWrite(_NotionTool):
             return _fail("text is required")
         try:
             client = self._client()
-            pid = self._resolve_page(str(params.get("where") or ""))
+            pid = self._resolve_page(str(params.get("where") or ""), client)
             access.check(client, self._cfg(), pid, self._run_pages())
             blocks = text_blocks(text)
             if mode == "append":
@@ -296,7 +346,7 @@ class NotionUpsert(_NotionTool):
         from temper_ai.integrations.notion.client import normalize_id
         from temper_ai.integrations.notion.content import build_properties
 
-        pid = self._resolve_page(row)
+        pid = self._resolve_page(row, client)
         page = client.page(pid)
         if normalize_id(str((page.get("parent") or {}).get("data_source_id") or "")) != normalize_id(ds):
             raise ValueError(f"row {pid} is not in this table")
@@ -311,7 +361,7 @@ class NotionComment(_NotionTool):
     parameters = {
         "type": "object",
         "properties": {
-            "where": {"type": "string", "description": "origin, target name, page id or URL"},
+            "where": {"type": "string", "description": "origin, target name, page id, URL or exact title"},
             "text": {"type": "string", "description": "The comment"},
         },
         "required": ["where", "text"],
@@ -326,7 +376,7 @@ class NotionComment(_NotionTool):
             return _fail("text is required")
         try:
             client = self._client()
-            pid = self._resolve_page(str(params.get("where") or ""))
+            pid = self._resolve_page(str(params.get("where") or ""), client)
             access.check(client, self._cfg(), pid, self._run_pages())
             made = client.comment(pid, text)
         except Exception as exc:  # noqa: BLE001

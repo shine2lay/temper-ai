@@ -51,7 +51,7 @@ class NotionError(RuntimeError):
 def normalize_id(value: str) -> str:
     """A page/table id from an id or a Notion URL, in 8-4-4-4-12 form."""
     text = str(value or "").strip()
-    if "notion.so" in text or "notion.site" in text:
+    if any(host in text for host in ("notion.so", "notion.site", "notion.com")):
         text = text.split("?", 1)[0].split("#", 1)[0].rstrip("/").rsplit("/", 1)[-1]
         text = text.rsplit("-", 1)[-1]
     raw = text.replace("-", "")

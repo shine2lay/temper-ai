@@ -372,8 +372,15 @@ class Handler:
             return
         eid, node = str(meta.get("run") or ""), str(meta.get("node") or "")
         info = self.ops.gate_info(eid, node) or {}
-        answers, response = blocks.form_answers(info.get("questions") or [],
-                                                 ((view.get("state") or {}).get("values")) or {})
+        values = ((view.get("state") or {}).get("values")) or {}
+        answers, response = blocks.form_answers(info.get("questions") or [], values)
+        # Which fields came back filled: if an answer goes missing, this
+        # says whether Slack sent it.
+        filled = sorted(k for k, v in values.items()
+                        if any(f.get("value") or f.get("selected_option") or f.get("selected_options")
+                               for f in (v or {}).values() if isinstance(f, dict)))
+        logger.info("Slack: %s sent the answer form for %s at %s: %d answer(s), fields %s",
+                    name, eid[:8], node, len(answers), ",".join(filled) or "none")
         channel, ts = str(meta.get("channel") or ""), str(meta.get("ts") or "")
         # The question message as posted, drawn again (a form's submission
         # does not carry the message it was opened from).

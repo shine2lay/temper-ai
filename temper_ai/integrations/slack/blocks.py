@@ -256,7 +256,7 @@ def answer_form(run: dict[str, Any], gate_info: dict[str, Any], channel: str = "
                          "label": _plain(label, 2000),
                          "element": {"type": "plain_text_input", "action_id": "v", "multiline": True}})
     body.append({"type": "input", "block_id": "response", "optional": True,
-                 "label": _plain("Anything else to tell it (optional)", 2000),
+                 "label": _plain("Anything else to tell it", 2000),
                  "element": {"type": "plain_text_input", "action_id": "v", "multiline": True}})
     meta = {"run": execution_id, "node": node, "event": gate_info.get("event_id"), "channel": channel, "ts": ts}
     return {"type": "modal", "callback_id": ANSWER_FORM, "title": _plain("Answer", 24),

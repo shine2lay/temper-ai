@@ -302,7 +302,7 @@ class Handler:
                 going = [r for r in self.ops.recent() if r.get("status") in GOING]
                 self.reply(msg, render.recent_text(going, self.config.get().zone, cfg.run_url))
         elif cmd.verb == "stop":
-            self.reply(msg, esc(self.stop(self.ops.resolve(cmd.run_id), user)))
+            self.reply(msg, esc(self.stop(self.ops.resolve(cmd.run_id), user, (msg.get("chat") or {}).get("id", ""))))
         elif cmd.verb == "run":
             self.run(cmd, msg, user)
         elif cmd.verb == "ask":
@@ -352,7 +352,7 @@ class Handler:
         for piece in pieces[1:]:
             self.client.send(chat_id, piece, reply_to=int(placeholder["message_id"]))
 
-    def stop(self, eid: str, user: dict[str, Any]) -> str:
+    def stop(self, eid: str, user: dict[str, Any], chat_id: Any = "") -> str:
         summary = self.ops.summary(eid)
         if summary.get("error"):
             raise OpsError(str(summary["error"]))
@@ -361,7 +361,7 @@ class Handler:
             return f"{summary.get('workflow')} {eid[:8]} is already {status}."
         who = display_name(user)
         self.ops.cancel(eid, f"Stopped in Telegram by {who}", by=f"{who} (Telegram)")
-        store.log_action(user.get("id", ""), who, "stop", eid, str(summary.get("workflow") or ""))
+        store.log_action(user.get("id", ""), who, "stop", eid, str(summary.get("workflow") or ""), chat_id=chat_id)
         return f"Stopping {summary.get('workflow')} {eid[:8]}."
 
     # -- plain words ---------------------------------------------------------------------
@@ -470,7 +470,7 @@ class Handler:
         if parts[0] == "n":
             self.client.edit_markup(chat_id, message_id, render.stuck_keyboard(copy.id, notice))
             return ""
-        text = self.stop(copy.execution_id, user)
+        text = self.stop(copy.execution_id, user, chat_id)
         notify_store.mark(copy.id, "closed", only_from=notify_store.OPEN, detail=f"stopped by {display_name(user)}")
         body = str(msg.get("text") or "")
         self._edit(chat_id, message_id, f"{esc(body)}\n\n⏹ {esc(text)} ({esc(display_name(user))})",
@@ -641,7 +641,7 @@ class Handler:
             self.ops.resume(eid)
             verdict = "resumed"
         store.log_action(user.get("id", ""), who, "approve", eid,
-                         f"{node} {copy.event_id} {verdict} {json.dumps(answers)[:400]}")
+                         f"{node} {copy.event_id} {verdict} {json.dumps(answers)[:400]}", chat_id=copy.target)
         pairs = tuple((a["question"] or a["id"], render.answer_text(a)) for a in answers)
         self.close(copy, notice, Decision(verdict, who, "Telegram", response, pairs), state)
         return "Approved" + (f" with {len(answers)} answer(s)" if answers else "")
@@ -649,7 +649,8 @@ class Handler:
     def reject(self, copy: Copy, notice: Notice, user: dict[str, Any]) -> str:
         who = display_name(user)
         self.ops.cancel(copy.execution_id, f"Rejected in Telegram by {who}", by=f"{who} (Telegram)")
-        store.log_action(user.get("id", ""), who, "reject", copy.execution_id, f"{copy.node} {copy.event_id}")
+        store.log_action(user.get("id", ""), who, "reject", copy.execution_id, f"{copy.node} {copy.event_id}",
+                         chat_id=copy.target)
         self.close(copy, notice, Decision("rejected", who, "Telegram"))
         return "Rejected; the run is stopped"
 

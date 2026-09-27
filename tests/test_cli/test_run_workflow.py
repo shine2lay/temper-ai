@@ -26,6 +26,7 @@ from sqlmodel import select
 from temper_ai.cli.run_workflow import (
     _install_signal_handlers,
     _load_run_row,
+    _start_mcp_manager,
     _update_run_row,
     cmd_run_workflow,
 )
@@ -58,6 +59,13 @@ def queued_run(isolated_db):
             status="queued",
         ))
     return execution_id
+
+
+@pytest.fixture(autouse=True)
+def _no_process_wide_mcp(monkeypatch):
+    """cmd_run_workflow loads the MCP configs into the process-wide manager (with a loop thread of
+    its own); the lifecycle tests leave that out. The MCP tests below call it with their own manager."""
+    monkeypatch.setattr("temper_ai.cli.run_workflow._start_mcp_manager", lambda config_dir: None)
 
 
 def _make_args(execution_id: str) -> argparse.Namespace:
@@ -375,6 +383,66 @@ def test_a_resume_that_cannot_restore_fails_its_run_without_starting_it(isolated
     row = _read_row("exec-broken")
     assert row["status"] == "failed"
     assert "resume failed: checkpoints unreadable" in row["error"]["message"]
+
+
+# --- MCP servers in a run of its own (2026-09-27, the first runs in boxes) ------------------
+#
+# The server loads the MCP server configs when it starts; `temper run-workflow` never did, so an
+# agent's MCP tools (task_verify's playwright.*) were skipped without a word and the agent stopped
+# with ToolsNotRegisteredError the moment runs went into their own containers.
+
+
+def _mcp_config_dir(tmp_path):
+    servers = tmp_path / "mcp_servers"
+    servers.mkdir()
+    (servers / "browser.yaml").write_text(
+        "mcp_server:\n  name: browser\n  transport: http\n  url: http://browser.invalid:1/mcp\n"
+    )
+    return str(tmp_path)
+
+
+def test_a_run_of_its_own_knows_the_mcp_servers_and_binds_their_tools(tmp_path):
+    from temper_ai.tools.mcp_client import MCPClientManager
+    from temper_ai.tools.mcp_tool import create_mcp_tools_from_agents
+
+    manager = MCPClientManager()
+    _start_mcp_manager(_mcp_config_dir(tmp_path), manager)
+    try:
+        assert manager.get_configured_servers() == ["browser"]
+        assert manager._event_loop.is_running(), "the tools reach the manager on a loop that keeps running"
+        # a nested agent's config, as a stage's agent_configs() hands it on
+        tools = create_mcp_tools_from_agents(manager, [{"agent": {"name": "task_verify",
+                                                                  "tools": ["Bash", "browser.navigate"]}}])
+        assert list(tools) == ["browser.navigate"]
+    finally:
+        manager._event_loop.call_soon_threadsafe(manager._event_loop.stop)
+
+
+def test_mcp_setup_that_fails_does_not_stop_the_run(caplog):
+    class Broken:
+        _event_loop = None
+
+        async def start(self, config_dir=None):
+            raise OSError("configs unreadable")
+
+    broken = Broken()
+    _start_mcp_manager(None, broken)  # no exception: a run may need no MCP tool at all
+    assert "MCP setup failed (non-fatal): configs unreadable" in caplog.text
+    broken._event_loop.call_soon_threadsafe(broken._event_loop.stop)
+
+
+def test_the_mcp_servers_are_loaded_before_the_workflow_runs(queued_run):
+    order: list[str] = []
+    fake_result = ExecuteResult(exit_code=0, status="completed")
+    with (
+        patch("temper_ai.runner.bootstrap.bootstrap_runner_context_from_env"),
+        patch("temper_ai.cli.run_workflow._start_mcp_manager",
+              side_effect=lambda config_dir: order.append(f"mcp {config_dir}")),
+        patch("temper_ai.runner.execute.execute_workflow",
+              side_effect=lambda **kw: order.append("execute") or fake_result),
+    ):
+        assert cmd_run_workflow(_make_args(queued_run)) == 0
+    assert order == ["mcp None", "execute"]
 
 
 # --- Argument parsing surface (smoke) ------------------------------------

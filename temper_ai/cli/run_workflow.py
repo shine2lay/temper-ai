@@ -37,6 +37,35 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _start_mcp_manager(config_dir: str | None, manager: Any = None) -> None:
+    """Load the MCP server configs into the shared manager, as the server does when it starts.
+
+    execute_workflow binds an agent's MCP tools (``playwright.browser_navigate``) only for the
+    servers the shared manager knows. The server loads them at startup (server.py); a run in a
+    process of its own -- this command, under the subprocess and docker spawners -- never did,
+    so every MCP tool was skipped without a word and its agent stopped with
+    ToolsNotRegisteredError (seen 2026-09-27, the first runs in boxes: task_verify's browser).
+
+    The manager's coroutines need a loop that keeps running: it gets one of its own in a daemon
+    thread, which the tools and the pre-connect reach with run_coroutine_threadsafe. A failure
+    here is not fatal, as in the server: a run whose agents use no MCP tool goes on without.
+    """
+    import asyncio
+
+    if manager is None:
+        from temper_ai.tools.mcp_client import mcp_manager as manager
+    loop = asyncio.new_event_loop()
+    threading.Thread(target=loop.run_forever, name="mcp-loop", daemon=True).start()
+    manager._event_loop = loop
+    try:
+        asyncio.run_coroutine_threadsafe(manager.start(config_dir=config_dir), loop).result(timeout=10)
+        configured = manager.get_configured_servers()
+        if configured:
+            logger.info("MCP: %d server(s) configured (lazy connect): %s", len(configured), ", ".join(configured))
+    except Exception as exc:  # noqa: BLE001 - as the server: non-fatal, a run may need no MCP tool
+        logger.warning("MCP setup failed (non-fatal): %s", exc)
+
+
 def cmd_run_workflow(args: argparse.Namespace) -> int:
     """Run a single WorkflowRun row to completion. Returns the exit code.
 
@@ -120,6 +149,9 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         jsonl_notifier,
         webhook if webhook.enabled else None,
     )
+
+    # --- MCP servers: their configs, as the server loads them when it starts --
+    _start_mcp_manager(getattr(args, "config_dir", None))
 
     # --- Execute --------------------------------------------------------------
     from temper_ai.runner.execute import execute_workflow

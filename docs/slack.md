@@ -212,7 +212,8 @@ fails. `--only form,stop` runs some of them.
 
 `ask` and `mention` cost what two answers cost (see
 [Questions about the code](#questions-about-the-code)). notify_probe uses
-no model, so the four runs cost nothing. The whole set takes a few minutes.
+no model, so the four runs cost nothing. The whole set takes about three
+minutes (its first live run: 171 s and 9 cents).
 
 ### One fake at a time
 
@@ -292,6 +293,11 @@ slack:
     channel: "#temper-qa"     # the only channel fakes may use (the default)
     user: U0123456789         # who fakes act as (default: the first agents dm)
 ```
+
+A private test channel is given by its id (`channel: C0123456789`). The bot
+looks a `#name` up among public channels only, because finding a private
+one by name needs Slack's `groups:read`, which temper's app doesn't ask
+for. Either way the bot must be in the channel.
 
 ## Rules
 

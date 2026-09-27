@@ -33,6 +33,7 @@ import httpx
 
 from temper_ai.integrations.slack import blocks, fakes
 from temper_ai.integrations.slack.client import SlackClient
+from temper_ai.integrations.slack.config import channel_problem
 
 PROBE = "notify_probe"
 CHECKS = ("ask", "mention", "form", "approve", "reject", "stop")
@@ -177,7 +178,7 @@ class Tester:
         if not info.get("on"):
             raise E2EError(f"the Slack test entry is off: {info.get('reason') or 'test_door: false in the Slack config'}")
         if info.get("channel_error"):
-            raise E2EError(f"can't find the test channel {info.get('channel')}: {info['channel_error']}")
+            raise E2EError(channel_problem(str(info.get("channel") or ""), str(info["channel_error"])))
         self.where = fakes.Where.from_info(info)
         if not (self.where.channel and self.where.user and self.where.bot_user):
             raise E2EError(f"the test entry did not say its channel, user and bot user: {info}")

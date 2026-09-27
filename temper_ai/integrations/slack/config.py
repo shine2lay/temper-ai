@@ -20,7 +20,7 @@ directory, so the workflow-config importer passes it by.)::
         - dm: U0123ABCD
         - channel: C0456EFGH
       test_door:                # the private test entry (docs/slack.md); false turns it off
-        channel: "#temper-qa"   # the only channel fake events may name
+        channel: "#temper-qa"   # the only channel fake events may name (a private one by its id)
         user: U0123ABCD         # who fake events come from (default: the first agents dm)
 
 A destination is a channel and/or a DM: ``channel`` is a channel id
@@ -85,6 +85,20 @@ class DoorSettings:
     on: bool = True
     channel: str = DEFAULT_TEST_CHANNEL
     user: str = ""
+
+
+def channel_problem(channel: str, error: str) -> str:
+    """Why the test channel can't be used, and what to do about it.
+
+    The bot looks a ``#name`` up among public channels only: finding a
+    private one by name needs Slack's groups:read, which temper's app
+    doesn't ask for. A private test channel is given by its id instead.
+    """
+    text = f"can't find the test channel {channel}: {error}"
+    if channel.startswith("#") and error == "channel_not_found":
+        text += (". If it is a private channel, give its id (C…) as test_door.channel in "
+                 "configs/slack/local/slack.yaml: the bot can't look up a private channel by name")
+    return text
 
 
 @dataclass

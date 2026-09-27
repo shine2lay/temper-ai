@@ -50,6 +50,7 @@ from typing import Any
 
 from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.slack.client import TEST_TRIGGER, SlackClient, SlackError
+from temper_ai.integrations.slack.config import channel_problem
 from temper_ai.integrations.slack.handlers import SOURCE, describe, inbox_key
 
 logger = logging.getLogger(__name__)
@@ -264,7 +265,7 @@ def take(envelope: Any, *, service: Any, base_url: str | None = None, fakes: Fak
     try:
         want = channel_id(service.client, door.channel)
     except SlackError as exc:
-        raise DoorError(503, f"can't find the test channel {door.channel}: {exc.error}") from exc
+        raise DoorError(503, channel_problem(door.channel, exc.error)) from exc
     got = channel_of(envelope)
     if got != want:
         raise DoorError(400, f"fakes only go to {door.channel} ({want}); this one is for {got or 'no channel'}")

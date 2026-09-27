@@ -33,6 +33,7 @@ from temper_ai.integrations.slack.client import SlackClient, SlackError
 from temper_ai.integrations.slack.config import (
     ConfigWatcher,
     SlackConfigError,
+    channel_problem,
     parse_config,
 )
 from temper_ai.integrations.slack.handlers import EXPIRES_S, SOURCE, Handler, describe
@@ -164,6 +165,13 @@ class TestSettings:
                                       "test_door": {"channel": "C0QA00001", "user": OTHER}}})
         assert (cfg.test_door.channel, cfg.test_user()) == ("C0QA00001", OTHER)
 
+    def test_a_private_channel_named_by_name_is_told_to_use_its_id(self):
+        # The bot finds a #name among public channels only (no groups:read).
+        hint = "give its id (C\u2026) as test_door.channel"
+        assert hint in channel_problem("#temper-qa", "channel_not_found")
+        assert hint not in channel_problem("C0QA00001", "channel_not_found")
+        assert hint not in channel_problem("#temper-qa", "ratelimited")
+
     @pytest.mark.parametrize("value", [{"channel": "D0DM"}, {"user": "#nope"}, {"doors": 1}, {"on": "yes"}, 3])
     def test_a_bad_setting_is_an_error(self, value):
         with pytest.raises(SlackConfigError):
@@ -202,6 +210,17 @@ class TestWhoMayUseIt:
         elsewhere = fakes.Where(channel="C0RUNS001", channel_name="#runs", user=OWNER, bot_user="UBOT")
         got = client.post("/api/test/slack", json=fakes.command(elsewhere, "help"), headers=KEY)
         assert got.status_code == 400 and "fakes only go to #temper-qa" in got.text
+
+    def test_a_channel_it_cannot_find_says_what_to_do(self, client, slack, slack_config, monkeypatch):
+        slack_config(f"slack:\n  agents:\n    - dm: {OWNER}\n  test_door:\n    channel: \"#private-qa\"\n")
+
+        def not_found(target: str) -> str:
+            raise SlackError("conversations.list", "channel_not_found", target)
+
+        monkeypatch.setattr(slack, "resolve", not_found)
+        got = client.post("/api/test/slack", json=fakes.command(WHERE, "help"), headers=KEY)
+        assert got.status_code == 503 and "give its id" in got.text
+        assert client.get("/api/test/slack", headers=KEY).json()["channel_error"] == "channel_not_found"
 
     def test_only_slack_shaped_envelopes(self, client):
         got = client.post("/api/test/slack", json={"type": "hello", "payload": {}}, headers=KEY)
@@ -585,6 +604,13 @@ class TestE2E:
         theirs = Theirs()
         theirs.door_on = False
         with pytest.raises(e2e.E2EError, match="entry is off"):
+            make_tester(theirs)
+
+    def test_a_test_channel_it_cannot_find_says_what_to_do(self, monkeypatch):
+        theirs = Theirs()
+        monkeypatch.setattr(theirs, "info", lambda: {"on": True, "slack": True, "channel": "#temper-qa",
+                                                      "channel_error": "channel_not_found"})
+        with pytest.raises(e2e.E2EError, match="give its id"):
             make_tester(theirs)
 
 

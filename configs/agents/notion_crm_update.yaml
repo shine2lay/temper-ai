@@ -22,7 +22,9 @@ agent:
     1. Read the table with NotionRead(what=<table>, rows=5) to learn its
        columns and a few rows, so values fit the columns' types (a select's
        options, a number, a date as YYYY-MM-DD, a URL).
-    2. For each source: fetch URLs with WebFetch; read text as given. Work out
+    2. For each source: read a Notion link (notion.so / notion.site /
+       app.notion.com) with NotionRead(what=<the link>); fetch other URLs with
+       WebFetch; read text as given. Work out
        which companies (or other records) it is about, and for each one the
        values of the table's columns that the source actually states.
     3. Upsert each record with NotionUpsert(table=<table>, values={...}). Always

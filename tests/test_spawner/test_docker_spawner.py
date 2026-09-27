@@ -371,6 +371,17 @@ class TestLivenessAndKill:
         assert spawner.is_alive(_handle()) is False   # gone
         assert all(c[-1] == "temper-run-exec-1" for c in docker.commands("inspect"))
 
+    @pytest.mark.parametrize("stderr", [
+        "error: no such object: temper-run-exec-1",               # docker 29's CLI (seen 2026-09-27)
+        "Error: No such object: temper-run-exec-1",               # older CLIs
+        "Error response from daemon: No such container: temper-run-exec-1",
+    ])
+    def test_a_removed_container_is_gone_in_every_docker_wording(self, stderr):
+        """Docker 29 says it in lower case. Matched as written, the reaper could not tell a run
+        whose box had died, and left it "running" for good (queue task 9's resume probe)."""
+        docker = FakeDocker(answers={"inspect": [(1, "", stderr)]})
+        assert _spawner(docker, None).is_alive(_handle()) is False
+
     def test_the_handle_column_is_not_trusted_for_the_name(self):
         """run-workflow used to overwrite spawner_handle with its PID; the
         reaper still finds the container from the execution_id."""
@@ -391,6 +402,7 @@ class TestLivenessAndKill:
 
     @pytest.mark.parametrize("stderr", [
         "Error response from daemon: No such container: temper-run-exec-1",
+        "error response from daemon: no such container: temper-run-exec-1",
         "Error response from daemon: cannot kill container: temper-run-exec-1: container is not running",
     ])
     def test_kill_of_a_gone_container_is_not_an_error(self, stderr):

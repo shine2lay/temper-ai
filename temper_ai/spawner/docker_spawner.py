@@ -82,7 +82,17 @@ RUN_COMMAND = ["uv", "run", "python", "-m", "temper_ai.cli.main", "run-workflow"
 TEMPLATE_GRACE_SECONDS = 120.0
 
 # `docker inspect` on a name that does not exist exits 1 with this on stderr.
-_NO_SUCH = ("No such container", "No such object")
+# Lower case, matched against lower-cased stderr: docker 29's CLI writes "error: no such object: X"
+# where older ones wrote "Error: No such object: X". Matched as written, a run container that --rm
+# had removed never counted as gone, and the reaper left its run "running" for good (2026-09-27,
+# queue task 9's resume probe: its killed run, and every run of a box that dies, never ended).
+_NO_SUCH = ("no such container", "no such object")
+
+
+def _says_gone(stderr: str) -> bool:
+    """Whether docker's error says the container does not exist (any docker version's wording)."""
+    said = stderr.lower()
+    return any(marker in said for marker in _NO_SUCH)
 
 
 def container_name(execution_id: str) -> str:
@@ -315,7 +325,7 @@ class DockerSpawner(Spawner):
             [self._docker, "inspect", "--format", "{{.State.Running}}", self._name_for(handle)],
         )
         if result.returncode != 0:
-            if any(marker in result.stderr for marker in _NO_SUCH):
+            if _says_gone(result.stderr):
                 return False  # gone: --rm removed it on exit, or it never started
             # Not an answer about the container (the daemon is busy or down):
             # the reaper must not bury a run over it.
@@ -329,7 +339,7 @@ class DockerSpawner(Spawner):
         if result.returncode == 0:
             logger.info("Sent SIG%s to run container %s", sig, name)
             return
-        if any(marker in result.stderr for marker in _NO_SUCH) or "is not running" in result.stderr:
+        if _says_gone(result.stderr) or "is not running" in result.stderr.lower():
             logger.debug("Run container %s already gone", name)
             return
         raise SpawnerError(f"docker kill -s {sig} {name} failed: {result.stderr.strip()}")

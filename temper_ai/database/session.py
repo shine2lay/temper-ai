@@ -43,7 +43,11 @@ class DatabaseManager:
         # first is fragile: a table whose module is imported lazily (memory is
         # only constructed after init_database) would silently not be created.
         from temper_ai.checkpoint import models as _checkpoint_models  # noqa: F401
+        from temper_ai.integrations.notify import models as _notify_models  # noqa: F401
         from temper_ai.integrations.slack import models as _slack_models  # noqa: F401
+        from temper_ai.integrations.telegram import (
+            models as _telegram_models,  # noqa: F401
+        )
         from temper_ai.memory import models as _memory_models  # noqa: F401
         from temper_ai.observability import models as _event_models  # noqa: F401
         from temper_ai.runner import models as _runner_models  # noqa: F401

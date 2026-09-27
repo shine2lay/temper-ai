@@ -123,6 +123,11 @@ class SlackClient:
                          thread_ts=thread_ts, reply_broadcast=bool(thread_ts and broadcast) or None,
                          unfurl_links=False, unfurl_media=False)
 
+    def open_view(self, trigger_id: str, view: dict[str, Any]) -> dict[str, Any]:
+        """Open a form (modal) for the person who just clicked; ``trigger_id``
+        comes with the click and lasts 3 seconds."""
+        return self.call("views.open", trigger_id=trigger_id, view=view)
+
     def update(self, channel: str, ts: str, text: str, blocks: list[dict] | None = None) -> dict[str, Any]:
         return self.call("chat.update", channel=channel, ts=ts, text=text,
                          blocks=blocks if blocks is not None else [])

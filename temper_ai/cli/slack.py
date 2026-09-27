@@ -4,8 +4,9 @@
 
 Checks, in order: both tokens are set; the bot token works (who it is, which
 workspace, whether it has every scope the manifest asks for); the app-level
-token can open a Socket Mode connection; the Slack config file parses and
-where each notice goes; the running server holds the socket; which
+token can open a Socket Mode connection; the Slack config file parses; the
+running server holds the socket; the notify file (where notices and
+questions go) is valid and names only places that exist; which
 workflows have no description (so neither search nor @temper can find them
 by what they do). Exit 1 if anything is wrong.
 """
@@ -81,13 +82,13 @@ def check(server: str = DEFAULT_SERVER) -> int:
             line(None, "config: no configs/slack/slack.yaml or configs/slack/local/slack.yaml (no notices are sent)")
         else:
             line(True, f"config: {path}")
-            for kind in KINDS:
-                print(f"       {kind:9} -> {cfg.route(kind, None).describe()}")
-            for name, kinds in sorted(cfg.workflows.items()):
-                print(f"       {name}: " + ", ".join(f"{k} -> {d.describe()}" for k, d in kinds.items()))
+            if any(cfg.route(k, None) for k in KINDS) or any(d for kinds in cfg.workflows.values()
+                                                              for d in kinds.values()):
+                line(None, "config: its notify/workflows routes are not used any more; where notices go is set "
+                           "in the notify file (below)")
             print(f"       agent tools may post to: {cfg.agents.describe()}")
             if client is not None:
-                for channel in {c for d in cfg.notify.values() for c in d.channels} | set(cfg.agents.channels):
+                for channel in set(cfg.agents.channels):
                     try:
                         client.resolve(channel)
                     except SlackError as exc:
@@ -112,6 +113,10 @@ def check(server: str = DEFAULT_SERVER) -> int:
             line(False, f"server: Slack is not running there ({status.get('reason')})")
     except (httpx.HTTPError, ValueError) as exc:
         line(False, f"server: {server}/api/slack/status: {exc}")
+
+    from temper_ai.cli.notify_check import check_notify
+
+    check_notify(line, lambda path: _server_get(server, path), via="slack")
 
     try:
         found = _server_get(server, "/api/workflows/search?q=&limit=500")

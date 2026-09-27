@@ -175,10 +175,13 @@ class WorkflowConfig:
     safety: dict | None = None  # Safety policy config
     memory: dict | None = None  # Memory config
     defaults: dict | None = None  # Default model, provider, etc.
+    # Where its questions and notices go (docs/notify.md); read by the notify
+    # loop from the stored config, kept here so the loader doesn't warn.
+    notify: dict | str | None = None
 
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "description", "version", "nodes",
-        "inputs", "outputs", "safety", "memory", "defaults",
+        "inputs", "outputs", "safety", "memory", "defaults", "notify",
     })
 
     @classmethod
@@ -206,4 +209,5 @@ class WorkflowConfig:
             safety=data.get("safety"),
             memory=data.get("memory"),
             defaults=data.get("defaults"),
+            notify=data.get("notify"),
         )

@@ -4,7 +4,7 @@
 
 _Auto-generated from code. Do not edit manually._
 
-Temper AI includes **20 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
+Temper AI includes **21 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
 
 Tool execution is gated by [safety policies](../policies/index.md) — see [File Access](../policies/file_access.md) and [Forbidden Ops](../policies/forbidden_ops.md).
 
@@ -41,6 +41,7 @@ Which container that is depends on the worker's `TEMPER_SPAWNER`. With `docker`,
 | [`SlackPost`](slackpost.md) | Post a new message in Slack, as the temper bot, to a channel or person the Slack config allows. Returns the message's channel and ts (use them with SlackReply). |
 | [`SlackReadThread`](slackreadthread.md) | Read a Slack thread (its first message and the replies, oldest first) in a channel or DM the Slack config allows, or a thread temper opened for a run. |
 | [`SlackReply`](slackreply.md) | Reply in a Slack thread, as the temper bot. The thread is the ts of its first message, in a channel or DM the Slack config allows, or a thread temper opened for a run. |
+| [`TelegramSend`](telegramsend.md) | Send a message in Telegram, as temper's bot, to a place the notify config lets agents use (by its name, e.g. "telegram"), or to "origin": the Telegram chat this run was started from, as a reply under the run's first message. Text may use *bold*, `code` and ``` blocks. |
 | [`WebFetch`](webfetch.md) | Fetch a web page and return its readable text — scripts, styles, nav and footers removed. Use this to read documentation, articles and API pages. JSON responses are returned formatted. Output is capped (default 30k characters) and says so when truncated. Use the http tool instead when you need the raw body, headers or a non-GET method. |
 | [`WebSearch`](websearch.md) | Search the web. Returns titles, URLs, and snippets for the query. |
 | [`Write`](write.md) | Write content to a file, creating parent directories as needed. Overwrites by default; set append=true to add to the end instead. To change part of an existing file use Edit, which does not require rewriting the whole file. |

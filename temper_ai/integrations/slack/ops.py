@@ -92,9 +92,13 @@ class TemperOps:
             raise OpsError(f"`{ref}` matches {len(set(matches))} runs; give more characters.")
         return matches[0]
 
-    def cancel(self, execution_id: str, reason: str) -> dict[str, Any]:
+    def cancel(self, execution_id: str, reason: str, by: str = "") -> dict[str, Any]:
+        """Stop a run. ``by`` ("Name (Slack)") is written on its waiting gates
+        first, so every copy of their questions can say who stopped it."""
         from temper_ai.api.routes import CancelRequest, cancel_run
 
+        if by:
+            self.record_who(execution_id, None, by)
         try:
             return cancel_run(execution_id, CancelRequest(reason=reason))
         except Exception as exc:  # noqa: BLE001
@@ -159,13 +163,41 @@ class TemperOps:
             row = session.exec(select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)).first()
             return row is not None and row.status in ("queued", "running")
 
-    def approve(self, execution_id: str, node: str) -> dict[str, Any]:
-        from temper_ai.api.routes import GateApproval, approve_gate
+    def approve(self, execution_id: str, node: str, answers: list[dict[str, Any]] | None = None,
+                response: str = "", by: str = "") -> dict[str, Any]:
+        """Approve a waiting gate, with the answers to its questions.
 
+        ``answers`` are {id, question, selected, custom}; ``by`` ("Name
+        (Telegram)") is written on the waiting events first: once the gate
+        is approved, the notify loop may close the other copies at any
+        moment, and they should say who answered.
+        """
+        from temper_ai.api.routes import GateAnswer, GateApproval, approve_gate
+
+        if by:
+            self.record_who(execution_id, node, by)
+        body = GateApproval(response=response or "", answers=[GateAnswer(**a) for a in (answers or [])])
         try:
-            return approve_gate(execution_id, node, GateApproval())
+            return approve_gate(execution_id, node, body)
         except Exception as exc:  # noqa: BLE001
             raise OpsError(_detail(exc)) from exc
+
+    def record_who(self, execution_id: str, node: str | None, who: str) -> int:
+        """Write ``gate_decided_by`` on the run's waiting gate events (one
+        node's, or all). Returns how many; never raises."""
+        try:
+            from temper_ai.observability.recorder import update_event
+
+            events = self.waiting_gates(execution_id)
+            done = 0
+            for ev in events:
+                if node is None or (ev.get("data") or {}).get("name") == node:
+                    update_event(str(ev["id"]), data={"gate_decided_by": who})
+                    done += 1
+            return done
+        except Exception as exc:  # noqa: BLE001 - the decision stands without the name
+            logger.warning("could not record who answered %s: %s", execution_id[:8], exc)
+            return 0
 
     # -- a finished run's answer -------------------------------------------------
 

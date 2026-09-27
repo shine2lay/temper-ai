@@ -1,9 +1,11 @@
 # Slack — run temper from Slack, and hear back there
 
 Temper runs a Slack bot. From Slack you can find a workflow by what it does,
-start it, check on it and stop it, and answer its gates with a button. Temper
-tells you when a gate is waiting, a run goes quiet, or a run fails or
-finishes, with one thread per run. Nothing needs a public address: the bot
+start it, check on it and stop it, and answer its gates' questions in a form.
+Temper tells you when a gate is waiting, a run goes quiet, or a run fails or
+finishes, with one thread per run. (It has a [Telegram bot](telegram.md)
+too; where each run's messages go is set once for both, in
+[notify.md](notify.md).) Nothing needs a public address: the bot
 holds an outgoing connection to Slack (Socket Mode) from inside the temper
 server.
 
@@ -65,42 +67,47 @@ answer is the message.
 
 | Kind | When | Buttons |
 |---|---|---|
-| gate | a gate is waiting for an answer | **Approve** / **Reject** (Reject stops the run) |
+| question | a gate is waiting for an answer | **Answer** (a form with its questions), **Approve** / **Reject** (Reject stops the run) |
 | stuck | a running run has written no event for `stuck_after` | **Stop run** |
 | failed | a run failed; the notice quotes the failed step's own error | |
 | finished | a run completed or was cancelled | |
 
-Every notice about a run goes in one thread per destination. A run started
-from Slack keeps its notices in the thread it was started in. When a gate is
-answered anywhere (Slack, the dashboard, the API), its message loses its
-buttons and says who answered. When a quiet run ends, its "quiet" notice loses
-its Stop button. A run stopped from Slack says who stopped it. Runs that were
-already going when Slack was switched on are left alone.
+**Answer** opens a form with every question the step asked: a choice is a
+list to pick one from, a pick-any question has checkboxes, and each question
+has a box for a typed answer, plus one for anything else. Submitting it
+continues the run, and the next step gets the answers. **Approve** continues
+without answers.
 
-Where each kind goes is set in `configs/slack/local/slack.yaml` (git-ignored,
-because it names people's Slack ids). When that file doesn't exist,
-`configs/slack/slack.yaml` is used instead; it documents the format and sends
-nothing. Changes are picked up without a restart:
+Every notice about a run goes in one thread per place. A run started from
+Slack keeps its notices in the thread it was started in. When a gate is
+answered anywhere (Slack, Telegram, the dashboard, the API), its message
+loses its buttons and says who answered and where. When a quiet run ends, its
+"quiet" notice loses its Stop button. A run stopped from Slack says who
+stopped it. Runs that were already going when notices were switched on are
+left alone.
+
+Where each kind goes is set in the notify file,
+`configs/notify/local/notify.yaml`, shared with Telegram: see
+[notify.md](notify.md). By default a run's notices go back where it was
+started, and a run with no origin (the dashboard, schedules, the API) goes to
+the file's `fallback`, e.g. `{slack: {dm: U0123456789}}`. A workflow can
+choose its own with a `notify:` block.
+
+The Slack file, `configs/slack/local/slack.yaml` (git-ignored, because it
+names people's Slack ids), keeps the rest; its old `notify:` and
+`workflows:` routes are no longer used. Changes are picked up without a
+restart:
 
 ```yaml
 slack:
-  dashboard_url: https://temper.example.com   # run links in messages
-  stuck_after: 45m
-  notify:
-    gate: {dm: U0123456789}
-    stuck: {dm: U0123456789}
-    failed: {dm: U0123456789, channel: "#runs"}
-    finished: {channel: "#runs"}
-  workflows:              # per workflow; replaces the default for the kinds it names
-    noisy_probe: off
-    slack_pick: off       # the @temper picker itself
+  dashboard_url: https://temper.example.com   # run links in @temper's answers
   agents:                 # where the agent tools may post and read
     - dm: U0123456789
 ```
 
 A destination is `{channel: …, dm: …}`, and each part can be a list. A
 channel is an id (`C…`) or `#name`; for a private channel, the bot must be a
-member. `dm` is a user id (`U…`). `off` sends nothing.
+member. `dm` is a user id (`U…`).
 
 ## Agent tools
 
@@ -151,8 +158,9 @@ Once, by a Slack workspace admin:
    SLACK_APP_TOKEN=xapp-...
    ```
 
-5. Write `configs/slack/local/slack.yaml` (see above), and restart the server
-   and worker.
+5. Write `configs/slack/local/slack.yaml` (see above) and the Slack places in
+   `configs/notify/local/notify.yaml` ([notify.md](notify.md)), and restart
+   the server and worker.
 6. Check it:
 
    ```
@@ -161,7 +169,7 @@ Once, by a Slack workspace admin:
 
    The check confirms the bot token and the scopes it has, that a socket can
    be opened, and that the config loads, and shows where each kind of notice
-   goes. It then asks the running server (the local one, or `--server URL`)
+   goes (and that every workflow's own `notify:` names places that exist). It then asks the running server (the local one, or `--server URL`)
    whether its socket is connected (`GET /api/slack/status`), and lists
    workflows with no description, which search and @temper can only find by
    name.

@@ -1,0 +1,15 @@
+# Who may use temper's Telegram bot (docs/telegram.md). This tracked file
+# documents the format and lets nobody in; the real settings go in
+# configs/telegram/local/telegram.yaml (git-ignored, since it holds people's
+# Telegram ids), which is used instead when it exists.
+#
+# The bot's token goes in .env as TELEGRAM_BOT_TOKEN, never here.
+telegram:
+  # Telegram user ids of the people who own the bot. They may use it in
+  # their private chat with it, and any group one of them adds it to is
+  # allowed. The bot leaves a group anyone else adds it to.
+  owners: []
+  # Groups allowed even if no owner is in them (negative ids).
+  groups: []
+  # Times in messages are shown in this zone.
+  zone: America/Los_Angeles

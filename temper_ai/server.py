@@ -327,12 +327,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # SLACK_APP_TOKEN; off with TEMPER_SLACK=0 (only one process may hold
     # the app's socket). Starting does no network I/O, so a Slack outage or
     # a bad token cannot hold the server up.
+    # Notify: decides where each run's questions and notices go (the run's
+    # origin chat, or what its workflow's `notify:` says) and sends them
+    # through the places below. Off with TEMPER_NOTIFY=0.
+    notify_started = False
+    try:
+        from temper_ai.integrations.notify.service import start_notify
+        notify_started = start_notify() is not None
+    except Exception as e:
+        logger.warning("Notify failed to start: %s", e)
+
     slack_service = None
     try:
         from temper_ai.integrations.slack.service import start_slack
         slack_service = start_slack()
     except Exception as e:
         logger.warning("Slack failed to start: %s", e)
+
+    # Telegram: the bot polls for its messages (no public address needed).
+    # Needs TELEGRAM_BOT_TOKEN; off with TEMPER_TELEGRAM=0 (only one process
+    # may poll a bot).
+    telegram_service = None
+    try:
+        from temper_ai.integrations.telegram.service import start_telegram
+        telegram_service = start_telegram()
+    except Exception as e:
+        logger.warning("Telegram failed to start: %s", e)
 
     logger.info("Temper AI server ready")
 
@@ -342,9 +362,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
 
     # Shutdown
+    if telegram_service is not None:
+        from temper_ai.integrations.telegram.service import stop_telegram
+        stop_telegram()
     if slack_service is not None:
         from temper_ai.integrations.slack.service import stop_slack
         stop_slack()
+    if notify_started:
+        from temper_ai.integrations.notify.service import stop_notify
+        stop_notify()
     if trigger_scheduler is not None:
         trigger_scheduler.stop()
     if reaper is not None:

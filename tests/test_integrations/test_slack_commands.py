@@ -107,12 +107,9 @@ class TestSearch:
 
 
 class TestConfig:
-    def test_routes_and_overrides(self, slack_config):
+    def test_links_and_where_agents_may_post(self, slack_config):
+        # Where notices go is the notify file's job now (test_notify_*).
         cfg = load_config()
-        assert cfg.route("gate", "anything").users == (OWNER,)
-        assert cfg.route("finished", "noisy").channels == ()
-        assert cfg.route("failed", "noisy").channels == ("C0RUNS001",)
-        assert not cfg.route("gate", "slack_pick")
         assert cfg.run_url("abc") == "https://temper.test/app/workflow/abc"
         assert cfg.agent_may_post(OWNER) and cfg.agent_may_post("C0RUNS001") and not cfg.agent_may_post("C0OTHER01")
 
@@ -138,14 +135,14 @@ class TestConfig:
 
     def test_watcher_keeps_the_last_good_config(self, tmp_path, slack_config):
         watcher = ConfigWatcher()
-        assert watcher.get().route("gate", "x").users == (OWNER,)
+        assert watcher.get().agent_may_post(OWNER)
         import os
         import time
 
         path = tmp_path / "slack" / "slack.yaml"
-        path.write_text("slack:\n  notify:\n    gate: {dm: nobody}\n")
+        path.write_text("slack:\n  agents:\n    - dm: nobody\n")
         os.utime(path, (time.time() + 5, time.time() + 5))
-        assert watcher.get().route("gate", "x").users == (OWNER,)
+        assert watcher.get().agent_may_post(OWNER)
         assert watcher.error and "user id" in watcher.error
 
     def test_no_file_sends_nothing(self, tmp_path, monkeypatch):

@@ -1,7 +1,8 @@
 """Temper's Slack side, put together and run by the server.
 
-    socket (Slack -> temper): slash commands, button clicks, mentions, DMs
-    notifier (temper -> Slack): gate waiting, stuck, failed, finished
+    socket (Slack -> temper): slash commands, button clicks, forms, mentions, DMs
+    sender (temper -> Slack): the notify layer's questions and notices
+      (temper_ai/integrations/notify decides what goes where)
 
 Started from the server's lifespan when both tokens are set and
 ``TEMPER_SLACK`` is not off. Starting does no network I/O: the socket
@@ -18,6 +19,7 @@ import os
 import threading
 from typing import Any
 
+from temper_ai.integrations.notify import service as notify
 from temper_ai.integrations.slack.client import (
     SlackClient,
     SlackError,
@@ -26,8 +28,8 @@ from temper_ai.integrations.slack.client import (
 )
 from temper_ai.integrations.slack.config import ConfigWatcher
 from temper_ai.integrations.slack.handlers import Handler
-from temper_ai.integrations.slack.notifier import Notifier, RunPoster
 from temper_ai.integrations.slack.ops import TemperOps
+from temper_ai.integrations.slack.sender import SlackSender
 from temper_ai.integrations.slack.socket import SocketMode
 
 logger = logging.getLogger(__name__)
@@ -59,9 +61,8 @@ class SlackService:
         self.client = client or SlackClient()
         self.config = config or ConfigWatcher()
         self.ops = ops or TemperOps()
-        self.poster = RunPoster(self.client)
-        self.handler = Handler(self.client, self.config, self.ops, self.poster)
-        self.notifier = Notifier(self.poster, self.config, self.ops)
+        self.sender = SlackSender(self.client)
+        self.handler = Handler(self.client, self.config, self.ops)
         self.socket = SocketMode(self.client.open_socket_url, self.handler.submit)
         self.bot: dict[str, Any] = {}
         self.auth_error: str | None = None
@@ -69,7 +70,7 @@ class SlackService:
     def start(self) -> None:
         threading.Thread(target=self._who_am_i, name="slack-auth", daemon=True).start()
         self.socket.start()
-        self.notifier.start()
+        notify.register(self.sender)
 
     def _who_am_i(self) -> None:
         try:
@@ -82,7 +83,7 @@ class SlackService:
 
     def stop(self) -> None:
         self.socket.stop()
-        self.notifier.stop()
+        notify.unregister(self.sender.via)
         self.handler.shutdown()
 
     def status(self) -> dict[str, Any]:
@@ -92,11 +93,18 @@ class SlackService:
             "bot": {k: self.bot.get(k) for k in ("user", "user_id", "team", "team_id")} if self.bot else None,
             "auth_error": self.auth_error,
             "socket": self.socket.status(),
-            "notifier": {"last_tick_at": self.notifier.last_tick_at, "sent": self.notifier.sent,
-                         "last_error": self.notifier.last_error},
+            "notifier": _notify_status(),
             "handler": {"handled": self.handler.handled, "last_error": self.handler.last_error},
             "config": {"path": cfg.path, "error": self.config.error},
         }
+
+
+def _notify_status() -> dict[str, Any]:
+    """The notify loop's state, in the shape ``temper slack check`` reads."""
+    s = notify.status()
+    return {"running": s.get("running"), "last_tick_at": s.get("last_tick_at"), "sent": s.get("sent", 0),
+            "last_error": s.get("last_error") if s.get("running") else f"notify is not running ({s.get('reason')})",
+            "registered": "slack" in (s.get("senders") or [])}
 
 
 def start_slack() -> SlackService | None:

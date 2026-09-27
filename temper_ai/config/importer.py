@@ -41,6 +41,15 @@ def parse_yaml(file_path: str | Path) -> dict[str, Any]:
         raise ConfigValidationError(
             f"Config must have a 'name' field inside '{config_type}' block"
         )
+    if config_type == "workflow" and isinstance(inner, dict) and inner.get("notify") is not None:
+        # A bad notify: block fails the import here rather than being
+        # skipped quietly by the notify loop later.
+        from temper_ai.integrations.notify.config import NotifyConfigError, parse_block
+
+        try:
+            parse_block(inner["notify"], f"{name}: notify")
+        except NotifyConfigError as exc:
+            raise ConfigValidationError(f"{path}: {exc}") from exc
 
     return {
         "name": name,
@@ -82,7 +91,7 @@ def import_yaml(file_path: str | Path, store: ConfigStore | None = None) -> dict
 
 
 # Subdirectories holding YAMLs that are not workflow/stage/agent configs.
-NON_CONFIG_DIRS = ("mcp_servers", "slack", "tools", "triggers")
+NON_CONFIG_DIRS = ("mcp_servers", "notify", "slack", "telegram", "tools", "triggers")
 
 
 def import_config_tree(root: str | Path, store: ConfigStore | None = None) -> int:

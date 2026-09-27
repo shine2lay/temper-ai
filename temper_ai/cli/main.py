@@ -113,6 +113,11 @@ def main() -> None:
 
     add_slack_parser(subparsers)
 
+    # -- temper telegram check --
+    from temper_ai.cli.telegram import add_parser as add_telegram_parser
+
+    add_telegram_parser(subparsers)
+
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
@@ -185,6 +190,9 @@ def main() -> None:
     elif args.command == "slack":
         from temper_ai.cli.slack import cmd_slack
         sys.exit(cmd_slack(args))
+    elif args.command == "telegram":
+        from temper_ai.cli.telegram import cmd_telegram
+        sys.exit(cmd_telegram(args))
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

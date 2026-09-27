@@ -33,6 +33,9 @@ REJECT = "gate_reject"
 STOP = "run_stop"
 CONFIRM = "pick_confirm"
 CANCEL = "pick_cancel"
+ANSWER = "gate_answer"
+# callback_id of the form the Answer button opens.
+ANSWER_FORM = "gate_answer_form"
 
 
 def esc(text: Any) -> str:
@@ -177,13 +180,17 @@ def gate(run: dict[str, Any], gate_info: dict[str, Any], url: str = "") -> dict[
         if body:
             blocks.append(section(f"*{esc(name)}* said:\n>{esc(clip(body, 1400)).replace(chr(10), chr(10) + '>')}"))
     questions = gate_info.get("questions") or []
+    for q in questions[:5]:
+        blocks.append(section(_question_text(q)))
+    if len(questions) > 5:
+        blocks.append(context(f"…and {len(questions) - 5} more question(s)."))
     if questions:
         blocks.append(context(
-            f":question: It asks {len(questions)} question(s). To answer them, open the run in temper; "
-            "Approve here sends no answers."))
+            f":question: It asks {len(questions)} question(s): press *Answer* to reply and approve. "
+            "Approve alone sends no answers."))
     value = {"run": execution_id, "node": node, "event": gate_info.get("event_id")}
-    elements = [
-        button("Approve", APPROVE, value, style="primary"),
+    elements = ([button("Answer", ANSWER, value, style="primary")] if questions else []) + [
+        button("Approve", APPROVE, value, style=None if questions else "primary"),
         button("Reject", REJECT, value, style="danger",
                confirm=confirm_dialog("Reject?", f"This stops the {esc(workflow)} run.", "Reject and stop")),
     ] + open_button(url)
@@ -192,6 +199,97 @@ def gate(run: dict[str, Any], gate_info: dict[str, Any], url: str = "") -> dict[
 
 
 WAITING_PHRASE = "is waiting for your OK before"
+
+
+def _question_text(q: dict[str, Any]) -> str:
+    head = f"*{esc(q.get('header'))}:* " if q.get("header") else ""
+    text = f":grey_question: {head}{esc(q.get('question'))}"
+    options = [o for o in (q.get("options") or []) if isinstance(o, dict)]
+    if options:
+        pick = "pick any" if q.get("multiSelect") else "pick one"
+        text += f" _({pick})_\n" + "\n".join(f"• {esc(o.get('label'))}" + (
+            f" — {esc(clip(o.get('description'), 150))}" if o.get("description") else "") for o in options[:10])
+    return text
+
+
+def _plain(text: Any, limit: int) -> dict[str, Any]:
+    return {"type": "plain_text", "text": clip(text, limit) or " ", "emoji": True}
+
+
+def answer_form(run: dict[str, Any], gate_info: dict[str, Any], channel: str = "", ts: str = "") -> dict[str, Any]:
+    """The form the Answer button opens: every question, then Approve.
+
+    Choice questions are radio buttons or checkboxes (a menu past 10
+    options) plus an optional "your own answer" box; a question without
+    choices is a text box. Option values are their index in the question.
+    """
+    execution_id = str(run.get("id") or "")
+    workflow = str(run.get("workflow") or run.get("workflow_name") or "?")
+    node = str(gate_info.get("node_name") or "?")
+    body: list[dict[str, Any]] = [context(f"{esc(workflow)} ({short(execution_id)}) at *{esc(node)}*")]
+    for i, q in enumerate((gate_info.get("questions") or [])[:20]):
+        options = [o for o in (q.get("options") or []) if isinstance(o, dict) and o.get("label")][:100]
+        label = clip(q.get("question") or q.get("header") or f"Question {i + 1}", 1900)
+        if q.get("detail"):
+            body.append(context(esc(clip(q.get("detail"), 1900))))
+        if options:
+            multi = bool(q.get("multiSelect"))
+            few = len(options) <= 10
+            choices = []
+            for n, o in enumerate(options):
+                choice: dict[str, Any] = {"text": _plain(o.get("label"), 75), "value": str(n)}
+                if few and o.get("description"):
+                    choice["description"] = _plain(o.get("description"), 75)
+                choices.append(choice)
+            kind = ("checkboxes" if multi else "radio_buttons") if few else (
+                "multi_static_select" if multi else "static_select")
+            element: dict[str, Any] = {"type": kind, "action_id": "v", "options": choices}
+            if not few:
+                element["placeholder"] = _plain("Pick any" if multi else "Pick one", 150)
+            body.append({"type": "input", "block_id": f"q{i}", "optional": True,
+                         "label": _plain(label, 2000), "element": element})
+            body.append({"type": "input", "block_id": f"q{i}c", "optional": True,
+                         "label": _plain("Or your own answer", 2000),
+                         "element": {"type": "plain_text_input", "action_id": "v"}})
+        else:
+            body.append({"type": "input", "block_id": f"q{i}c", "optional": True,
+                         "label": _plain(label, 2000),
+                         "element": {"type": "plain_text_input", "action_id": "v", "multiline": True}})
+    body.append({"type": "input", "block_id": "response", "optional": True,
+                 "label": _plain("Anything else to tell it (optional)", 2000),
+                 "element": {"type": "plain_text_input", "action_id": "v", "multiline": True}})
+    meta = {"run": execution_id, "node": node, "event": gate_info.get("event_id"), "channel": channel, "ts": ts}
+    return {"type": "modal", "callback_id": ANSWER_FORM, "title": _plain("Answer", 24),
+            "submit": _plain("Approve", 24), "close": _plain("Cancel", 24),
+            "private_metadata": json.dumps(meta, separators=(",", ":")), "blocks": body[:100]}
+
+
+def form_answers(questions: list[dict[str, Any]], values: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    """(answers, response) from a submitted form's ``view.state.values``.
+
+    Answers are in the gate's shape: {id, question, selected, custom}; a
+    question left empty is left out.
+    """
+    def field(block_id: str) -> dict[str, Any]:
+        return ((values.get(block_id) or {}).get("v")) or {}
+
+    answers = []
+    for i, q in enumerate(questions[:20]):
+        options = [o for o in (q.get("options") or []) if isinstance(o, dict) and o.get("label")][:100]
+        picked = field(f"q{i}")
+        chosen = ([picked["selected_option"]] if picked.get("selected_option") else []) + list(
+            picked.get("selected_options") or [])
+        selected = []
+        for c in chosen:
+            try:
+                selected.append(str(options[int(c.get("value"))]["label"]))
+            except (TypeError, ValueError, IndexError, KeyError):
+                continue
+        custom = str(field(f"q{i}c").get("value") or "").strip()
+        if selected or custom:
+            answers.append({"id": str(q.get("id") or f"q{i + 1}"), "question": str(q.get("question") or ""),
+                            "selected": selected, "custom": custom})
+    return answers, str(field("response").get("value") or "").strip()
 
 
 def decided(blocks: list[dict[str, Any]] | None, line: str, verdict: str = "") -> list[dict[str, Any]]:

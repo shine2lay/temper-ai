@@ -1,0 +1,62 @@
+# Where temper's notices and questions go (docs/notify.md). This tracked
+# file documents the format and names no places, so on its own it only
+# answers a run where it was started (a Slack thread, a Telegram chat). The
+# real settings go in configs/notify/local/notify.yaml (git-ignored, since
+# it holds Slack and Telegram ids), which is used instead when it exists.
+# Changes are picked up without a restart.
+#
+# Kinds of message:
+#   question  a gate is waiting for an answer, with its questions; it can be
+#             answered right there (Slack: an Answer form; Telegram: buttons
+#             and replies), and every other copy then says who answered
+#   stuck     a running run has written no event for stuck_after
+#   failed    a run failed
+#   finished  a run ended any other way (completed, cancelled)
+#
+# A route is `origin` (back where the run was started: its Slack thread or
+# Telegram chat), a place name, a list of those, or `off`. A run started
+# from the dashboard, a schedule or the API has no origin; when its list
+# comes to nothing, `fallback` is used. One message never goes twice to the
+# same place.
+#
+# The most specific setting wins, per kind: a run's own (POST /api/runs
+# {"notify": {...}}), then its workflow file's `notify:` block, then
+# `workflows:` below, then `defaults:`. Workflow files name places, never ids.
+notify:
+  # dashboard_url: https://temper.example.com   # run links in messages
+  stuck_after: 45m
+
+  # Names for the places messages can go.
+  places: {}
+  #   slack:    {slack: {dm: U0123ABCD}}          # the bot's DM with a person
+  #   runs:     {slack: {channel: C0123ABCD}}     # a channel id, or "#name"
+  #   telegram: {telegram: 123456789}             # a Telegram chat id
+  #   team:     {telegram: -1001234567890}        # a group (negative id)
+
+  defaults:
+    question: origin
+    stuck: origin
+    failed: origin
+    finished: origin
+
+  fallback: {}
+  #   question: slack
+  #   stuck: slack
+  #   failed: slack
+  #   finished: slack
+
+  # Per workflow; replaces the kinds it names (a workflow file can say the
+  # same in its own notify: block).
+  workflows:
+    slack_pick: off     # @temper's workflow picker: never a notice
+    repo_answer: off    # answers to repo questions come back as the answer itself
+
+  # Hold notices while people sleep; they go out together when it ends.
+  # quiet_hours: {from: "22:00", to: "07:00", zone: America/Los_Angeles, still_ping: [question]}
+
+  # A question nobody has answered after a while also goes to another place, once.
+  # nudge: {after: 30m, to: telegram}
+
+  # Where the TelegramSend agent tool may post (by place name); a run's own
+  # Telegram chat is always allowed.
+  agents: []

@@ -19,12 +19,14 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from temper_ai.integrations.notify import service as notify
+from temper_ai.integrations.notify import store as notify_store
+from temper_ai.integrations.notify.notice import Decision
 from temper_ai.integrations.slack import blocks, store
 from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
 from temper_ai.integrations.slack.client import SlackClient, SlackError
 from temper_ai.integrations.slack.commands import Command, coerce_inputs, parse
 from temper_ai.integrations.slack.config import ConfigWatcher
-from temper_ai.integrations.slack.notifier import RunPoster, close_gate
 from temper_ai.integrations.slack.ops import OpsError, TemperOps
 from temper_ai.integrations.slack.picker import Picker, conversation_text
 
@@ -37,12 +39,11 @@ SEEN_MAX = 500
 
 class Handler:
     def __init__(self, client: SlackClient, config: ConfigWatcher, ops: TemperOps | None = None,
-                 poster: RunPoster | None = None, picker: Picker | None = None, bot_user: str = "",
+                 picker: Picker | None = None, bot_user: str = "",
                  answerer: Answerer | None = None, workers: int = 8) -> None:
         self.client = client
         self.config = config
         self.ops = ops or TemperOps()
-        self.poster = poster or RunPoster(client)
         self.picker = picker or Picker(self.ops)
         # An answer holds its thread for a minute or more; there are enough
         # threads that a few questions at once don't hold up the commands.
@@ -77,6 +78,8 @@ class Handler:
             self.slash(payload)
         elif kind == "interactive" and payload.get("type") == "block_actions":
             self.action(payload)
+        elif kind == "interactive" and payload.get("type") == "view_submission":
+            self.form(payload)
         elif kind == "events_api":
             event = payload.get("event") or {}
             if self._first_time(str(payload.get("event_id") or "")) and self._first_time(
@@ -249,6 +252,8 @@ class Handler:
         try:
             if action_id in (blocks.APPROVE, blocks.REJECT):
                 self.gate(action_id == blocks.APPROVE, value, user, name, channel, ts, message)
+            elif action_id == blocks.ANSWER:
+                self.open_form(value, str(p.get("trigger_id") or ""), user, channel, ts, message, p)
             elif action_id == blocks.STOP:
                 text = self.stop(str(value.get("run") or ""), user, name)
                 self._decide(channel, ts, message, f":black_square_for_stop: {text} (<@{user}>)")
@@ -260,9 +265,10 @@ class Handler:
         except OpsError as exc:
             self._ephemeral(p, f":warning: {exc}")
 
-    def _decide(self, channel: str, ts: str, message: dict[str, Any], line: str) -> None:
+    def _decide(self, channel: str, ts: str, message: dict[str, Any], line: str, verdict: str | None = None) -> None:
         try:
-            self.client.update(channel, ts, message.get("text") or line, blocks.decided(message.get("blocks"), line))
+            self.client.update(channel, ts, message.get("text") or line,
+                               blocks.decided(message.get("blocks"), line, verdict or ""))
         except SlackError as exc:
             logger.warning("Slack: could not update %s/%s: %s", channel, ts, exc)
 
@@ -275,50 +281,113 @@ class Handler:
         except SlackError as exc:
             logger.warning("Slack: could not answer a click: %s", exc)
 
-    def gate(self, approve: bool, value: dict[str, Any], user: str, name: str, channel: str, ts: str,
-             message: dict[str, Any]) -> None:
-        eid, node, event_id = str(value.get("run") or ""), str(value.get("node") or ""), value.get("event")
+    def _waiting(self, eid: str, node: str, event_id: Any) -> tuple[bool, dict[str, Any] | None]:
         decision = self.ops.gate_decision(str(event_id)) if event_id else None
         if event_id and decision is not None:
-            waiting = decision.get("status") == "waiting"
-        else:
-            waiting = self.ops.gate_info(eid, node) is not None
+            return decision.get("status") == "waiting", decision
+        return self.ops.gate_info(eid, node) is not None, decision
+
+    def gate(self, approve: bool, value: dict[str, Any], user: str, name: str, channel: str, ts: str,
+             message: dict[str, Any], answers: list[dict[str, Any]] | None = None, response: str = "") -> None:
+        eid, node, event_id = str(value.get("run") or ""), str(value.get("node") or ""), value.get("event")
+        waiting, decision = self._waiting(eid, node, event_id)
         if not waiting:
             data = (decision or {}).get("data") or {}
             verdict = str(data.get("gate_status") or (decision or {}).get("status") or "closed")
             who = data.get("gate_decided_by")
-            close_gate(self.client, str(event_id or ""), None, message,
-                       f":information_source: Already {verdict}" + (f" by {who}" if who else "")
-                       + f"; <@{user}>'s click changed nothing.", verdict, clicked=(channel, ts))
+            if channel and ts:
+                self._decide(channel, ts, message, f":information_source: Already {verdict}"
+                             + (f" by {who}" if who else "") + f"; <@{user}>'s click changed nothing.", verdict)
+            self._close_everywhere(channel, ts, event_id, Decision.from_event(decision))
             return
+        by = f"{name or user} (Slack)"
         if approve:
             if self.ops.run_is_alive(eid):
-                self.ops.approve(eid, node)
+                self.ops.approve(eid, node, answers, response, by=by)
                 line, verdict = f":white_check_mark: Approved by <@{user}>", "approved"
             else:
                 # After a restart nothing waits on this gate: resuming the
                 # run brings it back to the gate, which asks again.
-                self.ops.approve(eid, node)
+                self.ops.approve(eid, node, answers, response, by=by)
                 self.ops.resume(eid)
                 line = (f":arrows_counterclockwise: <@{user}> approved, but temper had restarted since this "
                         "gate opened, so the run was resumed instead; it will ask again here.")
                 verdict = "resumed"
-            store.log_action(user, name, "approve", eid, f"{node} {event_id or ''} {verdict}")
+            if answers:
+                line += f" with {len(answers)} answer(s)"
+            store.log_action(user, name, "approve", eid,
+                             f"{node} {event_id or ''} {verdict} {json.dumps(answers or [])[:400]}")
         else:
-            self.ops.cancel(eid, f"Rejected in Slack by {name or user}")
+            self.ops.cancel(eid, f"Rejected in Slack by {name or user}", by=by)
             line, verdict = f":no_entry: Rejected by <@{user}>; the run is stopped.", "rejected"
             store.log_action(user, name, "reject", eid, f"{node} {event_id or ''}")
-        if event_id:
-            self._record_who(str(event_id), f"{name or user} (Slack)")
-        close_gate(self.client, str(event_id or ""), None, message, line, verdict, clicked=(channel, ts))
+        if channel and ts:
+            self._decide(channel, ts, message, line, verdict)
+        pairs = tuple((str(a.get("question") or a.get("id") or ""), ", ".join(
+            x for x in (", ".join(a.get("selected") or []), a.get("custom") or "") if x)) for a in answers or [])
+        self._close_everywhere(channel, ts, event_id, Decision(verdict, name or user, "Slack", response, pairs))
 
-    def _record_who(self, event_id: str, who: str) -> None:
+    def _close_everywhere(self, channel: str, ts: str, event_id: Any, decision: Decision) -> None:
+        """The other copies of this question (other channels, Telegram)
+        lose their buttons now; the notify loop would do it within 15 s."""
+        mine = notify_store.by_ref("slack", f"{channel}:{ts}") if channel and ts else None
+        key = mine.key if mine else (f"q:{event_id}" if event_id else "")
+        if key:
+            notify.close_question(key, decision, skip=mine.id if mine else None)
+
+    # -- the Answer form -------------------------------------------------------------
+
+    def open_form(self, value: dict[str, Any], trigger_id: str, user: str, channel: str, ts: str,
+                  message: dict[str, Any], p: dict[str, Any]) -> None:
+        eid, node, event_id = str(value.get("run") or ""), str(value.get("node") or ""), value.get("event")
+        waiting, decision = self._waiting(eid, node, event_id)
+        if not waiting:
+            self.gate(True, value, user, user, channel, ts, message)  # says "Already ..." and closes it
+            return
+        info = self.ops.gate_info(eid, node) or {}
+        questions = info.get("questions") or (((decision or {}).get("data") or {}).get("gate_context") or {}).get(
+            "questions") or []
+        if not questions:
+            raise OpsError("This gate has no questions to answer; use Approve.")
+        run = {"id": eid, "workflow": self.ops.summary(eid).get("workflow") or "?"}
+        gate_info = {"node_name": node, "event_id": event_id, "questions": questions}
         try:
-            from temper_ai.observability.recorder import update_event
+            self.client.open_view(trigger_id, blocks.answer_form(run, gate_info, channel, ts))
+        except SlackError as exc:
+            logger.warning("Slack: could not open the answer form: %s", exc)
+            raise OpsError(f"Slack would not open the form ({exc.error}); try again, or answer in temper.") from exc
 
-            update_event(event_id, data={"gate_decided_by": who})
-        except Exception as exc:  # noqa: BLE001 - the decision stands without the name
-            logger.warning("Slack: could not record who answered gate %s: %s", event_id, exc)
+    def form(self, p: dict[str, Any]) -> None:
+        """The Answer form was sent: approve its gate with the answers."""
+        view = p.get("view") or {}
+        if view.get("callback_id") != blocks.ANSWER_FORM:
+            return
+        try:
+            meta = json.loads(view.get("private_metadata") or "{}")
+        except ValueError:
+            return
+        user = str((p.get("user") or {}).get("id") or "")
+        name = str((p.get("user") or {}).get("username") or (p.get("user") or {}).get("name") or user)
+        if not self._first_time(f"form:{view.get('id')}:{view.get('hash')}"):
+            return
+        eid, node = str(meta.get("run") or ""), str(meta.get("node") or "")
+        info = self.ops.gate_info(eid, node) or {}
+        answers, response = blocks.form_answers(info.get("questions") or [],
+                                                 ((view.get("state") or {}).get("values")) or {})
+        channel, ts = str(meta.get("channel") or ""), str(meta.get("ts") or "")
+        # The question message as posted, drawn again (a form's submission
+        # does not carry the message it was opened from).
+        run = {"id": eid, "workflow": self.ops.summary(eid).get("workflow") or "?"}
+        message = blocks.gate(run, {"node_name": node, "event_id": meta.get("event"),
+                                    "upstream": info.get("upstream") or [], "questions": info.get("questions") or []},
+                              self.config.get().run_url(eid))
+        try:
+            self.gate(True, meta, user, name, channel, ts, message, answers=answers, response=response)
+        except OpsError as exc:
+            try:
+                self.client.post(user, f":warning: Your answers were not sent: {exc}")
+            except SlackError:
+                logger.warning("Slack: could not tell %s the answers failed: %s", user, exc)
 
     def confirm(self, value: dict[str, Any], user: str, name: str, channel: str, ts: str,
                 message: dict[str, Any]) -> None:

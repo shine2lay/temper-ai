@@ -73,6 +73,9 @@ class RunRequest(BaseModel):
     )
     inputs: dict = {}
     workspace_path: str | None = None
+    # Where this run's questions and notices go, over its workflow's
+    # `notify:` (docs/notify.md), e.g. {"question": "telegram", "finished": "off"}.
+    notify: dict | str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -125,6 +128,14 @@ def start_run(body: RunRequest):
     """
     execution_id = str(uuid.uuid4())
 
+    notify_block = None
+    if body.notify is not None:
+        from temper_ai.integrations.notify.config import NotifyConfigError, parse_block
+        try:
+            notify_block = parse_block(body.notify, "notify")
+        except NotifyConfigError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     # Validate workflow exists before starting. Pass inputs so any
     # `type: template` nodes can be expanded at load time. Both modes
     # share this validation so a bad workflow name fails fast as 400.
@@ -134,6 +145,14 @@ def start_run(body: RunRequest):
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if notify_block is not None:
+        # Saved before the run starts, so its first question already follows it.
+        from temper_ai.integrations.notify import store as notify_store
+        from temper_ai.integrations.notify.config import KINDS
+        # parse_block only accepts a mapping or off, so a plain value is off.
+        notify_store.save_run_settings(execution_id, body.notify if isinstance(body.notify, dict)
+                                       else {kind: "off" for kind in KINDS})
 
     # Mode dispatch — three modes:
     #   inprocess (default): server thread runs workflow (legacy)
@@ -320,6 +339,22 @@ def search_workflow_configs(q: str = "", limit: int = 10):
 def slack_status():
     """Whether this server runs Slack, and how its socket and notices are doing."""
     from temper_ai.integrations.slack.service import status
+
+    return status()
+
+
+@router.get("/api/telegram/status")
+def telegram_status():
+    """Whether this server runs the Telegram bot, its polling, and the chats it knows."""
+    from temper_ai.integrations.telegram.service import status
+
+    return status()
+
+
+@router.get("/api/notify/status")
+def notify_status():
+    """The notify loop: which places are on, what it sent and held, its config."""
+    from temper_ai.integrations.notify.service import status
 
     return status()
 

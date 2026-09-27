@@ -1,0 +1,27 @@
+workflow:
+  name: notify_probe
+  description: |
+    Zero-cost check of where a run's questions and notices go, and of
+    answering a question in Slack or Telegram. No LLM calls, no API key.
+
+      /run notify_probe            (Telegram or Slack: it answers there)
+      POST /api/runs {"workflow": "notify_probe",
+                      "notify": {"question": "telegram", "finished": "slack"}}
+
+    `ask` ends its turn with three questions: one choice, one pick-any and
+    one typed. `decide` is gated, so the run waits until someone answers;
+    `decide` then shows the answers it got. See docs/notify.md.
+
+  outputs:
+    decided: decide.output
+
+  nodes:
+    - name: ask
+      type: agent
+      agent: gate_smoke_ask
+
+    - name: decide
+      type: agent
+      agent: gate_smoke_use
+      depends_on: [ask]
+      gate: true

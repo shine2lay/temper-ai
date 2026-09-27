@@ -7,15 +7,15 @@ from datetime import UTC, datetime
 
 import pytest
 
+from temper_ai.integrations.notify import store as notify_store
 from temper_ai.integrations.slack import store
 from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
+from temper_ai.integrations.slack.blocks import ANSWER as ANSWER_BUTTON
 from temper_ai.integrations.slack.blocks import APPROVE, CANCEL, CONFIRM, REJECT, STOP
 from temper_ai.integrations.slack.config import ConfigWatcher
 from temper_ai.integrations.slack.handlers import Handler
-from temper_ai.integrations.slack.notifier import GATE
 from temper_ai.integrations.slack.picker import Pick
 from temper_ai.integrations.slack.socket import SocketMode
-from temper_ai.triggers.scheduler import claim, settle
 
 from .conftest import OTHER, OWNER
 from .test_slack_answer import finish
@@ -141,17 +141,20 @@ class TestSlashCommands:
         assert "don't know" in said(slack) and "/temper run trigger_probe" in said(slack)
 
 
-def gate_message(slack, ops, eid: str = "run-1", event: str = "ev-1") -> dict:
-    """A gate notice as the notifier posts it (claimed under slack:gate)."""
+def gate_message(slack, ops, eid: str = "run-1", event: str = "ev-1", questions: list | None = None) -> dict:
+    """A question as the notify loop posts it (one copy, sent)."""
     from temper_ai.integrations.slack import blocks
 
     ops.add_run(eid, "gate_demo", "running", NOW)
     ops.alive.add(eid)
-    ops.add_gate(event, eid, "approve_step", NOW)
-    msg = blocks.gate({"id": eid, "workflow": "gate_demo"}, {"node_name": "approve_step", "event_id": event})
+    ops.add_gate(event, eid, "approve_step", NOW, questions=questions)
+    msg = blocks.gate({"id": eid, "workflow": "gate_demo"},
+                      {"node_name": "approve_step", "event_id": event, "questions": questions or []})
     answer = slack.post(f"D{OWNER}", msg["text"], msg["blocks"])
-    fire = claim(GATE, event, outcome="posting")
-    settle(fire, "posted", f"D{OWNER}:{answer['ts']}", execution_id=eid)
+    copy = notify_store.claim(f"q:{event}", "question", eid, "slack", f"D{OWNER}", node="approve_step",
+                              event_id=event)
+    assert copy is not None
+    notify_store.mark(copy.id, "sent", ref=f"D{OWNER}:{answer['ts']}")
     return slack.posts[-1]
 
 
@@ -188,6 +191,70 @@ class TestGateButtons:
         ops.alive.discard("run-1")  # temper restarted; nothing waits on the gate in memory
         click(handler, APPROVE, button_value(msg, APPROVE), msg)
         assert ops.resumed == ["run-1"] and "resumed" in str(slack.updates[-1]["blocks"])
+
+    def test_answer_opens_a_form_and_its_answers_reach_the_gate(self, handler, slack, ops):
+        questions = [
+            {"id": "size", "question": "How big?", "options": [{"label": "Small"}, {"label": "Large"}]},
+            {"id": "parts", "question": "Which parts?", "multiSelect": True,
+             "options": [{"label": "API"}, {"label": "UI"}, {"label": "Docs"}]},
+            {"id": "name", "question": "What should it be called?"},
+        ]
+        msg = gate_message(slack, ops, questions=questions)
+        value = button_value(msg, ANSWER_BUTTON)
+        handler.handle({"type": "interactive", "payload": {
+            "type": "block_actions", "trigger_id": "trig-1", "user": {"id": OWNER, "username": "shine"},
+            "channel": {"id": msg["channel"]}, "container": {"message_ts": msg["ts"]},
+            "message": {"ts": msg["ts"], "text": msg["text"], "blocks": msg.get("blocks")},
+            "actions": [{"action_id": ANSWER_BUTTON, "value": value}]}})
+        assert ops.answers == [] and len(slack.views) == 1
+        view = slack.views[0]["view"]
+        assert slack.views[0]["trigger_id"] == "trig-1"
+        ids = [b.get("block_id") for b in view["blocks"] if b.get("type") == "input"]
+        assert {"q0", "q1", "q2c", "response"} <= set(ids)
+
+        # Sent: the choice, two of the three parts, a typed name and a note.
+        handler.handle({"type": "interactive", "payload": {
+            "type": "view_submission", "user": {"id": OWNER, "username": "shine"},
+            "view": {"id": "V1", "hash": "h1", "callback_id": view["callback_id"],
+                     "private_metadata": view["private_metadata"],
+                     "state": {"values": {
+                         "q0": {"v": {"selected_option": {"value": "1"}}},
+                         "q1": {"v": {"selected_options": [{"value": "0"}, {"value": "2"}]}},
+                         "q2c": {"v": {"value": "Blue Heron"}},
+                         "response": {"v": {"value": "looks right"}}}}}}})
+        assert ops.approved == [("run-1", "approve_step")]
+        got = ops.answers[0]
+        assert {a["id"]: (a["selected"], a["custom"]) for a in got["answers"]} == {
+            "size": (["Large"], ""), "parts": (["API", "Docs"], ""), "name": ([], "Blue Heron")}
+        assert got["response"] == "looks right" and got["by"] == "shine (Slack)"
+        # The question message loses its buttons and says who answered.
+        update = slack.updates[-1]
+        assert update["ts"] == msg["ts"] and "Approved by" in str(update["blocks"])
+        assert not any(b.get("type") == "actions" for b in update["blocks"])
+
+    def test_a_form_sent_twice_answers_once(self, handler, slack, ops):
+        questions = [{"id": "name", "question": "Name?"}]
+        msg = gate_message(slack, ops, questions=questions)
+        from temper_ai.integrations.slack import blocks as slack_blocks
+
+        view = slack_blocks.answer_form({"id": "run-1", "workflow": "gate_demo"},
+                                        {"node_name": "approve_step", "event_id": "ev-1", "questions": questions},
+                                        msg["channel"], msg["ts"])
+        payload = {"type": "view_submission", "user": {"id": OWNER, "username": "shine"},
+                   "view": {"id": "V2", "hash": "h2", "callback_id": view["callback_id"],
+                            "private_metadata": view["private_metadata"],
+                            "state": {"values": {"q0c": {"v": {"value": "Kestrel"}}}}}}
+        handler.handle({"type": "interactive", "payload": payload})
+        handler.handle({"type": "interactive", "payload": payload})
+        assert len(ops.answers) == 1 and ops.answers[0]["answers"][0]["custom"] == "Kestrel"
+
+    def test_a_form_for_a_gate_answered_elsewhere_changes_nothing(self, handler, slack, ops):
+        questions = [{"id": "name", "question": "Name?"}]
+        msg = gate_message(slack, ops, questions=questions)
+        ops.approve("run-1", "approve_step", by="ana (dashboard)")   # answered in the dashboard first
+        click(handler, ANSWER_BUTTON, button_value(msg, ANSWER_BUTTON), msg)
+        assert slack.views == [] and len(ops.answers) == 1
+        assert "Already approved" in str(slack.updates[-1]["blocks"])
 
     def test_stop_button_on_a_stuck_notice(self, handler, slack, ops):
         ops.add_run("run-q", "trigger_probe", "running", NOW)

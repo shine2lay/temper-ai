@@ -1,0 +1,30 @@
+# EPD loop, between the plan (`tasks`) and the build (queue task 8, 2026-09-27).
+#
+# Two bets built at the same time changed the same files: b034's PR conflicted twice, after b012
+# and after b025 merged, and was merged with master by hand; b013 and b014 fixed the same bug in
+# mock_account.py two ways (RETRO gap 6). So once a bet is planned, the files its tasks change are
+# compared with every other live bet's -- its plan (tasks.json) and what its branch changes (its
+# open PR). Sharing one with a live bet that started planning before it, this bet waits until that
+# bet's PR is merged or closed; then its build starts from the master of that moment, and is told
+# which files changed there since its plan (task_description, with a paragraph added).
+#
+# The work is `epd_loop.py turn` (bin/epd_loop.py cmd_turn): no model, a look every 5 minutes, up
+# to 45 minutes per run of this node. It prints `waiting: true` when time is up and the node runs
+# again (epd_loop's loop_condition); past 24 hours of waiting it fails, and the run stops for the
+# owner. Test fixtures and generated files do not count (frontend/tests/fixtures/, docs/reference/).
+# Only a bet that started planning first makes a bet wait, so two bets never wait for each other.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: epd_turn
+  version: 1
+  type: script
+  # the script ends each round at 45 min (EPD_TURN_ROUND_S); a script agent's ceiling is 3600 s
+  timeout_seconds: 3300
+  strict_undefined: true
+  script_template: |
+    #!/bin/sh
+    set -eu
+    PY=python3
+    [ -n "$TEMPER_PYTHON" ] && PY="$TEMPER_PYTHON"
+    EPD_TURN_SNAPSHOT={{ repo_path }} EPD_TURN_DESCRIPTION={{ task_description }} \
+      "$PY" /app/configs/epd/bin/epd_loop.py turn --bet {{ bet_id }}

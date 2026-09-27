@@ -31,7 +31,16 @@ workflow:
   #    reaches the build's QA, with production as the before side (measure_url, `before_email`,
   #    measure_password; read only), and the measure. The differences the build did not cause
   #    (`same_value_noted`) reach ship, which puts them on the PR.
-  version: 11
+  # 12 (2026-09-27, queue task 8, bets built side by side): two bets built at the same time changed
+  #    the same files (b034's PR conflicted twice and was merged with master by hand; b013 and b014
+  #    fixed one bug two ways, RETRO gap 6). A `turn` node now sits between the plan and the build:
+  #    a script, no model (agents/epd_turn, bin/epd_loop.py cmd_turn). When a live bet that started
+  #    planning before this one changes a file this plan's tasks change (its tasks.json, or its open
+  #    PR), the build waits until that PR is merged or closed, looking every 5 minutes; past 24 hours
+  #    the run stops for the owner. The build then starts from the master of that moment and its task
+  #    description says which files changed there since the plan. The plan stage is told what the
+  #    other live bets change (`live_bets`), so it can reuse or keep clear of their work.
+  version: 12
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
@@ -120,6 +129,7 @@ workflow:
     task_name:    {type: string, required: true}
     task_description: {type: string, required: true}
     stack_ttl:    {type: string, required: false}
+    live_bets:    {type: string, required: false}  # the other bets being built: id, title, the files their plans change (Markdown)
 
   outputs:
     task_count:      tasks.structured.task_count
@@ -169,6 +179,34 @@ workflow:
         reach: input.reach
         qa_config_path: input.qa_config_path
         measure_config_path: input.measure_config_path
+        live_bets: input.live_bets
+
+    # 1b — Its turn (v12). A bet whose plan changes a file that a live bet which started planning
+    #      before it is changing waits here until that bet's PR is merged or closed, so the two are
+    #      never built on top of each other; only an earlier bet makes a bet wait, so two never wait
+    #      for each other. A script, no model: a look every 5 minutes, 45 minutes a round, then
+    #      `waiting` says go round again. It fails past 24 hours of waiting (the owner decides the
+    #      other PR, then resumes this bet). Out: the build's task description, with what master
+    #      changed since the plan when it did.
+    - name: turn
+      type: agent
+      agent: epd_turn
+      depends_on: [tasks]
+      condition:
+        source: tasks.structured.status
+        operator: equals
+        value: COMPLETE
+      loop_to: turn
+      max_loops: 40
+      on_max_loops: fail
+      loop_condition:
+        source: turn.structured.waiting
+        operator: equals
+        value: true
+      input_map:
+        bet_id: input.bet_id
+        repo_path: input.repo_path
+        task_description: input.task_description
 
     # 2 — The whole build pipeline: claim, worktree, stack, plan, implement, review, QA, security,
     #     verify, deploy. Its own judges decide its verdict; this node does not second-guess them.
@@ -186,7 +224,7 @@ workflow:
     - name: build
       type: stage
       ref: workflows/epd_task
-      depends_on: [tasks]
+      depends_on: [turn]
       condition:
         source: tasks.structured.status
         operator: equals
@@ -194,7 +232,8 @@ workflow:
       input_map:
         repo_url: input.repo_url
         task_name: input.task_name
-        task_description: input.task_description
+        # the bet's, with a paragraph on what master changed since the plan when it did (turn, v12)
+        task_description: turn.structured.task_description
         invariant: input.invariant
         threshold: input.threshold
         base_branch: input.base_branch

@@ -28,9 +28,16 @@
 # the live checks found were two screens disagreeing: b028's four drop-to-call figures on one
 # ticket (F084), b030's "Fine" beside the ladder's "roll this" (F087), b037's Margin cushion 80.0%
 # on Actions and 75.1% in the entry preview (F105).
+#
+# 6 (2026-09-27, queue task 8, bets built side by side): the lead is told what the other bets being
+# built change (`live_bets`: id, title, the files their plans change; epd_loop.py live_bets_md).
+# b013 and b014 fixed the same bug in mock_account.py two ways, and b034's PR conflicted twice with
+# bets merged while it was built. Rule 9: what another live bet fixes is left to it; a task that
+# must change one of its files is written to hold on top of its change, since this bet's build
+# waits for that bet to merge (epd_loop's `turn` node) and starts from master with it.
 agent:
   name: epd_plan_lead
-  version: 5
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -93,6 +100,11 @@ agent:
        a status word beside a ladder's advice). For each screen, the QA login that shows it. A
        figure on one screen only is not listed; [] when there is none. The check greps for the
        screens you miss.
+    9. Other bets may be being built now; the task lists them, with the files their plans change.
+       Do not fix a second time, another way, what one of them fixes: leave it to that bet and say
+       so in not_doing ("bNNN fixes this"). A task may change a file one of them changes: this
+       bet's build then waits until that bet is merged and starts from master with its change, so
+       write the task to hold on top of that change, and name it in plan.md's Risks.
 
     Write two files, each in full, with one Write call each.
 
@@ -180,3 +192,7 @@ agent:
 
     ## QA engineer
     {{ qa or qa_out }}
+    {% if live_bets %}
+    ## Bets being built now (rule 9)
+    {{ live_bets }}
+    {% endif %}

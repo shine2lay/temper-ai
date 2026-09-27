@@ -17,7 +17,10 @@ workflow:
   # 6 (2026-09-26, queue task 7, "one value on every screen"): `same_value` out, the lead's list of
   #    each figure or verdict the bet changes that shows on more than one screen, with every screen
   #    (also in tasks.json). epd_loop hands it to the build's QA and to the measure.
-  version: 6
+  # 7 (2026-09-27, queue task 8, bets built side by side): `live_bets` in, for the lead: the other
+  #    bets being built, with the files their plans change, so the plan leaves to them what they
+  #    fix and knows when this build will wait for one of them (epd_loop v12, `turn`).
+  version: 7
   description: |
     EPD loop, plan stage: a pitch becomes the build's tasks. An architect
     designs the change, four engineers check the design in their own areas,
@@ -70,6 +73,7 @@ workflow:
     reach: {type: string, required: false}        # what the live checkers can reach, Markdown
     qa_config_path: {type: string, required: false}
     measure_config_path: {type: string, required: false}
+    live_bets: {type: string, required: false}    # the other bets being built: id, title, their plans' files (v7)
   outputs:
     status: lead.structured.status
     tasks_path: lead.structured.tasks_path
@@ -189,6 +193,7 @@ workflow:
         # null on the first pass; set when the check sent the plan back
         check_verdict: check.structured.verdict
         check_issues: check.structured.issues
+        live_bets: input.live_bets
 
     # What the lead changed since the check last read the plan ("" on the first pass). Free.
     - name: changes

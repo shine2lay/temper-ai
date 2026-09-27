@@ -69,6 +69,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -1330,6 +1331,9 @@ git -C "$SNAP" rev-parse HEAD
     if not (snap / ".temper" / "README.md").exists():
         die(f"{bet_id}: origin/{BASE_BRANCH} ({head[:12]}) has no .temper/ knowledge folder for the plan "
             f"stage to read; merge it first (RUNBOOK: the knowledge folder)")
+    # the commit the plan read, for the build to be told what master changed since (`turn`): the
+    # snapshot goes when the run is collected, and a resume at build starts from the same plan
+    write(BETS_DIR / bet_id / "plan_base", head + "\n")
     log(f"plan snapshot for {bet_id}: {snap} at {head[:12]} (origin/{BASE_BRANCH})")
     return snap
 
@@ -1361,6 +1365,262 @@ def open_bet() -> str | None:
 def waiting_bets() -> list[str]:
     """Candidates on file that the owner has neither listed in the backlog nor rejected."""
     return [r["bet_id"] for r in ledger_rows() if r["status"] in WAITING]
+
+
+# Bets built side by side (queue task 8, 2026-09-27). Two bets built at the same time changed the
+# same files: b034's PR conflicted twice, after b012 and after b025 merged (adjacent lines; the last
+# was the imports of api/routes/settings.py), and was merged with master by hand; b013 and b014 fixed
+# the same bug in mock_account.py two ways (RETRO gap 6). The conflict check before a wave saw only
+# the files a pitch names. Now, once a bet is planned, the files its tasks change are compared with
+# every other live bet's: its plan (tasks.json) and what its branch changes (its open PR). Sharing a
+# file with a live bet that started planning before it, the bet waits (epd_loop's `turn` node, a
+# script: no model) until that bet's PR is merged or closed, then builds on the master of that
+# moment and is told what changed there since its plan. Only an earlier bet makes a bet wait, so two
+# bets can never wait for each other. The plan stage is told what the other live bets change
+# (live_bets_md), so it can reuse or keep clear of their work.
+TURN_IGNORED = ("frontend/tests/fixtures/", "docs/reference/")  # test fixtures and generated files
+TURN_POLL_S = int(os.environ.get("EPD_TURN_POLL_S", "300"))  # a look every 5 minutes
+TURN_ROUND_S = int(os.environ.get("EPD_TURN_ROUND_S", "2700"))  # one node run: 45 min (a script's cap is 1 h)
+TURN_LIMIT_H = float(os.environ.get("EPD_TURN_LIMIT_H", "24"))  # then the run stops, for the owner
+DEPLOY_KEYS = Path("/app/github-deploy")  # inside the temper container
+
+
+def counted_files(files) -> set[str]:
+    """The files that count for a collision: repo paths, less test fixtures and generated files."""
+    out = set()
+    for f in files or []:
+        f = str(f).strip()
+        while f.startswith("./"):
+            f = f[2:]
+        if f and not f.startswith(TURN_IGNORED):
+            out.add(f)
+    return out
+
+
+def planned_files(bet_id: str) -> set[str] | None:
+    """The files a bet's plan says its tasks change (tasks.json); None before it is planned."""
+    text = read(BETS_DIR / bet_id / "tasks.json")
+    if not text.strip():
+        return None
+    try:
+        tasks = json.loads(text)
+    except ValueError:
+        return None  # being written, or broken: not a plan to compare with yet
+    return counted_files(f for t in tasks.get("tasks") or [] if isinstance(t, dict) for f in t.get("files") or [])
+
+
+def started_key(bet_id: str, st: dict) -> tuple:
+    """A bet's place in line: the order the bets started planning in, strict (the id breaks ties).
+    A bet started before the start was recorded (plan_started) did start before every bet that has
+    one, so it comes first; among those, their loop run's launch orders them."""
+    if st.get("plan_started"):
+        return (1, st["plan_started"], bet_id)
+    return (0, ((st.get("stages") or {}).get("loop") or {}).get("_launched") or "", bet_id)
+
+
+# Being built: approved and not yet merged, closed or stopped. A stopped or failed build waits for the
+# owner (resume or kill) and does not hold other bets up; a shipped one is on master already.
+LIVE = {"approved", "running", "tasked", "built", "pr_opened"}
+
+
+def still_colliding(info: dict) -> bool:
+    """A bet whose changes can still meet another's: being built, or its PR open and not merged. A
+    merged bet's changes are master's; the loop records the merge when the owner's word on the PR
+    comes through its gate (status shipped, ship.merged)."""
+    if info.get("status") not in LIVE:
+        return False
+    return not (((info.get("state") or {}).get("stages") or {}).get("ship") or {}).get("merged")
+
+
+def blockers(me: str, bets: dict[str, dict]) -> list[dict]:
+    """The live bets that started planning before `me` and change a file `me` changes, oldest first,
+    each with the files they share. One still planning (no plan yet: `files` None) is listed too,
+    with `planning` true: which files it will change is not known until its plan is written.
+    `bets`: bet id -> {status, state, title, files}, `me` among them (bets_in_line). Pure, so the
+    wait, the tests and the dry run on past bets share it."""
+    mine = bets[me]
+    here = started_key(me, mine["state"])
+    out = []
+    for b, info in sorted(bets.items(), key=lambda kv: started_key(kv[0], kv[1]["state"])):
+        if b == me or not started_key(b, info["state"]) < here or not still_colliding(info):
+            continue
+        head = {"bet_id": b, "title": info.get("title") or "", "status": info.get("status") or ""}
+        if info["files"] is None:
+            out.append({**head, "files": [], "planning": True})
+            continue
+        # counted_files again here, so fixtures and generated files never count, however the sets were made
+        shared = counted_files(mine["files"] or ()) & counted_files(info["files"])
+        if shared:
+            out.append({**head, "files": sorted(shared)})
+    return out
+
+
+def turn_git(*args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    """git in the pipeline's clone, from inside the temper container (the `turn` node): the clone
+    is the container user's."""
+    return subprocess.run(["git", "-C", cpath(MAIN_CLONE), *args], text=True, capture_output=True, env=env)
+
+
+def turn_fetch() -> str:
+    """Fetch origin into the pipeline's clone with the deploy key, as refresh_main does, from inside
+    the container. "" when it worked, else why not: a failed fetch leaves the last one's refs."""
+    key = DEPLOY_KEYS / GH_REPO / "id_ed25519"
+    if not key.exists():
+        key = DEPLOY_KEYS / "id_ed25519"
+    if not key.exists():
+        return f"no deploy key in {DEPLOY_KEYS}"
+    fd, tmp = tempfile.mkstemp()
+    try:
+        os.write(fd, key.read_bytes())
+        os.close(fd)
+        os.chmod(tmp, 0o600)
+        ssh = (f"ssh -i {tmp} -o IdentitiesOnly=yes -o UserKnownHostsFile={DEPLOY_KEYS}/known_hosts "
+               "-o StrictHostKeyChecking=yes -o BatchMode=yes")
+        r = turn_git("fetch", "-q", "--prune", "origin",
+                     env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_SSH_COMMAND": ssh})
+        return "" if r.returncode == 0 else (r.stderr.strip() or f"exit {r.returncode}")[:300]
+    finally:
+        os.unlink(tmp)
+
+
+def branch_files(bet_id: str, st: dict) -> set[str]:
+    """What a live bet's branch changes against master: its open PR, or its build so far (from the
+    `turn` node, whose clone holds both)."""
+    branch = ((st.get("stages") or {}).get("ship") or {}).get("branch") or f"epd-{bet_id}"
+    for ref in (f"origin/{branch}", branch):
+        if turn_git("rev-parse", "-q", "--verify", f"{ref}^{{commit}}").returncode == 0:
+            r = turn_git("diff", "--name-only", f"origin/{BASE_BRANCH}...{ref}")
+            if r.returncode == 0:
+                return counted_files(r.stdout.split())
+    return set()
+
+
+def bets_in_line(with_branches: bool = False) -> dict[str, dict]:
+    """Every bet on the ledger, as blockers() reads them: the ledger's status, state.json, title,
+    and the files it changes -- its plan's, and with ``with_branches`` (the `turn` node) what the
+    branch of a live one changes too."""
+    out = {}
+    for row in ledger_rows():
+        b = row["bet_id"]
+        info = {"status": row.get("status") or "", "state": load_state(b), "title": row.get("title") or "",
+                "files": planned_files(b)}
+        if with_branches and still_colliding(info):
+            branch = branch_files(b, info["state"])
+            if branch:
+                info["files"] = (info["files"] or set()) | branch
+        out[b] = info
+    return out
+
+
+def live_bets_md(me: str) -> str:
+    """The other bets being built, for the plan stage: id, title, the files their plans change.
+    Markdown, "" when there are none."""
+    lines = []
+    for b, info in bets_in_line().items():
+        if b != me and still_colliding(info) and info["files"]:
+            lines.append(f"- {b} ({info['status']}): {info['title']}\n"
+                         f"  its plan changes: {', '.join(sorted(info['files']))}")
+    return "\n".join(lines)
+
+
+def master_moved_note(base: str, head: str, moved: set[str], mine: set[str], waited_for: list[str]) -> str:
+    """What the build is told when master moved between its plan and its start."""
+    if not moved:
+        return ""
+    ours, others = sorted(moved & mine), sorted(moved - mine)
+    after = f", after it waited for {', '.join(waited_for)}" if waited_for else ""
+    text = (f"\n\nMaster moved since this bet was planned: the plan read the code at {base[:12]}, and your "
+            f"worktree starts from origin/{BASE_BRANCH} at {head[:12]}{after}. ")
+    if ours:
+        text += (f"Files this plan's tasks change that changed on master since: {', '.join(ours)}. Before you "
+                 f"edit one of them, read it as it is now: the plan's line numbers and quoted code for it may be "
+                 f"out of date, and what another bet changed there is kept, not undone. ")
+    if others:
+        shown = others[:40]
+        more = f" and {len(others) - len(shown)} more" if len(others) > len(shown) else ""
+        text += f"Other files that changed: {', '.join(shown)}{more}."
+    return text.rstrip()
+
+
+def cmd_turn(bet_id: str) -> None:
+    """epd_loop's `turn` node, in the temper container: wait while a live bet that started planning
+    before this one changes a file this one's plan changes; then say what master changed since the
+    plan. One JSON line out: waiting (the node's loop_condition: it runs again), blockers,
+    waited_for, master_moved, and task_description, the build's, with a paragraph on master added.
+    The wait is kept in the bet's turn.json; past TURN_LIMIT_H hours of it the node fails, and the
+    run stops for the owner."""
+    def note(msg: str) -> None:
+        print(f"[{dt.datetime.now():%H:%M:%S}] {msg}", file=sys.stderr, flush=True)
+
+    desc = os.environ.get("EPD_TURN_DESCRIPTION", "")
+    snap = os.environ.get("EPD_TURN_SNAPSHOT") or cpath(PLANS_DIR / f"epd-{bet_id}")
+    record = BETS_DIR / bet_id / "turn.json"
+    try:
+        prev = json.loads(read(record) or "{}")
+    except ValueError:
+        prev = {}
+    since = prev.get("since") if not prev.get("cleared") else None
+    waited_for = [] if prev.get("cleared") else list(prev.get("waited_for") or [])
+    failed = turn_fetch()
+    if failed:
+        note(f"git fetch failed ({failed}); going on with the refs the clone has")
+    start = time.monotonic()
+    while True:
+        bets = bets_in_line(with_branches=True)
+        if bet_id not in bets:
+            bets[bet_id] = {"status": "running", "state": load_state(bet_id), "title": "", "files": set()}
+        bets[bet_id]["files"] = planned_files(bet_id) or set()  # its own plan: its branch is not built yet
+        blocking = blockers(bet_id, bets)
+        now = dt.datetime.now(dt.UTC)
+        if not blocking:
+            break
+        since = since or now.isoformat(timespec="seconds")
+        waited_for = list(dict.fromkeys(waited_for + [b["bet_id"] for b in blocking]))
+        write(record, json.dumps({"since": since, "checked": now.isoformat(timespec="seconds"),
+                                  "blockers": blocking, "waited_for": waited_for}, indent=2))
+        what = "; ".join(f"{b['bet_id']} (" + ("still planning" if b.get("planning") else
+                                                f"{b['status']}: {', '.join(b['files'])}") + ")"
+                         for b in blocking)
+        hours = (now - dt.datetime.fromisoformat(since)).total_seconds() / 3600
+        if hours >= TURN_LIMIT_H:
+            print(json.dumps({"waiting": False, "gave_up": True, "blockers": blocking, "since": since}))
+            die(f"{bet_id} has waited {hours:.0f} h for {what}: they change the same files. Decide that bet "
+                f"(merge or close its PR, or stop it), then `epd_loop.py resume --bet {bet_id}`: it checks "
+                f"again and builds.")
+        if time.monotonic() - start + TURN_POLL_S > TURN_ROUND_S:
+            note(f"still waiting for {what}; the node runs again")
+            print(json.dumps({"waiting": True, "blockers": blocking, "since": since, "waited_for": waited_for,
+                              "master_moved": [], "task_description": desc}))
+            return
+        note(f"waiting for {what} (since {since[:16]}Z)")
+        time.sleep(TURN_POLL_S)
+
+    if since:
+        failed = turn_fetch()  # master moved while it waited: build on what it is now
+        if failed:
+            note(f"git fetch failed ({failed}); master is as the last fetch left it")
+    base = read(BETS_DIR / bet_id / "plan_base").strip()
+    if not base:  # planned before plan_base was kept: the snapshot, while the run lives
+        r = subprocess.run(["git", "-C", snap, "rev-parse", "HEAD"], text=True, capture_output=True)
+        base = r.stdout.strip() if r.returncode == 0 else ""
+    head = turn_git("rev-parse", f"origin/{BASE_BRANCH}").stdout.strip()
+    moved: set[str] | None = None
+    if base and head:
+        diff = turn_git("diff", "--name-only", base, head)
+        if diff.returncode == 0:
+            moved = counted_files(diff.stdout.split())
+    if moved is None:
+        note(f"what master changed since the plan is not known (plan commit {base[:12] or 'not kept'})")
+    else:
+        desc += master_moved_note(base, head, moved, planned_files(bet_id) or set(), waited_for)
+    now = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
+    write(record, json.dumps({"since": since, "cleared": now, "waited_for": waited_for,
+                              "master_moved": sorted(moved or [])}, indent=2))
+    waited = round((dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(since)).total_seconds() / 60) if since else 0
+    note(f"clear: {'waited ' + str(waited) + ' min for ' + ', '.join(waited_for) if waited_for else 'no live bet shares its files'}"
+         f"; master moved in {len(moved or [])} file(s) since the plan")
+    print(json.dumps({"waiting": False, "blockers": [], "waited_for": waited_for, "waited_min": waited,
+                      "master_moved": sorted(moved or []), "task_description": desc}))
 
 
 def new_bet_ids(n: int) -> list[str]:
@@ -2859,6 +3119,8 @@ def loop_inputs(bet_id: str, planning: bool = True) -> dict:
         "task_name": f"epd {bet_id}",
         "task_description": described,
         "stack_ttl": "8h",
+        # the other bets being built, for the plan to reuse or keep clear of (queue task 8)
+        "live_bets": live_bets_md(bet_id),
     }
     if staged:
         inputs["plan_dir"] = cpath(bdir / "plan")
@@ -2948,6 +3210,11 @@ def start_bet(bet_id: str, keep: bool, wait: bool) -> None:
     mkdir_shared(BETS_DIR / bet_id / "plan")
     st = load_state(bet_id)
     st["qa"] = "paper" if qa_on_paper(bet_id) else "seed"  # how it was checked, for the analysis
+    # Its place in line among bets built side by side (queue task 8): now, on a first start and on a
+    # retry alike. A stopped bet holds nobody up, so a bet built while it was stopped must not have to
+    # make way for it later: b034's first run failed at 04:09 on 09-23, b012 was built from 06:58, and
+    # b034, retried at 07:03 in its old place, would have waited for nobody -- its PR conflicted.
+    st["plan_started"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     st["status"] = "running"
     save_state(st)
     log(f"== {bet_id}: the loop, as one run ==")
@@ -3083,6 +3350,12 @@ def cmd_resume(at: str | None = None, bet: str | None = None) -> None:
     if stage == "tasks":
         plan_snapshot(bet_id)  # planning again: against what the build would start from now
         mkdir_shared(bdir / "plan")
+    # A resume is the owner's go: a bet that waited for another (`turn`) starts a new 24 h wait.
+    (bdir / "turn.json").unlink(missing_ok=True)
+    if stage in ("tasks", "build"):
+        # at its plan or its build it goes to the back of the line, as a retry does (start_bet);
+        # after the build it keeps its place, so later bets still wait for its PR
+        st["plan_started"] = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     new = fork_run(source, seq, "epd_loop", loop_inputs(bet_id, planning=stage == "tasks"), LOOP_WORKSPACE)
     st["stages"]["loop"] = {"_run_id": new, "_launched": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
                             "_forked_from": source, "_fork_sequence": seq,
@@ -3141,6 +3414,15 @@ def collect_bet(bet_id: str, keep: bool, retry: bool = False) -> bool | str:
         running = [n["name"] for n in info.get("nodes") or [] if n.get("status") == "running"]
         log(f"{bet_id}: run {rid[:8]} is still {status} (running={running}, "
             f"cost=${info.get('total_cost_usd') or 0:.2f}); nothing to collect yet")
+        try:
+            turn = json.loads(read(BETS_DIR / bet_id / "turn.json") or "{}")
+        except ValueError:
+            turn = {}
+        if "turn" in running and turn.get("blockers") and not turn.get("cleared"):
+            what = "; ".join(f"{b['bet_id']} (" + ("still planning" if b.get("planning") else
+                                                    ', '.join(b['files'])) + ")" for b in turn["blockers"])
+            log(f"   planned, and waiting since {str(turn.get('since'))[:16]}Z for {what}: an earlier bet "
+                f"changing the same files is merged or closed first. It builds on master then.")
         return "running"
     if status != "completed":
         why = "rate limited: the work is fine, the account is not" if rate_limited(rid) else info.get("error_message")
@@ -3398,7 +3680,15 @@ def main() -> None:
     d = sub.add_parser("down", help="tear down a bet's stacks (b004) or a proposal's (r001)")
     d.add_argument("what")
     sub.add_parser("scorecard", help="the owner's decisions on bets and PRs, by the config versions that earned them")
+    t = sub.add_parser("turn", help="the loop run's `turn` node, in the temper container: wait for the live "
+                                    "bets that started first and change the same files, then say what "
+                                    "master changed since the plan")
+    t.add_argument("--bet", required=True)
     args = ap.parse_args()
+
+    if args.cmd == "turn":
+        cmd_turn(args.bet)  # before the host's setup below: it runs as the container's user
+        return
 
     mkdir_shared(BETS_DIR)
     mkdir_shared(REPORTS_DIR)

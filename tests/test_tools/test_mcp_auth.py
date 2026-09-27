@@ -117,6 +117,39 @@ def test_tokens_round_trip_through_the_database(key):
     assert loaded.refresh_token == "rt-1"
 
 
+def test_a_stored_token_keeps_counting_down(key, monkeypatch):
+    """expires_in counts from when the token was issued, so a grant loaded
+    later has less time left (none, once it is past), not a fresh hour."""
+    import time as _time
+
+    store = DatabaseTokenStore("notion", server_url="https://mcp.notion.com/mcp")
+    now = _time.time()
+    monkeypatch.setattr(mcp_auth.time, "time", lambda: now)
+    asyncio.run(store.set_tokens(_token(refresh_token="rt-1", expires_in=3600)))
+
+    monkeypatch.setattr(mcp_auth.time, "time", lambda: now + 600)
+    assert asyncio.run(store.get_tokens()).expires_in == 3000
+    monkeypatch.setattr(mcp_auth.time, "time", lambda: now + 7 * 86400)
+    assert asyncio.run(store.get_tokens()).expires_in == 0
+
+
+def test_an_expired_stored_grant_is_refreshed_not_sent(key):
+    """The SDK loads stored tokens without an expiry and would send an
+    expired one (401, then a browser sign-in). The provider must see it as
+    expired so it refreshes first."""
+    from mcp.shared.auth import OAuthClientInformationFull
+
+    store = DatabaseTokenStore("notion", server_url="https://mcp.notion.com/mcp")
+    asyncio.run(store.set_tokens(_token(refresh_token="rt-1", expires_in=0)))
+    asyncio.run(store.set_client_info(OAuthClientInformationFull(
+        client_id="c1", redirect_uris=["http://localhost:1/callback"])))
+    provider = build_oauth_provider({"name": "notion", "url": "https://mcp.notion.com/mcp"})
+    asyncio.run(provider._initialize())
+
+    assert not provider.context.is_token_valid()
+    assert provider.context.can_refresh_token()
+
+
 def test_tokens_are_encrypted_at_rest(key):
     store = DatabaseTokenStore("notion", server_url="https://mcp.notion.com/mcp")
     asyncio.run(store.set_tokens(_token(refresh_token="super-secret-rt")))

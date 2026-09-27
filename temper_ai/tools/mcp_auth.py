@@ -29,6 +29,7 @@ import logging
 import os
 import socket
 import threading
+import time
 import webbrowser
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -313,13 +314,32 @@ class DatabaseTokenStore:
         if data is None:
             return None
         try:
-            return OAuthToken.model_validate(data)
+            tokens = OAuthToken.model_validate(data)
         except Exception:
             logger.warning("MCP server '%s': stored tokens are malformed", self.server_name)
             return None
+        # The token's lifetime counts from when it was issued, not from now:
+        # hand back what is left, so the provider refreshes an old token
+        # before using it (see _GrantProvider).
+        expires_at = data.get("expires_at")
+        if expires_at is None and tokens.expires_in is not None:
+            row = self._row()
+            issued = getattr(row, "updated_at", None)
+            if issued is not None:
+                if issued.tzinfo is None:
+                    from datetime import UTC
+
+                    issued = issued.replace(tzinfo=UTC)
+                expires_at = issued.timestamp() + int(tokens.expires_in)
+        if expires_at is not None:
+            tokens.expires_in = max(0, int(float(expires_at) - time.time()))
+        return tokens
 
     async def set_tokens(self, tokens: Any) -> None:
-        self._write(tokens_encrypted=self._seal.seal(tokens.model_dump(mode="json")))
+        data = tokens.model_dump(mode="json")
+        if tokens.expires_in is not None:
+            data["expires_at"] = time.time() + int(tokens.expires_in)
+        self._write(tokens_encrypted=self._seal.seal(data))
 
     async def get_client_info(self) -> Any | None:
         from mcp.shared.auth import OAuthClientInformationFull
@@ -364,7 +384,6 @@ def build_oauth_provider(
     nothing can reach ``localhost`` here. The human approves anywhere, the
     redirect fails harmlessly in their browser, and they paste the URL back.
     """
-    from mcp.client.auth import OAuthClientProvider
     from mcp.shared.auth import OAuthClientMetadata
 
     server_name = config.get("name", "unnamed")
@@ -393,13 +412,36 @@ def build_oauth_provider(
         redirect_handler = _make_refuse_redirect(server_name)
         callback_handler = _make_refuse_callback(server_name)
 
-    return OAuthClientProvider(
+    return _grant_provider_class()(
         server_url=url,
         client_metadata=metadata,
         storage=storage,
         redirect_handler=redirect_handler,
         callback_handler=callback_handler,
     )
+
+
+def _grant_provider_class() -> Any:
+    """The SDK's provider, fixed to refresh a stored grant that has expired.
+
+    The SDK loads stored tokens without their expiry, so it treats any stored
+    access token as valid forever: it sends it, gets 401, and then wants a
+    browser sign-in instead of using the refresh token. Here the expiry is
+    restored on load (``DatabaseTokenStore.get_tokens`` gives the time left),
+    so an expired token is refreshed first, unattended.
+    """
+    from mcp.client.auth import OAuthClientProvider
+
+    class _GrantProvider(OAuthClientProvider):  # type: ignore[misc]
+        async def _initialize(self) -> None:
+            await super()._initialize()
+            tokens = self.context.current_tokens
+            if tokens is not None and tokens.expires_in is not None:
+                left = int(tokens.expires_in)
+                # Nothing left: in the past, so is_token_valid says no at once.
+                self.context.token_expiry_time = time.time() + left if left > 0 else time.time() - 1
+
+    return _GrantProvider
 
 
 def _make_refuse_redirect(server_name: str) -> Any:

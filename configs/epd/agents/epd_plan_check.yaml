@@ -35,7 +35,12 @@ agent:
   #    but not "Can you afford it?", whose lines headroom.py works out with its own arithmetic ("the
   #    market would have to fall N%", "your cushion stays at N%"). Those were the known second screens
   #    (F084, F105), and QA on production still read 71.1% there against 73.7%.
-  version: 6
+  # 7 (2026-09-27, queue task 7, its live test): a verdict is checked the same way. b030's plan (check
+  #    v5) listed its second AAPL call's strike on /positions but not the call's verdict, and the known
+  #    second screen was that verdict: the ladder's "Your rule says roll this one" beside /positions'
+  #    "Fine" (F087). The check now lists, for each call, position or order whose advice the bet adds
+  #    or changes, every page that gives it a verdict in words.
+  version: 7
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -88,7 +93,12 @@ agent:
       the backend's copy. A line that works the same figure out in other code (another function,
       another formula) is the likeliest to disagree: b028's ticket gave drop to call from
       account_effect.py and, in "Can you afford it?", from headroom.py. Count it, and a line that
-      restates the figure in other words.
+      restates the figure in other words. A verdict counts the same way: for each call, position
+      or order whose advice the bet adds or changes (a call or position its seed adds included),
+      grep every page that gives it a verdict in words (the ladder's "Your rule says ...",
+      /positions' status word and lane, its Action card, the Overview's attention list) and list
+      them as one entry. b030 added a second AAPL call whose ladder said "roll this one" while
+      /positions said "Fine"; its plan listed the call's strike on /positions, not its verdict.
 
     Ask for every file you need in one turn (several Read, Grep and Glob calls in one reply, not one
     a turn), and read each file once.

@@ -224,6 +224,8 @@ class TestWhatTheAgentsAreTold:
         assert "| same_value\"" in check_prompt
         # v6: the live test's plans missed "Can you afford it?", which works the figure out in other code
         assert "by what the figure means, in its words" in " ".join(check_prompt.split())
+        # v7: b030's plan missed a verdict (the ladder's "roll this one" beside /positions' "Fine")
+        assert "A verdict counts the same way" in " ".join(check_prompt.split())
 
 
 def write_tasks(L, bet_id: str, same_value) -> None:  # noqa: N803 (the fixture's name)

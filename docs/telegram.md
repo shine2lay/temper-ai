@@ -1,5 +1,7 @@
 # Telegram — run temper from Telegram, and hear back there
 
+Checked live on 2026-09-28: runs started from Telegram run in their own box.
+
 Temper runs a Telegram bot that works like its [Slack app](slack.md): you can
 find a workflow, start it, check on it and stop it, ask about the code, and
 answer a run's questions right in the chat. Each run's messages stay

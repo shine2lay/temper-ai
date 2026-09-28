@@ -113,6 +113,8 @@ class TestRunContainer:
         assert cmd[cmd.index("--add-host") + 1] == "host.docker.internal:host-gateway"
         assert "temper.execution_id=exec-1" in cmd
         assert cmd[cmd.index("--security-opt") + 1] == "no-new-privileges"
+        # The image's healthcheck asks for the server's port: no run listens there.
+        assert "--no-healthcheck" in cmd
         # image, then the run command
         image_at = cmd.index("temper-ai-worker")
         assert cmd[image_at:] == [

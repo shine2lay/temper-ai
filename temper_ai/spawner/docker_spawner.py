@@ -41,6 +41,9 @@ What a run container is, precisely:
   identity  --name and --hostname temper-run-<execution_id>, labels
             temper.role=run and temper.execution_id; --rm, --init (a PID 1
             that reaps the tools a node forks), no-new-privileges
+  health    none: the image's HEALTHCHECK asks for the server's port,
+            which nothing in a run container listens on, so every run
+            would show as "unhealthy" in `docker ps`
 
 What it does not change: the run still executes as the template's user
 with the template's credentials mounted (claude_code needs them), and the
@@ -402,6 +405,7 @@ class DockerSpawner(Spawner):
             "--label", "temper.role=run",
             "--label", f"temper.execution_id={execution_id}",
             "--security-opt", "no-new-privileges",
+            "--no-healthcheck",
         ]
         for network in template.networks[:1]:
             cmd += ["--network", network]

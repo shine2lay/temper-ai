@@ -109,6 +109,22 @@ def test_a_rule_that_failed_to_start_is_tried_again(client, monkeypatch):
     assert calls == ["ev-r", "ev-r"]
 
 
+def test_an_event_waits_while_notion_is_still_starting(client, monkeypatch):
+    """Right after a restart the sweeper can reach an event before Notion is up:
+    it is tried again later, not closed as "Notion is off"."""
+    from temper_ai.integrations.notion import service as notion_service
+
+    monkeypatch.setattr(notion_service, "service", lambda: None)
+    monkeypatch.setattr(notion_service, "why_off", lambda: None)
+    row = inbox_store.get(_post(client, _event("ev-early")).json()["event"])
+    assert (row.status, row.tries) == ("failed", 1)
+    assert "hasn't started yet" in row.outcome
+
+    monkeypatch.setattr(notion_service, "why_off", lambda: "TEMPER_NOTION is off")
+    assert inbox.process(row.id, now=row.next_try_at) == "skipped"
+    assert inbox_store.get(row.id).outcome == "skipped: Notion is off (TEMPER_NOTION is off)"
+
+
 def test_verification_token_is_kept_unsigned(client, dispatched, monkeypatch):
     monkeypatch.delenv(notion.SECRET_ENV)
     r = client.post(hooks.NOTION_PATH, json={"verification_token": "secret_abc"})

@@ -339,17 +339,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("Notify failed to start: %s", e)
 
-    # Event inbox: every event from Linear, Notion, Slack and Telegram is
-    # saved before it is handled; this sweeper retries the ones that failed,
-    # picks up the ones a restart cut off, and deletes old ones.
-    inbox_started = False
-    try:
-        from temper_ai.integrations.inbox.service import start_inbox
-        start_inbox()
-        inbox_started = True
-    except Exception as e:
-        logger.warning("Event inbox failed to start: %s", e)
-
     slack_service = None
     try:
         from temper_ai.integrations.slack.service import start_slack
@@ -376,6 +365,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("Notion failed to start: %s", e)
 
+    # Event inbox: every event from Linear, Notion, Slack and Telegram is
+    # saved before it is handled; this sweeper retries the ones that failed,
+    # picks up the ones a restart cut off, and deletes old ones. It starts
+    # last, so the events a restart cut off meet their sources already running.
+    inbox_started = False
+    try:
+        from temper_ai.integrations.inbox.service import start_inbox
+        start_inbox()
+        inbox_started = True
+    except Exception as e:
+        logger.warning("Event inbox failed to start: %s", e)
+
     logger.info("Temper AI server ready")
 
     # The /mcp endpoint needs its session manager running for the life of
@@ -383,7 +384,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with _mcp_server.session_manager.run():
         yield
 
-    # Shutdown
+    # Shutdown: the inbox first, so it takes no new work while its sources stop
+    # (an event cut off here is picked up again after the restart).
+    if inbox_started:
+        from temper_ai.integrations.inbox.service import stop_inbox
+        stop_inbox()
     if notion_service is not None:
         from temper_ai.integrations.notion.service import stop_notion
         stop_notion()
@@ -393,9 +398,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if slack_service is not None:
         from temper_ai.integrations.slack.service import stop_slack
         stop_slack()
-    if inbox_started:
-        from temper_ai.integrations.inbox.service import stop_inbox
-        stop_inbox()
     if notify_started:
         from temper_ai.integrations.notify.service import stop_notify
         stop_notify()

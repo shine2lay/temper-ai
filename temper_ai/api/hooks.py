@@ -430,10 +430,18 @@ def notion_recent() -> dict[str, Any]:
 def notion_dispatch(event: dict[str, Any]) -> str:
     """Do what one verified Notion event asks; the outcome in a few words.
     Raises if it went wrong, and the inbox tries again."""
-    from temper_ai.integrations.notion.service import service
+    from temper_ai.integrations.notion.service import service, why_off
 
     svc = service()
-    outcome = svc.handle(event) if svc is not None else "skipped: Notion is off (NOTION_TOKEN not set)"
+    if svc is None:
+        reason = why_off()
+        if reason is None:
+            # Notion is on but not started yet in this server (the server is
+            # starting up): the event waits for it rather than being dropped.
+            raise inbox.Retry("Notion hasn't started yet in this server")
+        outcome = f"skipped: Notion is off ({reason})"
+    else:
+        outcome = svc.handle(event)
     logger.info("Notion event %s (%s): %s", event.get("id"), event.get("type"), outcome)
     return outcome
 

@@ -68,3 +68,22 @@ def _no_provider_credentials(monkeypatch):
     Tests that want a credential set it themselves."""
     for name in _CREDENTIAL_ENV:
         monkeypatch.delenv(name, raising=False)
+
+
+_DOCKER_SPAWNER_ENV = (
+    "TEMPER_DOCKER_WORKSPACES", "TEMPER_DOCKER_RUN_COMMAND",
+    "TEMPER_DOCKER_TEMPLATE_CONTAINER", "TEMPER_DOCKER_IMAGE",
+    "TEMPER_DOCKER_MEMORY", "TEMPER_DOCKER_CPUS", "TEMPER_DOCKER_PIDS_LIMIT",
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_docker_spawner_settings(monkeypatch):
+    """The Docker spawner reads its settings from the environment, and a test
+    that runs the CLI from the repo root loads the real .env into it (the CLI
+    loads .env on start). The variables then stay for every later test in
+    that worker: test_a_run_without_a_workspace_gets_no_writable_host_path
+    failed that way once the owner's .env said TEMPER_DOCKER_WORKSPACES=all.
+    Tests that want a setting set it themselves."""
+    for name in _DOCKER_SPAWNER_ENV:
+        monkeypatch.delenv(name, raising=False)

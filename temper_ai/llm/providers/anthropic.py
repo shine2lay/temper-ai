@@ -54,8 +54,10 @@ import time
 from datetime import datetime
 from typing import Any, Protocol
 
+import httpx
+
 from temper_ai.llm.models import LLMResponse, LLMStreamChunk
-from temper_ai.llm.providers.base import BaseLLM, StreamCallback
+from temper_ai.llm.providers.base import BaseLLM, StreamCallback, _compute_backoff
 from temper_ai.llm.token_pool import (
     NamedToken,
     PoolExhausted,
@@ -273,6 +275,24 @@ def _is_rate_limit(exc: Exception) -> bool:
     """
     status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
     return status in (429, 529)
+
+
+def _stream_broke(exc: Exception) -> bool:
+    """Whether a stream failed after it began, for a reason that is not the request's.
+
+    The SDK retries a request whose response never began; once a stream is
+    under way it retries nothing. A read that stalls or a connection that drops
+    then surfaces as httpx's own error ("The read operation timed out"), and a
+    server that gives out mid-answer sends an error event inside a stream that
+    already began with 200 ("overloaded_error", "api_error"). Matched on the
+    transport's error and the event's type rather than SDK class, as
+    _is_rate_limit is.
+    """
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)):
+        return True
+    body = getattr(exc, "body", None)
+    kind = (body.get("error") or {}).get("type") if isinstance(body, dict) else None
+    return kind in ("overloaded_error", "api_error")
 
 
 def _reset_epoch(exc: Exception) -> float | None:
@@ -592,15 +612,38 @@ class AnthropicLLM(BaseLLM):
 
         # A rate limit surfaces on entering the stream, before any chunk; if it
         # ever arrives mid-stream the partial text is dropped and the retry
-        # starts clean rather than emitting the same prefix twice.
+        # starts clean rather than emitting the same prefix twice. A stream that
+        # breaks later is sent again whole (_send_stream): the answer is the new
+        # stream's, though on_chunk has already seen the broken one's first text.
         started = time.monotonic()
-        final = self._send(create_kwargs, kwargs, run)
+        final = self._send_stream(create_kwargs, kwargs, run)
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
         if on_chunk:
             on_chunk(LLMStreamChunk(content="", done=True))
 
         return _parse_response(final, create_kwargs["model"], elapsed_ms)
+
+    def _send_stream(self, create_kwargs: dict[str, Any], kwargs: dict[str, Any], run) -> Any:
+        """`_send`, sent again whole when the stream broke after it began.
+
+        One stalled read or one "Overloaded" event failed the call and the
+        agent with it, often hours into a round at high effort: 5 of 15,164
+        calls in 60 hours, each ending its agent. The request changes nothing by
+        itself, so it goes out again, with the base class's attempts, backoff
+        and retry event (_execute_with_retry, which this SDK path bypasses).
+        """
+        attempt = 0
+        while True:
+            try:
+                return self._send(create_kwargs, kwargs, run)
+            except Exception as exc:  # noqa: BLE001 - re-raised below unless the stream broke
+                if attempt + 1 >= self.max_retries or not _stream_broke(exc):
+                    raise
+                delay = _compute_backoff(attempt)
+                self._record_retry(exc, attempt, delay)
+                time.sleep(delay)
+                attempt += 1
 
     # The Anthropic and Gemini providers use their SDK clients directly
     # (via complete()/stream()) rather than the httpx-based base class methods.

@@ -1,0 +1,33 @@
+workflow:
+  name: epd_structure_grade
+  version: 2
+  description: |
+    The build pair's second test, not part of the loop: grade a codebase the
+    pair built from nothing (epd_build_new) against a fixed rubric that answers
+    three questions: how well it is structured (S1-S3: one home per kind, one
+    job per file, the next thing easy to place), how sound its architecture is
+    (A1-A4: layers, one home per concern, the boundary, where change lands),
+    and how well it keeps to its patterns (P1-P4: one shape per kind, blocks
+    reused, the stack's own ways, standards written and obeyed), after a short
+    gate (G1-G2: the requests are met, CI passes). Run by
+    ~/epd-autopilot/buildloop/greenfield.py after features 1, 3 and 5; its
+    sibling epd_pattern_audit audits each later feature's change.
+  inputs:
+    grade_dir: {type: string, required: true}   # holds code/, requests/, brief.md, rubric.md, scratch/
+    label: {type: string, required: true}
+    features: {type: string, required: true}    # the requests built so far: F1, F1-F3, F1-F5
+  outputs:
+    answers: grade.structured.answers
+    summary: grade.structured.summary
+    scores: grade.structured.scores
+    counts: grade.structured.counts
+    verdict: grade.structured.verdict
+
+  nodes:
+    - name: grade
+      type: agent
+      agent: epd_structure_grade
+      input_map:
+        grade_dir: input.grade_dir
+        label: input.label
+        features: input.features

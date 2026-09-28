@@ -1,0 +1,31 @@
+workflow:
+  name: epd_pattern_audit
+  version: 1
+  description: |
+    The build pair's test, not part of the loop: audit one change (base..head)
+    for how well it kept to the patterns that were there. Every unit the change
+    adds or alters is set against what did that kind of job at the base and
+    classed (follows, extends, new and needed or not, reinvents, duplicates,
+    bypasses, foundation change needed or churn); the follow rate and every
+    miss come back. Run by ~/epd-autopilot/buildloop/greenfield.py on each
+    feature after the first (and on the RollCall rebuilds, blind).
+  inputs:
+    audit_dir: {type: string, required: true}   # holds code/, request.md, rubric.md, scratch/
+    label: {type: string, required: true}
+    base: {type: string, required: true}
+    head: {type: string, required: true}
+  outputs:
+    summary: audit.structured.summary
+    classes: audit.structured.classes
+    follow_rate: audit.structured.follow_rate
+    score: audit.structured.score
+
+  nodes:
+    - name: audit
+      type: agent
+      agent: epd_pattern_audit
+      input_map:
+        audit_dir: input.audit_dir
+        label: input.label
+        base: input.base
+        head: input.head

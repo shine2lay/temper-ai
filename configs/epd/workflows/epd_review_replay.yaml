@@ -1,0 +1,31 @@
+workflow:
+  name: epd_review_replay
+  version: 1
+  description: |
+    The build pair's test, not part of the loop: the next reviewer
+    (task_review_next) alone, on the exact change the old reviewer's first
+    round reviewed (a past bet's first handover from the old coder, with its
+    report, the same plan and the same rules), to measure what one round of
+    it catches. Run by ~/epd-autopilot/buildloop/review_alone.py.
+  inputs:
+    workspace_path: {type: string, required: true}   # the old handover, rebuilt on the replay's base
+    task_name: {type: string, required: true}
+    task_description: {type: string, required: true}
+    branch: {type: string, required: true}
+    base_branch: {type: string, required: true}
+    implement_report: {type: string, required: false}   # the old coder's reply for that handover
+  outputs:
+    verdict: review.structured.verdict
+    findings: review.structured.findings
+
+  nodes:
+    - name: review
+      type: agent
+      agent: task_review_next
+      input_map:
+        workspace_path: input.workspace_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: input.branch
+        base_branch: input.base_branch
+        implement_report: input.implement_report

@@ -1,0 +1,108 @@
+workflow:
+  name: epd_build_replay
+  version: 1
+  description: |
+    The build pair's test, not part of the loop: build a past bet again with
+    the next coder and reviewer (task_implement_next, task_review_next), from
+    the plan the loop built it from and the code it started on, and judge it
+    the way epd_task does -- review beside CI's checks, the gate, back to the
+    coder -- for up to three rounds. No environment, deploy, QA, security,
+    last pass or pull request: the replay measures whether the change is
+    right and fits, and what that costs. The driver prepares the worktree (a
+    clone at the base, the plan at .epd/plan.md, the codebase notes and the
+    project's standards at .temper/) and grades the result against what
+    shipped. Run by ~/epd-autopilot/buildloop/replay.py.
+  inputs:
+    workspace_path: {type: string, required: true}   # the replay's worktree
+    task_name: {type: string, required: true}
+    task_description: {type: string, required: true}
+    branch: {type: string, required: true}
+    base_branch: {type: string, required: true}
+  outputs:
+    verdict: gate.structured.verdict
+    summary: gate.structured.summary
+    review_verdict: gate.structured.review_verdict
+    test_verdict: gate.structured.test_verdict
+    review_findings: gate.structured.review_findings
+    test_failures: gate.structured.test_failures
+    implement_status: implement.structured.status
+    commit: implement.structured.commit
+    tasks_done: implement.structured.tasks_done
+    tasks_left: implement.structured.tasks_left
+
+  nodes:
+    # Same wiring as epd_task's implement: the gate's lists on a fix round, its
+    # own previous result on a `partial` round.
+    - name: implement
+      type: agent
+      agent: task_implement_next
+      input_map:
+        workspace_path: input.workspace_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: input.branch
+        base_branch: input.base_branch
+        review_findings: gate.structured.review_findings
+        test_failures: gate.structured.test_failures
+        sent_back_because: gate.structured.summary
+        tasks_done: implement.structured.tasks_done
+        continue_summary: implement.structured.summary
+      loop_to: implement
+      max_loops: 4
+      on_max_loops: silent
+      loop_condition:
+        source: implement.structured.status
+        operator: equals
+        value: partial
+
+    - name: branch
+      type: agent
+      agent: task_branch_check
+      depends_on: [implement]
+      input_map:
+        workspace_path: input.workspace_path
+        branch: input.branch
+        commit: implement.structured.commit
+
+    - name: review
+      type: agent
+      agent: task_review_next
+      depends_on: [branch]
+      input_map:
+        workspace_path: input.workspace_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: input.branch
+        base_branch: input.base_branch
+        implement_report: implement.output
+
+    - name: test
+      type: agent
+      agent: task_test
+      depends_on: [branch]
+      input_map:
+        workspace_path: input.workspace_path
+        base_branch: input.base_branch
+
+    # The two judges epd_task has without an environment. A judge that is not
+    # mapped did not run and the gate ignores it (task_gate v9). max_loops 3 =
+    # three reviews, two fix rounds, as in epd_task.
+    - name: gate
+      type: agent
+      agent: task_gate
+      depends_on: [review, test]
+      loop_to: implement
+      max_loops: 3
+      on_max_loops: silent
+      loop_condition:
+        source: gate.structured.verdict
+        operator: equals
+        value: request_changes
+      input_map:
+        implement_status: implement.structured.status
+        worktree_path: input.workspace_path
+        review_verdict: review.structured.verdict
+        test_verdict: test.structured.verdict
+        review_findings: review.structured.findings
+        test_failures: test.structured.failures
+        test_summary: test.structured.summary

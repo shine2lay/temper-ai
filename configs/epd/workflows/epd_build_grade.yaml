@@ -1,0 +1,26 @@
+workflow:
+  name: epd_build_grade
+  version: 1
+  description: |
+    The build pair's test, not part of the loop: grade one finished build of
+    a bet, blind (the tree under a random label, the same bet, plan, rules and
+    checks for every build graded). Run by ~/epd-autopilot/buildloop/grade.py
+    once per tree: the old pair's and the new pair's, first handover and final.
+  inputs:
+    bet_id: {type: string, required: true}
+    grade_dir: {type: string, required: true}   # holds code/, bet.md, plan.md, checks.md
+    label: {type: string, required: true}
+  outputs:
+    summary: grade.structured.summary
+    checks: grade.structured.checks
+    findings: grade.structured.findings
+    tasks: grade.structured.tasks
+
+  nodes:
+    - name: grade
+      type: agent
+      agent: epd_build_grade
+      input_map:
+        bet_id: input.bet_id
+        grade_dir: input.grade_dir
+        label: input.label

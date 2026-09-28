@@ -1,0 +1,115 @@
+workflow:
+  name: epd_build_new
+  version: 1
+  description: |
+    The build pair's second test, not part of the loop: build a new project
+    from nothing, one feature request at a time, with the next coder and
+    reviewer (task_implement_next, task_review_next) and nobody else: no
+    planner, no architect. The first build lays the foundation and writes the
+    project's standards and notes itself (configs/epd/rules/new_project.md).
+    The same wiring as epd_build_replay: the coder, the branch check, the
+    review beside CI's checks, the gate, back to the coder, up to three
+    reviews. The driver seeds the repository (the brief at docs/brief.md),
+    puts one request at .epd/plan.md per feature, merges each approved
+    feature into master before the next, and grades the codebase against a
+    rubric after features 1, 3 and 5. Run by
+    ~/epd-autopilot/buildloop/greenfield.py.
+  inputs:
+    workspace_path: {type: string, required: true}   # the project's repository
+    task_name: {type: string, required: true}
+    task_description: {type: string, required: true}
+    branch: {type: string, required: true}
+    base_branch: {type: string, required: true}
+  outputs:
+    verdict: gate.structured.verdict
+    summary: gate.structured.summary
+    review_verdict: gate.structured.review_verdict
+    test_verdict: gate.structured.test_verdict
+    review_findings: gate.structured.review_findings
+    test_failures: gate.structured.test_failures
+    implement_status: implement.structured.status
+    commit: implement.structured.commit
+    tasks_done: implement.structured.tasks_done
+    tasks_left: implement.structured.tasks_left
+
+  nodes:
+    # As epd_task's implement: the gate's lists on a fix round, its own previous
+    # result on a `partial` round. A first build (the foundation and the first
+    # feature) can take several rounds of 160 calls.
+    - name: implement
+      type: agent
+      agent: task_implement_next
+      input_map:
+        workspace_path: input.workspace_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: input.branch
+        base_branch: input.base_branch
+        review_findings: gate.structured.review_findings
+        test_failures: gate.structured.test_failures
+        sent_back_because: gate.structured.summary
+        tasks_done: implement.structured.tasks_done
+        continue_summary: implement.structured.summary
+      loop_to: implement
+      max_loops: 4
+      on_max_loops: silent
+      loop_condition:
+        source: implement.structured.status
+        operator: equals
+        value: partial
+
+    - name: branch
+      type: agent
+      agent: task_branch_check
+      depends_on: [implement]
+      input_map:
+        workspace_path: input.workspace_path
+        branch: input.branch
+        commit: implement.structured.commit
+
+    - name: review
+      type: agent
+      agent: task_review_next
+      depends_on: [branch]
+      input_map:
+        workspace_path: input.workspace_path
+        task_name: input.task_name
+        task_description: input.task_description
+        branch: input.branch
+        base_branch: input.base_branch
+        implement_report: implement.output
+
+    # No base_branch, so the test step compares nothing with the base, and
+    # every failure is the change's. task_test excuses a failure the base has
+    # too, and keys a failure it cannot parse (a lint or type check that
+    # exits 1) as just "exit": on a new project the base has no code, so the
+    # same step fails there as well ("no such directory") and a broken check
+    # would be excused. Master only ever holds approved, green features here,
+    # so there is nothing on it to excuse.
+    - name: test
+      type: agent
+      agent: task_test
+      depends_on: [branch]
+      input_map:
+        workspace_path: input.workspace_path
+
+    # max_loops 3 = three reviews, two fix rounds, as in epd_task.
+    - name: gate
+      type: agent
+      agent: task_gate
+      depends_on: [review, test]
+      loop_to: implement
+      max_loops: 3
+      on_max_loops: silent
+      loop_condition:
+        source: gate.structured.verdict
+        operator: equals
+        value: request_changes
+      input_map:
+        implement_status: implement.structured.status
+        worktree_path: input.workspace_path
+        review_verdict: review.structured.verdict
+        test_verdict: test.structured.verdict
+        review_findings: review.structured.findings
+        test_failures: test.structured.failures
+        test_summary: test.structured.summary

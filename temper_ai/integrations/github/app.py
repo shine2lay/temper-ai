@@ -7,11 +7,13 @@ using the owner's token (TEMPER_GITHUB_TOKEN in tools.github_pr).
 How the app logs in. Its private key (``GITHUB_APP_PRIVATE_KEY``, held in
 memory by integrations.github.secret) signs a JSON Web Token that says "I am
 app ``GITHUB_APP_ID``" for ten minutes. With it temper asks GitHub for an
-*installation token*: good for an hour, limited to the permissions the app
-was given and, when it is for one repository, to that repository. That token
-is what every call and push uses; it is kept in memory and used again until
-five minutes before it runs out. Neither the key nor a token is ever logged
-or put in an error message.
+*installation token*: good for an hour and, when it is for one repository,
+good on that repository only. It carries only ``PERMISSIONS``, what temper
+does as the app (push a branch, comment, open and review pull requests),
+however much more the app was given on GitHub. That token is what every call
+and push uses; it is kept in memory and used again until five minutes before
+it runs out. Neither the key nor a token is ever logged or put in an error
+message.
 
 Where the key is. Only in temper's server (``GitHubApp``). A run works in a
 box whose shell an agent drives, so the key is kept out of it (the spawners
@@ -60,8 +62,32 @@ JWT_LIFETIME_S = 540          # GitHub takes at most 600; less, for clock skew
 JWT_BACKDATE_S = 60           # iat a minute early, for clock skew the other way
 TOKEN_MARGIN_S = 300          # a token is used again until five minutes before it expires
 REPOS_TTL_S = 300.0           # how long the list of installed repos is trusted
-INSTALL_TTL_S = 600.0         # how long a repo -> installation answer is trusted
+INSTALL_TTL_S = 600.0         # how long a repo -> installation answer (and what it grants) is trusted
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+# What temper does as the app, and so all its tokens for a repository may do, whatever else the
+# app was given: push a branch (contents), comment on issues, open and review pull requests.
+PERMISSIONS = {"contents": "write", "issues": "write", "pull_requests": "write", "metadata": "read"}
+# A token for a whole installation only lists its repositories.
+LISTING = {"metadata": "read"}
+_LEVELS = {"read": 1, "write": 2, "admin": 3}
+
+
+def level(value: Any) -> int:
+    """How much a permission's access is: 0 none, 1 read, 2 write, 3 admin."""
+    return _LEVELS.get(str(value or "").lower(), 0)
+
+
+def scoped(granted: dict[str, Any], wanted: dict[str, str] | None = None) -> dict[str, str]:
+    """``wanted`` (default ``PERMISSIONS``) cut down to what ``granted`` allows: GitHub refuses a
+    token that asks for more than the installation has, so a permission it lacks is left out
+    (and the call that needs it fails, saying so) rather than asked for."""
+    out: dict[str, str] = {}
+    for name, access in (wanted or PERMISSIONS).items():
+        have = str(granted.get(name) or "")
+        if level(have):
+            out[name] = access if level(have) >= level(access) else have
+    return out
 
 
 class GitHubAppError(RuntimeError):
@@ -207,6 +233,7 @@ class GitHubApp(_Base):
             raise GitHubAppError(f"{secret.PRIVATE_KEY_ENV} is not an RSA key (GitHub apps sign with RS256)")
         self._key = key
         self._installs: dict[str, tuple[int, float]] = {}
+        self._granted: dict[int, tuple[dict[str, Any], float]] = {}  # installation -> its permissions
         self._me: dict[str, Any] | None = None
 
     # --- the app's own login ------------------------------------------------------------------
@@ -252,10 +279,28 @@ class GitHubApp(_Base):
         if response.status_code == 404:
             raise NotInstalled(f"the app is not installed on {repo}")
         _raise_for(response, f"find the app's installation on {repo}")
-        install_id = int(response.json()["id"])
+        found = response.json()
+        install_id = int(found["id"])
         with self._lock:
             self._installs[key] = (install_id, now)
+            if isinstance(found.get("permissions"), dict):
+                self._granted[install_id] = (dict(found["permissions"]), now)
         return install_id
+
+    def granted(self, installation: int) -> dict[str, Any]:
+        """The permissions the owner granted that installation (they may lag behind the app's)."""
+        now = self._clock()
+        with self._lock:
+            known = self._granted.get(installation)
+            if known and now - known[1] < INSTALL_TTL_S:
+                return known[0]
+        response = self._as_app("GET", f"/app/installations/{installation}")
+        _raise_for(response, "read the app's installation")
+        permissions = response.json().get("permissions")
+        permissions = dict(permissions) if isinstance(permissions, dict) else {}
+        with self._lock:
+            self._granted[installation] = (permissions, now)
+        return permissions
 
     def token(self, repo: str | None = None, *, installation: int | None = None) -> Token:
         """A token for one repository (only that one), or for a whole installation; made or reused."""
@@ -268,12 +313,18 @@ class GitHubApp(_Base):
             held = self._tokens.get(key)
             if held and now < held.expires_at - TOKEN_MARGIN_S:
                 return held
-        # A repository's token works on that repository only, whatever else the installation covers.
-        body = {"repositories": [str(repo).split("/", 1)[1]]} if repo else None
+        # A repository's token works on that repository only, whatever else the installation
+        # covers, and does only what temper does (PERMISSIONS), whatever else the app may do.
+        # A whole installation's token only lists its repositories.
+        body: dict[str, Any] = {"permissions": scoped(self.granted(install_id)) if repo else dict(LISTING)}
+        if repo:
+            body["repositories"] = [repo.split("/", 1)[1]]
         response = self._as_app("POST", f"/app/installations/{install_id}/access_tokens", json=body)
-        if response.status_code in (404, 422) and repo is not None:
-            with self._lock:  # uninstalled (and maybe installed again): ask which installation next time
-                self._installs.pop(repo.lower(), None)
+        if response.status_code in (404, 422):
+            with self._lock:  # uninstalled, or its permissions changed: ask again next time
+                self._granted.pop(install_id, None)
+                if repo is not None:
+                    self._installs.pop(repo.lower(), None)
         _raise_for(response, f"get a token for {repo or 'the installation'}")
         answer = response.json()
         made = Token(str(answer["token"]), _expiry(answer.get("expires_at"), now))
@@ -308,6 +359,9 @@ class GitHubApp(_Base):
         installs: dict[str, tuple[int, float]] = {}
         for install in self.installations():
             install_id = int(install["id"])
+            if isinstance(install.get("permissions"), dict):
+                with self._lock:
+                    self._granted[install_id] = (dict(install["permissions"]), now)
             token = self.installation_token(installation=install_id)
             page = 1
             with self._client(token) as client:
@@ -334,6 +388,7 @@ class GitHubApp(_Base):
         super().forget_tokens()
         with self._lock:
             self._installs.clear()
+            self._granted.clear()
 
 
 class ServerApp(_Base):

@@ -154,6 +154,22 @@ with the other keys.
    `temper github convert CODE --env-file ~/temper-ai/.env` with the code
    GitHub put in the address (it works once, within an hour).
 
+   **Or make it on GitHub's own form** (Settings → Developer settings →
+   GitHub Apps → New GitHub App), as temper-ai-bot was made. It needs:
+   the webhook URL above with a secret you make up, content type
+   `application/json`; repository permissions **Contents**, **Issues** and
+   **Pull requests** read and write (Metadata read comes with them); and the
+   events **Issues**, **Issue comment** and **Pull request**. Then generate a
+   private key, and put the three values in the env file yourself — the key
+   as `base64 -w0 key.pem`, and delete the `.pem` after. More permissions do
+   no harm (the tokens temper makes never carry them); more events are
+   answered and dropped, but are noise in GitHub's delivery log.
+
+   Keep the env file to yourself: `chmod 600 ~/temper-ai/.env`. Where the
+   checkout is mounted into temper's server (a local
+   `docker-compose.override.yml`), a run's box sees it too, and an env file
+   others may read would give every key in it to the agents.
+
 2. **Install it** on the repositories it may work on (the link is on the
    page after Create: `https://github.com/apps/temper-ai-bot/installations/new`).
    Installing it on more later needs no change in temper.
@@ -169,7 +185,12 @@ with the other keys.
 
 5. **Check it:** `docker compose exec server temper github check` — the app
    as GitHub knows it, where it is installed, a token for each installation,
-   the webhook secret, the settings and which rules are on.
+   the webhook secret, the settings and which rules are on. It exits 1 with
+   `warnings` for anything that stops temper working: a permission or event
+   the app lacks, an installation that has not accepted the app's new
+   permissions (the account's Settings → Applications), a settings name that
+   is not the app's, an env file others can read. `notes` list what the app
+   has that temper never uses.
 
 If the app's name is not `temper-ai-bot` (say it was taken), set `app:` in
 `configs/github/github.yaml` to its real name: that is the word people
@@ -185,6 +206,11 @@ run that acts as the app asks the server for a token for one repository
 server makes those from the key and reuses each until five minutes before
 it runs out.
 
+A token is only ever for that one repository, and carries only what temper
+uses there — contents, issues and pull requests (read and write), metadata
+(read) — however much more the app was given on GitHub. (Listing where the
+app is installed takes a token with metadata read only.)
+
 ## How an event is handled
 
 - **Genuine.** `X-Hub-Signature-256` must be the HMAC-SHA256 of the exact
@@ -197,6 +223,10 @@ it runs out.
   and checked once it is; forged ones are then dropped.
 - **Once.** GitHub's redeliveries carry the same `X-GitHub-Delivery` id,
   which the inbox already has, so nothing starts twice.
+- **Only what can start work.** Issues, issue comments and pull requests
+  are kept, and so are the app's own `ping` and installation events (a
+  record of when it was set up). Any other event the app is sent — CI runs,
+  check runs — is checked, answered 200 (`ignored`) and dropped, not kept.
 - **Visible.** `temper events list --source github` lists events and what
   became of each ("started github_work …", "no trigger matched",
   "skipped: …"). `GET /api/hooks/github/recent` (behind the API token, not

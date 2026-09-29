@@ -234,7 +234,7 @@ class TestTheSettings:
         (tmp_path / "github").mkdir()
         (tmp_path / "github" / "github.yaml").write_text("github: [unclosed\n")
         settings = load_settings(tmp_path)
-        assert (settings.app, settings.allowed_authors) == ("shine-temper", ("shine2lay",))
+        assert (settings.app, settings.allowed_authors) == ("temper-ai-bot", ("shine2lay",))
 
     def test_the_folder_is_server_settings_not_a_workflow_config(self):
         from temper_ai.config.importer import NON_CONFIG_DIRS

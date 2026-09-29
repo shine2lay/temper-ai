@@ -6,7 +6,10 @@ GitHub posts every event of the app's installations to
 the HMAC-SHA256 of the exact body. A delivery without it, or with one that
 does not match, is refused. ``X-GitHub-Event`` names the event and
 ``X-GitHub-Delivery`` is its id (the same on a redelivery, so a delivery is
-handled once).
+handled once). Only the events a rule can start work on are kept, and
+``ping`` and the installation events, which say the webhook works and where
+the app is; the app may be sent more (a check run, a workflow run: several
+for each CI run), which are answered and dropped (``kept``).
 
 Who may start work, before any rule is asked: the people in
 ``configs/github/github.yaml`` (``allowed_authors``, by default only
@@ -48,8 +51,10 @@ EVENT_HEADER = "x-github-event"
 DELIVERY_HEADER = "x-github-delivery"
 SIGNATURE_HEADER = "x-hub-signature-256"
 SECRET_ENV = secret.WEBHOOK_SECRET_ENV
-# The events a rule can start work on. Others (ping, installation, ...) are kept and skipped.
+# The events a rule can start work on.
 EVENTS = frozenset({"issues", "issue_comment", "pull_request"})
+# Kept though they start nothing: the webhook works, the app was installed (or on more repos).
+NOTED = frozenset({"ping", "installation", "installation_repositories"})
 ON_KEYS = frozenset({
     "event", "action", "label", "has_label", "mention", "pull_request", "draft", "repos", "authors",
 })
@@ -57,6 +62,11 @@ ON_KEYS = frozenset({
 
 def signing_secret() -> str | None:
     return secret.webhook_secret()
+
+
+def kept(event_name: str) -> bool:
+    """Whether a delivery of this event is kept (in the event inbox) or answered and dropped."""
+    return event_name in EVENTS or event_name in NOTED
 
 
 def verify_signature(raw: bytes, signature: str | None, key: str) -> bool:

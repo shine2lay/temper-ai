@@ -11,7 +11,9 @@
         the app's manifest, as JSON (what setup hands GitHub).
     temper github check
         the app as GitHub knows it, where it is installed, a token for each
-        installation, the webhook secret, the settings and the rules.
+        installation, the webhook secret, the settings and the rules; what the
+        app lacks, what it has that temper never uses, and whether the env
+        file is readable by others.
 
 ``setup`` and ``convert`` run where the env file is (the host); ``check`` runs
 where temper runs, with its environment. See docs/github.md.
@@ -38,16 +40,20 @@ from temper_ai.integrations.github import secret
 from temper_ai.integrations.github.app import (
     API_URL,
     APP_ID_ENV,
+    PERMISSIONS,
     GitHubAppError,
+    level,
     server_app,
     why_not_configured,
 )
 from temper_ai.integrations.github.settings import load_settings
+from temper_ai.triggers import github as trigger
 
 HOOK_URL = "https://hooks.wai2shine.com/api/hooks/github"
 HOMEPAGE = "https://github.com/shine2lay/temper-ai"
-EVENTS = ("issues", "issue_comment", "pull_request")
-PERMISSIONS = {"issues": "write", "pull_requests": "write", "contents": "write", "metadata": "read"}
+EVENTS = tuple(sorted(trigger.EVENTS))
+# Where temper's env file may be: the checkout (on the host), the checkout as temper's server sees it.
+ENV_FILES = (Path(".env"), Path("/app/repo/.env"))
 DEFAULT_LISTEN = "127.0.0.1:8765"
 SETUP_TIMEOUT_S = 3600
 
@@ -227,6 +233,25 @@ def setup(env_file: str, name: str | None, hook_url: str, listen: str, org: str 
     return result
 
 
+def lacking(granted: dict[str, Any]) -> list[str]:
+    """The permissions temper needs that ``granted`` does not give (enough of)."""
+    return [f"{name}: {access}" for name, access in PERMISSIONS.items() if level(granted.get(name)) < level(access)]
+
+
+def readable_by_others(paths: tuple[Path, ...] | None = None) -> list[str]:
+    """Env files others may read: every key in them is theirs, and temper's run boxes see the
+    checkout when it is mounted into temper's server (docker-compose.override.yml)."""
+    out = []
+    for path in ENV_FILES if paths is None else paths:
+        try:
+            mode = path.stat().st_mode
+        except OSError:
+            continue
+        if mode & 0o044:
+            out.append(str(path))
+    return out
+
+
 def check() -> int:
     """Print the app's setup; 0 if it can work, 1 if not."""
     settings = load_settings()
@@ -239,36 +264,65 @@ def check() -> int:
 
     report["rules"] = {t.name: ("on" if t.enabled else "off") + f" -> {t.workflow}"
                        for t in load_triggers(source="github")}
-    ok = report["webhook_secret"] == "set"
+    warnings: list[str] = []
+    notes: list[str] = []
+    if report["webhook_secret"] != "set":
+        warnings.append(report["webhook_secret"])
+    for path in readable_by_others():
+        warnings.append(f"{path} can be read by others (and by agents, where the checkout is mounted): "
+                        "chmod 600 it")
     reason = why_not_configured()
     if reason:
         report["app"] = reason
-        ok = False
+        warnings.append(reason)
     else:
         try:
-            app = server_app()
-            me = app.whoami()
-            report["app"] = {"id": me.get("id"), "slug": me.get("slug"), "name": me.get("name"),
-                             "owner": (me.get("owner") or {}).get("login"), "page": me.get("html_url"),
-                             "events": me.get("events"), "permissions": me.get("permissions")}
-            if me.get("slug") and me.get("slug") != settings.app:
-                report["warning"] = f"the app is '{me.get('slug')}' but the settings say '{settings.app}'"
-                ok = False
-            installs = []
-            for install in app.installations():
-                app.installation_token(installation=int(install["id"]))
-                installs.append({"account": (install.get("account") or {}).get("login"),
-                                 "repositories": install.get("repository_selection"), "token": "ok"})
-            report["installations"] = installs
-            report["repos"] = sorted(app.installed_repos(refresh=True))
-            if not installs:
-                report["warning"] = "the app is not installed anywhere yet"
-                ok = False
+            _check_app(settings.app, report, warnings, notes)
         except (GitHubAppError, httpx.HTTPError) as exc:
             report["app"] = f"error: {exc}"
-            ok = False
+            warnings.append(str(report["app"]))
+    if warnings:
+        report["warnings"] = warnings
+    if notes:
+        report["notes"] = notes
     print(json.dumps(report, indent=2))
-    return 0 if ok else 1
+    return 1 if warnings else 0
+
+
+def _check_app(name: str, report: dict[str, Any], warnings: list[str], notes: list[str]) -> None:
+    app = server_app()
+    me = app.whoami()
+    granted = dict(me.get("permissions") or {})
+    events = [str(e) for e in me.get("events") or []]
+    report["app"] = {"id": me.get("id"), "slug": me.get("slug"), "name": me.get("name"),
+                     "owner": (me.get("owner") or {}).get("login"), "page": me.get("html_url"),
+                     "events": events, "permissions": granted}
+    if me.get("slug") and me.get("slug") != name:
+        warnings.append(f"the app is '{me.get('slug')}' but the settings say '{name}'")
+    if lacking(granted):
+        warnings.append(f"the app lacks {', '.join(lacking(granted))} (its settings page, Permissions)")
+    if sorted(set(granted) - set(PERMISSIONS)):
+        notes.append(f"the app may also use {', '.join(sorted(set(granted) - set(PERMISSIONS)))}: "
+                     "temper's tokens never carry those")
+    if [e for e in EVENTS if e not in events]:
+        warnings.append(f"the app is not sent {', '.join(e for e in EVENTS if e not in events)} events "
+                        "(its settings page, Subscribe to events)")
+    if [e for e in events if not trigger.kept(e)]:
+        notes.append(f"the app is also sent {', '.join(e for e in events if not trigger.kept(e))} events: "
+                     "temper answers and drops them")
+    installs = []
+    for install in app.installations():
+        app.installation_token(installation=int(install["id"]))
+        account = (install.get("account") or {}).get("login")
+        installs.append({"account": account, "repositories": install.get("repository_selection"), "token": "ok"})
+        behind = lacking(dict(install.get("permissions") or {}))
+        if behind and not lacking(granted):
+            warnings.append(f"the installation on {account} lacks {', '.join(behind)}: accept the app's "
+                            "new permissions there (Settings, Applications)")
+    report["installations"] = installs
+    report["repos"] = sorted(app.installed_repos(refresh=True))
+    if not installs:
+        warnings.append("the app is not installed anywhere yet")
 
 
 def cmd_github(args: Any) -> int:

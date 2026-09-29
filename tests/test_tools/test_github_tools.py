@@ -59,7 +59,8 @@ class FakeGitHub:
         body = json.loads(request.content) if request.content else None
         self.calls.append((request.method, path, request.headers.get("authorization", ""), body))
         if path == f"{BASE}/installation":
-            return httpx.Response(200, json={"id": 99})
+            return httpx.Response(200, json={"id": 99, "permissions": {
+                "contents": "write", "issues": "write", "pull_requests": "write", "metadata": "read"}})
         if path.endswith("/installation"):
             return httpx.Response(404, json={"message": "Not Found"})
         if path == "/app/installations/99/access_tokens":

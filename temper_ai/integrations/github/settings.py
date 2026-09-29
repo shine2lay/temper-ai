@@ -3,10 +3,10 @@
 ::
 
     github:
-      app: shine-temper              # the app's name on GitHub (its slug)
+      app: temper-ai-bot             # the app's name on GitHub (its slug)
       allowed_authors: [shine2lay]   # the only people whose events start work
 
-``app`` is how a comment calls on temper (``@shine-temper ...``) and how
+``app`` is how a comment calls on temper (``@temper-ai-bot ...``) and how
 temper knows its own doings: the app acts on GitHub as ``<app>[bot]``, and
 nothing that account does starts anything. ``allowed_authors`` are GitHub
 logins; everyone else's labels, comments and pull requests start nothing
@@ -30,7 +30,7 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_APP = "shine-temper"
+DEFAULT_APP = "temper-ai-bot"
 DEFAULT_AUTHORS = ("shine2lay",)
 
 

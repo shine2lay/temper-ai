@@ -73,6 +73,15 @@ def pull_opened(repo=REPO, sender="shine2lay"):
     }
 
 
+def ci_run():
+    return "workflow_run", {
+        "action": "completed",
+        "workflow_run": {"id": 1, "name": "CI", "head_branch": "master", "conclusion": "success"},
+        "repository": repository(),
+        "sender": {"login": "shine2lay", "type": "User"},
+    }
+
+
 def _post(client, event, *, key=SECRET, delivery="g-1", raw=None, signature=None):
     event_name, payload = event
     body = raw if raw is not None else json.dumps(payload).encode()
@@ -158,6 +167,30 @@ class TestTheDoor:
     def test_not_json(self, client, dispatched):
         assert _post(client, labeled(), raw=b"not json").status_code == 400
         assert dispatched == []
+
+    def test_an_event_temper_does_not_use_is_answered_and_not_kept(self, client, dispatched):
+        """The app may be sent more than temper uses: a check run, a workflow run, per CI job."""
+        response = _post(client, ci_run())
+        assert response.status_code == 200
+        assert response.json()["ignored"] == "workflow_run events start nothing"
+        assert dispatched == [] and inbox_store.listing(source="github") == []
+
+    def test_a_forged_one_of_those_is_still_refused(self, client, dispatched):
+        assert _post(client, ci_run(), key="guess").status_code == 401
+
+    def test_before_the_secret_is_set_those_are_not_kept_either(self, client, dispatched, monkeypatch):
+        monkeypatch.delenv(secret.WEBHOOK_SECRET_ENV, raising=False)
+        secret.forget()
+        assert _post(client, ci_run()).json()["ignored"] == "workflow_run events start nothing"
+        assert inbox_store.listing(source="github") == []
+
+    @pytest.mark.parametrize("event_name", ["ping", "installation", "installation_repositories"])
+    def test_the_webhook_s_own_news_is_kept(self, client, dispatched, event_name):
+        """They start nothing, but say the webhook works and where the app is."""
+        payload = {"action": "created", "sender": {"login": "shine2lay", "type": "User"}}
+        assert _post(client, (event_name, payload), delivery=event_name).status_code == 200
+        assert inbox_store.find("github", event_name) is not None
+        assert [name for name, _ in dispatched] == [event_name]
 
     def test_before_the_secret_is_set_a_delivery_is_kept_not_handled(self, client, dispatched, monkeypatch):
         monkeypatch.delenv(secret.WEBHOOK_SECRET_ENV, raising=False)

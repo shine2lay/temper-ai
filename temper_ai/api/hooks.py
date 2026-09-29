@@ -478,11 +478,16 @@ async def github_webhook(request: Request, background: BackgroundTasks) -> Any:
     delivery = (request.headers.get(github.DELIVERY_HEADER, "").strip()
                 or "sha256:" + hashlib.sha256(raw).hexdigest()[:32])
     secret = github.signing_secret()
+    if secret is not None and not github.verify_signature(raw, signature, secret):
+        raise HTTPException(status_code=401, detail="X-Hub-Signature-256 does not match the body.")
+    if not github.kept(event_name):
+        # Nothing starts from it (a check run, a workflow run...: the app may be sent more than
+        # temper uses), so it is not kept.
+        logger.debug("GitHub delivery %s: a %s event, not kept", delivery, event_name or "nameless")
+        return {"ok": True, "delivery": delivery, "ignored": f"{event_name or 'an unnamed'} events start nothing"}
     if secret is None:
         # The event name is not in the body: it is kept with the signature.
         return _hold(GITHUB, delivery, raw, f"{event_name} {signature}", github.SECRET_ENV)
-    if not github.verify_signature(raw, signature, secret):
-        raise HTTPException(status_code=401, detail="X-Hub-Signature-256 does not match the body.")
     payload = _json_object(raw)
     row, new = _save(GITHUB, delivery, _github_kind(event_name, payload),
                      github.subject_of(event_name, payload), payload)

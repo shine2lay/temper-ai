@@ -2,9 +2,10 @@
 
 Pinned: the app signs a short JSON Web Token with its private key and trades
 it for an installation token, which is used again until five minutes before
-it runs out; a token works on one repository; the app works only where it
-is installed; a run (no key) gets its tokens from temper's server; and the
-key is taken out of the environment, so nothing temper starts inherits it.
+it runs out; a token works on one repository and does only what temper does,
+however much more the app was given; the app works only where it is
+installed; a run (no key) gets its tokens from temper's server; and the key
+is taken out of the environment, so nothing temper starts inherits it.
 """
 
 from __future__ import annotations
@@ -26,10 +27,16 @@ from temper_ai.integrations.github.app import (
     NotInstalled,
     ServerApp,
     pem_of,
+    scoped,
 )
 
 API = "https://api.github.test"
 INSTALLED = {"shine2lay/temper-ai": 99, "shine2lay/roamee": 99}
+# What the owner gave the real app: more than temper uses.
+GRANTED = {"actions": "write", "checks": "write", "code_quality": "write", "contents": "write",
+           "issues": "write", "metadata": "read", "pull_requests": "write", "repository_hooks": "write",
+           "security_events": "write"}
+TEMPERS = {"contents": "write", "issues": "write", "pull_requests": "write", "metadata": "read"}
 
 
 @pytest.fixture(scope="module")
@@ -61,6 +68,7 @@ class FakeGitHub:
     def __init__(self, clock: Clock, installed: dict[str, int] | None = None) -> None:
         self.clock = clock
         self.installed = dict(INSTALLED if installed is None else installed)
+        self.granted = dict(GRANTED)
         self.calls: list[tuple[str, str, str]] = []  # (method, path, authorization)
         self.token_bodies: list[dict | None] = []
         self.jwts: list[str] = []
@@ -78,16 +86,29 @@ class FakeGitHub:
             self.jwts.append(auth.removeprefix("Bearer "))
             repo = path[len("/repos/"):-len("/installation")]
             if repo.lower() in self.installed:
-                return httpx.Response(200, json={"id": self.installed[repo.lower()]})
+                return httpx.Response(200, json={"id": self.installed[repo.lower()],
+                                                 "permissions": dict(self.granted)})
             return httpx.Response(404, json={"message": "Not Found"})
         if path.startswith("/app/installations/") and path.endswith("/access_tokens"):
             self.jwts.append(auth.removeprefix("Bearer "))
+            body = json.loads(request.content) if request.content else None
+            self.token_bodies.append(body)
+            asked = (body or {}).get("permissions") or {}
+            if any(github_app.level(self.granted.get(name)) < github_app.level(access)
+                   for name, access in asked.items()):
+                # GitHub refuses a token asking for more than the installation has.
+                return httpx.Response(422, json={"message": "The permissions requested are not granted "
+                                                            "to this installation."})
             self.made += 1
-            self.token_bodies.append(json.loads(request.content) if request.content else None)
             return httpx.Response(201, json={"token": f"ghs_install_{self.made}",
                                              "expires_at": iso(self.clock.now + 3600)})
+        if path.startswith("/app/installations/"):
+            self.jwts.append(auth.removeprefix("Bearer "))
+            install_id = int(path.rsplit("/", 1)[1])
+            return httpx.Response(200, json={"id": install_id, "permissions": dict(self.granted)})
         if path == "/app/installations":
-            return httpx.Response(200, json=[{"id": i} for i in sorted(set(self.installed.values()))])
+            return httpx.Response(200, json=[{"id": i, "permissions": dict(self.granted)}
+                                             for i in sorted(set(self.installed.values()))])
         if path == "/installation/repositories":
             return httpx.Response(200, json={"repositories": [{"full_name": r} for r in sorted(self.installed)]})
         if path.startswith("/repos/"):
@@ -160,8 +181,39 @@ class TestInstallationTokens:
     def test_a_token_works_on_one_repository(self, the_app, gh):
         the_app.installation_token("shine2lay/temper-ai")
         the_app.installation_token("shine2lay/roamee")
-        assert gh.token_bodies == [{"repositories": ["temper-ai"]}, {"repositories": ["roamee"]}]
+        assert [b["repositories"] for b in gh.token_bodies] == [["temper-ai"], ["roamee"]]
         assert gh.made == 2  # one per repository, not shared
+
+    def test_a_token_does_only_what_temper_does(self, the_app, gh):
+        """The app may also run workflows, change webhooks...: its tokens never can."""
+        the_app.installation_token("shine2lay/temper-ai")
+        assert gh.token_bodies == [{"repositories": ["temper-ai"], "permissions": TEMPERS}]
+        assert github_app.PERMISSIONS == TEMPERS
+
+    def test_never_more_than_the_installation_grants(self, the_app, gh):
+        gh.granted = {"metadata": "read", "issues": "write", "pull_requests": "read"}
+        assert the_app.installation_token("shine2lay/temper-ai") == "ghs_install_1"
+        assert gh.token_bodies[0]["permissions"] == {"issues": "write", "pull_requests": "read",
+                                                     "metadata": "read"}
+
+    def test_after_the_owner_takes_a_permission_back(self, the_app, gh, clock):
+        the_app.installed_repos()  # knows the installation, and what it grants
+        gh.granted.pop("contents")
+        clock.now += 10
+        with pytest.raises(GitHubAppError, match="422: The permissions requested are not granted"):
+            the_app.installation_token("shine2lay/temper-ai")
+        assert the_app.installation_token("shine2lay/temper-ai") == "ghs_install_2"  # read again
+        assert "contents" not in gh.token_bodies[-1]["permissions"]
+
+    def test_a_whole_installation_s_token_only_lists_its_repositories(self, the_app, gh):
+        the_app.installed_repos()
+        assert gh.token_bodies == [{"permissions": {"metadata": "read"}}]
+
+    def test_what_it_asks_for_given_what_is_granted(self):
+        assert scoped(GRANTED) == TEMPERS
+        assert scoped({"contents": "read", "metadata": "read"}) == {"contents": "read", "metadata": "read"}
+        assert scoped({"contents": "admin", "issues": "none"}) == {"contents": "write"}
+        assert scoped({}) == {}
 
     def test_the_login_to_get_one_is_the_apps_token(self, the_app, gh):
         the_app.installation_token("shine2lay/temper-ai")
@@ -341,7 +393,7 @@ class TestTheServerHandsOutTokens:
         body = response.json()
         assert (body["repo"], body["token"]) == ("shine2lay/temper-ai", "ghs_install_1")
         assert datetime.fromisoformat(body["expires_at"]).timestamp() == clock.now + 3600
-        assert gh.token_bodies == [{"repositories": ["temper-ai"]}]
+        assert gh.token_bodies == [{"repositories": ["temper-ai"], "permissions": TEMPERS}]
 
     def test_not_where_the_app_is_not_installed(self, client, gh):
         response = client.post("/api/github/token", json={"repo": "someone/else"})

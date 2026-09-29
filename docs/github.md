@@ -183,7 +183,8 @@ with the other keys.
 4. **Restart temper** with `temper-deploy restart`, so the server reads the
    new keys. `temper-deploy hooks` shows every public hook path answering.
 
-5. **Check it:** `docker compose exec server temper github check` — the app
+5. **Check it** in the server container, where the keys are:
+   `docker exec -w /app temper-ai-server-1 /app/.venv/bin/temper github check` — the app
    as GitHub knows it, where it is installed, a token for each installation,
    the webhook secret, the settings and which rules are on. It exits 1 with
    `warnings` for anything that stops temper working: a permission or event

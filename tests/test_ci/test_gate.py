@@ -134,6 +134,32 @@ def test_only_our_own_pushes_to_our_own_branches_are_checked(ci, monkeypatch):
     assert got[0]["branch"] == "ci-gate"
 
 
+def test_a_fresh_gate_leaves_history_alone(ci, monkeypatch):
+    """GitHub's event feed hands back the last hundred pushes. On a first start
+    that is a pile of commits from before this gate existed \u2014 they have no CI
+    compose file and could not pass even in principle. Judging them puts red
+    crosses on commits nobody is landing and spends ten minutes each doing it.
+    """
+    _, gate, paths, _ = ci
+    old = {"type": "PushEvent", "actor": {"login": paths.ALLOWED_PUSHERS[0]},
+           "created_at": "2020-01-01T00:00:00Z",
+           "payload": {"ref": "refs/heads/ancient", "head": "1" * 40}}
+    new = {"type": "PushEvent", "actor": {"login": paths.ALLOWED_PUSHERS[0]},
+           "created_at": "2099-01-01T00:00:00Z",
+           "payload": {"ref": "refs/heads/today", "head": "2" * 40}}
+    monkeypatch.setattr(gate, "gh", lambda *a, **k: subprocess.CompletedProcess(
+        a, 0, json.dumps([old, new]), ""))
+
+    got = gate.our_pushes()
+
+    assert [p["sha"] for p in got] == ["2" * 40], "it went back over history"
+    # And the watermark is remembered, so a restart does not start judging history again.
+    first = gate.state()["watching_since"]
+    gate.our_pushes()
+    assert gate.state()["watching_since"] == first
+    assert first.endswith("Z"), "the watermark must be in GitHub's own shape to compare with it"
+
+
 def test_a_commit_already_answered_for_is_not_checked_again(ci, monkeypatch):
     """Ten minutes of docker for an answer we already have, on every poll."""
     _, gate, _, _ = ci

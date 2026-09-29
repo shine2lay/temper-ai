@@ -22,6 +22,7 @@ over docker and make both slower than doing them in turn.
 
 from __future__ import annotations
 
+import datetime as dt
 import fcntl
 import json
 import os
@@ -137,8 +138,32 @@ def post_status(sha: str, status: str, description: str, target: str = "") -> bo
     return r.returncode == 0
 
 
+def watching_since() -> str:
+    """The moment this gate started watching. Nothing older is its business.
+
+    GitHub's event feed hands back the last hundred pushes, which on a first
+    start is a pile of history \u2014 commits from before this gate existed, which
+    have no docker-compose.ci.yml and could not be checked even in principle.
+    Judging them is wrong twice over: it puts red crosses on commits nobody is
+    landing, and it spends ten minutes each finding out what was never in
+    doubt. So the first pass writes down the time and checks nothing; from
+    then on, only what is pushed after that.
+    """
+    data = state()
+    since = data.get("watching_since")
+    if not since:
+        # GitHub's own shape, so comparing them is comparing like with like:
+        # "2026-09-29T23:29:19Z", not the "+00:00" the rest of this file writes.
+        since = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        data["watching_since"] = since
+        save(data)
+        log(f"first pass: watching for pushes from {since} onwards, and leaving history alone")
+    return str(since)
+
+
 def our_pushes() -> list[dict]:
-    """Recent pushes to branches of this repository, by people on the list."""
+    """Pushes to branches of this repository, by people on the list, since we started."""
+    since = watching_since()
     r = gh("api", f"repos/{paths.GH_REPO}/events?per_page=100")
     if r.returncode:
         log(f"could not read the repository's events: {r.stderr.strip()[:200]}")
@@ -154,12 +179,17 @@ def our_pushes() -> list[dict]:
         who = (e.get("actor") or {}).get("login") or ""
         if who not in paths.ALLOWED_PUSHERS:
             continue
+        # GitHub stamps every event; anything from before we started is history.
+        when = str(e.get("created_at") or "")
+        if when and when < since:
+            continue
         payload = e.get("payload") or {}
         ref = str(payload.get("ref") or "")
         head = str(payload.get("head") or "")
         if not head or not ref.startswith("refs/heads/"):
             continue
-        out.append({"sha": head, "branch": ref.removeprefix("refs/heads/"), "who": who})
+        out.append({"sha": head, "branch": ref.removeprefix("refs/heads/"), "who": who,
+                    "when": when})
     return out
 
 

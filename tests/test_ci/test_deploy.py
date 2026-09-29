@@ -134,6 +134,46 @@ def test_it_only_believes_a_restart_that_came_after_it_asked(dep):
     assert deploy.restart_done_after(asked) is not None
 
 
+def test_it_asks_the_live_temper_where_it_is(dep, monkeypatch):
+    """The bug this exists for: the live API was hard-coded to port 8000 and the
+    live server is on 8420, so every part of the live check that spoke to the
+    API failed on every deploy, whatever the deploy had done \u2014 and a check that
+    always says no reverts good code for ever, while looking like caution.
+    """
+    deploy, _ = dep
+    monkeypatch.setattr(deploy, "sh", lambda *a, **k: subprocess.CompletedProcess(
+        a, 0, "127.0.0.1:8420\n[::]:8420\n", ""))
+    assert deploy.live_api() == "http://127.0.0.1:8420"
+
+
+def test_with_docker_silent_it_falls_back_to_the_published_port(dep, monkeypatch):
+    """Docker not answering is not a reason to check nothing; the compose file
+    publishes one port and it is in the repository."""
+    deploy, _ = dep
+    monkeypatch.setattr(deploy, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "no such container"))
+    assert deploy.live_api() == f"http://127.0.0.1:{deploy.LIVE_PORT_DEFAULT}"
+    assert deploy.LIVE_PORT_DEFAULT == 8420, "this must match docker-compose.yml"
+
+
+def test_the_live_port_default_is_the_one_compose_publishes():
+    """If someone changes the published port, the fallback has to follow, or a
+    deploy on a day docker is slow reverts everything."""
+    import re  # noqa: PLC0415
+
+    compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(encoding="utf-8")
+    # The line reads "${TEMPER_BIND:-127.0.0.1}:8420:8420" \u2014 the address is a variable,
+    # the published port is not.
+    published = {int(m) for m in re.findall(r"[:}](\d+):8420\"", compose)}
+    assert published, "docker-compose.yml publishes no server port"
+
+    import sys as _sys  # noqa: PLC0415
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    from temper_ci import deploy as deploy_mod  # noqa: PLC0415
+
+    assert deploy_mod.LIVE_PORT_DEFAULT in published, (
+        f"the fallback is {deploy_mod.LIVE_PORT_DEFAULT}, but compose publishes {published}")
+
+
 def test_it_asks_for_a_restart_the_way_temper_deploy_expects(dep, monkeypatch):
     """--commit is temper-deploy's own check that the restart really carried
     this change; getting the arguments wrong would mean a silent no-op."""

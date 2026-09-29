@@ -139,11 +139,17 @@ export const AgentCardContent = memo(function AgentCardContent({
           className="w-2 h-2 rounded-full shrink-0"
           style={{ backgroundColor: statusColor }}
         />
-        <span className={cn('text-[13px] font-semibold truncate', isFailed ? 'text-red-700 dark:text-red-400' : 'text-temper-text')}>
+        {/* The name keeps its width: the model label gives way first, then the
+            agent's own name, so a card that also says "streaming" still reads
+            "implement" rather than a letter and an ellipsis. */}
+        <span
+          className={cn('text-[13px] font-semibold truncate shrink-0 max-w-[65%]', isFailed ? 'text-red-700 dark:text-red-400' : 'text-temper-text')}
+          title={agentName}
+        >
           {agentName}
         </span>
         {secondaryName && (
-          <span className="text-[10px] text-temper-text-dim truncate shrink-0" title={`agent: ${secondaryName}`}>
+          <span className="text-[10px] text-temper-text-dim truncate min-w-0" title={`agent: ${secondaryName}`}>
             {secondaryName}
           </span>
         )}
@@ -153,11 +159,11 @@ export const AgentCardContent = memo(function AgentCardContent({
         {isStreaming && (
           <span className="text-[9px] px-1 py-px rounded bg-blue-500/15 text-blue-700 dark:text-blue-400 font-medium shrink-0 animate-pulse">streaming</span>
         )}
-        <span className="ml-auto flex items-center gap-1 shrink-0">
+        <span className={cn('ml-auto flex items-center gap-1', isScript ? 'shrink-0' : 'min-w-0 shrink-[100]')}>
           {isScript ? (
             <span className="text-[9px] px-1 py-px rounded bg-amber-500/15 text-amber-700 dark:text-amber-400 font-medium">script</span>
           ) : model ? (
-            <span className="text-[9px] px-1 py-px rounded bg-temper-surface text-temper-text-dim font-mono"
+            <span className="text-[9px] px-1 py-px rounded bg-temper-surface text-temper-text-dim font-mono truncate min-w-0"
                   title={provider ? `${provider}/${model}` : model}>
               {provider ? `${provider}` : ''}{provider && model ? '/' : ''}{model}
             </span>

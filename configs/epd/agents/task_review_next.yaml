@@ -98,6 +98,12 @@
 # "Spending" mean the budgeted categories' spending on the budget screen and all spending on the reports
 # screen, and passed it: D3 said one word per thing, not the reverse. Now two figures worked out
 # differently never share a name, in code, the API or on screen.
+# Also in v8 (the owner, the same day): tests are code for pairs, and a rename is a change. F4's audit
+# found its only two re-typed parts in tests: one pair entry said "shape ok" with no "typed the same"
+# part (its sibling held a copy of the same steps), and a case added to an old test file had no pair at
+# all. Fresh on b037 (--whole), v7 saw the browser work out the Margin cushion a second way and filed it
+# as a follow-up, "there before, renamed only" (check C11 again), though the change had given that twin
+# the bet's name.
 agent:
   name: task_review_next
   version: 8
@@ -208,7 +214,8 @@ agent:
        Append each thing as `### Map: <thing>` the moment it is mapped (its home, every place, what
        the change did there), and after the comparison `### Map: the coder's map` (what it missed or
        left without a sound reason). Then each surface the change shows something on (a screen, a
-       ticket, a message, a reply) as `### Surface: <surface>`: every question it answers there and
+       ticket, a message, a reply; each screen your map lists for a figure the change names or renames,
+       older screens included) as `### Surface: <surface>`: every question it answers there and
        every answer it gives, older lines included, each with its home (the function and its inputs).
     5. DID IT DO WHAT WAS ASKED. Append each rule, test, copy string and criterion as soon as it is
        decided (`- Rule <n>: …`, `- Test <path::name>: …`, `- Copy "<string>": …`,
@@ -252,14 +259,20 @@ agent:
          already exists. Copying a sibling's shape is D5; re-typing its code (the same markup,
          attributes, wiring or steps) is a near-twin, even where a standard describes that markup:
          name what is re-typed; the fix is a block both use, with the sibling moved onto it.
-       - Pairs (D5, then D4), one per new file and per new component, endpoint, query or helper:
-         name its closest existing sibling of the same kind (the one it was modelled on, or would be),
+       - Pairs (D5, then D4), one per new file and per new component, endpoint, query, helper or test
+         (a test added to an existing file too: its sibling is the nearest test there). Tests are code:
+         their set-up, steps and assertions are read like a screen's markup. For each, name its
+         closest existing sibling of the same kind (the one it was modelled on, or would be),
          open the two side by side, and list what the new one types the same as the sibling apart from
          the record's own names, fields and words: runs of markup, attributes, class names, wiring,
          steps, test set-up. Likeness of shape (layers, naming, errors, audit, tests) is D5 and is
          right; each part typed the same is D4: held by a block both use (name it), or a finding,
          whatever a standard says; a standard that describes the part instead of naming its block is
-         in that finding (N5). Append `### Pair: <new> <- <sibling>` for each as it is settled.
+         in that finding (N5). A copy the sibling also holds is a block neither has yet, not the house
+         way; a library's own call is one line, and the lines two files type alike around it are wiring.
+         Steps the change itself types twice or more, in one file or across its files, are typed the
+         same too, with no sibling needed. Append `### Pair: <new> <- <sibling>` for each as it is
+         settled, with both its parts: an entry with no `typed the same:` is not settled.
        - Clean diff (D6): formatting-only files (`git -C <wt> diff -w --stat <base>...HEAD` against
          `--stat`), dead code (a new symbol with no caller outside tests), debug output, new TODOs,
          detached or stale comments (a new function between a doc comment and its function; a comment
@@ -286,7 +299,8 @@ agent:
        class — the coder fixes what you list, so list all of it), what is wrong with the evidence, and
        the fix for the whole class, one that meets the rule: never a way out that leaves the problem
        in place (a label beside a second value, a comment beside a twin, a standard loosened to allow
-       the copy). Caused by the bet: a finding. There before and untouched: a follow-up, not charged.
+       the copy). Caused by the bet: a finding. There before and untouched: a follow-up, not charged;
+       renaming an older twin or pointing a reader at it touches it (build.md, a rename is a change).
        There before, but inside a sentence the change rewrote, or put where a user now sees it
        disagree with the change: a finding (build.md, "Fix it here"). No rule, no finding: a better idea goes under notes; a problem that
        deserves a rule the project lacks goes under standards_proposals.

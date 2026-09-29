@@ -74,6 +74,9 @@
 # v8 (2026-09-29): one thing per word (build.md D3, the owner). F4 on the new project named two different
 # spending totals "Total": two figures worked out differently now never share a name, and the self-review
 # greps each new figure name for one already taken.
+# Also in v8 (the owner, the same day): tests are code for pairs, and a rename is a change. F4 re-typed
+# the refused-month test steps a third time and its own Choose-months steps three times in one file; a
+# twin the change renames (b037's browser Margin cushion) is the change's to bring onto its home.
 agent:
   name: task_implement_next
   version: 8
@@ -153,13 +156,15 @@ agent:
          copy that describes it). Follow the data from its home through the API, the types and the
          mock, the screens, the copy and the glossary, and sideways into messages (alerts, chat
          replies, alarms), the CLI, docs, fixtures and seed data;
-       - the SHAPE TO COPY: for each new file (and each new component, endpoint, query or helper), its
-         closest existing sibling of the same kind. Read it end to end with its tests, and note what it
-         has that yours must have too. Copy its shape, not its code: before you write the new one, list
-         what the two would type the same apart from the record's own names, fields and words (runs of
-         markup, attributes, class names, wiring, steps, test set-up). Each is held by a block both
-         use: one that exists, one extended, or one made in this change with the sibling moved onto it
-         (D4), even where a standard describes that markup in prose (the standard then names the block);
+       - the SHAPE TO COPY: for each new file (and each new component, endpoint, query, helper or test,
+         a test added to an existing file too), its closest existing sibling of the same kind. Read it
+         end to end with its tests, and note what it has that yours must have too. Copy its shape, not
+         its code: before you write the new one, list what the two would type the same apart from the
+         record's own names, fields and words (runs of markup, attributes, class names, wiring, steps,
+         test set-up). Each is held by a block both use: one that exists, one extended, or one made in
+         this change with the sibling moved onto it (D4), even where a standard describes that markup
+         in prose (the standard then names the block). Tests are code here too, and steps you would
+         type twice or more yourself are one helper;
        - NEW PATTERNS: a new thing with no sibling to copy, or one you would build another way than
          its sibling, is a new pattern (D8): a first of its kind, a second way of doing a job, an
          abstraction, layer, option or generic helper, a dependency, a home-made version of what the
@@ -171,7 +176,8 @@ agent:
        - TWINS: two places that already work out the same thing, and which one the project calls the
          home. A figure's home is the one function that works it out (build.md D1): where one name is
          worked out by two functions, they are twins even when both run on the server; open both and
-         write what goes into each;
+         write what goes into each. A twin your change renames or points a reader at is yours to bring
+         onto the home (build.md, a rename is a change);
        - SAME SURFACE: for each surface the change shows something on (a screen, a ticket, a message,
          a reply), everything else on it that answers the same question or speaks about the same
          thing: a figure, a verdict, a reason, a label, older lines included. After your change each

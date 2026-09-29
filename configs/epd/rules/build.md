@@ -49,9 +49,11 @@ that states its reason (the plan's "Design vs rules" section, or a quoted owner 
   already does the job, by name AND by what it does (the formula, the operands, the output). Extend it rather
   than write its near-twin. Copy a sibling's shape (D5), not its code: where a new thing would re-type what a
   sibling already has (the same markup, attributes, wiring or steps, not merely the same kind of steps), that
-  part becomes one block both use, in this change, and the sibling moves onto it. A rule every instance must
-  re-type to follow is held by a block, and the standard names the block: prose is followed by copying, and
-  copies drift.
+  part becomes one block both use, in this change, and the sibling moves onto it. Tests are code here too: a
+  test that re-types its neighbour's set-up, steps or assertions is the same miss, and steps the change itself
+  types twice or more become one helper; a copy the sibling also holds is a block neither has yet, not the
+  house way. A rule every instance must re-type to follow is held by a block, and the standard names the
+  block: prose is followed by copying, and copies drift.
 - **D5 Copy the existing shape.** A new thing goes where its kind lives and looks like its closest existing
   sibling of the same kind: layers, naming, errors, logging, audit, tests. Say which sibling you copied.
 - **D6 A clean diff.** Every changed line serves the bet. No reformatting untouched code, no drive-by
@@ -90,9 +92,11 @@ that states its reason (the plan's "Design vs rules" section, or a quoted owner 
 The owner's rule: **fail it if the bet caused the difference; if it was there before, only note it.**
 The bet caused it when the change made it, changed it, copied it somewhere new, or put it where a user now
 sees it disagree with something (a new figure placed beside an older twin that shows a different value).
-Those are findings. A twin, stale word or slip that was already on the base branch, that the change does not
-touch and does not make visible, is a note (`follow_ups`), not a finding: it goes to the codebase notes and
-is not this branch's to fix.
+Those are findings. A rename is a change: an older twin that the change gives the bet's name, or points a
+reader at, is the bet's ("renamed only" is not "untouched"), and whether the two agree is settled by opening
+both, with a probe where reading cannot settle it. A twin, stale word or slip that was already on the base
+branch, that the change does not touch and does not make visible, is a note (`follow_ups`), not a finding:
+it goes to the codebase notes and is not this branch's to fix.
 
 **Fix it here** (the owner, 2026-09-28). When the change puts older code where a user now sees it disagree
 with what the change shows or promises (an older sentence, figure, label or reason on a surface the change

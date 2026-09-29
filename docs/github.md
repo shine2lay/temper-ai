@@ -232,3 +232,8 @@ app is installed takes a token with metadata read only.)
   became of each ("started github_work …", "no trigger matched",
   "skipped: …"). `GET /api/hooks/github/recent` (behind the API token, not
   public) lists the last ones.
+
+## See also
+
+- [linear.md](linear.md): start temper from a Linear issue
+- [notion.md](notion.md): start temper from a Notion page

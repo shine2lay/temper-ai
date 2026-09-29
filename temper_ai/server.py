@@ -378,6 +378,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("Event inbox failed to start: %s", e)
 
+    # The deadlines on the clean-ups failed runs are holding. A wait is a row in the
+    # database, so one that runs out while the server is down is picked up by the first
+    # sweep after the restart.
+    holds_started = False
+    try:
+        from temper_ai.runner import hold_sweeper
+        holds_started = hold_sweeper.start()
+    except Exception as e:
+        logger.warning("The keeper of clean-up deadlines failed to start: %s", e)
+
     logger.info("Temper AI server ready")
 
     # The /mcp endpoint needs its session manager running for the life of
@@ -402,6 +412,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if notify_started:
         from temper_ai.integrations.notify.service import stop_notify
         stop_notify()
+    if holds_started:
+        from temper_ai.runner import hold_sweeper
+        hold_sweeper.stop()
     if trigger_scheduler is not None:
         trigger_scheduler.stop()
     if reaper is not None:

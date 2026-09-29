@@ -17,6 +17,7 @@ from temper_ai.observability.event_types import EventType
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.conditions import evaluate_condition, source_value
 from temper_ai.stage.exceptions import CancellationError, CyclicDependencyError
+from temper_ai.stage.failure import FailurePolicy, RunStop, is_cleanup, undoes
 from temper_ai.stage.gate import EMPTY_RESPONSE, GateSignal, build_gate_context
 from temper_ai.stage.node import Node
 from temper_ai.stage.restore import Restore
@@ -89,8 +90,22 @@ def execute_graph(
     # (stage/restore.py).
     if is_workflow and initial_outputs is not None and not isinstance(getattr(context, "restore", None), Restore):
         state = _resume_state(context)
-        context.restore = Restore(initial_outputs, state.get("loops"), state.get("failed") or ())
+        context.restore = Restore(initial_outputs, state.get("loops"), state.get("failed") or (),
+                                  dispatches=state.get("dispatches"))
     restore = getattr(context, "restore", None)
+    # Where the run stopped, shared by every graph of the run: a failure inside a stage has to
+    # stop the batches at the top as well, or the run goes on spending on work it cannot use.
+    if is_workflow and not isinstance(getattr(context, "run_stop", None), RunStop):
+        context.run_stop = RunStop(policy=context.failure_policy or FailurePolicy())
+        # So every stage inherits the workflow's setting and can override it for itself.
+        context.failure_policy = context.run_stop.policy
+    if isinstance(restore, Restore):
+        # Agents a dispatcher added to this graph during the earlier attempt come back here,
+        # in their own stage, before anything is claimed -- they are part of this graph's
+        # topology, not the workflow's (see stage/restore.py).
+        nodes, node_map, batches, tombstones = _readd_dispatched(
+            nodes, node_map, batches, restore, context, graph_name,
+        )
     loop_counts: dict[str, int] = defaultdict(int)
     loop_feedback: dict[str, NodeResult] = {}
     if isinstance(restore, Restore):
@@ -102,6 +117,9 @@ def execute_graph(
         )
         node_outputs, loop_feedback = claimed.outputs, claimed.loop_feedback
         loop_counts.update(claimed.loop_counts)
+        node_outputs = {k: v for k, v in node_outputs.items() if k in node_map}
+        # What a kept dispatcher took out of the graph last time stays out of it.
+        node_outputs.update(tombstones)
         if claimed.reset and context.checkpoint_service is not None:
             for name in claimed.reset:
                 context.checkpoint_service.save_node_reset(prefix + name)
@@ -162,9 +180,10 @@ def execute_graph(
         # be reported failed too, when nothing broke and someone stopped it.
         if _stopped_mid_step(context, node_outputs):
             raise CancellationError("Workflow cancelled by user")
+        stopped = _settle_run(context, nodes, node_outputs, input_data) if is_workflow else None
         return _build_final_result(
             nodes, node_outputs, input_data, start, graph_event_id, context, workflow_outputs,
-            is_workflow=is_workflow, retired=retired,
+            is_workflow=is_workflow, retired=retired, stopped=stopped,
         )
 
     except Exception as exc:
@@ -173,10 +192,19 @@ def execute_graph(
         # list, the CLI exit code and downstream callers all treat it
         # differently (nothing went wrong; someone stopped it).
         terminal = Status.CANCELLED if isinstance(exc, CancellationError) else Status.FAILED
+        stopped = None
+        if is_workflow:
+            # Stopped by hand, or thrown out by something that broke: either way nothing more
+            # ran, so the clean-ups are still owed and the setup is still standing.
+            stop = getattr(context, "run_stop", None)
+            if isinstance(stop, RunStop):
+                stop.note_failure(context.node_path or "the run", str(exc))
+            stopped = _settle_run(context, nodes, node_outputs, input_data)
         context.event_recorder.update_event(
             graph_event_id,
             status=terminal.value,
-            data={"error": str(exc), "duration_seconds": duration},
+            data={"error": str(exc), "duration_seconds": duration,
+                  **({"stopped": stopped} if stopped else {})},
         )
         return NodeResult(
             status=terminal,
@@ -187,6 +215,144 @@ def execute_graph(
             cost_usd=sum(r.cost_usd for r in (*node_outputs.values(), *retired)),
             total_tokens=sum(r.total_tokens for r in (*node_outputs.values(), *retired)),
         )
+
+def _settle_run(
+    context: ExecutionContext,
+    nodes: list[Node],
+    node_outputs: dict[str, NodeResult],
+    input_data: dict,
+) -> dict | None:
+    """What the run leaves behind, worked out once at the very end.
+
+    Writes down the clean-ups it is keeping back -- their own row, which is what survives a
+    temper restart and what the deadline is measured against -- and hands back where the run
+    stopped for the workflow event, so the page can say what failed and what is being held.
+    """
+    from temper_ai.runner import holds
+
+    stop = getattr(context, "run_stop", None)
+    if not isinstance(stop, RunStop):
+        return None
+    if not stop.stopped:
+        # It finished. Any wait left by an earlier attempt is over: this attempt ran the
+        # clean-ups itself, or there were none to run.
+        if getattr(context, "run_only", None) is None:
+            holds.finish(context.run_id)
+        return None
+
+    # Anything that never got its turn -- the run was stopped by hand, or thrown out -- is
+    # still owed, and the setup it would tear down is still standing.
+    if stop.policy.holds:
+        for path, undone in _cleanups_owed(nodes, node_outputs, context.node_path or ""):
+            stop.hold(path, undone)
+
+    if stop.held and getattr(context, "run_only", None) is None:
+        holds.record(
+            context.run_id,
+            workflow_name=context.workflow_name,
+            workspace_path=context.workspace_path,
+            inputs=input_data,
+            held=[h.as_dict() for h in stop.held],
+            deadline=stop.policy.deadline(),
+            stopped_at=stop.path,
+            stop_reason=stop.reason,
+        )
+    return stop.as_dict()
+
+
+def _cleanups_owed(
+    nodes: list[Node],
+    node_outputs: dict[str, NodeResult],
+    prefix: str,
+) -> list[tuple[str, list[str]]]:
+    """The clean-ups of this run that have not run, by path, with what each undoes.
+
+    Walked over the whole run, stages and all: a run stopped by hand leaves its clean-ups
+    wherever they happen to sit, and each of them is still owed.
+    """
+    owed: list[tuple[str, list[str]]] = []
+    for node in nodes:
+        path = f"{prefix}.{node.name}" if prefix else node.name
+        result = node_outputs.get(node.name)
+        done = result is not None and result.status == Status.COMPLETED
+        if is_cleanup(node) and not done:
+            owed.append((path, undoes(node)))
+        children = getattr(node, "child_nodes", None)
+        if children and not done:
+            inside = (result.node_results if result is not None else None) or {}
+            owed.extend(_cleanups_owed(children, inside, path))
+    return owed
+
+
+def _readd_dispatched(
+    nodes: list[Node],
+    node_map: dict[str, Node],
+    batches: list[list[Node]],
+    restore: Restore,
+    context: ExecutionContext,
+    graph_name: str,
+) -> tuple[list[Node], dict[str, Node], list[list[Node]], dict[str, NodeResult]]:
+    """Put back the agents a dispatcher added to *this* graph during the earlier attempt.
+
+    A dispatched agent belongs to the graph it was added to: one added inside a stage was
+    checkpointed as ``build.worker_3``. Putting them all back at the top level -- which is what
+    a resume did before -- gave them paths they never had, so their finished results matched
+    nothing and every one of them ran again, on every resume; and "re-run from here" after the
+    dispatcher lost them altogether, because the graph it re-ran had no idea they existed.
+
+    They go back before anything is claimed, so their results are claimed with everyone else's.
+    """
+    prefix = f"{context.node_path}." if context.node_path else ""
+    deps = {name: list(node.depends_on) for name, node in node_map.items()}
+    entries = restore.claim_dispatches(prefix, node_map, restore.reruns(prefix, deps))
+    if not entries:
+        return nodes, node_map, batches, {}
+    loader = getattr(context, "graph_loader", None)
+    if loader is None:
+        logger.warning("Resume of '%s': %d dispatch(es) cannot be put back -- no graph loader",
+                       graph_name, len(entries))
+        return nodes, node_map, batches, {}
+    from temper_ai.stage.models import NodeConfig
+
+    added: list[Node] = []
+    tombstones: dict[str, NodeResult] = {}
+    for entry in entries:
+        # A dispatch can take a waiting node out as well as add one -- the "replace" shape. A
+        # kept dispatcher will not do it again, so its removals are made good here.
+        re_added = {d.get("name") for d in entry.get("added_nodes", [])}
+        for target in entry.get("removed_targets", []):
+            if target not in node_map or target in re_added:
+                continue
+            node_map.pop(target, None)
+            nodes = [n for n in nodes if n.name != target]
+            for batch in batches:
+                batch[:] = [n for n in batch if n.name != target]
+            tombstones[target] = NodeResult(
+                status=Status.SKIPPED,
+                error=f"removed by dispatch from '{entry.get('dispatcher')}'",
+            )
+        for node_dict in entry.get("added_nodes", []):
+            name = node_dict.get("name")
+            if not isinstance(name, str) or name in node_map:
+                continue
+            try:
+                built = loader._resolve_node(NodeConfig.from_dict(node_dict))
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Resume of '%s': could not build the dispatched node '%s': %s",
+                             graph_name, name, exc)
+                continue
+            node_map[name] = built
+            added.append(built)
+    if not added:
+        return nodes, node_map, batches, tombstones
+    nodes = [*nodes, *added]
+    # Their own order among themselves is worked out the same way it was when they were
+    # dispatched; they hang off nodes that are already in the graph, so they come after it.
+    batches = [*batches, *topological_sort(added)]
+    logger.info("Resume of '%s': %d agent(s) added last time are back in it: %s",
+                graph_name, len(added), ", ".join(n.name for n in added))
+    return nodes, node_map, batches, tombstones
+
 
 def _renamed_from(node_map: dict[str, Node]) -> dict[str, list[str]]:
     """Each renamed node's earlier names (NodeConfig.renamed_from), for what a resume restores."""
@@ -241,8 +407,7 @@ def _run_batches(
             result = _execute_single_node(node, input_data, node_outputs, context, graph_event_id, loop_feedback, node_map)
             # Handle dynamic spawning if the node produced _spawn
             node_outputs[node.name] = result
-            if cp:
-                cp.save_node_completed(cp_prefix + node.name, result)
+            _record_outcome(node, result, cp_prefix, context, cp)
             _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
             # A loop that could not read its verdict fails as it stands: no other pass.
             rewind = None if result.metadata.get(NO_LOOP_VERDICT) else _handle_loop(
@@ -257,13 +422,126 @@ def _run_batches(
             results = _execute_parallel_batch(remaining, input_data, node_outputs, context, graph_event_id, loop_feedback, node_map)
             for node, result in results:
                 node_outputs[node.name] = result
-                if cp:
-                    cp.save_node_completed(cp_prefix + node.name, result)
+                _record_outcome(node, result, cp_prefix, context, cp)
             # Dispatch after ALL parallel nodes complete — mutation to batches is
             # safe only once the current batch is done being iterated.
             for node, result in results:
                 _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
         batch_idx += 1
+
+
+# Set on the result of a clean-up kept back by a failure: it did not run, and the setup it
+# would have torn down is still standing for a resume (stage/failure.py).
+CLEANUP_HELD = "cleanup_held"
+
+
+def _record_outcome(
+    node: Node,
+    result: NodeResult,
+    cp_prefix: str,
+    context: ExecutionContext,
+    cp: Any,
+) -> None:
+    """Write what became of a node, and tell the run about it.
+
+    Three things can have happened:
+
+    * a clean-up was kept back -- no result to keep, a ``cleanup_held`` note instead, so a
+      resume knows the setup is still there and that this step still owes its work;
+    * a clean-up ran -- its result is kept like any other, and what it undid is written down,
+      so a resume does those steps again before anything that needs what they made;
+    * anything else -- its result is kept, and a failure stops the run here.
+    """
+    path = cp_prefix + node.name
+    stop = getattr(context, "run_stop", None)
+    undone = undoes(node)
+    if result.metadata.get(CLEANUP_HELD):
+        if cp is not None:
+            cp.save_cleanup_held(path, undone)
+        if isinstance(stop, RunStop):
+            stop.hold(path, undone)
+        return
+    if cp is not None:
+        cp.save_node_completed(path, result)
+    if result.status == Status.FAILED and isinstance(stop, RunStop):
+        stop.note_failure(path, result.error)
+    elif undone and result.status == Status.COMPLETED:
+        # Worth writing down even in a run that goes well: a fork, or "re-run from here",
+        # picks up a finished run whose setup has been torn down just the same.
+        if cp is not None:
+            cp.save_cleanup_ran(path, undone)
+        if isinstance(stop, RunStop):
+            stop.note_cleanup_ran(path, undone)
+
+
+def _held_or_skipped(
+    node: Node,
+    context: ExecutionContext,
+    parent_event_id: str,
+) -> NodeResult | None:
+    """Why this node does not start at all, or None when it may.
+
+    Two reasons, both about the run as a whole rather than this node's own dependencies:
+
+    * the run has stopped at a failure. Nothing new starts, except the steps that are there
+      for exactly this -- ``run_after_failure`` reports and pitches. Steps already running are
+      not touched; they finish and keep their results.
+    * this is a clean-up (it says what it undoes) and the run is holding its clean-ups, so the
+      setup the failed step needs is still there when someone picks the run up again.
+
+    A pass that was told to run only some steps (the held clean-ups, once the hold is over)
+    uses the same door: everything else is passed over.
+    """
+    path = f"{context.node_path}.{node.name}" if context.node_path else node.name
+    only = getattr(context, "run_only", None)
+    if only is not None and not _wanted(path, only):
+        result = NodeResult(
+            status=Status.SKIPPED,
+            error="not part of this pass: it ran only the clean-ups the run was holding",
+        )
+        _record_skipped_node(node, context, parent_event_id, result.error or "")
+        return result
+    stop = getattr(context, "run_stop", None)
+    if not isinstance(stop, RunStop) or not stop.stopped:
+        return None
+    policy = context.failure_policy or stop.policy
+    if is_cleanup(node) and policy.holds:
+        reason = (f"kept back so the run can be picked up where it stopped "
+                  f"('{stop.path}' failed); it undoes {', '.join(undoes(node))}")
+        logger.info("Clean-up '%s' is held: %s", node.name, reason)
+        _record_skipped_node(node, context, parent_event_id, reason, status="held")
+        return NodeResult(status=Status.SKIPPED, error=reason, metadata={CLEANUP_HELD: True})
+    if is_cleanup(node) or getattr(node.config, "run_after_failure", False):
+        # A clean-up in a workflow that cleans up at a failure is exactly the step that has
+        # to run now: the whole point of it is to let the setup go. So is a report.
+        return None
+    reason = f"the run stopped at '{stop.path}', which failed"
+    logger.info("Node '%s' does not start: %s", node.name, reason)
+    _record_skipped_node(node, context, parent_event_id, reason)
+    return NodeResult(status=Status.SKIPPED, error=reason)
+
+
+def _runs_after_a_failure(node: Node, context: ExecutionContext) -> bool:
+    """Whether this node still runs when something it depends on failed.
+
+    Two kinds do: a step marked ``run_after_failure`` (a report, a pitch), and a clean-up in a
+    run that cleans up at a failure -- letting go of the setup is what it is for. A clean-up in
+    a run that *holds* its clean-ups does not: it is kept back for the resume, which
+    `_held_or_skipped` has already decided by the time this is asked.
+    """
+    if getattr(node.config, "run_after_failure", False):
+        return True
+    if not is_cleanup(node):
+        return False
+    stop = getattr(context, "run_stop", None)
+    policy = context.failure_policy or (stop.policy if isinstance(stop, RunStop) else None)
+    return bool(policy and not policy.holds)
+
+
+def _wanted(path: str, only: Any) -> bool:
+    """Whether a pass told to run only certain paths wants this node: it is one of them, or a
+    stage that holds one of them."""
+    return any(p == path or p.startswith(f"{path}.") for p in only)
 
 
 def _resume_state(context: ExecutionContext) -> dict[str, Any]:
@@ -292,8 +570,12 @@ def _build_final_result(
     workflow_outputs: dict[str, str] | None = None,
     is_workflow: bool = False,
     retired: list[NodeResult] | None = None,
+    stopped: dict | None = None,
 ) -> NodeResult:
     """Assemble the final NodeResult once every batch has run.
+
+    ``stopped``: where the run stopped and what it is holding, when a failure stopped it
+    (stage/failure.py). It goes on the workflow event, which is what the page reads.
 
     A *workflow* whose nodes include a failure is reported as ``failed``
     (with the failed node names in the event), not ``completed``: before
@@ -347,9 +629,16 @@ def _build_final_result(
         event_data["retired_tool_calls"] = sum(a.tool_calls for a in retired_agents)
     if resolved_outputs:
         event_data["workflow_output"] = resolved_outputs
+    if stopped:
+        event_data["stopped"] = stopped
 
     failed_nodes = _failed_node_names(node_outputs) if is_workflow else []
     final_status = Status.FAILED if failed_nodes else Status.COMPLETED
+    if is_workflow and getattr(context, "run_only", None) is not None:
+        # A pass that ran only the held clean-ups, once the wait was over. It says nothing
+        # about whether the work succeeded: the run failed, and it still shows as failed, so
+        # whatever reads a run's outcome -- the EPD driver, the dashboard -- sees what it saw.
+        final_status = Status.FAILED
     error: str | None = None
     if failed_nodes:
         error = f"{len(failed_nodes)} node(s) failed: {', '.join(failed_nodes)}"
@@ -443,14 +732,16 @@ def _execute_single_node(
     node_map: dict[str, Node] | None = None,
 ) -> NodeResult:
     """Execute one node with condition checking and input resolution."""
+    stopped = _held_or_skipped(node, context, parent_event_id)
+    if stopped is not None:
+        return stopped
     upstream_failure = _check_dependency_failures(node, node_outputs)
-    if upstream_failure is not None and not getattr(node.config, "run_after_failure", False):
+    if upstream_failure is not None and not _runs_after_a_failure(node, context):
         logger.warning("Node '%s' skipped — %s", node.name, upstream_failure.error)
         _record_skipped_node(node, context, parent_event_id, upstream_failure.error or "dependency failed")
         return upstream_failure
     if upstream_failure is not None:
-        logger.info("Node '%s' runs after a failure upstream (run_after_failure): %s",
-                    node.name, upstream_failure.error)
+        logger.info("Node '%s' runs after a failure upstream: %s", node.name, upstream_failure.error)
 
     if node.condition:
         try:
@@ -615,6 +906,7 @@ def _record_skipped_node(
     context: ExecutionContext,
     parent_event_id: str,
     reason: str,
+    status: str = "skipped",
 ) -> None:
     """Record a stage event for a skipped node so the DAG can show it."""
     context.event_recorder.record(
@@ -622,7 +914,7 @@ def _record_skipped_node(
         data={**_build_node_event_data(node), "skip_reason": reason},
         parent_id=parent_event_id,
         execution_id=context.run_id,
-        status="skipped",
+        status=status,
     )
 
 
@@ -980,13 +1272,17 @@ def _apply_declarative_dispatch(
     if added_node_dicts or removed_targets:
         cp = getattr(context, "checkpoint_service", None)
         if cp is not None:
+            graph_path = getattr(context, "node_path", "") or ""
             cp.save_dispatch_applied(
-                dispatcher_name=node.name,
+                # By its full path, and with the graph it added to: a resume gives each graph
+                # back its own, so an agent added inside a stage comes back inside that stage.
+                dispatcher_name=f"{graph_path}.{node.name}" if graph_path else node.name,
                 added_nodes=added_node_dicts,
                 removed_targets=removed_targets,
                 dispatcher_depth=dispatcher_depth,
                 dispatcher_fingerprint=state.fingerprints[node.name],
                 dispatched_count_delta=len(added_node_dicts),
+                graph_path=graph_path,
             )
 
         # Emit an observability event so the dashboard timeline shows the

@@ -44,6 +44,32 @@ export interface WorkflowExecution {
   /** Every agent the run started (see AgentIndexEntry). Absent from servers
    *  that predate it. */
   agent_index?: AgentIndexEntry[];
+  /** Where the run stopped, when a failure stopped it. */
+  stopped?: RunStopped | null;
+  /** The clean-ups the run is holding back so a resume can use the same setup. */
+  hold?: CleanupHoldInfo | null;
+}
+
+/** Where a run stopped and what it is keeping back (the engine's stage/failure.py). */
+export interface RunStopped {
+  /** The step it stopped at, by its full path. */
+  path: string;
+  reason: string;
+  /** When it stopped. */
+  at: string | null;
+  mode: 'hold' | 'cleanup';
+  held: { path: string; undoes: string[] }[];
+}
+
+/** A run's held clean-ups: what is being kept, and until when. */
+export interface CleanupHoldInfo {
+  execution_id: string;
+  workflow_name: string;
+  cleanups: { path: string; undoes: string[] }[];
+  deadline: string | null;
+  seconds_left: number | null;
+  stopped_at: string | null;
+  stop_reason: string | null;
 }
 
 /**

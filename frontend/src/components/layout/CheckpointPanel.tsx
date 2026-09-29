@@ -9,6 +9,8 @@ import { useNavigate } from 'react-router-dom';
 import { useExecutionStore } from '@/store/executionStore';
 import { authFetch } from '@/lib/authFetch';
 import { formatDuration, formatTimestamp, cn } from '@/lib/utils';
+import { ResumeDialog } from './ResumeDialog';
+import { HoldBanner } from './HoldBanner';
 
 interface Checkpoint {
   id: string;
@@ -34,19 +36,6 @@ interface CheckpointResponse {
 async function fetchCheckpoints(executionId: string): Promise<CheckpointResponse> {
   const res = await authFetch(`/api/runs/${executionId}/checkpoints`);
   if (!res.ok) throw new Error(`Failed to fetch checkpoints: ${res.status}`);
-  return res.json();
-}
-
-async function resumeRun(executionId: string): Promise<{ execution_id: string; status: string }> {
-  const res = await authFetch(`/api/runs/${executionId}/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(body || `HTTP ${res.status}`);
-  }
   return res.json();
 }
 
@@ -107,13 +96,6 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
     enabled: !!executionId,
   });
 
-  const resumeMutation = useMutation({
-    mutationFn: () => resumeRun(executionId!),
-    onSuccess: (result) => {
-      navigate(`/workflow/${result.execution_id}`);
-    },
-  });
-
   const forkMutation = useMutation({
     mutationFn: (sequence: number) => forkRun(executionId!, sequence, workflowName!),
     onSuccess: (result) => {
@@ -122,6 +104,9 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
   });
 
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<string | null>(null);
+  // Resume asks first: the preview says what would keep its result and what would run again,
+  // and lets any finished step be ticked to run again too.
+  const [showPreview, setShowPreview] = useState(false);
 
   const handleViewOnDag = useCallback(
     (checkpoints: Checkpoint[], sequence: number) => {
@@ -176,19 +161,36 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
           )}
           {canResume && hasCheckpoints && (
             <button
-              onClick={() => resumeMutation.mutate()}
-              disabled={resumeMutation.isPending}
+              onClick={() => setShowPreview(true)}
               className={cn(
                 'px-3 py-1.5 rounded text-xs font-medium transition-colors',
                 'bg-temper-accent text-white hover:bg-temper-accent-dim',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
               )}
             >
-              {resumeMutation.isPending ? 'Resuming...' : 'Resume from Last Checkpoint'}
+              Resume…
             </button>
           )}
         </div>
       </div>
+
+      {/* Where it stopped, and the setup being kept for a resume */}
+      {workflow?.stopped && (
+        <div className="px-4 py-2 bg-red-50 text-[11px] text-red-700 border-b border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/20 shrink-0">
+          The run stopped at <span className="font-mono">{workflow.stopped.path}</span>: {workflow.stopped.reason}
+        </div>
+      )}
+      {workflow?.hold && <HoldBanner hold={workflow.hold} />}
+
+      {showPreview && executionId && (
+        <ResumeDialog
+          executionId={executionId}
+          onClose={() => setShowPreview(false)}
+          onResumed={(id) => {
+            setShowPreview(false);
+            navigate(`/workflow/${id}`);
+          }}
+        />
+      )}
 
       {/* Error/loading states */}
       {isLoading && (
@@ -196,11 +198,6 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
       )}
       {error && (
         <div className="px-4 py-3 text-sm text-red-400">Failed to load checkpoints: {(error as Error).message}</div>
-      )}
-      {resumeMutation.isError && (
-        <div className="px-4 py-2 bg-red-500/10 text-xs text-red-400 border-b border-red-500/20 shrink-0">
-          Resume failed: {(resumeMutation.error as Error).message}
-        </div>
       )}
       {forkMutation.isError && (
         <div className="px-4 py-2 bg-red-500/10 text-xs text-red-400 border-b border-red-500/20 shrink-0">

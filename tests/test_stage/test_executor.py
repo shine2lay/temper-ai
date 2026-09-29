@@ -1630,8 +1630,9 @@ class TestAFailureReachesEveryStepAfterIt:
 
         for node in chain:
             node.run.assert_not_called()
-        assert result.node_results["b"].error == "Dependency 'a' failed"
-        assert result.node_results["e"].error == "Dependency 'd' was skipped because 'a' failed"
+        # The run stops where it failed, so none of them start at all, and each says so.
+        assert result.node_results["b"].error == "the run stopped at 'a', which failed"
+        assert result.node_results["e"].error == "the run stopped at 'a', which failed"
         assert result.status == Status.FAILED
 
     def test_the_epd_task_shape(self):
@@ -1666,17 +1667,23 @@ class TestAFailureReachesEveryStepAfterIt:
         c.run.assert_called_once()
         d.run.assert_called_once()
 
-    def test_a_step_that_ran_after_the_failure_lets_the_next_one_run(self):
+    def test_only_steps_marked_to_run_after_a_failure_go_on(self):
+        """The run stopped, so nothing new starts -- except the steps that are there for
+        exactly this. A plain step after a report does not sneak through on its coat-tails."""
         a = _make_agent_node("a", status=Status.FAILED)
         b = _make_agent_node("b", depends_on=["a"])
         report = _make_agent_node("report", depends_on=["b"])
         report.config.run_after_failure = True
+        pitch = _make_agent_node("pitch", depends_on=["report"])
+        pitch.config.run_after_failure = True
         after = _make_agent_node("after", depends_on=["report"])
 
-        execute_graph([a, b, report, after], {}, _make_context(), graph_name="wf", is_workflow=True)
+        execute_graph([a, b, report, pitch, after], {}, _make_context(),
+                      graph_name="wf", is_workflow=True)
 
         report.run.assert_called_once()
-        after.run.assert_called_once()
+        pitch.run.assert_called_once()
+        after.run.assert_not_called()
 
     def test_a_run_after_failure_step_its_condition_skips_passes_the_failure_on(self):
         a = _make_agent_node("a", status=Status.FAILED, structured_output={"teardown": False})
@@ -1692,7 +1699,7 @@ class TestAFailureReachesEveryStepAfterIt:
 
         teardown.run.assert_not_called()
         after.run.assert_not_called(), "the failure was lost at a step its condition skipped"
-        assert result.node_results["after"].error == "Dependency 'teardown' was skipped because 'a' failed"
+        assert result.node_results["after"].error == "the run stopped at 'a', which failed"
         reasons = [c.kwargs["data"].get("skip_reason") for c in ctx.event_recorder.record.call_args_list]
         assert "condition not met; Dependency 'a' failed" in reasons
 

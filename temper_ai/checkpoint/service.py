@@ -102,6 +102,7 @@ class CheckpointService:
         dispatcher_depth: int,
         dispatcher_fingerprint: tuple[str, str],
         dispatched_count_delta: int,
+        graph_path: str = "",
     ) -> None:
         """Record a successful runtime dispatch application.
 
@@ -124,6 +125,12 @@ class CheckpointService:
             dispatched_count_delta: Number of nodes this dispatch added to
                 run-wide count. Summed across all dispatch_applied entries
                 to restore state.dispatched_count.
+            graph_path: The path of the graph the nodes were added to -- the
+                dispatcher's own stage, "" at the top level. A resume gives each
+                graph back its own dispatched nodes as it starts, so an agent added
+                inside a stage comes back inside that stage. Rows written before
+                this have no graph_path, and a resume finds their graph by the
+                dispatcher's name.
         """
         self._save(
             event_type="dispatch_applied",
@@ -135,8 +142,21 @@ class CheckpointService:
                 "dispatcher_depth": dispatcher_depth,
                 "dispatcher_fingerprint": list(dispatcher_fingerprint),
                 "dispatched_count_delta": dispatched_count_delta,
+                "graph_path": graph_path,
             },
         )
+
+    def save_cleanup_held(self, node_name: str, undoes: list[str]) -> None:
+        """A clean-up kept back by a failure: it has not run, and the setup it would
+        have torn down is still there for a resume (stage/failure.py)."""
+        self._save(event_type="cleanup_held", node_name=node_name, status="held",
+                   metadata_={"undoes": list(undoes)})
+
+    def save_cleanup_ran(self, node_name: str, undoes: list[str]) -> None:
+        """A clean-up that did run, and what it undid: a resume has to do those steps
+        again, with the same inputs, before anything that needs what they made."""
+        self._save(event_type="cleanup_ran", node_name=node_name, status="ran",
+                   metadata_={"undoes": list(undoes)})
 
     def save_node_reset(self, node_name: str) -> None:
         """A resume runs a node again that had finished (a failure at or before it; see
@@ -213,6 +233,13 @@ class CheckpointService:
           sent back with.
         - ``failed``: the paths whose last attempt failed, or was skipped because a step before
           it failed. They run again, and so does what finished after them.
+        - ``skipped``: the paths a condition of their own skipped, with nothing failed. A resume
+          leaves them be.
+        - ``dispatches``: the agents a dispatcher added during the run, kept by the graph they
+          were added to, so each graph gives back its own as it starts. A rewind drops the ones
+          of the pass it throws away.
+        - ``undone``: for each clean-up that ran, the steps it undid -- they have to be done
+          again before anything that needs what they made.
         """
         return self._replay_resume(self._load_full_history(up_to_sequence))
 
@@ -333,21 +360,59 @@ class CheckpointService:
         """
         loops: dict[str, dict[str, Any]] = {}
         last_failed: dict[str, bool] = {}
+        skipped: set[str] = set()
+        dispatches: list[dict[str, Any]] = []
+        undone: dict[str, list[str]] = {}
         for cp in history:
+            if cp.event_type == "dispatch_applied" and cp.node_name:
+                meta = cp.metadata_ or {}
+                fp = meta.get("dispatcher_fingerprint") or ["", ""]
+                path = cp.node_name
+                raw_graph = meta.get("graph_path")
+                dispatches.append({
+                    "dispatcher": path,
+                    # None for a row written before dispatches were kept by path: its graph is
+                    # found by the dispatcher's name when that graph starts.
+                    "graph_path": raw_graph if raw_graph is not None else None,
+                    "added_nodes": list(meta.get("added_nodes", [])),
+                    "removed_targets": list(meta.get("removed_targets", [])),
+                    "dispatcher_depth": int(meta.get("dispatcher_depth", 0)),
+                    "dispatcher_fingerprint": (str(fp[0]), str(fp[1])) if len(fp) >= 2 else ("", ""),
+                    "dispatched_count_delta": int(meta.get("dispatched_count_delta", 0)),
+                })
+                continue
+            if cp.event_type == "cleanup_ran" and cp.node_name:
+                undone[cp.node_name] = list((cp.metadata_ or {}).get("undoes", []))
+                continue
             if cp.event_type == "node_completed" and cp.node_name:
                 last_failed[cp.node_name] = cp.status == Status.FAILED.value or (
                     # a skip because of a failure says so: "... failed" (stage/executor.py)
                     cp.status == Status.SKIPPED.value and "failed" in (cp.error or "")
                 )
+                # A step its own condition skipped: nothing failed, and nothing is owed. A
+                # resume leaves it alone instead of calling it unfinished work.
+                if cp.status == Status.SKIPPED.value and not last_failed[cp.node_name]:
+                    skipped.add(cp.node_name)
+                else:
+                    skipped.discard(cp.node_name)
                 continue
             if cp.event_type != "loop_rewind":
                 continue
             meta = cp.metadata_ or {}
             for name in meta.get("cleared_nodes", []):
                 last_failed.pop(name, None)
+                skipped.discard(name)
+                skipped -= {k for k in skipped if k.startswith(f"{name}.")}
                 for kept in (loops, last_failed):
                     for key in [k for k in kept if k.startswith(f"{name}.")]:
                         del kept[key]
+                # The agents a dispatcher added during the pass the rewind throws away go with
+                # it: the next pass dispatches for itself, and without this the same agents
+                # would come back twice over.
+                dispatches[:] = [
+                    d for d in dispatches
+                    if not (d["dispatcher"] == name or d["dispatcher"].startswith(f"{name}."))
+                ]
             trigger = meta.get("trigger_node") or cp.node_name
             if not trigger:
                 continue
@@ -363,7 +428,13 @@ class CheckpointService:
                 structured_output=cp.structured_output,
                 error=cp.error,
             )
-        return {"loops": loops, "failed": sorted(p for p, bad in last_failed.items() if bad)}
+        return {
+            "loops": loops,
+            "failed": sorted(p for p, bad in last_failed.items() if bad),
+            "skipped": sorted(skipped),
+            "dispatches": dispatches,
+            "undone": undone,
+        }
 
     def reconstruct_dispatch_history(
         self, up_to_sequence: int | None = None,

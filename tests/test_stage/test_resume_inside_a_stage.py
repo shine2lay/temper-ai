@@ -116,13 +116,14 @@ class TestAStageInterruptedPartWay:
 
 class TestAStageWithAFailedStep:
     def _fail(self, run_id):
-        """The first attempt: s3 fails; s4 and s5 are skipped for it, `final` runs after it, and
-        the build finishes (a stage goes on past a failed step), so the run above goes on."""
+        """The first attempt: s3 fails, so the run stops there. s4 and s5 do not start, `final`
+        does because it is marked to run after a failure, and `ship`, further down and not
+        marked, never starts at all."""
         cp = CheckpointService(run_id)
         nodes, by_name = _graph(fail="s3", after_failure=True)
         first, _ = _run(nodes, run_id, cp)
         assert first.status == Status.FAILED
-        assert _ran(by_name) == {"tasks", "s1", "s2", "s3", "final", "ship"}
+        assert _ran(by_name) == {"tasks", "s1", "s2", "s3", "final"}
         return cp
 
     def test_the_failed_step_runs_again_and_what_comes_after_it(self):

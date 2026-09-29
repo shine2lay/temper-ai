@@ -114,6 +114,9 @@ class ExecutionContext:
     dispatch_limits: Any = None  # DispatchLimits — per-workflow safety caps. Resolved from workflow defaults by routes/CLI; None means use module defaults.
     dispatch_state: Any = None  # DispatchRunState — per-run bookkeeping for cap enforcement. Seeded by executor on first dispatch.
     restore: Any = None  # Restore — a resume's checkpoints, claimed graph by graph (top level and every stage). Set by the executor on a resume; shared by every node's copy.
+    run_stop: Any = None  # RunStop — where the run stopped, shared (not copied) by every graph of the run, so a failure inside a stage stops the batches at the top too. See stage/failure.py.
+    failure_policy: Any = None  # FailurePolicy — what a failure does from here down (hold the clean-ups, or run them). Replaced per stage by StageNode; None means the workflow's own.
+    run_only: Any = None  # set[str] | None — paths this pass is allowed to run (a cleanup-only pass runs the held clean-ups and nothing else). None means everything.
 
     def __post_init__(self) -> None:
         # The run's tool executor learns the run's cancel flag here: every run

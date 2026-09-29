@@ -27,6 +27,7 @@ from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.observability.event_recorder import EventRecorder
 from temper_ai.observability.event_types import EventType
 from temper_ai.observability.recorder import get_events, update_event
+from temper_ai.runner import holds
 from temper_ai.runner._helpers import (
     McpPreconnectError,
     bind_delegate_tool,
@@ -41,7 +42,9 @@ from temper_ai.runner.resume import (
 )
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph
+from temper_ai.stage.failure import FailurePolicy
 from temper_ai.stage.gate import normalise_response
+from temper_ai.stage.plan import build_restore, resume_plan
 from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
 
@@ -237,6 +240,8 @@ def _start_run(body: RunRequest) -> RunResponse:
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
         dispatch_limits=build_dispatch_limits(config),
+        # What a failure does in this workflow: hold its clean-ups (the default) or run them.
+        failure_policy=FailurePolicy.parse(getattr(config, "on_failure", None)),
     )
 
     # Bind execution context to Delegate tool so it can create sub-agents
@@ -280,11 +285,15 @@ def _queue_run(
     workspace_path: str | None,
     inputs: dict | None,
     start: str | None = None,
+    extra: dict | None = None,
 ) -> None:
     """Queue a run for the worker, which starts it in its own box.
 
     ``start`` is how the box begins: a fresh run (None), or ``resume`` /
-    ``fork`` from the run's checkpoints (read by ``temper run-workflow``).
+    ``fork`` from the run's checkpoints, or ``cleanup`` to run only the
+    clean-ups a failed run was holding (read by ``temper run-workflow``).
+    ``extra`` is anything else the box needs to know: the steps someone ticked
+    to run again (``rerun``), or the only paths a pass may run (``only``).
     A resumed run keeps its row: a finished one goes back to queued. One
     that is still queued or running is refused, so a run never has two
     boxes.
@@ -294,7 +303,8 @@ def _queue_run(
     from temper_ai.database import get_session
     from temper_ai.runner.models import WorkflowRun
 
-    metadata = {"start": start} if start else {}
+    metadata: dict = {"start": start} if start else {}
+    metadata.update({k: v for k, v in (extra or {}).items() if v})
     with get_session() as session:
         row = session.exec(
             select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
@@ -480,6 +490,11 @@ def get_workflow(execution_id: str):
         row = _run_row(execution_id)
         if row is not None and row["status"] in ("queued", "running"):
             result["status"] = row["status"]
+    # The clean-ups this run is holding, if it stopped at a failure: the page shows what is
+    # being kept for it and how long is left before it is let go.
+    hold = holds.waiting(execution_id)
+    if hold:
+        result["hold"] = hold
     return result
 
 
@@ -594,6 +609,9 @@ class ResumeRequest(BaseModel):
 
     workflow: str | None = None  # Override workflow config (default: use original)
     workspace_path: str | None = None
+    # Steps that finished and are to run again anyway -- ticked on the preview. Everything
+    # that used their results runs again with them (stage/plan.py).
+    rerun: list[str] = []
 
 
 class ForkRequest(BaseModel):
@@ -604,6 +622,103 @@ class ForkRequest(BaseModel):
     sequence: int  # Checkpoint sequence to fork from
     inputs: dict = {}
     workspace_path: str | None = None
+
+
+def _stopped_at(run: dict | None) -> str | None:
+    """Where the run stopped, as its workflow event recorded it.
+
+    ``get_workflow_execution`` lifts it out of the event's data to the top (``stopped``);
+    older answers and the raw event keep it under ``data``, so look in both.
+    """
+    run = run or {}
+    stopped = run.get("stopped") or (run.get("data") or {}).get("stopped") or {}
+    path = stopped.get("path") if isinstance(stopped, dict) else None
+    return str(path) if path else None
+
+
+def _plan_for(execution_id: str, workflow: str | None, rerun: list[str]) -> dict:
+    """What a resume of this run would do with each of its steps, and what it is holding.
+
+    The page shows it before anything runs, and the resume itself works it out the same way
+    from the same function, so what someone approves is what happens (stage/plan.py).
+    """
+    run = get_workflow_execution(execution_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+    name = workflow or run.get("workflow_name")
+    if not name:
+        raise HTTPException(status_code=400, detail="Cannot determine workflow name")
+    try:
+        nodes, _config = _state().graph_loader.load_workflow(name)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    plan = resume_plan(
+        nodes, CheckpointService(execution_id),
+        rerun=rerun, stopped_at=_stopped_at(run),
+    )
+    out = plan.as_dict()
+    out["execution_id"] = execution_id
+    out["workflow_name"] = name
+    out["hold"] = holds.waiting(execution_id)
+    return out
+
+
+@router.get("/api/runs/{execution_id}/resume-preview")
+def resume_preview(execution_id: str, workflow: str | None = None, rerun: str = ""):
+    """What a resume would keep, run again, or make again -- grouped by stage.
+
+    ``rerun`` is a comma-separated list of steps ticked to run again even though they
+    finished; the answer takes them, and everything that used their results, with it.
+    """
+    ticked = [p.strip() for p in rerun.split(",") if p.strip()]
+    return _plan_for(execution_id, workflow, ticked)
+
+
+@router.post("/api/runs/{execution_id}/cleanup")
+def release_cleanups(execution_id: str):
+    """Give up on picking this run up: run the clean-ups it was holding, now.
+
+    The run itself stays failed. Its box starts once more and runs those steps and nothing
+    else, so the dev stack and the worktree it was keeping for a resume are let go.
+    """
+    run = get_workflow_execution(execution_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+    ended = holds.end(execution_id, "released", by="give_up")
+    if ended is None:
+        raise HTTPException(status_code=409,
+                            detail="This run is not holding any clean-ups")
+    _queue_cleanup_pass(ended)
+    return {"execution_id": execution_id, "status": "queued",
+            "cleanups": [c.get("path") for c in ended["cleanups"]]}
+
+
+def _queue_cleanup_pass(hold: dict) -> None:
+    """Start the run once more, in its own box, to run only the clean-ups it was holding."""
+    execution_id = hold["execution_id"]
+    paths = [str(c.get("path")) for c in hold.get("cleanups", []) if c.get("path")]
+    if not paths:
+        return
+    mode = _execution_mode()
+    if mode == "inprocess":
+        logger.info("%s: its held clean-ups are for its box to run; this server runs in "
+                    "process, so they are left alone", execution_id)
+        return
+    _queue_run(execution_id, hold["workflow_name"], hold.get("workspace_path") or None,
+               hold.get("inputs") or {}, start="cleanup", extra={"only": paths})
+    if mode == "subprocess":
+        # External mode has a watcher that picks the queued row up; here the server is the
+        # one that starts boxes, so it starts this one itself.
+        from temper_ai.spawner import SpawnerError, get_spawner
+        try:
+            get_spawner().spawn(execution_id)
+        except SpawnerError:
+            logger.exception("%s: could not start a box for its held clean-ups", execution_id)
+            raise HTTPException(
+                status_code=503,
+                detail="Could not start a box to run the held clean-ups",
+            ) from None
+    logger.info("%s: running its held clean-ups now (%s)", execution_id, ", ".join(paths))
 
 
 @router.post("/api/runs/{execution_id}/resume", response_model=RunResponse)
@@ -638,6 +753,11 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     if not restored_outputs:
         raise HTTPException(status_code=400, detail="No checkpoints found — nothing to resume from")
 
+    # This attempt takes over any clean-ups the last one was holding: they are its business
+    # now, and an old deadline must not tear down the setup it is about to use.
+    holds.take_over(execution_id, by=execution_id)
+    stopped_at = _stopped_at(result)
+
     logger.info(
         "Resuming execution '%s' with %d checkpointed nodes: %s",
         execution_id, len(restored_outputs), list(restored_outputs.keys()),
@@ -657,7 +777,8 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         # Its box restores the checkpoints and replays the dispatches
         # (temper run-workflow), the same steps as below.
         _queue_run(execution_id, config.name, workspace,
-                   result.get("input_data") or {}, start="resume")
+                   result.get("input_data") or {}, start="resume",
+                   extra={"rerun": list(body.rerun or [])})
         return RunResponse(execution_id=execution_id, status="queued")
 
     from temper_ai.safety import PolicyEngine
@@ -689,9 +810,17 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
         dispatch_limits=build_dispatch_limits(config),
+        failure_policy=FailurePolicy.parse(getattr(config, "on_failure", None)),
     )
 
     bind_delegate_tool(run_tool_executor, context)
+
+    # What this resume will do with each step, worked out once and shared with the preview,
+    # so what someone approved on the page is what runs (stage/plan.py).
+    context.restore, _plan = build_restore(
+        nodes, checkpoint_svc, restored_outputs,
+        rerun=body.rerun or (), stopped_at=stopped_at,
+    )
 
     # Reconstruct original inputs from the first run
     original_inputs = result.get("input_data") or {}
@@ -760,6 +889,11 @@ def fork_run(body: ForkRequest):
         body.source_execution_id, body.sequence, new_execution_id, len(restored_outputs),
     )
 
+    # A fork of a run that is holding its clean-ups takes them over: it is using that setup
+    # now, and the source's deadline must not tear it down underneath it. The fork holds
+    # them again itself, with its own deadline, if it too stops at a failure.
+    holds.take_over(body.source_execution_id, by=new_execution_id)
+
     if _execution_mode() == "external":
         # The checkpoints are already copied under the new id; its box
         # restores them (temper run-workflow).
@@ -795,6 +929,7 @@ def fork_run(body: ForkRequest):
         gate_registry=_state().gates,
         graph_loader=_state().graph_loader,
         dispatch_limits=build_dispatch_limits(config),
+        failure_policy=FailurePolicy.parse(getattr(config, "on_failure", None)),
     )
 
     bind_delegate_tool(run_tool_executor, context)

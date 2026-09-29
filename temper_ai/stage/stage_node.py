@@ -18,6 +18,7 @@ from typing import Any
 
 from temper_ai.shared.types import ExecutionContext, NodeResult
 from temper_ai.stage.executor import execute_graph
+from temper_ai.stage.failure import policy_for
 from temper_ai.stage.models import NodeConfig
 from temper_ai.stage.node import Node
 
@@ -50,7 +51,13 @@ class StageNode(Node):
         node_path = (
             f"{context.node_path}.{self.name}" if context.node_path else self.name
         )
-        ctx = replace(context, node_path=node_path)
+        # A stage can say for itself what a failure does inside it (`on_failure`), over what
+        # the workflow says; everything deeper inherits that in turn.
+        ctx = replace(
+            context,
+            node_path=node_path,
+            failure_policy=policy_for(self.config, context.failure_policy),
+        )
 
         # 1. Input gate
         gated_input = self._apply_input_gate(input_data)

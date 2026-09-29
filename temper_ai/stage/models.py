@@ -61,6 +61,16 @@ class NodeConfig:
     # what happened. Its own condition still applies; if that skips it, the failure goes on
     # down to the nodes after it.
     run_after_failure: bool = False
+    # What this node undoes, by node name: a clean-up. `undoes: [environment, deploy]` says
+    # that once it has run, those steps' work is gone, so a resume has to do them again before
+    # anything that needs them. Naming them is the whole of it -- temper never guesses which
+    # step is a clean-up. A clean-up is held after a failure (see stage/failure.py) so the
+    # failed step can be tried again in the same setup.
+    undoes: list[str] | None = None
+    # What a failure does from here down, overriding the workflow's own setting:
+    #   "hold"    -- the run stops and its clean-ups wait, so a resume finds the setup intact
+    #   "cleanup" -- the run stops and its clean-ups run at once, as they did before
+    on_failure: str | None = None
     # Files the node must have written when it completes, or it fails: each a source
     # resolved like an input_map entry ("input.tasks_path"), or {path: <source>, when:
     # <condition>} for a file owed only in some outcomes. A step that says it completed
@@ -101,7 +111,8 @@ class NodeConfig:
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "type", "agent", "strategy", "strategy_config", "agents",
         "nodes", "ref", "depends_on", "condition", "loop_to", "max_loops",
-        "loop_condition", "on_max_loops", "run_after_failure", "required_files", "renamed_from",
+        "loop_condition", "on_max_loops", "run_after_failure", "undoes", "on_failure",
+        "required_files", "renamed_from",
         "timeout_seconds", "gate", "skip_policies", "input_map", "inputs", "outputs",
         "task_template",
         "system_prompt", "role", "model", "provider", "temperature",
@@ -142,6 +153,8 @@ class NodeConfig:
             loop_condition=data.get("loop_condition"),
             on_max_loops=data.get("on_max_loops", "silent"),
             run_after_failure=bool(data.get("run_after_failure", False)),
+            undoes=_names(data.get("undoes")),
+            on_failure=data.get("on_failure"),
             required_files=data.get("required_files"),
             renamed_from=_names(data.get("renamed_from")),
             timeout_seconds=data.get("timeout_seconds"),
@@ -164,7 +177,7 @@ class NodeConfig:
 
 
 def _names(value: Any) -> list[str] | None:
-    """`renamed_from` as written: one old name, or a list of them."""
+    """`renamed_from` and `undoes` as written: one name, or a list of them."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -191,13 +204,17 @@ class WorkflowConfig:
     safety: dict | None = None  # Safety policy config
     memory: dict | None = None  # Memory config
     defaults: dict | None = None  # Default model, provider, etc.
+    # What a failure does: "hold" (the default) or "cleanup", or a mapping that also sets how
+    # long a hold lasts -- {mode: hold, hold_hours: 24}. See stage/failure.py; a stage can
+    # override it for everything inside it with its own `on_failure`.
+    on_failure: dict | str | None = None
     # Where its questions and notices go (docs/notify.md); read by the notify
     # loop from the stored config, kept here so the loader doesn't warn.
     notify: dict | str | None = None
 
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "description", "version", "nodes",
-        "inputs", "outputs", "safety", "memory", "defaults", "notify",
+        "inputs", "outputs", "safety", "memory", "defaults", "notify", "on_failure",
     })
 
     @classmethod
@@ -226,4 +243,5 @@ class WorkflowConfig:
             memory=data.get("memory"),
             defaults=data.get("defaults"),
             notify=data.get("notify"),
+            on_failure=data.get("on_failure"),
         )

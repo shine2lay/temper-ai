@@ -99,7 +99,12 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     # they run in a box like any other run. Both restore from checkpoints; a
     # resume also links to the attempt it continues and replays its dispatches.
     # Worked out before this attempt writes its own workflow.started event.
-    start = (run_row.get("spawner_metadata") or {}).get("start")
+    meta = run_row.get("spawner_metadata") or {}
+    start = meta.get("start")
+    # Ticked on the preview: steps that finished and are to run again anyway. And, for the
+    # pass that runs a failed run's held clean-ups, the only paths it may run.
+    rerun = [str(p) for p in (meta.get("rerun") or [])]
+    run_only = [str(p) for p in (meta.get("only") or [])] or None
     try:
         initial_outputs, resume_metadata = _restored_state(execution_id, start)
     except Exception as exc:
@@ -167,6 +172,8 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             initial_outputs=initial_outputs,
             resume_metadata=resume_metadata,
             replay_dispatch_history=start == "resume",
+            rerun=rerun,
+            run_only=run_only,
         )
     except Exception as exc:
         # execute_workflow already catches its own exceptions and returns
@@ -215,12 +222,17 @@ def _restored_state(
     A fresh run gets (None, None). A fork's checkpoints were copied under its
     new id by the server, so both kinds restore the same way.
     """
-    if start not in ("resume", "fork"):
+    if start not in ("resume", "fork", "cleanup"):
         return None, None
     from temper_ai.checkpoint.service import CheckpointService
     initial_outputs = CheckpointService(execution_id).reconstruct()
     if start == "fork":
         return initial_outputs, None
+    if start == "cleanup":
+        # Only the clean-ups the run was holding, now that the wait is over. Everything
+        # else keeps the result it has; the run stays failed.
+        return initial_outputs, {"cleanup_of": execution_id,
+                                 "restored_node_names": sorted(initial_outputs)}
     from temper_ai.runner.resume import find_latest_workflow_event
     previous = find_latest_workflow_event(execution_id)
     return initial_outputs, {

@@ -70,6 +70,40 @@ class WorkflowRun(SQLModel, table=True):
     error: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
 
+class CleanupHold(SQLModel, table=True):
+    """Clean-ups a failed run is keeping back, and until when.
+
+    A clean-up is a step that says what it undoes -- tearing down a dev stack, removing a
+    worktree. When a run fails, temper holds them instead of running them, so the step that
+    failed can be tried again in the setup it needs. This row is the memory of that: it
+    survives a temper restart, and it is what the deadline is measured against.
+
+    It ends in one of four ways: the run is picked up again and finishes (``done``), someone
+    presses Give up (``released``), the deadline passes (``released``), or a later attempt --
+    a resume, or a fork -- takes it over (``taken_over``), so an old deadline cannot tear down
+    a setup a newer attempt is using.
+    """
+
+    __tablename__ = "cleanup_holds"
+
+    execution_id: str = Field(primary_key=True)
+    workflow_name: str = Field()
+    workspace_path: str = Field(default="")
+    inputs: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+
+    # The clean-ups being held, by node path, with what each of them undoes.
+    node_paths: list[Any] = Field(default_factory=list, sa_column=Column(JSON))
+    # Where the run stopped, so the page can say what is being held open and why.
+    stopped_at: str | None = Field(default=None)
+    stop_reason: str | None = Field(default=None)
+
+    status: str = Field(default="waiting", index=True)  # waiting / released / done / taken_over
+    deadline: datetime = Field(index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    ended_at: datetime | None = Field(default=None)
+    ended_by: str | None = Field(default=None)  # "deadline", "give_up", "resume", or a run id
+
+
 # Common query patterns:
 #   "what's currently running" → WHERE status = 'running'
 #   "anything to reap" → WHERE status = 'running' ORDER BY started_at

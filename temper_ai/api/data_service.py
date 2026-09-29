@@ -266,6 +266,10 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         # loop round or run attempt is not in it; its output still streams to
         # the page. This names every agent the run started.
         "agent_index": _agent_index(events),
+        # Where the run stopped and why, when a failure stopped it, with the clean-ups it is
+        # keeping back (stage/failure.py). The page says what failed instead of leaving the
+        # reader to find it among the nodes.
+        "stopped": wf_data.get("stopped"),
     }
     _clear_children_index()
     return result

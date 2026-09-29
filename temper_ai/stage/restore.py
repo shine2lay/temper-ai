@@ -18,6 +18,10 @@ level and every stage alike (``execute_graph``). What a graph claims:
   it is asked again, and what came after it stays finished.
 - its loops' state: how many times each loop went round, and what the node that sent it round
   said, which is what the loop's target reads on its next pass (a fix round's findings).
+- the agents a dispatcher in it added during the earlier attempt. They belong to the graph they
+  were added to, not to the workflow: an agent added inside a stage was checkpointed as
+  ``build.worker_3``, and putting it back at the top level as ``worker_3`` matched nothing, so
+  every dispatched agent ran again on every resume.
 
 A node that was finished but runs again gets a ``node_reset`` checkpoint (the executor writes it
 as the graph claims), so its old result does not come back on a later resume if this one stops
@@ -60,13 +64,38 @@ class Restore:
         outputs: Mapping[str, NodeResult],
         loops: Mapping[str, Mapping[str, Any]] | None = None,
         failed: Iterable[str] = (),
+        rerun: Iterable[str] | None = None,
+        redo: Iterable[str] = (),
+        dispatches: Iterable[Mapping[str, Any]] | None = None,
     ):
         """``outputs``: finished nodes by path (CheckpointService.reconstruct). ``loops``: per loop
         trigger's path, ``{"count", "target", "feedback"}``; ``failed``: the paths whose last
-        attempt failed, or was skipped because of a failure (both CheckpointService.resume_state)."""
+        attempt failed, or was skipped because of a failure (both CheckpointService.resume_state).
+
+        ``rerun``, when given, is the whole answer to what runs again, worked out once by
+        ``stage/plan.py`` -- the same answer the preview showed, so what the person approved is
+        what happens. Then nothing is worked out here: the paths given run again, and no others.
+        Without it (a graph run straight from the executor, as tests do), a failure spreads to
+        what depends on it, graph by graph, as it did before.
+
+        ``redo``: steps a clean-up undid, which are made again from the same inputs. They start
+        from nothing, insides and all -- what a torn-down stage left behind is not half-done
+        work to go on from, it is gone.
+
+        ``dispatches``: the agents dispatchers added during the earlier attempt, each with the
+        path of the graph it was added to, so every graph gives back its own as it starts.
+        """
         self._outputs = dict(outputs)
         self._loops = {k: dict(v) for k, v in (loops or {}).items()}
         self._failed = set(failed)
+        self._rerun = None if rerun is None else set(rerun)
+        self._redo = set(redo)
+        self._dispatches = [dict(d) for d in (dispatches or ())]
+        for path in self._redo:
+            below = f"{path}."
+            for kept in (self._outputs, self._loops):
+                for key in [k for k in kept if k.startswith(below)]:
+                    del kept[key]
         self._lock = threading.Lock()
 
     def claim(
@@ -98,16 +127,7 @@ class Restore:
                 if entry.get("feedback") is not None:
                     feedback[name] = entry["feedback"]
 
-            # What runs again: a node that failed, a stage with a failed step inside, and every
-            # node after one of them.
-            again = {name for name in depends_on if self._failed_at(f"{prefix}{name}")}
-            grew = bool(again)
-            while grew:
-                grew = False
-                for name, deps in depends_on.items():
-                    if name not in again and any(d in again for d in deps):
-                        again.add(name)
-                        grew = True
+            again = self._reruns(prefix, depends_on)
             reset = sorted(name for name in again if outputs.pop(name, None) is not None)
             self._failed -= {f"{prefix}{name}" for name in depends_on}
 
@@ -119,7 +139,61 @@ class Restore:
                     for key in [k for k in kept if k.startswith(below)]:
                         del kept[key]
                 self._failed = {p for p in self._failed if not p.startswith(below)}
+                self._dispatches = [d for d in self._dispatches
+                                    if not str(d.get("dispatcher", "")).startswith(below)]
             return Claimed(outputs, counts, feedback, reset)
+
+    def reruns(self, prefix: str, depends_on: Mapping[str, Sequence[str]]) -> set[str]:
+        """Which of the graph's own nodes run again -- the same answer ``claim`` works to."""
+        with self._lock:
+            return self._reruns(prefix, depends_on)
+
+    def _reruns(self, prefix: str, depends_on: Mapping[str, Sequence[str]]) -> set[str]:
+        """What runs again: what the plan said, or -- with no plan -- a node that failed, a
+        stage with a failed step inside, and every node after one of them."""
+        again = {name for name in depends_on if self._again_at(f"{prefix}{name}")}
+        if self._rerun is None:
+            grew = bool(again)
+            while grew:
+                grew = False
+                for name, deps in depends_on.items():
+                    if name not in again and any(d in again for d in deps):
+                        again.add(name)
+                        grew = True
+        return again
+
+    def claim_dispatches(
+        self, prefix: str, names: Iterable[str], rerunning: Iterable[str] = (),
+    ) -> list[dict]:
+        """The dispatches made in this graph last time, in the order they were made.
+
+        Claimed before the results are, as the graph starts: the agents they added are part of
+        this graph's shape, and their finished results are claimed with everyone else's.
+
+        A dispatcher that is running again is not claimed for: it will dispatch for itself, and
+        putting its agents back first would leave it adding names that are already there.
+
+        A dispatch saved by a temper that kept them by name alone has no graph of its own: it
+        goes to the graph that holds a node of that name, which is where it was made.
+        """
+        held = set(names)
+        afresh = set(rerunning)
+        mine: list[dict] = []
+        with self._lock:
+            for entry in list(self._dispatches):
+                path = str(entry.get("dispatcher") or "")
+                own_name = path.rsplit(".", 1)[-1]
+                graph = entry.get("graph_path")
+                if graph is None:
+                    owned = own_name in held
+                else:
+                    owned = str(graph) == prefix.rstrip(".")
+                if not owned:
+                    continue
+                self._dispatches.remove(entry)
+                if own_name not in afresh:
+                    mine.append(entry)
+        return mine
 
     def _rename(self, old: str, new: str) -> None:
         """Move the entries at path ``old`` and inside it to ``new``, unless ``new`` has its own
@@ -150,10 +224,12 @@ class Restore:
         if not taken:
             self._failed |= set(failed.values())
 
-    def _failed_at(self, path: str) -> bool:
-        """Whether the node at ``path``, or a step anywhere inside it, failed last time."""
+    def _again_at(self, path: str) -> bool:
+        """Whether the node at ``path``, or a step anywhere inside it, runs again: the plan says
+        so, or -- with no plan -- its last attempt failed."""
         below = f"{path}."
-        return any(p == path or p.startswith(below) for p in self._failed)
+        wanted = self._failed if self._rerun is None else self._rerun
+        return any(p == path or p.startswith(below) for p in wanted)
 
 
 def _own(key: str, prefix: str, names: Mapping[str, Any]) -> bool:

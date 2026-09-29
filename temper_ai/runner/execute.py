@@ -31,6 +31,7 @@ from temper_ai.runner._helpers import (
 )
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph, execute_graph_with_state
+from temper_ai.stage.failure import FailurePolicy
 from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
 
@@ -68,6 +69,8 @@ def execute_workflow(
     initial_outputs: dict[str, Any] | None = None,
     resume_metadata: dict[str, Any] | None = None,
     replay_dispatch_history: bool = False,
+    rerun: list[str] | None = None,
+    run_only: list[str] | None = None,
 ) -> ExecuteResult:
     """Run one workflow end-to-end.
 
@@ -88,6 +91,11 @@ def execute_workflow(
             dispatchers added before it stopped (and their caps), the way the
             server's resume route does. Its ``replayed_dispatches`` go into
             ``resume_metadata``.
+        rerun: node paths that finished but are to run again anyway -- what someone
+            ticked on the preview. Everything that used their results runs again too.
+        run_only: node paths this pass may run; everything else is passed over.
+            Used for the pass that runs the clean-ups a failed run was holding,
+            once the wait is over (Give up, or the deadline). None = the whole run.
 
     Returns:
         ExecuteResult with terminal status + headline metrics. The tool
@@ -173,10 +181,24 @@ def execute_workflow(
         gate_registry=getattr(runner_ctx, "gate_registry", None) or {},
         graph_loader=runner_ctx.graph_loader,
         dispatch_limits=build_dispatch_limits(config),
+        # What a failure does in this workflow: hold the clean-ups (the default) or run them.
+        failure_policy=FailurePolicy.parse(getattr(config, "on_failure", None)),
+        run_only=set(run_only) if run_only else None,
     )
 
     # Bind Delegate tool so agents can spawn sub-agents
     bind_delegate_tool(run_tool_executor, context)
+
+    if is_resume:
+        # What the resume will do with each step, worked out once -- the same answer the
+        # preview showed, so what was approved is what happens (stage/plan.py).
+        from temper_ai.stage.plan import build_restore
+        stopped = (resume_metadata or {}).get("stopped_at")
+        context.restore, resume_plan = build_restore(
+            nodes, checkpoint_svc, initial_outputs or {}, rerun=rerun or (), stopped_at=stopped,
+        )
+        if resume_metadata is not None:
+            resume_metadata = {**resume_metadata, "plan": resume_plan.as_dict()["counts"]}
 
     if replay_dispatch_history:
         from temper_ai.runner.resume import apply_dispatch_history_on_resume

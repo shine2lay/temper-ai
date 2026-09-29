@@ -34,13 +34,18 @@ def find_latest_workflow_event(execution_id: str) -> dict | None:
 def apply_dispatch_history_on_resume(
     checkpoint_svc, graph_loader, nodes, context,
 ) -> list[str]:
-    """Rebuild the DAG + DispatchRunState from saved dispatch_applied events.
+    """Restore DispatchRunState from the saved dispatch_applied events.
 
-    Called before executor restart during resume. For each persisted dispatch:
-      - materialize every added node via GraphLoader._resolve_node and insert
-        it into `nodes` so the executor sees it alongside the original YAML
-      - re-populate DispatchRunState (depths, parents, fingerprints,
-        dispatched_count) so post-resume dispatches still respect caps
+    The agents a dispatcher added are *not* put back here. They are put back by the
+    graph they were added to, as it starts (``stage/executor.py``,
+    ``_readd_dispatched``): an agent added inside a stage belongs to that stage, and
+    adding it at the top level -- which is what this used to do -- gave it a path it
+    never had. Its finished result, checkpointed as ``build.worker_3``, then matched
+    nothing, so every dispatched agent ran again on every resume, and "re-run from
+    here" lost them altogether.
+
+    What is restored here is the run-wide bookkeeping the caps are counted from
+    (depths, parents, fingerprints, dispatched_count), which is not per graph.
 
     op=remove targets are already handled by reconstruct() which marks them
     SKIPPED in the restored node_outputs.
@@ -49,7 +54,6 @@ def apply_dispatch_history_on_resume(
     metadata stamping on the new workflow.started event).
     """
     from temper_ai.stage.dispatch_limits import DispatchRunState, fingerprint_node
-    from temper_ai.stage.models import NodeConfig
 
     history = checkpoint_svc.reconstruct_dispatch_history()
     if not history:
@@ -61,10 +65,10 @@ def apply_dispatch_history_on_resume(
         context.dispatch_state = DispatchRunState()
     state = context.dispatch_state
 
-    existing_names = {n.name for n in nodes}
     replayed_dispatchers: list[str] = []
     for event in history:
-        dispatcher_name = event["dispatcher_name"]
+        # Saved as the dispatcher's full path; the caps are counted by bare name.
+        dispatcher_name = (event["dispatcher_name"] or "").split(".")[-1]
         # Record dispatcher's own fingerprint + depth so cycle/depth walks
         # work on post-resume dispatches.
         state.fingerprints.setdefault(
@@ -81,21 +85,6 @@ def apply_dispatch_history_on_resume(
                     "name — skipping restore of that node", dispatcher_name,
                 )
                 continue
-            if name in existing_names:
-                # Name already in DAG (shouldn't happen, but be defensive)
-                continue
-            try:
-                nc = NodeConfig.from_dict(node_dict)
-                built = graph_loader._resolve_node(nc)
-            except Exception as exc:  # noqa: BLE001
-                logger.error(
-                    "Resume: failed to re-materialize dispatched node '%s' "
-                    "(from dispatcher '%s'): %s",
-                    name, dispatcher_name, exc,
-                )
-                continue
-            nodes.append(built)
-            existing_names.add(name)
             # Rebuild state so future dispatches from this node see correct depth etc.
             new_depth = dispatcher_depth + 1
             state.depths[name] = new_depth
@@ -111,8 +100,8 @@ def apply_dispatch_history_on_resume(
             replayed_dispatchers.append(dispatcher_name)
 
     logger.info(
-        "Resume: replayed %d dispatch_applied event(s); DAG now has %d nodes, "
-        "dispatched_count=%d",
-        len(history), len(nodes), state.dispatched_count,
+        "Resume: replayed the state of %d dispatch(es); dispatched_count=%d. The agents "
+        "themselves come back with the graph they were added to.",
+        len(history), state.dispatched_count,
     )
     return replayed_dispatchers

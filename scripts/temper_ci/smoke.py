@@ -151,22 +151,43 @@ def restart_mid_run(box: Box) -> str:
 
 
 def finished_run_page(box: Box, shots: Path) -> tuple[str, list[str]]:
-    """A screenshot of the page of a finished run, from a headless browser."""
+    """The dashboard really renders a finished run \u2014 with the picture to prove it.
+
+    Not merely "a screenshot came out". The dashboard is a single-page app under
+    /app (its router's basename), served from the image's built dist; the API's own
+    root is a 404 by design. Photographing that 404 and calling it a pass is exactly
+    what this check did on its first outing, so now each page has to *show* something
+    only the real thing shows.
+    """
     run_id = box.start_run("smoke_test", {"message": "for the picture"})
     box.wait_for(run_id, ("completed",), seconds=180)
     shots.mkdir(parents=True, exist_ok=True)
     taken: list[str] = []
+    trouble: list[str] = []
     script = Path(__file__).with_name("shot.py")
-    for name, url in (("runs-list", box.api + "/"), ("finished-run", f"{box.api}/runs/{run_id}")):
+    pages = (
+        # The list: the workflow this run came from has to be on it.
+        ("runs-list", f"{box.api}/app/", ["smoke_test"]),
+        # The run itself: its own id, and the fact that it finished.
+        ("finished-run", f"{box.api}/app/workflow/{run_id}", [run_id[:8], "completed"]),
+    )
+    for name, url, expect in pages:
         target = shots / f"{name}.png"
-        r = sh("python3", str(script), url, str(target), timeout=180)
-        if r.returncode == 0 and target.exists():
+        args = ["python3", str(script), url, str(target)]
+        for text in expect:
+            args += ["--expect", text]
+        r = sh(*args, timeout=180)
+        if target.exists():
             taken.append(target.name)
-        else:
-            log(f"screenshot {name} did not come out: {(r.stderr or r.stdout).strip()[:300]}")
-    if not taken:
-        raise BoxError("the headless browser took no screenshot of the finished run")
-    return f"run {run_id[:8]} finished and its page was photographed ({', '.join(taken)})", taken
+        if r.returncode != 0:
+            why = (r.stdout or "").strip().splitlines()[-1:] or [(r.stderr or "").strip()[:200]]
+            trouble.append(f"{name}: {why[0][:220]}")
+    if trouble:
+        # The pictures stay in the report: a failure you can look at beats a sentence.
+        raise BoxError("the dashboard did not show the finished run \u2014 " + "; ".join(trouble))
+    return (f"run {run_id[:8]} finished, and the dashboard showed it: "
+            f"the list has its workflow, its own page has its id and says completed "
+            f"({', '.join(taken)})"), taken
 
 
 def hooks(box: Box) -> str:

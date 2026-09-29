@@ -138,7 +138,19 @@ def cmd_deploy(args) -> int:
 PROTECTION = {
     "required_status_checks": {
         "strict": True,                       # the branch must be up to date with master
-        "contexts": ["lint", "typecheck", "test", "temper/boxes"],
+        # Exactly the names GitHub shows on a commit \u2014 a required check that nobody ever
+        # posts is a branch that can never move, so these are copied from a real run and
+        # the test in tests/test_ci/ checks them against ci.yml.
+        "contexts": [
+            "lint",
+            "typecheck",
+            "tests (python 3.11)",
+            "tests (python 3.12)",
+            "tests (postgres)",
+            "frontend",
+            "e2e",
+            "temper/boxes",            # this machine: a whole temper, built from the commit
+        ],
     },
     "enforce_admins": True,                   # the owner goes through it too
     "required_pull_request_reviews": None,    # a pull request needs checks, not a second person

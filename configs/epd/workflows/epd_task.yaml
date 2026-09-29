@@ -719,6 +719,11 @@ workflow:
       # the two steps after it, so this ran by accident after most of them (and not
       # after the gate's own); now a failure reaches every step after it.
       run_after_failure: true
+      # What it undoes. At a failure temper holds it back instead of running it, so the
+      # stack is still up for a retry of the step that failed; if it does run -- the
+      # deadline passes, or someone gives up -- a resume puts the environment and the
+      # deploy back first, from the inputs they had, before retrying.
+      undoes: [environment, deploy]
       condition:
         source: environment.structured.stack_teardown
         operator: equals
@@ -736,6 +741,11 @@ workflow:
       # Releases the claim after a failed build too. It touches nothing it would
       # lose: a dirty worktree or an unpushed branch makes it refuse.
       run_after_failure: true
+      # What it undoes: the worktree it removes and the claim it releases. Held back at
+      # a failure so the code stays where it is for a retry; if it has already run, a
+      # resume claims and re-makes the worktree first, which picks the pushed branch
+      # back up rather than starting a new one.
+      undoes: [claim, worktree]
       condition:
         source: environment.structured.teardown
         operator: equals

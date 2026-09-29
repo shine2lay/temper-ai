@@ -4,7 +4,10 @@
 #   root/main/               one clone of the repo, reused across runs
 #   root/worktrees/<slug>/   git worktree on branch <slug>, cut from the base branch
 #
-# Idempotent: re-running for the same task reuses the clone and the worktree.
+# Idempotent: re-running for the same task reuses the clone and the worktree. When both are
+# gone but the branch was pushed -- what a finished cleanup leaves behind -- it picks that
+# branch up again rather than starting afresh from the base, so a build can be resumed after
+# its clean-up has run without redoing the work that is already on origin.
 #
 # 2: plan_dir. A plan made before the build (the EPD loop's plan stage) is put where the build's
 #    own plan step would have written it: plan.md at <worktree>/.epd/plan.md, and the engineers'
@@ -22,7 +25,7 @@
 # loader's env substitution, hence none below.
 agent:
   name: task_worktree
-  version: 3
+  version: 4
   type: script
   timeout_seconds: 600
   script_template: |
@@ -96,6 +99,15 @@ agent:
     elif git -C "$MAIN" rev-parse -q --verify "refs/heads/$TASK_SLUG" >/dev/null; then
       git -C "$MAIN" worktree add -q "$WT" "$TASK_SLUG" || fail "git worktree add failed (existing branch $TASK_SLUG)"
       WORKTREE=existing_branch
+    elif git -C "$MAIN" rev-parse -q --verify "refs/remotes/origin/$TASK_SLUG" >/dev/null; then
+      # The work is pushed but the local branch is gone: cleanup removed the worktree and
+      # the branch with it, and only origin still has the commits. Starting a fresh branch
+      # from the base here would throw that work away and build it all again, so pick the
+      # pushed branch back up instead -- which is what makes a build resumable after its
+      # clean-up has run.
+      git -C "$MAIN" worktree add -q --track -b "$TASK_SLUG" "$WT" "origin/$TASK_SLUG" \
+        || fail "git worktree add failed (pushed branch origin/$TASK_SLUG)"
+      WORKTREE=pushed_branch
     else
       git -C "$MAIN" worktree add -q -b "$TASK_SLUG" "$WT" "origin/$BASE_BRANCH" || fail "git worktree add failed"
       WORKTREE=created

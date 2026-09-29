@@ -26,6 +26,7 @@ import datetime as dt
 import fcntl
 import json
 import os
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -341,6 +342,41 @@ def watch() -> int:
         time.sleep(POLL_SECONDS)
 
 
+def own_code_fingerprint() -> str:
+    """What this process's own code looks like on disk, right now."""
+    here = Path(__file__).parent
+    bits = []
+    for f in sorted(here.glob("*.py")):
+        try:
+            bits.append(f"{f.name}:{f.stat().st_mtime_ns}:{f.stat().st_size}")
+        except OSError:
+            bits.append(f"{f.name}:gone")
+    return "|".join(bits)
+
+
+def restart_if_our_code_changed(known: str) -> str:
+    """Start again if this gate's own code has been landed over.
+
+    The gate lives in the repository it guards, so landing a fix *to the gate*
+    leaves the running process still holding the old code \u2014 Python read it at
+    start-up and will not read it again. That is how a fix to the live check
+    got reverted by the very bug it fixed: the fix landed, the old code did
+    the deploy, the old check failed as it always had, and the old rollback
+    undid the fix.
+
+    So before deciding anything about master, notice that the code on disk is
+    no longer the code in memory, and start again from it. systemd puts the
+    process back; anything in flight is safe, because a check that does not
+    finish is simply not reported and gets picked up again.
+    """
+    now = own_code_fingerprint()
+    if known and now != known:
+        log("this gate's own code changed underneath it \u2014 starting again so the new code "
+            "is what decides about master")
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+    return now
+
+
 def watch_with_deploys() -> int:
     """The service: check what is pushed, and take what lands on master live.
 
@@ -353,11 +389,15 @@ def watch_with_deploys() -> int:
     paths.ensure_dirs()
     log(f"watching {paths.GH_REPO} for pushes by {', '.join(paths.ALLOWED_PUSHERS)}, "
         "and master for things to take live")
+    mine = own_code_fingerprint()
     while True:
         try:
             once()
         except Exception as exc:  # noqa: BLE001
             log(f"the checking pass had a problem (carrying on): {type(exc).__name__}: {exc}")
+        # Between checking and deploying: if a land has just replaced this very
+        # code, the deploy must be decided by the new code, not by this process.
+        mine = restart_if_our_code_changed(mine)
         try:
             deploy_mod.watch_master()
         except Exception as exc:  # noqa: BLE001

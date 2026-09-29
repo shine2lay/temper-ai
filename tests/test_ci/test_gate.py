@@ -134,6 +134,30 @@ def test_only_our_own_pushes_to_our_own_branches_are_checked(ci, monkeypatch):
     assert got[0]["branch"] == "ci-gate"
 
 
+def test_it_starts_again_when_its_own_code_is_landed_over(ci, monkeypatch, tmp_path):
+    """What really happened: a fix to the live check landed; the running gate
+    still had the old code in memory; the old check failed as it always had;
+    and the old rollback reverted the fix. The gate lives in the repository it
+    guards, so it has to notice when it has been replaced.
+    """
+    _, gate, _, _ = ci
+
+    before = gate.own_code_fingerprint()
+    assert before, "it must be able to see its own code"
+    # Unchanged code: no restart, and the same answer.
+    assert gate.restart_if_our_code_changed(before) == before
+
+    started: list[list[str]] = []
+    monkeypatch.setattr(gate.os, "execv", lambda exe, argv: started.append(argv))
+    gate.restart_if_our_code_changed("something else entirely")
+    assert started, "its code changed underneath it and it carried on regardless"
+
+    # And with nothing known yet (first time round) it does not restart.
+    started.clear()
+    gate.restart_if_our_code_changed("")
+    assert not started
+
+
 def test_a_fresh_gate_leaves_history_alone(ci, monkeypatch):
     """GitHub's event feed hands back the last hundred pushes. On a first start
     that is a pile of commits from before this gate existed \u2014 they have no CI

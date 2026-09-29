@@ -17,7 +17,11 @@ from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import AliasChoices, BaseModel, Field
 
 from temper_ai.api.app_state import AppState
-from temper_ai.api.data_service import get_workflow_execution, list_workflow_executions
+from temper_ai.api.data_service import (
+    get_agent_index,
+    get_workflow_execution,
+    list_workflow_executions,
+)
 from temper_ai.api.websocket import ws_manager
 from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.observability.event_recorder import EventRecorder
@@ -477,6 +481,19 @@ def get_workflow(execution_id: str):
         if row is not None and row["status"] in ("queued", "running"):
             result["status"] = row["status"]
     return result
+
+
+@router.get("/api/workflows/{execution_id}/agents")
+def get_workflow_agents(execution_id: str):
+    """Every agent the run started, by id: name, node, status, times, cost.
+
+    Light and quick, unlike the full record: the run page asks for it when
+    output streams in for an agent it has not seen yet, so it can name it.
+    """
+    agents = get_agent_index(execution_id)
+    if agents is None:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+    return {"execution_id": execution_id, "agents": agents}
 
 
 _ACTIVE_STATUSES = ("pending", "queued", "running", "waiting")

@@ -41,6 +41,38 @@ export interface WorkflowExecution {
   error_message?: string;
   workflow_config?: Record<string, unknown>;
   workflow_config_snapshot?: Record<string, unknown>;
+  /** Every agent the run started (see AgentIndexEntry). Absent from servers
+   *  that predate it. */
+  agent_index?: AgentIndexEntry[];
+}
+
+/**
+ * One agent the run started, from the server's agent index. The node tree
+ * keeps one node per name, so an earlier loop round or an attempt a resume
+ * replaced is not in it, while its output still streams to the page; the
+ * index names every one of them. Light: no calls, prompts, inputs or
+ * outputs. Also served on its own by GET /api/workflows/{id}/agents.
+ */
+export interface AgentIndexEntry {
+  id: string;
+  agent_name: string;
+  /** 1 for the first agent of this name in the run, 2 for the next... */
+  round: number;
+  status: ExecutionStatus;
+  node_id: string | null;
+  node_name: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  duration_seconds: number | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+  error_message?: string | null;
+  role?: string | null;
+  agent_type?: string | null;
+  provider?: string | null;
+  model?: string | null;
 }
 
 export interface NodeExecution {
@@ -132,6 +164,11 @@ export interface AgentExecution {
   output?: string;
   reasoning?: string;
   error_message?: string;
+  /** From the agent index: which run of its name this is, and its node. */
+  round?: number;
+  node_name?: string | null;
+  /** Built from the agent index alone: no calls or output on the page. */
+  summary_only?: boolean;
   // Backward compat
   agent_id?: string;
   stage_id?: string;
@@ -230,13 +267,25 @@ export interface ToolActivity {
   args?: Record<string, unknown>;
 }
 
+/** Where streamed thinking (chunk_type "thinking") sits in the text: the
+ *  slice thinking[from, to) arrived when content was `at` long. */
+export interface ThinkingMark {
+  at: number;
+  from: number;
+  to: number;
+}
+
 export interface StreamEntry {
   content: string;
   thinking: string;
   /** Currently streaming tool call (name + arguments as they arrive). */
   activeToolCall: string;
+  /** The last model call ended (a done chunk). An agent makes many calls,
+   *  so more output can follow; the agent's own status says when it ends. */
   done: boolean;
   toolActivity: ToolActivity[];
+  /** Order of thinking and text, so the live strip shows them interleaved. */
+  thinkingMarks?: ThinkingMark[];
 }
 
 /* WebSocket message types */

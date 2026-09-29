@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import { formatTokens, formatCost, formatDuration, formatTimestamp, cn } from '@/lib/utils';
 import type { LLMCall } from '@/types';
+import { agentDisplayName, UNNAMED_AGENT } from '@/lib/liveAgents';
 
 type SortField = 'status' | 'model' | 'agent' | 'stage' | 'prompt_tokens' | 'completion_tokens' | 'total_tokens' | 'cost' | 'latency' | 'start_time';
 type SortDir = 'asc' | 'desc';
@@ -125,7 +126,7 @@ export function LLMCallsTable() {
     for (const [, call] of llmCalls) {
       const agentId = call.agent_execution_id ?? call.agent_id ?? '';
       const agent = agents.get(agentId);
-      const agentName = agent?.agent_name ?? agent?.name ?? agentId;
+      const agentName = agentDisplayName(agent) ?? UNNAMED_AGENT;
       const stageId = agentStageMap.get(agentId) ?? '';
       const stage = stages.get(stageId);
       const stageName = stage?.stage_name ?? stage?.name ?? stageId;

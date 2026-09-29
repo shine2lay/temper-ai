@@ -17,15 +17,19 @@ export function snapshotFingerprint(wf: WorkflowExecution): string {
   // nodes looked unchanged from its first poll to its last.
   const walk = (nodes: WorkflowExecution['nodes'] | undefined, depth: number) => {
     for (const node of nodes ?? []) {
+      // The id too: a loop's next round has the same name, and often the
+      // same status, as the round before it.
       const agentKeys = (node.agents ?? []).map(
-        (a) => `${a.agent_name}:${a.status}`,
+        (a) => `${a.id}:${a.agent_name}:${a.status}`,
       );
-      if (node.agent) agentKeys.push(`${node.agent.agent_name}:${node.agent.status}`);
+      if (node.agent) agentKeys.push(`${node.agent.id}:${node.agent.agent_name}:${node.agent.status}`);
       parts.push(`${depth}:${node.name}:${node.status}:${node.type}:[${agentKeys.join(',')}]`);
       walk(node.child_nodes, depth + 1);
     }
   };
   walk(wf.nodes, 0);
+  // Agents the tree does not keep (earlier rounds, replaced attempts).
+  for (const a of wf.agent_index ?? []) parts.push(`i:${a.id}:${a.status}`);
   return parts.join('|');
 }
 

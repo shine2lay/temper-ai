@@ -3,6 +3,7 @@ import { useExecutionStore } from '@/store/executionStore';
 import { STATUS_COLORS } from '@/lib/constants';
 import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
 import { JsonViewer } from '@/components/shared/JsonViewer';
+import { agentDisplayName, UNNAMED_AGENT } from '@/lib/liveAgents';
 
 interface AgentRowProps {
   agentId: string;
@@ -78,7 +79,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
 
         {/* Agent name */}
         <span className="text-sm font-medium text-temper-text truncate min-w-0">
-          {agent.agent_name ?? agent.name ?? agentId}
+          {agentDisplayName(agent) ?? UNNAMED_AGENT}
         </span>
 
         {/* Badges */}
@@ -132,7 +133,7 @@ export function AgentRow({ agentId, defaultExpanded = false }: AgentRowProps) {
 
       {/* Expanded content — 3-pane layout */}
       {expanded && (
-        <div id={regionId} role="region" aria-label={`Details for ${agent.agent_name ?? agentId}`} className="border-t border-temper-border/30">
+        <div id={regionId} role="region" aria-label={`Details for ${agentDisplayName(agent) ?? UNNAMED_AGENT}`} className="border-t border-temper-border/30">
           {/* Error banner for failed agents */}
           {isFailed && agent.error_message && (
             <div className="mx-4 mt-3 px-3 py-2 rounded-md bg-red-50 text-sm text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/50">

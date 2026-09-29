@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Any
 
-from sqlmodel import col, select
+from sqlmodel import col, not_, or_, select
 
 from temper_ai.database import get_session
 from temper_ai.observability.event_types import EventType
@@ -213,8 +213,10 @@ def get_events(
     event_type: EventType | None = None,
     parent_id: str | None = None,
     status: str | None = None,
-    limit: int = 100,
+    limit: int | None = 100,
     newest_first: bool = False,
+    type_prefixes: tuple[str, ...] = (),
+    exclude_type_prefixes: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
     """Query events with optional filters.
 
@@ -223,7 +225,10 @@ def get_events(
         event_type: Filter by event type.
         parent_id: Filter by parent event ID.
         status: Filter by event status.
-        limit: Max results.
+        limit: Max results; None returns every match.
+        type_prefixes: Keep only events whose type starts with one of these
+            ("llm." matches llm.call.started, llm.iteration, ...).
+        exclude_type_prefixes: Drop events whose type starts with one of these.
         newest_first: When True, return the most recent `limit` events
             (timestamp DESC). Listings want this so they don't get stuck on
             the oldest N once the table grows past `limit`. Leave False for
@@ -243,9 +248,15 @@ def get_events(
             stmt = stmt.where(Event.parent_id == parent_id)
         if status is not None:
             stmt = stmt.where(Event.status == status)
+        if type_prefixes:
+            stmt = stmt.where(or_(*(col(Event.type).startswith(p) for p in type_prefixes)))
+        for prefix in exclude_type_prefixes:
+            stmt = stmt.where(not_(col(Event.type).startswith(prefix)))
 
         order = col(Event.timestamp).desc() if newest_first else col(Event.timestamp)
-        stmt = stmt.order_by(order).limit(limit)
+        stmt = stmt.order_by(order)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         results = session.exec(stmt).all()
         return [_event_to_dict(e) for e in results]
 

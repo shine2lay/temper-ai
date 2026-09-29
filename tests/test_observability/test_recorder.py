@@ -174,6 +174,23 @@ class TestGetEvents:
         events = get_events(execution_id="exec-g8", limit=3)
         assert len(events) == 3
 
+    def test_no_limit_returns_every_match(self):
+        self._seed("exec-g9", n=120)
+        assert len(get_events(execution_id="exec-g9", limit=None)) == 120
+
+    def test_type_prefixes_keep_and_drop_whole_families(self):
+        for event_type in (
+            EventType.WORKFLOW_STARTED, EventType.AGENT_STARTED, EventType.LLM_CALL_STARTED,
+            EventType.LLM_ITERATION, EventType.TOOL_CALL_COMPLETED,
+        ):
+            record(event_type, execution_id="exec-g10")
+
+        calls = get_events(execution_id="exec-g10", type_prefixes=("llm.", "tool."))
+        rest = get_events(execution_id="exec-g10", exclude_type_prefixes=("llm.", "tool."))
+
+        assert sorted(e["type"] for e in calls) == ["llm.call.started", "llm.iteration", "tool.call.completed"]
+        assert sorted(e["type"] for e in rest) == ["agent.started", "workflow.started"]
+
     def test_results_contain_expected_fields(self):
         record(
             EventType.LLM_CALL_STARTED,

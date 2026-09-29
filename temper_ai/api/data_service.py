@@ -15,6 +15,52 @@ from temper_ai.observability.event_types import EventType
 
 logger = logging.getLogger(__name__)
 
+# llm.* and tool.* events are nearly all of a big run's events and nearly all
+# of its bytes (a call's start carries its prompt). They only fill in an
+# agent's calls, so they stay capped, newest kept. The events that say which
+# stages and agents ran are few, and are read in full however long the run:
+# under one cap for everything, a run past it lost its newest stages and
+# agents, and the page knew them only by id.
+_CALL_EVENT_PREFIXES = ("llm.", "tool.")
+MAX_CALL_EVENTS = 10000
+
+# A run in one of these can still start or finish agents.
+_LIVE_RUN_STATUSES = ("pending", "queued", "running", "waiting", "cancelling")
+
+
+def _load_run_events(execution_id: str) -> list[dict]:
+    """A run's events, oldest first: every structural event, the newest calls."""
+    structure = get_events(
+        execution_id=execution_id, exclude_type_prefixes=_CALL_EVENT_PREFIXES, limit=None,
+    )
+    calls = get_events(
+        execution_id=execution_id, type_prefixes=_CALL_EVENT_PREFIXES,
+        limit=MAX_CALL_EVENTS, newest_first=True,
+    )
+    seen: set[str] = set()
+    events: list[dict] = []
+    for e in [*structure, *calls]:
+        if e["id"] not in seen:
+            seen.add(e["id"])
+            events.append(e)
+    events.sort(key=lambda e: e.get("timestamp") or "")
+    return events
+
+
+def get_agent_index(execution_id: str) -> list[dict] | None:
+    """Every agent a run started, light; None when the run has no events.
+
+    What the run page looks up when output streams in for an agent it does
+    not know yet. Reads no llm.*/tool.* events, so it stays cheap on a run
+    whose full record takes seconds to build.
+    """
+    events = get_events(
+        execution_id=execution_id, exclude_type_prefixes=_CALL_EVENT_PREFIXES, limit=None,
+    )
+    if not events:
+        return None
+    return _agent_index(events)
+
 
 def get_workflow_execution(execution_id: str) -> dict | None:
     """Build the full WorkflowExecution hierarchy for a given execution.
@@ -29,7 +75,7 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     Returns dict matching frontend's WorkflowExecution TypeScript interface,
     or None if no events found.
     """
-    events = get_events(execution_id=execution_id, limit=10000)
+    events = _load_run_events(execution_id)
     if not events:
         return None
 
@@ -216,9 +262,91 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         "workflow_output": wf_data.get("workflow_output"),
         "error_message": wf_data.get("error"),
         "fork_source": fork_data.get("source_execution_id") if fork_meta else None,
+        # The tree above keeps one node per name, so an agent from an earlier
+        # loop round or run attempt is not in it; its output still streams to
+        # the page. This names every agent the run started.
+        "agent_index": _agent_index(events),
     }
     _clear_children_index()
     return result
+
+
+def _agent_index(events: list[dict]) -> list[dict]:
+    """One light entry per agent.started of the run, oldest first.
+
+    Every loop round and every resumed attempt, which the name-merged tree
+    drops. No calls, prompts, inputs or outputs: a big run starts hundreds of
+    agents and this rides along on every refresh of the run page. An agent
+    still marked running when its attempt was replaced by a resume, or when
+    the run is over, was cut off: it says "interrupted", not "running".
+    """
+    by_id = {e["id"]: e for e in events}
+    attempts = [e for e in events if e.get("type") == "workflow.started"]
+    newest = max(attempts, key=lambda e: e.get("timestamp") or "", default=None)
+    run_live = newest is not None and _resolve_status(newest) in _LIVE_RUN_STATUSES
+
+    ends: dict[str, dict] = {}
+    for e in events:
+        if e.get("type") in ("agent.completed", "agent.failed") and e.get("parent_id"):
+            ends.setdefault(e["parent_id"], e)
+
+    rounds: dict[str, int] = {}
+    index: list[dict] = []
+    started = [e for e in events if e.get("type") == "agent.started"]
+    for ev in sorted(started, key=lambda e: e.get("timestamp") or ""):
+        end = ends.get(ev["id"])
+        data = {**(ev.get("data") or {}), **((end or {}).get("data") or {})}
+        status = (end or {}).get("status") or _resolve_status(ev)
+        if status in ("pending", "running"):
+            attempt = _attempt_of(ev, by_id)
+            if not run_live or (attempt is not None and newest is not None and attempt != newest["id"]):
+                status = "interrupted"
+        name = data.get("agent_name") or ""
+        rounds[name] = rounds.get(name, 0) + 1
+        node = by_id.get(ev.get("parent_id") or "")
+        index.append({
+            "id": ev["id"],
+            "agent_name": name,
+            "round": rounds[name],
+            "status": status,
+            "node_id": ev.get("parent_id"),
+            "node_name": ((node or {}).get("data") or {}).get("name"),
+            "start_time": ev.get("timestamp"),
+            "end_time": (end or {}).get("timestamp"),
+            "duration_seconds": data.get("duration_seconds"),
+            "prompt_tokens": data.get("prompt_tokens", 0),
+            "completion_tokens": data.get("completion_tokens", 0),
+            "total_tokens": data.get("tokens", 0),
+            "estimated_cost_usd": data.get("cost_usd", 0),
+            "error_message": data.get("error"),
+            "role": data.get("role"),
+            # script and jev agents say it at the top; an LLM agent in its config.
+            "agent_type": data.get("type") or _config_type(data.get("agent_config")),
+            "provider": data.get("provider"),
+            "model": data.get("model"),
+        })
+    return index
+
+
+def _config_type(config: object) -> str | None:
+    """`type` of an agent.started's agent_config, flat or under `agent`."""
+    if not isinstance(config, dict):
+        return None
+    nested = config.get("agent")
+    value = config.get("type") or (nested.get("type") if isinstance(nested, dict) else None)
+    return value if isinstance(value, str) else None
+
+
+def _attempt_of(event: dict, by_id: dict[str, dict]) -> str | None:
+    """Id of the workflow.started an event hangs under, or None if its chain breaks."""
+    seen: set[str] = set()
+    current: dict | None = event
+    while current is not None and current["id"] not in seen:
+        if current.get("type") == "workflow.started":
+            return str(current["id"])
+        seen.add(current["id"])
+        current = by_id.get(current.get("parent_id") or "")
+    return None
 
 
 def _execution_ids_awaiting_a_human() -> set[str]:

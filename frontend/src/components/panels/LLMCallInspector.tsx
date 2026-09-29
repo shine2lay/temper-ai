@@ -1,6 +1,7 @@
 import { useExecutionStore } from '@/store/executionStore';
 import { SmartContent } from '@/components/shared/SmartContent';
 import { ThinkingContent } from '@/components/shared/ThinkingContent';
+import { hasThinkingTags } from '@/lib/streamSegments';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { MetricCell } from '@/components/shared/MetricCell';
@@ -46,7 +47,7 @@ function PromptDisplay({ prompt }: { prompt: unknown }) {
                 </div>
               )}
               {contentStr && (
-                contentStr.includes('<think>') ? (
+                hasThinkingTags(contentStr) ? (
                   <ThinkingContent
                     content={contentStr}
                     renderContent={(text, key) => <SmartContent key={key} content={text} maxHeight={300} />}
@@ -276,7 +277,7 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
       {/* Response */}
       <CollapsibleSection title="Response" defaultOpen>
         {llmCall.response ? (
-          llmCall.response.includes('<think>') ? (
+          hasThinkingTags(llmCall.response) ? (
             <>
               <ThinkingContent
                 content={llmCall.response}

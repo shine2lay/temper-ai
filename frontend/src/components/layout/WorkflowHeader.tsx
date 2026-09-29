@@ -8,6 +8,7 @@ import { formatDuration, formatTokens, formatCost, elapsedSeconds, cn } from '@/
 import { DURATION_TICK_MS } from '@/lib/constants';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { authFetch } from '@/lib/authFetch';
+import { liveAgents } from '@/lib/liveAgents';
 import { useGates } from '@/hooks/useGates';
 
 export function WorkflowHeader() {
@@ -51,15 +52,8 @@ export function WorkflowHeader() {
     ? formatDuration(elapsed)
     : formatDuration(workflow?.duration_seconds);
 
-  // Streaming agents (not done and not terminal)
-  const streamingAgents: Array<{ id: string; name: string }> = [];
-  streamingContent.forEach((entry, agentId) => {
-    const agent = agents.get(agentId);
-    const agentDone = agent?.status === 'completed' || agent?.status === 'failed';
-    if (!entry.done && !agentDone) {
-      streamingAgents.push({ id: agentId, name: agent?.agent_name ?? agentId });
-    }
-  });
+  // The agents at work, by name: the same list as the live strip.
+  const streamingAgents = liveAgents(streamingContent, agents, workflow?.status);
 
   // WS status indicator
   let wsIndicator: ReactNode;

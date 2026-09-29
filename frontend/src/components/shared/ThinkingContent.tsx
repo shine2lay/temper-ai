@@ -1,11 +1,14 @@
 /**
- * ThinkingContent — renders text that may contain <think>...</think> blocks.
- * Thinking blocks get distinct violet styling. Content outside thinking blocks
- * is rendered via a provided render function or as plain text.
+ * ThinkingContent — renders text that may contain thinking blocks, written
+ * `<think>...</think>` by most models and `<thinking>...</thinking>` by the
+ * Claude Code provider. Thinking blocks get distinct violet styling. Content
+ * outside thinking blocks is rendered via a provided render function or as
+ * plain text.
  *
- * Works with both complete and streaming content (handles unclosed <think> tags).
+ * Works with both complete and streaming content (handles unclosed tags).
  */
 import { cn } from '@/lib/utils';
+import { hasThinkingTags, parseStreamText } from '@/lib/streamSegments';
 
 interface ThinkingContentProps {
   content: string;
@@ -14,52 +17,15 @@ interface ThinkingContentProps {
   renderContent?: (text: string, key: number) => React.ReactNode;
 }
 
-interface Segment {
-  type: 'text' | 'thinking';
-  content: string;
-}
-
-function parseThinkingBlocks(content: string): Segment[] {
-  const segments: Segment[] = [];
-  let i = 0;
-  let current = '';
-  let inThink = false;
-
-  while (i < content.length) {
-    if (!inThink && content.startsWith('<think>', i)) {
-      if (current) segments.push({ type: 'text', content: current });
-      current = '';
-      inThink = true;
-      i += 7;
-      continue;
-    }
-    if (inThink && content.startsWith('</think>', i)) {
-      if (current) segments.push({ type: 'thinking', content: current });
-      current = '';
-      inThink = false;
-      i += 8;
-      continue;
-    }
-    current += content[i];
-    i++;
-  }
-
-  if (current) {
-    segments.push({ type: inThink ? 'thinking' : 'text', content: current });
-  }
-
-  return segments;
-}
-
 export function ThinkingContent({ content, className, renderContent }: ThinkingContentProps) {
   if (!content) return null;
 
-  // Fast path: no <think> tags at all
-  if (!content.includes('<think>')) {
+  // Fast path: no thinking tags at all
+  if (!hasThinkingTags(content)) {
     return <>{renderContent ? renderContent(content, 0) : <span className={className}>{content}</span>}</>;
   }
 
-  const segments = parseThinkingBlocks(content);
+  const segments = parseStreamText(content);
 
   return (
     <div className={cn('flex flex-col gap-1', className)}>
@@ -78,9 +44,4 @@ export function ThinkingContent({ content, className, renderContent }: ThinkingC
       })}
     </div>
   );
-}
-
-/** Strip <think>...</think> tags from content, returning just the non-thinking text. */
-export function stripThinkingTags(content: string): string {
-  return content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }

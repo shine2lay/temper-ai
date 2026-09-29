@@ -5,6 +5,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { toast } from 'sonner';
 import { useWorkflowWebSocket } from '@/hooks/useWorkflowWebSocket';
 import { useInitialData } from '@/hooks/useInitialData';
+import { useAgentLookup } from '@/hooks/useAgentLookup';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useExecutionStore } from '@/store/executionStore';
 import { WorkflowHeader } from '@/components/layout/WorkflowHeader';
@@ -64,6 +65,7 @@ export function ExecutionView() {
 
   useWorkflowWebSocket(workflowId);
   const { error: loadError } = useInitialData(workflowId);
+  useAgentLookup(workflowId);
   useKeyboardShortcuts({ onSwitchTab: setActiveTab, onShowHelp: () => setShowShortcutHelp(prev => !prev) });
 
   useEffect(() => {

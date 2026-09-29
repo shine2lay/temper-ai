@@ -10,6 +10,8 @@ import { CopyButton } from '@/components/shared/CopyButton';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { SmartContent } from '@/components/shared/SmartContent';
 import { ThinkingContent } from '@/components/shared/ThinkingContent';
+import { hasThinkingTags } from '@/lib/streamSegments';
+import { agentDisplayName, UNNAMED_AGENT } from '@/lib/liveAgents';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { StreamingPanel } from '@/components/panels/StreamingPanel';
 import { Badge } from '@/components/ui/badge';
@@ -39,27 +41,15 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
   // content the live bar showed during the run, just frozen. Empties on a
   // fresh page load (chunks aren't persisted in the backend), but in-session
   // it preserves the full trace so the user can scroll back through it.
-  const hasStream = !!(streamEntry && (streamEntry.content || (streamEntry.toolActivity?.length ?? 0) > 0));
+  const hasStream = !!(streamEntry && (streamEntry.content || streamEntry.thinking || (streamEntry.toolActivity?.length ?? 0) > 0));
 
-  if (!ag) {
-    return <EmptyState title="Agent not found" />;
-  }
-
-  const config = ag.agent_config_snapshot?.agent;
-  const { prompt: promptTokens, completion: completionTokens } = deriveTokenBreakdown(ag);
-  const totalDisplay = (ag.total_tokens ?? 0) > 0 ? ag.total_tokens : (promptTokens + completionTokens);
-  const totalTokens = Math.max(totalDisplay ?? 0, 1);
-  const promptPct = (promptTokens / totalTokens) * 100;
-  const completionPct = (completionTokens / totalTokens) * 100;
-
-  // Derive cost from llm_calls when top-level is 0
-  const cost = ag.estimated_cost_usd > 0
-    ? ag.estimated_cost_usd
-    : (ag.llm_calls ?? []).reduce((sum: number, c: { estimated_cost_usd?: number }) => sum + (c.estimated_cost_usd ?? 0), 0);
-
-
+  // Hooks before the early return below: a panel opened on an agent the
+  // page had no record of yet crashed ("rendered more hooks") when the
+  // record arrived.
+  const stageExecutionId = ag?.stage_execution_id;
+  const stageIdOfAgent = ag?.stage_id;
   const resolvedStageId = useMemo(() => {
-    const direct = ag.stage_execution_id ?? ag.stage_id;
+    const direct = stageExecutionId ?? stageIdOfAgent;
     if (direct) return direct;
     for (const [stageId, stage] of Array.from(stages)) {
       if (stage.agents?.some((a) => a.id === agentId)) {
@@ -67,10 +57,11 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       }
     }
     return undefined;
-  }, [ag.stage_execution_id, ag.stage_id, stages, agentId]);
+  }, [stageExecutionId, stageIdOfAgent, stages, agentId]);
 
   // Find sibling iterations: stages with the same name that have an agent with the same agent_name
   const iterations = useMemo(() => {
+    if (!ag) return [];
     const parentStage = resolvedStageId ? stages.get(resolvedStageId) : null;
     if (!parentStage) return [];
     const stageName = parentStage.name ?? parentStage.stage_name;
@@ -97,7 +88,23 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       return sa < sb ? -1 : sa > sb ? 1 : 0;
     });
     return siblings;
-  }, [ag, agentId, resolvedStageId, stages]);
+  }, [ag, resolvedStageId, stages]);
+
+  if (!ag) {
+    return <EmptyState title="Agent not found" />;
+  }
+
+  const config = ag.agent_config_snapshot?.agent;
+  const { prompt: promptTokens, completion: completionTokens } = deriveTokenBreakdown(ag);
+  const totalDisplay = (ag.total_tokens ?? 0) > 0 ? ag.total_tokens : (promptTokens + completionTokens);
+  const totalTokens = Math.max(totalDisplay ?? 0, 1);
+  const promptPct = (promptTokens / totalTokens) * 100;
+  const completionPct = (completionTokens / totalTokens) * 100;
+
+  // Derive cost from llm_calls when top-level is 0
+  const cost = ag.estimated_cost_usd > 0
+    ? ag.estimated_cost_usd
+    : (ag.llm_calls ?? []).reduce((sum: number, c: { estimated_cost_usd?: number }) => sum + (c.estimated_cost_usd ?? 0), 0);
 
   const hasMultipleRuns = iterations.length > 1;
 
@@ -145,7 +152,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2 sticky top-0 z-10 bg-temper-bg pb-2">
         <h3 className="text-lg font-semibold text-temper-text">
-          {ag.agent_name ?? ag.name ?? agentId}
+          {agentDisplayName(ag) ?? UNNAMED_AGENT}
         </h3>
         <StatusBadge status={ag.status} />
         {config?.provider && config?.model && (
@@ -163,7 +170,20 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
             {ag.role}
           </Badge>
         )}
+        {(ag.round ?? 1) > 1 && (
+          <Badge variant="secondary" className="text-xs">
+            round {ag.round}
+          </Badge>
+        )}
       </div>
+
+      {ag.summary_only && (
+        <p data-testid="agent-summary-only" className="text-xs text-temper-text-muted">
+          {ag.agent_name
+            ? 'The page has only a summary of this agent. A new agent\'s details arrive with the next update; an earlier loop round or retried attempt keeps just this summary and what it streamed.'
+            : 'The server could not say which agent this is. Its streamed output is below.'}
+        </p>
+      )}
 
       {/* Metrics grid — short values */}
       <div className="grid grid-cols-3 gap-2">
@@ -245,7 +265,7 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
           while boilerplate filled the screen. */}
       <CollapsibleSection title="Output" defaultOpen>
         {ag.output && (
-          ag.output.includes('<think>') ? (
+          hasThinkingTags(ag.output) ? (
             <ThinkingContent
               content={ag.output}
               className="mt-1 max-h-[400px] overflow-auto"

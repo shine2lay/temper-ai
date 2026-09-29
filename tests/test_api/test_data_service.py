@@ -9,6 +9,7 @@ from temper_ai.api.data_service import (
     _find_event_by_type,
     _get_end_time,
     _resolve_status,
+    get_agent_index,
     get_workflow_execution,
     list_workflow_executions,
 )
@@ -350,3 +351,135 @@ class TestARunWaitingForAPerson:
         runs = list_workflow_executions()["runs"]
 
         assert self._status(runs, "parked") == "running"
+
+
+def _ts(n: int) -> str:
+    return f"2026-01-01T00:{n // 60:02d}:{n % 60:02d}"
+
+
+def _events_query(events: list[dict]):
+    """get_events over a fixed list, honouring the filters a run's loader uses."""
+    def query(execution_id=None, event_type=None, parent_id=None, status=None, limit=100,
+              newest_first=False, type_prefixes=(), exclude_type_prefixes=()):
+        out = [e for e in events if execution_id in (None, e["execution_id"])]
+        if type_prefixes:
+            out = [e for e in out if e["type"].startswith(tuple(type_prefixes))]
+        if exclude_type_prefixes:
+            out = [e for e in out if not e["type"].startswith(tuple(exclude_type_prefixes))]
+        out = sorted(out, key=lambda e: e["timestamp"], reverse=newest_first)
+        return out if limit is None else out[:limit]
+    return query
+
+
+class TestEveryAgentOfARun:
+    """The run page names an agent from the run's record. The tree keeps one
+    node per name, and one cap on all events cut a long run's newest stages
+    off: an agent streaming output was then known only by its id, and its
+    panel had nothing to open."""
+
+    def test_a_run_past_the_call_cap_keeps_every_stage_and_agent(self, monkeypatch):
+        events = [
+            _evt("wf", "workflow.started", data={"name": "big"}, timestamp=_ts(0)),
+            _evt("s1", "stage.started", parent_id="wf", data={"name": "implement"}, timestamp=_ts(1)),
+            _evt("a1", "agent.started", parent_id="s1", data={"agent_name": "coder"}, timestamp=_ts(2)),
+            *[
+                _evt(f"l{i}", "llm.call.started", parent_id="a1", data={"iteration": i}, timestamp=_ts(3 + i))
+                for i in range(30)
+            ],
+            _evt("s2", "stage.started", parent_id="wf", data={"name": "review"}, timestamp=_ts(40)),
+            _evt("a2", "agent.started", parent_id="s2", data={"agent_name": "reviewer"}, timestamp=_ts(41)),
+            _evt("l99", "llm.call.started", parent_id="a2", data={"iteration": 1}, timestamp=_ts(42)),
+        ]
+        monkeypatch.setattr("temper_ai.api.data_service.MAX_CALL_EVENTS", 10)
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _events_query(events))
+
+        result = get_workflow_execution("run-1")
+
+        assert result is not None
+        assert [n["name"] for n in result["nodes"]] == ["implement", "review"]
+        assert [a["agent_name"] for a in result["agent_index"]] == ["coder", "reviewer"]
+        # The calls kept are the newest: the live agent's, then the tail of the one before.
+        assert result["nodes"][1]["agent"]["total_llm_calls"] == 1
+        assert result["nodes"][0]["agent"]["total_llm_calls"] == 9
+
+    def test_every_round_of_a_looped_agent_is_in_the_index(self, monkeypatch):
+        events = [
+            _evt("wf", "workflow.started", data={"name": "loop"}, timestamp=_ts(0)),
+            _evt("s1", "stage.started", parent_id="wf", data={"name": "review"}, timestamp=_ts(1)),
+            _evt("a1", "agent.started", parent_id="s1", timestamp=_ts(2), data={
+                "agent_name": "reviewer", "model": "m", "agent_config": {"type": "llm", "model": "m"},
+            }),
+            _evt("a1c", "agent.completed", parent_id="a1", status="completed",
+                 data={"tokens": 10, "cost_usd": 0.5, "duration_seconds": 3}, timestamp=_ts(5)),
+            _evt("s2", "stage.started", parent_id="wf", data={"name": "review"}, timestamp=_ts(6)),
+            _evt("a2", "agent.started", parent_id="s2", data={"agent_name": "reviewer"}, timestamp=_ts(7)),
+        ]
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _events_query(events))
+
+        result = get_workflow_execution("run-1")
+
+        assert result is not None
+        assert len(result["nodes"]) == 1  # the tree keeps the newest round only
+        first, second = result["agent_index"]
+        assert (first["id"], first["round"], first["status"]) == ("a1", 1, "completed")
+        assert (first["node_name"], first["node_id"], first["model"]) == ("review", "s1", "m")
+        assert first["agent_type"] == "llm"
+        assert (first["total_tokens"], first["estimated_cost_usd"], first["end_time"]) == (10, 0.5, _ts(5))
+        assert (second["id"], second["round"], second["status"]) == ("a2", 2, "running")
+
+    def test_an_agent_cut_off_by_a_resume_is_interrupted_not_running(self, monkeypatch):
+        events = [
+            _evt("wf1", "workflow.started", status="failed", data={"name": "w"}, timestamp=_ts(0)),
+            _evt("s1", "stage.started", parent_id="wf1", data={"name": "build"}, timestamp=_ts(1)),
+            _evt("a1", "agent.started", parent_id="s1", data={"agent_name": "builder"}, timestamp=_ts(2)),
+            _evt("wf2", "workflow.started", data={"name": "w", "resume_of": "x"}, timestamp=_ts(10)),
+            _evt("s2", "stage.started", parent_id="wf2", data={"name": "build"}, timestamp=_ts(11)),
+            _evt("a2", "agent.started", parent_id="s2", data={"agent_name": "builder"}, timestamp=_ts(12)),
+        ]
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _events_query(events))
+
+        index = get_agent_index("run-1")
+
+        assert index is not None
+        assert [(a["id"], a["status"]) for a in index] == [("a1", "interrupted"), ("a2", "running")]
+
+    def test_an_agent_still_running_when_the_run_ended_is_interrupted(self, monkeypatch):
+        events = [
+            _evt("wf", "workflow.started", status="completed", data={"name": "w"}, timestamp=_ts(0)),
+            _evt("s1", "stage.started", parent_id="wf", data={"name": "build"}, timestamp=_ts(1)),
+            _evt("a1", "agent.started", parent_id="s1", data={"agent_name": "builder"}, timestamp=_ts(2)),
+        ]
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _events_query(events))
+
+        index = get_agent_index("run-1")
+
+        assert index is not None
+        assert index[0]["status"] == "interrupted"
+
+    def test_the_index_reads_no_calls_and_carries_no_prompts_or_outputs(self, monkeypatch):
+        calls: list[dict] = []
+        events = [
+            _evt("wf", "workflow.started", data={"name": "w"}, timestamp=_ts(0)),
+            _evt("s1", "stage.started", parent_id="wf", data={"name": "plan"}, timestamp=_ts(1)),
+            _evt("a1", "agent.started", parent_id="s1", timestamp=_ts(2), data={
+                "agent_name": "planner", "input_data": {"task": "x"}, "agent_config": {"system_prompt": "p"},
+            }),
+            _evt("a1c", "agent.completed", parent_id="a1", status="completed", timestamp=_ts(3),
+                 data={"output": "the plan", "structured_output": {"a": 1}}),
+        ]
+        query = _events_query(events)
+
+        def recording_query(**kwargs):
+            calls.append(kwargs)
+            return query(**kwargs)
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", recording_query)
+
+        index = get_agent_index("run-1")
+
+        assert index is not None
+        assert [c["exclude_type_prefixes"] for c in calls] == [("llm.", "tool.")]
+        assert not {"input_data", "output", "structured_output", "agent_config_snapshot", "llm_calls"} & set(index[0])
+
+    def test_a_run_with_no_events_has_no_index(self, monkeypatch):
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _events_query([]))
+        assert get_agent_index("nope") is None

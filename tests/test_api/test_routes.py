@@ -56,6 +56,33 @@ class TestWorkflowListEndpoint:
         assert isinstance(body, (list, dict))
 
 
+class TestWorkflowAgentsEndpoint:
+    """What the run page asks when output streams in for an agent it does not know."""
+
+    def test_lists_every_agent_the_run_started(self, client):
+        from temper_ai.observability import record
+        from temper_ai.observability.event_types import EventType
+
+        wf = record(EventType.WORKFLOW_STARTED, execution_id="run-agents", status="running",
+                    data={"name": "w"})
+        stage = record(EventType.STAGE_STARTED, parent_id=wf, execution_id="run-agents",
+                       status="running", data={"name": "review"})
+        agent = record(EventType.AGENT_STARTED, parent_id=stage, execution_id="run-agents",
+                       status="running", data={"agent_name": "reviewer"})
+        record(EventType.LLM_CALL_STARTED, parent_id=agent, execution_id="run-agents")
+
+        r = client.get("/api/workflows/run-agents/agents")
+
+        assert r.status_code == 200
+        [entry] = r.json()["agents"]
+        assert (entry["id"], entry["agent_name"], entry["node_name"], entry["status"]) == (
+            agent, "reviewer", "review", "running",
+        )
+
+    def test_an_unknown_run_is_404(self, client):
+        assert client.get("/api/workflows/no-such-run/agents").status_code == 404
+
+
 class TestRuntimeConfigEndpoint:
     def test_runtime_config_returns_200(self, client):
         r = client.get("/api/runtime-config")

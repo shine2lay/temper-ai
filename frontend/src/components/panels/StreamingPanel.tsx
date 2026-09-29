@@ -8,6 +8,7 @@ import {
 import { CopyButton } from '@/components/shared/CopyButton';
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { ThinkingContent } from '@/components/shared/ThinkingContent';
+import { hasThinkingTags } from '@/lib/streamSegments';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +18,9 @@ interface StreamingPanelProps {
 
 export function StreamingPanel({ agentId }: StreamingPanelProps) {
   const stream = useExecutionStore((s) => s.streamingContent.get(agentId));
+  // A done chunk ends one model call; the agent is done when its record
+  // says so (it makes more calls meanwhile).
+  const agentRunning = useExecutionStore((s) => s.agents.get(agentId)?.status === 'running');
   const containerRef = useRef<HTMLDivElement>(null);
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -70,7 +74,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
         </Collapsible>
       )}
 
-      {stream.done ? (
+      {stream.done && !agentRunning ? (
         <div ref={containerRef} onScroll={handleScroll} className="relative max-h-80 overflow-auto">
           {stream.content && (
             <div className="absolute top-2 right-2 z-10">
@@ -119,7 +123,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
           )}
           {/* Stream content with thinking tag handling */}
           <div className="text-sm text-temper-text">
-            {stream.content.includes('<think>') ? (
+            {hasThinkingTags(stream.content) ? (
               <ThinkingContent
                 content={stream.content}
                 renderContent={(text) => <pre className="whitespace-pre-wrap">{text}</pre>}

@@ -10,6 +10,7 @@ import type {
   WorkflowExecution,
   NodeExecution,
   AgentExecution,
+  AgentIndexEntry,
   LLMCall,
   ToolCall,
   ToolActivity,
@@ -49,9 +50,16 @@ interface ExecutionState {
   dispatchedByName: Map<string, string>;
   /** When set, the DAG highlights state at this checkpoint sequence. null = show current/live state. */
   checkpointPreview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null;
+  /** Agents whose output streams in but that the page has no record of
+   *  yet: useAgentLookup asks the server who they are. */
+  unknownAgentIds: Set<string>;
 
   applySnapshot: (workflow: WorkflowExecution) => void;
   applyEvent: (msg: WSEvent) => void;
+  /** Records for agents of the run's agent index the page does not have. */
+  applyAgentIndex: (index: AgentIndexEntry[]) => void;
+  /** The server could not name these agents: show their output unnamed. */
+  giveUpAgentLookup: (ids: string[]) => void;
   reset: () => void;
   select: (type: Selection['type'], id: string) => void;
   clearSelection: () => void;
@@ -124,6 +132,93 @@ function _keepFinished<
     };
   }
   return next;
+}
+
+/** A record for an agent known only from the run's agent index. */
+function _agentFromIndex(e: AgentIndexEntry, stages: Map<string, NodeExecution>): AgentExecution {
+  const type = e.agent_type ?? (e.provider || e.model ? 'llm' : undefined);
+  return {
+    id: e.id,
+    agent_name: e.agent_name,
+    status: e.status,
+    start_time: e.start_time,
+    end_time: e.end_time,
+    duration_seconds: e.duration_seconds,
+    prompt_tokens: e.prompt_tokens ?? 0,
+    completion_tokens: e.completion_tokens ?? 0,
+    total_tokens: e.total_tokens ?? 0,
+    estimated_cost_usd: e.estimated_cost_usd ?? 0,
+    total_llm_calls: 0,
+    total_tool_calls: 0,
+    llm_calls: [],
+    tool_calls: [],
+    error_message: e.error_message ?? undefined,
+    role: e.role ?? undefined,
+    round: e.round,
+    node_name: e.node_name,
+    // Only a node the page draws: an earlier round's node is not in the tree.
+    stage_id: e.node_id && stages.has(e.node_id) ? e.node_id : undefined,
+    summary_only: true,
+    agent_config_snapshot: type || e.provider || e.model
+      ? { agent: { type: type ?? undefined, provider: e.provider ?? undefined, model: e.model ?? undefined } }
+      : undefined,
+  };
+}
+
+/**
+ * Give every agent of the run's index a record. The tree names only the
+ * newest agent of each name, so an earlier loop round or an attempt a
+ * resume replaced was known to the page only by the id its output streamed
+ * under, and its panel had nothing to open. A record from an earlier
+ * snapshot keeps its calls and output; the index brings its status.
+ */
+function _mergeAgentIndex(
+  agents: Map<string, AgentExecution>,
+  stages: Map<string, NodeExecution>,
+  unknown: Set<string>,
+  index: AgentIndexEntry[],
+  prevAgents: Map<string, AgentExecution>,
+): void {
+  for (const e of index) {
+    const current = agents.get(e.id);
+    if (current && !current.summary_only) {
+      if (current.round !== e.round || current.node_name !== e.node_name) {
+        agents.set(e.id, { ...current, round: e.round, node_name: e.node_name });
+      }
+      continue;
+    }
+    const light = _agentFromIndex(e, stages);
+    const prev = current ?? prevAgents.get(e.id);
+    const next = prev && !prev.summary_only
+      ? {
+          ...prev,
+          status: light.status,
+          end_time: light.end_time ?? prev.end_time,
+          duration_seconds: light.duration_seconds ?? prev.duration_seconds,
+          error_message: light.error_message ?? prev.error_message,
+          round: e.round,
+          node_name: e.node_name,
+        }
+      : light;
+    agents.set(e.id, _keepFinished(prev, next));
+  }
+  for (const id of Array.from(unknown)) {
+    if (agents.has(id)) unknown.delete(id);
+  }
+}
+
+/** Streamed thinking, marked where it came in the text. */
+function _addThinking(entry: StreamEntry, text: string): void {
+  if (!text) return;
+  const marks = entry.thinkingMarks ?? (entry.thinkingMarks = []);
+  const from = entry.thinking.length;
+  const last = marks[marks.length - 1];
+  if (last && last.at === entry.content.length && last.to === from) {
+    last.to = from + text.length;
+  } else {
+    marks.push({ at: entry.content.length, from, to: from + text.length });
+  }
+  entry.thinking += text;
 }
 
 /** Fields of a completion or update that describe the thing, not the event. */
@@ -243,6 +338,7 @@ export const useExecutionStore = create<ExecutionState>()(
     dispatchedByName: new Map(),
     hoveredNodeId: null,
     checkpointPreview: null,
+    unknownAgentIds: new Set(),
 
     applySnapshot: (workflow) =>
       set((state) => {
@@ -299,6 +395,10 @@ export const useExecutionStore = create<ExecutionState>()(
             }
           }
         }
+
+        _mergeAgentIndex(
+          state.agents, state.stages, state.unknownAgentIds, workflow.agent_index ?? [], prevAgents,
+        );
 
         // A poll can be taken just before a node starts and land just
         // after its live start event: keep what the WS added until a
@@ -427,6 +527,7 @@ export const useExecutionStore = create<ExecutionState>()(
               tool_calls: [],
             } as unknown as AgentExecution;
             const existingAgent = state.agents.get(agentId);
+            state.unknownAgentIds.delete(agentId);
             if (existingAgent) {
               Object.assign(existingAgent, agentData);
             } else {
@@ -589,13 +690,21 @@ export const useExecutionStore = create<ExecutionState>()(
             for (const chunk of chunks) {
               const agId = chunk.agent_id;
               if (!agId) continue;
+              // Output of an agent the last snapshot did not have (it
+              // started since, or it is a round the tree does not keep).
+              if (!state.agents.has(agId) && !state.unknownAgentIds.has(agId)) {
+                state.unknownAgentIds.add(agId);
+              }
               let entry = state.streamingContent.get(agId);
               if (!entry) {
                 entry = { content: '', thinking: '', activeToolCall: '', done: false, toolActivity: [] };
                 state.streamingContent.set(agId, entry);
               }
+              // `done` ends one model call, not the agent: output after it
+              // is the agent's next call.
+              if (chunk.content) entry.done = false;
               if (chunk.chunk_type === 'thinking') {
-                entry.thinking += chunk.content;
+                _addThinking(entry, chunk.content);
               } else if (chunk.chunk_type === 'tool_call') {
                 entry.activeToolCall += chunk.content;
               } else {
@@ -620,6 +729,36 @@ export const useExecutionStore = create<ExecutionState>()(
         }
       }),
 
+    applyAgentIndex: (index) =>
+      set((state) => {
+        _mergeAgentIndex(state.agents, state.stages, state.unknownAgentIds, index, state.agents);
+      }),
+
+    giveUpAgentLookup: (ids) =>
+      set((state) => {
+        for (const id of ids) {
+          state.unknownAgentIds.delete(id);
+          if (state.agents.has(id)) continue;
+          state.agents.set(id, {
+            id,
+            agent_name: '',
+            status: 'running',
+            start_time: null,
+            end_time: null,
+            duration_seconds: null,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            estimated_cost_usd: 0,
+            total_llm_calls: 0,
+            total_tool_calls: 0,
+            llm_calls: [],
+            tool_calls: [],
+            summary_only: true,
+          });
+        }
+      }),
+
     reset: () =>
       set((state) => {
         state.workflow = null;
@@ -628,6 +767,7 @@ export const useExecutionStore = create<ExecutionState>()(
         state.llmCalls = new Map();
         state.toolCalls = new Map();
         state.streamingContent = new Map();
+        state.unknownAgentIds = new Set();
         state.eventLog = [];
         state.dispatchedByName = new Map();
         // Nothing selected. This was `{ type: 'workflow' }`, which the first

@@ -12,6 +12,7 @@ import { SmartContent } from '@/components/shared/SmartContent';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { formatDuration, formatTimestamp } from '@/lib/utils';
+import { agentDisplayName, UNNAMED_AGENT } from '@/lib/liveAgents';
 
 interface ScriptAgentDetailPanelProps {
   agentId: string;
@@ -56,7 +57,7 @@ export function ScriptAgentDetailPanel({ agentId }: ScriptAgentDetailPanelProps)
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2 sticky top-0 z-10 bg-temper-bg pb-2">
         <h3 className="text-lg font-semibold text-temper-text">
-          {ag.agent_name ?? ag.name ?? agentId}
+          {agentDisplayName(ag) ?? UNNAMED_AGENT}
         </h3>
         <StatusBadge status={ag.status} />
         <Badge variant="secondary" className="text-xs bg-amber-500/15 text-amber-400 border-amber-500/30">

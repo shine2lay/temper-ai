@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from temper_ai.tools import TOOL_CLASSES
-from temper_ai.tools.github_pr import OpenPullRequest
+from temper_ai.tools.github_pr import OpenPullRequest, OpenPullRequestAsApp
 
 TOKEN = "ghp_test_token_0123456789abcdefghijklmnop"  # noqa: S105 - a fake token
 
@@ -85,8 +85,8 @@ def env(tmp_path, monkeypatch):
     head = commit(wt, "fix.txt", "the fix")
     github = FakeGitHub()
 
-    def tool(**config):
-        t = OpenPullRequest(config={
+    def tool(cls=OpenPullRequest, **config):
+        t = cls(config={
             "roots": [str(tmp_path / "repos")],
             "remote_template": f"file://{tmp_path}/remote/{{repo}}.git",
             "api_url": "https://api.github.test",
@@ -105,6 +105,7 @@ def call(tool, **params):
 
 def test_it_is_registered():
     assert TOOL_CLASSES["OpenPullRequest"] is OpenPullRequest
+    assert TOOL_CLASSES["OpenPullRequestAsApp"] is OpenPullRequestAsApp
 
 
 def test_pushes_the_branch_and_opens_the_pr(env):
@@ -303,16 +304,41 @@ def test_an_unknown_identity_is_refused(env):
     assert not result.success and "identity 'someone' is not one of token, app" in result.error
 
 
+def test_the_app_tool_pushes_and_opens_as_the_app(env, app_on, monkeypatch):
+    monkeypatch.delenv("TEMPER_GITHUB_TOKEN")
+    app = app_on("shine2lay/roamee")
+    result = call(env["tool"](OpenPullRequestAsApp), worktree=str(env["wt"]))
+    assert result.success, result.error
+    assert env["github"].auth and all(a == "Bearer ghs_app_installation_token" for a in env["github"].auth)
+    assert app.asked == ["shine2lay/roamee"]
+
+
+def test_the_app_tool_is_the_app_whatever_its_config_says(env, app_on):
+    app = app_on("shine2lay/roamee")
+    result = call(env["tool"](OpenPullRequestAsApp, identity="token"), worktree=str(env["wt"]))
+    assert result.success, result.error
+    assert all(a == "Bearer ghs_app_installation_token" for a in env["github"].auth)
+    assert app.asked == ["shine2lay/roamee"]
+
+
 def test_only_github_work_opens_pull_requests_as_the_app():
-    """The shipped agents: GitHub work signs as the app, Linear and Notion as the owner."""
+    """As a run hands out tools: every tool registered once, by name, without the tool config an
+    agent's YAML may give it (runner/execute.py). The first live pull request of GitHub work went
+    out as the owner because its agent said `identity: app` in exactly such a config."""
     import yaml
 
+    from temper_ai.tools.executor import ToolExecutor
+
+    executor = ToolExecutor()
+    executor.register_tools({name: cls() for name, cls in TOOL_CLASSES.items()})
     identities = {}
-    for path in sorted((Path(__file__).resolve().parents[2] / "configs" / "agents").glob("*.yaml")):
-        agent = (yaml.safe_load(path.read_text()) or {}).get("agent") or {}
-        for spec in agent.get("tools") or []:
-            name = spec if isinstance(spec, str) else spec.get("name")
-            if name == "OpenPullRequest":
-                config = {} if isinstance(spec, str) else spec.get("config") or {}
-                identities[path.stem] = config.get("identity", "token")
+    try:
+        for path in sorted((Path(__file__).resolve().parents[2] / "configs" / "agents").glob("*.yaml")):
+            agent = (yaml.safe_load(path.read_text()) or {}).get("agent") or {}
+            for spec in agent.get("tools") or []:
+                tool = executor.get_tool(spec if isinstance(spec, str) else str(spec.get("name")))
+                if isinstance(tool, OpenPullRequest):
+                    identities[path.stem] = tool._identity()
+    finally:
+        executor.shutdown()
     assert identities == {"github_report": "app", "linear_report": "token", "notion_report": "token"}

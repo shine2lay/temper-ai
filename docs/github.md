@@ -63,7 +63,7 @@ stays in the thread and the next run reads it. This holds across restarts.
 
 - It **never merges**, approves, or requests changes, and never pushes a
   protected branch (`main`, `master`, `staging`, ...). The push and the pull
-  request are temper's `OpenPullRequest` tool (with `identity: app`), not an
+  request are temper's `OpenPullRequestAsApp` tool, not an
   agent's shell.
 - Pull requests go only to repositories the app is installed on — temper
   asks GitHub which — and roamee's go into `staging`.

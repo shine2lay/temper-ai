@@ -28,15 +28,23 @@ may read).
 If a PR for the branch is already open, it is returned as it is: a later run
 on the same issue pushes new commits to the same PR.
 
-Who it acts as (``identity`` in the tool config):
+Who it acts as:
 
-* ``token`` (the default): the owner, with ``TEMPER_GITHUB_TOKEN``. Linear,
+* ``OpenPullRequest``: the owner, with ``TEMPER_GITHUB_TOKEN``. Linear,
   Notion and builds open their pull requests this way.
-* ``app``: temper's GitHub app (integrations.github.app), for work started
-  on GitHub. The push and the PR show as ``<app>[bot]``. The repositories it
-  may push to are the ones the app is installed on (GitHub is asked; a
-  ``repos`` list in the config narrows them), and a repository with a fixed
-  base (roamee: staging) gets pull requests into that base only.
+* ``OpenPullRequestAsApp``: temper's GitHub app (integrations.github.app),
+  for work started on GitHub. The push and the PR show as ``<app>[bot]``.
+  The repositories it may push to are the ones the app is installed on
+  (GitHub is asked; a ``repos`` list in the config narrows them), and a
+  repository with a fixed base (roamee: staging) gets pull requests into that
+  base only.
+
+The identity is the tool's own, not an agent's choice: a run registers every
+tool once, by name and without the tool config an agent's YAML may give it
+(runner/execute.py, api/routes.py), so an ``identity: app`` there never
+reached the tool, and GitHub work's first pull request went out as the owner.
+(``identity`` in the config still works where a tool is built with one, as
+the tests do.)
 """
 
 from __future__ import annotations
@@ -341,6 +349,22 @@ class OpenPullRequest(BaseTool):
         response.raise_for_status()
         pulls = response.json()
         return pulls[0] if isinstance(pulls, list) and pulls else None
+
+
+class OpenPullRequestAsApp(OpenPullRequest):
+    """OpenPullRequest as temper's GitHub app, whatever its config says: GitHub work's pull requests."""
+
+    name = "OpenPullRequestAsApp"
+    description = (
+        "Push the branch checked out in a task's git worktree to GitHub and open a pull "
+        "request for it into `base`, as temper's GitHub app. Returns the PR's URL. If a PR for "
+        "the branch is already open, pushes the new commits and returns that PR. It never "
+        "merges, never force-pushes, refuses protected branches (main, master, staging, ...) "
+        "and only pushes to repositories the app is installed on."
+    )
+
+    def _identity(self) -> str:
+        return "app"
 
 
 def _auth_config(token: str, remote: str) -> dict[str, str]:

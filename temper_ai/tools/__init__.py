@@ -15,7 +15,7 @@ from temper_ai.tools.github import (
     GitHubReview,
     GitHubThread,
 )
-from temper_ai.tools.github_pr import OpenPullRequest
+from temper_ai.tools.github_pr import OpenPullRequest, OpenPullRequestAsApp
 from temper_ai.tools.glob import Glob
 from temper_ai.tools.grep import Grep
 from temper_ai.tools.http import Http
@@ -66,6 +66,7 @@ TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "NotionUpsert": NotionUpsert,
     "NotionWrite": NotionWrite,
     "OpenPullRequest": OpenPullRequest,
+    "OpenPullRequestAsApp": OpenPullRequestAsApp,
     "QueryRunState": QueryRunState,
     "Read": Read,
     "RemoveNode": RemoveNode,

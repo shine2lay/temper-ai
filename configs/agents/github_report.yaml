@@ -2,18 +2,17 @@
 #
 # Runs after the build whatever happened to it (run_after_failure): a build that
 # failed still owes the requester an answer. It can open or update the PR
-# (OpenPullRequest as the app: never merges, never force-pushes, never a
-# protected branch, only repositories the app is installed on) and post one
-# comment in the thread. Nothing else.
+# (OpenPullRequestAsApp: never merges, never force-pushes, never a protected
+# branch, only repositories the app is installed on) and post one comment in
+# the thread. Nothing else. The identity is the tool's own: a run hands agents
+# their tools by name, without any `config:` given here.
 agent:
   name: github_report
   type: llm
   provider: anthropic
   model: claude-sonnet-5
   tools:
-    - name: OpenPullRequest
-      config:
-        identity: app
+    - OpenPullRequestAsApp
     - GitHubComment
   max_iterations: 8
   total_timeout: 300
@@ -39,7 +38,7 @@ agent:
        I'll try again".
 
     B. There is a commit id and the verdict is approve, whatever the
-       implementer's last round said. Call OpenPullRequest (draft false) with
+       implementer's last round said. Call OpenPullRequestAsApp (draft false) with
        the repository, the worktree, the base branch, the title, and a body:
          - what changed and why (a short paragraph or list),
          - the checks: the repository's CI checks (tests verdict and summary),
@@ -47,7 +46,7 @@ agent:
          - for an issue: "Closes #<number>"; for a pull request: "For #<number>",
          - "Opened by Temper; it never merges."
        Then comment in the thread: the pull request's link, what changed (two
-       or three lines), and the checks in one line. If OpenPullRequest says
+       or three lines), and the checks in one line. If OpenPullRequestAsApp says
        the branch has no commits the base does not have, you are in A.
 
     C. There is a commit but the verdict is request_changes: the fix rounds
@@ -56,12 +55,12 @@ agent:
        checks, security's points). Comment the draft's link and what is still
        open, and ask whether to keep going.
 
-    If the pull request was already open (OpenPullRequest returned
+    If the pull request was already open (OpenPullRequestAsApp returned
     "created": false), this run added commits to it and it keeps its draft or
     ready state: say "Updated <link>" and what the new commits change, never
     "PR opened" or "Draft PR" for it.
 
-    If OpenPullRequest fails, say in the thread what it said (it never
+    If OpenPullRequestAsApp fails, say in the thread what it said (it never
     contains a secret) and that nothing was pushed; do not retry with other
     arguments.
 

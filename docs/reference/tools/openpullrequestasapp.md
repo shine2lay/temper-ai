@@ -1,10 +1,10 @@
 [Home](../index.md) | **Tools** | [LLM Providers](../providers/index.md) | [Agent Types](../agents/index.md) | [Safety Policies](../policies/index.md) | [Topology Strategies](../strategies/index.md)
 
-# `OpenPullRequest` Tool
+# `OpenPullRequestAsApp` Tool
 
 [Back to Tools](index.md)
 
-> Push the branch checked out in a task's git worktree to GitHub and open a pull request for it into `base`. Returns the PR's URL. If a PR for the branch is already open, pushes the new commits and returns that PR. It never merges, never force-pushes, and refuses protected branches (main, master, staging, ...).
+> Push the branch checked out in a task's git worktree to GitHub and open a pull request for it into `base`, as temper's GitHub app. Returns the PR's URL. If a PR for the branch is already open, pushes the new commits and returns that PR. It never merges, never force-pushes, refuses protected branches (main, master, staging, ...) and only pushes to repositories the app is installed on.
 
 The one tool in temper that writes to GitHub. The token is read here, in the
 tool, from ``TEMPER_GITHUB_TOKEN`` in the server's environment: an agent's
@@ -67,13 +67,13 @@ the tests do.)
 
 ## Usage
 
-Add `OpenPullRequest` to an [LLM agent](../agents/llm.md)'s tools list:
+Add `OpenPullRequestAsApp` to an [LLM agent](../agents/llm.md)'s tools list:
 
 ```yaml
 agent:
   name: my_agent
   type: llm
-  tools: [OpenPullRequest]
+  tools: [OpenPullRequestAsApp]
 ```
 
 ## Related

@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from temper_ai.llm import service as service_mod
 from temper_ai.llm import token_pool as pool_mod
 from temper_ai.llm.token_pool import (
     DEFAULT_COOLDOWN_S,
@@ -315,36 +316,86 @@ class TestTruncation:
     Live: a planner explored for 24 iterations, was truncated while writing its
     plan, returned empty, and the node — seeing an empty output with no reason —
     ran the entire exploration again and was truncated at the same place.
+
+    A reply that spent all of max_tokens thinking is asked again first: only that
+    call's thinking is lost. Live: an implementer lost 35 minutes of work (22
+    calls) when one call thought through the cap and the agent was ended.
     """
 
-    def _run(self, finish_reason: str, content: str | None):
+    LS = [{"id": "c1", "name": "bash", "arguments": '{"command": "ls"}'}]
+
+    @staticmethod
+    def _reply(finish_reason: str, content: str | None, tool_calls: list | None = None):
         from temper_ai.llm.models import LLMResponse
+
+        return LLMResponse(
+            content=content, model="claude-opus-5", provider="MockProvider",
+            prompt_tokens=10, completion_tokens=32_000, total_tokens=32_010,
+            latency_ms=1, finish_reason=finish_reason, tool_calls=tool_calls,
+        )
+
+    def _thought_out(self, times: int = 1) -> list:
+        return [self._reply("max_tokens", "") for _ in range(times)]
+
+    def _run(self, *replies):
+        """Run the replies through the loop, with a bash tool; returns the result and the provider."""
         from temper_ai.llm.service import LLMService
 
         from .conftest import MockProvider
 
-        response = LLMResponse(
-            content=content, model="claude-opus-5", provider="MockProvider",
-            prompt_tokens=10, completion_tokens=32_000, total_tokens=32_010,
-            latency_ms=1, finish_reason=finish_reason,
+        provider = MockProvider(list(replies))
+        result = LLMService(provider).run(
+            [{"role": "user", "content": "plan it"}],
+            tools=[{"type": "function", "function": {"name": "bash"}}],
+            execute_tool=lambda name, params: f"result of {name}",
         )
-        return LLMService(MockProvider([response])).run([{"role": "user", "content": "plan it"}])
+        return result, provider
 
-    def test_an_empty_truncated_reply_names_its_cause(self):
-        result = self._run("max_tokens", "")
+    def test_an_empty_truncated_reply_is_asked_again_with_the_work_before_it(self):
+        result, provider = self._run(
+            self._reply("tool_calls", None, self.LS), *self._thought_out(), self._reply("stop", "## Plan"),
+        )
+        assert result.output == "## Plan"
+        assert result.error is None
+        assert len(result.tool_calls) == 1, "the call before the lost one is kept"
+        tool_results = [m for m in provider.calls[-1]["messages"] if m["role"] == "tool"]
+        assert tool_results[0]["content"].startswith("result of bash")
+        assert service_mod.OUTPUT_LIMIT_NOTE in tool_results[0]["content"], "told why it is asked again"
+
+    def test_the_note_is_said_once_however_often_the_call_is_asked(self):
+        result, provider = self._run(*self._thought_out(2), self._reply("stop", "## Plan"))
+        assert result.output == "## Plan"
+        asked = provider.calls[-1]["messages"][-1]["content"]
+        assert asked.count(service_mod.OUTPUT_LIMIT_NOTE) == 1
+
+    def test_each_lost_call_gets_its_own_retries(self):
+        """A long run can hit the cap more than once; a call that returned something starts the count again."""
+        result, _ = self._run(
+            *self._thought_out(),
+            self._reply("tool_calls", None, self.LS),
+            *self._thought_out(service_mod.OUTPUT_LIMIT_RETRIES),
+            self._reply("stop", "## Plan"),
+        )
+        assert result.output == "## Plan"
+        assert result.error is None
+
+    def test_an_empty_truncated_reply_names_its_cause_once_the_retries_are_spent(self):
+        result, provider = self._run(*self._thought_out(service_mod.OUTPUT_LIMIT_RETRIES + 1))
         assert result.output == ""
         assert "max_tokens" in (result.error or "")
         assert "provider_config" in result.error, "say what to change, not just what broke"
+        assert len(provider.calls) == service_mod.OUTPUT_LIMIT_RETRIES + 1
 
     def test_a_truncated_reply_that_still_said_something_is_kept(self):
         """Partial text is worth returning; only a silent truncation is a fault."""
-        result = self._run("max_tokens", "## Plan\nhalf a plan")
+        result, provider = self._run(self._reply("max_tokens", "## Plan\nhalf a plan"))
         assert result.output.startswith("## Plan")
         assert result.error is None
+        assert len(provider.calls) == 1
 
     def test_an_ordinary_empty_reply_is_still_unexplained(self):
         """The retry-on-empty path stays for the glitches it was built for."""
-        result = self._run("stop", "")
+        result, _ = self._run(self._reply("stop", ""))
         assert result.output == ""
         assert result.error is None
 

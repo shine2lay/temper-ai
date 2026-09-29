@@ -60,6 +60,14 @@ DEFAULT_MAX_CONTEXT_TOKENS = 120_000  # Conservative default — most models han
 MAX_TOOL_RESULT_CHARS = 200_000  # ~50k tokens
 WRAP_UP_TURNS = 3  # LLM turns left at which the model is told to stop exploring (per agent: wrap_up_turns)
 CANCELLED_ERROR = "Cancelled: the run was stopped"
+# A call that spends all of max_tokens thinking returns nothing; it is asked again this many times
+# (with _note_output_limit) before the agent ends with the error.
+OUTPUT_LIMIT_RETRIES = 2
+OUTPUT_LIMIT_NOTE = (
+    "[output limit] Your last reply spent its whole output allowance thinking and returned no text "
+    "and no tool call, so none of it was kept. Take a smaller step now: act on what you have already "
+    "decided (one tool call, or your answer) before thinking further."
+)
 
 
 class LLMService:
@@ -156,6 +164,7 @@ class LLMService:
         self.provider = self._own_provider
         self._active_fallback = None
         self._fallback_queue = list(self.fallbacks)
+        self._output_limit_retries = 0
 
         for iteration in range(1, self.max_iterations + 1):
             # A stopped run makes no further calls. Checked here, before every
@@ -206,10 +215,22 @@ class LLMService:
 
         tool_calls = parse_tool_calls(self._response)
         if not tool_calls:
-            self._record_iteration(iteration, "final_response", 0)
             output = extract_final_answer(self._response)
             error = None
             if not output.strip() and self._response.finish_reason == "max_tokens":
+                if self._output_limit_retries < OUTPUT_LIMIT_RETRIES:
+                    # Only this call's thinking is lost: nothing of it reached the
+                    # transcript, so asking again keeps the agent's context. Ending
+                    # the agent instead threw away every call before it (seen live:
+                    # an implementer lost 35 minutes of work to one long think).
+                    self._output_limit_retries += 1
+                    self._record_iteration(iteration, "output_limit_retry", 0)
+                    _note_output_limit(self._messages)
+                    logger.warning(
+                        "'%s': call %d thought through max_tokens with nothing to show; asking again (%d of %d)",
+                        self._ctx.agent_name, iteration, self._output_limit_retries, OUTPUT_LIMIT_RETRIES,
+                    )
+                    return None
                 # A truncated answer arrives as an empty one. Said plainly it is
                 # a configuration fault with an obvious fix; said as "empty
                 # output" the node just runs the whole exploration again and is
@@ -219,8 +240,11 @@ class LLMService:
                     "provider_config.max_tokens."
                 )
                 logger.warning("'%s': %s", self._ctx.agent_name, error)
+            self._record_iteration(iteration, "final_response", 0)
             return self._build_result(iteration, output=output, error=error)
 
+        # This call returned something: a later call lost to max_tokens gets its own retries.
+        self._output_limit_retries = 0
         if self._execute_tool is None and any(not self._is_context_tool(tc["name"]) for tc in tool_calls):
             return self._handle_no_executor(iteration, tool_calls)
 
@@ -763,6 +787,20 @@ def _nudge_to_finish(
             "Stop exploring and produce your final answer now, from what you already know."
         )
     messages[-1]["content"] = f"{messages[-1]['content']}\n\n[iteration budget] {note}"
+
+
+def _note_output_limit(messages: list[dict]) -> None:
+    """Tell the model, on the last message, that its last reply ran out of room while thinking.
+
+    Asked again unchanged, a model tends to think just as long; told why the reply was lost, it
+    takes a smaller step. Appended to the last message, as _nudge_to_finish does, so the transcript
+    stays a valid sequence for every provider; said once, however many times the call is asked again.
+    """
+    if not messages or not isinstance(messages[-1].get("content"), str):
+        return
+    if OUTPUT_LIMIT_NOTE in messages[-1]["content"]:
+        return
+    messages[-1]["content"] = f"{messages[-1]['content']}\n\n{OUTPUT_LIMIT_NOTE}"
 
 
 def _enforce_context_limit(messages: list[dict], max_tokens: int, max_messages: int) -> None:

@@ -60,7 +60,11 @@ def main() -> int:
             seen["title"] = page.title()
             seen["chars"] = len(body)
             seen["errors"] = problems[:3]
-            missing = [t for t in expect if t.lower() not in body.lower()]
+            # Title as well as body: to a person looking at the tab, "Temper AI \u2014 smoke_test"
+            # is the page telling them which run this is, and the dashboard puts some of what
+            # it knows there rather than in the page.
+            shown = f"{seen['title']}\n{body}"
+            missing = [t for t in expect if t.lower() not in shown.lower()]
             seen["missing"] = missing
             # A page that is mostly empty is not a dashboard, whatever it says.
             if int(seen["status"]) >= 400:

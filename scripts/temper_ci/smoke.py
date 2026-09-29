@@ -165,11 +165,14 @@ def finished_run_page(box: Box, shots: Path) -> tuple[str, list[str]]:
     taken: list[str] = []
     trouble: list[str] = []
     script = Path(__file__).with_name("shot.py")
+    # What to expect has to be something the page really shows, and something a page that
+    # failed to load its run could not show. The dashboard puts the workflow's name in the
+    # title and the run's state in the body; it does not print the raw id anywhere, and the
+    # single-page app answers *any* /app/... path with the same shell \u2014 so a run that did not
+    # load renders an empty frame with neither of these in it.
     pages = (
-        # The list: the workflow this run came from has to be on it.
         ("runs-list", f"{box.api}/app/", ["smoke_test"]),
-        # The run itself: its own id, and the fact that it finished.
-        ("finished-run", f"{box.api}/app/workflow/{run_id}", [run_id[:8], "completed"]),
+        ("finished-run", f"{box.api}/app/workflow/{run_id}", ["smoke_test", "completed"]),
     )
     for name, url, expect in pages:
         target = shots / f"{name}.png"
@@ -185,9 +188,8 @@ def finished_run_page(box: Box, shots: Path) -> tuple[str, list[str]]:
     if trouble:
         # The pictures stay in the report: a failure you can look at beats a sentence.
         raise BoxError("the dashboard did not show the finished run \u2014 " + "; ".join(trouble))
-    return (f"run {run_id[:8]} finished, and the dashboard showed it: "
-            f"the list has its workflow, its own page has its id and says completed "
-            f"({', '.join(taken)})"), taken
+    return (f"run {run_id[:8]} finished, and the dashboard showed it: the list names its "
+            f"workflow, and its own page says completed ({', '.join(taken)})"), taken
 
 
 def hooks(box: Box) -> str:

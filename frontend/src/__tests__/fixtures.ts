@@ -245,7 +245,10 @@ export function makeToolCallEvent(overrides: Partial<WSEvent['data']> = {}): WSE
   };
 }
 
-export function makeStreamBatchEvent(agentId: string, chunks: Array<{ content: string; done?: boolean; chunk_type?: string }>): WSEvent {
+export function makeStreamBatchEvent(
+  agentId: string,
+  chunks: Array<{ content: string; done?: boolean; chunk_type?: string; call_id?: string }>,
+): WSEvent {
   return {
     type: 'event',
     event_type: 'llm_stream_batch',

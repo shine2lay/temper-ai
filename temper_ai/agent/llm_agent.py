@@ -461,6 +461,7 @@ class LLMAgent(AgentABC):
                     content=content,
                     chunk_type=chunk_type,
                     done=done,
+                    call_id=getattr(chunk, "call_id", None),
                 )
             except Exception: # noqa
                 pass  # Best-effort — never block LLM streaming  # noqa: B110

@@ -38,6 +38,11 @@ class LLMStreamChunk:
     chunk_type: str = "content"  # "content" or "thinking"
     finish_reason: str | None = None
     model: str | None = None
+    # The LLM call this chunk belongs to (the llm.call.started event's id).
+    # Stamped by the service, not the provider: it lets a page that joined
+    # a run late tell which calls it has streamed and which it must read
+    # back from the event log.
+    call_id: str | None = None
 
 
 @dataclass

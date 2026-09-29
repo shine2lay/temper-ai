@@ -2,13 +2,13 @@
  * A big run replayed onto the run page: more agents than the node tree
  * keeps (loop rounds, parallel lanes, agents that started after the last
  * snapshot), more stream events than any buffer holds, and thinking in both
- * styles. Every agent is named in the live strip and in its panel, and a
- * click opens its panel.
+ * styles. Every agent is named in the live panel and in its own panel, and
+ * a click opens its story.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import { useExecutionStore } from '@/store/executionStore';
-import { LiveStreamBar } from '@/components/dag/LiveStreamBar';
+import { LivePanel } from '@/components/live/LivePanel';
 import { AgentDetailPanel } from '@/components/panels/AgentDetailPanel';
 import { useAgentLookup, MAX_LOOKUPS_PER_AGENT, LOOKUP_INTERVAL_MS } from '@/hooks/useAgentLookup';
 import { snapshotFingerprint } from '@/hooks/useInitialData';
@@ -183,7 +183,7 @@ function LivePage() {
   const selection = useExecutionStore((s) => s.selection);
   return (
     <>
-      <LiveStreamBar />
+      <LivePanel />
       {selection?.type === 'agent' && (
         <div data-testid="panel">
           <AgentDetailPanel agentId={selection.id} />
@@ -204,9 +204,17 @@ function mockAgentsEndpoint(agents: AgentIndexEntry[]) {
   return fetchMock;
 }
 
-function stripTabs(): HTMLElement[] {
-  const strip = screen.getByTestId('live-stream-bar');
-  return within(strip).getAllByRole('button').filter((b) => b.title.startsWith('Show ') || b.title.startsWith('Open '));
+/** Every agent row of the live panel's list. */
+function rosterRows(): HTMLElement[] {
+  return screen.queryAllByTestId('live-agent-row');
+}
+
+/** Click an agent's row, by the name shown on it. */
+function pickAgent(name: string): HTMLElement {
+  const row = rosterRows().find((r) => r.textContent?.includes(name));
+  if (!row) throw new Error(`no row for ${name}`);
+  fireEvent.click(row);
+  return row;
 }
 
 describe('a big run on the run page', () => {
@@ -219,7 +227,7 @@ describe('a big run on the run page', () => {
     vi.useRealTimers();
   });
 
-  it('names every agent in the live strip, including ones that started after the snapshot', async () => {
+  it('lists every agent of the run by name, including ones that started after the snapshot', async () => {
     const fetchMock = mockAgentsEndpoint([...PLANNED, ...LATE].map(indexEntry));
     act(() => {
       useExecutionStore.getState().applySnapshot(snapshot());
@@ -228,27 +236,31 @@ describe('a big run on the run page', () => {
     act(() => replayStream());
 
     // The late agents stream before the page knows them: never shown as ids.
-    expect(screen.getByTestId('live-stream-bar').textContent).not.toMatch(UUID_RE);
+    expect(screen.getByTestId('live-panel').textContent).not.toMatch(UUID_RE);
+
 
     await waitFor(() => expect(screen.getByText('scout-3')).toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalled();
 
-    const running = [...PLANNED, ...LATE].filter((p) => p.status === 'running');
-    const tabs = stripTabs();
-    expect(tabs).toHaveLength(running.length);
-    const labels = tabs.map((t) => t.textContent);
-    for (const label of labels) {
-      expect(label).not.toMatch(UUID_RE);
+    // The list holds every agent of the run — earlier rounds too.
+    for (const header of screen.getAllByTestId('live-group-header')) {
+      if (header.getAttribute('aria-expanded') === 'false') fireEvent.click(header);
     }
-    // Parallel lanes of one name are told apart by their round.
-    expect(labels).toEqual(expect.arrayContaining(['implementer #3', 'implementer #4', 'implementer #5']));
-    for (const p of running.filter((r) => r.name !== PARALLEL)) {
-      expect(labels).toContain(p.name);
+    const rows = rosterRows();
+    expect(rows).toHaveLength(PLANNED.length + LATE.length);
+    const text = rows.map((r) => r.textContent ?? '');
+    for (const line of text) expect(line).not.toMatch(UUID_RE);
+    for (const p of [...PLANNED, ...LATE]) {
+      expect(text.some((line) => line.includes(p.name))).toBe(true);
     }
+    // A loop's rounds are told apart by their round.
+    expect(text.some((line) => line.includes('round 5'))).toBe(true);
+    // One group per stage, not one per stage per way of naming it.
+    expect(screen.getAllByTestId('live-group-header')).toHaveLength(Object.keys(NODES).length);
     expect(useExecutionStore.getState().unknownAgentIds.size).toBe(0);
   });
 
-  it('opens the panel of every agent in the strip', async () => {
+  it('opens the side panel for the agent whose story is shown', async () => {
     mockAgentsEndpoint([...PLANNED, ...LATE].map(indexEntry));
     act(() => {
       useExecutionStore.getState().applySnapshot(snapshot());
@@ -257,14 +269,9 @@ describe('a big run on the run page', () => {
     act(() => replayStream());
     await waitFor(() => expect(screen.getByText('scout-1')).toBeInTheDocument());
 
-    const count = stripTabs().length;
-    for (let k = 0; k < count; k++) {
-      const tab = stripTabs()[k];
-      const label = tab.textContent ?? '';
-      const name = label.replace(/ #\d+$/, '');
-      // First click shows its output, the next opens its panel.
-      if (!tab.title.startsWith('Open ')) fireEvent.click(tab);
-      fireEvent.click(stripTabs()[k]);
+    for (const name of ['planner', 'reviewer', 'fixer', 'scout-2']) {
+      pickAgent(name);
+      fireEvent.click(screen.getByTestId('live-details-button'));
       const panel = screen.getByTestId('panel');
       expect(within(panel).queryByText('Agent not found')).toBeNull();
       expect(within(panel).getByRole('heading', { level: 3 }).textContent).toBe(name);
@@ -288,7 +295,7 @@ describe('a big run on the run page', () => {
     }
   });
 
-  it('streams thinking in the strip, both styles', async () => {
+  it('tells the story with thinking, in both styles', async () => {
     mockAgentsEndpoint([...PLANNED, ...LATE].map(indexEntry));
     act(() => {
       useExecutionStore.getState().applySnapshot(snapshot());
@@ -301,39 +308,36 @@ describe('a big run on the run page', () => {
       return Math.floor((STREAM_EVENTS - 1 - at) / everyone.length);
     };
 
-    // Tagged in the text (Claude Code): newest block, as thinking.
-    fireEvent.click(stripTabs().find((t) => t.textContent === 'reviewer')!);
-    let thinking = screen.getAllByTestId('live-thinking');
+    // Tagged in the text (an older Claude Code run): read as thinking.
+    pickAgent('reviewer');
+    let thinking = screen.getAllByTestId('story-thinking');
     expect(thinking.at(-1)!.textContent).toContain(`Is file ${lastStep(TAGGED)} safe?`);
-    expect(screen.getByTestId('live-stream-bar').textContent).not.toContain('<thinking>');
+    expect(screen.getByTestId('agent-story').textContent).not.toContain('<thinking>');
 
-    // Its own stream: shown where it came, between the text.
-    fireEvent.click(stripTabs().find((t) => t.textContent === 'fixer')!);
-    thinking = screen.getAllByTestId('live-thinking');
-    expect(thinking.at(-1)!.textContent).toContain(`Weighing fix ${lastStep(STREAMED)}.`);
-    expect(screen.getByTestId('live-stream-bar').textContent).toContain(`Applied fix ${lastStep(STREAMED)}.`);
+    // A thinking stream of its own: shown where it came, between the text.
+    pickAgent('fixer');
+    thinking = screen.getAllByTestId('story-thinking');
+    expect(thinking.at(-1)!.textContent).toContain(`Weighing fix ${lastStep(STREAMED)}`);
+    expect(screen.getByTestId('agent-story').textContent).toContain(`Applied fix ${lastStep(STREAMED)}.`);
 
-    // Expanded shows all of it.
-    fireEvent.click(screen.getByText('Expand'));
-    thinking = screen.getAllByTestId('live-thinking');
-    expect(thinking.length).toBeGreaterThan(10);
-    expect(thinking[0].textContent).toContain('Weighing fix 0.');
+    // The long story starts at its newest part, with the rest a click away.
+    expect(screen.getByText(/Show earlier/)).toBeInTheDocument();
   });
 
-  it('keeps an agent in the strip after each model call ends', () => {
+  it('keeps telling one agent\u2019s story across its model calls', () => {
     act(() => {
       useExecutionStore.getState().applySnapshot(snapshot());
     });
-    render(<LiveStreamBar />);
+    render(<LivePanel />);
     act(() => {
       const { applyEvent } = useExecutionStore.getState();
       applyEvent(makeStreamBatchEvent(STREAMED.id, [{ content: 'first call\n' }, { content: '', done: true }]));
       applyEvent(makeStreamBatchEvent(STREAMED.id, [{ content: 'second call\n' }]));
     });
-    const fixer = stripTabs().find((t) => t.textContent === 'fixer');
-    expect(fixer).toBeDefined();
-    fireEvent.click(fixer!);
-    expect(screen.getByTestId('live-stream-bar').textContent).toContain('second call');
+    pickAgent('fixer');
+    const story = screen.getByTestId('agent-story').textContent ?? '';
+    expect(story).toContain('first call');
+    expect(story).toContain('second call');
     expect(useExecutionStore.getState().streamingContent.get(STREAMED.id)?.done).toBe(false);
   });
 
@@ -354,9 +358,9 @@ describe('a big run on the run page', () => {
       });
     }
     expect(fetchMock).toHaveBeenCalledTimes(MAX_LOOKUPS_PER_AGENT);
-    const labels = stripTabs().map((t) => t.textContent);
-    expect(labels).toContain(UNNAMED_AGENT);
-    expect(screen.getByTestId('live-stream-bar').textContent).not.toMatch(UUID_RE);
+    const text = rosterRows().map((r) => r.textContent ?? '');
+    expect(text.some((line) => line.includes(UNNAMED_AGENT))).toBe(true);
+    expect(screen.getByTestId('live-panel').textContent).not.toMatch(UUID_RE);
   });
 });
 

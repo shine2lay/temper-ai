@@ -22,7 +22,17 @@ def test_notify_stream_chunk_publishes():
     notif = RedisChunkNotifier(pub)
     notif.notify_stream_chunk("e", "agent-1", "hi", "content", False)
     pub.publish.assert_called_once_with(
-        "e", "agent-1", "hi", chunk_type="content", done=False,
+        "e", "agent-1", "hi", chunk_type="content", done=False, call_id=None,
+    )
+
+
+def test_notify_stream_chunk_carries_the_call_it_belongs_to():
+    """A page that joined late tells streamed calls from ones it must read back."""
+    pub = MagicMock(spec=RedisChunkPublisher)
+    notif = RedisChunkNotifier(pub)
+    notif.notify_stream_chunk("e", "agent-1", "hi", "content", False, call_id="llm-7")
+    pub.publish.assert_called_once_with(
+        "e", "agent-1", "hi", chunk_type="content", done=False, call_id="llm-7",
     )
 
 

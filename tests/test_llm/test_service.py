@@ -239,6 +239,21 @@ class TestStreaming:
         assert len(chunks) >= 1
         assert any(c.done for c in chunks)
 
+    def test_every_chunk_says_which_call_it_came_from(self):
+        """The page reads back the calls it did not stream; this id pairs them."""
+        provider = MockProvider([_make_text_response("Streamed!")])
+        service = LLMService(provider)
+
+        chunks = []
+        service.run(
+            [{"role": "user", "content": "Hi"}],
+            stream_callback=lambda c: chunks.append(c),
+        )
+
+        ids = {c.call_id for c in chunks if c.content}
+        assert len(ids) == 1
+        assert next(iter(ids))  # a real event id, not None
+
     def test_stream_uses_stream_method(self):
         provider = MockProvider([_make_text_response("Hello")])
         service = LLMService(provider)

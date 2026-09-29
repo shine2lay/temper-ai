@@ -47,6 +47,7 @@ class CompositeNotifier:
         content: str,
         chunk_type: str = "content",
         done: bool = False,
+        call_id: str | None = None,
     ) -> None:
         for n in self._notifiers:
             if not hasattr(n, "notify_stream_chunk"):
@@ -54,6 +55,7 @@ class CompositeNotifier:
             try:
                 n.notify_stream_chunk(
                     execution_id, agent_id, content, chunk_type, done,
+                    call_id=call_id,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

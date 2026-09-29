@@ -42,11 +42,13 @@ class RedisChunkNotifier:
         content: str,
         chunk_type: str = "content",
         done: bool = False,
+        call_id: str | None = None,
     ) -> None:
         """Live LLM chunk → Redis Stream. Best-effort; publisher swallows
         Redis outages so the worker keeps running."""
         self._publisher.publish(
             execution_id, agent_id, content, chunk_type=chunk_type, done=done,
+            call_id=call_id,
         )
 
     def cleanup(self, execution_id: str) -> None:

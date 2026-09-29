@@ -137,6 +137,7 @@ class WebSocketManager:
                     chunk.content,
                     chunk_type=chunk.chunk_type,
                     done=chunk.done,
+                    call_id=chunk.call_id,
                 )
         except asyncio.CancelledError:
             # WS closed; let cleanup happen below
@@ -161,6 +162,12 @@ class WebSocketManager:
             "timestamp": datetime.now(UTC).isoformat(),
         }
 
+        # An event is broadcast at once while chunks wait up to CHUNK_FLUSH_MS
+        # in their batch, so an event could overtake the words written just
+        # before it. The run page tells one story per agent out of both, so
+        # the order has to hold: flush what is waiting first.
+        self._flush_chunks(execution_id)
+
         # Buffer for late-connecting clients (skip stream chunks — they're transient)
         if execution_id not in self._event_buffers:
             self._event_buffers[execution_id] = []
@@ -179,13 +186,17 @@ class WebSocketManager:
         content: str,
         chunk_type: str = "content",
         done: bool = False,
+        call_id: str | None = None,
     ):
         """Buffer a stream chunk for batched delivery.
 
         Called from executor threads for each LLM token. Chunks are accumulated
         and flushed as a single 'llm_stream_batch' message to reduce WebSocket overhead.
         """
-        chunk = {"agent_id": agent_id, "content": content, "chunk_type": chunk_type, "done": done}
+        chunk = {
+            "agent_id": agent_id, "content": content, "chunk_type": chunk_type,
+            "done": done, "call_id": call_id,
+        }
         buffer_size = self._buffer_chunk(execution_id, chunk)
 
         # Tool call chunks are infrequent but large — flush immediately so

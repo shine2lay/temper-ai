@@ -173,6 +173,31 @@ class TestWebSocketManagerUnit:
         self.manager.notify_stream_chunk("exec-done", "agent-1", "end", done=True)
         assert "exec-done" in flush_called
 
+    def test_chunk_carries_the_llm_call_it_belongs_to(self):
+        """The page merges streamed calls with ones it reads back by this id."""
+        sent = []
+        self.manager._broadcast = lambda eid, msg: sent.append(msg)
+
+        self.manager.notify_stream_chunk(
+            "exec-cid", "agent-1", "hi", done=True, call_id="llm-9",
+        )
+        chunks = [c for m in sent for c in m["data"]["chunks"]]
+        assert chunks == [{
+            "agent_id": "agent-1", "content": "hi", "chunk_type": "content",
+            "done": True, "call_id": "llm-9",
+        }]
+
+    def test_an_event_flushes_the_words_written_before_it(self):
+        """A tool step must not jump ahead of the text that introduced it."""
+        sent = []
+        self.manager._broadcast = lambda eid, msg: sent.append(msg)
+
+        self.manager.notify_stream_chunk("exec-order", "agent-1", "Running ")
+        self.manager.notify_event("exec-order", "tool.call.started", {"tool_name": "Bash"})
+
+        kinds = [m["event_type"] for m in sent]
+        assert kinds == ["llm_stream_batch", "tool.call.started"]
+
     def test_notify_stream_chunk_batch_size_triggers_immediate_flush(self):
         """Reaching CHUNK_BATCH_SIZE should schedule an immediate flush."""
         flush_called = []

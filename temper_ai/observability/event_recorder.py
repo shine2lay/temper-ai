@@ -132,8 +132,10 @@ class EventRecorder:
         content: str,
         chunk_type: str = "content",
         done: bool = False,
+        call_id: str | None = None,
     ):
         if hasattr(self._notifier, "notify_stream_chunk"):
             self._notifier.notify_stream_chunk(
                 self._execution_id, agent_id, content, chunk_type, done,
+                call_id=call_id,
             )

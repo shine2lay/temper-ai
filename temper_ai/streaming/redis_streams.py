@@ -38,6 +38,8 @@ class Chunk:
     content: str
     chunk_type: str = "content"
     done: bool = False
+    # The LLM call this chunk belongs to, when the service stamped one.
+    call_id: str | None = None
 
 
 # Per-run stream length cap. Each chunk is ~50-200 bytes; 10k entries
@@ -122,6 +124,7 @@ class RedisChunkPublisher:
         content: str,
         chunk_type: str = "content",
         done: bool = False,
+        call_id: str | None = None,
     ) -> None:
         """XADD a chunk event. Silently no-ops if Redis is unavailable.
 
@@ -138,6 +141,7 @@ class RedisChunkPublisher:
                     "content": content,
                     "chunk_type": chunk_type,
                     "done": "1" if done else "0",
+                    "call_id": call_id or "",
                 },
                 maxlen=self._maxlen,
                 approximate=True,
@@ -270,6 +274,7 @@ class RedisChunkSubscriber:
                     agent_id=fields.get("agent_id", ""),
                     content=fields.get("content", ""),
                     chunk_type=fields.get("chunk_type", "content"),
+                    call_id=fields.get("call_id") or None,
                     done=fields.get("done", "0") == "1",
                 )
                 yield chunk

@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
 import { MAX_EVENT_LOG_SIZE } from '@/lib/constants';
+import { appendChunk, finishTool, newStory, startTool, type AgentStory } from '@/lib/agentStory';
 import type {
   WorkflowExecution,
   NodeExecution,
@@ -24,6 +25,16 @@ import type {
 
 enableMapSet();
 
+/** The story of one agent, created the first time it says anything. */
+function _story(state: { stories: Map<string, AgentStory> }, agentId: string): AgentStory {
+  let story = state.stories.get(agentId);
+  if (!story) {
+    story = newStory();
+    state.stories.set(agentId, story);
+  }
+  return story;
+}
+
 // Re-export StageExecution as NodeExecution for backward compat
 export type StageExecution = NodeExecution;
 
@@ -34,6 +45,9 @@ interface ExecutionState {
   llmCalls: Map<string, LLMCall>;
   toolCalls: Map<string, ToolCall>;
   streamingContent: Map<string, StreamEntry>;
+  /** Per agent: what it thought, said and did, in the order it happened.
+   *  The live panel tells this story; see lib/agentStory.ts. */
+  stories: Map<string, AgentStory>;
   selection: Selection | null;
   /** Id of the node the cursor is currently over. Drives "hover-to-reveal"
    *  edge highlighting — connected edges go full opacity, others dim. */
@@ -329,6 +343,7 @@ export const useExecutionStore = create<ExecutionState>()(
     llmCalls: new Map(),
     toolCalls: new Map(),
     streamingContent: new Map(),
+    stories: new Map(),
     selection: null,
     wsStatus: { connected: false, reconnectAttempt: 0, lastHeartbeat: null, wsError: null },
     eventLog: [],
@@ -384,7 +399,15 @@ export const useExecutionStore = create<ExecutionState>()(
         // Agents of every node, nested ones included: the agents map is
         // looked up by id and counted, it is not what the DAG draws from.
         for (const node of _allNodes(workflow.nodes)) {
-          for (const agent of _nodeAgents(node)) {
+          for (const raw of _nodeAgents(node)) {
+            // Where the snapshot puts an agent is where it belongs: keep that
+            // link, so the live panel can group by stage even when the agent
+            // record itself does not name one.
+            const agent = {
+              ...raw,
+              stage_execution_id: raw.stage_execution_id ?? node.id,
+              node_name: raw.node_name ?? node.name,
+            };
             state.agents.set(agent.id, _keepFinished(prevAgents.get(agent.id), agent));
             for (const llm of agent.llm_calls ?? []) {
               const llmCopy = { ...llm, agent_id: agent.id, agent_execution_id: agent.id };
@@ -424,8 +447,9 @@ export const useExecutionStore = create<ExecutionState>()(
           if (!exists) state.selection = null;
         }
 
-        // Seed streamingContent for running agents so the LiveStreamBar
-        // shows activity even after a page refresh mid-execution.
+        // Seed streamingContent for running agents so the graph's cards and
+        // the header show activity even after a page refresh mid-execution.
+        // (The live panel builds its own story; this is for everything else.)
         if (workflow.status === 'running') {
           for (const [agentId, agent] of state.agents) {
             if (agent.status === 'running' && !state.streamingContent.has(agentId)) {
@@ -653,6 +677,12 @@ export const useExecutionStore = create<ExecutionState>()(
               startedAt: msg.timestamp ?? new Date().toISOString(),
               args: (data.input_params ?? data.input_data) as Record<string, unknown> | undefined,
             } satisfies ToolActivity);
+            startTool(_story(state, agId), {
+              toolId: (data.tool_execution_id ?? data.event_id) as string | undefined,
+              toolName: data.tool_name as string,
+              args: (data.input_params ?? data.input_data) as Record<string, unknown> | undefined,
+              at: msg.timestamp ?? new Date().toISOString(),
+            });
             break;
           }
 
@@ -675,6 +705,18 @@ export const useExecutionStore = create<ExecutionState>()(
                   running.durationSeconds = data.duration_seconds as number | undefined;
                 }
               }
+              const failed = msg.event_type === 'tool.call.failed'
+                || (data.status != null && data.status !== 'success' && data.status !== 'completed');
+              finishTool(_story(state, agId), {
+                toolId: toolId || undefined,
+                toolName: data.tool_name as string | undefined,
+                status: failed ? 'failed' : 'completed',
+                durationSeconds: data.duration_seconds as number | undefined,
+                result: data.output_data ?? data.output,
+                error: data.error_message as string | undefined,
+                args: (data.input_params ?? data.input_data) as Record<string, unknown> | undefined,
+                at: msg.timestamp ?? new Date().toISOString(),
+              });
             }
             break;
           }
@@ -686,6 +728,7 @@ export const useExecutionStore = create<ExecutionState>()(
               chunk_type?: string;
               content: string;
               done?: boolean;
+              call_id?: string | null;
             }>;
             for (const chunk of chunks) {
               const agId = chunk.agent_id;
@@ -700,6 +743,7 @@ export const useExecutionStore = create<ExecutionState>()(
                 entry = { content: '', thinking: '', activeToolCall: '', done: false, toolActivity: [] };
                 state.streamingContent.set(agId, entry);
               }
+              appendChunk(_story(state, agId), chunk, msg.timestamp ?? new Date().toISOString());
               // `done` ends one model call, not the agent: output after it
               // is the agent's next call.
               if (chunk.content) entry.done = false;
@@ -767,6 +811,7 @@ export const useExecutionStore = create<ExecutionState>()(
         state.llmCalls = new Map();
         state.toolCalls = new Map();
         state.streamingContent = new Map();
+        state.stories = new Map();
         state.unknownAgentIds = new Set();
         state.eventLog = [];
         state.dispatchedByName = new Map();

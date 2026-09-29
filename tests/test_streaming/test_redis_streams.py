@@ -116,6 +116,27 @@ class TestRoundTrip:
         assert first.content == "hello world"
         assert chunks[-1].chunk_type == "terminal"
 
+    def test_call_id_survives_the_round_trip(self, execution_id):
+        """A late page pairs streamed words with the call they belong to."""
+        pub = RedisChunkPublisher(REDIS_URL)
+        pub.publish(execution_id, "agent-A", "hi", "content", False, call_id="llm-42")
+        pub.publish_terminal(execution_id)
+        pub.close()
+
+        async def _read():
+            sub = RedisChunkSubscriber(REDIS_URL)
+            collected = []
+            async for chunk in sub.subscribe(execution_id):
+                collected.append(chunk)
+                if chunk.chunk_type == "terminal":
+                    break
+            await sub.close()
+            return collected
+
+        chunks = asyncio.run(_read())
+        assert chunks[0].call_id == "llm-42"
+        assert chunks[-1].call_id is None  # the sentinel belongs to no call
+
     def test_terminal_sentinel_unblocks_subscriber(self, execution_id):
         """Subscriber should exit promptly when terminal arrives."""
         pub = RedisChunkPublisher(REDIS_URL)

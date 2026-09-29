@@ -378,7 +378,9 @@ class LLMService:
             provider_name=self.provider.provider_name,
         )
         if self._stream_callback:
-            return self.provider.stream(wire, on_chunk=self._stream_callback, **kwargs)
+            return self.provider.stream(
+                wire, on_chunk=_tagged(self._stream_callback, llm_event_id), **kwargs,
+            )
         return self.provider.complete(wire, **kwargs)
 
     # -- fallback -----------------------------------------------------------
@@ -686,6 +688,28 @@ class LLMService:
             execution_id=self._ctx.execution_id,
             data=data,
         )
+
+
+def _tagged(on_chunk: StreamCallback, call_id: str | None) -> StreamCallback:
+    """The same callback, with every chunk stamped with its LLM call.
+
+    A provider knows nothing about temper's event log, so the service says
+    which call a chunk belongs to. The run page uses it to tell the calls it
+    has streamed from the ones it must read back from the log — a page
+    opened halfway through a run has missed most of them.
+    """
+    if not call_id:
+        return on_chunk
+
+    def stamped(chunk: Any) -> None:
+        try:
+            if getattr(chunk, "call_id", None) is None:
+                chunk.call_id = call_id
+        except AttributeError:  # a provider with a chunk type of its own
+            pass
+        on_chunk(chunk)
+
+    return stamped
 
 
 def _summarize_tool_call(tc: dict) -> dict:

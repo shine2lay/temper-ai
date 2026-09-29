@@ -92,6 +92,7 @@ class CLIPrinter:
         content: str,
         chunk_type: str = "content",
         done: bool = False,
+        call_id: str | None = None,
     ) -> None:
         """Stream chunks are ignored in CLI mode — we show results after completion."""
         pass

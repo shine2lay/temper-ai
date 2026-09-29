@@ -15,7 +15,7 @@ import { ViewTabs } from '@/components/layout/ViewTabs';
 import { EventLogPanel } from '@/components/layout/EventLogPanel';
 import { LLMCallsTable } from '@/components/layout/LLMCallsTable';
 import { ExecutionDAG } from '@/components/dag/ExecutionDAG';
-import { LiveStreamBar } from '@/components/dag/LiveStreamBar';
+import { LivePanel } from '@/components/live/LivePanel';
 import { TimelineChart } from '@/components/timeline/TimelineChart';
 import { DetailSheet } from '@/components/panels/DetailSheet';
 import { StageDetailOverlay } from '@/components/stage-detail';
@@ -131,7 +131,7 @@ export function ExecutionView() {
             <ErrorBoundary>
               <div className="relative w-full h-full">
                 <ExecutionDAG />
-                <LiveStreamBar />
+                <LivePanel />
               </div>
             </ErrorBoundary>
           }

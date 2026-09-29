@@ -107,6 +107,9 @@ jobs:
           python-version: '3.12'
       - run: uv sync --frozen --extra dev
 
+      - name: Show what is installed
+        run: uv run python scripts/show_versions.py
+
       - name: Run the tests, with the database tier on Postgres
         env:
           TEMPER_TEST_DATABASE_URL: postgresql://temper_ai:test@127.0.0.1:5432/temper_ai_test

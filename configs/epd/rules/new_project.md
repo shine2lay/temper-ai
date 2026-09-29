@@ -45,7 +45,9 @@ foundation must take it without a rewrite. Build only what this request needs.
   client (base URL, JSON, errors). On the server: the app's error type and how it becomes a response, the
   database session, settings. A block has one job and a name that says it; each has a user in the build that
   adds it. A later screen never re-writes markup or logic a block already has: it uses the block, or extends
-  it (D4).
+  it (D4). Nor does it re-type what an earlier screen wrote by hand: the second user is the moment the shared
+  part becomes a block, in that change, with the first screen moved onto it, and the standard names the
+  block instead of describing the markup.
 - **N6 Words.** A glossary: one word per thing, the same in the database, the API, the types, the screens and
   the copy (D3). The brief's words win; a word the brief lacks is chosen once and added.
 - **N7 Checks.** Each app has one command per check: install, lint, format check, type check, test, build.
@@ -97,15 +99,21 @@ The standards and the notes are part of the codebase and are judged like code.
 - A build that finds a standard wrong, missing or in the way changes it in the same change, says why on the
   standard's line, and brings along every place the old standard shaped (D2). A build never breaks a standard
   quietly, and never loosens one to let its own code through.
-- A building block that a new screen needs to do more is extended, not copied (D4, N5).
+- A building block that a new screen needs to do more is extended, not copied (D4, N5). What an earlier
+  screen or endpoint wrote by hand and a new one needs too becomes a block both use, in that change (D4).
+- A standard an earlier build wrote binds a later build only while it holds (see Precedence here): a build
+  that leans on one to allow what a default forbids checks its reason first.
 - The notes stay true: a change that makes one wrong fixes it.
 
 ## Precedence here
 
 build.md's order holds: the request, then the project's standards, then the code around the change, then the
-defaults. Here the standards are the pair's own work, so N1-N8 are the floor under them: a standard that
-breaks an N (money in floats, a check CI never runs) is a finding against that N, and the code it governs is
-judged by the N.
+defaults. Here the standards are the pair's own work, not the owner's, so being written down blesses nothing:
+N1-N8 and D1-D8 are the floor under them. A standard that breaks an N or a default (money in floats, a check
+CI never runs, a twin kept "by design", a list that every screen re-types by hand) needs a reason that holds
+by D8, saying why one home or one block cannot do the job; without one it is a finding against the rule it
+breaks, and the code it governs is judged by that rule. The reviewer judges each standard the change writes
+or leans on before it judges code by it.
 
 ## How the method changes on a new project
 
@@ -159,8 +167,12 @@ when"):
   one thing where the code does another: each is a finding (N8, or the standard).
 - **Fit within the change.** In a new project most of the change has no older sibling, so D1-D8 are judged
   within it: two things of one kind shaped two ways (D5); a building block written twice, bypassed or
-  near-copied (D4, N5); a figure or a limit worked out in two places or in the browser (D1, N2); two words for
-  one thing (D3, N6).
+  near-copied (D4, N5); markup or logic re-typed from an earlier screen or endpoint instead of held by a
+  block, even where a standard describes it (D4); a figure or a limit worked out in two places or in the
+  browser (D1, N2); two words for one thing (D3, N6).
+- **The standards themselves.** Each standard the change writes or leans on, judged before the code is
+  judged by it (Precedence here): a standard that allows what an N or a default forbids, with no reason that
+  holds, is a finding, at least **major**, because every later build follows it.
 - **Reasons (D8).** Every pattern the build sets has a reason that holds, written in its standard: the
   stack's own way used plainly, or a block already there, would not do the job, and nothing is bigger than
   the need. A dependency, abstraction, layer or option that no need in the brief or the request calls for

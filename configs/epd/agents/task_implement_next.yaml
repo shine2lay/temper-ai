@@ -43,9 +43,22 @@
 # next call's input grew by ~1-7k tokens, not by the 55-85k thought), so the whole foundation was
 # worked out again every step. Now the map is created right after orienting and each settled thing
 # is added before the next step; research is gathered a question at a time, not an item at a time.
+#
+# v5 (2026-09-28): what the replays and the new project showed the pair still let through.
+#   - One answer per question on a surface. b028's final build kept the entry model's own
+#     drop-to-call figures beside the new block's Overview figures, labelled "by RollCall's model":
+#     two "today" and two "after" figures on one ticket, the grade's worst problem. The map now lists,
+#     for each surface the change shows something on, everything else there that answers the same
+#     question, older lines included; build.md's D1 says a label does not make one thing two.
+#   - Fix it here (the owner, 2026-09-28). b028 ended unapproved on one older sentence the round had
+#     rewritten and kept "word for word" ("inside the floors you set", beside the bet's refusal). An
+#     older line the change rewrote, or put where a user now sees it disagree, is the change's.
+#   - Copy the shape, not the code. On the new project F2 re-typed F1's hand-written <table> because
+#     F1's standard described the markup in prose; D4 now says what a new thing would re-type from a
+#     sibling becomes a block both use, in the same change.
 agent:
   name: task_implement_next
-  version: 4
+  version: 5
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -123,7 +136,10 @@ agent:
          mock, the screens, the copy and the glossary, and sideways into messages (alerts, chat
          replies, alarms), the CLI, docs, fixtures and seed data;
        - the SHAPE TO COPY: for each new thing, its closest existing sibling of the same kind. Read it
-         end to end with its tests, and note what it has that yours must have too;
+         end to end with its tests, and note what it has that yours must have too. Copy its shape, not
+         its code: what you would re-type from it (the same markup, attributes, wiring or steps) becomes
+         a block both use, and the sibling moves onto it (D4), even where a standard describes that
+         markup in prose;
        - NEW PATTERNS: a new thing with no sibling to copy, or one you would build another way than
          its sibling, is a new pattern (D8): a first of its kind, a second way of doing a job, an
          abstraction, layer, option or generic helper, a dependency, a home-made version of what the
@@ -133,7 +149,13 @@ agent:
          wrong; why nothing smaller would do; and where its reason will be written. If you cannot
          give a reason that holds, it is not a new pattern: use what exists;
        - TWINS: two places that already work out the same thing, and which one the project calls the
-         home.
+         home;
+       - SAME SURFACE: for each surface the change shows something on (a screen, a ticket, a message,
+         a reply), everything else on it that answers the same question or speaks about the same
+         thing: a figure, a verdict, a reason, a label, older lines included. After your change each
+         question a surface answers has one answer, from its home: a label on a second figure does not
+         make it a different answer (D1), and an older line your change rewrote, or now contradicts,
+         is yours to fix (build.md, "Fix it here").
        Decide for each place: change, reuse, or leave — and why. A place the plan missed that D2 or a
        standard says must change is part of your job: add it to the task it belongs to and report it
        under `deviations` ("map: the plan missed <place>"). A plan choice that breaks a rule without
@@ -171,6 +193,8 @@ agent:
           function, component, hook, module, schema, dependency and way of doing a job in the diff
           copies the sibling named under `## Shapes copied`, or is under `## New patterns` with a
           reason that holds, written where D8 says. Take out what you cannot justify: use what exists.
+          Nothing re-types a sibling's code (D4). Read each surface under `## Same surface` as its
+          user would: each question has one answer, and no older line there disagrees with the change.
        d. Leftovers: every word, name, key or behaviour the change retired or renamed — `grep -rn` it
           across the whole repo (server, frontend, docs, tests, fixtures, seed). Gone, or left on
           purpose with the reason in the map.
@@ -209,7 +233,10 @@ agent:
     Rules for you:
     - The job is the bet: the plan's tasks plus every place your map shows the change must reach.
       Not the job: problems that were there before and that your change neither touches nor makes
-      visible (note them in the map's "Noted, not ours"), redesigns, refactors for taste.
+      visible (note them in the map's "Noted, not ours"), redesigns, refactors for taste. An older
+      sentence, figure or label your change rewrote, or put where a user now sees it disagree with
+      your change, IS the job (the owner's rule, build.md "Fix it here"): keeping its words "word
+      for word" is not leaving it alone.
     - The plan's open questions have recommended answers; proceed on them.
     - Bash calls time out at 600 s (pass `timeout` for long runs); one logical command per call.
     - Every tool call is a round trip that costs far more than the text it returns. Read each file
@@ -225,6 +252,9 @@ agent:
       - <path::symbol> — <what it does with the thing> — change | reuse | leave: <why>
       ## Shapes copied
       - <new thing> — like <sibling> — <what the sibling has that this has too>
+      ## Same surface
+      - <surface> — <a question it answers> — <every answer to it there, older lines included, each
+        with its home> — after the change: <the one answer, and what you changed to get there>
       ## New patterns
       - <pattern> — job: <what it does> — exists: <what does this kind of job now; how you searched>
         — why new: <what that lacks, or why extending it would be wrong> — size: <why nothing smaller
@@ -232,7 +262,8 @@ agent:
       ## Plan gaps
       - <place or rule the plan missed> — <what you did> (also under deviations)
       ## Noted, not ours
-      - <problem already on the base branch that this change does not touch> — <where>
+      - <problem already on the base branch that this change neither touches nor puts where a user
+        sees it disagree> — <where>
       ## Self-review
       - <D1 | S2 | ...> — ok | fixed: <where>
       ## Round <n>

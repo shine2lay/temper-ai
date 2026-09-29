@@ -29,6 +29,9 @@ that states its reason (the plan's "Design vs rules" section, or a quoted owner 
   function, a constant, a glossary entry); everything else reads it. Screens show what the server worked out:
   the browser formats, it never re-works a figure. A new figure gets one home, listed where the project lists
   its figures. Where twins already exist, the project's source is the home; never add another twin.
+  A surface (a screen, a ticket, a message) answers each question once: two figures a user would read as the
+  answer to the same question are twins even when one carries a label of its own ("estimated", "by the
+  model", "for this order"), because a label does not make one thing two.
 - **D2 The whole family.** When the change alters what a number, word, rule or state means, or adds one,
   every place it lives follows: the server, every screen, every message sent (alerts, chat replies, emails),
   the CLI, the API types and mocks, the glossary and copy, docs, tests, fixtures and seed data. Places
@@ -37,7 +40,11 @@ that states its reason (the plan's "Design vs rules" section, or a quoted owner 
   surface, in code and in copy; no new synonyms; a word the project retired stays retired.
 - **D4 Reuse before writing.** Before writing a helper, component, query or pattern, search for one that
   already does the job, by name AND by what it does (the formula, the operands, the output). Extend it rather
-  than write its near-twin.
+  than write its near-twin. Copy a sibling's shape (D5), not its code: where a new thing would re-type what a
+  sibling already has (the same markup, attributes, wiring or steps, not merely the same kind of steps), that
+  part becomes one block both use, in this change, and the sibling moves onto it. A rule every instance must
+  re-type to follow is held by a block, and the standard names the block: prose is followed by copying, and
+  copies drift.
 - **D5 Copy the existing shape.** A new thing goes where its kind lives and looks like its closest existing
   sibling of the same kind: layers, naming, errors, logging, audit, tests. Say which sibling you copied.
 - **D6 A clean diff.** Every changed line serves the bet. No reformatting untouched code, no drive-by
@@ -59,6 +66,10 @@ that states its reason (the plan's "Design vs rules" section, or a quoted owner 
     The reason says concretely what it lacks. "There was none" holds only if a search finds none.
   - **No bigger than the need**: one user needs no generic version; one case needs no option.
 
+  An exception to a default written as a standard (a twin kept "by design", a copy where a block would do)
+  is a new pattern too: its reason says why one home or one block cannot do the job. How twins are kept in
+  step (a test that pins them) is not a reason for there to be two.
+
   A new way to do the SAME job as an existing one, only better, is not added beside it: in the same change,
   move every user of the old way to it (D2), or leave the idea to the owner under `standards_proposals`.
   The reason is written where later builds will meet it: a pattern later code should copy becomes a
@@ -76,6 +87,13 @@ Those are findings. A twin, stale word or slip that was already on the base bran
 touch and does not make visible, is a note (`follow_ups`), not a finding: it goes to the codebase notes and
 is not this branch's to fix.
 
+**Fix it here** (the owner, 2026-09-28). When the change puts older code where a user now sees it disagree
+with what the change shows or promises (an older sentence, figure, label or reason on a surface the change
+touches, or one that speaks about what the change alters), the change fixes it in the same branch, even on a
+line it did not otherwise touch: a feature that adds a refusal also fixes the older line beside it that says
+the order is fine. Keeping an older wording "word for word" inside a sentence the change rewrote is not
+leaving it alone.
+
 ## A finding
 
 - **rule**: what it breaks: a plan clause (`plan: Rules 2`, `plan: Acceptance 3`, `plan: Copy`), a project
@@ -85,8 +103,9 @@ is not this branch's to fix.
 - **severity**:
   - `blocker`: a wrong result, broken behaviour, lost data, a security hole, a test deleted or bent to pass,
     work left uncommitted, a report claim the evidence contradicts.
-  - `major`: something a user could see disagree (two values or two words for one thing); a place in the
-    family still saying the old thing; a figure worked out away from its home or a second home added (D1);
+  - `major`: something a user could see disagree (two values or two words for one thing, labelled or not);
+    a place in the family still saying the old thing; a figure worked out away from its home or a second
+    home added (D1);
     planned behaviour, copy or a planned test missing or wrong; a test that cannot fail; a new pattern
     without a reason that holds (D8): a second way of doing a job, or an abstraction, layer, option or
     dependency that no need calls for.
@@ -98,4 +117,6 @@ is not this branch's to fix.
 - **places**: EVERY place the problem occurs, found by searching, not only the first one seen
   (`path::symbol` or `path:line`, one per place). `where` is the first of them.
 - **what**: the problem and the evidence (the line, the command output) in one or two sentences.
-- **fix**: what to change, for the whole class, specific enough to act on without re-deriving it.
+- **fix**: what to change, for the whole class, specific enough to act on without re-deriving it. The fix
+  meets the rule: it never offers a way out that leaves the problem where a user or a later build meets it
+  (a label beside a second value, a comment beside a twin, a standard loosened to allow the copy).

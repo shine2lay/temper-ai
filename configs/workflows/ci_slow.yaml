@@ -1,0 +1,41 @@
+workflow:
+  name: ci_slow
+  description: |
+    A run that takes long enough to do something to while it is going: the
+    machine check stops it and resumes it, and restarts the throwaway
+    server under another one to see it carry on. Script agents only, so it
+    costs nothing and needs no API key.
+
+      temper run ci_slow --input seconds=20
+      POST /api/runs {"workflow": "ci_slow", "inputs": {"seconds": "20"}}
+
+  inputs:
+    seconds:
+      type: string
+      required: false
+
+  outputs:
+    finished: after.output
+
+  nodes:
+    - name: before
+      type: agent
+      agent: ci_step
+      input_map:
+        step: "before"
+
+    - name: work
+      type: agent
+      agent: ci_step
+      depends_on: [before]
+      input_map:
+        step: "work"
+        sleep: input.seconds
+
+    - name: after
+      type: agent
+      agent: ci_step
+      depends_on: [work]
+      input_map:
+        step: "after"
+        saw: work.structured.step

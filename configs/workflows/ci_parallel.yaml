@@ -1,0 +1,63 @@
+workflow:
+  name: ci_parallel
+  description: |
+    The machine check's shape test: two branches that run side by side, one
+    of them a stage of three agents with a leader, joined again at the end.
+    Script agents only — no LLM call, no API key, no spend — so the
+    throwaway stack `temper-ci box` brings up can run it with no model keys
+    at all.
+
+      temper run ci_parallel
+      POST /api/runs {"workflow": "ci_parallel"}
+
+    What it proves when it finishes: the engine fans out, a nested stage
+    runs its agents and hands its leader their work, and a node that waits
+    on both branches sees both.
+
+  outputs:
+    joined: join.output
+
+  nodes:
+    - name: start
+      type: agent
+      agent: ci_step
+      input_map:
+        step: "start"
+
+    # Branch A: a plain node.
+    - name: left
+      type: agent
+      agent: ci_step
+      depends_on: [start]
+      input_map:
+        step: "left"
+        saw: start.structured.step
+
+    # Branch B: a stage inside the branch — two workers and a leader that
+    # receives their output.
+    - name: right
+      type: stage
+      strategy: leader
+      depends_on: [start]
+      agents:
+        - agent: ci_step
+          name: right_one
+          config:
+            step: "right_one"
+        - agent: ci_step
+          name: right_two
+          config:
+            step: "right_two"
+        - agent: ci_step
+          name: right_lead
+          role: leader
+          config:
+            step: "right_lead"
+
+    - name: join
+      type: agent
+      agent: ci_step
+      depends_on: [left, right]
+      input_map:
+        step: "join"
+        saw: left.structured.step

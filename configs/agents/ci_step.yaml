@@ -1,0 +1,35 @@
+# Zero-LLM agent for the machine check's smoke set (`temper-ci box`).
+#
+# It costs nothing, needs no API key and no network: the throwaway stack the
+# check runs has no model keys at all, so every agent the smoke set uses has
+# to be a script.
+#
+# What it does:
+#   * waits `sleep` seconds, so a run can be stopped, restarted or forked
+#     while it is still going;
+#   * fails with exit 3 while `needs` names a file that is not in the
+#     workspace yet, so a resume can be given something to succeed with;
+#   * prints {"step": ..., "saw": ..., "at": ...} as its output.
+agent:
+  name: ci_step
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/bash
+    set -u
+    STEP={{ step | default("step") }} \
+    SAW={{ saw | default("") }} \
+    NEEDS={{ needs | default("") }} \
+    WS={{ workspace_path | default("") }} \
+    SLEEP={{ sleep | default("0") }} \
+    python3 - <<'PY'
+    import json, os, sys, time
+    ws = os.environ.get("WS") or "."
+    needs = os.environ.get("NEEDS") or ""
+    if needs and not os.path.exists(os.path.join(ws, needs)):
+        print(f"{os.environ['STEP']}: {needs} is not in the workspace yet", file=sys.stderr)
+        sys.exit(3)
+    time.sleep(float(os.environ.get("SLEEP") or 0))
+    print(json.dumps({"step": os.environ["STEP"], "saw": os.environ["SAW"],
+                      "at": time.strftime("%H:%M:%S"), "workspace": ws}))
+    PY

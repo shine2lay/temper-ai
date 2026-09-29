@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""temper-ci — see scripts/temper_ci/cli.py.
+
+Kept as a tiny shim so the command works from anywhere, and so ~/.local/bin
+can hold a symlink to the copy in the main checkout (never to a worktree,
+which comes and goes).
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from temper_ci.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main())

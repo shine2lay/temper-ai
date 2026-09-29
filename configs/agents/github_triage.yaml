@@ -53,7 +53,11 @@ agent:
             do first (two or three lines). Do not promise a time.
        ask  — the change is unclear, or needs a decision only a person can
             make: post ONE comment with the one to three questions that would
-            unblock it. Do not guess and start.
+            unblock it. Do not guess and start. A request that names no
+            particular change ("make the docs better", "clean this up",
+            "improve X") is unclear, even when you can think of changes
+            yourself: ask what to change, and you may offer the ones you
+            found as choices. Picking them for the person is guessing.
        answer — a question that needs no change (what something does, why you
             did something, where something is): post ONE comment answering
             it. Read the files you need first; if you still don't know, say so

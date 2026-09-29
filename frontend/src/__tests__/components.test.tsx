@@ -10,6 +10,8 @@ import { ToolOriginBadge } from '@/components/shared/ToolOriginBadge';
 import { LLMCallInspector } from '@/components/panels/LLMCallInspector';
 import { ToolCallInspector } from '@/components/panels/ToolCallInspector';
 import { StreamingPanel } from '@/components/panels/StreamingPanel';
+import { AgentCardContent } from '@/components/dag/AgentCardContent';
+import type { AgentExecution } from '@/types';
 import {
   MOCK_WORKFLOW,
   makeAgentEndEvent,
@@ -273,5 +275,42 @@ describe('ToolOriginBadge', () => {
     render(<ToolOriginBadge tool={{ transport: 'builtin', server: null, executed_by: 'claude' }} />);
     expect(screen.getByText('via claude')).toBeTruthy();
     expect(screen.queryByText(/MCP/)).toBeNull();
+  });
+});
+
+describe('the agent card', () => {
+  beforeEach(resetStore);
+
+  // A tool handed settings of its own is stored as an object, not a name.
+  // Putting that object on the page threw "Objects are not valid as a React
+  // child" and the error boundary blanked the whole run page \u2014 graph, tabs
+  // and all \u2014 for every run of an agent with such a tool.
+  it('names a tool that was given settings of its own, instead of blanking the page', () => {
+    const agent = {
+      id: 'agent-tools',
+      agent_name: 'repo_answer',
+      status: 'completed',
+      duration_seconds: 4,
+      total_tokens: 100,
+      estimated_cost_usd: 0.01,
+      total_llm_calls: 1,
+      total_tool_calls: 1,
+      agent_config_snapshot: {
+        agent: {
+          type: 'llm',
+          model: 'claude-sonnet-4',
+          provider: 'anthropic',
+          tools: [
+            'ReadFile',
+            { name: 'OpenPullRequestAsApp', config: { identity: 'app' } },
+          ] as unknown as string[],
+        },
+      },
+    } as unknown as AgentExecution;
+
+    render(<AgentCardContent agent={agent} />);
+
+    expect(screen.getByText('ReadFile')).toBeTruthy();
+    expect(screen.getByText('OpenPullRequestAsApp')).toBeTruthy();
   });
 });

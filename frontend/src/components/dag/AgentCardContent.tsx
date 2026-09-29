@@ -2,6 +2,7 @@ import { memo, useState, useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import { STATUS_COLORS, deriveTokenBreakdown } from './constants';
 import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
+import { toolNames } from '@/lib/toolLabels';
 import { SmartContent } from '@/components/shared/SmartContent';
 import type { AgentExecution } from '@/types';
 
@@ -101,7 +102,7 @@ export const AgentCardContent = memo(function AgentCardContent({
   const model = configSnapshot?.model;
   const provider = configSnapshot?.provider;
 
-  const tools = configSnapshot?.tools as string[] | undefined;
+  const tools = toolNames(configSnapshot?.tools);
   const hasMem = configSnapshot?.memory && (configSnapshot.memory as Record<string, boolean>)?.enabled;
   const llmCalls = agent.total_llm_calls ?? 0;
   const toolCalls = agent.total_tool_calls ?? 0;
@@ -226,7 +227,7 @@ export const AgentCardContent = memo(function AgentCardContent({
                 <span className="text-amber-400">{toolCalls} tools</span>
               </>
             )}
-            {tools && tools.length > 0 && (
+            {tools.length > 0 && (
               <>
                 <span className="text-temper-border/40">|</span>
                 {tools.map((t) => (

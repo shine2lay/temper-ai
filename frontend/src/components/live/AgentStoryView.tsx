@@ -117,7 +117,7 @@ function Text({ text }: { text: string }) {
           );
         }
         return (
-          <div key={i} className="text-xs leading-relaxed text-temper-text">
+          <div key={i} data-testid="story-text" className="text-xs leading-relaxed text-temper-text">
             <MarkdownDisplay content={seg.content} />
           </div>
         );

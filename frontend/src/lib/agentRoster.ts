@@ -101,6 +101,20 @@ export function buildRoster(
     if (!byStageName.has(node.name)) byStageName.set(node.name, id);
   }
 
+  // Where an agent of this name last ran. In a stage of several agents each
+  // one runs under its own name ("scout_a"), which is no stage's name; when a
+  // loop comes round again, that name is all the index keeps. Matching it to
+  // the stage its namesake sits in keeps a round together, instead of giving
+  // every agent a group of its own.
+  const byAgentName = new Map<string, string>();
+  for (const [id, node] of stages) {
+    for (const nested of node.agents ?? []) {
+      for (const label of [nested.node_name, agentDisplayName(nested)]) {
+        if (label && !byAgentName.has(label)) byAgentName.set(label, id);
+      }
+    }
+  }
+
   const nameCount = new Map<string, number>();
   for (const agent of agents.values()) {
     const name = agentDisplayName(agent) ?? UNNAMED_AGENT;
@@ -111,6 +125,8 @@ export function buildRoster(
     const nodeId = [agent.stage_id, agent.stage_execution_id]
       .find((candidate) => candidate && stages.has(candidate))
       ?? (agent.node_name ? byStageName.get(agent.node_name) : undefined)
+      ?? (agent.node_name ? byAgentName.get(agent.node_name) : undefined)
+      ?? byAgentName.get(agentDisplayName(agent) ?? '')
       ?? null;
     const key = nodeId ?? (agent.node_name ? `name:${agent.node_name}` : 'other');
     let group = groups.get(key);

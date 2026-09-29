@@ -9,6 +9,26 @@
 /** Longest a value is shown before it is cut short. */
 const MAX = 56;
 
+/**
+ * The names of the tools an agent was given. A tool is usually named by a
+ * plain string, but one handed settings of its own arrives as
+ * `{ name, config }` — putting that object on the page crashes React and
+ * takes the whole run page with it, so only the name is kept.
+ */
+export function toolNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const names: string[] = [];
+  for (const entry of value) {
+    if (typeof entry === 'string') {
+      if (entry) names.push(entry);
+      continue;
+    }
+    const name = (entry as { name?: unknown })?.name;
+    if (typeof name === 'string' && name) names.push(name);
+  }
+  return names;
+}
+
 function shorten(value: unknown, max = MAX): string {
   const text = typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
   const oneLine = text.replace(/\s+/g, ' ').trim();

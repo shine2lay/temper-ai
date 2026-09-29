@@ -302,6 +302,39 @@ describe('the panel', () => {
     expect(screen.queryByTestId('live-agent-roster')).not.toBeNull();
   });
 
+  it('keeps a loop\u2019s earlier round in the stage it ran in', () => {
+    // A parallel stage runs each agent under its own name; when the loop comes
+    // round again, the earlier round survives only in the run\u2019s agent index,
+    // which knows that name and a node id the graph has forgotten.
+    const run2 = run([
+      node('n-fan', 'scouts', [
+        agent({ id: 'a-new', agent_name: 'scout_a', node_name: 'scout_a', round: 2 } as never),
+      ]),
+    ]);
+    (run2 as { agent_index?: unknown }).agent_index = [{
+      id: 'a-old',
+      agent_name: 'scout_a',
+      round: 1,
+      status: 'completed',
+      node_id: 'gone-with-the-round',
+      node_name: 'scout_a',
+      start_time: '2026-09-28T09:59:00Z',
+      end_time: '2026-09-28T09:59:30Z',
+      duration_seconds: 30,
+      prompt_tokens: 1,
+      completion_tokens: 1,
+      total_tokens: 2,
+      estimated_cost_usd: 0.001,
+    }];
+    act(() => {
+      useExecutionStore.getState().applySnapshot(run2);
+    });
+    render(<LivePanel />);
+
+    expect(screen.getAllByTestId('live-group-header')).toHaveLength(1);
+    expect(screen.getAllByTestId('live-agent-row')).toHaveLength(2);
+  });
+
   it('folds a stage whose agents have all finished', () => {
     act(() => {
       useExecutionStore.getState().applySnapshot(threeStages());

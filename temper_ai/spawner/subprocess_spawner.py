@@ -18,6 +18,7 @@ import subprocess  # noqa: S404 — intentional: this is the spawner
 import sys
 import threading
 
+from temper_ai.integrations.github import secret as _github_secret
 from temper_ai.spawner.base import Spawner, SpawnerError
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
@@ -69,8 +70,9 @@ class SubprocessSpawner(Spawner):
         ]
 
         # Inherit server env + apply overrides. Children get the same
-        # DB URL, LLM keys, config dir.
-        env = {**os.environ, **self._extra_env}
+        # DB URL, LLM keys, config dir -- never the GitHub app's key: a run
+        # asks the server for short-lived tokens (integrations.github.secret).
+        env = _github_secret.without_server_only({**os.environ, **self._extra_env})
 
         try:
             proc = subprocess.Popen(  # noqa: S603 — args are list, no shell

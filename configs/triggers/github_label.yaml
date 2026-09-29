@@ -1,0 +1,30 @@
+# Put the label "temper" on a GitHub issue and temper works it, as its GitHub
+# app: it reads the issue, asks in the thread if it is unclear, and otherwise
+# makes the change and opens a pull request (never merges). A reply in the
+# thread carries the work on (github_reply.yaml). See workflows/github_work.yaml
+# and docs/github.md.
+#
+# Only for people in configs/github/github.yaml's allowed_authors; the app's
+# own doings never start anything. Narrow it further with
+#   repos: [owner/name, owner/*]     only these repositories
+#   authors: [login]                 only these people
+# under `on:`. `enabled: false` turns it off (read on every event, no restart).
+trigger:
+  name: github_label
+  source: github
+  enabled: true
+  on:
+    event: issues
+    action: labeled
+    label: temper
+  workflow: github_work
+  inputs:
+    repo: "{{ github.repo }}"
+    number: "{{ github.number }}"
+    kind: "{{ github.kind }}"
+    why: label
+    default_branch: "{{ github.default_branch }}"
+    private: "{{ 'true' if github.private else 'false' }}"
+    head_ref: "{{ github.head_ref }}"
+    head_repo: "{{ github.head_repo }}"
+    base_ref: "{{ github.base_ref }}"

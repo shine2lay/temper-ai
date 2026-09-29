@@ -24,6 +24,7 @@ from temper_ai.api.app_state import AppState
 from temper_ai.api.auth import TokenAuthMiddleware, auth_enabled
 from temper_ai.api.docs import router as docs_router
 from temper_ai.api.events import router as events_router
+from temper_ai.api.github_tokens import router as github_tokens_router
 from temper_ai.api.hooks import router as hooks_router
 from temper_ai.api.pools import router as pools_router
 from temper_ai.api.routes import init_app_state
@@ -482,6 +483,7 @@ app.include_router(api_router)
 app.include_router(studio_router)
 app.include_router(docs_router)
 app.include_router(hooks_router)
+app.include_router(github_tokens_router)
 app.include_router(events_router)
 app.include_router(slack_test_router)
 app.include_router(triggers_router)

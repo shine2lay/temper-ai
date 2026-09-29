@@ -72,6 +72,22 @@ class TestSafeEnv:
         assert "sk-leak-test" not in r.result
         del os.environ["OPENAI_API_KEY"]
 
+    def test_strips_the_github_app_s_key_and_webhook_secret(self, monkeypatch):
+        # With the key anyone can act as temper's GitHub app on every repo it is on.
+        for name in ("GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET", "GITHUB_APP_CLIENT_SECRET",
+                     "SOME_OTHER_PRIVATE_KEY"):
+            monkeypatch.setenv(name, "-----BEGIN RSA PRIVATE KEY-----leak")
+        env = _safe_env()
+        assert not {k for k in env if "PRIVATE_KEY" in k or k.startswith("GITHUB_APP_") and k != "GITHUB_APP_ID"}
+
+    def test_an_agent_s_shell_never_sees_the_github_app_s_key(self, monkeypatch):
+        monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----leak-test")
+        monkeypatch.setenv("GITHUB_APP_ID", "1234")  # the id is no secret
+        r = Bash().execute(command="env")
+        assert r.success
+        assert "leak-test" not in r.result and "GITHUB_APP_PRIVATE_KEY" not in r.result
+        assert "GITHUB_APP_ID=1234" in r.result
+
 
 class TestAllowlistBypass:
     """P0-SEC-3: Verify newline and chaining can't bypass allowlist."""

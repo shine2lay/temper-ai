@@ -233,3 +233,86 @@ def test_the_token_never_appears_in_an_error(env):
     result = call(env["tool"](), worktree=str(env["wt"]))
     assert not result.success
     assert TOKEN not in (result.error or "")
+
+
+# --- who it acts as ---------------------------------------------------------------------------
+
+
+class StubApp:
+    """temper's GitHub app, as OpenPullRequest asks it: where it is installed, and a token."""
+
+    def __init__(self, installed: set[str]) -> None:
+        self.installed = frozenset(installed)
+        self.asked: list[str | None] = []
+
+    def installed_repos(self, refresh: bool = False) -> frozenset[str]:
+        return self.installed
+
+    def installation_token(self, repo: str | None = None, *, installation: int | None = None) -> str:
+        self.asked.append(repo)
+        return "ghs_app_installation_token"
+
+
+@pytest.fixture
+def app_on():
+    from temper_ai.integrations.github import app as github_app
+
+    def install(*repos: str) -> StubApp:
+        stub = StubApp(set(repos))
+        github_app.set_app(stub)  # type: ignore[arg-type]
+        return stub
+
+    yield install
+    github_app.set_app(None)
+
+
+def test_as_the_app_the_push_and_the_pr_go_with_the_app_s_token(env, app_on, monkeypatch):
+    monkeypatch.delenv("TEMPER_GITHUB_TOKEN")  # the owner's token is not needed
+    app = app_on("shine2lay/roamee")
+    result = call(env["tool"](identity="app"), worktree=str(env["wt"]))
+    assert result.success, result.error
+    assert env["github"].auth and all(a == "Bearer ghs_app_installation_token" for a in env["github"].auth)
+    assert app.asked == ["shine2lay/roamee"]
+    assert git("rev-parse", "refs/heads/roa-5", cwd=env["remote"]) == env["head"]
+
+
+def test_as_the_app_only_where_it_is_installed(env, app_on):
+    app_on("shine2lay/temper-ai")
+    result = call(env["tool"](identity="app"), worktree=str(env["wt"]))
+    assert not result.success and "not a repository temper may open PRs on" in result.error
+    assert env["github"].posts == []
+
+
+def test_as_the_app_roamee_pull_requests_go_into_staging(env, app_on):
+    app_on("shine2lay/roamee")
+    result = call(env["tool"](identity="app"), base="master", worktree=str(env["wt"]))
+    assert not result.success and "go into 'staging', not 'master'" in result.error
+    assert env["github"].posts == []
+
+
+def test_linear_and_notion_pull_requests_still_go_as_the_owner(env, app_on):
+    app = app_on("shine2lay/roamee")
+    result = call(env["tool"](), worktree=str(env["wt"]))
+    assert result.success, result.error
+    assert all(a == f"Bearer {TOKEN}" for a in env["github"].auth)
+    assert app.asked == []
+
+
+def test_an_unknown_identity_is_refused(env):
+    result = call(env["tool"](identity="someone"), worktree=str(env["wt"]))
+    assert not result.success and "identity 'someone' is not one of token, app" in result.error
+
+
+def test_only_github_work_opens_pull_requests_as_the_app():
+    """The shipped agents: GitHub work signs as the app, Linear and Notion as the owner."""
+    import yaml
+
+    identities = {}
+    for path in sorted((Path(__file__).resolve().parents[2] / "configs" / "agents").glob("*.yaml")):
+        agent = (yaml.safe_load(path.read_text()) or {}).get("agent") or {}
+        for spec in agent.get("tools") or []:
+            name = spec if isinstance(spec, str) else spec.get("name")
+            if name == "OpenPullRequest":
+                config = {} if isinstance(spec, str) else spec.get("config") or {}
+                identities[path.stem] = config.get("identity", "token")
+    assert identities == {"github_report": "app", "linear_report": "token", "notion_report": "token"}

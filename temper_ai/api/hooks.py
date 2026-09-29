@@ -1,11 +1,12 @@
 """Incoming webhooks: an event somewhere else starts a workflow here.
 
-``POST /api/hooks/linear`` and ``POST /api/hooks/notion`` are the addresses
-the internet may reach (the gateway forwards those exact paths and nothing
-else), so they authenticate themselves: the API token cannot be asked of
-Linear or Notion, and instead every delivery must carry the sender's
-signature over its exact bytes (Linear's must also be under a minute old).
-See triggers.linear and triggers.notion.
+``POST /api/hooks/linear``, ``POST /api/hooks/notion`` and
+``POST /api/hooks/github`` are the addresses the internet may reach (the
+gateway forwards those exact paths and nothing else), so they authenticate
+themselves: the API token cannot be asked of Linear, Notion or GitHub, and
+instead every delivery must carry the sender's signature over its exact
+bytes (Linear's must also be under a minute old). See triggers.linear,
+triggers.notion and triggers.github.
 
 Every checked delivery is saved in the event inbox (integrations.inbox)
 before temper answers, and handled from there after the answer. Linear
@@ -43,7 +44,7 @@ from fastapi.responses import JSONResponse
 
 from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.inbox import store as inbox_store
-from temper_ai.triggers import linear
+from temper_ai.triggers import github, linear
 from temper_ai.triggers.rules import Trigger, load_triggers, render_inputs
 
 logger = logging.getLogger(__name__)
@@ -455,13 +456,231 @@ def _handle_notion(ev: inbox_store.Event) -> inbox.Outcome:
     return inbox.outcome(outcome)
 
 
+# -- GitHub ------------------------------------------------------------------------------
+
+GITHUB = github.SOURCE
+# issue or pull request ("owner/name#12") -> the execution id of the last run started for it
+_thread_runs: dict[str, str] = {}
+
+
+def _github_kind(event_name: str, payload: dict[str, Any]) -> str:
+    return ".".join(p for p in (event_name, str(payload.get("action") or "")) if p)
+
+
+@router.post(github.PATH)
+async def github_webhook(request: Request, background: BackgroundTasks) -> Any:
+    """The GitHub app's events (see triggers.github), signed with its webhook secret."""
+    raw = await request.body()
+    signature = request.headers.get(github.SIGNATURE_HEADER) or ""
+    if not signature:
+        raise HTTPException(status_code=401, detail="There is no X-Hub-Signature-256.")
+    event_name = request.headers.get(github.EVENT_HEADER, "").strip()
+    delivery = (request.headers.get(github.DELIVERY_HEADER, "").strip()
+                or "sha256:" + hashlib.sha256(raw).hexdigest()[:32])
+    secret = github.signing_secret()
+    if secret is None:
+        # The event name is not in the body: it is kept with the signature.
+        return _hold(GITHUB, delivery, raw, f"{event_name} {signature}", github.SECRET_ENV)
+    if not github.verify_signature(raw, signature, secret):
+        raise HTTPException(status_code=401, detail="X-Hub-Signature-256 does not match the body.")
+    payload = _json_object(raw)
+    row, new = _save(GITHUB, delivery, _github_kind(event_name, payload),
+                     github.subject_of(event_name, payload), payload)
+    if not new:
+        logger.info("GitHub delivery %s: a redelivery of one already received", delivery)
+        return {"ok": True, "delivery": delivery, "duplicate": True}
+    background.add_task(inbox.process, row.id)
+    return {"ok": True, "delivery": delivery, "event": row.id}
+
+
+def _check_github(ev: inbox_store.Event) -> tuple[dict[str, Any], str, str] | None:
+    """A kept GitHub event, checked now that the webhook secret may be set."""
+    secret = github.signing_secret()
+    if secret is None:
+        return None
+    event_name, _, signature = (ev.signature or "").partition(" ")
+    raw = ev.raw.encode()
+    if not github.verify_signature(raw, signature, secret):
+        raise inbox.Bad("X-Hub-Signature-256 does not match the body")
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        raise inbox.Bad("the body is not JSON") from exc
+    if not isinstance(payload, dict):
+        raise inbox.Bad("the body is not a JSON object")
+    return payload, _github_kind(event_name, payload), github.subject_of(event_name, payload)
+
+
+def _event_name(ev: inbox_store.Event) -> str:
+    return (ev.kind or "").split(".", 1)[0]
+
+
+@router.get(github.PATH + "/recent")
+def github_recent() -> dict[str, Any]:
+    """The last GitHub deliveries and what became of each, newest first."""
+    out = []
+    for ev in inbox_store.listing(source=GITHUB, limit=RECENT_MAX):
+        payload = ev.payload or {}
+        out.append({
+            "event": ev.id,
+            "delivery": ev.delivery,
+            "received_at": ev.received_at.isoformat(timespec="seconds"),
+            "kind": ev.kind,
+            "thread": ev.subject,
+            "sender": str(_dict(payload.get("sender")).get("login") or ""),
+            "status": ev.status,
+            "outcome": ev.outcome or ev.error or ev.status,
+            "runs": list(ev.result.get("runs") or []),
+        })
+    return {"deliveries": out}
+
+
+def _handle_github(ev: inbox_store.Event) -> inbox.Outcome:
+    record: dict[str, Any] = {"delivery": ev.delivery, "outcome": "received", "runs": []}
+    github_dispatch(_event_name(ev), ev.payload, record)
+    outcome = str(record.get("outcome") or "handled")
+    if outcome.startswith("error:") or any("error" in r for r in record["runs"]):
+        raise inbox.Retry(outcome)
+    out = inbox.outcome(outcome)
+    out.extra["runs"] = record["runs"]
+    return out
+
+
+def github_dispatch(
+    event_name: str, payload: dict[str, Any], record: dict[str, Any], config_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Match one verified GitHub delivery against the GitHub rules and start their workflows."""
+    record.setdefault("runs", [])
+    try:
+        _github_dispatch(event_name, payload, record, config_dir)
+    except Exception as exc:  # noqa: BLE001 - recorded, and the inbox tries again
+        logger.exception("GitHub delivery %s failed", record.get("delivery"))
+        record["outcome"] = f"error: {exc}"
+    logger.info("GitHub delivery %s (%s.%s %s): %s", record.get("delivery"), event_name,
+                payload.get("action"), github.subject_of(event_name, payload), record["outcome"])
+    return record
+
+
+def _github_dispatch(
+    event_name: str, payload: dict[str, Any], record: dict[str, Any], config_dir: str | Path | None,
+) -> None:
+    from temper_ai.integrations.github.settings import load_settings
+
+    settings = load_settings(config_dir)
+    refused = github.refusal(event_name, payload, settings)
+    if refused:
+        record["outcome"] = refused
+        return
+
+    matched: list[Trigger] = []
+    for trigger in load_triggers(config_dir, source=GITHUB):
+        if not trigger.enabled:
+            continue
+        try:
+            if github.matches(trigger.on, event_name, payload, settings):
+                matched.append(trigger)
+        except ValueError as exc:
+            logger.warning("Trigger %s (%s): %s", trigger.name, trigger.path, exc)
+    if not matched:
+        record["outcome"] = "no trigger matched"
+        return
+
+    event = github.with_context(event_name, payload)
+    facts = event["github"]
+    if facts["is_pull"] and not facts["head_ref"]:
+        # A comment on a pull request does not say which branches it joins.
+        facts.update(_pull_branches(facts["repo"], facts["number"]))
+    thread = github.subject_of(event_name, payload)
+
+    from temper_ai.api.routes import RunRequest, start_run
+
+    # Runs this event started on an earlier try: not started again.
+    earlier = {s.get("workflow"): s.get("execution_id") for s in inbox.already_started()}
+    started = False
+    for trigger in matched:
+        entry: dict[str, Any] = {"trigger": trigger.name, "workflow": trigger.workflow, "thread": thread}
+        try:
+            if trigger.workflow in earlier:
+                entry["execution_id"] = str(earlier[trigger.workflow])
+                entry["earlier"] = True
+                record["runs"].append(entry)
+                started = True
+                continue
+            if started:
+                # Two rules for one event (a reply that also calls on the app): one run.
+                continue
+            inputs = render_inputs(trigger, event)
+            with _issue_lock:
+                going = _run_still_going(_thread_runs.get(thread) or _last_thread_run(thread))
+                if going:
+                    entry["skipped"] = f"run {going[:8]} for {thread} is still going"
+                    record["runs"].append(entry)
+                    continue
+                response = start_run(RunRequest(workflow=trigger.workflow, inputs=inputs))
+                _thread_runs[thread] = response.execution_id
+            entry["execution_id"] = response.execution_id
+            started = True
+        except HTTPException as exc:
+            entry["error"] = str(exc.detail)
+        except Exception as exc:  # noqa: BLE001 - one rule failing must not stop the others
+            entry["error"] = str(exc)
+        record["runs"].append(entry)
+    record["outcome"] = _summary(record["runs"])
+
+
+def _summary(runs: list[dict[str, Any]]) -> str:
+    started = [r for r in runs if "execution_id" in r]
+    failed = [r for r in runs if "error" in r]
+    busy = [r for r in runs if "skipped" in r]
+    parts = []
+    if started:
+        parts.append("started " + ", ".join(f"{r['workflow']} {r['execution_id'][:8]}" for r in started))
+    if busy:
+        parts.append("skipped " + "; ".join(f"{r['trigger']}: {r['skipped']}" for r in busy))
+    if failed:
+        parts.append("failed " + "; ".join(f"{r['trigger']}: {r['error']}" for r in failed))
+    return " / ".join(parts)
+
+
+def _pull_branches(repo: str, number: str) -> dict[str, Any]:
+    """The branches a pull request joins, asked of GitHub as the app."""
+    from temper_ai.integrations.github.app import get_app
+
+    response = get_app().request("GET", repo, f"/pulls/{number}")
+    if not response.is_success:
+        raise RuntimeError(f"could not read pull request {repo}#{number} ({response.status_code})")
+    pull = response.json()
+    head, base = _dict(pull.get("head")), _dict(pull.get("base"))
+    return {
+        "head_ref": str(head.get("ref") or ""),
+        "head_repo": str(_dict(head.get("repo")).get("full_name") or ""),
+        "base_ref": str(base.get("ref") or ""),
+        "draft": bool(pull.get("draft")),
+    }
+
+
+def _last_thread_run(thread: str) -> str | None:
+    """The last run a GitHub event started for an issue or PR, from the inbox (after a restart)."""
+    try:
+        for ev in inbox_store.listing(source=GITHUB, limit=200):
+            for run in ev.result.get("runs") or []:
+                if isinstance(run, dict) and run.get("thread") == thread and run.get("execution_id"):
+                    return str(run["execution_id"])
+    except Exception as exc:  # noqa: BLE001 - no database: the memory alone decides
+        logger.warning("Could not look up the last run for %s: %s", thread, exc)
+    return None
+
+
 inbox.register(LINEAR, _handle_linear, redo_safe=True)
 inbox.register_checker(LINEAR, _check_linear)
 inbox.register(NOTION, _handle_notion)
 inbox.register_checker(NOTION, _check_notion)
+inbox.register(GITHUB, _handle_github, redo_safe=True)
+inbox.register_checker(GITHUB, _check_github)
 
 
 def reset_state() -> None:
     """Forget which runs were started for which issue (tests)."""
     with _issue_lock:
         _issue_runs.clear()
+        _thread_runs.clear()

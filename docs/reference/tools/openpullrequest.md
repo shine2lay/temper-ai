@@ -34,6 +34,16 @@ may read).
 If a PR for the branch is already open, it is returned as it is: a later run
 on the same issue pushes new commits to the same PR.
 
+Who it acts as (``identity`` in the tool config):
+
+* ``token`` (the default): the owner, with ``TEMPER_GITHUB_TOKEN``. Linear,
+  Notion and builds open their pull requests this way.
+* ``app``: temper's GitHub app (integrations.github.app), for work started
+  on GitHub. The push and the PR show as ``<app>[bot]``. The repositories it
+  may push to are the ones the app is installed on (GitHub is asked; a
+  ``repos`` list in the config narrows them), and a repository with a fixed
+  base (roamee: staging) gets pull requests into that base only.
+
 - **Modifies state:** Yes
 
 ## Parameters

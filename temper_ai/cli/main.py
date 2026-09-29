@@ -113,6 +113,11 @@ def main() -> None:
 
     add_linear_parser(subparsers)
 
+    # -- temper github setup / convert / manifest / check --
+    from temper_ai.cli.github import add_parser as add_github_parser
+
+    add_github_parser(subparsers)
+
     # -- temper slack check --
     from temper_ai.cli.slack import add_parser as add_slack_parser
 
@@ -182,6 +187,10 @@ def main() -> None:
 
     # F17: auto-load .env file if present
     _load_dotenv()
+    # ...and take the GitHub app's secrets back out of the environment it just filled
+    from temper_ai.integrations.github import secret as github_secret
+
+    github_secret.take()
 
     if args.command == "run":
         _cmd_run(args)
@@ -202,6 +211,9 @@ def main() -> None:
     elif args.command == "linear":
         from temper_ai.cli.linear import cmd_linear
         sys.exit(cmd_linear(args))
+    elif args.command == "github":
+        from temper_ai.cli.github import cmd_github
+        sys.exit(cmd_github(args))
     elif args.command == "slack":
         from temper_ai.cli.slack import cmd_slack
         sys.exit(cmd_slack(args))

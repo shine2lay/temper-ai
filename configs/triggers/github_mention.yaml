@@ -1,0 +1,30 @@
+# "@shine-temper ..." in a comment on any issue or pull request: temper does
+# what is asked -- answers a question, makes a change (a pull request), or
+# reviews that pull request (comments only: it never approves, requests
+# changes or merges) -- and replies in that thread. The name to call it by is
+# the app's, from configs/github/github.yaml.
+#
+# To go on in a thread without the label, call on it again. One run per
+# issue or PR at a time; only allowed authors; never the app's own comments.
+# Narrow it with `repos:` / `authors:` under `on:`, or turn it off with
+# `enabled: false`.
+trigger:
+  name: github_mention
+  source: github
+  enabled: true
+  on:
+    event: issue_comment
+    action: created
+    mention: true
+  workflow: github_work
+  inputs:
+    repo: "{{ github.repo }}"
+    number: "{{ github.number }}"
+    kind: "{{ github.kind }}"
+    comment_id: "{{ github.comment_id }}"
+    why: mention
+    default_branch: "{{ github.default_branch }}"
+    private: "{{ 'true' if github.private else 'false' }}"
+    head_ref: "{{ github.head_ref }}"
+    head_repo: "{{ github.head_repo }}"
+    base_ref: "{{ github.base_ref }}"

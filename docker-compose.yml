@@ -262,6 +262,11 @@ services:
       TYPESAFE_BASE_URL: ${TYPESAFE_BASE_URL:-}
       LINEAR_CLIENT_ID: ${LINEAR_CLIENT_ID:-}
       LINEAR_CLIENT_SECRET: ${LINEAR_CLIENT_SECRET:-}
+      # temper's GitHub app key stays in the server, never here, where runs
+      # start: a run asks the server for short-lived tokens (docs/github.md).
+      # Set empty, these win over the same names in .env.
+      GITHUB_APP_PRIVATE_KEY: ""
+      GITHUB_APP_WEBHOOK_SECRET: ""
     env_file:
       - path: .env
         required: false

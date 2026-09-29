@@ -1,0 +1,13 @@
+# temper's GitHub app: server settings, read on every delivery (no restart).
+# See docs/github.md. A configs/github/local/github.yaml (git-ignored) is
+# used instead when it exists.
+github:
+  # The app's name on GitHub (its slug). A comment calls on temper with
+  # "@<app> ...", and the app acts as "<app>[bot]": nothing that account does
+  # starts anything.
+  app: shine-temper
+  # The GitHub accounts whose labels, comments and pull requests may start
+  # temper. Everyone else's are recorded as skipped. A trigger's own
+  # `authors:` can narrow this list, never widen it.
+  allowed_authors:
+    - shine2lay

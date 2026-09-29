@@ -1,0 +1,24 @@
+# Automatic review of new pull requests -- OFF. Pull requests are reviewed
+# when someone asks: "@shine-temper review this" on the PR (github_mention).
+#
+# Turned on, a pull request opened (or marked ready for review) by an allowed
+# author gets one review from the app: comments only, never approve, never
+# request changes, never merge (workflows/github_review.yaml). Drafts are left
+# alone, and so are the app's own pull requests.
+#
+# To turn it on for some repositories: `enabled: true`, and list them under
+# `on:` as `repos:` (leave `repos:` out for every repository the app is
+# installed on). Read on every event: no restart needed.
+trigger:
+  name: github_pr_review
+  source: github
+  enabled: false
+  on:
+    event: pull_request
+    action: [opened, ready_for_review]
+    draft: false
+    # repos: [shine2lay/temper-ai]
+  workflow: github_review
+  inputs:
+    repo: "{{ github.repo }}"
+    number: "{{ github.number }}"

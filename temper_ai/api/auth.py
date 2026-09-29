@@ -29,8 +29,12 @@ logger = logging.getLogger(__name__)
 # /api/hooks/linear cannot be given the API token (Linear sends what it
 # sends), so it authenticates each delivery itself: Linear's HMAC signature
 # over the body, and a timestamp under a minute old (api/hooks.py). Exact
-# path only: /api/hooks/linear/recent stays behind the token.
-PUBLIC_PATHS = ("/api/health", "/api/runtime-config", "/api/hooks/linear", "/api/hooks/notion")
+# path only: /api/hooks/linear/recent stays behind the token. Notion and
+# GitHub are the same: each delivery carries the sender's signature (Notion's,
+# and GitHub's X-Hub-Signature-256 with the app's webhook secret).
+PUBLIC_PATHS = (
+    "/api/health", "/api/runtime-config", "/api/hooks/linear", "/api/hooks/notion", "/api/hooks/github",
+)
 
 # The dashboard's static shell: HTML, JS and CSS containing no data. It
 # has to load unauthenticated or there is nowhere to type the token. Every

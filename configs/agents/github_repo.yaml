@@ -1,0 +1,96 @@
+# github_work, step 2: where the work happens, from the event (never the model's words).
+#
+# The repository is the one the issue or pull request is in, as GitHub said
+# it in the signed event; the app is installed there, or the event would not
+# have come. This turns it into the clone URL, the branch work is cut from,
+# and the task name (which names the branch):
+#
+#   an issue #12                 -> branch temper-issue-12, cut from the
+#                                   default branch; its PR goes there.
+#   temper's own PR (its branch   -> the same branch temper-issue-12: a change
+#   is temper-issue-12)             asked on the PR updates it.
+#   someone else's PR #7          -> branch temper-pr-7, cut from that PR's
+#                                   branch; its PR goes into that branch.
+#   a PR from a fork              -> refused: temper works on branches of the
+#                                   repository itself.
+#
+# roamee's work goes into staging, always. A private repository is cloned
+# over ssh with its deploy key (local/github-deploy/setup.sh owner/name); a
+# public one over https.
+agent:
+  name: github_repo
+  type: script
+  timeout_seconds: 30
+  script_template: |
+    #!/bin/sh
+    set -eu
+    REPO={{ repo | default('') }}
+    NUMBER={{ number | default('') }}
+    KIND={{ kind | default('') }}
+    DEFAULT_BRANCH={{ default_branch | default('') }}
+    PRIVATE={{ private | default('') }}
+    HEAD_REF={{ head_ref | default('') }}
+    HEAD_REPO={{ head_repo | default('') }}
+    BASE_REF={{ base_ref | default('') }}
+    # An optional workflow input that was not given arrives as Python None.
+    [ "$KIND" = None ] && KIND=""
+    [ "$DEFAULT_BRANCH" = None ] && DEFAULT_BRANCH=""
+    [ "$PRIVATE" = None ] && PRIVATE=""
+    [ "$HEAD_REF" = None ] && HEAD_REF=""
+    [ "$HEAD_REPO" = None ] && HEAD_REPO=""
+    [ "$BASE_REF" = None ] && BASE_REF=""
+
+    fail() { python3 -c 'import json,sys; print(json.dumps({"status": "failed", "error": sys.argv[1]}))' "$1"; exit 1; }
+    branch_ok() {
+      case "$1" in
+        ''|-*|*..*|*[!A-Za-z0-9._/-]*) return 1 ;;
+      esac
+      return 0
+    }
+
+    case "$REPO" in
+      */*/*|/*|*/|*..*|*[!A-Za-z0-9._/-]*|'') fail "'$REPO' is not an owner/name repository" ;;
+      */*) ;;
+      *) fail "'$REPO' is not an owner/name repository" ;;
+    esac
+    case "$NUMBER" in
+      ''|*[!0-9]*) fail "'$NUMBER' is not an issue or pull request number" ;;
+    esac
+    LOWER=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')
+
+    case "$PRIVATE" in
+      true|True) URL="git@github.com:$REPO.git" ;;
+      *) URL="https://github.com/$REPO.git" ;;
+    esac
+
+    if [ "$KIND" = pull ]; then
+      branch_ok "$HEAD_REF" || fail "the pull request's branch is not known ('$HEAD_REF')"
+      HEAD_LOWER=$(printf '%s' "$HEAD_REPO" | tr '[:upper:]' '[:lower:]')
+      [ "$HEAD_LOWER" = "$LOWER" ] || fail "the pull request's branch is in another repository ($HEAD_REPO); temper works only on branches of $REPO"
+      ISSUE=${HEAD_REF#temper-issue-}
+      case "$HEAD_REF:$ISSUE" in
+        temper-issue-*:*[!0-9]*|temper-issue-*:) TASK="temper pr $NUMBER"; BASE="$HEAD_REF" ;;
+        temper-issue-*) TASK="temper issue $ISSUE"; BASE="$BASE_REF" ;;
+        *) TASK="temper pr $NUMBER"; BASE="$HEAD_REF" ;;
+      esac
+    else
+      TASK="temper issue $NUMBER"
+      BASE="$DEFAULT_BRANCH"
+    fi
+
+    # Repositories whose pull requests go into one branch only.
+    case "$LOWER" in
+      shine2lay/roamee)
+        if [ "$KIND" = pull ]; then
+          [ "$BASE" = staging ] || fail "on $REPO temper's pull requests go into staging, and this one would go into '$BASE'"
+        else
+          BASE=staging
+        fi ;;
+    esac
+    # An issue's empty base (a run started by hand): the build cuts from the default branch.
+    if [ -n "$BASE" ] || [ "$KIND" = pull ]; then
+      branch_ok "$BASE" || fail "no branch to cut the work from ('$BASE')"
+    fi
+
+    python3 -c 'import json,sys; print(json.dumps({"status": "ready", "repo": sys.argv[1], "repo_url": sys.argv[2], "base_branch": sys.argv[3], "task_name": sys.argv[4], "number": sys.argv[5]}))' \
+      "$REPO" "$URL" "$BASE" "$TASK" "$NUMBER"

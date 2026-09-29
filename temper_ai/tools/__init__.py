@@ -8,6 +8,13 @@ from temper_ai.tools.delegate import Delegate
 from temper_ai.tools.edit import Edit
 from temper_ai.tools.executor import ToolExecutor
 from temper_ai.tools.git import Git
+from temper_ai.tools.github import (
+    GitHubComment,
+    GitHubFiles,
+    GitHubPullDiff,
+    GitHubReview,
+    GitHubThread,
+)
 from temper_ai.tools.github_pr import OpenPullRequest
 from temper_ai.tools.glob import Glob
 from temper_ai.tools.grep import Grep
@@ -44,6 +51,11 @@ TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "Delegate": Delegate,
     "Edit": Edit,
     "git": Git,
+    "GitHubComment": GitHubComment,
+    "GitHubFiles": GitHubFiles,
+    "GitHubPullDiff": GitHubPullDiff,
+    "GitHubReview": GitHubReview,
+    "GitHubThread": GitHubThread,
     "Glob": Glob,
     "Grep": Grep,
     "http": Http,

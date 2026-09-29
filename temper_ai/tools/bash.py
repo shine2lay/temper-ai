@@ -406,10 +406,12 @@ def _safe_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     """
     env = os.environ.copy()
     # Remove keys matching sensitive patterns
-    sensitive_suffixes = ("_API_KEY", "_SECRET", "_SECRET_KEY", "_TOKEN", "_PASSWORD")
+    sensitive_suffixes = ("_API_KEY", "_SECRET", "_SECRET_KEY", "_TOKEN", "_PASSWORD", "_PRIVATE_KEY")
     sensitive_exact = {
         "SUDO_ASKPASS", "SSH_AUTH_SOCK", "DATABASE_URL", "TEMPER_DATABASE_URL",
         "TEMPER_DASHBOARD_TOKEN", "CLAUDE_CONFIG_DIR",
+        # The GitHub app's keys: with them anyone can act as the app (integrations.github).
+        "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET", "GITHUB_APP_CLIENT_SECRET",
     }
     to_remove = set()
     for key in env:

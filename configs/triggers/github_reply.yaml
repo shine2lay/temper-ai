@@ -1,0 +1,33 @@
+# A reply in the thread of an issue (or pull request) labelled "temper"
+# carries the work on: an answer to temper's question starts the change, a
+# change request updates the pull request, a question gets an answer. temper
+# decides which from the whole thread (agents/github_triage.yaml); a comment
+# that asks nothing of it gets no reply.
+#
+# While a run for the same issue is still going, a reply starts nothing (one
+# run per issue or PR at a time; recorded as skipped). The comment stays in
+# the thread, and the next run reads it.
+#
+# Only allowed authors (configs/github/github.yaml); never the app's own
+# comments. Narrow it with `repos:` / `authors:` under `on:`, or turn it off
+# with `enabled: false`.
+trigger:
+  name: github_reply
+  source: github
+  enabled: true
+  on:
+    event: issue_comment
+    action: created
+    has_label: temper
+  workflow: github_work
+  inputs:
+    repo: "{{ github.repo }}"
+    number: "{{ github.number }}"
+    kind: "{{ github.kind }}"
+    comment_id: "{{ github.comment_id }}"
+    why: reply
+    default_branch: "{{ github.default_branch }}"
+    private: "{{ 'true' if github.private else 'false' }}"
+    head_ref: "{{ github.head_ref }}"
+    head_repo: "{{ github.head_repo }}"
+    base_ref: "{{ github.base_ref }}"

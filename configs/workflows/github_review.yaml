@@ -1,0 +1,32 @@
+workflow:
+  name: github_review
+  description: |
+    Review a GitHub pull request as temper's GitHub app: one review that only
+    comments (never approves, never requests changes, never merges). Started
+    by the github_pr_review trigger when it is turned on (it ships off), or by
+    hand:
+      temper run github_review --input repo=shine2lay/temper-ai --input number=7
+
+    A review someone asks for in a comment ("@shine-temper review this") goes
+    through github_work, which uses the same reviewer.
+  inputs:
+    repo:
+      type: string
+      required: true
+    number:
+      type: string
+      required: true
+    focus:
+      type: string
+      required: false
+  outputs:
+    verdict: review.structured.verdict
+    review_url: review.structured.review_url
+  nodes:
+    - name: review
+      type: agent
+      agent: github_reviewer
+      input_map:
+        repo: input.repo
+        number: input.number
+        focus: input.focus

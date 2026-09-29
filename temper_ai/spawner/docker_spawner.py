@@ -72,6 +72,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from temper_ai.integrations.github import secret as github_secret
 from temper_ai.spawner.base import Spawner, SpawnerBusy, SpawnerError
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
@@ -412,7 +413,10 @@ class DockerSpawner(Spawner):
         for host in template.extra_hosts:
             cmd += ["--add-host", host]
         for var in template.env:
-            if not var.startswith("TEMPER_RUN_CONTAINER="):
+            var_name = var.split("=", 1)[0]
+            # The GitHub app's key stays in the server: a box's shell could read
+            # the environment the box started with (integrations.github.secret).
+            if var_name != "TEMPER_RUN_CONTAINER" and var_name not in github_secret.SERVER_ONLY:
                 cmd += ["--env", var]
         cmd += ["--env", f"TEMPER_RUN_CONTAINER={name}"]
         all_workspaces = _all_workspaces()

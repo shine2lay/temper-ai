@@ -27,6 +27,16 @@ may read).
 
 If a PR for the branch is already open, it is returned as it is: a later run
 on the same issue pushes new commits to the same PR.
+
+Who it acts as (``identity`` in the tool config):
+
+* ``token`` (the default): the owner, with ``TEMPER_GITHUB_TOKEN``. Linear,
+  Notion and builds open their pull requests this way.
+* ``app``: temper's GitHub app (integrations.github.app), for work started
+  on GitHub. The push and the PR show as ``<app>[bot]``. The repositories it
+  may push to are the ones the app is installed on (GitHub is asked; a
+  ``repos`` list in the config narrows them), and a repository with a fixed
+  base (roamee: staging) gets pull requests into that base only.
 """
 
 from __future__ import annotations
@@ -54,6 +64,9 @@ DEFAULT_REPOS = ("shine2lay/roamee", "shine2lay/temper-ai")
 PROTECTED_BRANCHES = frozenset({
     "main", "master", "staging", "production", "prod", "develop", "dev", "release", "gh-pages",
 })
+# Under the app identity, pull requests into these repositories go to this base only.
+REQUIRED_BASES = {"shine2lay/roamee": "staging"}
+IDENTITIES = ("token", "app")
 REMOTE_TEMPLATE = "https://github.com/{repo}.git"
 API_URL = "https://api.github.com"
 GIT_TIMEOUT_S = 300
@@ -119,18 +132,50 @@ class OpenPullRequest(BaseTool):
 
     # --- config ---------------------------------------------------------------------------------
 
+    def _identity(self) -> str:
+        identity = str(self.config.get("identity") or "token").strip().lower()
+        if identity not in IDENTITIES:
+            raise PushRefused(f"identity '{identity}' is not one of {', '.join(IDENTITIES)}")
+        return identity
+
     def _allowed_repos(self) -> set[str]:
         configured = self.config.get("repos")
+        if self._identity() == "app":
+            from temper_ai.integrations.github.app import GitHubAppError, get_app
+
+            try:
+                installed = set(get_app().installed_repos())
+            except GitHubAppError as exc:
+                raise PushRefused(str(exc)) from exc
+            if configured:
+                installed &= {str(r).strip().lower() for r in configured if str(r).strip()}
+            return installed
         if not configured:
             env = os.environ.get(REPOS_ENV, "").strip()
             configured = [r for r in env.split(",") if r.strip()] if env else list(DEFAULT_REPOS)
         return {str(r).strip().lower() for r in configured if str(r).strip()}
 
+    def _required_base(self, repo: str) -> str | None:
+        if self._identity() != "app":
+            return None
+        bases = self.config.get("bases")
+        table = {str(k).lower(): str(v) for k, v in (bases if isinstance(bases, dict) else REQUIRED_BASES).items()}
+        return table.get(repo.lower())
+
     def _roots(self) -> list[Path]:
         configured = self.config.get("roots")
         return [Path(r) for r in configured] if configured else _workspace_roots()
 
-    def _token(self) -> str:
+    def _token(self, repo: str = "") -> str:
+        if self._identity() == "app":
+            from temper_ai.integrations.github.app import GitHubAppError, get_app
+
+            if not _REPO_RE.match(repo):
+                raise PushRefused(f"'{repo}' is not an owner/name repository")
+            try:
+                return get_app().installation_token(repo)
+            except GitHubAppError as exc:
+                raise PushRefused(str(exc)) from exc
         token = os.environ.get(str(self.config.get("token_env") or TOKEN_ENV), "").strip()
         if not token:
             raise PushRefused(f"{TOKEN_ENV} is not set, so temper cannot push to GitHub")
@@ -140,7 +185,7 @@ class OpenPullRequest(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         try:
-            token = self._token()
+            token = self._token(str(params.get("repo") or "").strip())
         except PushRefused as exc:
             return ToolResult(success=False, result="", error=str(exc))
         try:
@@ -163,6 +208,9 @@ class OpenPullRequest(BaseTool):
             raise PushRefused("repo, worktree, base and title are all required")
 
         repo = self._check_repo(repo)
+        required = self._required_base(repo)
+        if required and base != required:
+            raise PushRefused(f"pull requests on {repo} go into '{required}', not '{base}'")
         path = self._check_worktree(worktree, repo)
         branch = self._branch_of(path)
         self._check_branches(branch, base)

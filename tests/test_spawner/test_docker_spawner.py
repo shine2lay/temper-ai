@@ -134,6 +134,18 @@ class TestRunContainer:
             metadata={"execution_id": "exec-1", "container_id": "abc123", "image": "temper-ai-worker"},
         )
 
+    def test_never_gets_the_github_app_s_key(self, workspace):
+        # The server holds it (a run asks the server for short-lived tokens): a box's
+        # shell can read the environment the box started with.
+        env = ["PATH=/usr/bin", "GITHUB_APP_ID=1234", "GITHUB_APP_PRIVATE_KEY=-----BEGIN leak",
+               "GITHUB_APP_WEBHOOK_SECRET=whsec", "GITHUB_APP_CLIENT_SECRET=cs"]
+        info = json.loads(_inspect_json())[0]
+        info["Config"]["Env"] = env
+        docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
+        _spawner(docker, str(workspace)).spawn("exec-1")
+        assert set(_envs(_run_cmd(docker))) == {
+            "PATH=/usr/bin", "GITHUB_APP_ID=1234", "TEMPER_RUN_CONTAINER=temper-run-exec-1"}
+
     def test_never_gets_the_docker_socket(self, workspace):
         docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), "")]})
         _spawner(docker, str(workspace)).spawn("exec-1")

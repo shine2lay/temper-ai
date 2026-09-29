@@ -173,3 +173,25 @@ def test_is_alive_via_os_kill_when_untracked():
         metadata={"execution_id": "fake"},
     )
     assert spawner.is_alive(dead_handle) is False
+
+
+def test_a_run_never_gets_the_github_app_s_key(monkeypatch):
+    """The server holds the app's key; a run asks it for short-lived tokens."""
+    from temper_ai.spawner import subprocess_spawner
+
+    seen = {}
+
+    class FakePopen:
+        pid = 4242
+
+        def __init__(self, cmd, env=None, **kwargs):
+            seen["env"] = env
+
+    monkeypatch.setattr(subprocess_spawner.subprocess, "Popen", FakePopen)
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "-----BEGIN leak")
+    monkeypatch.setenv("GITHUB_APP_WEBHOOK_SECRET", "whsec")
+    monkeypatch.setenv("GITHUB_APP_ID", "1234")
+    SubprocessSpawner(extra_env={"GITHUB_APP_PRIVATE_KEY": "-----BEGIN again"}).spawn("exec-1")
+    env = seen["env"]
+    assert "GITHUB_APP_PRIVATE_KEY" not in env and "GITHUB_APP_WEBHOOK_SECRET" not in env
+    assert env["GITHUB_APP_ID"] == "1234"

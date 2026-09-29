@@ -4,7 +4,7 @@
 
 _Auto-generated from code. Do not edit manually._
 
-Temper AI includes **26 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
+Temper AI includes **31 built-in tools**. Agents reference tools by name in their [agent config](../agents/llm.md).
 
 Tool execution is gated by [safety policies](../policies/index.md) — see [File Access](../policies/file_access.md) and [Forbidden Ops](../policies/forbidden_ops.md).
 
@@ -31,6 +31,11 @@ Which container that is depends on the worker's `TEMPER_SPAWNER`. With `docker`,
 | [`Calculator`](calculator.md) | Evaluate a mathematical expression safely. Supports arithmetic, sqrt, sin, cos, tan, log, exp, abs, round, min, max, pi, e. |
 | [`Delegate`](delegate.md) | Run one or more agents as sub-tasks. Each task specifies an agent name and inputs. Results are returned as JSON. Use this to delegate work to specialized agents and get their output back. |
 | [`Edit`](edit.md) | Edit a file by exact string replacement. Pass several disjoint edits in one call — they are applied together or not at all. Each old_text must appear exactly once (include surrounding lines to make it unique) unless replace_all is set. Use Write to create a file or replace it wholesale. |
+| [`GitHubComment`](githubcomment.md) | Post a comment in the thread of a GitHub issue or pull request, as temper's GitHub app. Markdown. Returns the comment's id and link. |
+| [`GitHubFiles`](githubfiles.md) | Read a file of a GitHub repository (its text, up to max_chars), or list a directory's entries. `path` '' is the top of the repository; `ref` is a branch, tag or commit (default: the repository's default branch). |
+| [`GitHubPullDiff`](githubpulldiff.md) | Read what a GitHub pull request changes: every file with its status and line counts, and the patch of each (the unified diff), up to max_chars in all. |
+| [`GitHubReview`](githubreview.md) | Post a review on a GitHub pull request, as temper's GitHub app: a summary, and optionally comments on lines of the changed files. The review only comments: it never approves, never requests changes and never merges. |
+| [`GitHubThread`](githubthread.md) | Read a GitHub issue or pull request and its whole conversation: title, text, author, labels, state, and every comment (oldest first) with its author and id. For a pull request also its branches, draft state and reviews. Comments by the app itself are marked by their author, '<app>[bot]'. |
 | [`Glob`](glob.md) | Find files by name pattern, e.g. '**/*.py' or 'src/**/test_*.ts'. Returns up to 200 paths (raise with limit), newest first. Skips anything the repo's .gitignore excludes, plus .git, node_modules, __pycache__, virtualenvs and build output. Use Grep to search file contents. |
 | [`Grep`](grep.md) | Search file contents with a regular expression. Returns 'path:line: text' for up to 200 matches (raise with limit), then reports how many were omitted. Skips anything the repo's .gitignore excludes, plus .git, node_modules, __pycache__, virtualenvs and build output. Prefer this over running grep through Bash: that output is unbounded. |
 | [`LinearMoveIssue`](linearmoveissue.md) | Move a Linear issue to another workflow state, e.g. 'In Progress' when you start work and 'In Review' when its pull request is open. Changes the issue's state and nothing else. |

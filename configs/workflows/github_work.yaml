@@ -1,0 +1,177 @@
+workflow:
+  name: github_work
+  description: |
+    Work a GitHub issue or pull request, as temper's GitHub app. Started by
+    the github_label trigger (label "temper" put on an issue), github_reply (a
+    person's reply in a labelled thread) and github_mention ("@shine-temper
+    ..." in a comment), or by hand:
+      temper run github_work --input repo=shine2lay/temper-ai --input number=12
+
+      1. triage  — reads the thread and decides. Unclear: asks in the thread
+                   and stops. A question that needs no change: answers it and
+                   stops. Asked to review a pull request: the review step.
+                   Nothing asked of temper: stops without a word. Clear work:
+                   says so in the thread and writes the brief.
+      2. review  — (review only) one comment-only review of the pull request.
+      3. repo    — (go only) the event's repository: its clone URL, the branch
+                   work is cut from (roamee: staging; else the default branch,
+                   or the pull request's branch) and the task name. A script,
+                   from the signed event, never from the model's words.
+      4. build   — epd_task: worktree on branch temper-issue-<n> (or
+                   temper-pr-<n>), plan, implement, review, security, the
+                   repo's CI checks, the gate and its fix rounds. No stack and
+                   no browser QA. keep=true, so a later reply continues on the
+                   same branch.
+      5. report  — opens the pull request as the app (a draft when the gate
+                   still has objections) and comments its link in the thread.
+                   When there is nothing to push, says in the thread what went
+                   wrong. Runs after a failed build too.
+
+    Everything it posts shows as the app. It never merges, approves or
+    requests changes, never pushes a protected branch, and changes nothing on
+    GitHub but its comments, its review and its own pull request's branch.
+  inputs:
+    repo:
+      type: string
+      required: true
+    number:
+      type: string
+      required: true
+    kind:
+      type: string
+      required: false
+    comment_id:
+      type: string
+      required: false
+    why:
+      type: string
+      required: false
+    default_branch:
+      type: string
+      required: false
+    private:
+      type: string
+      required: false
+    head_ref:
+      type: string
+      required: false
+    head_repo:
+      type: string
+      required: false
+    base_ref:
+      type: string
+      required: false
+  outputs:
+    decision: triage.structured.decision
+    review_url: review.structured.review_url
+    branch: build.structured.branch
+    verdict: build.structured.verdict
+    pr_url: report.structured.pr_url
+    outcome: report.structured.outcome
+  nodes:
+    - name: triage
+      type: agent
+      agent: github_triage
+      input_map:
+        repo: input.repo
+        number: input.number
+        kind: input.kind
+        comment_id: input.comment_id
+        why: input.why
+
+    - name: review
+      type: agent
+      agent: github_reviewer
+      depends_on: [triage]
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: review
+      input_map:
+        repo: input.repo
+        number: input.number
+        comment_id: input.comment_id
+        focus: triage.structured.brief
+
+    - name: repo
+      type: agent
+      agent: github_repo
+      depends_on: [triage]
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
+      input_map:
+        repo: input.repo
+        number: input.number
+        kind: input.kind
+        default_branch: input.default_branch
+        private: input.private
+        head_ref: input.head_ref
+        head_repo: input.head_repo
+        base_ref: input.base_ref
+
+    - name: build
+      type: stage
+      ref: workflows/epd_task
+      depends_on: [repo]
+      # Its own condition too: a node whose dependency was skipped by a
+      # condition still runs, so without this an "ask" would start the build
+      # with no repository.
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
+      input_map:
+        repo_url: repo.structured.repo_url
+        base_branch: repo.structured.base_branch
+        task_name: repo.structured.task_name
+        task_description: triage.structured.brief
+        # A later reply continues on this branch and PR; a claim left by an
+        # earlier run on the same issue is this issue's own.
+        keep: true
+        force: true
+        # No dev stack and no browser QA: review, security and the repo's own
+        # CI checks are the judges.
+        stack: false
+        verify: false
+        plan: true
+        implement: true
+
+    - name: report
+      type: agent
+      agent: github_report
+      depends_on: [build]
+      # After a failed repo or build step too: the requester is owed an answer.
+      run_after_failure: true
+      condition:
+        source: triage.structured.decision
+        operator: equals
+        value: go
+      input_map:
+        repo: input.repo
+        number: input.number
+        kind: input.kind
+        title: triage.structured.title
+        repo_error: repo.error
+        repo_failure: repo.failure
+        build_status: build.status
+        build_error: build.error
+        build_failure: build.failure
+        worktree_path: build.structured.worktree_path
+        branch: build.structured.branch
+        base_branch: build.structured.base_branch
+        implement_status: build.structured.implement_status
+        implement_summary: build.structured.implement_summary
+        implement_commit: build.structured.implement_commit
+        review_verdict: build.structured.review_verdict
+        review_summary: build.structured.review_summary
+        review_findings: build.structured.review_findings
+        test_verdict: build.structured.test_verdict
+        test_summary: build.structured.test_summary
+        test_failures: build.structured.test_failures
+        security_verdict: build.structured.security_verdict
+        security_summary: build.structured.security_summary
+        security_human_actions: build.structured.security_human_actions
+        verdict: build.structured.verdict
+        verdict_summary: build.structured.verdict_summary

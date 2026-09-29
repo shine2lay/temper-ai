@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
+
+from temper_ai.shared.clock import as_utc, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +94,7 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
         logger.info("Orphan reconciliation skipped: execution mode is %s", mode)
         return 0
 
-    cutoff = started_before or datetime.now(UTC).replace(tzinfo=None)
+    cutoff = as_utc(started_before) or utcnow()
 
     try:
         from sqlmodel import select

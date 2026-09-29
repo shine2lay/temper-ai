@@ -1,0 +1,15 @@
+[Unit]
+Description=temper: look at GitHub's checks every 10 minutes
+
+[Timer]
+# Ten minutes: a red master is worth knowing about within the coffee break
+# that follows the push, and GitHub's API is nowhere near a rate limit at
+# six calls an hour.
+OnBootSec=3min
+OnUnitActiveSec=10min
+# If the box was asleep when a run finished, look as soon as it wakes.
+Persistent=true
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

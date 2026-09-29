@@ -61,6 +61,22 @@ def _create_pg_engine(url: str, pool_size: int) -> Engine:
         poolclass=QueuePool,
         echo=False,
     )
+
+    # Every time temper stores carries UTC (temper_ai/shared/clock.py), and
+    # most of its columns are `timestamp without time zone`. Postgres drops
+    # the offset using the *session's* zone, so a server whose database ran
+    # on local time would shift every stored time by its offset. Saying UTC
+    # on each connection makes the cast exact, wherever the database lives.
+    #
+    # Said here rather than in connect_args: connect_args would take over the
+    # `options` a URL can carry, and the tests use that to give each xdist
+    # worker a schema of its own.
+    @event.listens_for(engine, "connect")
+    def _utc_session(dbapi_conn, _rec):  # type: ignore[no-untyped-def]
+        cursor = dbapi_conn.cursor()
+        cursor.execute("SET TIME ZONE 'UTC'")
+        cursor.close()
+
     return engine
 
 

@@ -4,13 +4,29 @@ import pytest
 
 from temper_ai.database import init_database, reset_database
 from temper_ai.tools.executor import ToolExecutor
+from tests.pgtier import database_tier_url, truncate_everything
 
 
 @pytest.fixture(autouse=True)
-def _test_db():
-    """Initialize an in-memory SQLite database for each test."""
+def _test_db(request):
+    """A fresh database for each test.
+
+    In-memory SQLite by default: fast, and every test gets its own.
+
+    With ``TEMPER_TEST_DATABASE_URL`` set, the tests of the database tier
+    (tests/pgtier.py says which) run against the real thing instead —
+    Postgres is what temper runs on, and SQLite hid a whole class of bug:
+    the time-zone rules, the unique constraints and the row locking are all
+    Postgres's, not SQLite's. Everything else stays on SQLite in the same
+    run, so the tier costs seconds, not minutes.
+    """
     reset_database()
-    init_database("sqlite:///:memory:")
+    url = database_tier_url(request.node)
+    if url:
+        init_database(url)
+        truncate_everything()
+    else:
+        init_database("sqlite:///:memory:")
     yield
     reset_database()
 

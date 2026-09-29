@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -12,33 +12,18 @@ from sqlmodel import col, select
 
 from temper_ai.integrations.notify.models import NotifyCopy, NotifyRun
 from temper_ai.integrations.notify.notice import Copy
+from temper_ai.shared.clock import as_utc
+from temper_ai.shared.clock import utcnow as _now
 
 logger = logging.getLogger(__name__)
 
 OPEN = ("sending", "sent", "held")
 
 
-def _now() -> datetime:
-    return datetime.now(UTC)
-
-
-def _aware(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    return value if value.tzinfo else value.replace(tzinfo=UTC)
-
-
-def _utc(value: datetime | None) -> datetime | None:
-    """As naive UTC, the way the columns keep it."""
-    if value is None or value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
-
-
 def snapshot(row: NotifyCopy) -> Copy:
     return Copy(id=int(row.id or 0), key=row.key, kind=row.kind, execution_id=row.execution_id, node=row.node,
                 event_id=row.event_id, via=row.via, target=row.target, ref=row.ref, status=row.status,
-                nudge=row.nudge, state=dict(row.state or {}), created_at=_aware(row.created_at))
+                nudge=row.nudge, state=dict(row.state or {}), created_at=as_utc(row.created_at))
 
 
 def claim(key: str, kind: str, execution_id: str, via: str, target: str, *, node: str = "",
@@ -52,10 +37,10 @@ def claim(key: str, kind: str, execution_id: str, via: str, target: str, *, node
 
     with get_session() as session:
         row = NotifyCopy(key=key, kind=kind, execution_id=execution_id, node=node, event_id=event_id, via=via,
-                         target=target, status=status, release_at=_utc(release_at), nudge=nudge,
+                         target=target, status=status, release_at=as_utc(release_at), nudge=nudge,
                          state=state or {})
         if at is not None:
-            row.created_at = _utc(at) or row.created_at
+            row.created_at = as_utc(at) or row.created_at
         session.add(row)
         try:
             session.commit()
@@ -171,10 +156,11 @@ def rekey_question(execution_id: str, node: str, key: str, event_id: str, from_e
 def due_held(now: datetime) -> list[Copy]:
     from temper_ai.database import get_session
 
+    # The caller's clock may hand us a naive "now"; both sides are UTC.
+    moment = as_utc(now) or _now()
     with get_session() as session:
         rows = session.exec(select(NotifyCopy).where(NotifyCopy.status == "held")).all()
-        return [snapshot(r) for r in rows if (_aware(r.release_at) or now) <= now]
-
+        return [snapshot(r) for r in rows if (as_utc(r.release_at) or moment) <= moment]
 
 
 def run_settings(execution_id: str) -> dict[str, Any] | None:

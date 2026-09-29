@@ -18,7 +18,7 @@ import { AlertCircle } from 'lucide-react';
 import { authFetch } from '@/lib/authFetch';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { cn, formatCost, formatDuration, formatTokens } from '@/lib/utils';
+import { cn, ensureUTC, formatCost, formatDuration, formatTokens } from '@/lib/utils';
 import type { NodeExecution, WorkflowExecution } from '@/types';
 
 function nodeMap(run: WorkflowExecution | undefined): Map<string, NodeExecution> {
@@ -87,7 +87,9 @@ export function CompareView() {
 
   const summaryRows: { label: string; values: (string | number | null)[] }[] = [
     { label: 'Status', values: runs.map((r) => r?.status ?? null) },
-    { label: 'Started', values: runs.map((r) => (r?.start_time ? new Date(r.start_time + 'Z').toLocaleString() : null)) },
+    // ensureUTC, not `+ 'Z'`: the API returns some times with an offset
+    // already, and `...+00:00Z` is not a date at all.
+    { label: 'Started', values: runs.map((r) => (r?.start_time ? new Date(ensureUTC(r.start_time)).toLocaleString() : null)) },
     { label: 'Duration', values: runs.map((r) => (r?.duration_seconds != null ? formatDuration(r.duration_seconds) : null)) },
     { label: 'Tokens', values: runs.map((r) => (r?.total_tokens != null ? formatTokens(r.total_tokens) : null)) },
     {
@@ -154,9 +156,17 @@ export function CompareView() {
                 key={row.label}
                 className={differs(row.values) ? 'bg-temper-accent/10' : undefined}
               >
-                <td
+                {/* A row header, not a plain cell: this is the label every
+                    value in the row is paired with, so a screen reader can
+                    announce it with each one. `data-row` names the row
+                    whatever the data does, which is what a test can hold on
+                    to / the visible label gains a "differs" marker whenever
+                    the values disagree. */}
+                <th
+                  scope="row"
+                  data-row={row.label}
                   className={cn(
-                    'border-b border-temper-border/50 p-2 text-xs text-temper-text-muted',
+                    'border-b border-temper-border/50 p-2 text-left text-xs font-normal text-temper-text-muted',
                     differs(row.values) && 'border-l-2 border-l-temper-accent font-medium text-temper-text',
                   )}
                 >
@@ -166,7 +176,7 @@ export function CompareView() {
                       differs
                     </span>
                   )}
-                </td>
+                </th>
                 {row.values.map((v, i) => (
                   <td key={ids[i]} className="border-b border-temper-border/50 p-2 text-temper-text">
                     {row.label === 'Status' && v ? (
@@ -208,9 +218,13 @@ export function CompareView() {
                     differs(cells.map((c) => c?.status)) ? 'bg-temper-accent/5' : undefined
                   }
                 >
-                  <td className="border-b border-temper-border/50 p-2 font-mono text-xs text-temper-text">
+                  <th
+                    scope="row"
+                    data-row={name}
+                    className="border-b border-temper-border/50 p-2 text-left font-mono text-xs font-normal text-temper-text"
+                  >
                     {name}
-                  </td>
+                  </th>
                   {cells.map((node, i) => (
                     <td key={ids[i]} className="border-b border-temper-border/50 p-2">
                       {node ? (

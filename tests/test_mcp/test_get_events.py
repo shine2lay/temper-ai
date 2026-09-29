@@ -20,8 +20,7 @@ def _event(session, *, etype: str, status: str, seconds_ago: int, data: dict) ->
             execution_id="run-1",
             status=status,
             data=data,
-            timestamp=dt.datetime.now(dt.UTC).replace(tzinfo=None)
-            - dt.timedelta(seconds=seconds_ago),
+            timestamp=dt.datetime.now(dt.UTC) - dt.timedelta(seconds=seconds_ago),
         )
     )
 

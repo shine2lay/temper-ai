@@ -109,10 +109,15 @@ test.describe('Compare', () => {
     await page.goto(`/app/compare?ids=${a},${b}`);
 
     await expect(page.getByRole('heading', { name: /Comparing 2 runs/ })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'Duration', exact: true })).toBeVisible();
+
+    // By the row's own name, not its rendered text: a row whose values
+    // disagree also shows a "differs" marker, and whether two smoke runs
+    // take the same tenth of a second is a coin toss. Asserting the exact
+    // text made this test fail at random for weeks.
+    await expect(page.locator('th[data-row="Duration"]')).toBeVisible();
     // Node rows are the union across both runs.
-    await expect(page.getByRole('cell', { name: 'first', exact: true })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'second', exact: true })).toBeVisible();
+    await expect(page.locator('th[data-row="first"]')).toBeVisible();
+    await expect(page.locator('th[data-row="second"]')).toBeVisible();
   });
 
   test('asks for two runs when given fewer', async ({ page }) => {

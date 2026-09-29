@@ -6,26 +6,122 @@ on:
   push:
     branches: [master, main]
 
+# One version list, everywhere. GitHub, the pre-commit hook and the live
+# server all install from uv.lock, so a test that passes here passes there.
+# Before this, GitHub took the newest of everything, the hook took whatever
+# was in ~/.local, and the server took the lock file — and the three
+# disagreed enough to keep master red for eight days.
+env:
+  UV_FROZEN: "1"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.12'
-      - run: pip install ruff
-      - run: ruff check .
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff check .
 
   typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - run: uv run mypy temper_ai/ --ignore-missing-imports
+
+  test:
+    name: tests (python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Off, deliberately. With fail-fast on, 3.11 failing cancelled 3.12
+      # mid-run, so a version-specific break looked like a break everywhere
+      # and half the evidence was thrown away.
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --frozen --extra dev
+
+      - name: Show what is installed
+        run: uv run python scripts/show_versions.py
+
+      # No -x. Stopping at the first failure hid every other one, so each red
+      # run told you about a single test and you found the next only after
+      # fixing that. -n auto: the runners have 2-4 cores.
+      - name: Run the tests
+        run: uv run pytest tests/ --timeout=60 -n auto --junitxml=junit.xml
+
+      - name: Summarise
+        if: always()
+        run: uv run python scripts/junit_summary.py junit.xml --title "Python ${{ matrix.python-version }} · SQLite"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-${{ matrix.python-version }}
+          path: junit.xml
+          retention-days: 7
+
+  test-postgres:
+    # The database tier. Everything else runs on in-memory SQLite, which is
+    # fast but is not what temper runs on: the time-zone handling, the unique
+    # constraints and the row locking are all Postgres's. This job runs the
+    # tests that touch the database against a real one. (The workflow started
+    # a Postgres before this and no test ever connected to it.)
+    name: tests (postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: temper_ai_test
+          POSTGRES_USER: temper_ai
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
           python-version: '3.12'
-      - run: pip install -e ".[dev]"
-      - run: mypy temper_ai/ --ignore-missing-imports
+      - run: uv sync --frozen --extra dev
+
+      - name: Run the tests, with the database tier on Postgres
+        env:
+          TEMPER_TEST_DATABASE_URL: postgresql://temper_ai:test@127.0.0.1:5432/temper_ai_test
+        run: uv run pytest tests/ --timeout=120 -n auto --junitxml=junit-pg.xml
+
+      - name: Summarise
+        if: always()
+        run: uv run python scripts/junit_summary.py junit-pg.xml --title "Python 3.12 · Postgres tier"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-postgres
+          path: junit-pg.xml
+          retention-days: 7
 
   frontend:
     # The dashboard had no CI at all: its unit tests had been failing for
@@ -43,7 +139,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npx tsc -b
-      - run: npx vitest run
+      - run: npx vitest run --reporter=default --reporter=junit --outputFile=vitest-junit.xml
+      - name: Summarise
+        if: always()
+        run: python3 ../scripts/junit_summary.py vitest-junit.xml --title "Dashboard unit tests"
       - run: npm run build
 
   e2e:
@@ -53,8 +152,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
+          enable-cache: true
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
@@ -62,7 +162,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - run: pip install -e .
+      - run: uv sync --frozen
       - name: Build the dashboard
         working-directory: frontend
         run: |
@@ -76,7 +176,7 @@ jobs:
         env:
           TEMPER_DATABASE_URL: sqlite:///e2e.db
         run: |
-          temper serve --port 8420 > server.log 2>&1 &
+          uv run temper serve --port 8420 > server.log 2>&1 &
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8420/api/health && break
             sleep 1
@@ -96,47 +196,29 @@ jobs:
           # 127.0.0.1, not localhost: the server binds IPv4 and the runner
           # resolves localhost to ::1 first.
           TEMPER_E2E_BASE_URL: http://127.0.0.1:8420
-        run: npm run e2e
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: playwright-junit.xml
+        run: npx playwright test --reporter=list,junit
+
+      - name: Summarise
+        if: always()
+        working-directory: frontend
+        run: python3 ../scripts/junit_summary.py playwright-junit.xml --title "Browser tests"
+
+      # Named, not fatal. Failing the commit on a flake would push everyone
+      # into re-running until green, which is the habit we are trying to
+      # lose. The nightly repeats the suite and does treat flakiness as a
+      # failure, and that is what sends the message.
+      - name: Say which tests only passed on their retry
+        if: always()
+        working-directory: frontend
+        run: python3 ../scripts/flaky_report.py playwright-junit.xml --title "Browser tests" --soft
 
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: e2e-failures
-          path: frontend/test-results/
+          path: |
+            frontend/test-results/
+            frontend/playwright-junit.xml
+            server.log
           retention-days: 7
-
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.11', '3.12']
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: temper_ai_test
-          POSTGRES_USER: temper_ai
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
-      - run: pip install -e ".[dev]"
-      # -n auto: GitHub runners are 2-4 cores, so let xdist size itself.
-      # The suite is xdist-safe (verified: identical results serial and at
-      # 4/8/16 workers).
-      - run: pytest tests/ -x --timeout=60 -n auto
-        env:
-          TEMPER_DATABASE_URL: postgresql://temper_ai:test@localhost:5432/temper_ai_test

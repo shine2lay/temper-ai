@@ -11,14 +11,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
-from temper_ai.integrations.inbox.models import InboxEvent, utcnow
+from temper_ai.integrations.inbox.models import InboxEvent
+from temper_ai.shared.clock import as_utc, utcnow
 
 HELD = "unverified"
 FINISHED = ("done", "skipped", "expired", "gave_up")
@@ -26,19 +27,6 @@ STATUSES = (HELD, "new", "handling", "failed", *FINISHED)
 BACKOFF_S = (60, 300, 1800, 7200)        # the wait after the 1st, 2nd, 3rd and 4th failure
 MAX_TRIES = len(BACKOFF_S) + 1           # the 5th failure gives up
 KEEP_DAYS = {"done": 14, "skipped": 14, "expired": 14, "failed": 30, "gave_up": 30, HELD: 30}
-
-
-def _aware(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    return value if value.tzinfo else value.replace(tzinfo=UTC)
-
-
-def _naive(value: datetime | None) -> datetime | None:
-    """As naive UTC, the way the columns keep it."""
-    if value is None or value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 @dataclass
@@ -85,10 +73,10 @@ def _iso(value: datetime | None) -> str | None:
 
 def snapshot(row: InboxEvent) -> Event:
     return Event(id=int(row.id or 0), source=row.source, delivery=row.delivery, kind=row.kind,
-                 subject=row.subject, received_at=_aware(row.received_at) or datetime.now(UTC),
+                 subject=row.subject, received_at=as_utc(row.received_at) or utcnow(),
                  payload=dict(row.payload or {}), status=row.status, tries=row.tries, error=row.error,
-                 result=dict(row.result or {}), next_try_at=_aware(row.next_try_at),
-                 handled_at=_aware(row.handled_at), worker=row.worker, raw=row.raw or "",
+                 result=dict(row.result or {}), next_try_at=as_utc(row.next_try_at),
+                 handled_at=as_utc(row.handled_at), worker=row.worker, raw=row.raw or "",
                  signature=row.signature or "")
 
 
@@ -112,7 +100,7 @@ def save(source: str, delivery: str, *, kind: str = "", subject: str = "", paylo
         if status in FINISHED:
             row.handled_at = row.received_at
         if received_at is not None:
-            row.received_at = _naive(received_at) or row.received_at
+            row.received_at = as_utc(received_at) or row.received_at
         session.add(row)
         try:
             session.commit()
@@ -149,7 +137,7 @@ def claim(event_id: int, worker: str, *, now: datetime | None = None) -> Event |
     New and failed events can be taken; so can one left "handling" by a
     server process that is gone (``worker`` differs), which is how an event
     cut off by a restart is picked up again."""
-    at = _naive(now) or utcnow()
+    at = as_utc(now) or utcnow()
     with _session() as session:
         stmt = (update(InboxEvent)
                 .where(col(InboxEvent.id) == event_id,
@@ -176,7 +164,7 @@ def _merge(row: InboxEvent, result: dict[str, Any] | None) -> dict[str, Any]:
 def finish(event_id: int, status: str, result: dict[str, Any] | None = None, *, error: str = "",
            now: datetime | None = None) -> bool:
     """Close a handled event (done, skipped or expired)."""
-    at = _naive(now) or utcnow()
+    at = as_utc(now) or utcnow()
     with _session() as session:
         row = session.get(InboxEvent, event_id)
         if row is None or row.status != "handling":
@@ -191,7 +179,7 @@ def finish(event_id: int, status: str, result: dict[str, Any] | None = None, *, 
 
 def fail(event_id: int, error: str, *, now: datetime | None = None, result: dict[str, Any] | None = None) -> str:
     """Handling failed: try again after a wait, or give up after the last try. Returns the new status."""
-    at = _naive(now) or utcnow()
+    at = as_utc(now) or utcnow()
     with _session() as session:
         row = session.get(InboxEvent, event_id)
         if row is None or row.status != "handling":
@@ -209,7 +197,7 @@ def fail(event_id: int, error: str, *, now: datetime | None = None, result: dict
 
 
 def give_up(event_id: int, error: str, *, now: datetime | None = None) -> None:
-    at = _naive(now) or utcnow()
+    at = as_utc(now) or utcnow()
     with _session() as session:
         row = session.get(InboxEvent, event_id)
         if row is None or row.status in FINISHED:
@@ -240,7 +228,7 @@ def due(worker: str, sources: list[str], *, now: datetime | None = None, new_aft
     by a server process that is gone, and new ones nobody took for a while."""
     if not sources:
         return []
-    at = _naive(now) or utcnow()
+    at = as_utc(now) or utcnow()
     with _session() as session:
         rows = session.exec(
             select(InboxEvent.id)
@@ -306,14 +294,14 @@ def listing(*, source: str | None = None, status: str | None = None, since: date
         if subject:
             stmt = stmt.where(InboxEvent.subject == subject)
         if since is not None:
-            stmt = stmt.where(col(InboxEvent.received_at) >= _naive(since))
+            stmt = stmt.where(col(InboxEvent.received_at) >= as_utc(since))
         rows = session.exec(stmt.order_by(col(InboxEvent.id).desc()).limit(max(1, min(limit, 500)))).all()
         return [snapshot(r) for r in rows]
 
 
 def replay(event_id: int, *, now: datetime | None = None) -> tuple[bool, str]:
     """Put an event back to be handled again; (False, why) when that would be wrong."""
-    at = _naive(now) or utcnow()
+    at = as_utc(now) or utcnow()
     with _session() as session:
         row = session.get(InboxEvent, event_id)
         if row is None:
@@ -335,7 +323,7 @@ def replay(event_id: int, *, now: datetime | None = None) -> tuple[bool, str]:
 
 def prune(now: datetime | None = None) -> int:
     """Delete what is past keeping: finished rows after 14 days, failed and held ones after 30."""
-    at = _naive(now) or utcnow()
+    at = as_utc(now) or utcnow()
     gone = 0
     with _session() as session:
         for status, days in KEEP_DAYS.items():
@@ -354,7 +342,7 @@ def parse_since(text: str | None, now: datetime | None = None) -> datetime | Non
     """"30m", "2h", "3d", "1w" or an ISO date/time (UTC unless it says otherwise)."""
     if not text:
         return None
-    base = now or datetime.now(UTC)
+    base = now or utcnow()
     m = _SINCE.match(text.lower())
     if m:
         n, unit = int(m.group(1)), m.group(2)
@@ -363,4 +351,4 @@ def parse_since(text: str | None, now: datetime | None = None) -> datetime | Non
         value = datetime.fromisoformat(text.strip())
     except ValueError as exc:
         raise ValueError(f"--since takes 30m, 2h, 3d, 1w or a date like 2026-09-27: {text!r}") from exc
-    return value if value.tzinfo else value.replace(tzinfo=UTC)
+    return as_utc(value)

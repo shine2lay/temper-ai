@@ -5,7 +5,8 @@
 #   - mypy temper_ai/             (whole package)
 #   - pytest tests/ -x --timeout=60   (full suite)
 #
-# Bypass with `git commit --no-verify` if you must.
+# There is no bypass. `--no-verify` exists, but a commit that needs it is a
+# commit that breaks the build for everyone else; fix the cause instead.
 #
 # Install: ./scripts/install-git-hooks.sh
 # or: git config core.hooksPath scripts/git-hooks
@@ -17,6 +18,7 @@ cd "$REPO_ROOT"
 
 PASS="\033[0;32m✓\033[0m"
 FAIL="\033[0;31m✗\033[0m"
+WARN="\033[0;33m!\033[0m"
 
 # ─── 0. Docs regeneration (existing behavior) ─────────────────────────────
 RELEVANT_PATHS=(
@@ -46,38 +48,90 @@ if [ "$docs_needed" = true ]; then
     echo -e "$PASS Docs regenerated and staged."
 fi
 
-# ─── 1. ruff check . (whole project — matches CI) ─────────────────────────
+# ─── 1. The locked environment ────────────────────────────────────────────
+# Everything below runs through `uv run`, against uv.lock — the same list
+# GitHub installs and the same list the live server runs. Before this the
+# hook used whatever pytest was on $PATH (sqlmodel 0.0.31 in ~/.local),
+# GitHub took the newest of everything (0.0.47) and the server took the lock
+# file (0.0.37). Three answers to "do the tests pass", and master stayed red
+# for eight days without anyone able to reproduce it.
+if ! command -v uv > /dev/null; then
+    echo -e "$FAIL uv is not installed, and the hook needs it to use the locked versions."
+    echo "   Install: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+
+echo "Syncing the locked environment..."
+if ! uv sync --frozen --extra dev --quiet; then
+    echo -e "$FAIL uv sync --frozen failed. Is uv.lock in step with pyproject.toml?"
+    exit 1
+fi
+
+# Printed, so the versions used are in the log and any drift is visible
+# rather than inferred. --check fails if what got imported is not the lock.
+if ! uv run --quiet python scripts/show_versions.py --check; then
+    echo -e "$FAIL The environment is not the locked one."
+    exit 1
+fi
+
+# ─── 2. ruff check . (whole project — matches CI) ─────────────────────────
 echo "Running ruff check..."
-if ! ruff check .; then
+if ! uv run --quiet ruff check .; then
     echo ""
     echo -e "$FAIL ruff check failed."
-    echo "   Try: ruff check --fix ."
-    echo "   Or bypass: git commit --no-verify"
+    echo "   Try: uv run ruff check --fix ."
     exit 1
 fi
 echo -e "$PASS ruff check passed."
 
-# ─── 2. mypy temper_ai/ (whole package — matches CI) ──────────────────────
+# ─── 3. mypy temper_ai/ (whole package — matches CI) ──────────────────────
 echo "Running mypy on temper_ai/..."
-if ! mypy temper_ai/ --ignore-missing-imports 2>&1; then
+if ! uv run --quiet mypy temper_ai/ --ignore-missing-imports 2>&1; then
     echo ""
     echo -e "$FAIL mypy failed."
-    echo "   Bypass: git commit --no-verify"
     exit 1
 fi
 echo -e "$PASS mypy passed."
 
-# ─── 3. pytest (full suite — matches CI) ──────────────────────────────────
-# CI runs `pytest tests/ -x --timeout=60` with a Postgres service container.
-# Local dev may not have Postgres running, so tests/test_database/ is skipped
-# by default. Set PRECOMMIT_RUN_DB=1 to include them (requires TEMPER_DATABASE_URL).
+# ─── 4. pytest (full suite — matches CI) ──────────────────────────────────
+# No -x. Stopping at the first failure meant a commit told you about one
+# broken test, you fixed it, and the next run told you about the next.
 # -n 8: the suite is xdist-safe and this is where the speedup plateaus on a
 # 20-core box (68s serial -> 20s at 8 workers; 16 workers only buys ~1s more
 # while taking twice the machine). Override with PRECOMMIT_PYTEST_WORKERS.
 PYTEST_WORKERS="${PRECOMMIT_PYTEST_WORKERS:-8}"
-PYTEST_ARGS="tests/ -x --timeout=60 -q --no-header -n $PYTEST_WORKERS"
-if [ -z "${PRECOMMIT_RUN_DB:-}" ]; then
-    PYTEST_ARGS="$PYTEST_ARGS --ignore=tests/test_database"
+PYTEST_ARGS="tests/ --timeout=120 -q --no-header -n $PYTEST_WORKERS"
+
+# ─── 4a. The database tier ────────────────────────────────────────────────
+# When the commit touches anything that stores something, the tests that
+# touch the database run against a real Postgres instead of SQLite — in a
+# throwaway container on a port of its own, never the live one (which the
+# tests refuse to open anyway: tests/pgtier.py). Set PRECOMMIT_PG=0 to skip,
+# PRECOMMIT_PG=1 to force.
+DB_PATHS='^(temper_ai/(database|checkpoint|observability|runner|memory|triggers)/|temper_ai/integrations/(inbox|notify|slack|telegram)|temper_ai/.*models\.py|temper_ai/shared/clock\.py|tests/(conftest|pgtier)\.py|alembic/)'
+wants_pg="${PRECOMMIT_PG:-auto}"
+if [ "$wants_pg" = "auto" ]; then
+    if git diff --cached --name-only --diff-filter=ACM | grep -qE "$DB_PATHS"; then
+        wants_pg=1
+    else
+        wants_pg=0
+    fi
+fi
+
+if [ "$wants_pg" = "1" ]; then
+    if ! command -v docker > /dev/null; then
+        echo -e "$WARN This commit touches stored data, but docker is not here to run the"
+        echo "  Postgres tier. GitHub will run it. Continuing on SQLite."
+    else
+        echo "Starting a throwaway Postgres for the database tier..."
+        if TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)"; then
+            export TEMPER_TEST_DATABASE_URL
+            echo -e "$PASS Postgres tier on ${TEMPER_TEST_DATABASE_URL##*@}"
+        else
+            echo -e "$FAIL Could not start the throwaway Postgres."
+            exit 1
+        fi
+    fi
 fi
 
 echo "Running pytest..."
@@ -90,12 +144,37 @@ echo "Running pytest..."
 # `git commit` land in this repository: core.bare set, the branch being committed
 # moved to the test's commits.
 # shellcheck disable=SC2086,SC2046  (word splitting is intentional)
-if ! (unset $(git rev-parse --local-env-vars); pytest $PYTEST_ARGS) 2>&1 | tail -20; then
+if ! (unset $(git rev-parse --local-env-vars); uv run --quiet pytest $PYTEST_ARGS) 2>&1 | tail -40; then
     echo ""
     echo -e "$FAIL pytest failed."
-    echo "   Bypass: git commit --no-verify"
     exit 1
 fi
 echo -e "$PASS pytest passed."
+
+# ─── 5. The dashboard ─────────────────────────────────────────────────────
+# Its type check and unit tests, when the commit touches it. They ran only
+# on GitHub, so a type error or a broken component test was found after the
+# push rather than before it.
+STAGED_FE=$(git diff --cached --name-only --diff-filter=ACM -- 'frontend/*' || true)
+if [ -n "$STAGED_FE" ]; then
+    if [ ! -d frontend/node_modules ]; then
+        echo -e "$WARN frontend/ changed but node_modules is missing — run 'npm ci' in frontend/."
+        echo "  Skipping the dashboard checks; GitHub will still run them."
+    else
+        echo "Running the dashboard type check..."
+        if ! (cd frontend && npx --no-install tsc -b); then
+            echo -e "$FAIL The dashboard does not type-check."
+            exit 1
+        fi
+        echo -e "$PASS tsc passed."
+
+        echo "Running the dashboard unit tests..."
+        if ! (cd frontend && npx --no-install vitest run --silent 2>&1 | tail -25); then
+            echo -e "$FAIL The dashboard unit tests failed."
+            exit 1
+        fi
+        echo -e "$PASS vitest passed."
+    fi
+fi
 
 echo -e "$PASS All pre-commit checks passed."

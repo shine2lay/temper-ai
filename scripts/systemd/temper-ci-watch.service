@@ -1,0 +1,11 @@
+[Unit]
+Description=temper: watch GitHub's checks and DM the owner when they change (queue task 16)
+Documentation=file://%h/temper-ai/docs/testing.md
+
+[Service]
+Type=oneshot
+# The main checkout, not a worktree: worktrees come and go.
+ExecStart=/usr/bin/python3 %h/temper-ai/scripts/ci_watch.py
+TimeoutStartSec=300
+# gh lives in ~/.local/bin, which a user unit does not have on its PATH.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin

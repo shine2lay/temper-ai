@@ -201,7 +201,7 @@ def _open_event(execution_id: str, status: str = "running") -> str:
     with get_session() as session:
         session.add(Event(
             id=f"ev-{execution_id}", type="workflow.started", execution_id=execution_id,
-            status=status, data={}, timestamp=datetime.now(UTC).replace(tzinfo=None),
+            status=status, data={}, timestamp=datetime.now(UTC),
         ))
     return f"ev-{execution_id}"
 

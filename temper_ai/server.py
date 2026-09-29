@@ -242,7 +242,7 @@ _mcp_server = _build_mcp_server()
 
 # Captured before any run of ours can start, so reconciliation can tell a
 # previous process's runs from this one's.
-_PROCESS_START = _dt.datetime.now(_dt.UTC).replace(tzinfo=None)
+_PROCESS_START = _dt.datetime.now(_dt.UTC)
 
 
 # -- Lifespan --

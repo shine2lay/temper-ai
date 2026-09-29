@@ -7,20 +7,20 @@ loses nothing: the sweeper picks up what was left (service.py). The unique
 (source, delivery) is what makes a re-sent event a duplicate rather than a
 second piece of work.
 
-Times are naive UTC, the way the other tables keep them.
+Times carry UTC, like every other time temper stores (shared/clock.py).
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
+from temper_ai.shared.clock import utcnow
 
-def utcnow() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+__all__ = ["InboxEvent", "utcnow"]
 
 
 class InboxEvent(SQLModel, table=True):

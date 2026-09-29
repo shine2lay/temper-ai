@@ -337,7 +337,7 @@ def test_a_queued_resume_goes_on_from_its_checkpoints(isolated_db):
         session.add(Event(
             id="ev-first-attempt", type="workflow.started", execution_id="exec-resume",
             status="interrupted", data={},
-            timestamp=dt.datetime.now(dt.UTC).replace(tzinfo=None),
+            timestamp=dt.datetime.now(dt.UTC),
         ))
     _queue("exec-resume", "resume")
 

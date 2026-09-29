@@ -419,11 +419,17 @@ The server-and-worker split (see [Execution Modes](#execution-modes)) means orch
 ```bash
 git clone https://github.com/shine2lay/temper-ai.git
 cd temper-ai
-pip install -e ".[dev]"
-pytest                                                 # 900+ tests
-ruff check temper_ai/                                  # lint
-python -m scripts.code_quality_check.runner temper_ai   # quality report
+uv sync --frozen --extra dev      # exactly uv.lock: the versions CI and the server use
+uv run pytest tests/              # ~3,500 tests, about 20s at -n 8
+uv run ruff check .               # lint
+uv run mypy temper_ai/ --ignore-missing-imports
 ```
+
+Install with `uv`, not `pip install -e .[dev]`: pip takes the newest of
+everything, which is how CI and the server drifted apart and master stayed
+red for eight days. [docs/testing.md](docs/testing.md) has the whole picture:
+the Postgres tier, the browser tests, the nightly, and where to look when
+something is red.
 
 Docs auto-regenerate on commit when source files change. See [CONTRIBUTING.md](CONTRIBUTING.md).
 

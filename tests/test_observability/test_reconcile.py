@@ -21,7 +21,7 @@ def _run(session, *, status: str, minutes_ago: int, etype: str = "workflow.start
         execution_id=f"run-{status}-{minutes_ago}-{etype}",
         status=status,
         data={},
-        timestamp=dt.datetime.now(dt.UTC).replace(tzinfo=None) - dt.timedelta(minutes=minutes_ago),
+        timestamp=dt.datetime.now(dt.UTC) - dt.timedelta(minutes=minutes_ago),
     )
     session.add(ev)
     return ev.id
@@ -29,7 +29,7 @@ def _run(session, *, status: str, minutes_ago: int, etype: str = "workflow.start
 
 @pytest.fixture
 def now():
-    return dt.datetime.now(dt.UTC).replace(tzinfo=None)
+    return dt.datetime.now(dt.UTC)
 
 
 def test_marks_a_run_left_running_by_a_previous_process(now):

@@ -132,6 +132,43 @@ def cmd_deploy(args) -> int:
     return 0 if out.get("ok") else 1
 
 
+# The rule master is meant to live under. It is written down here, in code, because the
+# emergency switch is "turn it off, push, put it back" \u2014 and "put it back" has to be one
+# command at three in the morning, not a form filled in from memory.
+PROTECTION = {
+    "required_status_checks": {
+        "strict": True,                       # the branch must be up to date with master
+        "contexts": ["lint", "typecheck", "test", "temper/boxes"],
+    },
+    "enforce_admins": True,                   # the owner goes through it too
+    "required_pull_request_reviews": None,    # a pull request needs checks, not a second person
+    "restrictions": None,
+    "allow_force_pushes": False,
+    "allow_deletions": False,
+}
+
+
+def cmd_protect(args) -> int:
+    """Put master's protection back the way it is meant to be (or just show it)."""
+    now = paths.sh("gh", "api", f"repos/{paths.GH_REPO}/branches/master/protection", timeout=60)
+    if args.show:
+        print(now.stdout if now.returncode == 0 else "master is not protected at all.")
+        return 0
+    if now.returncode == 0:
+        backup = paths.STATE / "protection-before.json"
+        backup.write_text(now.stdout, encoding="utf-8")
+        print(f"what it was is saved in {backup}")
+    got = paths.sh("gh", "api", "-X", "PUT", f"repos/{paths.GH_REPO}/branches/master/protection",
+                   "-H", "Accept: application/vnd.github+json", "--input", "-",
+                   stdin=json.dumps(PROTECTION), timeout=60)
+    if got.returncode:
+        print(f"temper-ci: GitHub would not set it: {got.stderr.strip()[:400]}", file=sys.stderr)
+        return 1
+    print("master now requires lint, typecheck, test and temper/boxes, for everyone "
+          "including you, with force pushes and deletions refused.")
+    return 0
+
+
 def _resolve(ref: str) -> str:
     """A branch name, a short sha or a full one — all end up a full sha."""
     stack.fetch()
@@ -173,6 +210,10 @@ def main(argv: list[str] | None = None) -> int:
     d = sub.add_parser("deploy", help="make master live now")
     d.add_argument("commit", nargs="?", default="")
     d.set_defaults(fn=cmd_deploy)
+
+    pr = sub.add_parser("protect", help="put master's protection back as it should be")
+    pr.add_argument("--show", action="store_true", help="only print what it is now")
+    pr.set_defaults(fn=cmd_protect)
 
     args = p.parse_args(argv)
     return args.fn(args)

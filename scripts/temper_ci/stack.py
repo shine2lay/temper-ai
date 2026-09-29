@@ -71,6 +71,11 @@ def fetch(ref: str = "") -> None:
        "+refs/heads/*:refs/heads/*", timeout=300)
     sh("git", "-C", str(m), "fetch", "--quiet", "--prune", "upstream",
        "+refs/heads/*:refs/remotes/github/*", timeout=300)
+    # Pull requests too, so the owner can check one by hand after reading it — including one
+    # from a fork, whose commits are on no branch here. Fetching is only reading; nothing is
+    # ever *checked* from a fork unless a person asks for that exact commit.
+    sh("git", "-C", str(m), "fetch", "--quiet", "--prune", "upstream",
+       "+refs/pull/*/head:refs/remotes/pr/*", timeout=300)
     if ref:
         sh("git", "-C", str(m), "fetch", "--quiet", "upstream", ref, timeout=300)
 
@@ -216,12 +221,44 @@ class Box:
         return self.built
 
     def up(self) -> None:
-        r = self._compose("up", "-d", "--no-build", "server", "worker", timeout=UP_TIMEOUT)
+        """Server first, then the worker.
+
+        Both of them make the tables they need when they find a database
+        without any. The live database has had tables for months, so nobody
+        ever noticed; a box's database is empty every single time, and
+        starting the two together has them both run ``CREATE TABLE events``
+        at the same moment, one of which loses with "relation already
+        exists" and exits. So: the server brings the schema up, and the
+        worker joins a database that is already made.
+        """
+        r = self._compose("up", "-d", "--no-build", "server", timeout=UP_TIMEOUT)
         if r.returncode:
             tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-25:])
             raise BoxError(f"the throwaway stack for {self.sha[:12]} did not come up:\n{tail}")
         self.up_at = time.time()
         self.wait_for_api()
+        r = self._compose("up", "-d", "--no-build", "worker", timeout=UP_TIMEOUT)
+        if r.returncode:
+            tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-25:])
+            raise BoxError(f"the box's worker did not start:\n{tail}")
+        self.wait_for_worker()
+
+    def wait_for_worker(self, seconds: int = 90) -> None:
+        """A worker that exited takes every run with it, so say so early."""
+        deadline = time.time() + seconds
+        state = ""
+        while time.time() < deadline:
+            state = sh("docker", "inspect", "-f", "{{.State.Status}}",
+                       self.container("worker"), timeout=30).stdout.strip()
+            if state == "running":
+                time.sleep(3)   # let it take the queue
+                return
+            if state in ("exited", "dead"):
+                tail = "\n".join(sh("docker", "logs", "--tail", "25",
+                                    self.container("worker"), timeout=30).stderr.splitlines()[-12:])
+                raise BoxError(f"the box's worker stopped ({state}):\n{tail}")
+            time.sleep(2)
+        raise BoxError(f"the box's worker never started (it is {state or 'unknown'})")
 
     def wait_for_api(self, seconds: int = API_TIMEOUT) -> None:
         deadline = time.time() + seconds
@@ -276,7 +313,11 @@ class Box:
     # -- runs ---------------------------------------------------------------
 
     def start_run(self, workflow: str, inputs: dict | None = None) -> str:
-        got = self.post("/api/runs", {"workflow": workflow, "inputs": inputs or {}}, timeout=60)
+        # Every run a box starts is stamped with the box's own name. It costs nothing, and it
+        # is what lets the check prove afterwards that none of its runs ended up in the
+        # owner's live database \u2014 the sharpest evidence that the box kept to itself.
+        marked = {"ci_box": self.project, **(inputs or {})}
+        got = self.post("/api/runs", {"workflow": workflow, "inputs": marked}, timeout=60)
         run_id = got.get("execution_id") or got.get("id") or ""
         if not run_id:
             raise BoxError(f"starting {workflow} gave back no run id: {got}")
@@ -372,16 +413,42 @@ class Box:
             log(f"{self.project}: tearing down had a problem: {err}")
 
 
+LIVE_CONTAINERS = ("temper-ai-server-1", "temper-ai-worker-1", "temper-ai-postgres-1")
+
+
 def live_fingerprint() -> dict[str, str]:
-    """Enough about the live stack to prove a box never touched it."""
+    """Enough about the live stack to prove a box never touched it.
+
+    Only things a box could break, and nothing the live temper does on its
+    own: it is a working server, so rows appear in it while a check runs \u2014
+    a growing row count says the owner's temper is alive, not that the box
+    reached into it. What must not change is the containers themselves (a
+    box that recreated or restarted one would show a new start time) and
+    the volumes their data lives on.
+    """
     out: dict[str, str] = {}
-    for container in ("temper-ai-server-1", "temper-ai-worker-1", "temper-ai-postgres-1"):
-        r = sh("docker", "inspect", "-f", "{{.State.StartedAt}} {{.State.Status}}", container, timeout=30)
+    for container in LIVE_CONTAINERS:
+        r = sh("docker", "inspect", "-f",
+               "{{.State.StartedAt}} {{.State.Status}} {{.Id}}", container, timeout=30)
         out[container] = r.stdout.strip() or "missing"
-    r = sh("docker", "exec", "temper-ai-postgres-1", "psql", "-U", "temper_ai", "-d", "temper_ai",
-           "-tAc", "select count(*) from workflow_runs", timeout=30)
-    out["workflow_runs"] = r.stdout.strip() or "?"
-    r = sh("docker", "exec", "temper-ai-postgres-1", "psql", "-U", "temper_ai", "-d", "temper_ai",
-           "-tAc", "select count(*) from events", timeout=30)
-    out["events"] = r.stdout.strip() or "?"
+    r = sh("docker", "volume", "ls", "--filter", "label=com.docker.compose.project=temper-ai",
+           "--format", "{{.Name}}", timeout=30)
+    out["volumes"] = ",".join(sorted(r.stdout.split())) or "none"
     return out
+
+
+def live_saw_box_runs(project: str) -> str:
+    """Did anything the box started end up in the live database?
+
+    The other half of the isolation proof, and the sharper one: every run a
+    box starts carries its project name in ``inputs``. Finding one of those
+    in the live database would mean the box was talking to the owner's
+    temper. Returns "" when there is nothing, or what it found.
+    """
+    r = sh("docker", "exec", "temper-ai-postgres-1", "psql", "-U", "temper_ai", "-d", "temper_ai",
+           "-tAc", "select count(*) from workflow_runs where inputs::text like '%" + project + "%'",
+           timeout=60)
+    if r.returncode:
+        return f"could not ask the live database: {r.stderr.strip()[:120]}"
+    found = r.stdout.strip()
+    return "" if found in ("0", "") else f"{found} run(s) the box started are in the live database"

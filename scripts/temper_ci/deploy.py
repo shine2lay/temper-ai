@@ -27,7 +27,9 @@ from . import gate, paths, report
 from .paths import DEPLOY_STATE, MAIN_REPO, log, read_json, sh, stamp, write_json
 
 DEPLOY_DIR = Path.home() / ".local/state/temper-deploy"
-LAST_RESTART = DEPLOY_DIR / "last-restart.json"
+# temper-deploy's own record of the last restart it did: whose, when, and how the checks went.
+# temper-ci reads it rather than keeping a second account of the same thing.
+LAST_RESTART = Path.home() / ".local/state/temper-deploy/last-restart.json"
 TEMPER_DEPLOY = Path.home() / ".local/bin/temper-deploy"
 LIVE_API = "http://127.0.0.1:8000"
 RESTART_PATIENCE = 60 * 60          # an hour: a long run may be going
@@ -102,7 +104,12 @@ def live_check(shots: Path) -> dict:
 # -- restarting --------------------------------------------------------------
 
 def ask_restart(sha: str, why: str) -> None:
-    r = _temper_deploy("restart", "--reason", why, sha, timeout=120)
+    """Ask for a restart and say which commit has to be live after it.
+
+    `--commit` is temper-deploy's own check that the restart really carried
+    this change: it refuses if the checkout is not that commit or newer.
+    """
+    r = _temper_deploy("restart", "--reason", why, "--commit", sha, timeout=120)
     log(f"asked temper-deploy to restart for {sha[:12]}: {(r.stdout or r.stderr).strip()[:200]}")
 
 

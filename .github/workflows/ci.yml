@@ -1,10 +1,14 @@
 name: CI
 
+# Every branch of this repository, not just master: a change now lands
+# through a gate that waits for these checks on the exact commit it is
+# about to put on master (see docs/ci-gate.md), so they have to run while
+# the work is still on its own branch. Pull requests keep their own run,
+# which is what a fork's change gets (a fork never has a branch here).
 on:
   pull_request:
-    branches: [master, main]
   push:
-    branches: [master, main]
+    branches: ['**']
 
 # One version list, everywhere. GitHub, the pre-commit hook and the live
 # server all install from uv.lock, so a test that passes here passes there.
@@ -14,8 +18,10 @@ on:
 env:
   UV_FROZEN: "1"
 
+# One run per branch: a second push while the first is still going cancels
+# it, because nobody is waiting on a commit that has already been replaced.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

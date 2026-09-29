@@ -56,11 +56,26 @@ def plain_run(box: Box) -> str:
 def parallel_and_stage(box: Box) -> str:
     run_id = box.start_run("ci_parallel")
     box.wait_for(run_id, ("completed",), seconds=240)
-    agents = box.get(f"/api/workflows/{run_id}/agents")
-    names = sorted({str(a.get("node") or a.get("agent") or "") for a in (agents or [])})
-    if not any("right" in n for n in names):
-        raise BoxError(f"the nested stage left no trace; nodes seen: {names}")
-    return f"ci_parallel {run_id[:8]} completed; nodes: {', '.join(n for n in names if n)}"
+    run = box.get(f"/api/workflows/{run_id}")
+    nodes = {str(n.get("name")): str(n.get("status")) for n in (run.get("nodes") or [])}
+    for wanted in ("start", "left", "right", "join"):
+        if nodes.get(wanted) != "completed":
+            raise BoxError(f"node '{wanted}' is {nodes.get(wanted) or 'missing'}; nodes: {nodes}")
+    # The three agents of the stage in 'right' are named in the workflow; the run has to show
+    # all three, and one of them has to have led — which is what makes it a stage and not
+    # three agents in a row. (Their node_name is the stage's, which the engine may name after
+    # the node or after the stage itself, so go by the agents' own names.)
+    rows = (box.get(f"/api/workflows/{run_id}/agents") or {}).get("agents") or []
+    names = {str(a.get("agent_name") or "") for a in rows}
+    missing = [n for n in ("right_one", "right_two", "right_lead") if n not in names]
+    if missing:
+        raise BoxError(f"the stage in 'right' never ran {', '.join(missing)}; agents: {sorted(names)}")
+    # Six agents in four nodes: one to start, one on the left, three in the stage on the right,
+    # and the join, which only runs when both branches are done.
+    if len(rows) < 6:
+        raise BoxError(f"the run started {len(rows)} agents, not the six the workflow describes")
+    return (f"ci_parallel {run_id[:8]} completed: {', '.join(sorted(nodes))}; "
+            f"{len(rows)} agents, the stage in 'right' among them, and the join saw both branches")
 
 
 def gate_through_api(box: Box) -> str:
@@ -177,7 +192,9 @@ def hooks(box: Box) -> str:
     said.append(f"Linear took the signed test entry ({code})")
 
     # -- Notion: the same shape, its own secret and header.
-    nbody = json.dumps({"type": "page.created", "entity": {"id": "box-page"}}).encode()
+    # Notion names each delivery with an `id`; the hook refuses one without.
+    nbody = json.dumps({"id": f"box-notion-{int(time.time())}", "type": "page.created",
+                        "entity": {"id": "box-page", "type": "page"}}).encode()
     nsig = "sha256=" + hmac.new(b"box-notion-secret", nbody, hashlib.sha256).hexdigest()
     code, _ = box.status_of("POST", "/api/hooks/notion", raw=nbody)
     if code != 401:

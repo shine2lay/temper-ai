@@ -95,10 +95,10 @@ def log(message: str) -> None:
 
 
 def sh(*cmd: str, cwd: Path | None = None, timeout: int = 120,
-       env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+       env: dict[str, str] | None = None, stdin: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(  # noqa: S603 - fixed argv, no shell
         list(cmd), cwd=str(cwd) if cwd else None, capture_output=True, text=True,
-        timeout=timeout, env=env, check=False,
+        timeout=timeout, env=env, check=False, input=stdin,
     )
 
 

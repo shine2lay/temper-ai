@@ -1,0 +1,38 @@
+[Unit]
+# The machine half of the gate in front of master.
+#
+# It watches GitHub for the owner's pushes to this repository's own branches, runs the
+# smoke set in a throwaway temper for each one, and posts the result back as the
+# "temper/boxes" commit status that master's protection waits for. When master itself
+# moves, it restarts temper onto it and checks it live.
+#
+# It is a *user* service on purpose. A self-hosted GitHub runner on a public repository
+# would let a stranger's pull request change the workflow and run their code here; this
+# asks GitHub questions instead of letting GitHub tell it what to run.
+Description=temper-ci: check every pushed commit in a throwaway temper, then take master live
+Documentation=file://%h/temper-ai/docs/ci-gate.md
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The main checkout, never a worktree: worktrees come and go, and this has
+# to survive the one that made it being landed and removed.
+WorkingDirectory=%h/temper-ai
+ExecStart=/usr/bin/python3 %h/temper-ai/scripts/temper-ci watch
+Restart=always
+RestartSec=20
+# gh, uv and temper-deploy all live in ~/.local/bin, which a user unit
+# does not have on its PATH.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+# A check builds images and runs a whole temper; give it room, but never
+# let a wedged one sit there forever.
+TimeoutStopSec=120
+# Building images must not make the machine unpleasant to use meanwhile.
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+[Install]
+WantedBy=default.target

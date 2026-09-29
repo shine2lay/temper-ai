@@ -243,13 +243,19 @@ def check(sha: str, branch: str = "", post: bool = True) -> dict:
         log(f"{sha[:12]}: {verdict['reason']}")
 
     after = stack.live_fingerprint()
-    verdict["isolation"] = ("untouched — same containers, same start times, same row counts"
-                            if before == after else
-                            f"CHANGED, which must never happen: {before} → {after}")
+    leaked = stack.live_saw_box_runs(box.project)
     if before != after:
+        verdict["isolation"] = f"CHANGED, which must never happen: {before} → {after}"
+    elif leaked:
+        verdict["isolation"] = f"the box reached the live temper: {leaked}"
+    else:
+        verdict["isolation"] = ("untouched — the live containers are the same ones, started at the "
+                                "same moment, on the same volumes, and nothing the box ran is in "
+                                "the live database")
+    if before != after or leaked:
         verdict["ok"] = False
         verdict["reason"] = ((verdict.get("reason") or "") +
-                             " The live stack changed while the box ran; that is a failure by itself.")
+                             " The box did not keep to itself; that is a failure by itself.")
 
     verdict["seconds"] = time.time() - started
     verdict["finished_at"] = stamp()

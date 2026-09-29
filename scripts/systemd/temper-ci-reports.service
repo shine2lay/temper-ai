@@ -1,0 +1,14 @@
+[Unit]
+Description=temper-ci: serve the check reports on loopback, so a commit status can link to one
+Documentation=file://%h/temper-ai/docs/ci-gate.md
+
+[Service]
+Type=simple
+WorkingDirectory=%h/temper-ai
+ExecStart=/usr/bin/python3 %h/temper-ai/scripts/temper-ci serve-reports
+Restart=always
+RestartSec=10
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
-# Install (or refresh) temper's user timers.
+# Put temper-ci's two user services in place and start them.
 #
-#   scripts/systemd/install.sh          install and start
-#   scripts/systemd/install.sh --status show what is running
+#   bash scripts/systemd/install.sh
 #
-# User units, not system ones: they run as the owner, read the owner's
-# ~/temper-ai/.env for the Slack token, and need no root.
+# Both run as the owner, not as root: the check needs the owner's docker,
+# the owner's `gh` login (no new key anywhere) and the owner's temper-deploy.
+# Neither unit is ever started by GitHub — GitHub cannot reach this machine,
+# which is the whole reason the check is here and not on a runner.
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-UNITS=(temper-ci-watch.service temper-ci-watch.timer)
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+units="$HOME/.config/systemd/user"
+bin="$HOME/.local/bin"
+mkdir -p "$units" "$bin"
 
-if [ "${1:-}" = "--status" ]; then
-    systemctl --user list-timers --all 'temper-*' --no-pager
-    systemctl --user status temper-ci-watch.service --no-pager -n 20 || true
-    exit 0
-fi
-
-mkdir -p "$DEST"
-for unit in "${UNITS[@]}"; do
-    install -m 0644 "$HERE/$unit" "$DEST/$unit"
-    echo "installed $DEST/$unit"
+for unit in temper-ci.service temper-ci-reports.service; do
+    install -m 0644 "$here/$unit" "$units/$unit"
+    echo "installed $units/$unit"
 done
 
+# The command on the PATH points at the main checkout, so `temper-ci` keeps
+# working after the worktree that added it is landed and removed.
+ln -sfn "$HOME/temper-ai/scripts/temper-ci" "$bin/temper-ci"
+echo "linked $bin/temper-ci -> ~/temper-ai/scripts/temper-ci"
+
 systemctl --user daemon-reload
-systemctl --user enable --now temper-ci-watch.timer
+systemctl --user enable --now temper-ci-reports.service
+systemctl --user enable --now temper-ci.service
+systemctl --user --no-pager status temper-ci.service temper-ci-reports.service | head -20
 echo
-systemctl --user list-timers --all 'temper-ci-watch*' --no-pager
-echo
-echo "Try it:  python3 $HOME/temper-ai/scripts/ci_watch.py --test"
+echo "temper-ci status   — what it is checking, the last deploy, the last good commit"

@@ -55,6 +55,9 @@ with). Anyone else's label, comment or pull request is recorded as
 itself (`skipped: the app's own doing`), so its own comments never start a
 loop.
 
+The list lives in `configs/github/github.yaml`; a change there works from
+the next event, no restart.
+
 **One run per issue or pull request at a time.** A comment while a run for
 that thread is still going starts nothing (recorded as skipped); the comment
 stays in the thread and the next run reads it. This holds across restarts.

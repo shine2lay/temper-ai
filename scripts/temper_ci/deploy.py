@@ -240,10 +240,34 @@ def dm(text: str) -> None:
 
 # -- the whole thing ---------------------------------------------------------
 
+def can_be_gone_back_to(sha: str) -> bool:
+    """Is this a commit the gate itself has passed?
+
+    Going back to a commit from before the gate existed cannot work: its files
+    have no ``docker-compose.ci.yml``, so the throwaway temper cannot be built
+    from it, so the revert fails its own gate and master never moves. The
+    machine then tries again on the next failure and leaves a trail of revert
+    commits nobody can land \u2014 which is what happened here, twice, before this
+    check existed.
+
+    A commit is somewhere to go back to only if the box check has been run on
+    it and passed. Anything else is a guess, and a guess is worse than saying
+    plainly that there is nowhere to go and letting the owner decide.
+    """
+    if not sha:
+        return False
+    verdict = gate.result_for(sha)
+    return bool(verdict and verdict.get("ok"))
+
+
 def deploy(sha: str) -> dict:
     """master is at ``sha``: get it live, and make sure it is well."""
     data = state()
     good = data.get("last_good") or ""
+    if good and not can_be_gone_back_to(good):
+        log(f"{good[:12]} was on record as the good one, but the gate never passed it; "
+            "treating it as nowhere to go back to")
+        good = ""
     asked_at = dt.datetime.now(dt.UTC)
     ask_restart(sha, f"temper-ci: {sha[:12]} landed on master")
     row = wait_for_restart(asked_at)
@@ -263,6 +287,7 @@ def deploy(sha: str) -> dict:
     if out["ok"]:
         data["last_good"] = sha
         data["deployed"] = sha
+        data["revert_outstanding"] = ""
         save(data)
         log(f"{sha[:12]}: live and well")
         return out
@@ -272,9 +297,20 @@ def deploy(sha: str) -> dict:
     save(data)
     if not good or good == sha:
         dm(f"temper: the live check failed after {sha[:12]} ({bad_parts}), and there is no "
-           "earlier good commit on record to go back to. Temper is up but unwell — "
+           "earlier commit the gate has passed to go back to. Temper is up but unwell \u2014 "
            f"`temper-deploy status`, report: {report.url(sha)}")
         out["rolled_back"] = False
+        return out
+
+    # One revert, then hands off. If the last thing this did was revert and that
+    # did not put things right, a second revert is the machine arguing with
+    # itself on master while the owner is not looking.
+    if data.get("revert_outstanding"):
+        dm(f"temper: the live check failed again after {sha[:12]} ({bad_parts}), and a revert "
+           f"({str(data['revert_outstanding'])[:12]}) is already outstanding. Stopping here \u2014 "
+           f"this needs a person. `temper-ci status`, report: {report.url(sha)}")
+        out["rolled_back"] = False
+        out["reason"] = "a revert was already outstanding"
         return out
 
     back = revert_to(good, sha, f"the live check failed: {bad_parts}")
@@ -282,6 +318,8 @@ def deploy(sha: str) -> dict:
     data = state()
     data["last_deploy"] = out
     data["deployed"] = back.get("revert") or sha
+    # Cleared once a deploy is well again; until then, no second revert.
+    data["revert_outstanding"] = "" if back.get("ok") else (back.get("revert") or sha)
     save(data)
     subjects = sh("git", "-C", str(MAIN_REPO), "log", "--format=%h %s", f"{good}..{sha}").stdout.strip()
     dm("temper: the live check failed after the last land, so master has been put back.\n"
@@ -301,10 +339,19 @@ def watch_master() -> dict | None:
     if not sha or data.get("deployed") == sha:
         return None
     if not data.get("last_good"):
-        # First time: whatever is live now is the thing we would go back to.
-        data["last_good"] = sha
+        # First time: what is live now is where we would go back to \u2014 but only if
+        # the gate has passed it. On the day the gate is installed master is a
+        # commit from before it existed, and going back to that is impossible
+        # (no docker-compose.ci.yml in its files), so record nothing and let the
+        # first commit that passes become the one to go back to.
         data["deployed"] = sha
+        if can_be_gone_back_to(sha):
+            data["last_good"] = sha
+            log(f"first look: master is {sha[:12]}, and the gate has passed it, so that is "
+                "where we would go back to")
+        else:
+            log(f"first look: master is {sha[:12]}, which the gate never checked; there is "
+                "nowhere to go back to until a commit passes")
         save(data)
-        log(f"first look: master is {sha[:12]}, and that is the good one to go back to")
         return None
     return deploy(sha)

@@ -56,7 +56,7 @@ def _looks_like_temper(url: str) -> bool:
 
 
 def resolve_host_database_url(env: Mapping[str, str] | None = None,
-                              probe: Callable[[str], bool] = _looks_like_temper,
+                              probe: Callable[[str], bool] | None = None,
                               container: bool | None = None) -> str:
     """The database a command that writes grants should use.
 
@@ -68,6 +68,10 @@ def resolve_host_database_url(env: Mapping[str, str] | None = None,
     """
     env = os.environ if env is None else env
     container = in_container() if container is None else container
+    # Looked up now, not pinned as a default argument: the test suite
+    # replaces this so that nothing under pytest can go looking for a
+    # database a real temper is serving from.
+    probe = _looks_like_temper if probe is None else probe
     explicit = env.get(TEMPER_DATABASE_URL_ENV)
     if container and explicit:
         return explicit
@@ -77,6 +81,11 @@ def resolve_host_database_url(env: Mapping[str, str] | None = None,
     url = compose_url(env)
     try:
         ok = probe(url)
+    except AssertionError:
+        # A failed assertion is a broken caller, not a database that is
+        # down. Reporting it as "can't reach temper's database" would bury
+        # the one message that says what actually went wrong.
+        raise
     except Exception as exc:  # noqa: BLE001 - any connection failure means "not found"
         raise DatabaseNotFound(
             f"Can't reach temper's database at {_redact(url)} ({type(exc).__name__}). "

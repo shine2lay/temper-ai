@@ -85,3 +85,51 @@ def test_connect_commands_refuse_instead_of_using_the_default(monkeypatch, capsy
     monkeypatch.setattr("temper_ai.database.session.init_database", lambda *a: called.append(a))
     assert connect._init_db() is False
     assert called == [] and "nope" in capsys.readouterr().err
+
+
+class TestNoTestReachesALiveDatabase:
+    """The guard in tests/conftest.py, pinned.
+
+    Seven tests of `temper connect` used to pass on the owner's machine and
+    fail on GitHub, for one reason: the command looks for temper's compose
+    Postgres on port 5433, found the live one, and stored its grants there.
+    A test that writes to the database a real temper is serving from is a
+    bug whichever way it ends, so conftest takes the probe away.
+    """
+
+    def test_the_answer_is_this_tests_own_database(self, request):
+        from temper_ai.database import locate
+        from tests.conftest import TEST_DATABASE_URL
+
+        assert locate.resolve_host_database_url() == request.node.stash[TEST_DATABASE_URL]
+
+    def test_looking_for_a_real_one_is_an_error(self):
+        from temper_ai.database import locate
+
+        with pytest.raises(AssertionError, match="nothing under pytest"):
+            locate._looks_like_temper("postgresql://temper_ai:pw@127.0.0.1:5433/temper_ai")
+
+    def test_even_the_real_lookup_cannot_get_past_it(self):
+        """Not just the shortcut: the actual function refuses too.
+
+        The probe used to be pinned as a default argument, so replacing it
+        did nothing and the lookup dialled 5433 regardless. It is looked up
+        at call time now, and this is what says so.
+        """
+        from tests.conftest import REAL_RESOLVE_HOST_DATABASE_URL
+
+        with pytest.raises(AssertionError, match="nothing under pytest"):
+            REAL_RESOLVE_HOST_DATABASE_URL(env={}, container=False)
+
+    def test_the_password_is_not_in_the_complaint(self):
+        from temper_ai.database import locate
+
+        with pytest.raises(AssertionError) as caught:
+            locate._looks_like_temper("postgresql://temper_ai:hunter2@127.0.0.1:5433/temper_ai")
+        assert "hunter2" not in str(caught.value)
+
+    def test_opening_a_second_database_mid_test_is_an_error(self):
+        from temper_ai.database import session as db_session
+
+        with pytest.raises(AssertionError, match="loses the first one's tables"):
+            db_session.init_database("postgresql://someone@elsewhere/other")

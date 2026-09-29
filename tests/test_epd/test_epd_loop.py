@@ -42,6 +42,15 @@ def L(tmp_path, monkeypatch):
     ws = tmp_path / "workspaces"
     monkeypatch.setenv("EPD_WORKSPACES", str(ws))
     monkeypatch.setenv("EPD_REPO", "rollcall")
+    # The driver also knows two paths outside the workspace tree, and they
+    # are real: the owner's checkout, and prod's env file, which
+    # ensure_qa_password() *appends to*. loop_inputs() asks for the QA
+    # login, so on the owner's machine these tests were generating
+    # passwords into the live RollCall's .env; on a runner, where the
+    # directory does not exist, the same call raised FileNotFoundError.
+    # Nothing in a test may reach either.
+    monkeypatch.setenv("EPD_REPO_CHECKOUT", str(tmp_path / "checkout"))
+    monkeypatch.setenv("EPD_PROD_ENV_FILE", str(tmp_path / "prod.env"))
     spec = importlib.util.spec_from_file_location("epd_loop_under_test", DRIVER)
     mod = importlib.util.module_from_spec(spec)
     sys.modules.pop("epd_loop_under_test", None)

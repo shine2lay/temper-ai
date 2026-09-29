@@ -2,9 +2,15 @@
 
 import pytest
 
-from temper_ai.database import init_database, reset_database
+from temper_ai.database import init_database, locate, reset_database
 from temper_ai.tools.executor import ToolExecutor
 from tests.pgtier import database_tier_url, truncate_everything
+
+# The database this test got, so the guard below can hand back the same one.
+TEST_DATABASE_URL = pytest.StashKey[str]()
+
+# Kept before the guard replaces it, so the guard itself can be tested.
+REAL_RESOLVE_HOST_DATABASE_URL = locate.resolve_host_database_url
 
 
 @pytest.fixture(autouse=True)
@@ -26,9 +32,59 @@ def _test_db(request):
         init_database(url)
         truncate_everything()
     else:
-        init_database("sqlite:///:memory:")
+        url = "sqlite:///:memory:"
+        init_database(url)
+    request.node.stash[TEST_DATABASE_URL] = url
     yield
     reset_database()
+
+
+@pytest.fixture(autouse=True)
+def _never_the_live_database(request, monkeypatch):
+    """No test may reach the database a running temper is using.
+
+    ``temper connect`` and friends are typed on the host, where
+    ``TEMPER_DATABASE_URL`` is absent or belongs to another project, so
+    ``resolve_host_database_url`` goes looking for temper's compose Postgres
+    on port 5433 and ``_init_db`` points the global engine at whatever it
+    finds. Under pytest that is a live database: on a developer's machine
+    these tests quietly stored their grants in it and passed, and on GitHub,
+    where nothing answers on 5433, the same tests failed. Seven of them did,
+    which is how this was found.
+
+    So the probe is taken away and the answer is the test's own database.
+    A test that wants to exercise the real lookup passes its own ``probe``
+    and ``env``, which is untouched here.
+    """
+    def refuse(url: str) -> bool:
+        raise AssertionError(
+            f"A test tried to reach {locate._redact(url)} to see whether it is "
+            "temper's database. Tests get the database the _test_db fixture "
+            "made; nothing under pytest may touch a real one."
+        )
+
+    monkeypatch.setattr(locate, "_looks_like_temper", refuse)
+    monkeypatch.setattr(
+        locate,
+        "resolve_host_database_url",
+        lambda *a, **kw: request.node.stash[TEST_DATABASE_URL],
+    )
+
+    # ...and the engine stays the one the fixture opened. Only the host
+    # commands re-import this inside the call, so only they are affected;
+    # opening "sqlite:///:memory:" a second time would hand back a fresh
+    # empty database with none of the test's tables in it.
+    from temper_ai.database import session as db_session
+
+    def keep_the_test_database(url: str, *a, **kw):
+        expected = request.node.stash[TEST_DATABASE_URL]
+        assert url == expected, (
+            f"A test tried to open {url!r} while its own database is "
+            f"{expected!r}. Tests share one database per test; opening "
+            "another mid-test loses the first one's tables."
+        )
+
+    monkeypatch.setattr(db_session, "init_database", keep_the_test_database)
 
 
 @pytest.fixture(autouse=True)

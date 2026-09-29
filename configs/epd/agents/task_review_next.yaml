@@ -70,9 +70,17 @@
 # INSIDE a new unit has none; D5's side-by-side read likeness as success. Now each new file is read
 # beside its sibling and what the two type the same is listed: a block holds it, or it is a D4
 # finding, whatever a standard says.
+#
+# v7 (2026-09-29): a home is a function with its inputs (build.md D1). Fresh on b037's final build
+# (--whole, v5), this reviewer wrote on one surface "Margin cushion = overview margin block cushion_pct
+# (server) ... entry preview rows off account_effect (server)" and never compared the two: "server" was
+# taken for one home, and the two work the figure out from different requirements, the problem that
+# shipped (check C11). It did catch a second home when one side was the browser. Now each place and
+# each surface answer names the function its number comes from and that function's inputs, and one name
+# from two functions is opened on both sides and compared.
 agent:
   name: task_review_next
-  version: 6
+  version: 7
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -169,14 +177,17 @@ agent:
        user-visible words, keys) AND by meaning (the formula and its operands, synonyms). Follow it
        from its home through the API, the types and the mock, the screens, the copy and the glossary,
        and sideways into messages (alerts, chat replies, alarms), the CLI, docs, fixtures and seed.
-       Note twins and which one is the home. Then open `<wt>/.epd/map.md` and compare: a place the
+       Note twins and which one is the home. For a figure the home is the function that works it
+       out: for every place it is shown or sent, write the function its number comes from and what
+       goes into it (which amounts, prices, settings, as of when); "server" or a file is not a home.
+       Then open `<wt>/.epd/map.md` and compare: a place the
        change had to reach that it neither changed nor left for a sound reason is a finding (D2 or
        the standard); a place the coder left with a reason the rules do not support is a finding too.
        Append each thing as `### Map: <thing>` the moment it is mapped (its home, every place, what
        the change did there), and after the comparison `### Map: the coder's map` (what it missed or
        left without a sound reason). Then each surface the change shows something on (a screen, a
        ticket, a message, a reply) as `### Surface: <surface>`: every question it answers there and
-       every answer it gives, older lines included, each with its home.
+       every answer it gives, older lines included, each with its home (the function and its inputs).
     5. DID IT DO WHAT WAS ASKED. Append each rule, test, copy string and criterion as soon as it is
        decided (`- Rule <n>: …`, `- Test <path::name>: …`, `- Copy "<string>": …`,
        `- Criterion <n>: …`).
@@ -199,6 +210,10 @@ agent:
        - One home (D1 and the standards): every figure the change touches is read from its home
          everywhere; nothing new works it out again, in the browser or on a second server path; no new
          twin. Where the change puts a figure beside a twin, check they agree, with a probe if needed.
+         Where one name on your map or your surfaces comes from two functions, open both and compare
+         what goes into them: a second function is a second home (D1) even when both run on the
+         server, and a figure shown for another state ("after this trade") must come from the home
+         given that state. Whose it is to fix is build.md's "Caused by the bet, or there before".
          From your `### Surface:` entries: two figures a user would read as the answer to one
          question on one surface are a finding even when one is labelled as its own ("estimated",
          "by the model"); the fix is one figure from the home, never a label. An older line there

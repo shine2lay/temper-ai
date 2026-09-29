@@ -26,7 +26,11 @@ that states its reason (the plan's "Design vs rules" section, or a quoted owner 
 ## The defaults: D1-D8
 
 - **D1 One home.** Each figure, rule, threshold, word and piece of user-visible copy has one home (a
-  function, a constant, a glossary entry); everything else reads it. Screens show what the server worked out:
+  function, a constant, a glossary entry); everything else reads it. A figure's home is the one function
+  that works it out, not the side or the file it runs in: a second function that works out the same named
+  figure is a second home even when both run on the server, and the two disagree whenever anything goes
+  into them differently (another amount, price, requirement or moment); a figure shown for another state
+  ("after this trade") is the home's, given that state. Screens show what the server worked out:
   the browser formats, it never re-works a figure. A new figure gets one home, listed where the project lists
   its figures. Where twins already exist, the project's source is the home; never add another twin.
   A surface (a screen, a ticket, a message) answers each question once: two figures a user would read as the

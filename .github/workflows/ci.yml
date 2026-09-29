@@ -177,6 +177,7 @@ jobs:
           TEMPER_DATABASE_URL: sqlite:///e2e.db
         run: |
           uv run temper serve --port 8420 > server.log 2>&1 &
+          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8420/api/health && break
             sleep 1
@@ -212,6 +213,15 @@ jobs:
         if: always()
         working-directory: frontend
         run: python3 ../scripts/flaky_report.py playwright-junit.xml --title "Browser tests" --soft
+
+      # The server holds uv's cache lock for as long as it runs, and
+      # setup-uv's own cleanup prunes that cache once the job is over. Left
+      # alive, it made that prune wait five minutes and then exit 2, which
+      # failed a job whose 22 browser tests had all passed. A job should not
+      # walk away from a running server in any case.
+      - name: Stop the server
+        if: always()
+        run: kill "$SERVER_PID" 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: always()

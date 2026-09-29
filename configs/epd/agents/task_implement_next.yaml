@@ -56,9 +56,16 @@
 #   - Copy the shape, not the code. On the new project F2 re-typed F1's hand-written <table> because
 #     F1's standard described the markup in prose; D4 now says what a new thing would re-type from a
 #     sibling becomes a block both use, in the same change.
+#
+# v6 (2026-09-28): pairs. F3 on the new project (v5) made four shared blocks and still hand-wrote the
+# third and fourth <table> (CategoryList, BudgetList) from AccountList's markup, as S13 described it.
+# The map's `## Shapes copied` asked "what the sibling has that this has too", which reads as a list
+# to copy. Now each new file is set beside its sibling before it is written, and what the two would
+# type the same is listed with the block that holds it (used, extended, or made now with the sibling
+# moved onto it).
 agent:
   name: task_implement_next
-  version: 5
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -135,11 +142,13 @@ agent:
          copy that describes it). Follow the data from its home through the API, the types and the
          mock, the screens, the copy and the glossary, and sideways into messages (alerts, chat
          replies, alarms), the CLI, docs, fixtures and seed data;
-       - the SHAPE TO COPY: for each new thing, its closest existing sibling of the same kind. Read it
-         end to end with its tests, and note what it has that yours must have too. Copy its shape, not
-         its code: what you would re-type from it (the same markup, attributes, wiring or steps) becomes
-         a block both use, and the sibling moves onto it (D4), even where a standard describes that
-         markup in prose;
+       - the SHAPE TO COPY: for each new file (and each new component, endpoint, query or helper), its
+         closest existing sibling of the same kind. Read it end to end with its tests, and note what it
+         has that yours must have too. Copy its shape, not its code: before you write the new one, list
+         what the two would type the same apart from the record's own names, fields and words (runs of
+         markup, attributes, class names, wiring, steps, test set-up). Each is held by a block both
+         use: one that exists, one extended, or one made in this change with the sibling moved onto it
+         (D4), even where a standard describes that markup in prose (the standard then names the block);
        - NEW PATTERNS: a new thing with no sibling to copy, or one you would build another way than
          its sibling, is a new pattern (D8): a first of its kind, a second way of doing a job, an
          abstraction, layer, option or generic helper, a dependency, a home-made version of what the
@@ -193,7 +202,9 @@ agent:
           function, component, hook, module, schema, dependency and way of doing a job in the diff
           copies the sibling named under `## Shapes copied`, or is under `## New patterns` with a
           reason that holds, written where D8 says. Take out what you cannot justify: use what exists.
-          Nothing re-types a sibling's code (D4). Read each surface under `## Same surface` as its
+          Nothing re-types a sibling's code (D4): open each new file beside the sibling named for it
+          under `## Shapes copied`; what the two type the same is held by the block named there, and
+          anything else they type alike becomes one now. Read each surface under `## Same surface` as its
           user would: each question has one answer, and no older line there disagrees with the change.
        d. Leftovers: every word, name, key or behaviour the change retired or renamed — `grep -rn` it
           across the whole repo (server, frontend, docs, tests, fixtures, seed). Gone, or left on
@@ -251,7 +262,8 @@ agent:
       - home: <path::symbol>   (new: "new <path::symbol>, shaped like <sibling path::symbol>")
       - <path::symbol> — <what it does with the thing> — change | reuse | leave: <why>
       ## Shapes copied
-      - <new thing> — like <sibling> — <what the sibling has that this has too>
+      - <new file or unit> <- <sibling> — shape: <what the sibling has that this has too> — typed the
+        same: none | <each part, and the block that holds it>
       ## Same surface
       - <surface> — <a question it answers> — <every answer to it there, older lines included, each
         with its home> — after the change: <the one answer, and what you changed to get there>

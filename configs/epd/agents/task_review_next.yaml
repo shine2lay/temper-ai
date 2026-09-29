@@ -62,9 +62,17 @@
 #     describes the markup.
 #   - Fix it here (the owner, 2026-09-28): an older line the change rewrote, or put where a user now
 #     sees it disagree, is a finding, not a follow-up.
+#
+# v6 (2026-09-28): pairs. On the new project F3's reviewer (v5) passed the third and fourth
+# hand-written <table> (CategoryList, BudgetList: AccountList's header, row header, Money and Actions
+# markup again, and no table block) as "Fit D5: ok", while it raised the one-line figure under the
+# same lists as D4 (Finding 8). D4's search asks whether a new unit has a twin, and a run re-typed
+# INSIDE a new unit has none; D5's side-by-side read likeness as success. Now each new file is read
+# beside its sibling and what the two type the same is listed: a block holds it, or it is a D4
+# finding, whatever a standard says.
 agent:
   name: task_review_next
-  version: 5
+  version: 6
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -203,8 +211,14 @@ agent:
          already exists. Copying a sibling's shape is D5; re-typing its code (the same markup,
          attributes, wiring or steps) is a near-twin, even where a standard describes that markup:
          name what is re-typed; the fix is a block both use, with the sibling moved onto it.
-       - Shape (D5): set each new thing beside its closest existing sibling of the same kind: layers,
-         naming, errors, audit, tests.
+       - Pairs (D5, then D4), one per new file and per new component, endpoint, query or helper:
+         name its closest existing sibling of the same kind (the one it was modelled on, or would be),
+         open the two side by side, and list what the new one types the same as the sibling apart from
+         the record's own names, fields and words: runs of markup, attributes, class names, wiring,
+         steps, test set-up. Likeness of shape (layers, naming, errors, audit, tests) is D5 and is
+         right; each part typed the same is D4: held by a block both use (name it), or a finding,
+         whatever a standard says; a standard that describes the part instead of naming its block is
+         in that finding (N5). Append `### Pair: <new> <- <sibling>` for each as it is settled.
        - Clean diff (D6): formatting-only files (`git -C <wt> diff -w --stat <base>...HEAD` against
          `--stat`), dead code (a new symbol with no caller outside tests), debug output, new TODOs,
          detached or stale comments (a new function between a doc comment and its function; a comment
@@ -299,6 +313,8 @@ agent:
       ### Map: <thing>        — its home, every place, what the change did there
       ### Map: the coder's map — places it missed, places it left without a sound reason
       ### Surface: <surface> — each question it answers there, every answer (older lines too), each home
+      ### Pair: <new> <- <sibling> — shape: ok | differs (how); typed the same: none | <part>: held by
+                                   <block> | Finding <n>
       - Rule <n>: honoured | broken — evidence
       - Test <path::name>: weakened or removed (planned? reason) | planned: what it asserts, can it fail
       - Copy "<string>": each branch as planned | differs

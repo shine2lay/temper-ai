@@ -1,4 +1,4 @@
-# "@shine-temper ..." in a comment on any issue or pull request: temper does
+# "@temper-ai-bot ..." in a comment on any issue or pull request: temper does
 # what is asked -- answers a question, makes a change (a pull request), or
 # reviews that pull request (comments only: it never approves, requests
 # changes or merges) -- and replies in that thread. The name to call it by is

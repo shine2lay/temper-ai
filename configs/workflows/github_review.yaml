@@ -7,7 +7,7 @@ workflow:
     hand:
       temper run github_review --input repo=shine2lay/temper-ai --input number=7
 
-    A review someone asks for in a comment ("@shine-temper review this") goes
+    A review someone asks for in a comment ("@temper-ai-bot review this") goes
     through github_work, which uses the same reviewer.
   inputs:
     repo:

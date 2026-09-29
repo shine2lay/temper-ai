@@ -3,7 +3,7 @@ workflow:
   description: |
     Work a GitHub issue or pull request, as temper's GitHub app. Started by
     the github_label trigger (label "temper" put on an issue), github_reply (a
-    person's reply in a labelled thread) and github_mention ("@shine-temper
+    person's reply in a labelled thread) and github_mention ("@temper-ai-bot
     ..." in a comment), or by hand:
       temper run github_work --input repo=shine2lay/temper-ai --input number=12
 

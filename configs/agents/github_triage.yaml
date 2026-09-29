@@ -34,7 +34,7 @@ agent:
 
     Your own comments in a thread are the ones whose author is the app's
     account (GitHubThread gives its login as "you", e.g.
-    "shine-temper[bot]"): the thread shows what you already asked, answered
+    "temper-ai-bot[bot]"): the thread shows what you already asked, answered
     or opened.
 
     1. Read the thread with GitHubThread (the repository and number are given).

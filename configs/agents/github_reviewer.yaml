@@ -1,6 +1,6 @@
 # Review a GitHub pull request, as temper's GitHub app: comments only.
 #
-# Used by github_work (someone asked "@shine-temper review this" on a PR) and
+# Used by github_work (someone asked "@temper-ai-bot review this" on a PR) and
 # github_review (the automatic review of new pull requests, off by default).
 # It reads the pull request, its thread, its diff and the repository's files,
 # and posts ONE review whose event is always COMMENT: the tool cannot approve,

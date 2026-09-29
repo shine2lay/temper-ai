@@ -46,7 +46,7 @@ def labeled(sender="shine2lay", number=12, label="temper"):
     }
 
 
-def commented(body="@shine-temper what does this do?", sender="shine2lay", number=12, labels=(),
+def commented(body="@temper-ai-bot what does this do?", sender="shine2lay", number=12, labels=(),
               on_pull=False, comment_id=555):
     issue = {"number": number, "title": "A thing", "body": "", "state": "open", "user": {"login": "shine2lay"},
              "labels": [{"name": n} for n in labels]}
@@ -235,9 +235,9 @@ class TestWhatStartsWork:
         assert record["outcome"].startswith("skipped: stranger may not start temper")
 
     def test_the_app_s_own_comment_starts_nothing(self, started):
-        record = dispatch(commented("@shine-temper I opened a PR", sender="shine-temper[bot]", labels=("temper",)))
+        record = dispatch(commented("@temper-ai-bot I opened a PR", sender="temper-ai-bot[bot]", labels=("temper",)))
         assert started == []
-        assert record["outcome"] == "skipped: the app's own doing (shine-temper[bot])"
+        assert record["outcome"] == "skipped: the app's own doing (temper-ai-bot[bot])"
 
     def test_an_at_mention_on_an_issue_starts_github_work(self, started):
         dispatch(commented())
@@ -249,7 +249,7 @@ class TestWhatStartsWork:
     def test_an_at_mention_on_a_pull_request_names_its_branches(self, started):
         pulls = FakePulls()
         github_app.set_app(pulls)
-        dispatch(commented("@shine-temper review this", number=7, on_pull=True))
+        dispatch(commented("@temper-ai-bot review this", number=7, on_pull=True))
         [(workflow, inputs)] = started
         assert workflow == "github_work"
         assert (inputs["kind"], inputs["head_ref"], inputs["head_repo"], inputs["base_ref"]) == \
@@ -261,7 +261,7 @@ class TestWhatStartsWork:
         assert [(w, i["why"]) for w, i in started] == [("github_work", "reply")]
 
     def test_a_reply_that_also_calls_on_the_app_starts_one_run(self, started):
-        record = dispatch(commented("@shine-temper use the second option", labels=("temper",)))
+        record = dispatch(commented("@temper-ai-bot use the second option", labels=("temper",)))
         assert len(started) == 1
         assert record["outcome"].startswith("started github_work")
 

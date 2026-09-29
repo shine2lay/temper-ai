@@ -215,9 +215,9 @@ class TestMentions:
 class TestTheSettings:
     def test_the_shipped_settings(self):
         settings = load_settings(CONFIGS)
-        assert settings.app == "shine-temper"
+        assert settings.app == "temper-ai-bot"
         assert settings.allowed_authors == ("shine2lay",)
-        assert settings.bot_login == "shine-temper[bot]"
+        assert settings.bot_login == "temper-ai-bot[bot]"
 
     def test_a_local_file_wins(self, tmp_path):
         (tmp_path / "github" / "local").mkdir(parents=True)

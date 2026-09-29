@@ -1,5 +1,5 @@
 # Automatic review of new pull requests -- OFF. Pull requests are reviewed
-# when someone asks: "@shine-temper review this" on the PR (github_mention).
+# when someone asks: "@temper-ai-bot review this" on the PR (github_mention).
 #
 # Turned on, a pull request opened (or marked ready for review) by an allowed
 # author gets one review from the app: comments only, never approve, never

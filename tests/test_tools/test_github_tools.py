@@ -50,8 +50,8 @@ class FakeGitHub:
         self.calls: list[tuple[str, str, str, dict | None]] = []  # method, path, authorization, body
         self.refuse_line_comments = False
         self.comments = [
-            {"id": 1, "user": {"login": "shine2lay"}, "body": "@shine-temper what is this?", "created_at": "t1"},
-            {"id": 2, "user": {"login": "shine-temper[bot]"}, "body": "It is a page.", "created_at": "t2"},
+            {"id": 1, "user": {"login": "shine2lay"}, "body": "@temper-ai-bot what is this?", "created_at": "t1"},
+            {"id": 2, "user": {"login": "temper-ai-bot[bot]"}, "body": "It is a page.", "created_at": "t2"},
         ]
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -178,8 +178,8 @@ class TestReading:
         result = GitHubThread().execute(repo=REPO, number=12)
         assert result.success, result.error
         thread = result.metadata
-        assert (thread["you"], thread["kind"], thread["labels"]) == ("shine-temper[bot]", "issue", ["temper"])
-        assert [(c["id"], c["author"]) for c in thread["comments"]] == [(1, "shine2lay"), (2, "shine-temper[bot]")]
+        assert (thread["you"], thread["kind"], thread["labels"]) == ("temper-ai-bot[bot]", "issue", ["temper"])
+        assert [(c["id"], c["author"]) for c in thread["comments"]] == [(1, "shine2lay"), (2, "temper-ai-bot[bot]")]
         assert gh.posted() == []
 
     def test_a_pull_request_s_thread_has_its_branches(self, gh):

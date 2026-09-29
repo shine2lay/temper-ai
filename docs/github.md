@@ -1,9 +1,9 @@
 # GitHub — start temper from an issue or pull request
 
 Temper works GitHub issues and pull requests as its own GitHub app,
-**shine-temper**, and answers in the same thread. Everything it posts from
+**temper-ai-bot**, and answers in the same thread. Everything it posts from
 GitHub work — comments, reviews, pull requests — shows as
-`shine-temper[bot]`, never as a person. (Linear and Notion work, and builds,
+`temper-ai-bot[bot]`, never as a person. (Linear and Notion work, and builds,
 still sign with `TEMPER_GITHUB_TOKEN`, as before.)
 
 ```
@@ -16,9 +16,9 @@ GitHub ──webhook──▶ https://hooks.<zone>/api/hooks/github ──▶ tr
 | You do | Rule | Temper |
 |---|---|---|
 | Put the label **temper** on an issue | `github_label` | Reads the issue. Unclear: asks in the thread. Clear: makes the change and opens a pull request, then comments its link. |
-| Write **@shine-temper …** in a comment on an issue or pull request | `github_mention` | Does what is asked: answers a question, makes a change (a pull request), or reviews that pull request. Replies in that thread. |
+| Write **@temper-ai-bot …** in a comment on an issue or pull request | `github_mention` | Does what is asked: answers a question, makes a change (a pull request), or reviews that pull request. Replies in that thread. |
 | Reply in the thread of an issue labelled **temper** | `github_reply` | Carries the work on: an answer to its question starts the change, a change request updates the pull request, a question gets an answer, a comment that asks nothing of it gets nothing. |
-| Open a pull request | `github_pr_review` — **off** | Nothing, until turned on (see [Settings](#settings)). Ask for a review with "@shine-temper review this" instead. |
+| Open a pull request | `github_pr_review` — **off** | Nothing, until turned on (see [Settings](#settings)). Ask for a review with "@temper-ai-bot review this" instead. |
 
 How a run goes (`configs/workflows/github_work.yaml`):
 
@@ -84,8 +84,8 @@ restart.
 
 ```yaml
 github:
-  app: shine-temper          # the app's name on GitHub: "@shine-temper" calls on it,
-                             # and "shine-temper[bot]" is the app itself
+  app: temper-ai-bot         # the app's name on GitHub: "@temper-ai-bot" calls on it,
+                             # and "temper-ai-bot[bot]" is the app itself
   allowed_authors:           # who may start temper
     - shine2lay
 ```
@@ -155,7 +155,7 @@ with the other keys.
    GitHub put in the address (it works once, within an hour).
 
 2. **Install it** on the repositories it may work on (the link is on the
-   page after Create: `https://github.com/apps/shine-temper/installations/new`).
+   page after Create: `https://github.com/apps/temper-ai-bot/installations/new`).
    Installing it on more later needs no change in temper.
 
 3. **Open the public path**, next to Linear's and Notion's:
@@ -171,7 +171,7 @@ with the other keys.
    as GitHub knows it, where it is installed, a token for each installation,
    the webhook secret, the settings and which rules are on.
 
-If the app's name is not `shine-temper` (say it was taken), set `app:` in
+If the app's name is not `temper-ai-bot` (say it was taken), set `app:` in
 `configs/github/github.yaml` to its real name: that is the word people
 @mention and how temper knows its own doings.
 

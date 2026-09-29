@@ -93,9 +93,14 @@
 # beside `date.today`), a tail of its own. The owner chose "only what the rule names": N7 now says a
 # check refuses the things its standard names, in every spelling its tool sees; another way to do the
 # job is another thing, a standards proposal, not a finding unless the diff writes it.
+#
+# v8 (2026-09-29): one thing per word (build.md D3, the owner). F4's reviewer (v6) saw "Total" under
+# "Spending" mean the budgeted categories' spending on the budget screen and all spending on the reports
+# screen, and passed it: D3 said one word per thing, not the reverse. Now two figures worked out
+# differently never share a name, in code, the API or on screen.
 agent:
   name: task_review_next
-  version: 7
+  version: 8
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -238,7 +243,11 @@ agent:
          change's to fix (build.md, "Fix it here").
        - The whole family (D2): from your map.
        - One word (D3): the glossary's word wherever the change shows or sends the thing. Grep every
-         word and name the change retired or renamed across the whole repository.
+         word and name the change retired or renamed across the whole repository. Then the reverse,
+         one thing per word: for each name the change gives a figure (in code, the API or on screen),
+         grep it across the repository and open what else carries it. Two figures worked out
+         differently under one name are a finding even on different screens; the fix is a name each,
+         in the glossary, never a label.
        - Reuse (D4): for each new function, component or query, search by what it does for one that
          already exists. Copying a sibling's shape is D5; re-typing its code (the same markup,
          attributes, wiring or steps) is a near-twin, even where a standard describes that markup:

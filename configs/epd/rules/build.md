@@ -40,8 +40,11 @@ that states its reason (the plan's "Design vs rules" section, or a quoted owner 
   every place it lives follows: the server, every screen, every message sent (alerts, chat replies, emails),
   the CLI, the API types and mocks, the glossary and copy, docs, tests, fixtures and seed data. Places
   outside the planned files are still part of the job.
-- **D3 One word per thing.** Use the project's word (its glossary); the same thing has the same name on every
-  surface, in code and in copy; no new synonyms; a word the project retired stays retired.
+- **D3 One word per thing, one thing per word.** Use the project's word (its glossary); the same thing has the
+  same name on every surface, in code and in copy; no new synonyms; a word the project retired stays retired.
+  The reverse holds too: two things that differ never share a name. Two figures worked out differently (other
+  inputs, other rows, another rule) carry different names in the code, the API and on screen, even on
+  different screens, and the glossary says what each counts; a label or a footnote does not make one name two.
 - **D4 Reuse before writing.** Before writing a helper, component, query or pattern, search for one that
   already does the job, by name AND by what it does (the formula, the operands, the output). Extend it rather
   than write its near-twin. Copy a sibling's shape (D5), not its code: where a new thing would re-type what a

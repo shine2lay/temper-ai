@@ -48,8 +48,9 @@ foundation must take it without a rewrite. Build only what this request needs.
   it (D4). Nor does it re-type what an earlier screen wrote by hand: the second user is the moment the shared
   part becomes a block, in that change, with the first screen moved onto it, and the standard names the
   block instead of describing the markup.
-- **N6 Words.** A glossary: one word per thing, the same in the database, the API, the types, the screens and
-  the copy (D3). The brief's words win; a word the brief lacks is chosen once and added.
+- **N6 Words.** A glossary: one word per thing and one thing per word, the same in the database, the API, the
+  types, the screens and the copy (D3). The brief's words win; a word the brief lacks is chosen once and added;
+  each figure's entry says what it counts.
 - **N7 Checks.** Each app has one command per check: install, lint, format check, type check, test, build.
   CI runs every one on every pull request (the workflow the task names). Whatever a tool can enforce
   (formatting, import order, unused code, types) is enforced by a check, not by a line of prose. The checks

@@ -110,6 +110,18 @@ _EFFORT_AS_BUDGET: dict[str, int | None] = {
     "low": None, "medium": 4_000, "high": 8_000, "max": 16_000,
 }
 
+# Thinking a model does but will not show is thinking nobody can check. An
+# effort setting alone buys the first: measured 2026-09-28 on opus-5-5, `effort:
+# low` spent 134 output tokens on an 11-character answer and returned a single
+# empty thinking block. Asking for a summary as well is what makes those tokens
+# readable — 273 characters of thinking on the same prompt.
+_VISIBLE_THINKING = {"type": "adaptive", "display": "summarized"}
+
+# Models that refuse the `thinking` parameter. Learned from the first refusal
+# rather than listed: which knobs a generation accepts has already flipped once,
+# and a request killed by a knob is worse than a request without it.
+_NO_VISIBLE_THINKING: set[str] = set()
+
 _thinking_warned: set[str] = set()
 
 
@@ -135,6 +147,17 @@ _no_temperature_lock = threading.Lock()
 def _temperature_rejected(exc: Exception) -> bool:
     status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
     return status == 400 and "temperature" in str(exc).lower() and "deprecated" in str(exc).lower()
+
+
+def _thinking_rejected(exc: Exception) -> bool:
+    """Whether the request was refused *for asking to see the thinking*.
+
+    Narrow on purpose: only a 400 that names the parameter counts, so a limit,
+    an overload or a bad prompt is still raised rather than quietly retried
+    with one knob fewer.
+    """
+    status = getattr(exc, "status_code", None) or getattr(getattr(exc, "response", None), "status_code", None)
+    return status == 400 and "thinking" in str(exc).lower()
 
 
 def resolve_credential(api_key: str | None = None) -> tuple[str | None, AuthMode]:
@@ -224,6 +247,15 @@ def _apply_thinking_control(
                 model, budget, effort,
             )
         create_kwargs["output_config"] = {"effort": effort}
+        # Ask for the thinking back, not only for it to happen. Without this the
+        # blocks arrive empty and the run page has an agent that thought for
+        # thirty seconds with nothing to show for it.
+        if model not in _NO_VISIBLE_THINKING:
+            create_kwargs["thinking"] = dict(_VISIBLE_THINKING)
+            # Sampling is the model's own business while it reasons, and the
+            # API refuses any temperature but 1 once thinking is on. An agent
+            # config that set 0.7 did not mean to forbid thinking.
+            create_kwargs.pop("temperature", None)
         return
 
     # Legacy: a fixed budget is the only control, and thinking is opt-in.
@@ -339,6 +371,12 @@ class AnthropicLLM(BaseLLM):
     """Provider for Anthropic Claude models."""
 
     PROVIDER_NAME = "anthropic"
+    # Every level lands: a model with an effort dial is sent it as it stands,
+    # and one without is sent the matching thinking budget instead
+    # (_apply_thinking_control). `xhigh` is the CLI's own step and has no API
+    # equivalent, so it is not claimed here — asking for it names itself in
+    # `temper check` rather than arriving as something else.
+    HONOURS_EFFORT = ("low", "medium", "high", "max")
 
     def __init__(
         self,
@@ -490,14 +528,29 @@ class AnthropicLLM(BaseLLM):
 
         Newer models refuse `temperature` outright (400, not a warning), which
         killed the request rather than the parameter. The first refusal per
-        model teaches the process to stop sending it.
+        model teaches the process to stop sending it. Asking to see the thinking
+        is treated the same way: a model that refuses the `thinking` parameter
+        still answers without it, and losing the answer to keep the knob would
+        be the worse trade.
         """
         try:
             return self._call_with_pool(kwargs, run, model=create_kwargs.get("model"))
         except Exception as exc:  # noqa: BLE001 - narrowed immediately
+            model = create_kwargs.get("model", "")
+            if "thinking" in create_kwargs and _thinking_rejected(exc):
+                with _no_temperature_lock:
+                    first = model not in _NO_VISIBLE_THINKING
+                    _NO_VISIBLE_THINKING.add(model)
+                if first:
+                    logger.warning(
+                        "Anthropic: %s refuses the thinking parameter (%s); asking for "
+                        "effort alone from here on \u2014 its thinking will not be readable",
+                        model, str(exc)[:160],
+                    )
+                create_kwargs.pop("thinking")
+                return self._call_with_pool(kwargs, run, model=model)
             if "temperature" not in create_kwargs or not _temperature_rejected(exc):
                 raise
-            model = create_kwargs["model"]
             with _no_temperature_lock:
                 first = model not in _NO_TEMPERATURE
                 _NO_TEMPERATURE.add(model)
@@ -604,10 +657,28 @@ class AnthropicLLM(BaseLLM):
 
         def run(client):
             with client.messages.stream(**create_kwargs) as stream:
-                for text in stream.text_stream:
-                    content_parts.append(text)
-                    if on_chunk:
-                        on_chunk(LLMStreamChunk(content=text, done=False))
+                # The whole event stream rather than `stream.text_stream`: that
+                # helper yields the answer only, so thinking arrived nowhere and
+                # the live panel had nothing to show while the model reasoned.
+                # Thinking goes out as its own kind of chunk, so the page can
+                # keep it apart from the answer.
+                for event in stream:
+                    if getattr(event, "type", None) != "content_block_delta":
+                        continue
+                    delta = getattr(event, "delta", None)
+                    kind = getattr(delta, "type", None)
+                    if kind == "text_delta":
+                        text = getattr(delta, "text", "") or ""
+                        if not text:
+                            continue
+                        content_parts.append(text)
+                        if on_chunk:
+                            on_chunk(LLMStreamChunk(content=text, done=False))
+                    elif kind == "thinking_delta":
+                        text = getattr(delta, "thinking", "") or ""
+                        if text and on_chunk:
+                            on_chunk(LLMStreamChunk(content=text, done=False,
+                                                    chunk_type="thinking"))
                 return stream.get_final_message()
 
         # A rate limit surfaces on entering the stream, before any chunk; if it
@@ -745,11 +816,21 @@ def _convert_tools(tools: list[dict]) -> list[dict]:
 def _parse_response(response: Any, model: str, latency_ms: int | None = None) -> LLMResponse:
     """Parse Anthropic response to standard LLMResponse."""
     content_text = ""
+    thinking_parts: list[str] = []
     tool_calls = []
 
     for block in response.content:
         if block.type == "text":
             content_text += block.text
+        # Thinking is a block of its own, never part of the answer, and it is
+        # kept that way all the way to the page: read back into `reasoning`, it
+        # is shown as thinking rather than mixed into what the agent said.
+        # Both paths land here, so a run records the same thing whether it was
+        # streamed or not. `redacted_thinking` carries no readable text.
+        elif block.type == "thinking":
+            text = getattr(block, "thinking", "") or ""
+            if text:
+                thinking_parts.append(text)
         elif block.type == "tool_use":
             tool_calls.append({
                 "id": block.id,
@@ -782,4 +863,5 @@ def _parse_response(response: Any, model: str, latency_ms: int | None = None) ->
         latency_ms=latency_ms,
         finish_reason="tool_calls" if tool_calls else response.stop_reason or "stop",
         tool_calls=tool_calls if tool_calls else None,
+        reasoning="\n\n".join(thinking_parts) or None,
     )

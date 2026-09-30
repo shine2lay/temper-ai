@@ -35,6 +35,25 @@ person:
 * **nothing saved to pick up from** -- no checkpoints, so there is no "where it
   stopped" to go back to.
 
+Where the cut-off runs come from
+--------------------------------
+
+Two places, because a run dies differently depending on where it runs:
+
+* **In temper itself** (``inprocess``): nobody can close its event, so start-up
+  does it -- ``reconcile_and_report`` marks it ``interrupted`` and hands the
+  list over.
+* **In its own box** (``external``, which is how temper runs live): the run
+  outlives a restart of the server, so start-up must *not* touch it. When the
+  box died too -- the machine went down, docker restarted, the container was
+  killed -- the worker's reaper notices within seconds of coming back and ends
+  the run itself (``spawner/reaper.py`` -> ``settle_run_event``).
+
+So the pick-up waits a little (:data:`SETTLE_S`) for the reaper to finish its
+first sweep, and then looks for both: what start-up marked, and what was ended
+as lost *during this boot*. A run whose box died an hour ago while temper kept
+running was already dead and seen; it is not this restart's business.
+
 One at a time
 -------------
 
@@ -52,7 +71,9 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Any
 
+from temper_ai.observability.reconcile import INTERRUPTED
 from temper_ai.shared.clock import as_utc, utcnow
 
 logger = logging.getLogger(__name__)
@@ -67,6 +88,10 @@ MAX_PICKUPS = 2
 
 # Between two resumes, so a boot does not start every lost run at once.
 GAP_S = 5.0
+
+# How long to let the dust settle before looking. Long enough for the worker to
+# come up and its reaper (every 5s) to end the runs whose boxes died with it.
+SETTLE_S = float(os.environ.get("TEMPER_PICK_UP_SETTLE_S", "60") or 60)
 
 SWITCH_ENV = "TEMPER_PICK_UP_INTERRUPTED"
 OFF = ("0", "false", "off", "no")
@@ -256,6 +281,75 @@ def _hours(window: timedelta) -> str:
 # ─── what is known about each run ─────────────────────────────────────────
 
 
+def cut_off_by_this_stop(
+    marked: Iterable[Mapping[str, object]], *, since: datetime | None = None,
+) -> list[dict[str, object]]:
+    """Every run this restart found dead: what start-up marked, and what was reaped.
+
+    ``marked`` is what :func:`reconcile_and_report` returns -- runs temper was
+    running itself. The others ran in their own boxes: their boxes died with the
+    stack and the worker's reaper has just ended them, which is what ``since``
+    separates from the ones that died during the last uptime and were seen then.
+
+    One entry per run, in the shape :func:`candidates_from` reads.
+    """
+    entries = {str(m.get("execution_id") or ""): dict(m) for m in marked}
+    entries.pop("", None)
+    for run in _reaped_since(since or utcnow()):
+        entries.setdefault(str(run["execution_id"]), run)
+    return list(entries.values())
+
+
+def _reaped_since(since: datetime) -> list[dict[str, object]]:
+    """Runs whose box was found dead after ``since``, with their open event ended.
+
+    The reaper writes ``orphaned`` on the row and ``interrupted`` on the event;
+    both are read here, so a run that ended any other way cannot slip in.
+    """
+    out: list[dict[str, object]] = []
+    try:
+        from sqlmodel import select
+
+        from temper_ai.database import get_session
+        from temper_ai.observability.models import Event
+        from temper_ai.runner.models import WorkflowRun
+
+        with get_session() as session:
+            rows: Any = session.exec(
+                select(WorkflowRun.execution_id, WorkflowRun.workflow_name,  # type: ignore[call-overload]
+                       WorkflowRun.completed_at)
+                .where(WorkflowRun.status == "orphaned")
+                .where(WorkflowRun.completed_at.is_not(None))  # type: ignore[union-attr]
+            ).all()
+            fresh = {
+                str(execution_id): name
+                for execution_id, name, completed in rows
+                if (as_utc(completed) or since) >= since
+            }
+            if not fresh:
+                return []
+            events: Any = session.exec(
+                select(Event).where(
+                    Event.type == "workflow.started",
+                    Event.status == INTERRUPTED,
+                    Event.execution_id.in_(list(fresh)),  # type: ignore[union-attr]
+                )
+            ).all()
+            for event in events:
+                data = dict(event.data or {})
+                out.append({
+                    "execution_id": event.execution_id,
+                    "event_id": event.id,
+                    "workflow_name": str(data.get("name") or fresh.get(event.execution_id) or ""),
+                    # A box run was running; the reaper does not end a queued one.
+                    "status_before": "running",
+                    "timestamp": as_utc(event.timestamp),
+                })
+    except Exception:
+        logger.warning("Could not look for runs whose box died", exc_info=True)
+    return out
+
+
 def candidates_from(marked: Iterable[Mapping[str, object]]) -> list[Candidate]:
     """Gather what the rule needs about each run the marking just buried.
 
@@ -408,11 +502,17 @@ def pick_up_interrupted(
     *,
     now: datetime | None = None,
     gap_s: float = GAP_S,
+    settle_s: float | None = None,
+    since: datetime | None = None,
     resume: Callable[[str], None] | None = None,
     tell: Callable[[str], bool] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> Picks:
     """Pick up what should be picked up, one at a time, and say what happened.
+
+    Waits ``settle_s`` first: the runs that died in their own boxes are ended by
+    the worker's reaper a few seconds after it comes back, and picking up before
+    that would miss every one of them.
 
     Never raises: a start-up must finish even when none of this works.
     """
@@ -421,7 +521,11 @@ def pick_up_interrupted(
         if not switched_on():
             logger.info("Picking interrupted runs up again is off (%s)", SWITCH_ENV)
             return picks
-        picks = choose(candidates_from(marked), now=now)
+        started = since or utcnow()
+        settle = SETTLE_S if settle_s is None else settle_s
+        if settle > 0:
+            sleep(settle)
+        picks = choose(candidates_from(cut_off_by_this_stop(marked, since=started)), now=now)
         if not picks:
             return picks
 
@@ -493,13 +597,22 @@ def _tell_owner(text: str) -> bool:
     return tell_owner(text)
 
 
-def pick_up_in_the_background(marked: Iterable[Mapping[str, object]]) -> threading.Thread | None:
-    """Start the pick-up on a thread of its own: start-up does not wait for it."""
+def pick_up_in_the_background(
+    marked: Iterable[Mapping[str, object]], *, since: datetime | None = None,
+) -> threading.Thread | None:
+    """Start the pick-up on a thread of its own: start-up does not wait for it.
+
+    Started even when start-up marked nothing: on a live temper the lost runs are
+    the ones whose boxes died, and those are ended a little later by the reaper.
+    ``since`` is the moment this process came back -- runs ended before it were
+    already dead during the last uptime, and are not this restart's business.
+    """
     entries = [dict(m) for m in marked]
-    if not entries or not switched_on():
+    if not switched_on():
         return None
     thread = threading.Thread(
-        target=pick_up_interrupted, args=(entries,), name="pick-up-interrupted", daemon=True,
+        target=pick_up_interrupted, args=(entries,), kwargs={"since": since or utcnow()},
+        name="pick-up-interrupted", daemon=True,
     )
     thread.start()
     return thread

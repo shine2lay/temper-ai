@@ -391,16 +391,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("The keeper of clean-up deadlines failed to start: %s", e)
 
-    # The runs this start-up just buried: the ones that can safely come back are
-    # picked up where they stopped, one at a time, on a thread of their own, and
-    # the owner gets one message about it. Last, so a resumed run finds the
-    # configs, the tools, the box watcher and the clean-up deadlines already up.
-    if interrupted:
-        try:
-            from temper_ai.runner.pickup import pick_up_in_the_background
-            pick_up_in_the_background(interrupted)
-        except Exception as e:
-            logger.warning("Could not start picking interrupted runs back up: %s", e)
+    # The runs this stop cut off: the ones that can safely come back are picked
+    # up where they stopped, one at a time, on a thread of their own, and the
+    # owner gets one message about it. Last, so a resumed run finds the configs,
+    # the tools, the box watcher and the clean-up deadlines already up. The
+    # thread waits a minute first: a run in its own box is ended by the worker's
+    # reaper shortly after it comes back, not by the marking above.
+    try:
+        from temper_ai.runner.pickup import pick_up_in_the_background
+        pick_up_in_the_background(interrupted, since=_PROCESS_START)
+    except Exception as e:
+        logger.warning("Could not start picking interrupted runs back up: %s", e)
 
     logger.info("Temper AI server ready")
 

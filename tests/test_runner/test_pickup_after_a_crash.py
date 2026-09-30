@@ -195,7 +195,10 @@ class TestPickingThemUp:
 
     @pytest.fixture(autouse=True)
     def _facts(self, monkeypatch):
-        """Stand in for the database reads; the rule itself is what is under test here."""
+        """Stand in for the database reads; the acting itself is what is under test here."""
+        monkeypatch.setattr(pickup, "SETTLE_S", 0.0)
+        monkeypatch.setattr(pickup, "cut_off_by_this_stop",
+                            lambda marked, since=None: list(marked))
         monkeypatch.setattr(pickup, "candidates_from",
                             lambda marked: [_candidate(str(m["execution_id"])) for m in marked])
         monkeypatch.setattr(pickup, "_stamp_attempt", lambda event_id, attempt: None)
@@ -296,6 +299,9 @@ class TestTheWayItStartsThemAgain:
 
     def test_the_thread_does_the_work_and_start_up_does_not_wait(self, monkeypatch):
         started = []
+        monkeypatch.setattr(pickup, "SETTLE_S", 0.0)
+        monkeypatch.setattr(pickup, "cut_off_by_this_stop",
+                            lambda marked, since=None: list(marked))
         monkeypatch.setattr(pickup, "candidates_from",
                             lambda marked: [_candidate("run-thread")])
         monkeypatch.setattr(pickup, "_stamp_attempt", lambda event_id, attempt: None)
@@ -308,8 +314,33 @@ class TestTheWayItStartsThemAgain:
         thread.join(timeout=10)
         assert started == ["run-thread"]
 
-    def test_nothing_to_pick_up_starts_no_thread(self):
-        assert pickup.pick_up_in_the_background([]) is None
+    def test_it_still_looks_when_start_up_marked_nothing(self, monkeypatch):
+        """Live, the lost runs are the ones whose boxes died -- the marking sees none of them."""
+        looked = []
+        monkeypatch.setattr(pickup, "SETTLE_S", 0.0)
+        monkeypatch.setattr(pickup, "cut_off_by_this_stop",
+                            lambda marked, since=None: looked.append(list(marked)) or [])
+
+        thread = pickup.pick_up_in_the_background([])
+
+        assert thread is not None
+        thread.join(timeout=10)
+        assert looked == [[]]
+
+    def test_switched_off_starts_no_thread(self, monkeypatch):
+        monkeypatch.setenv(pickup.SWITCH_ENV, "0")
+
+        assert pickup.pick_up_in_the_background([{"execution_id": "run-off"}]) is None
+
+    def test_it_waits_for_the_dust_to_settle_before_looking(self, monkeypatch):
+        """The reaper ends the runs whose boxes died; looking first would see none of them."""
+        order = []
+        monkeypatch.setattr(pickup, "cut_off_by_this_stop",
+                            lambda marked, since=None: order.append("looked") or [])
+
+        pickup.pick_up_interrupted([], settle_s=42, sleep=lambda s: order.append(f"waited {s}"))
+
+        assert order == ["waited 42", "looked"]
 
 
 class TestWhatTheRuleIsToldAboutEachRun:
@@ -456,3 +487,83 @@ class TestFromTheMarkingToTheRule:
 
     def test_an_ordinary_restart_hands_over_nothing(self):
         assert reconcile_and_report(started_before=utcnow()) == []
+
+
+class TestTheRunsWhoseBoxesDied:
+    """Live, temper hands each run to its own box -- and that is where they die.
+
+    A box run outlives a restart of the server, so the marking must not touch it, and does
+    not. When the box died too, the worker's reaper finds it gone seconds after coming back
+    and ends the run itself. Those are the runs a restart has to pick up, and they only
+    exist a little *after* start-up -- which is why the pick-up waits before it looks.
+    """
+
+    def _reaped(self, execution_id, *, completed_ago=timedelta(seconds=5),
+                row_status="orphaned", event_status="interrupted", name="epd_build"):
+        """A run whose box was found dead: the row and the event the reaper writes."""
+        with get_session() as s:
+            s.add(WorkflowRun(execution_id=execution_id, workflow_name=name,
+                              workspace_path="/tmp/ws", status=row_status,
+                              spawner_kind="docker", spawner_handle=f"temper-run-{execution_id}",
+                              completed_at=utcnow() - completed_ago))
+            s.add(Event(id=f"ev-{execution_id}", type="workflow.started",
+                        execution_id=execution_id, status=event_status,
+                        data={"name": name, "error": "reaped: worker process gone"},
+                        timestamp=utcnow() - timedelta(minutes=20)))
+            s.commit()
+
+    def test_a_run_whose_box_died_with_the_stack_is_found(self):
+        self._reaped("run-boxed")
+
+        [found] = pickup.cut_off_by_this_stop([], since=utcnow() - timedelta(minutes=1))
+
+        assert found["execution_id"] == "run-boxed"
+        assert found["workflow_name"] == "epd_build"
+        assert found["event_id"] == "ev-run-boxed"
+        assert found["status_before"] == "running"
+
+    def test_a_box_that_died_during_the_last_uptime_is_not_this_restarts_business(self):
+        """It was already dead and already seen; a restart does not re-open old graves."""
+        self._reaped("run-old-box", completed_ago=timedelta(hours=3))
+
+        assert pickup.cut_off_by_this_stop([], since=utcnow() - timedelta(minutes=1)) == []
+
+    def test_a_run_still_going_in_its_box_is_left_alone(self):
+        """The whole reason the marking skips box runs: they survive the restart."""
+        self._reaped("run-alive", row_status="running", event_status="running")
+
+        assert pickup.cut_off_by_this_stop([], since=utcnow() - timedelta(minutes=1)) == []
+
+    def test_a_box_run_that_ended_any_other_way_is_left_alone(self):
+        for execution_id, row, event in [("run-done", "completed", "completed"),
+                                         ("run-stopped-box", "cancelled", "cancelled"),
+                                         ("run-failed-box", "failed", "failed")]:
+            self._reaped(execution_id, row_status=row, event_status=event)
+
+        assert pickup.cut_off_by_this_stop([], since=utcnow() - timedelta(minutes=1)) == []
+
+    def test_the_marking_and_the_reaper_are_one_list_without_repeats(self):
+        self._reaped("run-boxed")
+        marked = {"execution_id": "run-inprocess", "event_id": "ev-x",
+                  "workflow_name": "epd_task", "status_before": "running",
+                  "timestamp": utcnow() - timedelta(minutes=8)}
+        also_marked = {"execution_id": "run-boxed", "event_id": "ev-run-boxed",
+                       "workflow_name": "epd_build", "status_before": "running",
+                       "timestamp": utcnow() - timedelta(minutes=20)}
+
+        found = pickup.cut_off_by_this_stop([marked, also_marked],
+                                            since=utcnow() - timedelta(minutes=1))
+
+        assert sorted(str(f["execution_id"]) for f in found) == ["run-boxed", "run-inprocess"]
+
+    def test_a_reaped_run_goes_through_the_rule_like_any_other(self):
+        self._reaped("run-boxed")
+        with get_session() as s:
+            s.add(Checkpoint(execution_id="run-boxed", sequence=0, event_type="node_completed",
+                             node_name="build", status="completed"))
+            s.commit()
+
+        picks = choose(pickup.candidates_from(
+            pickup.cut_off_by_this_stop([], since=utcnow() - timedelta(minutes=1))))
+
+        assert [c.execution_id for c in picks.picked] == ["run-boxed"]

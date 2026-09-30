@@ -123,6 +123,31 @@ class TestBetweenProcesses:
         first_run.clear_cooldowns()
         assert _new_box(redis).cooling_until(TOKENS[0]) is None
 
+    def test_a_run_that_parks_for_the_allowance_leaves_the_shared_list_alone(self, redis):
+        """Waiting out a limit is not the same as forgetting it.
+
+        A parked run does nothing to the shared list: the limits it waits for
+        stay on it, at the times they were found, so every other process still
+        skips those accounts while it sleeps. Clearing them early would send
+        every run in every box straight back into the same refusal.
+        """
+        import threading
+
+        from temper_ai.llm import allowance
+
+        pool = _new_box(redis)
+        for token in TOKENS:
+            pool.cool(token, until=time.time() + 3600)
+        before = {key: round(until) for key, until in shared_cooldowns.pull("anthropic-oauth").items()}
+        assert before                      # the limits are on the list to begin with
+
+        allowance.sleep_until(time.time() - 1)                 # a park, start to finish
+        allowance.sleep_until(time.time() - 1, stop=threading.Event())
+
+        after = {key: round(until) for key, until in shared_cooldowns.pull("anthropic-oauth").items()}
+        assert after == before
+        assert _new_box(redis).cooling_until(TOKENS[0]) is not None
+
     def test_a_later_reset_is_never_shortened_by_an_earlier_one(self, redis):
         store = _process(redis)
         store.push("pool", "*", TOKENS[0], until=time.time() + 7200)

@@ -6,11 +6,13 @@ Records events at every level: LLM calls, tool calls, and iteration summaries.
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from temper_ai.llm import allowance
 from temper_ai.llm.context import (
     CONTEXT_POLICIES,
     DEFAULT_CONTEXT_POLICY,
@@ -60,9 +62,23 @@ DEFAULT_MAX_CONTEXT_TOKENS = 120_000  # Conservative default — most models han
 MAX_TOOL_RESULT_CHARS = 200_000  # ~50k tokens
 WRAP_UP_TURNS = 3  # LLM turns left at which the model is told to stop exploring (per agent: wrap_up_turns)
 CANCELLED_ERROR = "Cancelled: the run was stopped"
-# A call that spends all of max_tokens thinking returns nothing; it is asked again this many times
-# (with _note_output_limit) before the agent ends with the error.
-OUTPUT_LIMIT_RETRIES = 2
+# A call that spends all of max_tokens thinking returns nothing. It is asked once
+# more -- with more room (OUTPUT_LIMIT_HEADROOM) and told why (_note_output_limit)
+# -- and if that comes back empty too the agent ends with the error. Once, not
+# twice: an answer that does not fit is a budget the agent is set up with, not
+# bad luck, so a third full-price think buys nothing the second did not.
+OUTPUT_LIMIT_RETRIES = 1
+# How much more room the retried call gets. Only that call: the agent's own
+# max_tokens is left alone, so a raised ceiling cannot quietly become the price
+# of every later call in the run.
+OUTPUT_LIMIT_HEADROOM = 2.0
+# A model's real output ceiling is not published anywhere temper can read, and
+# the agents that hit this ask for 64k-128k already -- high enough that doubling
+# may be over it. So the raise is tried, and a provider that refuses it *for
+# that reason* gets the call again at the agent's own figure: the retry still
+# happens, with the note, exactly as it did before this. Guessing a ceiling
+# instead would turn some retries into a hard 400.
+_ROOM_REFUSED = re.compile(r"max_tokens", re.IGNORECASE)
 OUTPUT_LIMIT_NOTE = (
     "[output limit] Your last reply spent its whole output allowance thinking and returned no text "
     "and no tool call, so none of it was kept. Take a smaller step now: act on what you have already "
@@ -165,6 +181,13 @@ class LLMService:
         self._active_fallback = None
         self._fallback_queue = list(self.fallbacks)
         self._output_limit_retries = 0
+        # Extra output room for the next call only (see OUTPUT_LIMIT_HEADROOM).
+        self._extra_room: int | None = None
+        # How long this agent has spent parked waiting for the allowance to
+        # reopen. Kept out of total_timeout below -- a five-minute run timeout
+        # measured across a two-hour park would fail every parked run the
+        # moment it woke -- and checked against the ceiling in _wait_for_allowance.
+        self._parked_seconds = 0.0
 
         for iteration in range(1, self.max_iterations + 1):
             # A stopped run makes no further calls. Checked here, before every
@@ -200,7 +223,7 @@ class LLMService:
     def _run_iteration(self, iteration: int) -> LLMRunResult | None:
         """Run one iteration of the tool-calling loop. Returns result if done, None to continue."""
         self._iteration = iteration
-        elapsed = time.monotonic() - self._run_start
+        elapsed = time.monotonic() - self._run_start - self._parked_seconds
         if elapsed > self.total_timeout:
             logger.warning("LLM run timeout after %.0fs for '%s'", elapsed, self._ctx.agent_name)
             return self._build_result(iteration - 1, error=f"LLM run timed out after {elapsed:.0f}s")
@@ -224,11 +247,20 @@ class LLMService:
                     # the agent instead threw away every call before it (seen live:
                     # an implementer lost 35 minutes of work to one long think).
                     self._output_limit_retries += 1
-                    self._record_iteration(iteration, "output_limit_retry", 0)
+                    # The same budget would most likely be spent the same way,
+                    # so the retry is given more room as well as the note. For
+                    # this call only: _invoke_provider reads it once and
+                    # _clear_extra_room drops it.
+                    self._extra_room = self._room_for_retry()
+                    self._record_iteration(
+                        iteration, "output_limit_retry", 0, extra_room=self._extra_room,
+                    )
                     _note_output_limit(self._messages)
                     logger.warning(
-                        "'%s': call %d thought through max_tokens with nothing to show; asking again (%d of %d)",
-                        self._ctx.agent_name, iteration, self._output_limit_retries, OUTPUT_LIMIT_RETRIES,
+                        "'%s': call %d thought through max_tokens with nothing to show; "
+                        "asking again with %s room (%d of %d)",
+                        self._ctx.agent_name, iteration,
+                        self._extra_room or "the same", self._output_limit_retries, OUTPUT_LIMIT_RETRIES,
                     )
                     return None
                 # A truncated answer arrives as an empty one. Said plainly it is
@@ -245,6 +277,7 @@ class LLMService:
 
         # This call returned something: a later call lost to max_tokens gets its own retries.
         self._output_limit_retries = 0
+        self._extra_room = None
         if self._execute_tool is None and any(not self._is_context_tool(tc["name"]) for tc in tool_calls):
             return self._handle_no_executor(iteration, tool_calls)
 
@@ -275,10 +308,119 @@ class LLMService:
                 response = self._invoke_provider(llm_event_id=event_id)
             except Exception as e:  # noqa: BLE001
                 self._record_llm_failed(iteration, e)
+                if self._drop_extra_room(e):
+                    continue  # the same call, at the agent's own output ceiling
                 if is_capacity_error(e) and self._fall_back(e):
                     continue  # the same call, to the next model on the list
+                # Every account is cooling and the list is spent, but the
+                # allowance comes back at a known moment: wait for it rather
+                # than end the agent and wait for a person. Only when the
+                # failure names that moment and the wait fits the ceiling.
+                if is_capacity_error(e) and self._wait_for_allowance(e, iteration):
+                    continue  # the same call, once the allowance has reopened
                 raise
             return self._account_for(event_id, response, iteration)
+
+    # -- waiting for the allowance ------------------------------------------
+
+    def _wait_for_allowance(self, exc: Exception, iteration: int) -> bool:
+        """Park until the allowance reopens. False to fail the call as before.
+
+        False when the refusal names no reset, when the workflow has switched
+        waiting off, when the wait would pass the ceiling, or when the run was
+        stopped while parked -- in every one of those the caller raises and the
+        agent ends exactly as it does today.
+        """
+        wait = allowance.decide(
+            exc,
+            max_wait=self._allowance_max_wait(),
+            already_waited=self._parked_seconds,
+        )
+        if wait is None:
+            return False
+        logger.warning(
+            "'%s': every account is cooling; parking %s", self._ctx.agent_name, wait,
+        )
+        event_id = self._record(
+            EventType.LLM_ALLOWANCE,
+            {
+                "agent_name": self._ctx.agent_name,
+                "node_path": self._ctx.node_path,
+                "iteration": iteration,
+                "waiting_seconds": round(wait.seconds, 1),
+                "waiting_for": allowance.how_long(wait.seconds),
+                "until": wait.until_utc.isoformat(),
+                "reason": str(exc)[:500],
+                **self._where(),
+            },
+            execution_id=self._ctx.execution_id,
+            parent_id=self._ctx.agent_event_id,
+            status="waiting",
+        )
+        started = time.monotonic()
+        woke = allowance.sleep_until(wait.until, stop=self._ctx.cancel_event)
+        # A completed park waited exactly what it set out to -- that is what
+        # sleep_until guarantees -- and that is the figure the ceiling is
+        # about. Only a park cut short by a stop is measured, and then only to
+        # say how far it got. (Reading the clock either way would let a
+        # suspended process come back believing it had waited its ceiling out.)
+        parked = wait.seconds if woke else time.monotonic() - started
+        self._parked_seconds += parked
+        if event_id:
+            self._record(
+                EventType.LLM_ALLOWANCE,
+                {
+                    "agent_name": self._ctx.agent_name,
+                    "parked_seconds": round(parked, 1),
+                    "parked_for": allowance.how_long(parked),
+                    "woke": woke,
+                },
+                execution_id=self._ctx.execution_id,
+                parent_id=event_id,
+                status="completed" if woke else "cancelled",
+            )
+        if not woke:
+            logger.info("'%s': stopped while waiting for the allowance", self._ctx.agent_name)
+            return False
+        logger.info(
+            "'%s': the allowance reopened after %s; asking again",
+            self._ctx.agent_name, allowance.how_long(parked),
+        )
+        return True
+
+    def _allowance_max_wait(self) -> float:
+        """How long this call may park, in seconds. The workflow's say, or the default."""
+        if self._ctx.allowance_wait_max is not None:
+            return max(0.0, float(self._ctx.allowance_wait_max))
+        return allowance.DEFAULT_MAX_WAIT.total_seconds()
+
+    def _room_for_retry(self) -> int | None:
+        """The raised output ceiling for one retried call, or None to keep the agent's."""
+        raw = self._provider_config().get("max_tokens") or getattr(self.provider, "max_tokens", 0)
+        if raw is None:
+            return None
+        try:
+            asked = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return int(asked * OUTPUT_LIMIT_HEADROOM) if asked > 0 else None
+
+    def _drop_extra_room(self, exc: Exception) -> bool:
+        """True when this failure was the raised ceiling being refused, so ask again without it.
+
+        Only ever true once per retry: the room is cleared before returning, so
+        a provider that refuses for some other reason mentioning max_tokens
+        cannot loop here.
+        """
+        if self._extra_room is None or not _ROOM_REFUSED.search(str(exc)):
+            return False
+        logger.info(
+            "'%s': the provider would not take the raised output ceiling (%d); "
+            "asking again at the agent's own",
+            self._ctx.agent_name, self._extra_room,
+        )
+        self._extra_room = None
+        return True
 
     def _account_for(self, event_id: str, response: LLMResponse, iteration: int) -> tuple[str, LLMResponse, float]:
         """Price a completed call and record it. Returns (event_id, response, cost)."""
@@ -357,6 +499,11 @@ class LLMService:
         # ignores the rest. Named kwargs above win on collision.
         for key, value in self._provider_config().items():
             kwargs.setdefault(key, value)
+        # One retried call's extra output room, laid over the agent's own
+        # figure. Set only by the output-limit retry and dropped as soon as a
+        # call comes back, so no later call pays for it.
+        if self._extra_room:
+            kwargs["max_tokens"] = self._extra_room
         # The token the call is pinned to, if any. Set after provider_config so
         # a `token` there cannot pin a call that _check_tokens never saw.
         kwargs.pop("token", None)
@@ -663,6 +810,7 @@ class LLMService:
         action: str,
         tool_count: int,
         tool_calls: list[dict] | None = None,
+        extra_room: int | None = None,
     ) -> None:
         """Record an iteration summary event.
 
@@ -682,6 +830,10 @@ class LLMService:
         }
         if tool_calls:
             data["tool_calls"] = [_summarize_tool_call(tc) for tc in tool_calls]
+        if extra_room:
+            # The output ceiling the retried call is being given, so the run's
+            # history says not only that the retry happened but what changed.
+            data["extra_room"] = extra_room
         self._record(
             EventType.LLM_ITERATION,
             parent_id=self._ctx.agent_event_id,

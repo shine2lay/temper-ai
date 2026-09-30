@@ -311,6 +311,7 @@ def _quiet_fields(execution_id: str, result: dict, events: list[dict]) -> dict:
                     str(newest.get("status") or ""),
                 ) if newest else "",
                 after=quiet.after_for(workflow),
+                parked_until=_parked_until(newest),
             ),
         )
     except Exception as exc:  # noqa: BLE001 - never lose a run page over a badge
@@ -324,11 +325,30 @@ def _quiet_fields(execution_id: str, result: dict, events: list[dict]) -> dict:
     }
     if verdict.state == quiet.WAITING:
         fields["waiting_for"] = verdict.how_long
+    if verdict.state == quiet.PARKED:
+        fields["parked"] = True
+        fields["parked_until"] = (
+            verdict.parked_until.isoformat() if verdict.parked_until else None
+        )
     if verdict.quiet:
         fields["quiet_since"] = verdict.since.isoformat() if verdict.since else None
         fields["quiet_for"] = verdict.how_long
         fields["quiet_seconds"] = int(verdict.idle.total_seconds()) if verdict.idle else 0
     return fields
+
+
+def _parked_until(newest: dict | None) -> datetime | None:
+    """When the run this event belongs to wakes, if it is parked for the allowance.
+
+    A parked run writes nothing while it waits, so its own park event is the
+    newest thing it has done -- the same rule ``quiet.activity_of`` applies to
+    a listing row, applied here to the run page's own events.
+    """
+    if not newest or newest.get("type") != quiet.ALLOWANCE_EVENT:
+        return None
+    if str(newest.get("status") or "") != "waiting":
+        return None
+    return quiet.moment((newest.get("data") or {}).get("until"))
 
 
 def _agent_index(events: list[dict]) -> list[dict]:
@@ -556,6 +576,14 @@ def _mark_the_quiet_ones(runs: list[dict], awaiting: set[str]) -> None:
         if verdict.state == quiet.WAITING:
             run["waiting_on_you"] = True
             run["waiting_for"] = verdict.how_long
+        # Waiting for the model allowance to reopen: a wait with a known end
+        # and nothing for anybody to do. Said apart from "needs you" so the
+        # two are never confused on the listing.
+        if verdict.state == quiet.PARKED:
+            run["parked"] = True
+            run["parked_until"] = (
+                verdict.parked_until.isoformat() if verdict.parked_until else None
+            )
         if verdict.quiet:
             run["quiet_since"] = verdict.since.isoformat() if verdict.since else None
             run["quiet_for"] = verdict.how_long

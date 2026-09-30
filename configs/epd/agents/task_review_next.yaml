@@ -104,9 +104,16 @@
 # all. Fresh on b037 (--whole), v7 saw the browser work out the Margin cushion a second way and filed it
 # as a follow-up, "there before, renamed only" (check C11 again), though the change had given that twin
 # the bet's name.
+#
+# v9 (2026-09-30): a class that comes back ends with a check (build.md, the owner). On the new project
+# five review rounds in a row (T3's second and third, T3b's three) each found one more way of writing
+# the path of a module a web import ban refuses: a wrapped literal, a Vite query, a doubled slash. Each
+# fix refused the case it was shown, the next round found the next, and the reviewers' own proposal (a
+# check that pins the class) waited for a later tidy as a standards proposal. Now one more case of a
+# class an earlier round named is fixed by a check that holds the class by what its cases share.
 agent:
   name: task_review_next
-  version: 8
+  version: 9
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -302,7 +309,10 @@ agent:
        the copy). Caused by the bet: a finding. There before and untouched: a follow-up, not charged;
        renaming an older twin or pointing a reader at it touches it (build.md, a rename is a change).
        There before, but inside a sentence the change rewrote, or put where a user now sees it
-       disagree with the change: a finding (build.md, "Fix it here"). No rule, no finding: a better idea goes under notes; a problem that
+       disagree with the change: a finding (build.md, "Fix it here"). One more case of the class an
+       earlier round's finding named (an earlier round here, or the review of the request this one
+       finishes): its fix is a check that holds the class, not the new case (build.md, a class that
+       comes back). No rule, no finding: a better idea goes under notes; a problem that
        deserves a rule the project lacks goes under standards_proposals.
        Round one is exhaustive: raise everything now. Each round costs the coder a pass and you a
        review, and a finding held back for the next round is a round wasted.

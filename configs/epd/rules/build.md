@@ -131,3 +131,11 @@ leaving it alone.
 - **fix**: what to change, for the whole class, specific enough to act on without re-deriving it. The fix
   meets the rule: it never offers a way out that leaves the problem where a user or a later build meets it
   (a label beside a second value, a comment beside a twin, a standard loosened to allow the copy).
+
+**A class that comes back** (the owner, 2026-09-30). When a finding is one more case of the class an
+earlier round's finding named (on this branch, or in the review of the request this one finishes), fixing
+the cases one by one has not ended it. Its fix is then a check that holds the whole class: one that fails
+for any case by what the cases share, not by the ones found so far (a ban on imports reads the file an
+import leads to, not how its path is written), with the cases found so far in that check's own test. The
+finding says the class came back and which rounds found it. Past what that check can see, the rest is an
+accepted risk, written where the check is.

@@ -6,6 +6,10 @@ owner's merge gate: one PR waited two days, and four builds would have hit the 2
 it. So once a bet has waited 2 hours on a PR at the gate, the owner gets a Slack message naming the
 PR and the bets behind it: once per PR, then once a day while bets still wait on it. `nudge` runs on
 the host, on a timer, with no model; it reads what each waiting bet's turn node wrote (turn.json).
+
+Since 2026-09-29 the autopilot merges ready PRs itself, so the message says the PR is not merged yet
+and why that can be, instead of asking the owner to merge it at his gate (task 12's study,
+~/epd-autopilot/collide/waits.md).
 """
 
 import datetime as dt
@@ -51,7 +55,9 @@ def test_one_message_per_pr_naming_every_bet_behind_it(L):
     assert keep == {"40": {"first": NOW.isoformat(timespec="seconds"), "last": NOW.isoformat(timespec="seconds"),
                            "bet": "b064"}}
     text = L.nudge_text(due[0])
-    assert text.startswith("2 bets wait on PR #40 at your merge gate: b064: Covered calls")
+    assert text.startswith("2 bets wait on PR #40, not merged yet: b064: Covered calls")
+    assert "The autopilot merges it once CI passes and it merges cleanly" in text
+    assert "at your merge gate" not in text, "he no longer merges them himself (09-29)"
     assert "b120, for 3 h (both change backend/rollcall/roll.py)" in text
     assert "b121, for 26 h (both change frontend/src/pages/Roll.tsx)" in text
     assert text.endswith("https://github.com/shine2lay/rollcall/pull/40")

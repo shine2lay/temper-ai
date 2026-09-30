@@ -1721,7 +1721,14 @@ def parse_time(value) -> dt.datetime | None:
 
 
 def nudge_text(g: dict) -> str:
-    """The owner's message for one PR: which PR, and who waits on it for what."""
+    """The owner's message for one PR: which PR, and who waits on it for what.
+
+    Since 2026-09-29 the autopilot merges every ready bet PR itself (the owner: "You merge them
+    all"; ~/epd-autopilot/approve_pr.py), within half an hour of CI on the task-10 bets. So a PR
+    that bets have waited on for 2 hours is one it could not merge: CI failed, it no longer merges
+    cleanly, or a prod blackout. The message says so, rather than asking him to merge from his gate
+    (queue task 12's study, ~/epd-autopilot/collide/waits.md).
+    """
     def hours(h: float) -> str:
         return f"{h:.0f} h" if h < 48 else f"{h / 24:.0f} days"
 
@@ -1731,9 +1738,9 @@ def nudge_text(g: dict) -> str:
     n = len(g["waiting"])
     who = "; ".join(f"{w['bet_id']}, for {hours(w['hours'])} (both change {files(w['files'])})"
                     for w in g["waiting"])
-    return (f"{n} bet{'s' if n > 1 else ''} wait{'' if n > 1 else 's'} on PR #{g['pr_number']} at your merge gate: "
-            f"{g['title'] or g['bet']}\nWaiting: {who}.\nMerge or close it and they build on the new master: "
-            f"{g['pr']}")
+    return (f"{n} bet{'s' if n > 1 else ''} wait{'' if n > 1 else 's'} on PR #{g['pr_number']}, not merged yet: "
+            f"{g['title'] or g['bet']}\nWaiting: {who}.\nThe autopilot merges it once CI passes and it merges "
+            f"cleanly; if it is stuck, merge or close it and they build on the new master: {g['pr']}")
 
 
 def tell_owner(text: str) -> bool:

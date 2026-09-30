@@ -1,4 +1,5 @@
 import { useExecutionStore } from '@/store/executionStore';
+import { useStageLookup } from '@/store/selectors';
 import { SmartContent } from '@/components/shared/SmartContent';
 import { ThinkingContent } from '@/components/shared/ThinkingContent';
 import { hasThinkingTags } from '@/lib/streamSegments';
@@ -131,7 +132,7 @@ export function LLMCallInspector({ llmCallId }: LLMCallInspectorProps) {
   const llmCall = useExecutionStore((s) => s.llmCalls.get(llmCallId));
   const select = useExecutionStore((s) => s.select);
   const agents = useExecutionStore((s) => s.agents);
-  const stages = useExecutionStore((s) => s.stages);
+  const stages = useStageLookup();
 
   if (!llmCall) {
     return (

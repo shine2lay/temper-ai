@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
+import { useStage, useStageLookup } from '@/store/selectors';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { JsonViewer } from '@/components/shared/JsonViewer';
@@ -14,9 +15,11 @@ interface StageDetailPanelProps {
 }
 
 export function StageDetailPanel({ stageId }: StageDetailPanelProps) {
-  const stage = useExecutionStore((s) => s.stages.get(stageId));
+  // Every node, a stage inside a stage included: clicking one of those in
+  // the graph used to open a panel that said "Stage not found".
+  const stage = useStage(stageId);
   const select = useExecutionStore((s) => s.select);
-  const stages = useExecutionStore((s) => s.stages);
+  const stages = useStageLookup();
 
   const iterations = useMemo(() => {
     if (!stage) return [];

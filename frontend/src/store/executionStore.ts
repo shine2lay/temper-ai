@@ -41,6 +41,16 @@ export type StageExecution = NodeExecution;
 interface ExecutionState {
   workflow: WorkflowExecution | null;
   stages: Map<string, NodeExecution>;  // keep name 'stages' for component compat
+  /** The nodes that sit inside another node, which `stages` has no key for.
+   *
+   *  `stages` is what the graph draws: the top level plus the rounds a
+   *  dispatcher added, lifted out. A node nested inside another one stays
+   *  nested there, so its id was in no map and its panel read "Stage not
+   *  found". This map holds exactly those nodes — never a second copy of one
+   *  `stages` already has, or a live update would land on one copy and leave
+   *  the other stale. Look a stage up through `findStage` / `useStageLookup`,
+   *  which read both. Counts and the graph keep reading `stages` alone. */
+  nestedStages: Map<string, NodeExecution>;
   agents: Map<string, AgentExecution>;
   llmCalls: Map<string, LLMCall>;
   toolCalls: Map<string, ToolCall>;
@@ -148,8 +158,31 @@ function _keepFinished<
   return next;
 }
 
+/** A node as the panels want it: agents always an array, DAG fields filled. */
+function _normalizeNode(node: NodeExecution): NodeExecution {
+  const normalized = { ...node };
+  if (node.type === 'agent' && node.agent && (!node.agents || node.agents.length === 0)) {
+    normalized.agents = [node.agent];
+  }
+  normalized.stage_name = normalized.stage_name ?? normalized.name;
+  // Preserve DAG metadata for dependency arrows
+  normalized.depends_on = normalized.depends_on ?? [];
+  normalized.loop_to = normalized.loop_to ?? undefined;
+  normalized.max_loops = normalized.max_loops ?? undefined;
+  return normalized;
+}
+
+/** The node with this id, wherever it sits: drawn, or inside another node. */
+function _findStage(
+  state: { stages: Map<string, NodeExecution>; nestedStages: Map<string, NodeExecution> },
+  id: string | undefined,
+): NodeExecution | undefined {
+  if (!id) return undefined;
+  return state.stages.get(id) ?? state.nestedStages.get(id);
+}
+
 /** A record for an agent known only from the run's agent index. */
-function _agentFromIndex(e: AgentIndexEntry, stages: Map<string, NodeExecution>): AgentExecution {
+function _agentFromIndex(e: AgentIndexEntry, knownNodes: Set<string>): AgentExecution {
   const type = e.agent_type ?? (e.provider || e.model ? 'llm' : undefined);
   return {
     id: e.id,
@@ -170,8 +203,9 @@ function _agentFromIndex(e: AgentIndexEntry, stages: Map<string, NodeExecution>)
     role: e.role ?? undefined,
     round: e.round,
     node_name: e.node_name,
-    // Only a node the page draws: an earlier round's node is not in the tree.
-    stage_id: e.node_id && stages.has(e.node_id) ? e.node_id : undefined,
+    // Only a node the page has a record of: an earlier round's node is not
+    // in the tree at all, but a node nested inside another one is.
+    stage_id: e.node_id && knownNodes.has(e.node_id) ? e.node_id : undefined,
     summary_only: true,
     agent_config_snapshot: type || e.provider || e.model
       ? { agent: { type: type ?? undefined, provider: e.provider ?? undefined, model: e.model ?? undefined } }
@@ -188,7 +222,7 @@ function _agentFromIndex(e: AgentIndexEntry, stages: Map<string, NodeExecution>)
  */
 function _mergeAgentIndex(
   agents: Map<string, AgentExecution>,
-  stages: Map<string, NodeExecution>,
+  knownNodes: Set<string>,
   unknown: Set<string>,
   index: AgentIndexEntry[],
   prevAgents: Map<string, AgentExecution>,
@@ -201,7 +235,7 @@ function _mergeAgentIndex(
       }
       continue;
     }
-    const light = _agentFromIndex(e, stages);
+    const light = _agentFromIndex(e, knownNodes);
     const prev = current ?? prevAgents.get(e.id);
     const next = prev && !prev.summary_only
       ? {
@@ -339,6 +373,7 @@ export const useExecutionStore = create<ExecutionState>()(
   immer((set) => ({
     workflow: null,
     stages: new Map(),
+    nestedStages: new Map(),
     agents: new Map(),
     llmCalls: new Map(),
     toolCalls: new Map(),
@@ -358,6 +393,7 @@ export const useExecutionStore = create<ExecutionState>()(
     applySnapshot: (workflow) =>
       set((state) => {
         const prevStages = state.stages;
+        const prevNested = state.nestedStages;
         const prevAgents = state.agents;
         const stillActive = !TERMINAL.has(workflow.status ?? '');
 
@@ -382,17 +418,8 @@ export const useExecutionStore = create<ExecutionState>()(
         }
 
         for (const node of _liftDispatched(workflow.nodes)) {
-          // Normalize: ensure .agents is always an array (for agent-type nodes, move .agent into .agents)
-          const normalizedNode = { ...node };
-          if (node.type === 'agent' && node.agent && (!node.agents || node.agents.length === 0)) {
-            normalizedNode.agents = [node.agent];
-          }
-          normalizedNode.stage_name = normalizedNode.stage_name ?? normalizedNode.name;
-          // Preserve DAG metadata for dependency arrows
-          normalizedNode.depends_on = normalizedNode.depends_on ?? [];
-          normalizedNode.loop_to = normalizedNode.loop_to ?? undefined;
-          normalizedNode.max_loops = normalizedNode.max_loops ?? undefined;
           // Store in stages map (backward compat with components)
+          const normalizedNode = _normalizeNode(node);
           state.stages.set(normalizedNode.id, _keepFinished(prevStages.get(normalizedNode.id), normalizedNode));
         }
 
@@ -420,7 +447,11 @@ export const useExecutionStore = create<ExecutionState>()(
         }
 
         _mergeAgentIndex(
-          state.agents, state.stages, state.unknownAgentIds, workflow.agent_index ?? [], prevAgents,
+          state.agents,
+          new Set(_allNodes(workflow.nodes).map((n) => n.id)),
+          state.unknownAgentIds,
+          workflow.agent_index ?? [],
+          prevAgents,
         );
 
         // A poll can be taken just before a node starts and land just
@@ -435,12 +466,31 @@ export const useExecutionStore = create<ExecutionState>()(
           }
         }
 
+        // Every node the drawn map has no key for, so its panel can open.
+        // Built after the step above, so a node the WS put in `stages` is
+        // never also in here.
+        state.nestedStages = new Map();
+        for (const node of _allNodes(workflow.nodes)) {
+          if (state.stages.has(node.id)) continue;
+          state.nestedStages.set(
+            node.id,
+            _keepFinished(prevNested.get(node.id), _normalizeNode(node)),
+          );
+        }
+        if (stillActive) {
+          for (const [id, stage] of prevNested) {
+            if (!state.nestedStages.has(id) && !state.stages.has(id)) {
+              state.nestedStages.set(id, stage);
+            }
+          }
+        }
+
         // A refresh every few seconds used to drop whatever the user had
         // clicked. Keep it while the thing it points at still exists.
         const sel = state.selection;
         if (sel && sel.type !== 'workflow') {
           const exists =
-            (sel.type === 'stage' && state.stages.has(sel.id))
+            (sel.type === 'stage' && (state.stages.has(sel.id) || state.nestedStages.has(sel.id)))
             || (sel.type === 'agent' && state.agents.has(sel.id))
             || (sel.type === 'llmCall' && state.llmCalls.has(sel.id))
             || (sel.type === 'toolCall' && state.toolCalls.has(sel.id));
@@ -519,7 +569,7 @@ export const useExecutionStore = create<ExecutionState>()(
               start_time: data.start_time ?? msg.timestamp,
               ...(dispatcher ? { dispatched_by: dispatcher } : {}),
             } as unknown as NodeExecution;
-            const existing = state.stages.get(stageId);
+            const existing = _findStage(state, stageId);
             if (existing) {
               Object.assign(existing, nodeData);
             } else {
@@ -536,7 +586,7 @@ export const useExecutionStore = create<ExecutionState>()(
           case 'stage.completed':
           case 'stage.failed': {
             const sid = (data.stage_id ?? data.event_id ?? msg.stage_id) as string;
-            const stage = state.stages.get(sid);
+            const stage = _findStage(state, sid);
             if (stage) Object.assign(stage, data);
             break;
           }
@@ -561,7 +611,7 @@ export const useExecutionStore = create<ExecutionState>()(
               // node started live had no agent and drew as an empty pill.
               const parentStageId = (data.stage_id ?? data.parent_id) as string | undefined;
               if (parentStageId) {
-                const parentStage = state.stages.get(parentStageId);
+                const parentStage = _findStage(state, parentStageId);
                 if (parentStage) {
                   if (parentStage.type === 'agent') {
                     parentStage.agent = agentData;
@@ -617,7 +667,7 @@ export const useExecutionStore = create<ExecutionState>()(
             if (outcome.status == null) delete outcome.status;
             const ended = TERMINAL.has((outcome.status ?? '') as string);
             const at = msg.timestamp ?? new Date().toISOString();
-            const stage = state.stages.get(eid);
+            const stage = _findStage(state, eid);
             if (stage) {
               Object.assign(stage, outcome);
               if (ended && !stage.end_time) stage.end_time = at;
@@ -775,7 +825,13 @@ export const useExecutionStore = create<ExecutionState>()(
 
     applyAgentIndex: (index) =>
       set((state) => {
-        _mergeAgentIndex(state.agents, state.stages, state.unknownAgentIds, index, state.agents);
+        _mergeAgentIndex(
+          state.agents,
+          new Set([...state.stages.keys(), ...state.nestedStages.keys()]),
+          state.unknownAgentIds,
+          index,
+          state.agents,
+        );
       }),
 
     giveUpAgentLookup: (ids) =>
@@ -807,6 +863,7 @@ export const useExecutionStore = create<ExecutionState>()(
       set((state) => {
         state.workflow = null;
         state.stages = new Map();
+        state.nestedStages = new Map();
         state.agents = new Map();
         state.llmCalls = new Map();
         state.toolCalls = new Map();

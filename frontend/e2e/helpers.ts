@@ -60,6 +60,23 @@ export async function waitForFinish(
   );
 }
 
+/**
+ * Start the zero-cost `ci_nested` workflow and wait for it to finish.
+ *
+ * Its shape is the point: a stage (`outer`) with a stage inside it (`inner`),
+ * the shape `epd_task` and `epd_propose` runs have. Script agents only, so it
+ * costs nothing and needs no API key.
+ */
+export async function startNestedRun(request: APIRequestContext): Promise<string> {
+  const res = await request.post('/api/runs', { data: { workflow: 'ci_nested' } });
+  if (!res.ok()) {
+    throw new Error(`could not start ci_nested: HTTP ${res.status()} ${await res.text()}`);
+  }
+  const { execution_id: id } = await res.json();
+  await waitForFinish(request, id);
+  return id;
+}
+
 /** Start a run of the zero-cost `smoke_test` workflow and wait for it to finish. */
 export async function startSmokeRun(
   request: APIRequestContext,

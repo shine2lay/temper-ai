@@ -2,8 +2,36 @@
  * Derived state selectors for the execution store.
  * Adapted for v1 composable graph model.
  */
+import { useMemo } from 'react';
 import type { NodeExecution } from '@/types';
 import { useExecutionStore } from './executionStore';
+
+/**
+ * Every node of the run by id: the ones the graph draws plus the ones that
+ * sit inside another node.
+ *
+ * The graph draws the top level (and the rounds a dispatcher added, lifted
+ * out), so `stages` has no key for a stage inside a stage and its panel read
+ * "Stage not found". Panels look here instead; the header counts and the
+ * graph keep reading `stages` alone, so they stay top-level.
+ */
+export function useStageLookup(): Map<string, NodeExecution> {
+  const stages = useExecutionStore((s) => s.stages);
+  const nested = useExecutionStore((s) => s.nestedStages);
+  return useMemo(
+    // A drawn node wins over a nested one of the same id, which cannot
+    // happen today: the store never puts a node in both.
+    () => (nested.size === 0 ? stages : new Map([...nested, ...stages])),
+    [stages, nested],
+  );
+}
+
+/** One node by id, wherever it sits. Undefined while the page has no record. */
+export function useStage(stageId: string | null | undefined): NodeExecution | undefined {
+  return useExecutionStore((s) =>
+    stageId ? s.stages.get(stageId) ?? s.nestedStages.get(stageId) : undefined,
+  );
+}
 
 /** Group node executions by name (for collapsed DAG with iteration badges). */
 export function selectStageGroups(

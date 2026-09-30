@@ -5,7 +5,7 @@ open, the listing keeps saying "running", and the only way to find out is for
 somebody to open the page and notice that nothing has moved. An EPD build sat
 that way for ten hours on 2026-09-29 before anyone looked.
 
-Four states, and only one of them is bad:
+Five states, and only one of them is bad:
 
 ``finished``
     It ended -- completed, failed, cancelled or interrupted. Nothing to say.
@@ -13,6 +13,12 @@ Four states, and only one of them is bad:
     It is parked at a gate, waiting for a person. Healthy, not stuck: it
     carries on the moment the question is answered. The page says "waiting on
     you", never "quiet", however long it has been -- the wait is the point.
+``parked``
+    Every account's model allowance is spent, so the run is waiting for the
+    allowance to reopen at a known moment (:mod:`temper_ai.llm.allowance`).
+    Like a gate it is a healthy wait and never quiet, but unlike a gate it
+    wants nothing from anybody: the page says "waiting for allowance, back
+    around 14:20" and the notify loop leaves it alone.
 ``quiet``
     Still marked running, nobody is being asked anything, and no event has
     been written for longer than the run's threshold. This is the one worth
@@ -68,8 +74,13 @@ FINISHED = ("completed", "failed", "cancelled", "interrupted")
 
 HEALTHY = "healthy"
 WAITING = "waiting"
+PARKED = "parked"
 QUIET = "quiet"
 DONE = "finished"
+
+# The event a parked run leaves open while it waits (EventType.LLM_ALLOWANCE).
+# Named here rather than imported so this module keeps reading nothing.
+ALLOWANCE_EVENT = "llm.allowance"
 
 # How long a workflow's own threshold is remembered before it is read again.
 CONFIG_CACHE_S = 60.0
@@ -95,6 +106,9 @@ class Run:
     last_step: str = ""
     # This workflow's own threshold, when it sets one.
     after: timedelta | None = None
+    # When the model allowance this run is waiting on reopens. Set only while
+    # the run is parked for it; None the rest of the time.
+    parked_until: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -111,10 +125,17 @@ class Verdict:
     # The threshold that was applied, for the page to explain itself with.
     after: timedelta = DEFAULT_AFTER
     last_step: str = ""
+    # When a parked run expects to carry on. Only ever set with state parked.
+    parked_until: datetime | None = None
 
     @property
     def quiet(self) -> bool:
         return self.state == QUIET
+
+    @property
+    def waiting(self) -> bool:
+        """Healthily waiting -- on a person or on the allowance. Never quiet."""
+        return self.state in (WAITING, PARKED)
 
     @property
     def how_long(self) -> str:
@@ -131,6 +152,9 @@ class Verdict:
                     f"(nothing new for longer than {how_long(self.after)}).{last}")
         if self.state == WAITING:
             return f"{who}{short} is waiting on you, {self.how_long} so far."
+        if self.state == PARKED:
+            back = f" back around {self.parked_until:%H:%M} UTC" if self.parked_until else ""
+            return f"{who}{short} is waiting for the model allowance,{back or ' no end time given'}."
         if self.state == DONE:
             return f"{who}{short} has ended."
         return f"{who}{short} is getting on with it."
@@ -172,12 +196,20 @@ def look(run: Run, *, now: datetime | None = None,
     idle = (when - last) if last is not None else None
 
     def verdict(state: str, *, since: datetime | None = last,
-                span: timedelta | None = idle) -> Verdict:
+                span: timedelta | None = idle,
+                until: datetime | None = None) -> Verdict:
         return Verdict(execution_id=run.execution_id, state=state, since=since,
-                       idle=span, after=after, last_step=run.last_step)
+                       idle=span, after=after, last_step=run.last_step,
+                       parked_until=until)
 
     if run.status in FINISHED:
         return verdict(DONE, since=None, span=None)
+    # Waiting out a spent allowance is as healthy as a gate, and is checked
+    # first: a run can only be parked while it is running, and staying silent
+    # for hours is exactly what it is meant to do. Checked before the clock so
+    # task #23 never calls it quiet.
+    if run.parked_until is not None:
+        return verdict(PARKED, until=as_utc(run.parked_until))
     # A gate is a run doing exactly what it should: waiting for a person. The
     # listing already turns that into the status "waiting"; both are accepted
     # so a caller that has one and not the other still gets it right.
@@ -217,6 +249,7 @@ _VERBS = {
     "llm.iteration": "thinking",
     "llm.retry": "retrying a model call",
     "llm.fallback": "fell back to another model",
+    "llm.allowance": "waiting for the model allowance",
     "tool.call.started": "running a tool",
     "tool.call.completed": "ran a tool",
     "tool.call.failed": "a tool failed",
@@ -321,6 +354,10 @@ class Activity:
 
     at: datetime
     step: str = ""
+    # Set when that newest event is a park still open: when it wakes. A parked
+    # run writes nothing while it waits, so its park *is* the newest event --
+    # which is why this costs no extra query.
+    parked_until: datetime | None = None
 
 
 def activity_of(execution_ids: Iterable[str]) -> dict[str, Activity]:
@@ -356,10 +393,16 @@ def activity_of(execution_ids: Iterable[str]) -> dict[str, Activity]:
         ).all()
 
     steps: dict[str, str] = {}
+    parked: dict[str, datetime] = {}
     for eid, kind, status, data in rows:
         steps.setdefault(str(eid), last_step_label(str(kind or ""), data, str(status or "")))
+        if str(kind or "") == ALLOWANCE_EVENT and str(status or "") == "waiting":
+            until = moment((data or {}).get("until"))
+            if until is not None:
+                parked.setdefault(str(eid), until)
     return {
-        str(eid): Activity(at=as_utc(at) or at, step=steps.get(str(eid), ""))
+        str(eid): Activity(at=as_utc(at) or at, step=steps.get(str(eid), ""),
+                           parked_until=parked.get(str(eid)))
         for eid, at in pairs
     }
 
@@ -393,6 +436,7 @@ def verdicts_for(runs: Iterable[Mapping[str, Any]], *, gated: set[str] | None = 
                 at_a_gate=bool(gated and eid in gated),
                 last_step=seen.step if seen else "",
                 after=after_for(workflow, fallback) if eid in activity else None,
+                parked_until=seen.parked_until if seen else None,
             ),
             now=when,
             default_after=fallback,

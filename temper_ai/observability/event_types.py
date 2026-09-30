@@ -38,6 +38,11 @@ class EventType(StrEnum):
     # A model out of capacity handed the call to the next entry of the agent's
     # fallback list (temper_ai.llm.fallback); status failed when none was left.
     LLM_FALLBACK = "llm.fallback"
+    # Every account was cooling, so the run is parked until the allowance
+    # reopens (temper_ai.llm.allowance). Recorded `waiting` with the moment it
+    # will wake, then `completed` (or `cancelled`) with what it actually waited.
+    # A run's newest open one is what the page shows as "waiting for allowance".
+    LLM_ALLOWANCE = "llm.allowance"
 
     # Tool calls (from LLM service layer)
     TOOL_CALL_STARTED = "tool.call.started"

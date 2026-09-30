@@ -138,22 +138,46 @@ agent:
         assert "thinker" in out and "ollama" in out
 
     def test_it_passes_when_every_setting_lands(self, tmp_path, capsys):
+        # `anthropic`, not `claude`: the CLI provider is installed per machine
+        # (it lives in the gitignored local/ tree), so a test that named it
+        # would pass here and fail in CI for a reason that has nothing to do
+        # with what it is checking.
         _agent(tmp_path, "thinker", """
 agent:
   name: thinker
   type: llm
-  provider: claude
+  provider: anthropic
   provider_config:
-    effort: xhigh
+    effort: high
 """)
         assert check(tmp_path) == 0
         assert "every effort setting reaches" in capsys.readouterr().out
+
+    def test_a_provider_this_install_does_not_have_is_said_out_loud(self, tmp_path, capsys):
+        """Not the same as "no effort dial", and not something to pass over.
+
+        Providers are installed per machine. A config aimed at one this install
+        has never heard of cannot be checked either way, so the check says so
+        and fails rather than reporting that all is well.
+        """
+        _agent(tmp_path, "thinker", """
+agent:
+  name: thinker
+  type: llm
+  provider: a_provider_nobody_installed
+  provider_config:
+    effort: max
+""")
+        assert check(tmp_path) == 1
+        out = capsys.readouterr().out
+        assert "not configured in this install" in out and "thinker" in out
 
     def test_it_says_what_each_provider_can_do(self, tmp_path, capsys):
         """So the answer to \"then where do I put this agent?\" is on screen."""
         check(tmp_path)
         out = capsys.readouterr().out
-        assert "claude" in out and "low, medium, high, xhigh, max" in out
+        assert "anthropic" in out and "low, medium, high, max" in out
+        assert "no effort dial" in out  # and which ones have none
 
 
 class TestTheEffortVocabulary:

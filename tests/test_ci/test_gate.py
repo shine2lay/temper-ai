@@ -113,24 +113,28 @@ def test_one_check_at_a_time(ci):
 
 # -- who is allowed ----------------------------------------------------------
 
-def test_only_our_own_pushes_to_our_own_branches_are_checked(ci, monkeypatch):
+def test_only_our_own_branches_are_checked_never_forks_or_pull_requests(ci, monkeypatch):
     """The whole reason there is no self-hosted runner: temper-ai is public,
     so a stranger's pull request must never start anything on this machine.
-    Only a branch *of this repository*, pushed by someone on the list."""
-    _, gate, paths, _ = ci
-    events = [
-        {"type": "PushEvent", "actor": {"login": paths.ALLOWED_PUSHERS[0]},
-         "payload": {"ref": "refs/heads/ci-gate", "head": "1" * 40}},
-        {"type": "PushEvent", "actor": {"login": "a-stranger"},
-         "payload": {"ref": "refs/heads/sneaky", "head": "2" * 40}},
-        {"type": "PullRequestEvent", "actor": {"login": paths.ALLOWED_PUSHERS[0]},
-         "payload": {"ref": "refs/heads/pr", "head": "3" * 40}},
-        {"type": "PushEvent", "actor": {"login": paths.ALLOWED_PUSHERS[0]},
-         "payload": {"ref": "refs/tags/v1", "head": "4" * 40}},
-    ]
-    monkeypatch.setattr(gate, "gh", lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(events), ""))
+    Only a branch *of this repository* \u2014 which is exactly what ls-remote on
+    origin lists, and exactly what nobody without write access can create.
+    """
+    _, gate, _, _ = ci
+    monkeypatch.setattr(gate, "only_we_can_push", lambda: True)
+    listing = (
+        f"{'1' * 40}\trefs/heads/ci-gate\n"
+        f"{'4' * 40}\trefs/tags/v1\n"                  # a tag is not a branch
+        f"{'3' * 40}\trefs/pull/7/head\n"              # a pull request, possibly a stranger's
+        f"{'5' * 40}\trefs/heads/\n"                   # malformed, ignored
+    )
+    monkeypatch.setattr(gate, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, listing, ""))
+
+    gate.our_pushes()                       # the first look only notes where things are
+    listing_moved = f"{'9' * 40}\trefs/heads/ci-gate\n{'3' * 40}\trefs/pull/7/head\n"
+    monkeypatch.setattr(gate, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, listing_moved, ""))
     got = gate.our_pushes()
-    assert [p["sha"] for p in got] == ["1" * 40]
+
+    assert [p["sha"] for p in got] == ["9" * 40]
     assert got[0]["branch"] == "ci-gate"
 
 
@@ -158,30 +162,79 @@ def test_it_starts_again_when_its_own_code_is_landed_over(ci, monkeypatch, tmp_p
     assert not started
 
 
-def test_a_fresh_gate_leaves_history_alone(ci, monkeypatch):
-    """GitHub's event feed hands back the last hundred pushes. On a first start
-    that is a pile of commits from before this gate existed \u2014 they have no CI
-    compose file and could not pass even in principle. Judging them puts red
-    crosses on commits nobody is landing and spends ten minutes each doing it.
+def _heads(gate, monkeypatch, mapping: dict[str, str]) -> None:
+    """Make ``git ls-remote --heads origin`` answer with these branches."""
+    text = "".join(f"{sha}\trefs/heads/{branch}\n" for branch, sha in mapping.items())
+    monkeypatch.setattr(gate, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, text, ""))
+
+
+def test_a_fresh_gate_notes_where_everything_is_and_checks_nothing(ci, monkeypatch):
+    """On the day this is installed the repository has a dozen branches, all
+    from before the gate existed: no CI compose file, so they could not pass
+    even in principle. Putting red crosses on them ten minutes apart would be
+    wrong twice over.
+    """
+    _, gate, _, _ = ci
+    monkeypatch.setattr(gate, "only_we_can_push", lambda: True)
+    _heads(gate, monkeypatch, {"master": "1" * 40, "ancient": "2" * 40})
+
+    assert gate.our_pushes() == [], "it went back over history"
+    assert gate.state()["seen_heads"] == {"master": "1" * 40, "ancient": "2" * 40}
+
+    # Nothing moved: still nothing to do.
+    assert gate.our_pushes() == []
+
+    # One branch moves, another appears: both are work, the untouched one is not.
+    _heads(gate, monkeypatch, {"master": "3" * 40, "ancient": "2" * 40, "new": "4" * 40})
+    got = {p["branch"]: p["sha"] for p in gate.our_pushes()}
+    assert got == {"master": "3" * 40, "new": "4" * 40}
+    assert gate.our_pushes() == [], "it offered the same work twice"
+
+    # A branch that goes away stops being its business.
+    _heads(gate, monkeypatch, {"master": "3" * 40})
+    assert gate.our_pushes() == []
+    assert "new" not in gate.state()["seen_heads"]
+
+
+def test_it_asks_git_rather_than_githubs_event_feed(ci, monkeypatch):
+    """What really happened: a branch was pushed and the gate never saw it.
+    GitHub's /events feed is cached hard \u2014 minutes late, and sometimes a push
+    never appears on it at all. A gate that finds out about work late, or not
+    at all, is one people learn to go round.
+    """
+    _, gate, _, _ = ci
+    asked: list[tuple] = []
+    monkeypatch.setattr(gate, "only_we_can_push", lambda: True)
+    monkeypatch.setattr(gate, "gh", lambda *a, **k: (
+        asked.append(a), subprocess.CompletedProcess(a, 1, "", "should not be asked"))[1])
+    _heads(gate, monkeypatch, {"master": "1" * 40})
+
+    gate.our_pushes()
+    gate.our_pushes()
+
+    assert not any("events" in str(a) for a in asked), "it is still trusting the cached feed"
+
+
+def test_it_stops_looking_at_branches_when_someone_new_can_push(ci, monkeypatch):
+    """Looking at branch heads is only safe because a branch in this repository
+    can only be put there by someone with write access. Give write access to
+    someone else and this machine would start building and running their code.
     """
     _, gate, paths, _ = ci
-    old = {"type": "PushEvent", "actor": {"login": paths.ALLOWED_PUSHERS[0]},
-           "created_at": "2020-01-01T00:00:00Z",
-           "payload": {"ref": "refs/heads/ancient", "head": "1" * 40}}
-    new = {"type": "PushEvent", "actor": {"login": paths.ALLOWED_PUSHERS[0]},
-           "created_at": "2099-01-01T00:00:00Z",
-           "payload": {"ref": "refs/heads/today", "head": "2" * 40}}
-    monkeypatch.setattr(gate, "gh", lambda *a, **k: subprocess.CompletedProcess(
-        a, 0, json.dumps([old, new]), ""))
+    mine = paths.ALLOWED_PUSHERS[0]
 
-    got = gate.our_pushes()
+    def collaborators(logins):
+        body = json.dumps([{"login": n, "permissions": {"push": True}} for n in logins])
+        return lambda *a, **k: subprocess.CompletedProcess(a, 0, body, "")
 
-    assert [p["sha"] for p in got] == ["2" * 40], "it went back over history"
-    # And the watermark is remembered, so a restart does not start judging history again.
-    first = gate.state()["watching_since"]
-    gate.our_pushes()
-    assert gate.state()["watching_since"] == first
-    assert first.endswith("Z"), "the watermark must be in GitHub's own shape to compare with it"
+    monkeypatch.setattr(gate, "gh", collaborators([mine]))
+    assert gate.only_we_can_push() is True
+
+    monkeypatch.setattr(gate, "gh", collaborators([mine, "a-new-person"]))
+    assert gate.only_we_can_push() is False
+
+    _heads(gate, monkeypatch, {"master": "1" * 40})
+    assert gate.our_pushes() == [], "it kept checking after the trust boundary moved"
 
 
 def test_a_commit_already_answered_for_is_not_checked_again(ci, monkeypatch):

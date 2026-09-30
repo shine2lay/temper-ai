@@ -139,58 +139,98 @@ def post_status(sha: str, status: str, description: str, target: str = "") -> bo
     return r.returncode == 0
 
 
-def watching_since() -> str:
-    """The moment this gate started watching. Nothing older is its business.
+def only_we_can_push() -> bool:
+    """Is write access to this repository still just the people on the list?
 
-    GitHub's event feed hands back the last hundred pushes, which on a first
-    start is a pile of history \u2014 commits from before this gate existed, which
-    have no docker-compose.ci.yml and could not be checked even in principle.
-    Judging them is wrong twice over: it puts red crosses on commits nobody is
-    landing, and it spends ten minutes each finding out what was never in
-    doubt. So the first pass writes down the time and checks nothing; from
-    then on, only what is pushed after that.
+    This is what makes looking at branch heads safe. A branch under
+    ``refs/heads/`` in the repository itself can only be put there by someone
+    with write access \u2014 a fork's branches and a stranger's pull request are
+    never in that list. So if write access is exactly the people we already
+    trust, every branch head is by definition one of their pushes.
+
+    If someone new is given write access, that reasoning stops holding, and
+    this machine would start building and running their code. So it is asked
+    every pass, and the answer is loud when it changes.
     """
-    data = state()
-    since = data.get("watching_since")
-    if not since:
-        # GitHub's own shape, so comparing them is comparing like with like:
-        # "2026-09-29T23:29:19Z", not the "+00:00" the rest of this file writes.
-        since = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        data["watching_since"] = since
-        save(data)
-        log(f"first pass: watching for pushes from {since} onwards, and leaving history alone")
-    return str(since)
+    r = gh("api", f"repos/{paths.GH_REPO}/collaborators?per_page=100")
+    if r.returncode:
+        log(f"could not read who can push: {r.stderr.strip()[:200]}")
+        return False
+    try:
+        people = json.loads(r.stdout)
+    except ValueError:
+        return False
+    writers = {p.get("login") for p in people if (p.get("permissions") or {}).get("push")}
+    extra = writers - set(paths.ALLOWED_PUSHERS)
+    if extra:
+        log(f"someone else can push to {paths.GH_REPO} now ({', '.join(sorted(extra))}); "
+            "not checking branch heads until they are on the list in paths.ALLOWED_PUSHERS")
+        return False
+    return True
+
+
+def branch_heads() -> dict[str, str]:
+    """Every branch of the repository itself, and what it points at \u2014 asked of git.
+
+    Not GitHub's event feed. That feed is cached hard: a push can take many
+    minutes to appear on it, and some never do. A gate that finds out about
+    work late, or not at all, is a gate people learn to go round. ``ls-remote``
+    asks the server what the refs are right now, and answers in a moment.
+
+    Only ``refs/heads/*`` of this repository, which is the same trust boundary
+    as before: no fork branches, no ``refs/pull/*``.
+    """
+    r = sh("git", "-C", str(paths.MAIN_REPO), "ls-remote", "--heads", "origin", timeout=120)
+    if r.returncode:
+        log(f"could not ask git for the branches: {(r.stderr or r.stdout).strip()[:200]}")
+        return {}
+    heads: dict[str, str] = {}
+    for line in r.stdout.splitlines():
+        sha, _, ref = line.partition("\t")
+        ref = ref.strip()
+        if ref.startswith("refs/heads/") and len(sha.strip()) == 40:
+            heads[ref.removeprefix("refs/heads/")] = sha.strip()
+    return heads
 
 
 def our_pushes() -> list[dict]:
-    """Pushes to branches of this repository, by people on the list, since we started."""
-    since = watching_since()
-    r = gh("api", f"repos/{paths.GH_REPO}/events?per_page=100")
-    if r.returncode:
-        log(f"could not read the repository's events: {r.stderr.strip()[:200]}")
+    """Branch heads that have moved since the last look.
+
+    The first look writes down where every branch is and checks nothing. On
+    the day this is installed the repository has a dozen branches, all from
+    before the gate existed; they have no ``docker-compose.ci.yml`` and could
+    not be checked even in principle. Putting red crosses on them, ten minutes
+    apart, would be wrong twice over.
+    """
+    if not only_we_can_push():
         return []
-    try:
-        events = json.loads(r.stdout)
-    except ValueError:
+    heads = branch_heads()
+    if not heads:
         return []
+
+    data = state()
+    seen = data.get("seen_heads")
+    if not isinstance(seen, dict) or not seen:
+        data["seen_heads"] = dict(heads)
+        data.setdefault("watching_since", dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        save(data)
+        log(f"first look: {len(heads)} branch(es) noted where they are; "
+            "from now on, whatever moves gets checked")
+        return []
+
     out = []
-    for e in events:
-        if e.get("type") != "PushEvent":
+    for branch, sha in sorted(heads.items()):
+        if seen.get(branch) == sha:
             continue
-        who = (e.get("actor") or {}).get("login") or ""
-        if who not in paths.ALLOWED_PUSHERS:
-            continue
-        # GitHub stamps every event; anything from before we started is history.
-        when = str(e.get("created_at") or "")
-        if when and when < since:
-            continue
-        payload = e.get("payload") or {}
-        ref = str(payload.get("ref") or "")
-        head = str(payload.get("head") or "")
-        if not head or not ref.startswith("refs/heads/"):
-            continue
-        out.append({"sha": head, "branch": ref.removeprefix("refs/heads/"), "who": who,
-                    "when": when})
+        out.append({"sha": sha, "branch": branch, "who": paths.ALLOWED_PUSHERS[0]})
+        seen[branch] = sha
+    # Branches that have gone away stop being our business.
+    gone = [b for b in seen if b not in heads]
+    for b in gone:
+        seen.pop(b, None)
+    if out or gone:
+        data["seen_heads"] = seen
+        save(data)
     return out
 
 

@@ -528,6 +528,25 @@ class TestTheRunsWhoseBoxesDied:
 
         assert pickup.cut_off_by_this_stop([], since=utcnow() - timedelta(minutes=1)) == []
 
+    def test_a_box_buried_on_the_way_down_still_counts_as_this_stop(self):
+        """A stack going down is not instant: the reaper can bury a box before it goes.
+
+        Seen for real: both boxes were killed at 05:27:59 and the reaper, still up, wrote
+        them down two seconds before the server itself stopped. Measuring strictly from
+        the new process's start would leave exactly the runs this is meant to save.
+        """
+        self._reaped("run-last-gasp", completed_ago=timedelta(minutes=2))
+        with get_session() as s:
+            s.add(Checkpoint(execution_id="run-last-gasp", sequence=0,
+                             event_type="node_completed", node_name="build", status="completed"))
+            s.commit()
+        picked = []
+
+        pickup.pick_up_interrupted([], since=utcnow(), settle_s=0, sleep=lambda s: None,
+                                   resume=picked.append, tell=lambda t: True)
+
+        assert picked == ["run-last-gasp"]
+
     def test_a_run_still_going_in_its_box_is_left_alone(self):
         """The whole reason the marking skips box runs: they survive the restart."""
         self._reaped("run-alive", row_status="running", event_status="running")

@@ -51,8 +51,10 @@ Two places, because a run dies differently depending on where it runs:
 
 So the pick-up waits a little (:data:`SETTLE_S`) for the reaper to finish its
 first sweep, and then looks for both: what start-up marked, and what was ended
-as lost *during this boot*. A run whose box died an hour ago while temper kept
-running was already dead and seen; it is not this restart's business.
+as lost by this stop -- from a few minutes before the process came back
+(:data:`GRACE`, because a stack on its way down can still bury a box or two)
+until now. A run whose box died an hour ago while temper kept running was
+already dead and seen; it is not this restart's business.
 
 One at a time
 -------------
@@ -92,6 +94,12 @@ GAP_S = 5.0
 # How long to let the dust settle before looking. Long enough for the worker to
 # come up and its reaper (every 5s) to end the runs whose boxes died with it.
 SETTLE_S = float(os.environ.get("TEMPER_PICK_UP_SETTLE_S", "60") or 60)
+
+# How far back before the restart still counts as the same stop. A stack going
+# down is not instant: the boxes die first and the reaper, still alive for those
+# last seconds, buries some of them before the server itself goes. Without this
+# they would look like runs that died during the last uptime and be left.
+GRACE = timedelta(minutes=5)
 
 SWITCH_ENV = "TEMPER_PICK_UP_INTERRUPTED"
 OFF = ("0", "false", "off", "no")
@@ -288,7 +296,8 @@ def cut_off_by_this_stop(
 
     ``marked`` is what :func:`reconcile_and_report` returns -- runs temper was
     running itself. The others ran in their own boxes: their boxes died with the
-    stack and the worker's reaper has just ended them, which is what ``since``
+    stack and the reaper ended them, either on its way down or on its way back,
+    which is what ``since`` (a few minutes before the restart, see :data:`GRACE`)
     separates from the ones that died during the last uptime and were seen then.
 
     One entry per run, in the shape :func:`candidates_from` reads.
@@ -521,7 +530,7 @@ def pick_up_interrupted(
         if not switched_on():
             logger.info("Picking interrupted runs up again is off (%s)", SWITCH_ENV)
             return picks
-        started = since or utcnow()
+        started = (since or utcnow()) - GRACE
         settle = SETTLE_S if settle_s is None else settle_s
         if settle > 0:
             sleep(settle)

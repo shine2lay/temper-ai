@@ -24,6 +24,12 @@ Scope, deliberately narrow:
 * The status used is ``interrupted``, which the read path already
   understands, rather than ``failed`` — the workflow did not fail, it was
   cut off, and a later reader should be able to tell those apart.
+
+Marking is not the end of it: :func:`reconcile_and_report` hands back what it
+buried, and ``temper_ai/runner/pickup.py`` decides which of those runs temper
+picks back up by itself. Which is why each entry carries the status the run had
+*before* it was marked — a run parked at a gate (``waiting``) is not lost and
+must not be started again behind the answerer's back.
 """
 
 from __future__ import annotations
@@ -84,15 +90,25 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
     Returns the number of runs updated. Never raises: a failure here must not
     stop the server from starting.
     """
+    return len(reconcile_and_report(started_before=started_before))
+
+
+def reconcile_and_report(started_before: datetime | None = None) -> list[dict[str, Any]]:
+    """Mark them, and say which runs they were.
+
+    One entry per run: ``execution_id``, ``event_id``, ``workflow_name``,
+    ``status_before`` (running / queued / waiting) and ``timestamp`` (when that
+    attempt started). Never raises.
+    """
     if os.environ.get("TEMPER_RECONCILE_ORPHANS", "1").lower() in ("0", "false", "no"):
         logger.info("Orphan reconciliation disabled by TEMPER_RECONCILE_ORPHANS")
-        return 0
+        return []
 
     mode = os.environ.get("TEMPER_EXECUTION_MODE", "inprocess").lower()
     if mode not in ("inprocess", "external"):
         # A subprocess worker may outlive this process; its runs are not ours to bury.
         logger.info("Orphan reconciliation skipped: execution mode is %s", mode)
-        return 0
+        return []
 
     cutoff = as_utc(started_before) or utcnow()
 
@@ -102,7 +118,7 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
         from temper_ai.database.session import get_session
         from temper_ai.observability.models import Event
 
-        updated: list[str] = []
+        updated: list[dict[str, Any]] = []
         with get_session() as session:
             rows: Any = session.exec(
                 select(Event).where(
@@ -117,6 +133,7 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
                 rows = [e for e in rows if e.execution_id not in in_boxes]
 
             for event in rows:
+                was = event.status or "running"
                 event.status = INTERRUPTED
                 data = dict(event.data or {})
                 data.setdefault(
@@ -125,21 +142,29 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
                 )
                 event.data = data
                 session.add(event)
-                updated.append(event.execution_id or event.id)
+                updated.append({
+                    "execution_id": event.execution_id or event.id,
+                    "event_id": event.id,
+                    # The run's event calls the workflow "name"; older ones spelled it out.
+                    "workflow_name": str(data.get("name") or data.get("workflow_name") or ""),
+                    "status_before": was,
+                    "timestamp": as_utc(event.timestamp),
+                })
 
             if updated:
                 session.commit()
 
         if updated:
+            ids = [str(u["execution_id"]) for u in updated]
             logger.warning(
                 "Marked %d interrupted run(s) from a previous process: %s",
                 len(updated),
-                ", ".join(r[:8] for r in updated[:5]) + (" ..." if len(updated) > 5 else ""),
+                ", ".join(r[:8] for r in ids[:5]) + (" ..." if len(ids) > 5 else ""),
             )
-        return len(updated)
+        return updated
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Orphan reconciliation failed (continuing startup): %s", exc)
-        return 0
+        return []
 
 
 def _runs_in_boxes(session: Any, execution_ids: set[str]) -> set[str]:

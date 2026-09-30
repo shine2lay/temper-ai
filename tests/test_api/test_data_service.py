@@ -483,3 +483,71 @@ class TestEveryAgentOfARun:
     def test_a_run_with_no_events_has_no_index(self, monkeypatch):
         monkeypatch.setattr("temper_ai.api.data_service.get_events", _events_query([]))
         assert get_agent_index("nope") is None
+
+
+class TestTheAttemptsOfARun:
+    """A run cut off and started again keeps its id, so its page holds two attempts.
+
+    The tree merges them by name, which is what a reader wants -- but then a resumed run looks
+    like a run that simply took a while. These entries are how the page can say otherwise, and
+    say when it was temper that picked the run back up rather than a person.
+    """
+
+    def _two_attempts(self, first_data: dict) -> list[dict]:
+        return [
+            _evt("wf1", "workflow.started", execution_id="run-1", status="interrupted",
+                 timestamp="2026-09-28T01:20:00", data={"name": "epd_task", **first_data}),
+            _evt("s1", "stage.started", parent_id="wf1", timestamp="2026-09-28T01:21:00",
+                 data={"name": "plan"}),
+            _evt("wf2", "workflow.started", execution_id="run-1", status="completed",
+                 timestamp="2026-09-28T07:05:00",
+                 data={"name": "epd_task", "resume_of": "wf1", "restored_node_names": ["plan"],
+                       "cost_usd": 0.5}),
+            _evt("s2", "stage.started", parent_id="wf2", timestamp="2026-09-28T07:06:00",
+                 data={"name": "build"}),
+        ]
+
+    def test_a_run_that_ran_once_lists_no_attempts(self, monkeypatch):
+        events = [_evt("wf", "workflow.started", execution_id="run-1", data={"name": "epd_task"})]
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _events_query(events))
+
+        assert get_workflow_execution("run-1")["attempts"] == []
+
+    def test_both_attempts_are_listed_oldest_first(self, monkeypatch):
+        monkeypatch.setattr("temper_ai.api.data_service.get_events",
+                            _events_query(self._two_attempts({})))
+
+        attempts = get_workflow_execution("run-1")["attempts"]
+
+        assert [a["attempt"] for a in attempts] == [1, 2]
+        assert [a["event_id"] for a in attempts] == ["wf1", "wf2"]
+        assert [a["status"] for a in attempts] == ["interrupted", "completed"]
+        assert [a["is_current"] for a in attempts] == [False, True]
+
+    def test_the_attempt_temper_picked_up_says_so(self, monkeypatch):
+        stamped = {"auto_resumed": {"at": "2026-09-28T07:04:00+00:00", "attempt": 1},
+                   "error": "Interrupted: the server restarted while this run was in progress."}
+        monkeypatch.setattr("temper_ai.api.data_service.get_events",
+                            _events_query(self._two_attempts(stamped)))
+
+        attempts = get_workflow_execution("run-1")["attempts"]
+
+        assert [a["picked_up_by_temper"] for a in attempts] == [True, False]
+        assert attempts[0]["picked_up_at"] == "2026-09-28T07:04:00+00:00"
+        assert "restarted" in attempts[0]["error"]
+
+    def test_a_run_a_person_resumed_names_nobody(self, monkeypatch):
+        monkeypatch.setattr("temper_ai.api.data_service.get_events",
+                            _events_query(self._two_attempts({})))
+
+        assert not any(a["picked_up_by_temper"]
+                       for a in get_workflow_execution("run-1")["attempts"])
+
+    def test_the_earlier_attempts_steps_are_still_in_the_tree(self, monkeypatch):
+        """What the banner promises the reader: the first attempt is still readable."""
+        monkeypatch.setattr("temper_ai.api.data_service.get_events",
+                            _events_query(self._two_attempts({})))
+
+        names = [n["name"] for n in get_workflow_execution("run-1")["nodes"]]
+
+        assert names == ["plan", "build"]

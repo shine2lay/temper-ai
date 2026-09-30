@@ -270,6 +270,11 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         # keeping back (stage/failure.py). The page says what failed instead of leaving the
         # reader to find it among the nodes.
         "stopped": wf_data.get("stopped"),
+        # Every earlier attempt of this run, oldest first, so the page can say a run was
+        # resumed -- and whether a person pressed Resume or temper picked it up itself after
+        # a crash (runner/pickup.py). The steps of those attempts are merged into the tree
+        # above; this is who they were.
+        "attempts": _attempts(workflow_candidates, workflow_event),
     }
     _clear_children_index()
     return result
@@ -538,6 +543,39 @@ def _inline_passthroughs(nodes: list[dict]) -> None:
                         by_agent_name[n] = a
                 node["agents"] = list(by_agent_name.values())
         node["child_nodes"] = rebuilt
+
+
+def _attempts(workflow_events: list[dict], latest: dict) -> list[dict]:
+    """One entry per attempt of this run, oldest first.
+
+    A run cut off by a crash and started again keeps its execution id and gets
+    a second ``workflow.started``; the entries say when each attempt ran, how
+    it ended, and which of them temper picked back up by itself "" the stamp
+    ``runner/pickup.py`` leaves on the attempt it resumed.
+
+    A single entry means a run that ran once: the page shows nothing.
+    """
+    starts = [e for e in workflow_events if e.get("type") == "workflow.started"]
+    if len(starts) < 2:
+        return []
+    starts.sort(key=lambda e: e.get("timestamp") or "")
+    out = []
+    for i, event in enumerate(starts, start=1):
+        data = event.get("data") or {}
+        stamp = data.get("auto_resumed") or {}
+        out.append({
+            "attempt": i,
+            "event_id": event.get("id"),
+            "start_time": event.get("timestamp"),
+            "status": _resolve_status(event),
+            "error": data.get("error"),
+            "is_current": event.get("id") == latest.get("id"),
+            # This attempt was the one temper picked up again by itself; the next
+            # attempt in the list is what came of it.
+            "picked_up_by_temper": bool(stamp),
+            "picked_up_at": stamp.get("at") if isinstance(stamp, dict) else None,
+        })
+    return out
 
 
 def _build_resume_chain(latest_event: dict, all_workflow_events: list[dict]) -> list[dict]:

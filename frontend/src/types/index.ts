@@ -48,6 +48,24 @@ export interface WorkflowExecution {
   stopped?: RunStopped | null;
   /** The clean-ups the run is holding back so a resume can use the same setup. */
   hold?: CleanupHoldInfo | null;
+  /** Every attempt of this run, oldest first "" a run cut off and started again from where
+   *  it stopped keeps its id and gets another one. One entry (or none) means it ran once. */
+  attempts?: RunAttempt[] | null;
+}
+
+/** One attempt of a run: when it ran, how it ended, and who started it again. */
+export interface RunAttempt {
+  /** 1 for the first attempt, 2 for the next... */
+  attempt: number;
+  event_id: string | null;
+  start_time: string | null;
+  status: ExecutionStatus;
+  error?: string | null;
+  /** The attempt shown as the run's own state; the others are history. */
+  is_current: boolean;
+  /** temper picked this attempt back up itself after a crash, rather than a person. */
+  picked_up_by_temper: boolean;
+  picked_up_at?: string | null;
 }
 
 /** Where a run stopped and what it is keeping back (the engine's stage/failure.py). */

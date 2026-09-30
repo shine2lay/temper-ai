@@ -11,6 +11,7 @@ import { authFetch } from '@/lib/authFetch';
 import { formatDuration, formatTimestamp, cn } from '@/lib/utils';
 import { ResumeDialog } from './ResumeDialog';
 import { HoldBanner } from './HoldBanner';
+import { AttemptsBanner } from './AttemptsBanner';
 
 interface Checkpoint {
   id: string;
@@ -180,6 +181,7 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
         </div>
       )}
       {workflow?.hold && <HoldBanner hold={workflow.hold} />}
+      <AttemptsBanner attempts={workflow?.attempts} />
 
       {showPreview && executionId && (
         <ResumeDialog

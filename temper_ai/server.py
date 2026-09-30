@@ -279,8 +279,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Runs that were in flight when this process last stopped cannot report
     # their own death — their status lives on an event nobody will update.
-    from temper_ai.observability.reconcile import reconcile_interrupted_runs
-    reconcile_interrupted_runs(started_before=_PROCESS_START)
+    # Marking them is only half the job; picking the ones temper safely can back
+    # up where they stopped comes at the end of start-up, once everything a run
+    # needs is running (temper_ai/runner/pickup.py).
+    from temper_ai.observability.reconcile import reconcile_and_report
+    interrupted = reconcile_and_report(started_before=_PROCESS_START)
 
     # MCP servers (load configs only — connections are lazy)
     try:
@@ -387,6 +390,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         holds_started = hold_sweeper.start()
     except Exception as e:
         logger.warning("The keeper of clean-up deadlines failed to start: %s", e)
+
+    # The runs this start-up just buried: the ones that can safely come back are
+    # picked up where they stopped, one at a time, on a thread of their own, and
+    # the owner gets one message about it. Last, so a resumed run finds the
+    # configs, the tools, the box watcher and the clean-up deadlines already up.
+    if interrupted:
+        try:
+            from temper_ai.runner.pickup import pick_up_in_the_background
+            pick_up_in_the_background(interrupted)
+        except Exception as e:
+            logger.warning("Could not start picking interrupted runs back up: %s", e)
 
     logger.info("Temper AI server ready")
 

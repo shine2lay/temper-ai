@@ -1,5 +1,6 @@
 """Tests for api/data_service.py — event hierarchy reconstruction."""
 
+from datetime import timedelta
 from unittest.mock import patch
 
 from temper_ai.api.data_service import (
@@ -14,6 +15,8 @@ from temper_ai.api.data_service import (
     list_workflow_executions,
 )
 from temper_ai.observability.event_types import EventType
+from temper_ai.runner import quiet
+from temper_ai.shared.clock import utcnow
 
 
 def _evt(id, type, parent_id=None, execution_id="run-1", status="running", data=None, timestamp="2026-01-01T00:00:00"):
@@ -351,6 +354,117 @@ class TestARunWaitingForAPerson:
         runs = list_workflow_executions()["runs"]
 
         assert self._status(runs, "parked") == "running"
+
+
+class TestARunThatHasGoneQuiet:
+    """A run that stops getting anywhere looks exactly like one that is busy.
+
+    An EPD build began a deploy step at 06:59 and did nothing until 16:57 --
+    ten hours -- and the page said "running" the whole time. The listing and
+    the run page now say how long it has been quiet, and what it last did.
+    """
+
+    def _run(self, execution_id="stalled", status="running", name="epd_loop"):
+        return _evt("wf1", "workflow.started", execution_id=execution_id, status=status,
+                    data={"name": name}, timestamp="2026-01-01T00:00:00")
+
+    @patch("temper_ai.runner.quiet.activity_of")
+    @patch("temper_ai.api.data_service.get_events")
+    def test_the_list_says_how_long_it_has_been_quiet(self, mock_get_events, mock_activity):
+        mock_get_events.side_effect = _listing_where([self._run()], [])
+        quiet_since = utcnow() - timedelta(hours=2, minutes=14)
+        mock_activity.return_value = {
+            "stalled": quiet.Activity(at=quiet_since, step="deploy · running bash"),
+        }
+
+        run = list_workflow_executions()["runs"][0]
+
+        assert run["quiet"] is True
+        assert run["quiet_for"] == "2h 14m"
+        assert run["last_step"] == "deploy · running bash"
+        assert run["quiet_since"] == quiet_since.isoformat()
+
+    @patch("temper_ai.runner.quiet.activity_of")
+    @patch("temper_ai.api.data_service.get_events")
+    def test_a_run_still_getting_on_with_it_is_not_marked(self, mock_get_events, mock_activity):
+        mock_get_events.side_effect = _listing_where([self._run()], [])
+        mock_activity.return_value = {
+            "stalled": quiet.Activity(at=utcnow() - timedelta(minutes=3), step="build · thinking"),
+        }
+
+        run = list_workflow_executions()["runs"][0]
+
+        assert run["quiet"] is False
+        assert "quiet_for" not in run
+        assert run["last_step"] == "build · thinking"
+
+    @patch("temper_ai.runner.quiet.activity_of")
+    @patch("temper_ai.api.data_service.get_events")
+    def test_a_run_waiting_on_a_person_is_never_called_quiet(self, mock_get_events, mock_activity):
+        gate = [_evt("g1", "stage.started", execution_id="stalled", status="waiting",
+                     data={"name": "approve", "gate": True})]
+        mock_get_events.side_effect = _listing_where([self._run()], gate)
+        mock_activity.return_value = {
+            "stalled": quiet.Activity(at=utcnow() - timedelta(hours=9), step="approve · waiting for an OK"),
+        }
+
+        run = list_workflow_executions()["runs"][0]
+
+        assert run["status"] == "waiting"
+        assert run["quiet"] is False
+        # ...but how long it has waited is the thing that goes unnoticed. The
+        # EPD build sat on a question from 06:59 to 16:57 and the list said
+        # "needs you" in exactly the words it uses after two minutes.
+        assert run["waiting_on_you"] is True
+        assert run["waiting_for"] == "9h"
+
+    @patch("temper_ai.runner.quiet.activity_of")
+    @patch("temper_ai.api.data_service.get_events")
+    def test_a_finished_run_is_not_looked_up_at_all(self, mock_get_events, mock_activity):
+        """Nothing to chase, and no query spent asking about it."""
+        mock_get_events.side_effect = _listing_where([self._run(status="completed")], [])
+        mock_activity.return_value = {}
+
+        run = list_workflow_executions()["runs"][0]
+
+        assert run["quiet"] is False
+        mock_activity.assert_not_called()   # nothing live on the page: nothing asked
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_the_run_page_says_it_too_from_the_events_it_already_has(self, mock_get_events):
+        long_ago = (utcnow() - timedelta(hours=10)).isoformat()
+        events = [
+            _evt("wf", "workflow.started", execution_id="run-1", data={"name": "epd_loop"},
+                 timestamp=(utcnow() - timedelta(hours=11)).isoformat()),
+            _evt("s1", "stage.started", parent_id="wf", execution_id="run-1",
+                 data={"name": "deploy"}, timestamp=long_ago),
+        ]
+        mock_get_events.side_effect = _events_query(events)
+
+        result = get_workflow_execution("run-1")
+
+        assert result["quiet"] is True
+        assert result["quiet_for"] == "10h"
+        assert result["last_step"] == "deploy · started"
+        assert result["waiting_on_you"] is False
+
+    @patch("temper_ai.api.data_service.get_events")
+    def test_the_run_page_calls_a_gate_waiting_on_you(self, mock_get_events):
+        events = [
+            _evt("wf", "workflow.started", execution_id="run-1", data={"name": "gate_demo"},
+                 timestamp=(utcnow() - timedelta(hours=11)).isoformat()),
+            _evt("s1", "stage.started", parent_id="wf", execution_id="run-1", status="waiting",
+                 data={"name": "approve", "gate": True},
+                 timestamp=(utcnow() - timedelta(hours=10)).isoformat()),
+        ]
+        mock_get_events.side_effect = _events_query(events)
+
+        result = get_workflow_execution("run-1")
+
+        assert result["waiting_on_you"] is True
+        assert result["quiet"] is False
+        assert result["waiting_for"] == "10h"
+        assert result["last_step"] == "approve · waiting for an OK"
 
 
 def _ts(n: int) -> str:

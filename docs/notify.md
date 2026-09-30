@@ -16,7 +16,7 @@ runs, gates ──▶ notify loop (in the server, every 15 s) ──▶ Slack   
 | Kind | When | What you can do there |
 |---|---|---|
 | `question` | a gate is waiting, with the questions its step asked | answer them, then **Approve**, or **Reject** (stops the run) |
-| `stuck` | a running run has written no event for `stuck_after` | **Stop run** |
+| `stuck` | a running run has written no event for `stuck_after`, or for its workflow's own `quiet_after` | **Stop run** |
 | `failed` | a run failed; the message quotes the failed step's own error | |
 | `finished` | a run completed or was cancelled | |
 
@@ -126,6 +126,34 @@ both.
 Both can be set in the file (for every run), per workflow in `workflows:`,
 in a workflow file, or for one run; `quiet_hours: off` / `nudge: off` turns
 them off there.
+
+## When a run counts as quiet
+
+A run is quiet when it is still marked `running` and has written no event
+for longer than its threshold: `stuck_after` in this file (45 minutes), or
+the workflow's own `quiet_after`, which wins where it is set:
+
+```yaml
+name: epd_loop
+quiet_after: 2h        # a deploy step of this one really does take hours
+```
+
+Ten minutes of silence is alarming in a one-minute run and ordinary in a
+build, so the number belongs with the workflow. `quiet_after` takes `90s`,
+`30m`, `2h`, `1d` or a number of seconds.
+
+A run parked at a gate is **never** quiet, however long it waits: it is
+waiting for a person, which is the run doing its job. The run list and the
+run page say so, with how long it has been waiting ("needs you, 10h"),
+because a question nobody has answered since this morning is the thing that
+actually goes unnoticed. A run that has gone quiet shows "quiet for 2h 14m"
+and the last thing it did.
+
+One message goes out per quiet spell. A run that comes back to life by
+itself ends the spell and nothing more is said about it; if it goes quiet
+again later, that is a new spell and a new message. The same rule
+(`temper_ai/runner/quiet.py`) decides the badge and the message, so the
+screen and your phone never disagree.
 
 ## Status and checks
 

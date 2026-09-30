@@ -5,7 +5,9 @@ Checked every ``TICK_S`` in a daemon thread, from the database, so runs in
 worker processes are seen the same as in-process ones. Occasions:
 
 * a question: a gate is waiting (its questions, and Approve / Reject);
-* stuck: a running run has written no event for ``stuck_after``;
+* stuck: a running run has written no event for ``stuck_after`` -- or for
+  the ``quiet_after`` its own workflow sets, since a long silence is normal
+  in a build and alarming in a one-minute run;
 * failed / finished: a run ended.
 
 Each occasion in each place is one ``notify_copies`` row, claimed before
@@ -40,6 +42,7 @@ from temper_ai.integrations.notify.config import (
     parse_block,
 )
 from temper_ai.integrations.notify.notice import Copy, Decision, Notice, Sender
+from temper_ai.runner import quiet
 
 logger = logging.getLogger(__name__)
 
@@ -531,21 +534,43 @@ class Notifier:
 
     def _stuck(self, cfg: NotifyConfig, now: datetime, since: datetime,
                runs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        """Runs that have gone quiet, one message each.
+
+        The choice itself is :func:`temper_ai.runner.quiet.look`, the same rule
+        the run page shows a badge from, so a message never contradicts the
+        screen. What stays here is notify's own part: how long counts as quiet
+        for this workflow, whether this spell has already been spoken for, and
+        where to send it.
+        """
         out: list[dict[str, Any]] = []
         for run in runs.values():
-            if run.get("status") != "running" or run.get("workflow_name") in QUIET_WORKFLOWS:
-                continue
-            last = _aware(self.ops.last_activity(run["id"])) or _aware(run.get("start_time"))
-            # Quiet since before notify was on: a leftover, not news.
-            if last is None or now - last < cfg.stuck_after or last < since - cfg.stuck_after:
+            workflow = str(run.get("workflow_name") or "")
+            if workflow in QUIET_WORKFLOWS:
                 continue
             eid = str(run["id"])
+            last = _aware(self.ops.last_activity(eid)) or _aware(run.get("start_time"))
+            verdict = quiet.look(
+                quiet.Run(
+                    execution_id=eid,
+                    workflow_name=workflow,
+                    status=str(run.get("status") or ""),
+                    last_activity_at=last,
+                    started_at=_aware(run.get("start_time")),
+                    after=quiet.after_for(workflow, cfg.stuck_after),
+                ),
+                now=now,
+                default_after=cfg.stuck_after,
+            )
+            if not verdict.quiet or last is None:
+                continue
+            # Quiet since before notify was on: a leftover, not news.
+            if last < since - verdict.after:
+                continue
             key = f"stuck:{eid}@{last.isoformat(timespec='seconds')}"
             if store.has_copies(key):
                 continue
             if self.ops.waiting_gates(execution_id=eid):
                 continue   # waiting for an answer is not stuck
-            workflow = str(run.get("workflow_name") or "")
             targets = self.targets(cfg, "stuck", workflow, eid)
             if not targets:
                 store.claim(key, "stuck", eid, "", "", status="closed", state={"reason": "nowhere to send"})

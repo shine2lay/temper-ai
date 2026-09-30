@@ -456,3 +456,58 @@ class TestStuck:
         ops.activity["run-old"] = T0 - timedelta(hours=3)
         clock.now = _minutes(5)
         assert notifier.tick() == []
+
+    def test_a_second_check_over_the_same_quiet_run_says_nothing_again(self, notifier, slack, ops, clock):
+        """A quiet run stays quiet; asking again must not ask again."""
+        ops.add_run("run-q", "trigger_probe", "running", _minutes(1))
+        ops.activity["run-q"] = _minutes(1)
+        clock.now = _minutes(35)
+        assert [s["kind"] for s in notifier.tick()] == ["stuck"]
+        for later in (36, 40, 120):
+            clock.now = _minutes(later)
+            assert notifier.tick() == []
+        assert len(slack.posts) == 1
+
+    def test_a_run_that_comes_back_to_life_clears_the_mark(self, notifier, slack, ops, clock):
+        """New activity ends the quiet spell: nothing is repeated about it."""
+        ops.add_run("run-q", "trigger_probe", "running", _minutes(1))
+        ops.activity["run-q"] = _minutes(1)
+        clock.now = _minutes(35)
+        assert [s["kind"] for s in notifier.tick()] == ["stuck"]
+        ops.activity["run-q"] = _minutes(36)      # it moved again by itself
+        clock.now = _minutes(40)
+        assert notifier.tick() == []
+        assert len(slack.posts) == 1
+
+    def test_a_workflow_may_ask_to_be_left_quiet_for_longer(self, notifier, slack, ops, clock):
+        """``quiet_after`` in the workflow: a long step is normal for this one."""
+        from temper_ai.config.store import ConfigStore
+        from temper_ai.runner import quiet as quiet_rule
+
+        ConfigStore().put("slow_build", "workflow",
+                          {"name": "slow_build", "quiet_after": "2h", "nodes": []})
+        quiet_rule.forget_thresholds()
+        ops.add_run("run-slow", "slow_build", "running", _minutes(1))
+        ops.activity["run-slow"] = _minutes(1)
+        clock.now = _minutes(50)            # past the shared 45m, inside its own 2h
+        assert notifier.tick() == []
+        clock.now = _minutes(130)
+        assert [s["kind"] for s in notifier.tick()] == ["stuck"]
+
+    def test_a_workflow_may_ask_to_be_chased_sooner(self, notifier, slack, ops, clock):
+        from temper_ai.config.store import ConfigStore
+        from temper_ai.runner import quiet as quiet_rule
+
+        ConfigStore().put("brisk", "workflow", {"name": "brisk", "quiet_after": "5m", "nodes": []})
+        quiet_rule.forget_thresholds()
+        ops.add_run("run-brisk", "brisk", "running", _minutes(1))
+        ops.activity["run-brisk"] = _minutes(1)
+        clock.now = _minutes(10)            # nowhere near the shared 45m
+        assert [s["kind"] for s in notifier.tick()] == ["stuck"]
+
+    def test_a_run_waiting_on_a_person_is_never_called_quiet(self, notifier, slack, ops, clock):
+        """Ten hours at a gate is the run doing its job, not a run gone quiet."""
+        gate(ops, eid="run-gate", event="ev-gate", at=1)
+        clock.now = _minutes(600)
+        kinds = [s["kind"] for s in notifier.tick()]
+        assert "stuck" not in kinds

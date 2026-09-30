@@ -51,6 +51,22 @@ export interface WorkflowExecution {
   /** Every attempt of this run, oldest first "" a run cut off and started again from where
    *  it stopped keeps its id and gets another one. One entry (or none) means it ran once. */
   attempts?: RunAttempt[] | null;
+  /** Still marked running, but nothing new for longer than this workflow's
+   *  threshold (``quiet_after``, 30 minutes by default). A run waiting at a
+   *  gate is never quiet -- that is `waiting_on_you`. */
+  quiet?: boolean;
+  /** How long it has been quiet, in words: "2h 14m". */
+  quiet_for?: string;
+  /** When it last did anything, ISO. */
+  quiet_since?: string | null;
+  quiet_seconds?: number;
+  /** The last thing it did, e.g. the deploy step running bash. */
+  last_step?: string;
+  last_activity?: string | null;
+  /** Parked at a gate: healthy, and yours to answer. */
+  waiting_on_you?: boolean;
+  /** How long it has been waiting for you: "10h". */
+  waiting_for?: string;
 }
 
 /** One attempt of a run: when it ran, how it ended, and who started it again. */

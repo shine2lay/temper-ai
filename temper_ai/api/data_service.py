@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from temper_ai.observability import get_events
 from temper_ai.observability.event_types import EventType
+from temper_ai.runner import quiet
 
 logger = logging.getLogger(__name__)
 
@@ -276,8 +277,58 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         # above; this is who they were.
         "attempts": _attempts(workflow_candidates, workflow_event),
     }
+    result.update(_quiet_fields(execution_id, result, events))
     _clear_children_index()
     return result
+
+
+def _quiet_fields(execution_id: str, result: dict, events: list[dict]) -> dict:
+    """Whether this run has gone quiet, from the events already in hand.
+
+    The run page asks for a run every few seconds; the newest event is already
+    loaded here, so saying "quiet for 2h 14m" costs nothing but the reading.
+    """
+    status = str(result.get("status") or "")
+    newest = max((e for e in events if e.get("timestamp")),
+                 key=lambda e: e.get("timestamp") or "", default=None)
+    at_a_gate = any(
+        e.get("type") == "stage.started" and e.get("status") == "waiting"
+        and (e.get("data") or {}).get("gate")
+        for e in events
+    )
+    try:
+        workflow = str(result.get("workflow_name") or "")
+        verdict = quiet.look(
+            quiet.Run(
+                execution_id=execution_id,
+                workflow_name=workflow,
+                status=status,
+                last_activity_at=quiet.moment(newest.get("timestamp")) if newest else None,
+                started_at=quiet.moment(result.get("start_time")),
+                at_a_gate=at_a_gate,
+                last_step=quiet.last_step_label(
+                    str(newest.get("type") or ""), newest.get("data"),
+                    str(newest.get("status") or ""),
+                ) if newest else "",
+                after=quiet.after_for(workflow),
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - never lose a run page over a badge
+        logger.warning("could not work out whether %s is quiet: %s", execution_id[:8], exc)
+        return {}
+    fields = {
+        "quiet": verdict.quiet,
+        "last_step": verdict.last_step,
+        "last_activity": verdict.since.isoformat() if verdict.since else None,
+        "waiting_on_you": verdict.state == quiet.WAITING,
+    }
+    if verdict.state == quiet.WAITING:
+        fields["waiting_for"] = verdict.how_long
+    if verdict.quiet:
+        fields["quiet_since"] = verdict.since.isoformat() if verdict.since else None
+        fields["quiet_for"] = verdict.how_long
+        fields["quiet_seconds"] = int(verdict.idle.total_seconds()) if verdict.idle else 0
+    return fields
 
 
 def _agent_index(events: list[dict]) -> list[dict]:
@@ -471,8 +522,44 @@ def list_workflow_executions(
 
     total = len(runs)
     runs = runs[offset: offset + limit]
+    _mark_the_quiet_ones(runs, awaiting)
 
     return {"runs": runs, "total": total}
+
+
+def _mark_the_quiet_ones(runs: list[dict], awaiting: set[str]) -> None:
+    """Add ``quiet``/``quiet_for``/``last_step`` to the runs of one page.
+
+    A run still marked running that has written nothing for longer than its
+    threshold gets said so here, so the list shows "quiet for 2h 14m" instead
+    of a spinner that means nothing. Only the page's own rows are looked up,
+    and a run that has ended is not looked up at all.
+    """
+    if not runs:
+        return
+    try:
+        verdicts = quiet.verdicts_for(runs, gated=awaiting)
+    except Exception as exc:  # noqa: BLE001 - a listing must still render
+        logger.warning("could not work out which runs are quiet: %s", exc)
+        return
+    for run in runs:
+        verdict = verdicts.get(str(run.get("id")))
+        if verdict is None:
+            continue
+        run["quiet"] = verdict.quiet
+        run["last_step"] = verdict.last_step
+        run["last_activity"] = verdict.since.isoformat() if verdict.since else None
+        # How long it has been waiting for its answer. A gate is healthy, but
+        # a gate nobody has answered since this morning is the thing that
+        # actually goes unnoticed: "needs you" said the same at two minutes
+        # and at ten hours.
+        if verdict.state == quiet.WAITING:
+            run["waiting_on_you"] = True
+            run["waiting_for"] = verdict.how_long
+        if verdict.quiet:
+            run["quiet_since"] = verdict.since.isoformat() if verdict.since else None
+            run["quiet_for"] = verdict.how_long
+            run["quiet_seconds"] = int(verdict.idle.total_seconds()) if verdict.idle else 0
 
 
 def _inline_passthroughs(nodes: list[dict]) -> None:

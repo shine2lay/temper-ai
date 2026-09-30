@@ -30,6 +30,9 @@ export function WorkflowHeader() {
   // The engine keeps a gated run as "running" (it holds its slot); the
   // header should still say what is actually true of it to a person.
   const displayStatus = isRunning && isGated ? 'waiting' : workflow?.status;
+  // Waiting for a person is not quiet, however long it has waited -- the
+  // server says so too, but the page knows about the gate first.
+  const isQuiet = Boolean(workflow?.quiet) && !isGated;
 
   // stages is a Map<string, NodeExecution>, not a plain object.
   let unresolvedCount = 0;
@@ -274,6 +277,31 @@ export function WorkflowHeader() {
         </button>
 
         {workflow && <StatusBadge status={displayStatus ?? workflow.status} />}
+        {/* Still marked running, but nothing has happened for a long while.
+            A run that dies quietly looks exactly like one that is working:
+            this is the only place the difference shows. */}
+        {/* Parked on a question. Healthy -- but a question nobody has answered
+            since this morning is the thing that actually goes unnoticed, so
+            say how long it has been there. */}
+        {displayStatus === 'waiting' && workflow?.waiting_for && (
+          <span
+            className="text-[11px] px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 text-amber-900 dark:text-amber-300"
+            title={`This run has been waiting ${workflow.waiting_for} for an answer.`}
+          >
+            waiting on you · {workflow.waiting_for}
+          </span>
+        )}
+        {isQuiet && (
+          <span
+            className="text-[11px] px-1.5 py-0.5 rounded border border-yellow-500/40 bg-yellow-500/15 text-yellow-900 dark:text-yellow-300 cursor-help"
+            title={`Nothing new from this run for ${workflow?.quiet_for ?? 'a while'}.${
+              workflow?.last_step ? ` Last: ${workflow.last_step}.` : ''
+            } It may be stuck.`}
+          >
+            quiet for {workflow?.quiet_for ?? 'a while'}
+            {workflow?.last_step ? ` · ${workflow.last_step}` : ''}
+          </span>
+        )}
         {/* A run whose wiring did not resolve still completes — that is the
             deliberate design — but the only sign of it was a chip on one
             card somewhere in the graph. Say it at the top too. */}

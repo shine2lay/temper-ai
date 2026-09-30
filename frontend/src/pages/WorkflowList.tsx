@@ -13,7 +13,6 @@ import {
   formatCost,
   getDateGroup,
   cn,
-  ensureUTC,
 } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -39,6 +38,16 @@ interface WorkflowSummary {
   total_cost_usd: number | null;
   total_llm_calls: number | null;
   total_tool_calls: number | null;
+  /** The server's verdict: still marked running, but nothing new for longer
+   *  than this workflow's threshold. Absent from servers that predate it. */
+  quiet?: boolean;
+  /** How long it has been quiet, in words: "2h 14m". */
+  quiet_for?: string;
+  /** The last thing it did: "deploy · running bash". */
+  last_step?: string;
+  /** Parked at a gate, and how long it has been there: "10h". */
+  waiting_on_you?: boolean;
+  waiting_for?: string;
 }
 
 interface WorkflowConfigSummary {
@@ -83,8 +92,7 @@ const PAGE_SIZE = 50;
 /** Status tabs. The value is sent to the API as ?status=; `all` sends none. */
 const STATUS_TABS = ['all', 'waiting', 'running', 'completed', 'failed', 'cancelled', 'pending'] as const;
 
-/** Threshold in seconds above which a still-running workflow is flagged stale. */
-const STALE_THRESHOLD_S = 30 * 60;
+
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,13 +121,15 @@ function sortWorkflows(workflows: WorkflowSummary[], sortBy: SortKey): WorkflowS
 }
 
 /**
- * Returns true when a running workflow started more than STALE_THRESHOLD_S
- * seconds ago and still has status "running".
+ * How long this run has been quiet, or null when it is getting on with it.
+ *
+ * The server decides, from the run's newest event and its workflow's own
+ * threshold -- not from how long the run has been going. The badge here used
+ * to fire at 30 minutes of *age*, which called every long build stuck and
+ * said nothing about a run that died after two minutes.
  */
-function isStaleRun(wf: WorkflowSummary): boolean {
-  if (wf.status !== 'running' || !wf.start_time) return false;
-  const startMs = new Date(ensureUTC(wf.start_time)).getTime();
-  return (Date.now() - startMs) / 1000 > STALE_THRESHOLD_S;
+function quietFor(wf: WorkflowSummary): string | null {
+  return wf.quiet ? (wf.quiet_for ?? 'a while') : null;
 }
 
 /**
@@ -163,7 +173,7 @@ function WorkflowRow({
   runNumber?: number;
 }) {
   const shortId = wf.id.replace('wf-', '').slice(0, 8);
-  const stale = isStaleRun(wf);
+  const quiet = quietFor(wf);
   const instant = isInstantFailure(wf);
 
   const queryClient = useQueryClient();
@@ -198,6 +208,9 @@ function WorkflowRow({
         // A run that cannot move without you should read as a request, not as
         // another row in a list of things that are fine.
         wf.status === 'waiting' && 'bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/15',
+        // Quiet: still marked running, but nothing has happened for a long
+        // while. Not an error, so it stays quieter than a failure.
+        wf.quiet && 'border-yellow-500/40',
       )}
     >
       {/* Checkbox */}
@@ -227,9 +240,11 @@ function WorkflowRow({
         {wf.status === 'waiting' && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-500/40 font-medium"
-            title="This run has stopped to ask you something. Open it to answer."
+            title={`This run has stopped to ask you something${
+              wf.waiting_for ? `, ${wf.waiting_for} ago` : ''
+            }. Open it to answer.`}
           >
-            needs you
+            needs you{wf.waiting_for ? ` · ${wf.waiting_for}` : ''}
           </span>
         )}
         {instant && (
@@ -240,12 +255,12 @@ function WorkflowRow({
             0 tok
           </span>
         )}
-        {stale && (
+        {quiet && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-900 dark:text-yellow-400 border border-yellow-500/30 font-medium cursor-help"
-            title="This run has been running for over 30 minutes without progress. It may be stuck — consider cancelling."
+            title={`Nothing new from this run for ${quiet}.${wf.last_step ? ` Last: ${wf.last_step}.` : ''} It may be stuck — open it to see where it stopped.`}
           >
-            stale?
+            quiet {quiet}
           </span>
         )}
         {wf.status === 'running' && (

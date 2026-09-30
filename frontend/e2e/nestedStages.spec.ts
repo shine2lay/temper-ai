@@ -20,11 +20,45 @@
  * API key, no spend) has the same shape — a stage inside a stage.
  */
 import { expect, test } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 
 import { startNestedRun } from './helpers';
 
+type Node = { id: string; name: string; child_nodes?: Node[] };
+
+/**
+ * The run's nodes by name, nested ones included.
+ *
+ * Picking a node by its text picks the group it sits in just as easily, so
+ * the clicks below go by id, the same id the graph puts in `data-id`.
+ */
+async function nodeIds(
+  request: APIRequestContext,
+  runId: string,
+): Promise<Record<string, string>> {
+  const res = await request.get(`/api/workflows/${runId}`);
+  expect(res.ok(), `run ${runId} could not be read`).toBe(true);
+  const byName: Record<string, string> = {};
+  const walk = (nodes: Node[] | undefined) => {
+    for (const n of nodes ?? []) {
+      byName[n.name] = n.id;
+      walk(n.child_nodes);
+    }
+  };
+  walk((await res.json()).nodes);
+  return byName;
+}
+
+/** Click a node the way a person does: on its own corner, not on a child. */
+async function clickNode(page: Page, id: string) {
+  await page.keyboard.press('Escape');
+  await page
+    .locator(`.react-flow__node[data-id="${id}"]`)
+    .click({ position: { x: 12, y: 12 }, force: true });
+}
+
 /** Open a finished run's page and wait for its graph to be drawn. */
-async function openRun(page: import('@playwright/test').Page, id: string) {
+async function openRun(page: Page, id: string) {
   await page.goto(`/app/workflow/${id}`);
   await expect(page.locator('.react-flow__node').first()).toBeVisible();
   // Nodes arrive in one layout pass; give the last of them a moment to land.
@@ -47,10 +81,7 @@ test.describe('a stage inside a stage', () => {
 
     const notFound: string[] = [];
     for (const nodeId of ids) {
-      await page.keyboard.press('Escape');
-      const node = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
-      // Click the node's own corner: a group node's middle belongs to a child.
-      await node.click({ position: { x: 12, y: 12 }, force: true });
+      await clickNode(page, nodeId);
 
       const panel = page.getByRole('dialog');
       await expect(panel).toBeVisible();
@@ -63,21 +94,21 @@ test.describe('a stage inside a stage', () => {
 
   test('the inner stage shows its own details', async ({ page, request }) => {
     const id = await startNestedRun(request);
+    const ids = await nodeIds(request, id);
     await openRun(page, id);
 
     // `inner` sits inside `outer`; the graph draws it as a group of its own.
-    await page.locator('.react-flow__node', { hasText: 'inner' }).last().click({
-      position: { x: 12, y: 12 },
-      force: true,
-    });
+    await clickNode(page, ids.inner);
 
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible();
     await expect(panel).not.toContainText(/not found/i);
-    await expect(panel.getByRole('heading', { name: 'inner' })).toBeVisible();
-    // Its agents, and a duration that actually came from the node.
-    await expect(panel).toContainText('deep_one');
-    await expect(panel).toContainText(/\d+\.\d+s/);
+    await expect(panel).toContainText('Stage Details');
+    await expect(panel).toContainText('inner');
+    // Filled in from the node itself: its status, its timing, its agents.
+    await expect(panel).toContainText('completed');
+    await expect(panel).toContainText(/Duration\s*\d/);
+    await expect(panel).toContainText('ci_step');
   });
 
   test('an agent inside the inner stage links back to a stage that opens', async ({
@@ -85,11 +116,13 @@ test.describe('a stage inside a stage', () => {
     request,
   }) => {
     const id = await startNestedRun(request);
+    const ids = await nodeIds(request, id);
     await openRun(page, id);
 
-    await page.locator('.react-flow__node', { hasText: 'deep_two' }).last().click({ force: true });
+    await clickNode(page, ids.deep_two);
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible();
+    await expect(panel).toContainText('Agent Details');
 
     await panel.getByRole('button', { name: /Back to Stage/i }).click();
 

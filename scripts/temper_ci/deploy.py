@@ -146,8 +146,22 @@ def ask_restart(sha: str, why: str) -> None:
     log(f"asked temper-deploy to restart for {sha[:12]}: {(r.stdout or r.stderr).strip()[:200]}")
 
 
-def restart_done_after(when: dt.datetime) -> dict | None:
-    """The restart record, once there is one newer than ``when``."""
+def restart_done_after(when: dt.datetime, sha: str = "") -> dict | None:
+    """The restart record, once temper is on the commit we asked for.
+
+    A record newer than ``when`` means our own restart happened. An older one
+    is normally just the file lying around from last time, and reading it as
+    "the restart happened" would skip straight to checking a temper that never
+    came back -- which is why this is strict.
+
+    But there is one older record that answers the question honestly: the one
+    that already says temper is live on ``sha``. Then there is nothing to
+    restart, temper-deploy rightly does nothing, and no new record will ever
+    be written. Waiting for one waits the whole hour, and because the watcher
+    is a single loop it stops checking pushed commits the entire time -- that
+    is how a queued commit sat for half an hour behind "checking: nothing
+    right now".
+    """
     row = read_json(LAST_RESTART)
     if not row:
         return None
@@ -157,13 +171,19 @@ def restart_done_after(when: dt.datetime) -> dict | None:
         return None
     if at.tzinfo is None:
         at = at.replace(tzinfo=dt.UTC)
-    return row if at > when else None
+    if at > when:
+        return row
+    head = str(row.get("head") or "").strip()
+    if sha and head and sha.startswith(head):
+        return row
+    return None
 
 
-def wait_for_restart(since: dt.datetime, patience: int = RESTART_PATIENCE) -> dict | None:
+def wait_for_restart(since: dt.datetime, sha: str = "",
+                     patience: int = RESTART_PATIENCE) -> dict | None:
     deadline = time.time() + patience
     while time.time() < deadline:
-        row = restart_done_after(since)
+        row = restart_done_after(since, sha)
         if row:
             return row
         time.sleep(10)
@@ -277,7 +297,7 @@ def deploy(sha: str) -> dict:
         good = ""
     asked_at = dt.datetime.now(dt.UTC)
     ask_restart(sha, f"temper-ci: {sha[:12]} landed on master")
-    row = wait_for_restart(asked_at)
+    row = wait_for_restart(asked_at, sha)
     out: dict = {"sha": sha, "asked_at": asked_at.isoformat(), "restarted": bool(row)}
     if not row:
         out["reason"] = "temper never restarted; nothing was rolled back, because nothing went live"

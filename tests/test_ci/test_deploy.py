@@ -57,7 +57,7 @@ def test_a_restart_that_never_happens_rolls_nothing_back(dep, monkeypatch):
     deploy, _ = dep
     asked = []
     monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: asked.append(sha))
-    monkeypatch.setattr(deploy, "wait_for_restart", lambda since, **k: None)
+    monkeypatch.setattr(deploy, "wait_for_restart", lambda since, *a, **k: None)
     monkeypatch.setattr(deploy, "live_check", lambda shots: pytest.fail("it looked at a temper that never restarted"))
     monkeypatch.setattr(deploy, "revert_to", lambda *a: pytest.fail("it rolled back without deploying"))
     out = deploy.deploy("2" * 40)
@@ -135,6 +135,38 @@ def test_it_only_believes_a_restart_that_came_after_it_asked(dep):
     assert deploy.restart_done_after(asked) is None
     _restarted(deploy, tmp_path, asked + dt.timedelta(seconds=1))
     assert deploy.restart_done_after(asked) is not None
+
+
+def test_an_old_record_still_counts_when_temper_is_already_on_that_commit(dep):
+    """Someone restarted by hand first, so there is nothing left to restart.
+
+    temper-deploy then rightly does nothing and writes no new record, and
+    waiting for one waits the whole hour -- with the watcher a single loop,
+    it stops checking pushed commits for that hour too. A commit queued
+    behind this sat half an hour while the gate said "checking: nothing
+    right now".
+    """
+    deploy, tmp_path = dep
+    sha = "8" * 40
+    asked = dt.datetime.now(dt.UTC)
+    _restarted(deploy, tmp_path, asked - dt.timedelta(minutes=5), head=sha[:8])
+
+    assert deploy.restart_done_after(asked, sha) is not None
+    # Still strict about an old record for some *other* commit.
+    assert deploy.restart_done_after(asked, "9" * 40) is None
+    assert deploy.restart_done_after(asked) is None
+
+
+def test_it_does_not_wait_out_the_hour_when_the_commit_is_already_live(dep, monkeypatch):
+    """The wait must end at once, not after RESTART_PATIENCE."""
+    deploy, tmp_path = dep
+    sha = "7" * 40
+    asked = dt.datetime.now(dt.UTC)
+    _restarted(deploy, tmp_path, asked - dt.timedelta(minutes=5), head=sha[:8])
+    monkeypatch.setattr(deploy.time, "sleep",
+                        lambda s: pytest.fail("it slept waiting for a restart already done"))
+
+    assert deploy.wait_for_restart(asked, sha) is not None
 
 
 def test_a_half_finished_revert_does_not_block_the_next_one(dep, monkeypatch):

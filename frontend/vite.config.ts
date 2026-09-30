@@ -23,6 +23,17 @@ export default defineConfig({
       '/ws': { target: 'ws://localhost:8420', ws: true },
     },
   },
+  // `vite preview` serves the built dashboard, which is what the browser
+  // tests should judge: the dev server re-renders everything twice and skips
+  // no work, so a run of eighty-eight nodes feels slow there for reasons no
+  // user will ever meet. It needs the same proxy as the dev server.
+  preview: {
+    port: 5174,
+    proxy: {
+      '/api': 'http://localhost:8420',
+      '/ws': { target: 'ws://localhost:8420', ws: true },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

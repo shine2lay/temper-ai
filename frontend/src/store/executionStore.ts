@@ -7,6 +7,7 @@ import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
 import { MAX_EVENT_LOG_SIZE } from '@/lib/constants';
 import { appendChunk, finishTool, newStory, startTool, type AgentStory } from '@/lib/agentStory';
+import type { StatusFilter } from '@/lib/runSearch';
 import type {
   WorkflowExecution,
   NodeExecution,
@@ -74,6 +75,11 @@ interface ExecutionState {
   dispatchedByName: Map<string, string>;
   /** When set, the DAG highlights state at this checkpoint sequence. null = show current/live state. */
   checkpointPreview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null;
+  /** The find bar of the run page: the word typed and the status filter.
+   *  It lives here because the graph and the live panel both narrow by it,
+   *  and a run of eighty nodes is only findable if they stay in step. */
+  findQuery: string;
+  findStatus: StatusFilter;
   /** Agents whose output streams in but that the page has no record of
    *  yet: useAgentLookup asks the server who they are. */
   unknownAgentIds: Set<string>;
@@ -95,6 +101,8 @@ interface ExecutionState {
   openGate: (nodeName: string) => void;
   closeGate: () => void;
   setCheckpointPreview: (preview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null) => void;
+  setFindQuery: (query: string) => void;
+  setFindStatus: (status: StatusFilter) => void;
 }
 
 /** Extract all agents from a node (handles both agent and stage nodes). */
@@ -421,6 +429,8 @@ export const useExecutionStore = create<ExecutionState>()(
     dispatchedByName: new Map(),
     hoveredNodeId: null,
     checkpointPreview: null,
+    findQuery: '',
+    findStatus: 'all',
     unknownAgentIds: new Set(),
 
     applySnapshot: (workflow) =>
@@ -911,6 +921,10 @@ export const useExecutionStore = create<ExecutionState>()(
         // snapshot used to wipe; now that a refresh keeps the selection, it
         // opened Workflow Details over the canvas on every page load.
         state.selection = null;
+        // Another run is another search: a word typed on the last page would
+        // otherwise dim most of this one before it had finished loading.
+        state.findQuery = '';
+        state.findStatus = 'all';
         state.wsStatus = { connected: false, reconnectAttempt: 0, lastHeartbeat: null, wsError: null };
       }),
 
@@ -927,6 +941,16 @@ export const useExecutionStore = create<ExecutionState>()(
     setHoveredNodeId: (id) =>
       set((state) => {
         state.hoveredNodeId = id;
+      }),
+
+    setFindQuery: (query) =>
+      set((state) => {
+        state.findQuery = query;
+      }),
+
+    setFindStatus: (status) =>
+      set((state) => {
+        state.findStatus = status;
       }),
 
     setWSStatus: (partial) =>

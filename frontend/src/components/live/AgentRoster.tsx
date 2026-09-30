@@ -17,9 +17,15 @@ interface AgentRosterProps {
   onSelect: (agentId: string) => void;
   /** Ticks every second so a running agent's time keeps counting. */
   now: number;
+  /**
+   * The agents the run page's find bar is pointing at, or null when it is
+   * pointing at nothing. As on the graph, the rest is dimmed rather than
+   * dropped: the run keeps its shape and its counts.
+   */
+  lit?: Set<string> | null;
 }
 
-export function AgentRoster({ groups, selectedId, onSelect, now }: AgentRosterProps) {
+export function AgentRoster({ groups, selectedId, onSelect, now, lit = null }: AgentRosterProps) {
   const [opened, setOpened] = useState<Record<string, boolean>>({});
 
   // The group holding the shown agent is always open, whatever its state.
@@ -42,10 +48,18 @@ export function AgentRoster({ groups, selectedId, onSelect, now }: AgentRosterPr
   return (
     <div className="h-full overflow-y-auto py-1" data-testid="live-agent-roster">
       {groups.map((group) => {
+        // A stage holding a match opens itself: dimming a folded-away group
+        // would hide the very row the search just found.
+        const hasMatch = !lit || group.agents.some((a) => lit.has(a.id));
         const open = opened[group.key]
-          ?? (!group.finished || !anyBusy || group.key === selectedGroup);
+          ?? (!group.finished || !anyBusy || group.key === selectedGroup
+            || (!!lit && hasMatch));
         return (
-          <div key={group.key} className="mb-0.5">
+          <div
+            key={group.key}
+            className={cn('mb-0.5 transition-opacity', !hasMatch && 'opacity-30')}
+            data-dimmed={!hasMatch || undefined}
+          >
             <button
               type="button"
               onClick={() => setOpened((o) => ({ ...o, [group.key]: !open }))}
@@ -66,6 +80,7 @@ export function AgentRoster({ groups, selectedId, onSelect, now }: AgentRosterPr
                 selected={agent.id === selectedId}
                 onSelect={onSelect}
                 now={now}
+                dimmed={!!lit && !lit.has(agent.id)}
               />
             ))}
           </div>
@@ -80,9 +95,10 @@ interface AgentRowProps {
   selected: boolean;
   onSelect: (agentId: string) => void;
   now: number;
+  dimmed?: boolean;
 }
 
-const AgentRow = memo(function AgentRow({ agent, selected, onSelect, now }: AgentRowProps) {
+const AgentRow = memo(function AgentRow({ agent, selected, onSelect, now, dimmed = false }: AgentRowProps) {
   const seconds = agent.busy && agent.startTime
     ? Math.max(0, (now - Date.parse(agent.startTime)) / 1000)
     : agent.durationSeconds ?? null;
@@ -93,11 +109,13 @@ const AgentRow = memo(function AgentRow({ agent, selected, onSelect, now }: Agen
       onClick={() => onSelect(agent.id)}
       data-testid="live-agent-row"
       aria-current={selected ? 'true' : undefined}
+      data-dimmed={dimmed || undefined}
       className={cn(
-        'flex w-full flex-col gap-0.5 border-l-2 px-2 py-1 text-left transition-colors',
+        'flex w-full flex-col gap-0.5 border-l-2 px-2 py-1 text-left transition-[colors,opacity]',
         selected
           ? 'border-temper-accent bg-temper-surface/70'
           : 'border-transparent hover:bg-temper-surface/40',
+        dimmed && 'opacity-25',
       )}
     >
       <div className="flex items-center gap-1.5">

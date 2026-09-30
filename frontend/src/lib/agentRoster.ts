@@ -18,6 +18,8 @@ export interface RosterAgent {
   /** Its name, and the round when its name is used more than once. */
   name: string;
   roundLabel: string | null;
+  /** The model it ran on, so the find bar's word reaches it here too. */
+  model: string | null;
   status: string;
   /** What it is doing now, in a few words. */
   step: string;
@@ -149,6 +151,7 @@ export function buildRoster(
       roundLabel: (agent.round ?? 1) > 1 || (nameCount.get(name) ?? 0) > 1
         ? `round ${agent.round ?? 1}`
         : null,
+      model: agent.agent_config_snapshot?.agent?.model ?? null,
       status: agent.status,
       step: currentStep(story?.items, agent.status),
       busy: !isFinished(agent.status),

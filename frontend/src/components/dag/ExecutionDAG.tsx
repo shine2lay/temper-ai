@@ -13,7 +13,9 @@ import {
 import '@xyflow/react/dist/style.css';
 import { useExecutionStore } from '@/store/executionStore';
 import { useDagElements } from '@/hooks/useDagElements';
+import { useRunFind, type RunFind } from '@/hooks/useRunFind';
 import { DAG_FIT_MIN_ZOOM, DAG_FIT_PADDING } from '@/lib/constants';
+import { RunFindBar } from './RunFindBar';
 import { StageNode } from './StageNode';
 import { AgentNodeComponent } from './AgentNodeComponent';
 import { StageGroupNode } from './StageGroupNode';
@@ -22,6 +24,9 @@ import { DispatchEdge } from './DispatchEdge';
 import { RoutedEdge } from './RoutedEdge';
 
 const STORAGE_KEY_HIDE_SKIPPED = 'temper-dag-hide-skipped';
+
+/** How faint a node goes when the find bar is not pointing at it. */
+const FIND_DIM_OPACITY = 0.18;
 
 const nodeTypes = {
   stage: StageNode,
@@ -59,106 +64,55 @@ export function ExecutionDAG() {
   const prevLayoutRef = useRef('');
   const userMovedRef = useRef(false);
   const [legendOpen, setLegendOpen] = useState(false);
-  const stages = useExecutionStore((s) => s.stages);
-  const agents = useExecutionStore((s) => s.agents);
   const select = useExecutionStore((s) => s.select);
   const clearSelection = useExecutionStore((s) => s.clearSelection);
   const setHoveredNodeId = useExecutionStore((s) => s.setHoveredNodeId);
   const focusedNodeIndexRef = useRef<number>(-1);
-  const [search, setSearch] = useState('');
 
-  // Compute which agent IDs match the current search term.
-  // Agent-type nodes use a stage name as their node id; stage-type nodes
-  // are identified by their child agent ids. We track matching node ids
-  // (stage names) so we can dim non-matching nodes.
-  const matchingNodeIds = useCallback((): Set<string> | null => {
-    const term = search.trim().toLowerCase();
-    if (!term) return null;
+  // The find bar: search, stepping, the trouble jump and the status filter.
+  const find = useRunFind(computed.nodes);
+  // The keyboard listener is hung on the window once; it reads the live find
+  // through a ref so it is not torn down and rebuilt on every keystroke.
+  const findRef = useRef<RunFind>(find);
+  findRef.current = find;
 
-    const matched = new Set<string>();
-
-    // Check each agent
-    for (const [, agent] of agents) {
-      const haystack = [
-        agent.output ?? '',
-        JSON.stringify(agent.output_data ?? ''),
-      ].join(' ').toLowerCase();
-
-      if (haystack.includes(term)) {
-        matched.add(agent.id);
-      }
-    }
-
-    // Build a set of node ids (stage names) that contain a matching agent.
-    // Note: stages map keys are execution UUIDs, but ReactFlow node IDs use stage.name.
-    const matchedNodeIds = new Set<string>();
-    for (const [, stage] of stages) {
-      const nodeAgents = stage.agents ?? (stage.agent ? [stage.agent] : []);
-      const hasMatch = nodeAgents.some((a: { id: string }) => matched.has(a.id));
-      if (hasMatch && stage.name) matchedNodeIds.add(stage.name);
-    }
-
-    return matchedNodeIds;
-  }, [search, agents, stages]);
-
-  // Apply opacity to ReactFlow nodes based on search matches.
-  useEffect(() => {
-    const matchIds = matchingNodeIds();
-    if (matchIds === null) {
-      // No active search — restore full opacity on all nodes
-      setNodes((prev) =>
-        prev.map((n) => {
-          if (n.style?.opacity === 1 || n.style?.opacity === undefined) return n;
-          const { opacity: _removed, ...rest } = n.style ?? {};
-          return { ...n, style: rest };
-        }),
-      );
-      return;
-    }
-
-    setNodes((prev) =>
-      prev.map((n) => {
-        // For child nodes (parentId set), match based on parent stage
-        const matchId = n.parentId ?? n.id;
-        const isMatch = matchIds.has(matchId);
-        const targetOpacity = isMatch ? 1 : 0.25;
-        if (n.style?.opacity === targetOpacity) return n;
-        return { ...n, style: { ...n.style, opacity: targetOpacity } };
-      }),
-    );
-  }, [search, matchingNodeIds, setNodes]);
-
-  // Apply checkpoint preview overlay — dim nodes not yet reached, highlight completed/failed
   const checkpointPreview = useExecutionStore((s) => s.checkpointPreview);
   const setCheckpointPreview = useExecutionStore((s) => s.setCheckpointPreview);
-  useEffect(() => {
-    if (!checkpointPreview) return; // let search dimming handle normal state
-    const { completedNodes, failedNodes } = checkpointPreview;
 
-    setNodes((prev) =>
-      prev.map((n) => {
-        // Use the top-level node id (stage name) — child nodes inherit parent
-        const nodeId = n.parentId ?? n.id;
-        const isCompleted = completedNodes.has(nodeId);
-        const isFailed = failedNodes.has(nodeId);
-        const targetOpacity = isCompleted || isFailed ? 1 : 0.2;
-        if (n.style?.opacity === targetOpacity) return n;
-        return { ...n, style: { ...n.style, opacity: targetOpacity } };
-      }),
-    );
-  }, [checkpointPreview, setNodes]);
-
-  // Clear checkpoint preview when leaving the DAG (cleanup)
+  // `/` puts the cursor in the search box, `n` and `shift+n` step through the
+  // matches, Escape gives the whole run back. Nothing fires while you are
+  // typing somewhere else on the page.
   useEffect(() => {
-    return () => {
-      // Don't clear on every unmount — only matters if component is destroyed
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable);
+      const current = findRef.current;
+
+      if (event.key === 'Escape') {
+        if (current.query || current.status !== 'all' || current.focusedId) current.clear();
+        return;
+      }
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (event.key === '/') {
+        event.preventDefault();
+        current.inputRef.current?.focus();
+        current.inputRef.current?.select();
+        return;
+      }
+      if (event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        current.step(event.shiftKey ? -1 : 1);
+      }
     };
-  }, []);
 
-  const matchCount = useCallback((): number => {
-    const ids = matchingNodeIds();
-    return ids ? ids.size : 0;
-  }, [matchingNodeIds]);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const onInit: OnInit = useCallback(() => {
     setTimeout(() => fitView({ padding: DAG_FIT_PADDING, minZoom: DAG_FIT_MIN_ZOOM }), 50);
@@ -188,6 +142,36 @@ export function ExecutionDAG() {
   useEffect(() => {
     setEdges(computed.edges);
   }, [computed.edges, setEdges]);
+
+  // One dimming pass over whatever is on the canvas: the checkpoint preview
+  // when there is one, otherwise the find bar. It runs after the push above
+  // (same commit, declared later), so nodes arriving from a live update are
+  // dimmed too instead of flashing back to full.
+  //
+  // Nothing is removed — a run you cannot see whole is a run you cannot read.
+  const { lit, focusedId } = find;
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((node) => {
+        let opacity = 1;
+        if (checkpointPreview) {
+          const id = node.parentId ?? node.id;
+          opacity =
+            checkpointPreview.completedNodes.has(id) || checkpointPreview.failedNodes.has(id)
+              ? 1
+              : 0.2;
+        } else if (lit) {
+          opacity = lit.has(node.id) ? 1 : FIND_DIM_OPACITY;
+        }
+        const onIt = !!focusedId && node.id === focusedId;
+        const className = onIt
+          ? `${(node.className ?? '').replace(/\s*run-find-current/g, '')} run-find-current`.trim()
+          : (node.className ?? '').replace(/\s*run-find-current/g, '').trim() || undefined;
+        if (node.style?.opacity === opacity && node.className === className) return node;
+        return { ...node, className, style: { ...node.style, opacity } };
+      }),
+    );
+  }, [computed.nodes, lit, focusedId, checkpointPreview, setNodes]);
 
   /**
    * Layout is now driven entirely by ELK in `useDagElements`. The old
@@ -220,11 +204,14 @@ export function ExecutionDAG() {
   useEffect(() => {
     if (computed.nodes.length === 0) return;
     if (userMovedRef.current) return;
+    // While the find bar holds a node, the view belongs to it: a live update
+    // must not yank the page back to the whole run mid-search.
+    if (focusedId) return;
     if (layoutSignature === prevLayoutRef.current) return;
     prevLayoutRef.current = layoutSignature;
     const timer = setTimeout(() => fitView({ padding: DAG_FIT_PADDING, duration: 300, minZoom: DAG_FIT_MIN_ZOOM }), 120);
     return () => clearTimeout(timer);
-  }, [layoutSignature, computed.nodes.length, fitView]);
+  }, [layoutSignature, computed.nodes.length, focusedId, fitView]);
 
   // React Flow passes the originating event only for user gestures;
   // programmatic fitView calls pass none.
@@ -366,19 +353,7 @@ export function ExecutionDAG() {
                 />
                 Show skipped
               </label>
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search outputs..."
-                aria-label="Search agent outputs"
-                className="px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text placeholder:text-temper-text-dim w-48 focus:outline-none focus:border-temper-accent"
-              />
-              {search.trim() && (
-                <span className="text-[10px] text-temper-text-muted whitespace-nowrap">
-                  {matchCount()} {matchCount() === 1 ? 'match' : 'matches'}
-                </span>
-              )}
+              <RunFindBar find={find} />
             </div>
           </div>
         </Panel>

@@ -491,6 +491,20 @@ body {
   animation: running-glow 1.5s ease-in-out infinite;
 }
 
+/* The node the find bar is standing on: a ring bright enough to catch the
+   eye on a run of eighty nodes, drawn outside the node so it never moves
+   anything. It sits on the React Flow wrapper, not the card, so it works
+   the same for an agent card and for a stage container. */
+@keyframes run-find-ring {
+  0%, 100% { box-shadow: 0 0 0 2px var(--color-temper-accent), 0 0 12px 3px color-mix(in srgb, var(--color-temper-accent) 40%, transparent); }
+  50% { box-shadow: 0 0 0 3px var(--color-temper-accent), 0 0 20px 7px color-mix(in srgb, var(--color-temper-accent) 55%, transparent); }
+}
+.react-flow__node.run-find-current {
+  border-radius: 8px;
+  animation: run-find-ring 1.6s ease-in-out infinite;
+  z-index: 20 !important;
+}
+
 /* Rotating dashed border for running stage containers */
 @keyframes dash-march {
   to { stroke-dashoffset: -48; }

@@ -11,6 +11,7 @@ import { ChevronUp, Crosshair, PanelBottomClose } from 'lucide-react';
 import { useExecutionStore } from '@/store/executionStore';
 import { fullStory } from '@/lib/agentStory';
 import { buildRoster, busyCount, newestBusyAgent, statusWord } from '@/lib/agentRoster';
+import { litRosterIds } from '@/lib/runSearch';
 import { cn, formatDuration } from '@/lib/utils';
 import { AgentRoster } from './AgentRoster';
 import { useSecondTicker } from '@/hooks/useSecondTicker';
@@ -23,11 +24,19 @@ export function LivePanel() {
   const stories = useExecutionStore((s) => s.stories);
   const runStatus = useExecutionStore((s) => s.workflow?.status);
   const select = useExecutionStore((s) => s.select);
+  // The run page's find bar reaches in here too: one word narrows the graph
+  // and this list together, so the two never tell different stories.
+  const findQuery = useExecutionStore((s) => s.findQuery);
+  const findStatus = useExecutionStore((s) => s.findStatus);
 
   const { share, folded, dragging, setFolded, onHandlePointerDown, panelRef } = useLivePanelSize();
   const [pickedId, setPickedId] = useState<string | null>(null);
 
   const groups = useMemo(() => buildRoster(stages, agents, stories), [stages, agents, stories]);
+  const lit = useMemo(
+    () => litRosterIds(groups, findQuery, findStatus),
+    [groups, findQuery, findStatus],
+  );
   const following = pickedId === null;
   const followed = useMemo(() => newestBusyAgent(groups), [groups]);
   const working = useMemo(() => busyCount(groups), [groups]);
@@ -150,6 +159,7 @@ export function LivePanel() {
               selectedId={shownId}
               onSelect={(id) => setPickedId(id)}
               now={now}
+              lit={lit}
             />
           </div>
           <div className="min-w-0 flex-1">

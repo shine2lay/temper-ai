@@ -86,7 +86,9 @@ test.describe('a stage inside a stage', () => {
       const panel = page.getByRole('dialog');
       await expect(panel).toBeVisible();
       const text = (await panel.textContent()) ?? '';
-      if (/not found/i.test(text)) notFound.push(`${nodeId}: ${text.slice(0, 80)}`);
+      // The wording the panels use when a lookup misses. Matching plain
+      // "not found" would also catch an agent's own output saying it.
+      if (/(Stage|Agent) not found/i.test(text)) notFound.push(`${nodeId}: ${text.slice(0, 80)}`);
     }
 
     expect(notFound, 'nodes whose panel said "not found"').toEqual([]);
@@ -102,7 +104,7 @@ test.describe('a stage inside a stage', () => {
 
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible();
-    await expect(panel).not.toContainText(/not found/i);
+    await expect(panel).not.toContainText(/(Stage|Agent) not found/i);
     await expect(panel).toContainText('Stage Details');
     await expect(panel).toContainText('inner');
     // Filled in from the node itself: its status, its timing, its agents.
@@ -127,8 +129,33 @@ test.describe('a stage inside a stage', () => {
     await panel.getByRole('button', { name: /Back to Stage/i }).click();
 
     await expect(panel).toBeVisible();
-    await expect(panel).not.toContainText(/not found/i);
+    await expect(panel).not.toContainText(/(Stage|Agent) not found/i);
     await expect(panel).toContainText('Stage Details');
+    // The stage it sits in, which is the inner one / not its own agent node.
+    await expect(panel).toContainText('inner');
+  });
+
+  test('the agents an inner stage lists open, and lead back to it', async ({
+    page,
+    request,
+  }) => {
+    const id = await startNestedRun(request);
+    const ids = await nodeIds(request, id);
+    await openRun(page, id);
+
+    await clickNode(page, ids.inner);
+    const panel = page.getByRole('dialog');
+    await expect(panel).toBeVisible();
+
+    // The panel lists the stage's agents at the bottom; open the first.
+    const row = panel.getByRole('button', { name: /ci_step/i }).first();
+    await row.click();
+    await expect(panel).toContainText('Agent Details');
+    await expect(panel).not.toContainText(/(Stage|Agent) not found/i);
+
+    await panel.getByRole('button', { name: /Back to Stage/i }).click();
+    await expect(panel).toContainText('Stage Details');
+    await expect(panel).toContainText('inner');
   });
 
   test('the header counts stay top-level', async ({ page, request }) => {

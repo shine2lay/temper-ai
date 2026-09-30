@@ -163,20 +163,31 @@ describe('a stage inside another stage', () => {
     expect(screen.getByText(/Stage not found/i)).toBeInTheDocument();
   });
 
-  it('takes an agent of an inner stage back to the node it ran as', () => {
+  it('takes an agent that ran as a node of its own back to the stage around it', () => {
     render(<AgentDetailPanel agentId="a-stack-detect" />);
 
     const back = screen.getByRole('button', { name: /Back to Stage/i });
     fireEvent.click(back);
 
-    // The agent ran as a node of its own, nested inside `environment`.
+    // Its own node has no box in the graph — the box it sits in is the stage.
     const selection = useExecutionStore.getState().selection;
-    expect(selection).toEqual({ type: 'stage', id: 'n-stack-detect' });
+    expect(selection).toEqual({ type: 'stage', id: 'n-environment' });
 
-    // And what the link opens is that node, not an empty panel.
     render(<StageDetailPanel stageId={selection!.id} />);
     expect(screen.queryByText(/not found/i)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'stack_detect' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'environment' })).toBeInTheDocument();
+  });
+
+  it('leaves an agent of a top-level node pointing at that node', () => {
+    render(<AgentDetailPanel agentId="a-triage" />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Back to Stage/i }));
+
+    // `triage` is drawn as a box of its own, so that is where back goes.
+    expect(useExecutionStore.getState().selection).toEqual({
+      type: 'stage',
+      id: 'n-triage',
+    });
   });
 
   it('takes an agent that ran under the inner stage back to that stage', () => {
@@ -234,6 +245,18 @@ describe('a stage inside another stage', () => {
     expect(useExecutionStore.getState().stages.has('n-environment')).toBe(false);
   });
 
+  it('opens the panel of an agent listed by an inner stage', () => {
+    // The inner stage's panel lists its agents; clicking one has to open it.
+    render(<StageDetailPanel stageId="n-environment" />);
+    fireEvent.click(screen.getByRole('button', { name: /task_stack_detect/i }));
+
+    expect(useExecutionStore.getState().selection).toEqual({
+      type: 'agent',
+      id: 'a-stack-detect',
+    });
+    expect(useExecutionStore.getState().agents.has('a-stack-detect')).toBe(true);
+  });
+
   it('gives an index-only agent of an inner node its stage back', () => {
     const run = nestedRun();
     run.agent_index = [
@@ -250,5 +273,49 @@ describe('a stage inside another stage', () => {
 
     const agentRecord = useExecutionStore.getState().agents.get('a-stack-detect-round-1');
     expect(agentRecord?.stage_id).toBe('n-stack-detect');
+  });
+});
+
+describe('a round a dispatcher added', () => {
+  it('keeps its own box as the stage its agent goes back to', () => {
+    const round = agent('a-lens-reach', 'epd_lens_reach');
+    const run = {
+      id: 'run-dispatched-001',
+      workflow_name: 'epd_propose',
+      status: 'completed',
+      start_time: '2026-09-29T09:58:00Z',
+      nodes: [
+        {
+          id: 'n-pitches',
+          name: 'pitches',
+          type: 'stage',
+          status: 'completed',
+          start_time: '2026-09-29T09:58:00Z',
+          child_nodes: [
+            {
+              id: 'n-lens-reach',
+              name: 'lens_reach',
+              type: 'agent',
+              status: 'completed',
+              dispatched_by: 'pitches',
+              start_time: '2026-09-29T09:58:00Z',
+              agent: round,
+            } as NodeExecution,
+          ],
+        } as NodeExecution,
+      ],
+    } as WorkflowExecution;
+    load(run);
+
+    // Lifted out of its dispatcher, it is drawn as a box of its own /
+    // so that box, not the stage that dispatched it, is where back goes.
+    expect(useExecutionStore.getState().stages.has('n-lens-reach')).toBe(true);
+    render(<AgentDetailPanel agentId="a-lens-reach" />);
+    fireEvent.click(screen.getByRole('button', { name: /Back to Stage/i }));
+
+    expect(useExecutionStore.getState().selection).toEqual({
+      type: 'stage',
+      id: 'n-lens-reach',
+    });
   });
 });

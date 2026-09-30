@@ -158,6 +158,39 @@ function _keepFinished<
   return next;
 }
 
+/** For every node, the node it sits in — empty for the top level. */
+function _parentOf(nodes: NodeExecution[] | undefined): Map<string, NodeExecution> {
+  const parents = new Map<string, NodeExecution>();
+  const walk = (list: NodeExecution[] | undefined, parent: NodeExecution | null) => {
+    for (const n of list ?? []) {
+      if (parent) parents.set(n.id, parent);
+      walk(n.child_nodes, n);
+    }
+  };
+  walk(nodes, null);
+  return parents;
+}
+
+/**
+ * The stage an agent belongs to, for "Back to Stage" and for grouping.
+ * An agent node the graph draws a box of its own for — a top-level one, or a
+ * dispatched round lifted out — is that box. One nested inside a stage has no
+ * box of its own, so its agent belongs to the stage around it.
+ */
+function _agentHome(
+  node: NodeExecution,
+  parents: Map<string, NodeExecution>,
+  drawn: Map<string, NodeExecution>,
+): string {
+  if (node.type !== 'agent' || drawn.has(node.id)) return node.id;
+  let up = parents.get(node.id);
+  while (up) {
+    if (drawn.has(up.id) || up.type === 'stage') return up.id;
+    up = parents.get(up.id);
+  }
+  return node.id;
+}
+
 /** A node as the panels want it: agents always an array, DAG fields filled. */
 function _normalizeNode(node: NodeExecution): NodeExecution {
   const normalized = { ...node };
@@ -425,14 +458,16 @@ export const useExecutionStore = create<ExecutionState>()(
 
         // Agents of every node, nested ones included: the agents map is
         // looked up by id and counted, it is not what the DAG draws from.
+        const parents = _parentOf(workflow.nodes);
         for (const node of _allNodes(workflow.nodes)) {
+          const home = _agentHome(node, parents, state.stages);
           for (const raw of _nodeAgents(node)) {
             // Where the snapshot puts an agent is where it belongs: keep that
             // link, so the live panel can group by stage even when the agent
             // record itself does not name one.
             const agent = {
               ...raw,
-              stage_execution_id: raw.stage_execution_id ?? node.id,
+              stage_execution_id: raw.stage_execution_id ?? home,
               node_name: raw.node_name ?? node.name,
             };
             state.agents.set(agent.id, _keepFinished(prevAgents.get(agent.id), agent));

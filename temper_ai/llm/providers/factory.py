@@ -64,6 +64,23 @@ def register_provider(name: str, cls: type[BaseLLM], default_base_url: str | Non
         _DEFAULT_BASE_URLS[name] = default_base_url
 
 
+def honoured_effort(provider: str) -> tuple[str, ...] | None:
+    """The effort levels `provider` can ask for; None when it is not registered here.
+
+    Read from the class, so no credential is needed and no client is built:
+    this answers "would this setting land?" for a config that is not running.
+    """
+    provider_cls = _PROVIDER_MAP.get(provider)
+    if provider_cls is None:
+        return None
+    return tuple(getattr(provider_cls, "HONOURS_EFFORT", ()) or ())
+
+
+def registered_providers() -> list[str]:
+    """Every provider name this process can build, local ones included."""
+    return sorted(_PROVIDER_MAP)
+
+
 def create_provider(
     provider: str,
     model: str,

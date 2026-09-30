@@ -24,6 +24,19 @@ class _StreamError(Exception):
         self.body, self.status_code = body, 200
 
 
+def _text_event(text: str):
+    """One `content_block_delta` carrying answer text.
+
+    The provider reads the whole event stream rather than `text_stream`,
+    because thinking arrives as its own kind of delta and `text_stream` drops
+    everything that is not the answer.
+    """
+    return types.SimpleNamespace(
+        type="content_block_delta",
+        delta=types.SimpleNamespace(type="text_delta", text=text),
+    )
+
+
 class _Stream:
     """One `messages.stream(...)`: some text, then the final message or a failure part-way."""
 
@@ -36,12 +49,16 @@ class _Stream:
     def __exit__(self, *exc):
         return False
 
-    @property
-    def text_stream(self):
-        yield "the first words"
+    def __iter__(self):
+        yield _text_event("the first words")
         if self._failure is not None:
             raise self._failure
-        yield " and the rest"
+        yield _text_event(" and the rest")
+
+    @property
+    def text_stream(self):
+        for event in self:
+            yield event.delta.text
 
     def get_final_message(self):
         return types.SimpleNamespace(

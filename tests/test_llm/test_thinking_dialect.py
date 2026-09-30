@@ -38,12 +38,26 @@ class TestOpus55SpeaksEffort:
         assert _honours_effort("claude-opus-5-5-20260115")
 
     def test_effort_goes_out_as_output_config(self):
-        assert control_for("claude-opus-5-5", effort="max") == {"output_config": {"effort": "max"}}
+        sent = control_for("claude-opus-5-5", effort="max")
+        assert sent["output_config"] == {"effort": "max"}
+        # No budget_tokens: this dialect has no budget, and sending one is the
+        # cap that isn't.
+        assert "budget_tokens" not in sent["thinking"]
+
+    def test_the_thinking_is_asked_for_as_well_as_the_effort(self):
+        """Two different purchases, and temper was only making the first.
+
+        Effort alone buys thinking that happens; measured on opus-5-5 it came
+        back as one empty block \u2014 134 output tokens on an 11-character answer,
+        with nothing to read. `display: summarized` is what makes those tokens
+        legible on the run page.
+        """
+        assert control_for("claude-opus-5-5", effort="low")["thinking"]["display"] == "summarized"
 
     def test_a_budget_aimed_at_5_5_is_translated_not_dropped(self):
         """The wrong dialect is still a request for thinking; honour it."""
-        assert control_for("claude-opus-5-5", budget=16_000) == {"output_config": {"effort": "high"}}
-        assert control_for("claude-opus-5-5", budget=1_000) == {"output_config": {"effort": "low"}}
+        assert control_for("claude-opus-5-5", budget=16_000)["output_config"] == {"effort": "high"}
+        assert control_for("claude-opus-5-5", budget=1_000)["output_config"] == {"effort": "low"}
 
     def test_the_legacy_line_still_gets_a_budget(self):
         """Proof the dialects are actually distinguished, not all one branch."""

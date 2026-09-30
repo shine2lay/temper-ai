@@ -6,6 +6,7 @@ Usage:
     temper connect <mcp-server>          # one-time OAuth, grant stored
     temper connections                   # what is authorized
     temper validate <workflow>
+    temper check                         # agent settings the provider cannot honour
 """
 
 import argparse
@@ -138,6 +139,11 @@ def main() -> None:
 
     add_events_parser(subparsers)
 
+    # -- temper check --
+    from temper_ai.cli.check import add_parser as add_check_parser
+
+    add_check_parser(subparsers)
+
     # -- temper validate --
     validate_parser = subparsers.add_parser("validate", help="Validate a workflow config")
     validate_parser.add_argument("workflow", help="Workflow config name")
@@ -233,6 +239,9 @@ def main() -> None:
     elif args.command == "trim":
         from temper_ai.cli.trim import cmd_trim
         sys.exit(cmd_trim(args))
+    elif args.command == "check":
+        from temper_ai.cli.check import main as cmd_check
+        sys.exit(cmd_check(args))
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

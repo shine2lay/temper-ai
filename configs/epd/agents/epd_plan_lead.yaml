@@ -35,9 +35,21 @@
 # bets merged while it was built. Rule 9: what another live bet fixes is left to it; a task that
 # must change one of its files is written to hold on top of its change, since this bet's build
 # waits for that bet to merge (epd_loop's `turn` node) and starts from master with it.
+#
+# 7 (2026-09-30, queue task 11, "why most bets ship as iterate"): tasks.json and the reply carry
+# `criteria_reach`: for each numbered criterion, the state it needs, how QA reaches it on the build's
+# dev stack, and how the live check reaches it on prod, or "build only" with the reason prod cannot
+# show it. The live check could not reach a criterion's state on 33 of the 37 bets that came back
+# iterate (~/epd-autopilot/iterate/buckets.md, cause 2): a failure nobody can make happen on prod
+# (b014, b034, b044), a book no live login holds (b005, b009, b030), a market open while the check
+# ran shut (b019, b040). RollCall's /dev/states (dev stacks) and state logins on prod (qa-urgent@,
+# qa-multiroll@, qa-catch@, qa-loss@, qa-settled@; testing.md) reach most of them now (queue task 18);
+# the plan names which one, QA walks it there, and the live check counts a build-only criterion QA
+# met as covered instead of vacuous (epd_measure v13; the driver checks it, epd_loop.py
+# build_covered_ok).
 agent:
   name: epd_plan_lead
-  version: 6
+  version: 7
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -105,6 +117,18 @@ agent:
        so in not_doing ("bNNN fixes this"). A task may change a file one of them changes: this
        bet's build then waits until that bet is merged and starts from master with its change, so
        write the task to hold on top of that change, and name it in plan.md's Risks.
+    10. Every numbered criterion goes in criteria_reach: the state it needs (what must be true on
+       the page for it to show at all), how QA reaches that state on the build's dev stack, and how
+       the live check reaches it on production. Use only routes that exist, as the knowledge base
+       (testing.md) and the reach sheet list them, or that a task of this plan adds: a login that
+       holds the state, a /dev/states button or `rollcall dev state` (dev stacks only), the
+       market window (open, shut, after the close), or data a task seeds. Where production cannot
+       show the state at all (a broker that fails or stalls, a scan that times out, any state only
+       /dev/states makes), live is "build only: <why production cannot show it>": QA's walk on the
+       build is then the only proof, so its build route must be exact. A state no route reaches
+       gets a task that adds one (rule 4), or the criterion is reworded in the pitch's words to a
+       state that can be reached; say which in plan.md. The check fails a criterion with no entry,
+       and a route that neither exists nor is added.
 
     Write two files, each in full, with one Write call each.
 
@@ -126,6 +150,11 @@ agent:
          "screens": [{"route": "<page route>", "where": "<the card, row or line, in its words>",
                       "login": "<the QA login that shows it>"}]}
       ],
+      "criteria_reach": [
+        {"criterion": 1, "state": "<what must be true on the page for it to show>",
+         "build": "<how QA reaches it on the dev stack: login, /dev/states button, market window, or task N's seed>",
+         "live": "<how the live check reaches it on production: login, page, market window; or build only: <why>>"}
+      ],
       "test_command": "<the repository's full test command>"
     }
 
@@ -144,6 +173,7 @@ agent:
       "task_count": 0,
       "files": ["<every file any task touches>"],
       "same_value": ["<the same list as in tasks.json>"],
+      "criteria_reach": ["<the same list as in tasks.json>"],
       "blocked_because": "<when BLOCKED: what in the pitch cannot be turned into a checkable task; else \"\">"
     }
   task_template: |

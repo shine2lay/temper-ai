@@ -40,7 +40,12 @@ agent:
   #    second screen was that verdict: the ladder's "Your rule says roll this one" beside /positions'
   #    "Fine" (F087). The check now lists, for each call, position or order whose advice the bet adds
   #    or changes, every page that gives it a verdict in words.
-  version: 7
+  # 8 (2026-09-30, queue task 11, "why most bets ship as iterate"): the plan's `criteria_reach` (lead
+  #    v7) is checked like same_value. On 33 of the 37 bets that came back iterate the live check
+  #    could not reach a criterion's state (~/epd-autopilot/iterate/buckets.md, cause 2). A criterion
+  #    with no entry, a route that does not exist and no task adds, or a "build only" that production
+  #    could in fact show (a live state login holds it) is a `reach` issue.
+  version: 8
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -78,6 +83,12 @@ agent:
       a task changes, and name every test that renders or pins it);
     - a live checker cannot reach a criterion's state on a fresh dev stack, or the state does not
       survive the scheduled scan, a restart or a reseed;
+    - criteria_reach (in tasks.json) has no entry for a numbered criterion, or an entry whose route
+      does not exist: check each login, /dev/states button or `rollcall dev state` name against the
+      knowledge folder's testing.md and the seed (backend/rollcall/tenancy/seed.py, the dev states'
+      code), unless a task adds it; a live route that production cannot give (a state only
+      /dev/states makes, a login prod does not have); or "build only" for a state a production
+      login already holds (then the live check should look there). Kind `reach`;
     - it leaves the implementer a decision the criteria depend on;
     - it adds work no criterion or the invariant needs (a neighbouring fix, a refactor, a wider rule
       for other pages, tenants or brokers, a new setting), goes outside the pitch or its no-gos, or

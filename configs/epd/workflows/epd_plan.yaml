@@ -20,7 +20,11 @@ workflow:
   # 7 (2026-09-27, queue task 8, bets built side by side): `live_bets` in, for the lead: the other
   #    bets being built, with the files their plans change, so the plan leaves to them what they
   #    fix and knows when this build will wait for one of them (epd_loop v12, `turn`).
-  version: 7
+  # 8 (2026-09-30, queue task 11, "why most bets ship as iterate"): `criteria_reach` out, the lead's
+  #    list of how each criterion's state is reached on the build and on production, or "build
+  #    only" (lead v7, check v8). QA walks the build routes; the live check counts a build-only
+  #    criterion QA met as covered, not vacuous (epd_loop v14).
+  version: 8
   description: |
     EPD loop, plan stage: a pitch becomes the build's tasks. An architect
     designs the change, four engineers check the design in their own areas,
@@ -82,6 +86,7 @@ workflow:
     blocked_because: lead.structured.blocked_because
     plan_path: lead.structured.plan_path
     same_value: lead.structured.same_value   # [{what, source, screens: [{route, where, login}]}] (v6)
+    criteria_reach: lead.structured.criteria_reach   # [{criterion, state, build, live}] (v8)
     # null after a last pass (round 3): the check was skipped, and its second verdict was "revise"
     verdict: check.structured.verdict
     issues: check.structured.issues

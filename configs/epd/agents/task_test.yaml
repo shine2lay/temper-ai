@@ -24,7 +24,9 @@
 #   - in a clean detached worktree of the commit under /tmp, never in the task's own
 #     worktree: an install there (`npm ci` deletes node_modules) would pull the floor
 #     out from under the judges reading it at the same time;
-#   - jobs side by side, each job's steps in order, as CI runs them; `uses:` steps
+#   - jobs side by side, each job's steps in order and each job in its own worktree
+#     of the commit, as CI gives each job its own checkout (two jobs that `npm ci` in
+#     one folder delete each other's node_modules mid-install); `uses:` steps
 #     are skipped (this machine is already set up: uv, node, python), and so is any
 #     step this script cannot evaluate faithfully (an `if:`, a `$` + `{{ }}` GitHub
 #     expression, another shell) -- named in the report, never silently;
@@ -43,7 +45,7 @@
 # throws one away; it is also never silent.
 agent:
   name: task_test
-  version: 1
+  version: 2
   type: script
   # The script keeps its own budget (BUDGET, below) inside this, so it prints its
   # verdict even when a suite hangs. The ceiling for a script agent is 3600 s
@@ -380,18 +382,34 @@ agent:
     # ---------------------------------------------------------------- a job, a run
 
     def run_jobs(jobs: list[dict], tree: str, tag: str, only=None, narrow=None) -> dict:
-        """Every job at once, each job's steps in order. `only` limits a job to the steps
-        named (by index) plus the installs before them; `narrow` adds arguments to a step."""
+        """Every job at once, each job's steps in order, each job in its own clean worktree
+        of the commit, as each CI job gets its own checkout. In one shared folder the
+        frontend job's `npm ci` and the qa job's deleted each other's node_modules
+        mid-install (ENOTEMPTY, ENOENT; b109, 2026-09-30): the base's qa install failed,
+        so the head's qa failures went uncompared and counted as the change's. `only`
+        limits a job to the steps named (by index) plus the installs before them;
+        `narrow` adds arguments to a step."""
         results: dict = {}
+
+        def wanted(j: int, i: int, step: dict) -> bool:
+            return only is None or (j, i) in only or (step["setup"] and any(
+                k[0] == j and k[1] > i for k in only))
+
+        # Made here, one after another, not from the threads: `git worktree add`
+        # takes a lock in the shared .git. A job with nothing to run gets none.
+        commit = git("rev-parse", "HEAD", cwd=tree)
+        trees: dict[int, str] = {}
+        for j, job in enumerate(jobs):
+            if any(wanted(j, i, s) for i, s in enumerate(job["steps"])):
+                trees[j] = add_tree(commit, f"{tag}{j}") if trees else tree
 
         def one(j: int, job: dict) -> None:
             job_started = time.monotonic()
             stop = None
+            job_tree = trees.get(j)
             for i, step in enumerate(job["steps"]):
                 key = (j, i)
-                wanted = only is None or key in only or (step["setup"] and any(
-                    k[0] == j and k[1] > i for k in only))
-                if not wanted:
+                if job_tree is None or not wanted(j, i, step):
                     continue
                 if stop:
                     results[key] = {"step": step, "skipped": stop}
@@ -408,7 +426,7 @@ agent:
                     budget = min(budget, job_left)
                 if step["timeout"]:
                     budget = min(budget, step["timeout"])
-                r = run_step(step, tree, tag, j * 100 + i, budget, (narrow or {}).get(key, ()))
+                r = run_step(step, job_tree, tag, j * 100 + i, budget, (narrow or {}).get(key, ()))
                 results[key] = r
                 if r["items"] and step["setup"]:
                     stop = f"`{step['name']}` failed before it"

@@ -221,6 +221,23 @@ class TestItRunsWhatCiRunsTheWayCiRunsIt:
             "types · tsc: src/a.ts(9,19): error TS2580: Cannot find name 'process'.",
         ]
 
+    def test_each_job_has_a_checkout_of_its_own(self, tmp_path):
+        """Two jobs installing into one folder delete each other's files mid-install (the
+        frontend job's `npm ci` and the qa job's, b109, 2026-09-30). On GitHub each job has
+        its own checkout, and so it does here."""
+        claim = ('echo {me} > shared.txt; sleep 1; '
+                 'test "$(cat shared.txt)" = {me} || {{ echo "shared.txt holds $(cat shared.txt)"; exit 1; }}')
+        ci = {"on": ["pull_request"], "jobs": {
+            "frontend": {"steps": [{"name": "Install", "run": claim.format(me="frontend")}]},
+            "qa": {"steps": [{"name": "Install", "run": claim.format(me="qa")}]},
+        }}
+        repo = repo_with(tmp_path, {".github/workflows/ci.yml": ci}, {"x.txt": ""})
+        out = run_step(repo)
+        assert out["verdict"] == "pass", out["summary"]
+        assert out["failures"] == [] and out["preexisting"] == []
+        assert [c["result"] for c in out["checks"]] == ["passed", "passed"]
+        assert git(repo, "worktree", "list").count("\n") == 0  # every job's checkout is gone
+
     def test_a_failing_install_stops_its_job_and_nothing_else(self, tmp_path):
         ci = {"on": {"pull_request": {}}, "jobs": {"web": {"steps": [
             {"name": "Install", "run": "npm ci", "env": {"PATH": "bin:/usr/bin:/bin"}},

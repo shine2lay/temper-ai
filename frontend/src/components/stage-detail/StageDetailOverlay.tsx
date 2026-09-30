@@ -38,10 +38,8 @@ const STRATEGY_LABELS: Record<string, string> = {
 export function StageDetailOverlay() {
   const stageDetailId = useExecutionStore((s) => s.stageDetailId);
   const closeStageDetail = useExecutionStore((s) => s.closeStageDetail);
-  // A node nested inside another one is no key of the drawn map, so the
-  // overlay opened empty on it; read both.
   const stage = useExecutionStore((s) =>
-    s.stageDetailId ? s.stages.get(s.stageDetailId) ?? s.nestedStages.get(s.stageDetailId) : undefined,
+    s.stageDetailId ? s.stages.get(s.stageDetailId) : undefined,
   );
   const allAgents = useExecutionStore((s) => s.agents);
 

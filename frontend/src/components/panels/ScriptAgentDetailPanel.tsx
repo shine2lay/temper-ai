@@ -3,7 +3,6 @@
  * and error details. No LLM-specific fields (tokens, prompts, etc.).
  */
 import { useExecutionStore } from '@/store/executionStore';
-import { useStageLookup } from '@/store/selectors';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
 import { MetricCell } from '@/components/shared/MetricCell';
@@ -22,8 +21,7 @@ interface ScriptAgentDetailPanelProps {
 export function ScriptAgentDetailPanel({ agentId }: ScriptAgentDetailPanelProps) {
   const ag = useExecutionStore((s) => s.agents.get(agentId));
   const select = useExecutionStore((s) => s.select);
-  // Nested nodes too: an inner stage is not a key of the drawn map.
-  const stages = useStageLookup();
+  const stages = useExecutionStore((s) => s.stages);
 
   if (!ag) {
     return <EmptyState title="Agent not found" />;

@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
-import { useStageLookup } from '@/store/selectors';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ToolOriginBadge } from '@/components/shared/ToolOriginBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
@@ -35,9 +34,7 @@ interface AgentDetailPanelProps {
 export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
   const ag = useExecutionStore((s) => s.agents.get(agentId));
   const select = useExecutionStore((s) => s.select);
-  // Includes the nodes nested inside another node, so "Back to Stage" on an
-  // agent of an inner stage opens that stage instead of an empty panel.
-  const stages = useStageLookup();
+  const stages = useExecutionStore((s) => s.stages);
   const streamEntry = useExecutionStore((s) => s.streamingContent.get(agentId));
   const isRunning = ag?.status === 'running';
   // Keep the streamed transcript visible after the agent finishes — same

@@ -1,5 +1,4 @@
 import { useExecutionStore } from '@/store/executionStore';
-import { useStageLookup } from '@/store/selectors';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ToolOriginBadge } from '@/components/shared/ToolOriginBadge';
 import { CollapsibleSection } from '@/components/shared/Collapsible';
@@ -18,7 +17,7 @@ export function ToolCallInspector({ toolCallId }: ToolCallInspectorProps) {
   const toolCall = useExecutionStore((s) => s.toolCalls.get(toolCallId));
   const select = useExecutionStore((s) => s.select);
   const agents = useExecutionStore((s) => s.agents);
-  const stages = useStageLookup();
+  const stages = useExecutionStore((s) => s.stages);
 
   if (!toolCall) {
     return (

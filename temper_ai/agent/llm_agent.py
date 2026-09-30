@@ -19,7 +19,6 @@ from typing import Any
 
 from temper_ai.agent.base import AgentABC
 from temper_ai.agent.exceptions import ToolsNotRegisteredError
-from temper_ai.llm import allowance
 from temper_ai.llm.context import DEFAULT_CONTEXT_POLICY
 from temper_ai.llm.fallback import parse_fallback, parse_token
 from temper_ai.llm.models import CallContext, LLMRunResult
@@ -379,10 +378,6 @@ class LLMAgent(AgentABC):
             # Core doesn't know what keys mean — the provider does.
             provider_config=self.config.get("provider_config"),
             cancel_event=context.cancel_event,
-            # How long this agent may wait out a subscription allowance that
-            # every account has spent. The workflow's `wait_for_allowance:`,
-            # else six hours; see temper_ai.llm.allowance.
-            allowance_wait_max=allowance.max_wait_for(context.workflow_name),
         )
 
     def _recall_memories(self, context: ExecutionContext) -> list[str]:

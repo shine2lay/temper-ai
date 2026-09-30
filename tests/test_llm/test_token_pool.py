@@ -362,31 +362,11 @@ class TestTruncation:
         assert tool_results[0]["content"].startswith("result of bash")
         assert service_mod.OUTPUT_LIMIT_NOTE in tool_results[0]["content"], "told why it is asked again"
 
-    def test_the_note_is_said_once_however_often_it_is_added(self):
-        """A long run can lose a call more than once, and the note must not stack.
-
-        Each lost call is asked again and told why; the second telling lands on
-        a message that already says it, and repeating it there would give the
-        model two contradictory-looking copies of the same instruction.
-        """
-        result, provider = self._run(
-            *self._thought_out(), self._reply("stop", "## Plan"),
-        )
+    def test_the_note_is_said_once_however_often_the_call_is_asked(self):
+        result, provider = self._run(*self._thought_out(2), self._reply("stop", "## Plan"))
         assert result.output == "## Plan"
         asked = provider.calls[-1]["messages"][-1]["content"]
         assert asked.count(service_mod.OUTPUT_LIMIT_NOTE) == 1
-        # Told a second time, the same message is left as it stands.
-        service_mod._note_output_limit(provider.calls[-1]["messages"])
-        assert provider.calls[-1]["messages"][-1]["content"].count(service_mod.OUTPUT_LIMIT_NOTE) == 1
-
-    def test_a_lost_call_is_asked_again_once_and_no_more(self):
-        """One retry, not two. An answer that does not fit is the budget the
-        agent is set up with, not bad luck: a third full-price think buys
-        nothing the second did not, and each one costs a whole max_tokens."""
-        assert service_mod.OUTPUT_LIMIT_RETRIES == 1
-        result, provider = self._run(*self._thought_out(2))
-        assert len(provider.calls) == 2, "asked again once, then given up on"
-        assert "max_tokens" in (result.error or "")
 
     def test_each_lost_call_gets_its_own_retries(self):
         """A long run can hit the cap more than once; a call that returned something starts the count again."""

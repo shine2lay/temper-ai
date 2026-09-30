@@ -17,7 +17,6 @@ from temper_ai.runner.quiet import (
     DEFAULT_AFTER,
     DONE,
     HEALTHY,
-    PARKED,
     QUIET,
     WAITING,
     Run,
@@ -80,52 +79,6 @@ def test_the_listing_status_waiting_is_believed_too():
     """Callers that have the status but not the gate flag get it right."""
     verdict = look(run(status="waiting", last_activity_at=NOW - timedelta(hours=10)), now=NOW)
     assert verdict.state == WAITING
-
-
-# ─── waiting for the model allowance ──────────────────────────────────────
-
-
-def test_waiting_for_the_allowance_is_not_quiet():
-    """Every account's ceiling is spent, so the run set itself aside.
-
-    Hours of silence is exactly what it is meant to do, and it knows when it
-    carries on. Calling that quiet is how it used to read -- and a quiet notice
-    sends someone to look at a run that wants nobody.
-    """
-    verdict = look(
-        run(parked_until=NOW + timedelta(hours=2),
-            last_activity_at=NOW - timedelta(hours=5)),
-        now=NOW,
-    )
-    assert verdict.state == PARKED
-    assert not verdict.quiet
-    assert verdict.waiting
-    assert verdict.parked_until == NOW + timedelta(hours=2)
-
-
-def test_a_parked_run_is_not_waiting_on_you_either():
-    """Nobody is being asked anything: it comes back by itself."""
-    verdict = look(run(parked_until=NOW + timedelta(hours=1)), now=NOW)
-    assert verdict.state != WAITING
-
-
-def test_a_parked_run_says_when_it_comes_back():
-    verdict = look(run(parked_until=NOW + timedelta(hours=2, minutes=20)), now=NOW)
-    assert "waiting for the model allowance" in verdict.sentence()
-    assert "14:20" in verdict.sentence()
-
-
-def test_a_park_with_no_end_time_still_reads_as_waiting():
-    # Should the reset ever be missing, say so rather than imply a time.
-    verdict = look(run(parked_until=None, at_a_gate=False,
-                       last_activity_at=NOW - timedelta(minutes=5)), now=NOW)
-    assert verdict.state == HEALTHY
-
-
-def test_a_parked_run_that_has_ended_is_just_ended():
-    """A leftover park on a finished run must not keep it "waiting" forever."""
-    verdict = look(run(status="completed", parked_until=NOW + timedelta(hours=2)), now=NOW)
-    assert verdict.state == DONE
 
 
 def test_a_run_that_has_not_started_is_left_alone():
@@ -309,50 +262,6 @@ class TestWhatEachRunLastDid:
 
     def test_no_ids_no_query(self):
         assert quiet.activity_of([]) == {}
-
-    def test_an_open_park_is_found_with_when_it_wakes(self):
-        """A parked run writes nothing while it waits, so its park is its newest
-        event -- which is why knowing it is parked costs no extra query."""
-        write_event("parked", "llm.call.started", NOW - timedelta(hours=3),
-                    data={"agent_name": "planner"})
-        write_event("parked", "llm.allowance", NOW - timedelta(hours=2), status="waiting",
-                    data={"until": (NOW + timedelta(minutes=20)).isoformat(),
-                          "agent_name": "planner"})
-
-        seen = quiet.activity_of(["parked"])
-
-        assert seen["parked"].parked_until == NOW + timedelta(minutes=20)
-
-    def test_a_park_that_has_ended_is_not_still_waiting(self):
-        """The allowance reopened and the run carried on: no badge."""
-        write_event("woke", "llm.allowance", NOW - timedelta(hours=2), status="waiting",
-                    data={"until": (NOW - timedelta(hours=1)).isoformat()})
-        write_event("woke", "llm.allowance", NOW - timedelta(hours=1), status="completed",
-                    data={"parked_for": "1h"})
-
-        assert quiet.activity_of(["woke"])["woke"].parked_until is None
-
-    def test_a_parked_run_in_a_listing_is_never_called_quiet(self):
-        """The whole point: five hours of deliberate silence, and no chasing.
-
-        This is the case task #23 would otherwise shout about -- a run that
-        wants nobody, sitting still exactly as designed.
-        """
-        write_event("parked", "llm.allowance", NOW - timedelta(hours=5), status="waiting",
-                    data={"until": (NOW + timedelta(minutes=20)).isoformat()})
-
-        verdicts = quiet.verdicts_for(
-            [{"id": "parked", "workflow_name": "epd_loop", "status": "running"}], now=NOW)
-
-        assert verdicts["parked"].state == PARKED
-        assert not verdicts["parked"].quiet
-        assert verdicts["parked"].parked_until == NOW + timedelta(minutes=20)
-
-    def test_a_park_with_an_unreadable_wake_time_is_not_believed(self):
-        # Better to judge it by the clock than to show a badge saying nothing.
-        write_event("odd", "llm.allowance", NOW - timedelta(hours=5), status="waiting",
-                    data={"until": "soon"})
-        assert quiet.activity_of(["odd"])["odd"].parked_until is None
 
     def test_a_listing_is_judged_from_what_the_database_says(self):
         write_event("stalled", "stage.started", NOW - timedelta(hours=3), data={"name": "deploy"})

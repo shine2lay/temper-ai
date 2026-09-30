@@ -60,19 +60,6 @@ export function formatTimestamp(ts: string | null | undefined): string {
   return ms > 0 ? `${time}.${String(ms).padStart(3, '0')}` : time;
 }
 
-/** When a parked run comes back, as a person reads a clock: "14:20".
- *
- * A run waiting for the model allowance knows the moment it will carry on, and
- * that moment is the whole point of the badge -- "waiting for allowance" alone
- * reads like another way of saying stuck. Local time, because the reader's
- * clock is the one on the wall next to the screen. */
-export function formatClock(isoTs: string | null | undefined): string {
-  if (!isoTs) return '';
-  const d = new Date(ensureUTC(isoTs));
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
 /** Categorize an error message into a type with retryability info */
 export function categorizeError(msg: string): { type: string; retryable: boolean } {
   const lower = msg.toLowerCase();

@@ -4,7 +4,7 @@ import { ArrowLeft, Info, Pencil, Download, RotateCcw, Square } from 'lucide-rea
 import { toast } from 'sonner';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { formatDuration, formatTokens, formatCost, elapsedSeconds, formatClock, cn } from '@/lib/utils';
+import { formatDuration, formatTokens, formatCost, elapsedSeconds, cn } from '@/lib/utils';
 import { DURATION_TICK_MS } from '@/lib/constants';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { authFetch } from '@/lib/authFetch';
@@ -289,23 +289,6 @@ export function WorkflowHeader() {
             title={`This run has been waiting ${workflow.waiting_for} for an answer.`}
           >
             waiting on you · {workflow.waiting_for}
-          </span>
-        )}
-        {/* Waiting for the model allowance to reopen. A wait with a known end
-            and nothing for anybody to do, so it is said apart from "waiting on
-            you" — and never as "quiet", which is how it used to read. */}
-        {workflow?.parked && (
-          <span
-            className="text-[11px] px-1.5 py-0.5 rounded border border-sky-500/40 bg-sky-500/15 text-sky-900 dark:text-sky-300 cursor-help"
-            title={
-              'Every account has spent its model allowance, so this run set itself aside. ' +
-              'It carries on by itself when the allowance reopens — nothing to do.'
-            }
-          >
-            waiting for allowance
-            {formatClock(workflow.parked_until)
-              ? `, back around ${formatClock(workflow.parked_until)}`
-              : ''}
           </span>
         )}
         {isQuiet && (

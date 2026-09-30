@@ -85,9 +85,3 @@ class CallContext:
     # call. Checked only between nodes, a stopped run went on paying for an
     # agent's calls until that agent finished on its own.
     cancel_event: Any = None
-    # How long this agent may park waiting for the subscription allowance to
-    # reopen, in seconds, when every account is cooling at once
-    # (temper_ai.llm.allowance). None leaves it at the default six hours; 0
-    # never waits and fails as it did before. The workflow sets it with
-    # `wait_for_allowance:`.
-    allowance_wait_max: float | None = None

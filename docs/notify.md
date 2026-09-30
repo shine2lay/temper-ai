@@ -149,24 +149,6 @@ because a question nobody has answered since this morning is the thing that
 actually goes unnoticed. A run that has gone quiet shows "quiet for 2h 14m"
 and the last thing it did.
 
-A run waiting for the **model allowance** is never quiet either, and never
-"needs you". Every account has a ceiling; when all of them are spent at once
-the run sets itself aside and carries on by itself when the allowance
-reopens, showing "waiting for allowance, back around 14:20" until it does.
-Nobody is being asked anything, so no message goes out.
-
-How long a run may wait is capped — six hours by default, which covers the
-rolling window. Past that it fails as it always did, because a run holding
-its worktree and its branch for three days is worse than one that fails and
-is resumed. A workflow prepared to sit out a weekly reset says so:
-
-```yaml
-name: epd_loop
-wait_for_allowance: 2d   # or `0` / `false` to never wait
-```
-
-It takes the same durations as `quiet_after`.
-
 One message goes out per quiet spell. A run that comes back to life by
 itself ends the spell and nothing more is said about it; if it goes quiet
 again later, that is a new spell and a new message. The same rule

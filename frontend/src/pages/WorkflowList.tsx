@@ -11,7 +11,6 @@ import {
   formatRelativeTime,
   formatTokens,
   formatCost,
-  formatClock,
   getDateGroup,
   cn,
 } from '@/lib/utils';
@@ -44,10 +43,6 @@ interface WorkflowSummary {
   quiet?: boolean;
   /** How long it has been quiet, in words: "2h 14m". */
   quiet_for?: string;
-  /** Waiting for the model allowance to reopen: healthy, never quiet, and
-   *  nothing for anyone to do -- it carries on by itself. */
-  parked?: boolean;
-  parked_until?: string | null;
   /** The last thing it did: "deploy · running bash". */
   last_step?: string;
   /** Parked at a gate, and how long it has been there: "10h". */
@@ -124,11 +119,6 @@ function sortWorkflows(workflows: WorkflowSummary[], sortBy: SortKey): WorkflowS
   }
   return sorted;
 }
-
-/** What the "waiting for allowance" badge says when you hover it. */
-const PARKED_TITLE =
-  'Every account has spent its model allowance, so this run set itself aside. ' +
-  'It carries on by itself when the allowance reopens \u2014 nothing to do.';
 
 /**
  * How long this run has been quiet, or null when it is getting on with it.
@@ -255,18 +245,6 @@ function WorkflowRow({
             }. Open it to answer.`}
           >
             needs you{wf.waiting_for ? ` · ${wf.waiting_for}` : ''}
-          </span>
-        )}
-        {/* Waiting out a spent model allowance. Not "needs you" (nobody is
-            being asked anything) and not "quiet" (it is silent on purpose and
-            knows when it comes back). */}
-        {wf.parked && (
-          <span
-            className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-900 dark:text-sky-300 border border-sky-500/40 font-medium cursor-help"
-            title={PARKED_TITLE}
-          >
-            waiting for allowance
-            {formatClock(wf.parked_until) ? `, back around ${formatClock(wf.parked_until)}` : ''}
           </span>
         )}
         {instant && (

@@ -73,23 +73,6 @@ def _aware(value: Any) -> datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
-def _parked(runs: dict[str, dict[str, Any]]) -> dict[str, datetime]:
-    """Which of these runs are waiting for the model allowance, and until when.
-
-    Empty when the lookup fails: a notice loop that cannot reach the events
-    table should go on saying what it can, not stop.
-    """
-    ids = [str(r["id"]) for r in runs.values() if r.get("id")]
-    if not ids:
-        return {}
-    try:
-        seen = quiet.activity_of(ids)
-    except Exception as exc:  # noqa: BLE001 - a missed park is better than a dead loop
-        logger.warning("could not tell which runs are waiting for the allowance: %s", exc)
-        return {}
-    return {eid: a.parked_until for eid, a in seen.items() if a.parked_until is not None}
-
-
 def question_notice(cfg: NotifyConfig, execution_id: str, workflow: str, event: dict[str, Any],
                     nudged_after_min: int = 0) -> Notice:
     """A waiting gate's event (``{id, data}``) as a question notice."""
@@ -564,10 +547,6 @@ class Notifier:
         where to send it.
         """
         out: list[dict[str, Any]] = []
-        # Which of these are waiting out a spent model allowance. Two queries
-        # for the whole tick, and it is what keeps a parked run from being
-        # called quiet: it is silent on purpose, and wants nobody.
-        parked = _parked(runs)
         for run in runs.values():
             workflow = str(run.get("workflow_name") or "")
             if workflow in QUIET_WORKFLOWS:
@@ -582,7 +561,6 @@ class Notifier:
                     last_activity_at=last,
                     started_at=_aware(run.get("start_time")),
                     after=quiet.after_for(workflow, cfg.stuck_after),
-                    parked_until=parked.get(eid),
                 ),
                 now=now,
                 default_after=cfg.stuck_after,

@@ -67,12 +67,6 @@ export interface WorkflowExecution {
   waiting_on_you?: boolean;
   /** How long it has been waiting for you: "10h". */
   waiting_for?: string;
-  /** Waiting for the model allowance to reopen: every account's ceiling is
-   *  spent, so the run set itself aside and will carry on by itself. Healthy,
-   *  never quiet, and nothing for anyone to do. */
-  parked?: boolean;
-  /** When it expects to carry on, ISO. */
-  parked_until?: string | null;
 }
 
 /** One attempt of a run: when it ran, how it ended, and who started it again. */

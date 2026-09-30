@@ -153,7 +153,7 @@ def test_quiet_after_as_written_in_a_workflow(written, expected):
 
 
 @pytest.mark.parametrize("span,words", [
-    (timedelta(seconds=30), "just now"),
+    (timedelta(seconds=30), "under a minute"),
     (timedelta(minutes=45), "45m"),
     (timedelta(hours=2, minutes=14), "2h 14m"),
     (timedelta(hours=3), "3h"),
@@ -163,6 +163,23 @@ def test_quiet_after_as_written_in_a_workflow(written, expected):
 ])
 def test_how_long_in_words(span, words):
     assert how_long(span) == words
+
+
+@pytest.mark.parametrize("last_activity,at_a_gate", [
+    (timedelta(seconds=40), False),   # quiet, only just
+    (timedelta(seconds=10), True),    # waiting, only just
+])
+def test_a_short_span_still_reads_as_a_length(last_activity, at_a_gate):
+    """Every span goes after "for" or before "so far", so it must be one.
+
+    A gate spends its first minute in this branch every single time, and
+    said "is waiting on you, just now so far".
+    """
+    verdict = look(run(last_activity_at=NOW - last_activity,
+                       at_a_gate=at_a_gate, after=timedelta(seconds=30)), now=NOW)
+
+    assert verdict.how_long == "under a minute"
+    assert "just now" not in verdict.sentence("epd_loop")
 
 
 def test_the_sentence_says_how_long_and_what_it_was_doing():

@@ -298,8 +298,12 @@ class Notifier:
         if not targets:
             return []
         wf_block, run_block = self._blocks(workflow, execution_id)
-        quiet = cfg.quiet_hours(workflow, wf_block, run_block)
-        hold_until = quiet.holds(kind, now) if quiet else None
+        # Not the quiet of a quiet run: these are the hours you asked not to
+        # be disturbed in. Named apart because the module deciding the other
+        # kind of quiet is imported here too, and the two must never be one
+        # careless line away from each other.
+        quiet_hours = cfg.quiet_hours(workflow, wf_block, run_block)
+        hold_until = quiet_hours.holds(kind, now) if quiet_hours else None
         built: Notice | None = notice if isinstance(notice, Notice) else None
         out = []
         for via, target in targets:

@@ -137,12 +137,18 @@ class Verdict:
 
 
 def how_long(span: timedelta | None) -> str:
-    """A span in words: "just now", "45m", "2h 14m", "3d 4h"."""
+    """A span in words: "under a minute", "45m", "2h 14m", "3d 4h".
+
+    Every one of these is read after "for": "quiet for ...", "needs you,
+    ... so far". "just now" names a moment, not a length, so it came out as
+    "quiet for just now" -- and a gate reads that way for its first minute,
+    every time.
+    """
     if span is None:
         return "an unknown time"
     seconds = int(max(0.0, span.total_seconds()))
     if seconds < 60:
-        return "just now"
+        return "under a minute"
     minutes = seconds // 60
     if minutes < 60:
         return f"{minutes}m"

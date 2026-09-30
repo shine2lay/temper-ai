@@ -149,16 +149,19 @@ function Thinking({ text, open }: { text: string; open: boolean }) {
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-1 text-left text-[9px] font-medium text-violet-400"
+        className="flex w-full items-center gap-1 text-left text-[9px] font-medium text-violet-700 dark:text-violet-400"
       >
         <ChevronRight className={cn('size-3 transition-transform', expanded && 'rotate-90')} />
         thinking
         {!expanded && (
-          <span className="truncate font-normal text-violet-300/60">· {firstLine(text)}</span>
+          <span className="truncate font-normal text-violet-700/70 dark:text-violet-300/60">· {firstLine(text)}</span>
         )}
       </button>
+      {/* Violet says thinking in both themes: pale violet on the dark
+          background, and a dark violet on the light one, where the pale one
+          was there but could not be read. */}
       {expanded && (
-        <div className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-violet-300/80">
+        <div className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-violet-900 dark:text-violet-300/80">
           {text}
         </div>
       )}

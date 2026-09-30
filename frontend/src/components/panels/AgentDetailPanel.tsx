@@ -390,8 +390,8 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
                 {/* Marked as thinking wherever it is shown, and never run
                     together with the answer: what the model considered and
                     what it said are different claims. */}
-                <div className="rounded bg-violet-500/5 border border-violet-500/20 p-2">
-                  <MarkdownDisplay content={call.thinking!} className="text-violet-300/80 text-xs" />
+                <div className="rounded bg-violet-500/10 border border-violet-500/30 p-2">
+                  <MarkdownDisplay content={call.thinking!} className="text-violet-900 dark:text-violet-300/80 text-xs" />
                 </div>
               </div>
             ))}

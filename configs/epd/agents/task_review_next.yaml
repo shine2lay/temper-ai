@@ -87,7 +87,12 @@
 # the limit of deterministic, and accept the rest as a risk. new_project.md N7 now says a check goes as
 # far as the tool's own rules can see by reading the code, and past that is an accepted risk, not a
 # finding unless the diff writes it. A probe of a check runs its one tool on a scratch file outside the
-# worktree (round 1 did so, though "no lint" forbade it).
+# worktree (round 1 did so, though "no lint" forbade it). That evening round 2 read N7's "any other
+# form one of its rules can refuse" as every other way to do the same job (`navigator.sendBeacon`,
+# `EventSource` and `WebSocket` beside `fetch`, a `<link>` beside a CSS import, `email.utils.localtime`
+# beside `date.today`), a tail of its own. The owner chose "only what the rule names": N7 now says a
+# check refuses the things its standard names, in every spelling its tool sees; another way to do the
+# job is another thing, a standards proposal, not a finding unless the diff writes it.
 agent:
   name: task_review_next
   version: 7

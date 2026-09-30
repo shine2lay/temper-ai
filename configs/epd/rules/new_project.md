@@ -53,13 +53,16 @@ foundation must take it without a rewrite. Build only what this request needs.
 - **N7 Checks.** Each app has one command per check: install, lint, format check, type check, test, build.
   CI runs every one on every pull request (the workflow the task names). Whatever a tool can enforce
   (formatting, import order, unused code, types) is enforced by a check, not by a line of prose. The checks
-  pass on every build. A check that bans a use goes as far as the tool's own rules can see by reading the
-  code: the name imported or re-exported, the global by its bare name and as a member of `window`,
-  `globalThis`, `self` or `document`, the library's other names for the same thing, and any other form one
-  of its rules can refuse. Past that is an accepted risk (a global passed through a variable, a name built
-  while the code runs, a form only a plugin written for it could see): no hole in the check, and no finding
-  unless the diff writes it. The standard names the forms its check refuses and the risk it accepts, so the
-  notes stay true.
+  pass on every build. A check that bans a use refuses the things its standard names, each in every
+  spelling the tool's own rules can see by reading the code: imported or re-exported by any path, the global
+  by its bare name and as a member of `window`, `globalThis`, `self` or `document`, and the library's other
+  names for that same thing (a deprecated alias, a `v1` path). Past that is an accepted risk (a global passed
+  through a variable, a name built while the code runs, a form only a plugin written for it could see): no
+  hole in the check. Another way to do the same job is another thing, not a spelling (`navigator.sendBeacon`
+  beside `fetch`, a `<link>` beside a CSS import, `email.utils.localtime` beside `date.today`): the standard
+  names it, or it is a risk the standard accepts, and a review may propose naming it (Standards proposals).
+  Neither is a finding unless the diff writes it. The standard names the things its check refuses and the
+  risk it accepts, so the notes stay true.
 - **N8 Written down.** The decisions live in the repository, where every later build and review reads them
   first:
   - `.temper/standards.md`: the rules, numbered S1, S2, ... Each is a rule someone can check against a diff,

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Trim old runs' sent material. Run weekly by temper-trim.timer.
+#
+#   temper-trim                 do it, then hand the space back
+#   temper-trim --dry-run       say what it would do, change nothing
+#   temper-trim --limit 500     stop after 500 runs (safe to repeat)
+#
+# The database URL is built the same way docker-compose.yml builds it, from
+# the project's own .env, so there is no second copy of the password to keep
+# in step. Everything else is the `temper trim` command's own flags.
+#
+# It deliberately IGNORES an inherited TEMPER_DATABASE_URL. Several projects
+# on this machine export one, and more than one of them has a database named
+# temper_ai; inheriting a stray value once pointed a trim at the wrong
+# database entirely. This command trims *temper's* database or none. To aim
+# it somewhere else on purpose, set TEMPER_TRIM_DATABASE_URL.
+set -euo pipefail
+
+# Always the main checkout, so this keeps working after a worktree lands.
+repo="${TEMPER_REPO:-$HOME/temper-ai}"
+cd "$repo"
+
+if [[ -n "${TEMPER_TRIM_DATABASE_URL:-}" ]]; then
+    export TEMPER_DATABASE_URL="$TEMPER_TRIM_DATABASE_URL"
+else
+    password="temper_dev" # the same default as docker-compose.yml
+    port="5433"
+    if [[ -f .env ]]; then
+        # Read only the two keys we need; ignore everything else in there.
+        from_env="$(grep -E '^POSTGRES_PASSWORD=' .env | tail -1 | cut -d= -f2- || true)"
+        [[ -n "$from_env" ]] && password="$from_env"
+        from_env="$(grep -E '^POSTGRES_PORT=' .env | tail -1 | cut -d= -f2- || true)"
+        [[ -n "$from_env" ]] && port="$from_env"
+    fi
+    export TEMPER_DATABASE_URL="postgresql://temper_ai:${password}@localhost:${port}/temper_ai"
+fi
+
+# Say plainly what is missing. Under systemd the PATH is not a login shell's,
+# and a bare "exec: uv: not found" in the journal says nothing about the cause.
+if ! command -v uv >/dev/null 2>&1; then
+    echo "temper-trim: uv is not on PATH ($PATH)." >&2
+    echo "temper-trim: install it, or point the unit's PATH at the directory holding uv." >&2
+    exit 127
+fi
+
+exec uv run --quiet python -m temper_ai.cli.main trim "$@"

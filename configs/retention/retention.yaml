@@ -1,0 +1,42 @@
+# How long a run keeps the material it *sent* (docs/retention.md).
+#
+# The event log is nearly all prompt. On this machine `llm.call.started`
+# (the whole transcript handed to the model on every iteration) and
+# `agent.started` (the agent's input, system prompt and task template) were
+# 10.5 GB of a 14 GB events table; everything that says what *happened* —
+# results, tokens, cost, tool results, failures — was a few hundred MB.
+#
+# So old routine runs drop their sent material and keep their whole story.
+# The run page still draws them: what came back, what it cost, how long it
+# took, what failed. Only the "what exactly was in the prompt" panels go.
+#
+# Nothing is trimmed for a run that did not complete (still going, failed,
+# cancelled, interrupted), a run where a gate asked a person something, a
+# workflow on `keep_whole`, a run younger than `older_than_days`, or one of
+# the newest `keep_recent_per_workflow` of its workflow.
+#
+# Run it by hand with `temper trim --dry-run` (inside the server container);
+# the weekly timer runs `temper trim` and logs a line per pass.
+#
+# `configs/retention/local/retention.yaml` is used instead when it exists.
+# Changes are picked up on the next pass — no restart.
+retention:
+  # A run must be at least this old before anything is dropped.
+  older_than_days: 30
+
+  # Never trim the newest N runs of any workflow, so every workflow always
+  # keeps a complete example to read.
+  keep_recent_per_workflow: 5
+
+  # Workflows kept whole for ever: the ones we are actively grading and
+  # improving, where the prompt itself is the evidence. Shell-style globs.
+  keep_whole:
+    - "epd_*" # the EPD loop: builds, graders, pitches, scorecards
+
+  # Cut a trimmed run's checkpoint outputs to the same 5000 characters
+  # `agent.completed` already stores, so a checkpoint never holds less of
+  # the outcome than the event log does.
+  trim_checkpoints: true
+
+  # Rows per database round trip while trimming a run.
+  batch_size: 200

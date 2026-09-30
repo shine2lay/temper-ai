@@ -179,6 +179,10 @@ def main() -> None:
     )
     wq_parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
+    # -- temper trim (weekly housekeeping: old runs' sent material) --
+    from temper_ai.cli.trim import add_parser as _add_trim_parser
+    _add_trim_parser(subparsers)
+
     args = parser.parse_args()
 
     # F28: --debug flag sets logging to DEBUG
@@ -226,6 +230,9 @@ def main() -> None:
     elif args.command == "events":
         from temper_ai.cli.events import cmd_events
         sys.exit(cmd_events(args))
+    elif args.command == "trim":
+        from temper_ai.cli.trim import cmd_trim
+        sys.exit(cmd_trim(args))
     elif args.command == "validate":
         _cmd_validate(args)
     elif args.command == "run-workflow":

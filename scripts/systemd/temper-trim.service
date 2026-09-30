@@ -1,0 +1,27 @@
+[Unit]
+Description=temper trim: drop old runs' sent material, keep every outcome
+# Started every Sunday by temper-trim.timer. It says nothing on success;
+# ~/.local/state/temper-trim/trim.log has one JSON line per pass.
+#
+# Runs against the live database while runs are going. That is safe by
+# design: a run that has not completed is never chosen, the outcome is
+# re-read just before each run is touched, each run commits on its own,
+# and the VACUUM afterwards is the plain kind, which takes no exclusive
+# lock. Stopping it half way loses nothing.
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/shinelay/temper-ai
+Environment=PATH=/home/shinelay/.local/bin:/usr/local/bin:/usr/bin:/bin
+# The wrapper builds the database URL from the project's own .env, the same
+# way docker-compose.yml does, so there is no second copy of the password.
+ExecStart=/home/shinelay/.local/bin/temper-trim --vacuum --quiet
+# Housekeeping must never slow a run down.
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=6h
+
+[Install]
+WantedBy=default.target

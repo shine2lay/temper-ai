@@ -1,0 +1,14 @@
+[Unit]
+Description=temper: trim old runs' sent material every Sunday at 04:10
+
+[Timer]
+# Sunday, early, and before offsite-backup.timer at 05:00 — so the week's
+# trimming is already done and vacuumed when the night's copy is taken.
+OnCalendar=Sun *-*-* 04:10:00
+# If the machine was off on Sunday, do it at the next boot instead of
+# skipping a week.
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

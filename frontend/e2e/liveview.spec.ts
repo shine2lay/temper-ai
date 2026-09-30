@@ -189,6 +189,43 @@ test.describe('the live panel', () => {
     await page.screenshot({ path: `${OUT}/panel-many-agents.png` });
   });
 
+  test('stage headers stay put while the list scrolls, and a button fills the page', async ({ page }) => {
+    await replay(page, bigRun());
+    const roster = page.getByTestId('live-agent-roster');
+    await expect(page.getByTestId('live-agent-row').first()).toBeVisible();
+
+    // Scrolled into the middle of the longest stage, that stage's header is
+    // still at the top of the list saying whose agents these are.
+    const pinned = await roster.evaluate((el) => {
+      const groups = Array.from(el.children) as HTMLElement[];
+      const tallest = groups.reduce((a, b) => (b.offsetHeight > a.offsetHeight ? b : a));
+      const listTop = el.getBoundingClientRect().top;
+      el.scrollTop += tallest.getBoundingClientRect().top - listTop + tallest.offsetHeight / 2;
+      const header = tallest.querySelector('[data-testid="live-group-header"]') as HTMLElement;
+      return {
+        name: header.textContent ?? '',
+        gap: header.getBoundingClientRect().top - el.getBoundingClientRect().top,
+        sticky: getComputedStyle(header).position,
+        scrolled: el.scrollTop,
+      };
+    });
+    expect(pinned.scrolled).toBeGreaterThan(0);
+    expect(pinned.sticky).toBe('sticky');
+    expect(Math.abs(pinned.gap)).toBeLessThan(2);
+    await page.screenshot({ path: `${OUT}/panel-sticky-stages.png` });
+
+    // One button, no dragging: the panel fills the page and comes back.
+    const before = (await page.getByTestId('live-panel').boundingBox())!.height;
+    await page.getByLabel('Open the live panel to the full page').click();
+    const full = (await page.getByTestId('live-panel').boundingBox())!.height;
+    expect(full).toBeGreaterThan(before + 50);
+    await page.screenshot({ path: `${OUT}/panel-full-page.png` });
+
+    await page.getByLabel('Put the live panel back to its height').click();
+    const back = (await page.getByTestId('live-panel').boundingBox())!.height;
+    expect(Math.abs(back - before)).toBeLessThan(2);
+  });
+
   test('a step that failed', async ({ page }) => {
     await replay(page, replayRun());
     await page.getByTestId('live-agent-row').filter({ hasText: 'packager' }).click();

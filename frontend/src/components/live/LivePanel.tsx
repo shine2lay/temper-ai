@@ -3,11 +3,14 @@
  * chosen agent's story on the right.
  *
  * It follows whichever agent is working unless you pick one yourself; the
- * Follow button hands it back. Drag its top edge to make it as tall as the
- * page or fold it to a bar — it remembers what you chose.
+ * Follow button hands it back. Picking one anywhere on the page counts:
+ * clicking an agent on the graph, or opening one in the side panel, brings
+ * the panel to that agent. Drag its top edge to make it as tall as the
+ * page, press the button to fill the page in one go, or fold it to a bar —
+ * it remembers what you chose.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronUp, Crosshair, PanelBottomClose } from 'lucide-react';
+import { useEffect, useMemo, useRef } from 'react';
+import { ChevronUp, Crosshair, Maximize2, Minimize2, PanelBottomClose } from 'lucide-react';
 import { useExecutionStore } from '@/store/executionStore';
 import { fullStory } from '@/lib/agentStory';
 import { buildRoster, busyCount, newestBusyAgent, statusWord } from '@/lib/agentRoster';
@@ -16,7 +19,7 @@ import { cn, formatDuration } from '@/lib/utils';
 import { AgentRoster } from './AgentRoster';
 import { useSecondTicker } from '@/hooks/useSecondTicker';
 import { AgentStoryView } from './AgentStoryView';
-import { BAR_HEIGHT, useLivePanelSize } from './useLivePanelSize';
+import { useLivePanelSize } from './useLivePanelSize';
 
 export function LivePanel() {
   const stages = useExecutionStore((s) => s.stages);
@@ -29,8 +32,17 @@ export function LivePanel() {
   const findQuery = useExecutionStore((s) => s.findQuery);
   const findStatus = useExecutionStore((s) => s.findStatus);
 
-  const { share, folded, dragging, setFolded, onHandlePointerDown, panelRef } = useLivePanelSize();
-  const [pickedId, setPickedId] = useState<string | null>(null);
+  // The agent picked, wherever it was picked. It lives in the store, so a
+  // click on the graph or in the side panel reaches the panel too; the panel
+  // used to keep its own idea of it and could not be told.
+  const livePick = useExecutionStore((s) => s.livePick);
+  const pickLiveAgent = useExecutionStore((s) => s.pickLiveAgent);
+  const clearLivePick = useExecutionStore((s) => s.clearLivePick);
+
+  const {
+    folded, expanded, dragging, height, setFolded, setExpanded, onHandlePointerDown, panelRef,
+  } = useLivePanelSize();
+  const pickedId = livePick?.id ?? null;
 
   const groups = useMemo(() => buildRoster(stages, agents, stories), [stages, agents, stories]);
   const lit = useMemo(
@@ -87,13 +99,11 @@ export function LivePanel() {
     prevFollowed.current = followed;
   }, [followed]);
 
-  const height = folded ? BAR_HEIGHT : `${Math.round(share * 100)}%`;
-
   return (
     <div
       ref={panelRef}
       data-testid="live-panel"
-      style={{ height: typeof height === 'number' ? `${height}px` : height }}
+      style={{ height }}
       className={cn(
         // Solid: at full height the graph behind it must not show through.
         'absolute inset-x-0 bottom-0 z-10 flex flex-col border-t border-temper-border bg-temper-bg',
@@ -120,6 +130,16 @@ export function LivePanel() {
         >
           {folded ? <ChevronUp className="size-4" /> : <PanelBottomClose className="size-4" />}
         </button>
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          data-testid="live-expand-button"
+          aria-pressed={expanded}
+          aria-label={expanded ? 'Put the live panel back to its height' : 'Open the live panel to the full page'}
+          className="shrink-0 rounded p-0.5 text-temper-text-muted hover:text-temper-text"
+        >
+          {expanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+        </button>
         <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-temper-text-dim">
           Now
         </span>
@@ -130,7 +150,7 @@ export function LivePanel() {
           {!following && (
             <button
               type="button"
-              onClick={() => setPickedId(null)}
+              onClick={clearLivePick}
               data-testid="live-follow-button"
               className="flex items-center gap-1 rounded border border-temper-border px-1.5 py-0.5 text-[10px] text-temper-text-muted hover:text-temper-text"
             >
@@ -157,9 +177,10 @@ export function LivePanel() {
             <AgentRoster
               groups={groups}
               selectedId={shownId}
-              onSelect={(id) => setPickedId(id)}
+              onSelect={pickLiveAgent}
               now={now}
               lit={lit}
+              reveal={livePick}
             />
           </div>
           <div className="min-w-0 flex-1">

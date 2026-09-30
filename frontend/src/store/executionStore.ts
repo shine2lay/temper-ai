@@ -60,6 +60,14 @@ interface ExecutionState {
    *  The live panel tells this story; see lib/agentStory.ts. */
   stories: Map<string, AgentStory>;
   selection: Selection | null;
+  /**
+   * The agent the live panel is pinned to, or null while it follows whichever
+   * agent is working. It lives here, not in the panel, so that clicking an
+   * agent anywhere on the page (the graph, a stage's list, the side panel)
+   * brings the panel with it. The count goes up on every pick, so choosing
+   * the same agent twice still scrolls the panel's list to it.
+   */
+  livePick: { id: string; nonce: number } | null;
   /** Id of the node the cursor is currently over. Drives "hover-to-reveal"
    *  edge highlighting — connected edges go full opacity, others dim. */
   hoveredNodeId: string | null;
@@ -93,6 +101,10 @@ interface ExecutionState {
   reset: () => void;
   select: (type: Selection['type'], id: string) => void;
   clearSelection: () => void;
+  /** Pins the live panel to an agent without opening the side panel. */
+  pickLiveAgent: (agentId: string) => void;
+  /** The live panel's Follow button: back to whichever agent is working. */
+  clearLivePick: () => void;
   setHoveredNodeId: (id: string | null) => void;
   setWSStatus: (partial: Partial<WSStatus>) => void;
   toggleStageExpanded: (stageName: string) => void;
@@ -421,6 +433,7 @@ export const useExecutionStore = create<ExecutionState>()(
     streamingContent: new Map(),
     stories: new Map(),
     selection: null,
+    livePick: null,
     wsStatus: { connected: false, reconnectAttempt: 0, lastHeartbeat: null, wsError: null },
     eventLog: [],
     expandedStages: new Set(),
@@ -540,6 +553,12 @@ export const useExecutionStore = create<ExecutionState>()(
             || (sel.type === 'llmCall' && state.llmCalls.has(sel.id))
             || (sel.type === 'toolCall' && state.toolCalls.has(sel.id));
           if (!exists) state.selection = null;
+        }
+
+        // Same for the agent the live panel is pinned to: an agent the run
+        // no longer has would leave the panel showing nothing.
+        if (state.livePick && !state.agents.has(state.livePick.id)) {
+          state.livePick = null;
         }
 
         // Seed streamingContent for running agents so the graph's cards and
@@ -921,6 +940,8 @@ export const useExecutionStore = create<ExecutionState>()(
         // snapshot used to wipe; now that a refresh keeps the selection, it
         // opened Workflow Details over the canvas on every page load.
         state.selection = null;
+        // Another run is another run: the panel starts by following it.
+        state.livePick = null;
         // Another run is another search: a word typed on the last page would
         // otherwise dim most of this one before it had finished loading.
         state.findQuery = '';
@@ -931,11 +952,26 @@ export const useExecutionStore = create<ExecutionState>()(
     select: (type, id) =>
       set((state) => {
         state.selection = { type, id };
+        // Choosing an agent anywhere on the page chooses it in the live
+        // panel too, so the two never show different agents.
+        if (type === 'agent') {
+          state.livePick = { id, nonce: (state.livePick?.nonce ?? 0) + 1 };
+        }
       }),
 
     clearSelection: () =>
       set((state) => {
         state.selection = null;
+      }),
+
+    pickLiveAgent: (agentId) =>
+      set((state) => {
+        state.livePick = { id: agentId, nonce: (state.livePick?.nonce ?? 0) + 1 };
+      }),
+
+    clearLivePick: () =>
+      set((state) => {
+        state.livePick = null;
       }),
 
     setHoveredNodeId: (id) =>

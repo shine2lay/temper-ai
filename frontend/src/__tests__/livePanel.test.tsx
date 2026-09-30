@@ -399,6 +399,137 @@ describe('the panel', () => {
     expect(screen.getByTestId('live-now-line').textContent).toContain('tester');
   });
 
+  it('shows an agent picked anywhere else on the page, and stops following', () => {
+    act(() => {
+      useExecutionStore.getState().applySnapshot(threeStages());
+      useExecutionStore.getState().applyEvent(
+        makeStreamBatchEvent('a2', [{ content: 'coder at work', call_id: 'c1' }]),
+      );
+    });
+    render(<LivePanel />);
+    expect(screen.getByTestId('live-now-line').textContent).toContain('coder');
+    // "plan" is over, so its stage starts folded and its agent is not drawn.
+    expect(screen.queryByText('planner')).toBeNull();
+
+    // A click on the graph, or an agent opened in the side panel, is this.
+    act(() => {
+      useExecutionStore.getState().select('agent', 'a1');
+    });
+
+    expect(screen.getByTestId('live-now-line').textContent).toContain('planner');
+    const plan = screen.getAllByTestId('live-group-header').find((h) => h.textContent?.includes('plan'))!;
+    expect(plan.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('planner')).toBeInTheDocument();
+
+    // It counts as picking one, so Follow is offered and hands it back.
+    fireEvent.click(screen.getByTestId('live-follow-button'));
+    expect(screen.getByTestId('live-now-line').textContent).toContain('coder');
+  });
+
+  it('scrolls its list to an agent picked elsewhere', () => {
+    const scrolled: Element[] = [];
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: function scrollIntoView(this: HTMLElement) { scrolled.push(this); },
+    });
+    act(() => {
+      useExecutionStore.getState().applySnapshot(threeStages());
+    });
+    render(<LivePanel />);
+
+    act(() => {
+      useExecutionStore.getState().select('agent', 'a1');
+    });
+    expect(scrolled.map((el) => el.getAttribute('data-agent-id'))).toContain('a1');
+
+    // The run going on by itself must not keep dragging the list back.
+    const after = scrolled.length;
+    act(() => {
+      useExecutionStore.getState().applyEvent(
+        makeStreamBatchEvent('a3', [{ content: 'tester at work', call_id: 'c2' }], '2026-09-28T10:05:00Z'),
+      );
+    });
+    expect(scrolled).toHaveLength(after);
+  });
+
+  it('opening one in the side panel is picking it, here as anywhere else', () => {
+    act(() => {
+      useExecutionStore.getState().applySnapshot(threeStages());
+      useExecutionStore.getState().applyEvent(
+        makeStreamBatchEvent('a2', [{ content: 'coder at work', call_id: 'c1' }]),
+      );
+    });
+    render(<LivePanel />);
+
+    fireEvent.click(screen.getByTestId('live-details-button'));
+    expect(useExecutionStore.getState().selection).toEqual({ type: 'agent', id: 'a2' });
+
+    // A newer agent no longer takes the panel with it: it stays on the one
+    // being read, and Follow hands it back.
+    act(() => {
+      useExecutionStore.getState().applyEvent(
+        makeStreamBatchEvent('a3', [{ content: 'tester at work', call_id: 'c2' }], '2026-09-28T10:05:00Z'),
+      );
+    });
+    expect(screen.getByTestId('live-now-line').textContent).toContain('coder');
+    fireEvent.click(screen.getByTestId('live-follow-button'));
+    expect(screen.getByTestId('live-now-line').textContent).toContain('tester');
+  });
+
+  it('opens a stage the reader had folded when an agent in it is picked elsewhere', () => {
+    act(() => {
+      useExecutionStore.getState().applySnapshot(threeStages());
+    });
+    render(<LivePanel />);
+
+    // Fold "build" by hand, then pick its agent from the graph.
+    const build = screen.getAllByTestId('live-group-header').find((h) => h.textContent?.includes('build'))!;
+    fireEvent.click(build);
+    expect(build.getAttribute('aria-expanded')).toBe('false');
+
+    act(() => {
+      useExecutionStore.getState().select('agent', 'a2');
+    });
+    expect(build.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('coder')).toBeInTheDocument();
+  });
+
+  it('opens to the full page and back with one button, and remembers which', () => {
+    act(() => {
+      useExecutionStore.getState().applySnapshot(threeStages());
+    });
+    const first = render(<LivePanel />);
+    expect(screen.getByTestId('live-panel').style.height).toBe(`${Math.round(DEFAULT_SHARE * 100)}%`);
+
+    fireEvent.click(screen.getByLabelText('Open the live panel to the full page'));
+    expect(screen.getByTestId('live-panel').style.height).toBe('100%');
+
+    // Remembered, like the dragged height is.
+    first.unmount();
+    render(<LivePanel />);
+    expect(screen.getByTestId('live-panel').style.height).toBe('100%');
+
+    fireEvent.click(screen.getByLabelText('Put the live panel back to its height'));
+    expect(screen.getByTestId('live-panel').style.height).toBe(`${Math.round(DEFAULT_SHARE * 100)}%`);
+    cleanup();
+    render(<LivePanel />);
+    expect(screen.getByTestId('live-panel').style.height).toBe(`${Math.round(DEFAULT_SHARE * 100)}%`);
+  });
+
+  it('opens a folded panel when it is opened to the full page', () => {
+    act(() => {
+      useExecutionStore.getState().applySnapshot(threeStages());
+    });
+    render(<LivePanel />);
+    fireEvent.click(screen.getByLabelText('Fold the live panel'));
+    expect(screen.queryByTestId('live-agent-roster')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Open the live panel to the full page'));
+    expect(screen.getByTestId('live-panel').style.height).toBe('100%');
+    expect(screen.queryByTestId('live-agent-roster')).not.toBeNull();
+  });
+
   it('says what is happening now, and how many others are working', () => {
     act(() => {
       useExecutionStore.getState().applySnapshot(threeStages());
@@ -415,6 +546,49 @@ describe('the panel', () => {
     expect(line).toContain('build · coder');
     expect(line).toContain('Run npm test');
     expect(line).toContain('(+1 more working)');
+  });
+});
+
+describe('the stages in the list', () => {
+  function twoStages() {
+    return run([
+      node('n1', 'plan', [
+        agent({ id: 'a1', agent_name: 'planner', status: 'completed', duration_seconds: 30 }),
+      ], 'completed'),
+      node('n2', 'build', [
+        agent({ id: 'a2', agent_name: 'coder' }),
+        agent({ id: 'a3', agent_name: 'reviewer', status: 'completed', duration_seconds: 20 }),
+      ]),
+    ]);
+  }
+
+  it('keeps each stage header in place while its agents scroll past it', () => {
+    act(() => {
+      useExecutionStore.getState().applySnapshot(twoStages());
+    });
+    render(<LivePanel />);
+    for (const header of screen.getAllByTestId('live-group-header')) {
+      expect(header.className).toContain('sticky');
+      expect(header.className).toContain('top-0');
+    }
+  });
+
+  it('says how many agents a stage holds and whether any are still working', () => {
+    act(() => {
+      useExecutionStore.getState().applySnapshot(twoStages());
+    });
+    render(<LivePanel />);
+    const headers = screen.getAllByTestId('live-group-header');
+    const build = headers.find((h) => h.textContent?.includes('build'))!;
+    const plan = headers.find((h) => h.textContent?.includes('plan'))!;
+
+    expect(within(build).getByTitle('2 agents').textContent).toBe('2');
+    expect(within(build).getByTestId('live-group-working').textContent).toBe('1');
+    expect(within(build).getByTitle('1 still working')).toBeInTheDocument();
+
+    // A stage where everyone has stopped says nothing about working.
+    expect(within(plan).queryByTestId('live-group-working')).toBeNull();
+    expect(within(plan).getByTitle('1 agent').textContent).toBe('1');
   });
 });
 

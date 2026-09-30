@@ -6,7 +6,7 @@
  * already happened. Once the run is over there is no "now" left to make room
  * for, so every stage starts open and the whole run reads back.
  */
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { cn, formatCost, formatDuration } from '@/lib/utils';
 import { statusWord, type RosterAgent, type RosterGroup } from '@/lib/agentRoster';
@@ -23,10 +23,36 @@ interface AgentRosterProps {
    * dropped: the run keeps its shape and its counts.
    */
   lit?: Set<string> | null;
+  /**
+   * An agent picked somewhere else on the page: open the stage it sits in,
+   * folded or not, and scroll the list to it. The count goes up on every
+   * pick, so picking the same agent twice still brings it into view.
+   */
+  reveal?: { id: string; nonce: number } | null;
 }
 
-export function AgentRoster({ groups, selectedId, onSelect, now, lit = null }: AgentRosterProps) {
-  const [opened, setOpened] = useState<Record<string, boolean>>({});
+export function AgentRoster({
+  groups, selectedId, onSelect, now, lit = null, reveal = null,
+}: AgentRosterProps) {
+  // Stages the reader folded or opened by hand, each with the pick it was
+  // done at: a later pick in that stage undoes a fold, so an agent chosen
+  // elsewhere is never hidden behind a stage the reader once closed.
+  const [opened, setOpened] = useState<Record<string, { open: boolean; at: number }>>({});
+  const rows = useRef(new Map<string, HTMLButtonElement>());
+  const scrolledTo = useRef(reveal);
+
+  const keepRow = useCallback((id: string, el: HTMLButtonElement | null) => {
+    if (el) rows.current.set(id, el);
+    else rows.current.delete(id);
+  }, []);
+
+  // A fresh pick brings its row into view. Only a fresh one: a run streaming
+  // away must never drag the list back to the agent you last chose.
+  useEffect(() => {
+    if (!reveal || reveal === scrolledTo.current) return;
+    scrolledTo.current = reveal;
+    rows.current.get(reveal.id)?.scrollIntoView?.({ block: 'nearest' });
+  }, [reveal]);
 
   // The group holding the shown agent is always open, whatever its state.
   const selectedGroup = useMemo(
@@ -46,43 +72,77 @@ export function AgentRoster({ groups, selectedId, onSelect, now, lit = null }: A
   }
 
   return (
-    <div className="h-full overflow-y-auto py-1" data-testid="live-agent-roster">
+    // No padding at the top: a strip of it above a stuck header would show
+    // the rows sliding past, which is exactly what sticking is meant to stop.
+    <div className="h-full overflow-y-auto pb-1" data-testid="live-agent-roster">
       {groups.map((group) => {
         // A stage holding a match opens itself: dimming a folded-away group
         // would hide the very row the search just found.
         const hasMatch = !lit || group.agents.some((a) => lit.has(a.id));
-        const open = opened[group.key]
+        const byHand = opened[group.key];
+        // A fold made before the newest pick in this stage is spent.
+        const pickedHere = !!reveal && group.agents.some((a) => a.id === reveal.id);
+        const stale = !!byHand && pickedHere && byHand.at < reveal.nonce;
+        const open = (byHand && !stale ? byHand.open : undefined)
           ?? (!group.finished || !anyBusy || group.key === selectedGroup
             || (!!lit && hasMatch));
+        const working = group.agents.filter((a) => a.busy).length;
         return (
           <div
             key={group.key}
-            className={cn('mb-0.5 transition-opacity', !hasMatch && 'opacity-30')}
+            className={cn('mb-1.5 transition-opacity', !hasMatch && 'opacity-30')}
             data-dimmed={!hasMatch || undefined}
           >
+            {/* The header stays put while its own agents scroll past, so a
+                long stage never leaves you wondering whose list this is. */}
             <button
               type="button"
-              onClick={() => setOpened((o) => ({ ...o, [group.key]: !open }))}
+              onClick={() => setOpened((o) => ({
+                ...o,
+                [group.key]: { open: !open, at: reveal?.nonce ?? 0 },
+              }))}
               data-testid="live-group-header"
               aria-expanded={open}
-              className="flex w-full items-center gap-1 px-2 py-1 text-left text-[11px] font-medium text-temper-text-muted hover:text-temper-text"
+              className="sticky top-0 z-10 flex w-full items-center gap-1 border-y border-temper-border bg-temper-surface px-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-temper-text-muted hover:text-temper-text"
             >
               <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
-              <span className="truncate">{group.name}</span>
-              <span className="ml-auto shrink-0 font-mono text-[10px] opacity-60">
-                {group.agents.length}
+              <span className="truncate normal-case">{group.name}</span>
+              <span className="ml-auto flex shrink-0 items-center gap-1">
+                {working > 0 && (
+                  <span
+                    data-testid="live-group-working"
+                    title={`${working} still working`}
+                    className="flex items-center gap-0.5 font-mono text-[9px] text-temper-accent"
+                  >
+                    <span className="size-1.5 animate-pulse rounded-full bg-temper-accent" />
+                    {working}
+                  </span>
+                )}
+                <span
+                  title={`${group.agents.length} agent${group.agents.length === 1 ? '' : 's'}`}
+                  className="rounded bg-temper-bg px-1 font-mono text-[10px] text-temper-text-dim"
+                >
+                  {group.agents.length}
+                </span>
               </span>
             </button>
-            {open && group.agents.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                selected={agent.id === selectedId}
-                onSelect={onSelect}
-                now={now}
-                dimmed={!!lit && !lit.has(agent.id)}
-              />
-            ))}
+            {/* A line down the side of a stage's agents: the list reads as
+                groups of agents, not as one long run of rows. */}
+            {open && (
+              <div className="ml-2 border-l border-temper-border/60">
+                {group.agents.map((agent) => (
+                  <AgentRow
+                    key={agent.id}
+                    agent={agent}
+                    selected={agent.id === selectedId}
+                    onSelect={onSelect}
+                    now={now}
+                    dimmed={!!lit && !lit.has(agent.id)}
+                    keepRow={keepRow}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
@@ -96,18 +156,29 @@ interface AgentRowProps {
   onSelect: (agentId: string) => void;
   now: number;
   dimmed?: boolean;
+  /** Hands the row's element up, so a picked agent can be scrolled to. */
+  keepRow?: (agentId: string, el: HTMLButtonElement | null) => void;
 }
 
-const AgentRow = memo(function AgentRow({ agent, selected, onSelect, now, dimmed = false }: AgentRowProps) {
+const AgentRow = memo(function AgentRow({
+  agent, selected, onSelect, now, dimmed = false, keepRow,
+}: AgentRowProps) {
   const seconds = agent.busy && agent.startTime
     ? Math.max(0, (now - Date.parse(agent.startTime)) / 1000)
     : agent.durationSeconds ?? null;
 
+  const attach = useCallback(
+    (el: HTMLButtonElement | null) => keepRow?.(agent.id, el),
+    [keepRow, agent.id],
+  );
+
   return (
     <button
       type="button"
+      ref={attach}
       onClick={() => onSelect(agent.id)}
       data-testid="live-agent-row"
+      data-agent-id={agent.id}
       aria-current={selected ? 'true' : undefined}
       data-dimmed={dimmed || undefined}
       className={cn(

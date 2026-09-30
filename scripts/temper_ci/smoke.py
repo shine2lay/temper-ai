@@ -253,13 +253,34 @@ def hooks(box: Box) -> str:
 
 # -- the whole set -----------------------------------------------------------
 
-def run_all(box: Box, shots: Path) -> list[Result]:
-    results: list[Result] = []
+# How many things the set checks, when it gets all the way through. Used to say
+# how much was not reached when it stops early.
+SET_SIZE = 8
 
-    def add(name: str, what: str, fn) -> Result:
+
+def run_all(box: Box, shots: Path) -> list[Result]:
+    """The smoke set, in order, stopping at the first thing that fails.
+
+    Stopping matters. When the stack is properly broken \u2014 a worker that never
+    picks anything up, say \u2014 every one of these waits its full three minutes
+    before giving up, so carrying on would take twenty-five minutes to say
+    what the first one already said, while every other land waits behind it.
+    The first failure is the answer; the rest are the same failure again.
+    """
+    results: list[Result] = []
+    stopped_early = False
+
+    def add(name: str, what: str, fn) -> Result | None:
+        nonlocal stopped_early
+        if stopped_early:
+            return None
         r = _timed(name, what, fn)
         log(f"  {'ok  ' if r.ok else 'FAIL'} {name} ({r.seconds:.0f}s) {r.detail[:160]}")
         results.append(r)
+        if not r.ok:
+            stopped_early = True
+            log(f"  stopping here: with '{name}' broken the rest would only say so again, "
+                "slowly, while everything else waits")
         return r
 
     add("plain run", "a workflow runs end to end", lambda: plain_run(box))
@@ -281,7 +302,8 @@ def run_all(box: Box, shots: Path) -> list[Result]:
         return detail
 
     r = add("the page", "the dashboard shows a finished run", page)
-    r.shots = shot_files
+    if r is not None:
+        r.shots = shot_files
 
     add("hooks", "the public hooks refuse what isn't signed and take the test entries",
         lambda: hooks(box))

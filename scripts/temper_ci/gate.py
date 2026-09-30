@@ -305,9 +305,13 @@ def check(sha: str, branch: str = "", post: bool = True) -> dict:
             verdict["checks"] = [asdict(r) for r in results]
             failed = [r for r in results if not r.ok]
             verdict["ok"] = not failed
+            # The set stops at the first failure, so say what was reached rather
+            # than leaving it to look as if the rest were fine.
+            not_reached = max(smoke.SET_SIZE - len(results), 0)
+            verdict["not_reached"] = not_reached
             verdict["reason"] = "" if not failed else (
-                f"{len(failed)} of {len(results)} failed: " +
-                "; ".join(f"{r.name} — {r.detail[:120]}" for r in failed))
+                "; ".join(f"{r.name} — {r.detail[:120]}" for r in failed) +
+                (f" (stopped there; {not_reached} of the set not reached)" if not_reached else ""))
     except Exception as exc:  # noqa: BLE001 - a stack that will not start is a failure
         verdict["ok"] = False
         verdict["reason"] = f"the throwaway temper could not be used: {exc}"

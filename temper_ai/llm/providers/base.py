@@ -72,13 +72,6 @@ class BaseLLM(ABC):
     # report success.
     SUPPORTS_TOOLS: bool = True
 
-    # Which `effort` levels this provider can actually ask its model for
-    # (temper's names, see temper_ai/llm/effort.py). Empty means the provider
-    # has no effort dial: an agent config that sets one is asking for thinking
-    # that will never be requested, and `temper check` says so by name rather
-    # than letting the line sit there looking like a control.
-    HONOURS_EFFORT: tuple[str, ...] = ()
-
     @property
     def provider_name(self) -> str:
         return self.PROVIDER_NAME

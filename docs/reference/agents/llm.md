@@ -45,8 +45,6 @@ agent:
   # Optional:
   temperature: 0.7
   max_tokens: 4096
-  provider_config:
-    effort: high            # how hard the model thinks — see "Thinking" below
   max_iterations: 10        # Tool-calling loop limit
   token_budget: 8000        # Prompt token budget
   max_context_tokens: 100000 # Window the tool-calling loop must stay under
@@ -61,56 +59,6 @@ agent:
     store_observations: true
     recall_limit: 10
 ```
-
-## Thinking (`effort`)
-
-How hard the model thinks before it answers. It is off unless an agent asks:
-thinking is billed as output, so nothing is spent on an agent that never said
-so, and there is no global default.
-
-```yaml
-agent:
-  name: planner
-  provider: claude
-  provider_config:
-    effort: high          # low | medium | high | xhigh | max
-```
-
-What each provider does with it:
-
-| Provider | Takes | How |
-|---|---|---|
-| `claude` / `claude_code` | low, medium, high, xhigh, max | `--effort` on the CLI |
-| `anthropic` | low, medium, high, max | `output_config.effort` on a model with the dial; the matching thinking budget on one without |
-| `gemini`, `openai`, `ollama`, `vllm`, `claude_v2` | — | no effort dial |
-
-A level a provider cannot ask for is **not** silently dropped:
-
-```
-$ temper check
-Agent configs read: 103  (under configs)
-  ⚠ 1 setting(s) go nowhere:
-    deep_thinker (configs/agents/deep_thinker.yaml): effort: max is dropped
-    — the ollama provider has no effort dial
-```
-
-`temper check` exits non-zero when a setting goes nowhere, so it can sit in a
-gate. It reads the config files, not a running server, and checks `fallback`
-entries too — a fallback is where a run spends its hours once the first account
-is out.
-
-### Where the thinking is read
-
-Thinking is kept with the model call that produced it, whether or not anyone
-was watching the run, and it survives a page reload:
-
-- the agent's panel on the right has a folded **Thinking** section with every
-  call that thought, each linking to the call itself;
-- an individual model call shows its own thinking in its inspector;
-- the live panel at the bottom shows it as it arrives, folded to one line once
-  it is done.
-
-It is always drawn as thinking, in its own block, never mixed into the answer.
 
 ## Context Policy
 

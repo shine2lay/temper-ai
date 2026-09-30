@@ -109,12 +109,6 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
     ? ag.estimated_cost_usd
     : (ag.llm_calls ?? []).reduce((sum: number, c: { estimated_cost_usd?: number }) => sum + (c.estimated_cost_usd ?? 0), 0);
 
-  // The calls that thought, keeping each one's place in the list so the
-  // section and the calls below it name the same #N.
-  const thinkingCalls = (ag.llm_calls ?? [])
-    .map((call, index) => ({ call, index }))
-    .filter(({ call }) => !!call.thinking);
-
   const hasMultipleRuns = iterations.length > 1;
 
   const STATUS_DOT: Record<string, string> = {
@@ -366,38 +360,6 @@ export function AgentDetailPanel({ agentId }: AgentDetailPanelProps) {
       )}
 
       <Separator />
-
-      {/* Everything this agent thought, in one place.
-          The badge on a call below says thinking happened; reading it meant
-          opening each call in turn, which for a twenty-call agent is twenty
-          round trips to find the one that went wrong. Folded by default: an
-          agent that thinks is normal, and the answer stays the thing you see
-          first. */}
-      {thinkingCalls.length > 0 && (
-        <CollapsibleSection
-          title={`Thinking (${thinkingCalls.length} call${thinkingCalls.length > 1 ? 's' : ''})`}
-        >
-          <div className="flex flex-col gap-3" data-testid="agent-thinking">
-            {thinkingCalls.map(({ call, index }) => (
-              <div key={call.id} className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  className="self-start text-[10px] font-mono text-temper-text-dim hover:text-temper-text"
-                  onClick={() => select('llmCall', call.id)}
-                >
-                  #{index + 1} {call.model ?? 'llm'} &middot; open call
-                </button>
-                {/* Marked as thinking wherever it is shown, and never run
-                    together with the answer: what the model considered and
-                    what it said are different claims. */}
-                <div className="rounded bg-violet-500/5 border border-violet-500/20 p-2">
-                  <MarkdownDisplay content={call.thinking!} className="text-violet-300/80 text-xs" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
 
       {/* LLM calls list */}
       {ag.llm_calls && ag.llm_calls.length > 0 && (

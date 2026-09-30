@@ -258,11 +258,7 @@ class TestThinkingControl:
     def test_a_claude_5_model_gets_the_effort_dial(self, monkeypatch):
         sent = self._sent(monkeypatch, effort="low")
         assert sent["output_config"] == {"effort": "low"}
-        # No budget: this generation has none, and sending one would be the
-        # cap that isn't. What `thinking` carries here is the request to see
-        # it \u2014 without that the blocks come back empty and paid for.
-        assert "budget_tokens" not in sent["thinking"]
-        assert sent["thinking"]["display"] == "summarized"
+        assert "thinking" not in sent
 
     def test_a_budget_aimed_at_a_claude_5_model_becomes_an_effort(self, monkeypatch, caplog):
         """Passing it through would be worse than refusing it: the model accepts
@@ -272,7 +268,7 @@ class TestThinkingControl:
         mod._thinking_warned.clear()
         sent = self._sent(monkeypatch, thinking_budget=1024)
         assert sent["output_config"] == {"effort": "low"}
-        assert "budget_tokens" not in sent["thinking"]
+        assert "thinking" not in sent
         assert "ignores thinking budgets" in caplog.text
 
     def test_an_explicit_effort_is_not_overridden_by_a_budget(self, monkeypatch):

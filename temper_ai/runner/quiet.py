@@ -284,7 +284,15 @@ def _read_quiet_after(workflow_name: str) -> timedelta | None:
         config = ConfigStore().get(workflow_name, "workflow")
     except Exception:  # noqa: BLE001 - no config, no threshold; never a failed page
         return None
-    return parse_after(config.get("quiet_after"), where=workflow_name)
+    # The store hands back the file as written, outer ``workflow:`` and all,
+    # so the setting sits one level down. Accept it either way: the same
+    # config arrives unwrapped from other callers, and a threshold that
+    # silently reads as "nothing here" is exactly the bug this went live
+    # with -- every workflow quietly back on the 45-minute default.
+    body = config.get("workflow", config)
+    if not isinstance(body, dict):
+        body = config
+    return parse_after(body.get("quiet_after"), where=workflow_name)
 
 
 def parse_after(value: Any, *, where: str = "") -> timedelta | None:

@@ -263,10 +263,18 @@ class TestWhatEachRunLastDid:
         assert verdicts["done"].state == DONE
 
     def test_a_workflows_own_threshold_is_read_from_its_config(self):
+        """The shape a real config file has: everything under ``workflow:``.
+
+        This went live reading only the top level, so every workflow's own
+        quiet_after read as "nothing here" and silently fell back to the
+        45-minute default. The first test of it used a flat dict nobody
+        writes, and passed.
+        """
         from temper_ai.config.store import ConfigStore
 
         ConfigStore().put("slow_build", "workflow",
-                          {"name": "slow_build", "quiet_after": "4h", "nodes": []})
+                          {"workflow": {"name": "slow_build", "quiet_after": "4h",
+                                        "nodes": []}})
         quiet.forget_thresholds()
         write_event("slow", "stage.started", NOW - timedelta(hours=3), data={"name": "deploy"})
 
@@ -275,6 +283,16 @@ class TestWhatEachRunLastDid:
 
         assert verdicts["slow"].state == HEALTHY
         assert verdicts["slow"].after == timedelta(hours=4)
+
+    def test_a_threshold_written_without_the_wrapper_is_read_too(self):
+        """Some callers hand the body over already unwrapped."""
+        from temper_ai.config.store import ConfigStore
+
+        ConfigStore().put("flat_build", "workflow",
+                          {"name": "flat_build", "quiet_after": "4h", "nodes": []})
+        quiet.forget_thresholds()
+
+        assert quiet.after_for("flat_build") == timedelta(hours=4)
 
     def test_a_workflow_that_says_nothing_gets_the_default(self):
         quiet.forget_thresholds()

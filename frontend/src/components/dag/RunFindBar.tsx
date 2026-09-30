@@ -8,6 +8,8 @@
  * Nothing here decides anything: the rules are in lib/runSearch.ts and the
  * wiring is in hooks/useRunFind.ts.
  */
+import { Search } from 'lucide-react';
+
 import type { RunFind } from '@/hooks/useRunFind';
 import type { StatusFilter } from '@/lib/runSearch';
 
@@ -30,7 +32,7 @@ export function RunFindBar({ find }: { find: RunFind }) {
 
   return (
     <div
-      className="flex items-center gap-1.5"
+      className="flex items-center gap-1.5 flex-wrap justify-end"
       data-testid="run-find-bar"
       // Typing must not reach the graph's own key handling: Enter in the box
       // steps to the next match, it does not open a node. Only the box's own
@@ -40,13 +42,17 @@ export function RunFindBar({ find }: { find: RunFind }) {
         if (e.target === find.inputRef.current) e.stopPropagation();
       }}
     >
-      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-temper-surface border border-temper-border focus-within:border-temper-accent">
-        <span aria-hidden className="text-temper-text-dim text-[11px] leading-none">
-          ⌕
-        </span>
+      {/* `shrink-0` earns its place: in a narrow toolbar the box would
+          otherwise be squeezed below the width of the fixed input inside it,
+          and the count spilled out through its own border. */}
+      <div className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-temper-surface border border-temper-border focus-within:border-temper-accent">
+        <Search aria-hidden className="w-3 h-3 shrink-0 text-temper-text-dim" />
         <input
           ref={find.inputRef}
-          type="search"
+          // Not `type="search"`: Chrome hangs its own clear cross inside the
+          // box, over the count. Escape and the box's own emptying do that
+          // job, and say so.
+          type="text"
           value={find.query}
           onChange={(e) => find.setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -66,7 +72,7 @@ export function RunFindBar({ find }: { find: RunFind }) {
         {searching && (
           <span
             data-testid="run-find-count"
-            className={`text-[10px] whitespace-nowrap tabular-nums ${
+            className={`shrink-0 pl-0.5 text-[10px] whitespace-nowrap tabular-nums ${
               find.matches.length === 0 ? 'text-temper-text-dim' : 'text-temper-text-muted'
             }`}
           >

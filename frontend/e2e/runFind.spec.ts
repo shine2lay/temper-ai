@@ -141,6 +141,20 @@ test.describe('finding your way around a run', () => {
     const matches = Number((await count.innerText()).split(' of ')[1]);
     expect(matches).toBeGreaterThan(0);
 
+    // And it is readable: the count sits inside the box drawn around it.
+    // It used to spill out through the border on a narrower toolbar, which
+    // no unit test can see.
+    expect(
+      await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="run-find-count"]');
+        const box = el?.parentElement;
+        if (!el || !box) return 'no count';
+        const c = el.getBoundingClientRect();
+        const b = box.getBoundingClientRect();
+        return c.right <= b.right + 0.5 && c.left >= b.left - 0.5 ? 'inside' : 'spills out';
+      }),
+    ).toBe('inside');
+
     // Dimmed, not deleted: every node is still drawn.
     expect(await page.locator('.react-flow__node').count()).toBe(all);
     expect(await brightCount(page)).toBeLessThan(all);

@@ -215,7 +215,7 @@ class TestCommands:
         placeholder = next(m for m in telegram.sent if "Reading the code" in m["text"])
         answer = [e for e in telegram.edits if e["message_id"] == placeholder["message_id"]][-1]
         assert "backend/trips/routes.py" in answer["text"] and "<answer>" not in answer["text"]
-        assert ops.started[0][0] == "repo_answer"
+        assert ops.started[0][0] == "roamee_answer"  # it names roamee, so roamee's own answerer
 
     def test_ask_with_no_question_and_typos_are_explained(self, bot, telegram, ops):
         say(bot, "/ask")

@@ -38,7 +38,11 @@ from temper_ai.integrations.slack.access import (
     refusal,
     repos_named,
 )
-from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
+from temper_ai.integrations.slack.answer import (
+    ANSWER_WORKFLOW,
+    ROAMEE_WORKFLOW,
+    Answerer,
+)
 from temper_ai.integrations.slack.client import SlackClient, SlackError
 from temper_ai.integrations.slack.commands import Command, coerce_inputs, parse
 from temper_ai.integrations.slack.config import ConfigWatcher
@@ -325,8 +329,9 @@ class Handler:
                 blocks.section(f":warning: Not started: {blocks.esc('; '.join(problems))}"),
                 blocks.context(blocks.workflow_line(entry))]})
             return
-        if cmd.workflow == ANSWER_WORKFLOW:
+        if cmd.workflow in (ANSWER_WORKFLOW, ROAMEE_WORKFLOW):
             # Its answer is the point, and a run thread would never show it.
+            # Which of the two answers is decided by the question itself.
             self.ask(str(inputs.get("question") or ""), user, name, reply, may.repos if may else ())
             return
         eid = self.ops.start(cmd.workflow, inputs)
@@ -640,7 +645,7 @@ class Handler:
         except OpsError as exc:
             self.client.update(channel, pts, str(exc), [blocks.section(f":warning: {blocks.esc(exc)}")])
             return
-        if pick.workflow == ANSWER_WORKFLOW:
+        if pick.workflow in (ANSWER_WORKFLOW, ROAMEE_WORKFLOW):
             if not may_ask:
                 self._refuse_in_place(channel, pts, may_ask, user)
                 return

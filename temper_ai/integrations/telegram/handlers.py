@@ -33,7 +33,11 @@ from temper_ai.integrations.notify import store as notify_store
 from temper_ai.integrations.notify.config import ConfigWatcher as NotifyWatcher
 from temper_ai.integrations.notify.loop import question_notice
 from temper_ai.integrations.notify.notice import Copy, Decision, Notice
-from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
+from temper_ai.integrations.slack.answer import (
+    ANSWER_WORKFLOW,
+    ROAMEE_WORKFLOW,
+    Answerer,
+)
 from temper_ai.integrations.slack.commands import Command, coerce_inputs, parse
 from temper_ai.integrations.slack.ops import OpsError, TemperOps
 from temper_ai.integrations.slack.picker import Picker
@@ -361,7 +365,7 @@ class Handler:
         if problems:
             self.reply(msg, f"⚠️ Not started: {render.note('; '.join(problems))}")
             return
-        if cmd.workflow == ANSWER_WORKFLOW:
+        if cmd.workflow in (ANSWER_WORKFLOW, ROAMEE_WORKFLOW):
             self.ask(str(inputs.get("question") or ""), msg, user)
             return
         who = display_name(user)
@@ -427,7 +431,7 @@ class Handler:
         except OpsError as exc:
             self._edit(chat_id, pid_message, f"⚠️ {render.note(exc)}")
             return
-        if pick.workflow == ANSWER_WORKFLOW:
+        if pick.workflow in (ANSWER_WORKFLOW, ROAMEE_WORKFLOW):
             self.ask(str(pick.inputs.get("question") or text), msg, user, conversation, placeholder)
             return
         if not pick.workflow or pick.question and pick.problems:

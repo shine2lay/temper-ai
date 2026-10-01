@@ -11,7 +11,11 @@ import pytest
 from temper_ai.integrations.notify import store as notify_store
 from temper_ai.integrations.slack import store
 from temper_ai.integrations.slack.access import parse_config as parse_access
-from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
+from temper_ai.integrations.slack.answer import (
+    ANSWER_WORKFLOW,
+    ROAMEE_WORKFLOW,
+    Answerer,
+)
 from temper_ai.integrations.slack.blocks import ANSWER as ANSWER_BUTTON
 from temper_ai.integrations.slack.blocks import APPROVE, CANCEL, CONFIRM, REJECT, STOP
 from temper_ai.integrations.slack.config import ConfigWatcher
@@ -341,7 +345,9 @@ class TestQuestions:
     def test_ask_answers_in_the_channel_for_everyone(self, handler, slack, ops):
         finish(ops, ANSWER)
         slash(handler, "ask can roamee's app export a trip?")
-        assert ops.started == [(ANSWER_WORKFLOW, {"question": "can roamee's app export a trip?", "conversation": ""})]
+        # Roamee's own answerer: it names roamee and no other repository.
+        assert ops.started == [(ROAMEE_WORKFLOW, {"question": "can roamee's app export a trip?",
+                                                  "conversation": ""})]
         first, last = slack.responses[0], slack.responses[-1]
         assert first["response_type"] == "ephemeral" and "Reading the code" in first["text"]
         assert last["response_type"] == "in_channel"
@@ -372,7 +378,9 @@ class TestQuestions:
         picker.result = Pick(workflow=ANSWER_WORKFLOW, inputs={"question": "Can roamee export a trip?"})
         finish(ops, ANSWER)
         mention(handler, "<@UBOT> can it export a trip?")
-        assert ops.started == [(ANSWER_WORKFLOW, {"question": "Can roamee export a trip?", "conversation": ""})]
+        # The interpreter picked the answering door; the question itself says
+        # which answerer walks through it, here roamee's.
+        assert ops.started == [(ROAMEE_WORKFLOW, {"question": "Can roamee export a trip?", "conversation": ""})]
         placeholder, answer = slack.posts[0], slack.updates[-1]
         assert answer["ts"] == placeholder["ts"] and slack.buttons(answer) == []
         assert "backend/trips/routes.py" in json.dumps(answer["blocks"])
@@ -634,8 +642,10 @@ class TestPlainWordsAreFenced:
 class TestAskingIsFenced:
     def test_a_role_only_asks_about_its_own_repos(self, fenced, slack, ops):
         slash(fenced, "ask what does roamee do", user=OTHER)
-        assert ops.started[0][0] == ANSWER_WORKFLOW
-        assert ops.started[0][1]["repos"] == "roamee"
+        # A role that may only ask about roamee gets roamee's own answerer,
+        # which reads roamee and nothing else: there is no list to pass it.
+        assert ops.started[0][0] == ROAMEE_WORKFLOW
+        assert "repos" not in ops.started[0][1]
 
     def test_the_owner_asks_about_all_of_them(self, fenced, slack, ops):
         slash(fenced, "ask what does rollcall do")
@@ -657,14 +667,15 @@ class TestAskingIsFenced:
         assert picker.asked, "a request about their own repository is read as usual"
 
     def test_a_question_in_plain_words_is_answered_from_the_roles_repos_only(self, fenced, slack, ops, picker):
-        """A request that names no repository at all: the role's list still
-        goes on the run the interpreter builds, as it does for /temper ask.
-        Nothing in the wording could have put it there."""
+        """A request that names no repository at all: the role's own fence
+        still decides, as it does for /temper ask. Nothing in the wording
+        could have sent it to the answerer that reads all three."""
         picker.result = Pick(workflow=ANSWER_WORKFLOW, inputs={"question": "how does the itinerary editor work?"},
                              reason="it answers questions", execution_id="pick0003-x")
         mention(fenced, "<@UBOT> how does the itinerary editor work?", user=OTHER)
-        assert ops.started[0][0] == ANSWER_WORKFLOW
-        assert ops.started[0][1]["repos"] == "roamee", "not every repository temper keeps"
+        assert ops.started[0][0] == ROAMEE_WORKFLOW, "not the answerer that reads every repository"
+        assert "repos" not in ops.started[0][1]
+        assert ops.started[0][1]["question"] == "how does the itinerary editor work?"
 
     def test_the_owner_may_ask_about_any_of_them(self, fenced, slack, ops, picker):
         mention(fenced, "<@UBOT> have a look at rollcall's option chain")

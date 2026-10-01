@@ -31,6 +31,7 @@ from temper_ai.tools.notion import (
 from temper_ai.tools.query_run_state import QueryRunState
 from temper_ai.tools.read import Read
 from temper_ai.tools.remove_node import RemoveNode
+from temper_ai.tools.roamee import RoameeData, RoameeStack, RoameeWork
 from temper_ai.tools.slack import SlackPost, SlackReadThread, SlackReply
 from temper_ai.tools.telegram import TelegramSend
 from temper_ai.tools.web_fetch import WebFetch
@@ -70,6 +71,9 @@ TOOL_CLASSES: dict[str, type[BaseTool]] = {
     "QueryRunState": QueryRunState,
     "Read": Read,
     "RemoveNode": RemoveNode,
+    "RoameeData": RoameeData,
+    "RoameeStack": RoameeStack,
+    "RoameeWork": RoameeWork,
     "SlackPost": SlackPost,
     "SlackReadThread": SlackReadThread,
     "SlackReply": SlackReply,

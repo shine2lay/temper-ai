@@ -1,0 +1,52 @@
+workflow:
+  name: roamee_answer
+  description: |
+    Answers a question about roamee — anything about roamee, not only its
+    code: how something works, whether staging is up and what it is running,
+    what is in staging's database, what is open on GitHub and in Linear.
+
+    1. code   — refreshes the read-only copy of roamee from GitHub (at most
+                every 10 minutes) and says which commit it holds.
+    2. answer — reads that copy, and asks the three roamee tools when the
+                question is about the running stack, the data, or the work in
+                flight. Answers in a few Slack-sized lines, naming for every
+                fact where it came from.
+
+    Read-only, all the way down: it changes nothing in the repository, in the
+    containers, in the database, on GitHub or in Linear — the tools it has
+    cannot. Secrets are never printed, however the question is put.
+
+    It only ever looks at roamee. A question about rollcall or temper-ai goes
+    to `repo_answer` instead; `@temper` and `/temper ask` in Slack pick
+    between the two and post the answer themselves (docs/roamee.md).
+  inputs:
+    question:
+      type: string
+      required: true
+      description: The question about roamee, in plain words.
+    conversation:
+      type: string
+      required: false
+      description: Earlier messages of the Slack thread, oldest first, for context.
+  outputs:
+    answer: answer.output
+    repos: code.structured.summary
+  nodes:
+    - name: code
+      type: agent
+      agent: repo_copies
+      input_map:
+        # Roamee and nothing else: the copies step makes no copy of any other
+        # repository, and hands on roamee's own folder as the workspace, so
+        # Read, Grep and Glob cannot reach one.
+        only: roamee
+
+    - name: answer
+      type: agent
+      agent: roamee_answer
+      depends_on: [code]
+      input_map:
+        question: input.question
+        conversation: input.conversation
+        repos: code.structured.summary
+        workspace_path: code.structured.workspace

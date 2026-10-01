@@ -1,5 +1,5 @@
-"""A question about the repos: how the answer is taken out of the agent's
-text, waited for, and shown in Slack."""
+"""A question about the repos: which answerer takes it, how the answer is
+taken out of the agent's text, waited for, and shown in Slack."""
 
 from __future__ import annotations
 
@@ -11,8 +11,10 @@ from temper_ai.integrations.slack import blocks
 from temper_ai.integrations.slack.answer import (
     ANSWER_NODE,
     ANSWER_WORKFLOW,
+    ROAMEE_WORKFLOW,
     Answerer,
     extract,
+    workflow_for,
 )
 from temper_ai.integrations.slack.commands import parse
 from temper_ai.integrations.slack.ops import OpsError
@@ -21,9 +23,9 @@ from .conftest import OWNER
 
 
 def finish(ops, text: str = "<answer>Yes.</answer>", status: str = "completed", why: str = "") -> None:
-    """Every repo_answer run ``ops`` starts ends at once, with ``text``."""
+    """Every answering run ``ops`` starts ends at once, with ``text``."""
     def done(eid, workflow, inputs):
-        if workflow == ANSWER_WORKFLOW:
+        if workflow in (ANSWER_WORKFLOW, ROAMEE_WORKFLOW):
             ops.runs[eid]["status"] = status
             ops.summaries[eid].update(duration_seconds=42, total_cost_usd=0.12, failure_summary=why or None)
             ops.agent_texts[(eid, ANSWER_NODE)] = text
@@ -55,8 +57,8 @@ class TestExtract:
 class TestAnswerer:
     def test_a_finished_run_gives_its_answer(self, ops):
         finish(ops, "Checking.\n<answer>It can: `GET /api/trips/{id}/ics`.</answer>")
-        got = quick(ops).answer("can roamee export a trip?", "shine: which app?")
-        assert ops.started == [(ANSWER_WORKFLOW, {"question": "can roamee export a trip?",
+        got = quick(ops).answer("can rollcall export a roster?", "shine: which app?")
+        assert ops.started == [(ANSWER_WORKFLOW, {"question": "can rollcall export a roster?",
                                                   "conversation": "shine: which app?"})]
         assert got.text == "It can: `GET /api/trips/{id}/ics`."
         assert (got.seconds, got.cost_usd) == (42, 0.12)
@@ -75,6 +77,52 @@ class TestAnswerer:
         finish(ops, text="   ")
         with pytest.raises(OpsError, match="without an answer"):
             quick(ops).answer("q")
+
+
+class TestWhichAnswerer:
+    """A question about roamee goes to roamee's own answerer, which can also
+    see its staging stack and data; everything else stays with repo_answer."""
+
+    @pytest.mark.parametrize("question", [
+        "is roamee staging up?",
+        "how many trips are in roamee's database?",
+        "Roamee: what's open on GitHub?",
+        "can roamee export a trip?",
+    ])
+    def test_a_question_that_names_roamee_alone_goes_to_roamees_answerer(self, question):
+        assert workflow_for(question) == ROAMEE_WORKFLOW
+
+    @pytest.mark.parametrize("question", [
+        "can rollcall export a roster?",
+        "what does temper-ai do when a run fails?",
+        "do roamee and rollcall share the trip model?",   # two repos: the one that can read both
+        "how does the pick work?",                        # no repo named at all
+        "is roameeish a word?",                           # whole words only
+    ])
+    def test_everything_else_stays_with_repo_answer(self, question):
+        assert workflow_for(question) == ANSWER_WORKFLOW
+
+    def test_a_role_that_may_only_ask_about_roamee_always_gets_roamees_answerer(self):
+        assert workflow_for("how does the pick work?", repos=["roamee"]) == ROAMEE_WORKFLOW
+        assert workflow_for("what is open?", repos=("roamee",)) == ROAMEE_WORKFLOW
+        assert workflow_for("what is open?", repos=("rollcall",)) == ANSWER_WORKFLOW
+
+    def test_the_thread_counts_too(self):
+        assert workflow_for("and is it up?", "shine: roamee's staging") == ROAMEE_WORKFLOW
+        assert workflow_for("and is it up?", "shine: rollcall and roamee") == ANSWER_WORKFLOW
+
+    def test_roamees_answerer_is_not_told_which_repos_it_may_read(self, ops):
+        """It is roamee's and only roamee's, so it has no repos input to fill."""
+        finish(ops, "<answer>It is up.</answer>")
+        got = quick(ops).answer("is roamee staging up?", repos=["roamee"])
+        assert ops.started == [(ROAMEE_WORKFLOW, {"question": "is roamee staging up?", "conversation": ""})]
+        assert got.text == "It is up."
+
+    def test_repo_answer_still_gets_them(self, ops):
+        finish(ops, "<answer>It can.</answer>")
+        quick(ops).answer("can rollcall export a roster?", repos=["rollcall", "temper-ai"])
+        assert ops.started == [(ANSWER_WORKFLOW, {"question": "can rollcall export a roster?",
+                                                  "conversation": "", "repos": "rollcall,temper-ai"})]
 
 
 class TestShown:

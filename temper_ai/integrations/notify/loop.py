@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 TICK_S = 15.0
 STATE_NAME = "notify"
 # Runs temper itself starts to answer people: never worth a notice.
-QUIET_WORKFLOWS = frozenset({"slack_pick", "repo_answer", "telegram_pick"})
+QUIET_WORKFLOWS = frozenset({"slack_pick", "repo_answer", "roamee_answer", "telegram_pick"})
 FAILED_STATES = ("failed", "interrupted")
 FINISHED_STATES = ("completed", "cancelled")
 ENDED = FAILED_STATES + FINISHED_STATES

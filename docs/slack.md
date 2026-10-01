@@ -21,7 +21,7 @@ to read the code):
 
 | Command | What it does |
 |---|---|
-| `/temper ask <question>` | Answers a question about the code of rollcall, roamee or temper-ai, in the channel for everyone there. See below. |
+| `/temper ask <question>` | Answers a question about rollcall, roamee or temper-ai, in the channel for everyone there. See below. |
 | `/temper search <words>` | Workflows whose name, description or inputs match, with their inputs. Name matches first. |
 | `/temper list` | Every workflow; ones with no description are flagged. |
 | `/temper run <workflow> key=value …` | Starts a run and opens its thread in this conversation. Values are checked against the workflow's inputs first; quotes work (`msg="two words"`). |
@@ -63,6 +63,17 @@ workspace may ask about any of the three repos. Questions about temper's own
 runs go to `/temper status` instead. `repo_answer` runs post no notices; the
 answer is the message.
 
+### Questions about roamee
+
+A question that names roamee and no other repository goes to
+`roamee_answer` instead — and so does every question from the `roamee` role,
+whose people may only ask about roamee. It reads the same copy of the code,
+and can also look at roamee's three staging containers, its database
+(read-only, 200 rows, 5 seconds), and its open pull requests, recent commits,
+checks and Linear issues. It changes nothing and prints no secrets. See
+[roamee.md](roamee.md) for what it can see and what it refuses. Questions
+naming two repositories, or none, stay with `repo_answer`.
+
 ## Who can do what
 
 Everything a person may do is decided by one file,
@@ -89,11 +100,11 @@ access:
     roamee:
       about: Can ask about roamee and have runs built against roamee.
       commands: [help, list, search, status, ask, pick, stop, gate]
-      workflows: [repo_answer, github_work]   # all their interpreter sees
+      workflows: [repo_answer, roamee_answer, github_work]  # all their interpreter sees
       force:
         github_work: {repo: shine2lay/roamee} # put on after the inputs are filled
       repos: [roamee]       # the only repos /temper ask will read
-      auto: [repo_answer]   # starts without a click
+      auto: [repo_answer, roamee_answer]      # start without a click
       runs: own             # see and stop their own runs only
       gates: own            # answer gates on their own runs only
       channels: [C0…]       # optional: where this role applies

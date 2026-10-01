@@ -1,0 +1,36 @@
+[Unit]
+# The one door between a temper run and roamee's staging stack.
+#
+# A run happens inside its own container: no docker socket, no route to
+# roamee's network. This service runs on the host instead and answers four
+# fixed questions about roamee's three staging containers and their database,
+# read-only, with every secret blanked out (scripts/roamee_reader.py).
+#
+# It listens on a unix socket under ~/.temper/roamee-reader/, which temper's
+# worker (and so every run) has mounted read-only: nothing is published on a
+# port, and a run can neither move nor delete the socket.
+Description=roamee-reader: read-only answers about roamee's staging stack, for temper runs
+Documentation=file://%h/temper-ai/docs/roamee.md
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+# The main checkout, never a worktree: worktrees come and go, and the socket
+# has to stay where temper's containers have it mounted.
+WorkingDirectory=%h/temper-ai
+# The folder must exist before the containers mount it, or docker makes it
+# root-owned and this service cannot put its socket there.
+ExecStartPre=/bin/mkdir -p %h/.temper/roamee-reader
+ExecStart=/usr/bin/python3 %h/temper-ai/scripts/roamee_reader.py
+Restart=always
+RestartSec=10
+# docker lives in /usr/bin; a user unit starts with almost no PATH.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# It reads one password out of ~/temper-ai/.env itself and nothing else, so
+# temper's other keys never enter this process.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

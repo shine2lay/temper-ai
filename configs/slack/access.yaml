@@ -38,7 +38,10 @@ access:
     readonly:
       about: Can ask questions and look at the list of workflows; nothing else.
       commands: [help, list, search, ask]
-      workflows: [repo_answer]
+      # repo_answer is the door every question goes through; a question about
+      # roamee is handed on to roamee_answer, which can also see roamee's
+      # staging stack and data, read-only (docs/roamee.md).
+      workflows: [repo_answer, roamee_answer]
       runs: none
       gates: none
 
@@ -55,10 +58,13 @@ access:
       # Naming rollcall or temper-ai in a question or a request gets a short
       # no instead (repos:, below), and nobody is told.
       commands: [help, list, search, status, ask, pick, stop, gate]
-      workflows: [repo_answer, github_work]
+      # roamee_answer is their answerer: it reads roamee's code and, read-only,
+      # its staging containers, its database, and its GitHub and Linear work.
+      # Every question from this role goes there, because repos: is roamee.
+      workflows: [repo_answer, roamee_answer, github_work]
       force:
         github_work: {repo: shine2lay/roamee}
       repos: [roamee]
-      auto: [repo_answer]
+      auto: [repo_answer, roamee_answer]
       runs: own
       gates: own

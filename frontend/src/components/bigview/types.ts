@@ -113,7 +113,13 @@ export interface ViewShape {
   core: CoreBlock[];
   in: { label: string; value: ContentValue };
   out: { label: string; value: ContentValue };
-  timeline: TimelineRow[];
+  /**
+   * The stream of model and tool calls under this thing, in the order they
+   * happened. Left out by a kind that cannot have one (a single model call,
+   * a single tool call): the section is then not drawn at all, rather than
+   * standing empty on a full screen.
+   */
+  timeline?: TimelineRow[];
   error?: string;
   /** Shown under the top strip when the page only has a summary. */
   note?: string;

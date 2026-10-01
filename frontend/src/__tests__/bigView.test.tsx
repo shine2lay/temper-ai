@@ -180,7 +180,7 @@ beforeEach(() => {
 /* ---------- the frame ---------- */
 
 describe('the frame, for every kind', () => {
-  it.each(KINDS)('opens on %s with a strip, a box, two arrows and a timeline', (_label, type, id, title) => {
+  it.each(KINDS)('opens on %s with a strip, a box and two arrows', (_label, type, id, title) => {
     loadRun();
     openBigView(type, id);
 
@@ -192,9 +192,28 @@ describe('the frame, for every kind', () => {
     expect(screen.getByTestId('bv-box')).toBeInTheDocument();
     expect(screen.getByTestId('bv-in')).toBeInTheDocument();
     expect(screen.getByTestId('bv-out')).toBeInTheDocument();
-    expect(screen.getByTestId('bv-timeline-section')).toBeInTheDocument();
     // Never two kinds of panel: the old sheet is gone.
     expect(screen.queryByTestId('detail-sheet')).toBeNull();
+  });
+
+  it('gives the timeline to the things that can have one, and to no other', () => {
+    loadRun();
+    // A run, a stage, an agent: the stream of calls under them belongs there,
+    // even when it is empty, because "nothing happened" is worth knowing.
+    for (const [, type, id] of KINDS.filter(([, , nodeId]) => !nodeId.startsWith('llm-') && !nodeId.startsWith('tool-'))) {
+      openBigView(type, id);
+      expect(screen.getByTestId('bv-timeline-section')).toBeInTheDocument();
+      cleanup();
+    }
+    // A single call has no stream of its own: no empty band on the screen.
+    for (const [type, id] of [
+      ['llmCall', 'llm-1'],
+      ['toolCall', 'tool-1'],
+    ] as const) {
+      openBigView(type, id);
+      expect(screen.queryByTestId('bv-timeline-section')).toBeNull();
+      cleanup();
+    }
   });
 
   it('fills the screen rather than sitting in a drawer', () => {
@@ -320,9 +339,28 @@ describe('what each kind shows', () => {
     const inBody = openArrow('in');
     expect(within(inBody).getByTestId('bv-messages')).toHaveTextContent('Should we ship?');
     const outBody = openArrow('out');
-    expect(within(outBody).getByTestId('bv-markdown')).toHaveTextContent('Verdict');
+    // A prose answer reads as markdown: the heading is a heading.
+    expect(within(outBody).getByRole('heading', { name: /Verdict/i })).toBeInTheDocument();
     // Its thinking is its own fold, not dumped into the answer.
     expect(foldKeys()).toContain('thinking');
+  });
+
+  it('a model call that answered in JSON: a tree, not a paragraph of braces', () => {
+    loadRun();
+    openBigView('llmCall', 'llm-2');
+
+    const outBody = openArrow('out');
+    // Structured answers are the common case, and have to fold like any other
+    // JSON: rendering them as prose was a raw dump in disguise.
+    expect(within(outBody).getByTestId('bv-auto')).toBeInTheDocument();
+    expect(within(outBody).getByText('json')).toBeInTheDocument();
+    const before = outBody.textContent ?? '';
+    expect(before).toContain('verdict');
+    const toggles = within(outBody).getAllByRole('button');
+    act(() => {
+      fireEvent.click(toggles[toggles.length - 1]);
+    });
+    expect(outBody.textContent).not.toBe(before);
   });
 
   it('a tool call: its arguments on the left, its return on the right', () => {

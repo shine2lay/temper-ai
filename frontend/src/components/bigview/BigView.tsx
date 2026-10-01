@@ -179,17 +179,19 @@ function Body({ shape, onClose }: { shape: ViewShape; onClose: () => void }) {
           />
         </div>
 
-        <section data-testid="bv-timeline-section" className="border-t border-temper-border/60 p-3">
-          <h3 className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-temper-text-muted">
-            What happened
-            {shape.timeline.length > 0 && (
-              <span className="rounded bg-temper-surface px-1.5 py-0.5 font-mono text-[10px]">
-                {shape.timeline.length}
-              </span>
-            )}
-          </h3>
-          <Timeline rows={shape.timeline} subjectId={shape.id} />
-        </section>
+        {shape.timeline && (
+          <section data-testid="bv-timeline-section" className="border-t border-temper-border/60 p-3">
+            <h3 className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-temper-text-muted">
+              What happened
+              {shape.timeline.length > 0 && (
+                <span className="rounded bg-temper-surface px-1.5 py-0.5 font-mono text-[10px]">
+                  {shape.timeline.length}
+                </span>
+              )}
+            </h3>
+            <Timeline rows={shape.timeline} subjectId={shape.id} />
+          </section>
+        )}
       </div>
     </>
   );

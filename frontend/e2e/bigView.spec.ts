@@ -316,8 +316,11 @@ test.describe('the big view', () => {
       await expect(panel.getByTestId('bv-box')).toBeVisible();
       await expect(panel.getByTestId('bv-in')).toBeVisible();
       await expect(panel.getByTestId('bv-out')).toBeVisible();
-      await expect(panel.getByTestId('bv-timeline-section')).toBeVisible();
       await expect(panel.getByTestId('bv-missing')).toHaveCount(0);
+      // The stream belongs to the things that can have one; a single call
+      // shows no empty band where it would be.
+      const leaf = expected === 'llmCall' || expected === 'toolCall';
+      await expect(panel.getByTestId('bv-timeline-section')).toHaveCount(leaf ? 0 : 1);
 
       // At least 80% of the window, in both directions.
       const box = await panel.boundingBox();

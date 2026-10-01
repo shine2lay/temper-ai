@@ -199,8 +199,9 @@ export function rowPanes(row: TimelineRow): {
   if (row.type === 'llm') {
     const call = row.source as LLMCall;
     const asked = call.tool_calls ?? [];
+    // An answer can be prose, JSON or code: let the renderer tell which.
     const out: ContentValue = call.response
-      ? { kind: 'markdown', text: call.response }
+      ? { kind: 'auto', text: call.response }
       : asked.length > 0
         ? { kind: 'json', data: asked }
         : { kind: 'empty', note: 'No answer' };
@@ -642,13 +643,14 @@ function llmCallShape(callId: string, src: ShapeSources): ViewShape | null {
     in: { label: 'Conversation sent', value: messagesOrText(call.prompt) },
     out: {
       label: 'What the model answered',
+      // Structured answers are the common case now: a JSON answer has to be a
+      // tree you can fold, not a paragraph of braces.
       value: call.response
-        ? { kind: 'markdown', text: call.response }
+        ? { kind: 'auto', text: call.response }
         : asked.length > 0
           ? { kind: 'json', data: asked }
           : { kind: 'empty', note: 'No answer recorded' },
     },
-    timeline: [],
     error: call.status === 'failed' ? call.error_message : undefined,
   };
 }
@@ -698,7 +700,6 @@ function toolCallShape(callId: string, src: ShapeSources): ViewShape | null {
     core,
     in: { label: 'Arguments', value: json(call.input_data ?? call.input_params, 'No arguments') },
     out: { label: 'What it returned', value: returned(call.output_data) },
-    timeline: [],
     error: call.status === 'failed' ? call.error_message : undefined,
   };
 }

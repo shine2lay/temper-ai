@@ -39,8 +39,11 @@ agent:
     MAX_AGE = 600  # seconds
     # Read from the environment, not written into this text: a quoted
     # heredoc expands nothing, so `| env` hands over the variable's name.
+    # `default('', true)` because a workflow input that nobody filled in
+    # arrives as None, which would otherwise be handed over as the word
+    # "None" and match no repository at all (it did: 2026-10-01).
     ONLY = [s.strip() for s in
-            os.environ.get("{{ only | default('') | env }}", "").replace(",", " ").split() if s.strip()]
+            os.environ.get("{{ only | default('', true) | env }}", "").replace(",", " ").split() if s.strip()]
     REPOS = [
         # name, clone URL, branch, deploy key under KEYDIR (None: public), what it is, folders to hide
         ("rollcall", "git@github.com:shine2lay/rollcall.git", "master", "id_ed25519",

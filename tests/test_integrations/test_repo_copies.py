@@ -29,7 +29,7 @@ from temper_ai.agent.script_agent import (
 CONFIG = Path(__file__).resolve().parents[2] / "configs" / "agents" / "repo_copies.yaml"
 
 
-def rendered(**inputs: str) -> tuple[str, dict[str, str]]:
+def rendered(**inputs: str | None) -> tuple[str, dict[str, str]]:
     """The script and the environment, exactly as ScriptAgent prepares them."""
     config = yaml.safe_load(CONFIG.read_text())["agent"]
     stash = _ValueStash()
@@ -67,15 +67,32 @@ def test_the_value_travels_in_the_environment_not_in_the_text():
     assert "{{" not in body and "$TEMPER_V" not in body
 
 
+ALL = ["rollcall", "roamee", "temper-ai"]
+
+
 @pytest.mark.parametrize("only,expected", [
     ("roamee", ["roamee"]),
     ("roamee,temper-ai", ["roamee", "temper-ai"]),
-    ("", ["rollcall", "roamee", "temper-ai"]),
+    ("", ALL),
+    # Nobody filled the input in: the engine hands the step None, not "".
+    (None, ALL),
 ])
 def test_only_the_named_repositories_are_touched(only, expected, tmp_path):
     script, environment = rendered(only=only)
     got = run(script, environment, tmp_path)
     assert [e["name"] for e in got.get("repos", [])] == expected, got
+
+
+@pytest.mark.parametrize("inputs", [{}, {"only": None}])
+def test_an_unfilled_input_asks_for_every_repository(inputs, tmp_path):
+    """A workflow input with no value reaches a script step as None, and
+    `str(None)` is the word "None": without `default('', true)` every ask
+    went looking for a repository called None and failed (2026-10-01, live).
+    """
+    script, environment = rendered(**inputs)
+    assert "None" not in environment.values(), environment
+    got = run(script, environment, tmp_path)
+    assert [e["name"] for e in got.get("repos", [])] == ALL, got
 
 
 def test_a_repository_nobody_may_ask_about_is_not_even_named(tmp_path):

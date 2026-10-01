@@ -58,7 +58,13 @@ agent:
   #    on the build, with nothing shipped unproven, is `build_covered`, not vacuous; the driver
   #    checks each against the plan (epd_loop.py build_covered_ok). A state login that no longer
   #    holds its state goes in `drifted_logins`, so the next round fixes the login, not the bet.
-  version: 13
+  # 14 (2026-10-01): the measure after the close is handed the market-hours outcome and the criteria
+  #    that waited for the close. It measures those with the market shut and carries every other
+  #    criterion's result from the market-hours outcome, instead of walking them again: a criterion
+  #    only the open market shows cannot be seen after the close. b115 (criterion 3, the open-market
+  #    line) and b111 (criterion 6) were met in session, came back vacuous / build_covered after the
+  #    close, and both bets stayed iterate with every criterion seen met (after-close run, 13:05).
+  version: 14
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -296,6 +302,18 @@ agent:
     {% else %}{% for c in verify_threshold_checks %}- {{ c.status }}: {{ c.clause }} -- {{ c.evidence }}
     {% endfor %}{% endif %}{% else %}QA's walk was not given: no criterion is build_covered.{% endif %}
     {% if accepted_unreachable %}The build shipped these unproven, so nothing is build_covered: {{ accepted_unreachable }}{% endif %}
+    {% endif %}
+    {% if open_outcome_path %}
+    ## This is the measure after the close
+    The market was open for the first measure, which left these criteria for the close. Measure them now, with the market shut:
+    {% if waited is string %}{{ waited }}
+    {% else %}{% for w in (waited or []) %}- {{ w }}
+    {% endfor %}{% endif %}
+    Every other criterion was measured with the market open, in:
+
+      {{ open_outcome_path }}
+
+    Read it. Carry each other criterion's result from there, with its evidence, and say it comes from the market-hours measure; do not walk it again, because what only the open market shows cannot be seen now. Measure one again only if that file left it vacuous, unmet or waiting and the shut market can show it. The threshold, the verdict and outcome.md cover every criterion: the carried ones and the ones measured now. Still look for regressions now.
     {% endif %}
 
     Measure it.

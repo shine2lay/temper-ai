@@ -17,7 +17,13 @@ workflow:
   #    the build and what the build shipped unproven. Out: `build_covered` (build-only criteria QA
   #    met, counted covered instead of vacuous; the driver checks each, epd_loop.py
   #    build_covered_ok) and `drifted_logins` (a state login that no longer holds its state).
-  version: 8
+  # 9 (2026-10-01): `open_outcome_path` and `waited` in, for the measure after the close: the
+  #    market-hours outcome and the criteria that waited for the close. That measure re-walked every
+  #    criterion with the market shut and lost what only the open market shows: b115's criterion 3
+  #    (the open-market line, met in session) came back vacuous and b111's criterion 6 (met in
+  #    session) build_covered and refused, so both stayed iterate with every criterion seen met.
+  #    Now it measures the waited criteria and carries the rest from the market-hours outcome.
+  version: 9
   description: |
     EPD loop, stage 7 of 7: measure. Replaces the product department's
     accountability. On the shipped build's URL, one agent checks the bet's
@@ -44,6 +50,8 @@ workflow:
     criteria_reach: {type: array, required: false}   # [{criterion, state, build, live}] from the plan (v8)
     verify_threshold_checks: {type: array, required: false}   # [{clause, status, evidence}] QA's walk on the build (v8)
     accepted_unreachable: {type: array, required: false}   # clauses the build shipped unproven (v8)
+    open_outcome_path: {type: string, required: false}   # the market-hours outcome, for the measure after the close (v9)
+    waited: {type: array, required: false}   # the criteria that waited for the close (v9)
   outputs:
     status: measure.structured.status
     outcome_path: measure.structured.outcome_path
@@ -82,3 +90,5 @@ workflow:
         criteria_reach: input.criteria_reach
         verify_threshold_checks: input.verify_threshold_checks
         accepted_unreachable: input.accepted_unreachable
+        open_outcome_path: input.open_outcome_path
+        waited: input.waited

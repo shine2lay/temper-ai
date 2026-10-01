@@ -1441,7 +1441,7 @@ def test_after_close_measures_again_once_the_market_is_shut(L, monkeypatch):
     L.save_state(st)
     measured = []
 
-    def fake_stage_measure(st, keep, market=""):
+    def fake_stage_measure(st, keep, market="", open_outcome="", waited=None):
         measured.append((st["bet_id"], market, st["stages"]["ship"].get("prod_url")))
         return {"verdict": "kept", "waits_for_close": []}
 

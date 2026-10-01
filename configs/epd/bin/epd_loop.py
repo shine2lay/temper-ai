@@ -3157,9 +3157,12 @@ def scorecard() -> str:
     return "\n".join(lines)
 
 
-def stage_measure(st: dict, keep: bool, market: str = "") -> dict:
+def stage_measure(st: dict, keep: bool, market: str = "", open_outcome: str = "",
+                  waited: list | None = None) -> dict:
     """Measure the bet on the live build; `market` ("open"/"shut", "" to let the agent read the app)
-    decides whether its "(after the close)" criteria are measured or wait. Returns the measure's output."""
+    decides whether its "(after the close)" criteria are measured or wait. After the close,
+    `open_outcome` (the market-hours outcome.md) and `waited` (the criteria it left for the close) make
+    it measure those and carry the rest. Returns the measure's output."""
     bet_id = st["bet_id"]
     bdir = BETS_DIR / bet_id
     # Same read as stage_ship: the bet's own build.json first, then state. The composed loop
@@ -3219,6 +3222,9 @@ def stage_measure(st: dict, keep: bool, market: str = "") -> dict:
         "criteria_reach": criteria_reach_of(bdir),
         "verify_threshold_checks": as_list(b.get("verify_threshold_checks")),
         "accepted_unreachable": as_list(b.get("accepted_unreachable")),
+        # After the close: the market-hours outcome and what waited for the close (epd_measure v9).
+        "open_outcome_path": open_outcome,
+        "waited": as_list(waited),
     }, workspace=LOOP_WORKSPACE, timeout=2400)
     if not (bdir / "outcome.md").exists():
         die("epd_measure finished but wrote no outcome.md")
@@ -3261,12 +3267,20 @@ def cmd_after_close(keep: bool) -> None:
             # The composed loop measured on prod (its measure_url) without recording it where
             # stage_measure looks; the measure after the close goes to the same place.
             ship.update({"prod_url": PROD_URL, "prod_qa": True})
-        if (bdir / "outcome.md").exists():
+        opened = bdir / "outcome-open.md"
+        if (bdir / "outcome.md").exists() and not st["after_close"].get("measured"):
             # The market-hours measure stays beside the new one: it saw what needs the market open.
-            write(bdir / "outcome-open.md", read(bdir / "outcome.md"))
-        log(f"{bet_id}: measuring again with the market shut "
-            f"({len(st['after_close'].get('criteria') or [])} criteria waited for it)")
-        out = stage_measure(st, keep, market="shut")
+            # Only the first time: measuring after the close again (by hand) finds outcome.md is the
+            # shut one, and copying it would lose the market-hours results the measure carries.
+            write(opened, read(bdir / "outcome.md"))
+        waited = as_list(st["after_close"].get("criteria"))
+        log(f"{bet_id}: measuring again with the market shut ({len(waited)} criteria waited for it; "
+            f"the rest carried from {opened.name})")
+        # The market-hours results are carried, not re-walked: b115's open-market line (met in session)
+        # came back vacuous after the close, and b111's criterion 6 build_covered and refused, so both
+        # stayed iterate with every criterion seen met (2026-10-01).
+        out = stage_measure(st, keep, market="shut", open_outcome=cpath(opened) if opened.exists() else "",
+                            waited=waited)
         if not waits_for_close(out):
             st = load_state(bet_id)
             st["after_close"] = {**st.get("after_close", {}), "due": False,

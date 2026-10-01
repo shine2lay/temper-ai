@@ -81,10 +81,14 @@ def test_fingerprint_is_stable_and_not_the_key(key):
 
 def test_seal_round_trip(key):
     sealer = _Sealer(key)
-    payload = {"access_token": "at-1", "refresh_token": "rt-1"}
+    # A token long enough that it cannot turn up in the ciphertext by
+    # chance: "at-1" is four characters of base64, which random bytes hit
+    # about once in eight thousand runs, and did on 2026-10-01.
+    token = "at-" + "9f3c1d7b5e2a4086"
+    payload = {"access_token": token, "refresh_token": "rt-1"}
     sealed = sealer.seal(payload)
 
-    assert "at-1" not in sealed, "the token must not survive in the ciphertext"
+    assert token not in sealed, "the token must not survive in the ciphertext"
     assert sealer.open(sealed) == payload
 
 

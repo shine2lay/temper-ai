@@ -5,6 +5,12 @@ the request against the best matches' descriptions and every workflow's
 one-line summary, and answers with a workflow, inputs, and a question when
 something it needs is missing. Nothing here starts the picked workflow: the
 person confirms first.
+
+The same picker is each role's interpreter: given ``allowed``, it never
+sees any other workflow — not in the candidates, not in the one-line list —
+so it cannot name one, however the request is worded. The role's forced
+inputs are not applied here: the handler puts them on *after* the picker
+has filled the inputs, so nothing the picker was told can change them.
 """
 
 from __future__ import annotations
@@ -12,6 +18,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -46,6 +53,14 @@ def _spec(entry: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def narrow(catalog: list[dict[str, Any]], allowed: Sequence[str] | None) -> list[dict[str, Any]]:
+    """The catalog a role's interpreter sees: ``None`` means every workflow."""
+    if allowed is None:
+        return list(catalog)
+    names = set(allowed)
+    return [e for e in catalog if e.get("name") in names]
+
+
 def candidates_for(ops: Any, catalog: list[dict[str, Any]], request: str,
                    conversation: str = "") -> list[dict[str, Any]]:
     """The workflows whose full description and inputs the picker reads.
@@ -63,10 +78,13 @@ def candidates_for(ops: Any, catalog: list[dict[str, Any]], request: str,
                  if re.search(rf"(?<![\w-]){re.escape(e['name'])}(?![\w-])", conversation)]
         thread = ops.search(f"{conversation}\n{request}", limit=TOP).get("results") or []
         found = named + found + list(thread)
+    # The search reads every workflow there is; the role's own catalog is
+    # the only thing the picker may be shown.
+    mine = {e["name"] for e in catalog}
     seen: set[str] = set()
     out = []
     for e in found:
-        if e.get("name") != PICK_WORKFLOW and e.get("name") not in seen:
+        if e.get("name") != PICK_WORKFLOW and e.get("name") in mine and e.get("name") not in seen:
             seen.add(e["name"])
             out.append(e)
     return out[:TOP]
@@ -115,8 +133,10 @@ class Picker:
         self.poll_s = poll_s
         self._sleep = sleep
 
-    def pick(self, request: str, conversation: str = "") -> Pick:
-        catalog = [e for e in self.ops.catalog() if e.get("name") != PICK_WORKFLOW]
+    def pick(self, request: str, conversation: str = "", allowed: Sequence[str] | None = None) -> Pick:
+        """Which workflow does this person want? ``allowed`` is the only
+        world the picker is shown (``None``: every workflow)."""
+        catalog = narrow([e for e in self.ops.catalog() if e.get("name") != PICK_WORKFLOW], allowed)
         if not catalog:
             raise OpsError("temper has no workflows to pick from.")
         found = candidates_for(self.ops, catalog, request, conversation)

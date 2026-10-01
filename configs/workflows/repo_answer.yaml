@@ -24,6 +24,16 @@ workflow:
       type: string
       required: false
       description: Earlier messages of the Slack thread, oldest first, for context.
+    repos:
+      type: string
+      required: false
+      default: ""
+      description: >
+        The only repositories this question may be answered from, comma
+        separated (e.g. "roamee"). Empty means all of them. Slack puts the
+        asker's own list here (configs/slack/access.yaml): no copy of any
+        other repository is made or looked at, so the answer cannot come
+        from one.
   outputs:
     answer: answer.output
     repos: repos.structured.summary
@@ -31,6 +41,8 @@ workflow:
     - name: repos
       type: agent
       agent: repo_copies
+      input_map:
+        only: input.repos
 
     - name: answer
       type: agent

@@ -101,19 +101,27 @@ def parse(text: str) -> Command:
     return Command("run", workflow=workflow, inputs=inputs)
 
 
-def coerce_inputs(raw: dict[str, str], declared: dict[str, dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+def coerce_inputs(raw: dict[str, str], declared: dict[str, dict[str, Any]],
+                  forced: dict[str, Any] | None = None) -> tuple[dict[str, Any], list[str]]:
     """Strings from the command line as the types the workflow declares.
 
     Returns the inputs and a list of problems; any problem means "don't
     start". A name the workflow does not declare is a problem (a typo would
     otherwise start a run without the input it meant), unless the workflow
     declares no inputs at all.
+
+    ``forced`` is what the person's role puts on this workflow whatever they
+    typed (``access.yaml``): those inputs are taken as given, so they are not
+    missing, and they overwrite anything typed for the same name.
     """
     import json
 
+    forced = dict(forced or {})
     out: dict[str, Any] = {}
     problems: list[str] = []
     for key, value in raw.items():
+        if key in forced:   # the role decides this one; what was typed is dropped
+            continue
         if declared and key not in declared:
             problems.append(f"`{key}` is not one of its inputs ({', '.join(f'`{k}`' for k in declared)})")
             continue
@@ -139,7 +147,9 @@ def coerce_inputs(raw: dict[str, str], declared: dict[str, dict[str, Any]]) -> t
                 out[key] = value
         except (ValueError, json.JSONDecodeError) as exc:
             problems.append(f"`{key}` should be {kind}: {exc}")
-    missing = [k for k, spec in declared.items() if (spec or {}).get("required") and k not in raw
+    out.update(forced)
+    given = set(raw) | set(forced)
+    missing = [k for k, spec in declared.items() if (spec or {}).get("required") and k not in given
                and (spec or {}).get("default") is None]
     if missing:
         problems.append("missing required input(s): " + ", ".join(f"`{m}`" for m in missing))

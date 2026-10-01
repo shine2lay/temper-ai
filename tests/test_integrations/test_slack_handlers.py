@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
 from temper_ai.integrations.notify import store as notify_store
 from temper_ai.integrations.slack import store
+from temper_ai.integrations.slack.access import parse_config as parse_access
 from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
 from temper_ai.integrations.slack.blocks import ANSWER as ANSWER_BUTTON
 from temper_ai.integrations.slack.blocks import APPROVE, CANCEL, CONFIRM, REJECT, STOP
@@ -17,7 +19,7 @@ from temper_ai.integrations.slack.handlers import Handler
 from temper_ai.integrations.slack.picker import Pick
 from temper_ai.integrations.slack.socket import SocketMode
 
-from .conftest import OTHER, OWNER
+from .conftest import OTHER, OWNER, FakeAccess
 from .test_slack_answer import finish
 
 CHANNEL = "C0ASKED01"
@@ -28,9 +30,11 @@ class FakePicker:
     def __init__(self, pick: Pick) -> None:
         self.result = pick
         self.asked: list[tuple[str, str]] = []
+        self.allowed: Any = "not asked"
 
-    def pick(self, request: str, conversation: str = "") -> Pick:
+    def pick(self, request: str, conversation: str = "", allowed=None) -> Pick:
         self.asked.append((request, conversation))
+        self.allowed = allowed
         return self.result
 
 
@@ -43,7 +47,7 @@ def picker() -> FakePicker:
 @pytest.fixture
 def handler(slack, ops, slack_config, picker) -> Handler:
     return Handler(slack, ConfigWatcher(), ops, picker=picker, bot_user="UBOT",
-                   answerer=Answerer(ops, timeout_s=0, sleep=lambda _s: None))
+                   answerer=Answerer(ops, timeout_s=0, sleep=lambda _s: None), access=FakeAccess())
 
 
 def slash(handler: Handler, text: str, user: str = OWNER, channel: str = CHANNEL) -> None:
@@ -265,8 +269,9 @@ class TestGateButtons:
 
 
 def mention(handler: Handler, text: str, channel: str = CHANNEL, ts: str = "1790000100.000001",
-            thread_ts: str | None = None, kind: str = "app_mention", event_id: str = "Ev1", **extra) -> None:
-    event = {"type": kind, "user": OWNER, "text": text, "channel": channel, "ts": ts, **extra}
+            thread_ts: str | None = None, kind: str = "app_mention", event_id: str = "Ev1",
+            user: str = OWNER, **extra) -> None:
+    event = {"type": kind, "user": user, "text": text, "channel": channel, "ts": ts, **extra}
     if thread_ts:
         event["thread_ts"] = thread_ts
     handler.handle({"type": "events_api", "payload": {"event_id": event_id, "event": event}})
@@ -387,6 +392,234 @@ class TestQuestions:
         finish(ops, status="failed", why="boom")
         mention(handler, "<@UBOT> q?")
         assert "boom" in slack.updates[-1]["text"]
+
+
+# -- who may do what, at every way in ------------------------------------------------
+
+STRANGER = "U0NOONE03"
+#: OTHER is in a role with one patch: a workflow of its own, pinned inputs,
+#: and only their own runs. STRANGER is in no role at all.
+RULES = parse_access({"access": {
+    "owner": OWNER,
+    "default": "readonly",
+    "people": {OTHER: {"role": "patch", "name": "lomit"}},
+    "roles": {
+        "readonly": {"commands": ["help", "list", "search", "ask"], "workflows": ["repo_answer"],
+                     "runs": "none", "gates": "none"},
+        "patch": {"commands": ["help", "list", "search", "status", "ask", "run", "pick", "stop", "gate"],
+                  "workflows": ["repo_answer", "gate_demo", "trigger_probe"],
+                  "force": {"gate_demo": {"topic": "roamee"}},
+                  "repos": ["roamee"], "auto": ["trigger_probe"], "runs": "own", "gates": "own"},
+    },
+}})
+
+
+@pytest.fixture
+def fenced(slack, ops, slack_config, picker) -> Handler:
+    """A handler with real access rules in force."""
+    return Handler(slack, ConfigWatcher(), ops, picker=picker, bot_user="UBOT",
+                   answerer=Answerer(ops, timeout_s=0, sleep=lambda _s: None),
+                   access=FakeAccess(RULES))
+
+
+def refused(slack) -> bool:
+    return ":lock: Sorry" in said(slack)
+
+
+class TestSlashCommandsAreFenced:
+    def test_a_stranger_cannot_run_anything(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly", user=STRANGER)
+        assert ops.started == [] and refused(slack)
+        assert slack.posts == [], "nothing is posted and nobody is told"
+
+    def test_a_role_cannot_run_a_workflow_it_does_not_have(self, fenced, slack, ops):
+        slash(fenced, "run mystery", user=OTHER)
+        assert ops.started == [] and refused(slack)
+
+    def test_the_forced_inputs_win_over_what_was_typed(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=rollcall rounds=2", user=OTHER)
+        assert ops.started == [("gate_demo", {"rounds": 2, "topic": "roamee"})]
+
+    def test_a_forced_input_counts_as_given(self, fenced, slack, ops):
+        # topic is required and was not typed; the role supplies it.
+        slash(fenced, "run gate_demo", user=OTHER)
+        assert ops.started == [("gate_demo", {"topic": "roamee"})]
+
+    def test_the_owner_keeps_everything(self, fenced, slack, ops):
+        slash(fenced, "run mystery")
+        assert ops.started == [("mystery", {})]
+
+    def test_a_stranger_cannot_stop_a_run(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly")          # the owner's run
+        eid = ops.recent()[0]["id"]
+        slash(fenced, f"stop {eid[:8]}", user=STRANGER)
+        assert ops.cancelled == [] and refused(slack)
+
+    def test_a_role_cannot_stop_someone_elses_run(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly")          # the owner's run
+        eid = ops.recent()[0]["id"]
+        slash(fenced, f"stop {eid[:8]}", user=OTHER)
+        assert ops.cancelled == [] and "isn't yours" in said(slack)
+
+    def test_but_can_stop_its_own(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly", user=OTHER)
+        eid = ops.recent()[0]["id"]
+        slash(fenced, f"stop {eid[:8]}", user=OTHER)
+        assert [c[0] for c in ops.cancelled] == [eid]
+
+    def test_status_shows_only_its_own_runs(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly")          # the owner's
+        slash(fenced, "run gate_demo topic=weekly", user=OTHER)
+        mine = ops.recent()[1]["id"] if ops.recent()[0]["id"] != ops.started else ops.recent()[-1]["id"]
+        slack.responses.clear()
+        slash(fenced, "status", user=OTHER)
+        shown = said(slack)
+        assert mine[:8] in shown
+        assert sum(r["id"][:8] in shown for r in ops.recent()) == 1, "only one run is theirs"
+
+    def test_the_owner_sees_every_run(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly")
+        slash(fenced, "run gate_demo topic=weekly", user=OTHER)
+        slack.responses.clear()
+        slash(fenced, "status")
+        assert sum(r["id"][:8] in said(slack) for r in ops.recent()) == 2
+
+    def test_a_stranger_may_still_ask_and_list(self, fenced, slack, ops):
+        slash(fenced, "list", user=STRANGER)
+        assert not refused(slack)
+        slash(fenced, "search gate", user=STRANGER)
+        assert not refused(slack)
+
+    def test_help_is_everyones(self, fenced, slack):
+        slash(fenced, "", user=STRANGER)
+        assert "/temper search" in said(slack)
+
+    def test_a_refusal_leaves_a_trace_but_sends_nothing(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly", user=STRANGER)
+        logged = [a for a in store.actions() if a["action"] == "refused"]
+        assert len(logged) == 1 and logged[0]["user_id"] == STRANGER and "run" in logged[0]["detail"]
+        assert slack.posts == [], "a refusal is answered to them alone; nothing is posted"
+
+
+class TestGateButtonsAreFenced:
+    def test_a_stranger_pressing_approve_does_nothing(self, fenced, slack, ops):
+        msg = gate_message(slack, ops)
+        click(fenced, APPROVE, button_value(msg, APPROVE), msg, user=STRANGER)
+        assert ops.approved == [] and slack.updates == [], "the message is left as it was"
+        assert ":lock: Sorry" in json.dumps(slack.responses[-1])
+
+    def test_a_role_cannot_answer_someone_elses_gate(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly")          # the owner's run
+        eid = ops.recent()[0]["id"]
+        msg = gate_message(slack, ops, eid=eid, event="ev-own")
+        click(fenced, REJECT, button_value(msg, REJECT), msg, user=OTHER)
+        assert ops.cancelled == [] and ":lock: Sorry" in json.dumps(slack.responses[-1])
+
+    def test_but_can_answer_the_gate_of_its_own_run(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly", user=OTHER)
+        eid = ops.recent()[0]["id"]
+        msg = gate_message(slack, ops, eid=eid, event="ev-mine")
+        click(fenced, APPROVE, button_value(msg, APPROVE), msg, user=OTHER)
+        assert ops.approved == [(eid, "approve_step")]
+
+    def test_the_owner_answers_anyones(self, fenced, slack, ops):
+        slash(fenced, "run gate_demo topic=weekly", user=OTHER)
+        eid = ops.recent()[0]["id"]
+        msg = gate_message(slack, ops, eid=eid, event="ev-theirs")
+        click(fenced, APPROVE, button_value(msg, APPROVE), msg)
+        assert ops.approved == [(eid, "approve_step")]
+
+
+class TestTheStartItButtonIsFenced:
+    def proposal(self, handler, slack, user=OTHER) -> dict:
+        mention(handler, "<@UBOT> do the approval demo", user=user)
+        placeholder = slack.posts[-1]
+        return {**placeholder, **slack.updates[-1]}
+
+    def test_a_stranger_cannot_start_a_proposal(self, fenced, slack, ops):
+        msg = self.proposal(fenced, slack)
+        click(fenced, CONFIRM, button_value(msg, CONFIRM), msg, user=STRANGER)
+        assert ops.started == [] and ":lock: Sorry" in json.dumps(slack.responses[-1])
+
+    def test_a_proposal_built_for_someone_else_is_not_theirs_to_start(self, fenced, slack, ops):
+        msg = self.proposal(fenced, slack, user=OWNER)
+        click(fenced, CONFIRM, button_value(msg, CONFIRM), msg, user=OTHER)
+        assert ops.started == [] and "isn't yours" in json.dumps(slack.responses[-1])
+
+    def test_its_own_proposal_starts_with_the_forced_inputs_on(self, fenced, slack, ops):
+        msg = self.proposal(fenced, slack)
+        click(fenced, CONFIRM, button_value(msg, CONFIRM), msg, user=OTHER)
+        assert ops.started == [("gate_demo", {"topic": "roamee"})]
+
+    def test_cancel_is_fenced_too(self, fenced, slack, ops):
+        msg = self.proposal(fenced, slack)
+        before = len(slack.updates)
+        click(fenced, CANCEL, button_value(msg, CANCEL), msg, user=STRANGER)
+        assert len(slack.updates) == before, "the proposal is left as it was"
+
+
+class TestPlainWordsAreFenced:
+    def test_a_stranger_who_wants_a_run_gets_one_line_and_nothing_else(self, fenced, slack, ops, picker):
+        mention(fenced, "<@UBOT> do the approval demo", user=STRANGER)
+        # readonly may ask, so the interpreter runs with only the question
+        # workflow in front of it; it cannot propose anything else.
+        assert picker.allowed == (ANSWER_WORKFLOW,)
+        assert ops.started == []
+        assert ":lock: Sorry" in str(slack.updates[-1]["blocks"])
+
+    def test_someone_with_no_role_at_all_is_not_worth_a_pick_run(self, slack, ops, slack_config, picker):
+        shut = parse_access({"access": {"owner": OWNER, "roles": {"r": {"commands": ["help"]}}, "default": "r"}})
+        handler = Handler(slack, ConfigWatcher(), ops, picker=picker, bot_user="UBOT",
+                         answerer=Answerer(ops, timeout_s=0, sleep=lambda _s: None), access=FakeAccess(shut))
+        mention(handler, "<@UBOT> do the approval demo", user=STRANGER)
+        assert picker.asked == [], "no run is started to tell someone no"
+        assert ":lock: Sorry" in str(slack.posts[-1]["blocks"])
+
+    def test_the_interpreter_sees_only_the_roles_workflows(self, fenced, slack, ops, picker):
+        mention(fenced, "<@UBOT> do the approval demo", user=OTHER)
+        assert picker.allowed == ("repo_answer", "gate_demo", "trigger_probe")
+
+    def test_the_owners_interpreter_sees_every_workflow(self, fenced, slack, ops, picker):
+        mention(fenced, "<@UBOT> do the approval demo")
+        assert picker.allowed is None
+
+    def test_the_forced_inputs_are_on_the_proposal(self, fenced, slack, ops, picker):
+        picker.result = Pick(workflow="gate_demo", inputs={"topic": "rollcall", "rounds": 2},
+                             reason="it asks first", execution_id="pick0001-x")
+        mention(fenced, "<@UBOT> do the approval demo for rollcall", user=OTHER)
+        value = json.loads(button_value({**slack.posts[-1], **slack.updates[-1]}, CONFIRM))
+        assert value["inputs"] == {"topic": "roamee", "rounds": 2}
+
+    def test_a_picked_workflow_the_role_may_not_use_is_refused(self, fenced, slack, ops, picker):
+        picker.result = Pick(workflow="mystery", inputs={}, reason="", execution_id="pick0002-x")
+        mention(fenced, "<@UBOT> do the mystery one", user=OTHER)
+        assert ops.started == [] and ":lock: Sorry" in str(slack.updates[-1]["blocks"])
+
+    def test_a_safe_workflow_starts_at_once_and_says_so(self, fenced, slack, ops, picker):
+        picker.result = Pick(workflow="trigger_probe", inputs={"note": "hi"}, reason="it only echoes",
+                             execution_id="pick0003-x")
+        mention(fenced, "<@UBOT> echo hi", user=OTHER)
+        assert ops.started == [("trigger_probe", {"note": "hi"})]
+        shown = str(slack.updates[-1]["blocks"])
+        assert "trigger_probe" in shown and "note" in shown
+        assert CONFIRM not in shown, "nothing left to press"
+        eid = ops.recent()[0]["id"]
+        assert store.actions()[0]["action"] == "auto" and store.started_by(eid) == OTHER
+
+    def test_an_unsafe_one_still_waits_for_a_click(self, fenced, slack, ops, picker):
+        mention(fenced, "<@UBOT> do the approval demo", user=OTHER)
+        assert ops.started == [] and CONFIRM in str(slack.updates[-1]["blocks"])
+
+
+class TestAskingIsFenced:
+    def test_a_role_only_asks_about_its_own_repos(self, fenced, slack, ops):
+        slash(fenced, "ask what does roamee do", user=OTHER)
+        assert ops.started[0][0] == ANSWER_WORKFLOW
+        assert ops.started[0][1]["repos"] == "roamee"
+
+    def test_the_owner_asks_about_all_of_them(self, fenced, slack, ops):
+        slash(fenced, "ask what does rollcall do")
+        assert "repos" not in ops.started[0][1]
 
 
 class FakeSocket:

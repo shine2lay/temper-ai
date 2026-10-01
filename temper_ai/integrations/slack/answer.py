@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -69,8 +70,14 @@ class Answerer:
         self.poll_s = poll_s
         self._sleep = sleep
 
-    def answer(self, question: str, conversation: str = "") -> Answer:
-        execution_id = self.ops.start(ANSWER_WORKFLOW, {"question": question, "conversation": conversation})
+    def answer(self, question: str, conversation: str = "", repos: Sequence[str] = ()) -> Answer:
+        """Answer one question. ``repos`` narrows which repositories temper
+        will even tell the answerer about (the asker's role says which);
+        empty means every repository it keeps a copy of."""
+        inputs: dict[str, Any] = {"question": question, "conversation": conversation}
+        if repos:
+            inputs["repos"] = ",".join(repos)
+        execution_id = self.ops.start(ANSWER_WORKFLOW, inputs)
         ref = execution_id[:8]
         summary = wait_for(self.ops, execution_id, self.timeout_s, self.poll_s, self._sleep)
         status = str(summary.get("status") or "running")

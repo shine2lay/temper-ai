@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from temper_ai.config.search import search_workflows
+from temper_ai.integrations.slack.access import AccessConfig
 from temper_ai.integrations.slack.client import SlackError
 from temper_ai.integrations.slack.ops import OpsError
 from temper_ai.integrations.telegram.client import TelegramError
@@ -23,6 +24,20 @@ TG_OTHER = 8000000002
 TG_GROUP = -5000000001
 TG_BOT = 7000000001
 TG_BOT_NAME = "temper_test_bot"
+
+
+class FakeAccess:
+    """The access rules a handler asks, as the test sets them.
+
+    The default is no access file at all: everyone may do everything, which
+    is what every test that is not about access expects.
+    """
+
+    def __init__(self, config: AccessConfig | None = None) -> None:
+        self.config = config or AccessConfig(on=False)
+
+    def get(self) -> AccessConfig:
+        return self.config
 
 
 class FakeSlack:

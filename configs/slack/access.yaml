@@ -1,0 +1,57 @@
+# Who may do what in temper's Slack bot (docs/slack.md, "Who can do what").
+#
+# This tracked file documents the format and is the safe default: with it in
+# place, only the owner may start, stop or answer anything, and everyone else
+# in the workspace is read-only. The real file, which names people's Slack
+# ids, is configs/slack/local/access.yaml (git-ignored) and is used instead
+# when it exists. Slack settings are read at start-up, so a change here needs
+# a restart (temper-deploy restart).
+#
+# Everything about access is decided from this file by one function,
+# temper_ai/integrations/slack/access.py: the slash commands, plain words in
+# a DM or a mention, the Start it / Cancel buttons and a gate's Approve,
+# Reject and Answer all ask it, and a refusal is one line in the thread.
+#
+# Without any access file at all, everyone may do everything, as temper's
+# Slack bot did before this file existed.
+access:
+  # The one person nothing applies to. Left out: the first user the Slack
+  # agent tools may DM (configs/slack/local/slack.yaml, agents:).
+  # owner: U0BDD2J0DAQ
+
+  # The role for anyone not named under people:.
+  default: readonly
+
+  people: {}
+  # people:
+  #   U0BDB8KN7Q9: {role: roamee, name: lomit}
+
+  roles:
+    # Anyone in the workspace who is not named above. They may look and ask;
+    # they may not start or stop anything, and their press on a button does
+    # nothing.
+    readonly:
+      about: Can ask questions and look at the list of workflows; nothing else.
+      commands: [help, list, search, ask]
+      workflows: [repo_answer]
+      runs: none
+      gates: none
+
+    # Roamee's side of the house. They never name a workflow: they write in
+    # plain words and the interpreter builds the run out of the workflows
+    # below, with force: put on afterwards, so a request cannot be aimed at
+    # another repository however it is worded.
+    #
+    # linear_work is deliberately not here: it is keyed by a Linear issue
+    # id, not a repository, so there is nothing to pin it to. The roamee
+    # research workflow goes here when it exists (the next task).
+    roamee:
+      about: Can ask about roamee and have runs built against roamee, and sees only their own runs.
+      commands: [help, list, search, status, ask, pick, stop, gate]
+      workflows: [repo_answer, github_work]
+      force:
+        github_work: {repo: shine2lay/roamee}
+      repos: [roamee]
+      auto: [repo_answer]
+      runs: own
+      gates: own

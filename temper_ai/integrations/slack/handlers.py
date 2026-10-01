@@ -8,8 +8,11 @@ fails or a restart cuts it off (``handle_saved``), unless the envelope is
 over 30 minutes old: its reply link has expired by then. Answers go back
 through the Web API and response_url.
 
-Anyone in the workspace may act; every action is recorded with who did it
-(``store.log_action``).
+Who may do what is not decided here: every way in — a slash command, plain
+words, the Start it and Cancel buttons, a gate's Approve, Reject and Answer
+— asks ``access.decide`` and shows ``access.refusal`` when the answer is no
+(:mod:`temper_ai.integrations.slack.access`, ``configs/slack/access.yaml``).
+Every action is recorded with who did it (``store.log_action``).
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from temper_ai.integrations.notify import service as notify
 from temper_ai.integrations.notify import store as notify_store
 from temper_ai.integrations.notify.notice import Decision
 from temper_ai.integrations.slack import blocks, store
+from temper_ai.integrations.slack.access import AccessWatcher, Verdict, decide, refusal
 from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
 from temper_ai.integrations.slack.client import SlackClient, SlackError
 from temper_ai.integrations.slack.commands import Command, coerce_inputs, parse
@@ -94,9 +98,11 @@ def without_token(envelope: dict[str, Any]) -> dict[str, Any]:
 class Handler:
     def __init__(self, client: SlackClient, config: ConfigWatcher, ops: TemperOps | None = None,
                  picker: Picker | None = None, bot_user: str = "",
-                 answerer: Answerer | None = None, workers: int = 8) -> None:
+                 answerer: Answerer | None = None, workers: int = 8,
+                 access: AccessWatcher | None = None) -> None:
         self.client = client
         self.config = config
+        self.access = access or AccessWatcher()
         self.ops = ops or TemperOps()
         self.picker = picker or Picker(self.ops)
         # An answer holds its thread for a minute or more; there are enough
@@ -176,6 +182,24 @@ class Handler:
                 self._seen.popitem(last=False)
             return True
 
+    # -- who may do what ---------------------------------------------------------
+
+    def may(self, user: str, action: str, channel: str = "", workflow: str = "",
+            run_by: str | None = None) -> Verdict:
+        """The one question every way in asks before it does anything."""
+        return decide(self.access.get(), user, action, channel=channel, workflow=workflow, run_by=run_by)
+
+    def _no(self, verdict: Verdict, user: str = "", name: str = "") -> dict[str, Any]:
+        """A refusal as a message: one line, in the thread, nobody else told.
+
+        A refusal is recorded like anything else (``slack_actions``), so a
+        fence that turns somebody away leaves a trace; nothing is sent.
+        """
+        line = refusal(verdict)
+        if user:
+            store.log_action(user, name, "refused", None, f"{verdict.action} {verdict.why}"[:500])
+        return {"text": line, "blocks": [blocks.section(line)]}
+
     # -- slash commands ---------------------------------------------------------
 
     def slash(self, p: dict[str, Any]) -> None:
@@ -206,45 +230,72 @@ class Handler:
             return
         if cmd.verb == "help":
             reply(blocks.help_message())
-        elif cmd.verb == "list":
+            return
+        may = self.may(user, cmd.verb, channel, workflow=cmd.workflow if cmd.verb == "run" else "")
+        if not may:
+            reply(self._no(may, user, name))
+            return
+        if cmd.verb == "list":
             reply(blocks.workflows(self.ops.search(cmd.query, limit=500), "Workflows"))
         elif cmd.verb == "search":
             reply(blocks.workflows(self.ops.search(cmd.query, limit=10), f"Workflows for “{cmd.query}”"))
         elif cmd.verb == "status":
             if cmd.run_id:
                 eid = self.ops.resolve(cmd.run_id)
+                mine = self.may(user, "status", channel, run_by=store.started_by(eid))
+                if not mine:
+                    reply(self._no(mine, user, name))
+                    return
                 summary = self.ops.summary(eid)
                 if summary.get("error"):
                     raise OpsError(str(summary["error"]))
                 reply(blocks.status(summary, cfg.run_url(eid)))
             else:
                 going = [r for r in self.ops.recent() if r.get("status") in GOING]
+                if not self.may(user, "status", channel, run_by=""):
+                    going = [r for r in going
+                             if self.may(user, "status", channel,
+                                         run_by=store.started_by(str(r.get("id") or "")))]
                 reply(blocks.recent_runs(going, cfg.run_url))
         elif cmd.verb == "stop":
             eid = self.ops.resolve(cmd.run_id)
+            mine = self.may(user, "stop", channel, run_by=store.started_by(eid))
+            if not mine:
+                reply(self._no(mine, user, name))
+                return
             reply({"text": self.stop(eid, user, name)})
         elif cmd.verb == "run":
-            self.run(cmd, user, name, channel, reply)
+            self.run(cmd, user, name, channel, reply, may)
         elif cmd.verb == "ask":
-            self.ask(cmd.query, user, name, reply)
+            self.ask(cmd.query, user, name, reply, may.repos)
 
-    def ask(self, question: str, user: str, name: str, reply: Any) -> None:
-        """``/temper ask``: read the code, answer in the channel for everyone there."""
+    def ask(self, question: str, user: str, name: str, reply: Any, repos: tuple[str, ...] = ()) -> None:
+        """``/temper ask``: read the code, answer in the channel for everyone there.
+
+        ``repos`` is what the asker's role may ask about; empty means every
+        repository temper keeps a copy of."""
         reply({"text": "Reading the code…", "blocks": [blocks.context(
             f":mag: Reading the code to answer _{blocks.esc(blocks.clip(question, 300))}_ — about a minute.")]})
         store.log_action(user, name, "ask", None, question[:500])
-        got = self.answerer.answer(question)
+        got = self.answerer.answer(question, repos=repos)
         message = blocks.answer(got.text, got.execution_id, self.config.get().run_url(got.execution_id),
                                 got.seconds, got.cost_usd, question=question, by=user)
         reply({**message, "response_type": "in_channel"})
 
-    def run(self, cmd: Command, user: str, name: str, channel: str, reply: Any) -> None:
+    def run(self, cmd: Command, user: str, name: str, channel: str, reply: Any,
+            may: Verdict | None = None) -> None:
+        """``/temper run``: start a workflow by name.
+
+        ``may`` is what the asker's role allows: its forced inputs go on the
+        run whatever was typed for them.
+        """
         entry = next((e for e in self.ops.catalog() if e["name"] == cmd.workflow), None)
         if entry is None:
             hits = self.ops.search(cmd.workflow, limit=5).get("results") or []
             like = ", ".join(f"`{h['name']}`" for h in hits)
             raise OpsError(f"There is no workflow `{cmd.workflow}`." + (f" Did you mean {like}?" if like else ""))
-        inputs, problems = coerce_inputs(cmd.inputs, entry.get("inputs") or {})
+        inputs, problems = coerce_inputs(cmd.inputs, entry.get("inputs") or {},
+                                         forced=may.force if may else None)
         if problems:
             reply({"text": "Not started", "blocks": [
                 blocks.section(f":warning: Not started: {blocks.esc('; '.join(problems))}"),
@@ -252,7 +303,7 @@ class Handler:
             return
         if cmd.workflow == ANSWER_WORKFLOW:
             # Its answer is the point, and a run thread would never show it.
-            self.ask(str(inputs.get("question") or ""), user, name, reply)
+            self.ask(str(inputs.get("question") or ""), user, name, reply, may.repos if may else ())
             return
         eid = self.ops.start(cmd.workflow, inputs)
         store.log_action(user, name, "run", eid, f"{cmd.workflow} {json.dumps(inputs)[:500]}")
@@ -326,6 +377,12 @@ class Handler:
             # Two quick clicks on one message: the second does nothing.
             if not self._first_time(f"click:{channel}:{ts}:{action_id}:{value.get('event', '')}"):
                 return
+        # A button is a way in like any other: pressing one you may not press
+        # does nothing to the message, and nobody is told.
+        may = self._may_press(action_id, value, user, channel)
+        if not may:
+            self._ephemeral(p, self._no(may, user, name)["text"])
+            return
         try:
             if action_id in (blocks.APPROVE, blocks.REJECT):
                 self.gate(action_id == blocks.APPROVE, value, user, name, channel, ts, message)
@@ -335,12 +392,29 @@ class Handler:
                 text = self.stop(str(value.get("run") or ""), user, name)
                 self._decide(channel, ts, message, f":black_square_for_stop: {text} (<@{user}>)")
             elif action_id == blocks.CONFIRM:
-                self.confirm(value, user, name, channel, ts, message)
+                self.confirm(value, user, name, channel, ts, message, may)
             elif action_id == blocks.CANCEL:
                 store.log_action(user, name, "cancel_pick", None, str(value.get("workflow") or ""))
                 self._decide(channel, ts, message, f"Cancelled by <@{user}>; nothing was started.")
         except OpsError as exc:
             self._ephemeral(p, f":warning: {exc}")
+
+    def _may_press(self, action_id: str, value: dict[str, Any], user: str, channel: str) -> Verdict:
+        """May this person press this button?
+
+        A gate's buttons and Stop are about somebody's run, so whose it is
+        comes from what was recorded as it started, never from the button:
+        a button's value is whatever Slack was given.
+        """
+        if action_id in (blocks.APPROVE, blocks.REJECT, blocks.ANSWER):
+            return self.may(user, "gate", channel, run_by=store.started_by(str(value.get("run") or "")))
+        if action_id == blocks.STOP:
+            return self.may(user, "stop", channel, run_by=store.started_by(str(value.get("run") or "")))
+        if action_id in (blocks.CONFIRM, blocks.CANCEL):
+            # A proposal belongs to the person it was built for.
+            return self.may(user, "pick", channel, workflow=str(value.get("workflow") or ""),
+                            run_by=str(value.get("by") or "") or None)
+        return Verdict(True)
 
     def _decide(self, channel: str, ts: str, message: dict[str, Any], line: str, verdict: str | None = None) -> None:
         try:
@@ -474,10 +548,14 @@ class Handler:
                 logger.warning("Slack: could not tell %s the answers failed: %s", user, exc)
 
     def confirm(self, value: dict[str, Any], user: str, name: str, channel: str, ts: str,
-                message: dict[str, Any]) -> None:
+                message: dict[str, Any], may: Verdict | None = None) -> None:
         workflow = str(value.get("workflow") or "")
         raw = value.get("inputs")
         inputs: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        # The role's forced inputs go on again here: the button's value came
+        # back from Slack, so it is not what decides the run.
+        if may and may.force:
+            inputs = {**inputs, **may.force}
         if not any(e["name"] == workflow for e in self.ops.catalog()):
             raise OpsError(f"There is no workflow `{workflow}` any more.")
         eid = self.ops.start(workflow, inputs)
@@ -504,6 +582,14 @@ class Handler:
                                           "Or ask what rollcall, roamee or temper-ai can do.")
             self.client.post(channel, message["text"], message["blocks"], thread_ts=thread)
             return
+        # Plain words are a way in like any other. A role that may neither
+        # have a run built nor ask a question gets one line and no run.
+        may_pick = self.may(user, "pick", channel)
+        may_ask = self.may(user, "ask", channel)
+        if not may_pick and not may_ask:
+            line = self._no(may_pick, user, self.client.user_name(user))["text"]
+            self.client.post(channel, line, [blocks.section(line)], thread_ts=thread)
+            return
         placeholder = self.client.post(channel, "Looking for the right workflow…", thread_ts=thread)
         pts = str(placeholder.get("ts") or "")
         conversation = ""
@@ -516,13 +602,20 @@ class Handler:
                 logger.info("Slack: could not read the thread for context: %s", exc)
         # A message event carries only the user's id; the log is read by people.
         store.log_action(user, self.client.user_name(user), "pick", None, text[:500])
+        # The interpreter sees the role's workflows and nothing else, so it
+        # cannot name one the role doesn't have, however the request is put.
+        allowed = may_pick.workflows if may_pick else (ANSWER_WORKFLOW,)
         try:
-            pick = self.picker.pick(text, conversation)
+            pick = self.picker.pick(text, conversation, allowed=allowed)
         except OpsError as exc:
             self.client.update(channel, pts, str(exc), [blocks.section(f":warning: {blocks.esc(exc)}")])
             return
         if pick.workflow == ANSWER_WORKFLOW:
-            self.answer_in_thread(channel, pts, str(pick.inputs.get("question") or text), conversation)
+            if not may_ask:
+                self._refuse_in_place(channel, pts, may_ask, user)
+                return
+            self.answer_in_thread(channel, pts, str(pick.inputs.get("question") or text), conversation,
+                                  may_ask.repos)
             return
         if not pick.workflow or pick.question and pick.problems:
             answer = pick.question or "I couldn't find a workflow that does that."
@@ -534,16 +627,42 @@ class Handler:
                 "\n_Reply in this thread with more._"
             self.client.update(channel, pts, blocks.clip(answer, 300), [blocks.section(answer)])
             return
+        # Now the workflow is known: may this person have it, and with what
+        # forced on it? The forced values go on *after* the interpreter has
+        # filled the inputs, so nothing it was told can shake them off.
+        mine = self.may(user, "pick", channel, workflow=pick.workflow)
+        if not mine:
+            self._refuse_in_place(channel, pts, mine, user)
+            return
+        inputs = {**pick.inputs, **mine.force}
         entry = next((e for e in self.ops.catalog() if e["name"] == pick.workflow), None)
-        proposal = blocks.proposal(pick.workflow, pick.inputs, pick.reason, entry, user, pick.execution_id[:8])
+        if mine.auto:
+            # A workflow the role calls safe: started, and said so.
+            eid = self.ops.start(pick.workflow, inputs)
+            store.log_action(user, self.client.user_name(user), "auto", eid,
+                             f"{pick.workflow} {json.dumps(inputs)[:500]}")
+            started = blocks.started(pick.workflow, eid, inputs, user, self.config.get().run_url(eid))
+            self.client.update(channel, pts, started["text"], started["blocks"])
+            store.save_thread(eid, channel, pts, origin=True)
+            return
+        proposal = blocks.proposal(pick.workflow, inputs, pick.reason, entry, user, pick.execution_id[:8])
         self.client.update(channel, pts, proposal["text"], proposal["blocks"])
 
-    def answer_in_thread(self, channel: str, ts: str, question: str, conversation: str) -> None:
+    def _refuse_in_place(self, channel: str, ts: str, verdict: Verdict, user: str = "") -> None:
+        """Turn the "looking…" message into the one refusal line."""
+        line = self._no(verdict, user, self.client.user_name(user) if user else "")["text"]
+        try:
+            self.client.update(channel, ts, line, [blocks.section(line)])
+        except SlackError as exc:
+            logger.warning("Slack: could not say no in %s/%s: %s", channel, ts, exc)
+
+    def answer_in_thread(self, channel: str, ts: str, question: str, conversation: str,
+                         repos: tuple[str, ...] = ()) -> None:
         """A question in plain words: answered in place of the placeholder, no button to press."""
         self.client.update(channel, ts, "Reading the code…", [
             blocks.context(":mag: That's a question about the code; reading it to answer — about a minute.")])
         try:
-            got = self.answerer.answer(question, conversation)
+            got = self.answerer.answer(question, conversation, repos=repos)
         except OpsError as exc:
             self.client.update(channel, ts, str(exc), [blocks.section(f":warning: {blocks.esc(exc)}")])
             return

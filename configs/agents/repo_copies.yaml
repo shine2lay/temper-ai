@@ -18,6 +18,12 @@
 # the answerer can't take them for the app. roamee's docs/ is old architecture
 # notes, design mock-ups and plans: with it in, answers described a trip page
 # and an "Export to calendar" button the code no longer has (2026-09-26).
+#
+# `only` narrows the list to the repos the asker may ask about (Slack puts
+# their role's list there, configs/slack/access.yaml). The others are not
+# copied or mentioned, and when exactly one is left the workspace handed on
+# is that repo's own folder, so the answerer's Read, Grep and Glob cannot
+# reach any other. Empty: every repo, as always.
 agent:
   name: repo_copies
   type: script
@@ -27,9 +33,14 @@ agent:
     import fcntl, json, os, shutil, subprocess, tempfile, time
     from pathlib import Path
 
-    ROOT = Path("/app/workspaces/readonly")
-    KEYDIR = Path("/app/github-deploy")
+    # The container's folders; a test points them somewhere it may write.
+    ROOT = Path(os.environ.get("REPO_COPIES_ROOT") or "/app/workspaces/readonly")
+    KEYDIR = Path(os.environ.get("REPO_COPIES_KEYS") or "/app/github-deploy")
     MAX_AGE = 600  # seconds
+    # Read from the environment, not written into this text: a quoted
+    # heredoc expands nothing, so `| env` hands over the variable's name.
+    ONLY = [s.strip() for s in
+            os.environ.get("{{ only | default('') | env }}", "").replace(",", " ").split() if s.strip()]
     REPOS = [
         # name, clone URL, branch, deploy key under KEYDIR (None: public), what it is, folders to hide
         ("rollcall", "git@github.com:shine2lay/rollcall.git", "master", "id_ed25519",
@@ -86,6 +97,13 @@ agent:
                 os.unlink(keyfile)
 
 
+    if ONLY:
+        REPOS = [r for r in REPOS if r[0] in ONLY]
+        if not REPOS:
+            print(json.dumps({"status": "failed", "workspace": str(ROOT), "summary": "",
+                              "repos": [], "error": "no such repository: %s" % ", ".join(ONLY)}))
+            raise SystemExit(1)
+
     ROOT.mkdir(parents=True, exist_ok=True)
     report = []
     for name, url, branch, key, about, hide in REPOS:
@@ -119,18 +137,23 @@ agent:
             entry["missing"] = True
         report.append(entry)
 
+    have_names = [e["name"] for e in report if not e.get("missing")]
+    # One repo only: hand on its own folder, so nothing else can be read,
+    # and name it as the workspace root rather than a folder inside it.
+    alone = ONLY and len(have_names) == 1
     lines = []
     for e in report:
+        folder = "./ (%s)" % e["name"] if alone else "%s/" % e["name"]
         if e.get("missing"):
-            lines.append("- %s/: MISSING, no copy could be made (%s)" % (e["name"], e["copy"]))
+            lines.append("- %s: MISSING, no copy could be made (%s)" % (folder, e["copy"]))
             continue
         notes = "has capability notes in .temper/" if e["notes"] else "no capability notes: read the code"
         hidden = ("; left out as out of date: " + ", ".join("%s/" % h for h in e["hidden"])) if e["hidden"] else ""
         stale = "" if e["copy"] in ("fresh", "refreshed") else "; WARNING: " + e["copy"] + ", so this copy may be old"
-        lines.append("- %s/: %s. Branch %s at commit %s (%s); %s%s%s"
-                     % (e["name"], e["about"], e["branch"], e["commit"], e["date"], notes, hidden, stale))
-    have = [e for e in report if not e.get("missing")]
-    print(json.dumps({"status": "ready" if have else "failed", "workspace": str(ROOT),
+        lines.append("- %s: %s. Branch %s at commit %s (%s); %s%s%s"
+                     % (folder, e["about"], e["branch"], e["commit"], e["date"], notes, hidden, stale))
+    workspace = (ROOT / have_names[0]) if alone else ROOT
+    print(json.dumps({"status": "ready" if have_names else "failed", "workspace": str(workspace),
                       "summary": "\n".join(lines), "repos": report}))
-    raise SystemExit(0 if have else 1)
+    raise SystemExit(0 if have_names else 1)
     PY

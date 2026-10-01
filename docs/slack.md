@@ -63,6 +63,67 @@ workspace may ask about any of the three repos. Questions about temper's own
 runs go to `/temper status` instead. `repo_answer` runs post no notices; the
 answer is the message.
 
+## Who can do what
+
+Everything a person may do is decided by one file,
+`configs/slack/access.yaml` (and `configs/slack/local/access.yaml`, which
+replaces it and is where the real Slack ids go). It is read at start-up, so
+a change needs a restart. With no file at all, everyone may do everything,
+as before the file existed.
+
+One function, `temper_ai/integrations/slack/access.py:decide()`, answers
+every case — the slash commands, plain words to @temper, the **Start it** /
+**Cancel** buttons and a gate's **Approve** / **Reject** / **Answer**. A
+refusal is one line in the thread, and nobody is notified.
+
+The file is roles; a person is one line that names their role:
+
+```yaml
+access:
+  owner: U0BDD2J0DAQ        # nothing applies to the owner
+  default: readonly         # anyone not named below
+  people:
+    U0BDB8KN7Q9: {role: roamee, name: lomit}
+  roles:
+    roamee:
+      about: Can ask about roamee and have runs built against roamee.
+      commands: [help, list, search, status, ask, pick, stop, gate]
+      workflows: [repo_answer, github_work]   # all their interpreter sees
+      force:
+        github_work: {repo: shine2lay/roamee} # put on after the inputs are filled
+      repos: [roamee]       # the only repos /temper ask will read
+      auto: [repo_answer]   # starts without a click
+      runs: own             # see and stop their own runs only
+      gates: own            # answer gates on their own runs only
+      channels: [C0…]       # optional: where this role applies
+```
+
+| Key | What it decides |
+|---|---|
+| `commands` | Which of `help list search status ask run pick stop gate` the role may use. `pick` is plain words to @temper; `gate` is a gate's buttons and form. |
+| `workflows` | Which workflows the role may start — and the only ones its interpreter is shown. `*` means all. |
+| `force` | Inputs pinned on every run of a workflow (`"*"` pins them on all of them). Applied **after** the interpreter fills the inputs, so no wording can shake them off. A pinned input counts as given, so a required input need not be typed. |
+| `repos` | Which repositories `/temper ask` will read for them. |
+| `auto` | Workflows that start straight away instead of waiting for **Start it**; the reply says what started. |
+| `runs` | `own`, `all` or `none` — whose runs they may see in `/temper status` and stop. |
+| `gates` | `own`, `all` or `none` — whose gates they may answer or approve. |
+| `channels` | Where the role applies; elsewhere the person falls back to the default role. Channel **ids**, not `#names`. |
+
+Unknown keys are a mistake, not something ignored: `temper check` reads the
+access file and fails on an unknown key, a role that allows a workflow that
+doesn't exist, a forced input the workflow doesn't take, a person with no
+role or an unknown one, and anything that isn't a Slack id where one belongs.
+
+**Anyone not named** gets the `default` role, which may ask, search and
+list, and nothing else: a press on **Start it**, **Approve** or **Reject**
+does nothing but tell them, in that thread, that it isn't theirs to press.
+
+**A person in a role never names a workflow.** They write in plain words,
+and the picker is shown only their role's workflows ([the
+interpreter](#commands)), so it cannot propose anything else, however the
+request is worded. Something outside the role's patch gets one short line
+back and no run.
+
 ## Notices
 
 | Kind | When | Buttons |
@@ -301,9 +362,10 @@ for. Either way the bot must be in the channel.
 
 ## Rules
 
-- **Anyone in the workspace can act.** Every start, stop, gate answer and
-  pick is logged with the Slack user (table `slack_actions`; also in the
-  server log).
+- **Who may act is in one file**, `configs/slack/access.yaml` (see [Who can
+  do what](#who-can-do-what)); without it, anyone in the workspace can act.
+  Every start, stop, gate answer and pick is logged with the Slack user
+  (table `slack_actions`; also in the server log), refused ones too.
 - **Only one process may hold the socket**, because Slack hands each event to
   any one open connection. Run any other server on the same app with
   `TEMPER_SLACK=0`. Tests run with it off.

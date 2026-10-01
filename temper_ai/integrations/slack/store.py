@@ -80,6 +80,34 @@ def log_action(user_id: str, user_name: str, action: str, execution_id: str | No
     logger.info("Slack: %s (%s) %s %s %s", user_name, user_id, action, (execution_id or "")[:8], detail[:200])
 
 
+#: The actions that mean "this person started this run".
+STARTERS = ("run", "confirm", "auto")
+
+
+def started_by(execution_id: str) -> str:
+    """The Slack user who started this run; "" when nobody in Slack did.
+
+    Whose a run is decides who may stop it or answer its gate, so it is
+    read from what was recorded as it started, not from anything a button
+    carries.
+    """
+    from temper_ai.database import get_session
+
+    if not execution_id:
+        return ""
+    try:
+        with get_session() as session:
+            row = session.exec(
+                select(SlackAction).where(SlackAction.execution_id == execution_id,
+                                          col(SlackAction.action).in_(STARTERS))
+                .order_by(col(SlackAction.id))
+            ).first()
+            return row.user_id if row else ""
+    except Exception as exc:  # noqa: BLE001 - an unreadable table must not grant access
+        logger.warning("Slack: could not read who started %s: %s", execution_id[:8], exc)
+        return ""
+
+
 def actions(limit: int = 50, execution_id: str | None = None) -> list[dict[str, Any]]:
     from temper_ai.database import get_session
 

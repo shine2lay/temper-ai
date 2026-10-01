@@ -38,7 +38,7 @@ from temper_ai.integrations.slack.config import (
 )
 from temper_ai.integrations.slack.handlers import EXPIRES_S, SOURCE, Handler, describe
 
-from .conftest import OTHER, OWNER, FakeSlack
+from .conftest import OTHER, OWNER, FakeAccess, FakeSlack
 
 SECRET = "door-secret"  # noqa: S105 - a test value
 QA = "CTEMPER-QA"       # what FakeSlack makes of "#temper-qa"
@@ -102,7 +102,7 @@ def slack() -> CheckingSlack:
 
 @pytest.fixture
 def handler(slack, ops, slack_config):
-    h = Handler(slack, ConfigWatcher(), ops, bot_user="UBOT")
+    h = Handler(slack, ConfigWatcher(), ops, bot_user="UBOT", access=FakeAccess())
     h._pool = RightAway()
     inbox.register(SOURCE, h.handle_saved, expires_after_s=EXPIRES_S)
     yield h

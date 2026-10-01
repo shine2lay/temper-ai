@@ -22,6 +22,11 @@ access:
   # The role for anyone not named under people:.
   default: readonly
 
+  # Every repository temper can answer about (configs/agents/repo_copies.yaml).
+  # A request naming one the role's repos: leaves out is refused outright:
+  # one line, no run at all, not even the one that reads the request.
+  repositories: [rollcall, roamee, temper-ai]
+
   people: {}
   # people:
   #   U0BDB8KN7Q9: {role: roamee, name: lomit}
@@ -47,6 +52,8 @@ access:
     # research workflow goes here when it exists (the next task).
     roamee:
       about: Can ask about roamee and have runs built against roamee, and sees only their own runs.
+      # Naming rollcall or temper-ai in a question or a request gets a short
+      # no instead (repos:, below), and nobody is told.
       commands: [help, list, search, status, ask, pick, stop, gate]
       workflows: [repo_answer, github_work]
       force:

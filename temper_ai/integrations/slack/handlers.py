@@ -31,7 +31,13 @@ from temper_ai.integrations.notify import service as notify
 from temper_ai.integrations.notify import store as notify_store
 from temper_ai.integrations.notify.notice import Decision
 from temper_ai.integrations.slack import blocks, store
-from temper_ai.integrations.slack.access import AccessWatcher, Verdict, decide, refusal
+from temper_ai.integrations.slack.access import (
+    AccessWatcher,
+    Verdict,
+    decide,
+    refusal,
+    repos_named,
+)
 from temper_ai.integrations.slack.answer import ANSWER_WORKFLOW, Answerer
 from temper_ai.integrations.slack.client import SlackClient, SlackError
 from temper_ai.integrations.slack.commands import Command, coerce_inputs, parse
@@ -185,9 +191,23 @@ class Handler:
     # -- who may do what ---------------------------------------------------------
 
     def may(self, user: str, action: str, channel: str = "", workflow: str = "",
-            run_by: str | None = None) -> Verdict:
+            run_by: str | None = None, repo: str = "") -> Verdict:
         """The one question every way in asks before it does anything."""
-        return decide(self.access.get(), user, action, channel=channel, workflow=workflow, run_by=run_by)
+        return decide(self.access.get(), user, action, channel=channel, workflow=workflow,
+                      run_by=run_by, repo=repo)
+
+    def may_about(self, user: str, action: str, text: str, channel: str = "") -> Verdict:
+        """The same question for a request's own words: the first repository
+        it names that this person may not touch decides it.
+
+        Somebody else's repository is turned away before anything starts, so
+        it costs no run at all, not even the one that reads the request.
+        """
+        for repo in repos_named(text, self.access.get().repositories):
+            verdict = self.may(user, action, channel, repo=repo)
+            if not verdict:
+                return verdict
+        return self.may(user, action, channel)
 
     def _no(self, verdict: Verdict, user: str = "", name: str = "") -> dict[str, Any]:
         """A refusal as a message: one line, in the thread, nobody else told.
@@ -267,6 +287,10 @@ class Handler:
         elif cmd.verb == "run":
             self.run(cmd, user, name, channel, reply, may)
         elif cmd.verb == "ask":
+            about = self.may_about(user, "ask", cmd.query, channel)
+            if not about:
+                reply(self._no(about, user, name))
+                return
             self.ask(cmd.query, user, name, reply, may.repos)
 
     def ask(self, question: str, user: str, name: str, reply: Any, repos: tuple[str, ...] = ()) -> None:
@@ -584,8 +608,11 @@ class Handler:
             return
         # Plain words are a way in like any other. A role that may neither
         # have a run built nor ask a question gets one line and no run.
-        may_pick = self.may(user, "pick", channel)
-        may_ask = self.may(user, "ask", channel)
+        # Both are asked of the words themselves, so a request about somebody
+        # else's repository is turned away here: before the interpreter, which
+        # is a run of its own, and before anything it would have started.
+        may_pick = self.may_about(user, "pick", text, channel)
+        may_ask = self.may_about(user, "ask", text, channel)
         if not may_pick and not may_ask:
             line = self._no(may_pick, user, self.client.user_name(user))["text"]
             self.client.post(channel, line, [blocks.section(line)], thread_ts=thread)

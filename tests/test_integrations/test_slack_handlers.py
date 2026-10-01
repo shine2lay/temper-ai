@@ -402,6 +402,7 @@ STRANGER = "U0NOONE03"
 RULES = parse_access({"access": {
     "owner": OWNER,
     "default": "readonly",
+    "repositories": ["rollcall", "roamee", "temper-ai"],
     "people": {OTHER: {"role": "patch", "name": "lomit"}},
     "roles": {
         "readonly": {"commands": ["help", "list", "search", "ask"], "workflows": ["repo_answer"],
@@ -584,9 +585,12 @@ class TestPlainWordsAreFenced:
         assert picker.allowed is None
 
     def test_the_forced_inputs_are_on_the_proposal(self, fenced, slack, ops, picker):
+        # Whatever the interpreter filled in — here somebody else's repository
+        # — the role's own value goes on afterwards. (Asking for it in so many
+        # words never gets this far: see TestAskingIsFenced.)
         picker.result = Pick(workflow="gate_demo", inputs={"topic": "rollcall", "rounds": 2},
                              reason="it asks first", execution_id="pick0001-x")
-        mention(fenced, "<@UBOT> do the approval demo for rollcall", user=OTHER)
+        mention(fenced, "<@UBOT> do the approval demo", user=OTHER)
         value = json.loads(button_value({**slack.posts[-1], **slack.updates[-1]}, CONFIRM))
         assert value["inputs"] == {"topic": "roamee", "rounds": 2}
 
@@ -620,6 +624,29 @@ class TestAskingIsFenced:
     def test_the_owner_asks_about_all_of_them(self, fenced, slack, ops):
         slash(fenced, "ask what does rollcall do")
         assert "repos" not in ops.started[0][1]
+
+    def test_a_question_about_another_repository_gets_one_line_and_no_run(self, fenced, slack, ops):
+        slash(fenced, "ask how does rollcall roll a call", user=OTHER)
+        assert ops.started == [], "nothing is started to say no"
+        assert refused(slack) and slack.posts == [], "one line in the thread, nobody told"
+
+    def test_plain_words_about_another_repository_never_reach_the_interpreter(
+            self, fenced, slack, ops, picker):
+        mention(fenced, "<@UBOT> have a look at rollcall's option chain", user=OTHER)
+        assert picker.asked == [], "not even the run that reads the request"
+        assert ops.started == [] and ":lock: Sorry" in str(slack.posts[-1]["blocks"])
+
+    def test_its_own_repository_still_goes_through(self, fenced, slack, ops, picker):
+        mention(fenced, "<@UBOT> what does roamee do about hotels?", user=OTHER)
+        assert picker.asked, "a request about their own repository is read as usual"
+
+    def test_the_owner_may_ask_about_any_of_them(self, fenced, slack, ops, picker):
+        mention(fenced, "<@UBOT> have a look at rollcall's option chain")
+        assert picker.asked and ":lock: Sorry" not in str(slack.posts[-1]["blocks"])
+
+    def test_an_unlisted_person_may_still_ask_about_any_of_them(self, fenced, slack, ops):
+        slash(fenced, "ask what does rollcall do", user=STRANGER)
+        assert ops.started and ops.started[0][0] == ANSWER_WORKFLOW
 
 
 class FakeSocket:

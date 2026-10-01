@@ -179,6 +179,15 @@ def _access_problems(path: Path, workflows: dict[str, dict[str, Any]],
     known = sorted(workflows)
     problems: list[str] = []
     notes: list[str] = []
+    narrowed = [role.name for role in cfg.roles.values() if role.repos]
+    for name in cfg.repositories:
+        if repos and name not in repos:
+            problems.append(f"{path}: repositories: there is no repository '{name}' "
+                            f"(there are: {', '.join(sorted(repos))})")
+    if narrowed and not cfg.repositories:
+        problems.append(f"{path}: repositories: missing, so a question naming a repository "
+                        f"{', '.join(narrowed)} may not ask about cannot be recognised "
+                        f"(list every one: {', '.join(sorted(repos)) or 'see configs/agents/repo_copies.yaml'})")
     for role in cfg.roles.values():
         where = f"{path}: roles.{role.name}"
         if not role.commands:
@@ -219,6 +228,9 @@ def _access_problems(path: Path, workflows: dict[str, dict[str, Any]],
             if repos and repo not in repos:
                 problems.append(f"{where}.repos: there is no repository '{repo}' "
                                 f"(there are: {', '.join(sorted(repos))})")
+            elif cfg.repositories and repo not in cfg.repositories:
+                problems.append(f"{where}.repos: '{repo}' is not in repositories: "
+                                f"({', '.join(cfg.repositories)}), so the fence cannot name it")
     used = set(cfg.people.values()) | ({cfg.default} if cfg.default else set())
     for name in sorted(set(cfg.roles) - used):
         notes.append(f"{path}: roles.{name}: nobody has this role here (the local file names the people)")

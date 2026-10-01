@@ -10,6 +10,7 @@ The file is built from named **roles**, so adding someone is one line::
     access:
       owner: U0123ABCD          # everything, everywhere
       default: readonly         # the role for anyone not named below
+      repositories: [rollcall, roamee, temper-ai]   # every one temper knows
       people:
         U0456EFGH: {role: roamee, name: lomit}
       roles:
@@ -43,6 +44,12 @@ at another repo; the forced values are applied **after** the interpreter
 has filled the inputs, so no wording can talk it out of them. A ``"*"``
 key forces values on every workflow the role may use.
 
+``repos`` is the other half of that fence, for questions. Only those
+repositories are copied for the answer, and a question that names one of
+``repositories`` the role may not ask about is refused outright: one line,
+no run, nothing copied. Leave ``repos`` out and the role may ask about any
+of them.
+
 ``runs`` and ``gates`` are ``own``, ``all`` or ``none``: whose runs this
 role may see, stop and start from a proposal, and whose gates it may answer.
 
@@ -64,6 +71,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -83,7 +91,7 @@ SCOPES = ("none", "own", "all")
 ANY = "*"
 
 ROLE_KEYS = {"commands", "workflows", "force", "repos", "runs", "gates", "auto", "channels", "about"}
-TOP_KEYS = {"owner", "default", "roles", "people"}
+TOP_KEYS = {"owner", "default", "roles", "people", "repositories"}
 
 _USER = re.compile(r"^[UW][A-Z0-9]{6,}$")
 _CHANNEL_ID = re.compile(r"^[CGD][A-Z0-9]{6,}$")
@@ -94,6 +102,7 @@ NO_WORKFLOW = "that's outside what I can do for you here."
 NO_RUN = "that run isn't yours."
 NO_GATE = "that question isn't yours to answer."
 NO_SEE = "that run isn't yours."
+NO_REPO = "that's not a repository I can work on for you."
 
 
 class AccessConfigError(ValueError):
@@ -166,6 +175,9 @@ class AccessConfig:
     people: dict[str, str] = field(default_factory=dict)
     #: Slack user id -> the name written beside it, for reports only.
     names: dict[str, str] = field(default_factory=dict)
+    #: Every repository temper can answer about, so a question naming one a
+    #: role may not ask about is refused before anything is started.
+    repositories: tuple[str, ...] = ()
     path: str = ""
     #: False when there is no access file: everyone may do everything.
     on: bool = False
@@ -188,13 +200,26 @@ class AccessConfig:
         return bool(self.owner) and user == self.owner
 
 
+def repos_named(text: str, known: Iterable[str]) -> tuple[str, ...]:
+    """The repositories ``known`` that ``text`` names, in the order given.
+
+    Whole words only, so "rollcall" in a sentence counts and "rollcalling"
+    does not. Pure text matching, no model: it decides only whether to
+    refuse, never what an allowed question is answered from.
+    """
+    low = text.lower()
+    return tuple(name for name in known
+                 if re.search(rf"(?<![\w-]){re.escape(name.lower())}(?![\w-])", low))
+
+
 def decide(cfg: AccessConfig, user: str, action: str, *, channel: str = "", workflow: str = "",
-           run_by: str | None = None) -> Verdict:
+           run_by: str | None = None, repo: str = "") -> Verdict:
     """May ``user`` do ``action`` here — and with what forced on it?
 
     ``workflow`` is the workflow being named, picked or started; ``run_by``
     is the Slack user whose run is being seen, stopped or gated ("" when
-    nobody in Slack started it, e.g. a trigger did).
+    nobody in Slack started it, e.g. a trigger did); ``repo`` is a
+    repository the question names (:func:`repos_named` finds them).
 
     Pure: no Slack, no database, no clock. Every entry point asks this and
     nothing else.
@@ -215,6 +240,11 @@ def decide(cfg: AccessConfig, user: str, action: str, *, channel: str = "", work
         return allowed
     if action not in role.commands:
         return no(NO_COMMAND)
+    # A question that names a repository the role may not ask about is
+    # refused before anything starts: no run, no copy, nothing to answer
+    # from. A role with no list of its own may ask about any of them.
+    if repo and role.repos and repo not in role.repos:
+        return no(NO_REPO)
     if action in ("run", "pick"):
         if workflow and not role.may_use(workflow):
             return no(NO_WORKFLOW)
@@ -325,6 +355,7 @@ def parse_config(raw: Any, path: str = "") -> AccessConfig:
         raise AccessConfigError(
             f"unknown key(s) under access: {', '.join(sorted(unknown))} (use {', '.join(sorted(TOP_KEYS))})")
     cfg = AccessConfig(path=path, on=True)
+    cfg.repositories = _names(body.get("repositories"), "repositories")
     owner = str(body.get("owner") or "").strip()
     if owner and not _USER.match(owner):
         raise AccessConfigError(f"owner: {owner!r} is not a user id (U…)")

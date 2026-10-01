@@ -82,6 +82,7 @@ The file is roles; a person is one line that names their role:
 access:
   owner: U0BDD2J0DAQ        # nothing applies to the owner
   default: readonly         # anyone not named below
+  repositories: [rollcall, roamee, temper-ai]   # every one temper knows
   people:
     U0BDB8KN7Q9: {role: roamee, name: lomit}
   roles:
@@ -103,11 +104,16 @@ access:
 | `commands` | Which of `help list search status ask run pick stop gate` the role may use. `pick` is plain words to @temper; `gate` is a gate's buttons and form. |
 | `workflows` | Which workflows the role may start — and the only ones its interpreter is shown. `*` means all. |
 | `force` | Inputs pinned on every run of a workflow (`"*"` pins them on all of them). Applied **after** the interpreter fills the inputs, so no wording can shake them off. A pinned input counts as given, so a required input need not be typed. |
-| `repos` | Which repositories `/temper ask` will read for them. |
+| `repos` | Which repositories they may ask about or have work done in. Naming another one is refused outright (see `repositories`), and only these are copied for an answer; with one left, the answerer is handed that repository's own folder. |
 | `auto` | Workflows that start straight away instead of waiting for **Start it**; the reply says what started. |
 | `runs` | `own`, `all` or `none` — whose runs they may see in `/temper status` and stop. |
 | `gates` | `own`, `all` or `none` — whose gates they may answer or approve. |
 | `channels` | Where the role applies; elsewhere the person falls back to the default role. Channel **ids**, not `#names`. |
+
+`repositories` (top level) is every repository temper can answer about. It
+is what makes a short no possible: a request that names one the role's
+`repos` leaves out is turned away before anything starts — no run, not even
+the one that reads the request, and nobody is told.
 
 Unknown keys are a mistake, not something ignored: `temper check` reads the
 access file and fails on an unknown key, a role that allows a workflow that
@@ -122,7 +128,8 @@ does nothing but tell them, in that thread, that it isn't theirs to press.
 and the picker is shown only their role's workflows ([the
 interpreter](#commands)), so it cannot propose anything else, however the
 request is worded. Something outside the role's patch gets one short line
-back and no run.
+back and no run — a request naming another repository never reaches the
+interpreter at all.
 
 ## Notices
 

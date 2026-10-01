@@ -13,6 +13,7 @@ import yaml
 
 from temper_ai.integrations.slack.access import (
     ANY,
+    NO_REPO,
     AccessConfig,
     AccessConfigError,
     AccessWatcher,
@@ -21,6 +22,7 @@ from temper_ai.integrations.slack.access import (
     load_config,
     parse_config,
     refusal,
+    repos_named,
 )
 
 OWNER = "U0OWNER01"
@@ -32,6 +34,7 @@ FILE = {
     "access": {
         "owner": OWNER,
         "default": "readonly",
+        "repositories": ["rollcall", "roamee", "temper-ai"],
         "people": {LOMIT: {"role": "roamee", "name": "lomit"}},
         "roles": {
             "readonly": {
@@ -115,6 +118,17 @@ class TestARoleWithAPatch:
         assert decide(cfg, LOMIT, "ask").repos == ("roamee",)
         assert decide(cfg, NOBODY, "ask").repos == ()
 
+    def test_another_repository_is_refused_outright(self, cfg):
+        """Not narrowed to roamee and answered anyway: refused outright, so
+        nothing starts, not even the run that reads the request."""
+        assert decide(cfg, LOMIT, "ask", repo="roamee")
+        for action in ("ask", "pick"):
+            no = decide(cfg, LOMIT, action, repo="rollcall")
+            assert not no and no.why == NO_REPO, action
+        # The owner and a role with no list of its own may ask about any.
+        assert decide(cfg, OWNER, "ask", repo="rollcall")
+        assert decide(cfg, NOBODY, "ask", repo="rollcall")
+
     def test_own_runs_only(self, cfg):
         for action in ("status", "stop", "gate"):
             assert decide(cfg, LOMIT, action, run_by=LOMIT), action
@@ -131,6 +145,27 @@ class TestARoleWithAPatch:
         # and each run in it is then asked about one at a time.
         assert decide(cfg, LOMIT, "status", run_by=None)
         assert not decide(cfg, NOBODY, "status", run_by=None)
+
+
+class TestTheRepositoriesARequestNames:
+    """Plain text matching, no model: it only ever decides a refusal."""
+
+    KNOWN = ("rollcall", "roamee", "temper-ai")
+
+    @pytest.mark.parametrize("text,expected", [
+        ("how does a traveller add a hotel in roamee?", ("roamee",)),
+        ("what does rollcall do with ROAMEE's trips?", ("rollcall", "roamee")),
+        ("Roamee", ("roamee",)),                      # any case
+        ("look at temper-ai's runner", ("temper-ai",)),
+        ("nothing in particular", ()),
+        ("rollcalling is not rollcall-ish", ()),      # whole words only
+        ("a roamee/trip path", ("roamee",)),
+    ])
+    def test_which_repositories_a_request_names(self, text, expected):
+        assert repos_named(text, self.KNOWN) == expected
+
+    def test_nothing_is_named_when_the_file_lists_none(self):
+        assert repos_named("all about rollcall", ()) == ()
 
 
 class TestChannels:

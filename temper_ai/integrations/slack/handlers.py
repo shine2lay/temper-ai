@@ -397,16 +397,19 @@ class Handler:
             value = json.loads(act.get("value") or "{}")
         except ValueError:
             value = {}
-        if action_id in (blocks.APPROVE, blocks.REJECT, blocks.CONFIRM, blocks.CANCEL, blocks.STOP):
-            # Two quick clicks on one message: the second does nothing.
-            if not self._first_time(f"click:{channel}:{ts}:{action_id}:{value.get('event', '')}"):
-                return
         # A button is a way in like any other: pressing one you may not press
-        # does nothing to the message, and nobody is told.
+        # does nothing to the message, and nobody is told. This comes first:
+        # a press that was refused did nothing, so it must not use up the one
+        # press the message has in it: otherwise anyone could press a button
+        # they may not press and leave it dead for the person who may.
         may = self._may_press(action_id, value, user, channel)
         if not may:
             self._ephemeral(p, self._no(may, user, name)["text"])
             return
+        if action_id in (blocks.APPROVE, blocks.REJECT, blocks.CONFIRM, blocks.CANCEL, blocks.STOP):
+            # Two quick clicks on one message: the second does nothing.
+            if not self._first_time(f"click:{channel}:{ts}:{action_id}:{value.get('event', '')}"):
+                return
         try:
             if action_id in (blocks.APPROVE, blocks.REJECT):
                 self.gate(action_id == blocks.APPROVE, value, user, name, channel, ts, message)

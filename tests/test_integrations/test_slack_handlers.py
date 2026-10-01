@@ -530,6 +530,22 @@ class TestGateButtonsAreFenced:
         click(fenced, APPROVE, button_value(msg, APPROVE), msg)
         assert ops.approved == [(eid, "approve_step")]
 
+    def test_a_refused_press_leaves_the_button_working(self, fenced, slack, ops):
+        """A message takes one press, so a press that was refused must not be
+        the one it took: otherwise anybody could kill a gate by pressing it."""
+        msg = gate_message(slack, ops, eid="run-owned", event="ev-still-live")
+        click(fenced, APPROVE, button_value(msg, APPROVE), msg, user=STRANGER)
+        click(fenced, APPROVE, button_value(msg, APPROVE), msg, user=OTHER)
+        assert ops.approved == [], "neither of them may answer the owner's gate"
+        click(fenced, APPROVE, button_value(msg, APPROVE), msg)
+        assert ops.approved == [("run-owned", "approve_step")], "the owner's press still counts"
+
+    def test_two_presses_by_the_person_who_may_still_count_once(self, fenced, slack, ops):
+        msg = gate_message(slack, ops, eid="run-owned", event="ev-twice")
+        click(fenced, APPROVE, button_value(msg, APPROVE), msg)
+        click(fenced, APPROVE, button_value(msg, APPROVE), msg)
+        assert ops.approved == [("run-owned", "approve_step")]
+
 
 class TestTheStartItButtonIsFenced:
     def proposal(self, handler, slack, user=OTHER) -> dict:

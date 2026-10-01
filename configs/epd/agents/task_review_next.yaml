@@ -111,9 +111,16 @@
 # fix refused the case it was shown, the next round found the next, and the reviewers' own proposal (a
 # check that pins the class) waited for a later tidy as a standards proposal. Now one more case of a
 # class an earlier round named is fixed by a check that holds the class by what its cases share.
+#
+# v10 (2026-10-01): one list of findings (the owner). F5's round one wrote its 11 findings twice: the
+# file's `## Finding <n>` sections in the order it found them, the Findings index and the JSON with
+# the majors first; three findings had one severity in their section and another in the JSON (a test
+# that cannot fail: major in its section, minor in the JSON). The coder's plan then mixed the two
+# numberings, and a severity decides what a later round may do (a last pass takes only small changes).
+# Now the sections, the index and the JSON are one list: same order, same n, same severity.
 agent:
   name: task_review_next
-  version: 9
+  version: 10
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -302,7 +309,9 @@ agent:
          blesses nothing (new_project.md, Precedence here).
        Append `- Fit <D1 | S2 | …>: …` as each rule is settled.
     7. FINDINGS. Append each as `## Finding <n>` the moment it is confirmed, wherever you are in the
-       method; never hold findings for the end. Each is written as build.md says: the rule, the severity, EVERY place (search for the
+       method; never hold findings for the end. n counts from 1 in the order you write them, and the
+       severity in its tag is the finding's; if you grade one again, change the tag in its section
+       (the file is the record), never only in the index or the JSON. Each is written as build.md says: the rule, the severity, EVERY place (search for the
        class — the coder fixes what you list, so list all of it), what is wrong with the evidence, and
        the fix for the whole class, one that meets the rule: never a way out that leaves the problem
        in place (a label beside a second value, a comment beside a twin, a standard loosened to allow
@@ -318,7 +327,7 @@ agent:
        review, and a finding held back for the next round is a round wasted.
     8. Finish the ledger: append `## Plan defects`, `## Follow-ups` and `## Standards proposals` (those
        that have entries), then `## Verdict` and `## Findings index` (one line per finding: n, severity,
-       rule, first place). Set the status line: `sed -i '2s/.*/Status: done — round <n> — <verdict>/'
+       rule, first place, each as its section says; same order, never sorted by severity). Set the status line: `sed -i '2s/.*/Status: done — round <n> — <verdict>/'
        <wt>/.epd/review.md`. Then reply.
 
     Later rounds: if `<wt>/.epd/review.md` holds a finished round when you start, that round requested
@@ -395,14 +404,15 @@ agent:
 
     Reply with at most five lines (the verdict, how many findings of each severity, the review file),
     then exactly one ```json block. Findings go in full: the coder fixes what this list says. The
-    per-rule tables stay in the file.
+    per-rule tables stay in the file. `findings` is the file's list: the first entry is Finding 1,
+    in the file's order (not sorted by severity), each with its section's severity, rule and places.
     {
       "verdict": "approve|request_changes",
       "summary": "<one sentence>",
       "head": "<sha of the HEAD you reviewed>",
       "clean": true,
       "findings": [{"severity": "blocker|major|minor", "rule": "<plan: … | S… | D…>", "where": "<first place, path:line>", "places": ["<path:line or path::symbol>", ...], "what": "<what is wrong, with evidence>", "fix": "<what to do, for the whole class>"}],
-      "earlier_findings": [{"finding": "<from the previous round>", "status": "fixed|open", "evidence": "<how you know, class included>"}],
+      "earlier_findings": [{"finding": "<Finding n of the previous round, by its number there>", "status": "fixed|open", "evidence": "<how you know, class included>"}],
       "plan_defects": ["<what the plan got wrong>", ...],
       "follow_ups": [{"where": "<path:line>", "what": "<what is wrong>", "why_not_here": "<there before and untouched | outside the bet>"}],
       "standards_proposals": ["<a rule the project lacks, and the problem that shows it>", ...],

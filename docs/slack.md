@@ -290,6 +290,14 @@ temper slack fake click <message ts> answer --thread <thread ts> --wait
 temper slack fake submit <the Answer click's fake id> --pick q0=1 --wait
 ```
 
+Every fake acts as the owner unless `--as U…` names somebody else, which
+is how [the rules](#who-can-do-what) are checked without asking that person
+to try:
+
+```
+temper slack fake command run gate_smoke --as U0BDB8KN7Q9 --wait
+```
+
 A click needs the ts of a message temper posted in the test channel (and of
 its thread, when it is a reply). The click is built from that message as
 Slack's API returns it, so it carries the button temper really posted.

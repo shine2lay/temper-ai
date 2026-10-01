@@ -2,7 +2,7 @@
 flows work?
 
     temper slack check [--server URL]
-    temper slack fake command|mention|click|submit ... [--wait [SECONDS]]
+    temper slack fake command|mention|click|submit ... [--as USER_ID] [--wait [SECONDS]]
     temper slack e2e [--only ask,mention,form,approve,reject,stop]
 
 ``fake`` and ``e2e`` go through the server's Slack test entry (see
@@ -190,8 +190,11 @@ def fake(args: Any) -> int:
         envelope = fakes.submit(t.where, view, picks)
         thread = args.thread or ""
         print(f"form filled in: {json.dumps(picks, ensure_ascii=False)}")
+    if getattr(args, "as_user", None):
+        envelope = {**envelope, "as": args.as_user}
     sent = t.door.send(envelope)
-    print(f"fake {sent['fake']} ({sent['kind']}) sent; inbox event {sent.get('event_id')}")
+    acting = f" as {sent['as']}" if sent.get("as") and getattr(args, "as_user", None) else ""
+    print(f"fake {sent['fake']} ({sent['kind']}) sent{acting}; inbox event {sent.get('event_id')}")
     if args.wait:
         follow(t, sent["fake"], args.wait, thread, since)
         if clicked is not None:
@@ -257,6 +260,8 @@ def add_parser(subparsers: Any) -> None:
                           "response=text; without any, the e2e's picks")
     sbm.add_argument("--thread", help="a thread to print after --wait (the run's)")
     for kind in (cmd, men, clk, sbm):
+        kind.add_argument("--as", dest="as_user", metavar="USER_ID",
+                          help="act as this Slack user (default the owner), to test the access rules")
         kind.add_argument("--server", default=server, help=f"the temper server (default {DEFAULT_SERVER})")
         kind.add_argument("--wait", nargs="?", type=float, const=480.0, default=0.0, metavar="SECONDS",
                           help="print what temper does with it (replies, forms, its inbox event, the thread), "

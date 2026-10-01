@@ -19,8 +19,13 @@ real. Only what can't be faked is swapped, at the edges:
   is kept here for an hour (``temper slack fake`` prints it). An answer
   meant for everyone (``in_channel``) is posted in the channel by the bot,
   as Slack itself would post it.
-- the user: a fake always acts as the owner (``test_door.user``, else the
-  first person the Slack agent tools may DM), whatever it says.
+- the user: a fake acts as the owner (``test_door.user``, else the first
+  person the Slack agent tools may DM), whatever its payload says, unless
+  the envelope names somebody else in ``as`` (``temper slack fake --as
+  U…``). That is how the access rules are checked without asking the person
+  to try: a fake as a stranger is refused exactly as they would be
+  (docs/slack.md, "Who can do what"). It only says who acts; it is no way
+  in, because the entry already needs its own secret.
 - ``trigger_id``: a form opens only from a real click (the id lasts 3
   seconds). A fake click's starts with ``test.``; the form is still sent
   to Slack, which checks its blocks before it looks at the trigger, so
@@ -41,6 +46,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import time
@@ -209,8 +215,22 @@ def channel_of(envelope: dict[str, Any]) -> str:
 
 # -- taking one -------------------------------------------------------------------------------
 
+def acting_user(envelope: Any, owner: str) -> str:
+    """Who the fake acts as: the owner, or whoever ``as`` names.
+
+    A Socket Mode envelope has no ``as``, so nothing real can set it.
+    """
+    who = envelope.get("as") if isinstance(envelope, dict) else None
+    if who in (None, ""):
+        return owner
+    who = str(who).strip()
+    if not re.fullmatch(r"[UW][A-Z0-9]{2,}", who):
+        raise DoorError(400, f"'as' should be a Slack user id like U0123456789, not {who!r}")
+    return who
+
+
 def owner_name(client: Any, user: str) -> str:
-    """The owner's Slack name, which a real command or click carries (and
+    """The person's Slack name, which a real command or click carries (and
     temper writes down as who decided)."""
     try:
         name = str(client.user_name(user) or "")
@@ -221,10 +241,11 @@ def owner_name(client: Any, user: str) -> str:
 
 def prepare(envelope: dict[str, Any], fake: Fake, base_url: str, user: str, name: str = "") -> dict[str, Any]:
     """The fake as it is saved and handled: its own ids, reply link and
-    trigger, and the owner (``user``, called ``name``) as the one who did it."""
+    trigger, and ``user`` (called ``name``) as the one who did it."""
     env = copy.deepcopy(envelope)
+    env.pop("as", None)
     env["envelope_id"] = f"test-{fake.id}"
-    env["test"] = {"fake": fake.id}
+    env["test"] = {"fake": fake.id, "as": user}
     p = env["payload"]
     p.pop("token", None)
     kind = env.get("type")
@@ -259,9 +280,10 @@ def take(envelope: Any, *, service: Any, base_url: str | None = None, fakes: Fak
         raise DoorError(400, f"expected a Socket Mode envelope: type one of {', '.join(KINDS)}")
     if not isinstance(envelope.get("payload"), dict):
         raise DoorError(400, "the envelope has no payload")
-    user = service.config.get().test_user()
-    if not user:
+    owner = service.config.get().test_user()
+    if not owner:
         raise DoorError(503, "fakes act as the owner: set test_door.user (or an agents dm) in the Slack config")
+    user = acting_user(envelope, owner)
     try:
         want = channel_id(service.client, door.channel)
     except SlackError as exc:
@@ -279,8 +301,9 @@ def take(envelope: Any, *, service: Any, base_url: str | None = None, fakes: Fak
     except Exception:  # noqa: BLE001 - handled unsaved, as the socket does
         logger.exception("Slack test entry: could not save fake %s; handling it unsaved", fake.id)
     service.handler.submit(fake.event_id if fake.event_id is not None else env)
-    logger.info("Slack test entry: fake %s (%s) in %s, inbox event %s", fake.id, fake.kind, got, fake.event_id)
-    return {"fake": fake.id, "kind": fake.kind, "event_id": fake.event_id,
+    logger.info("Slack test entry: fake %s (%s) in %s as %s, inbox event %s",
+                fake.id, fake.kind, got, user, fake.event_id)
+    return {"fake": fake.id, "kind": fake.kind, "event_id": fake.event_id, "as": user,
             "response_url": env["payload"].get("response_url"), "trigger_id": env["payload"].get("trigger_id")}
 
 

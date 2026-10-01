@@ -29,6 +29,7 @@ from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.inbox import store as inbox_store
 from temper_ai.integrations.slack import blocks, door, e2e, fakes
 from temper_ai.integrations.slack import service as slack_service
+from temper_ai.integrations.slack.access import parse_config as parse_access
 from temper_ai.integrations.slack.client import SlackClient, SlackError
 from temper_ai.integrations.slack.config import (
     ConfigWatcher,
@@ -257,7 +258,7 @@ class TestSameAsTheSocket:
         assert (row.source, row.delivery, row.kind, row.subject) == (
             "slack", f"test:{got['fake']}", "test /temper help", QA)
         assert (row.status, row.outcome) == ("done", "handled /temper help")
-        assert row.payload["test"] == {"fake": got["fake"]}
+        assert row.payload["test"] == {"fake": got["fake"], "as": OWNER}
         # Temper answered on the fake's own reply link, not Slack's.
         assert slack.responses[-1]["url"] == f"{LOCAL}/api/test/slack/replies/{got['fake']}"
 
@@ -267,6 +268,29 @@ class TestSameAsTheSocket:
         row = inbox_store.get(send(client, env)["event_id"])
         assert (row.payload["payload"]["user_id"], row.payload["payload"]["user_name"]) == (OWNER, "shine")
         assert fakes.token_paths(row.payload) == [] and "legacy-secret" not in json.dumps(row.payload)
+
+    def test_as_makes_the_fake_act_as_somebody_else(self, client):
+        """How the access rules are checked without asking the person to try."""
+        got = send(client, {**fakes.command(WHERE, "help"), "as": OTHER})
+        assert got["as"] == OTHER
+        row = inbox_store.get(got["event_id"])
+        assert row.payload["payload"]["user_id"] == OTHER
+        assert row.payload["test"] == {"fake": got["fake"], "as": OTHER}
+        assert "as" not in row.payload  # it only chooses the user; it is not part of the envelope
+
+    def test_as_has_to_be_a_slack_user_id(self, client):
+        env = {**fakes.command(WHERE, "help"), "as": "lomit"}
+        got = client.post("/api/test/slack", json=env, headers=KEY)
+        assert got.status_code == 400 and "U0123456789" in got.json()["detail"]
+
+    def test_a_fake_as_a_stranger_is_refused_as_the_stranger_would_be(self, client, slack, handler, ops):
+        """The rules decide, not the door: this is how the fence is proved live."""
+        handler.access.config = parse_access({"access": {"owner": OWNER, "default": "readonly",
+                                                         "roles": {"readonly": {"commands": ["help"]}}}})
+        send(client, {**fakes.command(WHERE, "run gate_demo"), "as": OTHER})
+        assert ops.started == [] and ":lock: Sorry" in str(slack.responses[-1])
+        send(client, fakes.command(WHERE, "run gate_demo"))   # the owner still may
+        assert ":lock: Sorry" not in str(slack.responses[-1])
 
     def test_it_can_be_replayed_like_any_event(self, client, slack, monkeypatch):
         monkeypatch.setattr(inbox, "submit", lambda event_id: inbox.process(event_id))

@@ -656,6 +656,16 @@ class TestAskingIsFenced:
         mention(fenced, "<@UBOT> what does roamee do about hotels?", user=OTHER)
         assert picker.asked, "a request about their own repository is read as usual"
 
+    def test_a_question_in_plain_words_is_answered_from_the_roles_repos_only(self, fenced, slack, ops, picker):
+        """A request that names no repository at all: the role's list still
+        goes on the run the interpreter builds, as it does for /temper ask.
+        Nothing in the wording could have put it there."""
+        picker.result = Pick(workflow=ANSWER_WORKFLOW, inputs={"question": "how does the itinerary editor work?"},
+                             reason="it answers questions", execution_id="pick0003-x")
+        mention(fenced, "<@UBOT> how does the itinerary editor work?", user=OTHER)
+        assert ops.started[0][0] == ANSWER_WORKFLOW
+        assert ops.started[0][1]["repos"] == "roamee", "not every repository temper keeps"
+
     def test_the_owner_may_ask_about_any_of_them(self, fenced, slack, ops, picker):
         mention(fenced, "<@UBOT> have a look at rollcall's option chain")
         assert picker.asked and ":lock: Sorry" not in str(slack.posts[-1]["blocks"])

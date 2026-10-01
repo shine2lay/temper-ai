@@ -1,0 +1,41 @@
+workflow:
+  name: ci_dispatch_rounds
+  description: |
+    Three rounds of three: round_1 dispatches three slow children and round_2,
+    which waits for those three, then dispatches three more and round_3 --
+    nine children in all, three at a time, so nodes keep appearing in a run
+    that is already on the screen.
+
+      temper run ci_dispatch_rounds --input items='["alpha","bravo","charlie"]'
+      POST /api/runs {"workflow": "ci_dispatch_rounds",
+                      "inputs": {"items": ["alpha", "bravo", "charlie"]}}
+
+    Script agents only -- no LLM call, no API key, no spend -- so the
+    throwaway stack `temper-ci box` brings up can run it with no model keys.
+
+    This is what `liveGrow.spec.ts` watches: the run page, opened while the
+    run is going, has to keep drawing as each round's nodes arrive and as each
+    finished step's `agent.completed` lands, without a reload. It is the shape
+    that used to blank the page mid-run.
+
+  inputs:
+    items:
+      type: array
+      required: true
+
+  defaults:
+    dispatch:
+      # Per round: three children plus the next round's dispatcher.
+      max_children_per_dispatch: 4
+      # 9 children + round_2 and round_3.
+      max_dynamic_nodes: 11
+      # round_3 is depth 2; its children are depth 3.
+      max_dispatch_depth: 4
+
+  nodes:
+    - name: round_1
+      type: agent
+      agent: ci_dispatch_round
+      input_map:
+        items: workflow.items
+        round: "1"

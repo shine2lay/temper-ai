@@ -1,0 +1,55 @@
+# One round of `ci_dispatch_rounds`: dispatches three slow children named for
+# the round (r1_alpha .. r3_charlie) and -- until the last round -- the
+# dispatcher of the next round, which waits for this round's three. So a new
+# batch of nodes appears in a running run every few seconds, which is what the
+# end-to-end check `liveGrow.spec.ts` watches the page survive.
+#
+# Script only: no LLM call, no API key, no spend, so the throwaway stack
+# `temper-ci box` brings up can run it with no model keys at all.
+#
+# A chain rather than a loop: a loop's rewind clears the output of every node
+# after its target, earlier rounds' children included, so they would run again.
+#
+# The engine gives a script no round number, so a counter file per run stands
+# in for one. `input_map` carries that number so each round_N has its own
+# fingerprint: the dispatch cycle guard fingerprints a child as (agent,
+# input_map), and with no input_map every round_N would match its parent.
+agent:
+  name: ci_dispatch_round
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/bash
+    set -u
+    F="/tmp/temper-ci-round-{{ run_id }}"
+    N=$(( $(cat "$F" 2>/dev/null || echo 0) + 1 ))
+    echo "$N" > "$F"
+    sleep 1
+    if [ "$N" -lt 3 ]; then NEXT="[$((N + 1))]"; else NEXT="[]"; fi
+    echo "{\"round\": $N, \"next\": $NEXT}"
+  dispatch:
+    - op: add
+      for_each: input.items
+      as: item
+      node:
+        name: "r{{ structured.round }}_{{ item }}"
+        type: agent
+        agent: ci_step
+        input_map:
+          step: "r{{ structured.round }}_{{ item }}"
+          sleep: "3"
+
+    - op: add
+      for_each: structured.next
+      as: n
+      node:
+        name: "round_{{ n }}"
+        type: agent
+        agent: ci_dispatch_round
+        input_map:
+          items: workflow.items
+          round: "{{ n }}"
+        depends_on:
+          - "r{{ structured.round }}_alpha"
+          - "r{{ structured.round }}_bravo"
+          - "r{{ structured.round }}_charlie"

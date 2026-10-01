@@ -2,10 +2,11 @@
  * Watch a real run that keeps adding nodes, in a real browser, without ever
  * reloading the page.
  *
- * `ui_dispatch_rounds` is a zero-cost script workflow that dispatches five
- * children and the next round's dispatcher, four rounds deep: nodes appear
- * every few seconds for a couple of minutes, which is exactly the situation
- * where the run page used to throw and go blank.
+ * `ci_dispatch_rounds` is a zero-cost script workflow that dispatches three
+ * children and the next round's dispatcher, three rounds deep: nodes appear
+ * every few seconds for a minute or so, which is exactly the situation where
+ * the run page used to throw and go blank. Script agents only, so the
+ * throwaway stack the machine check runs has no model keys to need.
  *
  * The test fails on the first page error, and reports where it happened: the
  * build carries source maps, so the stack is in our own file and function
@@ -29,15 +30,15 @@ function watchForTrouble(page: Page): string[] {
   return trouble;
 }
 
-// Four rounds of five children, three seconds each: the run itself takes
-// around two minutes, and the point is to watch the whole of it.
+// Three rounds of three children, three seconds each: the run itself takes
+// around a minute, and the point is to watch the whole of it.
 test.setTimeout(300_000);
 
 test('a run that keeps growing never breaks the page', async ({ page, request }) => {
   const started = await request.post('/api/runs', {
     data: {
-      workflow: 'ui_dispatch_rounds',
-      inputs: { items: ['alpha', 'bravo', 'charlie', 'delta', 'echo'] },
+      workflow: 'ci_dispatch_rounds',
+      inputs: { items: ['alpha', 'bravo', 'charlie'] },
     },
   });
   expect(started.ok(), `could not start the run: ${await started.text()}`).toBe(true);

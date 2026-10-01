@@ -268,6 +268,12 @@ async function settled(page: Page) {
   );
 }
 
+/** A picture for the proof folder, taken once everything has stopped moving. */
+async function shot(page: Page, name: string) {
+  await settled(page);
+  await page.screenshot({ path: `${OUT}/${name}.png` });
+}
+
 async function openModelCall(page: Page) {
   await page.getByRole('tab', { name: 'LLM Calls' }).click();
   await page.getByRole('row').filter({ hasText: 'writer' }).first().click();
@@ -354,7 +360,8 @@ test.describe('the big view', () => {
     await expect(out.locator('h1')).toContainText('What we found');
     await expect(out.locator('strong').first()).toBeVisible();
 
-    await page.screenshot({ path: `${OUT}/agent-both-arrows.png` });
+    // Both at once: a JSON tree on the left, markdown on the right.
+    await shot(page, 'agent-both-arrows');
   });
 
   test('a model call shows the conversation sent and the answer', async ({ page }) => {
@@ -366,6 +373,9 @@ test.describe('the big view', () => {
 
     await panel.getByTestId('bv-out-toggle').click();
     await expect(panel.getByTestId('bv-out-body')).toBeVisible();
+
+    // The conversation sent, and the answer rendered as markdown.
+    await shot(page, 'model-call');
   });
 
   test('a tool call shows its arguments and its return', async ({ page }) => {
@@ -402,7 +412,7 @@ test.describe('the big view', () => {
     }
     await expect(panel.getByTestId('bv-row-body')).toHaveCount(3);
 
-    await page.screenshot({ path: `${OUT}/timeline-open.png` });
+    await shot(page, 'timeline-open');
   });
 
   test('Escape closes it and gives focus back to what was clicked', async ({ page }) => {
@@ -444,7 +454,7 @@ test.describe('the big view', () => {
     // A JSON tree, foldable — not a wall of braces in a <pre>.
     await expect(panel.getByTestId('bv-fold-config').getByTestId('bv-json')).toBeVisible();
 
-    await page.screenshot({ path: `${OUT}/agent-folds.png` });
+    await shot(page, 'agent-folds');
   });
 
   test('a long output gets a height of its own and scrolls inside it', async ({ page }) => {
@@ -465,12 +475,12 @@ test.describe('the big view', () => {
     await expect(panel).toHaveAttribute('data-kind', 'scriptAgent');
     await panel.getByTestId('bv-fold-script-trigger').click();
     await expect(panel.getByTestId('bv-fold-script')).toContainText('os.listdir');
-    await page.screenshot({ path: `${OUT}/script-agent.png` });
+    await shot(page, 'script-agent');
     await close(page);
 
     await openStage(page, 'bv-n-ship');
     await expect(panelOf(page).getByTestId('bv-error')).toContainText('could not run');
-    await page.screenshot({ path: `${OUT}/failed-stage.png` });
+    await shot(page, 'failed-stage');
   });
 
   test('the top strip stays one line, even on a narrow window', async ({ page }) => {
@@ -487,7 +497,7 @@ test.describe('the big view', () => {
     const panel = await panelOf(page).boundingBox();
     expect(panel!.width).toBeGreaterThanOrEqual(419);
 
-    await page.screenshot({ path: `${OUT}/phone.png` });
+    await shot(page, 'phone');
   });
 
   test('the bottom live panel keeps step with the view', async ({ page }) => {
@@ -627,6 +637,6 @@ test.describe('on a big run', () => {
     expect(runMs, `the run itself took ${runMs}ms`).toBeLessThan(1500);
     expect(agentMs, `the busy agent took ${agentMs}ms`).toBeLessThan(1500);
 
-    await page.screenshot({ path: `${OUT}/big-run.png` });
+    await shot(page, 'big-run');
   });
 });

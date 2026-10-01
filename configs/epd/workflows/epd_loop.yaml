@@ -48,7 +48,15 @@ workflow:
   #    run from before the rename resume or fork without planning again (the engine reads its
   #    checkpoints under the old name). The driver reads both names in old runs and states. No box
   #    does anything different: only the graph's shape and the names changed.
-  version: 13
+  # 14 (2026-09-30, queue task 11, "why most bets ship as iterate"): the plan's `criteria_reach`
+  #    (plan v8: each criterion's state, its route on the build and on production, or "build only")
+  #    goes to the build's QA and to the measure. The measure also gets QA's threshold walk and
+  #    what the build shipped unproven, so a build-only criterion QA met counts as covered, not
+  #    vacuous; `build_covered`, `drifted_logins`, `verify_threshold_checks` and
+  #    `accepted_unreachable` come out for the driver, which checks each covered one against the
+  #    plan (epd_loop.py build_covered_ok). The live check could not reach a criterion's state on
+  #    33 of the 37 bets that came back iterate (~/epd-autopilot/iterate/buckets.md, cause 2).
+  version: 14
   description: |
     The EPD loop, as one run, for one bet the owner has already approved.
 
@@ -161,6 +169,10 @@ workflow:
     right_threshold: measure.structured.right_threshold
     outcome_summary: measure.structured.summary
     waits_for_close: measure.structured.waits_for_close
+    build_covered:   measure.structured.build_covered     # [{criterion, why, qa_evidence}] (v14)
+    drifted_logins:  measure.structured.drifted_logins    # [{criterion, login, missing}] (v14)
+    verify_threshold_checks: build.structured.verify_threshold_checks
+    accepted_unreachable: build.structured.accepted_unreachable
 
   nodes:
     # 0 	ed The bet as the owner approved it (v13): the pitch (bet.md) and the owner's approval
@@ -273,6 +285,8 @@ workflow:
         # One value on every screen (v11): the plan's list, and production to read it on before
         # this change where the build's screens differ (read only).
         same_value: plan.structured.same_value
+        # How QA reaches each criterion's state on the dev stack (v14).
+        criteria_reach: plan.structured.criteria_reach
         before_url: input.measure_url
         before_email: input.before_email
         before_password: input.measure_password
@@ -356,3 +370,7 @@ workflow:
         report_path: input.report_path
         build_summary: build.structured.implement_summary
         same_value: plan.structured.same_value
+        # Where the live check reaches each criterion, and what QA saw on the build (v14).
+        criteria_reach: plan.structured.criteria_reach
+        verify_threshold_checks: build.structured.verify_threshold_checks
+        accepted_unreachable: build.structured.accepted_unreachable

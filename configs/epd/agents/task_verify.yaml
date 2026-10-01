@@ -70,7 +70,14 @@ agent:
   #    from one that was there before (`same_value_checks`); the gate applies the owner's rule to
   #    that. Most defects the live checks found were two screens disagreeing (F084, F087, F105).
   #    max_iterations 64 -> 74 for the production side.
-  version: 11
+  # 12 (2026-09-30, queue task 11, "why most bets ship as iterate"): the plan names each criterion's
+  #    state and the route to it on this dev stack (`criteria_reach`: a login, a /dev/states button,
+  #    the market window, a task's seed), and whether production can show it at all ("build
+  #    only"). QA walks each criterion by that route. For a build-only criterion this walk is the
+  #    only proof there will be: the live check counts it covered only when this said `met`, with
+  #    the state named in the evidence. The live check could not reach a criterion's state on 33 of
+  #    the 37 bets that came back iterate (~/epd-autopilot/iterate/buckets.md, cause 2).
+  version: 12
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -288,6 +295,17 @@ agent:
     {% if threshold %}
     The success threshold, pre-registered — walk every clause of it:
     {{ threshold }}
+    {% endif %}
+    {% if criteria_reach %}
+    How to reach each criterion's state. The plan names, for each numbered criterion, the state it
+    needs and the route to it on this stack: use that route (a login, a /dev/states button, the
+    market window, a task's seed) before you call a clause `unverified`, and name the state you
+    reached in its evidence. Where the plan says production cannot show the state ("build only"),
+    your walk here is the only proof the bet will ever get: walk it with extra care, and photograph
+    the state.
+    {% if criteria_reach is string %}{{ criteria_reach }}
+    {% else %}{% for r in criteria_reach %}- criterion {{ r.criterion }}: {{ r.state }} -- here: {{ r.build }}{% if r.live %}; on production: {{ r.live }}{% endif %}
+    {% endfor %}{% endif %}
     {% endif %}
     {% if same_value %}
     One value on every screen. The plan lists these figures, each shown on more

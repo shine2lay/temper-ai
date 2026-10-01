@@ -1096,6 +1096,70 @@ def same_value_inputs(bdir: Path) -> dict:
             "before_password": ensure_qa_password()}
 
 
+# How each criterion's state is reached (queue task 11, "why most bets ship as iterate"). On 33 of the
+# 37 bets that came back iterate, the live check could not reach a criterion's state, so it was vacuous
+# (~/epd-autopilot/iterate/buckets.md, cause 2): a failure nobody can make happen on production, a book
+# no login held, a market open while the check ran shut. The plan now names each criterion's route on
+# the build's dev stack and on production (plan v8, `criteria_reach`), or says "build only" where
+# production cannot show the state at all; QA walks the build routes and the measure the live ones. A
+# build-only criterion QA met counts as covered instead of vacuous, and the driver holds the measure to
+# the plan: build_covered_ok.
+def criteria_reach_of(bdir: Path) -> list:
+    """The plan's route to each numbered criterion's state (tasks.json `criteria_reach`):
+    [{criterion, state, build, live}], `live` reading "build only: <why>" where production cannot show
+    the state. [] for a plan without the list."""
+    try:
+        got = json.loads(read(bdir / "tasks.json") or "{}").get("criteria_reach")
+    except (ValueError, AttributeError):
+        return []
+    return [r for r in got if isinstance(r, dict)] if isinstance(got, list) else []
+
+
+def criterion_no(raw) -> int | None:
+    """A criterion's number from 3, "3" or "criterion 3"; None when there is none."""
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    m = re.search(r"\d+", str(raw or ""))
+    return int(m.group()) if m else None
+
+
+def build_only(reach: list) -> set[int]:
+    """The criteria whose state the plan says production cannot show (`live` starts "build only")."""
+    out = set()
+    for r in as_list(reach):
+        n = criterion_no(r.get("criterion")) if isinstance(r, dict) else None
+        if n is not None and str(r.get("live") or "").strip().lower().startswith("build only"):
+            out.add(n)
+    return out
+
+
+def build_covered_ok(out: dict, reach: list, unproven=None, walked=None) -> tuple[list, list]:
+    """Split the measure's `build_covered` into what the loop accepts and what it refuses.
+
+    A criterion counts as covered by the build's QA, rather than vacuous on production, only when the
+    plan said production cannot show its state (build only), QA's walk of the build was there to read
+    (`walked`), the build shipped no clause unproven (`unproven`: the gate's accepted_unreachable), and
+    the measure quoted QA's evidence. Anything else it called covered was not seen anywhere, so it is
+    vacuous: the measure's own rule, held here because the ledger is what the next bet inherits.
+    """
+    shipped_unproven = [u for u in as_list(unproven) if str(u).strip()]
+    allowed = build_only(reach) if as_list(walked) and not shipped_unproven else set()
+    ok, refused = [], []
+    for c in as_list(out.get("build_covered")):
+        n = criterion_no(c.get("criterion")) if isinstance(c, dict) else criterion_no(c)
+        quoted = isinstance(c, dict) and bool(str(c.get("qa_evidence") or "").strip())
+        (ok if n is not None and n in allowed and quoted else refused).append(c)
+    return ok, refused
+
+
+def criteria_reach_inputs(bdir: Path) -> dict:
+    """The build's input: the plan's route to each criterion's state; nothing when the plan has none."""
+    listed = criteria_reach_of(bdir)
+    return {"criteria_reach": listed} if listed else {}
+
+
 def same_value_md(noted) -> str:
     """The PR-body section for figures that read differently on two screens without this build having
     caused it (the gate's `same_value_noted`); "" when there are none."""
@@ -2689,6 +2753,7 @@ def stage_build(st: dict) -> None:
         "verify_login_note": logins["login_note"],
         "paper_account": logins["paper_account"],
         **same_value_inputs(bdir),
+        **criteria_reach_inputs(bdir),
     }, workspace=cpath(WORKSPACES / "repos"), timeout=4 * 3600)
     write(bdir / "build.json", json.dumps(out, indent=2, default=str))
     st["stages"]["build"] = {k: out.get(k) for k in (
@@ -3150,10 +3215,15 @@ def stage_measure(st: dict, keep: bool, market: str = "") -> dict:
         "report_path": cpath(report),
         "build_summary": b.get("implement_summary") or "",
         "same_value": same_value_of(bdir),
+        # Where the live check reaches each criterion, and what QA saw on the build (queue task 11).
+        "criteria_reach": criteria_reach_of(bdir),
+        "verify_threshold_checks": as_list(b.get("verify_threshold_checks")),
+        "accepted_unreachable": as_list(b.get("accepted_unreachable")),
     }, workspace=LOOP_WORKSPACE, timeout=2400)
     if not (bdir / "outcome.md").exists():
         die("epd_measure finished but wrote no outcome.md")
-    verdict = settle_verdict(out)
+    verdict = settle_verdict(out, criteria_reach_of(bdir), b.get("accepted_unreachable"),
+                             b.get("verify_threshold_checks"))
     st["stages"]["measure"] = out
     st["status"] = verdict if verdict in TERMINAL else "iterate"
     save_state(st)
@@ -3204,15 +3274,25 @@ def cmd_after_close(keep: bool) -> None:
             save_state(st)
 
 
-def settle_verdict(out: dict) -> str:
+def settle_verdict(out: dict, reach: list | None = None, unproven=None, walked=None) -> str:
     """The verdict the ledger gets, held to what was seen.
 
     A criterion that could not fail did not pass. The agent is told this, and the driver holds it
     to it: a kept verdict with a vacuous criterion, or with the threshold not met, is recorded as
     iterate, because the ledger is what the next proposal inherits and it must not be truer than
-    what was seen. Same rule for a measure run alone and for the composed loop.
+    what was seen. Same rule for a measure run alone and for the composed loop. A criterion the
+    measure counted as covered by the build's QA is held to the plan first (build_covered_ok): one
+    the loop refuses was seen nowhere, so it counts as vacuous and the threshold as not met.
     """
     verdict = out.get("verdict") or "iterate"
+    ok, refused = build_covered_ok(out, reach or [], unproven, walked)
+    if refused:
+        log(f"measure counted {len(refused)} criteria as covered by the build that the plan does not mark "
+            "build only, with no QA walk or evidence, or with a clause shipped unproven: counting them vacuous")
+        out["build_covered_refused"] = refused
+        out["build_covered"] = ok
+        out["vacuous_criteria"] = int(out.get("vacuous_criteria") or 0) + len(refused)
+        out["threshold_met"] = False
     vacuous = int(out.get("vacuous_criteria") or 0)
     if verdict == "kept" and (vacuous or out.get("threshold_met") is False):
         log(f"measure said kept, but {vacuous} criteria were vacuous / the threshold was not met — recording iterate")
@@ -3226,6 +3306,13 @@ def outcome_line(out: dict, verdict: str) -> str:
     note = f" [{vacuous} criteria vacuous]" if vacuous else ""
     if waits_for_close(out):
         note += f" [{len(waits_for_close(out))} wait for the close]"
+    covered = as_list(out.get("build_covered"))
+    if covered:
+        note += f" [{len(covered)} covered by the build's QA]"
+    drifted = sorted({str(d.get("login")).strip() for d in as_list(out.get("drifted_logins"))
+                      if isinstance(d, dict) and str(d.get("login") or "").strip()})
+    if drifted:
+        note += f" [login drifted: {', '.join(drifted)}]"
     summary = out.get("summary") or out.get("outcome_summary") or ""
     return f"{verdict}{note}: {summary} (right threshold: {out.get('right_threshold')})"
 
@@ -3687,7 +3774,8 @@ def finish_loop(st: dict, out: dict, keep: bool) -> None:
     st["stages"]["loop"] = out
     bet = st["stages"].get("bet") or json.loads(read(BETS_DIR / bet_id / "bet.json") or "{}")
     shipped = out.get("shipped")  # deploy's status: shipped | changes_requested | closed | None
-    verdict = settle_verdict(out) if out.get("verdict") else None
+    verdict = (settle_verdict(out, criteria_reach_of(BETS_DIR / bet_id), out.get("accepted_unreachable"),
+                              out.get("verify_threshold_checks")) if out.get("verdict") else None)
     if verdict in TERMINAL:
         st["status"], outcome = verdict, outcome_line(out, verdict)
     elif shipped in ("changes_requested", "closed"):

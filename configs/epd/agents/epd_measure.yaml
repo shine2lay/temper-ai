@@ -48,7 +48,17 @@ agent:
   #    compared on the live product. Differences go in outcome.md's "One value on every screen" and
   #    the reply's `same_value`. It reports them: QA already judged whether the build caused one.
   #    max_iterations 60 -> 66 for the extra screens.
-  version: 12
+  # 13 (2026-09-30, queue task 11, "why most bets ship as iterate"): on 33 of the 37 bets that came
+  #    back iterate, a criterion's state never arose on production, so it was vacuous
+  #    (~/epd-autopilot/iterate/buckets.md, cause 2): a failure nobody can make happen there
+  #    (b014, b034, b044), a book no login held (b005, b009, b030). The plan now names each
+  #    criterion's route on production (`criteria_reach`), and the book-situation logins RollCall
+  #    made on prod (qa-urgent@, qa-multiroll@, qa-catch@, qa-loss@, qa-settled@, qa-orders@; queue
+  #    task 18) are listed. A "build only" criterion (production cannot show its state) that QA met
+  #    on the build, with nothing shipped unproven, is `build_covered`, not vacuous; the driver
+  #    checks each against the plan (epd_loop.py build_covered_ok). A state login that no longer
+  #    holds its state goes in `drifted_logins`, so the next round fixes the login, not the bet.
+  version: 13
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -110,9 +120,32 @@ agent:
     margin debt), qa-setaside@rollcall.test (a finished screen with more
     than 50 set-aside stocks), qa-brake@rollcall.test (the uncovered-shares
     brake refuses every entry), qa-nobroker@rollcall.test (no broker
-    connected), qa-keyless@rollcall.test (Alpaca chosen, no keys saved).
-    Never press Scan or Refresh on qa-noscan@, qa-fresh@, qa-oneclose@ or
-    qa-setaside@.
+    connected), qa-keyless@rollcall.test (Alpaca chosen, no keys saved),
+    qa-orders@rollcall.test (six finished practice rolls: 3 filled, 2
+    cancelled, 1 gone). Book situations, each a whole practice tenant:
+    qa-urgent@rollcall.test (an urgent roll card), qa-multiroll@rollcall.test
+    (a roll offering several strikes), qa-catch@rollcall.test (a roll whose
+    confirm prints the catch line), qa-loss@rollcall.test (a closed name that
+    lost money, shares and call), qa-settled@rollcall.test (one call assigned
+    away and another expired worthless).
+    Never press Scan or Refresh on qa-noscan@, qa-fresh@, qa-oneclose@,
+    qa-setaside@ or qa-orders@.
+    Before you measure a criterion on a state login, check on the page that
+    it still holds what its name promises (the urgent card is there, the
+    several strikes are offered). If it does not, the login has drifted: the
+    criterion is vacuous, and it goes in `drifted_logins` with the login and
+    what is missing, so the next round fixes the login rather than the bet.
+    The task may give the plan's route to each criterion's state on
+    production: use it. Where it says "build only", production cannot show
+    that state at all (a broker that fails or stalls, a scan that times out,
+    a state only the dev stack's /dev/states makes): do not try to force it
+    here. Read QA's walk on the build, given in the task. If QA met that
+    criterion there, with the state named in its evidence, and the build
+    shipped nothing unproven, the result is `build_covered`: quote QA's
+    evidence, and still check here whatever of it production does show (the
+    page loads, the ordinary path reads right). Otherwise it is vacuous, as
+    below. "Build only" never covers a state one of the logins above holds:
+    measure that one on the login.
     A criterion marked "(after the close)" is about what the app shows with
     the market shut. While the market is open, do not measure it: its result
     is `waits_for_close`, it goes in `waits_for_close`, and the driver
@@ -165,7 +198,7 @@ agent:
        you are the only stage that looks at the running product.
     5. Decide:
        - kept    — invariant holds AND every criterion truly met (none
-                   vacuous) AND no regression
+                   vacuous; build_covered counts as met) AND no regression
        - iterate — invariant holds but a criterion is unmet OR vacuous, or
                    the walk shows the friction moved rather than went; say
                    exactly what the next bet on this problem should change.
@@ -182,7 +215,9 @@ agent:
       ## Invariant     — the sentence, holds/does not, the evidence quoted
       ## Threshold     — each criterion in turn: what was measured, what was
                         found, and met / not met / VACUOUS (the situation it
-                        describes never arose, so nothing was tested)
+                        describes never arose, so nothing was tested) /
+                        COVERED BY THE BUILD (build only: QA's evidence quoted,
+                        and what production showed of it)
       ## Unverified    — what the build claims that no walk here could see,
                         and what would have to exist to walk it; "nothing"
                         if every part of the invariant was exercised
@@ -202,11 +237,14 @@ agent:
       "invariant_holds": true,
       "criteria": [
         {"text": "<the criterion, as the bet worded it>",
-         "result": "met|unmet|vacuous|waits_for_close",
+         "criterion": <its number in the bet>,
+         "result": "met|unmet|vacuous|build_covered|waits_for_close",
          "how": "<what you did and what you saw, one sentence>"}
       ],
-      "threshold_met": <true only if every criterion is "met">,
+      "threshold_met": <true only if every criterion is "met" or "build_covered">,
       "vacuous_criteria": <how many read "vacuous">,
+      "build_covered": [{"criterion": <number>, "why": "<why production cannot show the state>", "qa_evidence": "<QA's evidence, quoted>"}],
+      "drifted_logins": [{"criterion": <number>, "login": "<the login>", "missing": "<what it no longer holds>"}],
       "unverified": "<what remains unseen on the running build, or "">",
       "waits_for_close": ["<each criterion marked (after the close) left for the after-close measure>"],
       "same_value": [{"what": "<a listed figure>", "result": "agree|differ|unread", "values": [{"screen": "<route: where>", "value": "<as shown>"}]}],
@@ -247,6 +285,17 @@ agent:
     {% else %}{% for f in same_value %}- {{ f.what }}{% if f.source %} (from {{ f.source }}){% endif %}
     {% for s in (f.screens or []) %}    - {{ s.route }}{% if s.where %}: {{ s.where }}{% endif %}{% if s.login %} (as {{ s.login }}){% endif %}
     {% endfor %}{% endfor %}{% endif %}
+    {% endif %}
+    {% if criteria_reach %}
+    ## How each criterion's state is reached on production (from the plan)
+    {% if criteria_reach is string %}{{ criteria_reach }}
+    {% else %}{% for r in criteria_reach %}- criterion {{ r.criterion }}: {{ r.state }} -- on production: {{ r.live }}
+    {% endfor %}{% endif %}
+    ## QA's walk on the build (for "build only" criteria)
+    {% if verify_threshold_checks %}{% if verify_threshold_checks is string %}{{ verify_threshold_checks }}
+    {% else %}{% for c in verify_threshold_checks %}- {{ c.status }}: {{ c.clause }} -- {{ c.evidence }}
+    {% endfor %}{% endif %}{% else %}QA's walk was not given: no criterion is build_covered.{% endif %}
+    {% if accepted_unreachable %}The build shipped these unproven, so nothing is build_covered: {{ accepted_unreachable }}{% endif %}
     {% endif %}
 
     Measure it.

@@ -61,7 +61,11 @@ workflow:
   #     `same_value_checks` reach the gate, which fails the round only for a difference this build
   #     caused and notes one that was there before (the owner's rule). `verify_same_value`,
   #     `same_value_caused` and `same_value_noted` come out; ship puts the noted ones on the PR.
-  version: 14
+  # 15 (2026-09-30, queue task 11, "why most bets ship as iterate"): `criteria_reach` in (the
+  #     plan's route to each criterion's state on this dev stack, and whether production can show
+  #     it) reaches verify, which walks each criterion there. A build-only criterion is proven by
+  #     QA's walk alone, so the live check counts it as covered only if QA met it (epd_loop v14).
+  version: 15
   description: |
     Implement a task end to end — the workflow that is to replace the
     engineering/product/design (EPD) hand process. Grows one step at a
@@ -205,6 +209,11 @@ workflow:
     # The plan's figures that show on more than one screen, each with every screen (tasks.json
     # `same_value`), and where QA reads them before this change: production, read only (v14).
     same_value:
+      type: array
+      required: false
+    # How each criterion's state is reached on this dev stack and on production (tasks.json
+    # `criteria_reach`: [{criterion, state, build, live}]; v15).
+    criteria_reach:
       type: array
       required: false
     before_url:
@@ -524,6 +533,8 @@ workflow:
         before_url: input.before_url
         before_email: input.before_email
         before_password: input.before_password
+        # The plan's route to each criterion's state (v15).
+        criteria_reach: input.criteria_reach
 
     - name: security
       type: agent

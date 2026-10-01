@@ -12,7 +12,12 @@ workflow:
   # 7 (2026-09-26, queue task 7, "one value on every screen"): `same_value` in (the plan's figures
   #    that show on more than one screen, each with every screen) and out (what the measure saw on
   #    each); outcome.md gets a section for it.
-  version: 7
+  # 8 (2026-09-30, queue task 11, "why most bets ship as iterate"): `criteria_reach` in (the plan's
+  #    route to each criterion's state on production, or "build only"), with QA's threshold walk on
+  #    the build and what the build shipped unproven. Out: `build_covered` (build-only criteria QA
+  #    met, counted covered instead of vacuous; the driver checks each, epd_loop.py
+  #    build_covered_ok) and `drifted_logins` (a state login that no longer holds its state).
+  version: 8
   description: |
     EPD loop, stage 7 of 7: measure. Replaces the product department's
     accountability. On the shipped build's URL, one agent checks the bet's
@@ -36,6 +41,9 @@ workflow:
     report_path: {type: string, required: true}
     build_summary: {type: string, required: false}
     same_value: {type: array, required: false}   # [{what, source, screens: [{route, where, login}]}] from the plan (v7)
+    criteria_reach: {type: array, required: false}   # [{criterion, state, build, live}] from the plan (v8)
+    verify_threshold_checks: {type: array, required: false}   # [{clause, status, evidence}] QA's walk on the build (v8)
+    accepted_unreachable: {type: array, required: false}   # clauses the build shipped unproven (v8)
   outputs:
     status: measure.structured.status
     outcome_path: measure.structured.outcome_path
@@ -47,6 +55,8 @@ workflow:
     unverified: measure.structured.unverified
     waits_for_close: measure.structured.waits_for_close
     same_value: measure.structured.same_value   # [{what, result: agree|differ|unread, values}] (v7)
+    build_covered: measure.structured.build_covered   # [{criterion, why, qa_evidence}] (v8)
+    drifted_logins: measure.structured.drifted_logins   # [{criterion, login, missing}] (v8)
     regressions: measure.structured.regressions
     right_threshold: measure.structured.right_threshold
     summary: measure.structured.summary
@@ -69,3 +79,6 @@ workflow:
         report_path: input.report_path
         build_summary: input.build_summary
         same_value: input.same_value
+        criteria_reach: input.criteria_reach
+        verify_threshold_checks: input.verify_threshold_checks
+        accepted_unreachable: input.accepted_unreachable

@@ -9,8 +9,112 @@
  * The page under the camera is the real build. Only its two sources are
  * replaced: the REST snapshot and the websocket.
  */
+import { expect, type Page } from '@playwright/test';
 
 export const RUN_ID = 'replay-live-0001';
+
+/* ---------- feeding a made-up run to the real page ---------- */
+
+/** The little a replay needs to answer the dashboard's two requests. */
+export interface ReplayAgentLike {
+  id: string;
+  agent_name: string;
+  status: string;
+  round?: number;
+  start_time: string;
+  end_time: string | null;
+  duration_seconds: number | null;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  estimated_cost_usd?: number;
+}
+
+export interface ReplayNodeLike {
+  id: string;
+  name: string;
+  agents: ReplayAgentLike[];
+}
+
+export interface ReplaySnapshot {
+  id: string;
+  nodes: ReplayNodeLike[];
+}
+
+declare global {
+  interface Window {
+    __replay?: { send: (msg: unknown) => void; open: boolean };
+  }
+}
+
+/**
+ * Feed the page a made-up run instead of the server's, then open it.
+ *
+ * Both of the dashboard's sources are replaced: `/api/workflows/...` answers
+ * with the snapshot (and its light agent index), and `WebSocket` is swapped
+ * for one that says only what a test tells it to, through `window.__replay`.
+ */
+export async function replayInto(page: Page, snapshot: ReplaySnapshot): Promise<void> {
+  await page.route('**/api/workflows/**', async (route) => {
+    const url = route.request().url();
+    if (url.includes('/agents')) {
+      const agents = snapshot.nodes.flatMap((n) =>
+        n.agents.map((a) => ({
+          id: a.id,
+          agent_name: a.agent_name,
+          round: a.round,
+          status: a.status,
+          node_id: n.id,
+          node_name: n.name,
+          start_time: a.start_time,
+          end_time: a.end_time,
+          duration_seconds: a.duration_seconds,
+          prompt_tokens: a.prompt_tokens,
+          completion_tokens: a.completion_tokens,
+          total_tokens: a.total_tokens,
+          estimated_cost_usd: a.estimated_cost_usd,
+        })),
+      );
+      await route.fulfill({ json: { agents } });
+      return;
+    }
+    await route.fulfill({ json: snapshot });
+  });
+  await page.route('**/api/runs/**', (route) => route.fulfill({ json: { gates: [], checkpoints: [] } }));
+
+  // A websocket that says what we tell it to.
+  await page.addInitScript((snap) => {
+    class ReplaySocket {
+      static OPEN = 1;
+      readyState = 1;
+      onopen: ((e: unknown) => void) | null = null;
+      onmessage: ((e: { data: string }) => void) | null = null;
+      onerror: ((e: unknown) => void) | null = null;
+      onclose: ((e: unknown) => void) | null = null;
+      constructor() {
+        window.__replay = {
+          open: true,
+          send: (msg: unknown) => this.onmessage?.({ data: JSON.stringify(msg) }),
+        };
+        setTimeout(() => {
+          this.onopen?.({});
+          window.__replay?.send({ type: 'snapshot', workflow: snap });
+        }, 0);
+      }
+      send() {}
+      close() {
+        this.readyState = 3;
+        if (window.__replay) window.__replay.open = false;
+      }
+      addEventListener() {}
+      removeEventListener() {}
+    }
+    (window as unknown as { WebSocket: unknown }).WebSocket = ReplaySocket;
+  }, snapshot);
+
+  await page.goto(`/app/workflow/${snapshot.id}`);
+  await expect(page.getByTestId('live-panel')).toBeVisible();
+}
 
 /**
  * The made-up run starts a couple of minutes ago, so the times on screen read

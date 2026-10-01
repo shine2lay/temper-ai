@@ -1,8 +1,8 @@
 /**
- * An agent that thought: its thinking has to be readable from its own panel.
+ * An agent that thought: its thinking has to be readable from its own view.
  *
- * The panel already put a violet "thinking" badge on each model call, but the
- * text lived inside the call's own inspector — so reading what a twenty-call
+ * The view already puts a violet mark on each model call in the timeline, but
+ * the text lives inside the call's own row — so reading what a twenty-call
  * agent thought meant opening twenty calls one at a time, which nobody does.
  *
  * It is folded by default: an agent that thinks is normal, and the answer stays
@@ -10,10 +10,10 @@
  * run together with what the agent actually said.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, act, fireEvent } from '@testing-library/react';
+import { screen, act } from '@testing-library/react';
 import { useExecutionStore } from '@/store/executionStore';
-import { AgentDetailPanel } from '@/components/panels/AgentDetailPanel';
 import { MOCK_WORKFLOW } from './fixtures';
+import { openBigView, openFold, openRow, foldKeys } from './bigViewHarness';
 import type { AgentExecution, LLMCall, WorkflowExecution } from '@/types';
 
 function call(id: string, thinking?: string, response = 'Done.'): LLMCall {
@@ -80,60 +80,61 @@ function load(calls: LLMCall[]) {
   });
 }
 
-describe("an agent's own panel shows what it thought", () => {
+describe("an agent's own view shows what it thought", () => {
   beforeEach(() => load([]));
 
-  it('gathers the thinking of every call into one section', () => {
+  it('gathers the thinking of every call into one fold', () => {
     load([
       call('c1', 'The effort flag never reached the command line.'),
       call('c2'),
       call('c3', 'Both paths have to record it, not just the watched one.'),
     ]);
-    render(<AgentDetailPanel agentId="a-thinker" />);
+    openBigView('agent', 'a-thinker');
 
-    // Named with how many calls thought, so the section is worth opening.
-    const trigger = screen.getByText(/Thinking \(2 calls\)/);
-    fireEvent.click(trigger);
+    // Badged with how many calls thought, so the fold is worth opening.
+    expect(screen.getByTestId('bv-fold-thinking')).toHaveTextContent('2 calls');
+    openFold('thinking');
 
-    const section = screen.getByTestId('agent-thinking');
+    const section = screen.getByTestId('bv-fold-thinking');
     expect(section.textContent).toContain('The effort flag never reached');
     expect(section.textContent).toContain('Both paths have to record it');
   });
 
   it('is folded until it is asked for', () => {
     load([call('c1', 'A long deliberation nobody asked to read yet.')]);
-    render(<AgentDetailPanel agentId="a-thinker" />);
+    openBigView('agent', 'a-thinker');
 
-    expect(screen.queryByTestId('agent-thinking')).toBeNull();
-    expect(screen.getByText(/Thinking \(1 call\)/)).toBeInTheDocument();
+    expect(screen.getByTestId('bv-fold-thinking')).toHaveTextContent('1 call');
+    expect(screen.getByTestId('bv-fold-thinking').textContent).not.toContain('A long deliberation');
   });
 
   it('says nothing at all when no call thought', () => {
     load([call('c1'), call('c2')]);
-    render(<AgentDetailPanel agentId="a-thinker" />);
+    openBigView('agent', 'a-thinker');
 
-    expect(screen.queryByText(/^Thinking \(/)).toBeNull();
+    expect(foldKeys()).not.toContain('thinking');
   });
 
   it('keeps thinking out of the answer', () => {
     load([call('c1', 'Maybe the tests are wrong.', 'The tests are right.')]);
-    render(<AgentDetailPanel agentId="a-thinker" />);
+    openBigView('agent', 'a-thinker');
 
-    fireEvent.click(screen.getByText(/Thinking \(1 call\)/));
-    const section = screen.getByTestId('agent-thinking');
+    openFold('thinking');
+    const section = screen.getByTestId('bv-fold-thinking');
     expect(section.textContent).toContain('Maybe the tests are wrong');
     expect(section.textContent).not.toContain('The tests are right');
   });
 
-  it('points each block at the call that produced it', () => {
+  it('numbers each block as the timeline numbers the call that produced it', () => {
     load([call('c1'), call('c2', 'Second call thought about it.')]);
-    render(<AgentDetailPanel agentId="a-thinker" />);
+    openBigView('agent', 'a-thinker');
 
-    fireEvent.click(screen.getByText(/Thinking \(1 call\)/));
-    // Numbered as in the call list below it, so #2 means the same call there.
-    const opener = screen.getByRole('button', { name: /#2 claude-opus-5-5/ });
-    fireEvent.click(opener);
-    expect(useExecutionStore.getState().selection).toEqual({ type: 'llmCall', id: 'c2' });
+    openFold('thinking');
+    // #2 here means the second row of the timeline below.
+    expect(screen.getByTestId('bv-fold-thinking').textContent).toContain('#2 claude-opus-5-5');
+
+    const second = openRow(1);
+    expect(second.textContent).toContain('Second call thought about it');
   });
 });
 
@@ -141,11 +142,11 @@ describe('thinking read back from storage survives a reload', () => {
   it('needs no live stream to be there', () => {
     // A fresh page: nothing was streamed into this store, the run is over.
     load([call('c1', 'Recorded when the run happened, not when the page opened.')]);
-    render(<AgentDetailPanel agentId="a-thinker" />);
+    openBigView('agent', 'a-thinker');
 
     expect(useExecutionStore.getState().streamingContent.size).toBe(0);
-    fireEvent.click(screen.getByText(/Thinking \(1 call\)/));
-    expect(screen.getByTestId('agent-thinking').textContent).toContain(
+    openFold('thinking');
+    expect(screen.getByTestId('bv-fold-thinking').textContent).toContain(
       'Recorded when the run happened',
     );
   });

@@ -2,18 +2,19 @@
  * A big run replayed onto the run page: more agents than the node tree
  * keeps (loop rounds, parallel lanes, agents that started after the last
  * snapshot), more stream events than any buffer holds, and thinking in both
- * styles. Every agent is named in the live panel and in its own panel, and
+ * styles. Every agent is named in the live panel and in its own big view, and
  * a click opens its story.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import { useExecutionStore } from '@/store/executionStore';
 import { LivePanel } from '@/components/live/LivePanel';
-import { AgentDetailPanel } from '@/components/panels/AgentDetailPanel';
+import { BigView } from '@/components/bigview/BigView';
 import { useAgentLookup, MAX_LOOKUPS_PER_AGENT, LOOKUP_INTERVAL_MS } from '@/hooks/useAgentLookup';
 import { snapshotFingerprint } from '@/hooks/useInitialData';
 import { UNNAMED_AGENT } from '@/lib/liveAgents';
 import { makeStreamBatchEvent } from './fixtures';
+import { openBigView } from './bigViewHarness';
 import type {
   AgentExecution,
   AgentIndexEntry,
@@ -184,11 +185,7 @@ function LivePage() {
   return (
     <>
       <LivePanel />
-      {selection?.type === 'agent' && (
-        <div data-testid="panel">
-          <AgentDetailPanel agentId={selection.id} />
-        </div>
-      )}
+      {selection && <BigView />}
     </>
   );
 }
@@ -260,7 +257,7 @@ describe('a big run on the run page', () => {
     expect(useExecutionStore.getState().unknownAgentIds.size).toBe(0);
   });
 
-  it('opens the side panel for the agent whose story is shown', async () => {
+  it('opens the big view for the agent whose story is shown', async () => {
     mockAgentsEndpoint([...PLANNED, ...LATE].map(indexEntry));
     act(() => {
       useExecutionStore.getState().applySnapshot(snapshot());
@@ -272,14 +269,14 @@ describe('a big run on the run page', () => {
     for (const name of ['planner', 'reviewer', 'fixer', 'scout-2']) {
       pickAgent(name);
       fireEvent.click(screen.getByTestId('live-details-button'));
-      const panel = screen.getByTestId('panel');
-      expect(within(panel).queryByText('Agent not found')).toBeNull();
-      expect(within(panel).getByRole('heading', { level: 3 }).textContent).toBe(name);
+      const panel = screen.getByTestId('big-view');
+      expect(within(panel).queryByText(/not on the page/i)).toBeNull();
+      expect(within(panel).getByTestId('bv-title').textContent).toBe(name);
       expect(panel.textContent).not.toMatch(UUID_RE);
     }
   });
 
-  it('opens a panel with a name for every agent of the run, earlier rounds too', () => {
+  it('opens the view with a name for every agent of the run, earlier rounds too', () => {
     mockAgentsEndpoint([]);
     act(() => {
       useExecutionStore.getState().applySnapshot(snapshot());
@@ -288,9 +285,9 @@ describe('a big run on the run page', () => {
     for (const p of PLANNED) {
       const agent = useExecutionStore.getState().agents.get(p.id);
       expect(agent?.agent_name).toBe(p.name);
-      const { unmount } = render(<AgentDetailPanel agentId={p.id} />);
-      expect(screen.queryByText('Agent not found')).toBeNull();
-      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe(p.name);
+      const { unmount } = openBigView('agent', p.id);
+      expect(screen.queryByText(/not on the page/i)).toBeNull();
+      expect(screen.getByTestId('bv-title').textContent).toBe(p.name);
       unmount();
     }
   });

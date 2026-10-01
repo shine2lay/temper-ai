@@ -4,13 +4,13 @@
  *
  * What broke: the store filled its stage map from the drawn graph, which
  * keeps a node's children inside it, so a stage sitting inside another stage
- * was never a key of that map and its panel read "Stage not found". On a real
+ * was never a key of that map and its view read "Stage not found". On a real
  * `epd_propose` run that was all six `pitch_*` stages; on a `github_work` run
  * it was the `environment` stage inside `build`. Unit tests cover the lookup;
- * only a click on the real page proves the graph, the store and the panel
+ * only a click on the real page proves the graph, the store and the view
  * agree about a node's id.
  *
- * So this clicks every node the graph draws and reads the panel that opens.
+ * So this clicks every node the graph draws and reads the view that opens.
  * It runs against a real server with the built dashboard:
  *
  *   npm run build && TEMPER_E2E_BASE_URL=http://localhost:8420 \
@@ -49,9 +49,16 @@ async function nodeIds(
   return byName;
 }
 
-/** Click a node the way a person does: on its own corner, not on a child. */
+/**
+ * Click a node the way a person does: on its own corner, not on a child.
+ *
+ * The big view is modal, so a view left open from the click before has to be
+ * gone 
+ otherwise the click lands on its veil and nothing is selected.
+ */
 async function clickNode(page: Page, id: string) {
   await page.keyboard.press('Escape');
+  await expect(page.getByTestId('big-view')).toBeHidden();
   await page
     .locator(`.react-flow__node[data-id="${id}"]`)
     .click({ position: { x: 12, y: 12 }, force: true });
@@ -68,7 +75,7 @@ async function openRun(page: Page, id: string) {
 }
 
 test.describe('a stage inside a stage', () => {
-  test('every node of the graph opens a details panel', async ({ page, request }) => {
+  test('every node of the graph opens the big view', async ({ page, request }) => {
     const id = await startNestedRun(request);
     await openRun(page, id);
 
@@ -83,15 +90,15 @@ test.describe('a stage inside a stage', () => {
     for (const nodeId of ids) {
       await clickNode(page, nodeId);
 
-      const panel = page.getByRole('dialog');
+      const panel = page.getByTestId('big-view');
       await expect(panel).toBeVisible();
-      const text = (await panel.textContent()) ?? '';
-      // The wording the panels use when a lookup misses. Matching plain
-      // "not found" would also catch an agent's own output saying it.
-      if (/(Stage|Agent) not found/i.test(text)) notFound.push(`${nodeId}: ${text.slice(0, 80)}`);
+      // The one wording the view uses when a lookup misses.
+      if (await panel.getByTestId('bv-missing').count()) {
+        notFound.push(`${nodeId}: ${(await panel.textContent())?.slice(0, 80)}`);
+      }
     }
 
-    expect(notFound, 'nodes whose panel said "not found"').toEqual([]);
+    expect(notFound, 'nodes the view said were not on the page').toEqual([]);
   });
 
   test('the inner stage shows its own details', async ({ page, request }) => {
@@ -102,14 +109,15 @@ test.describe('a stage inside a stage', () => {
     // `inner` sits inside `outer`; the graph draws it as a group of its own.
     await clickNode(page, ids.inner);
 
-    const panel = page.getByRole('dialog');
+    const panel = page.getByTestId('big-view');
     await expect(panel).toBeVisible();
-    await expect(panel).not.toContainText(/(Stage|Agent) not found/i);
-    await expect(panel).toContainText('Stage Details');
-    await expect(panel).toContainText('inner');
+    await expect(panel.getByTestId('bv-missing')).toHaveCount(0);
+    await expect(panel).toHaveAttribute('data-kind', 'stage');
+    await expect(panel.getByTestId('bv-title')).toHaveText('inner');
     // Filled in from the node itself: its status, its timing, its agents.
-    await expect(panel).toContainText('completed');
-    await expect(panel).toContainText(/Duration\s*\d/);
+    await expect(panel.getByTestId('bv-status')).toContainText('completed');
+    await expect(panel.getByTestId('bv-facts')).toContainText(/took\s*\d/);
+    await panel.getByTestId('bv-fold-children-trigger').click();
     await expect(panel).toContainText('ci_step');
   });
 
@@ -122,17 +130,17 @@ test.describe('a stage inside a stage', () => {
     await openRun(page, id);
 
     await clickNode(page, ids.deep_two);
-    const panel = page.getByRole('dialog');
+    const panel = page.getByTestId('big-view');
     await expect(panel).toBeVisible();
-    await expect(panel).toContainText('Agent Details');
+    await expect(panel).toHaveAttribute('data-kind', /agent/i);
 
-    await panel.getByRole('button', { name: /Back to Stage/i }).click();
+    await panel.getByTestId('bv-parent').click();
 
     await expect(panel).toBeVisible();
-    await expect(panel).not.toContainText(/(Stage|Agent) not found/i);
-    await expect(panel).toContainText('Stage Details');
+    await expect(panel.getByTestId('bv-missing')).toHaveCount(0);
+    await expect(panel).toHaveAttribute('data-kind', 'stage');
     // The stage it sits in, which is the inner one / not its own agent node.
-    await expect(panel).toContainText('inner');
+    await expect(panel.getByTestId('bv-title')).toHaveText('inner');
   });
 
   test('the agents an inner stage lists open, and lead back to it', async ({
@@ -144,18 +152,19 @@ test.describe('a stage inside a stage', () => {
     await openRun(page, id);
 
     await clickNode(page, ids.inner);
-    const panel = page.getByRole('dialog');
+    const panel = page.getByTestId('big-view');
     await expect(panel).toBeVisible();
 
-    // The panel lists the stage's agents at the bottom; open the first.
+    // The view lists the stage's agents in its own fold; open the first.
+    await panel.getByTestId('bv-fold-children-trigger').click();
     const row = panel.getByRole('button', { name: /ci_step/i }).first();
     await row.click();
-    await expect(panel).toContainText('Agent Details');
-    await expect(panel).not.toContainText(/(Stage|Agent) not found/i);
+    await expect(panel).toHaveAttribute('data-kind', /agent/i);
+    await expect(panel.getByTestId('bv-missing')).toHaveCount(0);
 
-    await panel.getByRole('button', { name: /Back to Stage/i }).click();
-    await expect(panel).toContainText('Stage Details');
-    await expect(panel).toContainText('inner');
+    await panel.getByTestId('bv-parent').click();
+    await expect(panel).toHaveAttribute('data-kind', 'stage');
+    await expect(panel.getByTestId('bv-title')).toHaveText('inner');
   });
 
   test('the header counts stay top-level', async ({ page, request }) => {

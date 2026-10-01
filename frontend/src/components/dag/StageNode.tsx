@@ -38,7 +38,6 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
   const isDispatcher = hasDispatchedChildren || hasRemovedChildren;
 
   const select = useExecutionStore((s) => s.select);
-  const openStageDetail = useExecutionStore((s) => s.openStageDetail);
   const openGate = useExecutionStore((s) => s.openGate);
   const [collapsed, setCollapsed] = useState(false);
   // Default to latest iteration
@@ -65,10 +64,10 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
   const borderWidth = dispatchedBy ? 3 : 2;
 
   // A node parked at a human gate is asking a question, so its card opens the
-  // gate rather than the stage detail: the detail panel cannot answer.
+  // gate rather than the big view: a detail view cannot answer.
   const isWaitingGate = currentStage.status === 'waiting' && !!currentStage.gate;
   const activate = () =>
-    isWaitingGate ? openGate(stageName) : openStageDetail(currentStage.id);
+    isWaitingGate ? openGate(stageName) : select('stage', currentStage.id);
 
   return (
     <div
@@ -167,11 +166,11 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
           </span>
         )}
 
-        {/* Expand into overlay button */}
+        {/* Open the big view on this stage */}
         <button
           onClick={(e) => {
             e.stopPropagation();
-            openStageDetail(currentStage.id);
+            select('stage', currentStage.id);
           }}
           className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 shrink-0 transition-colors"
           aria-label="Open stage detail view"

@@ -7,9 +7,8 @@ import { render, screen, act } from '@testing-library/react';
 import { useExecutionStore } from '@/store/executionStore';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ToolOriginBadge } from '@/components/shared/ToolOriginBadge';
-import { LLMCallInspector } from '@/components/panels/LLMCallInspector';
-import { ToolCallInspector } from '@/components/panels/ToolCallInspector';
-import { StreamingPanel } from '@/components/panels/StreamingPanel';
+import { StreamingPanel } from '@/components/shared/StreamingPanel';
+import { openBigView, openArrow, foldKeys, facts } from './bigViewHarness';
 import { AgentCardContent } from '@/components/dag/AgentCardContent';
 import type { AgentExecution } from '@/types';
 import {
@@ -51,27 +50,26 @@ describe('StatusBadge', () => {
   });
 });
 
-describe('LLMCallInspector', () => {
+describe('the big view on a model call', () => {
   beforeEach(() => {
     resetStore();
     useExecutionStore.getState().applySnapshot(MOCK_WORKFLOW);
   });
 
-  it('renders LLM call details from store', () => {
-    render(<LLMCallInspector llmCallId="llm-001" />);
+  it('puts the model, the status and how long it took on the top strip', () => {
+    openBigView('llmCall', 'llm-001');
 
-    // provider/model appears both in the header badge and the detail rows
-    expect(screen.getAllByText('ollama/qwen3').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('bv-title')).toHaveTextContent('ollama/qwen3');
     expect(screen.getAllByText('completed').length).toBeGreaterThan(0);
-    expect(screen.getByText('5000ms')).toBeInTheDocument();
+    expect(facts().join(' ')).toContain('5000ms');
   });
 
-  it('shows "not found" for missing LLM call', () => {
-    render(<LLMCallInspector llmCallId="nonexistent" />);
-    expect(screen.getByText('LLM call not found.')).toBeInTheDocument();
+  it('says so when the call is not on the page', () => {
+    openBigView('llmCall', 'nonexistent');
+    expect(screen.getByText('This model call is not on the page.')).toBeInTheDocument();
   });
 
-  it('displays error_message when status is failed', () => {
+  it('shows the error when the call failed', () => {
     // Add a failed LLM call via setState (respects immer immutability)
     act(() => {
       const llmCalls = new Map(useExecutionStore.getState().llmCalls);
@@ -90,41 +88,41 @@ describe('LLMCallInspector', () => {
       useExecutionStore.setState({ llmCalls });
     });
 
-    render(<LLMCallInspector llmCallId="llm-fail" />);
+    openBigView('llmCall', 'llm-fail');
     expect(screen.getByText('Connection timeout')).toBeInTheDocument();
   });
 });
 
-describe('ToolCallInspector', () => {
+describe('the big view on a tool call', () => {
   beforeEach(() => {
     resetStore();
     useExecutionStore.getState().applySnapshot(MOCK_WORKFLOW);
   });
 
-  it('renders tool call details from store', () => {
-    render(<ToolCallInspector toolCallId="tool-001" />);
+  it('names the tool and its status', () => {
+    openBigView('toolCall', 'tool-001');
 
-    // tool name appears in both the header and the detail rows
-    expect(screen.getAllByText('Bash').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('bv-title')).toHaveTextContent('Bash');
     expect(screen.getAllByText('completed').length).toBeGreaterThan(0);
   });
 
-  it('shows "not found" for missing tool call', () => {
-    render(<ToolCallInspector toolCallId="nonexistent" />);
-    expect(screen.getByText('Tool call not found.')).toBeInTheDocument();
+  it('says so when the call is not on the page', () => {
+    openBigView('toolCall', 'nonexistent');
+    expect(screen.getByText('This tool call is not on the page.')).toBeInTheDocument();
   });
 
-  it('displays output_data (not output)', () => {
-    render(<ToolCallInspector toolCallId="tool-001" />);
+  it('shows output_data (not output) behind the right-hand arrow', () => {
+    openBigView('toolCall', 'tool-001');
+    // Closed, the arrow shows nothing: that is what keeps a big run quick.
+    expect(screen.queryByTestId('bv-out-body')).not.toBeInTheDocument();
 
-    // Both input_params and output_data are rendered — verify output_data content exists
-    const matches = screen.getAllByText(/hello/);
-    expect(matches.length).toBeGreaterThanOrEqual(1);
+    const out = openArrow('out');
+    expect(out.textContent).toMatch(/hello/);
   });
 
-  it('displays safety badge when safety_checks_applied is present', () => {
-    render(<ToolCallInspector toolCallId="tool-001" />);
-    expect(screen.getByText('safety checked')).toBeInTheDocument();
+  it('offers the safety checks as a fold of their own', () => {
+    openBigView('toolCall', 'tool-001');
+    expect(foldKeys()).toContain('safety');
   });
 });
 
@@ -192,19 +190,18 @@ describe('Store updates trigger component re-renders', () => {
       useExecutionStore.getState().applySnapshot(MOCK_WORKFLOW);
     });
 
-    // Render LLM inspector for existing call
-    const { rerender } = render(<LLMCallInspector llmCallId="llm-001" />);
-    expect(screen.getAllByText('ollama/qwen3').length).toBeGreaterThan(0);
-    expect(screen.getByText('350')).toBeInTheDocument(); // total_tokens
+    // Open the big view on an existing call
+    openBigView('llmCall', 'llm-001');
+    expect(screen.getByTestId('bv-title')).toHaveTextContent('ollama/qwen3');
+    expect(facts().join(' ')).toContain('350'); // total_tokens
 
-    // Simulate agent_end event that doesn't change the LLM call
+    // An agent_end event that doesn't change the LLM call
     act(() => {
       useExecutionStore.getState().applyEvent(makeAgentEndEvent());
     });
 
-    // LLM call should still be visible
-    rerender(<LLMCallInspector llmCallId="llm-001" />);
-    expect(screen.getAllByText('ollama/qwen3').length).toBeGreaterThan(0);
+    // The call is still the thing on screen
+    expect(screen.getByTestId('bv-title')).toHaveTextContent('ollama/qwen3');
   });
 
   it('workflow status changes propagate to components', () => {

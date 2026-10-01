@@ -74,7 +74,6 @@ interface ExecutionState {
   wsStatus: WSStatus;
   eventLog: EventLogEntry[];
   expandedStages: Set<string>;
-  stageDetailId: string | null;
   /** Node name whose gate modal is open, or null. A gate is asked per node,
    *  not per stage event: a loop re-gates the same name. */
   gateNodeName: string | null;
@@ -108,8 +107,6 @@ interface ExecutionState {
   setHoveredNodeId: (id: string | null) => void;
   setWSStatus: (partial: Partial<WSStatus>) => void;
   toggleStageExpanded: (stageName: string) => void;
-  openStageDetail: (stageId: string) => void;
-  closeStageDetail: () => void;
   openGate: (nodeName: string) => void;
   closeGate: () => void;
   setCheckpointPreview: (preview: { sequence: number; completedNodes: Set<string>; failedNodes: Set<string> } | null) => void;
@@ -437,7 +434,6 @@ export const useExecutionStore = create<ExecutionState>()(
     wsStatus: { connected: false, reconnectAttempt: 0, lastHeartbeat: null, wsError: null },
     eventLog: [],
     expandedStages: new Set(),
-    stageDetailId: null,
     gateNodeName: null,
     dispatchedByName: new Map(),
     hoveredNodeId: null,
@@ -1003,21 +999,11 @@ export const useExecutionStore = create<ExecutionState>()(
         }
       }),
 
-    openStageDetail: (stageId) =>
-      set((state) => {
-        state.stageDetailId = stageId;
-      }),
-
-    closeStageDetail: () =>
-      set((state) => {
-        state.stageDetailId = null;
-      }),
-
     openGate: (nodeName) =>
       set((state) => {
         state.gateNodeName = nodeName;
-        // The gate is the thing to answer; don't bury it under the detail panel.
-        state.stageDetailId = null;
+        // The gate is the thing to answer; don't bury it under the big view.
+        state.selection = null;
       }),
 
     closeGate: () =>

@@ -5,12 +5,16 @@ import { cn } from '@/lib/utils';
 interface MarkdownDisplayProps {
   content: string;
   className?: string;
+  /** When set, the prose scrolls inside its own box instead of growing. */
+  maxHeight?: number;
 }
 
-export function MarkdownDisplay({ content, className }: MarkdownDisplayProps) {
+export function MarkdownDisplay({ content, className, maxHeight }: MarkdownDisplayProps) {
   return (
     <div
+      style={maxHeight != null ? { maxHeight } : undefined}
       className={cn(
+        maxHeight != null && 'overflow-auto',
         'rounded-md bg-temper-panel p-4 text-sm text-temper-text',
         'border border-temper-border prose dark:prose-invert prose-sm max-w-none',
         'prose-headings:text-temper-text prose-p:text-temper-text prose-li:text-temper-text',

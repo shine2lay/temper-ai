@@ -15,80 +15,9 @@
  * picture of the wrong screen is worse than none.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { replayRun, finishedRun, bigRun, LIVE_WORDS, LIVE_TOOLS } from './liveReplay';
+import { replayRun, finishedRun, bigRun, replayInto as replay, LIVE_WORDS, LIVE_TOOLS } from './liveReplay';
 
 const OUT = process.env.TEMPER_PROOF_DIR ?? 'e2e/proofs/live';
-
-type Snapshot = ReturnType<typeof replayRun>;
-
-declare global {
-  interface Window {
-    __replay?: { send: (msg: unknown) => void; open: boolean };
-  }
-}
-
-/** Feed the page a made-up run instead of the server's. */
-async function replay(page: Page, snapshot: Snapshot): Promise<void> {
-  await page.route('**/api/workflows/**', async (route) => {
-    const url = route.request().url();
-    if (url.includes('/agents')) {
-      const agents = snapshot.nodes.flatMap((n) =>
-        n.agents.map((a) => ({
-          id: a.id,
-          agent_name: a.agent_name,
-          round: a.round,
-          status: a.status,
-          node_id: n.id,
-          node_name: n.name,
-          start_time: a.start_time,
-          end_time: a.end_time,
-          duration_seconds: a.duration_seconds,
-          prompt_tokens: a.prompt_tokens,
-          completion_tokens: a.completion_tokens,
-          total_tokens: a.total_tokens,
-          estimated_cost_usd: a.estimated_cost_usd,
-        })),
-      );
-      await route.fulfill({ json: { agents } });
-      return;
-    }
-    await route.fulfill({ json: snapshot });
-  });
-  await page.route('**/api/runs/**', (route) => route.fulfill({ json: { gates: [], checkpoints: [] } }));
-
-  // A websocket that says what we tell it to.
-  await page.addInitScript((snap) => {
-    class ReplaySocket {
-      static OPEN = 1;
-      readyState = 1;
-      onopen: ((e: unknown) => void) | null = null;
-      onmessage: ((e: { data: string }) => void) | null = null;
-      onerror: ((e: unknown) => void) | null = null;
-      onclose: ((e: unknown) => void) | null = null;
-      constructor() {
-        window.__replay = {
-          open: true,
-          send: (msg: unknown) => this.onmessage?.({ data: JSON.stringify(msg) }),
-        };
-        setTimeout(() => {
-          this.onopen?.({});
-          window.__replay?.send({ type: 'snapshot', workflow: snap });
-        }, 0);
-      }
-      send() {}
-      close() {
-        this.readyState = 3;
-        if (window.__replay) window.__replay.open = false;
-      }
-      addEventListener() {}
-      removeEventListener() {}
-    }
-    (window as unknown as { WebSocket: unknown }).WebSocket = ReplaySocket;
-  }, snapshot);
-
-  await page.goto(`/app/workflow/${snapshot.id}`);
-  await expect(page.getByTestId('live-panel')).toBeVisible();
-}
 
 /** Say a few words as one of the agents. */
 async function say(page: Page, from: number, to: number): Promise<void> {

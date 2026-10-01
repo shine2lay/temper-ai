@@ -647,3 +647,87 @@ body {
   outline-offset: 3px;
   border-radius: 12px;
 }
+
+/* ---------------------------------------------------------------------------
+   The big view: one full-screen picture of whatever you clicked.
+
+   Every movement here is plain CSS driven by Radix's data-state, so the view
+   needs no animation library. One timing scale is shared by the view, the two
+   arrows, every fold and every timeline row, so the whole thing feels like one
+   object rather than a pile of separately-animated parts.
+--------------------------------------------------------------------------- */
+:root {
+  --bv-quick: 120ms;
+  --bv-base: 200ms;
+  --bv-slow: 320ms;
+  --bv-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes bv-view-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes bv-view-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(8px) scale(0.99); }
+}
+@keyframes bv-veil-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bv-veil-out { from { opacity: 1; } to { opacity: 0; } }
+
+.bv-view[data-state="open"] { animation: bv-view-in var(--bv-slow) var(--bv-ease); }
+.bv-view[data-state="closed"] { animation: bv-view-out var(--bv-base) var(--bv-ease); }
+.bv-veil[data-state="open"] { animation: bv-veil-in var(--bv-base) ease-out; }
+.bv-veil[data-state="closed"] { animation: bv-veil-out var(--bv-base) ease-in; }
+
+/* A fold opens to the height Radix measures for it, so nothing is rendered
+   at a guessed height and nothing jumps when it lands. */
+@keyframes bv-fold-open {
+  from { height: 0; opacity: 0; }
+  to { height: var(--radix-collapsible-content-height); opacity: 1; }
+}
+@keyframes bv-fold-shut {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}
+.bv-fold[data-state="open"] { animation: bv-fold-open var(--bv-base) var(--bv-ease); }
+.bv-fold[data-state="closed"] { animation: bv-fold-shut var(--bv-quick) var(--bv-ease); }
+
+/* The two arrows grow out of the middle box, so the eye reads them as what
+   went in on the left and what came out on the right. */
+@keyframes bv-arrow-left {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes bv-arrow-right {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.bv-arrow-in { animation: bv-arrow-left var(--bv-base) var(--bv-ease); }
+.bv-arrow-out { animation: bv-arrow-right var(--bv-base) var(--bv-ease); }
+
+/* Timeline rows arrive in the order they happened. The delay is capped so a
+   run with fifty calls does not keep the reader waiting. */
+@keyframes bv-row-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.bv-row { animation: bv-row-in var(--bv-base) var(--bv-ease) both; animation-delay: var(--bv-row-delay, 0ms); }
+
+/* Everything above stops when the machine asks for less motion: the view and
+   its parts still open and close, they simply arrive already in place. */
+@media (prefers-reduced-motion: reduce) {
+  .bv-view, .bv-veil, .bv-fold, .bv-arrow-in, .bv-arrow-out, .bv-row,
+  .bv-view *, .bv-veil * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+:root[data-motion="still"] .bv-view,
+:root[data-motion="still"] .bv-veil,
+:root[data-motion="still"] .bv-fold,
+:root[data-motion="still"] .bv-arrow-in,
+:root[data-motion="still"] .bv-arrow-out,
+:root[data-motion="still"] .bv-row {
+  animation: none !important;
+  transition: none !important;
+}

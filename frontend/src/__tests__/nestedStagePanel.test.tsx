@@ -1,5 +1,5 @@
 /**
- * A stage inside another stage: its panel has to open.
+ * A stage inside another stage: its view has to open.
  *
  * The graph draws the top level (plus the rounds a dispatcher added, lifted
  * out), so `stages` has no key for a nested node and every panel that read it
@@ -11,9 +11,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { useExecutionStore } from '@/store/executionStore';
-import { StageDetailPanel } from '@/components/panels/StageDetailPanel';
-import { AgentDetailPanel } from '@/components/panels/AgentDetailPanel';
 import { WorkflowSummaryBar } from '@/components/layout/WorkflowSummaryBar';
+import { openBigView, openFold, facts } from './bigViewHarness';
 import type { AgentExecution, NodeExecution, WorkflowExecution } from '@/types';
 
 function agent(id: string, name: string, status = 'completed'): AgentExecution {
@@ -140,48 +139,46 @@ describe('a stage inside another stage', () => {
   });
 
   it('opens the inner stage instead of saying it is not found', () => {
-    render(<StageDetailPanel stageId="n-environment" />);
+    openBigView('stage', 'n-environment');
 
-    expect(screen.queryByText(/not found/i)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'environment' })).toBeInTheDocument();
+    expect(screen.queryByText(/not on the page/i)).toBeNull();
+    expect(screen.getByTestId('bv-title')).toHaveTextContent('environment');
     expect(screen.getAllByText('completed').length).toBeGreaterThan(0);
     // Its timing and its agent, not an empty shell.
-    expect(screen.getByText('40.0s')).toBeInTheDocument();
+    expect(facts().join(' ')).toContain('40.0s');
+    openFold('children');
     expect(screen.getByText('task_stack_detect')).toBeInTheDocument();
   });
 
   it('still opens a top-level stage', () => {
-    render(<StageDetailPanel stageId="n-build" />);
+    openBigView('stage', 'n-build');
 
-    expect(screen.queryByText(/not found/i)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'build' })).toBeInTheDocument();
+    expect(screen.queryByText(/not on the page/i)).toBeNull();
+    expect(screen.getByTestId('bv-title')).toHaveTextContent('build');
   });
 
   it('says so for a stage id the run never had', () => {
-    render(<StageDetailPanel stageId="n-nope" />);
+    openBigView('stage', 'n-nope');
 
-    expect(screen.getByText(/Stage not found/i)).toBeInTheDocument();
+    expect(screen.getByText('This stage is not on the page.')).toBeInTheDocument();
   });
 
   it('takes an agent that ran as a node of its own back to the stage around it', () => {
-    render(<AgentDetailPanel agentId="a-stack-detect" />);
+    openBigView('agent', 'a-stack-detect');
 
-    const back = screen.getByRole('button', { name: /Back to Stage/i });
-    fireEvent.click(back);
+    fireEvent.click(screen.getByTestId('bv-parent'));
 
     // Its own node has no box in the graph — the box it sits in is the stage.
-    const selection = useExecutionStore.getState().selection;
-    expect(selection).toEqual({ type: 'stage', id: 'n-environment' });
-
-    render(<StageDetailPanel stageId={selection!.id} />);
-    expect(screen.queryByText(/not found/i)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'environment' })).toBeInTheDocument();
+    expect(useExecutionStore.getState().selection).toEqual({ type: 'stage', id: 'n-environment' });
+    // And the view follows it there, rather than saying it is not on the page.
+    expect(screen.queryByText(/not on the page/i)).toBeNull();
+    expect(screen.getByTestId('bv-title')).toHaveTextContent('environment');
   });
 
   it('leaves an agent of a top-level node pointing at that node', () => {
-    render(<AgentDetailPanel agentId="a-triage" />);
+    openBigView('agent', 'a-triage');
 
-    fireEvent.click(screen.getByRole('button', { name: /Back to Stage/i }));
+    fireEvent.click(screen.getByTestId('bv-parent'));
 
     // `triage` is drawn as a box of its own, so that is where back goes.
     expect(useExecutionStore.getState().selection).toEqual({
@@ -191,16 +188,13 @@ describe('a stage inside another stage', () => {
   });
 
   it('takes an agent that ran under the inner stage back to that stage', () => {
-    render(<AgentDetailPanel agentId="a-stack-up" />);
+    openBigView('agent', 'a-stack-up');
 
-    fireEvent.click(screen.getByRole('button', { name: /Back to Stage/i }));
+    fireEvent.click(screen.getByTestId('bv-parent'));
 
-    const selection = useExecutionStore.getState().selection;
-    expect(selection).toEqual({ type: 'stage', id: 'n-environment' });
-
-    render(<StageDetailPanel stageId={selection!.id} />);
-    expect(screen.queryByText(/not found/i)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'environment' })).toBeInTheDocument();
+    expect(useExecutionStore.getState().selection).toEqual({ type: 'stage', id: 'n-environment' });
+    expect(screen.queryByText(/not on the page/i)).toBeNull();
+    expect(screen.getByTestId('bv-title')).toHaveTextContent('environment');
   });
 
   it('counts only the top-level stages in the header', () => {
@@ -245,9 +239,10 @@ describe('a stage inside another stage', () => {
     expect(useExecutionStore.getState().stages.has('n-environment')).toBe(false);
   });
 
-  it('opens the panel of an agent listed by an inner stage', () => {
-    // The inner stage's panel lists its agents; clicking one has to open it.
-    render(<StageDetailPanel stageId="n-environment" />);
+  it('opens the view of an agent listed by an inner stage', () => {
+    // The inner stage's view lists its agents; clicking one has to open it.
+    openBigView('stage', 'n-environment');
+    openFold('children');
     fireEvent.click(screen.getByRole('button', { name: /task_stack_detect/i }));
 
     expect(useExecutionStore.getState().selection).toEqual({
@@ -310,8 +305,8 @@ describe('a round a dispatcher added', () => {
     // Lifted out of its dispatcher, it is drawn as a box of its own /
     // so that box, not the stage that dispatched it, is where back goes.
     expect(useExecutionStore.getState().stages.has('n-lens-reach')).toBe(true);
-    render(<AgentDetailPanel agentId="a-lens-reach" />);
-    fireEvent.click(screen.getByRole('button', { name: /Back to Stage/i }));
+    openBigView('agent', 'a-lens-reach');
+    fireEvent.click(screen.getByTestId('bv-parent'));
 
     expect(useExecutionStore.getState().selection).toEqual({
       type: 'stage',

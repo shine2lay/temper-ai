@@ -35,7 +35,7 @@ test.describe('proofs', () => {
     await page.screenshot({ path: `${OUT}/studio.png` });
   });
 
-  test('a run, each of its tabs, and an agent panel', async ({ page }) => {
+  test('a run, each of its tabs, and the big view on a node', async ({ page }) => {
     // Capture a run this suite created, so the proof shows a known shape
     // rather than whatever happened to be at the top of the list.
     const id = await startSmokeRun(page.request);
@@ -53,6 +53,7 @@ test.describe('proofs', () => {
 
     await page.getByRole('tab', { name: 'DAG' }).click();
     await page.locator('.react-flow__node').first().click({ position: { x: 40, y: 12 } });
+    await expect(page.getByTestId('big-view')).toBeVisible();
     await page.screenshot({ path: `${OUT}/run-panel.png` });
   });
 

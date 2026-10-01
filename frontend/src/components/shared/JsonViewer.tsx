@@ -5,9 +5,13 @@ import { CopyButton } from './CopyButton';
 interface JsonViewerProps {
   data: unknown;
   className?: string;
+  /** How tall the tree may grow before it scrolls inside its own box. */
+  maxHeight?: number;
 }
 
-export function JsonViewer({ data, className }: JsonViewerProps) {
+const DEFAULT_MAX_HEIGHT = 320;
+
+export function JsonViewer({ data, className, maxHeight = DEFAULT_MAX_HEIGHT }: JsonViewerProps) {
   if (data == null) {
     return <p className="text-xs text-temper-text-dim">No data</p>;
   }
@@ -19,7 +23,7 @@ export function JsonViewer({ data, className }: JsonViewerProps) {
       <div className="absolute top-1 right-1 z-10">
         <CopyButton text={jsonStr} />
       </div>
-      <div className="p-3 max-h-80 overflow-auto text-xs font-mono">
+      <div className="p-3 overflow-auto text-xs font-mono" style={{ maxHeight }}>
         <JsonNode value={data} depth={0} />
       </div>
     </div>

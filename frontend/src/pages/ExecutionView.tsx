@@ -17,8 +17,7 @@ import { LLMCallsTable } from '@/components/layout/LLMCallsTable';
 import { ExecutionDAG } from '@/components/dag/ExecutionDAG';
 import { LivePanel } from '@/components/live/LivePanel';
 import { TimelineChart } from '@/components/timeline/TimelineChart';
-import { DetailSheet } from '@/components/panels/DetailSheet';
-import { StageDetailOverlay } from '@/components/stage-detail';
+import { BigView } from '@/components/bigview/BigView';
 import { CheckpointPanel } from '@/components/layout/CheckpointPanel';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 
@@ -140,8 +139,7 @@ export function ExecutionView() {
           llmCallsContent={<ErrorBoundary><LLMCallsTable /></ErrorBoundary>}
           checkpointContent={<ErrorBoundary><CheckpointPanel onSwitchTab={setActiveTab} /></ErrorBoundary>}
         />
-        <DetailSheet />
-        <StageDetailOverlay />
+        <BigView />
         <GateModal executionId={workflowId} />
         {showShortcutHelp && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowShortcutHelp(false)}>

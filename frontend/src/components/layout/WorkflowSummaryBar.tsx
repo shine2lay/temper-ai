@@ -4,6 +4,7 @@ import { selectStageGroups } from '@/store/selectors';
 import { formatTokens, formatCost, formatDuration } from '@/lib/utils';
 
 import { STATUS_COLORS } from '@/lib/constants';
+import { asList } from '@/lib/asList';
 
 function pipelineColor(status: string): string {
   return STATUS_COLORS[status] ?? STATUS_COLORS.pending;
@@ -42,7 +43,7 @@ export function WorkflowSummaryBar() {
     const costs: Array<{ name: string; cost: number }> = [];
     for (const [, stage] of stages) {
       let cost = 0;
-      for (const agent of stage.agents ?? []) {
+      for (const agent of asList(stage.agents)) {
         cost += agent.estimated_cost_usd ?? 0;
       }
       if (cost > 0) {

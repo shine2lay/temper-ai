@@ -5,6 +5,7 @@ import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
 import { toolNames } from '@/lib/toolLabels';
 import { SmartContent } from '@/components/shared/SmartContent';
 import type { AgentExecution } from '@/types';
+import { asList } from '@/lib/asList';
 
 /**
  * Build a map of stage name → primary agent name for single-agent stages.
@@ -15,7 +16,7 @@ function useStageToAgentMap(): Map<string, string> {
   return useMemo(() => {
     const map = new Map<string, string>();
     for (const [, stage] of stages) {
-      const agents = stage.agents ?? [];
+      const agents = asList(stage.agents);
       if (agents.length === 1 && agents[0]) {
         const agentName = agents[0].agent_name ?? agents[0].name ?? '';
         if (agentName && stage.name && stage.name !== agentName) {

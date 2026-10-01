@@ -6,6 +6,7 @@ import { STATUS_COLORS, STATUS_BG_COLORS } from './constants';
 import { formatDuration, formatTokens, formatCost, extractOutputPreview } from '@/lib/utils';
 import { AgentCardContent } from './AgentCardContent';
 import type { StageNodeData } from '@/hooks/useDagElements';
+import { asList } from '@/lib/asList';
 
 const STRATEGY_DESCRIPTIONS: Record<string, string> = {
   debate: 'Agents debate and refine answers collaboratively',
@@ -46,7 +47,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
   // Clamp index if iterations changed
   const safeIndex = Math.min(iterIndex, iterationCount - 1);
   const currentIter = iterations[safeIndex];
-  const currentAgents = currentIter?.agents ?? [];
+  const currentAgents = asList(currentIter?.agents);
   const currentStage = currentIter?.stage ?? stage;
 
   const stageName = stage.stage_name ?? stage.name ?? stage.id;

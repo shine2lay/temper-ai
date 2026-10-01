@@ -22,6 +22,7 @@ import type {
   WSEvent,
   EventLogEntry,
 } from '@/types';
+import { asList } from '@/lib/asList';
 // getNodeAgents available from types if needed
 
 enableMapSet();
@@ -146,7 +147,7 @@ function _liftDispatched(nodes: NodeExecution[] | undefined): NodeExecution[] {
   const out: NodeExecution[] = [];
   const seen = new Set<string>();
   const visit = (node: NodeExecution) => {
-    const children = node.child_nodes ?? [];
+    const children = asList(node.child_nodes);
     const lifted = children.filter((c) => c.dispatched_by);
     const kept = children.filter((c) => !c.dispatched_by);
     if (!seen.has(node.id)) {
@@ -216,7 +217,7 @@ function _normalizeNode(node: NodeExecution): NodeExecution {
   }
   normalized.stage_name = normalized.stage_name ?? normalized.name;
   // Preserve DAG metadata for dependency arrows
-  normalized.depends_on = normalized.depends_on ?? [];
+  normalized.depends_on = asList(normalized.depends_on);
   normalized.loop_to = normalized.loop_to ?? undefined;
   normalized.max_loops = normalized.max_loops ?? undefined;
   return normalized;
@@ -319,12 +320,57 @@ function _addThinking(entry: StreamEntry, text: string): void {
   entry.thinking += text;
 }
 
+/**
+ * Fields the page keeps as lists. An event may use the same word for a
+ * count: `agent.completed` carries `llm_calls: 9` and `tool_calls: 9`,
+ * meaning "nine of them", while the agent on the page holds the nine calls
+ * themselves. Merged in blindly, the number replaced the list and the next
+ * draw of that agent's card threw "calls is not iterable" — the whole run
+ * page went blank the moment a step finished, and only a refresh (which
+ * rebuilds everything from the snapshot) brought it back.
+ */
+const LIST_FIELDS = [
+  'llm_calls',
+  'tool_calls',
+  'agents',
+  'child_nodes',
+  'nodes',
+  'depends_on',
+] as const;
+
+/** What a count of those is called on the page, where there is a name for it. */
+const COUNT_FIELD: Record<string, string> = {
+  llm_calls: 'total_llm_calls',
+  tool_calls: 'total_tool_calls',
+};
+
+/**
+ * An event's fields, made safe to merge into something the page is drawing:
+ * a list field that arrived as anything but a list is not allowed to land on
+ * it. A number is kept as the count it is; anything else is dropped.
+ */
+function _mergeable(data: Record<string, unknown>): Record<string, unknown> {
+  let out = data;
+  for (const field of LIST_FIELDS) {
+    if (!(field in out)) continue;
+    const value = out[field];
+    if (Array.isArray(value)) continue;
+    if (out === data) out = { ...data };
+    delete out[field];
+    const countField = COUNT_FIELD[field];
+    if (countField && typeof value === 'number' && !(countField in out)) {
+      out[countField] = value;
+    }
+  }
+  return out;
+}
+
 /** Fields of a completion or update that describe the thing, not the event. */
 function _outcome(data: Record<string, unknown>): Record<string, unknown> {
   const { event_id: _e, parent_id: _p, ...rest } = data;
   void _e;
   void _p;
-  return rest;
+  return _mergeable(rest);
 }
 
 /** Build a full chronological event log from a workflow snapshot. */
@@ -364,7 +410,7 @@ function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
         });
       }
 
-      for (const llm of agent.llm_calls ?? []) {
+      for (const llm of asList(agent.llm_calls)) {
         if (llm.start_time) {
           events.push({
             timestamp: llm.start_time,
@@ -375,7 +421,7 @@ function _buildSnapshotEvents(workflow: WorkflowExecution): EventLogEntry[] {
         }
       }
 
-      for (const tool of agent.tool_calls ?? []) {
+      for (const tool of asList(agent.tool_calls)) {
         if (tool.start_time) {
           events.push({
             timestamp: tool.start_time,
@@ -490,11 +536,11 @@ export const useExecutionStore = create<ExecutionState>()(
               node_name: raw.node_name ?? node.name,
             };
             state.agents.set(agent.id, _keepFinished(prevAgents.get(agent.id), agent));
-            for (const llm of agent.llm_calls ?? []) {
+            for (const llm of asList(agent.llm_calls)) {
               const llmCopy = { ...llm, agent_id: agent.id, agent_execution_id: agent.id };
               state.llmCalls.set(llmCopy.id, llmCopy);
             }
-            for (const tool of agent.tool_calls ?? []) {
+            for (const tool of asList(agent.tool_calls)) {
               state.toolCalls.set(tool.id, { ...tool });
             }
           }
@@ -504,7 +550,7 @@ export const useExecutionStore = create<ExecutionState>()(
           state.agents,
           new Set(_allNodes(workflow.nodes).map((n) => n.id)),
           state.unknownAgentIds,
-          workflow.agent_index ?? [],
+          asList(workflow.agent_index),
           prevAgents,
         );
 
@@ -564,7 +610,7 @@ export const useExecutionStore = create<ExecutionState>()(
           for (const [agentId, agent] of state.agents) {
             if (agent.status === 'running' && !state.streamingContent.has(agentId)) {
               // Seed tool activity from any currently-running tool calls
-              const runningTools: ToolActivity[] = (agent.tool_calls ?? [])
+              const runningTools: ToolActivity[] = asList<ToolCall>(agent.tool_calls)
                 .filter((tc) => tc.status === 'running')
                 .map((tc) => ({
                   toolName: tc.tool_name,
@@ -606,11 +652,11 @@ export const useExecutionStore = create<ExecutionState>()(
           case 'workflow.completed':
           case 'workflow.failed':
             if (state.workflow) {
-              Object.assign(state.workflow, data);
+              Object.assign(state.workflow, _mergeable(data));
             } else if (msg.event_type.includes('start')) {
               state.workflow = {
                 id: (data.execution_id ?? msg.execution_id) as string,
-                ...data,
+                ..._mergeable(data),
                 nodes: [],
               } as unknown as WorkflowExecution;
             }
@@ -622,7 +668,7 @@ export const useExecutionStore = create<ExecutionState>()(
             const name = (data.name ?? '') as string;
             const dispatcher = state.dispatchedByName.get(name);
             const nodeData = {
-              ...data,
+              ..._mergeable(data),
               id: data.id ?? stageId,
               name,
               type: data.type ?? 'agent',
@@ -647,7 +693,7 @@ export const useExecutionStore = create<ExecutionState>()(
           case 'stage.failed': {
             const sid = (data.stage_id ?? data.event_id ?? msg.stage_id) as string;
             const stage = _findStage(state, sid);
-            if (stage) Object.assign(stage, data);
+            if (stage) Object.assign(stage, _mergeable(data));
             break;
           }
 
@@ -655,7 +701,7 @@ export const useExecutionStore = create<ExecutionState>()(
           case 'agent.started': {
             const agentId = (data.agent_id ?? data.event_id ?? msg.agent_id) as string;
             const agentData = {
-              ...data,
+              ..._mergeable(data),
               id: data.id ?? agentId,
               llm_calls: [],
               tool_calls: [],
@@ -663,7 +709,13 @@ export const useExecutionStore = create<ExecutionState>()(
             const existingAgent = state.agents.get(agentId);
             state.unknownAgentIds.delete(agentId);
             if (existingAgent) {
-              Object.assign(existingAgent, agentData);
+              // An agent already on the page keeps the calls it has: the
+              // start event has none, and emptying them would wipe the
+              // transcript the user is reading.
+              const { llm_calls: _l, tool_calls: _t, ...withoutCalls } = agentData;
+              void _l;
+              void _t;
+              Object.assign(existingAgent, withoutCalls);
             } else {
               state.agents.set(agentId, agentData);
               // Try to add to parent node. The event names its node by
@@ -745,7 +797,7 @@ export const useExecutionStore = create<ExecutionState>()(
 
           case 'dispatch.applied': {
             const dispatcher = data.dispatcher as string | undefined;
-            const added = ((data.added ?? []) as unknown[]).filter(
+            const added = asList(data.added).filter(
               (n): n is string => typeof n === 'string',
             );
             if (!dispatcher || added.length === 0) break;
@@ -833,7 +885,11 @@ export const useExecutionStore = create<ExecutionState>()(
 
           case 'llm_stream_batch':
           case 'llm.stream.chunk': {
-            const chunks = (data.chunks ?? [data]) as Array<{
+            // A batch is a list of chunks; a single chunk message is the
+            // chunk itself. Anything else is not a batch at all.
+            const chunks = (
+              'chunks' in data ? asList(data.chunks) : [data]
+            ) as Array<{
               agent_id?: string;
               chunk_type?: string;
               content: string;

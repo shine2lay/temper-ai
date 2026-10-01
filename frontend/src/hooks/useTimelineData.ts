@@ -3,6 +3,7 @@ import { useExecutionStore } from '@/store/executionStore';
 import { selectStageGroups } from '@/store/selectors';
 import { STATUS_COLORS } from '@/lib/constants';
 import { ensureUTC } from '@/lib/utils';
+import { asList } from '@/lib/asList';
 
 export interface TimelineRow {
   id: string;
@@ -101,7 +102,7 @@ export function useTimelineData(): {
       let iterIdx = 0;
       for (const exec of executions) {
         iterIdx++;
-        for (const a of exec.agents ?? []) {
+        for (const a of asList(exec.agents)) {
           const agent = agents.get(a.id);
           if (!agent) continue;
           const baseName = agent.agent_name ?? agent.name ?? a.id;

@@ -6,6 +6,7 @@ import type { AgentExecution, NodeExecution } from '@/types';
 import type { AgentStory, StoryItem } from '@/lib/agentStory';
 import { toolStepLabel } from '@/lib/toolLabels';
 import { agentDisplayName, UNNAMED_AGENT } from '@/lib/liveAgents';
+import { asList } from './asList';
 
 const TERMINAL = new Set(['completed', 'failed', 'skipped', 'cancelled', 'timeout', 'interrupted', 'orphaned']);
 
@@ -110,7 +111,7 @@ export function buildRoster(
   // every agent a group of its own.
   const byAgentName = new Map<string, string>();
   for (const [id, node] of stages) {
-    for (const nested of node.agents ?? []) {
+    for (const nested of asList(node.agents)) {
       for (const label of [nested.node_name, agentDisplayName(nested)]) {
         if (label && !byAgentName.has(label)) byAgentName.set(label, id);
       }

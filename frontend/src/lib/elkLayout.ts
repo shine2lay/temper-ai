@@ -27,6 +27,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 
 import type { NodeExecution, AgentExecution } from '@/types';
 import { LAYOUT } from './constants';
+import { asList } from './asList';
 
 // ---------------------------------------------------------------------------
 // Public types — consumed by useDagElements
@@ -129,7 +130,7 @@ function rawDepMap(nodes: NodeExecution[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const n of nodes) {
     const deps: string[] = [];
-    for (const depName of n.depends_on ?? []) {
+    for (const depName of asList(n.depends_on)) {
       const id = nameToId.get(depName);
       if (id) deps.push(id);
     }
@@ -137,7 +138,7 @@ function rawDepMap(nodes: NodeExecution[]): Map<string, string[]> {
     // this the dispatcher and its children are disconnected components,
     // which ELK stacks at the same coordinates — every dynamic run drew
     // its nodes in one pile with no edges between them.
-    if (n.dispatched_by && !(n.depends_on ?? []).includes(n.dispatched_by)) {
+    if (n.dispatched_by && !asList<string>(n.depends_on).includes(n.dispatched_by)) {
       const id = nameToId.get(n.dispatched_by);
       if (id && id !== n.id) deps.push(id);
     }
@@ -265,7 +266,7 @@ function buildElkNode(
 ): ElkNode {
   // Decide what's "inside" this node — child stages or synthesized
   // per-agent pseudo nodes.
-  const realChildren = node.child_nodes ?? [];
+  const realChildren = asList(node.child_nodes);
   // A plain agent node already draws its own agent card (buildAgentData
   // reads node.agent), and the store normalises `.agent` into `.agents`
   // for those nodes. Synthesizing a pseudo child for them therefore
@@ -278,7 +279,7 @@ function buildElkNode(
   // attempt, all with the same agent name, so counting records sent this
   // down the synthesis path and produced a second card at identical
   // coordinates. Attempts already render inside the card as iterations.
-  const agentRecords = node.agents ?? [];
+  const agentRecords = asList(node.agents);
   const distinctAgents = new Set(agentRecords.map((a) => a.agent_name ?? a.id)).size;
   const synthesizeFrom =
     node.type === 'agent' && distinctAgents <= 1 ? [] : agentRecords;
@@ -444,7 +445,7 @@ function hoistDispatchedChildren(nodes: NodeExecution[]): NodeExecution[] {
   // inside its parent's box with its own children -- so every level of
   // dispatch doubled the edges below it and nested a container per round.
   const visit = (node: NodeExecution): void => {
-    const children = node.child_nodes ?? [];
+    const children = asList(node.child_nodes);
     const dispatched = children.filter((c) => (c as NodeExecution).dispatched_by);
     const kept = children.filter((c) => !(c as NodeExecution).dispatched_by);
     if (!placed.has(node.id)) {
@@ -459,7 +460,7 @@ function hoistDispatchedChildren(nodes: NodeExecution[]): NodeExecution[] {
       const parentName = (child as NodeExecution).dispatched_by ?? node.name;
       visit({
         ...(child as NodeExecution),
-        depends_on: (child.depends_on ?? []).length > 0
+        depends_on: asList(child.depends_on).length > 0
           ? child.depends_on
           : [parentName as string],
       } as NodeExecution);
@@ -558,7 +559,7 @@ function postProcessStrategies(result: ElkLayoutResult): void {
     const origKidsList: { id?: string; name?: string }[] =
       orig.child_nodes && orig.child_nodes.length > 0
         ? orig.child_nodes
-        : (orig.agents ?? []).map((a) => ({
+        : asList(orig.agents).map((a) => ({
             id: `${orig.id}__${a.agent_name ?? a.id}`,
             name: a.agent_name ?? a.id,
           }));

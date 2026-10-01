@@ -5,6 +5,7 @@ export {
   STAGE_PALETTE,
   LAYOUT,
 } from '@/lib/constants';
+import { asList } from '@/lib/asList';
 
 /** Confidence score thresholds and their badge styles */
 export const CONFIDENCE_STYLES = {
@@ -30,7 +31,12 @@ export function deriveTokenBreakdown(agent: any): { prompt: number; completion: 
   if (prompt > 0 || completion > 0) return { prompt, completion };
 
   // Aggregate from llm_calls
-  const calls = agent.llm_calls ?? [];
+  // The one that brought the run page down: an `agent.completed` event says
+  // `llm_calls: 9` meaning nine of them, and that number used to land on the
+  // agent in place of the calls themselves.
+  const calls = asList<{ prompt_tokens?: number; completion_tokens?: number }>(
+    agent.llm_calls,
+  );
   let p = 0, c = 0;
   for (const call of calls) {
     p += call.prompt_tokens ?? 0;

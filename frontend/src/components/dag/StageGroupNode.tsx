@@ -5,6 +5,7 @@ import { useExecutionStore } from '@/store/executionStore';
 import { STATUS_COLORS } from './constants';
 import { cn, formatDuration, formatTokens, formatCost } from '@/lib/utils';
 import type { StageNodeData } from '@/hooks/useDagElements';
+import { asList } from '@/lib/asList';
 
 const STRATEGY_LABELS: Record<string, string> = {
   parallel: '⚡ parallel',
@@ -32,7 +33,7 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
   const select = useExecutionStore((s) => s.select);
   const statusColor = STATUS_COLORS[stage.status] ?? STATUS_COLORS.pending;
   const stageName = stage.name ?? stage.stage_name ?? stage.id;
-  const agents = stage.agents ?? [];
+  const agents = asList(stage.agents);
 
   const showCost = totalCost > 0;
   const agentLabel = delegateCount

@@ -3,6 +3,7 @@ import { useExecutionStore } from '@/store/executionStore';
 import { formatTokens, formatCost, formatDuration, formatTimestamp, cn } from '@/lib/utils';
 import type { LLMCall } from '@/types';
 import { agentDisplayName, UNNAMED_AGENT } from '@/lib/liveAgents';
+import { asList } from '@/lib/asList';
 
 type SortField = 'status' | 'model' | 'agent' | 'stage' | 'prompt_tokens' | 'completion_tokens' | 'total_tokens' | 'cost' | 'latency' | 'start_time';
 type SortDir = 'asc' | 'desc';
@@ -113,7 +114,7 @@ export function LLMCallsTable() {
   const agentStageMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const [, stage] of stages) {
-      for (const agent of stage.agents ?? []) {
+      for (const agent of asList(stage.agents)) {
         map.set(agent.id, stage.id);
       }
     }

@@ -37,6 +37,7 @@ import {
 } from '@/lib/elkLayout';
 import { EDGE_COLORS, LAYOUT, STAGE_PALETTE } from '@/lib/constants';
 import type { AgentExecution, NodeExecution, StageExecution } from '@/types';
+import { asList } from '@/lib/asList';
 
 // ---------------------------------------------------------------------------
 // Public types — kept stable so the existing node components don't change.
@@ -322,7 +323,7 @@ function collectAgents(node: NodeExecution, agentMap: Map<string, AgentExecution
   const out: AgentExecution[] = [];
   const list = node.agents ?? (node.agent ? [node.agent] : []);
   for (const a of list) out.push(agentMap.get(a.id) ?? a);
-  for (const child of node.child_nodes ?? []) out.push(...collectAgents(child, agentMap));
+  for (const child of asList(node.child_nodes)) out.push(...collectAgents(child, agentMap));
   return out;
 }
 

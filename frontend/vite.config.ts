@@ -15,6 +15,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // A crash in the browser has to name the function it happened in.
+    // Minified, the run page's errors read "h is not iterable", which says
+    // nothing and cost a day of guessing. Source maps are separate files the
+    // browser only fetches when devtools are open, so the dashboard the user
+    // downloads is not a byte bigger, and a stack trace in devtools reads in
+    // our own names. (esbuild's `keepNames` would do it without devtools, but
+    // it costs ~10% of the gzipped bundle, so maps it is.)
+    sourcemap: true,
   },
   server: {
     port: 5173,

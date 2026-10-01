@@ -14,6 +14,7 @@
  * read back — nothing is told twice.
  */
 import type { AgentExecution, LLMCall, ToolCall } from '@/types';
+import { asList } from './asList';
 
 export type StoryItemKind = 'text' | 'thinking' | 'tool';
 
@@ -218,7 +219,7 @@ export function storyFromStored(
   if (!agent) return [];
   const out: StoryItem[] = [];
 
-  for (const call of agent.llm_calls ?? []) {
+  for (const call of asList(agent.llm_calls)) {
     const id = callId(call);
     if (id && skip?.calls?.has(id)) continue;
     const at = call.start_time ?? undefined;
@@ -240,7 +241,7 @@ export function storyFromStored(
     }
   }
 
-  for (const call of agent.tool_calls ?? []) {
+  for (const call of asList(agent.tool_calls)) {
     const id = toolId(call);
     if (id && skip?.tools?.has(id)) continue;
     out.push({
@@ -290,7 +291,7 @@ export function fullStory(
   // this page heard. A live item is placed by the model call it belongs to,
   // so what the page heard lands where it happened, not where it arrived.
   const callStart = new Map<string, number>();
-  for (const call of agent?.llm_calls ?? []) {
+  for (const call of asList(agent?.llm_calls)) {
     const id = callId(call);
     const t = call.start_time ? Date.parse(call.start_time) : NaN;
     if (id && !Number.isNaN(t)) callStart.set(id, t);
@@ -315,7 +316,7 @@ function withStoredDetail(
   agent: Pick<AgentExecution, 'tool_calls'> | null | undefined,
 ): StoryItem[] {
   const byId = new Map<string, ToolCall>();
-  for (const call of agent?.tool_calls ?? []) {
+  for (const call of asList(agent?.tool_calls)) {
     const id = toolId(call);
     if (id) byId.set(id, call);
   }

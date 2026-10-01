@@ -39,6 +39,7 @@ import type {
   TimelineRow,
   ViewShape,
 } from './types';
+import { asList } from '@/lib/asList';
 
 /** Everything the builder may read. A plain bag, so tests can fake it. */
 export interface ShapeSources {
@@ -175,8 +176,8 @@ function toolRow(call: ToolCall): TimelineRow {
 export function agentTimeline(agent: AgentExecution | undefined): TimelineRow[] {
   if (!agent) return [];
   const rows: TimelineRow[] = [];
-  for (const call of agent.llm_calls ?? []) rows.push(llmRow(call));
-  for (const call of agent.tool_calls ?? []) rows.push(toolRow(call));
+  for (const call of asList(agent.llm_calls)) rows.push(llmRow(call));
+  for (const call of asList(agent.tool_calls)) rows.push(toolRow(call));
   return sortRows(rows);
 }
 
@@ -198,7 +199,7 @@ export function rowPanes(row: TimelineRow): {
 } {
   if (row.type === 'llm') {
     const call = row.source as LLMCall;
-    const asked = call.tool_calls ?? [];
+    const asked = asList(call.tool_calls);
     // An answer can be prose, JSON or code: let the renderer tell which.
     const out: ContentValue = call.response
       ? { kind: 'auto', text: call.response }
@@ -308,8 +309,8 @@ function stageShape(stageId: string, src: ShapeSources): ViewShape | null {
   const rows: TimelineRow[] = [];
   for (const a of agents) {
     const full = src.agents.get(a.id) ?? a;
-    for (const call of full.llm_calls ?? []) rows.push(llmRow(call));
-    for (const call of full.tool_calls ?? []) rows.push(toolRow(call));
+    for (const call of asList(full.llm_calls)) rows.push(llmRow(call));
+    for (const call of asList(full.tool_calls)) rows.push(toolRow(call));
   }
 
   const parentId = parentStageId(stageId, src.stages);
@@ -325,7 +326,7 @@ function stageShape(stageId: string, src: ShapeSources): ViewShape | null {
   if (stage.strategy) facts.push({ label: 'strategy', value: stage.strategy });
 
   const core: CoreBlock[] = [];
-  const childStages = stage.child_nodes ?? [];
+  const childStages = asList(stage.child_nodes);
   if (childStages.length > 0) {
     core.push({
       key: 'inner',
@@ -442,7 +443,7 @@ function agentShape(agentId: string, src: ShapeSources): ViewShape | null {
   const cost =
     ag.estimated_cost_usd > 0
       ? ag.estimated_cost_usd
-      : (ag.llm_calls ?? []).reduce((sum, c) => sum + (c.estimated_cost_usd ?? 0), 0);
+      : asList<LLMCall>(ag.llm_calls).reduce((sum, c) => sum + (c.estimated_cost_usd ?? 0), 0);
 
   const facts: Fact[] = [{ label: 'status', value: ag.status, tone: 'status' }];
   if (script) {
@@ -506,7 +507,7 @@ function agentShape(agentId: string, src: ShapeSources): ViewShape | null {
         value: { kind: 'widget', name: 'tool-names', data: tools },
       });
     }
-    const thinking = (ag.llm_calls ?? [])
+    const thinking = asList<LLMCall>(ag.llm_calls)
       .map((call, index) => ({ call, index }))
       .filter(({ call }) => !!call.thinking);
     if (thinking.length > 0) {
@@ -600,7 +601,7 @@ function llmCallShape(callId: string, src: ShapeSources): ViewShape | null {
         : '-';
 
   const title = call.provider && call.model ? `${call.provider}/${call.model}` : call.model ?? 'Model call';
-  const asked = call.tool_calls ?? [];
+  const asked = asList(call.tool_calls);
 
   const core: CoreBlock[] = [];
   if (call.thinking) {

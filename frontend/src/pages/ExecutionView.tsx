@@ -116,9 +116,17 @@ export function ExecutionView() {
 
   return (
     <ReactFlowProvider>
+      {/* One box per part of the run view. A run that is still growing can
+          hand any one of them something it cannot draw; when that happens the
+          part says so and the rest of the page carries on, instead of the
+          whole page going white in the middle of the run. */}
       <div className="flex flex-col h-full bg-temper-bg">
-        <WorkflowHeader />
-        <WorkflowSummaryBar />
+        <ErrorBoundary label="The run's title bar" resetKey={workflowId}>
+          <WorkflowHeader />
+        </ErrorBoundary>
+        <ErrorBoundary label="The run's totals" resetKey={workflowId}>
+          <WorkflowSummaryBar />
+        </ErrorBoundary>
 
         <ViewTabs
           activeTab={activeTab}
@@ -127,20 +135,28 @@ export function ExecutionView() {
           eventCount={filteredEventCount}
           llmCallCount={llmCalls.size}
           dagContent={
-            <ErrorBoundary>
-              <div className="relative w-full h-full">
+            <div className="relative w-full h-full">
+              {/* The picture and the live panel break separately: a bad
+                  agent in the panel must not take the graph with it. */}
+              <ErrorBoundary label="The run's picture" resetKey={workflowId}>
                 <ExecutionDAG />
+              </ErrorBoundary>
+              <ErrorBoundary label="The live panel" resetKey={workflowId}>
                 <LivePanel />
-              </div>
-            </ErrorBoundary>
+              </ErrorBoundary>
+            </div>
           }
-          timelineContent={<ErrorBoundary><TimelineChart /></ErrorBoundary>}
-          eventLogContent={<ErrorBoundary><EventLogPanel /></ErrorBoundary>}
-          llmCallsContent={<ErrorBoundary><LLMCallsTable /></ErrorBoundary>}
-          checkpointContent={<ErrorBoundary><CheckpointPanel onSwitchTab={setActiveTab} /></ErrorBoundary>}
+          timelineContent={<ErrorBoundary label="The timeline" resetKey={workflowId}><TimelineChart /></ErrorBoundary>}
+          eventLogContent={<ErrorBoundary label="The event log" resetKey={workflowId}><EventLogPanel /></ErrorBoundary>}
+          llmCallsContent={<ErrorBoundary label="The model calls" resetKey={workflowId}><LLMCallsTable /></ErrorBoundary>}
+          checkpointContent={<ErrorBoundary label="The checkpoints" resetKey={workflowId}><CheckpointPanel onSwitchTab={setActiveTab} /></ErrorBoundary>}
         />
-        <BigView />
-        <GateModal executionId={workflowId} />
+        <ErrorBoundary label="The full-screen view" resetKey={workflowId}>
+          <BigView />
+        </ErrorBoundary>
+        <ErrorBoundary label="The gate" resetKey={workflowId}>
+          <GateModal executionId={workflowId} />
+        </ErrorBoundary>
         {showShortcutHelp && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowShortcutHelp(false)}>
             <div className="bg-temper-panel border border-temper-border rounded-lg p-6 shadow-xl max-w-sm" onClick={e => e.stopPropagation()}>

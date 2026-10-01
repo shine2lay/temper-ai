@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import { formatCost, formatTokens } from '@/lib/utils';
+import { asList } from '@/lib/asList';
 
 interface BarSegment {
   label: string;
@@ -95,7 +96,7 @@ export function CostBreakdownSection() {
       const segments: BarSegment[] = [];
       let stageTotal = 0;
 
-      for (const agentRef of stage.agents ?? []) {
+      for (const agentRef of asList(stage.agents)) {
         const agent = agents.get(agentRef.id);
         const cost = agent?.estimated_cost_usd ?? 0;
         if (cost > 0) {

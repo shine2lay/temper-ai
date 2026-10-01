@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useExecutionStore } from '@/store/executionStore';
 import { authFetch } from '@/lib/authFetch';
 import type { WorkflowExecution } from '@/types';
+import { asList } from '@/lib/asList';
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -19,7 +20,7 @@ export function snapshotFingerprint(wf: WorkflowExecution): string {
     for (const node of nodes ?? []) {
       // The id too: a loop's next round has the same name, and often the
       // same status, as the round before it.
-      const agentKeys = (node.agents ?? []).map(
+      const agentKeys = asList(node.agents).map(
         (a) => `${a.id}:${a.agent_name}:${a.status}`,
       );
       if (node.agent) agentKeys.push(`${node.agent.id}:${node.agent.agent_name}:${node.agent.status}`);
@@ -29,7 +30,7 @@ export function snapshotFingerprint(wf: WorkflowExecution): string {
   };
   walk(wf.nodes, 0);
   // Agents the tree does not keep (earlier rounds, replaced attempts).
-  for (const a of wf.agent_index ?? []) parts.push(`i:${a.id}:${a.status}`);
+  for (const a of asList(wf.agent_index)) parts.push(`i:${a.id}:${a.status}`);
   return parts.join('|');
 }
 

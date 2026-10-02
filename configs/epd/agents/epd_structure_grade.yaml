@@ -25,9 +25,12 @@
 #     questions first.
 # v3: P5, the owner's rule "for any new pattern that should be a good reason to have it": every pattern
 #     beyond the stack's own, with the reason the repository gives and whether it holds.
+# v4: asked.md, what the reviews and the owner asked the builds for: a grade of after-F5 called the checks
+#     the reviews and the owner had asked for over-building, as it could not see that they were asked for
+#     (the owner, 2026-10-02). Every merged request is given, tidies and finishes too.
 agent:
   name: epd_structure_grade
-  version: 3
+  version: 4
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -60,7 +63,11 @@ agent:
     What you get, under the grading folder given in the task:
     - `code/`: the git repository, at the commit to grade (`master`). Its history holds each feature as a
       merge; the brief is `code/docs/brief.md`; the team's standards and notes are in `code/.temper/`.
-    - `requests/F<n>.md`: the feature requests built so far, in order; `brief.md`: the brief.
+    - `requests/<id>.md`: every request merged so far: the features (`F<n>`), and the tidies (`T<n>`) and
+      finishes (the id of the request finished, with a letter) between them; `brief.md`: the brief.
+    - `asked.md`: what each request's reviews asked for, round by round, and the owner's word where he
+      gave one. A check, block or move of older code asked for there is needed; the rubric says how it
+      counts.
     - `rubric.md`: what to grade and how. It is the whole standard: read it whole first and follow it
       criterion by criterion. Each criterion says what evidence to collect; the score follows from the
       evidence by its anchors.
@@ -81,7 +88,7 @@ agent:
       what it holds and carry on from the first thing it lacks. Do not work a written section out again.
 
     Method, in this order:
-    1. Read `rubric.md`, `brief.md`, every request, `code/.temper/` whole and `code/README.md`. Start
+    1. Read `rubric.md`, `brief.md`, every request, `asked.md`, `code/.temper/` whole and `code/README.md`. Start
        the ledger.
     2. A fresh clone for the runs: `git clone -q <folder>/code <folder>/scratch/ci`. Run every `run:` step
        of the pull-request workflow there, as written, in order (G2); this installs what the later runs

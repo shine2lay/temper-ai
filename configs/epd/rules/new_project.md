@@ -59,8 +59,9 @@ foundation must take it without a rewrite. Build only what this request needs.
   by its bare name and as a member of `window`, `globalThis`, `self` or `document`, and the library's other
   names for that same thing (a deprecated alias, a `v1` path). Past that is an accepted risk (a global passed
   through a variable, a name built while the code runs, a form only a plugin written for it could see): no
-  hole in the check, until the same class of spelling comes back in a later round, when a check written for
-  it holds the class (build.md, a class that comes back). Another way to do the same job is another thing, not a spelling (`navigator.sendBeacon`
+  hole in the check, until the same class of spelling comes back in a later round, when a check made of the
+  tools' own rules holds the class; where only a home-made check could, the risk stays accepted and the
+  review proposes the check to the owner (build.md, a class that comes back). Another way to do the same job is another thing, not a spelling (`navigator.sendBeacon`
   beside `fetch`, a `<link>` beside a CSS import, `email.utils.localtime` beside `date.today`): the standard
   names it, or it is a risk the standard accepts, and a review may propose naming it (Standards proposals).
   Neither is a finding unless the diff writes it. The standard names the things its check refuses and the

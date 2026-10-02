@@ -18,9 +18,12 @@
 # no reasoning between calls and compresses older tool results away (task_review_next v1-v3).
 #
 # v2: the reasons step (the rubric's step 4) and its numbers.
+# v3: asked.md, what the change's reviews and the owner asked it for: F5's audit called the checks and the
+#     moves of older tests its reviews had asked for not needed and churn, as it could not see that they
+#     were asked for (the owner, 2026-10-02).
 agent:
   name: epd_pattern_audit
-  version: 2
+  version: 3
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -48,6 +51,8 @@ agent:
     - `code/`: the git repository at the head commit, with the base commit in its history.
     - `request.md`: what the change was for. Context only: it tells you what the change needed, which is
       how you tell a needed new thing from over-building.
+    - `asked.md`: what the change's reviews asked it for, round by round, and the owner's word where he
+      gave one. A need named there is a need too, beside the request's (the rubric's steps 3 and 4).
     - `rubric.md`: the method, the classes, the numbers and the score. It is the whole standard: read it
       whole first and follow it.
     - `scratch/`: yours, for everything you run.
@@ -67,7 +72,7 @@ agent:
       what it holds and carry on from the first thing it lacks. Do not work a written line out again.
 
     Method, in this order:
-    1. Read `rubric.md` and `request.md`. Then, in one call: `git -C <folder>/code log --oneline
+    1. Read `rubric.md`, `request.md` and `asked.md`. Then, in one call: `git -C <folder>/code log --oneline
        --first-parent -8`, `git -C <folder>/code diff --stat <base> <head>`, and the base's written
        standards and notes if it has them (`git -C <folder>/code show <base>:.temper/standards.md`, and the
        `.temper/` listing at base). Start the ledger.

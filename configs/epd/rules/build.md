@@ -140,6 +140,15 @@ import leads to, not how its path is written), with the cases found so far in th
 finding says the class came back and which rounds found it. Past what that check can see, the rest is an
 accepted risk, written where the check is.
 
+That check is made of the tools' own rules and settings (the owner, 2026-10-02): a lint rule and its
+options, a tool's config, an import-linter contract, a type, a test over a table the code already keeps.
+Where only a home-made check would hold the class (a lint plugin, a walker of the code, a script of its own),
+the review does not ask for one: the cases found are fixed, the class is an accepted risk written in the
+standard, and the review proposes the check under standards_proposals, saying it is home-made and needs the
+owner's word. A build adds a home-made check only when its request carries the owner's word for it; the
+checks already there stay. The reviews kept asking for one more check, each with holes of its own, and the
+grades called them built past any need: past what the tools can see, the owner decides.
+
 **A check a build adds** (the owner, 2026-10-01). A check is only as good as what it was tried on: five
 checks in a row added in fix rounds (import bans, their spellings, links, a name check, a copy check) had
 holes the next review found, each time while the coder's report said the check caught the whole class. So

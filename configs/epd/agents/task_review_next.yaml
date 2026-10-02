@@ -118,9 +118,15 @@
 # that cannot fail: major in its section, minor in the JSON). The coder's plan then mixed the two
 # numberings, and a severity decides what a later round may do (a last pass takes only small changes).
 # Now the sections, the index and the JSON are one list: same order, same n, same severity.
+#
+# v11 (2026-10-02): a check a class needs is made of the tools' own rules (build.md, the owner). The
+# reviews of T3-F5 asked for one more check each time a class came back (an import plugin of its own, a
+# name walker, a copy check with a 278-line test), each with holes the next round found, and the grade
+# after F5 called them built past any need. Past what the tools' own rules can see, the review proposes a
+# home-made check to the owner instead of asking for it.
 agent:
   name: task_review_next
-  version: 10
+  version: 11
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -320,8 +326,9 @@ agent:
        There before, but inside a sentence the change rewrote, or put where a user now sees it
        disagree with the change: a finding (build.md, "Fix it here"). One more case of the class an
        earlier round's finding named (an earlier round here, or the review of the request this one
-       finishes): its fix is a check that holds the class, not the new case (build.md, a class that
-       comes back). No rule, no finding: a better idea goes under notes; a problem that
+       finishes): its fix is a check that holds the class, not the new case, made of the tools' own
+       rules and settings; where only a home-made check would hold it, the case is fixed and the check
+       goes under standards_proposals for the owner (build.md, a class that comes back). No rule, no finding: a better idea goes under notes; a problem that
        deserves a rule the project lacks goes under standards_proposals.
        Round one is exhaustive: raise everything now. Each round costs the coder a pass and you a
        review, and a finding held back for the next round is a round wasted.

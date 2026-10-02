@@ -45,8 +45,9 @@ The box's Chrome has no screen of its own, so you look at it over the tailnet:
 - In a browser: `https://spark.tailbb5055.ts.net:6090/vnc.html`
 - From macOS Screen Sharing: `vnc://spark.tailbb5055.ts.net:5901`
 
-Both ask for a password (kept in `~/.local/state/box-browser/view-password.txt`
-on the box, mode 600, never in any repo). Neither is reachable off the
+Both ask for a password (kept in `~/.temper/box-browser/view-password.txt` on
+the box, mode 600, never in any repo — the same folder holds `browser.json`,
+which says which Bridge target is the box's). Neither is reachable off the
 tailnet: x11vnc and noVNC listen on loopback only, and the tailscale serves
 are tailnet-only — no Funnel.
 

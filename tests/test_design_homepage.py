@@ -152,6 +152,46 @@ def test_no_canvas_fallback_or_credential_in_output(monkeypatch):
         h.Penpot()
 
 
+def test_container_bootstrap_only_reads_explicitly_authorized_login(monkeypatch):
+    box = "temper-run-89bcec85-9acc-4094-b4ab-5bc5eb7fac17"
+    monkeypatch.delenv("PENPOT_AGENT_PASSWORD", raising=False)
+    monkeypatch.setenv("TEMPER_RUN_CONTAINER", box)
+    data = (f"TEMPER_RUN_CONTAINER={box}\0PENPOT_AGENT_EMAIL=design-agent@spark.local\0"
+            "PENPOT_AGENT_PASSWORD=fictional-test-value\0OTHER_PASSWORD=never-return\0").encode()
+    reads = []
+    def read(path):
+        reads.append(str(path))
+        return data
+    monkeypatch.setattr(h.Path, "read_bytes", read)
+    assert h.Penpot.password() == "fictional-test-value"
+    assert reads == ["/proc/1/environ"]
+
+
+@pytest.mark.parametrize("box", ["", "temper-ai-worker-1", "temper-run-not-a-uuid"])
+def test_no_bootstrap_read_outside_own_run_container(monkeypatch, box):
+    monkeypatch.delenv("PENPOT_AGENT_PASSWORD", raising=False)
+    monkeypatch.setenv("TEMPER_RUN_CONTAINER", box)
+    def forbidden(path):
+        pytest.fail("must never read host or worker environment")
+    monkeypatch.setattr(h.Path, "read_bytes", forbidden)
+    assert h.Penpot.password() == ""
+
+
+@pytest.mark.parametrize("changed", ["other-container", "other-profile", "unreadable"])
+def test_bootstrap_identity_mismatch_fails_closed(monkeypatch, changed):
+    box = "temper-run-89bcec85-9acc-4094-b4ab-5bc5eb7fac17"
+    monkeypatch.delenv("PENPOT_AGENT_PASSWORD", raising=False)
+    monkeypatch.setenv("TEMPER_RUN_CONTAINER", box)
+    def read(path):
+        if changed == "unreadable":
+            raise PermissionError("test fixture")
+        identity = "temper-run-00000000-0000-0000-0000-000000000000" if changed == "other-container" else box
+        email = "someone-else@example.invalid" if changed == "other-profile" else "design-agent@spark.local"
+        return f"TEMPER_RUN_CONTAINER={identity}\0PENPOT_AGENT_EMAIL={email}\0PENPOT_AGENT_PASSWORD=fixture\0".encode()
+    monkeypatch.setattr(h.Path, "read_bytes", read)
+    assert h.Penpot.password() == ""
+
+
 def test_completion_not_self_attested(tmp_path):
     job = h.Job(tmp_path)
     assert not job.state["packet_verified"]

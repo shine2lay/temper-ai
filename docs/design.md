@@ -199,7 +199,14 @@ account with **all temper run containers**, not just Design. No password/session
 cookie goes into a config, model input, output or artifact. The API client is
 standard-library, restricts the host, checks the authenticated email and creates
 new files only in design-agent's Drafts project. No owner-file mutation, new
-accounts/permissions, MCP keys or browser login service is required.
+accounts/permissions, MCP keys or browser login service is required. Script Bash
+strips inherited `*_PASSWORD` variables: this Design client reads only the
+explicitly authorized Penpot password from its own run-container bootstrap
+(`/proc/1/environ`), after matching the full run UUID/container and design-agent
+identity. It fails closed outside that run or on unreadable/mismatched identity.
+It neither changes the engine's generic command filter nor puts any key into a
+template, model context, checkpoint or artifact. This is Docker/Linux-specific;
+the host proof uses its existing credential file, not this fallback.
 
 API saves use the verified Penpot 2.18 object/library/component change protocol.
 Text remains live with colour/type references; component instances retain main

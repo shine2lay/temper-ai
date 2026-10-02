@@ -161,9 +161,39 @@ class Penpot:
         data = self.request(self.base + "/api/main/methods/" + method, args or {})
         return p.kebab(json.loads(data)) if data else None
 
+    @staticmethod
+    def password():
+        value = os.getenv("PENPOT_AGENT_PASSWORD", "")
+        if value:
+            return value
+        # Script Bash removes *_PASSWORD. The owner explicitly granted this
+        # service login to run containers; read ONLY that key from this same
+        # container's bootstrap environment, never a host/another run or output.
+        box = os.getenv("TEMPER_RUN_CONTAINER", "")
+        prefix = "temper-run-"
+        try:
+            if not box.startswith(prefix):
+                return ""
+            import uuid
+            if str(uuid.UUID(box[len(prefix):])) != box[len(prefix):]:
+                return ""
+            raw = Path("/proc/1/environ").read_bytes()
+            allowed = {"TEMPER_RUN_CONTAINER", "PENPOT_AGENT_EMAIL", "PENPOT_AGENT_PASSWORD"}
+            boot = {}
+            for item in raw.split(b"\0"):
+                key, sep, data = item.partition(b"=")
+                name = key.decode("ascii", errors="ignore")
+                if sep and name in allowed:
+                    boot[name] = data.decode("utf-8")
+            if boot.get("TEMPER_RUN_CONTAINER") != box or boot.get("PENPOT_AGENT_EMAIL") != "design-agent@spark.local":
+                return ""
+            return boot.get("PENPOT_AGENT_PASSWORD", "")
+        except (OSError, UnicodeError, ValueError):
+            return ""
+
     def login(self):
         email = os.getenv("PENPOT_AGENT_EMAIL", "")
-        password = os.getenv("PENPOT_AGENT_PASSWORD", "")
+        password = self.password()
         if email != "design-agent@spark.local" or not password:
             raise ValueError("authorized Penpot login unavailable; never substitute a canvas")
         self.profile = self.rpc("login-with-password", {"email": email, "password": password})

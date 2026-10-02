@@ -1,0 +1,53 @@
+workflow:
+  name: signal_harvest
+  # Rung-0 DEMAND-VALIDATION stage (product role; shaped 2026-10-01). Takes the
+  # scan_market shortlist and ranks it by FREE real-world demand evidence so we
+  # know which 1-2 ideas deserve PAID validation next. Cheapest validation rung,
+  # done first and well (owner's one-rung-at-a-time rule).
+  #
+  # Four parallel signal lenses, then a synthesizer (leader) that scores + ranks:
+  #     [ search | jobs | pain | competitors ] -> synthesize (leader)
+  #
+  # Signals by evidence tier (money > behavior > words), which sets the weights:
+  #   jobs        0.35  employers paying humans to do the task = funded budget
+  #   competitors 0.30  customers paying incumbents + their 1-star openings
+  #   pain        0.20  distinct recent first-person complaints (voice)
+  #   search      0.15  people typing the query (weakest, words only)
+  #
+  # Evidence discipline is mandatory in every agent: each figure needs a real URL
+  # + date + verbatim quote, tagged measured|estimate and primary|secondary|
+  # vendor|listicle; low-confidence is discounted, vendor/listicle is never sole
+  # evidence (a past scan caught vendor-blog fabrication). All agents share one
+  # workspace, so the lenses write state/signal/*.md and the leader reads them.
+  #
+  # Landed 2026-10-01 after A/B evidence review (top-idea citations verified). provider: claude = Claude
+  # Code CLI (its own WebSearch/WebFetch tool loop); no temper tools: blocks.
+  version: 1
+  description: |
+    Rung-0 signal harvest: from a market shortlist, gather four free demand
+    signals (search, job-postings, pain-voice, competitor-vitals) per idea with
+    cited evidence, then produce a per-idea signal scorecard and a ranked
+    shortlist recommending the top 1-2 ideas to advance to paid validation.
+  inputs:
+    shortlist:
+      type: string
+      required: true   # the scan_market shortlist (idea names + one-line each)
+  outputs:
+    scorecard_path: synthesize.structured.scorecard_path
+    ranking: synthesize.structured.ranking
+    recommend_advance: synthesize.structured.recommend_advance
+
+  nodes:
+    # Four parallel free-signal lenses + a leader that scores and ranks them.
+    - name: synthesize
+      type: stage
+      strategy: leader
+      input_map:
+        shortlist: input.shortlist
+      agents:
+        - agent: signal_search
+        - agent: signal_jobs
+        - agent: signal_pain
+        - agent: signal_competitors
+        - agent: signal_synthesize
+          role: leader

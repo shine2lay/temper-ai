@@ -1,0 +1,57 @@
+{
+  "brand": "Crewline",
+  "product_name": "Crewline Screen",
+  "audience": "Hiring managers and recruiters filling hourly roles (warehouse, retail, food service, trades)",
+  "interests": ["recruiting", "hourly hiring", "warehouse operations", "staffing"],
+  "keywords": ["hourly applicant screening", "high volume hiring screening", "warehouse applicant phone screen"],
+  "cta_signup": "Join the early-access list",
+  "followup_question": "What does screening hourly applicants cost you today, in hours or in no-shows?",
+  "call_offer": "Happy to talk for 15 minutes about how you hire today? Leave a time that suits you.",
+  "how_it_works": [
+    "You post the role as you do today and forward applicants to Crewline.",
+    "Every applicant gets a short text-message screen within minutes, day or night.",
+    "You see a ranked shortlist with availability, licences and shift preferences, ready to book."
+  ],
+  "faq": [
+    {"q": "Is this available today?", "a": "Not yet. We are building it with a small group of early-access teams."},
+    {"q": "What happens to my deposit?", "a": "It holds a founding spot and is fully refundable, any time, on request."}
+  ],
+  "variants": [
+    {
+      "id": "A",
+      "framing": "speed: screen every applicant before a competitor calls them",
+      "headline": "Screen every hourly applicant within minutes, not days",
+      "subhead": "Good hourly candidates take the first offer. Reach them first, without adding recruiter hours.",
+      "bullets": [
+        "Applicants wait days for a call and accept another job",
+        "Recruiters spend evenings phoning people who never pick up",
+        "Weekend applicants go cold before Monday"
+      ],
+      "ad": {"headline": "Screen hourly hires faster", "body": "Every applicant screened by text within minutes. Join early access."}
+    },
+    {
+      "id": "B",
+      "framing": "cost: cut the recruiter hours spent on phone screens",
+      "headline": "Stop paying recruiters to phone-screen applicants who never answer",
+      "subhead": "Hand the first screen to a text conversation and keep your team on interviews and offers.",
+      "bullets": [
+        "Most phone screens end in voicemail",
+        "Screening eats the hours meant for interviews",
+        "Agency fees climb when the pipeline stalls"
+      ],
+      "ad": {"headline": "Fewer phone screens", "body": "Let a text screen do the first call for hourly roles. Early access open."}
+    },
+    {
+      "id": "C",
+      "framing": "no-shows: book only applicants who confirmed shifts and availability",
+      "headline": "Book interviews only with applicants who confirmed the shift",
+      "subhead": "Screen for availability, licences and shift fit first, so the people you book actually show up.",
+      "bullets": [
+        "Interview no-shows waste whole mornings",
+        "Applicants learn the shift times only at the interview",
+        "Licence and certification checks happen too late"
+      ],
+      "ad": {"headline": "Cut interview no-shows", "body": "Screen hourly applicants for shift fit before you book. Join early access."}
+    }
+  ]
+}

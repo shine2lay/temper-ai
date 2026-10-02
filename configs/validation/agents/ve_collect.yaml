@@ -1,0 +1,20 @@
+# @description VALIDATION ENGINE step 4 (product role): live runs pull the raw page events (PostHog),
+# the form posts (Netlify Forms) and the deposits + refunds (Stripe); every run then applies the
+# pre-registered bot filter (under 2 s, datacenter IPs, bot user agents, automated browsers),
+# keeps the test's own campaign and segment, and assembles the scorecard (spec schema: funnel,
+# variants, channels, quality flags, spend, evidence links). No verdict here: ve_decide does that.
+# No model. POSIX sh; no dollar-brace env syntax.
+agent:
+  name: ve_collect
+  version: 1
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    #!/bin/sh
+    set -e
+    BIN={{ ve_bin | default('', true) }}
+    [ -n "$BIN" ] || BIN=/app/configs/validation/bin
+    [ -f "$BIN/ve.py" ] || BIN="$HOME/temper-ai/configs/validation/bin"
+    PY=python3
+    "$PY" -c 'import yaml' 2>/dev/null || PY="$TEMPER_PYTHON"
+    "$PY" "$BIN/ve.py" collect --dir {{ idea_dir }}

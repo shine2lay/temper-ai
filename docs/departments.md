@@ -16,7 +16,7 @@ role tests and lands a change.
 
 | Role | Department | Looks after |
 |---|---|---|
-| `product` | Product management | The problems, pitches and bets the loop builds; the pitch review and its fit lens; the graders for pitches and pitch reviews. |
+| `product` | Product management | The problems, pitches and bets the loop builds; the pitch review and its fit lens; the graders for pitches and pitch reviews; finding and testing new markets: the market scan, the signal harvest and the validation engine. |
 | `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
 | `design` | Design | The personas, the walks of the product as each of them, and the report stage that runs the walks. |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
@@ -115,9 +115,10 @@ build's test run and browser check (qa), seeded flaws for the security read
 ## The ownership table
 
 Paths are under `configs/`. *agent (script)* is an agent that runs a script
-instead of a model; *script* is a helper in `epd/bin/`.
+instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
+`validation/bin/`).
 
-### product (16)
+### product (43)
 
 | Config | Kind |
 |---|---|
@@ -137,6 +138,33 @@ instead of a model; *script* is a helper in `epd/bin/`.
 | `epd/agents/epd_pitch_previous.yaml` | agent (script) |
 | `epd/agents/epd_pitch_write.yaml` | agent |
 | `epd/agents/epd_problems.yaml` | agent |
+| `workflows/scan_market.yaml` | workflow |
+| `agents/scan_check.yaml` | agent |
+| `agents/scan_lens_demand.yaml` | agent |
+| `agents/scan_lens_market.yaml` | agent |
+| `agents/scan_lens_timing.yaml` | agent |
+| `agents/scan_synthesize.yaml` | agent |
+| `workflows/signal_harvest.yaml` | workflow |
+| `agents/signal_competitors.yaml` | agent |
+| `agents/signal_jobs.yaml` | agent |
+| `agents/signal_pain.yaml` | agent |
+| `agents/signal_search.yaml` | agent |
+| `agents/signal_synthesize.yaml` | agent |
+| `validation/workflows/validation_engine.yaml` | workflow |
+| `validation/agents/ve_campaign.yaml` | agent |
+| `validation/agents/ve_collect.yaml` | agent (script) |
+| `validation/agents/ve_decide.yaml` | agent (script) |
+| `validation/agents/ve_deploy.yaml` | agent (script) |
+| `validation/agents/ve_interview.yaml` | agent |
+| `validation/agents/ve_page.yaml` | agent |
+| `validation/agents/ve_setup.yaml` | agent (script) |
+| `validation/agents/ve_simulate.yaml` | agent (script) |
+| `validation/bin/ve.py` | script |
+| `validation/bin/ve_common.py` | script |
+| `validation/bin/ve_live.py` | script |
+| `validation/bin/ve_score.py` | script |
+| `validation/bin/ve_site.py` | script |
+| `validation/bin/ve_traffic.py` | script |
 
 ### marketing (4)
 

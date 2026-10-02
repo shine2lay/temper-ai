@@ -1,6 +1,8 @@
 # Validation Engine — autonomous demand testing for shaped bets
 
-Status: design spec (not built). Owner: Product management role. Created 2026-10-01.
+Status: built 2026-10-01 (configs/validation; see [As built](#as-built-configsvalidation)).
+The no-spend dry run is proven end to end; live runs wait on the owner's rails, a budget and
+the go-ahead. Owner: Product management role. Created 2026-10-01.
 
 ## Why this exists (north-star fit)
 
@@ -193,6 +195,85 @@ first, in a `wt new` worktree; land only a working engine.
 - Keep tool blocks off agents on `provider: claude` (that provider ignores temper tool schemas;
   it uses its own built-in tool loop). See docs/testing.md and the Scan trial lessons.
 
+## As built (configs/validation)
+
+One idea per run. The steps are plain scripts (`configs/validation/bin/ve.py <step>`) except
+the three that need judgement or a browser, which run on `provider: claude` with no `tools:`
+block.
+
+```
+ve_setup -> ve_page -> ve_deploy -> ve_campaign (live) | ve_simulate (dry run) -> ve_collect -> ve_decide -> ve_interview
+```
+
+| Step | Kind | What it does |
+|---|---|---|
+| `ve_setup` | script | Reads which rails exist (names only, never values), picks the mode, writes and sha256-locks `preregistration.json` (bars, window, budget, channels, decision rules, refund-by date) before any data exists. Live without every rail, a budget or the go-ahead: stops, writes `RAILS_CHECKLIST.md`, nothing is deployed or spent. Refuses a second launch while a live test runs, and a confirm tier for an idea with no advance/pivot. |
+| `ve_page` | model | Writes `page/copy.json`: a neutral test brand, 2-3 value-proposition framings (A/B the pain, not the button) with ad creatives, "how it would work", FAQ, the follow-up question; then runs `ve.py check-copy` until the honesty check passes. |
+| `ve_deploy` | script | Renders the site (one page per framing, reserve, call, thanks, privacy, deposit-done) with `ve.js`; checks every rendered page again (early-access banner, refund terms, no ships-now wording, no owner brand); dry run: a local test URL; live: Stripe Payment Links per framing + Netlify deploy + form check. Writes `campaign_plan.json`: every ad with its UTM URL and a lifetime cap, the caps never adding up past the budget. |
+| `ve_campaign` | model, live only | Phase `all`: launches exactly the plan (API or the signed-in browser), records `campaign_launch.json`, `ve.py check-launch` must pass. Phase `collect`: pulls the ad report into `ad_report.jsonl`, `ve.py check-ad-report` (over budget = pause every ad and tell the owner). |
+| `ve_simulate` | script, dry run only | A seeded synthetic crowd (with planted bots: under 2 s, bot user agents, automated browsers, data-centre IPs) clicks the planned ads and goes through the real pages in a real browser (Playwright), fills the forms, reserves through a mock checkout, asks for one refund. Zero spend; every row is marked synthetic. |
+| `ve_collect` | script | Live: pulls raw events (PostHog), forms (Netlify) and deposits/refunds (Stripe). Both modes: the bot filter, sessions, the funnel, `scorecard.yaml` in the schema above. |
+| `ve_decide` | script | Verifies the pre-registration hash, applies the rules in order, sizes the confirm tier for survivors, writes `decision.json` and `report.md`. Live kill: refunds every deposit. Always runs (a stopped run's report is the rails checklist). |
+| `ve_interview` | model, survivors only | `prepare` (dry run, screen tier, or no interview rails): guide, panel screener, AI-disclosure + consent script, invite for signups who asked for a call; contacts no one. `live` (confirm tier with panel + voice rails): opt-in panel only, disclosed AI interviews, themes with quotes. |
+
+**Instrumentation.** `ve.js` sends `page_view`, `scroll` (25/50/75/90), `section_view`
+("how it works"), `heartbeat`, `page_leave` (seconds on page), `signup`, `followup_answer`,
+`call_click`/`call_request`, `deposit_click`/`deposit_paid`, each with the session, framing and
+the UTM tags. Every ad URL carries `utm_source`, `utm_medium`, `utm_campaign=ve-<idea>-<tier>`,
+`utm_content=<framing>`, `ve_ad=<ad id>` and, on search, `utm_term={keyword}`. The follow-up
+question is asked on the thanks page right after signup (no email rail needed).
+
+**Bot filter.** A session is dropped when it lasts under 2 s, comes from a data-centre range
+(`bin/datacenter_cidrs.txt`), has a bot user agent or reports an automated browser. Sessions
+without the test's `utm_campaign`, from another test, or (live) marked synthetic are counted
+apart. Real sessions outside the target countries are a `segment_leak`. The dry run checks the
+filter against the simulator's ground truth (every planted bot caught, no human dropped).
+
+**Rules, in order** (`ve_score.decide`, each step written to the report's trace):
+`kill_ctr` (1,000+ impressions, CTR under 0.3%, no framing at 0.5%) ->
+`kill_no_commitment` (10+ signups, no deposit, no booked call) -> `kill_signup_rate` (20+
+real visits, signup rate under 3%, no framing at 10%) -> screen: `pivot` when one framing
+works and another flops by 2x or more with a one-sided Fisher p under 0.05 (drop the flop),
+else `advance` (the screen only kills duds) -> confirm: `advance` on 3+ deposits, 30%+ engaged
+and an answered follow-up, else `pivot`, else `kill_default`. A moved bar gets no verdict.
+Under the data minimums the call is flagged `sample_too_small`, not judged. A verdict before
+the window ends is `provisional`.
+
+**Confirm sizing.** max(100 clicks per kept framing, 150), capped at 300, at the screen's
+observed CPC (else the assumed $2), over 10 days; above the owner's confirm budget, or with
+none set, the owner is asked first.
+
+**Deposits.** $49 by default, fully refundable on request any time, and in full if nothing
+launches within 90 days: the refund-by date is in the pre-registration and the report, and
+`ve.py refund --dir <idea folder> --why <reason>` gives back every deposit still held (Stripe
+calls are idempotent). A live kill refunds at once.
+
+**Running it.**
+
+- Dry run (default, $0): `temper run validation_engine -i idea="<one paragraph>" -i idea_id=<slug>
+  -i segment="..." -i evidence=<signal-harvest notes> -i interviews=yes`.
+- Live: the owner copies `configs/validation/rails.example.env` to
+  `~/.config/validation-engine/rails.env` (chmod 600) and fills it in; `ve.py checklist` shows
+  what is still missing. Then `-i mode=live` (phase `all`: page, deposits, ads), and after the
+  window `-i mode=live -i phase=collect -i state_root=<same folder>` for the verdict. Confirm
+  tier: `-i tier=confirm` on a survivor.
+- State per idea: `<state_root>/state/ve/<idea_id>/` (rails.json, preregistration.json,
+  page/, site/, campaign_plan.json, events/forms/deposits/ad_report .jsonl, scorecard.yaml,
+  decision.json, report.md, evidence/, interview/). A new test archives the previous one.
+
+**Tested** in `tests/test_validation_engine` with no service reached: a whole dry run through
+the real page (HTTP crowd), the gate (every missing rail, a budget above the owner's, a second
+launch, a secret never printed), the rules, the launch and ad-report checks, and the live
+adapters on a fake transport. The Netlify, PostHog and Stripe adapters meet the real services
+for the first time on the first live run: run it in Stripe test mode first.
+
+**First dry run** (2026-10-01, hourly-screening, the Signal Harvest's top idea): ve_page wrote
+the "Shiftfunnel" page (3 framings) for $0.39 in 2 minutes; the browser crowd took 33 s. 70
+visits, 12 planted bots all caught, 0 humans dropped; 10,416 impressions, CTR 0.67%, 49 real
+visits in segment, 7 signups (14%), 1 deposit + 2 booked calls, $0 spent; the rules gave
+PIVOT (framing A 33% vs B 0%, p=0.02) and sized a $400 confirm tier that needs the owner's
+budget. Synthetic numbers: they test the engine, not the idea.
+
 ## Cost model (cheapest-first)
 
 - Rung 0 (Signal Harvest): ~free, desk research only.
@@ -203,6 +284,11 @@ first, in a `wt new` worktree; land only a working engine.
 Spend climbs only as confidence climbs. Most ideas die cheap at the screen tier.
 
 ## Open questions (to calibrate before first live run)
+
+The engine starts from the defaults in `ve_common.DEFAULT_THRESHOLDS` (CTR 0.5% / kill 0.3%,
+signups 10% / weak 3%, 3 deposits, 30% engaged, 100 clicks per framing for an A/B call, $49
+deposit, screen 7 days, confirm 10 days); `build_preregistration(overrides=...)` changes them
+per idea, before the run, never after.
 
 - Exact per-channel CTR / signup / deposit thresholds (seed from benchmarks, update after run 1).
 - Deposit size that is "costly enough" to signal intent without killing all conversion.

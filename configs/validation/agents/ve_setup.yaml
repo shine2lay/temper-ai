@@ -1,0 +1,35 @@
+# @description VALIDATION ENGINE step 0 (product role). Reads the owner's rails file (key names only),
+# decides what this run may do (dry run: local test URL, zero spend; live: every rail + a set budget
+# + VE_GO_AHEAD=yes) and hash-locks the pre-registered bars before any data exists. Its flags drive
+# the workflow's conditions: build, live, simulate, proceed, interviews. A live run without rails
+# stops here, with the rails checklist, before anything is deployed or spent. No model.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution). Code: configs/validation/bin/ve.py.
+agent:
+  name: ve_setup
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -e
+    BIN={{ ve_bin | default('', true) }}
+    [ -n "$BIN" ] || BIN=/app/configs/validation/bin
+    [ -f "$BIN/ve.py" ] || BIN="$HOME/temper-ai/configs/validation/bin"
+    PY=python3
+    "$PY" -c 'import yaml' 2>/dev/null || PY="$TEMPER_PYTHON"
+    "$PY" "$BIN/ve.py" setup \
+      --workspace {{ workspace_path }} \
+      --state-root {{ state_root | default('', true) }} \
+      --idea {{ idea | default('', true) }} \
+      --idea-id {{ idea_id | default('', true) }} \
+      --mode {{ mode | default('dry_run', true) }} \
+      --phase {{ phase | default('all', true) }} \
+      --tier {{ tier | default('screen', true) }} \
+      --rails-file {{ rails_file | default('', true) }} \
+      --budget-usd {{ budget_usd | default('', true) }} \
+      --interviews {{ interviews | default('', true) }} \
+      --segment {{ segment | default('', true) }} \
+      --countries {{ countries | default('', true) }} \
+      --channels {{ channels | default('', true) }} \
+      --deposit-usd {{ deposit_usd | default('', true) }} \
+      --evidence {{ evidence | default('', true) }}

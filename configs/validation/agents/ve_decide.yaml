@@ -1,0 +1,23 @@
+# @description VALIDATION ENGINE step 5 (product role): applies the pre-registered rules in order
+# (verifying their sha256 first) -> advance / pivot / kill, with the rule that fired and the trace
+# of every rule checked; sizes the confirm-tier spend for survivors (asks the owner when no
+# confirm budget is set); on a live kill, refunds every deposit. Writes scorecard.yaml/.json,
+# decision.json and report.md. When setup stopped (live without rails), it writes the blocked
+# report with the rails checklist instead. Decides whether Rung 4 interviews run (prepare or
+# live). No model. POSIX sh; no dollar-brace env syntax.
+agent:
+  name: ve_decide
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -e
+    BIN={{ ve_bin | default('', true) }}
+    [ -n "$BIN" ] || BIN=/app/configs/validation/bin
+    [ -f "$BIN/ve.py" ] || BIN="$HOME/temper-ai/configs/validation/bin"
+    PY=python3
+    "$PY" -c 'import yaml' 2>/dev/null || PY="$TEMPER_PYTHON"
+    "$PY" "$BIN/ve.py" decide --dir {{ idea_dir | default('', true) }} \
+      --stop {{ stop | default('', true) }} \
+      --checklist-path {{ checklist_path | default('', true) }}

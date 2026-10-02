@@ -1,0 +1,206 @@
+# VALIDATION ENGINE (product role): paid demand testing, Rungs 1-4, for an idea that survived
+# Signal Harvest (docs/validation_engine.md). One idea per run:
+#
+#   ve_setup -> ve_page -> ve_deploy -> ve_campaign (live) | ve_simulate (dry run) -> ve_collect -> ve_decide -> ve_interview
+#
+# mode=dry_run (the default; also whatever runs without the owner's rails): a local test URL, a
+#   seeded synthetic crowd with planted bots through the real page and its event script, $0, every
+#   number labelled synthetic. It proves the funnel, the bot filter and the scorecard end to end.
+# mode=live: only with every rail in ~/.config/validation-engine/rails.env, a set budget and
+#   VE_GO_AHEAD=yes; otherwise ve_setup stops before anything is deployed or spent, and the run's
+#   report is the rails checklist. Live runs twice per test: phase=all launches (page, deposits,
+#   ads), phase=collect after the window pulls the data and gives the verdict.
+#
+# The bars are locked (sha256) in preregistration.json before any data exists; ve_decide verifies
+# them before it applies a rule. Code: configs/validation/bin/ve.py.
+workflow:
+  name: validation_engine
+  version: 1
+  description: |
+    Paid demand test for one idea (Rungs 1-4): honest fake-door page with 2-3 value-proposition
+    variants, capped search + cold ads with UTM tags, refundable deposits, bot-filtered funnel
+    metrics, a per-idea scorecard and an advance / pivot / kill verdict against pre-registered
+    bars, confirm-tier sizing for survivors, and opt-in disclosed AI interviews (Rung 4).
+    Dry run by default (local test URL, synthetic crowd, $0); live only with the owner's rails,
+    a set budget and the go-ahead.
+  inputs:
+    idea:
+      type: string
+      required: true    # one paragraph: the idea, its buyer and the pain (from the scan / signal harvest)
+    idea_id:
+      type: string
+      default: ""       # a slug; made from the idea when empty
+    mode:
+      type: string
+      default: dry_run  # dry_run | live
+    phase:
+      type: string
+      default: all      # all (set up + launch) | collect (live: pull the data after the window, decide)
+    tier:
+      type: string
+      default: screen   # screen (~$50) | confirm (~$200-400, survivors only)
+    budget_usd:
+      type: string
+      default: ""       # live: the test's budget, at most the rails' tier budget
+    interviews:
+      type: string
+      default: ""       # yes = prepare (or, confirm tier with rails, run) Rung 4 interviews for survivors
+    segment:
+      type: string
+      default: ""
+    evidence:
+      type: string
+      default: ""       # Rung 0 evidence: pains, quotes, jobs, competitors (text or a file path)
+    countries:
+      type: string
+      default: ""
+    channels:
+      type: string
+      default: ""       # e.g. google-search,reddit-ads (default: the rails' VE_AD_CHANNELS)
+    deposit_usd:
+      type: string
+      default: ""
+    rails_file:
+      type: string
+      default: ""       # default ~/.config/validation-engine/rails.env
+    state_root:
+      type: string
+      default: ""       # where state/ve/<idea_id>/ lives; give the same one to phase=collect
+    seed:
+      type: string
+      default: "7"      # dry run: the synthetic crowd's seed
+    ve_bin:
+      type: string
+      default: ""       # engine code dir; default /app/configs/validation/bin, then ~/temper-ai/...
+  outputs:
+    decision: ve_decide.structured.decision
+    rule: ve_decide.structured.rule
+    reason: ve_decide.structured.reason
+    next_step: ve_decide.structured.next_step
+    provisional: ve_decide.structured.provisional
+    synthetic: ve_decide.structured.synthetic
+    confirm_sizing: ve_decide.structured.confirm_sizing
+    spend_usd: ve_decide.structured.spend_usd
+    quality_flags: ve_decide.structured.quality_flags
+    scorecard_path: ve_decide.structured.scorecard_path
+    report_path: ve_decide.structured.report_path
+    blocked: ve_decide.structured.blocked
+    stop: ve_decide.structured.stop
+    interview_mode: ve_decide.structured.interview_mode
+
+  nodes:
+    - name: ve_setup
+      type: agent
+      agent: ve_setup
+      input_map:
+        idea: input.idea
+        idea_id: input.idea_id
+        mode: input.mode
+        phase: input.phase
+        tier: input.tier
+        rails_file: input.rails_file
+        budget_usd: input.budget_usd
+        interviews: input.interviews
+        segment: input.segment
+        countries: input.countries
+        channels: input.channels
+        deposit_usd: input.deposit_usd
+        evidence: input.evidence
+        state_root: input.state_root
+        ve_bin: input.ve_bin
+
+    - name: ve_page
+      type: agent
+      agent: ve_page
+      depends_on: [ve_setup]
+      condition:
+        source: ve_setup.structured.build
+        operator: equals
+        value: true
+      input_map:
+        idea_dir: ve_setup.structured.idea_dir
+        ve_bin: ve_setup.structured.ve_bin
+        mode: ve_setup.structured.mode
+        brand: ve_setup.structured.brand
+        idea: input.idea
+        segment: input.segment
+        evidence: input.evidence
+
+    - name: ve_deploy
+      type: agent
+      agent: ve_deploy
+      depends_on: [ve_page]
+      condition:
+        source: ve_setup.structured.build
+        operator: equals
+        value: true
+      input_map:
+        idea_dir: ve_setup.structured.idea_dir
+        ve_bin: ve_setup.structured.ve_bin
+
+    - name: ve_campaign
+      type: agent
+      agent: ve_campaign
+      depends_on: [ve_deploy]
+      condition:
+        source: ve_setup.structured.live
+        operator: equals
+        value: true
+      input_map:
+        phase: ve_setup.structured.phase
+        idea_dir: ve_setup.structured.idea_dir
+        ve_bin: ve_setup.structured.ve_bin
+        rails_file: ve_setup.structured.rails_file
+        channels: ve_setup.structured.channels
+        budget_usd: ve_setup.structured.budget_usd
+
+    - name: ve_simulate
+      type: agent
+      agent: ve_simulate
+      depends_on: [ve_deploy]
+      condition:
+        source: ve_setup.structured.simulate
+        operator: equals
+        value: true
+      input_map:
+        idea_dir: ve_setup.structured.idea_dir
+        ve_bin: ve_setup.structured.ve_bin
+        seed: input.seed
+
+    - name: ve_collect
+      type: agent
+      agent: ve_collect
+      depends_on: [ve_campaign, ve_simulate]
+      condition:
+        source: ve_setup.structured.proceed
+        operator: equals
+        value: true
+      input_map:
+        idea_dir: ve_setup.structured.idea_dir
+        ve_bin: ve_setup.structured.ve_bin
+
+    - name: ve_decide
+      type: agent
+      agent: ve_decide
+      depends_on: [ve_collect]
+      input_map:
+        idea_dir: ve_setup.structured.idea_dir
+        ve_bin: ve_setup.structured.ve_bin
+        stop: ve_setup.structured.stop
+        checklist_path: ve_setup.structured.checklist_path
+
+    - name: ve_interview
+      type: agent
+      agent: ve_interview
+      depends_on: [ve_decide]
+      condition:
+        source: ve_decide.structured.run_interview
+        operator: equals
+        value: true
+      input_map:
+        interview_mode: ve_decide.structured.interview_mode
+        idea_dir: ve_decide.structured.idea_dir
+        decision: ve_decide.structured.decision
+        rule: ve_decide.structured.rule
+        brand: ve_setup.structured.brand
+        rails_file: ve_setup.structured.rails_file

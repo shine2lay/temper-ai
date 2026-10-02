@@ -1,0 +1,20 @@
+# @description VALIDATION ENGINE dry-run traffic (product role): serves the rendered page on its local
+# test URL and plays a seeded synthetic crowd through it (ad click -> landing -> scroll -> signup ->
+# follow-up -> deposit or call), with planted bots (instant bounces, bot user agents, datacenter
+# IPs, automated browsers) so the bot filter is tested against known truth. With a browser the
+# page's own event script sends every event; without one the events are posted directly and the
+# step says so. Zero spend, labelled synthetic everywhere. Never runs in live mode. No model.
+agent:
+  name: ve_simulate
+  version: 1
+  type: script
+  timeout_seconds: 1500
+  script_template: |
+    #!/bin/sh
+    set -e
+    BIN={{ ve_bin | default('', true) }}
+    [ -n "$BIN" ] || BIN=/app/configs/validation/bin
+    [ -f "$BIN/ve.py" ] || BIN="$HOME/temper-ai/configs/validation/bin"
+    PY=python3
+    "$PY" -c 'import yaml, playwright' 2>/dev/null || PY="$TEMPER_PYTHON"
+    "$PY" "$BIN/ve.py" simulate --dir {{ idea_dir }} --seed {{ seed | default('7', true) }}

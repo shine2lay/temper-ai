@@ -1,0 +1,20 @@
+# @description VALIDATION ENGINE step 2 (product role): renders the fake-door page from page/copy.json
+# (one page per variant, the early-access banner, the refundable-deposit and privacy text, the
+# event script), re-reads every rendered page against the honesty guard, and writes the UTM-tagged
+# campaign plan. Dry run: a local test URL, zero budget. Live (rails + go-ahead only): Stripe
+# Payment Links (refundable), a Netlify deploy with form detection checked, and a smoke check of
+# the live page before any ad can point at it. No model. POSIX sh; no dollar-brace env syntax.
+agent:
+  name: ve_deploy
+  version: 1
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    #!/bin/sh
+    set -e
+    BIN={{ ve_bin | default('', true) }}
+    [ -n "$BIN" ] || BIN=/app/configs/validation/bin
+    [ -f "$BIN/ve.py" ] || BIN="$HOME/temper-ai/configs/validation/bin"
+    PY=python3
+    "$PY" -c 'import yaml' 2>/dev/null || PY="$TEMPER_PYTHON"
+    "$PY" "$BIN/ve.py" deploy --dir {{ idea_dir }}

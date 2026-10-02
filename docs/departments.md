@@ -18,7 +18,7 @@ role tests and lands a change.
 |---|---|---|
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest, the opportunity brief and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
-| `design` | Design | The personas, the walks of the product as each of them, and the report stage that runs the walks; design reviews (heuristics, WCAG 2.2) and their grader on planted-problem test sites ([design.md](design.md)). |
+| `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage source workflows with owner gates ([design.md](design.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
@@ -177,13 +177,16 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
 
-### design (10)
+### design (13)
 
 | Config | Kind |
 |---|---|
 | `epd/workflows/epd_report.yaml` | workflow |
 | `design/workflows/design_review.yaml` | workflow |
 | `design/workflows/design_review_grade.yaml` | workflow |
+| `design/workflows/design_homepage_v1.yaml` | workflow (real direction/final owner gates) |
+| `design/workflows/design_homepage_pilot_v1.yaml` | workflow (fictional-only provisional selection) |
+| `design/agents/design_homepage_stage_v1.yaml` | agent (script; Penpot source, budget, evidence, handoff) |
 | `epd/agents/epd_personas.yaml` | agent |
 | `epd/agents/epd_walk.yaml` | agent |
 | `design/agents/design_capture.yaml` | agent (script) |

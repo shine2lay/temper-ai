@@ -1,0 +1,31 @@
+# @description Design-owned Penpot homepage source/artifact steps. No model; standard
+# library only. Uses the existing authorized design-agent login in temper's .env.
+# Never puts credentials in a task, output, checkpoint or artifact.
+agent:
+  name: design_homepage_stage_v1
+  version: 1
+  type: script
+  timeout_seconds: 1500
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+
+    stage = os.environ.get("{{ stage | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    mode = os.environ.get("{{ mode | default('real', true) | env }}", "real")
+    raw = os.environ.get("{{ brief_json | default('', true) | env }}", "") if stage == "brief" else os.environ.get("{{ direction_json | default('', true) | env }}", "")
+    {% if gate is defined %}
+    raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
+    {% endif %}
+    if not stage or not workspace:
+        raise SystemExit("homepage stage/workspace required")
+    os.environ["HOMEPAGE_DATA"] = raw
+    cmd = [sys.executable, "/app/configs/design/bin/design_homepage_v1.py", stage, "--workspace", workspace]
+    if mode == "pilot":
+        cmd.append("--pilot")
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

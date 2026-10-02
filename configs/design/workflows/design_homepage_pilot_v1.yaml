@@ -1,0 +1,74 @@
+# Fictional-only companion. Provisional direction can be selected automatically;
+# real input fails before Penpot writes. No owner taste/final approval is implied.
+workflow:
+  name: design_homepage_pilot_v1
+  version: 1
+  description: |
+    Fictional-only Penpot homepage pilot. Same Design source stages and unchanged
+    measured reviewer as design_homepage_v1. Auto-selects provisionally, never as
+    owner approval. Budget and evidence/fix gates stop each paid round. Max 3 rounds.
+  inputs:
+    brief_json: {type: string, default: ""}
+    direction_json: {type: string, default: ""}
+  outputs:
+    handoff_path: handoff.structured.handoff_path
+    manifest_path: handoff.structured.manifest_path
+    source_url: handoff.structured.source_url
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_homepage_stage_v1
+      input_map: {stage: brief, mode: pilot, brief_json: input.brief_json}
+    - name: explore
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [brief]
+      input_map: {stage: explore, mode: pilot}
+    - name: direction
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [explore]
+      input_map: {stage: direction, mode: pilot, direction_json: input.direction_json}
+    - name: design
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [direction]
+      input_map: {stage: design, mode: pilot}
+    - name: measure
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [design]
+      input_map: {stage: measure, mode: pilot}
+    - name: budget
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [measure]
+      gate: true
+      input_map: {stage: budget, mode: pilot}
+    - name: critic_a
+      type: agent
+      agent: design_critic
+      depends_on: [budget]
+    - name: critic_b
+      type: agent
+      agent: design_critic
+      depends_on: [budget]
+    - name: merge
+      type: agent
+      agent: design_merge
+      depends_on: [critic_a, critic_b]
+    - name: disposition
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [merge]
+      gate: true
+      loop_to: design
+      max_loops: 3
+      on_max_loops: silent
+      loop_condition: {source: disposition.structured.verdict, operator: equals, value: request_changes}
+      input_map: {stage: disposition, mode: pilot}
+    - name: handoff
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [disposition]
+      input_map: {stage: handoff, mode: pilot}

@@ -1,0 +1,85 @@
+# Design-owned real-deliverable entry. The owner, not an agent, answers direction
+# and final gates. Budget/review checkpoints are separate from aesthetic approval.
+workflow:
+  name: design_homepage_v1
+  version: 1
+  description: |
+    Editable template-driven room-booking homepage: brief -> three structural Penpot
+    directions -> OWNER DIRECTION -> visual system and 390/768/1440 source -> static
+    measurements -> budget checkpoint -> two unchanged critics and merge -> bounded
+    evidence/fix checkpoint -> handoff -> OWNER FINAL. No publication or real flow.
+    Source stage receipts support resume; never substitute a screenshot canvas.
+    JSON gate responses and the companion pilot are documented in docs/design.md.
+  inputs:
+    brief_json: {type: string, required: true}
+    direction_json: {type: string, default: ""}
+  outputs:
+    handoff_path: handoff.structured.handoff_path
+    manifest_path: handoff.structured.manifest_path
+    source_url: handoff.structured.source_url
+    final_gate: final.structured.owner_final_gate_recorded
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_homepage_stage_v1
+      input_map: {stage: brief, mode: real, brief_json: input.brief_json}
+    - name: explore
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [brief]
+      input_map: {stage: explore, mode: real}
+    - name: direction
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [explore]
+      gate: true
+      input_map: {stage: direction, mode: real, direction_json: input.direction_json}
+    - name: design
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [direction]
+      input_map: {stage: design, mode: real}
+    - name: measure
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [design]
+      input_map: {stage: measure, mode: real}
+    - name: budget
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [measure]
+      gate: true
+      input_map: {stage: budget, mode: real}
+    - name: critic_a
+      type: agent
+      agent: design_critic
+      depends_on: [budget]
+    - name: critic_b
+      type: agent
+      agent: design_critic
+      depends_on: [budget]
+    - name: merge
+      type: agent
+      agent: design_merge
+      depends_on: [critic_a, critic_b]
+    - name: disposition
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [merge]
+      gate: true
+      loop_to: design
+      max_loops: 3
+      on_max_loops: silent
+      loop_condition: {source: disposition.structured.verdict, operator: equals, value: request_changes}
+      input_map: {stage: disposition, mode: real}
+    - name: handoff
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [disposition]
+      input_map: {stage: handoff, mode: real}
+    - name: final
+      type: agent
+      agent: design_homepage_stage_v1
+      depends_on: [handoff]
+      gate: true
+      input_map: {stage: final, mode: real}

@@ -123,7 +123,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (35)
+### product (40)
 
 | Config | Kind |
 |---|---|
@@ -147,6 +147,11 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/brief_setup.yaml` | agent (script) |
 | `agents/brief_synthesize.yaml` | agent |
 | `agents/brief_viability.yaml` | agent |
+| `workflows/desk_check.yaml` | workflow |
+| `agents/desk_assumption.yaml` | agent |
+| `agents/desk_final.yaml` | agent (script) |
+| `agents/desk_setup.yaml` | agent (script) |
+| `agents/desk_synthesize.yaml` | agent |
 | `validation/workflows/validation_engine.yaml` | workflow |
 | `validation/agents/ve_campaign.yaml` | agent |
 | `validation/agents/ve_collect.yaml` | agent (script) |

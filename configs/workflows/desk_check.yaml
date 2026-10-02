@@ -1,0 +1,106 @@
+workflow:
+  name: desk_check
+  # DESK CHECK (product role; built 2026-10-02). The free rung of assumption testing (Teresa
+  # Torres, Continuous Discovery Habits): before any paid test, check an idea's riskiest
+  # assumptions against public documents. Input: a hypothesis and its assumptions, each with a
+  # pass bar and a kill bar fixed before the run (usually the "desk" tests an opportunity brief
+  # lists). Output: per assumption pass / kill / unknown, each resting on fetched, quoted primary
+  # sources (or a count made from a public dataset), and what the verdicts mean for the
+  # hypothesis.
+  #
+  #   setup (script) -> [ check_1 | ... | check_6, one per assumption ] -> synth -> final (script)
+  #
+  # Six fixed researcher slots, each run only when its assumption exists (setup lists the slots;
+  # a condition skips the rest). Not a `type: template` fan-out: `temper run` loads a workflow
+  # without its inputs, so a template can't expand from the command line.
+  #
+  # Evidence discipline, same as opportunity_brief: every load-bearing claim has a URL, a date
+  # and an exact quote confirmed on the page (cite.py keeps each page read); a count made from a
+  # public dataset keeps the dataset and the script, which the check runs again; primary = the
+  # original document; vendor marketing is tagged vendor; an interested party's own survey is
+  # tagged interested; listicles never count; never invent; never get around a block; desk
+  # research only (no sign-ups, demos, quotes or contact). check_desk.py checks each verdict's
+  # support and lists its decisive claims for a person to re-read by hand.
+  #
+  # provider: claude = Claude Code CLI (its own WebSearch/WebFetch/Bash); no temper tools: blocks.
+  version: 1
+  description: |
+    Desk check of an idea's riskiest assumptions: one researcher per assumption (in parallel,
+    up to 6) judges it pass / kill / unknown against the pass and kill bars given with it, from
+    fetched and quoted primary documents and public datasets it counts itself; then a
+    synthesizer reviews each verdict against its bar and says what the verdicts mean for the
+    hypothesis. A script checks every verdict's support and lists the decisive claims for a
+    hand check.
+  inputs:
+    hypothesis:
+      type: string
+      required: true    # the idea, its current hypothesis and the evidence so far (a few paragraphs)
+    assumptions:
+      type: string
+      required: true    # JSON list, 1-6 entries: [{"id": "A1", "assumption", "pass_if", "kill_if", "pointers"}], ids A1..An in order
+  outputs:
+    report_path: synth.structured.report_path
+    hypothesis_status: synth.structured.hypothesis_status
+    verdicts: synth.structured.verdicts
+    check_verdict: final.structured.verdict
+    check_problems: final.structured.problems
+    spot_check: final.structured.spot_check
+
+  nodes:
+    # Input files + the two helpers (cite.py, check_desk.py) into the workspace. No model.
+    - name: setup
+      type: agent
+      agent: desk_setup
+      input_map:
+        hypothesis: input.hypothesis
+        assumptions: input.assumptions
+
+    # One researcher per assumption, side by side.
+    - name: check_1
+      type: agent
+      agent: desk_assumption
+      depends_on: [setup]
+      condition: {source: setup.structured.slots, operator: contains, value: A1}
+      input_map: {slot: A1}
+    - name: check_2
+      type: agent
+      agent: desk_assumption
+      depends_on: [setup]
+      condition: {source: setup.structured.slots, operator: contains, value: A2}
+      input_map: {slot: A2}
+    - name: check_3
+      type: agent
+      agent: desk_assumption
+      depends_on: [setup]
+      condition: {source: setup.structured.slots, operator: contains, value: A3}
+      input_map: {slot: A3}
+    - name: check_4
+      type: agent
+      agent: desk_assumption
+      depends_on: [setup]
+      condition: {source: setup.structured.slots, operator: contains, value: A4}
+      input_map: {slot: A4}
+    - name: check_5
+      type: agent
+      agent: desk_assumption
+      depends_on: [setup]
+      condition: {source: setup.structured.slots, operator: contains, value: A5}
+      input_map: {slot: A5}
+    - name: check_6
+      type: agent
+      agent: desk_assumption
+      depends_on: [setup]
+      condition: {source: setup.structured.slots, operator: contains, value: A6}
+      input_map: {slot: A6}
+
+    # Reviews each verdict against its bar and writes the report. Runs check_desk.py itself.
+    - name: synth
+      type: agent
+      agent: desk_synthesize
+      depends_on: [check_1, check_2, check_3, check_4, check_5, check_6]
+
+    # The report's mechanical check and the hand-check list. No model.
+    - name: final
+      type: agent
+      agent: desk_final
+      depends_on: [synth]

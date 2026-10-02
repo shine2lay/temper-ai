@@ -1,0 +1,19 @@
+# @description DESK CHECK last step (product role). No model. Runs the desk check's mechanical
+# check (state/desk/check_desk.py, written by desk_setup): every verdict's support (quotes on
+# their kept pages, count scripts re-run against their kept datasets, at least one primary and
+# neutral decisive claim per pass or kill), the report's coverage and its hypothesis status.
+# Prints the verdict and each assumption's decisive claims for the hand check. Part of
+# workflows/desk_check.yaml.
+agent:
+  name: desk_final
+  version: 1
+  type: script
+  timeout_seconds: 900
+  script_template: |
+    #!/bin/sh
+    WS={{ workspace_path }}
+    if [ -z "$WS" ]; then echo "desk_check needs a workspace: run it with --workspace <folder>" >&2; exit 1; fi
+    cd "$WS" || exit 1
+    PY=python3
+    command -v python3 >/dev/null 2>&1 || PY="$TEMPER_PYTHON"
+    "$PY" state/desk/check_desk.py --final

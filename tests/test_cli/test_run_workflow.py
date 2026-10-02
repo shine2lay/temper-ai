@@ -27,6 +27,7 @@ from temper_ai.cli.run_workflow import (
     _install_signal_handlers,
     _load_run_row,
     _start_mcp_manager,
+    _stop_mcp_manager,
     _update_run_row,
     cmd_run_workflow,
 )
@@ -64,8 +65,10 @@ def queued_run(isolated_db):
 @pytest.fixture(autouse=True)
 def _no_process_wide_mcp(monkeypatch):
     """cmd_run_workflow loads the MCP configs into the process-wide manager (with a loop thread of
-    its own); the lifecycle tests leave that out. The MCP tests below call it with their own manager."""
+    its own) and ends its sessions at the end; the lifecycle tests leave both out. The MCP tests
+    below call them with their own manager."""
     monkeypatch.setattr("temper_ai.cli.run_workflow._start_mcp_manager", lambda config_dir: None)
+    monkeypatch.setattr("temper_ai.cli.run_workflow._stop_mcp_manager", lambda: None)
 
 
 def _make_args(execution_id: str) -> argparse.Namespace:
@@ -431,18 +434,95 @@ def test_mcp_setup_that_fails_does_not_stop_the_run(caplog):
     broken._event_loop.call_soon_threadsafe(broken._event_loop.stop)
 
 
-def test_the_mcp_servers_are_loaded_before_the_workflow_runs(queued_run):
+def test_the_mcp_servers_are_loaded_before_the_workflow_runs_and_let_go_after(queued_run):
     order: list[str] = []
     fake_result = ExecuteResult(exit_code=0, status="completed")
     with (
         patch("temper_ai.runner.bootstrap.bootstrap_runner_context_from_env"),
         patch("temper_ai.cli.run_workflow._start_mcp_manager",
               side_effect=lambda config_dir: order.append(f"mcp {config_dir}")),
+        patch("temper_ai.cli.run_workflow._stop_mcp_manager",
+              side_effect=lambda: order.append("mcp sessions ended")),
         patch("temper_ai.runner.execute.execute_workflow",
               side_effect=lambda **kw: order.append("execute") or fake_result),
     ):
         assert cmd_run_workflow(_make_args(queued_run)) == 0
-    assert order == ["mcp None", "execute"]
+    assert order == ["mcp None", "execute", "mcp sessions ended"]
+
+
+def test_a_run_that_crashes_still_lets_its_mcp_sessions_go(queued_run):
+    ended: list[str] = []
+    with (
+        patch("temper_ai.runner.bootstrap.bootstrap_runner_context_from_env"),
+        patch("temper_ai.cli.run_workflow._stop_mcp_manager", side_effect=lambda: ended.append("yes")),
+        patch("temper_ai.runner.execute.execute_workflow", side_effect=RuntimeError("a bug")),
+    ):
+        assert cmd_run_workflow(_make_args(queued_run)) == 1
+    assert ended == ["yes"]
+    assert _read_row(queued_run)["status"] == "failed"
+
+
+class _ManagerOnALoop:
+    """Stands in for MCPClientManager: a loop of its own in a thread, and a stop() to watch."""
+
+    def __init__(self, stop=None):
+        import asyncio
+
+        self._event_loop = asyncio.new_event_loop()
+        threading.Thread(target=self._event_loop.run_forever, daemon=True).start()
+        self.stopped_on: list[object] = []
+        self._stop = stop
+
+    async def stop(self):
+        import asyncio
+
+        self.stopped_on.append(asyncio.get_running_loop())
+        if self._stop is not None:
+            await self._stop()
+
+    def close(self):
+        import asyncio
+
+        # one round trip first, so a stop() given up on and cancelled has finished
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self._event_loop).result(timeout=5)
+        self._event_loop.call_soon_threadsafe(self._event_loop.stop)
+
+
+def test_ending_the_sessions_stops_the_manager_on_its_own_loop():
+    manager = _ManagerOnALoop()
+    try:
+        _stop_mcp_manager(manager)
+        assert manager.stopped_on == [manager._event_loop], "sessions are ended where they were opened"
+    finally:
+        manager.close()
+
+
+def test_sessions_that_will_not_end_never_fail_the_run(caplog):
+    import asyncio
+
+    async def refuses():
+        raise ConnectionError("the proxy is gone")
+
+    async def hangs():
+        await asyncio.sleep(60)
+
+    for stop, said in ((refuses, "the proxy is gone"), (hangs, "TimeoutError")):
+        manager = _ManagerOnALoop(stop)
+        try:
+            _stop_mcp_manager(manager, timeout=0.2)  # no exception, and no long wait
+            assert said in caplog.text
+        finally:
+            manager.close()
+
+
+def test_a_manager_that_never_started_has_nothing_to_end():
+    class NeverStarted:
+        _event_loop = None
+
+        async def stop(self):  # pragma: no cover - must not be reached
+            raise AssertionError("stopped a manager that never started")
+
+    _stop_mcp_manager(NeverStarted())
 
 
 # --- Argument parsing surface (smoke) ------------------------------------

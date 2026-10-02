@@ -66,6 +66,33 @@ def _start_mcp_manager(config_dir: str | None, manager: Any = None) -> None:
         logger.warning("MCP setup failed (non-fatal): %s", exc)
 
 
+def _stop_mcp_manager(manager: Any = None, timeout: float = 15) -> None:
+    """End the MCP sessions this run opened, before its process exits.
+
+    Ending a session tells its server so (an HTTP session is deleted). A run in a box of its own
+    used to exit holding the session it opens up front to learn the tools (preconnect_mcp_servers),
+    and the server on the other end kept it until it gave up waiting. The signed-in browser's proxy
+    (local/chrome-mcp) keeps an idle session 30 minutes and allows six at once, so five runs in a
+    row filled it and the next session was turned away with a bare "503 Service Unavailable" (seen
+    2026-10-01). An agent's own session already ends with its node (MCPClientManager.release);
+    this ends the rest. Best effort, like the setup: a session that will not close must not change
+    the run's result.
+    """
+    import asyncio
+
+    if manager is None:
+        from temper_ai.tools.mcp_client import mcp_manager as manager
+    loop = getattr(manager, "_event_loop", None)
+    if loop is None or not loop.is_running():
+        return
+    ending = asyncio.run_coroutine_threadsafe(manager.stop(), loop)
+    try:
+        ending.result(timeout=timeout)
+    except Exception as exc:  # noqa: BLE001 - never the run's undoing
+        ending.cancel()
+        logger.warning("MCP sessions did not all close at the end of the run: %r", exc)
+
+
 def cmd_run_workflow(args: argparse.Namespace) -> int:
     """Run a single WorkflowRun row to completion. Returns the exit code.
 
@@ -193,6 +220,8 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         # Redis publisher needs explicit close (TCP socket); JSONL is
         # closed by its own cleanup. Only call close() on the one that has it.
         redis_notifier.close()
+        # And the MCP sessions the run opened, so no server holds them after it.
+        _stop_mcp_manager()
 
     # --- Persist terminal state ----------------------------------------------
     final_status = (

@@ -139,3 +139,14 @@ for any case by what the cases share, not by the ones found so far (a ban on imp
 import leads to, not how its path is written), with the cases found so far in that check's own test. The
 finding says the class came back and which rounds found it. Past what that check can see, the rest is an
 accepted risk, written where the check is.
+
+**A check a build adds** (the owner, 2026-10-01). A check is only as good as what it was tried on: five
+checks in a row added in fix rounds (import bans, their spellings, links, a name check, a copy check) had
+holes the next review found, each time while the coder's report said the check caught the whole class. So
+before the review, the coder tries every check the build adds or changes (a lint rule, a tool's config, a
+test that reads the code) on every form of what it claims to refuse: each kind of file it reads, and the
+same case across two kinds (`.ts` beside `.tsx`); a case at its threshold and one just under; each
+spelling its standard names; and every case a review found. Those tries are the check's own test, each
+expected refused or let through as the standard says. The standard then says what the check refuses and
+the risk it leaves as the tries show it, and the report claims no more than they show. A form the check
+claims and does not refuse is a hole in the check (a test that cannot fail), not an accepted risk.

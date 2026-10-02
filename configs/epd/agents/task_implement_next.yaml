@@ -77,9 +77,13 @@
 # Also in v8 (the owner, the same day): tests are code for pairs, and a rename is a change. F4 re-typed
 # the refused-month test steps a third time and its own Choose-months steps three times in one file; a
 # twin the change renames (b037's browser Margin cushion) is the change's to bring onto its home.
+# v9 (2026-10-01, the owner): a check a build adds is tried first (build.md "A check a build adds").
+# T3, T3b, T3c and F5 each added a check in a fix round whose holes the next review found (F5: a copy
+# check that never compared .ts with .tsx and let through a case a review found, while the report said
+# it caught every run); the self-review now tries each new check on every form it claims.
 agent:
   name: task_implement_next
-  version: 8
+  version: 9
   type: llm
   provider: anthropic
   model: claude-opus-5-5
@@ -236,6 +240,11 @@ agent:
        f. Run the project's checks for everything you touched (the standards list them): lint, type
           check, the tests of each area; the whole suites once at the end when they fit in a few
           minutes.
+       g. Checks you added or changed (a lint rule, a tool's config, a test that reads the code): try
+          each on every form of what it claims to refuse (build.md, "A check a build adds"): each kind
+          of file it reads and one case across two kinds, a case at its threshold and one just under,
+          each spelling its standard names, every case a review found. The tries are its own test; the
+          standard and your report say what it refuses and the risk it leaves as the tries show it.
        Fix what this finds (commit "self-review: <what>"), then add a `## Self-review` section to the
        map: one line per rule you checked (D1-D8 and each standard), ok or fixed-where.
 

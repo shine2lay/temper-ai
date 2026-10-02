@@ -235,6 +235,9 @@ export interface AgentExecution {
   node_name?: string | null;
   /** Built from the agent index alone: no calls or output on the page. */
   summary_only?: boolean;
+  /** A script agent's saved log, in figures (its completion event): the log itself is read
+   *  page by page, never carried here. */
+  log?: ScriptLogSummary | null;
   // Backward compat
   agent_id?: string;
   stage_id?: string;
@@ -376,7 +379,26 @@ export interface WSHeartbeat {
   timestamp: string;
 }
 
-export type WSMessage = WSSnapshot | WSEvent | WSHeartbeat;
+/** One saved row of a script agent's log, sent as it is saved (see lib/scriptLog.ts). */
+export interface WSScriptLog {
+  type: 'script_log';
+  execution_id?: string;
+  data: unknown;
+}
+
+export type WSMessage = WSSnapshot | WSEvent | WSHeartbeat | WSScriptLog;
+
+/** What a script agent's completion says about its saved log. */
+export interface ScriptLogSummary {
+  rows?: number;
+  saved_bytes?: number;
+  dropped_bytes?: number;
+  lost_bytes?: number;
+  limit?: number;
+  truncated?: boolean;
+  /** False when the end of the log (its end note included) could not be saved. */
+  complete?: boolean;
+}
 
 /* Selection state */
 

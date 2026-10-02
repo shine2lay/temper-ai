@@ -374,11 +374,14 @@ def activity_of(execution_ids: Iterable[str]) -> dict[str, Activity]:
 
     from temper_ai.database import get_session
     from temper_ai.observability.models import Event
+    from temper_ai.observability.script_logs import SCRIPT_LOG
 
+    # A script's saved log rows (script.log) are its output, not a step of the run: left out, so
+    # what a run is doing, and when it last did something, read as they did before scripts had logs.
     with get_session() as session:
         newest = session.exec(
             select(Event.execution_id, func.max(Event.timestamp))
-            .where(col(Event.execution_id).in_(ids))
+            .where(col(Event.execution_id).in_(ids), col(Event.type) != SCRIPT_LOG)
             .group_by(col(Event.execution_id)),
         ).all()
         pairs = [(eid, at) for eid, at in newest if eid and at is not None]
@@ -389,7 +392,7 @@ def activity_of(execution_ids: Iterable[str]) -> dict[str, Activity]:
         rows = session.exec(
             select(Event.execution_id, Event.type, Event.status, Event.data)
             .where(or_(*[and_(col(Event.execution_id) == eid, col(Event.timestamp) == at)
-                         for eid, at in pairs])),
+                         for eid, at in pairs]), col(Event.type) != SCRIPT_LOG),
         ).all()
 
     steps: dict[str, str] = {}

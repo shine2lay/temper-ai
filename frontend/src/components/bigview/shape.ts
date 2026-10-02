@@ -31,6 +31,7 @@ import {
 } from '@/lib/utils';
 import { toolNames } from '@/lib/toolLabels';
 import { agentDisplayName, UNNAMED_AGENT } from '@/lib/liveAgents';
+import { scriptConfigOf } from '@/lib/scriptLog';
 import type {
   ContentValue,
   CoreBlock,
@@ -91,8 +92,9 @@ function nameOf(node: NodeExecution | undefined): string {
 /** The same rule the old sheet used to tell a script agent from a model one. */
 export function isScriptAgent(agent: AgentExecution | undefined): boolean {
   if (!agent) return false;
+  // Its config says so: flat, double-nested (a snapshot) or as a live start event has it.
+  if (scriptConfigOf(agent) !== null) return true;
   const config = agent.agent_config_snapshot?.agent;
-  if (config?.type === 'script') return true;
   return (
     !config?.model &&
     !config?.provider &&
@@ -476,6 +478,16 @@ function agentShape(agentId: string, src: ShapeSources): ViewShape | null {
   facts.push({ label: 'started', value: formatTimestamp(ag.start_time) });
 
   const core: CoreBlock[] = [];
+  if (scriptConfigOf(ag) !== null) {
+    // What the script printed, saved as it printed it: live while it runs, and still there
+    // after a refresh, a timeout or a cancel.
+    core.push({
+      key: 'log',
+      title: ag.status === 'running' ? 'Output, live' : 'Output log',
+      value: { kind: 'scriptLog', attemptId: agentId },
+      defaultOpen: true,
+    });
+  }
   if (src.hasStream(agentId)) {
     core.push({
       key: 'stream',

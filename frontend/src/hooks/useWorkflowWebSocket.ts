@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
+import { useScriptLogStore } from '@/store/scriptLogStore';
 import type { WSMessage } from '@/types';
 import { getApiKey } from '@/lib/authFetch';
 import {
@@ -58,9 +59,17 @@ export function useWorkflowWebSocket(workflowId: string | undefined): void {
       switch (msg.type) {
         case 'snapshot':
           applySnapshot(msg.workflow);
+          // Sent on every (re)connect: script log rows saved while the socket was down never
+          // came, so the logs open on the page read what they missed.
+          useScriptLogStore.getState().markStale();
           break;
         case 'event':
           applyEvent(msg);
+          break;
+        case 'script_log':
+          // A script's output, one saved row: it goes to the log views, never into the run's
+          // events or snapshot.
+          useScriptLogStore.getState().offerLive(msg.execution_id, msg.data);
           break;
         case 'heartbeat':
           setWSStatus({ lastHeartbeat: msg.timestamp });

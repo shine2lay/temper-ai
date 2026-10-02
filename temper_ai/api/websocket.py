@@ -19,6 +19,7 @@ import logging
 import threading
 from collections import defaultdict
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -78,6 +79,11 @@ class WebSocketManager:
             self._forward_redis_chunks(execution_id),
             name=f"ws-redis-{execution_id}",
         )
+        # Script log rows from a subprocess worker, likewise, but to this socket alone, and from
+        # where the stream is NOW: settled before the snapshot goes out, so that everything saved
+        # before it is in the database for the client's catch-up (it asks once it has the
+        # snapshot), and everything saved after reaches it here. No gap between the two.
+        log_task = await self._start_script_log_forwarder(websocket, execution_id)
 
         try:
             # Send snapshot of current state — this contains all data up to now,
@@ -105,6 +111,8 @@ class WebSocketManager:
             logger.warning("WebSocket error for %s: %s", execution_id, exc)
         finally:
             redis_task.cancel()
+            if log_task is not None:
+                log_task.cancel()
             self._disconnect(websocket, execution_id)
 
     async def _forward_redis_chunks(self, execution_id: str) -> None:
@@ -148,6 +156,52 @@ class WebSocketManager:
             )
         finally:
             await sub.close()
+
+    async def _start_script_log_forwarder(
+        self, websocket: WebSocket, execution_id: str,
+    ) -> asyncio.Task | None:
+        """Start passing a subprocess worker's script log rows to one socket; None when there is
+        nothing to pass (no Redis, or the run's stream has ended)."""
+        try:
+            from temper_ai.streaming import RedisChunkSubscriber
+        except ImportError:
+            return None
+        sub = RedisChunkSubscriber()
+        if not sub.enabled:
+            return None
+        start = await sub.script_log_position(execution_id)
+        if start is None:
+            await sub.close()
+            return None
+        return asyncio.create_task(
+            self._forward_script_logs(sub, websocket, execution_id, start),
+            name=f"ws-scriptlog-{execution_id}",
+        )
+
+    async def _forward_script_logs(
+        self, sub: Any, websocket: WebSocket, execution_id: str, start: str,
+    ) -> None:
+        """The per-socket forwarder: each row as one ``script_log`` message, to this socket only."""
+        try:
+            async for row in sub.subscribe_script_logs(execution_id, from_id=start):
+                await self._send_json(websocket, {
+                    "type": "script_log", "execution_id": execution_id, "data": row,
+                })
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Script log forwarder for %s exited: %s", execution_id, exc)
+        finally:
+            await sub.close()
+
+    def notify_script_log(self, execution_id: str, row: dict) -> None:
+        """A script log row from an in-process run (EventRecorder.record_script_log_rows), to
+        every socket watching it; a large one without its text (script_logs.live_row). Not
+        buffered for late joiners: they read the database."""
+        from temper_ai.observability.script_logs import live_row
+
+        self._broadcast(execution_id, {"type": "script_log", "execution_id": execution_id,
+                                       "data": live_row(row)})
 
     def notify_event(self, execution_id: str, event_type: str, data: dict):
         """Called by the executor when an event occurs. Broadcasts to all connected clients.

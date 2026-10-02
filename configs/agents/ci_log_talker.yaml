@@ -1,0 +1,62 @@
+# Zero-LLM agent that prints as it goes, for checking script agents' live output and saved logs
+# (configs/workflows/ci_script_log.yaml; frontend/e2e/scriptLog.spec.ts).
+#
+# Costs nothing, needs no key and no network. All of its output is made up:
+#   * a line every `delay` seconds, `ticks` times, with a few non-ASCII characters;
+#   * a line to stderr every second tick;
+#   * one line written in two pieces, half a second apart (a partial line);
+#   * with `flood_mb`, that many megabytes of filler at the end, as fast as it can (past the
+#     10 MB default, the saved log stops at its limit while the script carries on);
+#   * with `fail`, a last line to stderr and that exit code;
+#   * otherwise {"name": ..., "ticks": ..., "done": true} as its final line: the JSON hand-off.
+#
+# It flushes after every line, as any program must for its output to show while it runs.
+agent:
+  name: ci_log_talker
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/bash
+    set -u
+    NAME={{ name | default("talker", true) }} \
+    TICKS={{ ticks | default("5", true) }} \
+    DELAY={{ delay | default("1", true) }} \
+    FAIL={{ fail | default("0", true) }} \
+    FLOOD_MB={{ flood_mb | default("0", true) }} \
+    python3 - <<'PY'
+    import json, os, sys, time
+
+    def number(key, default, kind=float):
+        try:
+            return kind(os.environ.get(key) or default)
+        except ValueError:
+            return kind(default)
+
+    name = os.environ.get("NAME") or "talker"
+    ticks = number("TICKS", 5, int)
+    delay = number("DELAY", 1.0)
+    fail = number("FAIL", 0, int)
+    flood_mb = number("FLOOD_MB", 0.0)
+
+    print(f"{name}: starting, {ticks} ticks {delay}s apart", flush=True)
+    for i in range(1, ticks + 1):
+        time.sleep(delay)
+        print(f"{name}: tick {i}/{ticks} \u2013 h\u00e9llo \u2713", flush=True)
+        if i % 2 == 0:
+            print(f"{name}: warning at tick {i}", file=sys.stderr, flush=True)
+    sys.stdout.write(f"{name}: one line, printed in two pieces... ")
+    sys.stdout.flush()
+    time.sleep(0.5)
+    sys.stdout.write("and finished\n")
+    sys.stdout.flush()
+    if flood_mb > 0:
+        line = f"{name}: flood " + "x" * 90 + "\n"
+        for _ in range(int(flood_mb * 1_000_000 / len(line)) + 1):
+            sys.stdout.write(line)
+        sys.stdout.flush()
+        print(f"{name}: flood over", flush=True)
+    if fail:
+        print(f"{name}: giving up with exit code {fail}", file=sys.stderr, flush=True)
+        sys.exit(fail)
+    print(json.dumps({"name": name, "ticks": ticks, "done": True}), flush=True)
+    PY

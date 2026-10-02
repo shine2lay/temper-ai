@@ -13,6 +13,7 @@ when the worker exits so a subscriber that's blocked on XREAD can wake.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -55,6 +56,20 @@ DEFAULT_STREAM_TTL_SECONDS = 24 * 60 * 60
 def chunk_stream_key(execution_id: str) -> str:
     """Canonical Redis key for the chunk stream of one workflow run."""
     return f"temper:chunks:{execution_id}"
+
+
+# Script agents' saved log rows (observability/script_logs.py), one stream per run beside the
+# chunks: each entry is one row, already saved, as JSON. The stream only carries rows to viewers
+# connected at the time (each reads from where the stream was when it connected); anyone else
+# reads the rows from the database. So it is kept short: a row is up to ~100 KB, and a viewer
+# that falls behind by more than this many rows sees a gap in the sequence numbers and fills it
+# from the database too.
+DEFAULT_SCRIPT_LOG_MAXLEN = 200
+
+
+def script_log_stream_key(execution_id: str) -> str:
+    """Redis key of the stream of script log rows of one workflow run."""
+    return f"temper:scriptlog:{execution_id}"
 
 
 def _resolve_url(url: str | None) -> str | None:
@@ -149,12 +164,31 @@ class RedisChunkPublisher:
         except Exception as exc:  # noqa: BLE001
             self._mark_unhealthy(exc)
 
+    def publish_script_log(self, execution_id: str, row: dict) -> None:
+        """XADD one saved script log row. Silently no-ops if Redis is unavailable: the row is in
+        the database, and a viewer that misses it here catches up from there."""
+        client = self._client
+        if not self.enabled or client is None:
+            return
+        key = script_log_stream_key(execution_id)
+        try:
+            pipe = client.pipeline(transaction=False)
+            pipe.xadd(key, {"row": json.dumps(row, ensure_ascii=False)},
+                      maxlen=DEFAULT_SCRIPT_LOG_MAXLEN, approximate=True)
+            # Kept a day after its last row, like the chunks after the run: a worker that dies
+            # before its terminal sentinel must not leave the stream behind for ever.
+            pipe.expire(key, self._ttl_seconds)
+            pipe.execute()
+        except Exception as exc:  # noqa: BLE001
+            self._mark_unhealthy(exc)
+
     def publish_terminal(self, execution_id: str) -> None:
         """Sentinel chunk: signals "no more chunks for this execution_id".
 
         Subscribers blocked on XREAD wake up, see done=1 with no content,
         and exit cleanly. Without this they'd time out on the next BLOCK
-        cycle (slower UI dismissal of the streaming state).
+        cycle (slower UI dismissal of the streaming state). The script
+        log stream gets one too, so its readers stop as well.
         """
         client = self._client
         if not self.enabled or client is None:
@@ -174,6 +208,10 @@ class RedisChunkPublisher:
             # Stamp a TTL so the stream doesn't live forever after the
             # last subscriber disconnects.
             client.expire(chunk_stream_key(execution_id), self._ttl_seconds)
+            log_key = script_log_stream_key(execution_id)
+            client.xadd(log_key, {"terminal": "1"},
+                        maxlen=DEFAULT_SCRIPT_LOG_MAXLEN, approximate=True)
+            client.expire(log_key, self._ttl_seconds)
         except Exception as exc:  # noqa: BLE001
             self._mark_unhealthy(exc)
 
@@ -281,6 +319,54 @@ class RedisChunkSubscriber:
                 if chunk.chunk_type == "terminal":
                     # Sentinel: worker is done; close the stream cleanly.
                     return
+
+    async def script_log_position(self, execution_id: str) -> str | None:
+        """Where a run's script log stream is now, to read on from: its last entry's id, "0"
+        when it has none yet, or None when it has ended (or cannot be read). Never raises.
+
+        A viewer reads what was saved before it connected from the database
+        (`read_script_log`), so reading the stream from its beginning would only send rows
+        twice; starting from the last entry's id rather than "$" leaves no gap between now and
+        the first XREAD.
+        """
+        if self._client is None:
+            return None
+        try:
+            newest = await self._client.xrevrange(script_log_stream_key(execution_id), count=1)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Script log XREVRANGE failed for %s (%s)", execution_id, exc)
+            return None
+        if not newest:
+            return "0"
+        last_id, fields = newest[0]
+        return None if fields.get("terminal") else last_id
+
+    async def subscribe_script_logs(self, execution_id: str, *, from_id: str) -> AsyncIterator[dict]:
+        """Yield the script log rows of one run after ``from_id`` (see `script_log_position`),
+        until its terminal sentinel."""
+        if self._client is None:
+            return
+        key = script_log_stream_key(execution_id)
+        last_id = from_id
+        while True:
+            try:
+                resp = await self._client.xread({key: last_id}, block=self.BLOCK_MS, count=16)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Script log XREAD failed for %s (%s); exiting", execution_id, exc)
+                return
+            if not resp:
+                continue
+            _key, entries = resp[0]
+            for entry_id, fields in entries:
+                last_id = entry_id
+                if fields.get("terminal"):
+                    return
+                try:
+                    row = json.loads(fields.get("row") or "")
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    yield row
 
     async def close(self) -> None:
         if self._client is not None:

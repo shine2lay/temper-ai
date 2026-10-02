@@ -51,6 +51,8 @@ export type ContentValue =
   | { kind: 'json'; data: unknown }
   | { kind: 'messages'; messages: unknown }
   | { kind: 'stream'; agentId: string }
+  /** A script agent's saved log, read page by page (components/scriptlog/ScriptLogView.tsx). */
+  | { kind: 'scriptLog'; attemptId: string }
   | { kind: 'thinking'; text: string }
   | { kind: 'widget'; name: WidgetName; data?: unknown }
   | { kind: 'empty'; note: string }
@@ -140,6 +142,7 @@ export function isEmptyContent(value: ContentValue): boolean {
     case 'widget':
       return Array.isArray(value.data) && value.data.length === 0;
     case 'stream':
+    case 'scriptLog':
       return false;
     default:
       return !value.text;

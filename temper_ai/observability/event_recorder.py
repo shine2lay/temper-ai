@@ -8,6 +8,7 @@ Notifier protocol (duck-typed):
     cleanup(execution_id: str) -> None
     # Optional:
     notify_stream_chunk(execution_id, agent_id, content, chunk_type, done) -> None
+    notify_script_log(execution_id, row) -> None   # a script agent's saved log row
 """
 
 import logging
@@ -125,6 +126,40 @@ class EventRecorder:
             "event.updated",
             {"event_id": event_id, "status": status, **(data or {})},
         )
+
+    def record_script_log_rows(
+        self, attempt_id: str, rows: list[tuple[int, dict]], execution_id: str | None = None,
+    ) -> list[str]:
+        """Save rows of a script agent's log, ``[(seq, data), ...]``, then send them to whoever
+        watches the run.
+
+        Saved first, in one go, and sent only once saved (raising, unsent, when they were not), so
+        a live viewer never sees output that a refresh would not show again. Rows go to the
+        notifier's ``notify_script_log``, never through ``notify_event``: there can be thousands
+        per run, and a run's live event stream is for its structure.
+        """
+        from temper_ai.observability.script_logs import (
+            save_script_log_rows,
+            script_log_event_id,
+        )
+
+        exec_id = execution_id or self._execution_id
+        if self._persist:
+            ids = save_script_log_rows(exec_id, attempt_id, rows)
+        else:
+            ids = [script_log_event_id(attempt_id, seq) for seq, _ in rows]
+        notify = getattr(self._notifier, "notify_script_log", None)
+        if notify is not None:
+            for eid, (seq, data) in zip(ids, rows, strict=True):
+                try:
+                    notify(self._execution_id, {**data, "id": eid, "attempt_id": attempt_id, "seq": seq})
+                except Exception:  # noqa: BLE001 - saved already; a viewer catches up from the database
+                    logger.warning("Sending script log row %s failed", eid, exc_info=True)
+        return ids
+
+    def record_script_log(self, attempt_id: str, seq: int, data: dict, execution_id: str | None = None) -> str:
+        """One row of a script agent's log: see :meth:`record_script_log_rows`."""
+        return self.record_script_log_rows(attempt_id, [(seq, data)], execution_id=execution_id)[0]
 
     def broadcast_stream_chunk(
         self,

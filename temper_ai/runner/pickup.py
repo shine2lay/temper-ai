@@ -479,12 +479,15 @@ def _history(ids: Sequence[str]) -> tuple[dict[str, int], dict[str, datetime], s
 
         from temper_ai.database import get_session
         from temper_ai.observability.models import Event
+        from temper_ai.observability.script_logs import SCRIPT_LOG
 
+        # Not a script's saved log rows: output, not steps (and up to ~10 MB a script, each
+        # carried here whole by Event.data).
         with get_session() as session:
             rows = session.exec(
                 select(Event.execution_id, Event.type, Event.data,  # type: ignore[call-overload]
                        Event.timestamp, Event.status)
-                .where(Event.execution_id.in_(ids)),  # type: ignore[union-attr]
+                .where(Event.execution_id.in_(ids), Event.type != SCRIPT_LOG),  # type: ignore[union-attr]
             ).all()
         for execution_id, etype, data, timestamp, status in rows:
             when = as_utc(timestamp)

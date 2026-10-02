@@ -101,7 +101,11 @@ cd frontend && TEMPER_E2E_BASE_URL=http://127.0.0.1:8420 npx playwright test
 ```
 
 They make their own data with the zero-cost `smoke_test` workflow, so no API
-key is needed.
+key is needed. Script agents' live output and saved logs are checked the
+same way, with the zero-cost `ci_script_log` and `ci_script_log_timeout`
+workflows (made-up output on a timer, a failure, a timeout, a cancel and a
+flood past the 10 MB limit; `frontend/e2e/scriptLog.spec.ts`). Set
+`TEMPER_PROOF_DIR` to keep its screenshots.
 
 ## Flaky tests
 

@@ -27,6 +27,7 @@ from temper_ai.streaming.redis_streams import (
     RedisChunkPublisher,
     RedisChunkSubscriber,
     chunk_stream_key,
+    script_log_stream_key,
 )
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     "RedisChunkPublisher",
     "RedisChunkSubscriber",
     "chunk_stream_key",
+    "script_log_stream_key",
 ]

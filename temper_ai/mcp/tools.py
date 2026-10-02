@@ -494,6 +494,7 @@ class TemperTools:
             limit: Most recent N events (default 50).
         """
         from temper_ai.observability.recorder import get_events as _query
+        from temper_ai.observability.script_logs import SCRIPT_LOG_PREFIX
 
         try:
             events = _query(
@@ -502,6 +503,9 @@ class TemperTools:
                 status=status,
                 limit=limit,
                 newest_first=True,
+                # A script's saved log rows are its output, many to a script: they would push the
+                # run's steps out of the newest N. Asked for by type ("script.log"), they are listed.
+                exclude_type_prefixes=() if event_type else (SCRIPT_LOG_PREFIX,),
             )
         except Exception as exc:
             return {"error": f"could not read events: {exc}"}

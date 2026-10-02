@@ -63,6 +63,19 @@ class CompositeNotifier:
                     type(n).__name__, exc,
                 )
 
+    def notify_script_log(self, execution_id: str, row: dict) -> None:
+        """A script agent's saved log row, to every sink that shows one live."""
+        for n in self._notifiers:
+            if not hasattr(n, "notify_script_log"):
+                continue
+            try:
+                n.notify_script_log(execution_id, row)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Notifier %s.notify_script_log raised (%s); continuing",
+                    type(n).__name__, exc,
+                )
+
     def cleanup(self, execution_id: str) -> None:
         for n in self._notifiers:
             try:

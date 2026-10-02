@@ -18,6 +18,7 @@ import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { ThinkingContent } from '@/components/shared/ThinkingContent';
 import { StreamingPanel } from '@/components/shared/StreamingPanel';
+import { ScriptLogView } from '@/components/scriptlog/ScriptLogView';
 import { CostBreakdownSection } from '@/components/shared/CostBreakdownSection';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { hasThinkingTags } from '@/lib/streamSegments';
@@ -116,6 +117,17 @@ export const Content = memo(function Content({ value, maxHeight = CONTENT_HEIGHT
       return (
         <div data-testid="bv-stream" className={cn('overflow-auto', className)} style={{ maxHeight }}>
           <StreamingPanel agentId={value.agentId} />
+        </div>
+      );
+
+    case 'scriptLog':
+      // Its own height and scrolling: it follows new output, and reads older output on demand.
+      return (
+        <div
+          data-testid="bv-script-log"
+          className={cn('overflow-hidden rounded-md border border-temper-border', className)}
+        >
+          <ScriptLogView attemptId={value.attemptId} height={Math.max(maxHeight, 480)} />
         </div>
       );
 

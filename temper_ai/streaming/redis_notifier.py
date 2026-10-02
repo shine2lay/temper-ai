@@ -51,6 +51,14 @@ class RedisChunkNotifier:
             call_id=call_id,
         )
 
+    def notify_script_log(self, execution_id: str, row: dict) -> None:
+        """A script agent's saved log row → its own Redis Stream, for the server to pass to the
+        run's viewers. Best-effort like the chunks: the row is already in the database. A large
+        row goes without its text (script_logs.live_row)."""
+        from temper_ai.observability.script_logs import live_row
+
+        self._publisher.publish_script_log(execution_id, live_row(row))
+
     def cleanup(self, execution_id: str) -> None:
         """Worker is done with this run. Send sentinel so subscribers wake,
         then close the client. Idempotent — double-cleanup is harmless."""

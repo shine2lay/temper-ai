@@ -114,11 +114,14 @@ def copy_events_for_fork(
 
     Returns the new workflow_started event ID (so the executor can parent new events to it).
     """
-    # Load source events into plain dicts (detached from session)
+    # Load source events into plain dicts (detached from session). Not script agents' saved log
+    # rows: an agent's output stays with the attempt that printed it (a fork's copied agents show
+    # no log), and there can be thousands of them, which would crowd the events below out of the
+    # limit.
     with get_session() as session:
         stmt = (
             select(Event)
-            .where(Event.execution_id == source_execution_id)
+            .where(Event.execution_id == source_execution_id, Event.type != EventType.SCRIPT_LOG.value)
             .order_by(col(Event.timestamp))
             .limit(10000)
         )

@@ -346,10 +346,14 @@ def _run_inputs(execution_id: str) -> dict[str, Any]:
 def _last_activity(execution_id: str) -> datetime | None:
     from temper_ai.database import get_session
     from temper_ai.observability.models import Event
+    from temper_ai.observability.script_logs import SCRIPT_LOG
 
+    # A script printing is not the run doing something new: its saved log rows are left out.
     with get_session() as session:
         value = session.exec(
-            select(func.max(Event.timestamp)).where(Event.execution_id == execution_id)
+            select(func.max(Event.timestamp)).where(
+                Event.execution_id == execution_id, Event.type != SCRIPT_LOG,
+            )
         ).first()
         return _aware(value) if isinstance(value, datetime) else None
 

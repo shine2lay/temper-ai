@@ -18,6 +18,7 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from temper_ai.agent.base import AgentABC
 from temper_ai.agent.exceptions import ScriptRenderError
+from temper_ai.agent.script_log import ScriptLog, log_limit
 from temper_ai.observability import EventType
 from temper_ai.observability import record as _default_record
 from temper_ai.shared.types import AgentResult, ExecutionContext, Status
@@ -265,8 +266,10 @@ class ScriptAgent(AgentABC):
         """Execute the script agent pipeline.
 
         1. Render Jinja template from config["script_template"] with input_data
-        2. Execute via context.tool_executor (Bash tool with workspace + timeout)
-        3. Return AgentResult with stdout as output
+        2. Execute via context.tool_executor (Bash tool with workspace + timeout), saving what the
+           script prints to this attempt's log as it arrives (agent/script_log.py)
+        3. Return AgentResult with stdout as output; the log's figures go on the completion
+           event beside it, never into it
         """
         start = time.monotonic()
         _record = context.event_recorder.record if context.event_recorder else _default_record
@@ -274,6 +277,7 @@ class ScriptAgent(AgentABC):
 
         undefined_refs: list[str] = []
         stash = _ValueStash()
+        log: ScriptLog | None = None
         try:
             template_text = _rewrite_interpolations(self.config["script_template"], self.name)
             env = SandboxedEnvironment(
@@ -316,15 +320,23 @@ class ScriptAgent(AgentABC):
 
             timeout = self.config.get("timeout_seconds", 30)
             workspace = render_vars.get("workspace_path")
+            # `env` carries the interpolated values; `command` carries only the author's script.
+            # TEMPER_PYTHON is the interpreter temper itself runs on, with its
+            # dependencies (PyYAML among them); the image's `python3` has none.
+            # `_raw_output`: the output is read by code (its JSON is the structured output), so
+            # it is not compacted for a model's context the way a model's own calls are.
+            params: dict[str, Any] = {
+                "command": script, "_skip_allowlist": True, "_raw_output": True, "timeout": timeout,
+                "env": {**stash.env, "TEMPER_PYTHON": sys.executable},
+            }
+            # The attempt's log: what the script prints, saved and sent to the dashboard while it
+            # runs (agent/script_log.py). Only its output goes in it, never the script or its env.
+            log = self._open_log(agent_event_id, context)
+            if log is not None:
+                params["_output_sink"] = log.write
             tool_result = context.tool_executor.execute(
                 "Bash",
-                # `env` carries the interpolated values; `command` carries only the author's script.
-                # TEMPER_PYTHON is the interpreter temper itself runs on, with its
-                # dependencies (PyYAML among them); the image's `python3` has none.
-                # `_raw_output`: the output is read by code (its JSON is the structured output), so
-                # it is not compacted for a model's context the way a model's own calls are.
-                {"command": script, "_skip_allowlist": True, "_raw_output": True, "timeout": timeout,
-                 "env": {**stash.env, "TEMPER_PYTHON": sys.executable}},
+                params,
                 # A script agent runs the script ITS OWN config declares — the
                 # command is rendered from the template here, not chosen by a
                 # model — so it declares exactly the one tool it uses.
@@ -341,12 +353,15 @@ class ScriptAgent(AgentABC):
                 },
             )
 
+            # The log ends (saved to its last row, with how the attempt ended) before the agent's
+            # completion is recorded, so a viewer who sees the agent done finds its log whole.
+            log_summary = _close_log(log, tool_result, timeout)
             duration = round(time.monotonic() - start, 3)
             status = Status.COMPLETED if tool_result.success else Status.FAILED
             output = str(tool_result.result) if tool_result.result else ""
             self._record_script_completed(
                 tool_result, output, duration, agent_event_id, context, status,
-                undefined_refs=sorted(set(undefined_refs)),
+                undefined_refs=sorted(set(undefined_refs)), log_summary=log_summary,
             )
 
             # Extract structured output from script's JSON output (if any)
@@ -367,6 +382,10 @@ class ScriptAgent(AgentABC):
             )
 
         except Exception as e:  # noqa: BLE001
+            log_summary = None
+            if log is not None:
+                log.close("failed", detail=f"{type(e).__name__}: {e}")
+                log_summary = log.summary()
             duration = round(time.monotonic() - start, 3)
             _record(
                 EventType.AGENT_FAILED,
@@ -378,6 +397,7 @@ class ScriptAgent(AgentABC):
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "duration_seconds": duration,
+                    **({"log": log_summary} if log_summary else {}),
                 },
             )
             return AgentResult(
@@ -386,6 +406,23 @@ class ScriptAgent(AgentABC):
                 error=str(e),
                 duration_seconds=duration,
             )
+
+    def _open_log(self, attempt_id: Any, context: ExecutionContext) -> ScriptLog | None:
+        """This attempt's log, saved under its agent.started event's id; None without one."""
+        if not isinstance(attempt_id, str) or not attempt_id:
+            return None
+        limit = log_limit(self.config)
+        recorder = context.event_recorder
+        run_id = context.run_id
+        if recorder is not None:
+            def writer(rows: list[tuple[int, dict]]) -> None:
+                recorder.record_script_log_rows(attempt_id, rows, execution_id=run_id)
+        else:
+            from temper_ai.observability.script_logs import save_script_log_rows
+
+            def writer(rows: list[tuple[int, dict]]) -> None:
+                save_script_log_rows(run_id, attempt_id, rows)
+        return ScriptLog(attempt_id, writer, limit_bytes=limit)
 
     def _record_script_started(self, _record, input_data: dict, context: ExecutionContext) -> str:
         """Emit AGENT_STARTED event and return the event id."""
@@ -405,6 +442,8 @@ class ScriptAgent(AgentABC):
                         "name": self.name,
                         "script_template": self.config.get("script_template", "")[:2000],
                         "timeout_seconds": self.config.get("timeout_seconds", 30),
+                        **({"log_max_bytes": self.config["log_max_bytes"]}
+                           if "log_max_bytes" in self.config else {}),
                     }
                 },
             },
@@ -412,7 +451,8 @@ class ScriptAgent(AgentABC):
 
     def _record_script_completed(self, tool_result, output: str, duration: float,
                                  agent_event_id: str, context: ExecutionContext, status,
-                                 undefined_refs: list[str] | None = None) -> None:
+                                 undefined_refs: list[str] | None = None,
+                                 log_summary: dict | None = None) -> None:
         """Emit AGENT_COMPLETED or AGENT_FAILED event after script execution."""
         _record = context.event_recorder.record if context.event_recorder else _default_record
         structured = _extract_json(output)
@@ -433,6 +473,9 @@ class ScriptAgent(AgentABC):
                 "duration_seconds": duration,
                 "error": tool_result.error,
                 **({"undefined_refs": undefined_refs} if undefined_refs else {}),
+                # What the attempt's log holds (sizes, limit, whether it is whole): beside the
+                # output, never in it or in the structured output a next node reads.
+                **({"log": log_summary} if log_summary else {}),
             },
         )
 
@@ -440,7 +483,31 @@ class ScriptAgent(AgentABC):
         errors = super().validate_config()
         if not self.config.get("script_template"):
             errors.append("ScriptAgent requires 'script_template' in config")
+        try:
+            log_limit(self.config)
+        except ValueError as exc:
+            errors.append(str(exc))
         return errors
+
+
+def _close_log(log: ScriptLog | None, tool_result: Any, timeout: Any) -> dict | None:
+    """End the attempt's log with how the script ended, and say what it holds."""
+    if log is None:
+        return None
+    meta = getattr(tool_result, "metadata", None) or {}
+    error = str(getattr(tool_result, "error", "") or "")
+    stopped = meta.get("stopped")
+    if tool_result.success:
+        log.close("completed", exit_code=0)
+    elif stopped == "timeout" or (stopped is None and error.startswith("Tool 'Bash' timed out")):
+        log.close("timed_out", detail=f"after {timeout}s")
+    elif stopped == "cancelled" or error.startswith("Cancelled:"):
+        log.close("cancelled")
+    elif isinstance(meta.get("exit_code"), int):
+        log.close("failed", exit_code=meta["exit_code"])
+    else:
+        log.close("failed", detail=error)
+    return log.summary()
 
 
 def _extract_json(text: str) -> dict | None:

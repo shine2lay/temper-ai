@@ -1,0 +1,64 @@
+workflow:
+  name: ci_script_log
+  description: |
+    Script agents that print as they go, for checking live output and saved
+    logs: two talkers side by side under one agent name (each attempt has a
+    log of its own), and a last step that reads talker a's JSON hand-off, so
+    a log can never leak into what is handed on. Script agents only: no
+    model, no key, no spend; all output is made up.
+
+      POST /api/runs {"workflow": "ci_script_log",
+                      "inputs": {"ticks": "6", "delay": "1"}}
+
+    Inputs, all optional strings:
+      ticks, delay  each talker prints a line every `delay` seconds, `ticks`
+                    times, and a line to stderr every second tick
+      fail          an exit code: talker a fails with it after printing
+      flood_mb      talker b prints this many MB at the end (past 10 MB its
+                    log stops at the limit, the script carries on)
+
+    What frontend/e2e/scriptLog.spec.ts watches in a browser.
+
+  inputs:
+    ticks:
+      type: string
+      required: false
+    delay:
+      type: string
+      required: false
+    fail:
+      type: string
+      required: false
+    flood_mb:
+      type: string
+      required: false
+
+  outputs:
+    handed_on: use.output
+
+  nodes:
+    - name: talk_a
+      type: agent
+      agent: ci_log_talker
+      input_map:
+        name: "a"
+        ticks: input.ticks
+        delay: input.delay
+        fail: input.fail
+
+    - name: talk_b
+      type: agent
+      agent: ci_log_talker
+      input_map:
+        name: "b"
+        ticks: input.ticks
+        delay: input.delay
+        flood_mb: input.flood_mb
+
+    - name: use
+      type: agent
+      agent: ci_step
+      depends_on: [talk_a]
+      input_map:
+        step: "use"
+        saw: talk_a.structured.name

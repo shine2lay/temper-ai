@@ -5,7 +5,9 @@
  * It follows whichever agent is working unless you pick one yourself; the
  * Follow button hands it back. Picking one anywhere on the page counts:
  * clicking an agent on the graph, or opening one in the side panel, brings
- * the panel to that agent. Drag its top edge to make it as tall as the
+ * the panel to that agent. A script agent shows what its script prints
+ * instead, as it prints it (components/scriptlog/ScriptLogView.tsx). Drag
+ * its top edge to make it as tall as the
  * page, press the button to fill the page in one go, or fold it to a bar —
  * it remembers what you chose.
  */
@@ -16,6 +18,8 @@ import { fullStory } from '@/lib/agentStory';
 import { buildRoster, busyCount, newestBusyAgent, statusWord } from '@/lib/agentRoster';
 import { litRosterIds } from '@/lib/runSearch';
 import { cn, formatDuration } from '@/lib/utils';
+import { scriptConfigOf } from '@/lib/scriptLog';
+import { ScriptLogView } from '@/components/scriptlog/ScriptLogView';
 import { AgentRoster } from './AgentRoster';
 import { useSecondTicker } from '@/hooks/useSecondTicker';
 import { AgentStoryView } from './AgentStoryView';
@@ -62,6 +66,7 @@ export function LivePanel() {
   const shownId = (following ? followed ?? lastAgentId : pickedId) ?? null;
 
   const agent = shownId ? agents.get(shownId) : undefined;
+  const isScript = scriptConfigOf(agent) !== null;
   const story = shownId ? stories.get(shownId) : undefined;
   const items = useMemo(() => fullStory(agent, story), [agent, story]);
 
@@ -186,11 +191,15 @@ export function LivePanel() {
           <div className="min-w-0 flex-1">
             {/* Keyed by agent: a different agent starts its own view, with
                 its own window on a long story. */}
-            <AgentStoryView
-              key={shownId ?? 'none'}
-              items={items}
-              live={!!shownRow?.row.busy}
-            />
+            {isScript && shownId ? (
+              <ScriptLogView key={shownId} attemptId={shownId} />
+            ) : (
+              <AgentStoryView
+                key={shownId ?? 'none'}
+                items={items}
+                live={!!shownRow?.row.busy}
+              />
+            )}
           </div>
         </div>
       )}

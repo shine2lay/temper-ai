@@ -591,7 +591,8 @@ class TestEveryAgentOfARun:
         index = get_agent_index("run-1")
 
         assert index is not None
-        assert [c["exclude_type_prefixes"] for c in calls] == [("llm.", "tool.")]
+        # Nor a script agent's saved log: its rows are read a page at a time, from their own route.
+        assert [c["exclude_type_prefixes"] for c in calls] == [("llm.", "tool.", "script.")]
         assert not {"input_data", "output", "structured_output", "agent_config_snapshot", "llm_calls"} & set(index[0])
 
     def test_a_run_with_no_events_has_no_index(self, monkeypatch):

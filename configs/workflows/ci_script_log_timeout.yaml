@@ -1,0 +1,24 @@
+workflow:
+  name: ci_script_log_timeout
+  description: |
+    One script agent that prints until its 5-second timeout stops it: its
+    saved log keeps what it printed and ends with a note that it timed out.
+    Beside it, one step that finishes at once, so the failed run has more
+    than one node (other browser tests pick up any failed run and expect a
+    graph with at least two). Script agents only: no model, no key, no
+    spend; all output is made up.
+
+      POST /api/runs {"workflow": "ci_script_log_timeout"}
+
+    What frontend/e2e/scriptLog.spec.ts checks a timed-out log with.
+
+  nodes:
+    - name: stuck
+      type: agent
+      agent: ci_log_stuck
+
+    - name: beside
+      type: agent
+      agent: ci_step
+      input_map:
+        step: "beside"

@@ -7,13 +7,17 @@ Security:
 - Timeout enforcement (default 30s, max 600s)
 """
 
+import codecs
+import io
 import logging
 import os
 import re
+import selectors
 import shlex
 import signal
 import subprocess  # noqa: B404
 import time
+from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from temper_ai.tools._output_compaction import DEFAULT_MAX_CHARS
@@ -112,6 +116,11 @@ class Bash(BaseTool):
                     )
 
         cwd = self.config.get("workspace_root") or self.config.get("cwd")
+        # `_output_sink`: a script agent's live log (agent/script_log.py), handed the output as it
+        # arrives. A `_` parameter, like `_raw_output`: llm_agent strips those from a model's calls,
+        # so a model's own Bash calls never take the streaming path. It travels with the call, not
+        # on this (shared) tool, so two scripts running at once cannot write into each other's log.
+        sink = params.get("_output_sink")
         return _run_subprocess(
             command,
             timeout,
@@ -120,6 +129,7 @@ class Bash(BaseTool):
             max_output_chars=int(self.config.get("max_output_chars") or DEFAULT_MAX_CHARS),
             extra_env=params.get("env") or None,
             cancel_event=self.cancel_event,
+            output_sink=sink if callable(sink) else None,
         )
 
 
@@ -268,6 +278,7 @@ def _run_subprocess(
     max_output_chars: int = DEFAULT_MAX_CHARS,
     extra_env: dict[str, str] | None = None,
     cancel_event: Any = None,
+    output_sink: "OutputSink | None" = None,
 ) -> "ToolResult":
     """Execute a shell command in a subprocess and return a ToolResult.
 
@@ -276,6 +287,10 @@ def _run_subprocess(
     `subprocess.run` does) left every `uv run pytest` that outran its timeout
     running on in the container, and the executor's pool worker waiting on it.
     A run that is cancelled while the command runs kills the group the same way.
+
+    With an ``output_sink`` the pipes are read as the command writes them and
+    every piece is handed to the sink as it arrives (see `_run_streaming`);
+    the result is built exactly as it is without one.
     """
     try:
         proc = subprocess.Popen(
@@ -290,27 +305,39 @@ def _run_subprocess(
         )
     except Exception as e:
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
+    if output_sink is not None:
+        return _run_streaming(proc, command, timeout, compact, max_output_chars, cancel_event, output_sink)
     try:
         out, err = _wait(proc, timeout, cancel_event)
     except _Cancelled:
         _kill_group(proc)
-        return ToolResult(success=False, result="", error=(
-            "Cancelled: the run was stopped while this command was running. "
-            "It was killed, with everything it started."
-        ))
+        return ToolResult(success=False, result="", error=_CANCELLED_ERROR)
     except subprocess.TimeoutExpired:
         _kill_group(proc)
-        return ToolResult(success=False, result="", error=(
-            f"Command timed out after {timeout}s and was killed, with everything it started. "
-            f"Ask for a longer timeout (up to {_MAX_TIMEOUT}s), or, to leave a server running, "
-            "start it with its output redirected (`cmd > log 2>&1 &`) so this call can return."
-        ))
+        return ToolResult(success=False, result="", error=_timeout_error(timeout))
     except Exception as e:
         _kill_group(proc)
         return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
-    try:
-        result = _Completed(out or "", err or "", proc.returncode)
+    return _finish(command, _Completed(out or "", err or "", proc.returncode), compact, max_output_chars)
 
+
+_CANCELLED_ERROR = (
+    "Cancelled: the run was stopped while this command was running. "
+    "It was killed, with everything it started."
+)
+
+
+def _timeout_error(timeout: float) -> str:
+    return (
+        f"Command timed out after {timeout}s and was killed, with everything it started. "
+        f"Ask for a longer timeout (up to {_MAX_TIMEOUT}s), or, to leave a server running, "
+        "start it with its output redirected (`cmd > log 2>&1 &`) so this call can return."
+    )
+
+
+def _finish(command: str, result: "_Completed", compact: bool, max_output_chars: int) -> ToolResult:
+    """The ToolResult of a command that ran to its end: its output, ceilinged and joined."""
+    try:
         # Hard ceiling first, so a runaway command cannot exhaust memory here.
         stdout = result.stdout[:_MAX_OUTPUT_SIZE] + "\n... (truncated)" if len(result.stdout) > _MAX_OUTPUT_SIZE else result.stdout
         stderr = result.stderr[:_MAX_OUTPUT_SIZE] + "\n... (truncated)" if len(result.stderr) > _MAX_OUTPUT_SIZE else result.stderr
@@ -385,6 +412,15 @@ def _kill_group(proc: subprocess.Popen) -> None:
     the container. A process that put itself in a new session escapes this,
     which is what a daemon does on purpose.
     """
+    _signal_group(proc)
+    try:
+        proc.communicate(timeout=5)
+    except (subprocess.TimeoutExpired, ValueError, OSError):
+        proc.kill()
+
+
+def _signal_group(proc: subprocess.Popen) -> None:
+    """SIGKILL the command's process group (see `_kill_group`), without waiting on it."""
     try:
         if hasattr(os, "killpg"):
             os.killpg(proc.pid, signal.SIGKILL)
@@ -392,10 +428,213 @@ def _kill_group(proc: subprocess.Popen) -> None:
             proc.kill()
     except ProcessLookupError:
         pass
+
+
+# --------------------------------------------------------------------------- watching the output
+
+#: ``sink(stream, data)``: one piece of what the command wrote, as it arrived: ``"stdout"`` or
+#: ``"stderr"``, and the raw bytes, which may end mid-line or in the middle of a character.
+OutputSink = Callable[[str, bytes], None]
+
+_READ_SIZE = 65536
+#: After a kill, what the command wrote before it died may still be in the pipes: it is read out
+#: to the sink for this long at most (a process that escaped the group can hold a pipe open for
+#: ever). Well inside the 5 s the executor allows beyond the timeout, so the answer is this call's.
+_DRAIN_AFTER_KILL_S = 2.0
+
+
+def _run_streaming(
+    proc: subprocess.Popen,
+    command: str,
+    timeout: float,
+    compact: bool,
+    max_output_chars: int,
+    cancel_event: Any,
+    output_sink: OutputSink,
+) -> ToolResult:
+    """`_run_subprocess` for a caller that watches the output as it is written.
+
+    Both pipes are read as they fill, together, and each piece is handed to the sink before the
+    next read, so what a script prints is seen while it runs rather than when it ends. The result
+    is built as communicate() would have had it (see `_StreamText`): the script's final output, its
+    JSON hand-off and its exit status are what they always were. Stopping is unchanged too, timeout
+    or cancel: the whole group is killed and the result is empty. What the command wrote until then
+    reached the sink as it came, and what was still in the pipes is read out to it before this
+    returns. ``metadata["stopped"]`` says which stop it was.
+    """
+    sink = _GuardedSink(output_sink)
+    streams: dict[int, tuple[str, _StreamText]] = {}
+    selector = selectors.DefaultSelector()
     try:
-        proc.communicate(timeout=5)
-    except (subprocess.TimeoutExpired, ValueError, OSError):
+        for name, pipe in (("stdout", proc.stdout), ("stderr", proc.stderr)):
+            if not isinstance(pipe, io.TextIOWrapper):  # Popen(text=True) above: always one
+                raise TypeError(f"the command's {name} is not a text pipe")
+            fd = pipe.fileno()
+            streams[fd] = (name, _StreamText(pipe.encoding, pipe.errors or "strict"))
+            selector.register(fd, selectors.EVENT_READ)
+        stop = _pump(proc, selector, streams, sink, time.monotonic() + timeout, cancel_event)
+        if stop is not None:
+            _signal_group(proc)
+            _drain(selector, streams, sink, time.monotonic() + _DRAIN_AFTER_KILL_S)
+            _reap(proc)
+            error = _CANCELLED_ERROR if stop == "cancelled" else _timeout_error(timeout)
+            return ToolResult(success=False, result="", error=error, metadata={"stopped": stop})
+        for _, text in streams.values():
+            text.feed(b"", final=True)
+        bad = [text.error for _, text in streams.values() if text.error]  # stdout's first, as before
+        if bad:
+            _signal_group(proc)
+            _reap(proc)
+            return ToolResult(success=False, result="", error=f"UnicodeDecodeError: {bad[0]}")
+        out, err = (text.text() for _, text in streams.values())
+        return _finish(command, _Completed(out, err, proc.returncode), compact, max_output_chars)
+    except Exception as e:
+        _signal_group(proc)
+        _reap(proc)
+        return ToolResult(success=False, result="", error=f"{type(e).__name__}: {e}")
+    finally:
+        selector.close()
+        for pipe in (proc.stdout, proc.stderr):
+            if pipe is None:
+                continue
+            try:
+                pipe.close()
+            except Exception:  # noqa: BLE001, S110 - closing a pipe we are done with
+                pass
+
+
+def _pump(
+    proc: subprocess.Popen,
+    selector: selectors.BaseSelector,
+    streams: dict[int, tuple[str, "_StreamText"]],
+    sink: "_GuardedSink",
+    deadline: float,
+    cancel_event: Any,
+) -> str | None:
+    """Read both pipes to their end, then wait for the shell: None, or why it had to be stopped."""
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            return "cancelled"
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return "timeout"
+        wait = min(_CANCEL_POLL_S, remaining)
+        if selector.get_map():
+            for key, _ in selector.select(timeout=wait):
+                _read(selector, key.fd, streams, sink, decode=True)
+            continue
+        try:
+            proc.wait(timeout=wait)  # both pipes closed: the shell is ending, or closed them itself
+            return None
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def _drain(
+    selector: selectors.BaseSelector,
+    streams: dict[int, tuple[str, "_StreamText"]],
+    sink: "_GuardedSink",
+    until: float,
+) -> None:
+    """After a kill: hand the sink whatever is left in the pipes, until they close or time is up."""
+    while selector.get_map():
+        remaining = until - time.monotonic()
+        if remaining <= 0:
+            return
+        for key, _ in selector.select(timeout=min(_CANCEL_POLL_S, remaining)):
+            _read(selector, key.fd, streams, sink, decode=False)
+
+
+def _read(
+    selector: selectors.BaseSelector,
+    fd: int,
+    streams: dict[int, tuple[str, "_StreamText"]],
+    sink: "_GuardedSink",
+    decode: bool,
+) -> None:
+    try:
+        data = os.read(fd, _READ_SIZE)
+    except (BlockingIOError, InterruptedError):
+        return
+    except OSError:
+        data = b""
+    if not data:
+        selector.unregister(fd)
+        return
+    name, text = streams[fd]
+    if decode:
+        text.feed(data)
+    sink(name, data)
+
+
+def _reap(proc: subprocess.Popen) -> None:
+    try:
+        proc.wait(timeout=1)
+    except subprocess.TimeoutExpired:
         proc.kill()
+
+
+class _GuardedSink:
+    """The caller's sink, which can never stop the command being read: one that raises is let go."""
+
+    def __init__(self, sink: OutputSink) -> None:
+        self._sink: OutputSink | None = sink
+
+    def __call__(self, stream: str, data: bytes) -> None:
+        if self._sink is None:
+            return
+        try:
+            self._sink(stream, data)
+        except Exception:  # noqa: BLE001 - the command must be read to its end regardless
+            logger.warning("Output sink failed; the rest of this command's output is not passed to it",
+                           exc_info=True)
+            self._sink = None
+
+
+class _StreamText:
+    """One pipe's text for the result, decoded as ``Popen(text=True).communicate()`` decodes it.
+
+    communicate() decodes a whole stream at its end, strictly, then turns ``\\r\\n`` and ``\\r``
+    into ``\\n``. This does the same a piece at a time (a character or a ``\\r\\n`` split across two
+    reads is put back together) and keeps only what the result can hold, _MAX_OUTPUT_SIZE and one
+    character more to know there was more, so a runaway command costs no memory here. Decoding goes
+    on to the end regardless: output that is not valid text fails the call, as it always did,
+    wherever the bad byte is, and with the same message.
+    """
+
+    def __init__(self, encoding: str, errors: str) -> None:
+        self._bytes = codecs.getincrementaldecoder(encoding)(errors)
+        self._text = io.IncrementalNewlineDecoder(self._bytes, translate=True)
+        self._parts: list[str] = []
+        self._size = 0
+        self._fed = 0
+        self.error: str | None = None
+
+    def feed(self, data: bytes, final: bool = False) -> None:
+        if self.error is not None:
+            return
+        held = len(self._bytes.getstate()[0])  # bytes of a character still waiting for the rest
+        try:
+            text = self._text.decode(data, final=final)
+        except UnicodeDecodeError as e:
+            self.error = _decode_error_text(e, self._fed - held)
+            return
+        self._fed += len(data)
+        if text and self._size <= _MAX_OUTPUT_SIZE:
+            keep = text[: _MAX_OUTPUT_SIZE + 1 - self._size]
+            self._parts.append(keep)
+            self._size += len(keep)
+
+    def text(self) -> str:
+        return "".join(self._parts)
+
+
+def _decode_error_text(e: UnicodeDecodeError, offset: int) -> str:
+    """``str(e)`` as one decode of the whole stream would have put it: positions from its start."""
+    start, end = offset + e.start, offset + e.end
+    if e.end - e.start == 1:
+        return f"'{e.encoding}' codec can't decode byte 0x{e.object[e.start]:02x} in position {start}: {e.reason}"
+    return f"'{e.encoding}' codec can't decode bytes in position {start}-{end - 1}: {e.reason}"
 
 
 def _safe_env(extra: dict[str, str] | None = None) -> dict[str, str]:

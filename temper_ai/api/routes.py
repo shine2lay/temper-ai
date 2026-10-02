@@ -511,6 +511,36 @@ def get_workflow_agents(execution_id: str):
     return {"execution_id": execution_id, "agents": agents}
 
 
+@router.get("/api/runs/{execution_id}/agents/{attempt_id}/log")
+def get_script_log(
+    execution_id: str,
+    attempt_id: str,
+    after_seq: int | None = None,
+    before_seq: int | None = None,
+    max_bytes: int | None = None,
+):
+    """One page of a script agent's saved log: what its script printed, oldest row first.
+
+    ``attempt_id`` is the agent's id on the run page (its agent.started event): each attempt, a
+    retry included, has its own log. With no cursor the page is the newest output; ``before_seq``
+    pages back from a row, ``after_seq`` catches up after one. A page is whole rows, about
+    ``max_bytes`` of output (256 KB unless asked, 4 MB at most). See observability/script_logs.py.
+    """
+    from temper_ai.observability.script_logs import DEFAULT_PAGE_BYTES, read_script_log
+
+    if after_seq is not None and before_seq is not None:
+        raise HTTPException(status_code=400, detail="Ask for after_seq or before_seq, not both")
+    page = read_script_log(
+        execution_id, attempt_id, after_seq=after_seq, before_seq=before_seq,
+        max_bytes=max_bytes if max_bytes and max_bytes > 0 else DEFAULT_PAGE_BYTES,
+    )
+    if page is None:
+        raise HTTPException(
+            status_code=404, detail=f"Run '{execution_id}' has no agent '{attempt_id}'",
+        )
+    return page
+
+
 _ACTIVE_STATUSES = ("pending", "queued", "running", "waiting")
 
 

@@ -1,0 +1,21 @@
+# Zero-LLM agent that never finishes on its own: it prints a line every half second, and one to
+# stderr every third, until its 5-second timeout stops it. For checking that a timed-out
+# script's log keeps what it printed and says it timed out (configs/workflows/
+# ci_script_log_timeout.yaml; frontend/e2e/scriptLog.spec.ts). All of its output is made up.
+#
+# Plain bash: `echo` writes each line as it goes, with no buffering to flush.
+agent:
+  name: ci_log_stuck
+  type: script
+  timeout_seconds: 5
+  script_template: |
+    #!/bin/bash
+    i=0
+    while true; do
+      i=$((i + 1))
+      echo "stuck: still going, line $i"
+      if [ $((i % 3)) -eq 0 ]; then
+        echo "stuck: no end in sight at line $i" >&2
+      fi
+      sleep 0.5
+    done

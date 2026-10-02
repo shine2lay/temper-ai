@@ -67,3 +67,8 @@ class EventType(StrEnum):
     # Runtime dispatch — dynamic DAG mutation (see stage/dispatch.py)
     DISPATCH_APPLIED = "dispatch.applied"
     DISPATCH_CAP_EXCEEDED = "dispatch.cap_exceeded"
+
+    # A script agent's saved log: one row per batch of what its script printed, a child of the
+    # agent's agent.started event (observability/script_logs.py). Many per agent, so readers of
+    # a run's structure leave them out (see script_logs.SCRIPT_LOG_PREFIX).
+    SCRIPT_LOG = "script.log"

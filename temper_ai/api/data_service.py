@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from temper_ai.observability import get_events
 from temper_ai.observability.event_types import EventType
+from temper_ai.observability.script_logs import SCRIPT_LOG_PREFIX
 from temper_ai.runner import quiet
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,9 @@ logger = logging.getLogger(__name__)
 # agents, and the page knew them only by id.
 _CALL_EVENT_PREFIXES = ("llm.", "tool.")
 MAX_CALL_EVENTS = 10000
+# Script agents' saved logs (observability/script_logs.py) are no part of a run's record either:
+# up to ~10 MB per attempt, read a page at a time through their own endpoint, never with the run.
+_NOT_STRUCTURE_PREFIXES = (*_CALL_EVENT_PREFIXES, SCRIPT_LOG_PREFIX)
 
 # A run in one of these can still start or finish agents.
 _LIVE_RUN_STATUSES = ("pending", "queued", "running", "waiting", "cancelling")
@@ -32,7 +36,7 @@ _LIVE_RUN_STATUSES = ("pending", "queued", "running", "waiting", "cancelling")
 def _load_run_events(execution_id: str) -> list[dict]:
     """A run's events, oldest first: every structural event, the newest calls."""
     structure = get_events(
-        execution_id=execution_id, exclude_type_prefixes=_CALL_EVENT_PREFIXES, limit=None,
+        execution_id=execution_id, exclude_type_prefixes=_NOT_STRUCTURE_PREFIXES, limit=None,
     )
     calls = get_events(
         execution_id=execution_id, type_prefixes=_CALL_EVENT_PREFIXES,
@@ -56,7 +60,7 @@ def get_agent_index(execution_id: str) -> list[dict] | None:
     whose full record takes seconds to build.
     """
     events = get_events(
-        execution_id=execution_id, exclude_type_prefixes=_CALL_EVENT_PREFIXES, limit=None,
+        execution_id=execution_id, exclude_type_prefixes=_NOT_STRUCTURE_PREFIXES, limit=None,
     )
     if not events:
         return None
@@ -958,6 +962,9 @@ def _build_agent_execution(agent_event: dict, all_events: list[dict]) -> dict:
         "output_data": data.get("structured_output"),
         "role": data.get("role"),
         "error_message": data.get("error"),
+        # A script agent's saved log, in figures only (rows, bytes saved, limit, truncated,
+        # complete): the log itself is read page by page (GET /api/runs/<id>/agents/<id>/log).
+        "log": data.get("log"),
         # Agent config and input data for context engineering visibility
         "input_data": agent_event.get("data", {}).get("input_data"),
         "agent_config_snapshot": _build_agent_config_snapshot(agent_event),

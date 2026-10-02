@@ -1,0 +1,54 @@
+workflow:
+  name: scan_market
+  # Top-of-funnel market-research SCAN stage (product role; shaped 2026-10-01).
+  #   Lenses + synthesizer enforce three evidence/scoring disciplines that a
+  #   fixed grader (scan_check) checks:
+  #     (a) C2 evidence discipline: lenses hunt quantified PRIMARY pain stats and
+  #         the synthesizer requires a real WTP price for every candidate plus
+  #         >=80% primary-backed pain (at most one market-led candidate);
+  #     (b) consistent P×W×O ÷ (D×R) scoring via a mandatory per-candidate self-check;
+  #     (c) frontier-lab risk as its own column AND its own score factor R
+  #         (low=1/med=1.5/high=2), split from Openness but applied in ranking.
+  #   History: v2 (this config) scored 5/5 PASS vs v1's 4/5 pass-narrow (C2
+  #   failed at 43%) on the 2026-10-01 A/B; see product notebook + daily log.
+  #
+  #     [ demand | market | timing ] -> synthesize (leader) -> check
+  #
+  #   Pre-registered hypothesis + success criteria: product notebook, section
+  #   "Market-research (Scan) workflow".
+  version: 1
+  description: |
+    Market-research Scan v2: from an open frame, produce a ranked shortlist of
+    market/wedge candidates for a profitable software/AI product, each as a
+    structured 7-field record backed by primary sources, with consistent scoring
+    and a separate frontier-lab-risk column.
+  inputs:
+    frame:
+      type: string
+      required: false   # defaults to the open frame inside each agent template
+  outputs:
+    verdict: check.structured.verdict
+    grade_path: check.structured.grade_path
+    issues: check.structured.issues
+
+  nodes:
+    # Parallel research lenses + a leader that converges them into the shortlist.
+    - name: scan
+      type: stage
+      strategy: leader
+      input_map:
+        frame: input.frame
+      agents:
+        - agent: scan_lens_demand
+        - agent: scan_lens_market
+        - agent: scan_lens_timing
+        - agent: scan_synthesize
+          role: leader
+
+    # Grade the shortlist against the fixed, pre-registered rubric (UNCHANGED).
+    - name: check
+      type: agent
+      agent: scan_check
+      depends_on: [scan]
+      input_map:
+        frame: input.frame

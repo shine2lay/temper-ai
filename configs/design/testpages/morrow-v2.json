@@ -1,0 +1,6 @@
+{
+  "site": "morrow-v2",
+  "brief": "Morrow Rooms rents meeting rooms by the hour to small teams in Portland, Oregon. Visitors compare rooms, review a reservation and manage meeting preferences. Review these five independent screen states, not a tested end-to-end booking flow. The confirmation page is a separately initialized successful reservation. The pages are static snapshots; backend payment execution, persistence and behavior after pressing an action are outside this review. Evaluate what is visible and measured, including the wording of an action's consequences.",
+  "pages": ["index.html", "rooms.html", "booking.html", "settings.html", "confirmation.html"],
+  "key": "~/design-lab/answers/morrow-v2.yaml"
+}

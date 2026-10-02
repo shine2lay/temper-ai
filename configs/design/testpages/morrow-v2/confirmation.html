@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Your room is booked — Morrow Rooms</title>
+  <link rel="stylesheet" href="base.css">
+</head>
+<body>
+  <header class="site-header"><div class="wrap header-inner">
+    <a class="wordmark" href="index.html">Morrow Rooms</a>
+    <nav class="nav" aria-label="Main"><a href="rooms.html">Find a room</a><a href="settings.html">Settings</a></nav>
+  </div></header>
+  <main class="wrap">
+    <div class="receipt-layout">
+      <div class="page-heading"><p class="eyebrow">Reservation MR-1042</p><h1>Your room is booked</h1><p class="lead">You’re all set. A confirmation has been sent to jordan@example.com.</p></div>
+      <section class="card summary-card" aria-labelledby="reservation-title">
+        <svg class="room-mark" viewBox="0 0 72 56" aria-hidden="true" focusable="false"><path d="M4 50V6h64v44" fill="#edf3ed" stroke="#6d8377" stroke-width="2"/><path d="M20 50V18h32v32M16 36h40" fill="none" stroke="#6d8377" stroke-width="2"/><circle cx="46" cy="32" r="2" fill="#215e50"/></svg>
+        <h2 id="reservation-title">Willow room</h2><p>Everything you need for a focused team session.</p>
+        <dl class="summary-details"><div><dt>When</dt><dd>Wednesday, October 14, 2026</dd></div><div><dt>Time</dt><dd>10:00–12:00<br>America/Los_Angeles</dd></div><div><dt>Your team</dt><dd>8 people · Capacity 10</dd></div><div><dt>Where</dt><dd>24 Grove Street, Portland</dd></div></dl>
+        <p style="margin-top:24px">Free cancellation until October 13 at 10:00 America/Los_Angeles.</p>
+      </section>
+      <div class="receipt-actions"><button class="button compact" type="button">Add to calendar</button><div><button class="button secondary" type="button" disabled aria-describedby="receipt-help">Download receipt</button><p id="receipt-help">Available after your visit.</p></div></div>
+      <section class="next-meeting" aria-labelledby="another-meeting"><h2 id="another-meeting">Planning another meeting?</h2><p class="lead">Explore availability for October 14.</p><div class="date-stepper" role="group" aria-label="Explore other dates"><button type="button" aria-label="Previous day">‹</button><button type="button" aria-label="Next day">›</button></div></section>
+    </div>
+  </main>
+  <footer class="site-footer"><div class="wrap">Morrow Rooms · Portland, Oregon</div></footer>
+</body>
+</html>

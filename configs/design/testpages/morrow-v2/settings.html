@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Preferences — Morrow Rooms</title>
+  <link rel="stylesheet" href="base.css">
+</head>
+<body>
+  <header class="site-header"><div class="wrap header-inner">
+    <a class="wordmark" href="index.html">Morrow Rooms</a>
+    <nav class="nav" aria-label="Main"><a href="rooms.html">Find a room</a><a href="settings.html" aria-current="page">Settings</a></nav>
+  </div></header>
+  <main class="wrap">
+    <div class="page-heading"><h1>Your workspace preferences</h1><p class="lead">Manage reminders and the timezone for your meetings.</p></div>
+    <section class="preferences" aria-labelledby="preferences-title">
+      <div class="status-banner" role="status">All changes saved</div>
+      <div class="heading-row"><h2 id="preferences-title">Meeting preferences</h2><span class="badge">Unsaved changes</span></div>
+      <div class="field"><label for="timezone">Timezone</label><select id="timezone"><option>America/Los_Angeles</option><option>America/New_York</option></select></div>
+      <div class="setting-row"><div><h3 id="reminder-label">Pause all meeting reminders</h3><p>Reminders enabled</p></div><button class="switch" type="button" role="switch" aria-checked="true" aria-labelledby="reminder-label">On</button></div>
+      <div class="settings-actions"><button class="button danger" type="button">Delete workspace</button><button class="text-button" type="button">Save preferences</button></div>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="wrap">Morrow Rooms · Portland, Oregon</div></footer>
+</body>
+</html>

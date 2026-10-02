@@ -16,7 +16,7 @@ role tests and lands a change.
 
 | Role | Department | Looks after |
 |---|---|---|
-| `product` | Product management | The problems, pitches and bets the loop builds; the pitch review and its fit lens; the graders for pitches and pitch reviews; finding and testing new markets: the market scan, the signal harvest and the validation engine. |
+| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
 | `design` | Design | The personas, the walks of the product as each of them, and the report stage that runs the walks. |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
@@ -34,7 +34,10 @@ Two owners are not departments:
   Notion, Slack, Telegram), the demos, and the settings, triggers and MCP
   servers they use.
 - **RollCall**: runs the EPD loop (firing bets, gates, merges) and owns how
-  its stages connect: `epd_loop`'s wiring and the scripts around it.
+  its stages connect: `epd_loop`'s wiring and the scripts around it. It also
+  owns the loop's proposal side: the problems, bets and pitches, the pitch
+  review with its fit lens, and their graders (product handed them back on
+  2026-10-01 to work on new products only).
 
 ## Who owns what
 
@@ -86,7 +89,9 @@ config is never edited to try something.
 **Trial rules**
 
 - Never trial on live bets: forks and replays only.
-- Trials up to $10 go ahead; above that, the owner decides on an estimate.
+- Trials up to $10 go ahead; above that, the owner decides on an estimate,
+  unless the owner has set a role a rule of its own (product has no cap
+  since 2026-10-01).
 - Check the spare subscription allowance first, and wait when an account is
   near its weekly limit.
 - Delete local candidates when the trial is over.
@@ -95,8 +100,8 @@ config is never edited to try something.
 
 | Workflow | What it grades or tries | Owner |
 |---|---|---|
-| `epd_pitch_grade` | A pitch, against what happened to the pitch the loop built for the same problem | product |
-| `epd_lens_grade` | A pitch review: which known problems it caught, and whether its other findings were real | product |
+| `epd_pitch_grade` | A pitch, against what happened to the pitch the loop built for the same problem | RollCall |
+| `epd_lens_grade` | A pitch review: which known problems it caught, and whether its other findings were real | RollCall |
 | `epd_plan_grade` | A plan, against what happened to the plan the loop built for the same pitch | architecture |
 | `epd_structure_grade` | A codebase built from nothing: structure, architecture, keeping to its patterns | architecture |
 | `epd_pattern_audit` | One change: how well it kept to the patterns already there | architecture |
@@ -118,26 +123,10 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (43)
+### product (27)
 
 | Config | Kind |
 |---|---|
-| `epd/workflows/epd_bet.yaml` | workflow |
-| `epd/workflows/epd_lens.yaml` | workflow |
-| `epd/workflows/epd_lens_grade.yaml` | workflow |
-| `epd/workflows/epd_pitch.yaml` | workflow |
-| `epd/workflows/epd_pitch_grade.yaml` | workflow |
-| `epd/agents/epd_bet.yaml` | agent |
-| `epd/agents/epd_lens_fit.yaml` | agent |
-| `epd/agents/epd_lens_grade.yaml` | agent |
-| `epd/agents/epd_pitch_changes.yaml` | agent (script) |
-| `epd/agents/epd_pitch_check.yaml` | agent |
-| `epd/agents/epd_pitch_fix.yaml` | agent |
-| `epd/agents/epd_pitch_grade.yaml` | agent |
-| `epd/agents/epd_pitch_inputs.yaml` | agent (script) |
-| `epd/agents/epd_pitch_previous.yaml` | agent (script) |
-| `epd/agents/epd_pitch_write.yaml` | agent |
-| `epd/agents/epd_problems.yaml` | agent |
 | `workflows/scan_market.yaml` | workflow |
 | `agents/scan_check.yaml` | agent |
 | `agents/scan_lens_demand.yaml` | agent |
@@ -301,13 +290,29 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `epd/bin/capabilities.py` | script |
 | `epd/bin/kb_check.py` | script |
 
-### RollCall (8)
+### RollCall (24)
 
 | Config | Kind |
 |---|---|
+| `epd/workflows/epd_bet.yaml` | workflow |
+| `epd/workflows/epd_lens.yaml` | workflow |
+| `epd/workflows/epd_lens_grade.yaml` | workflow |
 | `epd/workflows/epd_loop.yaml` | workflow |
+| `epd/workflows/epd_pitch.yaml` | workflow |
+| `epd/workflows/epd_pitch_grade.yaml` | workflow |
 | `epd/workflows/epd_propose.yaml` | workflow |
+| `epd/agents/epd_bet.yaml` | agent |
 | `epd/agents/epd_bet_approved.yaml` | agent (script) |
+| `epd/agents/epd_lens_fit.yaml` | agent |
+| `epd/agents/epd_lens_grade.yaml` | agent |
+| `epd/agents/epd_pitch_changes.yaml` | agent (script) |
+| `epd/agents/epd_pitch_check.yaml` | agent |
+| `epd/agents/epd_pitch_fix.yaml` | agent |
+| `epd/agents/epd_pitch_grade.yaml` | agent |
+| `epd/agents/epd_pitch_inputs.yaml` | agent (script) |
+| `epd/agents/epd_pitch_previous.yaml` | agent (script) |
+| `epd/agents/epd_pitch_write.yaml` | agent |
+| `epd/agents/epd_problems.yaml` | agent |
 | `epd/agents/epd_turn.yaml` | agent (script) |
 | `epd/bin/epd_adopt.py` | script |
 | `epd/bin/epd_loop.py` | script |

@@ -4,6 +4,7 @@ Ported from Design's verified host proof; only standard-library dependencies.
 No credentials or browser protocol. Colours, text and component refs stay live.
 """
 import re
+import struct
 import uuid
 
 ROOT = "00000000-0000-0000-0000-000000000000"
@@ -40,7 +41,7 @@ def color(name, value):
 
 def typography(name, size, weight="400"):
     return {"id": nid(), "name": name, "path": "Quiet Atlas", "font-id": "sourcesanspro",
-            "font-family": "Source Sans Pro", "font-variant-id": "semibold" if weight == "600" else "regular",
+            "font-family": "sourcesanspro", "font-variant-id": "600" if weight == "600" else "regular",
             "font-weight": weight, "font-style": "normal", "font-size": str(size),
             "line-height": "1.35", "letter-spacing": "0", "text-transform": "none"}
 
@@ -53,10 +54,111 @@ def fill(c, file_id):
 def content(lines, style, ink, file_id, align="left"):
     attrs = {k: v for k, v in style.items() if k not in ("id", "name", "path")}
     attrs.update({"typography-ref-id": style["id"], "typography-ref-file": file_id,
-                  "fills": fill(ink, file_id), "text-align": align,
-                  "text-decoration": "none", "direction": "ltr"})
-    return {"type": "root", "children": [{"type": "paragraph-set", "children": [
-        {"type": "paragraph", **attrs, "children": [{"text": line, **attrs}]} for line in lines]}]}
+                  "fills": fill(ink, file_id), "text-decoration": "none"})
+    return {"type": "root", "vertical-align": "top", "children": [{"type": "paragraph-set", "children": [
+        {"type": "paragraph", "text-align": align, "text-direction": "ltr", **attrs,
+         "children": [{"text": line, **attrs}]} for line in lines]}]}
+
+
+class FontMetrics:
+    """Advance widths from the installed OFL font; no runtime packages/downloads.
+
+    This initial Latin/LTR layout cache is not a complex-script shaping engine.
+    SVG/editor text and its styled content remain editable, not converted to paths.
+    """
+    def __init__(self, data):
+        self.data = data
+        tables = {}
+        for i in range(struct.unpack_from(">H", data, 4)[0]):
+            tag, _, offset, _ = struct.unpack_from(">4sIII", data, 12 + 16 * i)
+            tables[tag] = offset
+        self.units = self.word(tables[b"head"] + 18)
+        self.hmtx = tables[b"hmtx"]
+        self.metric_count = self.word(tables[b"hhea"] + 34)
+        cmap = tables[b"cmap"]
+        choices = []
+        for i in range(self.word(cmap + 2)):
+            platform, encoding, offset = struct.unpack_from(">HHI", data, cmap + 4 + 8 * i)
+            base = cmap + offset
+            fmt = self.word(base)
+            if platform in (0, 3) and fmt in (4, 12) and (platform == 0 or encoding in (1, 10)):
+                choices.append((fmt, base))
+        if not choices:
+            raise ValueError("installed font has no supported Unicode cmap")
+        self.format, self.base = max(choices)
+        self.cache = {}
+
+    def word(self, offset):
+        return struct.unpack_from(">H", self.data, offset)[0]
+
+    def glyph(self, cp):
+        base = self.base
+        if self.format == 12:
+            count = struct.unpack_from(">I", self.data, base + 12)[0]
+            for i in range(count):
+                start, end, first = struct.unpack_from(">III", self.data, base + 16 + i * 12)
+                if start <= cp <= end:
+                    return first + cp - start
+            return 0
+        count = self.word(base + 6) // 2
+        ends = base + 14
+        starts = ends + 2 * count + 2
+        deltas = starts + 2 * count
+        offsets = deltas + 2 * count
+        for i in range(count):
+            start, end = self.word(starts + 2 * i), self.word(ends + 2 * i)
+            if start <= cp <= end:
+                delta = self.word(deltas + 2 * i)
+                distance = self.word(offsets + 2 * i)
+                if not distance:
+                    return (cp + delta) & 65535
+                glyph = self.word(offsets + 2 * i + distance + 2 * (cp - start))
+                return (glyph + delta) & 65535 if glyph else 0
+        return 0
+
+    def width(self, text, size):
+        total = 0
+        for char in text:
+            cp = ord(char)
+            # The authored pilot is Latin/LTR. Refuse complex shaping rather than
+            # silently showing an incorrect editable source for other scripts.
+            if not (cp <= 0x024F or 0x2000 <= cp <= 0x206F):
+                raise ValueError(f"unsupported pilot text character U+{cp:04X}; Latin/LTR only")
+            if cp not in self.cache:
+                glyph = self.glyph(cp)
+                if not glyph:
+                    raise ValueError(f"installed font lacks U+{cp:04X}")
+                self.cache[cp] = self.word(self.hmtx + 4 * min(glyph, self.metric_count - 1))
+            total += self.cache[cp]
+        return total * size / self.units
+
+
+def text_positions(obj, metrics):
+    """Seed Penpot's native text cache: required by its current WASM exporter.
+
+    Font advance widths, explicit authored line breaks and stable line boxes.
+    No kerning/complex shaping claim; editor edits may recompute the cache.
+    """
+    result = []
+    for i, paragraph in enumerate(obj["content"]["children"][0]["children"]):
+        leaf = paragraph["children"][0]
+        text = "".join(n.get("text", "") for n in paragraph["children"])
+        size = float(leaf["font-size"])
+        font = metrics[leaf["font-weight"]]
+        width = font.width(text, size)
+        height = round(size * 4 / 3)
+        line_height = size * float(leaf["line-height"])
+        dx = max(0, (obj["width"] - width) / 2) if paragraph["text-align"] == "center" else 0
+        dy = i * line_height + (line_height - height) / 2
+        result.append({"x": obj["x"] + dx, "y": obj["y"] + dy + height,
+                       "width": width, "height": height,
+                       "x1": dx, "y1": dy, "x2": dx + width, "y2": dy + height,
+                       "font-style": leaf["font-style"], "text-transform": "none",
+                       "font-size": f"{size:g}px", "font-weight": leaf["font-weight"],
+                       "text-decoration": "none", "letter-spacing": "normal",
+                       "fills": leaf["fills"], "direction": "ltr",
+                       "font-family": leaf["font-family"], "text": text})
+    return result
 
 
 def add_obj(obj, page):
@@ -66,8 +168,7 @@ def add_obj(obj, page):
 
 def mod_obj(obj, page):
     return {"type": "mod-obj", "id": obj["id"], "page-id": page,
-            "operations": [{"type": "set", "attr": k, "val": v} for k, v in obj.items()
-                           if k != "id"]}
+            "operations": [{"type": "assign", "value": {k: v for k, v in obj.items() if k != "id"}}]}
 
 
 def mark_main(obj, component_id, file_id):

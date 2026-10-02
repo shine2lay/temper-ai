@@ -6,6 +6,7 @@ persistence and exports are separate evidence in Design's pilot packet.
 import copy
 import importlib.util
 import json
+import struct
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -63,6 +64,7 @@ def test_editable_geometry_and_measurement(direction, width):
     texts = [o for o in state["objects"] if o["type"] == "text"]
     assert len(texts) > 25
     assert all(o["content"]["children"] for o in texts)
+    assert all("position-data" not in o for o in texts)
     assert state["components"]
     assert any(o.get("shape-ref") for o in state["objects"])
     assert set(h.RUNTIME_ONLY) <= set(facts["runtime_not_checked"])
@@ -190,6 +192,105 @@ def test_bootstrap_identity_mismatch_fails_closed(monkeypatch, changed):
         return f"TEMPER_RUN_CONTAINER={identity}\0PENPOT_AGENT_EMAIL={email}\0PENPOT_AGENT_PASSWORD=fixture\0".encode()
     monkeypatch.setattr(h.Path, "read_bytes", read)
     assert h.Penpot.password() == ""
+
+
+def test_drafts_identity_is_discovered_not_guessed(monkeypatch):
+    monkeypatch.setenv("PENPOT_URL", "https://spark.tailbb5055.ts.net:8790")
+    monkeypatch.setenv("PENPOT_AGENT_EMAIL", "design-agent@spark.local")
+    monkeypatch.setenv("PENPOT_AGENT_PASSWORD", "fictional-test-value")
+    client = h.Penpot()
+    calls = []
+    def rpc(method, args=None):
+        calls.append((method, args))
+        if method == "login-with-password":
+            return {"email": "design-agent@spark.local"}
+        if method == "get-profile":
+            return {"email": "design-agent@spark.local", "default-project-id": "own-drafts", "default-team-id": "own-team"}
+        if method == "create-file":
+            return {"id": "new-file"}
+        return {"id": "new-file", "project-id": "own-drafts", "team-id": "own-team"}
+    monkeypatch.setattr(client, "rpc", rpc)
+    client.login()
+    client.create("Fictional test only")
+    assert ("create-file", {"name": "Fictional test only", "project-id": "own-drafts"}) in calls
+    assert "PROJECT" not in vars(h)
+
+
+def test_file_outside_own_drafts_is_refused(monkeypatch):
+    monkeypatch.setenv("PENPOT_URL", "https://spark.tailbb5055.ts.net:8790")
+    client = h.Penpot()
+    client.project = "own-drafts"
+    client.profile = {"default-team-id": "own-team"}
+    monkeypatch.setattr(client, "rpc", lambda *args: {"project-id": "owner-project", "team-id": "different-team"})
+    with pytest.raises(ValueError, match="outside design-agent"):
+        client.get("file")
+
+
+def tiny_font(fmt):
+    """Two-glyph Unicode font, not a copied licensed asset or third-party service."""
+    head, hhea = bytearray(20), bytearray(36)
+    struct.pack_into(">H", head, 18, 1000)
+    struct.pack_into(">H", hhea, 34, 3)
+    if fmt == 4:
+        sub = struct.pack(">7H", 4, 32, 0, 4, 4, 1, 0)
+        sub += struct.pack(">9H", 66, 65535, 0, 65, 65535, 65472, 65535, 0, 0)
+    else:
+        sub = struct.pack(">HHIII3I", 12, 0, 28, 0, 1, 65, 66, 1)
+    cmap = struct.pack(">HHHHI", 0, 1, 3, 1 if fmt == 4 else 10, 12) + sub
+    tables = {b"head": bytes(head), b"hhea": bytes(hhea),
+              b"hmtx": struct.pack(">6H", 500, 0, 600, 0, 600, 0), b"cmap": cmap}
+    offset = 12 + 16 * len(tables)
+    directory, body = b"", b""
+    for name, data in tables.items():
+        directory += struct.pack(">4sIII", name, 0, offset, len(data))
+        body += data
+        offset += len(data)
+    return struct.pack(">I4H", 65536, len(tables), 0, 0, 0) + directory + body
+
+
+@pytest.mark.parametrize("fmt", [4, 12])
+def test_native_text_cache_uses_font_advances(fmt):
+    font = h.p.FontMetrics(tiny_font(fmt))
+    assert font.width("AB", 20) == 24
+    with pytest.raises(ValueError, match="lacks U"):
+        font.width("Z", 20)
+    with pytest.raises(ValueError, match="Latin/LTR"):
+        font.width("界", 20)
+    style, ink, fid = h.p.typography("Fixture", 20, "600"), h.p.color("Ink", "#111111"), h.p.nid()
+    obj = {"x": 14, "y": 18, "width": 100, "content": h.p.content(["AB"], style, ink, fid, "center")}
+    positions = h.p.text_positions(obj, {"600": font})
+    assert positions[0]["x"] == 52
+    assert positions[0]["width"] == 24
+    assert positions[0]["text"] == "AB"
+    assert positions[0]["fills"][0]["fill-color-ref-file"] == fid
+
+
+def test_component_instance_translates_native_text_cache():
+    class Metric:
+        def width(self, text, size):
+            return len(text) * size * .4
+    canvas = h.Canvas(h.p.nid(), h.p.nid())
+    canvas.fonts = {"400": Metric(), "600": Metric()}
+    component = canvas.button("Explore demo rooms")
+    board = canvas.board("Fixture", 0, 0, 390, 300)
+    canvas.instance(component, board, 24, 48, action=True)
+    main = next(o for o in component["objects"] if o["type"] == "text")
+    instance = next(o for o in canvas.objects if o.get("shape-ref") == main["id"])
+    assert instance["position-data"][0]["x"] - main["position-data"][0]["x"] == 24 - component["objects"][0]["x"]
+    assert instance["position-data"][0]["y"] - main["position-data"][0]["y"] == 48 - component["objects"][0]["y"]
+    assert instance["position-data"][0]["x1"] == main["position-data"][0]["x1"]
+    assert not h.measure(canvas.state({"team-id": h.p.nid()}))["violations"]
+
+
+def test_source_sans_pro_uses_verified_penpot_variant():
+    t = h.p.typography("Fixture", 20, "600")
+    assert t["font-variant-id"] == "600"
+    assert t["font-family"] == "sourcesanspro"
+    c = h.p.content(["Fixture"], t, h.p.color("Ink", "#111111"), h.p.nid())
+    assert c["vertical-align"] == "top"
+    paragraph = c["children"][0]["children"][0]
+    assert paragraph["text-direction"] == "ltr"
+    assert "direction" not in paragraph
 
 
 def test_completion_not_self_attested(tmp_path):

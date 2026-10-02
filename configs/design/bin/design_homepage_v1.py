@@ -29,7 +29,6 @@ import penpot_homepage_source as p
 VERSION = 1
 DIRECTIONS = ("product-led", "task-led", "explanation-led")
 WIDTHS = (390, 768, 1440)
-PROJECT = "d6e78769-4453-804d-8c55-fd6b40134048"
 PALETTE = {"paper": "#FAF8F3", "ink": "#1E3430", "pine": "#24594B",
            "muted": "#51645C", "sage": "#E5EEE7", "clay": "#AB442A",
            "white": "#FFFFFF", "border": "#72867B", "disabled": "#D4DAD5"}
@@ -142,6 +141,7 @@ class Penpot:
         self.jar = http.cookiejar.CookieJar()
         self.http = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
         self.profile = None
+        self.project = None
 
     def request(self, url, body=None, ctype="application/json", timeout=90):
         # Export URI is not permitted to exfiltrate the authenticated session elsewhere.
@@ -153,7 +153,7 @@ class Penpot:
             with self.http.open(req, timeout=timeout) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"Penpot HTTP {exc.code} (response suppressed)") from None
+            raise RuntimeError(f"Penpot HTTP {exc.code} at {urllib.parse.urlsplit(url).path} (response suppressed)") from None
         except urllib.error.URLError:
             raise RuntimeError("Penpot transport unavailable (credentials suppressed)") from None
 
@@ -199,13 +199,22 @@ class Penpot:
         self.profile = self.rpc("login-with-password", {"email": email, "password": password})
         if self.profile.get("email") != email:
             raise ValueError("authenticated profile differs from design-agent")
+        self.profile = self.rpc("get-profile")
+        if self.profile.get("email") != email:
+            raise ValueError("authenticated profile differs from design-agent")
+        self.project = self.profile.get("default-project-id")
+        if not self.project or not self.profile.get("default-team-id"):
+            raise ValueError("design-agent Drafts identity unavailable; never guess a project id")
         return self.profile
 
     def get(self, fid):
-        return self.rpc("get-file", {"id": fid})
+        file = self.rpc("get-file", {"id": fid})
+        if file.get("project-id") != self.project or file.get("team-id") != self.profile.get("default-team-id"):
+            raise ValueError("file is outside design-agent's own Drafts")
+        return file
 
     def create(self, name):
-        f = self.rpc("create-file", {"name": name, "project-id": PROJECT})
+        f = self.rpc("create-file", {"name": name, "project-id": self.project})
         return self.get(f["id"])
 
     def update(self, fid, changes):
@@ -296,8 +305,10 @@ def wrapped(value, width, size):
 
 
 class Canvas:
-    def __init__(self, fid, page, wire=False):
+    def __init__(self, fid, page, wire=False, font_dir=None):
         self.fid, self.page, self.wire = fid, page, wire
+        self.fonts = {weight: p.FontMetrics((Path(font_dir) / f"sourcesanspro-{variant}.ttf").read_bytes())
+                      for weight, variant in (("400", "regular"), ("600", "semibold"))} if font_dir else None
         colours = PALETTE if not wire else {**PALETTE, "paper": "#FFFFFF", "ink": "#202020",
             "pine": "#333333", "muted": "#505050", "sage": "#ECECEC", "clay": "#454545",
             "border": "#808080", "disabled": "#CCCCCC"}
@@ -330,7 +341,9 @@ class Canvas:
         h = math.ceil(len(lines) * size * 1.35 + 6)
         obj = p.shape("text", name, board["id"], board["id"], x, y, w, h, [])
         obj.update({"content": p.content(lines, self.typos[style], self.colors[color], self.fid, align),
-                    "grow-type": "fixed", "position-data": None})
+                    "grow-type": "fixed"})
+        if self.fonts:
+            obj["position-data"] = p.text_positions(obj, self.fonts)
         self.put(obj)
         self.metrics.append({"id": obj["id"], "board": board["name"], "kind": "text", "name": name,
                              "text": value, "size": size, "fg": self.colors[color]["color"],
@@ -364,6 +377,9 @@ class Canvas:
             obj.update({"id": mapping[src["id"]], "shape-ref": src["id"],
                         **p.geometry(src["x"] + dx, src["y"] + dy, src["width"], src["height"])})
             obj.pop("main-instance", None)
+            for span in obj.get("position-data", []):
+                span["x"] += dx
+                span["y"] += dy
             obj["parent-id"] = board["id"] if i == 0 else mapping[src["parent-id"]]
             obj["frame-id"] = board["id"] if i == 0 else mapping[src["frame-id"]]
             if i == 0:
@@ -571,6 +587,11 @@ def measure(state):
                metric["x"] + metric["w"] <= board["x"] + board["width"] + .01 and
                metric["y"] + metric["h"] <= board["y"] + board["height"] + .01}
         if metric["kind"] == "text":
+            obj = next(o for o in state["objects"] if o["id"] == metric["id"])
+            spans = obj.get("position-data", [])
+            if spans:
+                row["font_advance_fit"] = all(span["width"] <= metric["w"] + .01 for span in spans)
+                row["native_text_cache"] = True
             row["contrast"] = contrast(metric["fg"], metric["bg"])
             row["contrast_pass"] = row["contrast"] >= (3 if metric["size"] >= 24 else 4.5)
             row["size_pass"] = metric["size"] >= 16
@@ -578,7 +599,7 @@ def measure(state):
             row["target_pass"] = metric["w"] >= 44 and metric["h"] >= 44
         results.append(row)
     violations = [r for r in results if any(r.get(k) is False for k in
-                  ("inside_board", "contrast_pass", "size_pass", "target_pass"))]
+                  ("inside_board", "contrast_pass", "size_pass", "target_pass", "font_advance_fit"))]
     overlaps = []
     texts = [r for r in results if r["kind"] == "text"]
     for i, a in enumerate(texts):
@@ -590,6 +611,7 @@ def measure(state):
             if dx > 1 and dy > 1:
                 overlaps.append({"board": a["board"], "a": a["name"], "b": b["name"], "overlap": [dx, dy]})
     return {"at": now(), "basis": "editable Penpot source; not a DOM or live accessibility audit",
+            "text_layout_limit": "Installed TTF advances + explicit Latin/LTR line boxes seed Penpot's native text cache. Not a kerning/complex-script shaper; inspect exports and editor; edits may recompute positions.",
             "objects": results, "violations": violations, "text_box_overlaps": overlaps,
             "runtime_not_checked": RUNTIME_ONLY}
 
@@ -651,8 +673,10 @@ class Job:
         if (self.packet / "wireframes.pending.json").exists():
             raise ValueError("incomplete Penpot exploration detected; inspect saved file identity before retry, never duplicate it")
         value = load(self.packet / "brief.json")
+        assets(client, self.packet / "assets")
         file = client.create(value["product"] + " — structural wireframes (fictional pilot)" if value["fictional"] else value["product"] + " — structural wireframes")
-        canvas = Canvas(file["id"], file_page(file), True)
+        save(self.packet / "wireframes.pending.json", {"file_id": file["id"], "page_id": file_page(file), "status": "constructing"})
+        canvas = Canvas(file["id"], file_page(file), True, self.packet / "assets")
         for i, direction in enumerate(DIRECTIONS):
             canvas.homepage(value, direction, 390, 0, i * 4600)
             canvas.homepage(value, direction, 1440, 530, i * 4600)
@@ -721,9 +745,10 @@ class Job:
             return {**cached, "reused": True}
         if (self.packet / f"source-r{round_number:02}.pending.json").exists():
             raise ValueError("incomplete Penpot design detected; inspect saved file identity before retry, never duplicate it")
-        file = client.create(brief["product"] + f" — Quiet Atlas — r{round_number:02}" + (" (provisional fictional)" if brief["fictional"] else ""))
         assets(client, self.packet / "assets")
-        canvas = Canvas(file["id"], file_page(file))
+        file = client.create(brief["product"] + f" — Quiet Atlas — r{round_number:02}" + (" (provisional fictional)" if brief["fictional"] else ""))
+        save(self.packet / f"source-r{round_number:02}.pending.json", {"file_id": file["id"], "page_id": file_page(file), "status": "constructing"})
+        canvas = Canvas(file["id"], file_page(file), font_dir=self.packet / "assets")
         for width, x in ((390, 0), (768, 530), (1440, 1426)):
             canvas.homepage(brief, direction, width, x)
         # Reusable component states live outside the exported homepage boards, named and editable.
@@ -873,11 +898,15 @@ Editable structural alternatives: {wire_url}
 Source layers/board/component IDs: source.json and wireframes.json.
 Semantic colours, typography, spacing, contrast pairs and reusable components: tokens.json.
 Exact final words, room examples, terms and FAQ: final-copy.json. No rasterized final text.
-PNG/SVG exports: exports/. SVG keeps live text but font URLs point to the tailnet Penpot host;
+PNG/SVG exports: exports/. SVG contains native text; verify its font loading and portability.
 PNG is the portable visual reference. Bundle licensed fonts when implementing; do not outline
 or flatten the canonical Penpot text. No stock/photo/customer/logo assets.
 Source Sans Pro: SIL Open Font License 1.1; already installed in Penpot. Original vectors.
 Installed regular/semibold fonts, full OFL text, actual name-table copyright/version and hashes: assets/.
+Penpot's native text cache is seeded from those TTF advances and explicit Latin/LTR line boxes
+because its current WASM exporter requires cached positions. Source text remains editable;
+this is not a kerning/complex-script shaper. Editor edits may recompute positions. Compare exports
+with the real editor; implement live fluid text rather than copying cached coordinates.
 
 ## Responsive implementation
 Use max-width 1312px content centred at desktop; 64px desktop / 48px tablet / 24px phone margins.

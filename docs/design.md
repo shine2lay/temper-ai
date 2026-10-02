@@ -137,7 +137,17 @@ rooms, steps and FAQ entries, and terms. See `DEFAULT` and `brief_contract` in
 copy; layouts are three authored structures, not recolours. No real transactions,
 leads, external assets, publication or invented proof. Breakpoint/static-board
 limitations are explicit in the handoff. Unsupported copy/brief shapes fail rather
-than silently flatten or clip.
+than silently flatten or clip. This pilot supports Latin/LTR copy only.
+
+Penpot 2.18's current WASM exporter needs its native text-layout cache; uncached
+API-created text otherwise times out looking for a legacy `foreignObject`.
+The Design source builder seeds that cache with advance widths from the actual
+installed, licensed regular/semibold TTFs and explicit authored line boxes.
+Linked component instances translate the cached coordinates too. Styled source
+text stays editable; no text becomes paths or a screenshot. This is not a
+kerning/complex-script shaping engine, and editor edits may recompute positions.
+Source checks include advance-width fit; inspect actual exports and the editor,
+not just bounding-box metadata. Fonts, version, hashes and full OFL are retained.
 
 Run the fictional pilot with the default Morrow Rooms brief (blank `brief_json`),
 or provide your saved brief JSON. Use a **fresh** writable run workspace:
@@ -206,7 +216,10 @@ explicitly authorized Penpot password from its own run-container bootstrap
 identity. It fails closed outside that run or on unreadable/mismatched identity.
 It neither changes the engine's generic command filter nor puts any key into a
 template, model context, checkpoint or artifact. This is Docker/Linux-specific;
-the host proof uses its existing credential file, not this fallback.
+the host proof uses its existing credential file, not this fallback. The save
+client discovers the authenticated agent's default Drafts project/team through
+`get-profile`; it never guesses a project UUID. File reads/updates fail closed if
+the file is outside that same Drafts identity.
 
 API saves use the verified Penpot 2.18 object/library/component change protocol.
 Text remains live with colour/type references; component instances retain main

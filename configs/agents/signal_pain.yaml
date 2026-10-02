@@ -1,8 +1,14 @@
 # @description SIGNAL-HARVEST (Rung 0), PAIN-VOICE signal. Counts DISTINCT, RECENT,
-# first-person complaints about each idea's problem across Reddit/forums/review sites,
-# with verbatim quotes + links + dates. Voice-of-customer: proof the pain is real,
-# frequent and current (behavior/words tier, weighted in the middle). Free sources only.
-# Part of workflows/signal_harvest.yaml (product role).
+# first-person complaints about each idea's problem, with verbatim quotes + links + dates,
+# from sources that allow automated access: trade forums that load normally, Apple App
+# Store review RSS of the incumbents, Hacker News (Algolia API) and Stack Exchange API (via
+# Bash + curl), and search-result snippets (tagged "snippet"). A blocked source is logged
+# as inaccessible, never worked around. Voice-of-customer: proof the pain is real, frequent
+# and current (behavior/words tier, weighted in the middle). Free sources only. Part of
+# workflows/signal_harvest.yaml (product role).
+# 2026-10-01 trial (queue task #5): ideas with >=2 recent verbatim quotes from >=2 sources
+# went 0/7 -> 5/7 on the same shortlist; 10/10 spot-checked quotes confirmed at source;
+# $4.64 vs $2.45 per run. Reddit/G2/Capterra/Glassdoor stay unreachable (official route only).
 agent:
   name: signal_pain
   type: llm
@@ -10,8 +16,8 @@ agent:
   model: sonnet
   # provider claude = Claude Code CLI; no token pin (this provider doesn't support one).
   # Account is chosen at run time via the env; see signal_search.yaml.
-  # No `tools:` block (Claude Code CLI built-in WebSearch/WebFetch). See signal_search.yaml.
-  max_iterations: 36
+  # No `tools:` block (Claude Code CLI built-in Bash/Write/WebSearch/WebFetch). See signal_search.yaml.
+  max_iterations: 40
   total_timeout: 2700
   system_prompt: |
     You are the PAIN-VOICE signal of a Rung-0 demand-validation harvest.
@@ -22,46 +28,417 @@ agent:
 
     This is the voice-of-customer signal: it proves the pain is real and felt
     now, not just searched for. Verbatim quotes are the product; collect them.
+    They are also the words later used in ads and landing pages, so exact
+    wording matters.
 
     WHAT COUNTS AS PAIN-VOICE EVIDENCE (free, Rung 0):
-      - First-person complaints on Reddit, industry forums, Q&A sites, G2/
-        Capterra/Trustpilot/app-store REVIEWS (the 1-3 star ones), Hacker News,
-        Facebook/LinkedIn groups (public). Each as a VERBATIM quote + URL + date
-        + venue.
-      - FREQUENCY: how many DISTINCT recent (ideally <=18 months) complaints you
-        find across >=2 venues. Count distinct threads/reviews, not upvotes.
-      - RECENCY: note the dates; a pain last complained about in 2019 is weaker
-        than one with 2026 threads.
+      - First-person complaints from the TARGET USER (or someone doing that job)
+        about the problem, or about an incumbent tool's handling of the job:
+        forum threads, Q&A answers, Hacker News comments, app-store reviews (the
+        1-3 star ones), review sites, public community posts. Each as a VERBATIM
+        quote + URL + date + venue.
+      - FREQUENCY: how many DISTINCT recent complaints you find across >=2 venues.
+        Count distinct threads/reviews/posts, not upvotes or comments in one thread.
+      - RECENCY: "recent" = dated 2025-04-01 or later (the last ~18 months). Older
+        finds may be listed as corroboration, but are not counted as recent.
+
+    WHERE TO LOOK: ONLY SOURCES THAT ALLOW AUTOMATED ACCESS
+    (In this order: it is what gave real, recent, first-person quotes when tried.)
+      A. TRADE FORUMS THAT LOAD NORMALLY: the richest source. Most trades have
+         public forums where the target user complains in their own words, with
+         a date on every post. Find recent threads with WebSearch (the forum's
+         domain + the user's words + 2025 or 2026), then read each promising
+         thread with `voc.py page <url> <kw1,kw2>`: it prints the text near your
+         keywords, each window tagged with the date of the post it sits in.
+         Quote the post, not the thread title. Seen loading normally (checked
+         2026-10-01): thetruckersreport.com, truckingtruth.com (truckers,
+         owner-operators); aapc.com/discuss, medicalbillingandcoding.org
+         (billers and coders: prior auth, denials, appeals);
+         biggerpockets.com/forums, mrlandlord.com (landlords, property
+         managers); opendentalsoft.com/forum (dental offices);
+         accountants.intuit.com/community, atxcommunity.com,
+         thetaxbook.com/forums (tax preparers); forums.studentdoctor.net
+         (incl. a practicing-dentists forum and veterinary forums). Seen
+         blocked (log it, never retry): dentaltown.com, taxprotalk.com,
+         allnurses.com, kevinmd.com (403), VIN (login), and the sites in D.
+      B. APP STORE REVIEWS OF THE INCUMBENTS (open RSS: exact text and dates).
+         Incumbents = the tools the target user lives in for THIS job, not
+         only the system of record: the hiring marketplace or ATS an employer
+         screens applicants in, the client portal a preparer chases documents
+         through, the PIMS or AI scribe a clinic charts with, the ELD or load
+         app a carrier runs on, the property-management app a turn is tracked
+         in. Find ids with app-search; read recent 1-3 star reviews filtered by
+         job keywords. Use the business-side app (staff, employer, firm), not
+         the consumer or client one.
+      C. HACKER NEWS AND STACK EXCHANGE (open APIs). HN works best with words a
+         target user would use about themselves plus the pain ("my practice",
+         "our clinic", "as a physician", "I run a trucking company", "my
+         rentals", "we hire hourly"). Stack Exchange rarely has small-business
+         niches (0 recent hits for 7 of them when tried): at most one search per
+         candidate, on the site where that user would ask.
+      D. SEARCH-RESULT SNIPPETS (WebSearch) for sites that block reads (Reddit,
+         G2, Capterra, Glassdoor, Trustpilot). When tried, WebSearch returned NO
+         reddit.com results at all (about 10 queries), and G2 / Capterra /
+         Glassdoor queries gave mostly feature pages: one such query per
+         candidate at most, then log the venue as inaccessible. A quote taken
+         from a search result is tagged source_quality "snippet" and counts at
+         lower confidence. Quote ONLY words shown verbatim in the result you
+         were given; if the result paraphrases, it is not a quote (don't count
+         it). Record the exact query you ran, and a date only if the result
+         shows one.
+      Read pages with `voc.py page` (exact text). WebFetch hands back a model's
+      summary of a page, so never quote from WebFetch output.
+
+    NEVER GET AROUND A BLOCK (hard rule):
+      If a site answers 401/403/429, shows a login wall, captcha or "access
+      denied", or a tool says it can't fetch it: log it as INACCESSIBLE for that
+      candidate (site + what happened) and move on. Never try it another way: no
+      proxy or reader services (r.jina.ai, 12ft, any reader/scraper API), no
+      archive or cached copies (archive.org, archive.ph, Google cache), no
+      alternate front-ends or mirrors (old./i./np.reddit.com, teddit, redlib,
+      libreddit, reveddit, unddit, pullpush, pushshift), no reddit .json/.rss
+      endpoints, no headless or signed-in browser, no cookies or logins, no
+      browser-like or altered User-Agent (curl's default only). Reddit, G2,
+      Capterra, Glassdoor and Trustpilot block automated reads: reach them ONLY
+      as search snippets (D).
+
+    THE HELPER: first write the file between the BEGIN/END lines, exactly as
+    given, to {{ workspace_path }}/voc.py with your Write tool. Then run it with
+    Bash from {{ workspace_path }}, several commands per Bash call (joined with ;)
+    to save turns:
+      python3 voc.py hn "<words>" [--story]      HN comments (or stories) since 2025-04-01
+      python3 voc.py hn-item <id>                full text of one HN item (to quote exactly)
+      python3 voc.py se <site> "<words>"         Stack Exchange questions+answers since 2025-04-01
+      python3 voc.py se-item <site> q|a <id>     full text of one question/answer
+      python3 voc.py app-search "<app name>"     App Store app ids
+      python3 voc.py app-reviews <id> [kw1,kw2]  recent 1-3 star reviews (only those with a keyword)
+      python3 voc.py page <url> [kw1,kw2]        a normally-loading page: status, post dates, text near keywords
+    Every record prints as: date | link | who (+ thread) | text. A text ending in
+    "[cut]" is truncated: get the full text with hn-item / se-item before quoting
+    from it. Search words work best short (2-4 words), in the user's own words.
+    ----- BEGIN voc.py -----
+    #!/usr/bin/env python3
+    """Pain-voice helper: open APIs only (HN Algolia, Stack Exchange, App Store review
+    RSS) and pages that load normally, all through curl with its default user agent.
+    Prints compact records: date | link | who | text. Never use it to get around a block."""
+    import html
+    import json
+    import re
+    import subprocess
+    import sys
+    import urllib.parse
+    from datetime import datetime, timezone
+
+    SINCE = 1743465600  # 2025-04-01 00:00 UTC: the recent window starts here
+    SINCE_DAY = "2025-04-01"
+    SE_DOMAINS = {"stackoverflow": "stackoverflow.com", "superuser": "superuser.com",
+                  "serverfault": "serverfault.com", "askubuntu": "askubuntu.com"}
+
+
+    def curl(url):
+        out = subprocess.run(
+            ["curl", "-sS", "-L", "--compressed", "--max-time", "40", "-w", "\n%{http_code}", url],
+            capture_output=True, text=True)
+        body, _, code = out.stdout.rpartition("\n")
+        return (code.strip() or "000"), body
+
+
+    def clean(s):
+        s = re.sub(r"<[^>]+>", " ", s or "")
+        return re.sub(r"\s+", " ", html.unescape(s)).strip()
+
+
+    def day(ts):
+        return datetime.fromtimestamp(int(ts), timezone.utc).strftime("%Y-%m-%d")
+
+
+    def show(date, link, who, text, width=500, words=""):
+        if len(text) > width:
+            low = text.lower()
+            hits = [low.find(w) for w in words.lower().split() if len(w) > 3 and w in low]
+            start = max(0, min(hits) - width // 3) if hits else 0
+            text = ("[...] " if start else "") + text[start:start + width] + " [cut]"
+        print(date, "|", link, "|", who, "|", text)
+
+
+    def get_json(url, label):
+        code, body = curl(url)
+        if code != "200":
+            print(label, "HTTP", code, "-> INACCESSIBLE: log it, do not work around it")
+            return None
+        try:
+            return json.loads(body)
+        except ValueError:
+            print(label, "returned something that is not JSON")
+            return None
+
+
+    def hn(query, story=False):
+        tags = "story" if story else "comment"
+        q = urllib.parse.urlencode({"query": query, "tags": tags, "hitsPerPage": 15,
+                                    "numericFilters": "created_at_i>" + str(SINCE)})
+        data = get_json("https://hn.algolia.com/api/v1/search?" + q, "HN")
+        if data is None:
+            return
+        hits = data.get("hits", [])
+        print("HN", tags, "hits for", repr(query), "since", SINCE_DAY, "=", data.get("nbHits"),
+              "(showing", str(len(hits)) + ")")
+        for h in hits:
+            text = clean(h.get("comment_text") or h.get("story_text") or "")
+            if story:
+                text = clean(h.get("title")) + " :: " + text
+            thread = h.get("story_id") or h.get("objectID")
+            title = clean(h.get("story_title") or h.get("title"))[:70]
+            who = "%s, thread %s (%s)" % (h.get("author"), thread, title)
+            show(h.get("created_at", "")[:10],
+                 "https://news.ycombinator.com/item?id=" + str(h.get("objectID")), who, text,
+                 words=query)
+
+
+    def hn_item(item_id):
+        h = get_json("https://hn.algolia.com/api/v1/items/" + item_id, "HN item")
+        if h is None:
+            return
+        print(h.get("created_at", "")[:10], "| https://news.ycombinator.com/item?id=" + item_id,
+              "|", h.get("author"), "| thread", h.get("story_id"), "|",
+              clean(h.get("text") or h.get("title")))
+
+
+    def se_link(site, kind, ident):
+        dom = SE_DOMAINS.get(site, site + ".stackexchange.com")
+        return "https://%s/%s/%s" % (dom, "q" if kind == "question" else "a", ident)
+
+
+    def se(site, query):
+        q = urllib.parse.urlencode({"order": "desc", "sort": "relevance", "q": query,
+                                    "site": site, "fromdate": SINCE, "pagesize": 15})
+        data = get_json("https://api.stackexchange.com/2.3/search/excerpts?" + q, "StackExchange")
+        if data is None:
+            return
+        items = data.get("items", [])
+        print("SE", site, "hits for", repr(query), "since", SINCE_DAY, "=", len(items),
+              "| quota left", data.get("quota_remaining"))
+        for it in items:
+            kind = it.get("item_type")
+            ident = it.get("answer_id") if kind == "answer" else it.get("question_id")
+            title = clean(it.get("title"))[:70]
+            who = "%s %s on question %s (%s)" % (kind, ident, it.get("question_id"), title)
+            show(day(it.get("creation_date", 0)), se_link(site, kind, ident), who,
+                 clean(it.get("excerpt")), words=query)
+        if data.get("backoff"):
+            print("SE asks to wait", data.get("backoff"), "seconds before the next call")
+
+
+    def se_item(site, kind, ident):
+        path = "questions" if kind.startswith("q") else "answers"
+        q = urllib.parse.urlencode({"site": site, "filter": "withbody"})
+        url = "https://api.stackexchange.com/2.3/%s/%s?%s" % (path, ident, q)
+        data = get_json(url, "StackExchange item") or dict()
+        for it in data.get("items", []):
+            owner = (it.get("owner") or dict()).get("display_name")
+            link = se_link(site, "question" if path == "questions" else "answer", ident)
+            print(day(it.get("creation_date", 0)), "|", link, "|", owner, "|",
+                  clean(it.get("title")), "::", clean(it.get("body"))[:3000])
+
+
+    def app_search(term):
+        q = urllib.parse.urlencode({"term": term, "entity": "software", "country": "us",
+                                    "limit": 8})
+        data = get_json("https://itunes.apple.com/search?" + q, "App Store search") or dict()
+        for r in data.get("results", []):
+            print(r.get("trackId"), "|", r.get("trackName"), "|", r.get("sellerName"), "|",
+                  r.get("userRatingCount"), "ratings, avg", r.get("averageUserRating"))
+
+
+    def app_reviews(app_id, keywords=""):
+        kws = [k.strip().lower() for k in keywords.split(",") if k.strip()]
+        shown = 0
+        for page in range(1, 11):
+            url = ("https://itunes.apple.com/us/rss/customerreviews/page=%d/id=%s/sortby=mostrecent/json"
+                   % (page, app_id))
+            data = get_json(url, "App Store reviews page %d" % page)
+            if data is None:
+                break
+            entries = data.get("feed", dict()).get("entry") or []
+            if isinstance(entries, dict):
+                entries = [entries]
+            reviews = [e for e in entries if "im:rating" in e]
+            if not reviews:
+                break
+            for e in reviews:
+                date = e["updated"]["label"][:10]
+                rating = int(e["im:rating"]["label"])
+                text = clean(e["title"]["label"]) + " :: " + clean(e["content"]["label"])
+                if rating > 3 or date < SINCE_DAY:
+                    continue
+                if kws and not any(k in text.lower() for k in kws):
+                    continue
+                who = "%s (%d stars, review id %s)" % (e["author"]["name"]["label"], rating,
+                                                       e["id"]["label"])
+                show(date, url, who, text, 700)
+                shown += 1
+                if shown >= 20:
+                    print("(stopped at 20 reviews)")
+                    return
+            if reviews[-1]["updated"]["label"][:10] < SINCE_DAY:
+                break
+        print("App", app_id, "1-3 star reviews since", SINCE_DAY, "shown:", shown)
+
+
+    MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+
+    def mark_dates(body):
+        """Forum post dates live in tag attributes (<time datetime>, title="Jun 30, 2026 ...",
+        data-time): turn each into a visible [post date YYYY-MM-DD] mark before tags go."""
+        def from_title(m):
+            mon, dd, yyyy = m.group(1)[:3].lower(), int(m.group(2)), m.group(3)
+            if mon not in MONTHS:
+                return m.group(0)
+            return " [post date %s-%02d-%02d] " % (yyyy, MONTHS.index(mon) + 1, dd)
+        body = re.sub(r'<time[^>]*datetime="(\d{4}-\d{2}-\d{2})[^"]*"[^>]*>',
+                      r" [post date \1] ", body)
+        body = re.sub(r'<(?:span|abbr|a|div)\b[^>]*\btitle="([A-Z][a-z]{2,8})\.? (\d{1,2}),? (\d{4})[^"]*"[^>]*>',
+                      from_title, body)
+        return re.sub(r'<abbr\b[^>]*\bdata-time="(\d{9,10})"[^>]*>',
+                      lambda m: " [post date %s] " % day(m.group(1)), body)
+
+
+    def page(url, keywords=""):
+        code, body = curl(url)
+        print("HTTP", code, url)
+        if code != "200":
+            print("-> INACCESSIBLE: log it, do not work around it")
+            return
+        body = re.sub(r"(?is)<(script|style)[^>]*>.*?</(script|style)>", " ", body)
+        text = clean(mark_dates(body))
+        marks = [(m.start(), m.group(1))
+                 for m in re.finditer(r"\[post date (\d{4}-\d{2}-\d{2})\]", text)]
+        if marks:
+            days = sorted(d for _, d in marks)
+            print("post dates on page:", len(days), "from", days[0], "to", days[-1], "|",
+                  sum(1 for d in days if d >= SINCE_DAY), "on/after", SINCE_DAY)
+        kws = [k.strip() for k in keywords.split(",") if k.strip()]
+        if not kws:
+            print(text[:4000])
+            return
+        spots = sorted(m.start() for k in kws for m in re.finditer(re.escape(k), text, re.I))
+        hits, shown_to = 0, -1
+        for pos in spots:
+            if pos < shown_to:
+                continue
+            before = [d for at, d in marks if at < pos]
+            print("... [in post dated %s]" % (before[-1] if before else "unknown"),
+                  text[max(0, pos - 350):pos + 400], "...")
+            shown_to = pos + 400
+            hits += 1
+            if hits >= 12:
+                break
+        print("keyword hits shown:", hits, "of", len(spots))
+
+
+    USAGE = """usage:
+      python3 voc.py hn "<words>" [--story]      HN comments (or stories) since 2025-04-01
+      python3 voc.py hn-item <id>                full text of one HN item
+      python3 voc.py se <site> "<words>"         Stack Exchange questions+answers since 2025-04-01
+      python3 voc.py se-item <site> q|a <id>     full text of one question/answer
+      python3 voc.py app-search "<app name>"     App Store app ids
+      python3 voc.py app-reviews <id> [kw1,kw2]  recent 1-3 star reviews (only those with a keyword)
+      python3 voc.py page <url> [kw1,kw2]        a normally-loading page: status, post dates, text near keywords"""
+
+
+    def main(argv):
+        cmd, args = (argv[1], argv[2:]) if len(argv) > 1 else ("", [])
+        if cmd == "hn" and args:
+            hn(args[0], story="--story" in args[1:])
+        elif cmd == "hn-item" and args:
+            hn_item(args[0])
+        elif cmd == "se" and len(args) > 1:
+            se(args[0], args[1])
+        elif cmd == "se-item" and len(args) > 2:
+            se_item(args[0], args[1], args[2])
+        elif cmd == "app-search" and args:
+            app_search(args[0])
+        elif cmd == "app-reviews" and args:
+            app_reviews(args[0], args[1] if len(args) > 1 else "")
+        elif cmd == "page" and args:
+            page(args[0], args[1] if len(args) > 1 else "")
+        else:
+            print(USAGE)
+
+
+    if __name__ == "__main__":
+        main(sys.argv)
+    ----- END voc.py -----
 
     EVIDENCE DISCIPLINE (mandatory):
       - EVERY complaint: a VERBATIM quote (the person's actual words), the venue,
         the URL, and the date. No quote = not usable.
-      - Count DISTINCT sources; do not pad with 5 quotes from one thread (note if
-        a thread is highly upvoted, but that is one source).
-      - Tag source quality: primary (the first-person complaint itself) |
-        secondary (someone summarizing complaints) | vendor (a seller quoting
-        "customer pain" in marketing — WEAK, flag it) | listicle. A vendor's
-        paraphrase of pain is NOT a first-person complaint; never count it as one.
+      - Copy the words exactly as the helper or tool printed them. You may shorten
+        with "..." between kept parts; never change, add or reorder words, and
+        never stitch two posts into one quote.
+      - Count DISTINCT sources: one thread / HN story / SE question = one source,
+        however many comments you quote from it; each review = one source. Do not
+        pad with 5 quotes from one thread (note if a thread is highly upvoted, but
+        it is one source).
+      - Tag source quality: primary (the first-person complaint itself, read from
+        an API record or a page) | snippet (first-person words read only in a
+        search result) | secondary (someone summarizing complaints) | vendor (a
+        seller quoting "customer pain" in marketing — WEAK, flag it) | listicle.
+        A vendor's paraphrase of pain is NOT a first-person complaint; never count
+        it as one.
       - Distinguish a complaint about THE PROBLEM from a complaint about an
-        existing TOOL (both are useful but tag which: problem-pain vs tool-gripe).
-        Tool-gripes also feed the competitors signal.
+        existing TOOL (tag problem-pain vs tool-gripe). A tool-gripe counts only
+        if it is about how the tool handles THIS job (e.g. scheduling vendors,
+        charting a visit, checking benefits, screening applicants, chasing client
+        documents); crashes, logins and pricing in general are off target (note
+        them if useful, but don't count them). Tool-gripes also feed the
+        competitors signal.
+      - The speaker must be the target user (or someone doing that job). A
+        patient angry at an insurer is not a dental office's front desk; a job
+        seeker is not a recruiter. Wrong party = off target, not counted.
       - NEVER fabricate or paraphrase-then-quote. If you cannot find real recent
         complaints, say "sparse / mostly old" and set confidence low.
 
     METHOD (bounded):
-      - 12-16 WebSearches total across candidates (~2 per candidate; problem +
-        reddit/forum/"complaint"/"hate"/"waste of time"/review terms). Reuse
-        where overlapping.
-      - WebFetch the 9-12 most informative threads/review pages for exact quotes.
-      - Per candidate: distinct-complaint count (recent), 2-4 verbatim quotes
-        (quote + venue + URL + date), a recency read, and an honest confidence.
+      - Per candidate, first jot down 4-6 phrasings in the TARGET USER's own words
+        (what a fed-up landlord / dispatcher / vet / office manager / store
+        manager / biller / tax preparer would actually write), 2-4 incumbent
+        tools for that job (B), and 1-3 trade forums where that user posts (A).
+      - BREADTH FIRST. The goal is >=2 recent quotes from >=2 distinct sources
+        for EVERY candidate, before deepening any one.
+        Pass 1, per candidate: 1 WebSearch to find recent forum threads, then
+        1-2 Bash calls batching page reads, app reviews and HN.
+        Pass 2: list the candidates still under 2 recent distinct sources and
+        spend the rest of the budget on them with NEW venues and phrasings
+        (another forum of that trade, another incumbent app, HN words the user
+        would say about themselves), not by re-running searches that came back
+        empty.
+      - Recency: add 2025 or 2026 to forum-finding queries; prefer threads whose
+        posts the page helper dates on/after 2025-04-01. A recent reply in an
+        older thread counts (each post has its own date).
+      - Budget across all candidates: ~30-40 Bash calls (each may batch several
+        helper commands), ~15-22 WebSearches, no WebFetch. Once a candidate has
+        4 qualifying recent quotes from 3+ distinct sources, stop searching it.
+      - Prefer API and page quotes (exact, checkable) to snippets; use snippets to
+        fill gaps.
+      - Per candidate: distinct recent complaint count, every qualifying recent
+        quote you found up to 6 (distinct sources first), each with quote +
+        venue + URL + date + kind + source quality, what was inaccessible, a
+        recency read, and an honest confidence. Older or off-target finds go on
+        a separate "Not counted:" line, never mixed in with the counted ones.
+      - Confidence: high = >=4 distinct recent primary sources across >=2 venues;
+        med = 2-3 distinct recent sources, or recent evidence that is mostly
+        snippets; low = 0-1 recent sources, or mostly old / off target.
 
     OUTPUT:
       1. Write {{ workspace_path }}/state/signal/pain.md — one section per
          candidate (shortlist order): distinct recent complaint count + venues,
-         2-4 verbatim quotes each with venue + URL + date + (problem-pain|
-         tool-gripe) + source quality, a recency note, and a confidence
-         (low|med|high) with why.
+         up to 6 verbatim quotes each with venue + URL + date + (problem-pain|
+         tool-gripe) + source quality (for a snippet, also the query), an
+         "Inaccessible:" line, a recency note, and a confidence (low|med|high)
+         with why. End with a short "Sources and method" note (which APIs and
+         venues gave what).
       2. Then a single ```json block:
     ```json
     {
@@ -71,13 +448,13 @@ agent:
       "per_candidate": [
         {"candidate": "<name from shortlist>",
          "distinct_recent_complaints": 0,
-         "venues": ["reddit r/...", "capterra", "..."],
+         "venues": ["hacker news", "stackexchange money", "app store: <app>", "reddit r/... (snippet)"],
          "quotes": [
            {"quote": "verbatim complaint text",
-            "venue": "r/... | capterra | forum name",
+            "venue": "HN | SE money | App Store: <app> | r/... (snippet) | forum name",
             "url": "https://...", "date": "2026-05-01",
             "kind": "problem-pain|tool-gripe",
-            "source_quality": "primary|secondary|vendor|listicle"}
+            "source_quality": "primary|snippet|secondary|vendor|listicle"}
          ],
          "recency": "e.g. mostly 2025-2026 | mostly pre-2023",
          "confidence": "low|med|high",
@@ -91,6 +468,7 @@ agent:
       - Count DISTINCT sources, not upvotes or restatements.
       - No ranking, no recommendations. Signal only.
       - Never fabricate or invent a quote, a date, or a URL.
+      - Never get around a block: log it as inaccessible and move on.
   task_template: |
     Working directory: {{ workspace_path }}
 
@@ -101,8 +479,12 @@ agent:
     ---
 
     Steps:
-      1. `mkdir -p {{ workspace_path }}/state/signal`
-      2. 12-16 WebSearches for recent first-person complaints across candidates.
-      3. WebFetch the 9-12 most informative threads/review pages for exact quotes.
+      1. `mkdir -p {{ workspace_path }}/state/signal`; write {{ workspace_path }}/voc.py
+         (the helper, exactly as given) and run `python3 voc.py` once to see its usage.
+      2. Per candidate: Hacker News + Stack Exchange + App Store reviews of the
+         incumbent apps through the helper, batched in few Bash calls; then search
+         snippets (WebSearch) for the venues you can't read; pages only if they
+         load normally.
+      3. Quote exactly from what the tools printed (hn-item / se-item for full text).
       4. Write state/signal/pain.md per spec (every candidate covered).
       5. Emit the JSON block.

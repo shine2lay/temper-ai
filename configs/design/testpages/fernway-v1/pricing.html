@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing · Fernway Rota</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  .head { padding: var(--s6) 0 var(--s4); text-align: center; }
+  .head .lead { max-width: 640px; margin: 0 auto var(--s4); }
+  .billing { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 600; }
+  .switch { position: relative; width: 52px; height: 30px; border-radius: 15px; border: 2px solid #e3e7ec; background: #fff; cursor: pointer; padding: 0; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #e3e7ec; }
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s4); margin-top: var(--s5); }
+  .plan { border: 1px solid var(--line); border-radius: 12px; padding: var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+  .plan.team { border-top: 6px solid var(--primary); }
+  .plan h2 { font-size: 24px; margin: 0; }
+  .price { font-size: 36px; font-weight: 700; margin: 0; }
+  .price small { font-size: 16px; font-weight: 400; color: var(--muted); }
+  .plan ul { margin: 0; padding-left: 20px; color: var(--muted); }
+  .plan .btn { margin-top: auto; }
+  .compare { margin-top: var(--s7); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 12px var(--s2); border-bottom: 1px solid var(--line); }
+  thead th { font-size: 14px; color: var(--muted); }
+  td.c { text-align: center; }
+  .fine { margin-top: var(--s3); color: var(--muted); font-size: 14px; }
+  @media (max-width: 760px) { .plans { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="/index.html"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="6" fill="#1f5f8b"/><path d="M7 9h14M7 14h14M7 19h9" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>Fernway Rota</a>
+  <nav class="nav" aria-label="Main"><a href="/index.html#features">Product</a><a href="/pricing.html" aria-current="page">Pricing</a><a href="/index.html#customers">Customers</a><a href="/app/week.html">Sign in</a></nav>
+  <a class="btn" href="/signup.html">Start free trial</a>
+</div></header>
+
+<main id="main"><div class="wrap">
+<section class="head">
+  <h1>Pricing</h1>
+  <p class="lead">Every plan includes the rota, shift swaps and the mobile app. Try Team free for 14 days.</p>
+  <div class="billing"><span id="bill-label">Monthly</span><button class="switch" role="switch" aria-checked="false" aria-labelledby="bill-label bill-yearly"></button><span id="bill-yearly">Yearly</span></div>
+</section>
+
+<section class="plans" aria-label="Plans">
+  <div class="plan">
+    <h2>Free</h2>
+    <p class="price">$0</p>
+    <p class="muted">For teams of up to 5 people.</p>
+    <ul><li>Weekly rota</li><li>Shift swaps</li><li>Mobile app</li></ul>
+    <a class="btn btn-secondary" href="/signup.html?plan=free">Create free account</a>
+  </div>
+  <div class="plan team">
+    <h2>Team</h2>
+    <p class="price">$5 <small>per user</small></p>
+    <p class="muted">For teams of 6 to 100 people.</p>
+    <ul><li>Everything in Free</li><li>Cost as you plan</li><li>Templates</li><li>Overtime alerts</li></ul>
+    <a class="btn" href="/signup.html?plan=team">Get going</a>
+  </div>
+  <div class="plan">
+    <h2>Business</h2>
+    <p class="price">Custom</p>
+    <p class="muted">For more than 100 people or several sites.</p>
+    <ul><li>Everything in Team</li><li>Several sites</li><li>Payroll export</li><li>Single sign-on</li></ul>
+    <a class="btn btn-secondary" href="/demo.html">Talk to sales</a>
+  </div>
+</section>
+
+<section class="compare">
+  <h2>Compare plans</h2>
+  <table>
+    <thead><tr><th scope="col">Feature</th><th scope="col">Free</th><th scope="col">Team</th><th scope="col">Business</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Weekly rota and shift swaps</th>
+        <td class="c"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 10l4 4 8-8" stroke="#2b8a3e" stroke-width="2.5" fill="none"/></svg></td>
+        <td class="c"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 10l4 4 8-8" stroke="#2b8a3e" stroke-width="2.5" fill="none"/></svg></td>
+        <td class="c"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 10l4 4 8-8" stroke="#2b8a3e" stroke-width="2.5" fill="none"/></svg></td></tr>
+      <tr><th scope="row">Cost as you plan</th>
+        <td class="c"></td>
+        <td class="c"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 10l4 4 8-8" stroke="#2b8a3e" stroke-width="2.5" fill="none"/></svg></td>
+        <td class="c"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 10l4 4 8-8" stroke="#2b8a3e" stroke-width="2.5" fill="none"/></svg></td></tr>
+      <tr><th scope="row">Payroll export</th>
+        <td class="c"></td>
+        <td class="c"></td>
+        <td class="c"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 10l4 4 8-8" stroke="#2b8a3e" stroke-width="2.5" fill="none"/></svg></td></tr>
+      <tr><th scope="row">People</th><td class="c">Up to 5</td><td class="c">6 to 100</td><td class="c">Any number</td></tr>
+    </tbody>
+  </table>
+  <p class="fine">Prices exclude sales tax. You can cancel at any time from Settings.</p>
+</section>
+</div></main>
+
+<footer class="site-footer"><div class="wrap">
+  <span>© 2026 Fernway Rota</span>
+  <nav aria-label="Footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/help.html">Help centre</a></nav>
+</div></footer>
+</body>
+</html>

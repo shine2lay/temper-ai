@@ -1,0 +1,77 @@
+workflow:
+  name: design_review
+  # DESIGN REVIEW (design role, v1 2026-10-02). An expert review of a product's
+  # pages: measured facts first, then two independent AI critics, then a merge that keeps what
+  # holds up. The critic and grader every later design workflow reuses (owner's pick).
+  #
+  #   capture (script) -> [ critic_a | critic_b ] -> merge
+  #
+  # capture: screenshots per viewport, axe-core 4.13.0, design_measure.js and a Tab walk through
+  #   temper's playwright-mcp browser (no model). The critics judge hierarchy, wording, flow,
+  #   consistency, states and the WCAG 2.2 AA points no tool measures, from the screenshots and
+  #   the facts; they never contradict a measured number. merge: confirmed = measured or found
+  #   by both critics; single = one critic, kept for a person to check; rejected = contradicted.
+  # Graded on planted-problem test pages by design_review_grade (answer key kept off the box's
+  # container mounts). v1 on testpages/fernway-v1 (22 plants), 2 runs: all 22 found and
+  # confirmed, 35 findings each, none invented; about $1.8 and 7 minutes a run.
+  # docs/design.md has how to run and grade it.
+  #
+  # provider: claude = Claude Code CLI (Read shows PNGs to the model); no temper tools: blocks.
+  version: 1
+  description: |
+    Expert design review of a site's pages: screenshots and measured accessibility facts
+    (axe-core, contrast, target sizes, field names, focus, reflow) per viewport, two
+    independent critics (Nielsen's 10 heuristics, visual hierarchy, consistency across pages,
+    states, WCAG 2.2 AA), and a merge that writes a report with confirmed findings, findings
+    seen by one critic, and what was not checked.
+  inputs:
+    brief:
+      type: string
+      required: true    # what the product is, who uses it, what the pages are for
+    pages:
+      type: string
+      required: true    # comma-separated paths relative to the site, e.g. "index.html,pricing.html"
+    site:
+      type: string
+      default: ""       # a folder inside the run container to serve, e.g. /app/configs/design/testpages/fernway-v1
+    base_url:
+      type: string
+      default: ""       # or a deployed site (the browser must reach it)
+    viewports:
+      type: string
+      default: "desktop,mobile"
+  outputs:
+    report_path: merge.structured.report_path
+    findings_path: merge.structured.findings_path
+    confirmed: merge.structured.confirmed
+    single: merge.structured.single
+    rejected: merge.structured.rejected
+    severity_counts: merge.structured.severity_counts
+    screenshots: capture.structured.screenshots
+    measured_items: capture.structured.measured_items
+
+  nodes:
+    - name: capture
+      type: agent
+      agent: design_capture
+      input_map:
+        brief: input.brief
+        pages: input.pages
+        site: input.site
+        base_url: input.base_url
+        viewports: input.viewports
+
+    - name: critic_a
+      type: agent
+      agent: design_critic
+      depends_on: [capture]
+
+    - name: critic_b
+      type: agent
+      agent: design_critic
+      depends_on: [capture]
+
+    - name: merge
+      type: agent
+      agent: design_merge
+      depends_on: [critic_a, critic_b]

@@ -1,0 +1,53 @@
+# @description DESIGN REVIEW step 1 (design role). No model. Writes the review's
+# brief to review/brief.md, then runs design_capture.py: each page at each viewport as
+# screen-sized screenshots (review/shots/), axe-core 4.13.0 plus design_measure.js plus a keyboard
+# Tab walk (review/facts/*.json), and review/facts.md, the measured problems a reviewer reads
+# first. The browser is temper's playwright-mcp service; a local site folder is served from
+# this run's container, a deployed site is given by base_url. Part of workflows/design_review.yaml.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
+agent:
+  name: design_capture
+  version: 1
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    #!/bin/sh
+    set -e
+    cd {{ workspace_path }}
+    mkdir -p review
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import json
+    import os
+    import subprocess
+    import sys
+    import time
+
+    brief = (os.environ.get("{{ brief | env }}") or "").strip()
+    site = (os.environ.get("{{ site | default('', true) | env }}") or "").strip()
+    base_url = (os.environ.get("{{ base_url | default('', true) | env }}") or "").strip()
+    pages = (os.environ.get("{{ pages | env }}") or "").strip()
+    viewports = (os.environ.get("{{ viewports | default('desktop,mobile', true) | env }}") or "desktop,mobile").strip()
+    if not brief or not pages or not (site or base_url):
+        raise SystemExit("design_review needs: brief, pages, and site or base_url")
+    with open("review/brief.md", "w", encoding="utf-8") as f:
+        f.write("\n".join([
+            "# Design review brief", "",
+            "Written by design_capture, " + time.strftime("%Y-%m-%d %H:%M %Z") + ".", "",
+            "## What this is and who it is for", "", brief, "",
+            "## Pages reviewed", "", ", ".join(p.strip() for p in pages.split(",") if p.strip()), "",
+            "## Viewports", "", viewports, "",
+        ]))
+    cmd = [sys.executable, "/app/configs/design/bin/design_capture.py", "--out", "review",
+           "--pages", pages, "--viewports", viewports]
+    cmd += ["--base-url", base_url] if base_url else ["--site", site]
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=540)
+    if res.returncode != 0:
+        sys.stderr.write(res.stdout[-2000:] + res.stderr[-4000:])
+        raise SystemExit("design_capture.py failed (exit %d)" % res.returncode)
+    summary = json.loads(res.stdout.strip().splitlines()[-1])
+    tiles = sum(v["tiles"] for p in summary["pages"] for v in p["views"])
+    measured = sum(v["axe_violations"] + sum(int(x) for x in v["measured"].values())
+                   for p in summary["pages"] for v in p["views"])
+    print(json.dumps({"status": "completed", "facts_path": "review/facts.md", "brief_path": "review/brief.md",
+                      "pages": len(summary["pages"]), "screenshots": tiles, "measured_items": measured}))
+    PYEOF

@@ -1,0 +1,75 @@
+# @description DESIGN REVIEW grader (design role). Matches a design review's
+# findings against a planted-problem answer key: which planted problems were found (and whether
+# confirmed or seen by one critic), which were missed, and which findings match no plant (for a
+# person to sort into real-but-unplanted and invented). Writes grade/matches.json; design_score
+# turns it into numbers. Part of workflows/design_review_grade.yaml. Never sees the site.
+agent:
+  name: design_grade
+  version: 1
+  type: llm
+  provider: claude
+  model: opus
+  # provider claude = Claude Code CLI (Write for the output file). No `tools:` block.
+  max_iterations: 20
+  total_timeout: 900
+  system_prompt: |
+    You grade a design review against an answer key of problems that were planted in a test
+    site on purpose. You are strict and literal: the grade measures the review, so never give
+    credit the findings don't earn, and never hold back credit they do.
+
+    MATCHING RULES:
+      - A finding MATCHES a plant when it names the same place (same page, or "all"; the same
+        element or area) AND the same problem. The criterion label (Nielsen number, WCAG
+        number) does not need to match; the problem does.
+      - Same place, different problem: not a match (note it as "partial" in unmatched).
+      - Right problem, wrong place: not a match.
+      - The viewport must fit: a plant on mobile only is matched by a finding on mobile or
+        "all"; a desktop-only plant by desktop or "all".
+      - One finding may match two plants if it clearly states both problems ("bundled").
+      - Several findings may match one plant: list them all; the plant counts once.
+      - A plant with several parts (e.g. "no billing period AND conflicts with the other
+        page") is matched when the finding states its main problem; note which parts it
+        missed in "note".
+    THE KEY'S OTHER LISTS (if present):
+      - also_true: real problems that were not planted (checked by hand). A finding that
+        matches one (same place, same problem) is unmatched with guess "known" and that
+        item's id in "plant".
+      - fine: things that are correct in the site. A finding whose claim is one of these is
+        unmatched with guess "invented". If a finding that matches a plant ALSO claims a
+        place the fine list clears (e.g. extends a problem to pages where it isn't), it
+        still matches; add its id to that plant's "overclaims" and say what it got wrong.
+    For every other finding that matches no plant, give your best guess (you cannot see
+    the site, so a person checks these): "real" (a plausible genuine problem not in the key),
+    "doubtful" (could be real, could be invented), "invented" (contradicts the key's
+    description of the page or is clearly not a problem), "partial" (same place as plant X,
+    different problem), "duplicate" (restates a matched finding's problem).
+
+    OUTPUT:
+      1. Write grade/matches.json (create the folder; valid JSON):
+         {"site": "<the key's site>",
+          "plants": [{"id": "H1", "kind": "measured|judged", "matched_by": ["D3"],
+                      "best_status": "confirmed|single|none", "overclaims": [],
+                      "note": "..."}],
+          "unmatched": [{"finding": "D12", "status": "confirmed|single", "guess":
+                         "known|real|doubtful|invented|partial|duplicate",
+                         "plant": "H3, X2 or empty",
+                         "why": "..."}]}
+         Every plant in the key appears once in "plants" (matched_by empty if missed).
+         Every finding in the review appears in some plant's matched_by or in "unmatched".
+      2. Make your WHOLE final message a single ```json block, nothing before or after it:
+         {"status": "completed", "matches_path": "grade/matches.json"}
+  task_template: |
+    Working directory: {{ workspace_path }}
+
+    ANSWER KEY (YAML):
+    ---
+    {{ answer_key }}
+    ---
+
+    THE REVIEW'S FINDINGS (findings.json):
+    ---
+    {{ findings }}
+    ---
+
+    Grade the review against the key following your rules: write grade/matches.json, then emit
+    the JSON block as your whole final message.

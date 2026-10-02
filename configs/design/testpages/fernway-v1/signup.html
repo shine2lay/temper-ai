@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Start your free trial · Fernway Rota</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  .page { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s6); padding: var(--s6) 0; align-items: start; }
+  .pitch ul { padding-left: 20px; }
+  .pitch li { margin-bottom: var(--s1); }
+  form { border: 1px solid var(--line); border-radius: 12px; padding: var(--s4); }
+  .banner { background: #fdecea; border: 1px solid var(--danger); color: var(--danger); border-radius: var(--radius); padding: 12px var(--s2); margin-bottom: var(--s3); font-weight: 600; }
+  .field { margin-bottom: var(--s2); }
+  input, select { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--control); border-radius: var(--radius); font: 16px "Plex", system-ui, sans-serif; color: var(--ink); background: #fff; }
+  input::placeholder { color: #6b7685; }
+  input.bad { border: 2px solid var(--danger); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+  .agree { display: flex; gap: var(--s1); align-items: flex-start; margin: var(--s3) 0; font-size: 14px; }
+  .agree input { width: 24px; min-height: 24px; height: 24px; margin: 0; flex: none; }
+  form .btn { width: 100%; }
+  .alt { margin-top: var(--s2); text-align: center; font-size: 14px; }
+  @media (max-width: 760px) { .page, .two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="/index.html"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="6" fill="#1f5f8b"/><path d="M7 9h14M7 14h14M7 19h9" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>Fernway Rota</a>
+  <nav class="nav" aria-label="Main"><a href="/index.html#features">Product</a><a href="/pricing.html">Pricing</a><a href="/index.html#customers">Customers</a><a href="/app/week.html">Sign in</a></nav>
+</div></header>
+
+<main id="main"><div class="wrap page">
+  <div class="pitch">
+    <h1>Start your free trial</h1>
+    <p class="lead">14 days of Team, free. No card needed.</p>
+    <ul>
+      <li>Build your first rota in an afternoon</li>
+      <li>Invite your team by email or link</li>
+      <li>Keep everything if you stay on Free</li>
+    </ul>
+  </div>
+
+  <form action="/signup.html" method="post" novalidate>
+    <div class="banner" role="alert">Error: invalid input (code 422)</div>
+    <div class="two">
+      <div class="field"><input name="first" placeholder="First name" value="Maya" autocomplete="given-name"></div>
+      <div class="field"><input name="last" placeholder="Last name" value="Okafor" autocomplete="family-name"></div>
+    </div>
+    <div class="field"><input name="email" type="email" placeholder="Work email" value="maya@kettleandco.com" autocomplete="email"></div>
+    <div class="field"><input class="bad" name="password" type="password" placeholder="Password" value="kettle1" autocomplete="new-password"></div>
+    <div class="field"><input name="company" placeholder="Company name" value="Kettle &amp; Co" autocomplete="organization"></div>
+    <div class="two">
+      <div class="field"><input name="phone" type="tel" placeholder="Phone number (required)" autocomplete="tel"></div>
+      <div class="field"><input name="size" placeholder="Company size (required)"></div>
+    </div>
+    <div class="field"><input name="source" placeholder="How did you hear about us? (required)"></div>
+    <div class="field"><input name="role" placeholder="Your job title (required)" autocomplete="organization-title"></div>
+    <label class="agree"><input type="checkbox" name="terms" checked> <span>I agree to the <a href="/terms.html">Terms</a> and the <a href="/privacy.html">Privacy policy</a>.</span></label>
+    <button class="btn" type="submit">Create account</button>
+    <p class="alt">Already have an account? <a href="/app/week.html">Sign in</a></p>
+  </form>
+</div></main>
+
+<footer class="site-footer"><div class="wrap">
+  <span>© 2026 Fernway Rota</span>
+  <nav aria-label="Footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/help.html">Help centre</a></nav>
+</div></footer>
+</body>
+</html>

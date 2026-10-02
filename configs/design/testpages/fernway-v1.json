@@ -1,0 +1,6 @@
+{
+  "site": "fernway-v1",
+  "brief": "Fernway Rota: shift scheduling for small teams (cafes, shops, clinics). Marketing pages (home, pricing, signup) are read by owners and managers comparing tools before a free trial; the app's week screen is where a manager builds and publishes next week's rota.",
+  "pages": ["index.html", "pricing.html", "signup.html", "app/week.html"],
+  "key": "~/design-lab/answers/fernway-v1.yaml"
+}

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week of 12 Oct · Fernway Rota</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  body { background: var(--surface); }
+  .bar { background: #fff; border-bottom: 1px solid var(--line); }
+  .bar .wrap { max-width: none; display: flex; align-items: center; gap: var(--s3); min-height: 64px; }
+  .bar .who { margin-left: auto; color: var(--muted); font-size: 14px; }
+  .tools { max-width: none; display: flex; align-items: center; gap: var(--s2); padding-top: var(--s3); padding-bottom: var(--s3); flex-wrap: wrap; }
+  .tools h1 { font-size: 24px; margin: 0; }
+  .icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; border: 0; background: none; color: var(--ink); cursor: pointer; }
+  .tools .actions { margin-left: auto; display: flex; gap: var(--s1); }
+  .btn-danger { background: var(--danger); border-color: var(--danger); }
+  .layout { max-width: none; display: grid; grid-template-columns: 1fr 280px; gap: var(--s3); }
+  .layout > * { min-width: 0; }
+  .grid { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; }
+  th, td { border-bottom: 1px solid var(--line); padding: var(--s1); vertical-align: top; text-align: left; }
+  thead th { font-size: 14px; color: var(--muted); font-weight: 600; }
+  tbody th { font-weight: 600; white-space: nowrap; }
+  .shift { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 6px; padding: 4px 8px; font-size: 14px; cursor: grab; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .ok { background: #2f9e44; } .wait { background: #f59f00; } .no { background: #e03131; }
+  .hint { color: var(--muted); font-size: 14px; margin: var(--s2) 0 0; }
+  .side { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: var(--s3); min-height: 240px; }
+  .side h2 { font-size: 18px; }
+  .cost { margin-top: var(--s3); background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: var(--s3); }
+  .cost p { margin: 0; }
+  .cost strong { font-size: 24px; display: block; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
+    .bar .wrap { flex-wrap: wrap; gap: var(--s2); padding-top: var(--s2); padding-bottom: var(--s2); }
+    .bar .who { margin-left: 0; }
+    .tools .actions { margin-left: 0; width: 100%; flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+<header class="bar"><div class="wrap">
+  <a class="brand" href="/index.html"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="6" fill="#1f5f8b"/><path d="M7 9h14M7 14h14M7 19h9" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>Fernway Rota</a>
+  <nav class="nav" aria-label="App"><a href="/app/week.html" aria-current="page">Rota</a><a href="/app/team.html">Team</a><a href="/app/swaps.html">Swaps</a><a href="/app/reports.html">Reports</a></nav>
+  <span class="who">Kettle &amp; Co · Maya Okafor</span>
+</div></header>
+
+<main>
+<div class="wrap tools">
+  <button class="icon" aria-label="Previous week"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" stroke="currentColor" stroke-width="2" fill="none"/></svg></button>
+  <h1>Week of 12 Oct</h1>
+  <button class="icon" aria-label="Next week"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="2" fill="none"/></svg></button>
+  <div class="actions">
+    <button class="btn btn-secondary" type="button">Copy last week</button>
+    <button class="btn btn-danger" type="button">Delete week</button>
+    <button class="btn" type="button">Publish</button>
+  </div>
+</div>
+
+<div class="wrap layout">
+  <div>
+    <div class="grid" role="region" aria-label="Week schedule" tabindex="0">
+      <table>
+        <thead><tr><th scope="col">Person</th><th scope="col">Mon 12</th><th scope="col">Tue 13</th><th scope="col">Wed 14</th><th scope="col">Thu 15</th><th scope="col">Fri 16</th><th scope="col">Sat 17</th><th scope="col">Sun 18</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Maya O.</th><td><span class="shift"><span class="dot ok"></span>7–3</span></td><td><span class="shift"><span class="dot ok"></span>7–3</span></td><td></td><td><span class="shift"><span class="dot ok"></span>7–3</span></td><td><span class="shift"><span class="dot ok"></span>7–3</span></td><td></td><td></td></tr>
+          <tr><th scope="row">Dev P.</th><td><span class="shift"><span class="dot ok"></span>3–11</span></td><td></td><td><span class="shift"><span class="dot wait"></span>3–11</span></td><td><span class="shift"><span class="dot ok"></span>3–11</span></td><td></td><td><span class="shift"><span class="dot ok"></span>10–6</span></td><td></td></tr>
+          <tr><th scope="row">Ana R.</th><td></td><td><span class="shift"><span class="dot ok"></span>3–11</span></td><td><span class="shift"><span class="dot ok"></span>7–3</span></td><td></td><td><span class="shift"><span class="dot no"></span>3–11</span></td><td><span class="shift"><span class="dot ok"></span>3–11</span></td><td><span class="shift"><span class="dot wait"></span>10–6</span></td></tr>
+          <tr><th scope="row">Sam K.</th><td><span class="shift"><span class="dot ok"></span>10–6</span></td><td><span class="shift"><span class="dot ok"></span>10–6</span></td><td></td><td><span class="shift"><span class="dot wait"></span>10–6</span></td><td><span class="shift"><span class="dot ok"></span>10–6</span></td><td></td><td><span class="shift"><span class="dot ok"></span>3–11</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">Drag a shift to another day or person to move it.</p>
+  </div>
+
+  <aside>
+    <section class="side" aria-labelledby="open-h">
+      <h2 id="open-h">Open shifts</h2>
+    </section>
+    <section class="cost" aria-labelledby="cost-h">
+      <h2 id="cost-h" class="muted" style="font-size:14px;margin:0 0 4px">This week's cost</h2>
+      <p><strong>$4,312</strong>Budget $4,500</p>
+    </section>
+  </aside>
+</div>
+</main>
+</body>
+</html>

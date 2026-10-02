@@ -1,0 +1,69 @@
+# @description DESIGN REVIEW score (design role). No model. Turns the grader's
+# grade/matches.json into the review's numbers: recall of planted problems (confirmed only, and
+# confirmed or single), split measured/judged; share of findings that hit a plant; the unmatched
+# findings by the grader's guess; and coverage checks (every plant graded, every finding
+# accounted for). Part of workflows/design_review_grade.yaml.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
+agent:
+  name: design_score
+  version: 1
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -e
+    cd {{ workspace_path }}
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import json
+    import os
+
+    findings = json.loads(os.environ.get("{{ findings | env }}") or "{}")
+    m = json.load(open("grade/matches.json", encoding="utf-8"))
+    review = findings.get("findings") or []
+    status = {f["id"]: f.get("status", "") for f in review}
+    plants = m.get("plants") or []
+    unmatched = m.get("unmatched") or []
+
+    def recall(ps, ok):
+        return round(sum(1 for p in ps if p.get("best_status") in ok) / len(ps), 3) if ps else None
+
+    kinds = {}
+    for k in ("measured", "judged"):
+        ps = [p for p in plants if p.get("kind") == k]
+        kinds[k] = {"plants": len(ps), "confirmed": recall(ps, {"confirmed"}),
+                    "any": recall(ps, {"confirmed", "single"}),
+                    "missed": [p["id"] for p in ps if p.get("best_status") not in ("confirmed", "single")]}
+    matched_ids = {d for p in plants for d in (p.get("matched_by") or [])}
+    accounted = matched_ids | {u.get("finding") for u in unmatched}
+    guesses = {}
+    for u in unmatched:
+        guesses.setdefault(u.get("guess", "?"), []).append(u.get("finding"))
+    conf = [f for f in review if f.get("status") == "confirmed"]
+    known = {u.get("finding") for u in unmatched if u.get("guess") == "known"}
+    invented = {u.get("finding") for u in unmatched if u.get("guess") == "invented"}
+    true_ids = (matched_ids | known) & set(status)
+    overclaims = sorted({d for p in plants for d in (p.get("overclaims") or [])})
+    out = {
+        "status": "completed",
+        "site": m.get("site", ""),
+        "plants": len(plants),
+        "recall_confirmed": recall(plants, {"confirmed"}),
+        "recall_any": recall(plants, {"confirmed", "single"}),
+        "by_kind": kinds,
+        "missed": [p["id"] for p in plants if p.get("best_status") not in ("confirmed", "single")],
+        "findings": len(review),
+        "findings_confirmed": len(conf),
+        "findings_single": len(review) - len(conf),
+        "hit_rate_confirmed": round(sum(1 for f in conf if f["id"] in matched_ids) / len(conf), 3) if conf else None,
+        "hit_rate_all": round(len(matched_ids & set(status)) / len(review), 3) if review else None,
+        "true_findings": len(true_ids),
+        "true_rate": round(len(true_ids) / len(review), 3) if review else None,
+        "invented": sorted(invented),
+        "overclaims": overclaims,
+        "unmatched_by_guess": guesses,
+        "unaccounted_findings": sorted(set(status) - accounted),
+        "matches_path": "grade/matches.json",
+    }
+    json.dump(out, open("grade/score.json", "w", encoding="utf-8"), indent=1)
+    print(json.dumps(out))
+    PYEOF

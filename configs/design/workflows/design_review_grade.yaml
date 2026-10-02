@@ -1,0 +1,51 @@
+workflow:
+  name: design_review_grade
+  # DESIGN REVIEW GRADER (design role, v1 2026-10-02). Grades one design_review
+  # run on planted-problem test pages: recall of the planted problems (confirmed, and confirmed
+  # or seen by one critic; measured vs judged) and the findings that match no plant, for a
+  # person to sort into real-but-unplanted and invented. Its own run, so the answer key never
+  # enters the review's run; the host passes the review's findings.json and the key as text
+  # (the keys live in ~/design-lab/answers/, off every container mount).
+  #
+  #   grade (claude) -> score (script)
+  version: 1
+  description: |
+    Grades a design review's findings against a planted-problem answer key: which plants were
+    found, missed or only seen by one critic, which findings match nothing, and the recall and
+    hit-rate numbers.
+  inputs:
+    findings:
+      type: string
+      required: true    # the review run's review/findings.json, as text
+    answer_key:
+      type: string
+      required: true    # the test site's answer key (YAML), as text
+  outputs:
+    recall_confirmed: score.structured.recall_confirmed
+    recall_any: score.structured.recall_any
+    by_kind: score.structured.by_kind
+    missed: score.structured.missed
+    findings: score.structured.findings
+    hit_rate_confirmed: score.structured.hit_rate_confirmed
+    hit_rate_all: score.structured.hit_rate_all
+    true_findings: score.structured.true_findings
+    true_rate: score.structured.true_rate
+    invented: score.structured.invented
+    overclaims: score.structured.overclaims
+    unmatched_by_guess: score.structured.unmatched_by_guess
+    unaccounted_findings: score.structured.unaccounted_findings
+
+  nodes:
+    - name: grade
+      type: agent
+      agent: design_grade
+      input_map:
+        findings: input.findings
+        answer_key: input.answer_key
+
+    - name: score
+      type: agent
+      agent: design_score
+      depends_on: [grade]
+      input_map:
+        findings: input.findings

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fernway Rota · Shift scheduling for small teams</title>
+<link rel="stylesheet" href="/base.css">
+<style>
+  .nav a:focus { outline: none; }
+  .hero { padding: var(--s6) 0 var(--s5); }
+  .hero .wrap { display: grid; grid-template-columns: 1.1fr 1fr; gap: var(--s5); align-items: center; }
+  .eyebrow { display: block; font-size: 30px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #c2410c; margin-bottom: var(--s2); line-height: 1.2; }
+  .hero h1 { font-size: 28px; font-weight: 400; }
+  .hero .sub { font-size: 18px; color: var(--muted); }
+  .ctas { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s3); }
+  .logos { padding: var(--s4) 0; background: var(--surface); }
+  .logos .wrap { display: flex; align-items: center; gap: var(--s5); flex-wrap: wrap; }
+  .logos p { margin: 0; color: var(--muted); font-weight: 600; }
+  .features { padding: var(--s7) 0 var(--s6); }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s4); }
+  .feature p { color: #9aa3ae; }
+  .why { padding: var(--s6) 0; background: var(--surface); }
+  .how { padding: var(--s6) 0 var(--s2); }
+  .steps { display: flex; gap: var(--s4); min-width: 1040px; }
+  .step { flex: 1; border: 1px solid var(--line); border-radius: var(--radius); padding: var(--s3); }
+  .step b { display: block; font-size: 14px; color: var(--muted); margin-bottom: var(--s1); }
+  .pricing-teaser h2 { margin-top: var(--s1); margin-bottom: 120px; }
+  .pricing-teaser .row { display: flex; gap: var(--s4); align-items: center; flex-wrap: wrap; }
+  .pricing-teaser .lead { margin: 0; }
+  @media (max-width: 760px) { .hero .wrap, .grid3 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="/index.html"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="6" fill="#1f5f8b"/><path d="M7 9h14M7 14h14M7 19h9" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>Fernway Rota</a>
+  <nav class="nav" aria-label="Main"><a href="/index.html#features">Product</a><a href="/pricing.html">Pricing</a><a href="/index.html#customers">Customers</a><a href="/app/week.html">Sign in</a></nav>
+  <a class="btn" href="/signup.html">Start free trial</a>
+</div></header>
+
+<main id="main">
+<section class="hero"><div class="wrap">
+  <div>
+    <span class="eyebrow">New · Auto-fill for open shifts</span>
+    <h1>Build next week's rota in ten minutes</h1>
+    <p class="sub">Leverage AI-native orchestration to operationalise workforce elasticity across your shift graph.</p>
+    <div class="ctas"><a class="btn" href="/signup.html">Start free trial</a><a class="btn" href="/demo.html">Book a demo</a></div>
+  </div>
+  <svg viewBox="0 0 480 320" role="img" aria-label="A week of shifts laid out by day in Fernway Rota" style="width:100%;height:auto">
+    <rect x="0.5" y="0.5" width="479" height="319" rx="12" fill="#fff" stroke="#c9d1db"/>
+    <g font-family="Plex, sans-serif" font-size="13" font-weight="600" fill="#4a5565">
+      <text x="62" y="32">Mon</text><text x="120" y="32">Tue</text><text x="178" y="32">Wed</text><text x="236" y="32">Thu</text><text x="294" y="32">Fri</text><text x="352" y="32">Sat</text><text x="410" y="32">Sun</text>
+    </g>
+    <g fill="#1f5f8b">
+      <rect x="56" y="48" width="50" height="80" rx="6"/><rect x="114" y="48" width="50" height="80" rx="6"/><rect x="172" y="64" width="50" height="96" rx="6"/>
+      <rect x="230" y="48" width="50" height="80" rx="6"/><rect x="288" y="48" width="50" height="80" rx="6"/><rect x="346" y="80" width="50" height="112" rx="6"/>
+      <rect x="56" y="144" width="50" height="96" rx="6"/><rect x="114" y="144" width="50" height="96" rx="6"/><rect x="230" y="144" width="50" height="96" rx="6"/>
+      <rect x="404" y="96" width="50" height="80" rx="6"/>
+    </g>
+    <rect x="288" y="144" width="50" height="96" rx="6" fill="#fff" stroke="#b35c00" stroke-width="2" stroke-dasharray="5 4"/>
+    <text x="313" y="196" text-anchor="middle" font-family="Plex, sans-serif" font-size="12" font-weight="600" fill="#b35c00">Open</text>
+    <g fill="#c9d1db"><rect x="16" y="56" width="28" height="6" rx="3"/><rect x="16" y="152" width="28" height="6" rx="3"/><rect x="16" y="248" width="28" height="6" rx="3"/></g>
+  </svg>
+</div></section>
+
+<section class="logos" id="customers"><div class="wrap">
+  <p>Teams who plan with Fernway</p>
+  <img src="/img/logo-brightbean.svg" width="132" height="32">
+  <img src="/img/logo-northdesk.svg" width="132" height="32">
+  <img src="/img/logo-saltmarsh.svg" width="132" height="32">
+  <img src="/img/logo-kettle.svg" width="132" height="32">
+</div></section>
+
+<section class="features" id="features"><div class="wrap">
+  <h2>Everything a rota needs</h2>
+  <div class="grid3">
+    <div class="feature"><h3>Copy, fix, publish</h3><p>Start from last week, fill the gaps and publish. Fernway flags anyone booked over their contracted hours before you send.</p></div>
+    <div class="feature"><h3>Swaps without the texts</h3><p>Staff offer and pick up shifts in the app. You approve each swap with one tap, and the rota updates for everyone.</p></div>
+    <div class="feature"><h3>Cost as you plan</h3><p>See the week's wage bill change while you build it, against the budget you set for the week.</p></div>
+  </div>
+</div></section>
+
+<section class="why"><div class="wrap">
+  <h2>Why teams switch from spreadsheets</h2>
+  <p>Most small teams start with a spreadsheet and a group chat. It works until someone swaps a shift by text and nobody updates the sheet, or two people both think they are on the Saturday close, or payroll finds forty extra hours at the end of the month. Fernway keeps one rota that everyone sees on their phone, records every swap and every approval, and tells you the week's cost before you publish it, so the sheet and the chat stop disagreeing.</p>
+  <p>Setting up takes an afternoon. Import your team from a spreadsheet, set each person's roles and contracted hours, and copy in a typical week. From then on most managers spend about ten minutes a week on the rota, mostly approving swaps.</p>
+</div></section>
+
+<section class="how"><div class="wrap">
+  <h2>How it works</h2>
+  <div class="steps">
+    <div class="step"><b>Step 1</b><h3>Import your team</h3><p class="muted">Upload a spreadsheet or add people by email.</p></div>
+    <div class="step"><b>Step 2</b><h3>Copy a typical week</h3><p class="muted">Start from last week or a saved template.</p></div>
+    <div class="step"><b>Step 3</b><h3>Fill the gaps</h3><p class="muted">Open shifts go to the people free to take them.</p></div>
+    <div class="step"><b>Step 4</b><h3>Publish</h3><p class="muted">Everyone gets their shifts on their phone.</p></div>
+  </div>
+</div></section>
+
+<section class="pricing-teaser"><div class="wrap">
+  <h2>Simple pricing</h2>
+  <div class="row"><p class="lead">Free for teams of up to 5. Then $4 per person per month.</p><a class="btn btn-secondary" href="/pricing.html">See plans</a></div>
+</div></section>
+</main>
+
+<footer class="site-footer"><div class="wrap">
+  <span>© 2026 Fernway Rota</span>
+  <nav aria-label="Footer"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/help.html">Help centre</a></nav>
+</div></footer>
+</body>
+</html>

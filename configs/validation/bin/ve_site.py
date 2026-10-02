@@ -48,6 +48,17 @@ FAKE_PROOF = re.compile(
 ATTRIBUTED_QUOTE = re.compile(r"[\"\u201c][^\"\u201d]{12,}[\"\u201d]\s*(?:-|\u2013|\u2014)\s*[A-Z]")
 # Percent claims about a product that does not exist cannot be verified.
 PERCENT_CLAIM = re.compile(r"\b\d{1,3}(\.\d+)?\s?%")
+# Refund terms are the engine's: one wording on every page, so the copy may not restate (or narrow) them.
+# Only talk of refunding OUR deposit counts: a buyer's own pain ("chase down payment or give a refund") is fine.
+REFUND_TALK = re.compile(r"\brefund|money[- ]back", re.IGNORECASE)
+OUR_DEPOSIT = re.compile(r"\bdeposit|\breserv|founding|\bspot\b|money[- ]back|no questions asked", re.IGNORECASE)
+REFUND_FAQ_Q = "Is the deposit refundable?"
+
+
+def refund_terms(deposit: int) -> str:
+    """The one refund promise every page makes (the report carries its refund-by date)."""
+    return (f"Yes. The ${deposit} deposit is fully refundable: any time, for any reason, no questions asked. "
+            "If we don't launch within 90 days, we refund it in full without being asked.")
 
 MAX_HEADLINE = 90
 MAX_AD_HEADLINE = 30  # Google responsive search ad headline limit (the strictest channel)
@@ -137,6 +148,14 @@ def honesty_problems(copy: dict[str, Any]) -> list[str]:
         m = PERCENT_CLAIM.search(text)
         if m:
             problems.append(f"{where}: {m.group(0)!r} is an unverifiable statistic about an unbuilt product")
+    # Refund talk, per FAQ entry (question and answer together) and per other field.
+    units = [(f"faq[{i}]", f"{qa.get('q', '')} {qa.get('a', '')}") for i, qa in enumerate(copy.get("faq") or [])
+             if isinstance(qa, dict)]
+    units += [(where, text) for where, text in _texts(copy) if not where.startswith("faq[")]
+    for where, text in units:
+        if REFUND_TALK.search(text) and OUR_DEPOSIT.search(text):
+            problems.append(f"{where}: leave refunds out of the copy: the page states the refund terms itself, "
+                            "the same way everywhere (and adds the deposit FAQ)")
     brand_text = f"{copy.get('brand', '')} {copy.get('product_name', '')}".lower()
     for owner in OWNER_BRANDS:
         if owner in brand_text:
@@ -174,7 +193,7 @@ def guard_site(site_dir: str | Path, variants: list[str]) -> list[str]:
         if m:
             problems.append(f"{rel}: forbidden wording {m.group(0)!r}")
         if kind == "landing":
-            for key in ("privacy", "how_heading"):
+            for key in ("privacy", "how_heading", "refundable"):
                 if REQUIRED_PHRASES[key] not in plain:
                     problems.append(f"{rel}: {key} text missing")
             if 'id="how"' not in text:
@@ -421,7 +440,8 @@ def render_site(
     faq_items = "".join(
         f"<dt>{_e(qa.get('q', ''))}</dt><dd>{_e(qa.get('a', ''))}</dd>" for qa in copy.get("faq") or [] if isinstance(qa, dict)
     )
-    faq = f'<section class="faq"><h2>Questions</h2><dl>{faq_items}</dl></section>' if faq_items else ""
+    faq_items += f"<dt>{_e(REFUND_FAQ_Q)}</dt><dd>{_e(refund_terms(deposit))}</dd>"
+    faq = f'<section class="faq"><h2>Questions</h2><dl>{faq_items}</dl></section>'
     pages: list[str] = []
     variants = [v for v in copy["variants"] if isinstance(v, dict)]
     for i, v in enumerate(variants):

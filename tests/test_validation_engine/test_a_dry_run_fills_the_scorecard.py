@@ -5,6 +5,7 @@ through the real rendered page and the real collector, the same bot filter and r
 judge it, and every number is labelled synthetic (docs/validation_engine.md, "Scorecard schema")."""
 
 import copy
+import html
 import json
 import re
 import shutil
@@ -13,7 +14,13 @@ from urllib.parse import parse_qs, urlsplit
 import yaml
 from ve_common import build_preregistration, read_json, read_jsonl, write_json
 from ve_score import decide
-from ve_site import REQUIRED_PHRASES, guard_site
+from ve_site import (
+    REFUND_FAQ_Q,
+    REQUIRED_PHRASES,
+    guard_site,
+    refund_terms,
+    validate_copy,
+)
 
 from .conftest import run_ve
 
@@ -92,6 +99,21 @@ def test_every_page_says_early_access_and_fully_refundable(dry_run):
     for text in pages.values():
         assert not re.search(r"refund[^.]*automatically|automatically[^.]*refund", text, re.I), (
             "nothing refunds on its own: the 90-day promise is a dated duty in the report")
+
+
+def test_the_refund_terms_are_the_engines_alone(dry_run, copy_hourly):
+    # A second dry run's copy narrowed the promise ("refundable any time before we launch"):
+    # the copy may not restate refunds, and every landing page carries the one wording.
+    narrowed = copy.deepcopy(copy_hourly)
+    narrowed["faq"].append({"q": "Is the deposit refundable?", "a": "Yes, any time before we launch."})
+    assert any(p.startswith("faq[2]: leave refunds out") for p in validate_copy(narrowed))
+    pain = copy.deepcopy(copy_hourly)  # a buyer's own refund pain is not our promise
+    pain["variants"][0]["subhead"] = "Then you chase down payment or give a refund."
+    assert not [p for p in validate_copy(pain) if "leave refunds out" in p]
+    for name in ("a", "b", "c"):
+        text = (dry_run["dir"] / "site" / name / "index.html").read_text()
+        plain = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", text)).split())
+        assert REFUND_FAQ_Q in plain and refund_terms(49) in plain, f"{name}: no engine refund FAQ"
 
 
 def test_a_page_that_claims_it_ships_fails_the_guard(dry_run, tmp_path):

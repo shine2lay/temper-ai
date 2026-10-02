@@ -208,7 +208,7 @@ ve_setup -> ve_page -> ve_deploy -> ve_campaign (live) | ve_simulate (dry run) -
 | Step | Kind | What it does |
 |---|---|---|
 | `ve_setup` | script | Reads which rails exist (names only, never values), picks the mode, writes and sha256-locks `preregistration.json` (bars, window, budget, channels, decision rules, refund-by date) before any data exists. Live without every rail, a budget or the go-ahead: stops, writes `RAILS_CHECKLIST.md`, nothing is deployed or spent. Refuses a second launch while a live test runs, and a confirm tier for an idea with no advance/pivot. |
-| `ve_page` | model | Writes `page/copy.json`: a neutral test brand, 2-3 value-proposition framings (A/B the pain, not the button) with ad creatives, "how it would work", FAQ, the follow-up question; then runs `ve.py check-copy` until the honesty check passes. |
+| `ve_page` | model | Writes `page/copy.json`: a neutral test brand, 2-3 value-proposition framings (A/B the pain, not the button) with ad creatives, "how it would work", FAQ, the follow-up question; then runs `ve.py check-copy` until the honesty check passes (which also rejects copy that restates the refund terms: they are the engine's). |
 | `ve_deploy` | script | Renders the site (one page per framing, reserve, call, thanks, privacy, deposit-done) with `ve.js`; checks every rendered page again (early-access banner, refund terms, no ships-now wording, no owner brand); dry run: a local test URL; live: Stripe Payment Links per framing + Netlify deploy + form check. Writes `campaign_plan.json`: every ad with its UTM URL and a lifetime cap, the caps never adding up past the budget. |
 | `ve_campaign` | model, live only | Phase `all`: launches exactly the plan (API or the signed-in browser), records `campaign_launch.json`, `ve.py check-launch` must pass. Phase `collect`: pulls the ad report into `ad_report.jsonl`, `ve.py check-ad-report` (over budget = pause every ad and tell the owner). |
 | `ve_simulate` | script, dry run only | A seeded synthetic crowd (with planted bots: under 2 s, bot user agents, automated browsers, data-centre IPs) clicks the planned ads and goes through the real pages in a real browser (Playwright), fills the forms, reserves through a mock checkout, asks for one refund. Zero spend; every row is marked synthetic. |
@@ -244,9 +244,12 @@ observed CPC (else the assumed $2), over 10 days; above the owner's confirm budg
 none set, the owner is asked first.
 
 **Deposits.** $49 by default, fully refundable on request any time, and in full if nothing
-launches within 90 days: the refund-by date is in the pre-registration and the report, and
+launches within 90 days. The engine alone words this promise, the same on every page (each
+landing page's FAQ ends with it); the refund-by date is in the pre-registration and the report, and
 `ve.py refund --dir <idea folder> --why <reason>` gives back every deposit still held (Stripe
-calls are idempotent). A live kill refunds at once.
+calls are idempotent). A live kill refunds at once. Because the page says the 90-day refund
+needs no asking, a live launch also puts it on the calendar: a scheduler job runs `ve.py refund`
+on the refund-by date unless the owner has said the product launched.
 
 **Running it.**
 
@@ -267,12 +270,20 @@ launch, a secret never printed), the rules, the launch and ad-report checks, and
 adapters on a fake transport. The Netlify, PostHog and Stripe adapters meet the real services
 for the first time on the first live run: run it in Stripe test mode first.
 
-**First dry run** (2026-10-01, hourly-screening, the Signal Harvest's top idea): ve_page wrote
-the "Shiftfunnel" page (3 framings) for $0.39 in 2 minutes; the browser crowd took 33 s. 70
-visits, 12 planted bots all caught, 0 humans dropped; 10,416 impressions, CTR 0.67%, 49 real
-visits in segment, 7 signups (14%), 1 deposit + 2 booked calls, $0 spent; the rules gave
-PIVOT (framing A 33% vs B 0%, p=0.02) and sized a $400 confirm tier that needs the owner's
-budget. Synthetic numbers: they test the engine, not the idea.
+**Dry runs** (2026-10-01; synthetic numbers: they test the engine, not the idea):
+
+- hourly-screening (the first harvest's top pick; execution 1987278e): ve_page wrote the
+  "Shiftfunnel" page (3 framings) for $0.39 in 2 minutes; the browser crowd took 33 s. 70
+  visits, 12 planted bots all caught, 0 humans dropped; 10,416 impressions, CTR 0.67%, 49 real
+  visits in segment, 7 signups (14%), 1 deposit + 2 booked calls, $0 spent; the rules gave
+  PIVOT (framing A 33% vs B 0%, p=0.02) and sized a $400 confirm tier that needs the owner's
+  budget.
+- dental-verification (the re-run harvest's firm pick; executions 17312ae5, then 6c27c9f5):
+  the "Clearlane Benefits Desk" page, framings A re-typed breakdowns -> wrong estimates, B a
+  staff member's whole job is calling payers, C denied claims; the same funnel, verdict and
+  sizing ($0.85 of model time per run, $0 ad spend). The first run's FAQ narrowed the refund
+  promise ("refundable any time before we launch"): since then the copy may not word refunds
+  at all, and every page carries the engine's one refund promise.
 
 ## Cost model (cheapest-first)
 

@@ -53,6 +53,8 @@ agent:
       - The brand is neutral and invented; never use the owner's brands (wai2shine, shinelay,
         rollcall, roamee, temper, lomit) or a real company's name.
       - Plain, concrete words; no hype ("revolutionary", "AI-powered magic").
+      - Leave refunds out of the copy (FAQ included): the page states the deposit's refund terms
+        itself, the same way on every page, and adds the "Is the deposit refundable?" question.
 
     THE GATE: after writing the file, run
         python3 <ve_bin>/ve.py check-copy --dir <idea_dir>

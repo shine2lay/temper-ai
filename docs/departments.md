@@ -16,7 +16,7 @@ role tests and lands a change.
 
 | Role | Department | Looks after |
 |---|---|---|
-| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and the validation engine. New products only: RollCall's loop is not its part. |
+| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest, the opportunity brief and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
 | `design` | Design | The personas, the walks of the product as each of them, and the report stage that runs the walks. |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
@@ -123,7 +123,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (27)
+### product (35)
 
 | Config | Kind |
 |---|---|
@@ -139,6 +139,14 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/signal_pain.yaml` | agent |
 | `agents/signal_search.yaml` | agent |
 | `agents/signal_synthesize.yaml` | agent |
+| `workflows/opportunity_brief.yaml` | workflow |
+| `agents/brief_check.yaml` | agent (script) |
+| `agents/brief_competition.yaml` | agent |
+| `agents/brief_feasibility.yaml` | agent |
+| `agents/brief_gtm.yaml` | agent |
+| `agents/brief_setup.yaml` | agent (script) |
+| `agents/brief_synthesize.yaml` | agent |
+| `agents/brief_viability.yaml` | agent |
 | `validation/workflows/validation_engine.yaml` | workflow |
 | `validation/agents/ve_campaign.yaml` | agent |
 | `validation/agents/ve_collect.yaml` | agent (script) |

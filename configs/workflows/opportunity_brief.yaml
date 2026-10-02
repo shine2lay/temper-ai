@@ -1,0 +1,75 @@
+workflow:
+  name: opportunity_brief
+  # OPPORTUNITY BRIEF (product role; shaped 2026-10-01, queue task #7). For an idea that passed
+  # the free demand screen (signal_harvest), desk research answers the other ways a product
+  # fails: can we build it, would they pay us rather than what they already have, and can a
+  # tiny team reach them. Output: Marty Cagan's opportunity assessment as a short brief, the
+  # input to the owner's decision on which market to build (advice, not the decision).
+  #
+  #   setup (script) -> [ feasibility | viability | go_to_market | competition ] -> synthesize (leader) -> check (script)
+  #
+  # Evidence discipline, same as scan/signal: every load-bearing claim has a URL, a date and an
+  # exact quote confirmed on the page (cite.py keeps each page read, so the words can be checked
+  # again); primary = the original document; vendor marketing is tagged vendor; listicles never
+  # count; never invent; never get around a block; desk research only (no sign-ups, demos,
+  # quotes or contact). check_brief.py checks the brief's structure and quotes and draws the
+  # 10-claim spot-check sample a person re-fetches by hand.
+  #
+  # provider: claude = Claude Code CLI (its own WebSearch/WebFetch/Bash); no temper tools: blocks.
+  version: 1
+  description: |
+    Opportunity brief for one idea: four desk-research lenses (feasibility and usability,
+    viability, go-to-market, competition and bundling) with cited claims, then a synthesizer
+    that answers Cagan's 10 opportunity-assessment questions, rates the four big risks plus
+    go-to-market (low/med/high, with evidence), lists the riskiest assumptions with their
+    cheapest tests, sets kill criteria and recommends advance to the paid test / change the
+    wedge / kill. A script checks the brief and samples claims for a hand spot check.
+  inputs:
+    idea:
+      type: string
+      required: true    # name, target user, problem and wedge (one paragraph)
+    signal_evidence:
+      type: string
+      required: true    # the idea's free-signal evidence: its signal-scorecard section + quote-bank lines
+    focus:
+      type: string
+      default: ""       # idea-specific research pointers, one line per lens (feasibility:, viability:, go_to_market:, competition:)
+  outputs:
+    brief_path: brief.structured.brief_path
+    recommendation: brief.structured.recommendation
+    risks: brief.structured.risks
+    check_verdict: check.structured.verdict
+    check_problems: check.structured.problems
+    spot_check: check.structured.spot_check
+
+  nodes:
+    # Input file + the two helpers (cite.py, check_brief.py) into the workspace. No model.
+    - name: setup
+      type: agent
+      agent: brief_setup
+      input_map:
+        idea: input.idea
+        signal_evidence: input.signal_evidence
+        focus: input.focus
+
+    # Four parallel desk-research lenses + a leader that writes the brief.
+    - name: brief
+      type: stage
+      strategy: leader
+      depends_on: [setup]
+      input_map:
+        idea: input.idea
+        focus: input.focus
+      agents:
+        - agent: brief_feasibility
+        - agent: brief_viability
+        - agent: brief_gtm
+        - agent: brief_competition
+        - agent: brief_synthesize
+          role: leader
+
+    # The brief's mechanical check and the spot-check sample. No model.
+    - name: check
+      type: agent
+      agent: brief_check
+      depends_on: [brief]

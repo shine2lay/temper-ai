@@ -1,0 +1,18 @@
+# @description OPPORTUNITY BRIEF last step (product role). No model. Runs the brief's mechanical
+# check (check_brief.py, written by brief_setup): Cagan's 10 questions each cite a claim, the
+# five risk rows each have a verdict and >= 2 sources from >= 2 URLs with >= 1 primary, >= 3
+# riskiest assumptions with tests and kill results, kill criteria, one recommendation with its
+# reason, every cited claim exists with a URL and a date, and each quoted claim's words are on
+# the page cite.py kept. Prints the verdict and the 10-claim spot-check sample (seed 7) a person
+# re-fetches by hand. Part of workflows/opportunity_brief.yaml.
+agent:
+  name: brief_check
+  version: 1
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    cd {{ workspace_path }}
+    PY=python3
+    command -v python3 >/dev/null 2>&1 || PY="$TEMPER_PYTHON"
+    "$PY" check_brief.py --final

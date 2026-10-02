@@ -1,0 +1,502 @@
+# @description OPPORTUNITY BRIEF step 0 (product role). No model. Writes the run's input
+# (state/brief/input.md: the idea, its research pointers and its free-signal evidence) and two
+# helpers into the workspace: cite.py (exact page text through curl's default user agent,
+# PDFs through pdftotext; every page read is kept in state/brief/pages/ so its words can be
+# checked again) and check_brief.py (the brief's mechanical check, run by the synthesizer
+# before it finishes and by brief_check at the end). Part of workflows/opportunity_brief.yaml.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution) and
+# no Jinja delimiters inside the helpers.
+agent:
+  name: brief_setup
+  version: 1
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -e
+    cd {{ workspace_path }}
+    mkdir -p state/brief/lenses state/brief/pages
+    PY=python3
+    command -v python3 >/dev/null 2>&1 || PY="$TEMPER_PYTHON"
+    "$PY" - <<'PYEOF'
+    import os
+    import time
+
+    idea = (os.environ.get("{{ idea | env }}") or "").strip()
+    evidence = (os.environ.get("{{ signal_evidence | env }}") or "").strip()
+    focus = (os.environ.get("{{ focus | default('', true) | env }}") or "").strip()
+    if not idea or not evidence:
+        raise SystemExit("opportunity_brief needs two inputs: idea and signal_evidence")
+    parts = [
+        "# Opportunity brief input",
+        "",
+        "Written by brief_setup, " + time.strftime("%Y-%m-%d %H:%M %Z") + ".",
+        "",
+        "## Idea",
+        "",
+        idea,
+        "",
+        "## Research pointers for this idea",
+        "",
+        focus or "(none given)",
+        "",
+        "## Free-signal evidence (Rung 0: demand is already screened; build on it, don't redo it)",
+        "",
+        evidence,
+        "",
+    ]
+    with open(os.path.join("state", "brief", "input.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+    PYEOF
+    cat > cite.py <<'CITEEOF'
+    #!/usr/bin/env python3
+    """Exact page text for citing (opportunity_brief). Plain curl with its default user agent;
+    PDFs through pdftotext. A page that doesn't answer 200 is INACCESSIBLE: log it and move on,
+    never work around it. Every page read is kept in state/brief/pages/ (first line: its URL,
+    HTTP code and fetch time; then the text) so its words can be checked later.
+
+      python3 cite.py page <url> [kw1,kw2]   status, dates on the page, text near the keywords
+      python3 cite.py quote <url> "<words>"  FOUND / NOT FOUND: are these exact words on the page?
+    """
+    import hashlib
+    import html
+    import json
+    import os
+    import re
+    import subprocess
+    import sys
+    import time
+
+    HERE = os.path.dirname(os.path.abspath(__file__))
+    PAGES = os.path.join(HERE, "state", "brief", "pages")
+    META_DATE = (r"(?:datePublished|dateModified|published_time|modified_time|updated_time|"
+                 r"dateCreated)[^0-9<>]{0,40}(\d{4}-\d{2}-\d{2})")
+    TEXT_DATE = (r"(?i)\b(last updated|last modified|updated|effective(?: date)?|published|posted|"
+                 r"release date|revised)\s*(?:on|:)?\s*([A-Z][a-z]{2,8}\.? \d{1,2},? \d{4}|"
+                 r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4})")
+
+
+    def norm(s):
+        for a, b in (("\u2019", "'"), ("\u2018", "'"), ("\u201c", '"'), ("\u201d", '"'),
+                     ("\u2013", "-"), ("\u2014", "-"), ("\u00a0", " ")):
+            s = s.replace(a, b)
+        return re.sub(r"\s+", " ", s).strip()
+
+
+    def pdf_text(path):
+        try:
+            out = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True,
+                                 timeout=120)
+            return norm(out.stdout.decode("utf-8", "replace")), ""
+        except (OSError, subprocess.TimeoutExpired):
+            return "", ("PDF but no pdftotext here: read it with WebFetch and tag its claims "
+                        "how: webfetch, with no quote")
+
+
+    def html_text(raw):
+        body = raw.decode("utf-8", "replace")
+        dates = set(re.findall(META_DATE, body))
+        dates |= set(re.findall(r'<time[^>]*datetime="(\d{4}-\d{2}-\d{2})', body))
+        body = re.sub(r"(?is)<(script|style|noscript|svg)[^>]*>.*?</(script|style|noscript|svg)>",
+                      " ", body)
+        text = norm(html.unescape(re.sub(r"<[^>]+>", " ", body)))
+        return text, sorted(dates)
+
+
+    def fetch(url):
+        os.makedirs(PAGES, exist_ok=True)
+        path = os.path.join(PAGES, hashlib.sha1(url.encode()).hexdigest()[:16] + ".txt")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                head, _, text = f.read().partition("\n")
+            return json.loads(head), text
+        raw_path = "%s.%d.raw" % (path, os.getpid())
+        out = subprocess.run(["curl", "-sS", "-L", "--compressed", "--max-time", "45", "-o", raw_path,
+                              "-w", "%{http_code}\t%{content_type}\t%{url_effective}", url],
+                             capture_output=True, text=True)
+        code, ctype, final = (out.stdout.split("\t") + ["", "", ""])[:3]
+        meta = {"url": url, "final_url": final or url, "http": code or "000",
+                "content_type": ctype, "fetched": time.strftime("%Y-%m-%d %H:%M %Z")}
+        text = ""
+        if meta["http"] == "200" and os.path.exists(raw_path):
+            with open(raw_path, "rb") as f:
+                raw = f.read()
+            if "pdf" in ctype.lower() or raw[:5] == b"%PDF-":
+                text, note = pdf_text(raw_path)
+                meta["pdf"] = True
+            else:
+                text, meta["dates_on_page"] = html_text(raw)
+                note = ""
+            meta["dated_text"] = ["%s %s" % pair for pair in re.findall(TEXT_DATE, text)[:6]]
+            if not note and not text.strip():
+                note = ("200 but no readable text (a script-only page?): read it with WebFetch "
+                        "and tag its claims how: webfetch, with no quote")
+            if note:
+                meta["note"] = note
+        elif out.stderr.strip():
+            meta["error"] = out.stderr.strip()[:200]
+        if os.path.exists(raw_path):
+            os.remove(raw_path)
+        if meta["http"] == "200" or meta["http"].startswith("4"):
+            # Kept, so its words can be checked later and a block is never asked twice. A timeout
+            # or a server error is not kept. Lenses run side by side: write whole, then move.
+            tmp = "%s.%d.tmp" % (path, os.getpid())
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(json.dumps(meta) + "\n" + text[:3000000])
+            os.replace(tmp, path)
+        return meta, text
+
+
+    def header(meta):
+        print("HTTP", meta["http"], meta.get("final_url"), "|", meta.get("content_type", ""),
+              "| fetched", meta.get("fetched"))
+        if meta["http"] != "200":
+            print("-> INACCESSIBLE (%s): log it, never work around it" % meta.get("error", "status"))
+            return False
+        if meta.get("dates_on_page") or meta.get("dated_text"):
+            print("dates on page:", meta.get("dates_on_page", []), meta.get("dated_text", []))
+        if meta.get("note"):
+            print("->", meta["note"])
+        return True
+
+
+    def page(url, keywords=""):
+        meta, text = fetch(url)
+        if not header(meta):
+            return
+        kws = [k.strip() for k in keywords.split(",") if k.strip()]
+        if not kws:
+            print(text[:5000])
+            return
+        spots = sorted(m.start() for k in kws for m in re.finditer(re.escape(k), text, re.I))
+        hits, shown_to = 0, -1
+        for pos in spots:
+            if pos < shown_to:
+                continue
+            print("...", text[max(0, pos - 350):pos + 450], "...")
+            shown_to, hits = pos + 450, hits + 1
+            if hits >= 12:
+                break
+        print("keyword hits shown:", hits, "of", len(spots), "| page length", len(text))
+
+
+    def quote(url, words):
+        meta, text = fetch(url)
+        if not header(meta):
+            return
+        want = norm(words).lower()
+        flat = norm(text)
+        at = flat.lower().find(want)
+        if at < 0:
+            print("NOT FOUND on the page: don't cite these words; quote what the page says")
+            return
+        print("FOUND: ..." + flat[max(0, at - 200):at + len(want) + 200] + "...")
+
+
+    def main(argv):
+        if len(argv) > 2 and argv[1] == "page":
+            page(argv[2], argv[3] if len(argv) > 3 else "")
+        elif len(argv) > 3 and argv[1] == "quote":
+            quote(argv[2], argv[3])
+        else:
+            print(__doc__)
+
+
+    if __name__ == "__main__":
+        main(sys.argv)
+    CITEEOF
+    cat > check_brief.py <<'CHECKEOF'
+    #!/usr/bin/env python3
+    """Mechanical check of an opportunity brief (opportunity_brief workflow).
+
+      python3 check_brief.py           what is missing, one line each (the synthesizer runs it)
+      python3 check_brief.py --final   the same as one JSON object (the workflow's last step)
+
+    It counts the structural items of the bar: Cagan's 10 questions, the 5 risk rows, the
+    riskiest assumptions and kill criteria, the recommendation. It confirms that every cited
+    claim exists with a URL and a date, that a claim read with cite.py has its quote on the
+    page cite.py kept, and that the brief invents no source. It draws the 10-claim spot-check
+    sample (seed 7) that a person re-fetches by hand. Whether a source is really primary is
+    for that person to judge, not this script.
+    """
+    import glob
+    import hashlib
+    import json
+    import os
+    import random
+    import re
+    import sys
+
+    ROWS = ["value", "usability", "feasibility", "viability", "go_to_market"]
+    VERDICTS = ["low", "med", "high"]
+    DECISIONS = ["advance", "change_wedge", "kill"]
+    POOL_KINDS = ("price", "api", "rule", "date")
+    QUESTIONS = [
+        "Exactly what problem will this solve? (value proposition)",
+        "For whom do we solve that problem? (target market)",
+        "How big is the opportunity? (market size)",
+        "What alternatives are out there? (competitive landscape)",
+        "Why are we best suited to pursue this? (our differentiator)",
+        "Why now? (market window)",
+        "How will we get this product to market? (go-to-market strategy)",
+        "How will we measure success/make money from this product? (metrics/revenue strategy)",
+        "What factors are critical to success? (solution requirements)",
+        "Given the above, what's the recommendation? (go or no-go)",
+    ]
+    BRIEF_DIR = os.path.join("state", "brief")
+
+
+    def norm(s):
+        for a, b in (("\u2019", "'"), ("\u2018", "'"), ("\u201c", '"'), ("\u201d", '"'),
+                     ("\u2013", "-"), ("\u2014", "-"), ("\u00a0", " ")):
+            s = s.replace(a, b)
+        return re.sub(r"\s+", " ", s).strip()
+
+
+    def load_json(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f), ""
+        except FileNotFoundError:
+            return None, "missing"
+        except ValueError as exc:
+            return None, "not valid JSON (%s)" % exc
+
+
+    def kept_page(url):
+        name = hashlib.sha1(url.encode()).hexdigest()[:16] + ".txt"
+        path = os.path.join(BRIEF_DIR, "pages", name)
+        if not os.path.exists(path):
+            return None, None
+        with open(path, encoding="utf-8") as f:
+            head, _, text = f.read().partition("\n")
+        try:
+            meta = json.loads(head)
+        except ValueError:
+            meta = {}
+        return meta, text
+
+
+    def id_key(cid):
+        m = re.match(r"([A-Za-z]+)(\d+)$", str(cid))
+        return (m.group(1), int(m.group(2))) if m else (str(cid), 0)
+
+
+    def text_of(value):
+        return value.strip() if isinstance(value, str) else ""
+
+
+    def check():
+        problems = []
+        index = {}
+        for path in sorted(glob.glob(os.path.join(BRIEF_DIR, "lenses", "*.json"))):
+            data, err = load_json(path)
+            if err:
+                problems.append("%s is %s" % (path, err))
+                continue
+            for claim in (data or {}).get("claims", []):
+                if isinstance(claim, dict) and claim.get("id"):
+                    index[str(claim["id"])] = dict(claim, _file=os.path.basename(path))
+        brief_path = os.path.join(BRIEF_DIR, "brief.json")
+        brief, err = load_json(brief_path)
+        if err or not isinstance(brief, dict):
+            problems.append("%s is %s" % (brief_path, err or "not a JSON object"))
+            return {"verdict": "fail", "problems": problems, "items": {}}
+        if not os.path.exists(os.path.join(BRIEF_DIR, "brief.md")):
+            problems.append("state/brief/brief.md is missing")
+        try:
+            with open(os.path.join(BRIEF_DIR, "input.md"), encoding="utf-8") as f:
+                input_text = f.read()
+        except FileNotFoundError:
+            input_text = ""
+        copies = {}
+        for claim in brief.get("claims", []) or []:
+            if isinstance(claim, dict) and claim.get("id"):
+                copies[str(claim["id"])] = claim
+
+        bad_claims = {}
+
+        def resolve(cid):
+            cid = str(cid)
+            claim = index.get(cid)
+            copy = copies.get(cid)
+            if claim is None and copy is not None and copy.get("how") == "input":
+                if text_of(copy.get("url")) and copy["url"] in input_text:
+                    claim = dict(copy, _file="input.md")
+                else:
+                    bad_claims[cid] = "input claim whose URL is not in input.md"
+                    return None
+            if claim is None:
+                bad_claims[cid] = "cited but in no lens file (and not an input claim)"
+                return None
+            if copy is not None and text_of(copy.get("url")) != text_of(claim.get("url")):
+                bad_claims[cid] = "the brief's copy has a different URL from %s" % claim["_file"]
+            if not text_of(claim.get("url")).startswith("http"):
+                bad_claims[cid] = "no URL"
+                return None
+            if not (text_of(claim.get("date")) or text_of(claim.get("fetched"))):
+                bad_claims[cid] = "no date"
+                return None
+            return claim
+
+        items = {}
+        cited = set()
+
+        # 1. Cagan's 10 questions, each citing >= 1 claim.
+        questions = brief.get("questions") or []
+        q_ok = len(questions) == 10
+        if not q_ok:
+            problems.append("questions: %d entries, need exactly 10" % len(questions))
+        for n, q in enumerate(questions[:10], 1):
+            if not isinstance(q, dict):
+                q_ok = False
+                problems.append("question %d is not an object" % n)
+                continue
+            if text_of(q.get("question")) != QUESTIONS[n - 1]:
+                q_ok = False
+                problems.append("question %d should read exactly: %s" % (n, QUESTIONS[n - 1]))
+            if len(text_of(q.get("answer"))) < 40:
+                q_ok = False
+                problems.append("question %d: no real answer" % n)
+            ids = [str(c) for c in q.get("claims") or []]
+            cited.update(ids)
+            good = [c for c in ids if resolve(c)]
+            if not good:
+                q_ok = False
+                problems.append("question %d: cites no claim that exists with a URL and a date" % n)
+        items["questions"] = q_ok
+
+        # 2. Five rows, each with a verdict and >= 2 claims from >= 2 URLs, >= 1 primary read with cite.py.
+        rows = {}
+        for r in brief.get("risks") or []:
+            if isinstance(r, dict):
+                rows[text_of(r.get("row"))] = r
+        r_ok = True
+        for row in ROWS:
+            r = rows.get(row)
+            if r is None:
+                r_ok = False
+                problems.append("risk row %s is missing" % row)
+                continue
+            if text_of(r.get("verdict")) not in VERDICTS:
+                r_ok = False
+                problems.append("risk row %s: verdict must be low, med or high" % row)
+            if len(text_of(r.get("why"))) < 40:
+                r_ok = False
+                problems.append("risk row %s: no reason given" % row)
+            ids = [str(c) for c in r.get("claims") or []]
+            cited.update(ids)
+            good = [resolve(c) for c in ids]
+            good = [c for c in good if c]
+            urls = {text_of(c.get("url")) for c in good}
+            primary = [c for c in good if c.get("quality") == "primary" and c.get("how") in ("cite", "input")]
+            if len(good) < 2 or len(urls) < 2:
+                r_ok = False
+                problems.append("risk row %s: %d usable claims from %d URLs, need >= 2 from >= 2"
+                                % (row, len(good), len(urls)))
+            if not primary:
+                r_ok = False
+                problems.append("risk row %s: no primary claim read with cite.py" % row)
+        extra = sorted(set(rows) - set(ROWS))
+        if extra:
+            problems.append("unknown risk rows: %s (use %s)" % (", ".join(extra), ", ".join(ROWS)))
+        items["rows"] = r_ok
+
+        # 4. >= 3 riskiest assumptions with a test and a kill result, and explicit kill criteria.
+        assumptions = [a for a in brief.get("assumptions") or [] if isinstance(a, dict)]
+        a_ok = len(assumptions) >= 3
+        if not a_ok:
+            problems.append("assumptions: %d, need >= 3" % len(assumptions))
+        for n, a in enumerate(assumptions, 1):
+            cited.update(str(c) for c in a.get("claims") or [])
+            for field in ("assumption", "test", "kill_if"):
+                if len(text_of(a.get(field))) < 10:
+                    a_ok = False
+                    problems.append("assumption %d: no %s" % (n, field))
+        kills = [k for k in brief.get("kill_criteria") or [] if len(text_of(k)) >= 10]
+        if not kills:
+            a_ok = False
+            problems.append("kill_criteria: none")
+        items["assumptions_and_kill"] = a_ok
+
+        # 5. One clear recommendation with its reason.
+        rec = brief.get("recommendation") or {}
+        decision = text_of(rec.get("decision")) if isinstance(rec, dict) else ""
+        rec_ok = decision in DECISIONS and len(text_of(rec.get("reason"))) >= 40
+        if decision not in DECISIONS:
+            problems.append("recommendation.decision must be one of %s" % ", ".join(DECISIONS))
+        elif len(text_of(rec.get("reason"))) < 40:
+            problems.append("recommendation: no reason given")
+        if decision == "advance" and len(text_of(rec.get("first_paid_test"))) < 20:
+            rec_ok = False
+            problems.append("recommendation advance: say what the first paid test should test")
+        if decision == "change_wedge" and len(text_of(rec.get("new_wedge"))) < 20:
+            rec_ok = False
+            problems.append("recommendation change_wedge: name the new wedge")
+        items["recommendation"] = rec_ok
+
+        # Every cited claim: exists, and a cite.py claim's quote is on the page cite.py kept.
+        quote_ok = True
+        resolved = {}
+        for cid in sorted(cited, key=id_key):
+            claim = resolve(cid)
+            if not claim:
+                continue
+            resolved[cid] = claim
+            if claim.get("how") != "cite":
+                continue
+            meta, page = kept_page(text_of(claim.get("url")))
+            quote = norm(text_of(claim.get("quote"))).lower()
+            if page is None:
+                quote_ok = False
+                bad_claims[cid] = "how is cite, but cite.py never read this URL"
+            elif not quote:
+                quote_ok = False
+                bad_claims[cid] = "how is cite, but no quote"
+            elif quote not in norm(page).lower():
+                quote_ok = False
+                bad_claims[cid] = "quote is not on the page cite.py kept"
+        for cid in sorted(bad_claims, key=id_key):
+            problems.append("claim %s: %s" % (cid, bad_claims[cid]))
+        items["claims_and_quotes"] = quote_ok and not bad_claims
+
+        # The spot-check sample: load-bearing kinds first, seed 7 over ids in order; reserve after.
+        pool = sorted((c for c in resolved if resolved[c].get("kind") in POOL_KINDS), key=id_key)
+        rest = sorted((c for c in resolved if resolved[c].get("kind") not in POOL_KINDS), key=id_key)
+        order = random.Random(7).sample(pool, len(pool)) + random.Random(7).sample(rest, len(rest))
+        sample = [{"id": c, "kind": resolved[c].get("kind"), "claim": resolved[c].get("claim"),
+                   "quote": resolved[c].get("quote"), "url": resolved[c].get("url"),
+                   "date": resolved[c].get("date"), "quality": resolved[c].get("quality"),
+                   "how": resolved[c].get("how")} for c in order[:10]]
+        verdict = "pass" if all(items.values()) and not problems else "fail"
+        return {
+            "verdict": verdict,
+            "items": items,
+            "problems": problems,
+            "decision": decision,
+            "claims_cited": len(resolved),
+            "primary_cited": sum(1 for c in resolved.values() if c.get("quality") == "primary"),
+            "spot_check": sample,
+            "spot_check_reserve": order[10:],
+            "brief_path": os.path.join(BRIEF_DIR, "brief.md"),
+        }
+
+
+    def main(argv):
+        result = check()
+        if "--final" in argv:
+            print(json.dumps(result, indent=1))
+            return 0
+        for name, ok in result.get("items", {}).items():
+            print("%-22s %s" % (name, "ok" if ok else "NOT MET"))
+        for problem in result["problems"]:
+            print("- " + problem)
+        print("verdict:", result["verdict"], "| claims cited:", result.get("claims_cited"),
+              "| primary:", result.get("primary_cited"))
+        return 0 if result["verdict"] == "pass" else 1
+
+
+    if __name__ == "__main__":
+        sys.exit(main(sys.argv))
+    CHECKEOF
+    echo '{"status": "completed", "input_path": "state/brief/input.md", "helpers": ["cite.py", "check_brief.py"]}'

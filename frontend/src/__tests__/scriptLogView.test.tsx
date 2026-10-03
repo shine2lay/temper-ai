@@ -331,6 +331,25 @@ describe('the log view', () => {
     expect(screen.queryByTestId('script-log-older')).toBeNull();
   });
 
+  it('still reads the rest of an ended log when its timer fires before the clock says it may', async () => {
+    // setTimeout runs on another clock than Date.now(), which the store's gap between reads
+    // goes by, so a timer can fire a moment early by Date.now() (here about 2 timers in 100,
+    // by 1 ms). The store then turns the read down as too soon: it must be asked again, not
+    // dropped. Here Date.now() runs 400 ms behind from just after the first page, so the
+    // timer for the final read always fires early by it.
+    save('a1', ...[1, 2, 3, 4].map((s) => rawRow('a1', s, `line ${s}\n`)));
+    loadRun([agent('a1', { status: 'completed' })], 'completed');
+    render(<ScriptLogView attemptId="a1" />);
+    await waitFor(() => expect(lineTexts()).toEqual(['line 2', 'line 3', 'line 4']));
+    const realNow = Date.now.bind(Date);
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() - 400);
+    try {
+      await waitFor(() => expect(requests.some((r) => /after_seq=4\b/.test(r))).toBe(true), { timeout: 3000 });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('says so when nothing was saved', async () => {
     save('a1');
     loadRun([agent('a1', { status: 'completed' })], 'completed');

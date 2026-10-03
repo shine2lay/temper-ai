@@ -22,6 +22,24 @@ function afterGap(attemptId: string): number {
   return a ? Math.max(0, CATCH_UP_MIN_GAP_MS - (Date.now() - a.lastReadAt)) : 0;
 }
 
+/**
+ * Call `read` once the store would take it: CATCH_UP_MIN_GAP_MS after the last read, by
+ * Date.now(). setTimeout runs on another clock, so a timer can fire a moment before Date.now()
+ * says its delay is over, and the store turns a read asked for too soon down without a word.
+ * So look again when the timer fires and wait out what is left, rather than lose the read.
+ * Returns the cancel.
+ */
+function afterReadGap(attemptId: string, read: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout>;
+  const tryRead = () => {
+    const wait = afterGap(attemptId);
+    if (wait > 0) timer = setTimeout(tryRead, wait);
+    else read();
+  };
+  timer = setTimeout(tryRead, afterGap(attemptId));
+  return () => clearTimeout(timer);
+}
+
 export function useScriptLog(
   runId: string | undefined,
   attemptId: string | undefined,
@@ -54,11 +72,7 @@ export function useScriptLog(
   // Rows were missed: read the ones after the last held.
   useEffect(() => {
     if (!attemptId || !loaded || !needsCatchUp || loading || anchored) return;
-    const timer = setTimeout(
-      () => void useScriptLogStore.getState().loadAfter(attemptId),
-      afterGap(attemptId),
-    );
-    return () => clearTimeout(timer);
+    return afterReadGap(attemptId, () => void useScriptLogStore.getState().loadAfter(attemptId));
   }, [attemptId, loaded, needsCatchUp, loading, anchored]);
 
   // While it runs: ask the server when the socket has gone quiet, and try a failed read again.
@@ -85,7 +99,7 @@ export function useScriptLog(
   useEffect(() => {
     if (!attemptId || running || !loaded || ended || loading || anchored) return;
     if (finalRead.current === attemptId) return;
-    const timer = setTimeout(() => {
+    return afterReadGap(attemptId, () => {
       const store = useScriptLogStore.getState();
       const busy = store.attempts[attemptId]?.loading != null;
       void store.loadAfter(attemptId);
@@ -94,8 +108,7 @@ export function useScriptLog(
       if (!busy && useScriptLogStore.getState().attempts[attemptId]?.loading != null) {
         finalRead.current = attemptId;
       }
-    }, afterGap(attemptId));
-    return () => clearTimeout(timer);
+    });
   }, [attemptId, running, loaded, ended, loading, anchored]);
 
   return attempt;

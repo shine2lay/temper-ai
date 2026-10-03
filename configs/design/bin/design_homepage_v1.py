@@ -401,7 +401,7 @@ class Canvas:
             # put() stores the object by reference; add-obj contains the same object.
             if state == "focus":
                 b["strokes"] = [{"stroke-color": PALETTE["clay"], "stroke-opacity": 1,
-                                  "stroke-width": 3, "stroke-style": "solid", "stroke-alignment": "outside"}]
+                                  "stroke-width": 3, "stroke-style": "solid", "stroke-alignment": "outer"}]
             self.text("Label — live text", "Opening demo…" if state == "loading" else label,
                       b, x + 8, y + 10, 192, "button", "muted" if state == "disabled" else "white", color, "center")
         return self.component("Primary / " + state, 208, 48, build)
@@ -743,10 +743,12 @@ class Job:
         if cached:
             verify_source(client, load(self.packet / f"source-r{round_number:02}.json"))
             return {**cached, "reused": True}
-        if (self.packet / f"source-r{round_number:02}.pending.json").exists():
-            raise ValueError("incomplete Penpot design detected; inspect saved file identity before retry, never duplicate it")
+        name = brief["product"] + f" — Quiet Atlas — r{round_number:02}" + (" (provisional fictional)" if brief["fictional"] else "")
+        pending = self.packet / f"source-r{round_number:02}.pending.json"
+        file = recover_empty_pending(client, pending, name) if pending.exists() else None
         assets(client, self.packet / "assets")
-        file = client.create(brief["product"] + f" — Quiet Atlas — r{round_number:02}" + (" (provisional fictional)" if brief["fictional"] else ""))
+        if file is None:
+            file = client.create(name)
         save(self.packet / f"source-r{round_number:02}.pending.json", {"file_id": file["id"], "page_id": file_page(file), "status": "constructing"})
         canvas = Canvas(file["id"], file_page(file), font_dir=self.packet / "assets")
         for width, x in ((390, 0), (768, 530), (1440, 1426)):
@@ -968,6 +970,24 @@ keyboard, focus, names, landmarks and live states. No publishing is part of this
             raise ValueError("real workflow remains at final owner gate")
         save(self.packet / "owner-final.json", {**decision, "recorded_at": now()})
         return {"status": "completed", "owner_final_gate_recorded": True}
+
+
+def recover_empty_pending(client, path, expected_name):
+    """Recover only a known rejected save, not an ambiguous partial write.
+
+    Preserve the recorded file/page. Never create another file, silently merge
+    nonempty objects, overwrite source, or repeat a completed/paid stage.
+    """
+    saved = load(path)
+    file = client.get(saved["file_id"])  # includes own-Drafts/team enforcement
+    pages = file.get("data", {}).get("pages-index", {})
+    page = pages.get(saved.get("page_id"), {})
+    data = file.get("data", {})
+    if (file.get("name") != expected_name or file.get("revn") != 0
+            or len(pages) != 1 or set(page.get("objects", {})) != {p.ROOT}
+            or any(data.get(key) for key in ("colors", "typographies", "components"))):
+        raise ValueError("incomplete Penpot source is not an unchanged empty file; inspect before retry, never duplicate or overwrite it")
+    return file
 
 
 def main():

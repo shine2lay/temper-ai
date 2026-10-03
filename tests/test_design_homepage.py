@@ -311,3 +311,54 @@ def test_unreferenced_or_fourth_fix_refused(tmp_path):
     job.state["review_round"] = 3
     with pytest.raises(ValueError, match="exhausted"):
         job.disposition(json.dumps({"action": "fix", "issues": ["D1"], "patch": {"subhead": "Shorter."}}))
+
+
+def test_all_button_states_use_penpot_stroke_enum():
+    canvas = h.Canvas(h.p.nid(), h.p.nid())
+    for state in ("default", "hover", "focus", "pressed", "disabled", "loading"):
+        canvas.button("Explore demo rooms", state)
+    strokes = [s for obj in canvas.objects for s in obj.get("strokes", [])]
+    assert strokes
+    assert all(s["stroke-alignment"] in {"inner", "center", "outer"} for s in strokes)
+    focus = next(o for o in canvas.objects if o["name"] == "Primary / focus")
+    assert focus["strokes"][0]["stroke-alignment"] == "outer"
+    assert focus["strokes"][0]["stroke-width"] == 3
+
+
+def empty_pending(tmp_path):
+    fid, page = h.p.nid(), h.p.nid()
+    path = tmp_path / "source.pending.json"
+    h.save(path, {"file_id": fid, "page_id": page})
+    file = {"id": fid, "name": "Known pending source", "revn": 0,
+            "data": {"pages-index": {page: {"objects": {h.p.ROOT: {}}}}}}
+    class Client:
+        def get(self, requested):
+            assert requested == fid
+            return file
+        def create(self, *args):
+            pytest.fail("recovery must never create another file")
+    return Client(), path, file
+
+
+def test_recover_only_recorded_empty_draft(tmp_path):
+    client, path, file = empty_pending(tmp_path)
+    assert h.recover_empty_pending(client, path, "Known pending source") is file
+    assert h.load(path)["file_id"] == file["id"]
+
+
+@pytest.mark.parametrize("changed", ["revision", "object", "name", "page", "library"])
+def test_pending_recovery_refuses_ambiguous_or_wrong_source(tmp_path, changed):
+    client, path, file = empty_pending(tmp_path)
+    page = next(iter(file["data"]["pages-index"].values()))
+    if changed == "revision":
+        file["revn"] = 1
+    elif changed == "object":
+        page["objects"][h.p.nid()] = {"type": "text"}
+    elif changed == "name":
+        file["name"] = "Different source"
+    elif changed == "page":
+        file["data"]["pages-index"][h.p.nid()] = {"objects": {}}
+    else:
+        file["data"]["colors"] = {h.p.nid(): {"name": "Already saved"}}
+    with pytest.raises(ValueError, match="never duplicate or overwrite"):
+        h.recover_empty_pending(client, path, "Known pending source")

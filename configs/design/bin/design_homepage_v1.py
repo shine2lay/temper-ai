@@ -406,16 +406,29 @@ class Canvas:
                       b, x + 8, y + 10, 192, "button", "muted" if state == "disabled" else "white", color, "center")
         return self.component("Primary / " + state, 208, 48, build)
 
+    def schematic(self, board, x, y, width, height, seats):
+        """Original decorative table/seats; room facts remain meaningful live text."""
+        perimeter = self.rect("Illustrative room perimeter", board, x, y, width, height, "paper", 4)
+        perimeter["strokes"] = [{"stroke-color": self.colors["border"]["color"], "stroke-opacity": 1,
+                                  "stroke-width": 1, "stroke-style": "solid", "stroke-alignment": "outer"}]
+        self.rect("Meeting table", board, x + width * .2, y + height * .34,
+                  width * .6, height * .32, "border", 3)
+        half = seats // 2
+        for row in range(2):
+            for column in range(half):
+                sx = x + width * .14 + column * width * .72 / max(1, half - 1)
+                sy = y + height * (.14 if row == 0 else .76)
+                self.rect("Illustrative seat", board, sx - 3, sy, 6, height * .1, "pine", 2)
+
     def room(self, room, width):
         def build(b, x, y):
-            self.rect("Room-card surface", b, x, y, width, 244, "sage")
-            self.rect("Original vector room plan", b, x + 20, y + 20, 64, 44, "border", 4)
-            self.rect("Meeting table", b, x + 32, y + 30, 40, 24, "paper", 4)
+            self.rect("Room-card surface", b, x, y, width, 268, "sage")
+            self.schematic(b, x + 20, y + 20, 104, 52, int(room["capacity"].split()[0]))
             self.text("Room name", room["name"], b, x + 20, y + 82, width - 40, "label", bg="sage")
-            self.text("Capacity", room["capacity"], b, x + 20, y + 116, width - 40, bg="sage")
-            self.text("Equipment", room["equipment"], b, x + 20, y + 148, width - 40, bg="sage")
-            self.text("Illustrative price", room["price"], b, x + 20, y + 210, width - 40, "body", "muted", "sage")
-        return self.component(f"Room card / {room['name']} / {width}", width, 244, build)
+            self.text("Capacity", "Capacity: " + room["capacity"], b, x + 20, y + 118, width - 40, bg="sage")
+            eh = self.text("Equipment", "Equipment: " + room["equipment"], b, x + 20, y + 154, width - 40, bg="sage")
+            self.text("Illustrative price", room["price"], b, x + 20, y + 166 + eh, width - 40, "button", bg="sage")
+        return self.component(f"Room card / {room['name']} / {width}", width, 268, build)
 
     def disclosure(self, text, width):
         def build(b, x, y):
@@ -433,12 +446,15 @@ class Canvas:
         self.text("Brand", brief["product"], b, left, y + 24, 200, "label")
         if mobile:
             self.text("Demo badge", "Fictional demo", b, left + 210, y + 28, iw - 210, "body", "muted")
-        else:
-            self.text("Navigation: How it works", "How it works", b, x + width - pad - 300, y + 26, 140, "body")
-            self.text("Navigation: Example terms", "Example terms", b, x + width - pad - 148, y + 26, 148, "body")
-            for name, tx, tw in (("How it works anchor", x + width - pad - 300, 140), ("Example terms anchor", x + width - pad - 148, 148)):
-                self.metrics.append({"board": b["name"], "kind": "target", "name": name, "x": tx, "y": y + 18, "w": tw, "h": 44})
-        yy = y + 112
+        nav_y = y + (72 if mobile else 18)
+        nav_x = left if mobile else x + width - pad - 300
+        for name, label, offset, tw, line_w in (("How it works anchor", "How it works", 0, 140, 88),
+                                              ("Example terms anchor", "Example terms", 152, 148, 101)):
+            self.text("Navigation: " + label, label, b, nav_x + offset, nav_y + 8, tw, "body", "pine")
+            self.rect("Navigation underline", b, nav_x + offset, nav_y + 33, line_w, 1, "pine", 0)
+            self.metrics.append({"board": b["name"], "kind": "target", "name": name,
+                                 "x": nav_x + offset, "y": nav_y, "w": tw, "h": 44})
+        yy = y + (152 if mobile else 112)
         style = "display-phone" if mobile else ("display-tablet" if tablet else "display-desktop")
         hero_w = iw if mobile or tablet or direction == "explanation-led" else int(iw * .52)
         h = self.text("H1 — product promise", brief["headline"], b, left, yy, hero_w, style)
@@ -453,39 +469,44 @@ class Canvas:
             pw = iw - hero_w - 40
             ph = 270 if tablet else 300
             self.rect("Product illustration panel", b, px, yy, pw, ph, "sage", 20)
-            self.text("Illustration label", "Sample floor plan", b, px + 24, yy + 20, pw - 48, "label", bg="sage")
-            self.text("Illustration honesty", "Illustration only · not live availability", b, px + 24, yy + 58, pw - 48, color="muted", bg="sage")
-            for i, name in enumerate(("Cedar", "Oak", "Atlas")):
-                rw = (pw - 72) / 3
-                rx = px + 24 + i * (rw + 12)
-                self.rect("Floor-plan room " + name, b, rx, yy + 130, rw, 100, "pine", 6)
-                self.rect("Original vector table", b, rx + 12, yy + 148, rw - 24, 40, "paper", 4)
-                self.text("Plan label " + name, name, b, rx + 4, yy + 194, rw - 8, "body", "white", "pine", "center")
+            self.text("Illustration label", "Illustrative room layouts", b, px + 24, yy + 20, pw - 48, "label", bg="sage")
+            self.text("Illustration honesty", "Examples only · not live availability", b, px + 24, yy + 58, pw - 48, color="muted", bg="sage")
+            rx = px + 24
+            available = pw - 72
+            for room, fraction in zip(brief["rooms"], (.26, .32, .42), strict=True):
+                rw = available * fraction
+                self.schematic(b, rx, yy + 128, rw, 76, int(room["capacity"].split()[0]))
+                self.text("Plan label " + room["name"], room["name"], b, rx, yy + 216, rw, "body", bg="sage", align="center")
+                rx += rw + 12
             hero_end = max(hero_end, yy + ph + 40)
         yy = hero_end + 32
 
         def task_summary(pos):
-            panel_h = 204 if mobile else (176 if tablet else 160)
-            self.rect("Meeting needs illustration", b, left, pos, iw, panel_h, "sage", 16)
-            self.text("Needs heading", "Plan your meeting", b, left + 24, pos + 20, iw - 48, "label", bg="sage")
-            text = "Team size: 2–12 people\nEquipment: display, video or whiteboard" if mobile else "Team size: 2–12 people  /  Equipment: display, video or whiteboard"
-            self.text("Visible needs summary", text, b, left + 24, pos + 60, iw - 48, bg="sage")
-            self.text("Needs illustration disclosure", "Demo illustration — filters are not interactive here", b, left + 24,
-                      pos + (138 if mobile else 120 if tablet else 112), iw - 48, color="muted", bg="sage")
+            panel = self.rect("Meeting needs illustration", b, left, pos, iw, 300, "sage", 16)
+            head = self.text("Needs heading", "Your meeting checklist", b, left + 24, pos + 20, iw - 48, "label", bg="sage")
+            text = "People: 2–12\nPurpose: team meetings\nEquipment: display, video or whiteboard"
+            copy_y = pos + 36 + head
+            body = self.text("Visible needs summary", text, b, left + 24, copy_y, iw - 48, bg="sage")
+            note_y = copy_y + body + 16
+            note = self.text("Needs illustration disclosure", "Example needs, not a form.", b, left + 24,
+                             note_y, iw - 48, color="muted", bg="sage")
+            panel_h = note_y + note + 20 - pos
+            panel.update(p.geometry(left, pos, iw, panel_h))
             return pos + panel_h + 56
 
         def steps(pos):
             self.text("H2 — How it works", "How it works", b, left, pos, iw, "section")
             pos += 60
-            sw = iw if mobile else (iw - 2 * gap) / 3
+            stacked = mobile or tablet
+            sw = iw if stacked else (iw - 2 * gap) / 3
             end = pos
             for i, step in enumerate(brief["steps"]):
-                sx = left if mobile else left + i * (sw + gap)
-                sy = end if mobile else pos
+                sx = left if stacked else left + i * (sw + gap)
+                sy = end if stacked else pos
                 self.text("Step number", f"0{i + 1}", b, sx, sy, sw, "label", "clay")
                 hh = self.text("Step title", step["title"], b, sx, sy + 38, sw, "label")
                 bh = self.text("Step explanation", step["body"], b, sx, sy + 46 + hh, sw, color="muted")
-                end = sy + hh + bh + 78 if mobile else max(end, sy + hh + bh + 78)
+                end = sy + hh + bh + 78 if stacked else max(end, sy + hh + bh + 78)
             return end + 40
 
         def rooms(pos):
@@ -497,8 +518,8 @@ class Canvas:
             cw = int((iw - (cols - 1) * gap) / cols)
             for i, room in enumerate(brief["rooms"]):
                 comp = self.room(room, cw)
-                self.instance(comp, b, left + (i % cols) * (cw + gap), pos + (i // cols) * 268)
-            return pos + math.ceil(3 / cols) * 268 + 40
+                self.instance(comp, b, left + (i % cols) * (cw + gap), pos + (i // cols) * 296)
+            return pos + math.ceil(3 / cols) * 296 + 40
 
         if direction == "task-led":
             yy = task_summary(yy)
@@ -511,11 +532,21 @@ class Canvas:
             yy = steps(yy)
             yy = task_summary(yy)
             yy = rooms(yy)
-        self.rect("Example terms section", b, left, yy, iw, 224 if mobile else 160, "sage", 16)
-        self.text("H2 — example terms", "Know the terms before you decide", b, left + 24, yy + 24, iw - 48, "label", bg="sage")
-        hh = self.text("Example terms disclosure", brief["terms"], b, left + 24, yy + (86 if mobile else 62), iw - 48,
-                       color="muted", bg="sage")
-        yy += max(224 if mobile else 160, hh + (110 if mobile else 86)) + 56
+        panel = self.rect("Example terms section", b, left, yy, iw, 320, "sage", 16)
+        head = self.text("H2 — example terms", "Example booking terms", b, left + 24, yy + 24,
+                         iw - 48, "section", bg="sage")
+        cursor = yy + 40 + head
+        terms = brief["terms"].splitlines()
+        if len(terms) >= 3:
+            for term in terms[:2]:
+                cursor += self.text("Example term", term, b, left + 24, cursor, iw - 48, "label", bg="sage") + 12
+            cursor += 4 + self.text("Example terms disclosure", " ".join(terms[2:]), b, left + 24,
+                                    cursor + 4, iw - 48, color="muted", bg="sage")
+        else:
+            cursor += self.text("Example terms disclosure", brief["terms"], b, left + 24,
+                                cursor, iw - 48, color="muted", bg="sage")
+        panel.update(p.geometry(left, yy, iw, cursor + 24 - yy))
+        yy = cursor + 80
         self.text("H2 — FAQ", "A few practical questions", b, left, yy, iw, "section")
         yy += 96 if mobile else 64
         for item in brief["faq"]:
@@ -913,7 +944,8 @@ with the real editor; implement live fluid text rather than copying cached coord
 ## Responsive implementation
 Use max-width 1312px content centred at desktop; 64px desktop / 48px tablet / 24px phone margins.
 Desktop hero 52/48 text/illustration, three room columns. Tablet uses full-width hero text and two room columns;
-tablet/phone omit the decorative hero diagram; phone stacks and keeps every content section and labelled demo action.
+tablet/phone stack the three explanatory steps and omit the decorative hero diagram. Phone stacks rooms
+and keeps every content section, two 44px in-page header anchors and labelled demo action.
 At widths below 390, fluid text/content and one column; validate 320px and 400% zoom explicitly.
 Spacing scale 8/16/24/32/48/64; body 16px, lead 18px, headings 28/36/44/56px. Avoid hard-coded text-box heights in code.
 Static boards are target compositions, not auto-layout/reflow proof.
@@ -925,7 +957,8 @@ verify contrast and no obscuration in runtime. Disabled state is non-interactive
 Loading label 'Opening demo…' announces progress; failures say what happened and offer retry.
 Room-card responsive variants contain name, capacity, equipment and explicitly illustrative price;
 non-interactive examples use article, not button semantics. Demo disclosure stays adjacent to actions.
-Meeting-needs and floor-plan panels are labelled illustrations, not form controls. Hide purely decorative
+Meeting checklist is a labelled criteria summary, not a form. Room schematics show original tables/seats;
+their relative diagram sizes are illustrative, not architectural dimensions or availability. Hide purely decorative
 vector tables from accessibility APIs; all meaningful room details are live text.
 No-results: explain that no example rooms match, offer clear-filter action. Error: 'Demo rooms could not
 load. Try again.' Loading: honest progress; use reduced-motion preference. Those are handoff states,
@@ -933,8 +966,8 @@ not claimed live behaviors in this homepage-only study.
 
 ## Navigation and accessibility acceptance
 Use header/nav/main/footer landmarks, exactly one H1 and ordered H2 section headings.
-How it works and Example terms are in-page anchors, with 44px hit regions. Phone preserves access via
-section reading order and footer anchors in implementation. Explore demo rooms links to a clearly
+How it works and Example terms are underlined in-page anchors with 44px hit regions at every viewport.
+Phone places these in a second header row; preserve their source order and link semantics in implementation. Explore demo rooms links to a clearly
 labelled fictional demo route or a transparent demo placeholder; no signup, transaction or lead capture.
 Keyboard Tab/Shift-Tab/Enter/Space, visible/unobscured focus, useful accessible names, screen reader order,
 zoom/reflow/text spacing, contrast of every rendered state, status announcements and reduced motion

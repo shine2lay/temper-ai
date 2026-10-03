@@ -81,6 +81,45 @@ def test_structures_are_distinct():
     assert len({tuple(order) for order in orders}) == 3
 
 
+@pytest.mark.parametrize("width", h.WIDTHS)
+def test_review_r02_navigation_terms_and_named_room_facts(width):
+    brief = {**h.DEFAULT, "terms": "Minimum booking: 1 hour\nCancellation: 24 hours ahead\nIllustrative terms for all rooms; check real venue terms before booking."}
+    canvas = h.Canvas(h.p.nid(), h.p.nid())
+    canvas.homepage(brief, "task-led", width)
+    state = canvas.state({"team-id": h.p.nid()})
+    metrics = [m for m in state["metrics"] if m["board"].startswith("Homepage ")]
+    assert len([m for m in metrics if m["kind"] == "target" and "anchor" in m["name"]]) == 2
+    terms = next(m for m in metrics if m["name"] == "H2 — example terms")
+    assert terms["size"] == 28
+    assert len([m for m in metrics if m["name"] == "Example term"]) == 2
+    assert all(m["text"].startswith("Capacity: ") for m in metrics if m["name"] == "Capacity")
+    assert all(m["text"].startswith("Equipment: ") for m in metrics if m["name"] == "Equipment")
+    assert all(m["fg"] == h.PALETTE["ink"] for m in metrics if m["name"] == "Illustrative price")
+    facts = h.measure(state)
+    assert not facts["violations"] and not facts["text_box_overlaps"]
+
+
+def test_original_schematics_show_the_three_capacities_without_fake_action_tiles():
+    canvas = h.Canvas(h.p.nid(), h.p.nid())
+    board = canvas.board("Schematic proof", 0, 0, 500, 300)
+    for i, seats in enumerate((4, 8, 12)):
+        before = len(canvas.objects)
+        canvas.schematic(board, i * 150, 20, 120, 76, seats)
+        added = canvas.objects[before:]
+        assert len([o for o in added if o["name"] == "Illustrative seat"]) == seats
+        perimeter = next(o for o in added if o["name"] == "Illustrative room perimeter")
+        assert perimeter["fills"][0]["fill-color"] == h.PALETTE["paper"]
+        assert perimeter["strokes"][0]["stroke-alignment"] == "outer"
+
+
+def test_tablet_steps_are_stacked_for_readable_explanation():
+    canvas = h.Canvas(h.p.nid(), h.p.nid())
+    canvas.homepage(copy.deepcopy(h.DEFAULT), "task-led", 768)
+    steps = [m for m in canvas.metrics if m["board"].startswith("Homepage ") and m["name"] == "Step title"]
+    assert len({m["x"] for m in steps}) == 1
+    assert len({m["y"] for m in steps}) == 3
+
+
 def test_real_cannot_use_pilot_or_provisional_approval():
     brief = {**h.DEFAULT, "fictional": False}
     with pytest.raises(ValueError, match="refuses real"):

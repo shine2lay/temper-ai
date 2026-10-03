@@ -188,7 +188,14 @@ approve real direction or final taste.
   are bounded copy changes. Layout defects need an explicit source revision by
   Design, not invented auto-fixes. All observations/suggestions/decisions remain
   in the packet. At round three a fix request fails; unresolved issues must be
-  recorded. Loop rewinds to design, **not** brief/explore/direction.
+  recorded. Loop rewinds to design, **not** brief/explore/direction. A source
+  revision must be committed, normally landed and deployment-verified before
+  approving its fix disposition; record its exact commit in that disposition.
+  The first homepage review prompted the explicit second-round revision:
+  original 4/8/12-seat room schematics rather than blank placeholders, non-action
+  illustration styling, a meeting-criteria checklist, mobile header anchors,
+  sibling-size terms heading with labelled terms, grouped labelled card facts
+  and stacked tablet steps. These are Design source changes, not reviewer tuning.
 - Real final: `{"approval":"owner-final","reason":"..."}`. The pilot has no
   aesthetic pass/final-approval claim.
 

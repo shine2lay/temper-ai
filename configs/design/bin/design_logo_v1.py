@@ -67,6 +67,12 @@ class Job:
         uuid.UUID(run_id)
         if mode not in ("real", "fixture"):
             raise ValueError("explicit mode required")
+        # RunRequest.workspace_path must name an existing mounted host folder.
+        # Empty context otherwise creates per-script temporary artifacts that
+        # disappear between nodes; refuse before login, save or paid generation.
+        if (not str(workspace).strip() or not Path(workspace).is_absolute()
+                or not Path(workspace).is_dir()):
+            raise ValueError("explicit existing absolute persistent workspace required")
         self.root = Path(workspace).resolve() / "logo"
         self.root.mkdir(parents=True, exist_ok=True)
         self.state_path = self.root / "state.json"

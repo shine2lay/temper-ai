@@ -135,6 +135,24 @@ def test_unsafe_svg_resources_scripts_and_bounds(payload):
         c.safe_svg(payload.encode())
 
 
+@pytest.mark.parametrize("workspace", ["", ".", "relative", "/definitely-not-a-mounted-logo-workspace"])
+def test_missing_or_relative_workspace_rejected_before_artifacts(workspace):
+    with pytest.raises(ValueError, match="persistent workspace required"):
+        job.Job(workspace, "11111111-1111-4111-8111-111111111111", "fixture")
+
+
+def test_actual_native_vector_pattern_is_safe_but_resources_are_not():
+    # Penpot 2.18.1 exports live-text fill patterns, even for plain colours.
+    safe = b'<svg xmlns="http://www.w3.org/2000/svg"><defs><pattern id="p" width="1" height="1" patternUnits="userSpaceOnUse"><rect width="1" height="1" fill="#161616"/></pattern></defs><text fill="url(#p)">Northline</text></svg>'
+    assert not c.safe_svg(safe)["external_resources"]
+    for resource in (b'<image href="https://bad.test/image.png"/>', b'<use href="https://bad.test/mark.svg"/>', b'<script>bad</script>'):
+        with pytest.raises(ValueError):
+            c.safe_svg(safe.replace(b'<rect width="1" height="1" fill="#161616"/>', resource))
+    for transform in (b'matrix(1e999 0 0 1 0 0)', b'matrix(NaN 0 0 1 0 0)'):
+        with pytest.raises(ValueError):
+            c.safe_svg(safe.replace(b'id="p"', b'id="p" patternTransform="' + transform + b'"'))
+
+
 def test_self_contained_vectors_live_text_and_embedded_woff():
     data = b'<svg xmlns="http://www.w3.org/2000/svg"><style>@font-face{font-family:a;src:url(data:font/woff;base64,AA==)}</style><path d="M0 0 L100 0 L0 100 Z"/><text font-family="a">Northline</text></svg>'
     result = c.safe_svg(data)

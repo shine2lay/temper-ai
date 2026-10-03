@@ -20,6 +20,14 @@ It still pauses at native direction/final gates and never claims owner approval.
 
 ## Inputs and bounds
 
+The outer Temper run request **must** set `workspace_path` to a fresh existing
+absolute host directory. The server mounts that directory into the isolated run.
+This is run context, not a fictional-mode or approval input. Missing/relative/
+unavailable workspace fails before login, native creation or paid generation.
+The generic start tool lacking an outer workspace parameter is not a valid
+launcher here: use the same Temper API run request with explicit workspace.
+Artifacts must survive a failed/removed container; preserve its native file UUID.
+
 Real entry takes only `brief_json` and `budget_json`. No ordinary mode/direction/
 final/approval input exists. Brief fields: product, secondary_name, explicit
 fictional boolean, audience, positioning, qualities, avoid, sources (id/location/
@@ -129,7 +137,10 @@ New job stages use that client, including its authorized run bootstrap fallback.
 
 Each native source remains an editable file with original vectors/live text/
 shared colours/type. Actual PNGs and standalone SVGs come from native exporter.
-SVG allows only safe vector/text/defs tags and local references; no scripts,
+SVG allows only safe vector/text/defs tags (including Penpot's plain-colour
+vector `pattern` fills) and local references. Every pattern child/resource is
+still checked; allowing the harmless wrapper never permits raster/script/URLs.
+No scripts,
 events, foreignObject, raster images, remote URLs/styles or unbounded numeric
 attributes. Same installed OFL WOFFs are embedded, not private font URLs or
 silent font fallback. Keep source JSON + original TTF/license/name-table/SHA
@@ -151,6 +162,20 @@ in the task result. direction_owner_approved/final_owner_approved are separately
 recorded from the real native gates. Publication remains false. No diagnosed
 blocker, pending approval, isolated save, test-only shape or unrun workflow counts
 as an approved completed identity packet.
+
+## Retained first native fixture failure
+
+Actual model-free run142aa8ee-b591-4eec-bd56-95cc865844b7 ($0) saved a native
+Northline rough file, fresh source and native PNG, then the strict SVG checker
+rejected a harmless `pattern` wrapper. This was not a vector/path schema error
+and does not justify relaxing external-resource, script or raster bans. Its
+launcher also omitted the outer persistent workspace; container removal lost
+local checkpoints. The populated original file is retained, never overwritten
+or treated as an empty-retry source. A new explicitly mounted fictional fixture
+must prove persistence and same-UUID cancel/resume before real-brand generation.
+Host safe failure/source/export evidence stays in results/temper-logo/control/.
+Unit mocks did not detect these two actual-runtime issues. Native proof is still
+required; no paid experiment or real artwork approval occurred in this fixture.
 
 Files: configs/design/bin/{logo_contracts,penpot_logo_source,design_logo_v1}.py,
 configs/design/{agents,workflows}/design_logo*.yaml; model-free suite

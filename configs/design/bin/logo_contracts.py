@@ -300,7 +300,7 @@ def safe_svg(data):
     if re.search(r"<!DOCTYPE|<!ENTITY|<\?xml-stylesheet", source, re.I):
         raise ValueError("SVG document declarations/resources forbidden")
     root = ET.fromstring(source)
-    tags = {"svg", "g", "defs", "clipPath", "mask", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "style", "title", "desc", "linearGradient", "radialGradient", "stop", "use"}
+    tags = {"svg", "g", "defs", "clipPath", "mask", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "style", "title", "desc", "linearGradient", "radialGradient", "stop", "use", "pattern"}
     vectors, texts = 0, 0
     for e in root.iter():
         tag = e.tag.split("}")[-1]
@@ -314,7 +314,7 @@ def safe_svg(data):
                 raise ValueError("SVG event/external reference forbidden")
             if re.search(r"javascript:|data:|https?://|file:|(?<!:)//", value, re.I):
                 raise ValueError("SVG external/embedded resource forbidden")
-            if key in ("d", "transform", "viewBox", "x", "y", "width", "height", "rx", "ry", "r", "cx", "cy", "points"):
+            if key in ("d", "transform", "patternTransform", "gradientTransform", "viewBox", "x", "y", "width", "height", "rx", "ry", "r", "cx", "cy", "points", "stroke-width", "font-size"):
                 if re.search(r"nan|inf", value, re.I):
                     raise ValueError("non-finite SVG geometry")
                 for n in re.findall(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?", value):

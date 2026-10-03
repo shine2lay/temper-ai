@@ -1,0 +1,40 @@
+# Design-owned model-free logo contracts/native source/receipts. New candidate;
+# D3's authorized client and font primitives, never its homepage template.
+agent:
+  name: design_logo_stage_v1
+  version: 1
+  type: script
+  timeout_seconds: 2400
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+    import uuid
+
+    stage = os.environ.get("{{ stage | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    mode = os.environ.get("{{ mode | env }}", "")
+    budget_stage = os.environ.get("{{ budget_stage | default('initial', true) | env }}", "initial")
+    container = os.environ.get("TEMPER_RUN_CONTAINER", "")
+    if not container.startswith("temper-run-"):
+        raise SystemExit("owned isolated Temper container required")
+    run_id = str(uuid.UUID(container[len("temper-run-"):]))
+    raw = os.environ.get("{{ brief_json | default('', true) | env }}", "") if stage == "brief" else os.environ.get("{{ budget_json | default('', true) | env }}", "")
+    native_gate = False
+    {% if gate is defined %}
+    native_gate = True
+    raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
+    {% endif %}
+    if stage in ("direction", "final") and not native_gate:
+        raise SystemExit("artwork decision requires native human gate, not ordinary input")
+    os.environ["LOGO_DATA"] = raw
+    cmd = [sys.executable, "/app/configs/design/bin/design_logo_v1.py", stage,
+           "--workspace", workspace, "--mode", mode, "--run-id", run_id,
+           "--budget-stage", budget_stage]
+    if native_gate:
+        cmd.append("--native-gate")
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

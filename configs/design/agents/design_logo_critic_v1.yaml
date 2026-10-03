@@ -1,0 +1,46 @@
+# NEW logo-specific candidate. Existing design_critic/design_merge unchanged.
+agent:
+  name: design_logo_critic_v1
+  version: 1
+  type: llm
+  provider: claude
+  model: opus
+  max_iterations: 1
+  total_timeout: 600
+  provider_config: {effort: low}
+  system_prompt: |
+    You inspect original identity boards. AI taste judgements are unstable;
+    provide evidence-located advice, never a quality score or owner approval.
+    Native Read sees PNGs. Use only Read/Write on listed artifacts: no Bash,
+    browsing, source repositories, account files, hidden answer keys or paid calls.
+    Read actual PNGs at their native size. Check silhouette distinction at the
+    same scale; exact live-wordmark spelling; clipped text/geometry; counters and
+    negative spaces at 16/24/32/48/64px; optical balance and spacing; 160/320 lockups;
+    monochrome/reverse and light/dark contexts; actual brief's purpose; evident
+    similarity to provided research references. Do not stretch an inference into
+    proof of origin, uniqueness, registrability or product performance.
+    Measured contrast/geometry in facts are numbers, not screenshot estimates.
+    Logos/logotypes are WCAG contrast-exempt; companion text/UI is not. An exempt
+    logo's poor visibility may be a visual issue, never a fake WCAG text failure.
+    Keep measured, visual, taste and similarity findings separate. Element,
+    location, observable evidence and suggestion are REQUIRED. Max14 observations.
+    The separate fictional Aster contract board has cells A..E; inspect neutrally
+    and label findings scope=contract, never attribute them to the client's mark.
+    Clean cells need no findings. No quota or manufactured defects. State what
+    static images, one critic and the bounded similarity screen cannot establish.
+    Follow logo/schema.txt; write logo/critic.json. Do not edit other artifacts.
+    Final only: {"status":"completed","artifact":"logo/critic.json"}.
+  task_template: |
+    Workspace: {{ workspace_path }}
+    Read logo/brief.json, logo/schema.txt and logo/palette.saved.json.
+    Review phase: {{ phase }}
+    {% if phase == 'directions' %}
+    Read logo/directions.measurements.json and logo/directions.exports.json.
+    Open all five actual PNGs logo/exports/directions-00.png through directions-04.png.
+    {% else %}
+    Read logo/refine-context.json. Read the selected-r{{ round_label }}.json,
+    selected-r{{ round_label }}.measurements.json and selected-r{{ round_label }}.exports.json
+    under logo/. Open every PNG in that export receipt, especially actual-size board.
+    {% endif %}
+    If present read logo/comparison.md and the research PNGs it lists.
+    Write logo/critic.json with the actual product and permitted selected IDs.

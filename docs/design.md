@@ -1,5 +1,9 @@
 # Design reviews
 
+Original editable-vector identity work: [Logo workflow and contracts](design-logo.md).
+The logo workflow uses new Design-owned agents; reviewers and sealed review
+benchmarks described here are unchanged.
+
 `design_review` is an expert review of a product's pages: what a senior designer
 and an accessibility auditor would flag. It is the design role's first workflow,
 and the critic and grader that later design workflows reuse. Who owns it:

@@ -1,0 +1,110 @@
+# Design-owned actual logo work. Native human gates are never ordinary inputs.
+workflow:
+  name: design_logo_v1
+  version: 1
+  description: |
+    Sourced brief -> six original monochrome vectors -> three distinct symbols and
+    role palettes -> NEW bounded logo critic -> REAL OWNER DIRECTION -> budget ->
+    <=2 selected refinements/reviews -> native editable/portable packet -> REAL
+    OWNER FINAL. AI taste is advisory. No publication, production rebrand or
+    fictional bypass. Same-run saved receipts preserve completed paid work.
+  inputs:
+    brief_json: {type: string, required: true}
+    budget_json: {type: string, required: true}
+  safety:
+    policies:
+      - {type: budget, max_cost_usd: 8.15}
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_logo_stage_v1
+      input_map: {stage: brief, mode: real, brief_json: input.brief_json}
+    - name: initial_budget
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [brief]
+      gate: true
+      input_map: {stage: budget, mode: real, budget_stage: initial, budget_json: input.budget_json}
+    - name: explore
+      type: agent
+      agent: design_logo_explore_v1
+      depends_on: [initial_budget]
+    - name: save_exploration
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [explore]
+      input_map: {stage: explore, mode: real}
+    - name: palette
+      type: agent
+      agent: design_logo_palette_v1
+      depends_on: [save_exploration]
+    - name: save_palette
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [palette]
+      input_map: {stage: palette, mode: real}
+    - name: direction_critic
+      type: agent
+      agent: design_logo_critic_v1
+      depends_on: [save_palette]
+      input_map: {phase: directions}
+    - name: save_direction_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [direction_critic]
+      input_map: {stage: critic, mode: real}
+    - name: owner_direction
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_direction_critic]
+      gate: true
+      input_map: {stage: direction, mode: real}
+    - name: refine_budget
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [owner_direction]
+      gate: true
+      input_map: {stage: budget, mode: real, budget_stage: refine}
+    - name: prepare_refine
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [refine_budget]
+      input_map: {stage: prepare, mode: real}
+    - name: refine
+      type: agent
+      agent: design_logo_refine_v1
+      depends_on: [prepare_refine]
+    - name: save_refine
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [refine]
+      input_map: {stage: refine, mode: real}
+    - name: selected_critic
+      type: agent
+      agent: design_logo_critic_v1
+      depends_on: [save_refine]
+      input_map: {phase: selected, round_label: save_refine.structured.round_label}
+    - name: save_selected_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [selected_critic]
+      input_map: {stage: critic, mode: real}
+    - name: handoff
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_selected_critic]
+      input_map: {stage: handoff, mode: real}
+    - name: owner_final
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [handoff]
+      gate: true
+      loop_to: refine_budget
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: owner_final.structured.verdict, operator: equals, value: request_changes}
+      input_map: {stage: final, mode: real}
+  outputs:
+    packet: handoff.structured.manifest
+    direction_owner_approved: owner_direction.structured.direction_owner_approved
+    final_owner_approved: owner_final.structured.final_owner_approved

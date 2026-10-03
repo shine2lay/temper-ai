@@ -1,0 +1,266 @@
+"""Model-free contracts. Mock geometry is not real Penpot/visual evidence.
+
+No services/model requests/browser/vendor assets; deployed fixture proves the
+native paths, edit/reopen/export and actual gate resume separately.
+"""
+import copy
+import importlib
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pytest
+import yaml
+
+from temper_ai.stage.models import WorkflowConfig
+
+BIN = Path(__file__).resolve().parents[1] / "configs/design/bin"
+sys.path.insert(0, str(BIN))
+job = importlib.import_module("design_logo_v1")
+c = importlib.import_module("logo_contracts")
+s = importlib.import_module("penpot_logo_source")
+
+
+def brief(name="Northline", fictional=True):
+    return {"product": name, "secondary_name": name + " Kit", "fictional": fictional,
+            "audience": "Fictional researchers organising field notes.",
+            "positioning": "Make evidence easier to navigate.", "qualities": ["calm", "clear"],
+            "avoid": ["copied symbols"], "interpretations": ["Direction, not naming history."],
+            "sources": [{"id": "owner", "location": "fictional fixture", "fact": "Notes are grouped for later retrieval.", "status": "documented"}]}
+
+
+def reservation():
+    return {"pacific_day": datetime.now(ZoneInfo("America/Los_Angeles")).date().isoformat(),
+            "reserve_usd": 8.15, "day_spent_usd": 1.55279, "trial_spent_usd": 0,
+            "trial_envelope_usd": 8.15, "subscription_checked": True, "one_design_experiment": True,
+            "reconciliation": "Model-free test; actual host ledger is separate."}
+
+
+class Font:
+    def __init__(self, data):
+        pass
+
+    def width(self, text, size):
+        return len(text) * size * .44
+
+
+@pytest.fixture
+def canvas(tmp_path, monkeypatch):
+    monkeypatch.setattr(s.p, "FontMetrics", Font)
+    for variant in ("regular", "semibold"):
+        (tmp_path / f"sourcesanspro-{variant}.ttf").write_bytes(b"test")
+    file = {"id": s.p.nid(), "team-id": s.p.nid(), "project-id": s.p.nid(), "name": "Mock",
+            "data": {"pages": [s.p.nid()]}}
+    return s.LogoCanvas(file, tmp_path, "Northline")
+
+
+@pytest.mark.parametrize("name", ["Northline", "Field Ledger"])
+def test_different_brief_propagates_without_temper_catalogue(canvas, name):
+    b = brief(name)
+    c.brief_contract(b, "fixture")
+    exploration = c.exploration_contract(job.fixture_exploration(b), b)
+    palette = c.shortlist_contract(job.fixture_palette(b), b, exploration["concepts"])
+    canvas.product = name
+    canvas.comparison_board(exploration["concepts"], palette["shortlist"])
+    state = canvas.state()
+    assert any(m["text"] == name for m in state["metrics"])
+    assert all("Temper" not in m["text"] for m in state["metrics"])
+    assert any(o["type"] == "path" for o in state["objects"])
+    assert not any(o["type"] == "image" for o in state["objects"])
+    assert not s.measurements(state, {})["violations"]
+
+
+@pytest.mark.parametrize("name,fictional,mode", [("Temper", True, "fixture"), ("Temper", False, "fixture"), ("Northline", True, "real")])
+def test_real_fictional_modes_fail_closed(name, fictional, mode):
+    with pytest.raises(ValueError):
+        c.brief_contract(brief(name, fictional), mode)
+
+
+@pytest.mark.parametrize("change", [{"approval": "owner-final"}, {"product": "x" * 40}, {"sources": []}, {"fictional": "false"}])
+def test_brief_unknown_approval_or_unbounded_inputs(change):
+    with pytest.raises(ValueError):
+        c.brief_contract({**brief(), **change}, "fixture")
+
+
+@pytest.mark.parametrize("shape", [
+    {"kind": "script", "name": "x", "content": "bad"},
+    {"kind": "rect", "name": "x", "x": 1, "y": 1, "w": float("nan"), "h": 4},
+    {"kind": "ellipse", "name": "x", "x": 90, "y": 10, "w": 30, "h": 30},
+    {"kind": "rect", "name": "x", "x": 1, "y": 1, "w": 10, "h": 10, "href": "https://bad.test"},
+    {"kind": "path", "name": "x", "commands": [["M", 0, 0], ["L", 10, 10], ["L", 0, 10], ["L", 0, 0]]},
+    {"kind": "path", "name": "x", "commands": [["M", 0, 0], ["Q", 1, 2, 3, 4], ["L", 0, 10], ["Z"]]},
+])
+def test_unsafe_unbounded_geometry_rejected(shape):
+    with pytest.raises(ValueError):
+        c.shape_contract(shape)
+
+
+def test_six_divergent_not_recolour_and_cited_sources():
+    b = brief()
+    value = job.fixture_exploration(b)
+    assert c.exploration_contract(value, b)
+    duplicate = copy.deepcopy(value)
+    duplicate["concepts"][1]["symbol"] = duplicate["concepts"][0]["symbol"]
+    with pytest.raises(ValueError, match="duplicate"):
+        c.exploration_contract(duplicate, b)
+    value["concepts"][0]["source_ids"] = ["invented"]
+    with pytest.raises(ValueError, match="cite"):
+        c.exploration_contract(value, b)
+
+
+@pytest.mark.parametrize("change", [{"pacific_day": "2000-01-01"}, {"day_spent_usd": 2}, {"trial_spent_usd": 1},
+                                     {"reserve_usd": float("inf")}, {"subscription_checked": "false"}, {"one_design_experiment": False}])
+def test_budget_day_trial_and_fresh_allowance_fences(change):
+    assert c.budget_contract(reservation(), 4.1)
+    with pytest.raises(ValueError):
+        c.budget_contract({**reservation(), **change}, 4.1)
+
+
+@pytest.mark.parametrize("payload", [
+    '<svg><script>alert(1)</script><rect width="1"/></svg>',
+    '<svg onload="x"><path d="M0 0L1 1Z"/></svg>',
+    '<svg><image href="data:image/png;base64,AA"/></svg>',
+    '<svg><use href="https://bad.test/x"/><rect width="1"/></svg>',
+    '<svg><style>@import "https://bad.test";</style><rect width="1"/></svg>',
+    '<svg><style>text{font:url(https://private.test/x)}</style><rect width="1"/></svg>',
+    '<!DOCTYPE svg [<!ENTITY x "bad">]><svg><rect width="1"/></svg>',
+    '<svg><path d="MNaN 2L3 4Z"/></svg>',
+    '<svg><rect x="1e999" width="1"/></svg>',
+    '<svg><foreignObject/></svg>',
+])
+def test_unsafe_svg_resources_scripts_and_bounds(payload):
+    with pytest.raises(ValueError):
+        c.safe_svg(payload.encode())
+
+
+def test_self_contained_vectors_live_text_and_embedded_woff():
+    data = b'<svg xmlns="http://www.w3.org/2000/svg"><style>@font-face{font-family:a;src:url(data:font/woff;base64,AA==)}</style><path d="M0 0 L100 0 L0 100 Z"/><text font-family="a">Northline</text></svg>'
+    result = c.safe_svg(data)
+    assert result["vectors"] == 1 and result["text_elements"] == 1 and not result["external_resources"]
+
+
+def answer(kind="direction", fictional=False):
+    return {"approval": "fixture-test" if fictional else "owner-" + kind, "run_id": "r", "brief_hash": "b",
+            "artifact_hash": "a", "decision": "fixture-2" if kind == "direction" else "approve", "reason": "Actual/test gate answer."}
+
+
+@pytest.mark.parametrize("key,value", [("run_id", "other"), ("brief_hash", "new"), ("artifact_hash", "old"), ("approval", "fixture-test"), ("decision", "unknown")])
+def test_owner_gate_identity_fingerprint_and_approval_fence(key, value):
+    kwargs = {"kind": "direction", "run_id": "r", "brief_hash": "b", "artifact_hash": "a", "choices": {"fixture-2"}, "gate_only": True}
+    assert c.approval_contract(answer(), **kwargs)
+    with pytest.raises(ValueError):
+        c.approval_contract({**answer(), key: value}, **kwargs)
+    with pytest.raises(ValueError, match="ordinary input"):
+        c.approval_contract(answer(), **{**kwargs, "gate_only": False})
+
+
+def test_fixture_cannot_claim_owner_approval():
+    kwargs = {"kind": "final", "run_id": "r", "brief_hash": "b", "artifact_hash": "a", "choices": {"approve"}, "gate_only": True, "fictional": True}
+    with pytest.raises(ValueError, match="must not claim"):
+        c.approval_contract(answer("final"), **kwargs)
+    assert c.approval_contract(answer("final", True), **kwargs)
+
+
+def test_palette_roles_companion_contrast_logo_exemption(canvas):
+    palette = job.fixture_palette(brief())["shortlist"][0]["palette"]
+    assert c.palette_contract(palette)
+    with pytest.raises(ValueError, match="contrast"):
+        c.palette_contract({**palette, "muted": "#DDDDDD"})
+    board = canvas.board("test", 0, 0, 500, 200)
+    canvas.palette("exempt", {**s.MONO, "ink": "#AAAAAA"})
+    canvas.text(board, "Logo", "Northline", 10, 10, 400, 40, color="exempt/ink", logo=True)
+    facts = s.measurements(canvas.state(), {})
+    assert facts["text"][0]["logo_exempt"] and facts["text"][0]["companion_aa"] is None
+    assert not facts["violations"]
+
+
+def test_source_receipts_missing_text_cache_styles_geometry_rejected(canvas):
+    b = brief()
+    concept = job.fixture_exploration(b)["concepts"][2]
+    canvas.final_boards(b, concept, job.fixture_palette(b)["shortlist"][2]["palette"])
+    state = canvas.state()
+    assert not s.measurements(state, {})["violations"]
+    file = {**canvas.file, "revn": 1, "data": {"pages-index": {state["page_id"]: {"objects": {s.p.ROOT: {}, **{o["id"]: o for o in state["objects"]}}}},
+                "colors": {v["id"]: v for v in state["colors"].values()}, "typographies": {v["id"]: v for v in state["typographies"].values()}}}
+    assert all(s.source_checks(file, state)["checks"].values())
+    for field in ("colors", "typographies"):
+        changed = copy.deepcopy(file)
+        changed["data"][field] = {}
+        with pytest.raises(ValueError, match="mismatch"):
+            s.source_checks(changed, state)
+    changed = copy.deepcopy(file)
+    text_obj = next(o for o in state["objects"] if o["type"] == "text")
+    changed["data"]["pages-index"][state["page_id"]]["objects"][text_obj["id"]].pop("position-data")
+    with pytest.raises(ValueError, match="native_text_cache"):
+        s.source_checks(changed, state)
+
+
+def test_receipt_identical_resume_changed_input_missing_export(tmp_path):
+    j = job.Job(tmp_path, "11111111-1111-4111-8111-111111111111", "fixture")
+    path = j.root / "export.svg"
+    path.write_text('<svg><rect width="1"/></svg>')
+    first = j.receipt("explore", "input-hash", {"status": "completed"}, [path])
+    frozen = job.load(j.state_path)
+    assert job.Job(tmp_path, j.run_id, "fixture").cached("explore", "input-hash") == first
+    assert job.load(j.state_path) == frozen
+    with pytest.raises(ValueError, match="input changed"):
+        j.cached("explore", "new-hash")
+    path.write_text("tampered")
+    with pytest.raises(ValueError, match="changed/missing"):
+        j.cached("explore", "input-hash")
+    with pytest.raises(ValueError, match="another run"):
+        job.Job(tmp_path, "22222222-2222-4222-8222-222222222222", "fixture")
+
+
+def test_partial_identity_recovers_only_known_empty_native_file(tmp_path):
+    identity = tmp_path / "pending.json"
+    identity.write_text(json.dumps({"file_id": "owned", "page_id": "page", "name": "fixture"}))
+    class Client:
+        def get(self, file_id):
+            return {"id": file_id, "name": "fixture", "revn": 0,
+                    "data": {"pages-index": {"page": {"objects": {s.p.ROOT: {}}}}}}
+    client = Client()
+    assert job.h.recover_empty_pending(client, identity, "fixture")["id"] == "owned"
+    client.get = lambda _: {"id": "owned", "name": "fixture", "revn": 1,
+                           "data": {"pages-index": {"page": {"objects": {s.p.ROOT: {}, "foreign": {}}}}}}
+    with pytest.raises(ValueError):
+        job.h.recover_empty_pending(client, identity, "fixture")
+
+
+def test_two_refinement_rounds_and_no_unguided_final_revision(tmp_path):
+    j = job.Job(tmp_path, "11111111-1111-4111-8111-111111111111", "fixture")
+    j.state["direction"] = answer(fictional=True)
+    j.state["round"] = 2
+    with pytest.raises(ValueError, match="two refinement"):
+        j.prepare_refine()
+
+
+@pytest.mark.parametrize("name", ["design_logo_v1", "design_logo_fixture_v1"])
+def test_actual_workflow_schema_native_gates_loop_and_new_agents(name):
+    raw = yaml.safe_load((BIN.parent / "workflows" / (name + ".yaml")).read_text())["workflow"]
+    assert WorkflowConfig.from_dict(raw).name == name
+    nodes = {v["name"]: v for v in raw["nodes"]}
+    assert nodes["owner_direction"]["gate"] and nodes["owner_final"]["gate"]
+    assert nodes["owner_final"]["max_loops"] == 2 and nodes["owner_final"]["on_max_loops"] == "fail"
+    assert not set(raw["inputs"]) & {"direction_json", "final_json", "mode", "approval"}
+    assert all(n["agent"].startswith("design_logo_") for n in nodes.values())
+    if name == "design_logo_v1":
+        assert nodes["initial_budget"]["gate"] and nodes["refine_budget"]["gate"]
+        assert nodes["owner_final"]["loop_to"] == "refine_budget"
+        assert raw["safety"]["policies"][0]["max_cost_usd"] == 8.15
+    else:
+        assert all(n["agent"] == "design_logo_stage_v1" for n in nodes.values())
+        assert all(n["input_map"]["mode"] == "fixture" for n in nodes.values())
+
+
+def test_template_has_native_gate_boundary_no_secret_no_hardcoded_generation():
+    stage = yaml.safe_load((BIN.parent / "agents/design_logo_stage_v1.yaml").read_text())["agent"]["script_template"]
+    assert "gate is defined" in stage and "--native-gate" in stage
+    assert "PENPOT_AGENT_PASSWORD" not in stage
+    for name in ("explore", "palette", "critic", "refine"):
+        agent = yaml.safe_load((BIN.parent / "agents" / f"design_logo_{name}_v1.yaml").read_text())["agent"]
+        assert agent["provider"] == "claude" and agent["max_iterations"] == 1
+    # Real exploration consumes model geometry; fixed fixtures are guarded.
+    assert "c.brief_contract(brief, \"fixture\")" in (BIN / "design_logo_v1.py").read_text()

@@ -1,0 +1,32 @@
+# New Design-owned bounded selected-direction vector refinement.
+agent:
+  name: design_logo_refine_v1
+  version: 1
+  type: llm
+  provider: claude
+  model: opus
+  max_iterations: 1
+  total_timeout: 600
+  provider_config: {effort: low}
+  system_prompt: |
+    Refine only the REAL saved selected identity in logo/refine-context.json.
+    Use native Read/Write only on listed artifacts; no Bash, web, credentials,
+    paid assets, stock icons, engine edits or new direction/approval decisions.
+    Inspect the context's actual PNGs and brief/schema/selected vectors/palette.
+    Follow the owner's actual note first, then evidence-specific critic points.
+    Preserve the concept's idea, id and exact product name. Improve original
+    shapes/counters/optical balance/wordmark weight or palette within the chosen
+    direction. At most two rounds are enforced by the host; no critic loop or
+    autonomous third attempt. Say what changed and which advice was declined,
+    with reasons. Taste advice is not measurable truth or an invented user study.
+    Only allowlisted finite normalized editable vector objects, same installed
+    Source Sans Pro type, and six measured role colours as logo/schema.txt.
+    Do not substitute a fixed Temper template, external form or raster-as-vector.
+    Write logo/refined.json in the refinement schema. Do not edit other files.
+    Final only: {"status":"completed","artifact":"logo/refined.json"}.
+  task_template: |
+    Workspace: {{ workspace_path }}
+    Read logo/brief.json, logo/schema.txt and logo/refine-context.json.
+    Read its selected geometry, owner note, indicated critic and all listed PNGs.
+    If present read logo/comparison.md and listed research PNGs.
+    Write the bounded selected-direction refinement to logo/refined.json.

@@ -1,0 +1,66 @@
+# Explicitly fictional, model-free contract entry. Still pauses at native gates.
+workflow:
+  name: design_logo_fixture_v1
+  version: 1
+  description: Model-free differently named client, actual editable Penpot/export/gate/resume proof; no aesthetic evidence.
+  inputs:
+    brief_json: {type: string, required: true}
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_logo_stage_v1
+      input_map: {stage: brief, mode: fixture, brief_json: input.brief_json}
+    - name: save_exploration
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [brief]
+      input_map: {stage: explore, mode: fixture}
+    - name: save_palette
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_exploration]
+      input_map: {stage: palette, mode: fixture}
+    - name: save_direction_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_palette]
+      input_map: {stage: critic, mode: fixture}
+    - name: owner_direction
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_direction_critic]
+      gate: true
+      input_map: {stage: direction, mode: fixture}
+    - name: prepare_refine
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [owner_direction]
+      input_map: {stage: prepare, mode: fixture}
+    - name: save_refine
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [prepare_refine]
+      input_map: {stage: refine, mode: fixture}
+    - name: save_selected_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_refine]
+      input_map: {stage: critic, mode: fixture}
+    - name: handoff
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_selected_critic]
+      input_map: {stage: handoff, mode: fixture}
+    - name: owner_final
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [handoff]
+      gate: true
+      loop_to: prepare_refine
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: owner_final.structured.verdict, operator: equals, value: request_changes}
+      input_map: {stage: final, mode: fixture}
+  outputs:
+    packet: handoff.structured.manifest
+    final_owner_approved: owner_final.structured.final_owner_approved

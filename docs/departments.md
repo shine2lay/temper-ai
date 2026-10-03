@@ -18,7 +18,7 @@ role tests and lands a change.
 |---|---|---|
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest, the opportunity brief and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
-| `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage source workflows with owner gates ([design.md](design.md)). |
+| `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
@@ -177,7 +177,7 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
 
-### design (13)
+### design (20)
 
 | Config | Kind |
 |---|---|
@@ -187,6 +187,13 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `design/workflows/design_homepage_v1.yaml` | workflow (real direction/final owner gates) |
 | `design/workflows/design_homepage_pilot_v1.yaml` | workflow (fictional-only provisional selection) |
 | `design/agents/design_homepage_stage_v1.yaml` | agent (script; Penpot source, budget, evidence, handoff) |
+| `design/workflows/design_logo_v1.yaml` | workflow (real original vector identity; direction/final owner gates) |
+| `design/workflows/design_logo_fixture_v1.yaml` | workflow (model-free fictional gate/source/resume contract proof) |
+| `design/agents/design_logo_stage_v1.yaml` | agent (script; schema, native source, receipts, budget, handoff) |
+| `design/agents/design_logo_explore_v1.yaml` | agent (new original monochrome vectors) |
+| `design/agents/design_logo_palette_v1.yaml` | agent (new shortlist and role palettes) |
+| `design/agents/design_logo_critic_v1.yaml` | agent (new logo rubric/contract board; taste advisory) |
+| `design/agents/design_logo_refine_v1.yaml` | agent (new bounded selected-direction refinement) |
 | `epd/agents/epd_personas.yaml` | agent |
 | `epd/agents/epd_walk.yaml` | agent |
 | `design/agents/design_capture.yaml` | agent (script) |

@@ -1,0 +1,10 @@
+agent:
+  name: product_visibility_probe
+  type: script
+  strict_undefined: true
+  timeout_seconds: 20
+  script_template: |
+    #!/bin/bash
+    set -eu
+    python3 {{ assets_dir }}/probe.py --operation {{ operation }} \
+      --workspace {{ workspace_path }} --execution-id {{ run_id }}

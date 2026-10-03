@@ -123,7 +123,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (40)
+### product (48)
 
 | Config | Kind |
 |---|---|
@@ -167,6 +167,20 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `validation/bin/ve_score.py` | script |
 | `validation/bin/ve_site.py` | script |
 | `validation/bin/ve_traffic.py` | script |
+| `workflows/product_visibility_smoke.yaml` | workflow (non-model) |
+| `agents/product_visibility_probe.yaml` | agent (script) |
+| `product/bin/server_run.py` | script |
+| `product/bin/weekly_scan.py` | script |
+| `product/bin/visibility_evidence.py` | script |
+| `product/bin/visibility_assets/probe.py` | script |
+| `product/bin/visibility_assets/fixture.txt` | fixture |
+| `product/bin/tests/test_server_run.py` | helper tests |
+
+Product execution: [shared runs and local candidates](product-runs.md). Deployed live names
+still load from master. Product trials instead register a transitive, uniquely namespaced
+candidate with the supported Studio API; names absent from the deployed config tree survive
+worker import without overwriting live definitions. Stage assets in a dedicated shared
+workspace. Past direct-CLI execution history stays local-only; do not inject old events.
 
 ### marketing (4)
 

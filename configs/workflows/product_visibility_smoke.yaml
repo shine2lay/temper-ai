@@ -1,0 +1,38 @@
+workflow:
+  name: product_visibility_smoke
+  description: |
+    Product-only zero-model visibility proof: read a staged fixture, write a deterministic
+    artifact, read it back. Register a uniquely namespaced local candidate first, then run
+    it through POST /api/runs with an existing shared Product workspace. All three nodes
+    must complete at zero model cost; a successful config push alone is not acceptance.
+    See docs/product-runs.md. Does not launch research, contact people, or spend money.
+  notify: "off"
+  inputs:
+    assets_dir:
+      type: string
+      required: true
+  outputs:
+    artifact_path: check.structured.artifact_path
+    execution_id: check.structured.execution_id
+    verified: check.structured.ok
+  nodes:
+    - name: prepare
+      type: agent
+      agent: product_visibility_probe
+      input_map:
+        operation: prepare
+        assets_dir: input.assets_dir
+    - name: write
+      type: agent
+      agent: product_visibility_probe
+      depends_on: [prepare]
+      input_map:
+        operation: write
+        assets_dir: input.assets_dir
+    - name: check
+      type: agent
+      agent: product_visibility_probe
+      depends_on: [write]
+      input_map:
+        operation: check
+        assets_dir: input.assets_dir

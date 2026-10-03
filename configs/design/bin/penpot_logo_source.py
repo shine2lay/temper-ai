@@ -6,6 +6,7 @@ meeting-room templates. Deterministic boards display agent-generated geometry.
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 
 import logo_contracts as c
@@ -261,18 +262,59 @@ class LogoCanvas:
                 "typographies": self.typos, "metrics": self.metrics, "schema_version": c.VERSION}
 
 
+def _path_tokens(value):
+    """Command letters and numbers of a Penpot/SVG path string.
+
+    Penpot stores coordinates as float32 and rewrites separators, so a saved path
+    is compared by commands exactly and numbers within float32 precision.
+    """
+    if not isinstance(value, str):
+        return None
+    tokens = re.findall(r"[MLCZ]|-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", value)
+    if "".join(re.findall(r"[^\s,]", value)) != "".join(tokens):
+        return None
+    return tokens
+
+
+def same_path(expected, actual):
+    a, b = _path_tokens(expected), _path_tokens(actual)
+    if a is None or b is None or len(a) != len(b):
+        return False
+    for left, right in zip(a, b, strict=True):
+        if left.isalpha() or right.isalpha():
+            if left != right:
+                return False
+        elif abs(float(left) - float(right)) > 1e-3 * max(1.0, abs(float(left))):
+            return False
+    return True
+
+
+def _same_vector(expected, actual):
+    for key in ("name", "type", "selrect", "points", "transform", "fills", "parent-id", "frame-id"):
+        if actual.get(key) != expected.get(key):
+            return False
+    if expected["type"] == "path":
+        return same_path(expected["content"], actual.get("content"))
+    return actual.get("content") == expected.get("content")
+
+
+def _same_library_item(expected, actual):
+    # Penpot adds server metadata such as modified-at; every declared field stays exact.
+    return isinstance(actual, dict) and all(actual.get(k) == v for k, v in expected.items())
+
+
 def source_checks(file, state):
     objects = file["data"]["pages-index"][state["page_id"]]["objects"]
     checks = {
         "owned_identity": file["id"] == state["file_id"] and file["project-id"] == state["project_id"] and file["team-id"] == state["team_id"],
         "board_geometry": all(objects.get(b["id"], {}).get("selrect") == b["selrect"] for b in state["boards"]),
         "exact_object_set": set(objects) == {p.ROOT} | {o["id"] for o in state["objects"]},
-        "editable_vectors_geometry": all(all(objects.get(o["id"], {}).get(k) == o.get(k) for k in ("name", "type", "content", "selrect", "points", "transform", "fills", "parent-id", "frame-id"))
+        "editable_vectors_geometry": all(_same_vector(o, objects.get(o["id"], {}))
                                          for o in state["objects"] if o["type"] in ("rect", "circle", "path")),
         "live_wordmark_text": all(objects.get(o["id"], {}).get("content") == o["content"] for o in state["objects"] if o["type"] == "text"),
         "native_text_cache": all(objects.get(o["id"], {}).get("position-data") == o["position-data"] for o in state["objects"] if o["type"] == "text"),
-        "shared_colors": all(file["data"].get("colors", {}).get(v["id"]) == v for v in state["colors"].values()),
-        "shared_typography": all(file["data"].get("typographies", {}).get(v["id"]) == v for v in state["typographies"].values()),
+        "shared_colors": all(_same_library_item(v, file["data"].get("colors", {}).get(v["id"])) for v in state["colors"].values()),
+        "shared_typography": all(_same_library_item(v, file["data"].get("typographies", {}).get(v["id"])) for v in state["typographies"].values()),
     }
     if not all(checks.values()):
         raise ValueError("fresh Penpot source mismatch: " + ",".join(k for k, v in checks.items() if not v))

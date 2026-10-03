@@ -217,6 +217,20 @@ def test_source_receipts_missing_text_cache_styles_geometry_rejected(canvas):
         s.source_checks(changed, state)
 
 
+def test_reopen_accepts_penpot_float32_normalization_but_not_real_changes():
+    expected = "M850.400000 146.000000 C869.600000 117.200000 922.400000 117.200000 941.600000 146.000000 L927.200000 210.800000 L864.800000 210.800000 Z"
+    stored = ("M850.4000244140625,146.0C869.5999755859375,117.19999694824219,922.4000244140625,117.19999694824219,"
+              "941.5999755859375,146.0L927.2000122070312,210.8000030517578L864.7999877929688,210.8000030517578Z")
+    assert s.same_path(expected, stored)
+    for bad in (stored.replace("C869", "L869"), stored.replace("117.19999", "119.2", 1), stored + "M1,1",
+                stored.replace("Z", "Z<script>"), None, 5):
+        assert not s.same_path(expected, bad)
+    item = {"id": "c", "name": "ink", "color": "#161616"}
+    assert s._same_library_item(item, {**item, "modified-at": "2026-10-03"})
+    assert not s._same_library_item(item, {**item, "color": "#161617"})
+    assert not s._same_library_item(item, None)
+
+
 def test_receipt_identical_resume_changed_input_missing_export(tmp_path):
     j = job.Job(tmp_path, "11111111-1111-4111-8111-111111111111", "fixture")
     path = j.root / "export.svg"

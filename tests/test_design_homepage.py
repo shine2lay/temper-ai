@@ -82,18 +82,18 @@ def test_structures_are_distinct():
 
 
 @pytest.mark.parametrize("width", h.WIDTHS)
-def test_review_r02_navigation_terms_and_named_room_facts(width):
+def test_review_navigation_terms_and_named_room_facts(width):
     brief = {**h.DEFAULT, "terms": "Minimum booking: 1 hour\nCancellation: 24 hours ahead\nIllustrative terms for all rooms; check real venue terms before booking."}
     canvas = h.Canvas(h.p.nid(), h.p.nid())
     canvas.homepage(brief, "task-led", width)
     state = canvas.state({"team-id": h.p.nid()})
     metrics = [m for m in state["metrics"] if m["board"].startswith("Homepage ")]
-    assert len([m for m in metrics if m["kind"] == "target" and "anchor" in m["name"]]) == 2
+    assert len([m for m in metrics if m["kind"] == "target" and "anchor" in m["name"]]) == 3
     terms = next(m for m in metrics if m["name"] == "H2 — example terms")
     assert terms["size"] == 28
     assert len([m for m in metrics if m["name"] == "Example term"]) == 2
     assert all(m["text"].startswith("Capacity: ") for m in metrics if m["name"] == "Capacity")
-    assert all(m["text"].startswith("Equipment: ") for m in metrics if m["name"] == "Equipment")
+    assert all(m["text"].startswith("Display: ") for m in metrics if m["name"] == "Equipment")
     assert all(m["fg"] == h.PALETTE["ink"] for m in metrics if m["name"] == "Illustrative price")
     facts = h.measure(state)
     assert not facts["violations"] and not facts["text_box_overlaps"]
@@ -401,3 +401,42 @@ def test_pending_recovery_refuses_ambiguous_or_wrong_source(tmp_path, changed):
         file["data"]["colors"] = {h.p.nid(): {"name": "Already saved"}}
     with pytest.raises(ValueError, match="never duplicate or overwrite"):
         h.recover_empty_pending(client, path, "Known pending source")
+
+
+@pytest.mark.parametrize("width", h.WIDTHS)
+def test_final_room_facts_are_aligned_and_do_not_infer_absence(width):
+    canvas = h.Canvas(h.p.nid(), h.p.nid())
+    canvas.homepage(copy.deepcopy(h.DEFAULT), "task-led", width)
+    metrics = [m for m in canvas.metrics if m["board"].startswith("Homepage ")]
+    equipment = [m for m in metrics if m["name"] == "Equipment"]
+    assert len(equipment) == 3
+    assert all([line.split(":")[0] for line in m["text"].splitlines()] ==
+               ["Display", "Video", "Whiteboard", "Breakout"] for m in equipment)
+    assert "Video: Not listed" in equipment[0]["text"]
+    assert "Video: Listed" in equipment[1]["text"]
+    assert "Not listed means unspecified" in next(m for m in metrics if m["name"] == "Room example disclosure")["text"]
+    prices = [m for m in metrics if m["name"] == "Illustrative price"]
+    capacity = [m for m in metrics if m["name"] == "Capacity"]
+    assert all(m["text"].startswith("Example price:") for m in prices)
+    assert {m["size"] for m in prices} == {m["size"] for m in capacity}
+    assert len({m["y"] for m in prices}) == (1 if width == 1440 else 3)
+    assert len({m["x"] for m in prices}) == (3 if width == 1440 else 1)
+    assert not [m for m in metrics if m["name"] == "Demo badge"]
+    assert all(m["text"].startswith(("In the proposed room demo:", "Before booking at a real venue:"))
+               for m in metrics if m["name"] == "Step explanation")
+    result = h.measure(canvas.state({"team-id": h.p.nid()}))
+    assert not result["violations"] and not result["text_box_overlaps"]
+
+
+def test_three_example_policy_lines_and_balanced_desktop_needs():
+    brief = {**h.DEFAULT, "terms": "Minimum: 1 hour, billed per started hour.\nCancel 24h ahead: no charge.\nLater cancellation: full example price.\nFictional USD prices; no actual charge. Check real venue policies."}
+    canvas = h.Canvas(h.p.nid(), h.p.nid())
+    canvas.homepage(brief, "task-led", 1440)
+    metrics = [m for m in canvas.metrics if m["board"].startswith("Homepage ")]
+    assert len([m for m in metrics if m["name"] == "Example term"]) == 3
+    summaries = [m for m in metrics if m["name"] == "Visible needs summary"]
+    assert len(summaries) == 3 and len({m["x"] for m in summaries}) == 3
+    assert len({m["y"] for m in summaries}) == 1
+    assert next(m for m in metrics if m["name"] == "Needs heading")["text"] == "Example meeting needs"
+    result = h.measure(canvas.state({"team-id": h.p.nid()}))
+    assert not result["violations"] and not result["text_box_overlaps"]

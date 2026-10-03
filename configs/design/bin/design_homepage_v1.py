@@ -421,14 +421,26 @@ class Canvas:
                 self.rect("Illustrative seat", board, sx - 3, sy, 6, height * .1, "pine", 2)
 
     def room(self, room, width):
+        wide = width >= 600
+        height = 288 if wide else 388
         def build(b, x, y):
-            self.rect("Room-card surface", b, x, y, width, 268, "sage")
-            self.schematic(b, x + 20, y + 20, 104, 52, int(room["capacity"].split()[0]))
-            self.text("Room name", room["name"], b, x + 20, y + 82, width - 40, "label", bg="sage")
-            self.text("Capacity", "Capacity: " + room["capacity"], b, x + 20, y + 118, width - 40, bg="sage")
-            eh = self.text("Equipment", "Equipment: " + room["equipment"], b, x + 20, y + 154, width - 40, bg="sage")
-            self.text("Illustrative price", room["price"], b, x + 20, y + 166 + eh, width - 40, "button", bg="sage")
-        return self.component(f"Room card / {room['name']} / {width}", width, 268, build)
+            self.rect("Room-card surface", b, x, y, width, height, "sage")
+            self.schematic(b, x + 20, y + (88 if wide else 20), 104, 52, int(room["capacity"].split()[0]))
+            self.text("Room name", room["name"], b, x + 20, y + (24 if wide else 82),
+                      width * .4 - 40 if wide else width - 40, "label", bg="sage")
+            self.text("Capacity", "Capacity: " + room["capacity"], b, x + 20, y + (208 if wide else 124),
+                      width * .4 - 40 if wide else width - 40, "button", bg="sage")
+            fx, fw = (x + width * .4, width * .6 - 20) if wide else (x + 20, width - 40)
+            inventory = room["equipment"].lower()
+            facts = "\n".join(f"{label}: {'Listed' if key in inventory else 'Not listed'}"
+                              for label, key in (("Display", "display"), ("Video", "video"),
+                                                 ("Whiteboard", "whiteboard"), ("Breakout", "breakout")))
+            self.text("Equipment", facts, b, fx, y + (48 if wide else 170), fw, bg="sage")
+            price = room["price"].replace("Example:", "Example price:", 1)
+            self.text("Illustrative price", price, b, fx, y + (184 if wide else 284), fw, "button", bg="sage")
+            self.text("Example price units", "USD · 1-hour minimum", b, fx, y + (228 if wide else 324),
+                      fw, color="muted", bg="sage")
+        return self.component(f"Room card / {room['name']} / {width}", width, height, build)
 
     def disclosure(self, text, width):
         def build(b, x, y):
@@ -444,12 +456,11 @@ class Canvas:
         b = self.board(("Wireframe " if self.wire else "Homepage ") + f"{direction} / {width}", x, y, width, 4000)
         left = x + pad
         self.text("Brand", brief["product"], b, left, y + 24, 200, "label")
-        if mobile:
-            self.text("Demo badge", "Fictional demo", b, left + 210, y + 28, iw - 210, "body", "muted")
         nav_y = y + (72 if mobile else 18)
-        nav_x = left if mobile else x + width - pad - 300
-        for name, label, offset, tw, line_w in (("How it works anchor", "How it works", 0, 140, 88),
-                                              ("Example terms anchor", "Example terms", 152, 148, 101)):
+        nav_x = left if mobile else x + width - pad - 332
+        for name, label, offset, tw, line_w in (("Rooms anchor", "Rooms", 0, 60, 44),
+                                              ("How it works anchor", "How it works", 76, 110, 88),
+                                              ("Example terms anchor", "Example terms", 202, 130, 101)):
             self.text("Navigation: " + label, label, b, nav_x + offset, nav_y + 8, tw, "body", "pine")
             self.rect("Navigation underline", b, nav_x + offset, nav_y + 33, line_w, 1, "pine", 0)
             self.metrics.append({"board": b["name"], "kind": "target", "name": name,
@@ -478,15 +489,24 @@ class Canvas:
                 self.schematic(b, rx, yy + 128, rw, 76, int(room["capacity"].split()[0]))
                 self.text("Plan label " + room["name"], room["name"], b, rx, yy + 216, rw, "body", bg="sage", align="center")
                 rx += rw + 12
+            self.text("Diagram key", "Dots show seats; layouts not to scale.", b, px + 24,
+                      yy + 260, pw - 48, color="muted", bg="sage")
             hero_end = max(hero_end, yy + ph + 40)
         yy = hero_end + 32
 
         def task_summary(pos):
             panel = self.rect("Meeting needs illustration", b, left, pos, iw, 300, "sage", 16)
-            head = self.text("Needs heading", "Your meeting checklist", b, left + 24, pos + 20, iw - 48, "label", bg="sage")
-            text = "People: 2–12\nPurpose: team meetings\nEquipment: display, video or whiteboard"
+            head = self.text("Needs heading", "Example meeting needs", b, left + 24, pos + 20, iw - 48, "label", bg="sage")
             copy_y = pos + 36 + head
-            body = self.text("Visible needs summary", text, b, left + 24, copy_y, iw - 48, bg="sage")
+            if not mobile and not tablet:
+                column = (iw - 80) / 3
+                body = max(self.text("Visible needs summary", label + "\n" + value, b,
+                                    left + 24 + i * (column + 16), copy_y, column, bg="sage")
+                           for i, (label, value) in enumerate((("People", "2–12"), ("Purpose", "Team meetings"),
+                                                              ("Equipment", "Display, video or whiteboard"))))
+            else:
+                text = "People: 2–12\nPurpose: team meetings\nEquipment: display, video or whiteboard"
+                body = self.text("Visible needs summary", text, b, left + 24, copy_y, iw - 48, bg="sage")
             note_y = copy_y + body + 16
             note = self.text("Needs illustration disclosure", "Example needs, not a form.", b, left + 24,
                              note_y, iw - 48, color="muted", bg="sage")
@@ -505,21 +525,23 @@ class Canvas:
                 sy = end if stacked else pos
                 self.text("Step number", f"0{i + 1}", b, sx, sy, sw, "label", "clay")
                 hh = self.text("Step title", step["title"], b, sx, sy + 38, sw, "label")
-                bh = self.text("Step explanation", step["body"], b, sx, sy + 46 + hh, sw, color="muted")
+                context = "In the proposed room demo: " if i < 2 else "Before booking at a real venue: "
+                bh = self.text("Step explanation", context + step["body"], b, sx, sy + 46 + hh, sw, color="muted")
                 end = sy + hh + bh + 78 if stacked else max(end, sy + hh + bh + 78)
             return end + 40
 
         def rooms(pos):
-            self.text("H2 — room examples", "Three rooms. Different meetings.", b, left, pos, iw, "section")
-            hh = self.text("Room example disclosure", "Fictional spaces and illustrative prices — not bookable inventory.", b,
+            self.text("H2 — room examples", "Three sizes. Compare the fit.", b, left, pos, iw, "section")
+            hh = self.text("Room example disclosure", "Fictional room examples. Prices are illustrative; Not listed means unspecified.", b,
                            left, pos + (88 if mobile else 50), iw, color="muted")
             pos += (88 if mobile else 50) + hh + 24
-            cols = 1 if mobile else (2 if tablet else 3)
+            cols = 1 if mobile or tablet else 3
             cw = int((iw - (cols - 1) * gap) / cols)
+            row_h = (288 if cw >= 600 else 388) + gap
             for i, room in enumerate(brief["rooms"]):
                 comp = self.room(room, cw)
-                self.instance(comp, b, left + (i % cols) * (cw + gap), pos + (i // cols) * 296)
-            return pos + math.ceil(3 / cols) * 296 + 40
+                self.instance(comp, b, left + (i % cols) * (cw + gap), pos + (i // cols) * row_h)
+            return pos + math.ceil(3 / cols) * row_h + 40
 
         if direction == "task-led":
             yy = task_summary(yy)
@@ -538,9 +560,9 @@ class Canvas:
         cursor = yy + 40 + head
         terms = brief["terms"].splitlines()
         if len(terms) >= 3:
-            for term in terms[:2]:
+            for term in terms[:-1]:
                 cursor += self.text("Example term", term, b, left + 24, cursor, iw - 48, "label", bg="sage") + 12
-            cursor += 4 + self.text("Example terms disclosure", " ".join(terms[2:]), b, left + 24,
+            cursor += 4 + self.text("Example terms disclosure", terms[-1], b, left + 24,
                                     cursor + 4, iw - 48, color="muted", bg="sage")
         else:
             cursor += self.text("Example terms disclosure", brief["terms"], b, left + 24,
@@ -920,6 +942,9 @@ class Job:
         wire_url = f"{client.base}/#/workspace?team-id={wire['team_id']}&file-id={wire['file_id']}&page-id={wire['page_id']}"
         save(self.packet / "source-links.json", {"homepage": url, "wireframes": wire_url,
                                                "homepage_file_id": source["file_id"], "wireframe_file_id": wire["file_id"]})
+        save(self.packet / "rendered-copy.json", {b["name"]: [{"layer": m["name"], "text": m["text"]}
+                for m in source["metrics"] if m["kind"] == "text" and m["board"] == b["name"]]
+                for b in source["boards"] if b["name"].startswith("Homepage ")})
         body = f"""# Implementation handoff — {load(self.packet / 'brief.json')['product']}
 
 Provisional fictional design study; NOT owner taste approval or a real launch.
@@ -930,7 +955,9 @@ Editable structural alternatives: {wire_url}
 ## Source mapping
 Source layers/board/component IDs: source.json and wireframes.json.
 Semantic colours, typography, spacing, contrast pairs and reusable components: tokens.json.
-Exact final words, room examples, terms and FAQ: final-copy.json. No rasterized final text.
+Final brief/copy overrides, room inventory, terms and FAQ: final-copy.json.
+Exact rendered live text, including template labels, legends and navigation at every width: rendered-copy.json.
+No rasterized final text.
 PNG/SVG exports: exports/. SVG contains native text; verify its font loading and portability.
 PNG is the portable visual reference. Bundle licensed fonts when implementing; do not outline
 or flatten the canonical Penpot text. No stock/photo/customer/logo assets.
@@ -943,9 +970,9 @@ with the real editor; implement live fluid text rather than copying cached coord
 
 ## Responsive implementation
 Use max-width 1312px content centred at desktop; 64px desktop / 48px tablet / 24px phone margins.
-Desktop hero 52/48 text/illustration, three room columns. Tablet uses full-width hero text and two room columns;
+Desktop hero 52/48 text/illustration, three room columns. Tablet uses full-width hero text and three stacked room rows with aligned facts;
 tablet/phone stack the three explanatory steps and omit the decorative hero diagram. Phone stacks rooms
-and keeps every content section, two 44px in-page header anchors and labelled demo action.
+and keeps every content section, three 44px in-page header anchors and labelled demo action.
 At widths below 390, fluid text/content and one column; validate 320px and 400% zoom explicitly.
 Spacing scale 8/16/24/32/48/64; body 16px, lead 18px, headings 28/36/44/56px. Avoid hard-coded text-box heights in code.
 Static boards are target compositions, not auto-layout/reflow proof.
@@ -957,7 +984,9 @@ verify contrast and no obscuration in runtime. Disabled state is non-interactive
 Loading label 'Opening demo…' announces progress; failures say what happened and offer retry.
 Room-card responsive variants contain name, capacity, equipment and explicitly illustrative price;
 non-interactive examples use article, not button semantics. Demo disclosure stays adjacent to actions.
-Meeting checklist is a labelled criteria summary, not a form. Room schematics show original tables/seats;
+Example meeting needs is a labelled criteria summary, not a form. Equipment attributes use a fixed order;
+'Not listed' means unspecified, never falsely absent. Capacity and price have equal weight. Example USD
+pricing and hypothetical cancellation consequences are not a real quote, promise or charge. Room schematics show original tables/seats;
 their relative diagram sizes are illustrative, not architectural dimensions or availability. Hide purely decorative
 vector tables from accessibility APIs; all meaningful room details are live text.
 No-results: explain that no example rooms match, offer clear-filter action. Error: 'Demo rooms could not
@@ -966,7 +995,7 @@ not claimed live behaviors in this homepage-only study.
 
 ## Navigation and accessibility acceptance
 Use header/nav/main/footer landmarks, exactly one H1 and ordered H2 section headings.
-How it works and Example terms are underlined in-page anchors with 44px hit regions at every viewport.
+Rooms, How it works and Example terms are underlined in-page anchors with 44px hit regions at every viewport.
 Phone places these in a second header row; preserve their source order and link semantics in implementation. Explore demo rooms links to a clearly
 labelled fictional demo route or a transparent demo placeholder; no signup, transaction or lead capture.
 Keyboard Tab/Shift-Tab/Enter/Space, visible/unobscured focus, useful accessible names, screen reader order,

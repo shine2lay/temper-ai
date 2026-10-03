@@ -195,7 +195,13 @@ approve real direction or final taste.
   original 4/8/12-seat room schematics rather than blank placeholders, non-action
   illustration styling, a meeting-criteria checklist, mobile header anchors,
   sibling-size terms heading with labelled terms, grouped labelled card facts
-  and stacked tablet steps. These are Design source changes, not reviewer tuning.
+  and stacked tablet steps. Final-round fixes clarify proposed-demo step context,
+  fixed-order equipment (unlisted is unspecified, never falsely absent), equal
+  capacity/price weight and explicit USD units, aligned prices/stacked tablet room
+  rows, three visible section anchors, a seat legend and balanced desktop needs.
+  The source renders every leading example-policy line, retaining the final
+  disclosure; the handoff includes exact per-board `rendered-copy.json` alongside
+  the brief inventory. These are Design source changes, not reviewer tuning.
 - Real final: `{"approval":"owner-final","reason":"..."}`. The pilot has no
   aesthetic pass/final-approval claim.
 

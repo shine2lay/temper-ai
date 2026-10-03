@@ -6,6 +6,8 @@ native paths, edit/reopen/export and actual gate resume separately.
 import copy
 import importlib
 import json
+import os
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -282,3 +284,78 @@ def test_template_has_native_gate_boundary_no_secret_no_hardcoded_generation():
         assert agent["provider"] == "claude" and agent["max_iterations"] == 1
     # Real exploration consumes model geometry; fixed fixtures are guarded.
     assert "c.brief_contract(brief, \"fixture\")" in (BIN / "design_logo_v1.py").read_text()
+
+
+def run_native_wrapper(tmp_path, *, mode="fixture", stage="brief", workspace=None,
+                       container="temper-run-11111111-1111-4111-8111-111111111111",
+                       source="print('{}')\n", source_exists=True):
+    """Execute only our new script code and a local non-model CLI stub."""
+    from jinja2 import Environment
+
+    agent = yaml.safe_load((BIN.parent / "agents/design_logo_stage_v1.yaml").read_text())["agent"]
+    assert agent["strict_undefined"] is True
+    values = {}
+
+    def stash(value):
+        key = "FIXTURE_VALUE_" + str(len(values))
+        values[key] = str(value)
+        return key
+
+    env = Environment()
+    env.filters["env"] = stash
+    rendered = env.from_string(agent["script_template"]).render(
+        stage=stage, mode=mode, workspace_path=str(tmp_path) if workspace is None else workspace,
+        brief_json="{}", budget_json="{}",
+    )
+    body = rendered.split("<<'PYEOF'\n", 1)[1].rsplit("\nPYEOF", 1)[0]
+    stub = tmp_path / "native_cli_stub.py"
+    if source_exists:
+        stub.write_text(source)
+    body = body.replace("/app/configs/design/bin/design_logo_v1.py", str(stub))
+    driver = tmp_path / "wrapper.py"
+    driver.write_text(body)
+    result = subprocess.run([sys.executable, str(driver)], capture_output=True, text=True,
+                            env={**os.environ, **values, "TEMPER_RUN_CONTAINER": container}, timeout=10)
+    receipts = list((tmp_path / "logo-native-diagnostics").glob("*.json"))
+    return result, [json.loads(p.read_text()) for p in receipts]
+
+
+@pytest.mark.parametrize("options,code", [
+    ({"container": ""}, 21),
+    ({"container": "temper-run-invalid"}, 22),
+    ({"workspace": "relative"}, 23),
+    ({"mode": "unknown"}, 24),
+    ({"stage": "arbitrary"}, 25),
+    ({"stage": "direction"}, 27),
+])
+def test_native_wrapper_public_preflight_codes_no_artifact_or_gate_bypass(tmp_path, options, code):
+    result, receipts = run_native_wrapper(tmp_path, **options)
+    assert result.returncode == code
+    assert not receipts and not (tmp_path / "logo").exists()
+    assert not result.stdout and not result.stderr
+
+
+def test_native_wrapper_missing_source_has_only_public_receipt(tmp_path):
+    result, receipts = run_native_wrapper(tmp_path, source_exists=False)
+    assert result.returncode == 29
+    assert receipts[-1]["category"] == "native_source_unavailable"
+    assert receipts[-1]["source_available"] is False
+    assert not (tmp_path / "logo").exists()
+
+
+def test_native_wrapper_failure_never_preserves_private_output(tmp_path):
+    source = "import sys\nsys.stderr.write('PermissionError: private-sentinel\\n')\nraise SystemExit(1)\n"
+    result, receipts = run_native_wrapper(tmp_path, source=source)
+    assert result.returncode == 36
+    assert receipts[-1]["category"] == "filesystem_permission_denied"
+    assert "private-sentinel" not in json.dumps(receipts) + result.stdout + result.stderr
+    assert not set(receipts[-1]) & {"stdout", "stderr", "env", "raw", "brief_json", "budget_json"}
+
+
+def test_native_wrapper_success_preserves_native_json_and_source_identity(tmp_path):
+    result, receipts = run_native_wrapper(tmp_path)
+    assert result.returncode == 0 and json.loads(result.stdout) == {}
+    assert receipts[-1]["category"] == "native_command_completed"
+    assert receipts[-1]["run_id"] == "11111111-1111-4111-8111-111111111111"
+    assert receipts[-1]["isolated_identity_verified"] is True
+    assert receipts[-1]["mode"] == "fixture" and receipts[-1]["stage"] == "brief"

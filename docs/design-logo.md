@@ -28,6 +28,20 @@ The generic start tool lacking an outer workspace parameter is not a valid
 launcher here: use the same Temper API run request with explicit workspace.
 Artifacts must survive a failed/removed container; preserve its native file UUID.
 
+The candidate stage uses strict template variables and safe public diagnostic
+exit codes:21 missing isolated container,22 malformed run UUID,23 unavailable
+absolute workspace,24 invalid mode,25 invalid stage,26 invalid budget phase,
+27 missing native artwork gate,28 workspace diagnostic directory unwritable,
+29 canonical native source unavailable.31–39 classify only fixed native guards/
+exception classes. No captured stdout/stderr, input text, environment values or
+arbitrary error strings are saved in diagnostics. After valid context, append
+receipts under `workspace/logo-native-diagnostics/`, bound to run UUID/mode/stage;
+these are failure evidence, never successful source/export/approval proof.
+The first isolated native retry failed before any saved job state. Its generic
+exit1 and missing script stream did not identify a cause; do not infer a mount,
+credential or geometry error without these safe checks. This stage-only
+instrumentation changes no engine access, login grants or live reviewers.
+
 Real entry takes only `brief_json` and `budget_json`. No ordinary mode/direction/
 final/approval input exists. Brief fields: product, secondary_name, explicit
 fictional boolean, audience, positioning, qualities, avoid, sources (id/location/

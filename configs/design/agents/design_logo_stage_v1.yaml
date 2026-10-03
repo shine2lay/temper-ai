@@ -4,24 +4,41 @@ agent:
   name: design_logo_stage_v1
   version: 1
   type: script
+  strict_undefined: true
   timeout_seconds: 2400
   script_template: |
     #!/bin/sh
     set -e
     "$TEMPER_PYTHON" - <<'PYEOF'
+    import json
     import os
     import subprocess
     import sys
+    import time
     import uuid
+    from pathlib import Path
 
+    # Distinct public exit codes remain useful when a runtime cannot retain its
+    # script stream. Never put captured stdout/stderr or credentials in a receipt.
     stage = os.environ.get("{{ stage | env }}", "")
     workspace = os.environ.get("{{ workspace_path | env }}", "")
     mode = os.environ.get("{{ mode | env }}", "")
     budget_stage = os.environ.get("{{ budget_stage | default('initial', true) | env }}", "initial")
     container = os.environ.get("TEMPER_RUN_CONTAINER", "")
     if not container.startswith("temper-run-"):
-        raise SystemExit("owned isolated Temper container required")
-    run_id = str(uuid.UUID(container[len("temper-run-"):]))
+        raise SystemExit(21)  # missing isolated container identity
+    try:
+        run_id = str(uuid.UUID(container[len("temper-run-"):]))
+    except ValueError:
+        raise SystemExit(22)
+    if not workspace.strip() or not Path(workspace).is_absolute() or not Path(workspace).is_dir():
+        raise SystemExit(23)
+    if mode not in ("real", "fixture"):
+        raise SystemExit(24)
+    if stage not in ("brief", "budget", "explore", "palette", "critic", "direction", "prepare", "refine", "handoff", "final"):
+        raise SystemExit(25)
+    if budget_stage not in ("initial", "refine"):
+        raise SystemExit(26)
     raw = os.environ.get("{{ brief_json | default('', true) | env }}", "") if stage == "brief" else os.environ.get("{{ budget_json | default('', true) | env }}", "")
     native_gate = False
     {% if gate is defined %}
@@ -29,12 +46,44 @@ agent:
     raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
     {% endif %}
     if stage in ("direction", "final") and not native_gate:
-        raise SystemExit("artwork decision requires native human gate, not ordinary input")
+        raise SystemExit(27)
     os.environ["LOGO_DATA"] = raw
-    cmd = [sys.executable, "/app/configs/design/bin/design_logo_v1.py", stage,
+    source_path = Path("/app/configs/design/bin/design_logo_v1.py")
+    diagnostic = {"schema": 1, "run_id": run_id, "mode": mode, "stage": stage,
+                  "native_gate_present": native_gate, "source_available": source_path.is_file(),
+                  "workspace_available": True, "isolated_identity_verified": True}
+    directory = Path(workspace).resolve() / "logo-native-diagnostics"
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        raise SystemExit(28)
+    path = directory / (run_id + "-" + stage + "-" + str(time.monotonic_ns()) + ".json")
+    def save_diagnostic(code, category):
+        path.write_text(json.dumps({**diagnostic, "exit_code": code, "category": category}, sort_keys=True) + "\n")
+    if not diagnostic["source_available"]:
+        save_diagnostic(29, "native_source_unavailable")
+        raise SystemExit(29)
+    cmd = [sys.executable, str(source_path), stage,
            "--workspace", workspace, "--mode", mode, "--run-id", run_id,
            "--budget-stage", budget_stage]
     if native_gate:
         cmd.append("--native-gate")
-    subprocess.run(cmd, env=os.environ, check=True)
+    save_diagnostic(0, "native_command_started")
+    result = subprocess.run(cmd, env=os.environ, capture_output=True, text=True, check=False)
+    if result.returncode:
+        fixed = [
+            (31, "workspace_guard", "explicit existing absolute persistent workspace required"),
+            (32, "mode_guard", "explicit mode required"),
+            (33, "workspace_identity_guard", "workspace belongs to another run/mode"),
+            (34, "module_import_failed", "ModuleNotFoundError:"),
+            (35, "source_file_unavailable", "FileNotFoundError:"),
+            (36, "filesystem_permission_denied", "PermissionError:"),
+            (37, "filesystem_read_only", "Read-only file system"),
+            (38, "native_contract_or_operation_rejected", "logo stage rejected; inspect owned saved state/artifacts"),
+        ]
+        code, category = next(((n, label) for n, label, text in fixed if text in result.stderr), (39, "native_command_failed"))
+        save_diagnostic(code, category)
+        raise SystemExit(code)
+    save_diagnostic(0, "native_command_completed")
+    sys.stdout.write(result.stdout)
     PYEOF

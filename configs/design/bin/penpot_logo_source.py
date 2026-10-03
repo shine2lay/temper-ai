@@ -67,7 +67,7 @@ class LogoCanvas:
         return self.put(p.shape("rect", name, board["id"], board["id"], x, y, w, h,
                                 p.fill(self.colors[color], self.fid), radius))
 
-    def text(self, board, name, value, x, y, width, size=16, weight="400", color="mono/ink", bg="mono/paper", logo=False):
+    def wrap(self, value, width, size, weight):
         font = self.fonts[weight]
         lines = []
         for paragraph in value.split("\n"):
@@ -79,6 +79,32 @@ class LogoCanvas:
                 else:
                     line = (line + " " + word).strip()
             lines.append(line)
+        return lines
+
+    def abridge(self, value, width, size, weight, max_lines):
+        """Fit a description into max_lines by dropping whole words, never mid-word.
+
+        An abridged text ends with an ellipsis after a complete word; the full text
+        stays in the run's JSON artifacts and the measurements say so.
+        """
+        lines = self.wrap(value, width, size, weight)
+        if len(lines) <= max_lines:
+            return value, False
+        words = " ".join(value.split()).split(" ")
+        while words:
+            words.pop()
+            candidate = " ".join(words).rstrip(",;:-") + "\u2026"
+            if len(self.wrap(candidate, width, size, weight)) <= max_lines:
+                return candidate, True
+        raise ValueError("text cannot be abridged to fit")
+
+    def text(self, board, name, value, x, y, width, size=16, weight="400", color="mono/ink", bg="mono/paper", logo=False,
+             max_lines=None):
+        full = value
+        abridged = False
+        if max_lines:
+            value, abridged = self.abridge(value, width, size, weight, max_lines)
+        lines = self.wrap(value, width, size, weight)
         style = self.typos[f"{size}-{weight}"]
         height = math.ceil(len(lines) * size * 1.25 + 6)
         obj = p.shape("text", name, board["id"], board["id"], x, y, width, height, [])
@@ -86,7 +112,8 @@ class LogoCanvas:
         obj["position-data"] = p.text_positions(obj, self.fonts)
         self.put(obj)
         self.metrics.append({"id": obj["id"], "board": board["name"], "name": name,
-            "logo_exempt": logo, "text": value, "font_size": size, "fg": self.colors[color]["color"],
+            "logo_exempt": logo, "text": value, "full_text": full, "abridged": abridged,
+            "font_size": size, "fg": self.colors[color]["color"],
             "bg": self.colors[bg]["color"], "inside": x >= board["x"] and y >= board["y"] and
             x + width <= board["x"] + board["width"] and y + height <= board["y"] + board["height"],
             "advance_fit": all(s["width"] <= width + .01 for s in obj["position-data"])})
@@ -122,14 +149,16 @@ class LogoCanvas:
                   y + (symbol_size - text_size * 1.25) / 2, width, text_size,
                   concept["wordmark_weight"], palette + "/" + fg, palette + "/" + bg, True)
 
-    def rough_board(self, concepts):
+    def rough_board(self, concepts, title="monochrome exploration"):
         board = self.board("Six monochrome explorations — " + self.product, 0, 0, 1080, 790)
-        self.text(board, "Title", self.product + " / monochrome exploration", 28, 20, 1020, 28, "600")
+        self.text(board, "Title", self.product + " / " + title, 28, 20, 1020, 28, "600")
         for i, concept in enumerate(concepts):
             x, y = 28 + (i % 3) * 354, 90 + (i // 3) * 340
-            self.symbol(board, concept, x + 100, y + 20, 120)
-            self.text(board, "Label", concept["id"], x, y + 160, 300, 22, "600")
-            self.text(board, "Idea", concept["idea"][:160], x, y + 200, 300, 16)
+            self.symbol(board, concept, x + 100, y + 10, 120)
+            self.text(board, "Label", concept["name"], x, y + 146, 300, 22, "600", max_lines=1)
+            self.text(board, "Family", concept["family"] + " / " + concept["id"], x, y + 180, 300, 14,
+                      color="mono/muted", max_lines=1)
+            self.text(board, "Ownable detail", concept["ownable_detail"], x, y + 206, 300, 16, max_lines=5)
         return board
 
     def comparison_board(self, concepts, rows):
@@ -141,8 +170,8 @@ class LogoCanvas:
             x, y = i * 660 + 28, 1028
             self.text(board, "Neutral direction label", chr(65 + i) + " / " + concept["name"], x, y, 600, 28, "600")
             self.lockup(board, concept, self.product, x + 32, y + 64, 104, 50)
-            self.text(board, "Concept basis", concept["idea"][:230], x, y + 208, 586, 18)
-            self.text(board, "Trade-off", concept["tradeoff"][:160], x, y + 306, 586, 16, color="mono/muted")
+            self.text(board, "Concept basis", concept["idea"], x, y + 208, 586, 18, max_lines=4)
+            self.text(board, "Trade-off", concept["tradeoff"], x, y + 306, 586, 16, color="mono/muted", max_lines=4)
             for j, role in enumerate(c.ROLES):
                 sx = x + j * 98
                 self.rect(board, "Palette/" + role, sx, y + 408, 84, 52, palette + "/" + role)
@@ -321,12 +350,24 @@ def source_checks(file, state):
     return {"revn": file["revn"], "checks": checks, "editable_objects": len(objects) - 1, "schema_version": c.VERSION}
 
 
+def whole_words(row):
+    """A rendered text is either its full value or a whole-word prefix plus an ellipsis."""
+    rendered, full = row["text"], row.get("full_text", row["text"])
+    if rendered == full:
+        return True
+    prefix = rendered[:-1].rstrip()
+    normal = " ".join(full.split())
+    return (rendered.endswith("\u2026") and bool(prefix) and normal.startswith(prefix)
+            and (len(normal) == len(prefix) or not normal[len(prefix)].isalnum()))
+
+
 def measurements(state, palettes):
     rows = []
     for obj in state["metrics"]:
         ratio = c.contrast(obj["fg"], obj["bg"])
         rows.append({**obj, "contrast": ratio, "companion_aa": None if obj["logo_exempt"] else ratio >= (3 if obj["font_size"] >= 24 else 4.5)})
-    violations = [o for o in rows if not o["inside"] or not o["advance_fit"] or o["companion_aa"] is False]
+    violations = [o for o in rows if not o["inside"] or not o["advance_fit"] or o["companion_aa"] is False
+                  or not whole_words(o)]
     return {"text": rows, "violations": violations,
             "palette": {name: {a + "/" + b: c.contrast(pal[a], pal[b]) for a, b in
                          (("ink", "paper"), ("muted", "paper"), ("ink", "surface"), ("accent_on", "accent"), ("accent", "paper"), ("accent", "ink"))}

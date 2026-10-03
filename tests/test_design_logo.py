@@ -4,6 +4,7 @@ No services/model requests/browser/vendor assets; deployed fixture proves the
 native paths, edit/reopen/export and actual gate resume separately.
 """
 import copy
+import hashlib
 import importlib
 import json
 import os
@@ -112,12 +113,165 @@ def test_six_divergent_not_recolour_and_cited_sources():
         c.exploration_contract(value, b)
 
 
+RUN = "11111111-1111-4111-8111-111111111111"
+
+
+@pytest.mark.parametrize("families", [
+    ["geometric"] * 3 + ["letterform", "pictorial", "emblem"],  # three plain geometric marks
+    ["geometric", "letterform"] * 3,  # only two families
+])
+def test_exploration_spans_families_with_at_most_two_plain_geometric(families):
+    b = brief()
+    value = job.fixture_exploration(b)
+    for concept, family in zip(value["concepts"], families, strict=True):
+        concept["family"] = family
+    with pytest.raises(ValueError, match="families"):
+        c.exploration_contract(value, b)
+
+
+def test_concepts_name_family_ownable_detail_and_generic_risk():
+    b = brief()
+    value = job.fixture_exploration(b)
+    for change in ({"family": "mascot"}, {"id": c.EXPLORE_AGAIN}, {"ownable_detail": ""}):
+        bad = copy.deepcopy(value)
+        bad["concepts"][0].update(change)
+        with pytest.raises(ValueError):
+            c.exploration_contract(bad, b)
+    for field in ("ownable_detail", "generic_risk", "family"):
+        bad = copy.deepcopy(value)
+        del bad["concepts"][0][field]
+        with pytest.raises(ValueError, match="declarative"):
+            c.exploration_contract(bad, b)
+    concepts = copy.deepcopy(value["concepts"])
+    for concept in concepts[:3]:
+        concept["family"] = "emblem"
+    with pytest.raises(ValueError, match="two concept families"):
+        c.shortlist_contract(job.fixture_palette(b), b, concepts)
+
+
+def test_revision_pass_keeps_six_slots_and_bounded_notes():
+    b = brief()
+    draft = c.exploration_contract(job.fixture_exploration(b), b)
+    concepts = copy.deepcopy(draft["concepts"])
+    concepts[1]["symbol"] = [{"kind": "ellipse", "name": "Redrawn", "x": 14, "y": 14, "w": 72, "h": 72}]
+    note = {"id": "fixture-1", "seen": "The render showed a plain oval.", "change": "Redrew it as a disc."}
+    value = {"product": b["product"], "concepts": concepts, "revisions": [note]}
+    assert c.revision_contract(value, b, draft)
+    swapped = copy.deepcopy(value)
+    swapped["concepts"][0], swapped["concepts"][1] = swapped["concepts"][1], swapped["concepts"][0]
+    with pytest.raises(ValueError, match="same six concept ids"):
+        c.revision_contract(swapped, b, draft)
+    for notes in ([note, note], [{**note, "id": "invented"}], [{**note, "seen": ""}], [note] * 7):
+        with pytest.raises(ValueError):
+            c.revision_contract({**value, "revisions": notes}, b, draft)
+    with pytest.raises(ValueError):
+        c.revision_contract({**value, "product": "Elsewhere"}, b, draft)
+
+
+def research_folder(tmp_path):
+    folder = tmp_path / "research-source"
+    folder.mkdir()
+    (folder / "comparison.md").write_text("2026-10-03 dated notes; references only.")
+    (folder / "peer-a.png").write_bytes(job.PNG + b"fixture image")
+    files = {n: hashlib.sha256((folder / n).read_bytes()).hexdigest() for n in ("comparison.md", "peer-a.png")}
+    return folder, files
+
+
+def prior_round():
+    return {"run_id": "33333333-3333-4333-8333-333333333333", "owner_answer": "None: explore again",
+            "owner_source": "fictional fixture", "rejected": [{"id": "old", "name": "Old", "idea": "An earlier idea."}],
+            "evidence": ["peer-a.png"]}
+
+
+def test_research_screen_and_rejected_round_reach_the_run_pinned(tmp_path):
+    folder, files = research_folder(tmp_path)
+    b = c.brief_contract({**brief(), "research": {"dir": str(folder), "files": files},
+                          "prior_rounds": [prior_round()]}, "fixture")
+    (tmp_path / "one").mkdir()
+    j = job.Job(str(tmp_path / "one"), RUN, "fixture")
+    copies = j.research(b)
+    assert sorted(p.name for p in copies) == ["comparison.md", "comparison.md", "peer-a.png"]
+    notes = (j.root / "comparison.md").read_text()
+    for expected in ("logo/research/peer-a.png", "None: explore again", "Old: An earlier idea.", "dated notes"):
+        assert expected in notes
+    assert j.research(brief()) == []
+    (folder / "peer-a.png").write_bytes(job.PNG + b"changed after pinning")
+    (tmp_path / "two").mkdir()
+    with pytest.raises(ValueError, match="pinned hash"):
+        job.Job(str(tmp_path / "two"), RUN, "fixture").research(b)
+    (folder / "peer-a.png").unlink()
+    (folder / "peer-a.png").symlink_to(folder / "comparison.md")
+    with pytest.raises(ValueError, match="linked"):
+        job.Job(str(tmp_path / "two"), RUN, "fixture").research(b)
+
+
+@pytest.mark.parametrize("change", [
+    {"research": {"dir": "relative/research", "files": {"comparison.md": "0" * 64}}},
+    {"research": {"dir": "/a/../b", "files": {"comparison.md": "0" * 64}}},
+    {"research": {"dir": "/r", "files": {"peer.png": "0" * 64}}},
+    {"research": {"dir": "/r", "files": {"comparison.md": "not-a-hash"}}},
+    {"research": {"dir": "/r", "files": {"comparison.md": "0" * 64, "../x.png": "0" * 64}}},
+    {"research": {"dir": "/r", "files": {"comparison.md": "0" * 64, "x.svg": "0" * 64}}},
+    {"research": {"dir": "/r", "files": {"comparison.md": "0" * 64}}, "prior_rounds": [prior_round()]},
+    {"research": {"dir": "/r", "files": {"comparison.md": "0" * 64, "peer-a.png": "0" * 64}},
+     "prior_rounds": [prior_round()] * 3},
+    {"prior_rounds": [{**prior_round(), "run_id": "not-a-run"}]},
+])
+def test_research_and_prior_rounds_are_bounded_and_pinned(change):
+    with pytest.raises(ValueError):
+        c.brief_contract({**brief(), **change}, "fixture")
+
+
+def test_explore_again_records_rejection_ends_run_and_needs_owner_note(tmp_path):
+    b = brief()
+    j = job.Job(str(tmp_path), RUN, "fixture")
+    job.save(j.root / "sketches.saved.json", c.exploration_contract(job.fixture_exploration(b), b))
+    job.save(j.root / "palette.saved.json", job.fixture_palette(b))
+    j.state.update(brief_hash="b", direction_artifact_hash="a")
+    again = {**answer(fictional=True), "run_id": RUN, "decision": c.EXPLORE_AGAIN}
+    with pytest.raises(ValueError, match="owner's own note"):
+        j.direction(json.dumps(again), True)
+    with pytest.raises(ValueError, match="ordinary input"):
+        j.direction(json.dumps({**again, "owner_note": "None of these."}), False)
+    out = j.direction(json.dumps({**again, "owner_note": "None of these."}), True)
+    assert out["outcome"] == "explore_again" and out["direction_owner_approved"] is False
+    record = job.load(j.root / "explore-again.json")
+    assert [r["id"] for r in record["rejected"]] == ["fixture-0", "fixture-1", "fixture-2"]
+    assert record["owner_answer"] == "None of these." and record["fictional_test"] is True
+    assert "direction" not in j.state
+    with pytest.raises(ValueError, match="no selected owner direction"):
+        j.prepare_refine()
+
+
+def test_board_text_fits_whole_words_never_mid_word(canvas):
+    board = canvas.board("text", 0, 0, 400, 400)
+    long = "A disc divided by a level gap, the upper half shifted slightly and then settled into balance. " * 3
+    canvas.text(board, "Idea", long, 10, 10, 300, 16, max_lines=2)
+    facts = s.measurements(canvas.state(), {})
+    row = facts["text"][0]
+    assert row["abridged"] and row["full_text"] == long and row["text"].endswith("\u2026")
+    assert s.whole_words(row) and not facts["violations"]
+    assert s.whole_words({**row, "text": "A disc divided by a level\u2026"})
+    for cut in ("A disc divided by a lev\u2026", "A disc divided by a lev", "\u2026", long[:-3]):
+        assert not s.whole_words({**row, "text": cut})
+    assert s.measurements({**canvas.state(), "metrics": [{**canvas.state()["metrics"][0], "text": "A disc divided by a lev"}]},
+                          {})["violations"]
+
+
+def test_sketch_board_of_six_fits_without_violations(canvas):
+    b = brief()
+    canvas.rough_board(c.exploration_contract(job.fixture_exploration(b), b)["concepts"], "sketches revised after seeing the render")
+    facts = s.measurements(canvas.state(), {})
+    assert not facts["violations"]
+    assert any(m["name"] == "Ownable detail" for m in facts["text"])
+
+
 @pytest.mark.parametrize("change", [{"pacific_day": "2000-01-01"}, {"day_spent_usd": 2}, {"trial_spent_usd": 1},
                                      {"reserve_usd": float("inf")}, {"subscription_checked": "false"}, {"one_design_experiment": False}])
 def test_budget_day_trial_and_fresh_allowance_fences(change):
-    assert c.budget_contract(reservation(), 4.1)
+    assert c.budget_contract(reservation(), c.INITIAL_RESERVE)
     with pytest.raises(ValueError):
-        c.budget_contract({**reservation(), **change}, 4.1)
+        c.budget_contract({**reservation(), **change}, c.INITIAL_RESERVE)
 
 
 @pytest.mark.parametrize("payload", [
@@ -280,10 +434,18 @@ def test_actual_workflow_schema_native_gates_loop_and_new_agents(name):
     assert nodes["owner_final"]["max_loops"] == 2 and nodes["owner_final"]["on_max_loops"] == "fail"
     assert not set(raw["inputs"]) & {"direction_json", "final_json", "mode", "approval"}
     assert all(n["agent"].startswith("design_logo_") for n in nodes.values())
+    order = [v["name"] for v in raw["nodes"]]
+    after = order[order.index("owner_direction") + 1:]
+    assert after and all(nodes[n]["condition"] == {"source": "owner_direction.structured.outcome",
+                                                   "operator": "equals", "value": "selected"} for n in after)
+    assert all("condition" not in nodes[n] for n in order[:order.index("owner_direction") + 1])
+    assert nodes["save_revision"]["input_map"]["stage"] == "revise"
     if name == "design_logo_v1":
         assert nodes["initial_budget"]["gate"] and nodes["refine_budget"]["gate"]
         assert nodes["owner_final"]["loop_to"] == "refine_budget"
-        assert raw["safety"]["policies"][0]["max_cost_usd"] == 8.15
+        assert raw["safety"]["policies"][0]["max_cost_usd"] == c.FULL_ESTIMATE == 8.9
+        assert nodes["explore"]["input_map"] == {"phase": "draft"} and nodes["revise"]["input_map"] == {"phase": "revise"}
+        assert nodes["palette"]["depends_on"] == ["save_revision"]
     else:
         assert all(n["agent"] == "design_logo_stage_v1" for n in nodes.values())
         assert all(n["input_map"]["mode"] == "fixture" for n in nodes.values())

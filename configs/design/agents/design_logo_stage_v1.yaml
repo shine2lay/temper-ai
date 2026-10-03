@@ -35,7 +35,7 @@ agent:
         raise SystemExit(23)
     if mode not in ("real", "fixture"):
         raise SystemExit(24)
-    if stage not in ("brief", "budget", "explore", "palette", "critic", "direction", "prepare", "refine", "handoff", "final"):
+    if stage not in ("brief", "budget", "explore", "revise", "palette", "critic", "direction", "prepare", "refine", "handoff", "final"):
         raise SystemExit(25)
     if budget_stage not in ("initial", "refine"):
         raise SystemExit(26)

@@ -9,20 +9,39 @@ import hashlib
 import json
 import math
 import re
+import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from pathlib import PurePosixPath
 from zoneinfo import ZoneInfo
 
-VERSION = 1
+VERSION = 2
 ROLES = ("ink", "paper", "accent", "accent_on", "muted", "surface")
-CAPS = {"explore": 2.25, "palette": 1.0, "critic": .85, "refine": 1.0}
-FULL_ESTIMATE = 8.15  # 7.8 stage estimates + .35 retry/overrun headroom; not CLI caps
+# Concept families. Plain geometry alone was rejected by the owner in the first
+# real Temper round as not memorable, so it may fill at most two of six slots.
+FAMILIES = ("geometric", "letterform", "pictorial", "emblem")
+EXPLORE_AGAIN = "explore-again"
+CAPS = {"explore": 2.25, "revise": .75, "palette": 1.0, "critic": .85, "refine": 1.0}
+# Stage reserves before each budget gate: everything up to the next owner gate.
+INITIAL_RESERVE = round(CAPS["explore"] + CAPS["revise"] + CAPS["palette"] + CAPS["critic"], 2)  # 4.85
+REFINE_RESERVE = round(CAPS["refine"] + CAPS["critic"], 2)  # 1.85
+FULL_ESTIMATE = round(INITIAL_RESERVE + 2 * REFINE_RESERVE + .35, 2)  # 8.9 incl. .35 headroom; not CLI caps
 SIZES = (16, 24, 32, 48, 64)
 SCHEMA = """Return only one JSON object (no Markdown/code fence).
 Explore: {product:<exact brief product>, concepts:[exactly six objects]}.
-Each concept: {id:<slug>, name:<up to32>, idea:<up to700>, source_ids:[brief source ids],
- tradeoff:<up to500>, symbol:[1..8 shape objects], minimum_symbol_px:16|24|32,
- wordmark_weight:'400'|'600'}.
+Each concept: {id:<slug>, name:<up to32>, family:'geometric'|'letterform'|'pictorial'|'emblem',
+ idea:<up to700>, ownable_detail:<up to300: the one visible detail people would remember>,
+ generic_risk:<up to300: the common mark family it could be mistaken for>,
+ source_ids:[brief source ids], tradeoff:<up to500>, symbol:[1..8 shape objects],
+ minimum_symbol_px:16|24|32, wordmark_weight:'400'|'600'}.
+At least three different families across the six; at most two 'geometric'.
+letterform = an original drawn letter/monogram from the name (paths, not font
+outlines); pictorial = a stylised, non-literal image of the idea; emblem = a
+contained shape whose inner negative space carries the idea.
+Revise: {product:<exact>, concepts:[the same six ids in the same order, full
+ concept schema, symbols redrawn where the render did not show the idea],
+ revisions:[up to6 {id, seen:<up to500: what the rendered PNG actually shows>,
+ change:<up to500: what you redrew and why>}]}.
 Rect: {kind:'rect',name:<up to48>,x:0..100,y:0..100,w:>0,h:>0,r:0..min(w,h)/2}.
 Ellipse: {kind:'ellipse',name:<up to48>,x,y,w,h}.
 Path: {kind:'path',name:<up to48>,commands:[["M",x,y],["L",x,y],
@@ -38,7 +57,8 @@ Palette: {product:<exact>,shortlist:[exactly3 objects],recommendation:<selected 
 ink/paper, muted/paper, ink/surface, paper/ink, accent_on/accent must >=4.5;
 accent/paper and accent/ink >=3 for demonstrated essential graphics. Logo/logotype
 exemptions are separate from ordinary companion text/UI. Never use accent as a
-status/error semantic. Shortlist THREE DIFFERENT ideas/forms, not recolours.
+status/error semantic. Shortlist THREE DIFFERENT ideas/forms, not recolours,
+from at least two different families.
 Refine: {product:<exact>,concept:<same concept schema and selected id>,
  palette:<same6role schema>, changes:[up to8 evidence-specific strings],
  declined:[up to8 reasoned strings]}. Respect real saved selection and owner note;
@@ -75,8 +95,49 @@ def number(value, low=0, high=100):
     return value
 
 
+def research_contract(r):
+    """Dated research screen handed to a run: host folder plus pinned file hashes.
+
+    Files are research references (official pages, rejected earlier boards), never
+    brand assets. The brief stage copies them into the run and re-checks hashes.
+    """
+    keys(r, ("dir", "files"))
+    folder = PurePosixPath(r["dir"]) if isinstance(r["dir"], str) else None
+    if folder is None or not folder.is_absolute() or ".." in folder.parts or len(r["dir"]) > 300:
+        raise ValueError("research folder must be an absolute path without ..")
+    files = r["files"]
+    if not isinstance(files, dict) or not 1 <= len(files) <= 16 or "comparison.md" not in files:
+        raise ValueError("research needs comparison.md and at most 16 pinned files")
+    for name, digest_value in files.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,47}\.(png|md)", name):
+            raise ValueError("research file names are plain png/md names")
+        if not isinstance(digest_value, str) or not re.fullmatch(r"[0-9a-f]{64}", digest_value):
+            raise ValueError("research files are pinned by sha256")
+    return r
+
+
+def prior_round_contract(row, research_files):
+    """An earlier round the owner rejected; carried so the next round avoids it."""
+    keys(row, ("run_id", "owner_answer", "owner_source", "rejected", "evidence"))
+    uuid.UUID(str(row["run_id"]))
+    text(row["owner_answer"], 600)
+    text(row["owner_source"], 200)
+    if not isinstance(row["rejected"], list) or not 1 <= len(row["rejected"]) <= 6:
+        raise ValueError("rejected round lists its directions")
+    for item in row["rejected"]:
+        keys(item, ("id", "name", "idea"))
+        text(item["id"], 32)
+        text(item["name"], 32)
+        text(item["idea"], 700)
+    if (not isinstance(row["evidence"], list) or len(row["evidence"]) > 6
+            or not set(row["evidence"]) <= set(research_files)):
+        raise ValueError("rejected-round evidence must be pinned research files")
+    return row
+
+
 def brief_contract(b, mode="real"):
-    keys(b, ("product", "secondary_name", "fictional", "audience", "positioning", "qualities", "avoid", "sources", "interpretations"))
+    keys(b, ("product", "secondary_name", "fictional", "audience", "positioning", "qualities", "avoid", "sources", "interpretations"),
+         ("research", "prior_rounds"))
     text(b["product"], 24)
     text(b["secondary_name"], 28)
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9 .&'-]{1,23}", b["product"]):
@@ -106,6 +167,12 @@ def brief_contract(b, mode="real"):
         text(row["fact"], 900)
         if row["status"] not in ("documented", "observed", "claim", "inference", "namesake"):
             raise ValueError("fact/interpretation status required")
+    files = research_contract(b["research"])["files"] if "research" in b else {}
+    if "prior_rounds" in b:
+        if not isinstance(b["prior_rounds"], list) or not 1 <= len(b["prior_rounds"]) <= 2:
+            raise ValueError("at most two earlier rejected rounds")
+        for row in b["prior_rounds"]:
+            prior_round_contract(row, files)
     return b
 
 
@@ -159,10 +226,13 @@ def shape_contract(s):
 
 
 def concept_contract(c, b):
-    keys(c, ("id", "name", "idea", "source_ids", "tradeoff", "symbol", "minimum_symbol_px", "wordmark_weight"))
-    if not isinstance(c["id"], str) or not re.fullmatch(r"[a-z][a-z0-9-]{1,30}", c["id"]):
+    keys(c, ("id", "name", "family", "idea", "ownable_detail", "generic_risk", "source_ids", "tradeoff",
+             "symbol", "minimum_symbol_px", "wordmark_weight"))
+    if not isinstance(c["id"], str) or not re.fullmatch(r"[a-z][a-z0-9-]{1,30}", c["id"]) or c["id"] == EXPLORE_AGAIN:
         raise ValueError("concept slug required")
-    for field, maximum in (("name", 32), ("idea", 700), ("tradeoff", 500)):
+    if c["family"] not in FAMILIES:
+        raise ValueError("unknown concept family")
+    for field, maximum in (("name", 32), ("idea", 700), ("ownable_detail", 300), ("generic_risk", 300), ("tradeoff", 500)):
         text(c[field], maximum)
     if not isinstance(c["source_ids"], list) or not c["source_ids"] or not set(c["source_ids"]) <= {r["id"] for r in b["sources"]}:
         raise ValueError("concept must cite supplied evidence, not invented sources")
@@ -185,6 +255,28 @@ def exploration_contract(v, b):
         concept_contract(c, b)
     if len({c["id"] for c in v["concepts"]}) != 6 or len({digest(c["symbol"]) for c in v["concepts"]}) != 6:
         raise ValueError("duplicate concepts, not divergent exploration")
+    families = [c["family"] for c in v["concepts"]]
+    if len(set(families)) < 3 or families.count("geometric") > 2:
+        raise ValueError("exploration needs three families and at most two plain geometric marks")
+    return v
+
+
+def revision_contract(v, b, draft):
+    """The explorer's second pass after seeing its own render: same six slots."""
+    keys(v, ("product", "concepts", "revisions"))
+    exploration_contract({"product": v["product"], "concepts": v["concepts"]}, b)
+    if [c["id"] for c in v["concepts"]] != [c["id"] for c in draft["concepts"]]:
+        raise ValueError("revision keeps the same six concept ids in order")
+    if not isinstance(v["revisions"], list) or len(v["revisions"]) > 6:
+        raise ValueError("bounded revision notes required")
+    seen = set()
+    for row in v["revisions"]:
+        keys(row, ("id", "seen", "change"))
+        if row["id"] not in {c["id"] for c in v["concepts"]} or row["id"] in seen:
+            raise ValueError("revision note must name one concept once")
+        seen.add(row["id"])
+        text(row["seen"], 500)
+        text(row["change"], 500)
     return v
 
 
@@ -224,6 +316,9 @@ def shortlist_contract(v, b, concepts):
         text(row["rationale"], 700)
     if len({r["id"] for r in v["shortlist"]}) != 3 or v["recommendation"] not in {r["id"] for r in v["shortlist"]}:
         raise ValueError("distinct shortlist and advisory recommendation required")
+    family = {c["id"]: c["family"] for c in concepts}
+    if len({family[r["id"]] for r in v["shortlist"]}) < 2:
+        raise ValueError("shortlist needs at least two concept families")
     text(v["recommendation_reason"], 900)
     return v
 
@@ -289,6 +384,8 @@ def approval_contract(v, *, kind, run_id, brief_hash, artifact_hash, choices, ga
     text(v["reason"], 1200)
     if "owner_note" in v:
         text(v["owner_note"], 1200)
+    if v["decision"] == EXPLORE_AGAIN and "owner_note" not in v:
+        raise ValueError("explore-again needs the owner's own note")
     return v
 
 

@@ -4,9 +4,11 @@ Design owns `design_logo_v1` and all `design_logo_*_v1` agents. This is new iden
 work, not a change to live design reviewers, EPD, app branding or engine access.
 
 ```
-sourced brief -> BUDGET -> six original monochrome vectors -> native rough PNG
+sourced brief + pinned research -> BUDGET -> six original monochrome vectors
+ -> native rough PNG -> explorer sees that render and redraws -> sketch PNG
  -> three different shortlists + role palettes -> native equal-scale boards
- -> new logo critic -> REAL OWNER DIRECTION -> FRESH BUDGET
+ -> new logo critic -> REAL OWNER DIRECTION (a direction, or explore-again: the
+    run ends and the next run's brief carries the rejected round) -> FRESH BUDGET
  -> selected refinement -> native source/exports -> new logo critic -> handoff
  -> REAL OWNER FINAL (or one bounded rewind for the second refinement)
 ```
@@ -69,6 +71,39 @@ back. Facts, claims, inference and creative name interpretations stay separate.
   rewind (its threshold counts the stopping attempt); script bounds independently
   forbid a third. Failed final revision is not successful completion.
 
+## Changes after the first real Temper round (2026-10-03)
+
+The owner rejected all three round-1 directions (run 6b9790e9): "None: fix the
+workflow and explore again". Weak spots it showed, and the fix for each:
+
+- No way to say "none": the direction gate accepts `decision: explore-again`
+  with the owner's own `owner_note`. The run records `explore-again.json` (the
+  rejected shortlist, the owner's answer) and every later node is skipped by
+  condition, so nothing is refined or spent. The next run's brief carries it in
+  `prior_rounds` (at most two), with that round's boards as pinned research.
+- The run never saw the research screen: an optional brief `research` block
+  names an absolute folder and its files pinned by sha256 (`comparison.md` plus
+  up to 15 PNG/MD files). The brief stage copies them into `logo/research/`,
+  failing on any changed, linked or oversized file, and writes
+  `logo/comparison.md` listing the images, rejected rounds and notes. Explore,
+  palette and critic read it. The folder must be visible inside the run: put
+  it inside the run's own `workspace_path` (for example `research-input/`);
+  `~/design-lab` is not mounted.
+- Ideas were described but not visible (the "shifted half" never showed): a
+  second explorer pass opens its own render and redraws, recording what it saw
+  and changed (`revisions`); the shortlist is made from these sketches.
+- Plain primitives, forgettable: each concept declares a family
+  (geometric/letterform/pictorial/emblem), an `ownable_detail` and a
+  `generic_risk`; six concepts span three families with at most two geometric,
+  the shortlist two families. Holes use nonzero winding (inner subpath drawn the
+  other way), never paper-coloured patches.
+- Board text cut mid-word: descriptions are fitted by whole words with an
+  ellipsis; measurements keep `full_text`/`abridged`, and any rendered text that
+  is not the full text or a whole-word prefix is a violation.
+
+These are prompt/contract fixes checked by model-free tests and the fictional
+fixture; whether round 2 is better is the owner's judgement at the real gate.
+
 ## Measurable rubric versus judgement
 
 Measure source identity/set/geometry, live spelling/style refs, native text cache,
@@ -123,10 +158,11 @@ required after save; real editor verification remains additional host evidence.
 
 ## Budget and retries
 
-Full trial estimate/reservation $8.15: initial exploration2.25 + shortlist1.00 +
-initial critic.85 + (refinement1.00 + critic.85)*2 =7.80, plus.35 headroom.
-These are conservative planning estimates, NOT per-Claude-CLI billing caps. Native
-budget policy8.15 checks between calls; an in-flight call can overshoot. CLI model
+Full run estimate/reservation $8.90: initial exploration2.25 + revision pass.75 +
+shortlist1.00 + initial critic.85 + (refinement1.00 + critic.85)*2 =8.55, plus.35
+headroom (v1 before the revision pass: $8.15). These are conservative planning
+estimates, NOT per-Claude-CLI billing caps. Native
+budget policy8.90 checks between calls; an in-flight call can overshoot. CLI model
 iteration/time bounds do not replace financial supervision. Record all real
 costs and any retry, including failures; no automatic artifact-stage paid retry.
 Reconcile prior Design experiments and reserve the full bounded envelope before
@@ -137,7 +173,7 @@ subscription/one-experiment checks. Gate waits may cross dates: recheck then.
 
 Budget JSON fields: pacific_day, reserve_usd, day_spent_usd, trial_spent_usd,
 trial_envelope_usd, subscription_checked:true, one_design_experiment:true and
-reconciliation. Initial stage reserve>=4.10; each refinement reserve>=1.85;
+reconciliation. Initial stage reserve>=4.85; each refinement reserve>=1.85;
 host must reserve the FULL outstanding trial in the shared ledger, not merely
 these stage minima. No paid call while allowance is near limits or deployment
 revision/duplicate work is uncertain. Native script and fictional tests cost0.

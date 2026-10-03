@@ -37,6 +37,10 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+FIXTURE_FAMILIES = ("geometric", "letterform", "pictorial", "emblem", "geometric", "emblem")
+PNG = b"\x89PNG\r\n\x1a\n"
+
+
 def fixture_exploration(brief):
     """Model-free contract fixture, NEVER a real brand or generation substitute."""
     c.brief_contract(brief, "fixture")
@@ -48,11 +52,24 @@ def fixture_exploration(brief):
             shape = {"kind": "ellipse", "name": "Fixture only", "x": 20, "y": 12, "w": 60, "h": 76}
         if i == 2:
             shape = {"kind": "path", "name": "Fixture cubic", "commands": [["M", 12, 30], ["C", 28, 6, 72, 6, 88, 30], ["L", 76, 84], ["L", 24, 84], ["Z"]]}
+        if i == 3:
+            # Real counter: inner subpath wound the other way leaves a hole (nonzero fill).
+            shape = {"kind": "path", "name": "Fixture ring", "commands": [
+                ["M", 10, 10], ["L", 90, 10], ["L", 90, 90], ["L", 10, 90], ["Z"],
+                ["M", 35, 35], ["L", 35, 65], ["L", 65, 65], ["L", 65, 35], ["Z"]]}
         concepts.append({"id": "fixture-" + str(i), "name": brief["product"] + " test " + str(i),
+            "family": FIXTURE_FAMILIES[i],
             "idea": "Fictional contract geometry, not generated artwork or aesthetic evidence.",
+            "ownable_detail": "Fixture only; exercises the board's whole-word text fitting with a long enough description.",
+            "generic_risk": "Fixture only; plain test shape.",
             "source_ids": [brief["sources"][0]["id"]], "tradeoff": "Fixture only; no uniqueness or design claim.",
             "symbol": [shape], "minimum_symbol_px": 24, "wordmark_weight": "600"})
     return {"product": brief["product"], "concepts": concepts}
+
+
+def fixture_revision(brief, draft):
+    c.brief_contract(brief, "fixture")
+    return {"product": brief["product"], "concepts": draft["concepts"], "revisions": []}
 
 
 def fixture_palette(brief):
@@ -114,6 +131,7 @@ class Job:
         self.state["brief_hash"] = c.digest(b)
         save(self.root / "brief.json", b)
         (self.root / "schema.txt").write_text(c.SCHEMA)
+        research = self.research(b)
         save(self.root / "bounds.json", {"estimate_usd": c.FULL_ESTIMATE, "stage_reserves_usd": c.CAPS,
              "refinement_max": 2, "review_max": 3, "roughs": 6, "shortlist": 3,
              "native_budget_policy_usd": c.FULL_ESTIMATE,
@@ -123,13 +141,52 @@ class Job:
         h.assets(client, self.root / "assets")
         out = {"status": "completed", "brief_hash": self.state["brief_hash"], "run_id": self.run_id,
                "product": b["product"], "schema": "logo/schema.txt", "estimate_usd": c.FULL_ESTIMATE}
-        return self.receipt("brief", fingerprint, out, [self.root / "brief.json", self.root / "schema.txt", self.root / "assets/licenses.json"])
+        out["research_files"] = len(research)
+        return self.receipt("brief", fingerprint, out, [self.root / "brief.json", self.root / "schema.txt", self.root / "assets/licenses.json", *research])
+
+    def research(self, b):
+        """Copy the pinned research screen into the run; every byte must match its hash."""
+        if "research" not in b:
+            return []
+        folder = Path(b["research"]["dir"])
+        if not folder.is_dir() or folder.resolve() != folder:
+            raise ValueError("research folder missing or not a real path")
+        copies = []
+        for name, expected in sorted(b["research"]["files"].items()):
+            path = folder / name
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 3_000_000:
+                raise ValueError("research file missing, linked or oversized")
+            data = path.read_bytes()
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise ValueError("research file does not match its pinned hash")
+            if name.endswith(".png") and not data.startswith(PNG):
+                raise ValueError("research image is not a PNG")
+            if name.endswith(".md"):
+                data.decode("utf-8")
+            target = self.root / "research" / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            copies.append(target)
+        images = ["logo/research/" + n for n in sorted(b["research"]["files"]) if n.endswith(".png")]
+        lines = ["# Research screen for this run", "",
+                 "Copied from the pinned research folder; hashes verified at the brief stage.",
+                 "References only: never copy, trace or reuse these marks.", "",
+                 "Research images (open each with Read):", *("- " + i for i in images), ""]
+        for row in b.get("prior_rounds", []):
+            lines += ["## Earlier round the owner rejected (run " + row["run_id"] + ")", "",
+                      "Owner's answer: " + row["owner_answer"], "",
+                      "Rejected directions (do not repeat their ideas or look):",
+                      *("- " + r["name"] + ": " + r["idea"] for r in row["rejected"]),
+                      "Boards of that round: " + ", ".join("logo/research/" + e for e in row["evidence"]), ""]
+        lines += ["## Dated comparison notes", "", (self.root / "research" / "comparison.md").read_text()]
+        (self.root / "comparison.md").write_text("\n".join(lines))
+        return [*copies, self.root / "comparison.md"]
 
     def budget(self, raw, stage):
         if self.mode == "fixture":
             c.brief_contract(load(self.root / "brief.json"), "fixture")
             return {"status": "completed", "model_calls": 0, "fictional_test": True}
-        reservation = c.budget_contract(json.loads(raw), 4.1 if stage == "initial" else 1.85)
+        reservation = c.budget_contract(json.loads(raw), c.INITIAL_RESERVE if stage == "initial" else c.REFINE_RESERVE)
         if stage != "initial" and self.state["round"] >= 2:
             raise ValueError("two refinement rounds exhausted; owner must decide reduced scope/new plan")
         label = "budget-initial" if stage == "initial" else f'budget-r{self.state["round"] + 1:02}'
@@ -210,8 +267,28 @@ class Job:
         out = {"status": "completed", "monochrome": exports[0]["path"], "product": b["product"], "concepts": [r["id"] for r in v["concepts"]]}
         return self.receipt("exploration", fingerprint, out, [self.root / "exploration.saved.json", self.root / "roughs.source.json", self.root / "roughs.exports.json"])
 
+    def adopt_revision(self):
+        """Second explorer pass: it has seen its own render and redrawn what failed."""
+        b, draft = load(self.root / "brief.json"), load(self.root / "exploration.saved.json")
+        v = fixture_revision(b, draft) if self.mode == "fixture" else load(self.root / "exploration-revised.json")
+        v = c.revision_contract(v, b, draft)
+        fingerprint = c.digest({"draft": c.digest(draft), "revision": v})
+        if result := self.cached("revision", fingerprint):
+            return result
+        save(self.root / "sketches.saved.json", v)
+        state, exports = self.native_file("sketches", lambda canvas: canvas.rough_board(v["concepts"], "sketches revised after seeing the render"))
+        facts = source.measurements(state, {})
+        if facts["violations"]:
+            raise ValueError("revised sketch board measured layout failed; preserve source identity")
+        save(self.root / "sketches.measurements.json", facts)
+        out = {"status": "completed", "monochrome": exports[0]["path"], "revised": [r["id"] for r in v["revisions"]]}
+        return self.receipt("revision", fingerprint, out, [self.root / "sketches.saved.json", self.root / "sketches.source.json", self.root / "sketches.exports.json"])
+
+    def concepts(self):
+        return load(self.root / "sketches.saved.json")["concepts"]
+
     def adopt_palette(self):
-        b, concepts = load(self.root / "brief.json"), load(self.root / "exploration.saved.json")["concepts"]
+        b, concepts = load(self.root / "brief.json"), self.concepts()
         v = fixture_palette(b) if self.mode == "fixture" else load(self.root / "palette.json")
         v = c.shortlist_contract(v, b, concepts)
         fingerprint = c.digest({"exploration": c.digest(concepts), "palette": v})
@@ -261,17 +338,29 @@ class Job:
         rows = load(self.root / "palette.saved.json")["shortlist"]
         decision = c.approval_contract(json.loads(raw), kind="direction", run_id=self.run_id,
             brief_hash=self.state["brief_hash"], artifact_hash=self.state["direction_artifact_hash"],
-            choices={r["id"] for r in rows}, gate_only=gate_only, fictional=self.mode == "fixture")
+            choices={r["id"] for r in rows} | {c.EXPLORE_AGAIN}, gate_only=gate_only, fictional=self.mode == "fixture")
         fingerprint = c.digest(decision)
         if result := self.cached("owner-direction", fingerprint):
             return result
-        self.state["direction"] = decision
         save(self.root / "owner-direction.json", {**decision, "recorded_at": h.now(), "fictional_test": self.mode == "fixture"})
-        concept = next(v for v in load(self.root / "exploration.saved.json")["concepts"] if v["id"] == decision["decision"])
+        if decision["decision"] == c.EXPLORE_AGAIN:
+            # None of the three: this run ends; the next run carries the rejection.
+            self.state["explore_again"] = decision
+            save(self.root / "explore-again.json", {"run_id": self.run_id, "brief_hash": self.state["brief_hash"],
+                "owner_answer": decision["owner_note"], "fictional_test": self.mode == "fixture",
+                "rejected": [{"id": v["id"], "name": v["name"], "idea": v["idea"]}
+                             for v in self.concepts() if v["id"] in {r["id"] for r in rows}],
+                "evidence": ["exports/sketches-00.png", "exports/directions-00.png"], "recorded_at": h.now()})
+            return self.receipt("owner-direction", fingerprint, {"status": "completed", "selected": c.EXPLORE_AGAIN,
+                "outcome": "explore_again", "direction_owner_approved": False, "final_owner_approved": False},
+                [self.root / "owner-direction.json", self.root / "explore-again.json"])
+        self.state["direction"] = decision
+        concept = next(v for v in self.concepts() if v["id"] == decision["decision"])
         palette = next(v["palette"] for v in rows if v["id"] == decision["decision"])
         save(self.root / "selected.json", {"concept": concept, "palette": palette})
         return self.receipt("owner-direction", fingerprint, {"status": "completed", "selected": decision["decision"],
-            "direction_owner_approved": self.mode == "real", "final_owner_approved": False}, [self.root / "owner-direction.json"])
+            "outcome": "selected", "direction_owner_approved": self.mode == "real", "final_owner_approved": False},
+            [self.root / "owner-direction.json"])
 
     def prepare_refine(self):
         if not self.state.get("direction"):
@@ -429,7 +518,7 @@ namesakes merit professional clearance before public use. No uniqueness claim.
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("stage", choices=("brief", "budget", "explore", "palette", "critic", "direction", "prepare", "refine", "handoff", "final"))
+    parser.add_argument("stage", choices=("brief", "budget", "explore", "revise", "palette", "critic", "direction", "prepare", "refine", "handoff", "final"))
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--mode", choices=("real", "fixture"), required=True)
@@ -439,7 +528,7 @@ def main():
     job = Job(args.workspace, args.run_id, args.mode)
     raw = os.getenv("LOGO_DATA", "")
     methods = {"brief": lambda: job.brief(raw), "budget": lambda: job.budget(raw, args.budget_stage),
-        "explore": job.adopt_exploration, "palette": job.adopt_palette, "critic": job.adopt_critic,
+        "explore": job.adopt_exploration, "revise": job.adopt_revision, "palette": job.adopt_palette, "critic": job.adopt_critic,
         "direction": lambda: job.direction(raw, args.native_gate), "prepare": job.prepare_refine,
         "refine": job.adopt_refine, "handoff": job.handoff, "final": lambda: job.final(raw, args.native_gate)}
     started = time.monotonic()

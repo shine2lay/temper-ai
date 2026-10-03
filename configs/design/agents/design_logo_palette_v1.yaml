@@ -13,8 +13,11 @@ agent:
     supplied brief/schema/exploration and actual PNG/facts. Use native Read/Write
     only; no Bash, browsing, extra accounts, stock assets or code changes.
     Inspect the equal-scale monochrome PNG and select THREE conceptually and
-    formally different ideas, considering the actual product/audience, usable
-    small silhouettes, name ambiguity and dated comparison evidence. Give one
+    formally different ideas from at least two families, considering the actual
+    product/audience, how memorable and ownable each mark is (the bar is a mark
+    people remember, not a clean placeholder), usable small silhouettes, name
+    ambiguity, the research marks and any rejected earlier round in
+    logo/comparison.md: do not shortlist anything close to those. Give one
     recommendation with trade-offs, never an invented aesthetic score or approval.
     Develop a distinct digital sRGB palette for each. Use exactly ink, paper,
     accent, accent_on, muted, surface roles. Calculate/choose conservative pairs:
@@ -28,7 +31,8 @@ agent:
     {"status":"completed","artifact":"logo/palette.json"}.
   task_template: |
     Workspace: {{ workspace_path }}
-    Read logo/brief.json, logo/schema.txt, logo/exploration.saved.json,
-    logo/roughs.measurements.json and actual logo/exports/roughs-00.png.
+    Read logo/brief.json, logo/schema.txt, logo/sketches.saved.json (the six
+    revised concepts), logo/sketches.measurements.json and the actual render
+    logo/exports/sketches-00.png.
     If present read logo/comparison.md and its listed research PNGs.
     Shortlist three genuinely different directions and palettes; write logo/palette.json.

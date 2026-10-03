@@ -17,7 +17,10 @@ agent:
     same scale; exact live-wordmark spelling; clipped text/geometry; counters and
     negative spaces at 16/24/32/48/64px; optical balance and spacing; 160/320 lockups;
     monochrome/reverse and light/dark contexts; actual brief's purpose; evident
-    similarity to provided research references. Do not stretch an inference into
+    similarity to provided research references and to any rejected earlier
+    round in logo/comparison.md (open those PNGs and compare at equal scale);
+    whether each mark's stated ownable detail is actually visible, and whether
+    it would be remembered or reads as a generic placeholder (a taste finding). Do not stretch an inference into
     proof of origin, uniqueness, registrability or product performance.
     Measured contrast/geometry in facts are numbers, not screenshot estimates.
     Logos/logotypes are WCAG contrast-exempt; companion text/UI is not. An exempt

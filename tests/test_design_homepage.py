@@ -440,3 +440,29 @@ def test_three_example_policy_lines_and_balanced_desktop_needs():
     assert next(m for m in metrics if m["name"] == "Needs heading")["text"] == "Example meeting needs"
     result = h.measure(canvas.state({"team-id": h.p.nid()}))
     assert not result["violations"] and not result["text_box_overlaps"]
+
+
+def test_svg_font_embedding_preserves_live_native_markup_and_uses_only_installed_filenames():
+    raw = b'<svg><style>@font-face{src:url(https://spark.test/fonts/sourcesanspro-regular.woff)};src:url("https://spark.test/fonts/sourcesanspro-regular.woff")</style><text x="10">Editable text</text><path d="M 1 2"/></svg>'
+    calls = []
+    def fetch(name):
+        calls.append(name)
+        return b"wOFFfixture-font"
+    result = h.embed_svg_fonts(raw, fetch)
+    assert calls == ["sourcesanspro-regular.woff"]
+    assert result.count(b"data:font/woff;base64,") == 2
+    assert b"https://" not in result
+    assert b'<text x="10">Editable text</text><path d="M 1 2"/>' in result
+
+
+@pytest.mark.parametrize("bad", [b"not-a-font", b"wOFF"])
+def test_svg_embedding_rejects_invalid_font_bytes(bad):
+    with pytest.raises(ValueError, match="not valid WOFF"):
+        h.embed_svg_fonts(b'<svg><style>src:url(https://host/fonts/sourcesanspro-semibold.woff)</style></svg>', lambda _: bad)
+
+
+def test_svg_embedding_does_not_fetch_arbitrary_remote_assets_or_change_embedded_fonts():
+    raw = b'<svg><style>src:url(data:font/woff;base64,eA==);src:url(https://foreign.test/private.woff)</style><path fill="url(#local)"/></svg>'
+    def forbidden(_):
+        raise AssertionError("No remote or unknown font requests allowed")
+    assert h.embed_svg_fonts(raw, forbidden) == raw

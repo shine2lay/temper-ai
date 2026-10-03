@@ -239,8 +239,11 @@ Text remains live with colour/type references; component instances retain main
 shape refs. Source, PNG and SVG exports come from actual Penpot, never an HTML
 canvas substitute. Fresh authenticated reopen verifies boards, text, styles,
 components and instances. Host inspection additionally opens the actual editor
-and exported images. SVG fonts may depend on tailnet URLs; PNG is the portable
-visual reference. Source Sans Pro is already installed (SIL OFL 1.1); original
+and exported images. Standalone native SVG fonts are embedded from the same
+installed regular/semibold WOFF bytes, preserving all vector/live-text markup;
+only two known filenames are fetched against authorized Penpot, never arbitrary
+origins from SVG. Independent offline rendering must load both fonts, not silently
+use a fallback. PNG is also portable. Source Sans Pro is installed (SIL OFL 1.1); original
 vectors require no third-party asset license. The host packet retains font
 license/name-table/hash evidence.
 

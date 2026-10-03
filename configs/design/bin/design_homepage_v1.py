@@ -8,12 +8,14 @@ Fictional pilot selection is provisional. No HTML canvas substitute.
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 import hashlib
 import http.cookiejar
 import json
 import math
 import os
+import re
 import shutil
 import struct
 import time
@@ -235,6 +237,10 @@ class Penpot:
         if uri.startswith("/"):
             uri = self.base + uri
         data = self.request(uri, timeout=120)
+        if kind == "svg":
+            # Native SVG geometry/live text stays intact; only its authorized,
+            # OFL-licensed installed font bytes become self-contained.
+            data = embed_svg_fonts(data, lambda name: self.request(self.base + "/fonts/" + name))
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
         if kind == "png":
@@ -244,6 +250,28 @@ class Penpot:
             if (w, h) != (board["width"], board["height"]):
                 raise ValueError("PNG export dimensions differ from editable source")
         return {"path": str(destination), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def embed_svg_fonts(data, fetch_installed_font):
+    """Keep native vector/text markup; remove remote-font/CORS/offline dependency.
+
+    Never fetch an origin found in SVG. Resolve only two known licensed filenames
+    against the already authorized Penpot server, using the caller's transport.
+    """
+    text = data.decode("utf-8")
+    fonts = {}
+    pattern = re.compile(r"url\(([\"']?)(https?://[^)\"']+/fonts/(sourcesanspro-(?:regular|semibold)\.woff))\1\)")
+
+    def replace(match):
+        name = match[3]
+        if name not in fonts:
+            font = fetch_installed_font(name)
+            if len(font) < 12 or font[:4] != b"wOFF":
+                raise ValueError("installed SVG font is not valid WOFF")
+            fonts[name] = base64.b64encode(font).decode("ascii")
+        return "url(data:font/woff;base64," + fonts[name] + ")"
+
+    return pattern.sub(replace, text).encode("utf-8")
 
 
 def font_names(data):

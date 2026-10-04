@@ -388,6 +388,66 @@ Penpot components (one main, linked instances at every width). Page fonts are
 uploaded to the Penpot team as custom fonts only when a licence file sits beside
 them (recorded in the report); images become Penpot media.
 
+**Layouts that reflow (`penpot_layout.py`, queue #9).** The extractor also
+records each element's computed layout (display, flex direction, wrap, gaps,
+padding, alignment, grid tracks as written and as computed, margins, min/max
+sizes, natural size). For every board the planner picks the Penpot layout that
+reproduces where the browser put each child, checked against a model of Penpot
+2.18.1's own flex and grid algorithms (1 px): CSS flex becomes Penpot flex
+(direction, gap, padding, alignment, wrap, each child fill, fixed or hug); CSS
+grid becomes Penpot grid (fr, px, % and auto tracks, each child in its cell);
+block flow becomes a column with the measured spacing, side-by-side children a
+row. Only what none of these can reproduce keeps its position, and every such
+fallback (positioned, or a flex/grid mapped to a measured row or column, e.g.
+`space-around` or `row-reverse`) is listed in the report (`layout.fallbacks`,
+issues `layout-positioned` / `layout-measured`). Texts grow: auto-height, or
+auto-width for one-line labels, boxed by their CSS line boxes so Penpot's own
+re-measure lands where the browser did. Penpot breaks lines like CSS
+`white-space: break-spaces` (the space at a line's end takes room; the browser
+drops it), so each wrapping text gets a width between the one where a line's
+last word would drop and the one where the next line's first word would come
+up, from per-line facts the extractor measures; a text no width can reproduce is
+listed in `layout.notes`. Grid `fr` tracks below 1 are scaled so the smallest is
+1fr (Penpot shares free space by max(1, fr)), keeping CSS's ratios. Boards hug
+their content, so a longer text grows its card and pushes everything after it; Penpot passes growth up
+only through boards that hug, so in a row of stretched cards the tallest hugs
+and the others fill (they stretch with it); a shorter card that grows past the
+row does not grow the row (a Penpot 2.18.1 limit). A page board has a fixed
+width and hugs its height: typing a new width reflows the page. Penpot has no
+media queries and no viewport units, so each width's board keeps the layout and
+sizes the browser used at that width: a board narrowed past one of the page's
+breakpoints keeps its own layout (the 390 and 768 boards carry the others), and
+type or spacing set with `vw` (`clamp(3rem, 8vw, 8rem)`) keeps its captured
+size. Sizes written as a share of the parent (`max-width: calc((100% - 128px) / 3)`)
+keep today's pixels too, since Penpot sizes boards in pixels (grid tracks are the
+only percentages), so such a box does not narrow with its parent. Centred
+containers (`width: min(100% - 48px, 1200px)`) fill up to their cap with the
+gutter as margins; a block held at its `max-width` (in a flex row, a column or
+a grid cell) fills up to it, so a narrower parent narrows it; a one-line text
+with room to spare in a row fills up to today's width and wraps when the row
+narrows, as CSS does (one word or `white-space: nowrap` keeps growing
+sideways). Boxes sized by their content do the same: a `dd` around its words
+in a row with room to spare, a width-auto box in a flex column that doesn't
+stretch it, and a grid item at the start of a wider column fill up to
+today's width, and their words wrap inside them. `align-items: baseline` keeps
+each item's offset from its line's top as a margin. Layers that keep their
+position (borders, focus rings, badges, positioned children, and the layers of
+a board with nothing to lay out, such as a dotted leader drawn by its border)
+get Penpot constraints from where they sit, so a top border keeps spanning its
+board, a corner badge keeps its corner, a badge hung past the right edge
+(`right: -116px`) keeps to that edge and a centred one stays centred when the
+board is resized; a box that fills up to its width keeps the room its design
+leaves after it for such a badge, as a right margin. Glyphs
+that overflow a tight line-height never become margins (the text box is its
+line boxes, as in CSS); the whole pixels Penpot adds to a text's box come out
+of its margins, so a board that hugs a row of labels is as wide as in the
+browser; and the planner models Penpot's rule that a filling board never
+shrinks below its content. Elements with `:hover` /
+`:focus-visible` rules become Penpot variant sets (property `State`: Default, Hover, Focus) and their instances link to the
+Default variant; component copies link to their main by place in the tree and
+mark layout differences as overrides. Verify also checks that layouts, text
+growth and variants come back from the server as sent.
+
 Verify reopens the saved file and checks every layer, text, colour, typography,
 component and instance; exports PNG and SVG from Penpot itself (SVG with its
 fonts and images embedded, same host only); and compares each width's Penpot PNG
@@ -396,8 +456,11 @@ differing by more than 48 (with a 1 px shift allowed) at most 2.0% overall,
 1.0% outside text and 12.0% inside text boxes (anti-aliasing and font
 hinting differ there); and in 32 px tiles at most 20% differing and a mean
 difference of at most 40, so a single lost card cannot hide in a page-wide
-average. Approximations (inset shadows other than rings, dash lengths, some
-background positions) are listed as issues, never hidden.
+average. Borders on some sides only become thin rectangles snapped to whole
+pixels, as the browser paints them (a hairline between two pixel rows would
+smear). Approximations (inset shadows other than rings, dash lengths, a dotted
+or dashed side drawn solid (`border-style-approximated`), some background
+positions) are listed as issues, never hidden.
 
 Fixture pages: `configs/design/testpages/html-fixtures/` (atlas, pulse, harbor;
 vendored OFL fonts). `design_homepage_v2_fixture` runs the whole flow with
@@ -466,8 +529,13 @@ art director must say for each concept how it uses the taste file (`taste_use`,
 citing entries T1, T2 ... once there are any); the contact sheet shows it.
 
 Tests: `tests/test_design_homepage_v2.py` (recorded scenes in
-`tests/design_homepage_v2_scenes/`, fake Penpot) and
-`tests/test_design_runtime_checks.py` (recorded browser results in
+`tests/design_homepage_v2_scenes/`, fake Penpot), `tests/test_penpot_layout.py`
+(hand-made scenes: flex, wrap, grid, cards, fallbacks, variants, text line
+boxes, constraints, baseline rows, max-width blocks, boxes fitted to their
+content, texts that rewrap) and `tests/test_design_runtime_checks.py`
+(recorded browser results in
 `tests/design_runtime_scenes/`). Live converter proofs, editor
 checks, fixture and paid runs: `/home/shinelay/design-lab/results/homepage-v2/` on spark;
-v2.1 proofs in `/home/shinelay/design-lab/results/homepage-v2.1/`.
+v2.1 proofs in `/home/shinelay/design-lab/results/homepage-v2.1/`; reflow proofs
+(text and width edits in the real editor) in
+`/home/shinelay/design-lab/results/penpot-reflow/`.

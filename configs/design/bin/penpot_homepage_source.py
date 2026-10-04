@@ -182,8 +182,9 @@ def mark_instance(obj, component_id, file_id, main_id):
 
 
 def kebab(value):
+    """Penpot's JSON keys back to its own names: layoutItemHSizing -> layout-item-h-sizing."""
     if isinstance(value, dict):
-        return {re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", str(k)).lower(): kebab(v)
+        return {re.sub(r"([A-Z])([A-Z][a-z])", r"\1-\2", re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", str(k))).lower(): kebab(v)
                 for k, v in value.items()}
     if isinstance(value, list):
         return [kebab(v) for v in value]

@@ -37,6 +37,9 @@
   const box = (r) => ({x: r2(r.left + sx), y: r2(r.top + sy), w: r2(r.width), h: r2(r.height)});
   const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
   const short = (s, n) => { s = clean(s); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; };
+  // HTML white space only (CSS collapses these); a no-break space is kept like a letter
+  const SPACE = /[ \t\n\r\f]/;
+  const trimSpace = (s) => s.replace(/^[ \t\n\r\f]+|[ \t\n\r\f]+$/g, '');
 
   // ---------- colours ----------
   const parseColor = (v) => {
@@ -301,12 +304,24 @@
       const b = borders[0];
       strokes = [{color: b.color.color, opacity: b.color.opacity, width: b.width, align: 'inner',
         style: b.style === 'dashed' ? 'dashed' : b.style === 'dotted' ? 'dotted' : 'solid'}];
+      if (!['solid', 'dashed', 'dotted'].includes(b.style)) issue('border-style-approximated', el, b.style + ' border drawn solid');
     } else if (borders.length) {
       sideRects = borders.map((b) => ({side: b.side, width: b.width, color: b.color.color, opacity: b.color.opacity}));
       if (radius.some((x) => x > 0)) issue('border-sides-approximated', el, 'unequal borders on a rounded box');
+      // A side is a plain rectangle: a dotted or dashed side (a dotted leader) comes out as a solid line.
+      const styled = borders.filter((b) => b.style !== 'solid');
+      if (styled.length) issue('border-style-approximated', el, styled.map((b) => b.side + ' ' + b.style).join(', ') + ' drawn solid');
     }
-    const visible = fills.length > 0 || strokes.length > 0 || sideRects.length > 0 || shadows.length > 0;
-    return {fills, strokes, sideRects, shadows, radius, visible};
+    // An outline (focus rings) is drawn as its own layer outside the box.
+    let outline = null;
+    const ow = parseFloat(cs.outlineWidth) || 0;
+    if (cs.outlineStyle && cs.outlineStyle !== 'none' && ow > 0) {
+      const oc = parseColor(cs.outlineColor);
+      if (visibleColor(oc)) outline = {width: ow, offset: parseFloat(cs.outlineOffset) || 0, color: oc.color, opacity: oc.opacity,
+        style: cs.outlineStyle === 'dashed' ? 'dashed' : cs.outlineStyle === 'dotted' ? 'dotted' : 'solid'};
+    }
+    const visible = fills.length > 0 || strokes.length > 0 || sideRects.length > 0 || shadows.length > 0 || !!outline;
+    return {fills, strokes, sideRects, shadows, radius, visible, outline};
   };
 
   // ---------- naming ----------
@@ -523,6 +538,8 @@
     const tag = node.tagName.toLowerCase();
     if (tag === 'br') return true;
     if (tag === 'img' || tag === 'svg' || tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'video' || tag === 'canvas' || tag === 'iframe') return false;
+    // A component is always its own layer, never folded into a text run.
+    if (node.dataset && node.dataset.component !== undefined) return false;
     const cs = getComputedStyle(node);
     if (!INLINE.has(cs.display) || cs.position === 'absolute' || cs.position === 'fixed' || cs.cssFloat !== 'none') return false;
     // An inline element that holds block-level content is walked like a block.
@@ -547,6 +564,21 @@
   };
   const sameStyle = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const range = document.createRange();
+  // The width of one space in an element's font (letter and word spacing included): the browser
+  // drops the space at a soft line break, Penpot keeps it at the line's end (see text.wrap).
+  const spaceWidths = new Map();
+  const spaceWidth = (el) => {
+    if (!el) return 0;
+    if (!spaceWidths.has(el)) {
+      const probe = document.createElement('span');
+      probe.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;white-space:pre;margin:0;padding:0;border:0';
+      probe.textContent = ' ';
+      el.appendChild(probe);
+      spaceWidths.set(el, probe.getBoundingClientRect().width);
+      probe.remove();
+    }
+    return spaceWidths.get(el);
+  };
 
   // Turn one run of inline content into a text node, in DOM order, keeping the browser's line boxes.
   const emitRun = (nodes, block, out) => {
@@ -558,13 +590,25 @@
     let lastWasSpace = true;
     let anyText = false;
     let plain = '';
+    let brk = null;             // what ended the line so far: 'space', 'end' (paragraph) or none
+    let spaceEl = null;         // the element of the last space seen
     const pushChar = (ch, leafRef, rc) => {
       const top = rc.top + sy, bottom = rc.bottom + sy, left = rc.left + sx, right = rc.right + sx;
       const cyy = (top + bottom) / 2;
       const wrapped = cur && (cyy > cur.bottom || (left < prevRight - 1 && top > prevTop + (bottom - top) * 0.3));
       if (!cur || wrapped) {
+        if (cur) { cur.k = brk || 'char'; cur.spEl = spaceEl; }
         cur = {top, bottom, frags: []};
         lines.push(cur);
+      }
+      // where the line's ink ends and its first word, for the width at which Penpot breaks it the same
+      if (ch === ' ') {
+        if (cur.inkR !== undefined && cur.fsp === undefined) cur.fsp = right - left;
+      } else {
+        if (cur.inkL === undefined) { cur.inkL = left; cur.inkR = right; cur.fwL = left; }
+        cur.inkL = Math.min(cur.inkL, left); cur.inkR = Math.max(cur.inkR, right);
+        if (cur.fsp === undefined) cur.fwR = Math.max(cur.fwR === undefined ? right : cur.fwR, right);
+        brk = null;
       }
       cur.top = Math.min(cur.top, top); cur.bottom = Math.max(cur.bottom, bottom);
       let f = cur.frags[cur.frags.length - 1];
@@ -593,7 +637,11 @@
           range.setStart(node, i); range.setEnd(node, i + 1);
           const rects = range.getClientRects();
           const rc = rects.length ? rects[rects.length - 1] : null;
-          const isWs = /\s/.test(ch);
+          const isWs = SPACE.test(ch);  // a no-break space is a character with a width, not white space
+          if (isWs) {
+            if (pre && ch === '\n') brk = 'end';
+            else if (brk !== 'end') { brk = 'space'; spaceEl = parent; }
+          }
           if (isWs && !pre) {
             // Collapsed white space still separates words in the live text (soft wraps
             // included); only a space with a visible box joins a line fragment.
@@ -616,14 +664,14 @@
       }
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const tag = node.tagName.toLowerCase();
-      if (tag === 'br') { paragraphs.push([]); lastWasSpace = true; plain += ' '; return; }
+      if (tag === 'br') { paragraphs.push([]); lastWasSpace = true; plain += ' '; brk = 'end'; return; }
       const cs = getComputedStyle(node);
       if (cs.display === 'none' || cs.visibility === 'hidden') return;
       const dec = decoration(node, cs, node.getBoundingClientRect());
       if (dec.visible) {
         for (const rc of node.getClientRects()) {
           decor.push({kind: 'rect', name: nameOf(node) + ' (inline box)', box: box(rc), fills: dec.fills, strokes: dec.strokes,
-            radius: dec.radius, shadows: dec.shadows, opacity: 1});
+            radius: dec.radius, shadows: dec.shadows, opacity: 1, deco: 'under', z: 0});
         }
       }
       for (const c of node.childNodes) visit(c);
@@ -632,9 +680,9 @@
     if (!anyText) return;
     // Trim trailing spaces of each paragraph's last leaf; drop empty leaves/paragraphs at the ends.
     for (const para of paragraphs) {
-      while (para.length && !para[para.length - 1].text.trim()) para.pop();
-      if (para.length) para[para.length - 1].text = para[para.length - 1].text.replace(/\s+$/, '');
-      if (para.length) para[0].text = para[0].text.replace(/^\s+/, '');
+      while (para.length && !trimSpace(para[para.length - 1].text)) para.pop();
+      if (para.length) para[para.length - 1].text = para[para.length - 1].text.replace(/[ \t\n\r\f]+$/, '');
+      if (para.length) para[0].text = para[0].text.replace(/^[ \t\n\r\f]+/, '');
     }
     while (paragraphs.length && !paragraphs[paragraphs.length - 1].length) paragraphs.pop();
     while (paragraphs.length && !paragraphs[0].length) paragraphs.shift();
@@ -654,8 +702,13 @@
     const half = Math.max(0, (lineBox - (lines[0].bottom - lines[0].top)) / 2);
     const minLeft = Math.min(...lines.flatMap((l) => l.frags.map((f) => f.left)));
     const maxRight = Math.max(...lines.flatMap((l) => l.frags.map((f) => f.right)));
-    const x = Math.min(contentLeft, minLeft);
-    const right = Math.max(contentRight, maxRight);
+    // Text straight inside a flex/grid box is an anonymous item: its box is the text itself.
+    const anon = /flex|grid/.test(bcs.display);
+    const x = anon ? minLeft : Math.min(contentLeft, minLeft);
+    const right = anon ? maxRight : Math.max(contentRight, maxRight);
+    // How the Penpot text should grow when edited: one shrink-wrapped line grows in width, the rest in height.
+    const nowrap = /^(nowrap|pre)$/.test(bcs.whiteSpace);
+    const fit = lines.length === 1 && (anon || nowrap || Math.abs((contentRight - contentLeft) - (maxRight - minLeft)) < 1.5) ? 'width' : 'height';
     const top = lines[0].top - half;
     const lastHalf = Math.max(0, (lineBox - (lines[lines.length - 1].bottom - lines[lines.length - 1].top)) / 2);
     const bottom = lines[lines.length - 1].bottom + lastHalf;
@@ -670,18 +723,26 @@
         const idx = leafIndex.get(f.leaf);
         if (!idx) continue;
         const text = f.text;
-        if (!text.trim()) continue;
+        if (!trimSpace(text)) continue;
         frags.push({p: idx[0], l: idx[1], x: r2(f.left), y: r2(f.bottom), w: r2(f.right - f.left), h: r2(f.bottom - f.top), text});
       }
     }
+    // Per line: ink width, what ended it, the space there, and its first word with the space after
+    // it; the planner picks a box width at which Penpot's breaks match the browser's.
+    const wrap = lines.map((l, i) => {
+      const k = i === lines.length - 1 ? 'end' : (l.k || 'char');
+      return {w: l.inkR === undefined ? 0 : r2(l.inkR - l.inkL), k, sp: k === 'space' ? r2(spaceWidth(l.spEl)) : 0,
+        fw: l.fwR === undefined ? null : r2(l.fwR - l.fwL), fsp: l.fsp === undefined ? null : r2(l.fsp)};
+    });
     for (const d of decor) out.push(d);
     const label = short(paragraphs.map((p) => p.map((l) => l.text).join('')).join(' '), 40);
     const tag = block.tagName.toLowerCase();
     const role = /^h[1-6]$/.test(tag) ? tag.toUpperCase() : (tag === 'a' || tag === 'button' ? titleCase(tag) : 'Text');
     out.push({kind: 'text', name: (block.dataset && block.dataset.name && block.childElementCount === 0 ? block.dataset.name : role + ' — ' + label),
+      fit, z: 0, item: anon ? {anon: true, pos: 'static', grow: 0, alignSelf: 'auto', justifySelf: 'auto', margin: [0, 0, 0, 0]} : undefined,
       box: {x: r2(x), y: r2(top), w: r2(right - x), h: r2(bottom - top)},
       text: {align, lineHeight: r2(lineBox), paragraphs: paragraphs.map((para) => para.map((leaf) => ({text: leaf.text, style: leaf.style}))), lines: frags,
-        plain: clean(plain)}});
+        wrap, plain: clean(plain), ...(nowrap ? {nowrap: true} : {})}});
     stats.texts += 1;
     void firstSize;
   };
@@ -711,10 +772,92 @@
   };
   const textContentOnlyWhitespace = (nodes) => nodes.every((n) => n.nodeType !== Node.TEXT_NODE || !n.data.trim());
 
-  const processChildren = (el, out) => {
-    const kids = [...el.childNodes];
-    // Paint order: negative z-index, in-flow, positioned, positive z-index (stable).
-    const ordered = kids.map((n, i) => ({n, i, k: paintKey(n)})).sort((a, b) => a.k - b.k || a.i - b.i).map((x) => x.n);
+  // ---------- layout facts (for Penpot flex and grid layouts) ----------
+  const pxOrNull = (v) => (v && /px$/.test(v)) ? r2(parseFloat(v)) : null;
+  const gapPx = (v) => (v && v !== 'normal') ? r2(parseFloat(v) || 0) : 0;
+  const tracks = (v) => (v && v !== 'none') ? v.split(/\s+/).filter((t) => /^-?[\d.]+px$/.test(t)).map((t) => r2(parseFloat(t))) : [];
+  // The author's own value of a property (crude cascade: inline style, then the most specific, latest matching rule).
+  let ruleList = null;
+  const allRules = () => {
+    if (ruleList) return ruleList;
+    ruleList = [];
+    const visit = (list) => {
+      for (const rule of list) {
+        if (rule.media && rule.cssRules) { if (window.matchMedia(rule.media.mediaText).matches) visit(rule.cssRules); continue; }
+        if (rule.cssRules && !rule.selectorText) { visit(rule.cssRules); continue; }
+        if (rule.selectorText && rule.style) ruleList.push(rule);
+      }
+    };
+    for (const sheet of document.styleSheets) { let rules; try { rules = sheet.cssRules; } catch (e) { continue; } visit(rules); }
+    return ruleList;
+  };
+  const specificity = (sel) => {
+    const ids = (sel.match(/#[\w-]+/g) || []).length;
+    const cls = (sel.match(/\.[\w-]+|\[[^\]]*\]|:(?!:)[\w-]+/g) || []).length;
+    const tags = (sel.replace(/#[\w-]+|\.[\w-]+|\[[^\]]*\]|::?[\w-]+(\([^)]*\))?/g, ' ').match(/[a-zA-Z][\w-]*/g) || []).length;
+    return ids * 10000 + cls * 100 + tags;
+  };
+  const specified = (el, prop) => {
+    const inline = el.style && el.style.getPropertyValue(prop);
+    if (inline) return inline.trim();
+    let best = null, bestSpec = -1;
+    for (const rule of allRules()) {
+      const v = rule.style.getPropertyValue(prop);
+      if (!v) continue;
+      for (const sel of splitTop(rule.selectorText)) {
+        let ok = false;
+        try { ok = el.matches(sel); } catch (e) { ok = false; }
+        if (ok) { const s = specificity(sel); if (s >= bestSpec) { best = v.trim(); bestSpec = s; } }
+      }
+    }
+    return best;
+  };
+  const layoutOf = (el, cs) => {
+    const d = cs.display;
+    const side = (s) => (parseFloat(cs['padding' + s]) || 0) + (parseFloat(cs['border' + s + 'Width']) || 0);
+    const L = {display: d, pad: ['Top', 'Right', 'Bottom', 'Left'].map((s) => r2(side(s))), textAlign: cs.textAlign};
+    if (/flex/.test(d)) {
+      Object.assign(L, {dir: cs.flexDirection, wrap: cs.flexWrap, gap: [gapPx(cs.rowGap), gapPx(cs.columnGap)],
+        justify: cs.justifyContent, alignItems: cs.alignItems, alignContent: cs.alignContent});
+    } else if (/grid/.test(d)) {
+      Object.assign(L, {gap: [gapPx(cs.rowGap), gapPx(cs.columnGap)], justify: cs.justifyContent, alignItems: cs.alignItems,
+        alignContent: cs.alignContent, justifyItems: cs.justifyItems, cols: tracks(cs.gridTemplateColumns), rows: tracks(cs.gridTemplateRows),
+        colsSpec: specified(el, 'grid-template-columns'), rowsSpec: specified(el, 'grid-template-rows'),
+        autoRows: cs.gridAutoRows, autoCols: cs.gridAutoColumns, flow: cs.gridAutoFlow});
+    }
+    return L;
+  };
+  // How this element sits in its parent's layout. Flex and grid items also get their natural size
+  // (what they measure when not stretched), so stretched items can become "fill" in Penpot.
+  const itemOf = (el, cs, pcs) => {
+    const it = {pos: cs.position, grow: parseFloat(cs.flexGrow) || 0, shrink: parseFloat(cs.flexShrink), basis: cs.flexBasis,
+      alignSelf: cs.alignSelf, justifySelf: cs.justifySelf,
+      margin: [cs.marginTop, cs.marginRight, cs.marginBottom, cs.marginLeft].map((v) => r2(parseFloat(v) || 0)),
+      minW: pxOrNull(cs.minWidth), maxW: pxOrNull(cs.maxWidth), minH: pxOrNull(cs.minHeight), maxH: pxOrNull(cs.maxHeight),
+      float: cs.cssFloat !== 'none',
+      offset: cs.position === 'relative' && ['top', 'right', 'bottom', 'left'].some((k) => cs[k] !== 'auto' && parseFloat(cs[k]) !== 0)};
+    // A centred block's own width rule (e.g. min(100% - 48px, 1200px)) tells whether it follows its parent.
+    if (!/absolute|fixed/.test(cs.position) && cs.marginLeft === cs.marginRight && parseFloat(cs.marginLeft) > 0.5) {
+      it.wspec = specified(el, 'width');
+    }
+    if (pcs && /flex|grid/.test(pcs.display) && !/absolute|fixed/.test(cs.position)) {
+      const saved = el.getAttribute('style');
+      el.style.setProperty('align-self', 'start', 'important');
+      if (/grid/.test(pcs.display)) el.style.setProperty('justify-self', 'start', 'important');
+      const r = el.getBoundingClientRect();
+      if (saved === null) el.removeAttribute('style'); else el.setAttribute('style', saved);
+      it.nat = {w: r2(r.width), h: r2(r.height)};
+    }
+    return it;
+  };
+  const sameBox = (a, b) => Math.abs(a.x - b.x) <= 0.5 && Math.abs(a.y - b.y) <= 0.5 && Math.abs(a.w - b.w) <= 0.5 && Math.abs(a.h - b.h) <= 0.5;
+  const compEls = [];
+  let registering = true;
+
+  const processChildren = (el, out, cs) => {
+    cs = cs || getComputedStyle(el);
+    // Children stay in DOM order (the layout order); each node carries its paint order in z.
+    const ordered = [...el.childNodes];
     let run = [];
     const flush = () => {
       if (run.length && !textContentOnlyWhitespace(run.filter((n) => n.nodeType === Node.TEXT_NODE)) || run.some((n) => n.nodeType === Node.ELEMENT_NODE && n.tagName.toLowerCase() !== 'br' && clean(n.textContent))) {
@@ -727,16 +870,17 @@
       if (n.nodeType === Node.TEXT_NODE || (n.nodeType === Node.ELEMENT_NODE && isInlineLevel(n))) { run.push(n); continue; }
       if (n.nodeType !== Node.ELEMENT_NODE) continue;
       flush();
-      walk(n, out);
+      walk(n, out, cs);
     }
     flush();
   };
 
-  const walk = (el, out) => {
+  const walk = (el, out, pcs) => {
     const tag = el.tagName.toLowerCase();
     if (SKIP.has(tag)) return;
     const cs = getComputedStyle(el);
     if (cs.display === 'none') return;
+    if (cs.display === 'contents') { processChildren(el, out, pcs); return; }
     stats.elements += 1;
     if (cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) {
       if (el.querySelector('*') && cs.visibility === 'hidden') issue('hidden-subtree-skipped', el, 'visibility:hidden');
@@ -754,7 +898,13 @@
     if (cs.mixBlendMode && cs.mixBlendMode !== 'normal') issue('blend-mode-ignored', el, cs.mixBlendMode);
     if (cs.backdropFilter && cs.backdropFilter !== 'none') issue('backdrop-filter-ignored', el, cs.backdropFilter);
     const rect = el.getBoundingClientRect();
-    if (tag === 'svg') { emitSvg(el, out); return; }
+    const z = paintKey(el);
+    const tagged = (nodes) => {
+      const it = itemOf(el, cs, pcs);
+      for (const n of nodes) { n.z = z; n.item = it; n.ibox = box(rect); }
+      return nodes;
+    };
+    if (tag === 'svg') { const tmp = []; emitSvg(el, tmp); out.push(...tagged(tmp)); return; }
     if (tag === 'img' || tag === 'picture') {
       const img = tag === 'img' ? el : el.querySelector('img');
       if (!img) return;
@@ -763,17 +913,17 @@
       const ics = getComputedStyle(img);
       const fit = ics.objectFit === 'cover' ? 'cover' : ics.objectFit === 'contain' ? 'contain' : 'fill';
       if (fit === 'contain') issue('object-fit-contain-approximated', img, '');
-      out.push({kind: 'rect', name: 'Image / ' + short(img.alt || img.getAttribute('src') || 'image', 40), box: box(r),
+      out.push(...tagged([{kind: 'rect', name: 'Image / ' + short(img.alt || img.getAttribute('src') || 'image', 40), box: box(r),
         fills: [{type: 'image', src: img.currentSrc || img.src, fit, natural: [img.naturalWidth, img.naturalHeight]}],
-        strokes: [], radius: radiiOf(ics, r), shadows: shadowsOf(ics, img), opacity: parseFloat(ics.opacity) || 1});
+        strokes: [], radius: radiiOf(ics, r), shadows: shadowsOf(ics, img), opacity: parseFloat(ics.opacity) || 1}]));
       stats.images += 1;
       return;
     }
     if (tag === 'video' || tag === 'canvas' || tag === 'iframe') { issue('media-unsupported', el, tag); return; }
     if (tag === 'input' || tag === 'textarea' || tag === 'select') {
       const dec = decoration(el, cs, rect);
-      out.push({kind: 'board', name: nameOf(el), box: box(rect), fills: dec.fills, strokes: dec.strokes, radius: dec.radius,
-        shadows: dec.shadows, opacity: parseFloat(cs.opacity) || 1, clip: true, children: [], formControl: tag});
+      out.push(...tagged([{kind: 'board', name: nameOf(el), box: box(rect), fills: dec.fills, strokes: dec.strokes, radius: dec.radius,
+        shadows: dec.shadows, opacity: parseFloat(cs.opacity) || 1, clip: true, children: [], formControl: tag}]));
       issue('form-control-text-not-carried', el, 'value/placeholder not converted');
       stats.boards += 1;
       return;
@@ -781,37 +931,49 @@
     const section = isSectionEl(el);
     const component = el.dataset ? el.dataset.component || null : null;
     const dec = decoration(el, cs, rect);
-    const layout = /flex|grid/.test(cs.display);
     const named = el.dataset && el.dataset.name;
-    const visibleKids = [...el.children].filter((c) => getComputedStyle(c).display !== 'none').length;
-    let node = null;
     const opacity = parseFloat(cs.opacity);
-    if (section || component || dec.visible || (layout && named)) {
-      node = {kind: 'board', name: nameOf(el, section ? 'section' : 'element'), box: box(rect), fills: dec.fills, strokes: dec.strokes,
-        radius: dec.radius, shadows: dec.shadows, opacity: Number.isFinite(opacity) ? opacity : 1,
-        clip: cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible' || false,
-        section, component, layout: layout ? {display: cs.display, direction: cs.flexDirection, gap: cs.gap, justify: cs.justifyContent, align: cs.alignItems,
-          padding: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft]} : null, tag, children: []};
-      for (const s of dec.sideRects) {
-        const b = box(rect);
-        const sr = s.side === 'top' ? {x: b.x, y: b.y, w: b.w, h: s.width} : s.side === 'bottom' ? {x: b.x, y: b.y + b.h - s.width, w: b.w, h: s.width}
-          : s.side === 'left' ? {x: b.x, y: b.y, w: s.width, h: b.h} : {x: b.x + b.w - s.width, y: b.y, w: s.width, h: b.h};
-        node.borderSides = node.borderSides || [];
-        node.borderSides.push({kind: 'rect', name: 'Border / ' + s.side, box: sr, fills: [{type: 'color', color: s.color, opacity: s.opacity}], strokes: [], radius: [0, 0, 0, 0], shadows: [], opacity: 1});
+    const kids = [];
+    processChildren(el, kids, cs);
+    const own = section || component || dec.visible || named || opacity < 1;
+    const b = box(rect);
+    if (!own) {
+      if (!kids.length) return;  // empty spacers: the layout margins keep their space
+      // A plain wrapper around exactly one layer of the same size adds nothing: the layer takes its
+      // place (and its place in the parent's layout).
+      if (kids.length === 1 && !kids[0].deco && sameBox(kids[0].box, b)) {
+        const k = kids[0];
+        k.item = itemOf(el, cs, pcs);
+        k.ibox = b;
+        if (k.z === undefined || z !== 0) k.z = z;
+        out.push(k);
+        return;
       }
-      stats.boards += 1;
-    } else if (named || (layout && visibleKids >= 2) || (opacity < 1)) {
-      node = {kind: 'group', name: nameOf(el), opacity: Number.isFinite(opacity) ? opacity : 1, tag, children: []};
-      stats.groups += 1;
     }
-    const target = node ? node.children : out;
-    processChildren(el, target);
-    if (node && node.borderSides) { node.children.push(...node.borderSides); delete node.borderSides; }
-    if (node) {
-      if (node.kind === 'group' && !node.children.length) return;
-      if (node.kind === 'group' && node.children.length === 1 && !named && node.opacity === 1) { out.push(node.children[0]); return; }
-      out.push(node);
+    // Every other element with content is a board, so its layout (flex, grid, block flow) can be carried.
+    const node = {kind: 'board', name: nameOf(el, section ? 'section' : 'element'), box: b, fills: dec.fills, strokes: dec.strokes,
+      radius: dec.radius, shadows: dec.shadows, opacity: Number.isFinite(opacity) ? opacity : 1,
+      clip: cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible' || false,
+      section, component, layout: layoutOf(el, cs), item: itemOf(el, cs, pcs), z, tag, children: kids};
+    if (!own) node.wrapper = true;
+    // The browser paints borders on whole pixels (it snaps the border box's edges to the pixel
+    // grid); Penpot draws a layer where it is put, so a hairline at y 247.56 would smear over two rows.
+    const L = Math.round(b.x), T = Math.round(b.y), R = Math.round(b.x + b.w), B = Math.round(b.y + b.h);
+    for (const s of dec.sideRects) {
+      const sr = s.side === 'top' ? {x: L, y: T, w: R - L, h: s.width} : s.side === 'bottom' ? {x: L, y: B - s.width, w: R - L, h: s.width}
+        : s.side === 'left' ? {x: L, y: T, w: s.width, h: B - T} : {x: R - s.width, y: T, w: s.width, h: B - T};
+      kids.push({kind: 'rect', name: 'Border / ' + s.side, box: sr, fills: [{type: 'color', color: s.color, opacity: s.opacity}], strokes: [],
+        radius: [0, 0, 0, 0], shadows: [], opacity: 1, deco: 'over', z: 0});
     }
+    if (dec.outline) {
+      const o = dec.outline, g = o.offset + o.width;
+      kids.push({kind: 'rect', name: 'Focus ring', box: {x: r2(b.x - g), y: r2(b.y - g), w: r2(b.w + 2 * g), h: r2(b.h + 2 * g)}, fills: [],
+        strokes: [{color: o.color, opacity: o.opacity, width: o.width, align: 'inner', style: o.style}],
+        radius: dec.radius.map((r) => (r > 0 ? r2(r + g) : 0)), shadows: [], opacity: 1, deco: 'over', z: 0});
+    }
+    stats.boards += 1;
+    if (component && registering) compEls.push([el, node]);
+    out.push(node);
   };
 
   const body = document.body;
@@ -823,9 +985,63 @@
   const bodyDec = decoration(body, bodyCs, body.getBoundingClientRect());
   for (const f of bodyDec.fills) if (f.type !== 'color') pageFills.push(f);
   const nodes = [];
-  processChildren(body, nodes);
-  return {version: 1, url: location.href, title: document.title, width: W, height: H,
+  processChildren(body, nodes, bodyCs);
+
+  // ---------- component states (hover, focus) -> Penpot variants ----------
+  // State rules are copied with the pseudo-class swapped for a class, so each state can be switched
+  // on, read like the default and compared with it. Only states that change something are kept.
+  if (opts.states && compEls.length) {
+    const rewritten = [];
+    const rewrite = (sel) => sel.replace(/:hover\b/g, '.__pp-hover').replace(/:focus-visible\b/g, '.__pp-focus').replace(/:focus\b(?!-)/g, '.__pp-focus');
+    const visitRules = (list, wrap) => {
+      for (const rule of list) {
+        if (rule.media && rule.cssRules) { const m = rule.media.mediaText; visitRules(rule.cssRules, (t) => wrap('@media ' + m + '{' + t + '}')); continue; }
+        if (rule.cssRules && !rule.selectorText) { visitRules(rule.cssRules, wrap); continue; }
+        if (rule.selectorText && rule.style && /:(hover|focus)/.test(rule.selectorText)) rewritten.push(wrap(rewrite(rule.selectorText) + '{' + rule.style.cssText + '}'));
+      }
+    };
+    for (const sheet of document.styleSheets) { let rules; try { rules = sheet.cssRules; } catch (e) { continue; } visitRules(rules, (t) => t); }
+    if (rewritten.length) {
+      const still = document.createElement('style');
+      still.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}';
+      document.head.appendChild(still);
+      const st = document.createElement('style');
+      document.head.appendChild(st);
+      const savedIssues = issues.length, savedStats = Object.assign({}, stats);
+      registering = false;
+      const FOCUSABLE = 'a[href],button,input,select,textarea,[tabindex]';
+      const snap = (el) => { const tmp = []; walk(el, tmp, el.parentElement ? getComputedStyle(el.parentElement) : null); return tmp[0] || null; };
+      const key = (n) => JSON.stringify(n, (k, v) => (k === 'item' || k === 'ibox' ? undefined : v));
+      for (const [el, node] of compEls) {
+        st.textContent = '';
+        const base = snap(el);
+        st.textContent = rewritten.join('\n');
+        const variants = {};
+        const chain = [];
+        for (let a = el; a && a !== document.documentElement; a = a.parentElement) chain.push(a);
+        chain.forEach((a) => a.classList.add('__pp-hover'));
+        const hov = snap(el);
+        chain.forEach((a) => a.classList.remove('__pp-hover'));
+        if (hov && base && key(hov) !== key(base)) variants.Hover = hov;
+        const f = el.matches(FOCUSABLE) ? el : el.querySelector(FOCUSABLE);
+        if (f) {
+          f.classList.add('__pp-focus');
+          const foc = snap(el);
+          f.classList.remove('__pp-focus');
+          if (foc && base && key(foc) !== key(base)) variants.Focus = foc;
+        }
+        if (Object.keys(variants).length) node.states = variants;
+      }
+      st.remove();
+      still.remove();
+      registering = true;
+      issues.length = savedIssues;
+      Object.assign(stats, savedStats);
+    }
+  }
+  return {version: 2, url: location.href, title: document.title, width: W, height: H,
     viewport: [window.innerWidth, window.innerHeight], background: pageFills, vars,
+    body: {box: box(body.getBoundingClientRect()), layout: layoutOf(body, bodyCs)},
     fonts: fonts.filter((f) => usedFonts.has(f.family.toLowerCase() + '|' + f.weight + '|' + f.style)),
     fontsUsed: [...usedFonts.values()], nodes, issues, stats};
 }

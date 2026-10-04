@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import copy
 import functools
 import hashlib
 import http.server
@@ -40,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 import penpot_homepage_source as p
+import penpot_layout as pl
 
 HERE = Path(__file__).resolve().parent
 EXTRACTOR = HERE / "html_dom_extract.js"
@@ -62,6 +64,13 @@ FONT_MAGIC = {b"\x00\x01\x00\x00": ("font/ttf", "ttf"), b"true": ("font/ttf", "t
 LICENCE_NAMES = ("OFL.txt", "OFL", "LICENSE.txt", "LICENSE", "LICENCE.txt", "LICENCE", "UFL.txt")
 SYNC_GROUPS = ("geometry-group", "content-group", "fill-group", "stroke-group", "radius-group",
                "shadow-group", "layer-effects-group", "name-group")
+# Penpot's component sync groups for layout attributes (common/types/component.cljc); any other
+# layout attribute is its own group, named like the attribute.
+LAYOUT_GROUPS = {"layout": "layout-container", "layout-gap-type": "layout-gap", "layout-padding-type": "layout-padding",
+                 "layout-item-margin-type": "layout-item-margin"}
+# Penpot variants: a component's states as one property.
+STATE_PROPERTY = "State"
+VARIANT_PAD, VARIANT_GAP = 24.0, 24.0
 
 
 def now() -> str:
@@ -227,7 +236,8 @@ def capture_code(base: str, page: str, widths: tuple[int, ...]) -> str:
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     });
     await page.waitForTimeout(150);
-    const scene = await page.evaluate('(' + A.src + ')({})');
+    // Component states (hover, focus) are read once, at the widest width, for the Penpot variants.
+    const scene = await page.evaluate('(' + A.src + ')(' + JSON.stringify({states: w === Math.max(...A.widths)}) + ')');
     const shot = await page.screenshot({fullPage: true, animations: 'disabled', caret: 'hide', scale: 'css'});
     let r = await page.request.put(A.base + '/__put/browser-' + w + '.png', {data: shot, headers: {'content-type': 'application/octet-stream'}});
     if (!r.ok()) throw new Error('upload screenshot failed ' + r.status());
@@ -617,6 +627,10 @@ class Builder:
         self.instances: list[dict] = []
         self.boards: list[dict] = []
         self.plain: dict[str, str] = {}
+        self.made: dict[int, str] = {}       # id(scene node) -> its Penpot layer (grid cells name their layer)
+        self.paths: dict[str, tuple] = {}    # Penpot layer -> its path under its component root (links instances)
+        self.variants: list[dict] = []
+        self.all_mains: list[dict] = []      # every component main, variant states included
         self._segment: dict | None = None
         self._noted: set[tuple] = set()
 
@@ -630,11 +644,70 @@ class Builder:
         self._segment = {"label": label, "objects": [], "after": []}
         self.segments.append(self._segment)
 
-    def put(self, obj: dict) -> dict:
+    def put(self, obj: dict, n: dict | None = None, path: tuple = ()) -> dict:
         assert self._segment is not None
         self.objects.append(obj)
         self._segment["objects"].append(obj)
+        if n is not None:
+            self.made[id(n)] = obj["id"]
+        self.paths[obj["id"]] = path
         return obj
+
+    # -- layout (plans from penpot_layout, kept on the scene nodes as n["pp"])
+    def item(self, obj: dict, n: dict, root: bool = False) -> None:
+        """How a layer sits in its parent's layout; a root board (page, component main) hugs its content
+        on the axes where the browser's size equals its content."""
+        pp = n.get("pp") or {}
+        if not root and pp.get("item"):
+            obj.update(copy.deepcopy(pp["item"]))
+        elif root and pp.get("mode"):
+            hug = pp.get("hug") or [None, None]
+            obj["layout-item-h-sizing"] = "auto" if hug[0] is not None else "fix"
+            obj["layout-item-v-sizing"] = "auto" if hug[1] is not None else "fix"
+
+    def ordered(self, n: dict) -> list[tuple[int, dict]]:
+        """Children in the order they go into Penpot's :shapes, each with its scene index.
+
+        A positioned board paints :shapes first to last, so children go by paint order (z). A layout
+        board lays :shapes out last to first and, at equal z-index, paints lower indexes on top: its
+        flow children go in reverse flow order (later ones on top, as in CSS), after the layers drawn
+        over them (borders, focus rings, positioned children) and before the ones drawn under.
+        """
+        kids = list(enumerate(n.get("children", [])))
+        pp = n.get("pp") or {}
+        if not pp.get("mode"):
+            return sorted(kids, key=lambda ic: float(ic[1].get("z") or 0))
+        rank = {id(c): i for i, c in enumerate(pp.get("order") or [])}
+        flow = sorted((ic for ic in kids if id(ic[1]) in rank), key=lambda ic: rank[id(ic[1])])
+        under = [ic for ic in kids if id(ic[1]) not in rank and ic[1].get("deco") == "under"]
+        over = [ic for ic in kids if id(ic[1]) not in rank and ic[1].get("deco") != "under"]
+        return list(reversed(over)) + list(reversed(flow)) + under
+
+    def children(self, obj: dict, n: dict, dx: float, dy: float, in_component: bool, path: tuple) -> None:
+        for i, c in self.ordered(n):
+            self.node(c, obj["id"], obj["id"], dx, dy, in_component, path + (i,))
+        if (n.get("pp") or {}).get("mode") == "grid":
+            obj["layout-grid-cells"] = self.grid_cells(n)
+
+    def grid_cells(self, n: dict) -> dict:
+        """Penpot grid cells: every track crossing covered once; a cell holds at most one layer."""
+        cells: dict[str, dict] = {}
+        for cell in n["pp"].get("cells") or []:
+            child = cell["child"]
+            sid = self.made.get(id(child)) if child is not None else None
+            spans = [(cell["row"], cell["column"], cell["row-span"], cell["column-span"])]
+            if child is not None and sid is None:
+                self.note("grid-cell-empty", n.get("name", ""), "a grid child made no layer; its cell is left empty")
+                spans = [(cell["row"] + r, cell["column"] + c, 1, 1)
+                         for r in range(cell["row-span"]) for c in range(cell["column-span"])]
+            for row, col, rs, cs in spans:
+                cid = p.nid()
+                cells[cid] = {"id": cid, "row": row, "row-span": rs, "column": col, "column-span": cs,
+                              "position": "manual" if sid else "auto",
+                              "justify-self": cell["justify-self"] if sid else "auto",
+                              "align-self": cell["align-self"] if sid else "auto",
+                              "shapes": [sid] if sid else []}
+        return cells
 
     # -- paint
     def color_fill(self, color: str, opacity: float) -> dict:
@@ -727,27 +800,31 @@ class Builder:
             obj["opacity"] = round(float(n["opacity"]), 3)
 
     # -- nodes
-    def node(self, n: dict, parent: str, frame: str, dx: float, dy: float, in_component: bool = False) -> None:
+    def node(self, n: dict, parent: str, frame: str, dx: float, dy: float, in_component: bool = False,
+             path: tuple = (), plain: bool = False, root: bool = False) -> None:
+        """One scene node -> Penpot layers. plain: build a component's board itself (main or instance
+        copy); root: it heads a component main, outside any layout."""
         kind = n["kind"]
-        if kind == "board" and n.get("component") and not in_component:
+        if kind == "board" and n.get("component") and not in_component and not plain:
             self.component_instance(n, parent, frame, dx, dy)
             return
         if kind == "board":
             b = n["box"]
             if b["w"] < 0.5 or b["h"] < 0.5:
-                if n.get("children"):
-                    for c in n["children"]:
-                        self.node(c, parent, frame, dx, dy, in_component)
+                for i, c in enumerate(n.get("children", [])):
+                    self.node(c, parent, frame, dx, dy, in_component, path + (i,))
                 return
-            if n.get("component") and in_component:
+            if n.get("component") and in_component and not plain:
                 self.note("nested-component-flattened", n["name"], "a component inside a component stays a plain board")
             obj = p.shape("frame", n["name"], parent, frame, b["x"] + dx, b["y"] + dy, b["w"], b["h"],
                           self.fills(n.get("fills", []), n["name"]))
             obj["show-content"] = not n.get("clip", False)
             self.decorate(obj, n)
-            self.put(obj)
-            for c in n.get("children", []):
-                self.node(c, obj["id"], obj["id"], dx, dy, in_component)
+            if (n.get("pp") or {}).get("mode"):
+                obj.update(copy.deepcopy(n["pp"]["attrs"]))
+            self.item(obj, n, root)
+            self.put(obj, n, path)
+            self.children(obj, n, dx, dy, in_component, path)
             return
         if kind == "group":
             bb = bbox(n)
@@ -756,9 +833,10 @@ class Builder:
             obj = p.shape("group", n["name"], parent, frame, bb[0] + dx, bb[1] + dy, max(bb[2], 0.01), max(bb[3], 0.01), [])
             if n.get("opacity", 1) < 0.999:
                 obj["opacity"] = round(float(n["opacity"]), 3)
-            self.put(obj)
-            for c in n.get("children", []):
-                self.node(c, obj["id"], frame, dx, dy, in_component)
+            self.item(obj, n, root)
+            self.put(obj, n, path)
+            for i, c in enumerate(n.get("children", [])):
+                self.node(c, obj["id"], frame, dx, dy, in_component, path + (i,))
             return
         if kind == "rect":
             b = n["box"]
@@ -767,17 +845,18 @@ class Builder:
             obj = p.shape("rect", n["name"], parent, frame, b["x"] + dx, b["y"] + dy, b["w"], b["h"],
                           self.fills(n.get("fills", []), n["name"]))
             self.decorate(obj, n)
-            self.put(obj)
+            self.item(obj, n, root)
+            self.put(obj, n, path)
             return
         if kind == "path":
-            self.path(n, parent, frame, dx, dy)
+            self.path(n, parent, frame, dx, dy, path, root)
             return
         if kind == "text":
-            self.text(n, parent, frame, dx, dy)
+            self.text(n, parent, frame, dx, dy, path, root)
             return
         self.note("node-unsupported", n.get("name", kind), kind)
 
-    def path(self, n: dict, parent: str, frame: str, dx: float, dy: float) -> None:
+    def path(self, n: dict, parent: str, frame: str, dx: float, dy: float, path: tuple = (), root: bool = False) -> None:
         b = n["box"]
         obj = p.shape("path", n["name"], parent, frame, b["x"] + dx, b["y"] + dy, max(b["w"], 0.01), max(b["h"], 0.01),
                       self.fills(n.get("fills", []), n["name"]))
@@ -788,7 +867,8 @@ class Builder:
             obj["opacity"] = round(float(n["opacity"]), 3)
         for key in ("x", "y", "width", "height"):
             obj.pop(key, None)
-        self.put(obj)
+        self.item(obj, n, root)
+        self.put(obj, n, path)
 
     def leaf(self, st: dict, block_line_height: float) -> dict:
         font = self.fonts.resolve(st)
@@ -805,13 +885,18 @@ class Builder:
                 "fills": [self.color_fill(st["color"], st.get("opacity", 1))],
                 "typography-ref-id": typo["id"], "typography-ref-file": self.fid}
 
-    def text(self, n: dict, parent: str, frame: str, dx: float, dy: float) -> None:
+    def text(self, n: dict, parent: str, frame: str, dx: float, dy: float, path: tuple = (), root: bool = False) -> None:
         t, b = n["text"], n["box"]
         align = t.get("align", "left")
-        slack = 0 if align == "justify" else 2
-        x = b["x"] + dx - (slack / 2 if align == "center" else slack if align == "right" else 0)
-        y = b["y"] + dy
-        w, h = b["w"] + slack, max(b["h"], 1)
+        plan = n.get("pp") or {}
+        if plan.get("box"):  # planned by penpot_layout: grows with its words (auto height or auto width)
+            x, y, w, h = plan["box"]
+            x, y = x + dx, y + dy
+        else:
+            slack = 0 if align == "justify" else 2
+            x = b["x"] + dx - (slack / 2 if align == "center" else slack if align == "right" else 0)
+            y = b["y"] + dy
+            w, h = b["w"] + slack, max(b["h"], 1)
         paragraphs = []
         for para in t["paragraphs"]:
             kids = [{"text": leaf["text"], **self.leaf(leaf["style"], t.get("lineHeight") or 0)} for leaf in para]
@@ -826,7 +911,8 @@ class Builder:
             self.plain[obj["id"]] = t["plain"]
         obj["content"] = {"type": "root", "vertical-align": "top",
                           "children": [{"type": "paragraph-set", "children": paragraphs}]}
-        obj["grow-type"] = "fixed"
+        obj["grow-type"] = plan.get("grow") or "fixed"
+        self.item(obj, n, root)
         positions = []
         for frag in t.get("lines", []):
             try:
@@ -847,39 +933,77 @@ class Builder:
             obj["position-data"] = positions
         else:
             self.note("text-without-lines", n["name"], "no line boxes; Penpot lays it out itself")
-        self.put(obj)
+        self.put(obj, n, path)
 
     # -- components
-    def component_main(self, n: dict, x: float, y: float, name: str) -> dict:
+    def component_main(self, n: dict, x: float, y: float, name: str, container: dict | None = None,
+                       state: str | None = None) -> dict:
+        """A component's main at (x, y): on the canvas, or as one state of a variant container."""
         b = n["box"]
         start = len(self._segment["objects"]) if self._segment else 0
-        self.node({**n, "component": None}, p.ROOT, p.ROOT, x - b["x"], y - b["y"], in_component=True)
+        parent = container["id"] if container else p.ROOT
+        self.node(n, parent, parent, x - b["x"], y - b["y"], in_component=True, plain=True, root=True)
         assert self._segment is not None
         objs = self._segment["objects"][start:]
         cid = p.nid()
         p.mark_main(objs[0], cid, self.fid)
-        self._segment["after"].append({"type": "add-component", "id": cid, "name": name, "path": "Components",
-                                       "main-instance-id": objs[0]["id"], "main-instance-page": self.page})
-        return {"id": cid, "name": name, "root": objs[0]["id"], "objects": objs, "width": b["w"], "height": b["h"]}
+        change = {"type": "add-component", "id": cid, "name": name, "path": "Components",
+                  "main-instance-id": objs[0]["id"], "main-instance-page": self.page}
+        if container:  # Penpot names a variant's main like its container, and the container like the component
+            objs[0].update({"name": container["name"], "variant-id": container["id"], "variant-name": state})
+            change.update({"variant-id": container["id"],
+                           "variant-properties": [{"name": STATE_PROPERTY, "value": state}]})
+        self._segment["after"].append(change)
+        main = {"id": cid, "name": name, "root": objs[0]["id"], "objects": objs, "width": b["w"], "height": b["h"],
+                "paths": {self.paths[o["id"]]: o for o in objs}, "state": state}
+        self.all_mains.append(main)
+        return main
+
+    def variant_set(self, n: dict, x: float, y: float, name: str) -> tuple[dict, float]:
+        """A Penpot variant container holding the default main and one main per state (hover, focus)."""
+        states = [("Default", n)] + [(s, n["states"][s]) for s in ("Hover", "Focus") if s in n["states"]]
+        w = sum(s["box"]["w"] for _, s in states) + VARIANT_GAP * (len(states) - 1) + 2 * VARIANT_PAD
+        h = max(s["box"]["h"] for _, s in states) + 2 * VARIANT_PAD
+        box = p.shape("frame", f"Components / {name}", p.ROOT, p.ROOT, x, y, w, h, [])
+        box.update({"is-variant-container": True, "show-content": True, "layout": "flex", "layout-flex-dir": "row",
+                    "layout-wrap-type": "nowrap", "layout-gap-type": "multiple",
+                    "layout-gap": {"row-gap": VARIANT_GAP, "column-gap": VARIANT_GAP},
+                    "layout-padding-type": "multiple",
+                    "layout-padding": {"p1": VARIANT_PAD, "p2": VARIANT_PAD, "p3": VARIANT_PAD, "p4": VARIANT_PAD},
+                    "layout-justify-content": "start", "layout-align-items": "start", "layout-align-content": "start",
+                    "layout-item-h-sizing": "auto", "layout-item-v-sizing": "auto"})
+        self.put(box)
+        mains, cx = {}, x + VARIANT_PAD
+        for state, node in states:
+            mains[state] = self.component_main(node, cx, y + VARIANT_PAD, name, box, state)
+            cx += node["box"]["w"] + VARIANT_GAP
+        # first flow item last in :shapes (the container is a flex layout)
+        roots = [m["root"] for m in mains.values()]
+        box["shapes"] = list(reversed(roots))
+        self.variants.append({"name": name, "container": box["id"], "states": list(mains),
+                              "components": {s: m["id"] for s, m in mains.items()}})
+        return mains["Default"], h
 
     def component_instance(self, n: dict, parent: str, frame: str, dx: float, dy: float) -> None:
         key = (n["component"], signature(n))
         main = self.mains.get(key)
         assert self._segment is not None
         start = len(self._segment["objects"])
-        self.node({**n, "component": None}, parent, frame, dx, dy, in_component=True)
+        self.node(n, parent, frame, dx, dy, in_component=True, plain=True)
         objs = self._segment["objects"][start:]
         if not objs:
             return
-        if not main or len(main["objects"]) != len(objs):
+        mine = {self.paths[o["id"]]: o for o in objs}
+        if not main or set(main["paths"]) != set(mine):
             self.note("component-not-linked", n["component"], "structure differs from its main; kept as a plain board")
             return
         root, mroot = objs[0], main["objects"][0]
         p.mark_instance(root, main["id"], self.fid, mroot["id"])
         touched_count = 0
-        for obj, src in zip(objs, main["objects"], strict=True):
+        for where, obj in mine.items():  # by place in the tree: layout boards list children in their own order
+            src = main["paths"][where]
             obj["shape-ref"] = src["id"]
-            touched = sorted(touched_groups(obj, src, root, mroot))
+            touched = sorted(touched_groups(obj, src, root, mroot, self.paths))
             if touched:
                 obj["touched"] = touched
                 touched_count += 1
@@ -887,7 +1011,8 @@ class Builder:
                                "touched_objects": touched_count})
 
     def plan_components(self, scenes: dict[int, dict], x: float) -> None:
-        """One main per (name, structure), taken from its first occurrence at the widest width."""
+        """One main per (name, structure), taken from its first occurrence at the widest width; a
+        component with hover or focus states becomes a variant set."""
         self.begin("components")
         y = 0.0
         names: dict[str, int] = {}
@@ -903,24 +1028,72 @@ class Builder:
                 name = n["component"] if count == 1 else f"{n['component']} {count}"
                 if count > 1:
                     self.note("component-variant", n["component"], f"a second structure became {name}")
-                self.mains[key] = self.component_main(n, x, y, name)
-                y += n["box"]["h"] + 120
+                if n.get("states"):
+                    self.mains[key], height = self.variant_set(n, x, y, name)
+                else:
+                    self.mains[key], height = self.component_main(n, x, y, name), n["box"]["h"]
+                y += height + 120
 
-    def page_board(self, scene: dict, x0: float, label: str) -> dict:
+    def page_board(self, scene: dict, page: dict, x0: float, label: str) -> dict:
+        """One width's page: a board laid out like the page's body (page: penpot_layout's page node)."""
         self.begin(f"board-{scene['width']}")
         w, h = scene["width"], scene["height"]
         board = p.shape("frame", f"{label} — {w}", p.ROOT, p.ROOT, x0, 0, w, h,
                         self.fills(scene.get("background", []), "page"))
         board["show-content"] = False
-        self.put(board)
-        for n in scene["nodes"]:
-            self.node(n, board["id"], board["id"], x0, 0)
+        pp = page.get("pp") or {}
+        if pp.get("mode"):  # a designer resizes the page's width; its height follows the content
+            board.update(copy.deepcopy(pp["attrs"]))
+            board["layout-item-h-sizing"] = "fix"
+            board["layout-item-v-sizing"] = "auto" if (pp.get("hug") or [None, None])[1] is not None else "fix"
+        self.put(board, page)
+        self.children(board, page, x0, 0, False, ())
         self.boards.append({"width": w, "id": board["id"], "name": board["name"], "height": h,
-                            "objects": len(self._segment["objects"]) if self._segment else 0})
+                            "objects": len(self._segment["objects"]) if self._segment else 0,
+                            "layout": pp.get("kind", "positioned")})
         return board
 
 
-def touched_groups(obj: dict, src: dict, root: dict, mroot: dict) -> set[str]:
+def _text_attr_differs(a: Any, b: Any) -> bool:
+    def norm(v: Any) -> Any:
+        v = str(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+        return None if v in (None, "", [], {}) else v
+    a, b = norm(a), norm(b)
+    if a == b:
+        return False
+    try:
+        return abs(float(a) - float(b)) > 1e-4
+    except (TypeError, ValueError):
+        return True
+
+
+def text_diff(a: Any, b: Any) -> set[str]:
+    """How two text contents differ, as Penpot 2.18.1 tells a copy's text overrides apart
+    (common/types/text.cljc get-diff-type): the letters, the styles or the paragraph structure."""
+    if a == b:
+        return set()
+    if type(a) is not type(b) or not isinstance(a, dict):
+        return {"text-content-structure"}
+    out: set[str] = set()
+    for k in (set(a) | set(b)) - {"key"}:
+        v1, v2 = a.get(k), b.get(k)
+        if k == "children":
+            if len(v1 or []) != len(v2 or []):
+                out.add("text-content-structure")
+            else:
+                for x, y in zip(v1 or [], v2 or [], strict=True):
+                    out |= text_diff(x, y)
+        elif k == "text":
+            if v1 != v2:
+                out.add("text-content-text")
+        elif k != "type" and _text_attr_differs(v1, v2):
+            out.add("text-content-attribute")
+    return out
+
+
+def touched_groups(obj: dict, src: dict, root: dict, mroot: dict, paths: dict[str, tuple] | None = None) -> set[str]:
+    """Penpot sync groups where a component copy differs from its main (paths: layer -> place in the
+    component, to compare grid cells, which name their layers)."""
     def rel(o: dict, r: dict) -> list[float]:
         s, rs = o["selrect"], r["selrect"]
         if o is r:
@@ -938,17 +1111,33 @@ def touched_groups(obj: dict, src: dict, root: dict, mroot: dict) -> set[str]:
     if rel(obj, root) != rel(src, mroot):
         groups.add("geometry-group")
     if obj["type"] == "text" and json.dumps(obj.get("content"), sort_keys=True) != json.dumps(src.get("content"), sort_keys=True):
-        groups.add("content-group")
+        # and which part: without these Penpot's sync gives the copy its main's words back
+        groups |= {"content-group"} | (text_diff(obj.get("content"), src.get("content")) or {"text-content-attribute"})
     if obj["type"] == "path":
         rs, ms = root["selrect"], mroot["selrect"]
         if shift_path(obj["content"], -rs["x"], -rs["y"]) != shift_path(src["content"], -ms["x"], -ms["y"]):
             groups.add("content-group")
     for key, group in (("fills", "fill-group"), ("strokes", "stroke-group"), ("shadow", "shadow-group"),
-                       ("opacity", "layer-effects-group"), ("name", "name-group")):
+                       ("opacity", "layer-effects-group"), ("name", "name-group"),
+                       # e.g. a label on one line in the main and wrapping in a narrow copy
+                       ("grow-type", "text-font-group"), ("show-content", "show-content"),
+                       ("hidden", "visibility-group"), ("blend-mode", "layer-effects-group")):
         if strip(obj.get(key)) != strip(src.get(key)):
             groups.add(group)
     if [obj.get(k) for k in ("r1", "r2", "r3", "r4")] != [src.get(k) for k in ("r1", "r2", "r3", "r4")]:
         groups.add("radius-group")
+
+    def cells(v: Any) -> list:
+        return sorted((c["row"], c["row-span"], c["column"], c["column-span"], c["position"], c["justify-self"],
+                       c["align-self"], tuple((paths or {}).get(s, s) for s in c["shapes"])) for c in (v or {}).values())
+
+    for key in set(obj) | set(src):
+        if key.startswith("layout"):
+            a, b = obj.get(key), src.get(key)
+            if key == "layout-grid-cells":
+                a, b = cells(a), cells(b)
+            if a != b:
+                groups.add(LAYOUT_GROUPS.get(key, key))
     return groups
 
 
@@ -960,13 +1149,26 @@ def build(scenes: dict[int, dict], file_id: str, page_id: str, fonts: Fonts, med
         lib.add_vars(scenes[width].get("vars", []))
     b = Builder(file_id, page_id, lib, fonts, media)
     widths = sorted(scenes)
+    # Layout first: Penpot flex/grid boards, text growth and component states (plans kept in n["pp"]).
+    pages = {}
+    for width in widths:
+        pages[width] = pl.page_node(scenes[width])
+        pl.plan_tree(pages[width])
+        for n in walk_scene(scenes[width]["nodes"]):
+            for state in (n.get("states") or {}).values():
+                pl.plan_tree(state)
+    layout = pl.summary(scenes, {w: pages[w]["pp"] for w in widths})
     xs, x = {}, 0.0
     for width in widths:
         xs[width] = x
         x += width + BOARD_GAP
     b.plan_components(scenes, x - BOARD_GAP + LIBRARY_GAP)
     for width in widths:
-        b.page_board(scenes[width], xs[width], label)
+        b.page_board(scenes[width], pages[width], xs[width], label)
+    layout["variants"] = b.variants
+    layout["texts"] = {g: sum(o.get("grow-type") == g for o in b.objects if o["type"] == "text")
+                       for g in ("auto-height", "auto-width", "fixed")}
+    layout["frames_with_layout"] = sum(1 for o in b.objects if o["type"] == "frame" and o.get("layout"))
     chunks: list[dict] = [{"label": "library", "changes": lib.changes()}]
     for seg in b.segments:
         changes = [p.add_obj(o, page_id) for o in seg["objects"]] + seg["after"]
@@ -977,12 +1179,16 @@ def build(scenes: dict[int, dict], file_id: str, page_id: str, fonts: Fonts, med
         for issue in scenes[width].get("issues", []):
             issues.append({**issue, "width": width})
     issues += fonts.issues + b.issues
+    for f in layout["fallbacks"]:  # what Penpot's layouts couldn't carry as the page wrote it
+        kind = "layout-positioned" if f["mapped"] == "positioned" else "layout-measured"
+        issues.append({"kind": kind, "where": f"{f['board']} ({f['width']} px)", "detail": f"{f['mapped']}: {f['why']}"})
     sections = [o["name"] for o in b.objects if o["type"] == "frame" and re.match(r"^(Section|Header|Footer|Navigation|Main)\b", o["name"])]
     return {"chunks": [c for c in chunks if c["changes"]], "objects": b.objects, "boards": b.boards,
-            "components": [{"id": m["id"], "name": m["name"], "root": m["root"], "objects": len(m["objects"])}
-                           for m in b.mains.values()],
+            "components": [{"id": m["id"], "name": m["name"], "root": m["root"], "objects": len(m["objects"]),
+                            **({"state": m["state"]} if m["state"] else {})} for m in b.all_mains],
             "instances": b.instances, "colors": lib.colors, "typographies": list(lib.typographies.values()),
-            "color_uses": lib.color_uses, "issues": issues, "sections": sections, "plain": b.plain}
+            "color_uses": lib.color_uses, "issues": issues, "sections": sections, "plain": b.plain,
+            "layout": layout}
 
 
 # --------------------------------------------------------------------------
@@ -1167,6 +1373,7 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
     data = file.get("data", {})
     objects = data.get("pages-index", {}).get(page_id, {}).get("objects", {})
     missing, wrong, text_bad, pos_missing, path_bad, page_text_bad = [], [], [], [], [], []
+    layout_bad, grow_bad, variant_bad = [], [], []
     plain = built.get("plain", {})
     for o in built["objects"]:
         got = objects.get(o["id"])
@@ -1175,6 +1382,11 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
             continue
         if got.get("type") != o["type"] or got.get("name") != o["name"]:
             wrong.append(o["name"])
+        for key, value in o.items():  # layouts, item sizing and grid cells survive the save
+            if key.startswith("layout") and got.get(key) != value:
+                layout_bad.append(f"{o['name']}: {key} {str(value)[:40]} -> {str(got.get(key))[:40]}")
+        if o.get("is-variant-container") != got.get("is-variant-container") or o.get("variant-id") != got.get("variant-id"):
+            variant_bad.append(o["name"])
         if o["type"] == "text":
             if content_text(got.get("content")) != content_text(o.get("content")):
                 text_bad.append(o["name"])
@@ -1182,6 +1394,8 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
                 page_text_bad.append(o["name"])
             if o.get("position-data") and len(got.get("position-data") or []) != len(o["position-data"]):
                 pos_missing.append(o["name"])
+            if got.get("grow-type") != o.get("grow-type"):
+                grow_bad.append(o["name"])
         if o["type"] == "path" and not got.get("content"):
             path_bad.append(o["name"])
     boards = []
@@ -1193,6 +1407,12 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
     typos = data.get("typographies", {})
     comps = data.get("components", {})
     comp_ok = all(c["id"] in comps and not comps[c["id"]].get("deleted") for c in built["components"])
+    variants = (built.get("layout") or {}).get("variants") or []
+    for v in variants:
+        for state, cid in v["components"].items():
+            props = (comps.get(cid) or {}).get("variant-properties") or []
+            if (comps.get(cid) or {}).get("variant-id") != v["container"] or [x.get("value") for x in props] != [state]:
+                variant_bad.append(f"{v['name']}: {state}")
     refs = [o for o in built["objects"] if o.get("shape-ref")]
     refs_ok = all(objects.get(o["id"], {}).get("shape-ref") == o["shape-ref"] and o["shape-ref"] in objects for o in refs)
     custom = {t["font-id"] for t in built["typographies"] if t["font-id"].startswith("custom-")}
@@ -1210,6 +1430,9 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
         "components": comp_ok and len(built["components"]) > 0,
         "instances_linked": refs_ok and len(built["instances"]) > 0,
         "custom_fonts_used": len(custom) > 0,
+        "layouts_kept": not layout_bad,
+        "text_growth_kept": not grow_bad,
+        "variants_kept": not variant_bad,
     }
     return {"checks": checks, "passed": all(checks.values()), "boards": boards,
             "counts": {"objects": len(built["objects"]), "reopened_objects": len(objects),
@@ -1219,9 +1442,12 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
                        "frames": sum(o["type"] == "frame" for o in built["objects"]),
                        "groups": sum(o["type"] == "group" for o in built["objects"]),
                        "colors": len(built["colors"]), "typographies": len(built["typographies"]),
-                       "components": len(built["components"]), "instances": len(built["instances"])},
+                       "components": len(built["components"]), "instances": len(built["instances"]),
+                       "frames_with_layout": sum(o["type"] == "frame" and bool(o.get("layout")) for o in built["objects"]),
+                       "variant_sets": len(variants)},
             "problems": {"missing": missing[:20], "wrong": wrong[:20], "text": text_bad[:20],
-                         "line_boxes": pos_missing[:20], "paths": path_bad[:20], "page_text": page_text_bad[:20]}}
+                         "line_boxes": pos_missing[:20], "paths": path_bad[:20], "page_text": page_text_bad[:20],
+                         "layout": layout_bad[:20], "growth": grow_bad[:20], "variants": variant_bad[:20]}}
 
 
 def judge(fidelity: dict) -> dict:
@@ -1315,7 +1541,7 @@ def convert(site: Path, page: str, out: Path, name: str, widths: tuple[int, ...]
                     "uses": built["color_uses"].get(c["id"], 0)} for c in built["colors"]],
         "typographies": [{k: t[k] for k in ("name", "font-family", "font-weight", "font-style", "font-size", "line-height",
                                             "letter-spacing", "text-transform")} for t in built["typographies"]],
-        "sections": built["sections"], "fonts": font_records, "media": media_records,
+        "sections": built["sections"], "fonts": font_records, "media": media_records, "layout": built["layout"],
         "issues": built["issues"], "issue_counts": issue_counts, "verify": checked, "exports": exports,
         "fidelity": {str(w): f for w, f in fidelity.items()},
         "fidelity_passed": all(f["passed"] for f in fidelity.values()),

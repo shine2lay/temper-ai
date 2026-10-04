@@ -32,7 +32,7 @@ def _load(name):
 
 h2p = _load("html_to_penpot")
 v2 = _load("design_homepage_v2")
-BASE = "http://172.21.0.1:42727"  # the recorded scenes' page address
+BASE = "http://172.21.0.1:39385"  # the recorded scenes' page address
 RUNTIME_SCENES = Path(__file__).resolve().parent / "design_runtime_scenes"  # recorded runtime-check results
 
 
@@ -192,6 +192,39 @@ def test_components_have_one_main_and_linked_instances_at_every_width():
             assert first_obj[c["main-instance-id"]] < i  # the main exists before it is declared a component
 
 
+def test_recorded_page_becomes_penpot_layouts_that_pass_text_growth_up_to_the_page():
+    """Task #9: every board reflows (flex, grid or a measured column/row) and a longer text grows
+    its boards up to the page, because every board on the way hugs its content."""
+    b = built()
+    layout = b["layout"]
+    assert not layout["fallbacks"] and layout["texts"]["fixed"] == 0 and layout["texts"]["auto-width"] > 0
+    for w in (390, 1440):
+        kinds = layout["widths"][w]["boards"]
+        assert layout["widths"][w]["positioned"] == 0 and kinds["grid"] == 2 and kinds["flex row"] >= 6
+    by_id = {o["id"]: o for o in b["objects"]}
+    pages = {x["id"] for x in b["boards"]}
+    for page in pages:  # a designer sets the page's width; its height follows the content
+        o = by_id[page]
+        assert (o["layout"], o["layout-flex-dir"], o["layout-item-h-sizing"], o["layout-item-v-sizing"]) == (
+            "flex", "column", "fix", "auto")
+    grown = 0
+    for o in b["objects"]:
+        if o["type"] != "text" or o["grow-type"] != "auto-height":
+            continue
+        chain, cur = [], by_id.get(o["parent-id"])
+        while cur is not None and cur["id"] not in pages:
+            chain.append(cur)
+            cur = by_id.get(cur["parent-id"])
+        if cur is None:
+            continue  # inside a component main, beside the pages
+        assert all(c.get("layout") and c["layout-item-v-sizing"] == "auto" for c in chain), o["name"]
+        grown += 1
+    assert grown >= 30
+    for g in (o for o in b["objects"] if o.get("layout") == "grid"):
+        placed = [s for c in g["layout-grid-cells"].values() for s in c["shapes"]]
+        assert placed and len(set(placed)) == len(placed) and all(by_id[s]["parent-id"] == g["id"] for s in placed)
+
+
 def test_inset_ring_becomes_inner_stroke_and_other_inset_shadows_hidden():
     lib = h2p.Library("file")
     builder = h2p.Builder("file", "page", lib, h2p.Fonts(), {})
@@ -323,6 +356,28 @@ def test_convert_reuses_team_fonts_already_uploaded(tmp_path, monkeypatch):
     reused = [f for f in report["fonts"] if f["reused"]]
     assert [(f["family"], f["weight"]) for f in reused] == [("Fraunces", 600)]
     assert ("Fraunces", 800, "normal", "known") in client.fonts  # new weight joins the existing family
+
+
+class LayoutLosingPenpot(FakePenpot):
+    """Saves everything but the grid cells, like a server that dropped an attribute."""
+
+    def update(self, file_id, changes):
+        super().update(file_id, changes)
+        for k, o in list(self.objects.items()):
+            if "layout-grid-cells" in o:
+                self.objects[k] = {a: v for a, v in o.items() if a != "layout-grid-cells"}
+
+
+def test_reopen_checks_layouts_text_growth_and_variants(tmp_path, monkeypatch):
+    report = fake_convert(tmp_path, monkeypatch, FakePenpot())
+    checks = report["verify"]["checks"]
+    assert checks["layouts_kept"] and checks["text_growth_kept"] and checks["variants_kept"]
+    assert report["verify"]["counts"]["frames_with_layout"] == report["layout"]["frames_with_layout"] > 50
+    assert report["layout"]["fallbacks"] == [] and set(report["layout"]["widths"]) == {390, 1440}
+    (tmp_path / "lost").mkdir()
+    lost = fake_convert(tmp_path / "lost", monkeypatch, LayoutLosingPenpot())
+    assert not lost["passed"] and not lost["verify"]["checks"]["layouts_kept"]
+    assert all(": layout-grid-cells " in p and p.endswith("-> None") for p in lost["verify"]["problems"]["layout"])
 
 
 def test_lost_layer_fails_reopen_visibly(tmp_path, monkeypatch):

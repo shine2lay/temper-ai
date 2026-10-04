@@ -19,6 +19,7 @@ from typing import Any
 from temper_ai.shared.types import ExecutionContext, NodeResult
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.failure import policy_for
+from temper_ai.stage.input_defaults import with_default
 from temper_ai.stage.models import NodeConfig
 from temper_ai.stage.node import Node
 
@@ -133,7 +134,9 @@ class StageNode(Node):
         missing: list[str] = []
         for local_name, source in self.config.inputs.items():
             if isinstance(source, dict):
-                gated[local_name] = input_data.get(local_name)
+                # A declared default stands in for a value left out, null or empty, so a required
+                # input that has one always counts as given (stage/input_defaults.py).
+                gated[local_name] = with_default(source, input_data.get(local_name))
                 if source.get("required") and gated[local_name] is None:
                     missing.append(local_name)
             elif "." in source:

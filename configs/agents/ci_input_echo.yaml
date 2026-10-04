@@ -1,0 +1,37 @@
+# Zero-LLM agent for configs/workflows/ci_input_defaults.yaml: prints, as one JSON line, the
+# inputs it got, each read the ways a script can take a value (docs/reference/workflow-inputs.md):
+#
+#   * WORD={{ word }}         in plain text: a quoted reference, "$TEMPER_V1";
+#   * MUST="{{ must }}"       inside double quotes: a bare reference, $TEMPER_V2;
+#   * {{ word | env }}        the variable's name, for a script that reads the environment itself
+#                             (here inside a quoted heredoc, where the shell expands nothing).
+#
+# `plain` has no default. A run that leaves it out hands this step None, which reaches the
+# script as empty text in all three forms, never as the word None. An input the step was not
+# given at all shows as "<unset>" in the env form.
+#
+# Costs nothing, needs no key and no network.
+agent:
+  name: ci_input_echo
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/bash
+    set -u
+    WHERE={{ where }} \
+    WORD={{ word }} \
+    MUST="{{ must }}" \
+    PLAIN={{ plain }} \
+    PLAIN_BARE="{{ plain }}" \
+    python3 - <<'PY'
+    import json, os
+    print(json.dumps({
+        "where": os.environ["WHERE"],
+        "word": os.environ["WORD"],
+        "must": os.environ["MUST"],
+        "plain": os.environ["PLAIN"],
+        "plain_bare": os.environ["PLAIN_BARE"],
+        "word_env": os.environ.get("{{ word | env }}", "<unset>"),
+        "plain_env": os.environ.get("{{ plain | env }}", "<unset>"),
+    }))
+    PY

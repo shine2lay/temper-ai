@@ -1203,6 +1203,11 @@ def generate_top_index() -> str:
 
     lines.extend([
         "",
+        "## Written by hand",
+        "",
+        "- [Workflow inputs](workflow-inputs.md) — a workflow's `inputs:` (type, required, "
+        "default), when a default applies, and what a step gets for a value that isn't there",
+        "",
         "## How It Fits Together",
         "",
         "```",

@@ -10,6 +10,10 @@ _Auto-generated from code. Do not edit manually._
 - [Safety Policies](policies/index.md) — Safety policies for action enforcement (file access, budget, forbidden ops)
 - [Topology Strategies](strategies/index.md) — Stage topology strategies (parallel, sequential, leader)
 
+## Written by hand
+
+- [Workflow inputs](workflow-inputs.md) — a workflow's `inputs:` (type, required, default), when a default applies, and what a step gets for a value that isn't there
+
 ## How It Fits Together
 
 ```

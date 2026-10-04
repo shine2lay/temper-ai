@@ -195,12 +195,20 @@ class _ValueStash:
 
     def _stash(self, value: Any) -> str | None:
         """Store the value, return its variable name — or None for an undefined, so the configured
-        undefined policy (record blank, or raise) still decides what happens."""
+        undefined policy (record blank, or raise) still decides what happens.
+
+        A value that is there but empty (None: an input the run did not give, a field a step
+        did not fill) is stored as empty text, never as the word "None" a script would take for
+        real text: a path named None, a repository called None. strict_undefined is not about
+        these: it still fails only a name that does not exist."""
         if isinstance(value, Undefined):
             str(value)
             return None
         name = f"{self.PREFIX}{len(self.env) + 1}"
-        self.env[name] = value if isinstance(value, str) else str(value)
+        if value is None:
+            self.env[name] = ""
+        else:
+            self.env[name] = value if isinstance(value, str) else str(value)
         return name
 
     def quoted(self, value: Any) -> str:

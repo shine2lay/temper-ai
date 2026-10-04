@@ -1,0 +1,76 @@
+workflow:
+  name: ci_input_defaults
+  description: |
+    Declared input defaults, for checking that a run gets them however it
+    starts, and that a script never gets the word None for a missing value
+    (docs/reference/workflow-inputs.md). Script agents only: no model, no
+    key, no spend.
+
+      POST /api/runs {"workflow": "ci_input_defaults", "inputs": {}}
+      POST /api/runs {"workflow": "ci_input_defaults",
+                      "inputs": {"word": "given", "must": "given too"}}
+
+    Inputs:
+      word   optional, default "from-the-default": left out, null or empty
+             text, the run gets the default; anything else is kept
+      must   required, with a default, so it counts as given
+      plain  optional, no default: left out, it reaches the script as empty
+             text, never "None"
+
+    Step `echo` prints, as JSON, what it got. Stage `inner` declares a
+    default of its own for `word` and its input_map leaves `word` out, so
+    its step `inner_echo` prints the stage's default.
+
+  inputs:
+    word:
+      type: string
+      required: false
+      default: from-the-default
+      description: Left out, null or empty, the run gets "from-the-default".
+    must:
+      type: string
+      required: true
+      default: required-but-defaulted
+      description: Required, but its default counts as given.
+    plain:
+      type: string
+      required: false
+      description: No default. Left out, the script gets empty text.
+
+  outputs:
+    seen: echo.output
+
+  nodes:
+    - name: echo
+      type: agent
+      agent: ci_input_echo
+      input_map:
+        where: "workflow"
+        word: input.word
+        must: input.must
+        plain: input.plain
+
+    - name: inner
+      type: stage
+      depends_on: [echo]
+      inputs:
+        word:
+          type: string
+          default: from-the-stage-default
+        must:
+          type: string
+          required: true
+        plain:
+          type: string
+      input_map:
+        must: input.must
+        plain: input.plain
+      nodes:
+        - name: inner_echo
+          type: agent
+          agent: ci_input_echo
+          input_map:
+            where: "stage"
+            word: input.word
+            must: input.must
+            plain: input.plain

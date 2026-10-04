@@ -128,6 +128,12 @@ def execute_workflow(
     nodes, config = runner_ctx.graph_loader.load_workflow(
         workflow_name, inputs=inputs, **({} if is_resume else run_start_options()),
     )
+    # Each declared default in place of an input left out, null or empty, the values the loader
+    # read: a resume, a fork and a run queued before defaults were filled in get them too, and
+    # every step that reads the run's inputs (one that checks them again on a resume included)
+    # sees what the run used (stage/input_defaults.py).
+    from temper_ai.stage.input_defaults import fill_input_defaults
+    inputs = fill_input_defaults(getattr(config, "inputs", None), inputs)
 
     # --- Tool executor + safety policy ---
     # Baseline tripwires plus the workflow's own safety block, see PolicyEngine.for_run.

@@ -64,6 +64,7 @@ from temper_ai.stage.gate import (
     several_waiting,
     signal_key,
 )
+from temper_ai.stage.input_defaults import fill_input_defaults
 from temper_ai.stage.pi_workflows import is_pi_workflow
 from temper_ai.stage.plan import build_restore, resume_plan
 from temper_ai.tools import TOOL_CLASSES
@@ -200,6 +201,11 @@ def _start_run(body: RunRequest) -> RunResponse:
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # What the run starts with: each declared default in place of an input left out, null or
+    # empty (the loader read the same values). Every mode runs with these and records them, so the
+    # run's saved inputs show what was used (stage/input_defaults.py).
+    body = body.model_copy(
+        update={"inputs": fill_input_defaults(getattr(config, "inputs", None), body.inputs)})
 
     if notify_block is not None:
         # Saved before the run starts, so its first question already follows it.
@@ -833,11 +839,15 @@ def _start_resume(
         or (result.get("input_data") or {}).get("workspace_path")
     )
 
+    # The run's own inputs, each declared default in place of one it left out: a run started
+    # before defaults were filled in has none of them (stage/input_defaults.py).
+    original_inputs = fill_input_defaults(getattr(config, "inputs", None), result.get("input_data"))
+
     if _execution_mode() == "external":
         # Its box restores the checkpoints and replays the dispatches
         # (temper run-workflow), the same steps as below.
         _queue_run(execution_id, config.name, workspace,
-                   result.get("input_data") or {}, start="resume",
+                   original_inputs, start="resume",
                    extra={"rerun": list(body.rerun or [])})
         return RunResponse(execution_id=execution_id, status="queued")
 
@@ -882,9 +892,6 @@ def _start_resume(
         nodes, checkpoint_svc, restored_outputs,
         rerun=body.rerun or (), stopped_at=stopped_at,
     )
-
-    # Reconstruct original inputs from the first run
-    original_inputs = result.get("input_data") or {}
 
     # Replay any dispatch_applied checkpoints — materialize dispatched nodes
     # into the loaded workflow and rebuild DispatchRunState so caps still
@@ -946,6 +953,9 @@ def fork_run(body: ForkRequest):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Each declared default in place of an input the fork leaves out (stage/input_defaults.py).
+    inputs = fill_input_defaults(getattr(config, "inputs", None), body.inputs)
+
     logger.info(
         "Forking execution '%s' at sequence %d → new execution '%s' with %d nodes restored",
         body.source_execution_id, body.sequence, new_execution_id, len(restored_outputs),
@@ -961,7 +971,7 @@ def fork_run(body: ForkRequest):
         # restores them (temper run-workflow).
         _record_fork_metadata(new_execution_id, body, restored_outputs, nodes)
         _queue_run(new_execution_id, config.name, body.workspace_path,
-                   body.inputs or {}, start="fork")
+                   inputs, start="fork")
         return RunResponse(execution_id=new_execution_id, status="queued")
 
     from temper_ai.safety import PolicyEngine
@@ -999,7 +1009,6 @@ def fork_run(body: ForkRequest):
 
     _record_fork_metadata(new_execution_id, body, restored_outputs, nodes)
 
-    inputs = body.inputs or {}
     thread = threading.Thread(
         target=_run_workflow_with_checkpoints,
         args=(nodes, inputs, context, config.name, new_execution_id, restored_outputs),

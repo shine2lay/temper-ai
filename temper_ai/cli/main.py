@@ -309,6 +309,9 @@ def _cmd_run(args) -> None:
         cli_overrides["model"] = args.model
 
     nodes, config = _load_workflow(args.workflow, cli_overrides, inputs)
+    # Each declared default in place of an input left out, null or empty (stage/input_defaults.py).
+    from temper_ai.stage.input_defaults import fill_input_defaults
+    inputs = fill_input_defaults(getattr(config, "inputs", None), inputs)
 
     # Reflect overrides in config.defaults so header display + dispatched-node
     # propagation see the effective values, not the pre-override YAML ones.

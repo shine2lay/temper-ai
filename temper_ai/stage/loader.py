@@ -20,6 +20,7 @@ from temper_ai.config.store import ConfigStore
 from temper_ai.shared.types import ExecutionContext, NodeResult
 from temper_ai.stage.agent_node import AgentNode
 from temper_ai.stage.exceptions import LoaderError, StageError, ValidationError
+from temper_ai.stage.input_defaults import fill_input_defaults
 from temper_ai.stage.models import NodeConfig, WorkflowConfig
 from temper_ai.stage.node import Node
 from temper_ai.stage.pi_workflows import pi_loop_problems
@@ -151,7 +152,10 @@ class GraphLoader:
             workflow_ref: Config name (looked up in config store) or raw config dict.
             inputs: Workflow inputs (the POST body's `inputs` field). Required
                 only if the workflow uses `type: template` nodes; otherwise
-                may be None.
+                may be None. What reads them here (template expansion, the
+                run-start checks) sees each declared default in place of an
+                input left out, null or empty (stage/input_defaults.py); the
+                caller fills its own copy the same way.
             run_start: True when a run is starting (not resuming). A stage whose
                 strategy registered a run-start check (topology
                 ``register_topology(..., run_start_check=...)``) is checked before it
@@ -199,6 +203,10 @@ class GraphLoader:
         """resolve_workflow, plus, for a starting run, the problems its strategies' run-start
         checks found (load_workflow raises them with the rest)."""
         raw = self._load_config(workflow_ref, "workflow")
+        if inputs is not None:
+            # Each declared default in place of an input left out, null or empty, before anything
+            # here reads them: template expansion and the run-start checks (a team's goal).
+            inputs = fill_input_defaults(raw.get("inputs"), inputs)
         try:
             raw = expand_templates(raw, inputs)
         except TemplateExpansionError as exc:

@@ -1,0 +1,86 @@
+workflow:
+  name: signal_grade
+  # PRODUCT SIGNAL QUALITY (product role; built 2026-10-04, queue #12). Grades one finished
+  # signal_harvest report (shortlist, state/signal_scorecard.md, state/signal/<lens>.md) for
+  # soundness against its own evidence, so a changed signal pipeline can be judged by a stable
+  # grader instead of the researcher's own confidence. It is not a demand score: a weak idea in
+  # a sound report passes, and the grader never rescores, re-weights or re-ranks (the formula
+  # stays the synthesizer's, configs/agents/signal_synthesize.yaml).
+  #
+  #   setup (script) -> review -> finalize (script)
+  #
+  # setup recomputes every cell, total, overall confidence and the ranking with the synthesizer's
+  # formula, checks candidate coverage and the shortlist's required players, and traces figures,
+  # quotes and URLs to the lens files (no model). review resolves the leads it left and looks for
+  # attribution, blocked-source, scope and competitor defects (no web). finalize keeps a finding
+  # only when its passages are verbatim in the files it names, and sets pass / revise / unknown
+  # per criterion: Q1 candidates, Q2 arithmetic/confidence/ranking, Q3 provenance, Q4 blocked
+  # sources and honest unknowns, Q5 scope (buyer, job, population, price), Q6 exact versus
+  # adjacent or bundled competitors and coverage. The same three steps run after the
+  # synthesizer in signal_harvest.
+  #
+  # Rubric (frozen): configs/agents/signal_grade_assets/rubric.md; checker check_signal.py (same
+  # folder, standard library only). Benchmark: tests/test_signal_grade/benchmark/. Bar, runs and
+  # calibration: product results/2026-10-04-signal-grade-12/. How to run: docs/product-runs.md.
+  version: 1
+  description: |
+    Grade a finished signal_harvest report for soundness against its own evidence (not
+    whether the market is good). A script recomputes the scorecard's arithmetic, confidence,
+    ranking and candidate coverage and traces its figures, quotes and URLs to the lens files; a
+    reviewer checks attribution, blocked sources, scope and competitor claims; a script keeps
+    only findings whose passages are verbatim in the files. Result per criterion Q1-Q6 and
+    overall: pass, revise or unknown. Never rescores and never changes the report.
+  inputs:
+    report:
+      type: string
+      required: false
+      default: "state"
+      description: "Folder in the run workspace holding signal_scorecard.md and signal/<lens>.md (or the scorecard's own path); default state, as signal_harvest writes it."
+    shortlist:
+      type: string
+      required: false
+      default: ""
+      description: "The shortlist the report was run on, as text. Give this or shortlist_path; without either, candidate coverage is unknown."
+    shortlist_path:
+      type: string
+      required: false
+      default: ""
+      description: "A file in the run workspace holding the shortlist (used when shortlist is empty)."
+    assets_dir:
+      type: string
+      required: false
+      default: "/app/configs/agents/signal_grade_assets"
+      description: "Folder with check_signal.py and rubric.md: the deployed copy by default; a candidate run stages its own copy into the workspace."
+  outputs:
+    quality_status: finalize.structured.quality_status
+    quality_path: finalize.structured.quality_path
+    criteria: finalize.structured.criteria
+    material_findings: finalize.structured.findings
+    unverified: finalize.structured.unverified
+    players_missing: finalize.structured.players_missing
+    problems: finalize.structured.problems
+    check_status: setup.structured.status
+
+  nodes:
+    # Deterministic check, no model. Copies the rubric and checker into state/signal_grade/.
+    - name: setup
+      type: agent
+      agent: signal_grade_setup
+      input_map:
+        report: input.report
+        shortlist: input.shortlist
+        shortlist_path: input.shortlist_path
+        assets_dir: input.assets_dir
+
+    - name: review
+      type: agent
+      agent: signal_grade_review
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: checked}
+
+    # Verification and the quality status on every path, no model.
+    - name: finalize
+      type: agent
+      agent: signal_grade_finalize
+      depends_on: [review]
+      run_after_failure: true

@@ -1,0 +1,44 @@
+SHORTLIST SOURCE: the product role's fresh market scan of 2026-10-02 (temper scan_market, job
+scan-fresh-1002; ideas explored before were left out). Below are the scan's top three candidates,
+plus one REFERENCE idea already screened on 2026-10-02 (the current lead), re-scored here so all
+four sit on one scale. Only each idea's name, target user, manual task, wedge and target price are
+given, deliberately WITHOUT the scan's stats or URLs: gather demand evidence INDEPENDENTLY, so any
+agreement is real triangulation, not an echo. Do your own fresh research for every figure. Score
+each of the four separately.
+
+CANDIDATE 1 — Missed-call recovery and booking for very small electrical contractors (home services)
+  Target user: owner-operated electrical contractors with 1-3 technicians (other single-trade shops,
+    such as plumbing or HVAC, later).
+  Problem/manual task: the owner is on a job when customers call, so calls go to voicemail or are
+    returned hours later; the customer books someone else, and booked visits are lost to no-shows.
+  Wedge: an AI phone line that answers missed and after-hours calls, books the job straight into the
+    shop's scheduling software (Housecall Pro, Jobber or ServiceTitan), and sends confirmation
+    reminders (target price about $149 per shop per month).
+
+CANDIDATE 2 — Denial triage and appeal letters for independent physician groups (medical billing)
+  Target user: independent and mid-size physician groups (one specialty first) and the outsourced
+    billing companies that work their claims: billing managers, revenue-cycle staff.
+  Problem/manual task: insurers deny claims, many over prior authorization; staff sort the denials by
+    hand, decide which are worth fighting and write each appeal, so many recoverable denials are
+    written off.
+  Wedge: reads the group's remittance files (835s), sorts denials by reason and dollars recoverable,
+    and drafts payer-specific appeal letters ready to send (priced as a share of dollars recovered,
+    about 4-7%).
+
+CANDIDATE 3 — Invoice capture and approval routing for small businesses, sold through bookkeepers (accounting)
+  Target user: independent bookkeeping firms that keep the books for many small-business clients on
+    QuickBooks Online or Xero.
+  Problem/manual task: supplier invoices arrive by email and paper; bookkeepers key them in by hand
+    and chase the client for approval before paying, which takes days per invoice.
+  Wedge: an inbox that captures each invoice, extracts and matches it, routes it to the client for
+    one-tap approval and syncs it to QuickBooks or Xero, with one view across all of a firm's
+    clients (target price about $1-2 per invoice).
+
+REFERENCE (screened 2026-10-02) — Medicare Advantage admission-denial appeal packets for rehab hospitals (post-acute care)
+  Target user: freestanding inpatient rehabilitation facilities (IRFs) first, then long-term care
+    hospitals (LTCHs): admissions directors, utilization-review and billing leaders.
+  Problem/manual task: Medicare Advantage plans deny admission requests; appealing takes hours of
+    record-pulling and letter-writing within tight deadlines, so many denials are never appealed and
+    the admission (and its revenue) is lost.
+  Wedge: same-day appeal packets for denied admissions (records pulled, payer criteria matched,
+    letter drafted), priced as a share of each admission won back.

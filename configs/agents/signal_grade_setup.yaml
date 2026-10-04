@@ -1,0 +1,88 @@
+# @description PRODUCT SIGNAL QUALITY step 1 (product role): stage the frozen rubric and the
+# checker, then check one signal_harvest report with no model. Recomputes every table cell,
+# total and overall confidence with the synthesizer's own formula, checks candidate coverage,
+# the ranking and the shortlist's required players, and traces the scorecard's figures, quotes
+# and URLs to the lens files, leaving leads for the semantic review. Never rescores and never
+# changes the report. A missing report or a used grading folder stops here at $0 (status
+# not_checked). Part of workflows/signal_grade.yaml and the post-synthesis quality check of
+# workflows/signal_harvest.yaml.
+agent:
+  name: signal_grade_setup
+  version: 1
+  type: script
+  timeout_seconds: 180
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import hashlib
+    import json
+    import os
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+
+    def value(name):
+        return (os.environ.get(name) or '').strip()
+
+
+    def stop(problem):
+        print(json.dumps({"status": "not_checked", "check_path": "", "rows": 0, "deterministic_findings": 0,
+                          "leads": 0, "players_missing": None, "problems": [problem]}))
+        sys.exit(0)
+
+
+    # `or ''`, not default(''): the server passes an input the run did not give as None, which the
+    # value stash would hand over as the text 'None' (first benchmark run, 1b7aef1a).
+    assets = Path(value('{{ (assets_dir or '') | env }}') or '/app/configs/agents/signal_grade_assets')
+    report = value('{{ (report or '') | env }}') or 'state'
+    shortlist_text = os.environ.get('{{ (shortlist or '') | env }}') or ''
+    shortlist_path = value('{{ (shortlist_path or '') | env }}')
+    run_id = value('{{ (run_id or '') | env }}')
+    here = Path.cwd().resolve()
+    dest = Path('state/signal_grade')
+    if dest.exists() and any(dest.iterdir()):
+        stop('state/signal_grade already holds a grade: grade in a fresh workspace')
+    for name in ('check_signal.py', 'rubric.md'):
+        if not (assets / name).is_file():
+            stop(f'assets_dir {assets} has no {name}')
+
+    # The report: a folder holding signal_scorecard.md and signal/<lens>.md, or the scorecard itself
+    # (signal_harvest passes its scorecard_path). Kept relative to the workspace.
+    folder = Path(report)
+    if folder.is_absolute():
+        try:
+            folder = folder.resolve().relative_to(here)
+        except ValueError:
+            stop(f'report {report} is outside the run workspace')
+    if folder.suffix == '.md':
+        folder = folder.parent
+    if '..' in folder.parts:
+        stop(f'report {report} leaves the run workspace')
+    folder = folder if str(folder) not in ('', '.') else Path('.')
+
+    if shortlist_text.strip():
+        shortlist, source = shortlist_text, 'input shortlist'
+    elif shortlist_path:
+        path = Path(shortlist_path)
+        if not path.is_file():
+            stop(f'shortlist_path {shortlist_path} is not a file')
+        shortlist, source = path.read_text(errors='replace'), f'shortlist_path {shortlist_path}'
+    else:
+        shortlist, source = None, 'none'
+
+    dest.mkdir(parents=True, exist_ok=True)
+    copied = {}
+    for name in ('check_signal.py', 'rubric.md'):
+        shutil.copyfile(assets / name, dest / name)
+        copied[name] = hashlib.sha256((dest / name).read_bytes()).hexdigest()
+    if shortlist is not None:
+        (dest / 'shortlist.txt').write_text(shortlist)
+    (dest / 'setup.json').write_text(json.dumps({
+        'run_id': run_id, 'assets_dir': str(assets), 'report_dir': str(folder), 'shortlist': source,
+        'sha256': copied}, indent=1))
+    sys.exit(subprocess.call([sys.executable, str(dest / 'check_signal.py'), 'check', '--report-dir', str(folder)]))
+    PY

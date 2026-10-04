@@ -1,0 +1,210 @@
+{
+  "version": "signal_grade_benchmark/1",
+  "frozen": "2026-10-04, queue #12, before the grader's first test run. Do not edit to fit a grader's output: a change is a new benchmark version and every case reruns.",
+  "rubric": "configs/agents/signal_grade_assets/rubric.md (signal_grade/1)",
+  "blind": "No. The PM who wrote the grader also wrote these expectations and mutations; the five sources were reviewed by the PM before (PM corrections in each pm_review file). It is a regression and calibration bench, not a held-out test.",
+  "matching": "A required defect is detected when one verified, material grader finding has a criterion in its criteria list, the same candidate id (any candidate for '*'), and at least one supporting passage that contains one of its markers (after removing markdown emphasis and collapsing whitespace). A forbidden item is an invented allegation when a verified, material finding has a criterion in its criteria list and the same candidate id (any candidate for '*'). Allowed items carry no penalty whether found or not. Any other verified, material finding is adjudicated by hand against the files under the rubric: true is a newly found real defect (recorded, not a failure), false is an invented allegation (a failure).",
+  "cases": [
+    {
+      "case": "c1_wedges",
+      "key": "r3kx",
+      "base": "wedges",
+      "mutant": null,
+      "kind": "sound control",
+      "expect": {"status": "pass", "players_missing": null},
+      "required": [],
+      "forbidden": [
+        {"id": "F1", "criteria": ["Q1", "Q2"], "candidate": "*", "why": "every candidate is present once; every cell, total, confidence and the ranking reproduce"},
+        {"id": "F2", "criteria": ["Q4"], "candidate": "B", "why": "pain 0 is presented as a structural venue gap, not proof the pain does not exist (honest unknown)"},
+        {"id": "F3", "criteria": ["Q4"], "candidate": "B0", "why": "pain 0: the one thread found is named off-target and out of window; nothing is claimed as measured absence"},
+        {"id": "F4", "criteria": ["Q6"], "candidate": "B", "why": "competitors: 'no vendor found that specifically targets IRF/LTCH', the named vendors are labelled one layer up (adjacent, labelled)"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q6"], "candidate": "A0", "why": "free eligibility checks bundled in practice-management software are named in the recommendation; whether the A0 block itself should label them is arguable"},
+        {"id": "A2", "criteria": ["Q3", "Q5"], "candidate": "*", "why": "minor attribution or scope wording the PM review did not record"}
+      ]
+    },
+    {
+      "case": "m1_wedges",
+      "key": "p8dn",
+      "base": "wedges",
+      "mutant": "m1_wedges",
+      "kind": "mutant",
+      "expect": {"status": "revise", "players_missing": null},
+      "required": [
+        {"id": "D1", "criteria": ["Q2"], "primary": "Q2", "candidate": "A", "markers": ["1.19"], "what": "A's weighted total 1.19; its terms sum to 0.885 (0.89); ranking and recommendation follow the wrong total"},
+        {"id": "D2", "criteria": ["Q2"], "primary": "Q2", "candidate": "A0", "markers": ["| 1.85 | med |", "Overall confidence: med", "weighted_score 1.85, confidence med"], "what": "A0 overall confidence med; search and pain are both low-confidence, so the rule forces low"},
+        {"id": "D3", "criteria": ["Q3"], "primary": "Q3", "candidate": "B", "markers": ["74.2%"], "what": "AMRPA initial denial rate 74.2% is in no lens file (the lens says 57.4%)"},
+        {"id": "D4", "criteria": ["Q4", "Q3"], "primary": "Q4", "candidate": "B", "markers": ["real absence", "searched the IRF/LTCH venues", "evidence the target users are untroubled", "not troubled by it"], "what": "B pain 0 rests on a venue gap the pain lens records; rewritten as a searched, real absence"}
+      ],
+      "forbidden": [
+        {"id": "F1", "criteria": ["Q1"], "candidate": "*", "why": "every candidate is present once"},
+        {"id": "F3", "criteria": ["Q4"], "candidate": "B0", "why": "B0's pain handling is unchanged and honest"},
+        {"id": "F4", "criteria": ["Q6"], "candidate": "B", "why": "B's competitors text is unchanged and labels the vendors adjacent"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q6"], "candidate": "A0", "why": "as in the control"},
+        {"id": "A2", "criteria": ["Q3", "Q5"], "candidate": "*", "why": "as in the control"},
+        {"id": "A3", "criteria": ["Q2"], "candidate": "*", "why": "ranking or recommendation consequences of D1 or D2 reported against another candidate"}
+      ]
+    },
+    {
+      "case": "c2_runnerup",
+      "key": "w2hc",
+      "base": "runnerup",
+      "mutant": null,
+      "kind": "sound control",
+      "expect": {"status": "pass", "players_missing": null},
+      "required": [],
+      "forbidden": [
+        {"id": "F1", "criteria": ["Q1", "Q2"], "candidate": "*", "why": "every candidate is present once; every cell, total, confidence and the ranking reproduce"},
+        {"id": "F2", "criteria": ["Q6"], "candidate": "REFERENCE", "why": "the search.md versus competitors.md contradiction on IRF/LTCH vendors is surfaced, not resolved upward; scored 1 (the PM review praised this)"},
+        {"id": "F3", "criteria": ["Q4"], "candidate": "REFERENCE", "why": "pain 0 is a structural venue gap, said so; the 2023 physician quote is shown and not counted"},
+        {"id": "F5", "criteria": ["Q3"], "candidate": "3", "why": "'roughly 58%' is derived from the report's own numbers (0.90 of 1.54) and holds"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q3", "Q5"], "candidate": "2", "why": "the AAPC thread behind a counted quote is about a payer treating in-network claims as out-of-network (PM correction); the URL shows it, the denial-appeal reading is arguable"},
+        {"id": "A2", "criteria": ["Q3", "Q5"], "candidate": "*", "why": "minor attribution or scope wording the PM review did not record"}
+      ]
+    },
+    {
+      "case": "m2_runnerup",
+      "key": "j5tz",
+      "base": "runnerup",
+      "mutant": "m2_runnerup",
+      "kind": "mutant",
+      "expect": {"status": "revise", "players_missing": null},
+      "required": [
+        {"id": "D5", "criteria": ["Q6", "Q3"], "primary": "Q6", "candidate": "REFERENCE", "markers": ["exact sellers", "six vendors sell", "AnnexMed, Waystar, CombineHealth", "competitors = 3 × med (0.8) = 2.4"], "what": "competitors 1 -> 3 with six exact sellers: competitors.md found no purpose-built vendor and calls Waystar and CombineHealth general enterprise RCM; the lens contradiction is resolved upward silently"},
+        {"id": "D6", "criteria": ["Q3", "Q5"], "primary": "Q3", "candidate": "2", "markers": ["a second AAPC biller (2025-08-02)", "100% of Medicare Advantage plans"], "what": "the 2023 Student Doctor Network physician quote (REFERENCE section of pain.md) presented as a 2025 AAPC biller's complaint for candidate 2"}
+      ],
+      "forbidden": [
+        {"id": "F1", "criteria": ["Q1"], "candidate": "*", "why": "every candidate is present once"},
+        {"id": "F6", "criteria": ["Q2"], "candidate": "1", "why": "unchanged and reproduces"},
+        {"id": "F7", "criteria": ["Q2"], "candidate": "2", "why": "unchanged and reproduces"},
+        {"id": "F8", "criteria": ["Q2"], "candidate": "3", "why": "unchanged and reproduces"},
+        {"id": "F3", "criteria": ["Q4"], "candidate": "REFERENCE", "why": "the pain handling is unchanged and honest"},
+        {"id": "F5", "criteria": ["Q3"], "candidate": "3", "why": "the derived 58% is unchanged and holds"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q3", "Q5"], "candidate": "2", "why": "as in the control (the AAPC UHC thread)"},
+        {"id": "A2", "criteria": ["Q3", "Q5"], "candidate": "*", "why": "as in the control"},
+        {"id": "A3", "criteria": ["Q2"], "candidate": "REFERENCE", "why": "D5's cell, total and ranking are internally consistent; a note on them is no penalty"}
+      ]
+    },
+    {
+      "case": "c3_h1001",
+      "key": "f9mb",
+      "base": "h1001",
+      "mutant": null,
+      "kind": "explicitly uncertain control",
+      "expect": {"status": "pass", "players_missing": null},
+      "required": [],
+      "forbidden": [
+        {"id": "F1", "criteria": ["Q1", "Q2"], "candidate": "*", "why": "every candidate is present once; every cell, total, confidence and the ranking reproduce"},
+        {"id": "F2", "criteria": ["Q4"], "candidate": "5", "why": "pain: 0 solid primary sources, the one quote labelled secondhand, Reddit zero results said so (honest unknown)"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q4"], "candidate": "3", "why": "the pain block and tension line say unverified and Reddit zero results, but the limitations call the 0 a 'confident absence within the venues checked' (wording arguable)"},
+        {"id": "A2", "criteria": ["Q4"], "candidate": "2", "why": "the limitations call the jobs 0 a 'confident absence within the venues checked' (wording arguable)"},
+        {"id": "A3", "criteria": ["Q4"], "candidate": "7", "why": "as A2"},
+        {"id": "A4", "criteria": ["Q3", "Q5", "Q6"], "candidate": "*", "why": "points the PM review did not check one way or the other"}
+      ]
+    },
+    {
+      "case": "m3_h1001",
+      "key": "x4qa",
+      "base": "h1001",
+      "mutant": "m3_h1001",
+      "kind": "mutant",
+      "expect": {"status": "revise", "players_missing": null},
+      "required": [
+        {"id": "D7", "criteria": ["Q1"], "primary": "Q1", "candidate": "7", "markers": ["Schedule C"], "what": "candidate 7 missing from the table, the per-idea sections and the ranking"},
+        {"id": "D8", "criteria": ["Q5", "Q3"], "primary": "Q5", "candidate": "3", "markers": ["all 227", "posted by independent clinics", "no chains or staffing vendors"], "what": "227 'veterinary scribe' postings over all employers (independents, chains, a staffing vendor) presented as all independent clinics, the target buyer"},
+        {"id": "D9", "criteria": ["Q4", "Q3"], "primary": "Q4", "candidate": "5", "markers": ["read the G2 and Capterra reviews", "in full and found no complaints"], "what": "G2 and Capterra, inaccessible per the pain lens, presented as read in full with no complaints found; the Reddit zero-results caveat removed"},
+        {"id": "D13", "criteria": ["Q5", "Q3"], "primary": "Q5", "candidate": "6", "markers": ["43 percent of all their prior-authorization denials", "across every care setting", "market-wide stat"], "what": "the OIG figure (43 percent of IRF denials, 36 percent of LTCH denials overturned) widened to all MA prior-authorization denials in every care setting"}
+      ],
+      "forbidden": [
+        {"id": "F6", "criteria": ["Q2"], "candidate": "*", "why": "the six remaining rows, the confidence labels and the ranking reproduce"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q4"], "candidate": "3", "why": "as in the control"},
+        {"id": "A2", "criteria": ["Q4"], "candidate": "2", "why": "as in the control"},
+        {"id": "A4", "criteria": ["Q3", "Q5", "Q6"], "candidate": "*", "why": "as in the control"},
+        {"id": "A5", "criteria": ["Q1"], "candidate": "*", "why": "leftover mentions of 'the seven' after D7, reported against another candidate"}
+      ]
+    },
+    {
+      "case": "c4_travel_live",
+      "key": "n6vs",
+      "base": "travel_live",
+      "mutant": null,
+      "kind": "known defects (PM review, results/signal-compare.md)",
+      "expect": {"status": "revise", "players_missing": ["Gemini", "Google Flights Explore", "Tripadvisor", "Airbnb", "Hopper"]},
+      "required": [
+        {"id": "K1", "criteria": ["Q5"], "primary": "Q5", "candidate": "V1", "markers": ["salaried postings for the exact", "real paid budget for the manual task", "5,000+"], "what": "employers' salaried travel-advisor postings counted as budget for V1, a consumer app, without saying the payer differs"},
+        {"id": "K4", "criteria": ["Q6"], "primary": "Q6", "candidate": "*", "markers": ["Tripadvisor", "Airbnb", "Hopper", "Gemini", "Google Flights Explore"], "what": "five players the shortlist asks to check appear in neither the competitors lens nor the scorecard"}
+      ],
+      "forbidden": [
+        {"id": "F1", "criteria": ["Q1", "Q2"], "candidate": "*", "why": "every candidate is present once; every cell, total, confidence and the ranking reproduce"},
+        {"id": "F5", "criteria": ["Q3"], "candidate": "V4", "why": "'58% of V4's weighted score (0.72 of 1.25)' is derived and holds"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q6"], "candidate": "V1", "why": "OTA-bundled assistants and ChatGPT support V1's competitors 3; the recommendation labels them free bundled add-ons (the formula reads crowding as demand: not rescored)"},
+        {"id": "A2", "criteria": ["Q5"], "candidate": "V2", "why": "the shortlist names advisors as the people paid by hand for V1-V3; low job scores for V2/V3 rest on the same proxy"},
+        {"id": "A3", "criteria": ["Q5"], "candidate": "V3", "why": "as A2"},
+        {"id": "A4", "criteria": ["Q3", "Q4", "Q5", "Q6"], "candidate": "*", "why": "points the PM review did not check one way or the other, and partial coverage notes (AI Mode only as a search figure, GetYourGuide and Viator only as affiliate partners)"}
+      ]
+    },
+    {
+      "case": "c5_travel_c1",
+      "key": "b7ye",
+      "base": "travel_c1",
+      "mutant": null,
+      "kind": "candidate-report control (spend lens in place of jobs)",
+      "expect": {"status": "pass", "players_missing": []},
+      "required": [],
+      "forbidden": [
+        {"id": "F1", "criteria": ["Q1", "Q2"], "candidate": "*", "why": "every candidate is present once; every cell (spend in place of jobs), total, confidence and the ranking reproduce"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q3"], "candidate": "V1", "why": "Mindtrip $22.5M rests on blocked pages' snippets (labelled secondary); the 56% AI-planning figure keeps the lens's own Allianz/Ipsos attribution, which the PM review found wrong on the web"},
+        {"id": "A2", "criteria": ["Q3", "Q4", "Q5", "Q6"], "candidate": "*", "why": "points the PM review found only on the web or did not check (dates, ChatGPT memory, praise counted as pain), and platform-overlap notes"}
+      ]
+    },
+    {
+      "case": "m4_travel_c1",
+      "key": "u1gr",
+      "base": "travel_c1",
+      "mutant": "m4_travel_c1",
+      "kind": "mutant",
+      "expect": {"status": "revise", "players_missing": []},
+      "required": [
+        {"id": "D10", "criteria": ["Q1"], "primary": "Q1", "candidate": "V2", "markers": ["Destination quiz widget"], "what": "V2 appears twice in the table and the ranking, the second time under another name"},
+        {"id": "D11", "criteria": ["Q2"], "primary": "Q2", "candidate": "V3", "markers": ["1×0.8=2.00", "0.35(2.00)", "= 2.00", "1.54"], "what": "V3's spend cell 1×0.8 written as 2.00 (0.80), and the total 1.54 follows it (1.12)"},
+        {"id": "D12", "criteria": ["Q3", "Q4"], "primary": "Q3", "candidate": "V3", "markers": ["I keep a spreadsheet of every trip", "r/solotravel"], "what": "a Reddit quote in no lens file (the pain lens records reddit.com as returning nothing) added to V3's pain evidence"}
+      ],
+      "forbidden": [
+        {"id": "F6", "criteria": ["Q2"], "candidate": "V1", "why": "unchanged and reproduces"},
+        {"id": "F7", "criteria": ["Q2"], "candidate": "V4", "why": "unchanged and reproduces"}
+      ],
+      "allowed": [
+        {"id": "A1", "criteria": ["Q3"], "candidate": "V1", "why": "as in the control"},
+        {"id": "A2", "criteria": ["Q3", "Q4", "Q5", "Q6"], "candidate": "*", "why": "as in the control"},
+        {"id": "A3", "criteria": ["Q2"], "candidate": "V2", "why": "ranking or tie notes caused by D10's duplicate row"}
+      ]
+    }
+  ],
+  "bar": {
+    "B1": "Every required defect (13 planted D1-D13, 2 known K1 K4: 15) detected, each with matching evidence.",
+    "B2": "No forbidden item alleged; every other verified, material finding adjudicated true by hand under the rubric.",
+    "B3": "Overall status as expected for all nine; a control may end revise only through allowed or adjudicated-true findings. No criterion ends unknown on any case. The required-player check reports exactly the expected missing players where the shortlist lists players.",
+    "B4": "The deterministic recomputation reproduces every table row of the five sources (23 rows) and flags no control row; the frozen sources, the originals on disk and every graded report folder are unchanged by grading.",
+    "B5": "Every table row parses, including the spend lens variant and the h1001, wedges, runnerup and travel formats.",
+    "B6": "Each finding carries criterion, candidate, kind, severity, claim, problem and verbatim passages; unverified findings are listed apart and not counted.",
+    "B7": "Each grade reports its limitations, and each run's server cost is recorded.",
+    "B8": "Every graded run executed on the shared Temper server through start.sh with a receipt; execution ids and UI links recorded.",
+    "B9": "The PM reads every finding and every control result and agrees with the scoring (manual review written down).",
+    "B10": "End-to-end: a candidate signal_harvest with the post-synthesis check runs on the shared server; scorecard_path, ranking and recommend_advance keep their contract, the synthesizer's scoring is unchanged, and the quality status and report path come out."
+  }
+}

@@ -1,0 +1,40 @@
+# @description PRODUCT SIGNAL QUALITY last step (product role): the quality status. No model.
+# Runs on every path. Keeps a review finding only when its passages are verbatim in the files
+# it names (an absence allegation only when the script confirms the absence), resolves every
+# lead, and sets pass / revise / unknown per criterion Q1-Q6 and overall; re-hashes the report
+# files to prove grading changed nothing. Writes state/signal_grade/quality.json and quality.md
+# and owns the workflow outputs. A grade from another run, or none, is unknown. Part of
+# workflows/signal_grade.yaml and the post-synthesis quality check of workflows/signal_harvest.yaml.
+agent:
+  name: signal_grade_finalize
+  version: 1
+  type: script
+  timeout_seconds: 180
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    run_id = (os.environ.get('{{ (run_id or '') | env }}') or '').strip()
+    grade = Path('state/signal_grade')
+    problem = None
+    try:
+        setup = json.loads((grade / 'setup.json').read_text())
+    except (OSError, ValueError):
+        setup, problem = None, 'the grading setup did not finish (see the setup step)'
+    if setup is not None and setup.get('run_id') != run_id:
+        problem = 'state/signal_grade holds a grade from another run: grade in a fresh workspace'
+    if problem is None and not (grade / 'check.json').is_file():
+        problem = 'the deterministic check did not run (see the setup step)'
+    if problem:
+        print(json.dumps({"status": "completed", "quality_status": "unknown", "quality_path": "", "criteria": {},
+                          "findings": 0, "unverified": 0, "players_missing": None, "problems": [problem]}))
+        sys.exit(0)
+    sys.exit(subprocess.call([sys.executable, str(grade / 'check_signal.py'), 'verify']))
+    PY

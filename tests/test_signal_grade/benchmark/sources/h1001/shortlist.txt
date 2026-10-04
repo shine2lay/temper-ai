@@ -1,0 +1,59 @@
+SHORTLIST SOURCE: temper scan_market (v2, landed 2026-10-01), snapshot of
+~/temper-ai/state/scan/shortlist.md captured 2026-10-01 17:52. Seven ranked
+wedge candidates. Below is ONLY each idea's name, target user, the manual task
+it would automate, and the wedge — deliberately WITHOUT the scan's own stats or
+URLs, so you gather demand evidence INDEPENDENTLY and any agreement is real
+triangulation, not an echo. Do your own fresh research for every figure.
+
+CANDIDATE 1 — Small-landlord unit-turn / vacancy-days coordination (property management)
+  Target user: small property-management firms (~50-500 units) using Buildium/AppFolio.
+  Problem/manual task: every vacant day between a move-out and the next move-in is
+    lost rent; the "make-ready" turn (cleaning, repairs, vendor scheduling, listing
+    readiness) is coordinated manually.
+  Wedge: scheduling + vendor dispatch + status tracking + listing-readiness triggers
+    layered on top of the existing property-management system.
+
+CANDIDATE 2 — Small-fleet detention capture & auto-invoicing (trucking)
+  Target user: small trucking carriers (~<=10 trucks) / owner-operators.
+  Problem/manual task: drivers sit unpaid at shipper/receiver docks ("detention"),
+    and carriers often fail to document, invoice, or collect the detention fees owed.
+  Wedge: geofenced check-in/out from existing ELD/phone GPS, timestamped evidence
+    packets, and auto-generated detention invoices.
+
+CANDIDATE 3 — Vet-clinic documentation / records layer on PIMS (veterinary)
+  Target user: independent veterinary clinics (~1-3 vets).
+  Problem/manual task: clinical records, client callbacks, and after-hours charting
+    are a top driver of staff/vet burnout; documentation eats clinical hours.
+  Wedge: an ambient-capture + structured-record add-on that sits on top of the
+    clinic's existing practice-management system (PIMS), not a PIMS replacement.
+
+CANDIDATE 4 — Dental insurance-verification + denial follow-up (dental)
+  Target user: independent dental offices (e.g. on Open Dental / Dentrix).
+  Problem/manual task: front-desk/billing staff spend growing time verifying patient
+    insurance benefits and chasing underpaid or denied claims.
+  Wedge: automated eligibility/benefit checks and denial follow-up driven by
+    payer-portal rules.
+
+CANDIDATE 5 — Hourly / blue-collar high-volume applicant screening (recruiting)
+  Target user: multi-location hourly employers (retail, QSR, warehouse, logistics).
+  Problem/manual task: high-volume roles take longer to fill and recruiters are
+    buried in large volumes of unqualified applicants to screen and schedule.
+  Wedge: commodity screening/qualification + interview scheduling that plugs into
+    existing low-cost applicant-tracking systems.
+
+CANDIDATE 6 — Specialty / post-acute prior-auth + denial-appeal packets (healthcare RCM)
+  Target user: a single specialty or post-acute segment (e.g. inpatient-rehab / LTCH)
+    practices or facilities and their billing teams.
+  Problem/manual task: clinicians/staff spend many hours per week on insurance
+    prior-authorization submissions, and on assembling appeal packets for denials
+    (many of which are overturned on appeal).
+  Wedge: prior-auth submission + evidence-based denial-appeal packet generation for
+    one payer/clinical segment.
+
+CANDIDATE 7 — Schedule C client record-gathering for tax preparers (accounting/tax)
+  Target user: small tax-preparation firms.
+  Problem/manual task: most of the work is upstream recordkeeping, and chasing
+    small-business (Schedule C) clients for missing documents before the deadline is
+    manual and repetitive.
+  Wedge: bank/card-feed categorization plus a client portal that proactively chases
+    missing Schedule C records ahead of tax season.

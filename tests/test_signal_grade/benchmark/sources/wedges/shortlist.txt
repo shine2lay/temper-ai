@@ -1,0 +1,38 @@
+SHORTLIST SOURCE: the product role's opportunity briefs of 2026-10-01 (temper opportunity_brief).
+Both briefs said "change the wedge": move from the front-end task, which practice software and payer
+portals are bundling for free, to the back-end task (chasing denied and underpaid claims, appealing
+denials). Below are the two NEW back-end wedges and, as CONTROLS, the two OLD front-end wedges, so the
+run measures them side by side. Only each idea's name, target user, manual task and wedge are given,
+deliberately WITHOUT the briefs' stats or URLs: gather demand evidence INDEPENDENTLY, so any agreement
+is real triangulation, not an echo. Do your own fresh research for every figure. Score each of the
+four separately; do not merge a new wedge with its control.
+
+CANDIDATE A (NEW) — Dental denied/underpaid-claim follow-up for Open Dental offices (dental)
+  Target user: independent single-office dental practices running Open Dental (owner dentist,
+    office manager, insurance coordinator).
+  Problem/manual task: insurance claims come back denied, stall unpaid for weeks, or get paid below
+    the estimate; staff have no time to chase them, so money owed to the practice is never collected.
+  Wedge: reads the office's claims through the Open Dental API, flags claims unpaid too long or paid
+    below the estimate, checks their status electronically, and gives staff a ranked follow-up work
+    list (target price about $199 per office per month).
+
+CANDIDATE A0 (CONTROL, OLD) — Dental insurance-eligibility verification before the visit (dental)
+  Target user: the same independent dental practices.
+  Problem/manual task: before each appointment staff phone insurers or log into payer portals to
+    check coverage, frequencies and remaining benefits.
+  Wedge: automated eligibility and benefits verification ahead of each appointment.
+
+CANDIDATE B (NEW) — Medicare Advantage admission-denial appeal packets for rehab hospitals (post-acute care)
+  Target user: freestanding inpatient rehabilitation facilities (IRFs) first, then long-term care
+    hospitals (LTCHs): admissions directors, utilization-review and billing leaders.
+  Problem/manual task: Medicare Advantage plans deny admission requests; appealing takes hours of
+    record-pulling and letter-writing within tight deadlines, so many denials are never appealed and
+    the admission (and its revenue) is lost.
+  Wedge: same-day appeal packets for denied admissions (records pulled, payer criteria matched,
+    letter drafted), priced as a share of each admission won back.
+
+CANDIDATE B0 (CONTROL, OLD) — Prior-authorization submission and tracking for post-acute providers (post-acute care)
+  Target user: the same rehab and long-term care hospitals.
+  Problem/manual task: staff submit prior-authorization requests through payer portals and fax,
+    then chase their status by phone.
+  Wedge: automated prior-authorization submission and status tracking.

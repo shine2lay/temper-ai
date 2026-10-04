@@ -22,6 +22,15 @@ workflow:
   #
   # Landed 2026-10-01 after A/B evidence review (top-idea citations verified). provider: claude = Claude
   # Code CLI (its own WebSearch/WebFetch tool loop); no temper tools: blocks.
+  #
+  # Post-synthesis quality check (2026-10-04, queue #12): the three signal_grade steps
+  # (workflows/signal_grade.yaml) grade the report just written for soundness against its own
+  # lens files: arithmetic, confidence, ranking and candidates by script, then provenance,
+  # blocked sources, scope and competitor claims by a reviewer, kept only when verbatim. They
+  # read the report and write state/signal_grade/ only; the lenses, the synthesizer, its
+  # weights and its outputs are unchanged. The research outputs stand whatever the grade says;
+  # quality_status says whether the report can be trusted as written (pass), needs fixing
+  # (revise) or could not be fully checked (unknown).
   version: 1
   description: |
     Rung-0 signal harvest: from a market shortlist, gather four free demand
@@ -32,10 +41,18 @@ workflow:
     shortlist:
       type: string
       required: true   # the scan_market shortlist (idea names + one-line each)
+    quality_assets_dir:
+      type: string
+      required: false
+      default: ""
+      description: "Folder with the grader's check_signal.py and rubric.md; empty uses the deployed copy (a candidate run stages its own)."
   outputs:
     scorecard_path: synthesize.structured.scorecard_path
     ranking: synthesize.structured.ranking
     recommend_advance: synthesize.structured.recommend_advance
+    quality_status: quality_finalize.structured.quality_status
+    quality_path: quality_finalize.structured.quality_path
+    quality_criteria: quality_finalize.structured.criteria
 
   nodes:
     # Four parallel free-signal lenses + a leader that scores and ranks them.
@@ -51,3 +68,26 @@ workflow:
         - agent: signal_competitors
         - agent: signal_synthesize
           role: leader
+
+    # Quality check of the report just written (no model; report defaults to state/, where the
+    # synthesizer writes it). Never changes the report.
+    - name: quality_setup
+      type: agent
+      agent: signal_grade_setup
+      depends_on: [synthesize]
+      input_map:
+        shortlist: input.shortlist
+        assets_dir: input.quality_assets_dir
+
+    - name: quality_review
+      type: agent
+      agent: signal_grade_review
+      depends_on: [quality_setup]
+      condition: {source: quality_setup.structured.status, operator: equals, value: checked}
+
+    # Verification and the quality status on every path, no model.
+    - name: quality_finalize
+      type: agent
+      agent: signal_grade_finalize
+      depends_on: [quality_review]
+      run_after_failure: true

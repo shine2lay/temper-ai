@@ -196,6 +196,43 @@ run; `score.py CASE=WORKSPACE` scores a finished run). A changed candidate rerun
 through a namespaced registration; the bar, scores, costs and manual reviews of the first
 version are in `~/product-autopilot/results/2026-10-03-shape-11/` (`REPORT.md`).
 
+## Grade a signal report (`signal_grade`)
+
+`signal_grade` grades one finished `signal_harvest` report for soundness against its own lens
+files, not whether the market is good: a weak idea in a sound report passes. A script recomputes
+every cell, total, overall confidence and the ranking with the synthesizer's formula, checks the
+shortlist's candidates and required players, and traces figures, quotes and URLs to the lens
+files; a reviewer (no web) resolves what the script could not and checks attribution, blocked
+sources and honest unknowns, scope (buyer, job, population, price) and exact versus adjacent or
+bundled competitors; a finding counts only when its passages are verbatim in the files. The
+result is `pass`, `revise` or `unknown` per criterion Q1-Q6 and overall, in
+`state/signal_grade/quality.md` and `quality.json`. It never rescores and never changes the report.
+
+`signal_harvest` runs the same three steps after its synthesizer (outputs `quality_status`,
+`quality_path`, `quality_criteria`; the research outputs are unchanged). To grade an older
+report, stage it as `_case/` (`shortlist.txt`, `signal_scorecard.md`, `signal/<lens>.md`):
+
+```sh
+JOB=grade-my-report
+mkdir ~/temper-ai/workspaces/product/$JOB
+python3 ~/product-autopilot/server.py stage /path/to/report-folder \
+  --workspace ~/temper-ai/workspaces/product/$JOB --relative _case
+~/product-autopilot/start.sh $JOB signal_grade --workspace ~/temper-ai/workspaces/product/$JOB \
+  --inputs ~/product-autopilot/inputs/$JOB.json
+```
+
+The inputs file is `{"report": "<workspace>/_case", "shortlist_path":
+"<workspace>/_case/shortlist.txt"}`; a candidate run also stages its own
+`configs/agents/signal_grade_assets` as `_assets` and passes `"assets_dir": "<workspace>/_assets"`
+(`quality_assets_dir` for `signal_harvest`). A run costs about $1-2 for the review; the script
+steps cost nothing.
+
+Regression benchmark: `tests/test_signal_grade/benchmark/` holds nine fixed cases built from five
+retained reports (sound and uncertain controls, labelled mutants, and the travel report's known
+defects); `score.py CASE=WORKSPACE` scores a finished run against `expected.json`, which is never
+staged into a run. A changed grader reruns all nine; the bar and calibration are in
+`~/product-autopilot/results/2026-10-04-signal-grade-12/` (`REPORT.md`).
+
 ## Checks
 
 Run Product helper checks once after revisions:
@@ -205,6 +242,7 @@ python3 -m unittest discover -s configs/product/bin/tests -v
 python3 ~/product-autopilot/tests/check_digest.py
 uv run pytest tests/test_scan_serving -q
 uv run pytest tests/test_shape_mvp -q
+uv run pytest tests/test_signal_grade -q
 ```
 
 These use fake status/config APIs, not model request fixtures or third-party services. New

@@ -1,0 +1,56 @@
+SHORTLIST SOURCE: the product role's owner-requested deep research on travel discovery by
+preference (2026-10-03). Four versions of one idea, researched side by side. Only each version's
+name, target user, problem, wedge and money model are given, deliberately WITHOUT stats or URLs:
+gather evidence independently and do your own fresh research for every figure. Score each of the
+four separately. US first, English sources; note big non-US players where they matter.
+
+READ FIRST: V1-V3 are CONSUMER products and V4 is a business product. For V1-V3 the target user
+IS the traveler: first-person complaints come from travelers themselves (travel forums that load
+normally, Hacker News, the Stack Exchange travel site, and App Store reviews of the CONSUMER
+trip-planning apps travelers use; for these versions the consumer app is the target user's app).
+For V4 the target users are travel sellers (independent travel advisors, host agencies, tour
+operators, hotel groups, destination marketing organisations): their words are in advisor
+communities and in reviews of the software they work in. For V1-V3, people paid to do the task by
+hand are those paid to plan trips or match travelers to destinations (travel advisors, trip
+designers, concierge planners); consumers themselves do not post jobs.
+
+PLAYERS TO CHECK (existence and overlap with each version, plus any others you find): Mindtrip,
+Layla, Wanderlog, TripIt, Google (Gemini, AI Mode in Search, Google Flights Explore), ChatGPT and
+any travel apps inside it, Expedia's AI assistant, Booking.com's AI trip planner, Trip.com
+TripGenie, Kayak, Tripadvisor, Airbnb, Hopper, Polarsteps, GetYourGuide, Viator; for V4 also
+Travefy, Tern and Fora.
+
+V1 - AI-chat trip planner for leisure travelers (consumer)
+  Target user: US leisure travelers planning a vacation (couples, families, friend groups).
+  Problem: working out where to go and what to do takes hours across blogs, reviews, maps and
+    booking sites, and generic top-10 lists ignore their tastes, budget and constraints.
+  Wedge: a chat assistant that asks about preferences and constraints and returns a personal
+    day-by-day itinerary (places, stays, activities on a map) with bookable links. Money: free to
+    use, affiliate commissions on bookings, optional premium subscription (about $5-10 a month).
+
+V2 - Preference quiz that matches travelers to destinations (consumer, or a widget for travel media and sellers)
+  Target user: travelers who know their budget and dates but not where to go; second, travel
+    media sites and travel sellers that would embed the quiz.
+  Problem: choosing a destination among endless inspiration (where should we go this time?).
+  Wedge: a short quiz (budget, dates, home airport, interests, travel style) that returns ranked
+    destination matches with reasons, typical prices and best season. Money: affiliate links on a
+    consumer site or app, or a widget licensed to travel media, tour operators or destination
+    marketers (about $100-500 a month, or a revenue share).
+
+V3 - Recommendations from a traveler's own past trips (consumer)
+  Target user: frequent US leisure travelers (about 3 or more trips a year) and loyalty-program
+    members.
+  Problem: every plan starts from zero; travel tools do not know what the traveler liked before.
+  Wedge: import past trips from email confirmations, loyalty accounts, photos or maps/location
+    history; build a taste profile; recommend next destinations, stays and activities. Money:
+    freemium subscription (about $5-10 a month or $50 a year) plus affiliate commissions.
+
+V4 - Client-preference matching sold to travel businesses (business)
+  Target user: independent travel advisors and host agencies first; then tour operators, hotel
+    groups and destination marketing organisations.
+  Problem: advisors spend hours learning each client's tastes and researching options before a
+    proposal; destinations and hotels want well-matched visitors.
+  Wedge: a client intake (quiz or chat) plus a matching engine that drafts a matched proposal for
+    the advisor to edit (about $30-80 per advisor per month), or an embeddable matcher and
+    qualified-lead source for destinations, tour operators and hotel groups (per lead or annual
+    licence).

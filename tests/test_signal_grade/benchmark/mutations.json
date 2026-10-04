@@ -1,0 +1,136 @@
+{
+  "note": "Labelled corruptions of the frozen source scorecards (queue #12). Each defect is a set of exact edits that build.py applies in order to the base scorecard; every anchor must match exactly once or the build stops. Lens files and shortlists are never edited: the planted defect lives in the scorecard, and the lens files are the evidence a grader must check it against. Ops: replace (find must occur exactly count times, default 1), replace_lines (exactly one line contains start; the first line from there containing end closes the range; both inclusive; with '' deletes), insert_after (exactly one line contains anchor).",
+  "mutants": {
+    "m1_wedges": {
+      "base": "wedges",
+      "defects": {
+        "D1": {
+          "what": "Arithmetic: candidate A's weighted total written as 1.19 (its own terms sum to 0.885 -> 0.89), and the ranking and recommendation follow the wrong total.",
+          "ops": [
+            {"op": "replace", "find": "| **0.89** | low |", "with": "| **1.19** | low |"},
+            {"op": "replace", "find": "= 0.075+0.56+0.10+0.15 = **0.89**", "with": "= 0.075+0.56+0.10+0.15 = **1.19**"},
+            {"op": "replace_lines", "start": "2. **B** — IRF/LTCH MA admission-denial appeals (NEW) — weighted_score 1.12, confidence low", "end": "4. **A** — Dental denied/underpaid-claim follow-up (NEW) — weighted_score 0.89, confidence low", "with": "2. **A** — Dental denied/underpaid-claim follow-up (NEW) — weighted_score 1.19, confidence low\n3. **B** — IRF/LTCH MA admission-denial appeals (NEW) — weighted_score 1.12, confidence low\n4. **B0** — Post-acute prior-auth submission/tracking (CONTROL) — weighted_score 0.94, confidence low"},
+            {"op": "replace", "find": "**Drop / deprioritize: Candidate A** (lowest score, 0.89)", "with": "**Drop / deprioritize: Candidate A** (score 1.19)"},
+            {"op": "replace", "find": "it sits just above A (0.94)", "with": "it sits just below A (0.94)"}
+          ]
+        },
+        "D2": {
+          "what": "Confidence rule: A0's overall confidence raised from low to med although search and pain are both low-confidence (two low signals force low).",
+          "ops": [
+            {"op": "replace", "find": "| 3×0.8=2.40 | **1.85** | low |", "with": "| 3×0.8=2.40 | **1.85** | med |"},
+            {"op": "replace_lines", "start": "All four overall-confidence ratings are **low** — see the per-idea blocks and", "end": "LIMITATIONS for why each one trips the low-confidence rule.", "with": "Three of the four overall-confidence ratings are **low**; A0's is **med**. See the\nper-idea blocks and LIMITATIONS."},
+            {"op": "replace_lines", "start": "**Overall confidence: low** — jobs and competitors are not individually low, but", "end": "out explicitly** (see RECOMMENDATION below for the tension this raises).", "with": "**Overall confidence: med** — jobs and competitors, the two money signals, are both\nmed/high-confidence, so the score rests on solid ground even though search and\npain are thin. This is the strongest case of the four (see RECOMMENDATION below)."},
+            {"op": "replace", "find": "1. **A0** — Dental eligibility verification (CONTROL) — weighted_score 1.85, confidence low", "with": "1. **A0** — Dental eligibility verification (CONTROL) — weighted_score 1.85, confidence med"},
+            {"op": "replace_lines", "start": "(All four tie on overall confidence at \"low,\" so the ranking is driven purely by", "end": "weighted_score; no tie-break was needed.)", "with": "(No ties on weighted_score, so no tie-break was needed.)"},
+            {"op": "replace", "find": "both labeled promising-but-unproven:**", "with": "with B labeled promising-but-unproven:**"}
+          ]
+        },
+        "D3": {
+          "what": "Unsupported figure: B's AMRPA initial denial rate written as 74.2% (the lens files say 57.4%), in its search evidence and the recommendation.",
+          "ops": [
+            {"op": "replace", "find": "57.4%", "with": "74.2%", "count": 2}
+          ]
+        },
+        "D4": {
+          "what": "Unknown presented as absence: B's pain 0 rests on a venue gap (no IRF/LTCH forum reachable, Reddit returned nothing) but is rewritten as a searched, real absence, in the evidence block, the recommendation and the limitations.",
+          "ops": [
+            {"op": "replace_lines", "start": "  the agent found no IRF/LTCH-specific forum in the accessible venue list; the one", "end": "  pain doesn't exist.", "with": "  the agent searched the IRF/LTCH venues and found no complaints there; the one\n  near-miss (AAPC thread) was from an orthopedic-practice biller, not rehab-hospital\n  staff. Read this as a **real absence**: rehab-hospital staff are not voicing\n  this pain."},
+            {"op": "replace_lines", "start": "  was found anywhere — but the pain agent attributes this to a structural gap (no", "end": "  accessible IRF/LTCH forum existed in the venue list), not disinterest. **Cheap", "with": "  was found anywhere, which suggests rehab-hospital staff are not troubled by it. **Cheap"},
+            {"op": "replace_lines", "start": "  signal is especially fragile for B/B0: the agent states plainly that no", "end": "  is a coverage gap, not evidence the target users are untroubled.", "with": "  signal is especially fragile for B0. For B it is not: the pain agent searched the\n  rehab-hospital venues, so pain=0 there is evidence the target users are untroubled."}
+          ]
+        }
+      }
+    },
+    "m2_runnerup": {
+      "base": "runnerup",
+      "defects": {
+        "D5": {
+          "what": "Adjacent as exact: REFERENCE's competitors rewritten from 1 (lens files disagree; competitors.md found no purpose-built vendor and calls Waystar and CombineHealth general enterprise RCM) to 3, six exact sellers, with the contradiction and its caveats removed and the total, ranking and recommendation made consistent (1.52).",
+          "ops": [
+            {"op": "replace", "find": "| 1×0.8=0.8 | **1.04** | med |", "with": "| 3×0.8=2.4 | **1.52** | med |"},
+            {"op": "replace_lines", "start": "- **competitors = 1 × med (0.8) = 0.8.** **Cross-signal tension, surfaced", "end": "  never be fully confirmed via free search alone\").", "with": "- **competitors = 3 × med (0.8) = 2.4.** A crowded field of exact sellers: six\n  vendors sell admission-denial-appeal tooling specifically for IRF/LTCH\n  (PayerWatch/Veracity AI, Mediware MediLinks preadmission module, UDSMR\n  preadmission module, AnnexMed, Waystar, CombineHealth) —\n  https://www.udsmr.org/products/inpatient-rehab. Strong funding in the same\n  category (Cohere Health $200M, Waystar public) shows buyers already pay for\n  this exact job. Confidence med."},
+            {"op": "replace", "find": "0.30×0.8 = 0.24+0.56+0.0+0.24 = **1.04**", "with": "0.30×2.4 = 0.24+0.56+0.0+0.72 = **1.52**"},
+            {"op": "replace_lines", "start": "(not independently fetched) and the competitors signal carries an unresolved", "end": "internal contradiction (see above) rather than a clean primary-sourced read.", "with": "(not independently fetched)."},
+            {"op": "replace", "find": "weighted_score **1.04**, confidence med", "with": "weighted_score **1.52**, confidence med"},
+            {"op": "replace", "find": "Lowest weighted_score (1.04) of the four", "with": "Lowest weighted_score (1.52) of the four"},
+            {"op": "replace", "find": "convert into a strong *competitive-crowding* or *pain-voice* score under this", "with": "convert into a strong *pain-voice* score under this"},
+            {"op": "replace", "find": "Two things should be resolved before any further spend:", "with": "One thing should be resolved before any further spend:"},
+            {"op": "replace_lines", "start": "forum exists for IRF/LTCH admissions/UR staff — not necessarily disinterest),", "end": "happen before this idea is either dropped for good or re-promoted.", "with": "forum exists for IRF/LTCH admissions/UR staff — not necessarily disinterest).\nThe competitor field is already crowded with six exact sellers."},
+            {"op": "replace_lines", "start": "  - **REFERENCE's competitors = 1** rests on an unresolved contradiction", "end": "    a clean read.", "with": ""}
+          ]
+        },
+        "D6": {
+          "what": "Misattributed quote: the Student Doctor Network physician post (2023-03-16, REFERENCE section of pain.md, not counted there) is inserted into candidate 2's pain evidence as a 2025 AAPC biller's complaint.",
+          "ops": [
+            {"op": "replace", "find": "  — plus a corroborating third post from a second author (knissen, 2026-08-12)", "with": "  — plus a second AAPC biller (2025-08-02): *\"In rehab, now 100% of Medicare\n  Advantage plans for example deny rehab. I get to do P2P on every patient\"* —\n  and a corroborating third post from a second author (knissen, 2026-08-12)"}
+          ]
+        }
+      }
+    },
+    "m3_h1001": {
+      "base": "h1001",
+      "defects": {
+        "D7": {
+          "what": "Missing candidate: candidate 7 (Schedule C record-gathering) removed from the table, its evidence block, the ranking and the recommendation and limitations.",
+          "ops": [
+            {"op": "replace_lines", "start": "| 7 | Schedule C record-gathering (tax) | 1×0.5=0.50", "end": "| 7 | Schedule C record-gathering (tax) | 1×0.5=0.50", "with": ""},
+            {"op": "replace_lines", "start": "### 7. Schedule C client record-gathering for tax preparers", "end": "  money signals are the weakest of all seven candidates here.", "with": ""},
+            {"op": "replace_lines", "start": "| 7 | Schedule C record-gathering (tax) | 0.55 | LOW |", "end": "| 7 | Schedule C record-gathering (tax) | 0.55 | LOW |", "with": ""},
+            {"op": "replace_lines", "start": "**Drop — Detention capture & auto-invoicing, and Schedule C", "end": "trying, these are the two to deprioritize for paid validation.", "with": "**Drop — Detention capture & auto-invoicing.** It shows the disqualifying pattern:\n**no budget signal** (jobs = 0 — the jobs agent's own words call it \"the honest\nweak/none found case,\" with the underlying task folded into generic biller titles\nrather than separately budgeted headcount) *and* the weakest, least-verified\ncompetitor data (score 1, confidence low, no primary review-platform fetch\nsucceeded). Decent pain-voice evidence exists (score 2), so the underlying problem\nis real — but with zero evidence anyone has a dedicated budget line for solving it\nand zero verified picture of who else is already trying, this is the one to\ndeprioritize for paid validation."},
+            {"op": "replace", "find": "on every attempt** for candidates 2, 5, 6, and 7.", "with": "on every attempt** for candidates 2, 5 and 6."},
+            {"op": "replace", "find": "this cuts against C1, C2, and C7 specifically, all of", "with": "this cuts against C1 and C2 specifically, both of"},
+            {"op": "replace", "find": "C3's pain score (0) and C2/C7's jobs scores", "with": "C3's pain score (0) and C2's jobs score"},
+            {"op": "replace", "find": "(0) are confident absences within the venues checked, but all three", "with": "(0) are confident absences within the venues checked, but both"}
+          ]
+        },
+        "D8": {
+          "what": "Denominator narrowed: candidate 3's 227 SimplyHired 'veterinary scribe' postings (all employers: independents, VCA/Ethos/Mars chains and a staffing vendor) presented as all posted by independent clinics, the target buyer.",
+          "ops": [
+            {"op": "replace_lines", "start": "  2026-10-01), salary band $25-30/hr (Pender Veterinary Centre), posted by", "end": "  multiple independent signs of a recurring, budgeted role, not a one-off.", "with": "  2026-10-01), salary band $25-30/hr (Pender Veterinary Centre), all 227\n  posted by independent clinics, the exact target buyer, with no chains or\n  staffing vendors in the count — a recurring, budgeted role, not a one-off."}
+          ]
+        },
+        "D9": {
+          "what": "Blocked source presented as read: candidate 5's pain evidence claims G2 and Capterra reviews were read in full with no complaints found (the pain lens records G2/Capterra as inaccessible, snippets only) and drops the Reddit zero-results caveat.",
+          "ops": [
+            {"op": "replace", "find": "- **pain = 1 × conf low = 0.50.** Pain agent found 0 solid primary sources;\n  the single quote counted is secondhand", "with": "- **pain = 1 × conf low = 0.50.** Pain agent read the G2 and Capterra reviews of\n  the main screening tools in full and found no complaints about screening\n  volume; the single quote counted is secondhand"},
+            {"op": "replace", "find": "  his own role). Reddit (r/recruiting, r/humanresources,\n  r/KitchenConfidential) returned zero results across every attempt.", "with": "  his own role)."}
+          ]
+        },
+        "D13": {
+          "what": "Population widened: candidate 6's HHS OIG figure (43 percent of IRF denials, 36 percent of LTCH denials overturned) presented as 43 percent of all MA prior-authorization denials across every care setting.",
+          "ops": [
+            {"op": "replace_lines", "start": "  via direct fetch — *\"Medicare Advantage Organizations collectively", "end": "  framing almost exactly. r/CodingandBilling confirmed at 35,500 members", "with": "  via direct fetch: Medicare Advantage organizations overturned 43 percent of\n  all their prior-authorization denials, across every care setting (oig.hhs.gov,\n  2026) — a market-wide stat for the whole denial problem the candidate\n  targets. r/CodingandBilling confirmed at 35,500 members"}
+          ]
+        }
+      }
+    },
+    "m4_travel_c1": {
+      "base": "travel_c1",
+      "defects": {
+        "D10": {
+          "what": "Duplicate candidate: V2 appears twice in the table and the ranking, the second time under another name.",
+          "ops": [
+            {"op": "insert_after", "anchor": "| V2 — Preference quiz | 1×0.5=0.50 |", "text": "| V2 — Destination quiz widget | 1×0.5=0.50 | 1×0.5=0.50 | 2×0.8=1.60 | 1×0.5=0.50 | **0.72** | low | **SOME** — as above |"},
+            {"op": "insert_after", "anchor": "4. **V2 — Preference quiz** — weighted_score 0.72, confidence **low**", "text": "5. **V2 — Destination quiz widget** — weighted_score 0.72, confidence **low**"}
+          ]
+        },
+        "D11": {
+          "what": "Cell arithmetic: V3's spend cell written 1×0.8=2.00 (should be 0.80), and the total (1.54), arithmetic line, block and ranking follow it.",
+          "ops": [
+            {"op": "replace", "find": "| 0×0.5=0.00 | 1×0.8=0.80 | 3×1.0=3.00 | 1×0.8=0.80 | **1.12** |", "with": "| 0×0.5=0.00 | 1×0.8=2.00 | 3×1.0=3.00 | 1×0.8=0.80 | **1.54** |"},
+            {"op": "replace", "find": "- V3: 0.15(0.00) + 0.35(0.80) + 0.20(3.00) + 0.30(0.80) = 0 + 0.28 + 0.60 + 0.24 = **1.12**", "with": "- V3: 0.15(0.00) + 0.35(2.00) + 0.20(3.00) + 0.30(0.80) = 0 + 0.70 + 0.60 + 0.24 = **1.54**"},
+            {"op": "replace", "find": "- **spend = 1 × conf 0.8 (med) = 0.80.**", "with": "- **spend = 1 × conf 0.8 (med) = 2.00.**"},
+            {"op": "replace", "find": "**weighted_score = 1.12. Overall confidence: med**", "with": "**weighted_score = 1.54. Overall confidence: med**"},
+            {"op": "replace", "find": "3. **V3 — Recommendations from past trips** — weighted_score 1.12, confidence **med**", "with": "3. **V3 — Recommendations from past trips** — weighted_score 1.54, confidence **med**"}
+          ]
+        },
+        "D12": {
+          "what": "Fabricated quote: a Reddit r/solotravel quote that is in no lens file (the pain lens records reddit.com as returning nothing) added to V3's pain evidence.",
+          "ops": [
+            {"op": "replace", "find": "  trips... Who remembers dates?!\" (Polarsteps App Store, 2026-04-14).", "with": "  trips... Who remembers dates?!\" (Polarsteps App Store, 2026-04-14); and on\n  Reddit, \"I keep a spreadsheet of every trip because no app remembers what I\n  liked\" (r/solotravel, 2026-06-02)."}
+          ]
+        }
+      }
+    }
+  }
+}

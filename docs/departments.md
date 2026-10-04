@@ -111,6 +111,7 @@ config is never edited to try something.
 | `epd_scorecard` | Every stage of one shipped bet, by three judges who don't see each other | data |
 | `epd_probe` | Claim, worktree, stack, deploy, verify and cleanup, pass or fail | systems |
 | `smoke_test`, `gate_smoke`, `ci_*` | An installation, at no model cost | systems |
+| `signal_grade` | A finished signal harvest, against its own evidence: arithmetic, confidence, candidates, provenance, blocked sources, scope and competitor claims (also runs at the end of every `signal_harvest`) | product |
 
 Still to build: a grader for launch notes (marketing), the walks and the UI
 (design), the frontend side of a build (frontend), seeded defects for the
@@ -123,7 +124,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (69)
+### product (75)
 
 | Config | Kind |
 |---|---|
@@ -150,6 +151,12 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/signal_pain.yaml` | agent |
 | `agents/signal_search.yaml` | agent |
 | `agents/signal_synthesize.yaml` | agent |
+| `workflows/signal_grade.yaml` | workflow |
+| `agents/signal_grade_setup.yaml` | agent (script) |
+| `agents/signal_grade_review.yaml` | agent |
+| `agents/signal_grade_finalize.yaml` | agent (script) |
+| `agents/signal_grade_assets/check_signal.py` | script |
+| `agents/signal_grade_assets/rubric.md` | contract |
 | `workflows/opportunity_brief.yaml` | workflow |
 | `agents/brief_check.yaml` | agent (script) |
 | `agents/brief_competition.yaml` | agent |

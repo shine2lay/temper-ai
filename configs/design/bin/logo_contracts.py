@@ -21,6 +21,9 @@ ROLES = ("ink", "paper", "accent", "accent_on", "muted", "surface")
 # real Temper round as not memorable, so it may fill at most two of six slots.
 FAMILIES = ("geometric", "letterform", "pictorial", "emblem")
 EXPLORE_AGAIN = "explore-again"
+# Optional per-shape colour: a part marked tone 'accent' draws in the palette accent in
+# colour versions (two-tone mark); one-colour versions draw every part alike.
+ACCENT_TONE = "accent"
 CAPS = {"explore": 2.25, "revise": .75, "palette": 1.0, "critic": .85, "refine": 1.0}
 # Stage reserves before each budget gate: everything up to the next owner gate.
 INITIAL_RESERVE = round(CAPS["explore"] + CAPS["revise"] + CAPS["palette"] + CAPS["critic"], 2)  # 4.85
@@ -48,6 +51,10 @@ Path: {kind:'path',name:<up to48>,commands:[["M",x,y],["L",x,y],
  ["C",c1x,c1y,c2x,c2y,x,y],["Z"]...]}. All coordinates finite 0..100.
 Paths must close every subpath; max64 commands/path,192 total/concept. Filled
 silhouettes only, no strokes, SVG strings, images, transforms, URLs, code or icons.
+Optional colour: any shape may add tone:'accent' to draw that part in the palette
+accent in colour versions (a two-tone colour mark); keep at least one shape untoned.
+Monochrome/one-colour versions draw every shape alike, so the idea must still read
+when accent parts merge with the rest.
 Use negative space between original shapes; do not fake counters with background
 patches. No fixed Temper catalogue. Generate forms from this brief. Existing font
 Source Sans Pro regular/semibold only; text remains live. No fabricated approval.
@@ -206,13 +213,13 @@ def shape_contract(s):
         raise ValueError("shape object required")
     kind = s.get("kind")
     if kind == "path":
-        keys(s, ("kind", "name", "commands"))
+        keys(s, ("kind", "name", "commands"), ("tone",))
         pts = path_points(s["commands"])
         xs, ys = zip(*pts, strict=True)
         if max(xs) - min(xs) < 1 or max(ys) - min(ys) < 1:
             raise ValueError("degenerate path")
     elif kind in ("rect", "ellipse"):
-        keys(s, ("kind", "name", "x", "y", "w", "h"), ("r",) if kind == "rect" else ())
+        keys(s, ("kind", "name", "x", "y", "w", "h"), ("r", "tone") if kind == "rect" else ("tone",))
         for k in ("x", "y", "w", "h"):
             number(s[k])
         if min(s["w"], s["h"]) < 1 or s["x"] + s["w"] > 100 or s["y"] + s["h"] > 100:
@@ -221,6 +228,8 @@ def shape_contract(s):
             number(s["r"], 0, min(s["w"], s["h"]) / 2)
     else:
         raise ValueError("only original rect/ellipse/closed path shapes allowed")
+    if "tone" in s and s["tone"] != ACCENT_TONE:
+        raise ValueError("shape tone may only be the palette accent role")
     text(s["name"], 48)
     return s
 
@@ -240,6 +249,8 @@ def concept_contract(c, b):
         raise ValueError("bounded original symbol required")
     for s in c["symbol"]:
         shape_contract(s)
+    if all(s.get("tone") == ACCENT_TONE for s in c["symbol"]):
+        raise ValueError("a colour mark keeps at least one untoned part")
     if sum(len(s.get("commands", [])) for s in c["symbol"]) > 192:
         raise ValueError("too many path commands")
     if c["minimum_symbol_px"] not in (16, 24, 32) or c["wordmark_weight"] not in ("400", "600"):

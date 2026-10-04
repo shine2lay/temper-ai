@@ -57,13 +57,17 @@ def fixture_exploration(brief):
             shape = {"kind": "path", "name": "Fixture ring", "commands": [
                 ["M", 10, 10], ["L", 90, 10], ["L", 90, 90], ["L", 10, 90], ["Z"],
                 ["M", 35, 35], ["L", 35, 65], ["L", 65, 65], ["L", 65, 35], ["Z"]]}
+        symbol = [shape]
+        if i == 2:
+            # Two-tone colour mark: an accent-toned part, drawn in one colour in monochrome.
+            symbol.append({"kind": "ellipse", "name": "Fixture accent", "x": 40, "y": 40, "w": 20, "h": 20, "tone": c.ACCENT_TONE})
         concepts.append({"id": "fixture-" + str(i), "name": brief["product"] + " test " + str(i),
             "family": FIXTURE_FAMILIES[i],
             "idea": "Fictional contract geometry, not generated artwork or aesthetic evidence.",
             "ownable_detail": "Fixture only; exercises the board's whole-word text fitting with a long enough description.",
             "generic_risk": "Fixture only; plain test shape.",
             "source_ids": [brief["sources"][0]["id"]], "tradeoff": "Fixture only; no uniqueness or design claim.",
-            "symbol": [shape], "minimum_symbol_px": 24, "wordmark_weight": "600"})
+            "symbol": symbol, "minimum_symbol_px": 24, "wordmark_weight": "600"})
     return {"product": brief["product"], "concepts": concepts}
 
 
@@ -369,7 +373,11 @@ class Job:
             raise ValueError("two refinement rounds exhausted")
         next_round = self.state["round"] + 1
         feedback = self.state.get("final_feedback", {}).get("owner_note", self.state["direction"].get("owner_note", self.state["direction"]["reason"]))
+        # The current schema (e.g. optional accent-toned parts) goes to its own file, so the
+        # brief stage's pinned schema.txt receipt stays intact for resume checks.
+        (self.root / "schema-refine.txt").write_text(c.SCHEMA)
         context = {"product": load(self.root / "brief.json")["product"], "round": next_round,
+                   "schema": "logo/schema-refine.txt", "schema_digest": c.digest(c.SCHEMA),
                    "selected": load(self.root / "selected.json"), "owner_note": feedback,
                    "critic": f'logo/critic-r{self.state["round"]:02}.json', "output": "logo/refined.json",
                    "pngs": [r["path"] for r in self.state["files"]["directions" if next_round == 1 else "selected-r01"]["exports"] if r["kind"] == "png"]}

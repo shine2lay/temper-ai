@@ -104,6 +104,20 @@ workflow and explore again". Weak spots it showed, and the fix for each:
 These are prompt/contract fixes checked by model-free tests and the fictional
 fixture; whether round 2 is better is the owner's judgement at the real gate.
 
+## Colour in the mark (round 2 direction gate, 2026-10-03)
+
+The owner picked an anvil-shaped T and asked for "some color on it", but
+symbols could only be drawn in one colour. A shape may now carry
+`tone: 'accent'`: colour versions (primary, secondary, reverse, symbol, symbol
+reverse, 512 avatar, actual-size board) draw it in the palette accent, while
+monochrome versions draw every part alike. A colour mark keeps at least one
+untoned part. Accent legibility on both backgrounds rests on the existing palette
+rule (accent >= 3:1 on paper and on ink). Exploration boards stay monochrome. A
+refinement reads the current schema from `logo/schema-refine.txt` (named in
+`refine-context.json`), so a run started before this change keeps its pinned
+`schema.txt` intact for resume checks. The fixture's chosen direction has an
+accent part, so the $0 run proves native save, reopen and export of two-tone vectors.
+
 ## Measurable rubric versus judgement
 
 Measure source identity/set/geometry, live spelling/style refs, native text cache,

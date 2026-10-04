@@ -350,6 +350,52 @@ def test_palette_roles_companion_contrast_logo_exemption(canvas):
     assert not facts["violations"]
 
 
+def test_accent_toned_parts_colour_versions_only(canvas):
+    """Owner asked for colour in the mark: toned parts take the accent in colour versions only."""
+    b = brief()
+    concept = job.fixture_exploration(b)["concepts"][2]
+    assert [part.get("tone") for part in concept["symbol"]] == [None, c.ACCENT_TONE]
+    palette = c.palette_contract(job.fixture_palette(b)["shortlist"][2]["palette"])
+    canvas.final_boards(b, concept, palette)
+    boards = {board["id"]: board["name"] for board in canvas.boards}
+    key = concept["id"]
+
+    def fills(board_name, part):
+        return {o["fills"][0]["fill-color-ref-id"] for o in canvas.objects
+                if boards.get(o["parent-id"]) == board_name and o["name"].split("/")[1] == part}
+
+    colour = canvas.colors
+    for board_name, base in (("symbol", "ink"), ("primary", "ink"), ("symbol-reverse", "paper"),
+                             ("reverse", "paper"), ("avatar-512", "paper")):
+        assert fills(board_name, "Fixture accent") == {colour[key + "/accent"]["id"]}, board_name
+        assert fills(board_name, "Fixture cubic") == {colour[key + "/" + base]["id"]}, board_name
+    for board_name in ("symbol-mono", "monochrome"):
+        assert fills(board_name, "Fixture accent") == fills(board_name, "Fixture cubic") == {colour["mono/ink"]["id"]}
+    assert not s.measurements(canvas.state(), {key: palette})["violations"]
+    # Contracts: tone names only the accent role, and a colour mark keeps an untoned part.
+    with pytest.raises(ValueError, match="tone"):
+        c.shape_contract({**concept["symbol"][1], "tone": "#FF0000"})
+    with pytest.raises(ValueError, match="untoned"):
+        c.concept_contract({**concept, "symbol": [concept["symbol"][1]]}, b)
+    assert "tone:'accent'" in c.SCHEMA
+
+
+def test_refine_gets_current_schema_and_pinned_brief_schema_stays(tmp_path):
+    j = job.Job(str(tmp_path), RUN, "fixture")
+    j.state["direction"] = answer(fictional=True)
+    job.save(j.root / "brief.json", brief())
+    job.save(j.root / "selected.json", {"concept": {}, "palette": {}})
+    (j.root / "schema.txt").write_text("pinned round schema")
+    j.state["files"] = {"directions": {"exports": [{"kind": "png", "path": "exports/directions-00.png"}]}}
+    j.prepare_refine()
+    context = json.loads((j.root / "refine-context.json").read_text())
+    assert context["schema"] == "logo/schema-refine.txt" and context["schema_digest"] == c.digest(c.SCHEMA)
+    assert (j.root / "schema-refine.txt").read_text() == c.SCHEMA
+    assert (j.root / "schema.txt").read_text() == "pinned round schema"
+    agent = (BIN.parent / "agents/design_logo_refine_v1.yaml").read_text()
+    assert "the schema file it names" in agent and "tone:'accent'" in agent
+
+
 def test_source_receipts_missing_text_cache_styles_geometry_rejected(canvas):
     b = brief()
     concept = job.fixture_exploration(b)["concepts"][2]

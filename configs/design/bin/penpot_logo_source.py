@@ -119,16 +119,18 @@ class LogoCanvas:
             "advance_fit": all(s["width"] <= width + .01 for s in obj["position-data"])})
         return obj
 
-    def symbol(self, board, concept, x, y, size, color="mono/ink"):
+    def symbol(self, board, concept, x, y, size, color="mono/ink", accent=None):
+        """Draw the symbol in one colour, or with accent-toned parts in `accent` (colour versions)."""
         c.concept_contract(concept, {"sources": [{"id": i} for i in concept["source_ids"]]})
         result = []
         for i, spec in enumerate(concept["symbol"]):
             bx, by, bw, bh = shape_bounds(spec)
             scale = size / 100
+            fill = accent if accent and spec.get("tone") == c.ACCENT_TONE else color
             obj = p.shape("circle" if spec["kind"] == "ellipse" else spec["kind"],
                           f'{concept["id"]}/{spec["name"]}/{i}', board["id"], board["id"],
                           x + bx * scale, y + by * scale, bw * scale, bh * scale,
-                          p.fill(self.colors[color], self.fid), spec.get("r", 0) * scale)
+                          p.fill(self.colors[fill], self.fid), spec.get("r", 0) * scale)
             if spec["kind"] == "path":
                 commands = []
                 for command in spec["commands"]:
@@ -141,8 +143,8 @@ class LogoCanvas:
             result.append(self.put(obj))
         return result
 
-    def lockup(self, board, concept, name, x, y, symbol_size, text_size, palette="mono", fg="ink", bg="paper"):
-        self.symbol(board, concept, x, y, symbol_size, palette + "/" + fg)
+    def lockup(self, board, concept, name, x, y, symbol_size, text_size, palette="mono", fg="ink", bg="paper", colour=False):
+        self.symbol(board, concept, x, y, symbol_size, palette + "/" + fg, palette + "/accent" if colour else None)
         gap = symbol_size * .25
         width = self.fonts[concept["wordmark_weight"]].width(name, text_size) + 8
         self.text(board, "Wordmark/" + name, name, x + symbol_size + gap,
@@ -197,29 +199,29 @@ class LogoCanvas:
         self.text(board, "Title", "Actual-size checks / " + self.product, 24, origin + 18, 720, 28, "600", key + "/ink", key + "/paper")
         x = 30
         for size in c.SIZES:
-            self.symbol(board, concept, x, origin + 100, size, key + "/ink")
+            self.symbol(board, concept, x, origin + 100, size, key + "/ink", key + "/accent")
             self.text(board, "Size label", str(size) + " px", x, origin + 184, 85, 16, color=key + "/ink", bg=key + "/paper")
             x += 132
         self.text(board, "Size limitation", f'Proposed symbol minimum: {concept["minimum_symbol_px"]}px. Lower sizes remain shown for inspection.', 24, origin + 226, 720, 16,
                   color=key + "/ink", bg=key + "/paper")
         for index, width in enumerate((160, 320)):
-            self.lockup_fit(board, concept, self.product, 30 + index * 290, origin + 300, width, key)
+            self.lockup_fit(board, concept, self.product, 30 + index * 290, origin + 300, width, key, colour=True)
             self.text(board, "Lockup size", str(width) + "px lockup", 30 + index * 290, origin + 388, 230, 16,
                       color=key + "/ink", bg=key + "/paper")
         self.rect(board, "Dark application", 24, origin + 444, 720, 150, key + "/ink")
-        self.lockup(board, concept, self.product, 48, origin + 484, 56, 40, key, "paper", "ink")
+        self.lockup(board, concept, self.product, 48, origin + 484, 56, 40, key, "paper", "ink", True)
         self.text(board, "Reverse companion", "Reverse / local preview only", 402, origin + 510, 310, 16,
                   color=key + "/paper", bg=key + "/ink")
         return board
 
-    def lockup_fit(self, board, concept, name, x, y, width, key, fg="ink", bg="paper"):
+    def lockup_fit(self, board, concept, name, x, y, width, key, fg="ink", bg="paper", colour=False):
         # Native shared typography sizes. Choose the largest supported size that
         # leaves honest horizontal clear space; never squeeze/stretch glyphs.
         for size in (64, 50, 40, 28, 22, 18, 16, 14):
             symbol = size * 1.4
             needed = symbol * 1.25 + self.fonts[concept["wordmark_weight"]].width(name, size) + 8
             if needed <= width:
-                self.lockup(board, concept, name, x, y, symbol, size, key, fg, bg)
+                self.lockup(board, concept, name, x, y, symbol, size, key, fg, bg, colour)
                 return
         raise ValueError("wordmark does not fit supported lockup width")
 
@@ -269,18 +271,20 @@ class LogoCanvas:
         for name, w, h, fg, label in specs:
             board = self.board(name, x, 0, w, h, transparent=True)
             pal, role = ("mono", "ink") if "/" in fg else (key, fg)
-            self.lockup_fit(board, concept, label, x + 12, 22, w - 24, pal, role, "paper" if role != "paper" else "ink")
+            # Colour versions draw accent-toned parts in the accent; monochrome stays one colour.
+            self.lockup_fit(board, concept, label, x + 12, 22, w - 24, pal, role, "paper" if role != "paper" else "ink",
+                            colour=pal == key)
             x += 430
         symbol = self.board("symbol", 0, 180, 128, 128, transparent=True)
-        self.symbol(symbol, concept, 12, 192, 104, key + "/ink")
+        self.symbol(symbol, concept, 12, 192, 104, key + "/ink", key + "/accent")
         mono = self.board("symbol-mono", 220, 180, 128, 128, transparent=True)
         self.symbol(mono, concept, 232, 192, 104)
         rev = self.board("symbol-reverse", 440, 180, 128, 128, transparent=True)
-        self.symbol(rev, concept, 452, 192, 104, key + "/paper")
+        self.symbol(rev, concept, 452, 192, 104, key + "/paper", key + "/accent")
         wordmark = self.board("wordmark", 660, 180, 300, 96, transparent=True)
         self.text(wordmark, "Live wordmark", brief["product"], 672, 194, 276, 50, concept["wordmark_weight"], key + "/ink", key + "/paper", True)
         avatar = self.board("avatar-512", 0, 440, 512, 512, key + "/ink")
-        self.symbol(avatar, concept, 88, 528, 336, key + "/paper")
+        self.symbol(avatar, concept, 88, 528, 336, key + "/paper", key + "/accent")
         self.actual_sizes_board(concept, palette, origin=1100)
         return self.boards
 

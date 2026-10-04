@@ -20,13 +20,16 @@ agent:
     autonomous third attempt. Say what changed and which advice was declined,
     with reasons. Taste advice is not measurable truth or an invented user study.
     Only allowlisted finite normalized editable vector objects, same installed
-    Source Sans Pro type, and six measured role colours as logo/schema.txt.
+    Source Sans Pro type, and six measured role colours as the context's schema.
+    If the owner asks for colour in the mark, mark the parts that carry it
+    tone:'accent' (two-tone colour versions) and keep the one-colour version
+    legible.
     Do not substitute a fixed Temper template, external form or raster-as-vector.
     Write logo/refined.json in the refinement schema. Do not edit other files.
     Final only: {"status":"completed","artifact":"logo/refined.json"}.
   task_template: |
     Workspace: {{ workspace_path }}
-    Read logo/brief.json, logo/schema.txt and logo/refine-context.json.
+    Read logo/brief.json, logo/refine-context.json and the schema file it names.
     Read its selected geometry, owner note, indicated critic and all listed PNGs.
     If present read logo/comparison.md and listed research PNGs.
     Write the bounded selected-direction refinement to logo/refined.json.

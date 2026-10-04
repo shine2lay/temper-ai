@@ -100,9 +100,11 @@ def prose(value, length):
     """Model-written explanation: a modest overrun is shortened, not a failed paid stage.
 
     Real run ad5c270f lost its round-1 critic save to one 129-character location
-    against a 120 bound. Ids, names, owner words and geometry stay strict (text());
-    only advisory prose is clipped, and anything beyond four times its bound is
-    still rejected as unbounded.
+    against a 120 bound, then its round-2 refinement save to a 49-character layer
+    name against 48. Every model-written label or explanation (layer and concept
+    names, concept prose, critic and palette prose) goes through here. Ids, enums,
+    brief/owner words and geometry stay strict (text()); anything beyond four times
+    its bound is still rejected as unbounded.
     """
     if isinstance(value, str) and length < len(value) <= 4 * length:
         value = value[:length - 1].rstrip() + "\u2026"
@@ -243,7 +245,7 @@ def shape_contract(s):
         raise ValueError("only original rect/ellipse/closed path shapes allowed")
     if "tone" in s and s["tone"] != ACCENT_TONE:
         raise ValueError("shape tone may only be the palette accent role")
-    text(s["name"], 48)
+    s["name"] = prose(s["name"], 48)
     return s
 
 
@@ -255,7 +257,7 @@ def concept_contract(c, b):
     if c["family"] not in FAMILIES:
         raise ValueError("unknown concept family")
     for field, maximum in (("name", 32), ("idea", 700), ("ownable_detail", 300), ("generic_risk", 300), ("tradeoff", 500)):
-        text(c[field], maximum)
+        c[field] = prose(c[field], maximum)
     if not isinstance(c["source_ids"], list) or not c["source_ids"] or not set(c["source_ids"]) <= {r["id"] for r in b["sources"]}:
         raise ValueError("concept must cite supplied evidence, not invented sources")
     if not isinstance(c["symbol"], list) or not 1 <= len(c["symbol"]) <= 8:

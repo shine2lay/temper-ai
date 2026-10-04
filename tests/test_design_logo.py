@@ -187,6 +187,25 @@ def test_critic_prose_overrun_is_shortened_but_ids_and_unbounded_text_fail():
                                {"fixture-2"})["observations"][0]["location"] == "board 4"
 
 
+def test_model_layer_and_concept_labels_shortened_but_ids_strict():
+    """A 49-character layer name once failed a paid real refinement save; shorten labels instead."""
+    b = brief()
+    concept = copy.deepcopy(job.fixture_exploration(b)["concepts"][0])
+    concept["symbol"][0]["name"] = "dovetail tail, thick waist, stepped base and feet"
+    concept["idea"] = "i" * 701
+    out = c.concept_contract(copy.deepcopy(concept), b)
+    assert len(out["symbol"][0]["name"]) == 48 and out["symbol"][0]["name"].endswith("\u2026")
+    assert len(out["idea"]) == 700
+    within = copy.deepcopy(job.fixture_exploration(b)["concepts"][0])
+    assert c.concept_contract(copy.deepcopy(within), b) == within
+    for change in ({"id": "x" * 40}, {"name": "n" * 129}, {"family": "stock"}):
+        with pytest.raises(ValueError):
+            c.concept_contract({**copy.deepcopy(concept), **change}, b)
+    concept["symbol"][0]["name"] = "layer\x07name"
+    with pytest.raises(ValueError):
+        c.concept_contract(concept, b)
+
+
 def research_folder(tmp_path):
     folder = tmp_path / "research-source"
     folder.mkdir()

@@ -1090,7 +1090,16 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
         first = _first_answer_to(execution_id, request_id)
         if first is not None:
             return first
-    event, signal = _gate_to_approve(execution_id, node_name, (body.event_id or "").strip() or None)
+    try:
+        event, signal = _gate_to_approve(execution_id, node_name, (body.event_id or "").strip() or None)
+    except HTTPException as exc:
+        # The same request sent twice at once: the other copy may have answered the wait
+        # between the look above and this one. Its answer is this request's answer.
+        if request_id and exc.status_code in (404, 409):
+            first = _first_answer_to(execution_id, request_id)
+            if first is not None:
+                return first
+        raise
     response = normalise_response(body.model_dump(include={"response", "answers"}))
     alive = _run_is_alive(execution_id)
     by = body.by.strip()

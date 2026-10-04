@@ -165,6 +165,29 @@ class TestRequestId:
         assert again.json()["event_id"] == round_1
         assert get_event(round_2)["status"] == "waiting", "round 2 is still waiting for its own answer"
 
+    def test_a_copy_that_looked_before_the_other_answered_gets_the_first_result(self, client, monkeypatch):
+        """The window the race below can hit: this copy looked for its request id before the
+        other copy's approval was written, and finds the wait answered when it gets there."""
+        from temper_ai.api import routes
+
+        event_id = _wait()
+        assert _approve(client, event_id=event_id, request_id="dup").status_code == 200
+
+        looks = []
+        real = routes._first_answer_to
+
+        def first_look_misses(execution_id, request_id):
+            looks.append(request_id)
+            return None if len(looks) == 1 else real(execution_id, request_id)
+        monkeypatch.setattr(routes, "_first_answer_to", first_look_misses)
+
+        again = _approve(client, event_id=event_id, request_id="dup")
+        by_name = _approve(client, request_id="dup")
+
+        assert again.status_code == 200 and again.json()["repeated"] is True
+        assert by_name.status_code == 200 and by_name.json()["repeated"] is True
+        assert _approve(client, event_id=event_id, request_id="other").status_code == 409
+
     def test_the_same_request_racing_itself_decides_once(self, state):
         from temper_ai.server import app
 

@@ -1,0 +1,69 @@
+workflow:
+  name: ci_pi_waits
+  description: |
+    A Pi workflow whose approvals let go of the worker, with no model call
+    when the Pi step runs on L2's stand-in box (tests/test_pi_agent/support.py
+    FakeBox; the step is switched off everywhere else, TEMPER_PI_AGENT).
+
+    `ask` waits on you before anything has run (the first node), `talk` is
+    the Pi step (agents/ci_pi_talk.yaml), and `review` waits on you again after it, in a loop that
+    must stop the run red when it runs out (`on_max_loops: fail`: a Pi
+    workflow never counts as done because a loop stopped going round).
+
+    At each approval the run saves where it is and its box (or thread) exits:
+    the run shows "waiting on you" with nothing running. Your answer carries
+    it on in a new box, without running finished steps again, however long
+    it waited and across restarts. The Pi step's own "what next" waits still
+    hold the worker (docs/pi-agent.md); answer `done` to finish it.
+
+      POST /api/runs {"workflow": "ci_pi_waits"}
+      POST /api/runs {"workflow": "ci_pi_waits", "inputs": {"verdict": "done"}}
+
+    `verdict` is what `review` says: "again" (the default) goes round once
+    more and then runs out (red, "ran out of rounds: 2 of 2"); "done" ships.
+    Script agents and the stand-in box only: no API key, no spend. The tests
+    in tests/test_runner/test_pi_parking*.py and the live check use it.
+
+  inputs:
+    verdict:
+      type: string
+      required: false
+
+  outputs:
+    shipped: ship.output
+
+  nodes:
+    - name: ask
+      type: agent
+      agent: ci_step
+      gate: true
+      input_map:
+        step: "ask"
+
+    - name: talk
+      type: agent
+      agent: ci_pi_talk
+      depends_on: [ask]
+
+    - name: review
+      type: agent
+      agent: ci_verdict
+      depends_on: [talk]
+      gate: true
+      loop_to: review
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition:
+        source: review.structured.verdict
+        operator: equals
+        value: again
+      input_map:
+        verdict: input.verdict
+
+    - name: ship
+      type: agent
+      agent: ci_step
+      depends_on: [review]
+      input_map:
+        step: "ship"
+        saw: review.structured.verdict

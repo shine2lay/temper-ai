@@ -18,7 +18,12 @@ from temper_ai.observability.event_types import EventType
 from temper_ai.shared.clock import utcnow
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.conditions import evaluate_condition, source_value
-from temper_ai.stage.exceptions import CancellationError, CyclicDependencyError
+from temper_ai.stage.exceptions import (
+    CancellationError,
+    CyclicDependencyError,
+    RunParked,
+    WorkflowError,
+)
 from temper_ai.stage.failure import FailurePolicy, RunStop, is_cleanup, undoes
 from temper_ai.stage.gate import (
     APPROVED,
@@ -197,35 +202,128 @@ def execute_graph(
             is_workflow=is_workflow, retired=retired, stopped=stopped,
         )
 
+    except RunParked as parked:
+        stop = getattr(context, "run_stop", None)
+        if not (is_workflow and isinstance(stop, RunStop) and stop.stopped):
+            _note_parked(parked, nodes, node_outputs, retired, context, graph_event_id, start,
+                         is_workflow=is_workflow)
+            raise
+        # A step failed beside the gate (the same parallel batch): the run stops on that
+        # failure, as it would have once the gate was answered. The open wait keeps whatever
+        # answer comes for a Resume, as at any stopped run.
+        return _end_graph(
+            WorkflowError(f"'{stop.path}' failed while '{parked.path}' waited on you: {stop.reason}"),
+            nodes, node_outputs, retired, input_data, context, graph_event_id, start,
+            is_workflow=is_workflow,
+        )
+
     except Exception as exc:
-        duration = time.monotonic() - start
-        # A user cancel is its own terminal state, not a failure: the run
-        # list, the CLI exit code and downstream callers all treat it
-        # differently (nothing went wrong; someone stopped it).
-        terminal = Status.CANCELLED if isinstance(exc, CancellationError) else Status.FAILED
-        stopped = None
-        if is_workflow:
-            # Stopped by hand, or thrown out by something that broke: either way nothing more
-            # ran, so the clean-ups are still owed and the setup is still standing.
-            stop = getattr(context, "run_stop", None)
-            if isinstance(stop, RunStop):
-                stop.note_failure(context.node_path or "the run", str(exc))
-            stopped = _settle_run(context, nodes, node_outputs, input_data)
+        return _end_graph(exc, nodes, node_outputs, retired, input_data, context, graph_event_id,
+                          start, is_workflow=is_workflow)
+
+
+def _note_parked(
+    parked: RunParked,
+    nodes: list[Node],
+    node_outputs: dict[str, NodeResult],
+    retired: list[NodeResult],
+    context: ExecutionContext,
+    graph_event_id: str,
+    start: float,
+    *,
+    is_workflow: bool,
+) -> None:
+    """Write a graph down as waiting on the owner, with what carrying it on needs.
+
+    The run's own event (``workflow.started``) gets status ``waiting`` and a ``parked`` note:
+    which wait, where, the round, the checkpoint, when, what the attempt cost, and what a
+    cancel must hold (no worker is left to work that out then). Nothing is settled: the run
+    is not over. A stage's event just says it is waiting. runner/parked.py reads the note.
+    """
+    duration = time.monotonic() - start
+    if not is_workflow:
         context.event_recorder.update_event(
-            graph_event_id,
-            status=terminal.value,
-            data={"error": str(exc), "duration_seconds": duration,
-                  **({"stopped": stopped} if stopped else {})},
+            graph_event_id, status="waiting",
+            data={"parked": parked.as_dict(), "duration_seconds": duration},
         )
-        return NodeResult(
-            status=terminal,
-            error=str(exc),
-            agent_results=[r for nr in node_outputs.values() for r in nr.agent_results],
-            node_results=node_outputs,
-            duration_seconds=duration,
-            cost_usd=sum(r.cost_usd for r in (*node_outputs.values(), *retired)),
-            total_tokens=sum(r.total_tokens for r in (*node_outputs.values(), *retired)),
-        )
+        return
+    note = {
+        **parked.as_dict(),
+        "at": utcnow().isoformat(),
+        "cost_usd": sum(r.cost_usd for r in (*node_outputs.values(), *retired)),
+        "total_tokens": sum(r.total_tokens for r in (*node_outputs.values(), *retired)),
+        "on_cancel": _parked_on_cancel(context, nodes, node_outputs),
+    }
+    context.event_recorder.update_event(
+        graph_event_id, status="waiting", data={"parked": note, "duration_seconds": duration},
+    )
+
+
+def _parked_on_cancel(
+    context: ExecutionContext,
+    nodes: list[Node],
+    node_outputs: dict[str, NodeResult],
+) -> dict | None:
+    """What cancelling the parked run must keep back, worked out while the graph is at hand.
+
+    The same as a cancel during a held wait would leave (``_settle_run``): under a holding
+    failure policy every clean-up that has not run is held for a resume.
+    """
+    if getattr(context, "run_only", None) is not None:
+        return None
+    stop = getattr(context, "run_stop", None)
+    if not isinstance(stop, RunStop):
+        return None
+    owed = _cleanups_owed(nodes, node_outputs, context.node_path or "") if stop.policy.holds else []
+    return {
+        "mode": stop.policy.mode,
+        "hold_hours": stop.policy.hold_hours,
+        "held": [{"path": path, "undoes": list(undone)} for path, undone in owed],
+    }
+
+
+def _end_graph(
+    exc: Exception,
+    nodes: list[Node],
+    node_outputs: dict[str, NodeResult],
+    retired: list[NodeResult],
+    input_data: dict,
+    context: ExecutionContext,
+    graph_event_id: str,
+    start: float,
+    *,
+    is_workflow: bool,
+) -> NodeResult:
+    """End a graph that was thrown out: cancelled by hand, or broken."""
+    duration = time.monotonic() - start
+    # A user cancel is its own terminal state, not a failure: the run
+    # list, the CLI exit code and downstream callers all treat it
+    # differently (nothing went wrong; someone stopped it).
+    terminal = Status.CANCELLED if isinstance(exc, CancellationError) else Status.FAILED
+    stopped = None
+    if is_workflow:
+        # Stopped by hand, or thrown out by something that broke: either way nothing more
+        # ran, so the clean-ups are still owed and the setup is still standing.
+        stop = getattr(context, "run_stop", None)
+        if isinstance(stop, RunStop):
+            stop.note_failure(context.node_path or "the run", str(exc))
+        stopped = _settle_run(context, nodes, node_outputs, input_data)
+    context.event_recorder.update_event(
+        graph_event_id,
+        status=terminal.value,
+        data={"error": str(exc), "duration_seconds": duration,
+              **({"stopped": stopped} if stopped else {})},
+    )
+    return NodeResult(
+        status=terminal,
+        error=str(exc),
+        agent_results=[r for nr in node_outputs.values() for r in nr.agent_results],
+        node_results=node_outputs,
+        duration_seconds=duration,
+        cost_usd=sum(r.cost_usd for r in (*node_outputs.values(), *retired)),
+        total_tokens=sum(r.total_tokens for r in (*node_outputs.values(), *retired)),
+    )
+
 
 def _settle_run(
     context: ExecutionContext,
@@ -432,7 +530,17 @@ def _run_batches(
                 _record_ran_out(node, result, cp_prefix, context, cp)
         else:
             # For parallel batches, only run nodes not already checkpointed
-            results = _execute_parallel_batch(remaining, input_data, node_outputs, context, graph_event_id, loop_feedback, node_map)
+            try:
+                results = _execute_parallel_batch(remaining, input_data, node_outputs, context, graph_event_id, loop_feedback, node_map)
+            except RunParked as parked:
+                # A gate let the worker go: keep what the rest of the batch finished, so the
+                # run carries on from there, then go up waiting.
+                for node, result in parked.finished:
+                    node_outputs[node.name] = result
+                    _record_outcome(node, result, cp_prefix, context, cp)
+                for node, result in parked.finished:
+                    _apply_declarative_dispatch(node, result, input_data, node_outputs, node_map, batches, context)
+                raise
             for node, result in results:
                 node_outputs[node.name] = result
                 _record_outcome(node, result, cp_prefix, context, cp)
@@ -1031,6 +1139,13 @@ def _run_node_with_events(
         )
         return result
 
+    except RunParked:
+        # A gate inside this stage let the worker go: the stage is waiting, not failed.
+        context.event_recorder.update_event(
+            node_event_id, status="waiting", data={"duration_seconds": time.monotonic() - start},
+        )
+        raise
+
     except Exception as exc:
         duration = time.monotonic() - start
         context.event_recorder.update_event(
@@ -1101,14 +1216,28 @@ def _execute_parallel_batch(
             ): node
             for node in batch
         }
+        parked: RunParked | None = None
         for future in as_completed(future_to_node):
             node = future_to_node[future]
             try:
                 result = future.result()
+            except RunParked as exc:
+                # A gate here let the worker go. The others in the batch finish first, and go
+                # up with it so they are kept; a second gate that parked goes up with it too
+                # (an answer at either carries the run on, and the resume waits on the other).
+                if parked is None:
+                    parked = exc
+                else:
+                    parked.also.extend([{k: v for k, v in exc.as_dict().items() if k != "also"},
+                                        *exc.also])
+                continue
             except Exception as exc:
                 result = NodeResult(status=Status.FAILED, error=str(exc))
             results.append((node, result))
 
+    if parked is not None:
+        parked.finished = results
+        raise parked
     return results
 
 
@@ -1951,6 +2080,36 @@ def _drain_batch(
     return batch, next_queue, processed
 
 
+def _park_at_gate(
+    context: ExecutionContext,
+    node: Node,
+    event_id: str,
+    path: str,
+    gate_round: int,
+) -> RunParked | None:
+    """Save where a Pi run waits, under the wait's own id, so it can let its worker go.
+
+    Returns the RunParked to raise, or None when the checkpoint could not be saved: then the
+    gate holds its worker and waits as any other gate does, rather than letting go of a run
+    nothing would know how to carry on.
+    """
+    service = context.checkpoint_service
+    if service is None:
+        logger.warning("Gate: '%s' would let its worker go, but the run saves no checkpoints; "
+                       "waiting with the worker held", path)
+        return None
+    try:
+        checkpoint_id = service.save_gate_parked(event_id, path, gate_round)
+    except Exception as exc:  # noqa: BLE001 - hold the worker instead
+        logger.warning("Gate: could not save where '%s' waits (%s); waiting with the worker held",
+                       path, exc)
+        return None
+    logger.info("Gate: '%s' round %s waits on you; the run lets its worker go (execution %s, "
+                "event %s)", path, gate_round, context.run_id, event_id)
+    return RunParked(event_id=event_id, node=node.name, path=path, round=gate_round,
+                     checkpoint_id=checkpoint_id)
+
+
 def _wait_for_gate(
     node: Node,
     context: ExecutionContext,
@@ -2032,6 +2191,13 @@ def _wait_for_gate(
                 status=WAITING,
                 event_id=waiting_event_id,
             )
+
+        # A Pi workflow does not hold its worker while it waits: it saves where it is, under
+        # the wait's own id, and lets the worker go (docs/gates.md, runner/parked.py).
+        if getattr(context, "park_at_gates", False):
+            parked = _park_at_gate(context, node, waiting_event_id, path, gate_round)
+            if parked is not None:
+                raise parked
 
         # Save checkpoint before waiting (so the run can resume if server crashes while waiting)
         if context.checkpoint_service:

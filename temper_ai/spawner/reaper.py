@@ -183,9 +183,50 @@ class Reaper:
             self._honor_cancel(execution_id, handle)
             return
 
+        if not alive and self._parked(execution_id):
+            # A Pi run's box let go at a gate: not lost, waiting on the owner.
+            self._let_go_parked(execution_id, handle, cancel=bool(row["cancel_requested"]))
+            return
+
         if not alive:
             self._mark_orphaned(execution_id, reason="worker process gone")
             self._termed_at.pop(execution_id, None)
+
+    @staticmethod
+    def _parked(execution_id: str) -> bool:
+        from temper_ai.runner.parked import parked_attempt
+
+        try:
+            return parked_attempt(execution_id) is not None
+        except Exception as exc:  # noqa: BLE001 - cannot tell: treat as before
+            logger.warning("Reaper: can't tell whether %s is parked: %s", execution_id, exc)
+            return False
+
+    def _let_go_parked(self, execution_id: str, handle: ProcessHandle, *, cancel: bool) -> None:
+        """Free a parked Pi run whose box has gone, then cancel it or carry it on.
+
+        Waits until the box is gone, not just stopped, so the box that carries the run on
+        never meets the old one's name. Then the row says ``waiting`` (no box, nothing lost),
+        and the run is cancelled if someone asked, or carried on if the owner has answered
+        (runner/parked.py): an answer that came while the box was letting go, or while this
+        worker was down, is applied here.
+        """
+        from temper_ai.runner import parked
+
+        is_gone = getattr(self._spawner, "is_gone", None)
+        try:
+            if callable(is_gone) and not is_gone(handle):
+                return  # stopped, not yet removed: look again next tick
+        except SpawnerError as exc:
+            logger.warning("Reaper: can't tell whether %s's box is gone: %s", execution_id, exc)
+            return
+        self._termed_at.pop(execution_id, None)
+        if cancel:
+            parked.cancel_parked(execution_id, by="reaper")
+            return
+        if self._mark_status(execution_id, parked.WAITING, keep_open=True):
+            logger.info("Reaper: %s waits on you with no box", execution_id)
+        parked.carry_on(execution_id, start=parked.queue_resume, by="reaper")
 
     def _honor_cancel(
         self, execution_id: str, handle: ProcessHandle,
@@ -262,8 +303,12 @@ class Reaper:
         *,
         error: dict | None = None,
         from_status: str = "running",
+        keep_open: bool = False,
     ) -> bool:
-        """End a row still in ``from_status``; False when the worker already ended it."""
+        """End a row still in ``from_status``; False when the worker already ended it.
+
+        ``keep_open``: the run is not over (a parked Pi run), so no end time is written.
+        """
         with get_session() as session:
             row = session.exec(
                 select(WorkflowRun).where(
@@ -274,7 +319,8 @@ class Reaper:
                 # Race: worker beat us to the terminal write. Fine.
                 return False
             row.status = status
-            row.completed_at = datetime.now(UTC)
+            if not keep_open:
+                row.completed_at = datetime.now(UTC)
             if error is not None:
                 row.error = error
             session.add(row)

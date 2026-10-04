@@ -19,6 +19,7 @@ from temper_ai.stage.agent_node import AgentNode
 from temper_ai.stage.exceptions import LoaderError, ValidationError
 from temper_ai.stage.models import NodeConfig, WorkflowConfig
 from temper_ai.stage.node import Node
+from temper_ai.stage.pi_workflows import pi_loop_problems
 from temper_ai.stage.stage_node import StageNode
 from temper_ai.stage.template_expansion import (
     TemplateExpansionError,
@@ -106,6 +107,28 @@ class GraphLoader:
             LoaderError: Config not found, invalid, or template expansion failed.
             ValidationError: Config fails validation.
         """
+        nodes, config = self.resolve_workflow(workflow_ref, inputs)
+        errors = self._validate(nodes)
+        # Pi workflows only: a loop that runs out must stop the run red (stage/pi_workflows.py).
+        errors.extend(pi_loop_problems(nodes))
+        if errors:
+            raise ValidationError(
+                f"Workflow '{config.name}' validation failed:\n"
+                + "\n".join(f"  - {e}" for e in errors)
+            )
+
+        return nodes, config
+
+    def resolve_workflow(
+        self,
+        workflow_ref: str,
+        inputs: dict[str, Any] | None = None,
+    ) -> tuple[list[Node], WorkflowConfig]:
+        """Resolve a workflow config into nodes, without validating them (load_workflow does).
+
+        Raises:
+            LoaderError: Config not found, invalid, or template expansion failed.
+        """
         raw = self._load_config(workflow_ref, "workflow")
         try:
             raw = expand_templates(raw, inputs)
@@ -116,15 +139,7 @@ class GraphLoader:
         # Store workflow defaults so agent resolution can apply them as fallbacks
         self._defaults = config.defaults or {}
 
-        nodes = self._resolve_nodes(config.nodes)
-        errors = self._validate(nodes)
-        if errors:
-            raise ValidationError(
-                f"Workflow '{config.name}' validation failed:\n"
-                + "\n".join(f"  - {e}" for e in errors)
-            )
-
-        return nodes, config
+        return self._resolve_nodes(config.nodes), config
 
     def _resolve_nodes(self, node_configs: list[NodeConfig]) -> list[Node]:
         """Resolve a list of NodeConfigs into executable Nodes."""

@@ -190,6 +190,29 @@ class CheckpointService:
             metadata_=metadata,
         )
 
+    def save_gate_parked(self, event_id: str, path: str, gate_round: int) -> str:
+        """Write down, under the wait's own id, that the run parked at a gate. Returns the id.
+
+        Pi workflows only (runner/parked.py): the run lets its worker go once this is saved,
+        so unlike the other saves a failure is raised (the gate then holds its worker, as for
+        any other workflow). Each round's wait has its own event id, so each round gets its own
+        checkpoint; a resumed run waiting on the same wait again keeps the one it has. The
+        replay that rebuilds a run's results skips it (it finished nothing).
+        """
+        with get_session() as session:
+            if session.get(Checkpoint, event_id) is not None:
+                return event_id
+            session.add(Checkpoint(
+                id=event_id,
+                execution_id=self.execution_id,
+                sequence=self._next_seq(),
+                event_type="gate_parked",
+                node_name=path,
+                status="waiting",
+                metadata_={"event_id": event_id, "path": path, "round": gate_round},
+            ))
+        return event_id
+
     def _save(self, **kwargs: Any) -> None:
         """Persist a checkpoint row."""
         checkpoint = Checkpoint(

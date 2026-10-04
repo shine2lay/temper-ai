@@ -34,12 +34,14 @@ from temper_ai.observability.recorder import (
     update_event,
 )
 from temper_ai.runner import holds
+from temper_ai.runner import parked as pi_parked
 from temper_ai.runner._helpers import (
     McpPreconnectError,
     bind_delegate_tool,
     build_dispatch_limits,
     preconnect_mcp_servers,
 )
+from temper_ai.runner.queue import AlreadyQueued, queue_run
 from temper_ai.runner.resume import (
     apply_dispatch_history_on_resume as _apply_dispatch_history_on_resume,
 )
@@ -47,6 +49,7 @@ from temper_ai.runner.resume import (
     find_latest_workflow_event as _find_latest_workflow_event,
 )
 from temper_ai.shared.types import ExecutionContext
+from temper_ai.stage.exceptions import RunParked
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.failure import FailurePolicy
 from temper_ai.stage.gate import (
@@ -61,6 +64,7 @@ from temper_ai.stage.gate import (
     several_waiting,
     signal_key,
 )
+from temper_ai.stage.pi_workflows import is_pi_workflow
 from temper_ai.stage.plan import build_restore, resume_plan
 from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
@@ -259,6 +263,8 @@ def _start_run(body: RunRequest) -> RunResponse:
         dispatch_limits=build_dispatch_limits(config),
         # What a failure does in this workflow: hold its clean-ups (the default) or run them.
         failure_policy=FailurePolicy.parse(getattr(config, "on_failure", None)),
+        # A Pi workflow's gates let the worker go while they wait (runner/parked.py).
+        park_at_gates=is_pi_workflow(nodes),
     )
 
     # Bind execution context to Delegate tool so it can create sub-agents
@@ -268,6 +274,7 @@ def _start_run(body: RunRequest) -> RunResponse:
         target=_run_workflow,
         args=(nodes, body.inputs, context, config.name, execution_id, config.outputs),
         daemon=True,
+        name=f"temper-run-{execution_id}",
     )
     thread.start()
 
@@ -313,47 +320,12 @@ def _queue_run(
     to run again (``rerun``), or the only paths a pass may run (``only``).
     A resumed run keeps its row: a finished one goes back to queued. One
     that is still queued or running is refused, so a run never has two
-    boxes.
+    boxes. (runner/queue.py does it; this says a refusal as a 409.)
     """
-    from sqlmodel import select
-
-    from temper_ai.database import get_session
-    from temper_ai.runner.models import WorkflowRun
-
-    metadata: dict = {"start": start} if start else {}
-    metadata.update({k: v for k, v in (extra or {}).items() if v})
-    with get_session() as session:
-        row = session.exec(
-            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
-        ).first()
-        if row is None:
-            session.add(WorkflowRun(
-                execution_id=execution_id,
-                workflow_name=workflow_name,
-                workspace_path=workspace_path or "",
-                inputs=inputs or {},
-                status="queued",
-                spawner_metadata=metadata,
-            ))
-            return
-        if row.status in ("queued", "running"):
-            raise HTTPException(
-                status_code=409,
-                detail=f"Execution '{execution_id}' is already {row.status}",
-            )
-        row.workflow_name = workflow_name
-        row.workspace_path = workspace_path or ""
-        row.inputs = inputs or {}
-        row.status = "queued"
-        row.spawner_kind = None
-        row.spawner_handle = None
-        row.spawner_metadata = metadata
-        row.cancel_requested = False
-        row.started_at = None
-        row.completed_at = None
-        row.result = None
-        row.error = None
-        session.add(row)
+    try:
+        queue_run(execution_id, workflow_name, workspace_path, inputs, start=start, extra=extra)
+    except AlreadyQueued as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _run_row(execution_id: str) -> dict | None:
@@ -621,6 +593,10 @@ def cancel_run(execution_id: str, body: CancelRequest | None = None):
         cancel_event.set()
         return {"status": "cancelling", "execution_id": execution_id}
 
+    # A Pi run parked at a gate with no worker: nothing is left to stop, so it ends here.
+    if not _run_is_alive(execution_id) and pi_parked.cancel_parked(execution_id, reason or None):
+        return {"status": "cancelled", "execution_id": execution_id}
+
     # Subprocess run? WorkflowRun row is the source of truth for spawner-managed runs.
     from sqlmodel import select
 
@@ -797,10 +773,43 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     # Reconstruct state from checkpoints
     checkpoint_svc = CheckpointService(execution_id)
     restored_outputs = checkpoint_svc.reconstruct()
+    pi_run = is_pi_workflow(nodes)
 
-    if not restored_outputs:
+    # A Pi run often starts by asking the owner something, so it can be resumed before its
+    # first step has finished: it starts again from its first step, and a wait it had opened
+    # is waited on again, not asked twice (docs/gates.md). Any other workflow needs a
+    # finished step to resume from.
+    if not restored_outputs and not pi_run:
         raise HTTPException(status_code=400, detail="No checkpoints found — nothing to resume from")
 
+    # A Pi run parked at a gate is carried on once, by whoever claims its parked attempt
+    # first: the owner's answer, the worker that let go, start-up, or this button.
+    parked = pi_parked.parked_attempt(execution_id) if pi_run else None
+    if parked is not None and not pi_parked.claim(parked):
+        raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
+    if pi_run and parked is None:
+        # Never a second copy of a Pi run: one is going here, or another asker has just
+        # claimed it and is starting it. (A box's row refuses a second box on its own.)
+        if execution_id in _state().running or pi_parked.being_carried_on(execution_id):
+            raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already running")
+    try:
+        return _start_resume(execution_id, body, result, nodes, config, checkpoint_svc, restored_outputs)
+    except BaseException:
+        if parked is not None:
+            pi_parked.release(parked)
+        raise
+
+
+def _start_resume(
+    execution_id: str,
+    body: ResumeRequest,
+    result: dict,
+    nodes: list,
+    config: Any,
+    checkpoint_svc: CheckpointService,
+    restored_outputs: dict,
+) -> RunResponse:
+    """Start the resumed attempt: in its own box, or on a thread here (resume_run checked it)."""
     # This attempt takes over any clean-ups the last one was holding: they are its business
     # now, and an old deadline must not tear down the setup it is about to use.
     holds.take_over(execution_id, by=execution_id)
@@ -859,6 +868,7 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         graph_loader=_state().graph_loader,
         dispatch_limits=build_dispatch_limits(config),
         failure_policy=FailurePolicy.parse(getattr(config, "on_failure", None)),
+        park_at_gates=is_pi_workflow(nodes),
     )
 
     bind_delegate_tool(run_tool_executor, context)
@@ -899,6 +909,7 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
         args=(nodes, original_inputs, context, config.name, execution_id, restored_outputs),
         kwargs={"workflow_outputs": config.outputs, "resume_metadata": resume_metadata},
         daemon=True,
+        name=f"temper-run-{execution_id}",
     )
     thread.start()
 
@@ -978,6 +989,7 @@ def fork_run(body: ForkRequest):
         graph_loader=_state().graph_loader,
         dispatch_limits=build_dispatch_limits(config),
         failure_policy=FailurePolicy.parse(getattr(config, "on_failure", None)),
+        park_at_gates=is_pi_workflow(nodes),
     )
 
     bind_delegate_tool(run_tool_executor, context)
@@ -1102,13 +1114,17 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
         raise
     response = normalise_response(body.model_dump(include={"response", "answers"}))
     alive = _run_is_alive(execution_id)
+    # A Pi run that let its worker go at this wait is carried on by the answer: it does not
+    # need Resume (runner/parked.py).
+    parked = None if alive else pi_parked.parked_attempt(execution_id)
     by = body.by.strip()
     decided: dict[str, Any] = {
         "gate_status": APPROVED, "gate_decided_at": _now_iso(),
         **({"gate_decided_by": by} if by else {}),
         **({"gate_request_id": request_id} if request_id else {}),
         **({"gate_response": response} if response else {}),
-        **({} if alive else {"gate_kept_for_resume": True}),
+        **({} if alive or parked else {"gate_kept_for_resume": True}),
+        **({"gate_carries_on": True} if parked else {}),
     }
     if event is not None:
         won, after = decide_event(str(event["id"]), expect=(WAITING,), status=APPROVED, data=decided)
@@ -1133,10 +1149,20 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
         if response is not None:
             signal.response = response
         signal.set()
+    # A Pi run parked here, or that parked while this answer went in, carries on now. (If it
+    # was still letting go, the worker carries it on as it lets go: one of the two sees the
+    # other, and the claim makes sure only one starts it.)
+    carried = _carry_on_parked(execution_id, by="answer")
     reply = _approval_reply(execution_id, {**(after or event), "status": APPROVED,
                                            "data": {**(event.get("data") or {}), **decided}})
+    if parked is not None or carried:
+        reply["carries_on"] = carried
+        if not carried and pi_parked.parked_attempt(execution_id) is not None:
+            # It could not be started: the answer is kept, and Resume carries it on.
+            reply.update(needs_resume=True, message=NEEDS_RESUME)
     logger.info("Gate: approved '%s' round %s of %s (event %s)%s", gate["path"], gate["round"],
-                execution_id[:8], gate["event_id"], "" if alive else "; the run needs Resume")
+                execution_id[:8], gate["event_id"],
+                "; carrying the run on" if carried else "" if alive or parked else "; the run needs Resume")
     return reply
 
 
@@ -1417,14 +1443,17 @@ def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_
             "Workflow '%s' completed: status=%s, cost=$%.4f, tokens=%d",
             workflow_name, result.status, result.cost_usd, result.total_tokens,
         )
+    except RunParked as parked:
+        logger.info("Workflow '%s' waits on you at '%s'; its thread lets go", workflow_name, parked.path)
     except Exception as exc:
         logger.error("Workflow '%s' failed: %s", workflow_name, exc, exc_info=True)
     finally:
-        _state().running.pop(execution_id, None)
+        _let_go(execution_id, context)
         ws_manager.cleanup(execution_id)
         # Clean up per-run tool executor thread pool
         if hasattr(context, 'tool_executor') and context.tool_executor:
             context.tool_executor.shutdown(wait=False)
+        _see_to_parked(execution_id, context)
 
 
 def _run_workflow_with_checkpoints(
@@ -1460,10 +1489,54 @@ def _run_workflow_with_checkpoints(
             "Workflow '%s' resumed and completed: status=%s, cost=$%.4f, tokens=%d",
             workflow_name, result.status, result.cost_usd, result.total_tokens,
         )
+    except RunParked as parked:
+        logger.info("Workflow '%s' waits on you at '%s'; its thread lets go", workflow_name, parked.path)
     except Exception as exc:
         logger.error("Workflow '%s' resume failed: %s", workflow_name, exc, exc_info=True)
     finally:
-        _state().running.pop(execution_id, None)
+        _let_go(execution_id, context)
         ws_manager.cleanup(execution_id)
         if hasattr(context, 'tool_executor') and context.tool_executor:
             context.tool_executor.shutdown(wait=False)
+        _see_to_parked(execution_id, context)
+
+
+def _let_go(execution_id: str, context: Any) -> None:
+    """The run's thread is ending: it no longer counts as running in this server.
+
+    A Pi run may have been carried on already by the time its old thread ends (the answer
+    came while it was letting go), so it frees only its own place, never the new attempt's.
+    """
+    running = _state().running
+    if not getattr(context, "park_at_gates", False):
+        running.pop(execution_id, None)
+        return
+    if running.get(execution_id) is getattr(context, "cancel_event", None):
+        running.pop(execution_id, None)
+
+
+def _see_to_parked(execution_id: str, context: Any) -> None:
+    """A Pi run whose thread let go at a gate: cancel it if a cancel came while it let go,
+    or carry it on if the answer is already in (runner/parked.py)."""
+    if not getattr(context, "park_at_gates", False):
+        return
+    try:
+        if pi_parked.parked_attempt(execution_id) is None:
+            return
+        cancel_event = getattr(context, "cancel_event", None)
+        if cancel_event is not None and cancel_event.is_set():
+            pi_parked.cancel_parked(execution_id, by="cancel while letting go")
+            return
+        _carry_on_parked(execution_id, by="the worker let go")
+    except Exception as exc:  # noqa: BLE001 - the run waits; the next answer or start-up looks again
+        logger.warning("Run %s: could not see to its parked wait: %s", execution_id, exc)
+
+
+def _carry_on_parked(execution_id: str, *, by: str) -> bool:
+    """Carry a parked Pi run on through Resume's own path, if the owner has answered and no
+    worker holds it."""
+    if _run_is_alive(execution_id):
+        return False
+    return pi_parked.carry_on(
+        execution_id, start=lambda eid: resume_run(eid, ResumeRequest()), by=by,
+    )

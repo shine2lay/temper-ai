@@ -62,7 +62,9 @@ never as a silent no-op.
 If nothing is running the run (temper restarted while it waited), the
 approval is **kept** and the reply says `"needs_resume": true` with a
 message: the run needs Resume, and when it comes back it goes on with this
-answer without asking again. Slack and Telegram resume it for you.
+answer without asking again. Slack and Telegram resume it for you. (A Pi run
+that let its worker go at the gate needs no Resume: the answer carries it on,
+see [Pi workflows](#pi-workflows).)
 
 **Reject** and **Cancel** keep their meaning: they stop the run. A reject or
 cancel never overwrites an approval that got there first.
@@ -111,6 +113,63 @@ budget. If it still asks for another round it fails again the same way, so
 the run cannot finish green unless the step now passes. A gated step asks
 again before that rerun.
 
+## Pi workflows
+
+A workflow with a Pi step (`type: pi`, [pi-agent.md](pi-agent.md)) is a Pi
+workflow (`temper_ai/stage/pi_workflows.py`). Three things differ for it;
+every other workflow behaves as described above.
+
+**A gate lets the worker go while it waits.** When a gate in a Pi workflow
+starts waiting, the run saves where it is (a `gate_parked` checkpoint whose
+id is the wait's event id, so each round has its own), writes its attempt down
+as `waiting` with a `parked` note (the wait's id, path and round), and its
+worker lets go: the run's box exits, or in in-process mode its thread ends.
+The run shows "waiting on you" with nothing running for it. Steps running
+beside the gate finish first and are kept.
+
+Your answer carries it on by itself, through Resume's own path: a new box (or
+thread) starts from the saved checkpoints, uses the answer without asking
+again, and runs nothing that already finished. The reply says
+`"carries_on": true`. It works however long the run waited and across
+restarts:
+
+- the approval carries it on when the worker has already let go;
+- the worker carries it on as it lets go, when the answer came first (in a
+  box, the worker's reaper does it once it sees the box gone);
+- an answer given while the worker or server was down is applied when it
+  comes back (the reaper, or the server at start-up).
+
+Whoever comes first claims the parked attempt with a compare-and-set, so the
+run is carried on once; a second Resume meanwhile gets a 409. The attempt that
+waited stays in the run's history as `parked`.
+
+A parked run never expires, never carries on by itself and never starts a new
+run. A restart does not mark it interrupted, and the start-up pick-up (with
+its 12-hour limit) leaves it alone: only an answer moves it. **Reject** or
+**Cancel** ends it (`cancelled`), as for any run. Stale, parallel and repeated
+approvals get the answers above (409s, `repeated: true`). You are told once,
+when the wait starts; there are no reminders. The Pi step's own "what next"
+waits are the step's and still hold its worker (pi-agent.md).
+
+**Resume works before anything finished.** A Pi run often starts by asking
+you something, so Resume of a Pi run with no checkpoint yet starts it again
+from its first step, instead of refusing with "No checkpoints found": a wait
+that step had opened is waited on again, not asked twice, and a first-step
+Pi step is handed back to the step like any other node. Other workflows still
+need a finished step to resume from.
+
+**Every loop must say `on_max_loops: fail`.** A Pi workflow must never count
+as done because a loop ran out of rounds, so `silent` (the default) and
+`ship_with_open_issues` are refused when the run starts, with the reason:
+
+```
+Node 'review' loops back to 'review' with on_max_loops: silent. In a workflow with a Pi step
+every loop must say on_max_loops: fail, so running out of rounds stops the run red instead of
+letting it count as done.
+```
+
+`temper check` names such loops before anyone starts the run.
+
 ## Trying it
 
 `ci_gate_rounds` is all of this with no model call: `review` waits for an
@@ -120,3 +179,10 @@ drives it: stale, simultaneous and repeated approvals, the red step, Resume.
 Model-free tests: `tests/test_observability/test_gate_approvals.py`,
 `tests/test_observability/test_gate_restarts.py` and
 `tests/test_stage/test_running_out_of_rounds.py`.
+
+`ci_pi_waits` is the Pi workflow version: `ask` waits on you as its first
+node, then the Pi step (`agents/ci_pi_talk.yaml`), then `review` waits each
+round in a loop that must fail when it runs out (`verdict: done` ships). It
+needs the Pi step switched on; its tests run it on L2's stand-in box, with no
+model: `tests/test_runner/pi_parking/` (in-process and box modes, restarts,
+waits of days, cancel, 409s) and `tests/test_stage/test_pi_loop_rule.py`.

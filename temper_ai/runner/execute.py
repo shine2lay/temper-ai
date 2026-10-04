@@ -29,9 +29,12 @@ from temper_ai.runner._helpers import (
     build_dispatch_limits,
     preconnect_mcp_servers,
 )
+from temper_ai.runner.parked import PARKED_STATUS
 from temper_ai.shared.types import ExecutionContext
+from temper_ai.stage.exceptions import RunParked
 from temper_ai.stage.executor import execute_graph, execute_graph_with_state
 from temper_ai.stage.failure import FailurePolicy
+from temper_ai.stage.pi_workflows import is_pi_workflow
 from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
 
@@ -51,7 +54,7 @@ class ExecuteResult:
     """
 
     exit_code: int  # 0 = success, 1 = workflow failure, 2 = setup failure
-    status: str  # "completed" | "failed" | "cancelled"
+    status: str  # "completed" | "failed" | "cancelled" | "waiting" (a Pi run that let its worker go at a gate)
     cost_usd: float = 0.0
     total_tokens: int = 0
     error: str | None = None
@@ -184,6 +187,8 @@ def execute_workflow(
         # What a failure does in this workflow: hold the clean-ups (the default) or run them.
         failure_policy=FailurePolicy.parse(getattr(config, "on_failure", None)),
         run_only=set(run_only) if run_only else None,
+        # A Pi workflow's gates let the worker go while they wait (runner/parked.py).
+        park_at_gates=is_pi_workflow(nodes),
     )
 
     # Bind Delegate tool so agents can spawn sub-agents
@@ -231,6 +236,11 @@ def execute_workflow(
                 is_workflow=True,
                 workflow_outputs=config.outputs,
             )
+    except RunParked as parked:
+        # Not over: it waits on the owner with its place saved, and this worker can go. The
+        # answer carries it on in a new box (runner/parked.py).
+        logger.info("Workflow '%s' waits on you at '%s'; its worker lets go", workflow_name, parked.path)
+        return ExecuteResult(exit_code=0, status=PARKED_STATUS)
     except Exception as exc:
         logger.exception("Workflow '%s' failed during execute_graph: %s", workflow_name, exc)
         return ExecuteResult(

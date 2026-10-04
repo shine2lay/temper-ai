@@ -23,7 +23,10 @@ person:
 
 * **cancelled** -- someone stopped it. Starting it again would undo that.
 * **waiting for an answer** -- parked at a gate. It is not lost: it carries on
-  when the question is answered.
+  when the question is answered. (A Pi run that let its worker go at a gate,
+  ``runner/parked.py``, is not even marked interrupted: however long it has
+  waited, only the owner's answer carries it on, and start-up applies an
+  answer that came in while nothing could act on it.)
 * **gave up** -- someone pressed Give up, or the deadline passed, and the
   clean-ups it was holding have run. The worktree and the dev stack it needs
   are gone.

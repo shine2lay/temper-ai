@@ -403,6 +403,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning("Could not start picking interrupted runs back up: %s", e)
 
+    # A Pi run parked at a gate whose answer came while nothing could carry it on (this
+    # server stopped between the answer and carrying it on) carries on now. One still
+    # waiting stays as it is, however long it has waited (runner/parked.py).
+    try:
+        import threading
+
+        from temper_ai.runner.parked import carry_on_at_startup
+        threading.Thread(target=carry_on_at_startup, name="temper-carry-on-parked", daemon=True).start()
+    except Exception as e:
+        logger.warning("Could not look for answered parked runs: %s", e)
+
     logger.info("Temper AI server ready")
 
     # The /mcp endpoint needs its session manager running for the life of

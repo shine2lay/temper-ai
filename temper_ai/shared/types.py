@@ -117,6 +117,7 @@ class ExecutionContext:
     run_stop: Any = None  # RunStop — where the run stopped, shared (not copied) by every graph of the run, so a failure inside a stage stops the batches at the top too. See stage/failure.py.
     failure_policy: Any = None  # FailurePolicy — what a failure does from here down (hold the clean-ups, or run them). Replaced per stage by StageNode; None means the workflow's own.
     run_only: Any = None  # set[str] | None — paths this pass is allowed to run (a cleanup-only pass runs the held clean-ups and nothing else). None means everything.
+    park_at_gates: bool = False  # Pi workflows only: a gate saves where the run is and lets the worker go instead of holding it (stage/pi_workflows.py, runner/parked.py). Set by whoever starts the run.
 
     def __post_init__(self) -> None:
         # The run's tool executor learns the run's cancel flag here: every run

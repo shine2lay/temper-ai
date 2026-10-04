@@ -6,7 +6,7 @@ Usage:
     temper connect <mcp-server>          # one-time OAuth, grant stored
     temper connections                   # what is authorized
     temper validate <workflow>
-    temper check                         # agent settings the provider cannot honour
+    temper check                         # settings that would not land (effort, Slack access, Pi loops)
 """
 
 import argparse

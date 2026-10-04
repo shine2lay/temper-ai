@@ -223,6 +223,20 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         # And the MCP sessions the run opened, so no server holds them after it.
         _stop_mcp_manager()
 
+    # --- A Pi run waiting on the owner: this box lets go ----------------------
+    from temper_ai.runner.parked import PARKED_STATUS, cancel_parked
+
+    if result.status == PARKED_STATUS:
+        if cancel_event.is_set():
+            # Cancelled while it was letting go: nothing is left to stop.
+            cancel_parked(execution_id, by="cancel while its box let go")
+            return result.exit_code
+        # Its row stays as it is: the worker's reaper sees this box gone, frees the run and
+        # carries it on once the owner has answered (runner/parked.py). Writing the row here
+        # would let a new box start under this one's name before this one is gone.
+        logger.info("Run %s waits on you; its box lets go", execution_id)
+        return result.exit_code
+
     # --- Persist terminal state ----------------------------------------------
     final_status = (
         "cancelled" if cancel_event.is_set() and result.status != "completed"

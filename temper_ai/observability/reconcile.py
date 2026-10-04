@@ -93,6 +93,11 @@ def reconcile_interrupted_runs(started_before: datetime | None = None) -> int:
     return len(reconcile_and_report(started_before=started_before))
 
 
+def _parked(event: Any) -> bool:
+    """A Pi run's attempt that let its worker go at a gate and waits on the owner."""
+    return event.status == "waiting" and isinstance((event.data or {}).get("parked"), dict)
+
+
 def reconcile_and_report(started_before: datetime | None = None) -> list[dict[str, Any]]:
     """Mark them, and say which runs they were.
 
@@ -131,6 +136,9 @@ def reconcile_and_report(started_before: datetime | None = None) -> list[dict[st
                 # A run in a box goes on without this server: not ours to bury.
                 in_boxes = _runs_in_boxes(session, {e.execution_id for e in rows if e.execution_id})
                 rows = [e for e in rows if e.execution_id not in in_boxes]
+            # A Pi run parked at a gate let its worker go on purpose: it is waiting on the
+            # owner, not cut off, and the answer carries it on (runner/parked.py).
+            rows = [e for e in rows if not _parked(e)]
 
             for event in rows:
                 was = event.status or "running"

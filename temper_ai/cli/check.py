@@ -15,6 +15,11 @@ The same goes for who may do what in Slack (``configs/slack/access.yaml``): a
 role allowing a workflow that no longer exists, or forcing an input the
 workflow does not take, would look like a fence and be a hole, so it is named
 here rather than found when somebody is refused or let through.
+
+And for the loops of workflows with a Pi step: each must end the run red when it
+runs out of rounds (``on_max_loops: fail``), so a Pi workflow never counts as
+done because a loop stopped going round. A run start refuses one that does not;
+this names it first.
 """
 
 from __future__ import annotations
@@ -264,6 +269,71 @@ def check_access(config_dir: str | Path = "configs") -> tuple[list[str], list[st
     return [str(p) for p in files], problems, notes
 
 
+# -- Pi workflows' loops ------------------------------------------------------------------
+
+
+class _FileConfigs:
+    """The config files under a folder, looked up the way the server's config store is.
+
+    The same files the server imports (``import_config_tree``: every ``*.yaml`` outside the
+    settings folders, the later of two with one name winning), read without a database.
+    """
+
+    def __init__(self, root: Path):
+        from temper_ai.config.importer import NON_CONFIG_DIRS, parse_yaml
+
+        self.configs: dict[tuple[str, str], dict[str, Any]] = {}
+        self.paths: dict[tuple[str, str], Path] = {}
+        for path in sorted(root.rglob("*.yaml")):
+            if any(part in NON_CONFIG_DIRS for part in path.parts):
+                continue
+            try:
+                parsed = parse_yaml(path)
+            except Exception:  # noqa: BLE001 - the server skips it too
+                continue
+            key = (str(parsed["config_type"]), str(parsed["name"]))
+            self.configs[key] = parsed["config"]
+            self.paths[key] = path
+
+    def get(self, name: str, config_type: str) -> dict[str, Any]:
+        from temper_ai.config.helpers import ConfigNotFoundError
+
+        try:
+            return self.configs[(config_type, name)]
+        except KeyError:
+            raise ConfigNotFoundError(f"{config_type} config '{name}' not found") from None
+
+    def workflows(self) -> list[str]:
+        return sorted(name for kind, name in self.configs if kind == "workflow")
+
+
+def check_pi_loops(config_dir: str | Path = "configs") -> tuple[int, list[str]]:
+    """(Pi workflows seen, problems): every loop in a Pi workflow must say
+    ``on_max_loops: fail`` (stage/pi_workflows.py), the same rule a run start enforces."""
+    from temper_ai.stage.loader import GraphLoader
+    from temper_ai.stage.pi_workflows import is_pi_workflow, pi_loop_problems
+
+    root = Path(config_dir)
+    if not root.is_dir():
+        return 0, []
+    files = _FileConfigs(root)
+    # The loader reads its store through get() only, which the files answer the same way.
+    loader = GraphLoader(files)  # type: ignore[arg-type]
+    seen = 0
+    problems: list[str] = []
+    for name in files.workflows():
+        try:
+            nodes, _config = loader.resolve_workflow(name)
+        except Exception:  # noqa: BLE001 - a workflow that will not load says so when started
+            continue
+        if not is_pi_workflow(nodes):
+            continue
+        seen += 1
+        where = files.paths.get(("workflow", name), name)
+        problems.extend(f"{where}: {line}" for line in pi_loop_problems(nodes))
+    return seen, problems
+
+
 def check(config_dir: str | Path = "configs") -> int:
     """Print the report. 0 when every setting lands, 1 when one does not."""
     seen, problems = check_effort(config_dir)
@@ -299,12 +369,24 @@ def check(config_dir: str | Path = "configs") -> int:
                   "does not take, is a fence with a hole in it.")
         else:
             print("\u2713 every role allows workflows that exist and forces inputs they take")
-    return 1 if (problems or access_problems) else 0
+
+    pi_seen, loop_problems = check_pi_loops(config_dir)
+    print()
+    print(f"Workflows with a Pi step: {pi_seen}")
+    if loop_problems:
+        print(f"\n\u26a0 {len(loop_problems)} loop(s) in Pi workflows may end by running out:")
+        for line in loop_problems:
+            print(f"  {line}")
+        print("\nA Pi workflow must never count as done because a loop stopped going round; "
+              "such a workflow is refused when it starts.")
+    elif pi_seen:
+        print("\u2713 every loop in a Pi workflow says on_max_loops: fail")
+    return 1 if (problems or access_problems or loop_problems) else 0
 
 
 def add_parser(subparsers) -> None:
     parser = subparsers.add_parser(
-        "check", help="Settings the provider cannot honour (effort), and Slack's access rules",
+        "check", help="Settings the provider cannot honour (effort), Slack's access rules, and Pi workflows' loops",
     )
     parser.add_argument("--config-dir", default="configs", help="Config directory")
 

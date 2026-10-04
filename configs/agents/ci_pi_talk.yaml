@@ -1,0 +1,15 @@
+# The Pi step of `ci_pi_waits` (docs/pi-agent.md, docs/gates.md "Pi workflows").
+# The Pi step is switched off unless TEMPER_PI_AGENT is on: elsewhere a run of
+# ci_pi_waits fails at this step with "Unknown agent type". The tests and the live
+# check run it on L2's stand-in box (tests/test_pi_agent/support.py FakeBox): no model.
+agent:
+  name: ci_pi_talk
+  type: pi
+  role: scout
+  provider: openai-codex
+  model: gpt-6.1-sol
+  thinking: medium
+  tools: [read]
+  message: "Read note.txt with the read tool and tell me its first word."
+  workspace_files:
+    note.txt: "quartzfinch is the first word."

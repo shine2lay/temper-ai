@@ -336,6 +336,21 @@ class DockerSpawner(Spawner):
             raise SpawnerError(f"docker inspect failed: {result.stderr.strip()}")
         return result.stdout.strip() == "true"
 
+    def is_gone(self, handle: ProcessHandle) -> bool:
+        """Whether the run's container no longer exists (removed, not merely stopped).
+
+        A parked Pi run is carried on in a new container with the same name, which docker
+        refuses while the old one is still there (runner/parked.py, spawner/reaper.py).
+        """
+        result = self._docker_run(
+            [self._docker, "inspect", "--format", "{{.State.Running}}", self._name_for(handle)],
+        )
+        if result.returncode == 0:
+            return False
+        if _says_gone(result.stderr):
+            return True
+        raise SpawnerError(f"docker inspect failed: {result.stderr.strip()}")
+
     def kill(self, handle: ProcessHandle, *, force: bool = False) -> None:
         name = self._name_for(handle)
         sig = "KILL" if force else "TERM"

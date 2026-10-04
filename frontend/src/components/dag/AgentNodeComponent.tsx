@@ -30,7 +30,7 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
   if (!agent) {
     const nodeStatus = stage?.status ?? 'skipped';
     const name = stage?.name ?? 'skipped';
-    const borderColor = STATUS_COLORS[nodeStatus] ?? stageColor ?? 'var(--color-temper-pending)';
+    const borderColor = STATUS_COLORS[nodeStatus] ?? stageColor ?? '#6b7280';
     // A node parked at a gate has not run, so this placeholder is all the
     // DAG shows for it — which makes it the only way back to the question
     // after the modal is dismissed. It is a button, not decoration.
@@ -69,9 +69,9 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
       // that compare the canvas with the run (frontend/dispatch_live_check.mjs).
       <div className="w-[200px]" data-testid="agent-pill" data-name={name} data-status={nodeStatus}>
         <Handle type="target" position={Position.Left} id="left"
-          className="!w-2 !h-2 !bg-temper-control !border-temper-bg" />
+          className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
         <Handle type="source" position={Position.Right} id="right"
-          className="!w-2 !h-2 !bg-temper-control !border-temper-bg" />
+          className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
         {isWaitingGate ? (
           <button
             type="button"
@@ -118,9 +118,9 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
     >
       {/* Handles for edges */}
       <Handle type="target" position={Position.Left} id="left"
-        className="!w-2 !h-2 !bg-temper-control !border-temper-bg" />
+        className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
       <Handle type="source" position={Position.Right} id="right"
-        className="!w-2 !h-2 !bg-temper-control !border-temper-bg" />
+        className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
       <Handle type="source" position={Position.Bottom} id="bottom"
         className="!w-0 !h-0 !bg-transparent !border-none" />
       <Handle type="target" position={Position.Bottom} id="bottom-target"

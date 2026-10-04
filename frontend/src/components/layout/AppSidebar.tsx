@@ -11,7 +11,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
-import { TemperSymbol } from '@/components/shared/TemperBrand';
 import { getActiveTheme, toggleTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
@@ -48,19 +47,11 @@ export function AppSidebar() {
         collapsed ? 'w-14' : 'w-[200px]',
       )}
     >
-      {/* Brand: the Temper symbol, with the name when there is room. The
-          symbol's own file keeps the glyph off its edges; the padding and
-          gap add the rest of the quarter-box clear space. */}
-      <div
-        className={cn(
-          'flex items-center gap-2.5 py-4 border-b border-temper-border shrink-0',
-          collapsed ? 'justify-center px-0' : 'px-3',
-        )}
-        data-testid="sidebar-brand"
-      >
-        <TemperSymbol size={32} label={collapsed ? 'Temper AI' : ''} />
+      {/* Brand */}
+      <div className="flex items-center gap-2 px-3 py-4 border-b border-temper-border shrink-0">
+        <span className="text-temper-accent font-bold text-lg leading-none shrink-0">T</span>
         {!collapsed && (
-          <span className="text-base font-semibold text-temper-text whitespace-nowrap">Temper AI</span>
+          <span className="text-sm font-semibold text-temper-text whitespace-nowrap">Temper AI</span>
         )}
       </div>
 
@@ -72,16 +63,12 @@ export function AppSidebar() {
             <Link
               key={item.to}
               to={item.to}
-              // Active: a quiet surface, the brand bar on the left and
-              // semibold text, so the state never rests on colour alone.
               className={cn(
-                'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors border-l-[3px]',
+                'flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors',
                 active
-                  ? 'bg-temper-surface border-temper-accent text-temper-text font-semibold'
-                  : 'border-transparent text-temper-text-muted hover:text-temper-text hover:bg-temper-surface',
+                  ? 'bg-temper-accent/15 text-temper-accent'
+                  : 'text-temper-text-muted hover:text-temper-text hover:bg-temper-surface',
               )}
-              aria-current={active ? 'page' : undefined}
-              aria-label={collapsed ? item.label : undefined}
               title={collapsed ? item.label : undefined}
             >
               <item.icon className="w-4 h-4 shrink-0" />

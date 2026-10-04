@@ -837,7 +837,7 @@ export function DesignStageNode({ data }: NodeProps) {
           type="target"
           position={Position.Left}
           id="left"
-          className="!bg-temper-control !w-2.5 !h-2.5"
+          className="!bg-temper-border !w-2.5 !h-2.5"
         />
       </div>
 
@@ -990,7 +990,7 @@ export function DesignStageNode({ data }: NodeProps) {
                   updateStage(stageName, { agents: [...agents, e.target.value] });
                 }
               }}
-              className="mt-1.5 w-full text-[10px] bg-temper-surface border border-temper-control rounded px-1.5 py-1 text-temper-text-dim hover:border-temper-accent transition-colors cursor-pointer"
+              className="mt-1.5 w-full text-[10px] bg-temper-surface border border-temper-border/50 rounded px-1.5 py-1 text-temper-text-dim hover:border-temper-accent/40 transition-colors cursor-pointer"
             >
               <option value="">+ Add agent...</option>
               {availableAgents.map((name) => (
@@ -1023,7 +1023,7 @@ export function DesignStageNode({ data }: NodeProps) {
                   />
                   <input
                     type="text" value={k} readOnly
-                    className="w-24 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-control rounded text-temper-text opacity-60"
+                    className="w-24 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text opacity-60"
                     placeholder="name"
                   />
                   <input
@@ -1035,7 +1035,7 @@ export function DesignStageNode({ data }: NodeProps) {
                       }
                       updateStage(stageName, { inputs: newInputs });
                     }}
-                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-control rounded text-temper-text"
+                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text"
                     placeholder="source"
                   />
                   <button
@@ -1091,7 +1091,7 @@ export function DesignStageNode({ data }: NodeProps) {
                   />
                   <input
                     type="text" value={o.name} readOnly
-                    className="w-24 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-control rounded text-temper-text opacity-60"
+                    className="w-24 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text opacity-60"
                     placeholder="name"
                   />
                   <input
@@ -1103,7 +1103,7 @@ export function DesignStageNode({ data }: NodeProps) {
                       }
                       updateStage(stageName, { outputs: newOutputs });
                     }}
-                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-control rounded text-temper-text"
+                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text"
                     placeholder="type"
                   />
                   <button
@@ -1208,7 +1208,7 @@ export function DesignStageNode({ data }: NodeProps) {
           type="source"
           position={Position.Right}
           id="right"
-          className="!bg-temper-control !w-2.5 !h-2.5"
+          className="!bg-temper-border !w-2.5 !h-2.5"
           style={{ top: '35%' }}
         />
       </div>
@@ -1220,7 +1220,7 @@ export function DesignStageNode({ data }: NodeProps) {
           type="source"
           position={Position.Bottom}
           id={`bottom-${i}`}
-          className="!bg-temper-control !w-2 !h-2"
+          className="!bg-temper-border !w-2 !h-2"
           style={{ left: `${30 + i * 20}%` }}
         />
       ))}
@@ -1231,7 +1231,7 @@ export function DesignStageNode({ data }: NodeProps) {
           type="target"
           position={Position.Top}
           id={`top-${i}`}
-          className="!bg-temper-control !w-2 !h-2"
+          className="!bg-temper-border !w-2 !h-2"
           style={{ left: `${30 + i * 20}%` }}
         />
       ))}

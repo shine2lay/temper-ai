@@ -301,7 +301,7 @@ export function ResourceBrowser() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={`Search ${activeTab}...`}
-          className="w-full px-2 py-1 text-[11px] bg-temper-surface border border-temper-control rounded text-temper-text placeholder:text-temper-text-dim"
+          className="w-full px-2 py-1 text-[11px] bg-temper-surface border border-temper-border rounded text-temper-text placeholder:text-temper-text-dim"
         />
       </div>
 
@@ -351,7 +351,7 @@ export function ResourceBrowser() {
             <button
               onClick={handleNewStage}
               disabled={createStageMutation.isPending}
-              className="px-2.5 py-1.5 rounded-md bg-temper-accent/10 border border-temper-accent/30 hover:bg-temper-accent/20 text-[11px] font-medium text-temper-text transition-colors disabled:opacity-50"
+              className="px-2.5 py-1.5 rounded-md bg-temper-accent/10 border border-temper-accent/30 hover:bg-temper-accent/20 text-[11px] font-medium text-temper-accent transition-colors disabled:opacity-50"
             >
               + New Stage
             </button>
@@ -380,7 +380,7 @@ export function ResourceBrowser() {
             <button
               onClick={handleNewAgent}
               disabled={createAgentMutation.isPending}
-              className="px-2.5 py-1.5 rounded-md bg-temper-accent/10 border border-temper-accent/30 hover:bg-temper-accent/20 text-[11px] font-medium text-temper-text transition-colors disabled:opacity-50"
+              className="px-2.5 py-1.5 rounded-md bg-temper-accent/10 border border-temper-accent/30 hover:bg-temper-accent/20 text-[11px] font-medium text-temper-accent transition-colors disabled:opacity-50"
             >
               + New Agent
             </button>

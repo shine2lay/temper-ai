@@ -98,7 +98,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
               {stream.toolActivity.map((tool, i) => (
                 <div key={i} className="flex items-center gap-2 text-xs">
                   {tool.status === 'running' ? (
-                    <span className="w-1.5 h-1.5 rounded-full bg-temper-running animate-pulse shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-temper-accent animate-pulse shrink-0" />
                   ) : tool.status === 'completed' ? (
                     <span className="w-1.5 h-1.5 rounded-full bg-temper-completed shrink-0" />
                   ) : (
@@ -107,7 +107,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
                   <span
                     className={cn(
                       'font-mono',
-                      tool.status === 'running' ? 'text-temper-running' : 'text-temper-text-muted',
+                      tool.status === 'running' ? 'text-temper-accent' : 'text-temper-text-muted',
                     )}
                   >
                     {tool.toolName}
@@ -148,7 +148,7 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
                 scrollToBottom();
                 setIsAtBottom(true);
               }}
-              className="sticky bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-temper-accent px-3 py-1 text-xs font-medium text-temper-on-accent shadow-md hover:bg-temper-accent-dim"
+              className="sticky bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-temper-accent/90 px-3 py-1 text-xs font-medium text-white shadow-md backdrop-blur-sm hover:bg-temper-accent"
             >
               Jump to bottom
             </button>

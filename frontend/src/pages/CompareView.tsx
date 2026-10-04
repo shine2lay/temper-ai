@@ -172,7 +172,7 @@ export function CompareView() {
                 >
                   {row.label}
                   {differs(row.values) && (
-                    <span className="ml-1.5 text-[10px] text-temper-text" title="values differ">
+                    <span className="ml-1.5 text-[10px] text-temper-accent" title="values differ">
                       differs
                     </span>
                   )}

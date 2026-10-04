@@ -45,7 +45,7 @@ export function RunFindBar({ find }: { find: RunFind }) {
       {/* `shrink-0` earns its place: in a narrow toolbar the box would
           otherwise be squeezed below the width of the fixed input inside it,
           and the count spilled out through its own border. */}
-      <div className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-temper-surface border border-temper-control focus-within:border-temper-accent">
+      <div className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-temper-surface border border-temper-border focus-within:border-temper-accent">
         <Search aria-hidden className="w-3 h-3 shrink-0 text-temper-text-dim" />
         <input
           ref={find.inputRef}
@@ -136,7 +136,7 @@ export function RunFindBar({ find }: { find: RunFind }) {
             data-testid={`run-find-status-${choice.key}`}
             className={`px-1.5 py-1 text-[10px] leading-none border-l first:border-l-0 border-temper-border transition-colors ${
               find.status === choice.key
-                ? 'bg-temper-accent/20 text-temper-text'
+                ? 'bg-temper-accent/20 text-temper-accent'
                 : 'bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-panel'
             }`}
           >

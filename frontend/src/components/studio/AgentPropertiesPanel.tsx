@@ -96,7 +96,7 @@ export function AgentPropertiesPanel() {
           <button
             onClick={() => save()}
             disabled={!isDirty || saveStatus === 'pending'}
-            className="px-2 py-1 text-[10px] rounded bg-temper-accent text-temper-on-accent hover:bg-temper-accent-dim disabled:opacity-50"
+            className="px-2 py-1 text-[10px] rounded bg-temper-accent text-white hover:opacity-90 disabled:opacity-50"
           >
             {saveStatus === 'pending' ? '...' : 'Save'}
           </button>

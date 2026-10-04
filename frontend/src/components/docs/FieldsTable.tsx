@@ -23,7 +23,7 @@ export function FieldsTable({ fields }: FieldsTableProps) {
           {fields.map((field) => (
             <tr key={field.name} className="border-b border-temper-border/50 hover:bg-temper-surface/50">
               <td className="py-2 pr-4 align-top">
-                <code className="font-mono text-xs text-temper-text bg-temper-accent/10 px-1.5 py-0.5 rounded whitespace-nowrap">
+                <code className="font-mono text-xs text-temper-accent bg-temper-accent/10 px-1.5 py-0.5 rounded whitespace-nowrap">
                   {field.name}
                 </code>
               </td>

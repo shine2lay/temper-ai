@@ -112,9 +112,9 @@ export function AgentRoster({
                   <span
                     data-testid="live-group-working"
                     title={`${working} still working`}
-                    className="flex items-center gap-0.5 font-mono text-[9px] text-temper-running"
+                    className="flex items-center gap-0.5 font-mono text-[9px] text-temper-accent"
                   >
-                    <span className="size-1.5 animate-pulse rounded-full bg-temper-running" />
+                    <span className="size-1.5 animate-pulse rounded-full bg-temper-accent" />
                     {working}
                   </span>
                 )}
@@ -193,7 +193,7 @@ const AgentRow = memo(function AgentRow({
         <span
           className={cn(
             'size-1.5 shrink-0 rounded-full',
-            agent.status === 'running' ? 'animate-pulse bg-temper-running' : STATUS_DOT[agent.status] ?? 'bg-temper-text-dim',
+            agent.status === 'running' ? 'animate-pulse bg-temper-accent' : STATUS_DOT[agent.status] ?? 'bg-temper-text-dim',
           )}
         />
         <span className="truncate text-xs text-temper-text">{agent.name}</span>

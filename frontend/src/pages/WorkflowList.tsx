@@ -229,7 +229,7 @@ function WorkflowRow({
         checked={selected.has(wf.id)}
         onChange={() => onToggleSelect(wf.id)}
         onClick={(e) => e.stopPropagation()}
-        className="shrink-0 accent-temper-accent w-4 h-4 border-2 border-temper-control rounded"
+        className="shrink-0 accent-temper-accent w-4 h-4 border-2 border-temper-border rounded"
         aria-label={`Select ${wf.workflow_name} for comparison`}
       />
 
@@ -338,7 +338,7 @@ function WorkflowRow({
       <Link
         to={`/studio/${wf.workflow_name}`}
         onClick={(e) => e.stopPropagation()}
-        className="text-[10px] px-2 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-accent/10 transition-colors shrink-0"
+        className="text-[10px] px-2 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 transition-colors shrink-0"
       >
         Studio
       </Link>
@@ -519,7 +519,7 @@ function NewRunModal({
                 value={selectedWorkflow}
                 onChange={(e) => setSelectedWorkflow(e.target.value)}
                 className={cn(
-                  'h-9 w-full rounded-md bg-temper-surface border border-temper-control',
+                  'h-9 w-full rounded-md bg-temper-surface border border-temper-border',
                   'px-3 text-sm text-temper-text',
                   'focus:outline-none focus:ring-1 focus:ring-temper-accent',
                   'disabled:opacity-50',
@@ -601,7 +601,7 @@ function NewRunModal({
                 'text-sm font-mono text-temper-text placeholder:text-temper-text-dim',
                 'resize-y focus:outline-none focus:ring-1 focus:ring-temper-accent',
                 'disabled:opacity-50',
-                jsonError ? 'border-temper-failed' : 'border-temper-control',
+                jsonError ? 'border-red-500/60' : 'border-temper-border',
               )}
               disabled={runMutation.isPending}
               aria-describedby={jsonError ? 'json-error' : undefined}
@@ -640,7 +640,7 @@ function NewRunModal({
               disabled={runMutation.isPending || !selectedWorkflow}
               className={cn(
                 'flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium transition-colors',
-                'bg-temper-accent text-temper-on-accent hover:bg-temper-accent-dim',
+                'bg-temper-accent text-white hover:opacity-90',
                 'focus:outline-none focus:ring-2 focus:ring-temper-accent/50',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
               )}
@@ -846,14 +846,14 @@ export function WorkflowList() {
               placeholder="Search loaded runs..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="px-3 py-1.5 rounded-md bg-temper-surface border border-temper-control text-sm text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-64 max-w-full min-w-0 flex-1"
+              className="px-3 py-1.5 rounded-md bg-temper-surface border border-temper-border text-sm text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-64 max-w-full min-w-0 flex-1"
               aria-label="Search workflows by name"
             />
 
             <div className="ml-auto flex items-center gap-2">
               <button
                 onClick={() => setNewRunOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-temper-on-accent hover:bg-temper-accent-dim transition-colors focus:outline-none focus:ring-2 focus:ring-temper-accent/50"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors focus:outline-none focus:ring-2 focus:ring-temper-accent/50"
                 aria-label="New Run — start a workflow run"
               >
                 <Play className="w-3 h-3" />
@@ -865,7 +865,7 @@ export function WorkflowList() {
                   onClick={() =>
                     navigate(`/compare?ids=${[...selected].join(',')}`)
                   }
-                  className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-temper-on-accent hover:bg-temper-accent-dim transition-colors"
+                  className="px-3 py-1 rounded-md text-xs font-medium bg-temper-accent text-white hover:opacity-90 transition-colors"
                 >
                   Compare ({selected.size})
                 </button>
@@ -891,7 +891,7 @@ export function WorkflowList() {
                   className={cn(
                     'px-2 py-0.5 rounded text-xs transition-colors',
                     (statusFilter === s || (s === 'all' && !statusFilter))
-                      ? 'bg-temper-accent/20 text-temper-text'
+                      ? 'bg-temper-accent/20 text-temper-accent'
                       : 'text-temper-text-muted hover:text-temper-text',
                   )}
                   aria-pressed={statusFilter === s || (s === 'all' && !statusFilter)}
@@ -911,7 +911,7 @@ export function WorkflowList() {
                 className={cn(
                   'px-2 py-0.5 rounded text-xs transition-colors',
                   sortBy === s
-                    ? 'bg-temper-accent/20 text-temper-text'
+                    ? 'bg-temper-accent/20 text-temper-accent'
                     : 'text-temper-text-muted hover:text-temper-text',
                 )}
                 aria-pressed={sortBy === s}

@@ -235,7 +235,7 @@ function GateDialog({
                 onChange={(e) => setCustoms((prev) => ({ ...prev, [q.id]: e.target.value }))}
                 placeholder={(q.options?.length ?? 0) > 0 ? 'Or answer in your own words…' : 'Your answer…'}
                 aria-label={q.question}
-                className="mt-2 w-full rounded-md border border-temper-control bg-temper-panel px-3 py-1.5 text-sm text-temper-text placeholder:text-temper-text-dim focus:border-temper-accent focus:outline-none"
+                className="mt-2 w-full rounded-md border border-temper-border bg-temper-panel px-3 py-1.5 text-sm text-temper-text placeholder:text-temper-text-dim focus:border-temper-accent focus:outline-none"
               />
             </section>
           ))}
@@ -254,7 +254,7 @@ function GateDialog({
               value={response}
               onChange={(e) => setResponse(e.target.value)}
               placeholder="Goes to the next node as gate.text…"
-              className="mt-1 w-full resize-y rounded-md border border-temper-control bg-temper-panel px-3 py-2 text-sm text-temper-text placeholder:text-temper-text-dim focus:border-temper-accent focus:outline-none"
+              className="mt-1 w-full resize-y rounded-md border border-temper-border bg-temper-panel px-3 py-2 text-sm text-temper-text placeholder:text-temper-text-dim focus:border-temper-accent focus:outline-none"
             />
           </section>
         </div>
@@ -275,7 +275,7 @@ function GateDialog({
               type="button"
               disabled={pending || !ready}
               onClick={() => onSubmit(response.trim(), answers)}
-              className="rounded-md bg-temper-accent px-3 py-1.5 text-xs font-medium text-temper-on-accent transition-colors hover:bg-temper-accent-dim disabled:opacity-50"
+              className="rounded-md bg-temper-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:brightness-110 disabled:opacity-50"
             >
               {pending ? 'Approving…' : 'Approve & continue'}
             </button>

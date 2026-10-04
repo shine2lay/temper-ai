@@ -75,10 +75,10 @@ export const DataFlowEdge: FC<EdgeProps> = ({
   const visibleKeys = dataKeys.slice(0, MAX_VISIBLE_KEYS);
   const overflowCount = dataKeys.length - MAX_VISIBLE_KEYS;
 
-  // Loop-back edges get a warm orange glow; data-flow edges a quiet neutral
+  // Loop-back edges get a warm orange glow; data-flow edges stay cool grey
   const trackColor = isLoop
     ? 'rgba(255, 167, 38, 0.15)'
-    : 'color-mix(in srgb, var(--color-temper-control) 14%, transparent)';
+    : 'rgba(100, 116, 139, 0.12)';
   const dotColor = isLoop
     ? 'var(--color-temper-loop-back)'
     : 'var(--color-temper-running)';

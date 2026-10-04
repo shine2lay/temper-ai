@@ -179,13 +179,13 @@ export function ScriptLogView({ attemptId, height, className }: Props) {
           title={status.title}
           className={cn(
             'flex items-center gap-1 rounded px-1.5 py-0.5 font-medium',
-            status.tone === 'live' && 'bg-temper-running/15 text-temper-text',
-            status.tone === 'ok' && 'bg-emerald-500/15 text-emerald-400',
+            status.tone === 'live' && 'bg-temper-accent/15 text-temper-accent',
+            status.tone === 'ok' && 'bg-emerald-500/15 text-emerald-500',
             status.tone === 'bad' && 'bg-red-500/15 text-red-400',
             status.tone === 'muted' && 'bg-temper-surface text-temper-text-muted',
           )}
         >
-          {status.tone === 'live' && <span className="size-1.5 animate-pulse rounded-full bg-temper-running" />}
+          {status.tone === 'live' && <span className="size-1.5 animate-pulse rounded-full bg-temper-accent" />}
           {status.text}
         </span>
         <span
@@ -351,7 +351,7 @@ const LogLineRow = memo(
             line.kind === 'end' && !ok && 'bg-red-500/10 text-red-400',
           )}
         >
-          <time className="shrink-0 font-mono tabular-nums opacity-90" dateTime={line.t} title={line.t}>
+          <time className="shrink-0 font-mono tabular-nums opacity-70" dateTime={line.t} title={line.t}>
             {formatLogTime(line.t)}
           </time>
           <Icon className="mt-0.5 size-3 shrink-0" />

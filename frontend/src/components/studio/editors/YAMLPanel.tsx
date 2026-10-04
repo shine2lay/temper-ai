@@ -73,7 +73,7 @@ export function YAMLPanel({ configData, onChange }: YAMLPanelProps) {
           <textarea
             value={yamlText}
             onChange={(e) => handleYamlChange(e.target.value)}
-            className="w-full h-64 px-3 py-2 text-xs font-mono bg-temper-surface border border-temper-control rounded text-temper-text resize-y"
+            className="w-full h-64 px-3 py-2 text-xs font-mono bg-temper-surface border border-temper-border rounded text-temper-text resize-y"
             spellCheck={false}
           />
           {parseError && (

@@ -4,67 +4,28 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Brand typeface: Source Sans Pro, served by this app from the Temper logo
-   packet (fonts/, SIL Open Font License 1.1, licence file next to the fonts).
-   No outside font service. Only regular and semibold ship, so the semibold
-   file answers every heavier request: medium, semibold and bold all draw the
-   real 600 face and the browser never fakes a bold. */
-@font-face {
-  font-family: 'Source Sans Pro';
-  src: url('./assets/fonts/sourcesanspro-regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Source Sans Pro';
-  src: url('./assets/fonts/sourcesanspro-semibold.ttf') format('truetype');
-  font-weight: 500 900;
-  font-style: normal;
-  font-display: swap;
-}
-
 @theme {
-  /* Temper AI custom palette — prefixed to avoid shadcn collision.
-     The neutrals and the green come from Design's Temper logo handoff
-     (ink, paper, surface, anvil green); the values live in the theme blocks
-     below. The status colours are a separate set on purpose: the brand green
-     is never a status signal, and colour alone never carries a status. */
+  /* Temper AI custom palette — prefixed to avoid shadcn collision */
   --color-temper-bg: var(--temper-bg);
   --color-temper-panel: var(--temper-panel);
   --color-temper-panel-light: var(--temper-panel-light);
   --color-temper-surface: var(--temper-surface);
   --color-temper-border: var(--temper-border);
   --color-temper-border-light: var(--temper-border-light);
-  --color-temper-control: var(--temper-control);
   --color-temper-text: var(--temper-text);
   --color-temper-text-muted: var(--temper-text-muted);
   --color-temper-text-dim: var(--temper-text-dim);
   --color-temper-accent: var(--temper-accent);
   --color-temper-accent-dim: var(--temper-accent-dim);
-  --color-temper-on-accent: var(--temper-on-accent);
-
-  --font-sans: 'Source Sans Pro', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  /* Source Sans Pro ships regular and semibold only: "bold" is 600. */
-  --font-weight-bold: 600;
 
   --color-temper-completed: #66bb6a;
-  /* Running was the old cyan accent; it keeps its own blue now that the
-     accent is the brand green. */
-  --color-temper-running: #64b5f6;
-  /* Failed and skipped are one step lighter than before: the new raised
-     surface #2d2d28 is lighter than the old navy one, and the old shades
-     measured 3.97:1 and 4.33:1 on it. Same hues, same meanings. */
-  --color-temper-failed: #f87171;
-  /* The old blue-grey pending measured 3.19:1 on the new dark panel. */
-  --color-temper-pending: #96938a;
+  --color-temper-running: #4fc3f7;
+  --color-temper-failed: #ef5350;
+  --color-temper-pending: #6a7080;
   /* A user cancel is not a failure, a skipped branch is not an error, and a
      gate waiting on a human is not a stall — each gets its own colour. */
   --color-temper-cancelled: #ffa726;
-  /* Skipped: the warm secondary grey (the old cool grey belonged to the old
-     theme); it is told apart from pending by its label, not its shade. */
-  --color-temper-skipped: #a8a396;
+  --color-temper-skipped: #8a90a0;
   --color-temper-waiting: #ffca28;
 
   --color-temper-bg-completed: var(--temper-bg-completed);
@@ -78,205 +39,179 @@
   --color-temper-loop-back: #ffa726;
 }
 
-/* Dark theme (default). Every value is from the Temper logo handoff
-   (UI-HANDOFF.md, dark table); scripts/check-brand-contrast.mjs measures the
-   pairs in the built CSS.
-     page #1a1a17 "ink" / raised #23231f / second surface #2d2d28
-     text #f7f5ef / secondary text #a8a396 (6.9:1 on the page)
-     green #5cb27f for text, links, buttons and focus (6.75:1); #2e7d4f is
-       too dark for text here (3.46:1) and is used by the logo only
-     control borders #858277 (4.53:1), dividers #3a3934 (decorative) */
+/* Dark mode values (default) */
 :root {
-  --temper-bg: #1a1a17;
-  --temper-panel: #23231f;
-  --temper-panel-light: #2d2d28;
-  --temper-surface: #2d2d28;
-  --temper-border: #3a3934;
-  --temper-border-light: #858277;
-  --temper-control: #858277;
-  --temper-text: #f7f5ef;
-  --temper-text-muted: #a8a396;
-  --temper-text-dim: #a8a396;
-  --temper-accent: #5cb27f;
-  /* Hover for solid green buttons: the green moved 15% towards the text
-     colour, so the ink label gains contrast (7.7:1) instead of losing it. */
-  --temper-accent-dim: #73bc90;
-  --temper-on-accent: #1a1a17;
+  --temper-bg: #1a1a2e;
+  --temper-panel: #0f1729;
+  --temper-panel-light: #1e2a4a;
+  --temper-surface: #162032;
+  --temper-border: #2a3a5c;
+  --temper-border-light: #3a4a6c;
+  --temper-text: #e0e0e0;
+  --temper-text-muted: #8a8fa0;
+  /* Was #6a7080: 3.61:1 on the panel and 3.45:1 on the page background,
+     which fails AA for the 9-10px metadata this token is used for. This
+     value measures 4.88 / 4.66 and stays dimmer than --temper-text-muted
+     (5.55), so the dim < muted < text hierarchy is unchanged. */
+  --temper-text-dim: #7d8698;
+  --temper-accent: #4fc3f7;
+  --temper-accent-dim: #2a7a9f;
 
-  --temper-bg-completed: #222a1f;
-  --temper-bg-running: #212a2d;
-  --temper-bg-failed: #2f201d;
-  --temper-bg-pending: #23231f;
+  --temper-bg-completed: #162318;
+  --temper-bg-running: #162538;
+  --temper-bg-failed: #231616;
+  --temper-bg-pending: #0f1729;
 
   /* Badge colors — dark mode */
   --badge-completed-bg: rgba(102, 187, 106, 0.2);
   --badge-completed-text: #66bb6a;
   --badge-completed-border: rgba(102, 187, 106, 0.4);
-  --badge-running-bg: rgba(100, 181, 246, 0.2);
-  --badge-running-text: #64b5f6;
-  --badge-running-border: rgba(100, 181, 246, 0.4);
-  /* Badge text sits on a 20% tint of its own colour; the lighter red and
-     grey keep it above 4.5:1 on the raised panel (the base colours measured
-     3.5:1 there). */
+  --badge-running-bg: rgba(79, 195, 247, 0.2);
+  --badge-running-text: #4fc3f7;
+  --badge-running-border: rgba(79, 195, 247, 0.4);
   --badge-failed-bg: rgba(239, 83, 80, 0.2);
-  --badge-failed-text: #ff8a80;
+  --badge-failed-text: #ef5350;
   --badge-failed-border: rgba(239, 83, 80, 0.3);
-  --badge-pending-bg: rgba(150, 147, 138, 0.2);
-  --badge-pending-text: #b5b2a9;
-  --badge-pending-border: rgba(150, 147, 138, 0.3);
+  --badge-pending-bg: rgba(106, 112, 128, 0.2);
+  --badge-pending-text: #6a7080;
+  --badge-pending-border: rgba(106, 112, 128, 0.3);
 
-  --temper-minimap-node: #4a4842;
-  --temper-minimap-mask: rgba(26, 26, 23, 0.7);
+  --temper-minimap-node: #1e2a4a;
+  --temper-minimap-mask: rgba(15, 23, 41, 0.7);
 }
-
-/* Light theme, from the Temper logo handoff (light table):
-     page #f7f5ef "paper" / raised #ffffff / second surface #e9e5da
-     text #1a1a17 / secondary text #5e5b53 (6.2:1 on paper)
-     green #2e7d4f for text, links, buttons and focus: 4.63:1 on paper and
-       5.05:1 on white, but only 4.01:1 on the second surface, so green text
-       is never set on #e9e5da
-     control borders #857f72 (3.65:1), dividers #d6d1c4 (decorative) */
 
 /* Light mode — system preference (no explicit data-theme set) */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    /* Keep in step with the :root[data-theme="light"] block below. */
-    --temper-bg: #f7f5ef;
+    --temper-bg: #f0f2f5;
     --temper-panel: #ffffff;
-    --temper-panel-light: #e9e5da;
-    --temper-surface: #e9e5da;
-    --temper-border: #d6d1c4;
-    --temper-border-light: #857f72;
-    --temper-control: #857f72;
-    --temper-text: #1a1a17;
-    --temper-text-muted: #5e5b53;
-    --temper-text-dim: #5e5b53;
-    --temper-accent: #2e7d4f;
-    --temper-accent-dim: #2b6e47;
-    --temper-on-accent: #ffffff;
-    --color-temper-token-prompt: #1e40af;
+    --temper-panel-light: #e8ecf2;
+    --temper-surface: #f5f7fa;
+    --temper-border: #d0d7e3;
+    --temper-border-light: #b8c2d4;
+    --temper-text: #111827;
+    --temper-text-muted: #374151;
+    --temper-text-dim: #6b7280;
+    --temper-accent: #2563eb;
+    --temper-accent-dim: #1d4ed8;
 
     /* Status colours: the dark-theme values are light tints that fail on a
-       light ground. These are the 700/800 equivalents, each at least 4.5:1
-       on paper, white and the #e9e5da surface (the warmer surface is darker
-       than the old grey one, so green, orange and grey went one step
-       darker; same hues, same meanings). */
-    --color-temper-completed: #166534;
+       white panel (the completed green measured 2.36:1 against 4.5 required).
+       These are the 700/800 equivalents, verified above AA. */
+    --color-temper-completed: #15803d;
     --color-temper-running: #0369a1;
     --color-temper-failed: #b91c1c;
     --color-temper-pending: #52525b;
-    --color-temper-cancelled: #9a3412;
-    --color-temper-skipped: #64615a;
-    --color-temper-waiting: #854d0e;
 
-    --color-temper-token-completion: #166534;
 
     --temper-bg-completed: #e8f5e9;
     --temper-bg-running: #e3f2fd;
     --temper-bg-failed: #fce4e4;
-    --temper-bg-pending: #f7f5ef;
+    --temper-bg-pending: #f0f2f5;
 
-    /* Badge colors — light mode (text darkened to clear 4.5:1 on the
-       badge's own fill; the old shades measured 3.5-4.1:1) */
+    /* Badge colors — light mode */
     --badge-completed-bg: #c8e6c9;
-    --badge-completed-text: #1b5e20;
+    --badge-completed-text: #2e7d32;
     --badge-completed-border: #81c784;
     --badge-running-bg: #b3e5fc;
-    --badge-running-text: #01579b;
-    --badge-running-border: #64b5f6;
+    --badge-running-text: #0277bd;
+    --badge-running-border: #4fc3f7;
     --badge-failed-bg: #ffcdd2;
-    --badge-failed-text: #b71c1c;
+    --badge-failed-text: #c62828;
     --badge-failed-border: #ef9a9a;
-    --badge-pending-bg: #e9e5da;
-    --badge-pending-text: #44403c;
-    --badge-pending-border: #c9c3b4;
+    --badge-pending-bg: #e0e0e0;
+    --badge-pending-text: #546e7a;
+    --badge-pending-border: #b0bec5;
 
-    --temper-minimap-node: #c9c3b4;
-    --temper-minimap-mask: rgba(247, 245, 239, 0.7);
+    --temper-minimap-node: #c8cfe0;
+    --temper-minimap-mask: rgba(240, 242, 245, 0.7);
   }
 }
 
 /* Light mode — explicit data-theme attribute */
 :root[data-theme="light"] {
-  /* Keep in step with the prefers-color-scheme block above. */
   color-scheme: light;
-  --temper-bg: #f7f5ef;
+  --temper-bg: #f0f2f5;
   --temper-panel: #ffffff;
-  --temper-panel-light: #e9e5da;
-  --temper-surface: #e9e5da;
-  --temper-border: #d6d1c4;
-  --temper-border-light: #857f72;
-  --temper-control: #857f72;
-  --temper-text: #1a1a17;
-  --temper-text-muted: #5e5b53;
-  --temper-text-dim: #5e5b53;
-  --temper-accent: #2e7d4f;
-  --temper-accent-dim: #2b6e47;
-  --temper-on-accent: #ffffff;
-  --color-temper-token-prompt: #1e40af;
+  --temper-panel-light: #e8ecf2;
+  --temper-surface: #edf0f5;
+  --temper-border: #c8cfe0;
+  --temper-border-light: #b0bace;
+  --temper-text: #111827;
+  --temper-text-muted: #374151;
+  --temper-text-dim: #6b7280;
+  --temper-accent: #2563eb;
+  --temper-accent-dim: #1d4ed8;
+  --color-temper-token-prompt: #2563eb;
   /* Status colours: the dark-theme values are light tints that fail on a
-     light ground. These are the 700/800 equivalents, each at least 4.5:1
-     on paper, white and the #e9e5da surface (the warmer surface is darker
-     than the old grey one, so green, orange and grey went one step
-     darker; same hues, same meanings). */
-  --color-temper-completed: #166534;
+     white panel (the completed green measured 2.36:1 against 4.5 required).
+     These are the 700/800 equivalents, verified above AA. */
+  --color-temper-completed: #15803d;
   --color-temper-running: #0369a1;
   --color-temper-failed: #b91c1c;
   --color-temper-pending: #52525b;
-  --color-temper-cancelled: #9a3412;
-  --color-temper-skipped: #64615a;
-  --color-temper-waiting: #854d0e;
 
-  --color-temper-token-completion: #166534;
+  --color-temper-token-completion: #16a34a;
+
+  /* Semantic accent colors — dark enough for white backgrounds */
+  --temper-emerald: #047857;       /* emerald-700 — json badges, output, costs */
+  --temper-emerald-bg: #d1fae5;    /* emerald-100 */
+  --temper-blue: #1d4ed8;          /* blue-700 — source tags, flow edges */
+  --temper-blue-bg: #dbeafe;       /* blue-100 */
+  --temper-amber: #b45309;         /* amber-700 — tools, warnings */
+  --temper-amber-bg: #fef3c7;      /* amber-100 */
+  --temper-violet: #6d28d9;        /* violet-700 — agent type badges */
+  --temper-violet-bg: #ede9fe;     /* violet-100 */
+  --temper-red: #b91c1c;           /* red-700 — errors */
+  --temper-red-bg: #fee2e2;        /* red-100 */
+  --temper-yellow: #a16207;        /* yellow-700 — conditions */
+  --temper-cyan: #0e7490;          /* cyan-700 — running state */
 
   --temper-bg-completed: #e8f5e9;
   --temper-bg-running: #e3f2fd;
   --temper-bg-failed: #fce4e4;
-  --temper-bg-pending: #f7f5ef;
+  --temper-bg-pending: #f0f2f5;
 
-  /* Badge colors, light mode (text darkened to clear 4.5:1 on the badge's
-     own fill; the old shades measured 3.5-4.1:1) */
+  /* Badge colors — light mode */
   --badge-completed-bg: #c8e6c9;
-  --badge-completed-text: #1b5e20;
+  --badge-completed-text: #2e7d32;
   --badge-completed-border: #81c784;
   --badge-running-bg: #b3e5fc;
-  --badge-running-text: #01579b;
-  --badge-running-border: #64b5f6;
+  --badge-running-text: #0277bd;
+  --badge-running-border: #4fc3f7;
   --badge-failed-bg: #ffcdd2;
-  --badge-failed-text: #b71c1c;
+  --badge-failed-text: #c62828;
   --badge-failed-border: #ef9a9a;
-  --badge-pending-bg: #e9e5da;
-  --badge-pending-text: #44403c;
-  --badge-pending-border: #c9c3b4;
+  --badge-pending-bg: #e0e0e0;
+  --badge-pending-text: #546e7a;
+  --badge-pending-border: #b0bec5;
 
-  --temper-minimap-node: #c9c3b4;
-  --temper-minimap-mask: rgba(247, 245, 239, 0.7);
+  --temper-minimap-node: #c8cfe0;
+  --temper-minimap-mask: rgba(240, 242, 245, 0.7);
 }
 
-/* shadcn tokens, dark (default). Same handoff values as the temper-* tokens:
-   --primary and --ring are the brand green; --accent stays a quiet hover
-   surface, not the brand colour; --input is the control border. */
+/* Always dark — override shadcn :root with dark values */
 :root {
   color-scheme: dark;
   --radius: 0.625rem;
-  --background: #1a1a17;
-  --foreground: #f7f5ef;
-  --card: #23231f;
-  --card-foreground: #f7f5ef;
-  --popover: #23231f;
-  --popover-foreground: #f7f5ef;
-  --primary: #5cb27f;
-  --primary-foreground: #1a1a17;
-  --secondary: #2d2d28;
-  --secondary-foreground: #f7f5ef;
-  --muted: #2d2d28;
-  --muted-foreground: #a8a396;
-  --accent: #2d2d28;
-  --accent-foreground: #f7f5ef;
+  --background: #1a1a2e;
+  --foreground: #e0e0e0;
+  --card: #0f1729;
+  --card-foreground: #e0e0e0;
+  --popover: #0f1729;
+  --popover-foreground: #e0e0e0;
+  --primary: #4fc3f7;
+  --primary-foreground: #0f1729;
+  --secondary: #1e2a4a;
+  --secondary-foreground: #e0e0e0;
+  --muted: #1e2a4a;
+  --muted-foreground: #8a8fa0;
+  --accent: #1e2a4a;
+  --accent-foreground: #e0e0e0;
   --destructive: #ef5350;
-  --border: #3a3934;
-  --input: #858277;
-  --ring: #5cb27f;
+  --border: #2a3a5c;
+  --input: #2a3a5c;
+  --ring: #4fc3f7;
   --chart-1: #42a5f5;
   --chart-2: #66bb6a;
   --chart-3: #ffa726;
@@ -284,69 +219,64 @@
   --chart-5: #ef5350;
 }
 
-/* shadcn tokens, light, by system preference.
+/* Light mode — shadcn overrides, by system preference.
 
    The temper-* block above already has this fallback, but these shadcn
    tokens only had the explicit [data-theme="light"] rule. On a light system
    with no theme chosen, the page went light while every shadcn surface
-   (Sheet, Dialog, Popover, Card) stayed dark, which is why the Agent
-   Details panel once rendered dark with dark text on it. */
+   (Sheet, Dialog, Popover, Card) stayed dark — which is why the Agent
+   Details panel rendered dark-navy with dark text on it. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     color-scheme: light;
-    --background: #f7f5ef;
-    --foreground: #1a1a17;
+    --background: #f0f2f5;
+    --foreground: #1a1a2e;
     --card: #ffffff;
-    --card-foreground: #1a1a17;
+    --card-foreground: #1a1a2e;
     --popover: #ffffff;
-    --popover-foreground: #1a1a17;
-    --primary: #2e7d4f;
+    --popover-foreground: #1a1a2e;
+    --primary: #1976d2;
     --primary-foreground: #ffffff;
-    --secondary: #e9e5da;
-    --secondary-foreground: #1a1a17;
-    --muted: #e9e5da;
-    --muted-foreground: #5e5b53;
-    --accent: #e9e5da;
-    --accent-foreground: #1a1a17;
+    --secondary: #e8ecf2;
+    --secondary-foreground: #1a1a2e;
+    --muted: #e8ecf2;
+    --muted-foreground: #5a6070;
+    --accent: #e8ecf2;
+    --accent-foreground: #1a1a2e;
     --destructive: #d32f2f;
-    --border: #d6d1c4;
-    --input: #857f72;
-    --ring: #2e7d4f;
+    --border: #d0d7e3;
+    --input: #d0d7e3;
+    --ring: #1976d2;
   }
 }
 
-/* shadcn tokens, light, by explicit choice */
+/* Light mode — shadcn overrides */
 :root[data-theme="light"] {
   color-scheme: light;
-  --background: #f7f5ef;
-  --foreground: #1a1a17;
+  --background: #f0f2f5;
+  --foreground: #1a1a2e;
   --card: #ffffff;
-  --card-foreground: #1a1a17;
+  --card-foreground: #1a1a2e;
   --popover: #ffffff;
-  --popover-foreground: #1a1a17;
-  --primary: #2e7d4f;
+  --popover-foreground: #1a1a2e;
+  --primary: #1976d2;
   --primary-foreground: #ffffff;
-  --secondary: #e9e5da;
-  --secondary-foreground: #1a1a17;
-  --muted: #e9e5da;
-  --muted-foreground: #5e5b53;
-  --accent: #e9e5da;
-  --accent-foreground: #1a1a17;
+  --secondary: #e8ecf2;
+  --secondary-foreground: #1a1a2e;
+  --muted: #e8ecf2;
+  --muted-foreground: #5a6070;
+  --accent: #e8ecf2;
+  --accent-foreground: #1a1a2e;
   --destructive: #d32f2f;
-  --border: #d6d1c4;
-  --input: #857f72;
-  --ring: #2e7d4f;
-}
-
-html {
-  /* Only regular and semibold exist; never let the browser smear a fake
-     bold (italic synthesis stays on, there is no italic file). */
-  font-synthesis-weight: none;
+  --border: #d0d7e3;
+  --input: #d0d7e3;
+  --ring: #1976d2;
 }
 
 body {
   margin: 0;
-  font-family: var(--font-sans);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -365,7 +295,7 @@ body {
    indicator for keyboard users only (`:focus-visible`), so it never shows on
    mouse clicks. */
 :focus-visible {
-  outline: 2px solid var(--color-temper-accent);
+  outline: 2px solid var(--color-temper-accent, #4fc3f7);
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -515,7 +445,7 @@ body {
 }
 
 .skeleton {
-  background: linear-gradient(90deg, var(--temper-surface) 25%, var(--temper-panel) 50%, var(--temper-surface) 75%);
+  background: linear-gradient(90deg, var(--temper-surface) 25%, var(--temper-panel-light) 50%, var(--temper-surface) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -595,28 +525,9 @@ body {
 /* ============================================================
    Light mode contrast fixes
    Override Tailwind dark-mode-only color classes to use
-   darker variants that are readable on paper and white.
-   Scoped to :root:not(.dark) so it covers both an explicit light
-   choice and a light system with no choice stored (theme.ts keeps
-   the .dark class in step with the theme actually shown).
+   darker variants that are readable on white/light backgrounds.
    ============================================================ */
-:root:not(.dark) {
-  /* Semantic colours, at least 4.5:1 on paper, white and the #e9e5da
-     surface (emerald, amber, yellow and cyan went one step darker for the
-     warmer surface) */
-  --temper-emerald: #065f46;       /* emerald-800: json badges, output, costs */
-  --temper-emerald-bg: #d1fae5;    /* emerald-100 */
-  --temper-blue: #1e40af;          /* blue-800: source tags, flow edges */
-  --temper-blue-bg: #dbeafe;       /* blue-100 */
-  --temper-amber: #92400e;         /* amber-800: tools, warnings */
-  --temper-amber-bg: #fef3c7;      /* amber-100 */
-  --temper-violet: #6d28d9;        /* violet-700: agent type badges */
-  --temper-violet-bg: #ede9fe;     /* violet-100 */
-  --temper-red: #b91c1c;           /* red-700: errors */
-  --temper-red-bg: #fee2e2;        /* red-100 */
-  --temper-yellow: #854d0e;        /* yellow-800: conditions */
-  --temper-cyan: #155e75;          /* cyan-800: running state */
-
+:root[data-theme="light"] {
   /* Emerald (costs, json badges, output bars, completion tokens) */
   .text-emerald-400 { color: var(--temper-emerald) !important; }
   .bg-emerald-400 { background-color: #34d399 !important; }
@@ -624,18 +535,14 @@ body {
   .bg-emerald-900\/20 { background-color: #d1fae5 !important; }
   .border-emerald-700\/30 { border-color: #6ee7b7 !important; }
   .text-emerald-400\/80 { color: var(--temper-emerald) !important; }
-  /* -500 text is ~2.5:1 on paper: the script log's finished line, done ticks */
-  .text-emerald-500 { color: var(--temper-emerald) !important; }
 
-  /* Blue (source tags, flow edges, prompt tokens) */
+  /* Blue (source tags, flow edges, prompt tokens, accent) */
   .text-blue-400 { color: var(--temper-blue) !important; }
   .bg-blue-500\/10, .bg-blue-500\/15 { background-color: var(--temper-blue-bg) !important; }
   .bg-blue-900\/30 { background-color: #dbeafe !important; }
 
   /* Amber (tools, warnings, loop indicators) */
   .text-amber-400 { color: var(--temper-amber) !important; }
-  /* -500/-600 text is 2-3:1 on paper: cancelled badge, log warnings */
-  .text-amber-500, .text-amber-600 { color: var(--temper-amber) !important; }
   .bg-amber-500\/10, .bg-amber-500\/15 { background-color: var(--temper-amber-bg) !important; }
   .bg-amber-900\/30 { background-color: #fef3c7 !important; }
 
@@ -646,7 +553,6 @@ body {
 
   /* Red (errors, failed states) */
   .text-red-400 { color: var(--temper-red) !important; }
-  .hover\:text-red-500:hover { color: var(--temper-red) !important; }
   .bg-red-500\/10, .bg-red-500\/15 { background-color: var(--temper-red-bg) !important; }
   .bg-red-950\/10 { background-color: #fee2e2 !important; }
   .bg-red-500\/20 { background-color: #fca5a5 !important; }
@@ -657,10 +563,10 @@ body {
   .border-yellow-500\/30 { border-color: #fde68a !important; }
 
   /* Sky (JSON string values in viewers) */
-  .text-sky-400 { color: #075985 !important; }
+  .text-sky-400 { color: #0369a1 !important; }
 
   /* Purple (JSON keys in viewers) */
-  .text-purple-400 { color: #6d28d9 !important; }
+  .text-purple-400 { color: #7c3aed !important; }
 
   /* Cyan (running state) */
   .text-cyan-400 { color: var(--temper-cyan) !important; }
@@ -669,10 +575,34 @@ body {
   .text-temper-token-prompt { color: var(--color-temper-token-prompt) !important; }
   .text-temper-token-completion { color: var(--color-temper-token-completion) !important; }
 
-  /* ReactFlow edges in light mode */
+  /* Surface backgrounds — slightly more contrast */
+  .bg-temper-surface\/50 { background-color: #e5e7eb !important; }
+  .bg-temper-surface\/30 { background-color: #edf0f5 !important; }
+
+  /* ReactFlow node borders and handles in light mode */
+  .react-flow__node { border-color: #d1d5db !important; }
   .react-flow__edge path { opacity: 0.85; }
 
-  /* Green edge lines, slightly darker for light backgrounds */
+  /* Handles — use medium gray instead of dark navy */
+  .react-flow__handle.\!bg-temper-border,
+  .\!bg-temper-border { background-color: #9ca3af !important; }
+
+  /* Agent card backgrounds inside stages */
+  .bg-temper-surface\/50 { background-color: #f3f4f6 !important; }
+
+  /* Faint labels that need more contrast */
+  .text-temper-text-dim { color: #4b5563 !important; }
+  .text-temper-text-muted { color: #374151 !important; }
+
+  /* SmartContent panels */
+  .bg-temper-panel { background-color: #ffffff !important; }
+
+  /* Input/output row backgrounds */
+  .bg-temper-surface { background-color: #f3f4f6 !important; }
+  .border-temper-border\/50 { border-color: #d1d5db !important; }
+  .border-temper-border\/30 { border-color: #e5e7eb !important; }
+
+  /* Green edge lines — slightly darker for light backgrounds */
   .react-flow__edge .react-flow__edge-path[style*="emerald"],
   .react-flow__edge .react-flow__edge-path[style*="10b981"] {
     stroke: #059669 !important;
@@ -680,10 +610,10 @@ body {
 
   /* Blue edge lines */
   .react-flow__edge .react-flow__edge-path[style*="3b82f6"] {
-    stroke: #1e40af !important;
+    stroke: #2563eb !important;
   }
 
-  /* MiniMap, more visible in light mode */
+  /* MiniMap — more visible in light mode */
   .temper-minimap-opacity { opacity: 0.6; }
 }
 

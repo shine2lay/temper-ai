@@ -10,7 +10,7 @@ type SortDir = 'asc' | 'desc';
 
 const STATUS_DOT: Record<string, string> = {
   completed: 'bg-emerald-400',
-  running: 'bg-temper-running animate-pulse',
+  running: 'bg-temper-accent animate-pulse',
   failed: 'bg-red-400',
   pending: 'bg-gray-500',
 };
@@ -227,7 +227,7 @@ export function LLMCallsTable() {
         <select
           value={filterModel}
           onChange={(e) => setFilterModel(e.target.value)}
-          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-control text-temper-text"
+          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-border text-temper-text"
         >
           <option value="">All Models</option>
           {uniqueModels.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -235,7 +235,7 @@ export function LLMCallsTable() {
         <select
           value={filterAgent}
           onChange={(e) => setFilterAgent(e.target.value)}
-          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-control text-temper-text"
+          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-border text-temper-text"
         >
           <option value="">All Agents</option>
           {uniqueAgents.map((a) => <option key={a} value={a}>{a}</option>)}
@@ -247,7 +247,7 @@ export function LLMCallsTable() {
             className={cn(
               'px-2 py-0.5 rounded text-xs transition-colors',
               filterStatus === s
-                ? 'bg-temper-accent/20 text-temper-text'
+                ? 'bg-temper-accent/20 text-temper-accent'
                 : 'text-temper-text-muted hover:text-temper-text',
             )}
           >
@@ -259,7 +259,7 @@ export function LLMCallsTable() {
           placeholder="Search..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-control text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-full sm:w-36"
+          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-border text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-full sm:w-36"
         />
         <span className="ml-auto text-xs text-temper-text-muted">
           {rows.length}/{enriched.length} calls

@@ -272,8 +272,8 @@ export function StudioCanvas() {
       <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
       <Controls position="bottom-left" />
       <MiniMap
-        nodeColor="var(--temper-minimap-node)"
-        maskColor="var(--temper-minimap-mask)"
+        nodeColor="#1e2a4a"
+        maskColor="rgba(15, 23, 41, 0.7)"
         position="bottom-right"
         style={{ width: 120, height: 80, opacity: 0.4 }}
         className="hover:!opacity-100 transition-opacity duration-200"

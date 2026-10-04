@@ -7,7 +7,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 const readClass =
   'text-xs text-temper-text cursor-pointer border-b border-transparent hover:border-dashed hover:border-temper-accent/40 transition-colors';
 const inputClass =
-  'text-xs bg-temper-surface border border-temper-accent rounded px-1.5 py-0.5 text-temper-text outline-none';
+  'text-xs bg-temper-surface border border-temper-accent/60 rounded px-1.5 py-0.5 text-temper-text outline-none';
 
 /* ---------- InlineEdit ---------- */
 

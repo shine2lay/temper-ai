@@ -95,7 +95,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
         type="target"
         position={Position.Left}
         id="left"
-        className="!bg-temper-control !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
 
       {/* Header */}
@@ -173,7 +173,7 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
             e.stopPropagation();
             select('stage', currentStage.id);
           }}
-          className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-accent/10 shrink-0 transition-colors"
+          className="text-[10px] px-1.5 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 shrink-0 transition-colors"
           aria-label="Open stage detail view"
           title="Open detailed view"
         >
@@ -343,28 +343,28 @@ export const StageNode = memo(function StageNode({ data }: NodeProps) {
         type="source"
         position={Position.Right}
         id="right"
-        className="!bg-temper-control !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
       {/* Loop source handle (bottom — loop-back out) */}
       <Handle
         type="source"
         position={Position.Bottom}
         id="bottom"
-        className="!bg-temper-control !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
       {/* Loop target handle (top — loop-back in) */}
       <Handle
         type="target"
         position={Position.Top}
         id="top"
-        className="!bg-temper-control !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
       {/* Loop target handle (bottom — loop-back in from below) */}
       <Handle
         type="target"
         position={Position.Bottom}
         id="bottom-target"
-        className="!bg-temper-control !w-2 !h-2"
+        className="!bg-temper-border !w-2 !h-2"
       />
     </div>
   );

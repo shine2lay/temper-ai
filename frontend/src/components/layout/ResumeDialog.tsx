@@ -163,7 +163,7 @@ export function ResumeDialog({ executionId, onClose, onResumed }: ResumeDialogPr
               disabled={resume.isPending || isLoading}
               className={cn(
                 'px-3 py-1.5 rounded text-xs font-medium transition-colors',
-                'bg-temper-accent text-temper-on-accent hover:bg-temper-accent-dim',
+                'bg-temper-accent text-white hover:bg-temper-accent-dim',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
               )}
             >

@@ -10,7 +10,7 @@ and the critic and grader that later design workflows reuse. Who owns it:
 [departments.md](departments.md).
 
 ```
-capture (script) -> [ critic_a | critic_b ] -> merge
+capture (script) -> [ critic_a | critic_b ] -> verify (script) -> merge
 ```
 
 - **capture** (no model): opens each page in temper's browser (playwright-mcp)
@@ -19,16 +19,32 @@ capture (script) -> [ critic_a | critic_b ] -> merge
   contrast, type sizes, headings, line length, target sizes, weak boundaries,
   where each form field's name comes from, unnamed graphics, overflow at
   390 px, landmarks, and a Tab walk with the focus ring of each stop.
+  Target size follows WCAG 2.5.8 in full: a control's labels count as part of
+  its target, and an undersized target passes when a 24 px circle on it meets
+  no other target or undersized target's circle (the spacing exception). Text
+  of inactive (disabled) controls is exempt from contrast. `facts.md` lists
+  these measured passes next to the problems, so critics stop reporting them.
 - **critic_a, critic_b**: the same agent run twice, apart. Each reads every
   page's screenshots and facts in one go, so it can also check consistency
   across pages. It judges what no tool can: hierarchy, wording, flow, states,
   consistency, and the WCAG 2.2 AA points that need a person (Nielsen's 10
-  heuristics, severity 0-4). It never contradicts a measured number.
-- **merge**: groups the same problem found twice, and sorts each finding into
-  *confirmed* (measured, or found by both critics), *single* (one critic: a
-  person checks it) or *rejected* (the facts contradict it). Writes
-  `review/report.md` (fix-first list, then each page) and
-  `review/findings.json`.
+  heuristics). It never contradicts a measured number, cites evidence a person
+  can check (element, page, screenshot tile or facts value), and rates
+  severity on Nielsen's 0-4 scale with anchored definitions and worked
+  examples from other products (when torn, the lower level).
+- **verify** (no model, `design_review_verify.py`): every critic claim about
+  target size, or about an inactive control's contrast, checked against the
+  facts page by page (contradicted, partly contradicted, supported), and each
+  finding marked checkable or not. Writes `review/verify.json`.
+- **merge**: groups the same problem found twice, drops the claims the facts
+  contradict (the report says which fact), and sorts each finding into
+  *confirmed* (measured, or found by both critics), *single* (one critic, with
+  checkable evidence the screenshot shows: a person checks it) or *rejected*
+  (contradicted, uncheckable or taste). Writes `review/report.md` (fix-first
+  list, then each page, then what the facts check dropped) and
+  `review/findings.json`. Without `verify.json` (the homepage workflows reuse
+  the critic and merge without that step) it does the same checks from
+  `facts.md`.
 
 Each finding names the page, viewport, element and place, the evidence (a
 measurement or what the screenshot shows), the Nielsen heuristic or WCAG
@@ -61,7 +77,7 @@ curl -s -X POST http://127.0.0.1:8420/api/runs -H 'Content-Type: application/jso
 - `workspace_path` is needed (without it the steps get an empty workspace),
   and the folder must be writable by the run's container user.
 
-A run of four pages takes about 7 minutes and $1.70-1.90.
+A run of four or five pages takes about 4-5 minutes and $1.80-2.00 (v2).
 
 ## Grading it
 
@@ -100,30 +116,29 @@ key as text, and prints the score:
 |---|---|---|---|---|---|---|---|
 | 2026-10-02 | fernway-v1 (22 plants) | 92910c36 | 22/22 confirmed | 35, all true | 0 | 1 | $1.91 |
 | 2026-10-02 | fernway-v1 (after the over-claim fix) | 396c4f58 | 22/22 confirmed | 35, all true | 0 | 0 | $1.73 |
+| 2026-10-04 | morrow-v2 (14 plants, 10 traps), v2 candidate | f99200aa | 14/14 | 23, all true | 0 | 0 | $1.80 |
+| 2026-10-04 | morrow-v2, v2 candidate | cfbd55a0 | 14/14 | 24, all true | 0 | 0 | $1.82 |
+| 2026-10-04 | fernway-v1, v2 candidate | 52ddd192 | 22/22 | 33, all true | 0 | 0 | $1.96 |
 
-fernway-v1 is too easy to tell versions apart: the next test site needs
-subtler plants.
+fernway-v1 is too easy to tell versions apart; morrow-v2 adds traps (things
+that look wrong but are fine) and severity per plant.
 
-## Candidate: `design_review_next` (precision)
+## v2 (queue #7, 2026-10-04): findings you can act on without sorting
 
-A test workflow next to `design_review`, graded on the sealed test sites
-before anything replaces the live reviewer. It changes three things:
+v1 on morrow-v2 called correctly spaced small targets a failure in both runs,
+once reported a checkbox whose label is its target as too small, and rated
+severity one step above the key on 8 of 14 plants. v2 was built as a test
+workflow next to the live one (`design_review_next`), graded on the sealed
+sites, and promoted only after it met every bar: all plants found, no invented
+findings or overclaims in three runs, all 10 traps held in each morrow-v2 run
+(v1: 9 and 8), severity equal to the key on 11 of 14 (v1: 6), cost 1.04-1.14x
+v1. The three changes are the measured passes (capture), the facts check
+(verify) and the anchored severity (critic and merge) described above.
 
-- **Target size by WCAG 2.5.8 in full** (`design_measure_next.js`): a control's
-  labels count as part of its target, and an undersized target passes when a
-  24 px circle on it meets no other target or undersized target's circle (the
-  spacing exception). Text of inactive (disabled) controls is listed as exempt
-  from contrast. `facts.md` lists these measured passes, so critics stop
-  reporting them as failures.
-- **A facts check before the merge** (`design_review_verify_next.py`, no model):
-  every critic claim about target size, or about an inactive control's
-  contrast, is checked against the facts, page by page, and each finding is
-  marked checkable or not (element, page, and a screenshot tile or facts value).
-  The merge drops the claims the facts contradict, says why in the report, and
-  keeps a one-critic finding only when it is checkable.
-- **Anchored severity**: critics and merge rate on Nielsen's 0-4 scale with
-  definitions and worked examples from other products; when torn, the lower
-  level.
+Known residual: on fernway-v1 the anchored scale rates some WCAG failures one
+step below its key (equal on 13 of 22 plants; v1: 17-18). Results and the
+hand check of every unmatched finding: `~/design-lab/results/review-precision/`
+(host only).
 
 ## Files
 
@@ -131,15 +146,12 @@ before anything replaces the live reviewer. It changes three things:
 |---|---|
 | `configs/design/workflows/design_review.yaml` | the review |
 | `configs/design/workflows/design_review_grade.yaml` | the grader |
-| `configs/design/agents/design_{capture,critic,merge,grade,score}.yaml` | its steps |
+| `configs/design/agents/design_{capture,critic,verify,merge,grade,score}.yaml` | its steps |
 | `configs/design/bin/design_capture.py` | capture: serves a site, drives playwright-mcp, writes `review/shots`, `review/facts`, `capture.json` |
 | `configs/design/bin/design_measure.js` | the in-page measurements |
+| `configs/design/bin/design_review_verify.py` | verify: the facts check of critic claims |
 | `configs/design/bin/vendor/axe-4.13.0.min.js` | axe-core (MPL-2.0) |
 | `configs/design/bin/design_trial.py` | review + grade on a test site (host) |
-| `configs/design/workflows/design_review_next.yaml` | the candidate (test workflow) |
-| `configs/design/agents/design_{capture,critic,verify,merge}_next.yaml` | its steps |
-| `configs/design/bin/design_capture_next.py`, `design_measure_next.js` | candidate capture and measurements |
-| `configs/design/bin/design_review_verify_next.py` | the facts check of critic claims |
 | `configs/design/testpages/<site>/`, `<site>.json` | test sites and their brief and pages |
 
 ## Editable Penpot homepage workflow (v1)

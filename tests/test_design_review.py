@@ -1,9 +1,9 @@
-"""Model-free contracts for Design's candidate reviewer (design_review_next, queue #7).
+"""Model-free contracts for Design's reviewer (design_review v2, queue #7).
 
-No models, accounts or browsers. The target-size geometry in design_measure_next.js is a pure
+No models, accounts or browsers. The target-size geometry in design_measure.js is a pure
 function between two markers, run here in node on hand-made generic layouts (among them a
 spaced pair of small buttons and a small checkbox inside a tall label). The facts lines and the
-claim check (design_review_verify_next.py) run on small hand-made facts and critic files.
+claim check (design_review_verify.py) run on small hand-made facts and critic files.
 """
 
 import importlib.util
@@ -35,65 +35,83 @@ def _load(name):
 
 # --------------------------------------------------------------------------- configs
 
-NEXT_AGENTS = [
-    "design_capture_next",
-    "design_critic_next",
-    "design_verify_next",
-    "design_merge_next",
+REVIEW_AGENTS = [
+    "design_capture",
+    "design_critic",
+    "design_verify",
+    "design_merge",
 ]
 
 
-def test_candidate_workflow_runs_next_agents_in_order():
-    raw = yaml.safe_load((DESIGN / "workflows/design_review_next.yaml").read_text())[
+def test_review_workflow_runs_verify_between_critics_and_merge():
+    raw = yaml.safe_load((DESIGN / "workflows/design_review.yaml").read_text())[
         "workflow"
     ]
-    assert WorkflowConfig.from_dict(raw).name == "design_review_next"
+    assert WorkflowConfig.from_dict(raw).name == "design_review"
     nodes = {n["name"]: n for n in raw["nodes"]}
-    assert nodes["capture"]["agent"] == "design_capture_next"
-    assert (
-        nodes["critic_a"]["agent"] == nodes["critic_b"]["agent"] == "design_critic_next"
-    )
-    assert nodes["verify"]["agent"] == "design_verify_next"
+    assert {name: n["agent"] for name, n in nodes.items()} == {
+        "capture": "design_capture",
+        "critic_a": "design_critic",
+        "critic_b": "design_critic",
+        "verify": "design_verify",
+        "merge": "design_merge",
+    }
     assert set(nodes["verify"]["depends_on"]) == {"critic_a", "critic_b"}
-    assert nodes["merge"]["agent"] == "design_merge_next" and nodes["merge"][
-        "depends_on"
-    ] == ["verify"]
+    assert nodes["merge"]["depends_on"] == ["verify"]
     assert set(raw["inputs"]) == {"brief", "pages", "site", "base_url", "viewports"}
+    assert raw["outputs"]["dropped_by_facts"] == "merge.structured.dropped_by_facts"
+    assert raw["outputs"]["contradicted_claims"] == "verify.structured.contradicted"
 
 
-@pytest.mark.parametrize("name", NEXT_AGENTS)
-def test_candidate_agents_import(name):
+@pytest.mark.parametrize("name", REVIEW_AGENTS)
+def test_review_agents_import(name):
     parsed = parse_yaml(DESIGN / "agents" / f"{name}.yaml")
     assert parsed["name"] == name and parsed["config_type"] == "agent"
 
 
-def test_live_reviewer_untouched_by_the_candidate():
-    raw = yaml.safe_load((DESIGN / "workflows/design_review.yaml").read_text())[
-        "workflow"
-    ]
-    agents = {n["name"]: n["agent"] for n in raw["nodes"]}
-    assert agents == {
-        "capture": "design_capture",
-        "critic_a": "design_critic",
-        "critic_b": "design_critic",
-        "merge": "design_merge",
-    }
-    capture = yaml.safe_load((DESIGN / "agents/design_capture_next.yaml").read_text())[
+def test_review_steps_run_the_promoted_scripts():
+    """No candidate (_next) copy is left behind: the live steps run the graded scripts."""
+    capture = yaml.safe_load((DESIGN / "agents/design_capture.yaml").read_text())[
         "agent"
     ]
+    assert "/app/configs/design/bin/design_capture.py" in capture["script_template"]
+    verify = yaml.safe_load((DESIGN / "agents/design_verify.yaml").read_text())["agent"]
+    assert "design_review_verify.py --review review" in verify["script_template"]
+    assert _load("design_capture").MEASURE.name == "design_measure.js"
+    leftovers = [
+        p.name
+        for p in DESIGN.rglob("*")
+        if p.is_file()
+        and re.search(
+            r"design_(review|capture|critic|verify|merge|measure)\w*_next", p.name
+        )
+    ]
+    assert leftovers == []
+
+
+def test_merge_works_without_a_verify_step():
+    """The homepage workflows reuse design_critic and design_merge without design_verify."""
+    merge = yaml.safe_load((DESIGN / "agents/design_merge.yaml").read_text())["agent"]
     assert (
-        "/app/configs/design/bin/design_capture_next.py" in capture["script_template"]
+        "If verify.json is missing, do those checks yourself from facts.md"
+        in (merge["system_prompt"])
     )
-    verify = yaml.safe_load((DESIGN / "agents/design_verify_next.yaml").read_text())[
-        "agent"
-    ]
-    assert "design_review_verify_next.py --review review" in verify["script_template"]
-    assert _load("design_capture_next").MEASURE.name == "design_measure_next.js"
+    for workflow in (
+        "design_homepage_v1",
+        "design_homepage_v2",
+        "design_homepage_pilot_v1",
+    ):
+        raw = yaml.safe_load((DESIGN / f"workflows/{workflow}.yaml").read_text())[
+            "workflow"
+        ]
+        agents = {n["name"]: n.get("agent") for n in raw["nodes"]}
+        assert agents["merge"] == "design_merge", workflow
+        assert "design_verify" not in agents.values(), workflow
 
 
-def test_candidate_prompts_name_no_benchmark_site():
+def test_review_prompts_name_no_benchmark_site():
     """Answer keys stay host-only; prompts carry no test-site names or their page content."""
-    for name in ("design_critic_next", "design_merge_next"):
+    for name in ("design_critic", "design_merge"):
         text = (DESIGN / "agents" / f"{name}.yaml").read_text().lower()
         for site in sorted(p.stem for p in (DESIGN / "testpages").glob("*.json")):
             assert site.split("-")[0] not in text, (name, site)
@@ -116,7 +134,7 @@ NODE = shutil.which("node")
 
 
 def geometry(targets):
-    js = (BIN / "design_measure_next.js").read_text()
+    js = (BIN / "design_measure.js").read_text()
     block = re.search(r"// BEGIN target-geometry.*?// END target-geometry", js, re.S)
     assert block, "geometry markers missing"
     code = (
@@ -222,7 +240,7 @@ def test_nested_targets_skip_each_other():
 
 # --------------------------------------------------------------------------- facts lines
 
-cap = _load("design_capture_next")
+cap = _load("design_capture")
 
 
 def test_facts_lines_name_failures_and_passes():
@@ -286,7 +304,7 @@ def test_facts_lines_name_failures_and_passes():
 
 # --------------------------------------------------------------------------- claim check
 
-ver = _load("design_review_verify_next")
+ver = _load("design_review_verify")
 
 
 def _review(tmp_path, critic_findings):

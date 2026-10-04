@@ -1,8 +1,60 @@
 // design_capture's in-page measurements (design role). One function expression,
-// evaluated in the page after axe-core: what a reviewer would otherwise guess at.
-// Every list is capped, and every item names its element by a CSS path.
+// evaluated in the page after axe-core: what a reviewer would otherwise guess at. Every list is
+// capped, and every item names its element by a CSS path. Target size follows WCAG 2.5.8 in
+// full (a control's labels count as its target; undersized targets pass by the spacing
+// exception) and lists the passes, and text of inactive (disabled) controls is exempt from
+// contrast, as WCAG 1.4.3/1.4.11 say (v2 2026-10-04, queue #7).
 (async () => {
   const LIMIT = 25;
+
+  // BEGIN target-geometry: pure, no DOM (tests/test_design_review.py runs this block in node).
+  // WCAG 2.5.8 Target Size (Minimum), AA. Each target: {id, rect: [x, y, w, h], labels: [[x, y, w, h]],
+  // skip: [ids nested in it or around it], exempt: "inline" or absent}. A target passes by size when
+  // its own box, or the box of one of its labels (clicking a label activates its control), is at
+  // least 24x24 CSS px. An undersized target passes by spacing when a 24 px circle centred on its
+  // bounding box (own box plus labels) meets no other target's box and no other undersized
+  // target's circle (centres at least 24 px apart). Exempt targets are not judged themselves but
+  // still count as other targets. Returns one result per target, in order.
+  const MIN = 24;
+  const distToRect = (p, r) => {
+    const dx = Math.max(r[0] - p[0], 0, p[0] - (r[0] + r[2]));
+    const dy = Math.max(r[1] - p[1], 0, p[1] - (r[1] + r[3]));
+    return Math.hypot(dx, dy);
+  };
+  const targetGeometry = (targets) => {
+    const EPS = 0.01;
+    const info = targets.map((t) => {
+      const rects = [t.rect, ...(t.labels || [])];
+      const big = rects.find((r) => r[2] >= MIN - EPS && r[3] >= MIN - EPS) || null;
+      const x0 = Math.min(...rects.map((r) => r[0]));
+      const y0 = Math.min(...rects.map((r) => r[1]));
+      const x1 = Math.max(...rects.map((r) => r[0] + r[2]));
+      const y1 = Math.max(...rects.map((r) => r[1] + r[3]));
+      return { t, rects, big, centre: [(x0 + x1) / 2, (y0 + y1) / 2] };
+    });
+    return info.map((a) => {
+      const res = { id: a.t.id, undersized: !a.big, passes: null, by: null, nearest: null };
+      if (a.t.exempt) { res.passes = a.t.exempt; return res; }
+      if (a.big) { res.passes = a.big === a.t.rect ? "size" : "label"; res.by = a.big; return res; }
+      let hit = null;
+      let nearest = null;
+      for (const b of info) {
+        if (b === a || (a.t.skip || []).includes(b.t.id) || (b.t.skip || []).includes(a.t.id)) continue;
+        const edge = Math.min(...b.rects.map((r) => distToRect(a.centre, r)));
+        const small = !b.big && !b.t.exempt;
+        const centre = small ? Math.hypot(a.centre[0] - b.centre[0], a.centre[1] - b.centre[1]) : null;
+        const near = { id: b.t.id, edge: +edge.toFixed(1), centre: centre === null ? null : +centre.toFixed(1) };
+        const kind = edge < MIN / 2 - EPS ? "target" : (centre !== null && centre < MIN - EPS ? "circle" : null);
+        if (kind && (!hit || edge < hit.edge)) hit = { ...near, hit: kind };
+        if (!nearest || edge < nearest.edge) nearest = near;
+      }
+      res.passes = hit ? null : "spacing";
+      res.nearest = hit || nearest;
+      return res;
+    });
+  };
+  // END target-geometry
+
   const parse = (c) => {
     const m = (c || "").match(/rgba?\(([^)]+)\)/);
     if (!m) return null;
@@ -60,6 +112,13 @@
     return ["none", ""];
   };
   const box = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top + scrollY), Math.round(r.width), Math.round(r.height)]; };
+  const rectOf = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top + scrollY, r.width, r.height]; };
+  const disabledCtl = (el) => !!el && (el.matches(":disabled") || el.getAttribute("aria-disabled") === "true");
+  const inactive = (el) => {
+    if (el.closest(':disabled,[aria-disabled="true"]')) return true;
+    const label = el.closest("label");
+    return !!(label && label.control && disabledCtl(label.control));
+  };
 
   const out = { url: location.pathname, title: document.title, viewport: [innerWidth, innerHeight],
     page_height: document.documentElement.scrollHeight };
@@ -83,9 +142,13 @@
     const large = size >= 24 || (size >= 18.66 && weight >= 700);
     texts.push({ sel: sel(el), tag: el.tagName.toLowerCase(), text: snip(n.nodeValue), size, weight,
       color: rgb(fg), background: rgb(bg), contrast: +ratio(fg, bg).toFixed(2), needs: large ? 3 : 4.5,
-      line_height: cs.lineHeight, transform: cs.textTransform, box: box(el) });
+      line_height: cs.lineHeight, transform: cs.textTransform, box: box(el), inactive: inactive(el) });
   }
-  out.contrast_failures = texts.filter((t) => t.contrast < t.needs).slice(0, LIMIT);
+  // WCAG 1.4.3: text of an inactive user interface component has no contrast requirement.
+  out.contrast_failures = texts.filter((t) => t.contrast < t.needs && !t.inactive).slice(0, LIMIT);
+  out.contrast_exempt = texts.filter((t) => t.contrast < t.needs && t.inactive).slice(0, LIMIT)
+    .map(({ sel, tag, text, size, weight, color, background, contrast, needs }) =>
+      ({ sel, tag, text, size, weight, color, background, contrast, needs, why: "inactive (disabled) control" }));
   const styles = {};
   for (const t of texts) { const k = `${t.size}px ${t.weight}`; styles[k] = (styles[k] || 0) + 1; }
   out.type_styles = Object.entries(styles).sort((a, b) => parseFloat(b[0]) - parseFloat(a[0]))
@@ -112,21 +175,37 @@
     .filter(visible);
   out.controls = interactive.slice(0, 60).map((el) => {
     const [source, name] = nameOf(el);
-    return { sel: sel(el), tag: el.tagName.toLowerCase(), role: el.getAttribute("role") || "", name, name_from: source, box: box(el) };
+    const c = { sel: sel(el), tag: el.tagName.toLowerCase(), role: el.getAttribute("role") || "", name, name_from: source, box: box(el) };
+    if (disabledCtl(el)) c.disabled = true;
+    return c;
   });
-  out.small_targets = interactive.filter((el) => {
-    const r = el.getBoundingClientRect();
-    if (r.width >= 24 && r.height >= 24) return false;
-    const cs = getComputedStyle(el);
-    if (el.tagName === "A" && cs.display === "inline" && el.parentElement
-        && snip(el.parentElement.innerText).length > snip(el.innerText).length + 5) return false; // a link inside a sentence
-    const label = el.closest("label");
-    if (label) { const lr = label.getBoundingClientRect(); if (lr.width >= 24 && lr.height >= 24) return false; }
-    return true;
-  }).slice(0, LIMIT).map((el) => ({ sel: sel(el), name: nameOf(el)[1], box: box(el) }));
+  // Target size (WCAG 2.5.8): judged over every visible target; a link inside a sentence is exempt
+  // (the inline exception) but still counts as a neighbour for the others.
+  const inlineLink = (el) => el.tagName === "A" && getComputedStyle(el).display === "inline" && el.parentElement
+    && snip(el.parentElement.innerText).length > snip(el.innerText).length + 5;
+  const geo = targetGeometry(interactive.map((el, i) => ({
+    id: i,
+    rect: rectOf(el),
+    labels: [...(el.labels || [])].filter((l) => visible(l)).map(rectOf).filter((r) => r[2] >= 4 && r[3] >= 4),
+    skip: interactive.map((o, j) => (o !== el && (o.contains(el) || el.contains(o)) ? j : -1)).filter((j) => j >= 0),
+    exempt: inlineLink(el) ? "inline" : undefined,
+  })));
+  const nb = (n) => n && { sel: sel(interactive[n.id]), name: nameOf(interactive[n.id])[1], edge: n.edge, centre: n.centre };
+  const rb = (r) => r.map(Math.round);
+  out.small_targets = geo.filter((g) => g.undersized && g.passes === null).slice(0, LIMIT).map((g) => {
+    const el = interactive[g.id];
+    return { sel: sel(el), name: nameOf(el)[1], box: box(el), too_close_to: nb(g.nearest), hit: g.nearest ? g.nearest.hit : null };
+  });
+  out.targets_pass = geo.filter((g) => g.passes === "label" || g.passes === "spacing").slice(0, LIMIT).map((g) => {
+    const el = interactive[g.id];
+    const t = { sel: sel(el), name: nameOf(el)[1], box: box(el), passes: g.passes };
+    if (g.passes === "label") t.label_box = rb(g.by);
+    else t.nearest = nb(g.nearest);
+    return t;
+  });
   out.weak_boundaries = [...document.querySelectorAll(
     "input:not([type=hidden]):not([type=checkbox]):not([type=radio]),select,textarea,[role=switch]")]
-    .filter(visible).map((el) => {
+    .filter(visible).filter((el) => !disabledCtl(el)).map((el) => {
       const cs = getComputedStyle(el);
       const around = bgOf(el.parentElement || document.body);
       let best = 1;

@@ -1,29 +1,38 @@
 workflow:
   name: design_review
-  # DESIGN REVIEW (design role, v1 2026-10-02). An expert review of a product's
-  # pages: measured facts first, then two independent AI critics, then a merge that keeps what
-  # holds up. The critic and grader every later design workflow reuses (owner's pick).
+  # DESIGN REVIEW (design role; v1 2026-10-02, v2 2026-10-04). An expert review of a
+  # product's pages: measured facts first, then two independent AI critics, a no-model check of
+  # their claims against the facts, then a merge that keeps what holds up. The critic and grader
+  # every later design workflow reuses (owner's pick).
   #
-  #   capture (script) -> [ critic_a | critic_b ] -> merge
+  #   capture (script) -> [ critic_a | critic_b ] -> verify (script) -> merge
   #
   # capture: screenshots per viewport, axe-core 4.13.0, design_measure.js and a Tab walk through
-  #   temper's playwright-mcp browser (no model). The critics judge hierarchy, wording, flow,
-  #   consistency, states and the WCAG 2.2 AA points no tool measures, from the screenshots and
-  #   the facts; they never contradict a measured number. merge: confirmed = measured or found
-  #   by both critics; single = one critic, kept for a person to check; rejected = contradicted.
-  # Graded on planted-problem test pages by design_review_grade (answer key kept off the box's
-  # container mounts). v1 on testpages/fernway-v1 (22 plants), 2 runs: all 22 found and
-  # confirmed, 35 findings each, none invented; about $1.8 and 7 minutes a run.
+  #   temper's playwright-mcp browser (no model). Target size follows WCAG 2.5.8 in full (a
+  #   control's labels count as its target; undersized targets pass by the spacing exception),
+  #   inactive controls are exempt from contrast, and facts.md lists measured passes next to the
+  #   problems. The critics judge hierarchy, wording, flow, consistency, states and the WCAG 2.2
+  #   AA points no tool measures, from the screenshots and the facts; they never contradict a
+  #   measured number and rate severity on anchored Nielsen 0-4 definitions. verify: each critic
+  #   claim on target size or on an inactive control's contrast against the facts, and whether
+  #   the finding cites checkable evidence. merge: drops what the facts contradict (saying why);
+  #   confirmed = measured or found by both critics; single = one critic with checkable evidence,
+  #   kept for a person to check; rejected = contradicted, uncheckable or taste.
+  # Graded on planted-problem test pages by design_review_grade (answer keys kept off the box's
+  # container mounts). v2, queue #7: 3 runs (2 on a 14-plant site with 10 traps, 1 on a 22-plant
+  # site): every plant found, no invented findings or overclaims, all traps held; severity equal
+  # to the key on 11 of 14 (v1: 6 of 14); about $1.8-2.0 and 4-5 minutes a run.
   # docs/design.md has how to run and grade it.
   #
   # provider: claude = Claude Code CLI (Read shows PNGs to the model); no temper tools: blocks.
-  version: 1
+  version: 2
   description: |
     Expert design review of a site's pages: screenshots and measured accessibility facts
-    (axe-core, contrast, target sizes, field names, focus, reflow) per viewport, two
-    independent critics (Nielsen's 10 heuristics, visual hierarchy, consistency across pages,
-    states, WCAG 2.2 AA), and a merge that writes a report with confirmed findings, findings
-    seen by one critic, and what was not checked.
+    (axe-core, contrast, target sizes by WCAG 2.5.8 in full, field names, focus, reflow) per
+    viewport, two independent critics (Nielsen's 10 heuristics, visual hierarchy, consistency
+    across pages, states, WCAG 2.2 AA, anchored severity), a no-model check of their claims
+    against the facts, and a merge that writes a report with confirmed findings, findings seen
+    by one critic, claims the facts ruled out, and what was not checked.
   inputs:
     brief:
       type: string
@@ -46,7 +55,10 @@ workflow:
     confirmed: merge.structured.confirmed
     single: merge.structured.single
     rejected: merge.structured.rejected
+    dropped_by_facts: merge.structured.dropped_by_facts
     severity_counts: merge.structured.severity_counts
+    contradicted_claims: verify.structured.contradicted
+    partly_contradicted_claims: verify.structured.partly_contradicted
     screenshots: capture.structured.screenshots
     measured_items: capture.structured.measured_items
 
@@ -71,7 +83,12 @@ workflow:
       agent: design_critic
       depends_on: [capture]
 
+    - name: verify
+      type: agent
+      agent: design_verify
+      depends_on: [critic_a, critic_b]
+
     - name: merge
       type: agent
       agent: design_merge
-      depends_on: [critic_a, critic_b]
+      depends_on: [verify]

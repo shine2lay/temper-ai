@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""design_review_verify_next (design role): the critics' claims checked against the measured facts.
+"""design_review_verify (design role): the critics' claims checked against the measured facts.
 
-Candidate step of workflows/design_review_next.yaml (queue #7, review precision); no model. It runs
-after the critics and before the merge. For every critic finding (review/critic/*.json) it:
+Step verify of workflows/design_review.yaml (agent design_verify; queue #7, review precision);
+no model. It runs after the critics and before the merge. For every critic finding
+(review/critic/*.json) it:
 
   - checks target-size failure claims (WCAG 2.5.8, "too small to tap"): an element the facts
     measure as passing (through its label, or by the spacing exception) contradicts the claim on
@@ -16,10 +17,10 @@ after the critics and before the merge. For every critic finding (review/critic/
 A claim is contradicted only by a measured pass, never by the absence of a measurement, and a
 finding that itself grants the pass ("meets 2.5.8 by spacing", "exempt") makes no failure claim.
 The verdict is about the size or contrast claim only: a finding may state other problems too.
-Writes review/verify.json and prints a one-line JSON summary. design_merge_next drops the claims
+Writes review/verify.json and prints a one-line JSON summary. design_merge drops the claims
 the facts contradict and keeps a one-critic finding only when it is checkable.
 
-    design_review_verify_next.py --review review
+    design_review_verify.py --review review
 """
 
 from __future__ import annotations
@@ -412,7 +413,7 @@ def verify(review: pathlib.Path) -> dict:
     return {
         "version": 1,
         "method": (
-            "claims checked against review/facts (design_measure_next.js): target size (WCAG "
+            "claims checked against review/facts (design_measure.js): target size (WCAG "
             "2.5.8) against measured failures and passes (label area, spacing exception), and "
             "contrast (1.4.3/1.4.11) claims about inactive (disabled) controls; a claim is "
             "contradicted only by a measured pass or exemption, never by a missing measurement; "

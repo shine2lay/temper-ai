@@ -1,12 +1,12 @@
-# @description DESIGN REVIEW facts check, candidate (design role, queue #7). No model.
-# Runs design_review_verify_next.py after the critics and before the merge: target-size claims
+# @description DESIGN REVIEW facts check (design role, queue #7). No model.
+# Runs design_review_verify.py after the critics and before the merge: target-size claims
 # (WCAG 2.5.8) against the measured failures and passes (label area, spacing exception),
 # contrast claims about inactive (disabled) controls, and whether each finding cites checkable
 # evidence (element, page, and a screenshot tile or facts value). Writes review/verify.json;
-# design_merge_next drops what the facts contradict. Part of workflows/design_review_next.yaml.
+# design_merge drops what the facts contradict. Part of workflows/design_review.yaml.
 # POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
 agent:
-  name: design_verify_next
+  name: design_verify
   version: 1
   type: script
   timeout_seconds: 120
@@ -14,4 +14,4 @@ agent:
     #!/bin/sh
     set -e
     cd {{ workspace_path }}
-    "$TEMPER_PYTHON" /app/configs/design/bin/design_review_verify_next.py --review review
+    "$TEMPER_PYTHON" /app/configs/design/bin/design_review_verify.py --review review

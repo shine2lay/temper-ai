@@ -1,13 +1,15 @@
 # @description DESIGN REVIEW step 1 (design role). No model. Writes the review's
 # brief to review/brief.md, then runs design_capture.py: each page at each viewport as
 # screen-sized screenshots (review/shots/), axe-core 4.13.0 plus design_measure.js plus a keyboard
-# Tab walk (review/facts/*.json), and review/facts.md, the measured problems a reviewer reads
-# first. The browser is temper's playwright-mcp service; a local site folder is served from
-# this run's container, a deployed site is given by base_url. Part of workflows/design_review.yaml.
+# Tab walk (review/facts/*.json), and review/facts.md, the measured problems and measured passes
+# a reviewer reads first (target size by WCAG 2.5.8 in full: label area and spacing exception;
+# inactive controls exempt from contrast; v2 2026-10-04). The browser is temper's playwright-mcp
+# service; a local site folder is served from this run's container, a deployed site is given by
+# base_url. Part of workflows/design_review.yaml.
 # POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
 agent:
   name: design_capture
-  version: 1
+  version: 2
   type: script
   timeout_seconds: 600
   script_template: |

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """design_capture (design role): what a design review looks at, captured before any model sees it.
 
+Target size is measured by WCAG 2.5.8 in full (label area and the spacing exception), inactive
+controls' text is exempt from contrast, and facts.md lists the measured PASSES next to the
+problems (a pass is a fact too: critics stop reporting failures the facts rule out, and
+design_review_verify.py checks their claims against them). v2 2026-10-04, queue #7.
+
 For each page and viewport it saves the page as screen-sized tiles (PNG) and a facts file:
 axe-core 4.13.0 (WCAG 2.0-2.2 A/AA rules) plus design_measure.js (text contrast, type styles,
 headings, long lines, target sizes, control boundaries, field names, unnamed graphics,
@@ -13,9 +18,9 @@ from a real origin (the browser refuses file:). A deployed site is given by --ba
     design_capture.py --out DIR --pages index.html,pricing.html --site SITE_DIR
     design_capture.py --out DIR --pages /,/pricing --base-url https://staging.example.com
 
-Writes DIR/shots/*.png, DIR/facts/*.json, DIR/facts.md (the measured problems and the page's
-type, headings, fields and tab order, merged over viewports: what a reviewer reads first) and
-DIR/capture.json; prints a JSON summary.
+Writes DIR/shots/*.png, DIR/facts/*.json, DIR/facts.md (the measured problems and passes and
+the page's type, headings, fields and tab order, merged over viewports: what a reviewer reads
+first) and DIR/capture.json; prints a JSON summary.
 """
 
 import argparse
@@ -208,12 +213,7 @@ def _items(f: dict) -> list[tuple[str, str]]:
             )
         )
     for t in f.get("small_targets") or []:
-        out.append(
-            (
-                "target",
-                f'target smaller than 24x24 px: `{t["sel"]}` "{t["name"]}" {t["box"][2]}x{t["box"][3]} px',
-            )
-        )
+        out.append(("target", _target_line(t)))
     for t in f.get("weak_boundaries") or []:
         out.append(
             (
@@ -267,6 +267,63 @@ def _items(f: dict) -> list[tuple[str, str]]:
     return out
 
 
+def _target_line(t: dict) -> str:
+    """A target that fails WCAG 2.5.8: under 24x24 px, and too close to another target."""
+    line = (
+        f"target smaller than 24x24 px without the 24 px spacing (WCAG 2.5.8): `{t['sel']}` "
+        f'"{t["name"]}" {t["box"][2]}x{t["box"][3]} px'
+    )
+    n = t.get("too_close_to")
+    if n:
+        how = (
+            f'its 24 px circle and the circle of `{n["sel"]}` "{n["name"]}" overlap '
+            f"(centres {n['centre']} px apart, need 24)"
+            if t.get("hit") == "circle"
+            else f'`{n["sel"]}` "{n["name"]}" is {n["edge"]} px from its centre (needs 12)'
+        )
+        line += "; " + how
+    return line
+
+
+def _passes(f: dict) -> list[tuple[str, str]]:
+    """(kind, line) for each measured PASS that a reviewer might otherwise report as a failure."""
+    out = []
+    for t in f.get("targets_pass") or []:
+        size = f"{t['box'][2]}x{t['box'][3]} px"
+        if t.get("passes") == "label":
+            lb = t.get("label_box") or [0, 0, 0, 0]
+            out.append(
+                (
+                    "target-pass",
+                    f"meets WCAG 2.5.8 through its label (clicking the label works the control): `{t['sel']}` "
+                    f'"{t["name"]}" control {size}, label {lb[2]}x{lb[3]} px',
+                )
+            )
+        else:
+            n = t.get("nearest")
+            near = (
+                f'; nearest other target `{n["sel"]}` "{n["name"]}" {n["edge"]} px from its centre'
+                if n
+                else "; no other target nearby"
+            )
+            out.append(
+                (
+                    "target-pass",
+                    f"under 24x24 px but meets WCAG 2.5.8 by the spacing exception (its 24 px circle touches "
+                    f'no other target): `{t["sel"]}` "{t["name"]}" {size}{near}',
+                )
+            )
+    for t in f.get("contrast_exempt") or []:
+        out.append(
+            (
+                "contrast-exempt",
+                f"text of an inactive (disabled) control, no contrast requirement (WCAG 1.4.3, 1.4.11): "
+                f'`{t["sel"]}` "{t["text"]}" {t["contrast"]}:1',
+            )
+        )
+    return out
+
+
 def write_summary(out: pathlib.Path, index: dict) -> None:
     """facts.md: one section per page, measured problems merged over viewports."""
     lines = [
@@ -276,9 +333,10 @@ def write_summary(out: pathlib.Path, index: dict) -> None:
         + index["axe"]
         + " and design_measure.js in a real browser, per viewport "
         + ", ".join(f"{k} {w}x{h}" for k, (w, h) in index["viewports"].items())
-        + ". A measured problem is a fact; whether it matters, and everything about hierarchy, wording,"
-        " flow and consistency, is the reviewer's to judge from the screenshots. The full numbers per"
-        " view are in facts/<page>-<viewport>.json.",
+        + ". A measured problem is a fact; so is a measured pass (never report a listed pass as a"
+        " failure). Whether a problem matters, and everything about hierarchy, wording, flow and"
+        " consistency, is the reviewer's to judge from the screenshots. The full numbers per view are"
+        " in facts/<page>-<viewport>.json.",
         "",
     ]
     for p in index["pages"]:
@@ -303,6 +361,14 @@ def write_summary(out: pathlib.Path, index: dict) -> None:
                 lines.append(f"- [{'+'.join(vps)}] {text}")
         else:
             lines.append("- none measured")
+        passed: dict[tuple[str, str], list[str]] = {}
+        for vp, f in views.items():
+            for item in _passes(f):
+                passed.setdefault(item, []).append(vp)
+        if passed:
+            lines += ["", "### Measured passes (checked and fine: not failures)"]
+            for (_kind, text), vps in passed.items():
+                lines.append(f"- [{'+'.join(vps)}] {text}")
         first_block: list[str] = []
         for i, (vp, f) in enumerate(views.items()):
             block: list[str] = []

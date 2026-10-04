@@ -12,6 +12,7 @@ from dataclasses import replace
 
 from temper_ai.agent import create_agent
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
+from temper_ai.stage.exceptions import RunParked
 from temper_ai.stage.models import NodeConfig
 from temper_ai.stage.node import Node
 
@@ -90,6 +91,10 @@ class AgentNode(Node):
                     duration_seconds=duration,
                     error=result.error,
                 )
+            except RunParked:
+                # The agent asked the owner and its Pi run lets the worker go: not a failure
+                # to retry (stage/step_waits.py). It goes up to the run's top.
+                raise
             except Exception as exc:
                 if attempt < self.MAX_RETRIES:
                     logger.warning(

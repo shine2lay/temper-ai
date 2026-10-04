@@ -37,6 +37,7 @@ from temper_ai.stage.gate import (
 )
 from temper_ai.stage.node import Node
 from temper_ai.stage.restore import Restore
+from temper_ai.stage.step_waits import park, spend_answers
 
 logger = logging.getLogger(__name__)
 
@@ -956,7 +957,14 @@ def _execute_single_node(
         status="running",
     )
 
-    result = _run_node_with_events(node, resolved, context, node_event_id)
+    try:
+        result = _run_node_with_events(node, resolved, context, node_event_id)
+    except RunParked as parked:
+        if node.config.gate and _asked_inside(parked):
+            # Its gate passed, then a wait inside the step let the worker go: the gate's
+            # answer stays this go's answer, so carrying the run on does not ask it again.
+            _keep_gate_answer(context, node, parked)
+        raise
     result.metadata[NODE_EVENT_ID] = node_event_id
     no_verdict = _loop_verdict_missing(node, result, {**node_outputs, node.name: result})
     if no_verdict:
@@ -971,6 +979,9 @@ def _execute_single_node(
         result.status = Status.FAILED
         result.error = no_file
         context.event_recorder.update_event(node_event_id, status="failed", data={"error": no_file})
+    if result.status == Status.COMPLETED:
+        # The answers the step was given at its own waits are spent: a later go asks afresh.
+        spend_answers(context, _step_path(context, node))
     return result
 
 
@@ -1121,6 +1132,7 @@ def _run_node_with_events(
         context,
         parent_event_id=node_event_id,
         skip_policies=node.config.skip_policies,
+        step_path=_step_path(context, node),
     )
 
     timeout = node.config.timeout_seconds
@@ -1140,7 +1152,8 @@ def _run_node_with_events(
         return result
 
     except RunParked:
-        # A gate inside this stage let the worker go: the stage is waiting, not failed.
+        # A wait in this step (stage/step_waits.py), or a gate inside this stage, let the
+        # worker go: the step is waiting, not failed.
         context.event_recorder.update_event(
             node_event_id, status="waiting", data={"duration_seconds": time.monotonic() - start},
         )
@@ -2087,27 +2100,15 @@ def _park_at_gate(
     path: str,
     gate_round: int,
 ) -> RunParked | None:
-    """Save where a Pi run waits, under the wait's own id, so it can let its worker go.
+    """Save where a Pi run waits at a gate, under the wait's own id, so it can let its worker go.
 
-    Returns the RunParked to raise, or None when the checkpoint could not be saved: then the
-    gate holds its worker and waits as any other gate does, rather than letting go of a run
-    nothing would know how to carry on.
+    The one parking path, shared with a step's own waits (stage/step_waits.py ``park``), told
+    on this module's logger as before. Returns the RunParked to raise, or None when the
+    checkpoint could not be saved: then the gate holds its worker and waits as any other gate
+    does, rather than letting go of a run nothing would know how to carry on.
     """
-    service = context.checkpoint_service
-    if service is None:
-        logger.warning("Gate: '%s' would let its worker go, but the run saves no checkpoints; "
-                       "waiting with the worker held", path)
-        return None
-    try:
-        checkpoint_id = service.save_gate_parked(event_id, path, gate_round)
-    except Exception as exc:  # noqa: BLE001 - hold the worker instead
-        logger.warning("Gate: could not save where '%s' waits (%s); waiting with the worker held",
-                       path, exc)
-        return None
-    logger.info("Gate: '%s' round %s waits on you; the run lets its worker go (execution %s, "
-                "event %s)", path, gate_round, context.run_id, event_id)
-    return RunParked(event_id=event_id, node=node.name, path=path, round=gate_round,
-                     checkpoint_id=checkpoint_id)
+    return park(context, event_id=event_id, node=node.name, path=path, round=gate_round,
+                log=logger)
 
 
 def _wait_for_gate(
@@ -2257,6 +2258,40 @@ def _wait_for_approval(
         if status == REPLACED:
             # Another attempt of this run took this wait over: this one is not the run any more.
             raise CancellationError(f"The approval at '{path}' was taken over by a later attempt of this run")
+
+
+def _step_path(context: ExecutionContext, node: Node) -> str:
+    """A step's own path in the run: ``review.security_check`` inside stage ``review``."""
+    return f"{context.node_path}.{node.name}" if context.node_path else node.name
+
+
+def _asked_inside(parked: RunParked) -> bool:
+    """Whether a wait a step asked from inside its work (not a gate's) let the worker go."""
+    return parked.wait_id is not None or any((w or {}).get("wait_id") for w in parked.also)
+
+
+def _keep_gate_answer(context: ExecutionContext, node: Node, parked: RunParked) -> None:
+    """Keep the answer a gated step went on with, for when the run carries the step on.
+
+    Its gate marked the answer used as the step started; the step then let its worker go at
+    a wait of its own (stage/step_waits.py) and will run again from the start. Without this
+    its gate would ask the owner a second time for the same go.
+    """
+    path = _step_path(context, node)
+    recorder = context.event_recorder
+    for ev in reversed(_gate_history(recorder, node.name)):
+        data = ev.get("data") or {}
+        if data.get("gate_path") != path or ev.get("status") != APPROVED:
+            continue
+        if data.get("gate_used_at"):
+            try:
+                recorder.update_event(str(ev["id"]), status=APPROVED,
+                                      data={"gate_used_at": None, "gate_kept_at": utcnow().isoformat(),
+                                            "gate_kept_while": parked.event_id})
+            except Exception as exc:  # noqa: BLE001 - at worst the gate asks again
+                logger.warning("Gate: could not keep the answer of '%s' for when it carries on: %s",
+                               path, exc)
+        return
 
 
 def _gate_history(recorder: Any, name: str) -> list[dict[str, Any]]:

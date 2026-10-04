@@ -1,9 +1,12 @@
 """Pi runs that wait on the owner without holding a worker (docs/gates.md, "Pi workflows").
 
-In a Pi workflow a gate does not keep its worker while it waits (stage/executor.py,
-``_park_at_gate``): it saves where the run is under the wait's own id, writes the run's attempt
-down as ``waiting`` with a ``parked`` note, and the worker lets go -- the run's box exits, or
-its thread ends. This module carries such a run on, or ends it:
+In a Pi workflow a wait does not keep its worker -- a gate's (stage/executor.py,
+``_park_at_gate``) or one a step asks from inside its work (stage/step_waits.py, ``ask_owner``),
+both through stage/step_waits.py ``park``: it saves where the run is under the wait's own id,
+writes the run's attempt down as ``waiting`` with a ``parked`` note, and the worker lets go --
+the run's box exits, or its thread ends. Carrying it on runs the waiting step again: a gate
+finds its answer and its step runs; a step that asked finds the answer at the same wait id
+and goes on from its own record. This module carries such a run on, or ends it:
 
 * The owner's answer carries it on through Resume's own path, in a new box or thread, without
   running again what finished. Three places ask, so the answer is never lost: the approval,
@@ -37,7 +40,8 @@ CANCELLED = "cancelled"
 CANCEL_MESSAGE = "Workflow cancelled by user"
 
 # Pi's own conversation waits are named ``<step>~wait-<id>``: they belong to the Pi step,
-# which waits on them itself (docs/pi-agent.md). Only gates park a run.
+# which waits on them itself (docs/pi-agent.md). Gates and a step's ask_owner waits
+# (``<step>~ask-<id>``) park a run; those do not.
 _PI_OWN_WAIT = "~wait-"
 
 # A claimed attempt's next attempt starts within moments (a thread, or a queued box row). A

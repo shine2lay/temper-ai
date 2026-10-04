@@ -171,6 +171,56 @@ letting it count as done.
 
 `temper check` names such loops before anyone starts the run.
 
+## Waits inside a step
+
+A gate asks before its step runs. A step that needs your answer in the middle
+of its own work asks with `ask_owner` (`temper_ai/stage/step_waits.py`):
+
+```python
+answer = ask_owner(context, "pause-after-round-3",
+                   question="Round 3 is done. Go on?", options=("go on", "stop"))
+```
+
+The wait id is the step's own and stable: it comes from the step's durable
+record (round 3's pause is always `pause-after-round-3`), never from a
+counter that restarts with the step. A step that runs again therefore asks
+the same wait again and gets its answer instead of opening a second one.
+
+The wait is a gate wait like any other, filed under the step:
+
+- its name is `<step path>~ask-<wait id>` (`ship~ask-pause-after-round-3`):
+  that is what `GET /api/runs/<id>/gates` lists it as and what
+  `POST /api/runs/<id>/approve/<name>` answers, with the same event ids,
+  rounds, refusals, 409s and `repeated: true` as above;
+- each wait id has its own wait and event id (and, in a Pi workflow, its own
+  `step_parked` checkpoint under that id), so round 2's pause is never round
+  1's;
+- **Reject** or **Cancel** ends it as it ends a gate's wait. Nothing expires
+  and nothing reminds you; you are told once, when it starts.
+
+**In a Pi workflow it lets the worker go**, through the same parking path as
+a gate: the run saves a `step_parked` checkpoint under the wait's event id
+(its round and wait id with it), writes its attempt down as `waiting` with a
+`parked` note that names the wait (its event id, path, round and `wait_id`),
+and the box exits or the thread ends. Everything in [Pi workflows](#pi-workflows)
+holds as for a gate: your answer carries the run on in a new box, whoever
+comes first claims it, it waits across restarts with no limit and the
+pick-up leaves it alone. Carrying on runs the waiting step again (and only
+it: finished steps are kept). The step starts over from its own durable
+record, asks the same wait id, gets your answer back at once and goes on.
+A gated step whose own wait parks keeps its gate's answer for that, so the
+gate does not ask twice. Outside a Pi workflow the step waits with its
+worker held, as a gate does there.
+
+An answer belongs to the step's current go: when the step finishes, its
+answers are spent, so a loop's next lap asks afresh. A step that parks,
+fails or is cut off keeps them for the go that carries it on.
+
+No shipped step asks this way yet: the team step (`type: team`) will, and
+the Pi step's own "what next" waits (`<step>~wait-<id>`) still hold their
+worker. The test step in `tests/test_runner/pi_parking/step_support.py`
+shows the pattern.
+
 ## Trying it
 
 `ci_gate_rounds` is all of this with no model call: `review` waits for an

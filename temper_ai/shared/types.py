@@ -118,6 +118,7 @@ class ExecutionContext:
     failure_policy: Any = None  # FailurePolicy — what a failure does from here down (hold the clean-ups, or run them). Replaced per stage by StageNode; None means the workflow's own.
     run_only: Any = None  # set[str] | None — paths this pass is allowed to run (a cleanup-only pass runs the held clean-ups and nothing else). None means everything.
     park_at_gates: bool = False  # Pi workflows only: a gate saves where the run is and lets the worker go instead of holding it (stage/pi_workflows.py, runner/parked.py). Set by whoever starts the run.
+    step_path: str | None = None  # The running step's own path in the run ("review.security_check"), whatever kind of node it is. Set by the executor for each step; what a wait inside the step is filed under (stage/step_waits.py).
 
     def __post_init__(self) -> None:
         # The run's tool executor learns the run's cancel flag here: every run

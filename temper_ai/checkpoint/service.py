@@ -191,14 +191,24 @@ class CheckpointService:
         )
 
     def save_gate_parked(self, event_id: str, path: str, gate_round: int) -> str:
-        """Write down, under the wait's own id, that the run parked at a gate. Returns the id.
+        """Write down, under the wait's own id, that the run parked at a gate. Returns the id."""
+        return self.save_wait_parked(event_id, path, gate_round)
 
-        Pi workflows only (runner/parked.py): the run lets its worker go once this is saved,
-        so unlike the other saves a failure is raised (the gate then holds its worker, as for
-        any other workflow). Each round's wait has its own event id, so each round gets its own
-        checkpoint; a resumed run waiting on the same wait again keeps the one it has. The
-        replay that rebuilds a run's results skips it (it finished nothing).
+    def save_wait_parked(self, event_id: str, path: str, gate_round: int, *,
+                         wait_id: str | None = None) -> str:
+        """Write down, under the wait's own id, that the run parked at a wait. Returns the id.
+
+        A gate's wait (``gate_parked``) or a step's own (``step_parked``, with its wait id:
+        stage/step_waits.py). Pi workflows only (runner/parked.py): the run lets its worker
+        go once this is saved, so unlike the other saves a failure is raised (the wait then
+        holds its worker, as in any other workflow). Each round's wait has its own event id,
+        so each round gets its own checkpoint; a resumed run waiting on the same wait again
+        keeps the one it has. The replay that rebuilds a run's results skips it (it finished
+        nothing).
         """
+        metadata: dict[str, Any] = {"event_id": event_id, "path": path, "round": gate_round}
+        if wait_id is not None:
+            metadata["wait_id"] = wait_id
         with get_session() as session:
             if session.get(Checkpoint, event_id) is not None:
                 return event_id
@@ -206,10 +216,10 @@ class CheckpointService:
                 id=event_id,
                 execution_id=self.execution_id,
                 sequence=self._next_seq(),
-                event_type="gate_parked",
+                event_type="gate_parked" if wait_id is None else "step_parked",
                 node_name=path,
                 status="waiting",
-                metadata_={"event_id": event_id, "path": path, "round": gate_round},
+                metadata_=metadata,
             ))
         return event_id
 

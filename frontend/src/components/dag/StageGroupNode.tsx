@@ -65,13 +65,13 @@ export const StageGroupNode = memo(function StageGroupNode({ data }: NodeProps) 
     >
       {/* Handles */}
       <Handle type="target" position={Position.Left} id="left"
-        className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
+        className="!w-2 !h-2 !bg-temper-control !border-temper-bg" />
       <Handle type="source" position={Position.Right} id="right"
-        className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
+        className="!w-2 !h-2 !bg-temper-control !border-temper-bg" />
       <Handle type="source" position={Position.Bottom} id="bottom"
-        className="!w-2 !h-2 !bg-temper-border !border-temper-bg" />
+        className="!w-2 !h-2 !bg-temper-control !border-temper-bg" />
       <Handle type="target" position={Position.Bottom} id="bottom-target"
-        className="!w-2 !h-2 !bg-temper-border !border-temper-bg !left-[70%]" />
+        className="!w-2 !h-2 !bg-temper-control !border-temper-bg !left-[70%]" />
 
       {/* Animated dashed border for running stages */}
       {isRunning && (

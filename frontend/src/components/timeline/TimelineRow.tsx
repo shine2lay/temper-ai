@@ -47,12 +47,13 @@ function BarDurationLabel({ row }: { row: TimelineRowData }) {
     return () => clearInterval(id);
   }, [isRunning, row.startTime]);
 
+  // Dark-theme status colours are light, so the label switches to ink there.
   if (isRunning) {
-    return <span className="text-[9px] font-mono text-white/90 whitespace-nowrap px-1">{formatDuration(elapsed)}</span>;
+    return <span className="text-[9px] font-mono text-white dark:text-temper-bg whitespace-nowrap px-1">{formatDuration(elapsed)}</span>;
   }
   if (row.endTime !== null && row.startTime !== null) {
     const durSec = (row.endTime - row.startTime) / 1000;
-    return <span className="text-[9px] font-mono text-white/90 whitespace-nowrap px-1">{formatDuration(durSec)}</span>;
+    return <span className="text-[9px] font-mono text-white dark:text-temper-bg whitespace-nowrap px-1">{formatDuration(durSec)}</span>;
   }
   return null;
 }

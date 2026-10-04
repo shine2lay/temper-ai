@@ -36,7 +36,7 @@ export function SettingsPage() {
                 className={cn(
                   'flex items-center gap-3 px-4 py-3 rounded-lg border-2 transition-colors',
                   currentTheme === 'dark'
-                    ? 'border-temper-accent bg-temper-accent/10 text-temper-accent'
+                    ? 'border-temper-accent bg-temper-accent/10 text-temper-text'
                     : 'border-temper-border bg-temper-surface text-temper-text-muted hover:text-temper-text',
                 )}
               >
@@ -81,12 +81,14 @@ export function SettingsPage() {
             {[
               { name: 'Background', var: '--temper-bg' },
               { name: 'Panel', var: '--temper-panel' },
-              { name: 'Border', var: '--temper-border' },
-              { name: 'Accent', var: '--temper-accent' },
+              { name: 'Surface', var: '--temper-surface' },
+              { name: 'Divider', var: '--temper-border' },
+              { name: 'Control border', var: '--temper-control' },
+              { name: 'Brand green', var: '--temper-accent' },
               { name: 'Text', var: '--temper-text' },
               { name: 'Text Muted', var: '--temper-text-muted' },
-              { name: 'Completed', var: '--temper-completed' },
-              { name: 'Running', var: '--temper-running' },
+              { name: 'Completed', var: '--color-temper-completed' },
+              { name: 'Running', var: '--color-temper-running' },
             ].map((color) => (
               <div key={color.var} className="space-y-2">
                 <div

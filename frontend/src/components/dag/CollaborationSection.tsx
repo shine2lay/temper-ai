@@ -90,7 +90,7 @@ export function CollaborationSection({ events, agents }: CollaborationSectionPro
             >
               <polygon
                 points="0 0, 8 3, 0 6"
-                fill="var(--color-temper-accent, #60a5fa)"
+                fill="var(--color-temper-accent)"
               />
             </marker>
           </defs>
@@ -109,7 +109,7 @@ export function CollaborationSection({ events, agents }: CollaborationSectionPro
                 <path
                   d={`M ${x1} ${curveY} Q ${midX} ${controlY} ${x2} ${curveY}`}
                   fill="none"
-                  stroke="var(--color-temper-accent, #60a5fa)"
+                  stroke="var(--color-temper-accent)"
                   strokeWidth="1.5"
                   markerEnd={`url(#collab-arrowhead-${markerId})`}
                   opacity="0.7"
@@ -118,7 +118,7 @@ export function CollaborationSection({ events, agents }: CollaborationSectionPro
                   x={midX}
                   y={labelY}
                   textAnchor="middle"
-                  fill="var(--color-temper-text-muted, #8a8fa0)"
+                  fill="var(--color-temper-text-muted)"
                   fontSize="9"
                   fontFamily="monospace"
                 >

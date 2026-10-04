@@ -1,6 +1,7 @@
 import { KeyRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { TemperLockup } from '@/components/shared/TemperBrand';
 import { clearApiKey, getApiKey, setApiKey, setUnauthorizedHandler } from '@/lib/authFetch';
 
 /**
@@ -43,14 +44,15 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-temper-bg p-6">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-temper-bg p-6">
+      <TemperLockup width={200} />
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-lg border border-temper-border bg-temper-surface p-6"
+        className="w-full max-w-sm rounded-lg border border-temper-border bg-temper-panel p-6"
       >
         <div className="mb-4 flex items-center gap-2 text-temper-text">
-          <KeyRound className="h-5 w-5 text-temper-accent" />
-          <h1 className="text-base font-medium">This temper server needs a token</h1>
+          <KeyRound className="h-5 w-5 text-temper-text-muted" />
+          <h1 className="text-base font-semibold">This temper server needs a token</h1>
         </div>
 
         <p className="mb-4 text-sm text-temper-text-muted">
@@ -59,7 +61,7 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
             : 'Paste the value of TEMPER_API_TOKEN. It stays in this browser.'}
         </p>
 
-        <label htmlFor="api-token" className="mb-1 block text-xs text-temper-text-dim">
+        <label htmlFor="api-token" className="mb-1 block text-xs text-temper-text-muted">
           API token
         </label>
         <input
@@ -68,14 +70,14 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="mb-4 w-full rounded border border-temper-border bg-temper-bg px-3 py-2 text-sm text-temper-text"
+          className="mb-4 w-full rounded border border-temper-control bg-temper-bg px-3 py-2 text-sm text-temper-text placeholder:text-temper-text-dim"
           placeholder="TEMPER_API_TOKEN"
         />
 
         <div className="flex gap-2">
           <button
             type="submit"
-            className="flex-1 rounded bg-temper-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="flex-1 rounded bg-temper-accent px-3 py-2 text-sm font-semibold text-temper-on-accent hover:bg-temper-accent-dim disabled:opacity-50"
             disabled={!value.trim()}
           >
             Continue
@@ -87,7 +89,7 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
                 clearApiKey();
                 setValue('');
               }}
-              className="rounded border border-temper-border px-3 py-2 text-sm text-temper-text-muted"
+              className="rounded border border-temper-control px-3 py-2 text-sm text-temper-text-muted hover:text-temper-text"
             >
               Forget stored token
             </button>

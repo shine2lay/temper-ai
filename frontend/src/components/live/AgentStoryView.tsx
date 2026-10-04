@@ -185,7 +185,7 @@ function ToolStep({ step }: { step: StoryTool }) {
         )}
       >
         {step.status === 'running' ? (
-          <span className="size-3 shrink-0 animate-pulse rounded-full bg-temper-accent/70" />
+          <span className="size-3 shrink-0 animate-pulse rounded-full bg-temper-running/70" />
         ) : failed ? (
           <X className="size-3 shrink-0 text-red-400" />
         ) : (

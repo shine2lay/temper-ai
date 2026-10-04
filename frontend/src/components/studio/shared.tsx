@@ -90,15 +90,15 @@ export function Field({
 
 /** Standard text input styling for Studio panels. */
 export const inputClass =
-  'w-full px-2 py-1.5 text-xs bg-temper-surface border border-temper-border rounded text-temper-text';
+  'w-full px-2 py-1.5 text-xs bg-temper-surface border border-temper-control rounded text-temper-text';
 
 /** Standard select styling for Studio panels. */
 export const selectClass =
-  'w-full px-2 py-1.5 text-xs bg-temper-surface border border-temper-border rounded text-temper-text';
+  'w-full px-2 py-1.5 text-xs bg-temper-surface border border-temper-control rounded text-temper-text';
 
 /** Standard textarea styling for Studio panels. */
 export const textareaClass =
-  'w-full px-2 py-1.5 text-xs bg-temper-surface border border-temper-border rounded text-temper-text resize-y min-h-[48px]';
+  'w-full px-2 py-1.5 text-xs bg-temper-surface border border-temper-control rounded text-temper-text resize-y min-h-[48px]';
 
 /** Standard checkbox styling. */
 export function Checkbox({
@@ -288,7 +288,7 @@ export function CompactOutputsEditor({
               next[i] = { ...next[i], name: e.target.value };
               onChange(next);
             }}
-            className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text"
+            className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-control rounded text-temper-text"
             placeholder="name"
           />
           <span className="text-[8px] text-temper-text-dim">{'\u2190'}</span>
@@ -300,7 +300,7 @@ export function CompactOutputsEditor({
               next[i] = { ...next[i], source: e.target.value };
               onChange(next);
             }}
-            className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text-muted"
+            className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-control rounded text-temper-text-muted"
             placeholder="stage.output"
           />
           <button
@@ -357,7 +357,7 @@ export function CompactKeyValueEditor({
               }
               onChange(next);
             }}
-            className={`w-24 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text ${readOnlyKeys ? 'opacity-60' : ''}`}
+            className={`w-24 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-control rounded text-temper-text ${readOnlyKeys ? 'opacity-60' : ''}`}
             placeholder={keyPlaceholder}
           />
           <span className="text-[8px] text-temper-text-dim">:</span>
@@ -367,7 +367,7 @@ export function CompactKeyValueEditor({
             onChange={(e) => {
               onChange({ ...entries, [k]: e.target.value });
             }}
-            className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-border rounded text-temper-text"
+            className="flex-1 px-1.5 py-0.5 text-[10px] bg-temper-surface border border-temper-control rounded text-temper-text"
             placeholder={valuePlaceholder}
           />
           <button

@@ -162,7 +162,7 @@ function InlineAgentsSection({
               if (!e.target.value) return;
               onUpdate({ agents: [...stage.agents, e.target.value] });
             }}
-            className="text-xs bg-temper-surface border border-temper-border rounded text-temper-text-muted px-2 py-1"
+            className="text-xs bg-temper-surface border border-temper-control rounded text-temper-text-muted px-2 py-1"
           >
             <option value="">+ Add agent...</option>
             {available.map((n) => (
@@ -346,7 +346,7 @@ export function StagePropertiesPanel() {
                     if (!e.target.value) return;
                     onUpdate({ depends_on: [...stage.depends_on, e.target.value] });
                   }}
-                  className="text-[9px] bg-temper-surface border border-temper-border rounded text-temper-text-muted px-1 py-0.5"
+                  className="text-[9px] bg-temper-surface border border-temper-control rounded text-temper-text-muted px-1 py-0.5"
                 >
                   <option value="">+ Add</option>
                   {otherStageNames

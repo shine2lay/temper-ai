@@ -85,7 +85,7 @@ function ParentLink({ link }: { link: ShapeLink }) {
       onClick={link.open}
       data-testid="bv-parent"
       title={`Back to ${link.label}`}
-      className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-temper-text-muted transition-colors hover:bg-temper-surface hover:text-temper-accent"
+      className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-temper-text-muted transition-colors hover:bg-temper-surface hover:text-temper-text"
     >
       <ArrowUpLeft className="size-3.5" />
       <span className="max-w-32 truncate">{link.label}</span>

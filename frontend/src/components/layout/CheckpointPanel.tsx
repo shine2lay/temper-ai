@@ -165,7 +165,7 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
               onClick={() => setShowPreview(true)}
               className={cn(
                 'px-3 py-1.5 rounded text-xs font-medium transition-colors',
-                'bg-temper-accent text-white hover:bg-temper-accent-dim',
+                'bg-temper-accent text-temper-on-accent hover:bg-temper-accent-dim',
               )}
             >
               Resume…
@@ -326,7 +326,7 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
                                 disabled={forkMutation.isPending}
                                 className={cn(
                                   'px-2 py-1 rounded text-[10px] font-medium transition-colors',
-                                  'bg-temper-accent/20 text-temper-accent hover:bg-temper-accent/30',
+                                  'bg-temper-accent/20 text-temper-text hover:bg-temper-accent/30',
                                   'disabled:opacity-50 disabled:cursor-not-allowed',
                                 )}
                               >
@@ -338,7 +338,7 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
                           {/* Resume hint for last checkpoint on failed/cancelled runs */}
                           {isLast && canResume && (
                             <div className="mt-1 pt-1 border-t border-temper-border/30">
-                              <span className="text-temper-accent text-[9px]">
+                              <span className="text-temper-text-muted text-[9px]">
                                 ↑ Use "Resume from Last Checkpoint" to continue from this point
                               </span>
                             </div>

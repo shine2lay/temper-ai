@@ -140,7 +140,7 @@ export function YamlPreview({ open, onClose }: YamlPreviewProps) {
           <h2 className="text-sm font-semibold text-temper-text flex-1">YAML Preview</h2>
           <button
             onClick={handleDownload}
-            className="text-xs px-2.5 py-1 rounded bg-temper-accent/10 text-temper-accent hover:bg-temper-accent/20 transition-colors font-medium"
+            className="text-xs px-2.5 py-1 rounded bg-temper-accent/10 text-temper-text hover:bg-temper-accent/20 transition-colors font-medium"
           >
             Download Bundle
           </button>
@@ -275,7 +275,7 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
       onClick={onClick}
       className={`text-xs px-2 py-1 rounded shrink-0 transition-colors ${
         active
-          ? 'bg-temper-accent/15 text-temper-accent font-medium'
+          ? 'bg-temper-accent/15 text-temper-text font-medium'
           : 'text-temper-text-muted hover:text-temper-text hover:bg-temper-surface/50'
       }`}
     >

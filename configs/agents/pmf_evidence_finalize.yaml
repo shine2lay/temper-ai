@@ -1,0 +1,20 @@
+# @description PRODUCT FIT AND REVENUE last step (product role): the final status and the report.
+# No model. Runs on every path (a blocked input, a failed model step, a full run): blocked when
+# setup blocked; reported when the interpretation passes the re-run check with no usage-limit
+# text; otherwise revise, with the measurements kept and the interpretation withheld. Writes
+# state/pmf/REPORT.md and result.json and owns the workflow outputs. Part of
+# workflows/pmf_evidence.yaml.
+agent:
+  name: pmf_evidence_finalize
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    if [ ! -f state/pmf/pmf_kit.py ] || [ ! -f state/pmf/setup.json ]; then
+      echo '{"status": "completed", "final_status": "blocked", "verdict": "not_measured", "report_path": "", "survey_status": "not_measured", "retention_status": "not_measured", "payment_status": "not_measured", "revenue_status": "not_measured", "problems": ["setup did not finish: assets_dir missing or unreadable, or the workspace was not fresh (see the setup step error)"]}'
+      exit 0
+    fi
+    python3 state/pmf/pmf_kit.py finalize

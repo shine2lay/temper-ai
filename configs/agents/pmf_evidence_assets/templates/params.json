@@ -1,0 +1,38 @@
+{
+  "schema": "pmf_evidence.params/1",
+  "product": null,
+  "data_label": null,
+  "buyer": null,
+  "user_unit": null,
+  "account_unit": null,
+  "value_event": null,
+  "observed_until": null,
+  "currency": null,
+  "survey": {
+    "min_value_events": null,
+    "lookback_days": null,
+    "min_responses": null
+  },
+  "retention": {
+    "period_days": null,
+    "cohort_by": null,
+    "min_users_per_period": null,
+    "min_periods": null,
+    "flat_last_periods": null,
+    "flat_max_drop_pp": null,
+    "min_plateau_rate": null
+  },
+  "payment": {
+    "target_price": null,
+    "price_unit": null,
+    "min_target_price_accounts": null
+  },
+  "revenue": {
+    "target": null,
+    "horizon_start": null,
+    "horizon_end": null
+  },
+  "data_quality": {
+    "max_rejected_share": null
+  }
+}

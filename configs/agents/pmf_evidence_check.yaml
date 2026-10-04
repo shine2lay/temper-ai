@@ -1,0 +1,16 @@
+# @description PRODUCT FIT AND REVENUE step 3 (product role): the deterministic check of the
+# interpretation against the facts (interpretation_contract.md). No model. It re-runs the
+# checker itself, so the model step cannot report a pass it did not get: every number traced to
+# a cited fact, no product-market-fit claim, statuses echoed, every open indicator given a next
+# test, contact and spend marked for owner approval. A failed check is data (status revise);
+# finalize turns it into the final status. Part of workflows/pmf_evidence.yaml.
+agent:
+  name: pmf_evidence_check
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 state/pmf/pmf_kit.py check

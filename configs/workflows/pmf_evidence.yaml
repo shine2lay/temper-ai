@@ -1,0 +1,89 @@
+workflow:
+  name: pmf_evidence
+  # PRODUCT FIT AND REVENUE EVIDENCE (product role; built 2026-10-04, queue #13). Measures the
+  # mission's product-market-fit indicators for one product from its own exports and keeps them
+  # apart: the share of eligible survey respondents "very disappointed" without the product
+  # (Sean Ellis question, fixed 40% bar), retention of the core value event by cohort and period
+  # (flat over enough fully observed periods), and customer accounts paying the target price
+  # after refunds, with revenue (gross, refunds, fees, net) reported apart. The verdict
+  # fit_indicators_met needs all three; the survey alone never shows product-market fit, and the
+  # report never claims it. Separate from the data department's EPD measurement flow.
+  #
+  #   setup (script) -> interpret -> check (script) -> finalize (script)
+  #
+  # setup validates every required parameter (no defaults: the product's targets and windows
+  # come from params.json) and the four CSV exports, and computes every number with
+  # pmf_kit.py (standard library): a missing or invalid input blocks here at $0. interpret
+  # writes the PM reading and next tests, citing the numbered facts. check re-runs the
+  # deterministic interpretation check (numbers traced to cited facts, no fit claim, statuses
+  # echoed, open indicators covered, owner approval for contact and spend). finalize: blocked,
+  # reported, or revise (measurements kept, interpretation withheld).
+  #
+  # Kit: configs/agents/pmf_evidence_assets/ (pmf_kit.py, data_dictionary.md,
+  # interpretation_contract.md, survey_template.md, templates/). Benchmark (synthetic, frozen):
+  # tests/test_pmf_evidence/benchmark/. Bar and runs: product results/2026-10-04-pmf-kit-13/.
+  # How to run: docs/product-runs.md.
+  version: 1
+  description: |
+    Measure product-market-fit evidence and revenue for one product from a params file and
+    four CSV exports (users, activity, survey, payments). A script validates every required
+    target and window and computes the survey share, retention by cohort and period, customer
+    accounts paying the target price after refunds, and net revenue, each with its denominators
+    and observation limits; a model writes the PM reading and next tests from those numbers; a
+    script checks the reading. Result: blocked, reported or revise, with the verdict
+    fit_indicators_met or fit_not_shown. Never claims product-market fit.
+  inputs:
+    params_path:
+      type: string
+      required: true
+      description: "The params file (pmf_evidence.params/1) in the run workspace: every target and window for the product, all required, no defaults. Start from configs/agents/pmf_evidence_assets/templates/params.json."
+    data_dir:
+      type: string
+      required: true
+      description: "The folder in the run workspace holding users.csv, activity.csv, survey.csv and payments.csv (columns in data_dictionary.md)."
+    assets_dir:
+      type: string
+      required: false
+      default: "/app/configs/agents/pmf_evidence_assets"
+      description: "Folder with pmf_kit.py, data_dictionary.md and interpretation_contract.md: the deployed copy by default; a candidate run stages its own copy into the workspace."
+  outputs:
+    final_status: finalize.structured.final_status
+    verdict: finalize.structured.verdict
+    report_path: finalize.structured.report_path
+    survey_status: finalize.structured.survey_status
+    retention_status: finalize.structured.retention_status
+    payment_status: finalize.structured.payment_status
+    revenue_status: finalize.structured.revenue_status
+    problems: finalize.structured.problems
+    setup_status: setup.structured.status
+    setup_problems: setup.structured.problems
+
+  nodes:
+    # Validation and every number, no model. Copies the kit into state/pmf/.
+    - name: setup
+      type: agent
+      agent: pmf_evidence_setup
+      input_map:
+        params_path: input.params_path
+        data_dir: input.data_dir
+        assets_dir: input.assets_dir
+
+    - name: interpret
+      type: agent
+      agent: pmf_evidence_interpret
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: measured}
+
+    # The deterministic interpretation check, no model.
+    - name: check
+      type: agent
+      agent: pmf_evidence_check
+      depends_on: [interpret]
+      condition: {source: setup.structured.status, operator: equals, value: measured}
+
+    # The final status and REPORT.md on every path, no model.
+    - name: finalize
+      type: agent
+      agent: pmf_evidence_finalize
+      depends_on: [check]
+      run_after_failure: true

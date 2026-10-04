@@ -233,6 +233,65 @@ defects); `score.py CASE=WORKSPACE` scores a finished run against `expected.json
 staged into a run. A changed grader reruns all nine; the bar and calibration are in
 `~/product-autopilot/results/2026-10-04-signal-grade-12/` (`REPORT.md`).
 
+## Measure fit and revenue (`pmf_evidence`)
+
+`pmf_evidence` measures one product's product-market-fit indicators from its own exports and
+reports each apart, with its numerator, denominator and observation limits: the survey's
+very-disappointed share among eligible respondents (bar fixed at 40%), retention by cohort and
+period (only fully observed periods count; a user not yet observed for a period leaves its
+denominator, never counted as lost), customer accounts that kept a payment of at least the target
+price after refunds, and net revenue (gross receipts minus refunds minus payment fees; promises
+are never money). The verdict is `fit_indicators_met` only when survey, retention and payment are
+all met, else `fit_not_shown`: the survey alone never shows product-market fit, and even
+`fit_indicators_met` is a measurement on the data given, not a fit claim. A model then writes an
+interpretation and next-test proposals, and a script checks every statement against the numbered
+facts the kit computed (no untraced number, no fit claim, no share said to hold over periods where
+it differs, owner approval for contact, surveys or spend). It chooses no market, price or target
+and contacts no one.
+
+Inputs: a `pmf_evidence.params/1` JSON and a folder holding four CSV exports (`users.csv`,
+`activity.csv`, `survey.csv`, `payments.csv`). Blank templates are in
+`configs/agents/pmf_evidence_assets/templates/`; `data_dictionary.md` next to them gives every
+parameter, column and rule (eligibility, censoring, duplicates, refunds, division by zero).
+Every product-specific value is required, with no default: buyer, user and customer-account units,
+the core value event, the last day the exports cover, the currency, survey eligibility and minimum
+respondents, the retention period and adequacy and flatness settings, the target price and its
+unit, the minimum paying accounts, the revenue target and horizon, the rejected-row limit, and
+`data_label` (`synthetic` or `real`). Fit the retention period to the product's rhythm: 7 days for
+weekly use, 91 for a few uses a year. Never fill in a missing value: a missing, misspelt or invalid
+parameter, file or column blocks the run at setup, one problem per line, with no model call and
+no cost. `survey_template.md` is the survey to send; sending it, or contacting anyone, needs the
+owner's approval.
+
+```sh
+JOB=fit-my-product
+mkdir ~/temper-ai/workspaces/product/$JOB
+python3 ~/product-autopilot/server.py stage /path/to/exports-and-params \
+  --workspace ~/temper-ai/workspaces/product/$JOB --relative _case
+~/product-autopilot/start.sh $JOB pmf_evidence --workspace ~/temper-ai/workspaces/product/$JOB \
+  --inputs ~/product-autopilot/inputs/$JOB.json
+```
+
+The inputs file is `{"params_path": "<workspace>/_case/params.json", "data_dir":
+"<workspace>/_case"}` with the workspace's absolute path; a candidate run also stages its own
+`configs/agents/pmf_evidence_assets` as `_assets` and passes `"assets_dir": "<workspace>/_assets"`.
+Results land in the workspace's `state/pmf/`: `REPORT.md` (verdict, indicator table, survey,
+retention curve and retention by cohort and period, payment and revenue kept apart, data quality, the checked
+interpretation, next tests and the numbered facts), `metrics.json`, `facts.json`, `rejected.csv`
+(every rejected row with its code), `interpretation.json`, `check.json` and `result.json`.
+
+The final status is `blocked` (setup refused the input: nothing measured, no model), `revise` (the
+check found a defect or a step left no usable output: the measurements stay, the interpretation is
+withheld) or `reported`. Read the report and its facts before taking it to the owner. A run costs
+about $0.25 for the interpretation; the script steps cost nothing.
+
+Regression benchmark: `tests/test_pmf_evidence/benchmark/` holds nine labelled synthetic cases
+(`construct.py OUTDIR` writes them; `expected.json` holds the expected metrics and is never staged
+into a run; `independent.py` is a separately written second calculation; `score.py
+CASE=WORKSPACE` scores a finished run). A changed kit reruns all nine; the bar, runs, costs and
+reviews of the first version are in `~/product-autopilot/results/2026-10-04-pmf-kit-13/`
+(`REPORT.md`).
+
 ## Checks
 
 Run Product helper checks once after revisions:
@@ -243,6 +302,7 @@ python3 ~/product-autopilot/tests/check_digest.py
 uv run pytest tests/test_scan_serving -q
 uv run pytest tests/test_shape_mvp -q
 uv run pytest tests/test_signal_grade -q
+uv run pytest tests/test_pmf_evidence -q
 ```
 
 These use fake status/config APIs, not model request fixtures or third-party services. New

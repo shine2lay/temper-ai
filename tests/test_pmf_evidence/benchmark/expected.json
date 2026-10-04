@@ -1,0 +1,1180 @@
+{
+ "schema": "pmf_evidence.benchmark/1",
+ "note": "Synthetic, labelled cases for queue #13 (construct.py builds them; README.md says how each is built). Values first worked out by hand from each construction, cross-checked by independent.py before the kit's calculator existed. Never staged into a run.",
+ "report_phrases": {
+  "synthetic": "Synthetic example",
+  "fit_rule": "The survey alone never shows product-market fit"
+ },
+ "cases": [
+  {
+   "case": "N1",
+   "dir": "N1",
+   "about": "Normal clean data, weekly product (60 seats, 20 agency accounts, two monthly cohorts): every fit indicator met.",
+   "sha256": {
+    "activity.csv": "2a9979456f046277786fce313971b06a027a845bea2cdf1331b97c93e7f92af6",
+    "params.json": "b59c753f42a706b982f8a80ca7c7641a0018f095aec6e432d074b1b4cc9571e8",
+    "payments.csv": "7a88e233daa822c84c60fefeb262be65c06e495e50b81a868f47ac2871bc549e",
+    "survey.csv": "ff478f59d89feb5eb4bd26a0336e0f7692e308bc6bf0430728114a554ecd6eb1",
+    "users.csv": "61915412eac9f4abc2b121c4390893ef5211ac366b02079e449d8c2d0949c600"
+   },
+   "expected_final_status": "reported",
+   "verdict": "fit_indicators_met",
+   "files": {
+    "users": {
+     "rows": 60,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "activity": {
+     "rows": 1450,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "survey": {
+     "rows": 44,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "payments": {
+     "rows": 84,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    }
+   },
+   "survey": {
+    "status": "met",
+    "reasons": [],
+    "valid": 44,
+    "repeat": 0,
+    "first": 44,
+    "eligible": 32,
+    "ineligible": 12,
+    "very": 14,
+    "somewhat": 12,
+    "not": 6,
+    "share_pct": "43.8",
+    "interval_pct": [
+     "28.2",
+     "60.7"
+    ],
+    "more_needed": 0
+   },
+   "retention": {
+    "status": "met",
+    "reasons": [],
+    "users": 60,
+    "curve": [
+     [
+      0,
+      60,
+      60
+     ],
+     [
+      1,
+      60,
+      48
+     ],
+     [
+      2,
+      60,
+      48
+     ],
+     [
+      3,
+      60,
+      32
+     ],
+     [
+      4,
+      60,
+      32
+     ],
+     [
+      5,
+      60,
+      32
+     ],
+     [
+      6,
+      60,
+      32
+     ],
+     [
+      7,
+      60,
+      32
+     ],
+     [
+      8,
+      30,
+      16
+     ],
+     [
+      9,
+      30,
+      16
+     ],
+     [
+      10,
+      30,
+      15
+     ],
+     [
+      11,
+      30,
+      16
+     ]
+    ],
+    "adequate_periods": 11,
+    "window": [
+     9,
+     11
+    ],
+    "drop_pp": "0.0",
+    "last_pct": "53.3",
+    "adequate_on": null
+   },
+   "payment": {
+    "status": "met",
+    "reasons": [],
+    "target_accounts": 12,
+    "paying_accounts": 16,
+    "below_target_accounts": 4,
+    "fully_refunded_accounts": 0
+   },
+   "revenue": {
+    "status": "met",
+    "reasons": [],
+    "gross": "1958.00",
+    "refunds": "0.00",
+    "fees": "69.34",
+    "net": "1888.66",
+    "promises": 0,
+    "promised": "0.00",
+    "outside_horizon": 0,
+    "outside_amount": "0.00",
+    "horizon_complete": true
+   }
+  },
+  {
+   "case": "E1",
+   "dir": "E1",
+   "about": "Empty exports (header rows only): nothing judged, shares undefined, no division error.",
+   "sha256": {
+    "activity.csv": "6685f8e6e3cd7352fd8d23454a3d3617d10d0414e390db63141bd9dc31fd97b4",
+    "params.json": "775b9c815f60d7f73a1cd8b25fad3f2a8fd870415433fa64c3929df75c5233ac",
+    "payments.csv": "25793e54856c8e0df3664cdf82d24b7d27924345119f4bc8a8a4ac81f34798da",
+    "survey.csv": "87bf112d5439910b5788d7164e1b23a9ea5d98cc62935d7e186d532fc84ae479",
+    "users.csv": "e8e61d723288eb738ac114d272e3048c137bc9374873085293d7c477711a536b"
+   },
+   "expected_final_status": "reported",
+   "verdict": "fit_not_shown",
+   "files": {
+    "users": {
+     "rows": 0,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "activity": {
+     "rows": 0,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "survey": {
+     "rows": 0,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "payments": {
+     "rows": 0,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    }
+   },
+   "survey": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "no_data"
+    ],
+    "valid": 0,
+    "repeat": 0,
+    "first": 0,
+    "eligible": 0,
+    "ineligible": 0,
+    "very": 0,
+    "somewhat": 0,
+    "not": 0,
+    "share_pct": null,
+    "interval_pct": null,
+    "more_needed": 30
+   },
+   "retention": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "no_data"
+    ],
+    "users": 0,
+    "curve": [],
+    "adequate_periods": 0,
+    "window": null,
+    "drop_pp": null,
+    "last_pct": null,
+    "adequate_on": null
+   },
+   "payment": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "no_data"
+    ],
+    "target_accounts": 0,
+    "paying_accounts": 0,
+    "below_target_accounts": 0,
+    "fully_refunded_accounts": 0
+   },
+   "revenue": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "no_data"
+    ],
+    "gross": "0.00",
+    "refunds": "0.00",
+    "fees": "0.00",
+    "net": "0.00",
+    "promises": 0,
+    "promised": "0.00",
+    "outside_horizon": 0,
+    "outside_amount": "0.00",
+    "horizon_complete": true
+   }
+  },
+  {
+   "case": "I1",
+   "dir": "I1",
+   "about": "Three weeks observed: survey short of responses, retention short of periods, payment and revenue horizon still open.",
+   "sha256": {
+    "activity.csv": "ff448d22cb831f3df6e49f9b197b3e2b36c573e4910f7af7bb200cf10498f088",
+    "params.json": "a7a9cd4e830ebedd13c6170127f8c9a629e15b023d689e68059b50db09c5eec4",
+    "payments.csv": "e2e3b637653056abd65470eb3c98d81fae78d638a64668f5ced2e894d2ecc03e",
+    "survey.csv": "0bdc344c8b2c39f2df7a0cc6a9af14598de031eda684c6832ed7cf14b33bf5a1",
+    "users.csv": "8e1a1fb278c8227f1466344389664c622bf6e6412baefdd7e299bf3d61dec662"
+   },
+   "expected_final_status": "reported",
+   "verdict": "fit_not_shown",
+   "files": {
+    "users": {
+     "rows": 30,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "activity": {
+     "rows": 246,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "survey": {
+     "rows": 15,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "payments": {
+     "rows": 13,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    }
+   },
+   "survey": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "too_few_responses"
+    ],
+    "valid": 15,
+    "repeat": 0,
+    "first": 15,
+    "eligible": 12,
+    "ineligible": 3,
+    "very": 6,
+    "somewhat": 4,
+    "not": 2,
+    "share_pct": "50.0",
+    "interval_pct": [
+     "25.4",
+     "74.6"
+    ],
+    "more_needed": 18
+   },
+   "retention": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "too_few_periods"
+    ],
+    "users": 30,
+    "curve": [
+     [
+      0,
+      30,
+      30
+     ],
+     [
+      1,
+      30,
+      24
+     ],
+     [
+      2,
+      30,
+      24
+     ]
+    ],
+    "adequate_periods": 2,
+    "window": null,
+    "drop_pp": null,
+    "last_pct": null,
+    "adequate_on": "2026-03-15"
+   },
+   "payment": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "horizon_open"
+    ],
+    "target_accounts": 6,
+    "paying_accounts": 6,
+    "below_target_accounts": 0,
+    "fully_refunded_accounts": 0
+   },
+   "revenue": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "horizon_open"
+    ],
+    "gross": "294.00",
+    "refunds": "0.00",
+    "fees": "10.32",
+    "net": "283.68",
+    "promises": 1,
+    "promised": "490.00",
+    "outside_horizon": 0,
+    "outside_amount": "0.00",
+    "horizon_complete": false
+   }
+  },
+  {
+   "case": "D1",
+   "dir": "D1",
+   "about": "N1 plus duplicate and invalid rows in every export; payments over the rejected-row limit.",
+   "sha256": {
+    "activity.csv": "98f2edc057b47ebc31c614c5ea0d976ba0e2b5ea2bab47f6cfc9575bf17195d2",
+    "params.json": "6eba8ed382f8920ab0f340b9056083c2f109f5996df49fd786a2f6a6562cbbda",
+    "payments.csv": "637f036cf94ebe06c64c17ddff60b1ee49e869497b95e7c848086ee10d67e81c",
+    "survey.csv": "487d5e37a51d1765c01c68bffd254837a6bdc86ce1d4d8e70af1412fbbbc309d",
+    "users.csv": "85a8034ea1980cf9770794f29d54681e12e769503523ae28d091b7974d8b1841"
+   },
+   "expected_final_status": "reported",
+   "verdict": "fit_not_shown",
+   "files": {
+    "users": {
+     "rows": 64,
+     "duplicates": 1,
+     "rejected": {
+      "bad_date": 1,
+      "conflicting_duplicate": 2
+     },
+     "over_limit": false
+    },
+    "activity": {
+     "rows": 1460,
+     "duplicates": 2,
+     "rejected": {
+      "after_observation_end": 1,
+      "bad_date": 1,
+      "before_user_start": 1,
+      "conflicting_duplicate": 2,
+      "missing_value": 1,
+      "unknown_user": 2
+     },
+     "over_limit": false
+    },
+    "survey": {
+     "rows": 48,
+     "duplicates": 1,
+     "rejected": {
+      "bad_answer": 1,
+      "missing_value": 1
+     },
+     "over_limit": false
+    },
+    "payments": {
+     "rows": 96,
+     "duplicates": 1,
+     "rejected": {
+      "bad_amount": 3,
+      "bad_reference": 1,
+      "conflicting_duplicate": 2,
+      "currency_mismatch": 1,
+      "refund_exceeds_payment": 1,
+      "unexpected_reference": 1,
+      "unknown_account": 1,
+      "unknown_kind": 1
+     },
+     "over_limit": true
+    }
+   },
+   "survey": {
+    "status": "met",
+    "reasons": [],
+    "valid": 45,
+    "repeat": 1,
+    "first": 44,
+    "eligible": 32,
+    "ineligible": 12,
+    "very": 14,
+    "somewhat": 12,
+    "not": 6,
+    "share_pct": "43.8",
+    "interval_pct": [
+     "28.2",
+     "60.7"
+    ],
+    "more_needed": 0
+   },
+   "retention": {
+    "status": "met",
+    "reasons": [],
+    "users": 60,
+    "curve": [
+     [
+      0,
+      60,
+      60
+     ],
+     [
+      1,
+      60,
+      48
+     ],
+     [
+      2,
+      60,
+      48
+     ],
+     [
+      3,
+      60,
+      32
+     ],
+     [
+      4,
+      60,
+      32
+     ],
+     [
+      5,
+      60,
+      32
+     ],
+     [
+      6,
+      60,
+      32
+     ],
+     [
+      7,
+      60,
+      32
+     ],
+     [
+      8,
+      30,
+      16
+     ],
+     [
+      9,
+      30,
+      16
+     ],
+     [
+      10,
+      30,
+      15
+     ],
+     [
+      11,
+      30,
+      16
+     ]
+    ],
+    "adequate_periods": 11,
+    "window": [
+     9,
+     11
+    ],
+    "drop_pp": "0.0",
+    "last_pct": "53.3",
+    "adequate_on": null
+   },
+   "payment": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "data_quality"
+    ],
+    "target_accounts": 12,
+    "paying_accounts": 16,
+    "below_target_accounts": 4,
+    "fully_refunded_accounts": 0
+   },
+   "revenue": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "data_quality"
+    ],
+    "gross": "1958.00",
+    "refunds": "0.00",
+    "fees": "69.34",
+    "net": "1888.66",
+    "promises": 0,
+    "promised": "0.00",
+    "outside_horizon": 0,
+    "outside_amount": "0.00",
+    "horizon_complete": true
+   }
+  },
+  {
+   "case": "L1",
+   "dir": "L1",
+   "about": "Survey passed and an early retention plateau, then a decline in the last periods.",
+   "sha256": {
+    "activity.csv": "3f29f121337170600fbc2cdbe9675328d707c07194f003a2fa1b6433c623cc81",
+    "params.json": "68de119902974323a43b1a35dc97d5b48f54a5fa48bdcec38b0bcdc1130f9710",
+    "payments.csv": "7a88e233daa822c84c60fefeb262be65c06e495e50b81a868f47ac2871bc549e",
+    "survey.csv": "8ed5101d1615bd3d8197fd0c2b36d4d74190e802c5642248796c3649a2a4fcb6",
+    "users.csv": "61915412eac9f4abc2b121c4390893ef5211ac366b02079e449d8c2d0949c600"
+   },
+   "expected_final_status": "reported",
+   "verdict": "fit_not_shown",
+   "files": {
+    "users": {
+     "rows": 60,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "activity": {
+     "rows": 1401,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "survey": {
+     "rows": 40,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "payments": {
+     "rows": 84,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    }
+   },
+   "survey": {
+    "status": "met",
+    "reasons": [],
+    "valid": 40,
+    "repeat": 0,
+    "first": 40,
+    "eligible": 28,
+    "ineligible": 12,
+    "very": 13,
+    "somewhat": 10,
+    "not": 5,
+    "share_pct": "46.4",
+    "interval_pct": [
+     "29.5",
+     "64.2"
+    ],
+    "more_needed": 0
+   },
+   "retention": {
+    "status": "not_met",
+    "reasons": [
+     "still_declining",
+     "below_plateau"
+    ],
+    "users": 60,
+    "curve": [
+     [
+      0,
+      60,
+      60
+     ],
+     [
+      1,
+      60,
+      48
+     ],
+     [
+      2,
+      60,
+      48
+     ],
+     [
+      3,
+      60,
+      32
+     ],
+     [
+      4,
+      60,
+      32
+     ],
+     [
+      5,
+      60,
+      32
+     ],
+     [
+      6,
+      60,
+      32
+     ],
+     [
+      7,
+      60,
+      32
+     ],
+     [
+      8,
+      30,
+      16
+     ],
+     [
+      9,
+      30,
+      12
+     ],
+     [
+      10,
+      30,
+      8
+     ],
+     [
+      11,
+      30,
+      7
+     ]
+    ],
+    "adequate_periods": 11,
+    "window": [
+     9,
+     11
+    ],
+    "drop_pp": "16.7",
+    "last_pct": "23.3",
+    "adequate_on": null
+   },
+   "payment": {
+    "status": "met",
+    "reasons": [],
+    "target_accounts": 12,
+    "paying_accounts": 16,
+    "below_target_accounts": 4,
+    "fully_refunded_accounts": 0
+   },
+   "revenue": {
+    "status": "met",
+    "reasons": [],
+    "gross": "1958.00",
+    "refunds": "0.00",
+    "fees": "69.34",
+    "net": "1888.66",
+    "promises": 0,
+    "promised": "0.00",
+    "outside_horizon": 0,
+    "outside_amount": "0.00",
+    "horizon_complete": true
+   }
+  },
+  {
+   "case": "R1",
+   "dir": "R1",
+   "about": "N1 usage and survey with refunds, partial refunds, fees, promises, discounts and an out-of-horizon payment.",
+   "sha256": {
+    "activity.csv": "2a9979456f046277786fce313971b06a027a845bea2cdf1331b97c93e7f92af6",
+    "params.json": "96c616f3a9becf2410cc14a4cd2ea2e23f855f456f9dce5c777350ed5847bcb6",
+    "payments.csv": "70cf1b9e9d247a1f9a90af4689e7b541c6f0df04414ccd2331a91b3ebc428d4e",
+    "survey.csv": "ff478f59d89feb5eb4bd26a0336e0f7692e308bc6bf0430728114a554ecd6eb1",
+    "users.csv": "61915412eac9f4abc2b121c4390893ef5211ac366b02079e449d8c2d0949c600"
+   },
+   "expected_final_status": "reported",
+   "verdict": "fit_not_shown",
+   "files": {
+    "users": {
+     "rows": 60,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "activity": {
+     "rows": 1450,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "survey": {
+     "rows": 44,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "payments": {
+     "rows": 105,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    }
+   },
+   "survey": {
+    "status": "met",
+    "reasons": [],
+    "valid": 44,
+    "repeat": 0,
+    "first": 44,
+    "eligible": 32,
+    "ineligible": 12,
+    "very": 14,
+    "somewhat": 12,
+    "not": 6,
+    "share_pct": "43.8",
+    "interval_pct": [
+     "28.2",
+     "60.7"
+    ],
+    "more_needed": 0
+   },
+   "retention": {
+    "status": "met",
+    "reasons": [],
+    "users": 60,
+    "curve": [
+     [
+      0,
+      60,
+      60
+     ],
+     [
+      1,
+      60,
+      48
+     ],
+     [
+      2,
+      60,
+      48
+     ],
+     [
+      3,
+      60,
+      32
+     ],
+     [
+      4,
+      60,
+      32
+     ],
+     [
+      5,
+      60,
+      32
+     ],
+     [
+      6,
+      60,
+      32
+     ],
+     [
+      7,
+      60,
+      32
+     ],
+     [
+      8,
+      30,
+      16
+     ],
+     [
+      9,
+      30,
+      16
+     ],
+     [
+      10,
+      30,
+      15
+     ],
+     [
+      11,
+      30,
+      16
+     ]
+    ],
+    "adequate_periods": 11,
+    "window": [
+     9,
+     11
+    ],
+    "drop_pp": "0.0",
+    "last_pct": "53.3",
+    "adequate_on": null
+   },
+   "payment": {
+    "status": "not_met",
+    "reasons": [
+     "too_few_accounts"
+    ],
+    "target_accounts": 9,
+    "paying_accounts": 15,
+    "below_target_accounts": 6,
+    "fully_refunded_accounts": 2
+   },
+   "revenue": {
+    "status": "not_met",
+    "reasons": [
+     "below_target"
+    ],
+    "gross": "2007.00",
+    "refunds": "589.00",
+    "fees": "71.06",
+    "net": "1346.94",
+    "promises": 2,
+    "promised": "639.00",
+    "outside_horizon": 1,
+    "outside_amount": "49.00",
+    "horizon_complete": true
+   }
+  },
+  {
+   "case": "F1",
+   "dir": "F1",
+   "about": "Trip planner used a few times a year: quarter-length periods, a one-year survey look-back.",
+   "sha256": {
+    "activity.csv": "0e3a7ed1c70265a0804c924d873e30cd04c479ba78dd1083c578a4330cfa8627",
+    "params.json": "69fd2cb75610d3c964ac6118994211e4cdb1cd628c6d6be7f582201f1f1cc63a",
+    "payments.csv": "86849c95b681c2adb13f6253880fd983fbf121e89c7410e46c0f90f023099aea",
+    "survey.csv": "4c8f50a2382268e7cfeecdd96dd218c6c6c545a31beb74083a58d7bff8abb550",
+    "users.csv": "0094c548e78dc5f700a64d150dfb14d4296ebec2c96b3db2461721c47033ffdf"
+   },
+   "expected_final_status": "reported",
+   "verdict": "fit_indicators_met",
+   "files": {
+    "users": {
+     "rows": 80,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "activity": {
+     "rows": 1248,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "survey": {
+     "rows": 72,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "payments": {
+     "rows": 82,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    }
+   },
+   "survey": {
+    "status": "met",
+    "reasons": [],
+    "valid": 72,
+    "repeat": 0,
+    "first": 72,
+    "eligible": 64,
+    "ineligible": 8,
+    "very": 28,
+    "somewhat": 24,
+    "not": 12,
+    "share_pct": "43.8",
+    "interval_pct": [
+     "32.3",
+     "55.9"
+    ],
+    "more_needed": 0
+   },
+   "retention": {
+    "status": "met",
+    "reasons": [],
+    "users": 80,
+    "curve": [
+     [
+      0,
+      80,
+      80
+     ],
+     [
+      1,
+      80,
+      56
+     ],
+     [
+      2,
+      80,
+      56
+     ],
+     [
+      3,
+      80,
+      56
+     ],
+     [
+      4,
+      80,
+      56
+     ],
+     [
+      5,
+      80,
+      56
+     ],
+     [
+      6,
+      80,
+      56
+     ],
+     [
+      7,
+      40,
+      28
+     ],
+     [
+      8,
+      40,
+      28
+     ]
+    ],
+    "adequate_periods": 8,
+    "window": [
+     6,
+     8
+    ],
+    "drop_pp": "0.0",
+    "last_pct": "70.0",
+    "adequate_on": null
+   },
+   "payment": {
+    "status": "met",
+    "reasons": [],
+    "target_accounts": 46,
+    "paying_accounts": 62,
+    "below_target_accounts": 16,
+    "fully_refunded_accounts": 2
+   },
+   "revenue": {
+    "status": "met",
+    "reasons": [],
+    "gross": "4736.00",
+    "refunds": "158.00",
+    "fees": "0.00",
+    "net": "4578.00",
+    "promises": 0,
+    "promised": "0.00",
+    "outside_horizon": 16,
+    "outside_amount": "1264.00",
+    "horizon_complete": true
+   }
+  },
+  {
+   "case": "S1",
+   "dir": "S1",
+   "about": "Survey threshold passed while retention and payment evidence are not yet adequate.",
+   "sha256": {
+    "activity.csv": "18145f328918e24e94b84feb849160487487d24e31f47ea0539e58a24d60f4ae",
+    "params.json": "572a2646764380c12014811766e10b81e910cb0c5f93f349957de529a4ff5c43",
+    "payments.csv": "a7d81ca7e97c8976e35e664257ad472f10dbd38507f6a6396efceaceef97c1a0",
+    "survey.csv": "365e343bcaf2ec760fef619128f9dbc0cc2a338295b63c7f239abde8a95ce3b2",
+    "users.csv": "407b1bad1c0476601c5f58fba1b781001e187a5a48ef59de8c0b345ec0c2ea12"
+   },
+   "expected_final_status": "reported",
+   "verdict": "fit_not_shown",
+   "files": {
+    "users": {
+     "rows": 50,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "activity": {
+     "rows": 540,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "survey": {
+     "rows": 45,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    },
+    "payments": {
+     "rows": 11,
+     "duplicates": 0,
+     "rejected": {},
+     "over_limit": false
+    }
+   },
+   "survey": {
+    "status": "met",
+    "reasons": [],
+    "valid": 45,
+    "repeat": 0,
+    "first": 45,
+    "eligible": 40,
+    "ineligible": 5,
+    "very": 18,
+    "somewhat": 14,
+    "not": 8,
+    "share_pct": "45.0",
+    "interval_pct": [
+     "30.7",
+     "60.2"
+    ],
+    "more_needed": 0
+   },
+   "retention": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "too_few_periods"
+    ],
+    "users": 50,
+    "curve": [
+     [
+      0,
+      50,
+      50
+     ],
+     [
+      1,
+      50,
+      40
+     ],
+     [
+      2,
+      50,
+      40
+     ],
+     [
+      3,
+      50,
+      40
+     ]
+    ],
+    "adequate_periods": 3,
+    "window": null,
+    "drop_pp": null,
+    "last_pct": null,
+    "adequate_on": "2026-03-22"
+   },
+   "payment": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "horizon_open"
+    ],
+    "target_accounts": 4,
+    "paying_accounts": 4,
+    "below_target_accounts": 0,
+    "fully_refunded_accounts": 0
+   },
+   "revenue": {
+    "status": "insufficient_evidence",
+    "reasons": [
+     "horizon_open"
+    ],
+    "gross": "196.00",
+    "refunds": "0.00",
+    "fees": "6.88",
+    "net": "189.12",
+    "promises": 3,
+    "promised": "147.00",
+    "outside_horizon": 0,
+    "outside_amount": "0.00",
+    "horizon_complete": false
+   }
+  },
+  {
+   "case": "P1",
+   "dir": "P1",
+   "about": "N1's exports with parameters left out, misspelt or wrong.",
+   "sha256": {
+    "activity.csv": "2a9979456f046277786fce313971b06a027a845bea2cdf1331b97c93e7f92af6",
+    "params.json": "c5f42194f49488f89b699d3c69a3ab1072796ab57ade0863e9381891d203dd56",
+    "payments.csv": "7a88e233daa822c84c60fefeb262be65c06e495e50b81a868f47ac2871bc549e",
+    "survey.csv": "ff478f59d89feb5eb4bd26a0336e0f7692e308bc6bf0430728114a554ecd6eb1",
+    "users.csv": "61915412eac9f4abc2b121c4390893ef5211ac366b02079e449d8c2d0949c600"
+   },
+   "expected_final_status": "blocked",
+   "setup_status": "blocked",
+   "setup_problems": [
+    [
+     "invalid_param",
+     "currency"
+    ],
+    [
+     "invalid_param",
+     "data_label"
+    ],
+    [
+     "invalid_param",
+     "payment.min_target_price_accounts"
+    ],
+    [
+     "invalid_param",
+     "survey.min_responses"
+    ],
+    [
+     "missing_param",
+     "observed_until"
+    ],
+    [
+     "missing_param",
+     "payment.target_price"
+    ],
+    [
+     "missing_param",
+     "retention.period_days"
+    ],
+    [
+     "missing_param",
+     "revenue"
+    ],
+    [
+     "missing_param",
+     "value_event"
+    ],
+    [
+     "unknown_param",
+     "retention.perod_days"
+    ]
+   ]
+  }
+ ]
+}

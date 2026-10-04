@@ -1,0 +1,32 @@
+# @description PRODUCT FIT AND REVENUE step 1 (product role): stage the kit, the params file and
+# the four CSV exports, validate every required parameter and measure. No model. A missing,
+# misspelt or invalid parameter, a missing file or column blocks here at $0 with one problem per
+# item; nothing is guessed or defaulted. Otherwise it writes the metrics (survey, retention,
+# payment, revenue kept apart), the numbered facts the interpretation must cite and the rejected
+# rows, all under state/pmf/. Part of workflows/pmf_evidence.yaml.
+agent:
+  name: pmf_evidence_setup
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import os
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    assets = Path(os.environ['{{ assets_dir | env }}']).resolve(strict=True)
+    dest = Path('state/pmf')
+    if dest.exists() and any(dest.iterdir()):
+        raise SystemExit('Refusing to overwrite an existing fit and revenue run: use a fresh workspace')
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in ('pmf_kit.py', 'data_dictionary.md', 'interpretation_contract.md'):
+        shutil.copyfile(assets / name, dest / name)
+    sys.exit(subprocess.call([sys.executable, 'state/pmf/pmf_kit.py', 'setup',
+                              os.environ['{{ params_path | env }}'], os.environ['{{ data_dir | env }}']]))
+    PY

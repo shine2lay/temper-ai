@@ -102,6 +102,10 @@ ignore = ["E501", "UP042"]
 # EPD's loop keeps its own local-day bookkeeping (a trading day is a local
 # day) and does not write to temper's database.
 "configs/epd/bin/*.py" = ["DTZ005", "DTZ011"]
+# The early product screen's workspace helpers are kept byte-identical to the
+# versions its verification run used (results pinned by digest), so style-only
+# rewrites stay out: import order and %-formatting only.
+"configs/agents/scan_serving_assets/*.py" = ["I001", "UP031"]
 
 [tool.mypy]
 python_version = "3.12"

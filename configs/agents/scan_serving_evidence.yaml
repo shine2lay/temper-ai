@@ -1,0 +1,95 @@
+# Early tech and serving screen, step 4: mechanical evidence extract for the
+# independent audit. Proves where quoted words sit on saved pages, never what they imply.
+agent:
+  name: scan_serving_evidence
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import json
+    from pathlib import Path
+    import textwrap
+
+    root = Path('state/scan')
+    pages = Path('state/desk/pages')
+    result = json.loads((root / 'serving.json').read_text())
+    width = 700
+
+
+    def normal(text):
+        return ' '.join(text.split())
+
+
+    def saved(path):
+        candidate = Path(path)
+        if not candidate.is_file() or pages.resolve() not in candidate.resolve().parents:
+            return None, ''
+        raw = candidate.read_text(errors='replace')
+        head, _, body = raw.partition('\n')
+        try:
+            meta = json.loads(head)
+        except ValueError:
+            meta, body = {}, raw
+        if not isinstance(meta, dict):
+            meta, body = {}, raw
+        return meta, normal(body)
+
+
+    lines = [
+        '# Evidence context for the independent audit',
+        '',
+        'Mechanical extract made after the screen: every factor reason, every claim',
+        'with the saved passage around its quote (whitespace normalised), and the',
+        'saved-page inventory with fetch status. It shows where words are, not what',
+        'they imply; judge the whole passage.',
+        '',
+    ]
+    claims = missing = 0
+    for item in result.get('candidates', []):
+        lines.append('## %s %s' % (item.get('id'), item.get('name')))
+        lines.append('Factors: ' + ' '.join('%s=%s' % (key, item.get(key)) for key in 'PWOTFBR') +
+                     ' score=%s rank=%s technical_unknown=%s serving_unknown=%s' % (
+                         item.get('score'), item.get('rank'),
+                         item.get('technical_unknown'), item.get('serving_unknown')))
+        for key, text in (item.get('factor_reasons') or {}).items():
+            lines.append('- reason %s: %s' % (key, text))
+        for number, claim in enumerate(item.get('claims') or [], 1):
+            claims += 1
+            meta, body = saved(str(claim.get('saved_page', '')))
+            quote = normal(str(claim.get('quote', '')))
+            lines.append('')
+            lines.append('### %s claim %d: %s' % (item.get('id'), number, claim.get('claim')))
+            lines.append('- url: %s | kind: %s | saved_page: %s' % (
+                claim.get('url'), claim.get('source_kind'), claim.get('saved_page')))
+            if meta is not None:
+                lines.append('- fetch: http %s | final_url %s | fetched %s' % (
+                    meta.get('http'), meta.get('final_url'), meta.get('fetched')))
+            lines.append('- scope_and_date: %s' % claim.get('scope_and_date'))
+            lines.append('- quote: %s' % quote)
+            at = body.find(quote) if quote else -1
+            if meta is None:
+                missing += 1
+                lines.append('- passage: SAVED PAGE MISSING OR OUTSIDE state/desk/pages')
+            elif at < 0:
+                missing += 1
+                lines.append('- passage: QUOTE NOT FOUND ON SAVED PAGE')
+            else:
+                start = max(0, at - width)
+                passage = '...' + body[start:at + len(quote) + width] + '...'
+                lines.append('- passage:')
+                lines.extend('    ' + part for part in textwrap.wrap(passage, 300))
+        lines.append('')
+    lines.append('## Saved-page inventory')
+    count = 0
+    for path in sorted(pages.glob('*')):
+        meta, body = saved(str(path))
+        count += 1
+        lines.append('- %s | http %s | %s | %d chars' % (
+            path, (meta or {}).get('http'), (meta or {}).get('url'), len(body)))
+    (root / 'evidence-context.md').write_text('\n'.join(lines) + '\n')
+    print(json.dumps({'status': 'completed', 'claims': claims, 'quotes_not_located': missing,
+                      'saved_pages': count, 'path': 'state/scan/evidence-context.md'}))
+    PY

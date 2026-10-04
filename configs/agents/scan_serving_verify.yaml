@@ -1,0 +1,10 @@
+# Early tech and serving screen: the mechanical check (check_serving.py) after the audit.
+agent:
+  name: scan_serving_verify
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 state/scan/check_serving.py

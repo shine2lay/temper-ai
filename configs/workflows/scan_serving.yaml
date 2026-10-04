@@ -1,0 +1,69 @@
+workflow:
+  name: scan_serving
+  version: 1
+  description: |
+    Early tech and serving screen of a saved scan_market result (1-8 candidates):
+    original pain-source recovery -> tech/build/serving screen -> mechanical
+    evidence extract -> independent evidence/calibration audit -> mechanical
+    check -> unchanged scan_check -> fixed reviewer. Public research only: no
+    demand tests, customer contact or spend. The Monday cadence launches it on
+    each new scan snapshot (configs/product/bin/weekly_scan.py). Bar and history:
+    product PLAN.md step 2c.
+  inputs:
+    baseline_dir:
+      type: string
+      required: true
+      description: "Saved scan snapshot with demand.md, market.md, timing.md, shortlist.md and grade.md."
+    assets_dir:
+      type: string
+      required: true
+      description: "check_serving.py and fixtures.json (configs/agents/scan_serving_assets); replays add retained sources."
+    cite_path:
+      type: string
+      required: true
+      description: "The desk cite helper (configs/agents/scan_serving_assets/cite.py)."
+    retain_sources:
+      type: string
+      required: false
+      description: "Optional true/false; default false. Retained replay sources require an exact identity match."
+  outputs:
+    verdict: review.structured.verdict
+    grade_path: review.structured.grade_path
+    issues: review.structured.issues
+  nodes:
+    - name: prepare
+      type: agent
+      agent: scan_serving_prepare
+      input_map:
+        baseline_dir: input.baseline_dir
+        assets_dir: input.assets_dir
+        cite_path: input.cite_path
+        retain_sources: input.retain_sources
+    - name: pain
+      type: agent
+      agent: scan_serving_pain
+      depends_on: [prepare]
+    - name: screen
+      type: agent
+      agent: scan_serving_screen
+      depends_on: [pain]
+    - name: evidence
+      type: agent
+      agent: scan_serving_evidence
+      depends_on: [screen]
+    - name: audit
+      type: agent
+      agent: scan_serving_audit
+      depends_on: [evidence]
+    - name: verify
+      type: agent
+      agent: scan_serving_verify
+      depends_on: [audit]
+    - name: check
+      type: agent
+      agent: scan_check
+      depends_on: [verify]
+    - name: review
+      type: agent
+      agent: scan_serving_grade
+      depends_on: [check]

@@ -130,6 +130,18 @@ scheduler definition. It submits one shared run, waits for its single monitor un
 is an explicitly local-only offline digest, never a server run. It refuses existing snapshots.
 #17 owns supplying the idea-register leave-out inputs; this plumbing change does not solve it.
 
+After a new snapshot and its digest, the wrapper also starts the early tech and serving screen
+(`scan_serving`, product PLAN.md step 2c) on that snapshot and returns without waiting: the
+scheduler stops a command after 30 minutes and the screen takes about an hour. It stages the
+snapshot's five files and `configs/agents/scan_serving_assets/{check_serving.py,fixtures.json,cite.py}`
+into a fresh `weekly-serving-<date>` workspace, launches through the same one-run-at-a-time
+helper and notes the run link in the daily log. A refused start leaves the scan snapshot as it
+is and exits 1; `SKIP_SERVING=1` skips the screen. The Product autopilot collects and reviews
+the screen run like any other (in that workspace: the re-ranked `state/scan/shortlist.md`,
+`serving.json`, `independent-audit.md` and the reviewer's `serving-grade.md`). A hand start uses
+the same three inputs; `retain_sources` (default false) is only for replays with an exact
+retained-page registry.
+
 ## Checks
 
 Run Product helper checks once after revisions:
@@ -137,6 +149,7 @@ Run Product helper checks once after revisions:
 ```sh
 python3 -m unittest discover -s configs/product/bin/tests -v
 python3 ~/product-autopilot/tests/check_digest.py
+uv run pytest tests/test_scan_serving -q
 ```
 
 These use fake status/config APIs, not model request fixtures or third-party services. New

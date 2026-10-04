@@ -248,7 +248,7 @@ class WeeklyTests(unittest.TestCase):
                 return Mock(returncode=0, stdout="fixture digest")
             env = {"CADENCE_DIR": str(root / "cadence"), "HIST_DIR": str(history),
                    "DAILY_DIR": str(root / "daily"), "RUN_LOG_DIR": str(root / "logs"),
-                   "SCAN_DIR": str(root / "legacy"), "SKIP_SCAN": "0"}
+                   "SCAN_DIR": str(root / "legacy"), "SKIP_SCAN": "0", "SKIP_SERVING": "1"}
             with patch.dict(server.os.environ, env), patch.object(server, "ROOT", root), \
                     patch.object(server, "SHARED", shared), patch.object(server, "launch", side_effect=launch), \
                     patch.object(weekly_scan.subprocess, "run", side_effect=make_digest):

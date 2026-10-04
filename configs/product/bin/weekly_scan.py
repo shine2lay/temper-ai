@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Existing Monday Product cadence, now shared-server only; no local CLI fallback."""
+"""Existing Monday Product cadence, now shared-server only; no local CLI fallback.
+
+After a new snapshot it starts the early tech and serving screen (scan_serving) on it and
+returns without waiting: the scheduler stops a command after 30 minutes and the screen takes
+about an hour. The Product autopilot collects and reviews that run (product-autopilot RUNBOOK).
+"""
 import datetime as dt
 import os
 import shutil
@@ -8,6 +13,28 @@ import sys
 from pathlib import Path
 
 import server_run as server
+
+SCREEN = "scan_serving"
+SCREEN_ASSETS = Path(__file__).resolve().parents[2] / "agents" / "scan_serving_assets"
+SNAPSHOT_FILES = ("demand.md", "market.md", "timing.md", "shortlist.md", "grade.md")
+ASSET_FILES = ("check_serving.py", "fixtures.json", "cite.py")
+
+
+def start_screen(snapshot: Path, date: str, logs: Path) -> dict:
+    """Stage the saved scan and the screen's helpers into a fresh shared workspace, start the run."""
+    name = f"weekly-serving-{date}"
+    workspace = server.SHARED / name
+    workspace.mkdir(parents=True)  # a fresh workspace only; an existing one is never reused
+    for file in SNAPSHOT_FILES:
+        server.stage(snapshot / file, workspace, f"inputs/baseline/{file}")
+    assets = Path(os.environ.get("SCREEN_ASSETS", SCREEN_ASSETS))
+    for file in ASSET_FILES:
+        server.stage(assets / file, workspace, f"inputs/assets/{file}")
+    inputs = logs / f"serving-inputs-{date}.json"
+    server.save(inputs, {"baseline_dir": str(workspace / "inputs/baseline"),
+                         "assets_dir": str(workspace / "inputs/assets"),
+                         "cite_path": str(workspace / "inputs/assets/cite.py")})
+    return server.launch(name, SCREEN, inputs, workspace)
 
 
 def main() -> int:
@@ -92,6 +119,19 @@ def main() -> int:
                       f"Cost: ${receipt['cost']}\nWorkspace: {job['workspace']}\n")
         summary += f"; shared run {job['run_url']}, cost ${receipt['cost']}"
     note(summary)
+    if not job:
+        return 0  # an offline digest has no new shared snapshot to screen
+    if os.environ.get("SKIP_SERVING") == "1":
+        note("SKIP_SERVING=1: no serving screen started for this snapshot")
+        return 0
+    try:
+        screen = start_screen(snapshot, date, logs)
+    except (server.Refused, server.APIError, OSError, ValueError) as exc:
+        note(f"NO serving screen started: {exc}; the scan snapshot stands; start the screen by hand "
+             "(docs/product-runs.md)")
+        return 1
+    note(f"serving screen started ({SCREEN}, about an hour, not awaited): {screen['run_url']}; "
+         "collect and review it per the Product RUNBOOK")
     return 0
 
 

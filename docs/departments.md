@@ -123,7 +123,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (48)
+### product (59)
 
 | Config | Kind |
 |---|---|
@@ -133,6 +133,17 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/scan_lens_market.yaml` | agent |
 | `agents/scan_lens_timing.yaml` | agent |
 | `agents/scan_synthesize.yaml` | agent |
+| `workflows/scan_serving.yaml` | workflow |
+| `agents/scan_serving_prepare.yaml` | agent (script) |
+| `agents/scan_serving_pain.yaml` | agent |
+| `agents/scan_serving_screen.yaml` | agent |
+| `agents/scan_serving_evidence.yaml` | agent (script) |
+| `agents/scan_serving_audit.yaml` | agent |
+| `agents/scan_serving_verify.yaml` | agent (script) |
+| `agents/scan_serving_grade.yaml` | agent |
+| `agents/scan_serving_assets/check_serving.py` | script |
+| `agents/scan_serving_assets/cite.py` | script |
+| `agents/scan_serving_assets/fixtures.json` | fixture |
 | `workflows/signal_harvest.yaml` | workflow |
 | `agents/signal_competitors.yaml` | agent |
 | `agents/signal_jobs.yaml` | agent |

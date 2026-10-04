@@ -1,0 +1,80 @@
+# Early tech and serving screen, step 1: copy a saved scan's five files, name its
+# candidates C1..Cn by original rank (check_serving.parse_identities) and stage the
+# checker, fictional guards and cite helper. Retained sources are for replays only.
+agent:
+  name: scan_serving_prepare
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+    import re
+    import shutil
+    import sys
+
+    source = Path(os.environ['{{ baseline_dir | env }}']).resolve(strict=True)
+    assets = Path(os.environ['{{ assets_dir | env }}']).resolve(strict=True)
+    cite = Path(os.environ['{{ cite_path | env }}']).resolve(strict=True)
+    dest = Path('state/scan')
+    if (dest / 'baseline').exists():
+        raise SystemExit('Refusing to overwrite an existing screen: use a fresh workspace')
+    names = ('demand.md', 'market.md', 'timing.md', 'shortlist.md', 'grade.md')
+    for name in names:
+        if not (source / name).is_file():
+            raise SystemExit('Missing baseline file: ' + name)
+    (dest / 'baseline').mkdir(parents=True)
+    hashes = {}
+    for name in names:
+        data = (source / name).read_bytes()
+        (dest / 'baseline' / name).write_bytes(data)
+        (dest / name).write_bytes(data)
+        hashes[name] = hashlib.sha256(data).hexdigest()
+    (dest / 'baseline-manifest.json').write_text(json.dumps(hashes, indent=2))
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, str(assets))
+    from check_serving import parse_identities
+    try:
+        names_by_id = parse_identities((source / 'shortlist.md').read_text())
+    except ValueError as error:
+        raise SystemExit('Cannot identify the saved candidates: ' + str(error))
+    (dest / 'candidate-identities.json').write_text(json.dumps(names_by_id, indent=2))
+    for name in ('fixtures.json', 'check_serving.py'):
+        shutil.copyfile(assets / name, dest / name)
+    for sub in ('pages', 'data'):
+        Path('state/desk', sub).mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(cite, 'state/desk/cite.py')
+    retained_pages = 0
+    retention = os.environ['{{ retain_sources | default('false', true) | env }}'].strip().lower()
+    if retention not in ('true', 'false'):
+        raise SystemExit('retain_sources must be true or false')
+    registry_path = assets / 'retained-sources.json'
+    if retention == 'true':
+        if registry_path.is_symlink() or not registry_path.is_file():
+            raise SystemExit('Explicit retained-source input is missing or unsafe')
+        registry = json.loads(registry_path.read_text())
+        if registry.get('schema') != 1 or registry.get('candidate_identities') != names_by_id:
+            raise SystemExit('Retained-source registry does not match this replay')
+        for record in registry['pages']:
+            filename = record['file']
+            if not re.fullmatch(r'[0-9a-f]{16}\.txt', filename):
+                raise SystemExit('Unsafe retained-source filename')
+            src = assets / 'retained_source_pages' / filename
+            if src.is_symlink() or not src.is_file():
+                raise SystemExit('Missing or unsafe retained-source body')
+            data = src.read_bytes()
+            if hashlib.sha256(data).hexdigest() != record['sha256']:
+                raise SystemExit('Retained-source body hash mismatch')
+            target = Path('state/desk/pages') / filename
+            if target.exists() and target.read_bytes() != data:
+                raise SystemExit('Conflicting existing retained-source body')
+            target.write_bytes(data)
+            retained_pages += 1
+        (dest / 'retained-sources.json').write_bytes(registry_path.read_bytes())
+    print(json.dumps({'status': 'completed', 'baseline_files': len(hashes), 'workspace': str(Path.cwd()), 'retained_pages': retained_pages}))
+    PY

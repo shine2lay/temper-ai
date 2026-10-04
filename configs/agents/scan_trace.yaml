@@ -1,0 +1,14 @@
+# @description Market-research SCAN: traces the shortlist's counted figures (no model) after the
+# synthesizer. Every figure a candidate counts as primary pain or a real price must be a
+# CONFIRMED record whose saved page names the candidate's segment -> state/scan/trace.json and
+# trace.md, which scan_check_strict reads. Never fails the run on what it finds. Part of
+# workflows/scan_market.yaml.
+agent:
+  name: scan_trace
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 state/desk/check_sources.py --trace

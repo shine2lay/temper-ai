@@ -9,19 +9,51 @@ workflow:
   #     (b) consistent P×W×O ÷ (D×R) scoring via a mandatory per-candidate self-check;
   #     (c) frontier-lab risk as its own column AND its own score factor R
   #         (low=1/med=1.5/high=2), split from Openness but applied in ranking.
-  #   History: v2 (this config) scored 5/5 PASS vs v1's 4/5 pass-narrow (C2
-  #   failed at 43%) on the 2026-10-01 A/B; see product notebook + daily log.
+  #   History: v2 scored 5/5 PASS vs v1's 4/5 pass-narrow (C2 failed at 43%) on the
+  #   2026-10-01 A/B; see product notebook + daily log.
+  # v3 (queue #19, 2026-10-04) adds a mechanical source check, cite.py's method (desk_check,
+  # opportunity_brief):
+  #   - setup writes cite.py and check_sources.py into state/desk/;
+  #   - the demand and market lenses read pages with cite.py (saved in state/desk/pages/)
+  #     and record each figure with the one sentence holding it (state/scan/evidence/);
+  #   - sources (script, no model) labels every figure CONFIRMED or UNCONFIRMED against
+  #     the saved copy of its page;
+  #   - the synthesizer counts only CONFIRMED figures as primary pain (C2) or a real
+  #     price (C4) and writes shortlist.json; trace (script) checks what it counted;
+  #   - the frozen scan_check grades as before (the yardstick); scan_check_strict grades
+  #     beside it (all five criteria required, seven field names, trace binds C2/C4).
+  #   Why: v2 scored 5/5 on scan_check, yet six of #9's nine trials failed on evidence a
+  #   hand check caught and the grader missed (a number not on its cited page, an
+  #   unverifiable figure counted as proof, an untraceable price). Bar, runs and results:
+  #   product PLAN.md and notebook n3; tests/test_scan_market/.
+  # v3.1 (after trial run 2e73770c: frozen 4/5, strict 3/5): the market and timing lenses
+  # run after the demand lens and work on its pain pockets (the market lens prices the
+  # job itself, not a whole suite; timing judges every pocket); a pain stat counts as
+  # primary only from a community, gov, association, academic or independent survey
+  # source, and a price only when it is for the candidate's own job (scope job).
+  # v3.2 (after trial run 0de83c03: frozen 5/5, yet a hand check found a software vendor's
+  # work-order data, relayed on an association's page, counted as the association's pain
+  # stat): a primary pain stat also names who measured it (measured_by, with the page's
+  # sentence naming them), and the page's data credit line next to the figure, if any, must
+  # name the same body; a vendor's data wherever it is published, and one person's story,
+  # never count as primary pain. The synthesizer marks the timing lens's figures as not
+  # source-checked.
+  # v3.3 (after trial run 3f0f2283: frozen 4/5, its C4 failing on a directory's estimate of a
+  # vendor's price counted as the real price): a price is what a seller charges; a third
+  # party's estimate, what a buyer could spend, or a '$X value' never counts as one. Timing
+  # figures, and claims built on an unconfirmed figure, are written 'unconfirmed'.
+  # Landed 2026-10-04 after trial runs d1bb2902 ($10.48) and 49ec4d05 ($16.68) both met the
+  # bar: frozen scan_check 5/5, every counted figure confirmed, a hand fetch of the top 3
+  # agreed. scan_check_strict said revise on both (proxy pain stats; queue #33).
   #
-  #     [ demand | market | timing ] -> synthesize (leader) -> check
-  #
-  #   Pre-registered hypothesis + success criteria: product notebook, section
-  #   "Market-research (Scan) workflow".
-  version: 1
+  #     setup -> demand -> [ market | timing ] -> sources -> synthesize -> trace -> [ check | check_strict ]
+  version: 2
   description: |
-    Market-research Scan v2: from an open frame, produce a ranked shortlist of
-    market/wedge candidates for a profitable software/AI product, each as a
-    structured 7-field record backed by primary sources, with consistent scoring
-    and a separate frontier-lab-risk column.
+    Market-research Scan v3: from an open frame, produce a ranked
+    shortlist of market/wedge candidates for a profitable software/AI product,
+    each a 7-field record whose counted pain stats and prices carry an exact
+    quote a script confirmed on a saved copy of the page; graded by the frozen
+    scan_check and by scan_check_strict.
   inputs:
     frame:
       type: string
@@ -30,25 +62,68 @@ workflow:
     verdict: check.structured.verdict
     grade_path: check.structured.grade_path
     issues: check.structured.issues
+    strict_verdict: check_strict.structured.verdict
+    strict_grade_path: check_strict.structured.grade_path
+    strict_issues: check_strict.structured.issues
+    trace_ok: trace.structured.ok
 
   nodes:
-    # Parallel research lenses + a leader that converges them into the shortlist.
-    - name: scan
+    # Clear the previous run's outputs; write cite.py and check_sources.py.
+    - name: setup
+      type: agent
+      agent: scan_setup
+
+    # Demand first: the pain pockets (demand.md) and their pain records
+    # (evidence/demand.json) the other two lenses work on.
+    - name: demand
+      type: agent
+      agent: scan_lens_demand
+      depends_on: [setup]
+      input_map:
+        frame: input.frame
+
+    # Then side by side: what buyers pay for each pocket's job (market, with its
+    # evidence records) and each pocket's timing and moat (timing).
+    - name: research
       type: stage
-      strategy: leader
+      strategy: parallel
+      depends_on: [demand]
       input_map:
         frame: input.frame
       agents:
-        - agent: scan_lens_demand
         - agent: scan_lens_market
         - agent: scan_lens_timing
-        - agent: scan_synthesize
-          role: leader
 
-    # Grade the shortlist against the fixed, pre-registered rubric (UNCHANGED).
+    # Mechanical source check (no model): CONFIRMED / UNCONFIRMED per figure.
+    - name: sources
+      type: agent
+      agent: scan_sources
+      depends_on: [research]
+
+    # Converge into the ranked shortlist, counting only CONFIRMED figures.
+    - name: synthesize
+      type: agent
+      agent: scan_synthesize
+      depends_on: [sources]
+      input_map:
+        frame: input.frame
+
+    # Trace the shortlist's counted figures (no model).
+    - name: trace
+      type: agent
+      agent: scan_trace
+      depends_on: [synthesize]
+
+    # Grade against the fixed, pre-registered rubric (UNCHANGED, the yardstick).
     - name: check
       type: agent
       agent: scan_check
-      depends_on: [scan]
+      depends_on: [trace]
       input_map:
         frame: input.frame
+
+    # Strict grade beside it (never reads grade.md).
+    - name: check_strict
+      type: agent
+      agent: scan_check_strict
+      depends_on: [trace]

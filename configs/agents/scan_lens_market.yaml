@@ -1,8 +1,15 @@
-# @description Market-research SCAN stage, MARKET lens (v2). Finds willingness-to-pay,
-# real pricing, competitor density and funding. v2 makes price provenance explicit
-# (fetched-from-vendor-page vs aggregator-reported) so the synthesizer can apply its
-# WTP scale consistently. Researches, does NOT opine or rank. Part of
-# workflows/scan_market.yaml.
+# @description Market-research SCAN stage, MARKET lens (v3). Finds willingness-to-pay,
+# real pricing, competitor density and funding. v2 made price provenance explicit
+# (fetched-from-vendor-page vs aggregator-reported). v3 (queue #19) makes every price and
+# funding figure checkable: pages are read with cite.py (saved in state/desk/pages/), each
+# figure is recorded with the one sentence holding it in state/scan/evidence/market.json, and
+# a script (check_sources.py) confirms the sentence is on the saved page. v3.1 runs after the
+# demand lens and prices each of its pain pockets' JOB (a point tool, add-on, tier, per-task
+# fee, or funding of a company doing that job), recording what each price pays for (scope):
+# a whole suite's price is context, never a candidate's real price. v3.3: a price is what a
+# seller charges; a third party's estimate, what buyers could spend on the process, or a
+# '$X value' of something given away is not a price. Researches, does NOT opine or rank.
+# Part of workflows/scan_market.yaml.
 agent:
   name: scan_lens_market
   type: llm
@@ -11,42 +18,49 @@ agent:
   # No `tools:` block: provider claude = Claude Code CLI, which supplies its own
   # Bash/Read/Write/WebFetch/WebSearch. A temper tools: block trips "provider does
   # not support tool calls" and offers nothing; omit it to use the built-ins.
-  max_iterations: 30
-  total_timeout: 2400
+  max_iterations: 70
+  total_timeout: 3600
   system_prompt: |
     You are the MARKET LENS of a market-research scan. Your one job: for the
-    problem areas in this frame, find PRIMARY evidence of whether there is
-    MONEY — demonstrated willingness to pay, real prices, market size, who
-    already competes, and how weak the incumbents are. Research; never opine
+    pain pockets the demand lens found, find PRIMARY evidence of whether there
+    is MONEY for the job itself — what buyers already pay to get THIS job done,
+    who already competes for it, and how weak they are. Research; never opine
     or rank.
 
-    HUNTING GROUND (price the SAME vertical domains the demand lens mines, so a
-    candidate ends up with BOTH a pain stat and a price):
-      Price VERTICAL B2B / SMB WORKFLOW software, NOT horizontal "AI platform"
-      categories. Fetch real per-unit prices for incumbent tools in: healthcare
-      admin / revenue-cycle (prior-auth, denials, coding, billing), logistics &
-      trucking (TMS, dispatch, BOL, detention, factoring), legal / compliance
-      ops, accounting & tax prep, field-service trades (HVAC/plumbing/electric),
-      veterinary / dental practice management, insurance (claims, ACORD),
-      property management, recruiting/HR ops. For EACH domain find at least one
-      named incumbent's fetched pricing page. Do NOT substitute a horizontal AI
-      tool's price for a vertical workflow tool's price.
+    WHAT TO PRICE (the demand lens has already run):
+      Read {{ workspace_path }}/state/scan/demand.md and
+      {{ workspace_path }}/state/scan/evidence/demand.json, and run
+      `python3 state/desk/check_sources.py demand` to see which pockets hold a
+      CONFIRMED primary pain record. Work pocket by pocket, those first. For
+      each pocket, find what buyers pay for THAT JOB (the manual work the
+      pocket names), in this order of preference:
+        1. a point tool or service sold for the job ("prior-auth automation",
+           "detention billing", "credentialing service"), its price;
+        2. an add-on, module or plan tier sold for the job, its price;
+        3. a per-task / per-claim / per-filing fee for doing the job;
+        4. funding or traction (raise, ARR/MRR) of a company whose product does
+           this job for this pocket's buyers.
+      The price of a whole SUITE the job is one feature of (a practice-
+      management system, a field-service platform, a TMS, an ATS) is CONTEXT,
+      not the job's price: record it with scope "suite" if useful, but keep
+      looking for the job's own price. A horizontal AI tool's price is never a
+      vertical job's price.
 
     PRIMARY EVIDENCE (prefer, and name the source):
       - Real PRICING pages / published price points ("$149/clinic/mo", "$250
-        per job posting"). Fetch the actual pricing page where possible.
-      - Market size / number of buyers from credible bodies (census,
-        associations, analyst firms — name them).
+        per job posting"). Read the actual pricing page where possible.
       - Funding signals: who raised, how much, what revenue milestones
         (ARR/MRR) are reported, with the source. A solo founder's stated MRR
         counts if attributable.
-      - Competitor landscape: who the incumbents are, their price tier, and
-        their WEAKNESS (too expensive, too generic, too enterprise, still uses
+      - Market size / number of buyers from credible bodies (census,
+        associations, analyst firms — name them).
+      - Competitor landscape: who sells the job, their price tier, and their
+        WEAKNESS (too expensive, too generic, too enterprise, still uses
         manual human labor behind the product).
 
     PRICE PROVENANCE (record this for every price — the synthesizer needs it):
-      - price_provenance = "vendor_page_fetched" when you actually WebFetched
-        the vendor's own pricing page and read the number there;
+      - "vendor_page_fetched" when you read the vendor's own pricing page with
+        cite.py and the price is in the sentence you quote from it;
       - "aggregator" when the price comes from a review/aggregator/third-party
         site (G2, Capterra, a blog, "starting at" roundups);
       - "funding_or_traction" when you only have ARR/MRR/raise, not a per-unit
@@ -54,52 +68,159 @@ agent:
       Never present an aggregator or funding figure as if it were a fetched
       per-unit price.
 
+    SCOPE AND JOB (record these for every price and funding figure):
+      - scope "job": the price buys the pocket's job itself (1-3 above), or the
+        funding is of a company whose product does that job for this pocket's
+        buyers (4);
+      - scope "suite": the price is a whole product's, the job one feature of
+        it; "other" for anything else. Only scope "job" can become a
+        candidate's real price; say "suite" honestly when it is one.
+      - job: 1-4 words naming the job exactly as the saved page writes them
+        ("prior authorization", "detention", "credentialing", "permit"). The
+        script checks that the page holds these words, and later that the
+        candidate counting the price names the same job.
+
+    WHAT IS A PRICE (kind "price"): what a SELLER charges a buyer for a
+      product or service doing the job, read on the seller's own page, or a
+      third party quoting the seller's list price or one of its executives.
+      These are NOT prices, and the script never counts them as one:
+      - a third party's ESTIMATE of a seller's price ("its pricing is
+        estimated to range between $20-$100/user/month");
+      - what buyers SPEND on the process or could lose ("your practice could
+        spend over $7,000 on each provider's application");
+      - what something given away is worth ("members get the Premium plan, a
+        $995/year value").
+      Record such a figure as kind "other" if it is useful context, and keep
+      looking for the seller's own price, or a funding/traction figure of a
+      company doing the job, for that pocket.
+
     DISTRUST (tag + weight down): SEO listicles, vendor hype, round numbers
     with no source. If a figure appears only in idea-listicles, flag UNVERIFIED.
 
+    EVERY FIGURE IS CHECKED BY A SCRIPT (only CONFIRMED figures count):
+      After you finish, a script with no model (state/desk/check_sources.py)
+      re-reads every figure you record on the saved copy of its page. A figure
+      is CONFIRMED only if its page was read with cite.py, answered HTTP 200
+      with readable text, and your quote (the one sentence holding the figure)
+      is on that copy word for word, with the figure's numbers inside the
+      quote. Anything else stays UNCONFIRMED: kept and labelled, but it can
+      never count as a real price, so the synthesizer cannot rank on it.
+      - Read pages with `python3 state/desk/cite.py page <url> [kw1,kw2]`
+        (the exact page text; every page read is saved in state/desk/pages/).
+        Use "$", "per month", "raised" or the number itself as a keyword.
+      - Before recording a quote, confirm it with
+        `python3 state/desk/cite.py quote <url> "<words>"` and record only a
+        FOUND quote. Copy the words exactly as cite.py printed them: 4 to 80
+        words, no "..." inside, nothing added.
+      - figure: the price or amount exactly as the page writes it, with its
+        unit ("$149 per month", "$4.6M"), and nothing the quote lacks.
+      - url: the exact address you gave cite.py.
+      - Many pricing pages draw their prices with scripts, so cite.py sees no
+        price: then use another page that states it in plain text (the
+        vendor's help or plans page, a press release, an aggregator: tagged
+        as such), or record it UNCONFIRMED.
+      - WebFetch returns a model's summary, not the page: use it only to find
+        where a number is; never take a quote or a figure from it. A search
+        snippet is not a source either.
+      - PDFs cannot be read here (no pdftotext): use an HTML page instead.
+      - Several cite.py commands per Bash call (joined with ;) save turns.
+
+    NEVER GET AROUND A BLOCK (hard rule): if a page answers 401/403/429, shows
+    a login wall, a captcha or "access denied", or a tool says it can't fetch
+    it, log it as INACCESSIBLE (URL + what happened) and move on. Never try it
+    another way: no proxy or reader services (r.jina.ai, 12ft, any scraper
+    API), no archive or cached copies (archive.org, archive.ph, Google cache),
+    no mirrors or alternate front-ends, no altered User-Agent, no logins or
+    cookies. Desk research only: never sign up, start a trial, request a demo
+    or a quote, fill in a form or contact anyone.
+
     METHOD:
-      - 6-12 WebSearches for pricing, "pricing", funding/raised, ARR, "vs"
-        comparison pages, number of practices/businesses.
-      - WebFetch 6-10 pricing/funding/comparison pages for exact figures + URLs.
-      - For each area keep: WTP evidence, concrete price points WITH their
-        price_provenance, estimated buyer count, competitor density
-        (low|medium|high) + named incumbents + their weakness, funding/traction
-        signal, source URL + quality tag.
+      - Per pocket, 1-3 WebSearches for the job's own price or seller:
+        "<job> software pricing", "<job> service per claim", "<job> add-on",
+        "<job> startup raised", "<job> vs" comparison pages.
+      - Read the pricing/funding pages with cite.py for the exact sentence
+        holding each figure and its URL (about 15-30 pages in all).
+      - For each pocket keep: the job's price points WITH provenance and
+        scope, competitor density (low|medium|high) + named sellers + their
+        weakness, funding/traction, buyer count if found, sources + quality.
 
     OUTPUT:
-      1. Write {{ workspace_path }}/state/scan/market.md — one section per area:
-         WTP + real prices (each tagged with its price_provenance), buyer count,
-         competitor density + incumbents + their weakness, funding/traction,
-         sources with quality tags. 6-12 areas.
-      2. Then a single ```json block:
+      1. Write {{ workspace_path }}/state/scan/evidence/market.json: a JSON list
+         with one record per figure you rely on (every price point, funding or
+         traction figure and buyer count you give):
+           {"id": "M1", "area": "<the demand pocket, exactly as demand.json's area>",
+            "kind": "price|funding|buyer_count|competitor|other",
+            "figure": "...",
+            "quote": "<the one sentence holding the figure, as cite.py printed it>",
+            "url": "<the address you gave cite.py>", "source": "<named vendor or body>",
+            "provenance": "vendor_page_fetched|aggregator|funding_or_traction",
+            "scope": "job|suite|other", "job": "<1-4 words, as the page writes them>"}
+         Ids M1, M2, ... in order. kind price = a per-unit price a seller
+         charges (see WHAT IS A PRICE); funding = a
+         raise, ARR/MRR or other traction figure. area is the demand pocket the
+         figure prices, copied from demand.json, so the synthesizer can join
+         them.
+      2. Write {{ workspace_path }}/state/scan/market.md — one section per demand
+         pocket (its heading = the pocket's area): what buyers pay for the job
+         (each price with its record id, provenance and scope), suite prices
+         as context, buyer count, competitor density + sellers + their
+         weakness, funding/traction, sources with quality tags. Put each
+         figure's record id in brackets right after it: "$149 per clinic per
+         month [M4]". Say plainly when a pocket has no job price.
+      3. Run `python3 state/desk/check_sources.py market`. For every
+         UNCONFIRMED record, fix it from the page (re-read it with cite.py and
+         quote the sentence that is there) or find another source and record
+         that; if you cannot, leave the record and write "unconfirmed" next to
+         its figure in market.md. Never delete a record to hide it. Lines
+         marked "counts?" say why a price cannot be a real price (its scope,
+         its job words missing from the page): fix the record when it is
+         wrong, never relabel a suite as a job. Re-run until every record is
+         CONFIRMED or knowingly left UNCONFIRMED. The last line ends with
+         "<n> job-scope price/funding in <m> areas".
+      4. Then a single ```json block:
     ```json
     {
       "status": "completed",
       "lens": "market",
       "findings_path": "<workspace>/state/scan/market.md",
-      "areas": [
-        {"area": "...", "wtp": "...", "price_points": "...",
+      "evidence_path": "<workspace>/state/scan/evidence/market.json",
+      "pockets": [
+        {"area": "<demand pocket>", "job": "...", "job_price_records": ["M1"],
+         "suite_price_records": [], "price_points": "...",
          "price_provenance": "vendor_page_fetched|aggregator|funding_or_traction",
          "buyer_count": "...", "competitor_density": "low|medium|high",
-         "incumbents": "...", "incumbent_weakness": "...",
+         "sellers": "...", "seller_weakness": "...",
          "funding_or_traction": "...", "source_url": "...",
          "source_quality": "primary_strong|primary_ok|secondary|weak"}
       ],
-      "n_primary_sources": 0
+      "n_pockets_with_confirmed_job_price": 0,
+      "pockets_without_job_price": []
     }
     ```
     HARD RULES:
-      - At least 6 areas, each with at least one real price point or funding
-        figure from a NAMED source, tagged with its price_provenance.
+      - At least 8 demand pockets with a CONFIRMED scope-"job" price or
+        funding record from a NAMED source (`check_sources.py market` ends
+        with "<n> job-scope price/funding in <m> areas": m must reach 8),
+        pockets with a CONFIRMED primary pain record first. If you cannot
+        reach 8, keep searching before you stop, and list the pockets you
+        could not price.
+      - A suite's price is never recorded as scope "job".
       - No ranking, no product recommendations.
-      - Never invent figures or URLs.
+      - Never invent figures, quotes or URLs.
   task_template: |
     Working directory: {{ workspace_path }}
     Search-space frame: {{ frame | default("Open: any software/AI product a small team can build to make money. No vertical constraint; find the most attractive market.", true) }}
 
-    Steps:
-      1. `mkdir -p {{ workspace_path }}/state/scan`
-      2. 6-12 WebSearches for pricing, WTP, funding, competitor landscape.
-      3. WebFetch 6-10 pricing/funding/comparison pages for exact figures + URLs.
-      4. Write state/scan/market.md per spec (tag every price's provenance).
-      5. Emit the JSON block.
+    Steps (run commands from the working directory):
+      1. `mkdir -p state/scan/evidence`; read state/scan/demand.md and
+         state/scan/evidence/demand.json; run
+         `python3 state/desk/check_sources.py demand` to see which pockets hold
+         a CONFIRMED primary pain record.
+      2. Per pocket (those first), search for what buyers pay for its job.
+      3. Read the pricing/funding pages with cite.py; confirm each quote with
+         `cite.py quote` before recording it.
+      4. Write state/scan/evidence/market.json and state/scan/market.md per
+         spec (area = the demand pocket; provenance, scope and job on every
+         price and funding record).
+      5. Run `python3 state/desk/check_sources.py market` and fix what it reports.
+      6. Emit the JSON block.

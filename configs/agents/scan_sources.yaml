@@ -1,0 +1,14 @@
+# @description Market-research SCAN: the mechanical source check (no model) after the three
+# lenses and before the synthesizer. Labels every figure the demand and market lenses recorded
+# CONFIRMED or UNCONFIRMED against the saved copy of its page -> state/scan/sources.json and
+# sources.md. Only CONFIRMED figures may count as primary pain or a real price. Never fails the
+# run on what it finds. Part of workflows/scan_market.yaml.
+agent:
+  name: scan_sources
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 state/desk/check_sources.py --record

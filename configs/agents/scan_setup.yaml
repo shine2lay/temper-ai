@@ -1,0 +1,934 @@
+# @description Market-research SCAN step 0 (product role). No model. Clears the previous run's
+# scan outputs and saved pages, then writes two helpers into state/desk/: cite.py (exact page
+# text through curl's default user agent; every page read kept in state/desk/pages/; the same
+# file as scan_serving_assets/cite.py and desk_setup's) and check_sources.py (the mechanical
+# source check: a figure counts as primary pain or a real price only when the one sentence
+# holding it is on its page's saved copy). The lenses, the sources and trace steps and the
+# synthesizer run check_sources.py. Part of workflows/scan_market.yaml.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution) and
+# no Jinja delimiters inside the helpers.
+agent:
+  name: scan_setup
+  version: 1
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -eu
+    WS={{ workspace_path }}
+    if [ -z "$WS" ]; then echo "scan_market needs a workspace: run it with --workspace <folder>" >&2; exit 1; fi
+    cd "$WS"
+    mkdir -p state/desk state/scan
+    rm -rf state/desk/pages state/scan/evidence
+    for f in demand.md market.md timing.md shortlist.md shortlist.json grade.md grade-strict.md \
+             sources.json sources.md trace.json trace.md; do
+      rm -f "state/scan/$f"
+    done
+    mkdir -p state/desk/pages state/scan/evidence
+    cat > state/desk/cite.py <<'CITEEOF'
+    #!/usr/bin/env python3
+    """Exact page text for citing, and public datasets for counting (desk_check). Plain curl with
+    its default user agent; PDFs through pdftotext. A page or file that doesn't answer 200 is
+    INACCESSIBLE: log it and move on, never work around it. Run from the workspace root.
+
+      python3 state/desk/cite.py page <url> [kw1,kw2]   status, dates on the page, text near the keywords
+      python3 state/desk/cite.py quote <url> "<words>"  FOUND / NOT FOUND: are these exact words on the page?
+      python3 state/desk/cite.py data <url> <name>      download a public dataset whole to state/desk/data/<name>
+
+    Every page read is kept in state/desk/pages/ (first line: its URL, HTTP code and fetch time;
+    then the text) so its words can be checked later. A dataset keeps its own record next to it
+    (<name>.meta.json: URL, HTTP code, fetch time, size), which the check reads.
+    """
+    import hashlib
+    import html
+    import json
+    import os
+    import re
+    import subprocess
+    import sys
+    import time
+
+    HERE = os.path.dirname(os.path.abspath(__file__))
+    PAGES = os.path.join(HERE, "pages")
+    DATA = os.path.join(HERE, "data")
+    META_DATE = (r"(?:datePublished|dateModified|published_time|modified_time|updated_time|"
+                 r"dateCreated)[^0-9<>]{0,40}(\d{4}-\d{2}-\d{2})")
+    TEXT_DATE = (r"(?i)\b(last updated|last modified|updated|effective(?: date)?|published|posted|"
+                 r"release date|revised)\s*(?:on|:)?\s*([A-Z][a-z]{2,8}\.? \d{1,2},? \d{4}|"
+                 r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4})")
+
+
+    def norm(s):
+        for a, b in (("\u2019", "'"), ("\u2018", "'"), ("\u201c", '"'), ("\u201d", '"'),
+                     ("\u2013", "-"), ("\u2014", "-"), ("\u00a0", " ")):
+            s = s.replace(a, b)
+        return re.sub(r"\s+", " ", s).strip()
+
+
+    def pdf_text(path):
+        try:
+            out = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True,
+                                 timeout=120)
+            return norm(out.stdout.decode("utf-8", "replace")), ""
+        except (OSError, subprocess.TimeoutExpired):
+            return "", ("PDF but no pdftotext here: read it with WebFetch and tag its claims "
+                        "how: webfetch, with no quote")
+
+
+    def html_text(raw):
+        body = raw.decode("utf-8", "replace")
+        dates = set(re.findall(META_DATE, body))
+        dates |= set(re.findall(r'<time[^>]*datetime="(\d{4}-\d{2}-\d{2})', body))
+        body = re.sub(r"(?is)<(script|style|noscript|svg)[^>]*>.*?</(script|style|noscript|svg)>",
+                      " ", body)
+        text = norm(html.unescape(re.sub(r"<[^>]+>", " ", body)))
+        return text, sorted(dates)
+
+
+    def curl(url, dest, max_time):
+        out = subprocess.run(["curl", "-sS", "-L", "--compressed", "--max-time", str(max_time),
+                              "--max-filesize", "400000000", "-o", dest,
+                              "-w", "%{http_code}\t%{content_type}\t%{url_effective}", url],
+                             capture_output=True, text=True)
+        code, ctype, final = (out.stdout.split("\t") + ["", "", ""])[:3]
+        meta = {"url": url, "final_url": final or url, "http": code or "000",
+                "content_type": ctype, "fetched": time.strftime("%Y-%m-%d %H:%M %Z")}
+        if meta["http"] != "200" and out.stderr.strip():
+            meta["error"] = out.stderr.strip()[:200]
+        return meta
+
+
+    def fetch(url):
+        os.makedirs(PAGES, exist_ok=True)
+        path = os.path.join(PAGES, hashlib.sha1(url.encode()).hexdigest()[:16] + ".txt")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                head, _, text = f.read().partition("\n")
+            return json.loads(head), text
+        raw_path = "%s.%d.raw" % (path, os.getpid())
+        meta = curl(url, raw_path, 45)
+        text = ""
+        if meta["http"] == "200" and os.path.exists(raw_path):
+            with open(raw_path, "rb") as f:
+                raw = f.read()
+            if "pdf" in meta["content_type"].lower() or raw[:5] == b"%PDF-":
+                text, note = pdf_text(raw_path)
+                meta["pdf"] = True
+            else:
+                text, meta["dates_on_page"] = html_text(raw)
+                note = ""
+            meta["dated_text"] = ["%s %s" % pair for pair in re.findall(TEXT_DATE, text)[:6]]
+            if not note and not text.strip():
+                note = ("200 but no readable text (a script-only page?): read it with WebFetch "
+                        "and tag its claims how: webfetch, with no quote")
+            if note:
+                meta["note"] = note
+        if os.path.exists(raw_path):
+            os.remove(raw_path)
+        if meta["http"] == "200" or meta["http"].startswith("4"):
+            # Kept, so its words can be checked later and a block is never asked twice. A timeout
+            # or a server error is not kept. Researchers run side by side: write whole, then move.
+            tmp = "%s.%d.tmp" % (path, os.getpid())
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(json.dumps(meta) + "\n" + text[:3000000])
+            os.replace(tmp, path)
+        return meta, text
+
+
+    def header(meta):
+        print("HTTP", meta["http"], meta.get("final_url"), "|", meta.get("content_type", ""),
+              "| fetched", meta.get("fetched"))
+        if meta["http"] != "200":
+            print("-> INACCESSIBLE (%s): log it, never work around it" % meta.get("error", "status"))
+            return False
+        if meta.get("dates_on_page") or meta.get("dated_text"):
+            print("dates on page:", meta.get("dates_on_page", []), meta.get("dated_text", []))
+        if meta.get("note"):
+            print("->", meta["note"])
+        return True
+
+
+    def page(url, keywords=""):
+        meta, text = fetch(url)
+        if not header(meta):
+            return
+        kws = [k.strip() for k in keywords.split(",") if k.strip()]
+        if not kws:
+            print(text[:5000])
+            return
+        spots = sorted(m.start() for k in kws for m in re.finditer(re.escape(k), text, re.I))
+        hits, shown_to = 0, -1
+        for pos in spots:
+            if pos < shown_to:
+                continue
+            print("...", text[max(0, pos - 350):pos + 450], "...")
+            shown_to, hits = pos + 450, hits + 1
+            if hits >= 12:
+                break
+        print("keyword hits shown:", hits, "of", len(spots), "| page length", len(text))
+
+
+    def quote(url, words):
+        meta, text = fetch(url)
+        if not header(meta):
+            return
+        want = norm(words).lower()
+        flat = norm(text)
+        at = flat.lower().find(want)
+        if at < 0:
+            print("NOT FOUND on the page: don't cite these words; quote what the page says")
+            return
+        print("FOUND: ..." + flat[max(0, at - 200):at + len(want) + 200] + "...")
+
+
+    def data(url, name):
+        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$", name) or name.endswith(".meta.json"):
+            print("name: letters, digits, dots, dashes and underscores (e.g. hospital_owners.csv)")
+            return
+        os.makedirs(DATA, exist_ok=True)
+        path = os.path.join(DATA, name)
+        meta_path = path + ".meta.json"
+        if os.path.exists(meta_path):
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.load(f)
+            if meta.get("url") != url:
+                print("state/desk/data/%s holds another URL (%s): pick another name" % (name, meta.get("url")))
+                return
+            print("already fetched:", json.dumps(meta))
+            return
+        part = "%s.%d.part" % (path, os.getpid())
+        meta = curl(url, part, 600)
+        if meta["http"] == "200" and os.path.exists(part):
+            os.replace(part, path)
+            digest = hashlib.sha1()
+            lines = 0
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    digest.update(chunk)
+                    lines += chunk.count(b"\n")
+            meta.update({"file": "state/desk/data/" + name, "bytes": os.path.getsize(path),
+                         "lines": lines, "sha1": digest.hexdigest()})
+        elif os.path.exists(part):
+            os.remove(part)
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=1)
+        if not header(meta):
+            return
+        print("saved state/desk/data/%s: %d bytes, %d lines" % (name, meta["bytes"], meta["lines"]))
+        with open(path, "rb") as f:
+            head = f.read(4000).decode("utf-8", "replace").splitlines()
+        for line in head[:5]:
+            print("  " + line[:400])
+
+
+    def main(argv):
+        if len(argv) > 2 and argv[1] == "page":
+            page(argv[2], argv[3] if len(argv) > 3 else "")
+        elif len(argv) > 3 and argv[1] == "quote":
+            quote(argv[2], argv[3])
+        elif len(argv) > 3 and argv[1] == "data":
+            data(argv[2], argv[3])
+        else:
+            print(__doc__)
+
+
+    if __name__ == "__main__":
+        main(sys.argv)
+    CITEEOF
+    cat > state/desk/check_sources.py <<'CHECKEOF'
+    #!/usr/bin/env python3
+    """Mechanical source check for scan_market. No model and no network: it reads only the copies of
+    pages that cite.py saved in state/desk/pages/. A figure counts as primary pain or a real price only
+    when the one sentence holding it is on its page's saved copy. Run from the workspace root.
+
+      python3 state/desk/check_sources.py demand     check the demand lens's records (state/scan/evidence/demand.json)
+      python3 state/desk/check_sources.py market     check the market lens's records (state/scan/evidence/market.json)
+      python3 state/desk/check_sources.py --record   every record, labelled -> state/scan/sources.json and sources.md
+      python3 state/desk/check_sources.py --trace    the shortlist's counted figures -> state/scan/trace.json and trace.md
+
+    A demand record: {"id": "D1", "area": "<domain>: <pocket>", "kind": "pain", "figure": "13 hours per week",
+      "quote": "<the one sentence holding the figure, copied from cite.py's print of the page>",
+      "url": "<the address given to cite.py>", "source": "<named body or vendor>", "primary": true,
+      "source_type": "association", "measured_by": "<the body that collected the data, as the page names it>",
+      "measured_by_quote": "<the page's sentence or 'Source:' line naming that body as the one that measured it>"}
+    A market record also says what a price or funding figure pays for: "scope": "job" (this job, for
+    this segment) or "suite" (a whole product the job is one part of), and "job": "<1-4 words>".
+    CONFIRMED needs all of: a saved copy that answered HTTP 200 with readable text; the quote on it
+    (case, spacing, quote marks and dashes aside); every number of the figure inside the quote (a
+    figure with no digits must itself be in the quote); a quote of 4 to 80 words. Anything else is
+    UNCONFIRMED, with the reason. An UNCONFIRMED figure stays in the files, labelled, and never counts.
+    What may COUNT (--trace): primary pain = a CONFIRMED pain record marked primary whose source_type
+    is community, gov, association, academic or independent_survey, whose measured_by is named word for
+    word in its measured_by_quote (found on the saved page) and in the page's data credit line next to
+    the figure (a 'Source: ...' line within 3,000 characters after the quote), when the page has one;
+    a real price = a CONFIRMED price
+    or funding record with scope "job" whose job words are on its saved page and in the candidate's
+    own name or wedge; a price record whose quote gives an estimate, a cost a buyer could incur or what
+    something given away is worth ('a $995/year value') never counts. Both also need the saved page to
+    name each of the candidate's segment terms.
+    """
+    import hashlib
+    import json
+    import os
+    import re
+    import sys
+    from urllib.parse import urlparse
+
+    DESK = os.path.dirname(os.path.abspath(__file__))
+    PAGES = os.path.join(DESK, "pages")
+    SCAN = os.path.join("state", "scan")
+    LENSES = {"demand": ("D", ("pain", "buyer_count", "other")),
+              "market": ("M", ("price", "funding", "buyer_count", "competitor", "other"))}
+    COUNTED = {"pain_ids": ("pain",), "price_ids": ("price", "funding")}
+    # Who measured a pain figure. Only the first five can make it primary pain: a vendor's own or
+    # commissioned survey, a vendor page or a vendor's platform data (wherever it is published), one
+    # person's or one firm's own story, a job post, a listicle or a news relay cannot.
+    PRIMARY_TYPES = ("community", "gov", "association", "academic", "independent_survey")
+    SOURCE_TYPES = PRIMARY_TYPES + ("vendor_survey", "vendor", "anecdote", "job_post", "listicle", "news",
+                                    "other")
+    # What a price or funding figure pays for. Only "job" can be a candidate's real price.
+    SCOPES = ("job", "suite", "other")
+    # A price is what a seller charges. A price record whose quote gives one of these instead never counts
+    # as a real price: a third party's estimate of a seller's price ('estimated tax' and 'estimated
+    # payments' aside), what a buyer could spend on the process, or what something given away is worth.
+    NOT_A_PRICE = (
+        (re.compile(r"\bestimat\w*\b(?!\s+(?:quarterly\s+)?(?:tax|taxes|payment|payments)\b)", re.I),
+         "an estimate"),
+        (re.compile(r"\b(?:could|may|might)\s+(?:spend|cost|pay|run)\b|\bcan\s+(?:spend|cost|run)\b", re.I),
+         "a cost a buyer could incur"),
+        (re.compile(r"\$\s?[\d.,]+\S*\s+value\b|\bvalued\s+at\b", re.I),
+         "what something is worth"),
+    )
+    # Words that name no segment on their own: a segment term made only of these is refused.
+    GENERIC = set("""a an and the of for to in on with by at or small mid large sized size independent
+    local regional national ai software saas tool tools platform platforms app apps solution solutions
+    service services system systems business businesses company companies firm firms team teams office
+    offices owner owners operator operators customer customers client clients user users smb smbs
+    enterprise enterprises management manager managers automation automated workflow workflows process
+    processes operations ops admin administration data digital online cloud support provider providers
+    vendor vendors industry market agency agencies group groups practice practices shop shops""".split())
+    # Words that name no measurer on their own ("the association", "a national survey"): a primary pain
+    # record's measured_by needs at least one other word.
+    MEASURER_GENERIC = GENERIC | set("""association associations society institute council board bureau
+    center centre foundation commission committee federation alliance coalition organization organisation
+    department government federal state us u s american international survey surveys study studies report
+    reports poll polls research researchers analysis authors author respondents members member staff
+    editors editorial news press media journal""".split())
+    # A data credit line, as pages credit a chart, a table, a list or a whole article ("Source: 2023 and
+    # 2024 AppWork data."). The nearest one after a figure's quote, within CREDIT_WINDOW characters,
+    # says who measured the figure.
+    CREDIT = re.compile(r"(?<![a-z])(?:data\s+)?sources?\s*:\s*([^:]{3,220}?)"
+                        r"(?=\.\s|\.?$|\s(?:share|print|photo|image|note|notes)\b)", re.I)
+    DATA_WORDS = re.compile(r"\b(?:data|dataset|survey|surveys|study|studies|report|poll|analysis|research|"
+                            r"index|census|benchmark|statistics|estimates?)\b", re.I)
+    CREDIT_WINDOW = 3000
+    # scan_serving's check_serving.HEADINGS, in the same order (its parse_identities reads the same names).
+    HEADINGS = (
+        re.compile(r"^### #(\d+) \u2014 (.*?)\. Score ", re.M),
+        re.compile(r"^### (\d+)\. (.*?) \u2014 score ", re.M),
+        re.compile(r"^###\s+#?(\d+)[.)]?\s+(?:[\u2014\u2013-]\s+)?(.+?)"
+                   r"(?:\s*(?:[.,(]|[\u2014\u2013-])\s*[Ss]core\b.*)?$", re.M),
+    )
+    ID_GROUP = re.compile(r"\[((?:[DM]\d{1,3})(?:\s*[,;]\s*[DM]\d{1,3})*)\]")
+    NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+    SCALED = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(thousand|million|billion|trillion|mn|bn|[kmb])\b", re.I)
+    SCALE = {"thousand": 1e3, "k": 1e3, "million": 1e6, "mn": 1e6, "m": 1e6, "billion": 1e9, "bn": 1e9,
+             "b": 1e9, "trillion": 1e12}
+    # Numbers a page writes in words ("Nine percent of denials", "forty-two hours").
+    UNITS = {w: n for n, w in enumerate("""zero one two three four five six seven eight nine ten eleven twelve
+             thirteen fourteen fifteen sixteen seventeen eighteen nineteen""".split())}
+    TENS = {w: 10 * n for n, w in enumerate("twenty thirty forty fifty sixty seventy eighty ninety".split(), 2)}
+
+
+    def norm(s):
+        """cite.py's norm, plus the invisible and look-alike characters pages carry."""
+        for a, b in (("\u2019", "'"), ("\u2018", "'"), ("\u201c", '"'), ("\u201d", '"'),
+                     ("\u2013", "-"), ("\u2014", "-"), ("\u00a0", " "), ("\u2011", "-"),
+                     ("\u2010", "-"), ("\u2212", "-"), ("\u2026", "..."), ("\u00ad", ""),
+                     ("\u200b", ""), ("\u2009", " "), ("\u202f", " "), ("\u2032", "'")):
+            s = s.replace(a, b)
+        return re.sub(r"\s+", " ", s).strip()
+
+
+    def words(s):
+        """Lower-case letters and digits only, single spaces: for segment terms."""
+        return re.sub(r"[^a-z0-9]+", " ", norm(s).lower()).strip()
+
+
+    def word_numbers(s):
+        """Values of numbers written in words: 'nine' -> 9, 'forty-two' -> 42, 'three hundred' -> 300."""
+        found, value, run = set(), 0, False
+        for word in re.findall(r"[a-z]+", s.lower()) + [""]:
+            if word in UNITS or word in TENS:
+                value += UNITS.get(word, 0) + TENS.get(word, 0)
+                run = True
+            elif run and word == "hundred":
+                value *= 100
+            elif run and word in ("thousand", "million", "billion"):
+                value *= SCALE[word]
+            elif run and word == "and":
+                continue
+            else:
+                if run:
+                    found.add(float(value))
+                value, run = 0, False
+        return found
+
+
+    def numbers(s):
+        """Every number in s: digits ('1,282' -> 1282), scaled ('$4.6 million' -> 4.6 and 4600000), words."""
+        found = set()
+        for token in NUMBER.findall(s):
+            try:
+                found.add(float(token.replace(",", "")))
+            except ValueError:
+                pass
+        for token, scale in SCALED.findall(s):
+            try:
+                found.add(round(float(token.replace(",", "")) * SCALE[scale.lower()], 2))
+            except ValueError:
+                pass
+        return found | word_numbers(s)
+
+
+    def needed(figure):
+        """The figure's numbers, each as the set of values that would show it ('$4.6M' -> {4600000},
+        which '$4.6 million' and '$4,600,000' show and '$4.6 billion' does not)."""
+        scaled = {}
+        for match in SCALED.finditer(figure):
+            try:
+                value = float(match.group(1).replace(",", ""))
+            except ValueError:
+                continue
+            scaled[match.start(1)] = round(value * SCALE[match.group(2).lower()], 2)
+        needs = []
+        for match in NUMBER.finditer(figure):
+            try:
+                value = float(match.group(0).replace(",", ""))
+            except ValueError:
+                continue
+            needs.append({scaled[match.start()]} if match.start() in scaled else {value})
+        return needs + [{value} for value in sorted(word_numbers(figure))]
+
+
+    def load(path, default=None):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return default
+        except ValueError:
+            return "not JSON"
+
+
+    def save(path, data):
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=1, ensure_ascii=False)
+        os.replace(tmp, path)
+
+
+    def page_file(url):
+        return hashlib.sha1(url.encode()).hexdigest()[:16] + ".txt"
+
+
+    def saved_page(url):
+        """(meta, text) of cite.py's saved copy, or (None, '') when there is none."""
+        path = os.path.join(PAGES, page_file(url))
+        if not os.path.exists(path):
+            return None, ""
+        with open(path, encoding="utf-8") as f:
+            head, _, text = f.read().partition("\n")
+        try:
+            return json.loads(head), text
+        except ValueError:
+            return {"http": "unreadable"}, ""
+
+
+    def where(text, figure):
+        """Where the figure's numbers sit on the page: a hint for fixing a quote."""
+        flat = norm(text)
+        for token in NUMBER.findall(figure):
+            at = flat.find(token)
+            if at >= 0:
+                return "the page has %s at: ...%s..." % (token, flat[max(0, at - 160):at + 200])
+        return "none of the figure's numbers is on the saved page"
+
+
+    def check(record, lens):
+        """Status and reasons for one record; never raises on a malformed record."""
+        prefix, kinds = LENSES[lens]
+        reasons = []
+        if not isinstance(record, dict):
+            return "UNCONFIRMED", ["not a JSON object"], ""
+        rid = str(record.get("id", ""))
+        if not re.fullmatch(prefix + r"\d{1,3}", rid):
+            reasons.append("id must be %s1, %s2, ..." % (prefix, prefix))
+        kind = record.get("kind")
+        if kind not in kinds:
+            reasons.append("kind must be one of: " + ", ".join(kinds))
+        figure = norm(str(record.get("figure") or ""))
+        quote = norm(str(record.get("quote") or ""))
+        url = str(record.get("url") or "").strip()
+        if not figure:
+            reasons.append("no figure")
+        if not quote:
+            reasons.append("no quote")
+        elif not 4 <= len(quote.split()) <= 80:
+            reasons.append("the quote must be the one sentence holding the figure (4 to 80 words)")
+        if not re.match(r"https?://\S+$", url):
+            reasons.append("url must be the http(s) address given to cite.py")
+            return "UNCONFIRMED", reasons, ""
+        meta, text = saved_page(url)
+        hint = ""
+        if meta is None:
+            reasons.append("no saved copy of this address: read it with cite.py page first, and record "
+                           "the same address you gave cite.py")
+        elif str(meta.get("http")) != "200":
+            reasons.append("the page answered HTTP %s: it cannot confirm a figure" % meta.get("http"))
+        elif meta.get("url") not in (None, url):
+            reasons.append("the saved copy is of another address")
+        elif not text.strip():
+            reasons.append("the saved copy has no readable text (%s)" % (meta.get("note") or "empty page"))
+        elif quote:
+            flat = norm(text).lower()
+            want = quote.lower()
+            if want not in flat and want.replace(" ", "") not in flat.replace(" ", ""):
+                reasons.append("the quote is not on the saved page")
+                hint = where(text, figure)
+        if figure and quote:
+            need = needed(figure)
+            if need:
+                have = numbers(quote)
+                missing = [min(values) for values in need if not values & have]
+                if missing:
+                    reasons.append("the figure's number(s) %s are not in the quote"
+                                   % ", ".join("%g" % n for n in missing))
+            elif figure.lower() not in quote.lower():
+                reasons.append("the figure (no digits) is not in the quote")
+        return ("UNCONFIRMED" if reasons else "CONFIRMED"), reasons, hint
+
+
+    def records_of(lens):
+        path = os.path.join(SCAN, "evidence", lens + ".json")
+        data = load(path)
+        if isinstance(data, dict):
+            data = data.get("records")
+        return path, data
+
+
+    def credit_after(text, quote):
+        """The page's nearest data credit line after the quote, within CREDIT_WINDOW characters ('' if none)."""
+        flat = norm(text)
+        want = norm(quote)
+        at = flat.lower().find(want.lower()) if want else -1
+        if at < 0:
+            return ""
+        end = at + len(want)
+        for match in CREDIT.finditer(flat, end):
+            if match.start() - end > CREDIT_WINDOW:
+                break
+            if DATA_WORDS.search(match.group(1)):
+                return match.group(1).strip()
+        return ""
+
+
+    def names(who, text):
+        """True when text names the body who (in words() form): as whole words or, for a name of five or more
+        letters, with dots and spaces ignored ('J.D. Power' = 'JD Power')."""
+        said = words(text)
+        if (" %s " % who) in (" %s " % said):
+            return True
+        packed = who.replace(" ", "")
+        return len(packed) >= 5 and packed in said.replace(" ", "")
+
+
+    def measurer_why(record, text):
+        """Why a pain record's measurer cannot be trusted for primary pain ([] when it can), and the page's
+        data credit line next to the figure ('' when there is none)."""
+        who = words(str(record.get("measured_by") or ""))
+        said = norm(str(record.get("measured_by_quote") or ""))
+        credit = credit_after(text, str(record.get("quote") or ""))
+        why = []
+        if not who or set(who.split()) <= MEASURER_GENERIC:
+            why.append("measured_by must name the body that collected the data, as the page names it")
+        if not said:
+            why.append("no measured_by_quote (the page's sentence or 'Source:' line naming who measured it)")
+        elif not 2 <= len(said.split()) <= 80:
+            why.append("measured_by_quote must be one sentence or credit line (2 to 80 words)")
+        else:
+            flat = norm(text).lower()
+            want = said.lower()
+            if want not in flat and want.replace(" ", "") not in flat.replace(" ", ""):
+                why.append("its measured_by_quote is not on the saved page")
+            elif who and not names(who, said):
+                why.append("its measured_by_quote never names '%s'" % norm(str(record.get("measured_by"))))
+        if credit and who and not names(who, credit):
+            why.append("the page credits the data next to this figure to '%s', not to '%s'"
+                       % (cell(credit, 90), norm(str(record.get("measured_by")))))
+        return why, credit
+
+
+    def checked(lens):
+        """Every record of one lens with its status; problems with the file itself."""
+        path, data = records_of(lens)
+        if data is None:
+            return [], ["%s: no records (the %s lens writes them)" % (path, lens)]
+        if not isinstance(data, list):
+            return [], ["%s: must hold a JSON list of records" % path]
+        rows, problems, seen = [], [], set()
+        for n, record in enumerate(data, 1):
+            status, reasons, hint = check(record, lens)
+            record = record if isinstance(record, dict) else {}
+            rid = str(record.get("id") or "#%d" % n)
+            if rid in seen:
+                status, reasons = "UNCONFIRMED", reasons + ["duplicate id"]
+            seen.add(rid)
+            url = str(record.get("url") or "")
+            job = words(str(record.get("job") or ""))
+            _, text = saved_page(url) if url else (None, "")
+            mwhy, credit = measurer_why(record, text)
+            rows.append({"id": rid, "lens": lens, "kind": record.get("kind"), "area": record.get("area"),
+                         "figure": record.get("figure"), "quote": record.get("quote"), "url": url,
+                         "domain": urlparse(url).netloc, "source": record.get("source"),
+                         "primary": record.get("primary") is True,
+                         "source_type": record.get("source_type"),
+                         "measured_by": record.get("measured_by"),
+                         "measured_by_quote": record.get("measured_by_quote"),
+                         "credit_line": credit, "measurer_why": mwhy,
+                         "provenance": record.get("provenance") or record.get("price_provenance"),
+                         "scope": record.get("scope"), "job": job,
+                         "job_on_page": bool(job) and term_on(job, page_words_of(url)),
+                         "page": page_file(url) if url else "", "status": status,
+                         "reasons": reasons, "hint": hint})
+        return rows, problems
+
+
+    def page_words_of(url):
+        _, text = saved_page(url) if url else (None, "")
+        return " " + words(text) + " "
+
+
+    def pain_why(row):
+        """Why a pain record cannot count as primary pain, CONFIRMED or not ([] when it can)."""
+        why = []
+        if row.get("primary") is not True:
+            why.append("its record is not marked primary")
+        if row.get("source_type") not in PRIMARY_TYPES:
+            why.append("its source_type is %s; primary pain needs one of: %s"
+                       % (row.get("source_type") or "missing", ", ".join(PRIMARY_TYPES)))
+        if not why:
+            why += row.get("measurer_why", ["its measurer was not checked"])
+        return why
+
+
+    def price_why(row):
+        """Why a price or funding record cannot count as a real price, CONFIRMED or not ([] when it can)."""
+        why = []
+        if row.get("scope") != "job":
+            why.append("its scope is %s; only a price or funding figure for this job (scope job) counts, "
+                       "a suite's price is context" % (row.get("scope") or "missing"))
+        job = row.get("job") or ""
+        if not job or set(job.split()) <= GENERIC or len(job.split()) > 4:
+            why.append("its job must be 1-4 words naming the job it pays for (not generic words)")
+        elif not row.get("job_on_page"):
+            why.append("its saved page never names its job '%s'" % job)
+        if row.get("kind") == "price":
+            text = "%s %s" % (row.get("quote") or "", row.get("figure") or "")
+            for pattern, what in NOT_A_PRICE:
+                found = pattern.search(text)
+                if found:
+                    why.append("its quote gives %s ('%s'), not a price a seller charges: find the seller's "
+                               "own price, or record it as kind other" % (what, found.group(0)))
+                    break
+        return why
+
+
+    def counts_as(row):
+        """What a record can count as on its own page ('primary pain', 'real price' or '')."""
+        if row["status"] != "CONFIRMED":
+            return ""
+        if row["kind"] == "pain" and not pain_why(row):
+            return "primary pain"
+        if row["kind"] in ("price", "funding") and not price_why(row):
+            return "real price"
+        return ""
+
+
+    def cell(value, limit=70):
+        text = norm(str(value if value is not None else ""))
+        text = text if len(text) <= limit else text[:limit - 3] + "..."
+        return text.replace("|", "/")
+
+
+    def lens_report(lens):
+        rows, problems = checked(lens)
+        for problem in problems:
+            print("PROBLEM", problem)
+        for row in rows:
+            line = "%s %s %s | %s" % (row["id"], row["status"], row["kind"], cell(row["figure"], 50))
+            if row["reasons"]:
+                line += " | " + "; ".join(row["reasons"])
+            print(line)
+            if row["hint"]:
+                print("   hint:", row["hint"])
+            notes = []
+            if lens == "demand" and row["kind"] == "pain":
+                if row["source_type"] not in SOURCE_TYPES:
+                    notes.append("source_type must be one of: " + ", ".join(SOURCE_TYPES))
+                elif row["primary"] and row["source_type"] not in PRIMARY_TYPES:
+                    notes.append("marked primary, but a %s source never counts as primary pain"
+                                 % row["source_type"])
+                elif row["primary"]:
+                    notes += row["measurer_why"]
+            if lens == "market" and row["kind"] in ("price", "funding"):
+                if row["scope"] not in SCOPES:
+                    notes.append("scope must be one of: " + ", ".join(SCOPES))
+                notes += [n for n in price_why(row) if not n.startswith("its scope is")]
+            if notes:
+                print("   counts? " + "; ".join(notes))
+        ok = sum(row["status"] == "CONFIRMED" for row in rows)
+        pain = [row for row in rows if counts_as(row) == "primary pain"]
+        price = [row for row in rows if counts_as(row) == "real price"]
+        print("%s: %d records, %d CONFIRMED (%d primary pain in %d areas, %d job-scope price/funding in %d areas), "
+              "%d UNCONFIRMED" % (lens, len(rows), ok, len(pain), len({r["area"] for r in pain}), len(price),
+                                  len({r["area"] for r in price}), len(rows) - ok))
+
+
+    def record():
+        rows, problems = [], []
+        for lens in LENSES:
+            found, trouble = checked(lens)
+            rows += found
+            problems += trouble
+        summary = {lens: {"records": sum(r["lens"] == lens for r in rows),
+                          "confirmed": sum(r["lens"] == lens and r["status"] == "CONFIRMED" for r in rows)}
+                   for lens in LENSES}
+        summary["confirmed_primary_pain"] = sum(counts_as(r) == "primary pain" for r in rows)
+        summary["confirmed_price_or_funding"] = sum(r["status"] == "CONFIRMED"
+                                                    and r["kind"] in ("price", "funding") for r in rows)
+        summary["confirmed_job_price_or_funding"] = sum(counts_as(r) == "real price" for r in rows)
+        save(os.path.join(SCAN, "sources.json"), {"records": rows, "problems": problems, "summary": summary})
+        lines = ["# Mechanical source check (script, no model)", "",
+                 "CONFIRMED: the one sentence holding the figure is on the page's saved copy "
+                 "(state/desk/pages/<page>), which answered HTTP 200, and the figure's numbers are in it. "
+                 "UNCONFIRMED figures stay in the lens files but never count as primary pain or a real price.",
+                 "",
+                 "What can count: primary pain = a CONFIRMED pain record marked primary whose source type is "
+                 "%s, and whose measurer (measured_by) is named in its measured_by_quote on the saved page and "
+                 "in the page's data credit line next to the figure, if it has one; a real price = a CONFIRMED "
+                 "price or funding record for the job itself (scope job) whose "
+                 "job words are on its saved page. A suite's price, a vendor's survey or platform data, one "
+                 "person's story or a relayed figure is "
+                 "context only. The shortlist trace also needs the page to name the candidate's segment and, "
+                 "for a price, the job to be the candidate's own." % ", ".join(PRIMARY_TYPES), ""]
+        lines += ["PROBLEM: " + p for p in problems]
+        for lens in LENSES:
+            lines += ["", "## %s lens: %d records, %d CONFIRMED" % (lens, summary[lens]["records"],
+                                                                    summary[lens]["confirmed"]), "",
+                      "| id | kind | figure | status | can count as | source type / scope | page (saved copy) "
+                      "| why not confirmed, or why it cannot count |",
+                      "|---|---|---|---|---|---|---|---|"]
+            for r in rows:
+                if r["lens"] == lens:
+                    if r["kind"] == "pain":
+                        label = "%s%s%s" % (r["source_type"] or "no type", ", primary" if r["primary"] else "",
+                                            ", measured by %s" % r["measured_by"] if r.get("measured_by") else "")
+                    elif r["kind"] in ("price", "funding"):
+                        label = "%s%s" % (r["scope"] or "no scope", " (%s)" % r["job"] if r["job"] else "")
+                    else:
+                        label = ""
+                    why = r["reasons"]
+                    if not why and r["kind"] == "pain":
+                        why = pain_why(r)
+                    elif not why and r["kind"] in ("price", "funding"):
+                        why = price_why(r)
+                    lines.append("| %s | %s | %s | %s | %s | %s | %s (%s) | %s |" % (
+                        r["id"], r["kind"], cell(r["figure"], 45), r["status"], counts_as(r) or "-",
+                        cell(label, 70), cell(r["domain"], 40), r["page"], cell("; ".join(why), 170)))
+        lines += ["", "Totals: %d CONFIRMED primary pain stats that can count; %d CONFIRMED job-scope prices or "
+                  "funding figures that can count (of %d CONFIRMED price or funding figures)."
+                  % (summary["confirmed_primary_pain"], summary["confirmed_job_price_or_funding"],
+                     summary["confirmed_price_or_funding"])]
+        with open(os.path.join(SCAN, "sources.md"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        for problem in problems:
+            print("PROBLEM", problem)
+        print(json.dumps({"status": "completed", "sources_path": os.path.join(SCAN, "sources.md"),
+                          "problems": len(problems), **summary}))
+
+
+    def headings(md):
+        for pattern in HEADINGS:
+            found = [(int(n), norm(name)) for n, name in pattern.findall(md)]
+            if found:
+                return found
+        return []
+
+
+    def rank_of(candidate):
+        try:
+            return int(candidate.get("rank"))
+        except (TypeError, ValueError):
+            return candidate.get("rank")
+
+
+    def term_on(term, page_words):
+        pattern = r"(?:^| )" + re.escape(term) + (r"" if len(term) >= 5 else r"s?(?: |$)")
+        return re.search(pattern, page_words) is not None
+
+
+    def trace():
+        problems = []
+        sources = load(os.path.join(SCAN, "sources.json"))
+        if not isinstance(sources, dict):
+            sources = {"records": []}
+            problems.append("no readable state/scan/sources.json: the sources step did not run")
+        by_id = {r["id"]: r for r in sources.get("records", [])}
+        shortlist = load(os.path.join(SCAN, "shortlist.json"))
+        try:
+            with open(os.path.join(SCAN, "shortlist.md"), encoding="utf-8") as f:
+                md = f.read()
+        except FileNotFoundError:
+            md = ""
+            problems.append("no state/scan/shortlist.md")
+        candidates = shortlist.get("candidates") if isinstance(shortlist, dict) else None
+        if not isinstance(candidates, list) or not candidates:
+            problems.append("state/scan/shortlist.json must hold {\"candidates\": [...]} (one per ranked candidate)")
+            candidates = []
+        ranked = headings(md)
+        listed = [(rank_of(c), norm(str(c.get("name") or ""))) for c in candidates if isinstance(c, dict)]
+        if listed != ranked:
+            problems.append("shortlist.json's (rank, name) pairs must equal shortlist.md's ranked headings "
+                            "('### #<rank> \u2014 <name>. Score <score>'): json %s vs md %s" % (listed, ranked))
+        tagged = {}
+        for number, line in enumerate(md.splitlines(), 1):
+            for group in ID_GROUP.findall(line):
+                for rid in re.split(r"\s*[,;]\s*", group):
+                    tagged.setdefault(rid, []).append(number)
+                    record = by_id.get(rid)
+                    if record is None:
+                        problems.append("shortlist.md line %d tags [%s], which no lens recorded" % (number, rid))
+                    elif record["status"] != "CONFIRMED" and "unconfirmed" not in line.lower():
+                        problems.append("shortlist.md line %d cites %s, which the script left UNCONFIRMED, "
+                                        "without the word 'unconfirmed' on that line" % (number, rid))
+        page_words = {}
+        rows = []
+        for c in candidates:
+            if not isinstance(c, dict):
+                problems.append("a shortlist.json candidate is not a JSON object")
+                continue
+            label = "#%s %s" % (c.get("rank"), norm(str(c.get("name") or "")))
+            own = " " + words(str(c.get("name") or "") + " " + str(c.get("wedge") or "")) + " "
+            terms = []
+            for raw in c.get("segment_terms") or []:
+                term = words(str(raw))
+                if not term or set(term.split()) <= GENERIC:
+                    problems.append("%s: segment term '%s' names no segment on its own" % (label, raw))
+                elif (" " + term) not in own:
+                    problems.append("%s: segment term '%s' is not in its own name or wedge" % (label, raw))
+                else:
+                    terms.append(term)
+            if not terms:
+                problems.append("%s: needs 1-3 segment_terms (words of its own name or wedge naming who pays "
+                                "or the job; every counted figure's saved page must name each of them)" % label)
+            elif len(terms) > 3:
+                problems.append("%s: at most 3 segment_terms" % label)
+            row = {"rank": c.get("rank"), "name": c.get("name"), "segment_terms": terms,
+                   "market_led": c.get("market_led") is True, "counted": []}
+            passed = {}
+            for field, kinds in COUNTED.items():
+                ids = c.get(field) or []
+                if not isinstance(ids, list):
+                    problems.append("%s: %s must be a list of record ids" % (label, field))
+                    ids = []
+                good = bad = 0
+                for rid in ids:
+                    rid = str(rid)
+                    record = by_id.get(rid)
+                    why = []
+                    link = ""
+                    if record is None:
+                        why.append("no such record")
+                    else:
+                        if record["kind"] not in kinds:
+                            why.append("its kind is %s" % record["kind"])
+                        if record["status"] != "CONFIRMED":
+                            why.append("the script left it UNCONFIRMED (%s)" % "; ".join(record["reasons"]))
+                        if field == "pain_ids":
+                            why += pain_why(record)
+                        else:
+                            trouble = price_why(record)
+                            why += trouble
+                            job = record.get("job") or ""
+                            if not trouble and (" " + job) not in own:
+                                why.append("its job '%s' is not in the candidate's own name or wedge" % job)
+                        if record["page"] not in page_words:
+                            _, text = saved_page(record["url"]) if record["url"] else (None, "")
+                            page_words[record["page"]] = " " + words(text) + " "
+                        missing = [t for t in terms if not term_on(t, page_words[record["page"]])]
+                        link = ", ".join(t for t in terms if t not in missing)
+                        if missing:
+                            why.append("its saved page never names the segment term(s) %s" % missing)
+                    if rid not in tagged:
+                        why.append("shortlist.md never tags [%s]" % rid)
+                    what = "primary pain" if field == "pain_ids" else "a real price"
+                    if why:
+                        bad += 1
+                        problems.append("%s counts %s as %s, but %s" % (label, rid, what, "; ".join(why)))
+                    else:
+                        good += 1
+                    row["counted"].append({"id": rid, "as": what, "ok": not why, "segment_term_on_page": link,
+                                           "job": (record or {}).get("job") if field == "price_ids" else None,
+                                           "why": why})
+                passed[field] = good > 0 and bad == 0
+            if not row["market_led"] and not (c.get("pain_ids") or []):
+                problems.append("%s: not market-led, so it must count a primary pain id" % label)
+            row["primary_pain_confirmed"] = passed["pain_ids"] and not row["market_led"]
+            row["price_confirmed"] = passed["price_ids"]
+            rows.append(row)
+        n = len(rows)
+        k = sum(r["primary_pain_confirmed"] for r in rows)
+        p = sum(r["price_confirmed"] for r in rows)
+        result = {"ok": not problems, "problems": problems, "candidates": rows,
+                  "c2": {"confirmed_primary_pain": k, "candidates": n, "met": n > 0 and k >= 0.8 * n},
+                  "c4": {"confirmed_price": p, "candidates": n, "met": n > 0 and p == n}}
+        save(os.path.join(SCAN, "trace.json"), result)
+        lines = ["# Trace: the shortlist's counted figures against the source check (script, no model)", "",
+                 "Primary pain (C2): %d/%d candidates count a CONFIRMED primary pain stat (a %s source, its "
+                 "measurer named on the page) whose page names their segment (>=80%% required): %s"
+                 % (k, n, "/".join(PRIMARY_TYPES), "met" if result["c2"]["met"] else "NOT met"),
+                 "Real price (C4): %d/%d candidates count a CONFIRMED price or funding figure for their own job "
+                 "(scope job) whose page names that job and their segment (100%% required): %s"
+                 % (p, n, "met" if result["c4"]["met"] else "NOT met"), "",
+                 "| rank | candidate | segment terms | counted figures |", "|---|---|---|---|"]
+        for r in rows:
+            counted = "; ".join("%s %s %s%s" % (x["id"], x["as"], "ok" if x["ok"] else "FAILS",
+                                                " (page names '%s')" % x["segment_term_on_page"]
+                                                if x["segment_term_on_page"] else "") for x in r["counted"])
+            lines.append("| %s | %s | %s | %s |" % (r["rank"], cell(r["name"], 60), cell(", ".join(r["segment_terms"]), 50),
+                                                     cell(counted, 400)))
+        lines += ["", "Problems: %d" % len(problems)] + ["- " + p for p in problems]
+        with open(os.path.join(SCAN, "trace.md"), "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        for problem in problems:
+            print("PROBLEM", problem)
+        print(json.dumps({"status": "completed", "trace_path": os.path.join(SCAN, "trace.md"), "ok": result["ok"],
+                          "c2": result["c2"], "c4": result["c4"], "problems": len(problems)}))
+
+
+    def main(argv):
+        if len(argv) == 2 and argv[1] in LENSES:
+            lens_report(argv[1])
+        elif argv[1:] == ["--record"]:
+            record()
+        elif argv[1:] == ["--trace"]:
+            trace()
+        else:
+            print(__doc__)
+
+
+    if __name__ == "__main__":
+        main(sys.argv)
+    CHECKEOF
+    echo '{"status": "completed", "cite": "state/desk/cite.py", "check": "state/desk/check_sources.py"}'

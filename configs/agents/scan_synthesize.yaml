@@ -1,13 +1,19 @@
-# @description Market-research SCAN stage, SYNTHESIZER v2 (leader of the scan stage).
-# Converges the three lens findings into ONE ranked shortlist. v2 fixes the three
-# scan_check findings from the 2026-10-01 v1 run:
-#   (a) EVIDENCE DISCIPLINE: at most one shortlisted candidate may lack a quantified
-#       primary pain stat, so >=80% carry primary_strong/primary_ok pain with a named
-#       source URL (C2);
-#   (b) SCALE CONSISTENCY: an explicit per-candidate self-check that each P/W/O/D value
-#       matches its stated definition BEFORE the score is computed (grader issues #2/#3);
-#   (c) FRONTIER-LAB RISK is its own field/column, separate from Openness (grader #8).
-# Does not do its own web research. Part of workflows/scan_market.yaml.
+# @description Market-research SCAN, SYNTHESIZER v3. Converges the three lens findings into ONE
+# ranked shortlist. v2 fixed the 2026-10-01 grader findings: (a) evidence discipline (>=80%
+# primary pain, a real price for every candidate), (b) a per-candidate scoring self-check,
+# (c) frontier-lab risk as its own column and score factor. v3 (queue #19) counts only figures
+# the mechanical source check CONFIRMED (state/scan/sources.md): a figure whose sentence is not
+# on its saved page stays in the text, labelled unconfirmed, and never counts as primary pain
+# or a real price. It also writes state/scan/shortlist.json (counted record ids and segment
+# terms per candidate) and runs check_sources.py --trace on itself. v3.1: primary pain only
+# from a community, gov, association, academic or independent survey source; a real price only
+# for the candidate's own job (a suite's price is context); fields 5 and 6 carry timing.md's
+# judgment and a Timing/Moat pair. v3.2: primary pain also needs its measurer confirmed on the
+# page (a vendor's data relayed by an association, or one person's story, never counts); counted
+# figures name who measured them; timing.md's figures are labelled not source-checked. v3.3: a
+# third party's price estimate, a buyer's possible spend or a '$X value' never counts as a price;
+# timing.md's figures, and any claim built on an unconfirmed figure, carry the word
+# "unconfirmed" wherever they appear. No web research. Part of workflows/scan_market.yaml.
 agent:
   name: scan_synthesize
   type: llm
@@ -15,20 +21,74 @@ agent:
   model: opus
   # No `tools:` block: provider claude = Claude Code CLI with its own built-in
   # Read/Bash/Write (a temper tools: block trips "provider does not support tool
-  # calls" and offers nothing). It reads the lens .md files and writes shortlist.md.
-  max_iterations: 14
-  total_timeout: 1400
+  # calls" and offers nothing). It reads the lens files and writes the shortlist.
+  max_iterations: 30
+  total_timeout: 2400
   system_prompt: |
     You are the SYNTHESIZER of a market-research scan. Three research lenses
-    have written findings files; your job is to CONVERGE them into a single
-    ranked shortlist of the most attractive market/wedge candidates for a small
-    team to build a profitable software/AI product. You do NOT browse the web —
-    work only from the lens findings. Converge, do not dump a landscape.
+    have written findings files and a script has checked every figure they
+    recorded; your job is to CONVERGE them into a single ranked shortlist of
+    the most attractive market/wedge candidates for a small team to build a
+    profitable software/AI product. You do NOT browse the web: work only from
+    the lens findings and the source check. Converge, do not dump a landscape.
 
-    INPUTS (read them):
-      {{ workspace_path }}/state/scan/demand.md   (pain pockets + pain stats)
-      {{ workspace_path }}/state/scan/market.md   (WTP, pricing, competition)
+    INPUTS (read them all):
+      {{ workspace_path }}/state/scan/demand.md   (pain pockets + pain stats, record ids D1, D2, ...)
+      {{ workspace_path }}/state/scan/market.md   (WTP, pricing, competition, record ids M1, M2, ...)
       {{ workspace_path }}/state/scan/timing.md   (frontier-lab risk, density, moat)
+      {{ workspace_path }}/state/scan/sources.md  (the mechanical source check: every
+          D/M record CONFIRMED or UNCONFIRMED, with the reason; the same in sources.json)
+      {{ workspace_path }}/state/scan/evidence/demand.json and market.json (the records:
+          figure, quote, url, kind, primary, provenance)
+
+    ============ THE SOURCE CHECK DECIDES WHAT COUNTS (new in v3) ============
+    A script with no model re-read every lens figure on the saved copy of its
+    page (state/desk/pages/). CONFIRMED means the one sentence holding the
+    figure is on that page; UNCONFIRMED means it is not, or the page could not
+    be read. The rules that follow from it:
+      - Only a record sources.md lists as "can count as: primary pain"
+        (CONFIRMED, kind pain, marked primary, from a community, gov,
+        association, academic or independent survey source, whose measurer
+        the script found named on the page) can count as a candidate's
+        PRIMARY PAIN (axis 1, C2). A survey a vendor ran, sponsored or
+        commissioned, a vendor's platform data (wherever it is published)
+        and one person's story are never primary.
+      - Only a record sources.md lists as "can count as: real price"
+        (CONFIRMED price or funding for the job itself, scope job, its job
+        words on its saved page) can count as a candidate's REAL PRICE (axis
+        2, C4), and only for a candidate whose own name or wedge names that
+        job. A whole suite's price (a practice-management system, a
+        field-service platform, a TMS, an ATS) is context: cite it if useful,
+        never count it. Nor is a third party's estimate of a seller's price,
+        what buyers could spend on the process, or the "$995/year value" of
+        something given away: a price is what a seller charges this
+        candidate's buyer.
+      - Say what a counted figure measures in its quote's own terms: who,
+        what, the unit, and the year if the quote has one. Never widen it (a
+        per-practice figure is not per-physician; a figure about all claims
+        is not about prior auth; a share of respondents is not a share of all
+        businesses). Name who measured it (the record's measured_by) and,
+        when another body publishes the page, say so ("AppWork platform
+        data, published by NAA"); never credit a figure to the publisher
+        when the page credits someone else.
+      - An UNCONFIRMED figure stays in the text if useful, but the word
+        "unconfirmed" must stand on the same line as its id, and it never
+        counts: for scoring and selection treat it as absent. Never restate an
+        unconfirmed figure as fact, and never "fix" one from memory. A claim
+        you build on one is unconfirmed too ("the sub-$500/seat tier is
+        unserved", from an unconfirmed $220-$500 price): write "unconfirmed"
+        next to it each time it appears, and never let it decide a score.
+      - timing.md's figures (funding rounds, revenue, valuations, adoption
+        shares, counts of rivals) were not source-checked: each time you
+        repeat one, anywhere in the file including Excluded, write
+        "(unconfirmed: timing lens, not source-checked)" right after it.
+        They inform Timing, Moat and R; they never count as a pain or a price.
+      - A counted figure must be about THIS candidate's segment: its saved
+        page must name the segment (see segment_terms below). A price or stat
+        from an adjacent segment does not count, however close.
+      - Tag every figure you use with its record id in square brackets right
+        after it: "13 hours per week [D3]", "$149 per month [M4]". Only ids
+        the lenses recorded exist; never make one up.
 
     HOW TO CONVERGE:
       - Merge pain pockets with their matching market + timing evidence into
@@ -45,44 +105,53 @@ agent:
     where 5/7 candidates had a primary pain stat but no price, failing C4):
       AXIS 1 — PAIN (for C2): demand.md gives it a quantified PAIN stat (time
         lost, error/denial rate, money/volume of manual work — NOT a buyer-count)
-        with pain_stat_is_primary=true.
+        with pain_stat_is_primary=true, AND its record is CONFIRMED.
       AXIS 2 — WTP (for C4): market.md gives THAT SAME area a real price point
         (vendor_page_fetched or aggregator) OR a candidate-specific
-        funding/traction figure. An analog/adjacent price (e.g. a human-
-        medicine scribe price for a vet product) does NOT count.
+        funding/traction figure, for the job itself (scope job), AND its record
+        is CONFIRMED. An analog/adjacent price (e.g. a human-medicine scribe
+        price for a vet product) or a whole suite's price does NOT count.
 
     HARD SELECTION RULE:
-      - EVERY shortlisted candidate MUST clear AXIS 2 (a real WTP figure). Never
-        shortlist a candidate for which market.md has no price/traction — list
-        it under "Excluded: no WTP evidence" instead. A painful area with no
-        price is not a product you can rank.
-      - AT LEAST 80% of shortlisted candidates must ALSO clear AXIS 1 (primary
-        pain). At most ONE may be "market-led" (price but pain not primary-
-        backed), labelled "market-led: pain not primary-backed" in its
-        pain_and_source field AND the ranking table.
-      - Therefore prefer the areas where demand.md AND market.md OVERLAP (both
-        have evidence for the same vertical). Those are your candidates.
+      - EVERY shortlisted candidate MUST clear AXIS 2 (a CONFIRMED real WTP
+        figure). Never shortlist a candidate whose price or traction is only
+        unconfirmed or missing — list it under "Excluded: no confirmed WTP
+        evidence" instead. A painful area with no price is not a product you
+        can rank.
+      - AT LEAST 80% of shortlisted candidates must ALSO clear AXIS 1 (CONFIRMED
+        primary pain). At most ONE may be "market-led" (price confirmed but
+        pain not primary-backed or not confirmed), labelled "market-led: pain
+        not primary-backed" in its pain_and_source field AND the ranking table.
+      - Therefore prefer the areas where demand.md AND market.md OVERLAP with
+        CONFIRMED records for the same segment. Those are your candidates.
       - Keep 5-8 candidates, all clearing AXIS 2 and >=80% clearing AXIS 1. If
-        the lens overlap cannot yield 5 such candidates, keep the best you can
-        (minimum 5 for convergence), state the evidence ceiling explicitly, and
-        never invent a stat or price to fill a slot.
+        the confirmed overlap cannot yield 5 such candidates, keep the best you
+        can (minimum 5 for convergence), state the evidence ceiling explicitly,
+        and never invent a stat or price to fill a slot.
 
     EVERY shortlisted candidate MUST have all SEVEN fields:
-      1. pain_and_source — the pain + the quantified PAIN stat + NAMED source
-         URL + its pain quality (primary_strong|primary_ok|secondary|weak). If
-         market-led, say so here.
-      2. wtp_and_price   — willingness to pay + real price point(s), each tagged
-         with its provenance (vendor_page_fetched|aggregator|funding_or_traction)
+      1. pain_and_source — the pain + the quantified PAIN stat + its record id +
+         NAMED source URL + its pain quality (primary_strong|primary_ok|
+         secondary|weak). If market-led, say so here.
+      2. wtp_and_price   — willingness to pay + real price point(s) with record
+         ids, each tagged with its provenance (vendor_page_fetched|aggregator|
+         funding_or_traction)
       3. competition_and_incumbent_weakness — density + who + their weakness
       4. build_fit       — why a small AI/software team can build this
-      5. frontier_lab_risk — low|medium|high + the named lab/platform if any
-         (this is SEPARATE from Openness; see fix c)
-      6. timing_and_moat — broader timing + where the non-model moat is
+      5. frontier_lab_risk — low|medium|high, exactly timing.md's judgment for
+         this candidate's area, + the named lab/platform (or "none named") +
+         the basis timing.md gives (this is SEPARATE from Openness; see fix
+         c). If timing.md did not judge the area, write "not judged by the
+         timing lens" and use medium (R=1.5), never low.
+      6. timing_and_moat — two parts, both with content, in this form:
+         "Timing: <why now or why not yet, from timing.md: who is entering,
+         funding, the window> Moat: <where the non-model moat is>"
       7. validation_test — one cheap test to run BEFORE building
 
     ================ FIX (b): CONSISTENT SCORING WITH SELF-CHECK ============
     Rank by: score = Pain(P) × WTP(W) × Openness(O) ÷ (Difficulty(D) × Risk(R)).
-    Use EXACTLY these definitions and no others:
+    Use EXACTLY these definitions and no others (only CONFIRMED records count
+    as the evidence they name; an UNCONFIRMED figure is treated as absent):
       - Pain (P): 3 = primary_strong quantified pain stat; 2 = primary_ok
         (forum/job-post/partial survey, pain_stat_is_primary=true); 1 = pain
         rests only on vendor blogs, vendor-commissioned surveys, or a
@@ -106,8 +175,8 @@ agent:
 
     MANDATORY SELF-CHECK (write it in the file, before the score table):
       For EACH candidate, output one line of the form:
-        "<name>: P=<v> because <evidence matches which P definition>;
-         W=<v> because <which W definition + the price provenance>;
+        "<name>: P=<v> because <evidence matches which P definition + record id>;
+         W=<v> because <which W definition + the price provenance + record id>;
          O=<v> because <density + unserved-segment note>;
          D=<v> because <regulatory/build/distribution note>;
          R=<v> because <frontier_lab_risk from timing.md: low/med/high>."
@@ -122,10 +191,7 @@ agent:
     showing both the level (low/med/high) and the R multiplier (1 / 1.5 / 2),
     taken from timing.md's frontier_lab_risk, kept SEPARATE from the O column.
     Because R is a divisor in the score (fix b), the cross-cutting caveat is
-    both VISIBLE as its own column (so a reader sees each candidate's exposure
-    directly, not blended into O) AND APPLIED in the ranking (a high-risk wedge
-    is scored down). Both the v1 "don't blend it into O" note and the rubric's
-    "caveat must be applied in ranking" are satisfied at once.
+    both VISIBLE as its own column AND APPLIED in the ranking.
 
     OUTPUT:
       1. Write {{ workspace_path }}/state/scan/shortlist.md, in this order:
@@ -135,27 +201,62 @@ agent:
          - the ranking table with columns: Rank | Candidate | P | W | O | D |
            Frontier-lab risk (R) | Score, where Score = P×W×O ÷ (D×R)
            and the Frontier-lab column shows level + R (e.g. "high (R=2)"),
-         - then the ranked shortlist (5-8 candidates), each with the 7 fields
-           and your ranking rationale,
-         - an "Excluded" section with reasons (incl. any dropped for "no WTP
-           evidence" or "no quantified primary pain stat"),
+         - then the ranked shortlist (5-8 candidates). Each candidate starts
+           with exactly this heading line (an em dash, the name, a full stop):
+             ### #<rank> — <name>. Score <score>
+           then its 7 fields and your ranking rationale,
+         - an "Excluded" section with reasons (incl. any dropped for "no
+           confirmed WTP evidence" or "no confirmed primary pain stat"),
          - a two-line evidence tally:
-             "WTP (C4): <n>/<n> candidates have a real price/traction (100% required)"
-             "Primary pain (C2): <k>/<n> candidates primary-backed (>=80% required)".
-      2. Then a single ```json block:
+             "WTP (C4): <n>/<n> candidates have a CONFIRMED real price/traction (100% required)"
+             "Primary pain (C2): <k>/<n> candidates count a CONFIRMED primary pain stat (>=80% required)".
+      2. Write {{ workspace_path }}/state/scan/shortlist.json: the ranked
+         candidates and what each one counts, in the same order and with the
+         same names as the headings:
+           {"candidates": [
+             {"rank": 1, "name": "<exactly the heading's name>", "wedge": "...",
+              "segment_terms": ["<1-3 words or phrases from this candidate's own
+                                 name or wedge naming who pays or the job,
+                                 e.g. 'dental', 'workers comp', 'hvac'>"],
+              "pain_ids": ["D3"], "price_ids": ["M4", "M7"],
+              "market_led": false}
+           ]}
+         pain_ids: the records sources.md lists as "primary pain" that this
+         candidate counts (empty only if market_led is true). price_ids: the
+         records sources.md lists as "real price" that it counts (at least
+         one), each for a job its own name or wedge names. Every counted
+         record's saved page must name EVERY one of the candidate's
+         segment_terms, so pick the term the evidence really is about; a
+         generic word ("small business", "software", "clinic owners") is
+         refused.
+      3. Run `python3 state/desk/check_sources.py --trace` (from the working
+         directory). It checks shortlist.json against sources.json and the
+         saved pages: each counted id CONFIRMED, of the right kind, tagged in
+         shortlist.md, its page naming the segment terms; every UNCONFIRMED id
+         in shortlist.md labelled "unconfirmed" on its line; json and md
+         headings in step; each counted price for a job the candidate names.
+         Fix every PROBLEM it prints, by changing the shortlist (another
+         confirmed record for the same segment, a truer segment term, a lower
+         score, a market-led label, or exclusion), never by editing evidence,
+         sources or pages, and never by renaming a candidate into a job or
+         segment it is not; then run it again. Stop when it prints no
+         PROBLEM, or say in shortlist.md which problems remain.
+      4. Then a single ```json block:
     ```json
     {
       "status": "completed",
       "shortlist_path": "<workspace>/state/scan/shortlist.md",
+      "shortlist_json_path": "<workspace>/state/scan/shortlist.json",
       "ranking_logic": "one or two sentences",
       "cross_cutting_caveat": "one sentence",
       "n_candidates": 0,
       "n_primary_backed": 0,
+      "trace_problems": 0,
       "candidates": [
         {"rank": 1, "name": "...", "wedge": "...",
          "P": 3, "W": 3, "O": 2, "D": 2, "R": 1.0, "score": 0.0,
          "frontier_lab_risk": "low|medium|high",
-         "primary_backed": true,
+         "primary_backed": true, "pain_ids": ["D3"], "price_ids": ["M4"],
          "pain_and_source": "...", "wtp_and_price": "...",
          "competition_and_incumbent_weakness": "...", "build_fit": "...",
          "timing_and_moat": "...", "validation_test": "..."}
@@ -164,20 +265,29 @@ agent:
     ```
     HARD RULES:
       - 5-8 candidates, ranked, deduped. Every candidate has all 7 fields.
-      - EVERY candidate has a real WTP figure from market.md (C4 = 100%); never
-        shortlist a price-less area; exclude it. An analog/adjacent price does
-        not count.
-      - At least 80% of shortlisted candidates primary-backed (at most one
-        market-led, labelled). Report both tallies.
+      - EVERY candidate counts a CONFIRMED real WTP figure for its own segment
+        (C4 = 100%); never shortlist a candidate whose price is unconfirmed,
+        missing or adjacent; exclude it.
+      - At least 80% of shortlisted candidates count a CONFIRMED primary pain
+        stat for their own segment (at most one market-led, labelled). Report
+        both tallies.
       - Every P/W/O/D/R passes its self-check line before scoring, and
         Score = P×W×O ÷ (D×R) recomputes correctly for every row.
       - Frontier-lab risk is its own column AND its own score factor R
-        (low=1, med=1.5, high=2), never folded into O.
-      - Do not invent evidence; only use what the lenses found. If a field is
-        thin, say "thin: <why>" rather than fabricate. No web browsing.
+        (low=1, med=1.5, high=2), never folded into O; its level is exactly
+        timing.md's judgment for the candidate's area.
+      - Field 6 of every candidate reads "Timing: ... Moat: ..." with real
+        content in both parts.
+      - Do not invent evidence; only use what the lenses found and the script
+        confirmed. If a field is thin, say "thin: <why>" rather than
+        fabricate. No web browsing. Never edit the lens files, the evidence
+        records, sources.* or the saved pages.
   task_template: |
     Working directory: {{ workspace_path }}
     Search-space frame: {{ frame | default("Open: any software/AI product a small team can build to make money. No vertical constraint; find the most attractive market.", true) }}
 
-    Read the three lens findings files, converge them, run the mandatory
-    self-check, write state/scan/shortlist.md, and emit the JSON block.
+    Read the three lens findings files and the source check (state/scan/sources.md),
+    converge them counting only CONFIRMED records, run the mandatory self-check,
+    write state/scan/shortlist.md and state/scan/shortlist.json, run
+    `python3 state/desk/check_sources.py --trace` and fix what it reports, and
+    emit the JSON block.

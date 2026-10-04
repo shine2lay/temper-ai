@@ -5,6 +5,9 @@
  * Thinking is kept whole — the newest is open while it streams, older
  * thinking folds to a line. A tool step is one line in plain words; open it
  * to see what it was given and what came back. Anything that failed is red.
+ *
+ * A tool call the model is still writing is a request, shown as such: it is
+ * not a step until the tool actually runs.
  */
 import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronRight, X } from 'lucide-react';
@@ -13,7 +16,7 @@ import { JsonViewer } from '@/components/shared/JsonViewer';
 import { parseStreamText } from '@/lib/streamSegments';
 import { toolStepLabel } from '@/lib/toolLabels';
 import { cn, formatDuration } from '@/lib/utils';
-import type { StoryItem, StoryTool } from '@/lib/agentStory';
+import type { StoryItem, StoryText, StoryThinking, StoryTool } from '@/lib/agentStory';
 
 /** Steps shown at first: the latest part of a long story. */
 export const WINDOW = 40;
@@ -97,10 +100,59 @@ const StoryRow = memo(function StoryRow({
   item: StoryItem;
   openThinking: boolean;
 }) {
-  if (item.kind === 'thinking') return <Thinking text={item.text} open={openThinking} />;
+  if (item.kind === 'thinking') {
+    return (
+      <>
+        <Thinking text={item.text} open={openThinking} />
+        <Gaps item={item} />
+      </>
+    );
+  }
   if (item.kind === 'tool') return <ToolStep step={item} />;
-  return <Text text={item.text} />;
+  if (item.error) {
+    // Plain text, never markdown: an error says exactly what it says.
+    return (
+      <div data-testid="story-error" className="whitespace-pre-wrap rounded bg-red-500/10 px-2 py-1 text-[11px] text-red-400">
+        {item.text}
+      </div>
+    );
+  }
+  if (item.request) {
+    return (
+      <>
+        <div data-testid="story-request" className="whitespace-pre-wrap font-mono text-[11px] text-temper-text-muted">
+          <span className="text-temper-text-dim">asks for </span>
+          {item.text.trim()}
+        </div>
+        <Gaps item={item} />
+      </>
+    );
+  }
+  return (
+    <>
+      <Text text={item.text} />
+      <Gaps item={item} />
+    </>
+  );
 });
+
+/** What the page does not show of this item, said plainly. */
+function Gaps({ item }: { item: StoryText | StoryThinking }) {
+  return (
+    <>
+      {item.clipped ? (
+        <div data-testid="story-clipped" className="text-[10px] text-temper-text-dim">
+          … {item.clipped.toLocaleString()} more characters, kept in the run's record
+        </div>
+      ) : null}
+      {item.partial ? (
+        <div data-testid="story-partial" className="text-[10px] text-temper-text-dim">
+          Some words did not reach this page; the full reply shows when the call ends.
+        </div>
+      ) : null}
+    </>
+  );
+}
 
 /** Model text. Old runs put thinking and tool lines inside it; split those out. */
 function Text({ text }: { text: string }) {
@@ -196,6 +248,14 @@ function ToolStep({ step }: { step: StoryTool }) {
           {step.durationSeconds != null ? formatDuration(step.durationSeconds) : step.status === 'running' ? '…' : ''}
         </span>
       </button>
+      {step.status === 'running' && step.progress ? (
+        <pre
+          data-testid="story-tool-progress"
+          className="ml-4 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-temper-text-dim"
+        >
+          {step.progress}
+        </pre>
+      ) : null}
       {open && (
         <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-temper-border pl-2">
           <Detail title="given">{step.args ? <JsonViewer data={step.args} /> : <Empty />}</Detail>

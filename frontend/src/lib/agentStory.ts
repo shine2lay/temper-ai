@@ -32,12 +32,24 @@ export interface StoryText extends StoryItemBase {
   text: string;
   /** No more words will be added (its call ended). */
   closed?: boolean;
+  // Set only by a Pi agent step's story (piStory.ts):
+  /** The model writing a tool call: what it asked for, not a step that ran. */
+  request?: boolean;
+  /** Something failed, and this says what. */
+  error?: boolean;
+  /** Words of this call were missed; its final message fills them in. */
+  partial?: boolean;
+  /** Characters past the story's limit, kept out of the page. */
+  clipped?: number;
 }
 
 export interface StoryThinking extends StoryItemBase {
   kind: 'thinking';
   text: string;
   closed?: boolean;
+  // Set only by a Pi agent step's story (piStory.ts):
+  partial?: boolean;
+  clipped?: number;
 }
 
 export interface StoryTool extends StoryItemBase {
@@ -50,6 +62,8 @@ export interface StoryTool extends StoryItemBase {
   error?: string;
   /** The tool call's own id, so its start and its end find each other. */
   toolId?: string;
+  /** While it runs: the latest output it reported (a Pi agent step's story only). */
+  progress?: string;
 }
 
 export type StoryItem = StoryText | StoryThinking | StoryTool;
@@ -60,6 +74,15 @@ export interface AgentStory {
   streamedCalls: Set<string>;
   /** Tool calls already in the story. */
   toolIds: Set<string>;
+  // Kept only by a Pi agent step's story (piStory.ts):
+  /** A Pi agent step's turn told this story. */
+  pi?: boolean;
+  /** The last numbered word heard per call (and per running tool's report). */
+  seqs?: Map<string, number>;
+  /** Calls whose final message is in: any word of theirs arriving later is a late copy. */
+  finalCalls?: Set<string>;
+  /** Calls with a gap in their numbering, until their final message fills it. */
+  gapCalls?: Set<string>;
 }
 
 export function newStory(): AgentStory {
@@ -81,6 +104,8 @@ export interface StreamChunk {
   chunk_type?: string;
   done?: boolean;
   call_id?: string | null;
+  /** Its number within its call, from 1, when the producer numbers them (Pi). */
+  seq?: number | null;
 }
 
 /**

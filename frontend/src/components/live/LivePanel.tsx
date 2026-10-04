@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { ChevronUp, Crosshair, Maximize2, Minimize2, PanelBottomClose } from 'lucide-react';
 import { useExecutionStore } from '@/store/executionStore';
 import { fullStory } from '@/lib/agentStory';
+import { fullStory as piFullStory, isPiAgent } from '@/lib/piStory';
 import { buildRoster, busyCount, newestBusyAgent, statusWord } from '@/lib/agentRoster';
 import { litRosterIds } from '@/lib/runSearch';
 import { cn, formatDuration } from '@/lib/utils';
@@ -68,7 +69,11 @@ export function LivePanel() {
   const agent = shownId ? agents.get(shownId) : undefined;
   const isScript = scriptConfigOf(agent) !== null;
   const story = shownId ? stories.get(shownId) : undefined;
-  const items = useMemo(() => fullStory(agent, story), [agent, story]);
+  // A Pi agent step's turn tells its story its own way (piStory.ts).
+  const items = useMemo(
+    () => (story?.pi || isPiAgent(agent) ? piFullStory(agent, story) : fullStory(agent, story)),
+    [agent, story],
+  );
 
   const anyBusy = working > 0;
   const now = useSecondTicker(anyBusy);

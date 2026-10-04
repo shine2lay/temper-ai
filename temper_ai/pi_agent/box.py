@@ -1,0 +1,725 @@
+"""The Pi worker box: one sealed container per turn, started and torn down by the host.
+
+What the box allows (and what L1 proved live on the same runtime):
+
+* the container runs the pinned Pi runtime (mounted read-only) as the host user, with
+  ``--network none``, a read-only root, every capability dropped, no new privileges, a pid,
+  memory and CPU limit, no logging driver and docker's init;
+* its only way out is an in-container relay on 127.0.0.1:3128 that pipes bytes to the
+  host's egress proxy over a bind-mounted Unix socket; the proxy allows ``CONNECT`` to the
+  route's provider host on port 443 and answers 403 to everything else;
+* it holds no credential: Pi's ``apiKey`` command asks the host over a second Unix socket;
+  the host hands over the token from the host Pi installation (the single owner of the
+  login and its refresh: ``pi auth print-bearer-token --provider P --min-expiry 30m``),
+  only while the turn's allowance lasts, after adding it to the turn's redactor, and stores
+  nothing;
+* the host's own Pi settings, logins and memory are never mounted. The worker gets a
+  generated agent folder, a private copy of its role (copied once per participant) and its
+  participant folder (``/w``), which keeps the Pi session file between turns.
+
+Nothing here logs request bodies, prompts, tokens or captured process output.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import tempfile
+import threading
+import time
+import uuid
+from collections import Counter
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from temper_ai.pi_agent.rpc import Rpc
+
+ASSETS = Path(__file__).parent / "assets"
+PROBE_DIR = ASSETS / "temper-box"
+CONFIG_ENV = "TEMPER_PI_BOX_CONFIG"
+CONTAINER_PYTHON = "/usr/local/bin/python3"
+WORKDIR = "/w/workspace"
+STATE_FILE = "/w/state/box-state.json"
+BUDGET_SLACK = 2
+FAULTS = ("deny_handoff", "kill_after_prompt")
+ROLE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+FORBIDDEN = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+ESTABLISHED = b"HTTP/1.1 200 Connection Established\r\n\r\n"
+#: Pi settings for every worker: no telemetry, no packages, Pi's own retries and compaction off
+#: (Temper decides what happens after a failure), the SSE transport L1 proved.
+SETTINGS = {
+    "enableInstallTelemetry": False, "quietStartup": True, "packages": [],
+    "cacheWarming": "off", "retry": {"enabled": False, "provider": {"maxRetries": 0}},
+    "compaction": {"enabled": False}, "transport": "sse",
+}
+DOCKER_ENV_KEYS = ("HOME", "LANG")
+
+
+class BoxError(Exception):
+    """A box failure with a static code and a plain message (never captured output)."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class Route:
+    provider: str
+    host: str
+    #: A model catalog file copied into the agent folder as models-store.json (codex route).
+    catalog: str | None = None
+    #: A sealed login extension folder (anthropic route), mounted read-only at /ext/auth.
+    extension: str | None = None
+    extension_entry: str | None = None
+
+
+@dataclass(frozen=True)
+class BoxConfig:
+    """Where the worker's runtime, role definitions and state live. Read from the JSON file
+    named by ``TEMPER_PI_BOX_CONFIG`` when a Pi step runs; never read with the step off."""
+
+    image: str
+    runtime_dir: str
+    pi_version: str
+    identity_extension: str
+    identity_config: str
+    identities_dir: str
+    state_root: str
+    host_node: str
+    host_pi: str
+    routes: dict[str, Route]
+    socket_root: str = ""
+    #: Home of the account whose host Pi login the handoff asks (default: this process's).
+    host_home: str = ""
+    #: ``live`` or ``rehearsal`` (egress goes to a local TLS stand-in, tokens are synthetic).
+    mode: str = "live"
+    rehearsal: dict | None = None
+    memory: str = "4g"
+    cpus: str = "4"
+    pids: int = 512
+    turn_timeout_s: float = 900.0
+    model_calls_per_turn: int = 6
+    #: Proof-harness failure injection only: ``deny_handoff`` or ``kill_after_prompt``.
+    fault: str | None = None
+
+    @classmethod
+    def load(cls, path: str | None = None) -> BoxConfig:
+        path = path or os.environ.get(CONFIG_ENV, "")
+        if not path:
+            raise BoxError("box_not_configured",
+                           f"the Pi worker box is not configured (set {CONFIG_ENV})")
+        try:
+            raw = json.loads(Path(path).read_text(encoding="utf-8"))
+            routes = {name: Route(**value) for name, value in raw.pop("routes").items()}
+            cfg = cls(routes=routes, **raw)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise BoxError("box_config_invalid",
+                           f"the Pi worker box config could not be read: {type(exc).__name__}"
+                           ) from None
+        cfg.check()
+        return cfg
+
+    def check(self) -> None:
+        problems = []
+        if self.mode not in ("live", "rehearsal"):
+            problems.append("mode must be live or rehearsal")
+        if self.mode == "rehearsal" and not (self.rehearsal or {}).get("upstream_port"):
+            problems.append("rehearsal needs upstream_port")
+        if not IMAGE_RE.match(self.image):
+            problems.append("image must be a sha256 image id")
+        if self.fault not in (None, *FAULTS):
+            problems.append("unknown fault")
+        runtime = Path(self.runtime_dir)
+        if not (runtime / "node").is_file() or not (runtime / CLI_REL).is_file():
+            problems.append("runtime_dir lacks node or the Pi cli")
+        elif installed_pi_version(runtime) != self.pi_version:
+            problems.append("installed Pi version differs from pi_version")
+        if not (Path(self.identity_extension) / "index.ts").is_file():
+            problems.append("identity_extension lacks index.ts")
+        if not (Path(self.identity_config) / "pi-identity.json").is_file():
+            problems.append("identity_config lacks pi-identity.json")
+        if not Path(self.identities_dir).is_dir():
+            problems.append("identities_dir missing")
+        if not self.routes:
+            problems.append("no routes")
+        if problems:
+            raise BoxError("box_config_invalid", "Pi worker box config: " + "; ".join(problems))
+
+    @property
+    def sockets(self) -> Path:
+        return Path(self.socket_root or f"/run/user/{os.getuid()}/temper-pi")
+
+
+CLI_REL = "pi/dist/bundle/cli.js"
+
+
+def installed_pi_version(runtime_dir: Path) -> str | None:
+    try:
+        return json.loads((runtime_dir / "pi" / "package.json").read_text())["version"]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def tree_sha256(root: Path) -> str:
+    """One digest over a folder's regular files (relative path + content), node_modules and
+    symlinks excluded -- the digest pinned for an extension."""
+    h = hashlib.sha256()
+    root = Path(root)
+    files = sorted(p for p in root.rglob("*")
+                   if p.is_file() and not p.is_symlink() and "node_modules" not in p.parts)
+    for p in files:
+        h.update(p.relative_to(root).as_posix().encode() + b"\0")
+        h.update(hashlib.sha256(p.read_bytes()).digest())
+    return h.hexdigest()
+
+
+def file_sha256(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def jwt_account_ids(token: str) -> list[str]:
+    """Account ids inside a JWT-shaped token: redacted with the token itself."""
+    parts = token.split(".")
+    if len(parts) < 2:
+        return []
+    try:
+        padded = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded))
+    except (ValueError, UnicodeError):
+        return []
+    found: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if "account_id" in str(key).lower() and isinstance(item, str) and len(item) >= 6:
+                    found.append(item)
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(payload)
+    return found
+
+
+# --- sessions (checked before every start: R1 K6) ----------------------------------------
+
+
+def check_session(sessions_dir: Path, session_id: str, *, must_exist: bool) -> dict:
+    """The participant's one Pi session file: private, matching, and not stopped mid-turn.
+
+    Raises :class:`BoxError` when the folder holds anything else, the header does not match,
+    or a session that must exist is missing. Pi reopens a session at its last entry, so the
+    active branch runs from that entry up its parents. ``settled`` is False when the branch's
+    last message is not a finished assistant message (a dangling tool call or an unanswered
+    prompt); ``settle_point`` is then the branch's last entry before the unfinished part --
+    where the owner's decision about the cut-off turn moves the branch back to."""
+    files = sorted(p for p in sessions_dir.iterdir()) if sessions_dir.is_dir() else []
+    mine = [p for p in files if p.is_file() and p.name.endswith(f"_{session_id}.jsonl")]
+    if [p for p in files if p not in mine] or len(mine) > 1:
+        raise BoxError("session_folder_not_private",
+                       "the participant's session folder holds other files")
+    if not mine:
+        if must_exist:
+            raise BoxError("session_missing", "the participant's Pi session file is missing")
+        return {"exists": False, "settled": True, "messages": 0}
+    lines = mine[0].read_text(encoding="utf-8").splitlines()
+    try:
+        entries = [json.loads(line) for line in lines if line.strip()]
+    except ValueError:
+        raise BoxError("session_unreadable", "the Pi session file is not valid JSON lines") from None
+    header = entries[0] if entries else {}
+    if header.get("type") != "session" or header.get("id") != session_id \
+            or header.get("cwd") != WORKDIR:
+        raise BoxError("session_mismatch", "the Pi session header does not match the participant")
+    branch = _active_branch(entries[1:])
+    msgs = [e.get("message") or {} for e in branch if e.get("type") == "message"]
+    last = msgs[-1] if msgs else None
+    settle_point = None
+    pending = False
+    for entry in branch:
+        if entry.get("type") == "message":
+            pending = not _finished(entry.get("message") or {})
+            if not pending:
+                settle_point = entry.get("id")
+        elif not pending:
+            settle_point = entry.get("id")
+    settled = not pending
+    return {"exists": True, "file": mine[0].name, "entries": len(entries), "messages": len(msgs),
+            "leaf_id": branch[-1].get("id") if branch else None,
+            "settle_point": settle_point, "branch_entries": len(branch),
+            "last_role": last.get("role") if last else None,
+            "last_stop": last.get("stopReason") if last else None, "settled": settled,
+            "identity_entries": sum(1 for e in branch if e.get("type") == "custom"
+                                    and e.get("customType") == "identity")}
+
+
+def _finished(message: dict) -> bool:
+    return message.get("role") == "assistant" and message.get("stopReason") in (
+        "stop", "error", "aborted", "length")
+
+
+def _active_branch(entries: list[dict]) -> list[dict]:
+    """Root-to-leaf entries of the branch Pi reopens: from the file's last entry up."""
+    if not entries:
+        return []
+    by_id = {e.get("id"): e for e in entries if e.get("id")}
+    out: list[dict] = []
+    seen: set = set()
+    node: dict | None = entries[-1]
+    while node is not None and node.get("id") not in seen:
+        seen.add(node.get("id"))
+        out.append(node)
+        parent = node.get("parentId")
+        node = by_id.get(parent) if parent else None
+    return list(reversed(out))
+
+
+# --- host-side Unix socket servers --------------------------------------------------------
+
+
+class UnixServer:
+    """A Unix socket server, one thread per connection; handler errors are swallowed."""
+
+    def __init__(self, path: Path, handler: Callable[[socket.socket], None]):
+        self.path = path
+        self.handler = handler
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.bind(str(path))
+        os.chmod(path, 0o600)
+        self.sock.listen(32)
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._one, args=(conn,), daemon=True).start()
+
+    def _one(self, conn: socket.socket) -> None:
+        try:
+            self.handler(conn)
+        except Exception:  # noqa: BLE001 - a broken client never takes the host down
+            pass
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def close(self) -> None:
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def read_line(conn: socket.socket, limit: int = 256, timeout: float = 30) -> str:
+    conn.settimeout(timeout)
+    buf = b""
+    while b"\n" not in buf and len(buf) <= limit:
+        data = conn.recv(64)
+        if not data:
+            break
+        buf += data
+    return buf.split(b"\n", 1)[0].decode("ascii", "replace").strip()
+
+
+def pipe(src: socket.socket, dst: socket.socket, counter: Counter, key: str) -> None:
+    try:
+        while data := src.recv(65536):
+            counter[key] += len(data)
+            dst.sendall(data)
+    except OSError:
+        pass
+    finally:
+        for s in (src, dst):
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+
+# --- the box ----------------------------------------------------------------------------
+
+
+@dataclass
+class BoxSpec:
+    """What one start of a participant's worker needs."""
+
+    participant_dir: Path
+    session_id: str
+    role: str
+    provider: str
+    model: str
+    thinking: str
+    tools: list[str]
+    labels: dict[str, str] = field(default_factory=dict)
+
+
+class WorkerBox:
+    """One container and its two host-side sockets, for one turn. Not reused."""
+
+    def __init__(self, cfg: BoxConfig, spec: BoxSpec, redactor: Any,
+                 owner_token: Callable[[str], str] | None = None,
+                 connector: Callable[[str], socket.socket] | None = None):
+        self.cfg = cfg
+        self.spec = spec
+        self.route = cfg.routes[spec.provider]
+        self.redactor = redactor
+        self.owner_token = owner_token or self._host_pi_token
+        self.connector = connector or self._connect_upstream
+        self.name = f"temper-pi-{uuid.uuid4().hex[:20]}"
+        self.pdir = Path(spec.participant_dir)
+        self.allowance = 0
+        self.handoffs = 0
+        self.denied = 0
+        self.tunnels: list[dict] = []
+        self.bytes: Counter[str] = Counter()
+        self.live: set[socket.socket] = set()
+        self.lock = threading.Lock()
+        self.sock_dir: Path | None = None
+        self.servers: list[UnixServer] = []
+        self.created = False
+        self.rpc: Rpc | None = None
+        self.inspected: dict | None = None
+
+    # --- setup ---
+
+    def _write_agent_dir(self) -> None:
+        """A fresh agent folder at every start: settings, the login command and role config."""
+        agent = self.pdir / "agent"
+        if agent.exists():
+            shutil.rmtree(agent)
+        agent.mkdir(mode=0o700, parents=True)
+
+        def put(name: str, data: bytes) -> None:
+            fd = os.open(agent / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+
+        put("settings.json", json.dumps(SETTINGS, indent=2).encode())
+        command = f"!{CONTAINER_PYTHON} -B /box/handoff_client.py {self.route.provider}"
+        put("models.json", json.dumps({"providers": {self.route.provider: {"apiKey": command}}},
+                                      indent=2).encode())
+        if self.route.catalog:
+            put("models-store.json", Path(self.route.catalog).read_bytes())
+        config = Path(self.cfg.identity_config)
+        for name in ("pi-identity.json", "pi-identity-role.md"):
+            if (config / name).is_file():
+                put(name, (config / name).read_bytes())
+
+    def _identity_copy(self) -> Path:
+        """The identity extension without its node_modules, plus a link to the runtime's
+        modules as seen inside the box. Content-addressed, made once per state root."""
+        src = Path(self.cfg.identity_extension)
+        dst = Path(self.cfg.state_root) / "_ext" / f"identity-{tree_sha256(src)[:16]}"
+        if dst.is_dir():
+            return dst
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        tmp = Path(tempfile.mkdtemp(prefix=".identity-", dir=dst.parent))
+        shutil.copytree(src, tmp, dirs_exist_ok=True, symlinks=True,
+                        ignore=shutil.ignore_patterns("node_modules"))
+        os.symlink("/pi-runtime/pi/node_modules", tmp / "node_modules")
+        try:
+            os.rename(tmp, dst)
+        except OSError:
+            shutil.rmtree(tmp, ignore_errors=True)
+        return dst
+
+    def mounts(self) -> list[tuple[str, str, bool]]:
+        """(source, target, writable)."""
+        assert self.sock_dir is not None
+        mounts = [
+            (str(Path(self.cfg.runtime_dir).resolve()), "/pi-runtime", False),
+            (str(ASSETS.resolve()), "/box", False),
+            (str(self._identity_copy().resolve()), "/ext/identity", False),
+            (str(PROBE_DIR.resolve()), "/ext/temper-box", False),
+            (str(self.pdir.resolve()), "/w", True),
+            (str(self.sock_dir), "/box-sock", False),
+        ]
+        if self.route.extension:
+            mounts.append((str(Path(self.route.extension).resolve()), "/ext/auth", False))
+        ca_pem = (self.cfg.rehearsal or {}).get("ca_pem")
+        if self.cfg.mode == "rehearsal" and ca_pem:
+            mounts.append((str(Path(ca_pem).resolve()),
+                           "/box-ca/ca.pem", False))
+        return mounts
+
+    def env(self) -> dict[str, str]:
+        env = {
+            "HOME": "/w/home", "LANG": "C.UTF-8",
+            "PATH": "/pi-runtime:/usr/local/bin:/usr/bin:/bin", "TMPDIR": "/w/tmp",
+            "XDG_CACHE_HOME": "/w/cache", "PI_CODING_AGENT_DIR": "/w/agent",
+            "PI_CODING_AGENT_SESSION_DIR": "/w/sessions", "NODE_DISABLE_COMPILE_CACHE": "1",
+            "PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0",
+            "HTTPS_PROXY": "http://127.0.0.1:3128", "HTTP_PROXY": "http://127.0.0.1:3128",
+            "TEMPER_BOX_OBSERVER_OUT": "/w/observer/events.jsonl",
+            "TEMPER_BOX_STATE_OUT": STATE_FILE,
+            "TEMPER_BOX_ROLE": self.spec.role, "TEMPER_BOX_TOOLS": ",".join(sorted(self.spec.tools)),
+            "PI_MEMORY_DIR": "/w/memory", "PI_IDENTITY_DIR": "/w/memory/identities",
+            "PI_IDENTITY_REINDEX": "0", "PI_TLDR_NUDGES": "off",
+        }
+        if self.cfg.mode == "rehearsal":
+            env["NODE_EXTRA_CA_CERTS"] = "/box-ca/ca.pem"
+        return env
+
+    def pi_args(self) -> list[str]:
+        args = ["--mode", "rpc", "--offline", "--no-approve", "--no-extensions", "--no-skills",
+                "--no-prompt-templates", "--no-themes", "--no-context-files",
+                "--extension", "/ext/identity/index.ts",
+                "--extension", "/ext/temper-box/index.ts"]
+        if self.route.extension:
+            args += ["--extension", f"/ext/auth/{self.route.extension_entry or 'index.ts'}"]
+        args += ["--provider", self.spec.provider, "--model", self.spec.model,
+                 "--thinking", self.spec.thinking, "--tools", ",".join(self.spec.tools),
+                 "--session-dir", "/w/sessions", "--session-id", self.spec.session_id]
+        return args
+
+    def create_args(self, command: list[str] | None = None) -> list[str]:
+        args = ["docker", "create", "--pull=never", "--interactive", "--init",
+                "--name", self.name, "--label", "temper.pi.box=1"]
+        for key, value in sorted(self.spec.labels.items()):
+            args += ["--label", f"temper.pi.{key}={value}"]
+        args += ["--network", "none", "--read-only", "--cap-drop", "ALL",
+                 "--security-opt", "no-new-privileges", "--pids-limit", str(self.cfg.pids),
+                 "--memory", self.cfg.memory, "--cpus", self.cfg.cpus,
+                 "--user", f"{os.getuid()}:{os.getgid()}", "--log-driver", "none",
+                 "--dns", "127.0.0.1", "--dns-search", ".", "--workdir", WORKDIR,
+                 "--entrypoint", CONTAINER_PYTHON]
+        for src, dst, writable in self.mounts():
+            args += ["--mount", f"type=bind,source={src},target={dst}"
+                     + ("" if writable else ",readonly")]
+        for key, value in sorted(self.env().items()):
+            args += ["--env", f"{key}={value}"]
+        args += [self.cfg.image, "-B", "/box/entry.py", *self.pi_args()] if command is None \
+            else [self.cfg.image, *command]
+        return args
+
+    def _docker(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess:
+        env = {k: os.environ[k] for k in DOCKER_ENV_KEYS if k in os.environ}
+        env["PATH"] = "/usr/bin:/bin:/usr/local/bin"
+        return subprocess.run(["docker", *args], capture_output=True, text=True,
+                              timeout=timeout, env=env)
+
+    def _open_sockets(self) -> None:
+        root = self.cfg.sockets
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.sock_dir = Path(tempfile.mkdtemp(prefix="b", dir=root))
+        os.chmod(self.sock_dir, 0o755)
+        self.servers = [UnixServer(self.sock_dir / "handoff.sock", self._handoff),
+                        UnixServer(self.sock_dir / "egress.sock", self._egress)]
+
+    def start(self, event_sink: Callable[[dict], None],
+              command: list[str] | None = None) -> Rpc:
+        """Create, check and start the container; its attached stdio is the RPC channel."""
+        for sub in ("sessions", "workspace", "home", "tmp", "cache", "state", "observer",
+                    "memory/identities"):
+            (self.pdir / sub).mkdir(parents=True, exist_ok=True)
+        for stale in ("box-state.json", "box-blocked.json", "box-rewind.json"):
+            (self.pdir / "state" / stale).unlink(missing_ok=True)
+        self._write_agent_dir()
+        self._open_sockets()
+        made = self._docker(*self.create_args(command)[1:])
+        if made.returncode != 0:
+            raise BoxError("box_create_failed", "the worker container could not be created")
+        self.created = True
+        self.inspected = self._inspect()
+        env = {k: os.environ[k] for k in DOCKER_ENV_KEYS if k in os.environ}
+        env["PATH"] = "/usr/bin:/bin:/usr/local/bin"
+        self.rpc = Rpc(["docker", "start", "--attach", "--interactive", self.name],
+                       cwd=str(self.pdir), env=env, event_sink=event_sink)
+        return self.rpc
+
+    def _inspect(self) -> dict:
+        """Refuse to start a container that is not sealed exactly as asked."""
+        out = self._docker("inspect", self.name)
+        if out.returncode != 0:
+            raise BoxError("box_inspect_failed", "the worker container could not be inspected")
+        info = json.loads(out.stdout)[0]
+        hc = info.get("HostConfig") or {}
+        binds = {(m.get("Source"), m.get("Destination"), bool(m.get("RW")))
+                 for m in info.get("Mounts") or []}
+        expected = set(self.mounts())
+        owner_pi = str(Path.home() / ".pi")
+        checks = {
+            "network_none": hc.get("NetworkMode") == "none",
+            "read_only_root": hc.get("ReadonlyRootfs") is True,
+            "not_privileged": hc.get("Privileged") is False,
+            "cap_drop_all": [c.upper() for c in hc.get("CapDrop") or []] in (["ALL"], ["CAP_ALL"]),
+            "no_cap_add": not hc.get("CapAdd"),
+            "no_new_privileges": any(str(o).startswith("no-new-privileges")
+                                     for o in hc.get("SecurityOpt") or []),
+            "own_pid_namespace": hc.get("PidMode") in ("", None),
+            "no_devices": not hc.get("Devices"),
+            "log_driver_none": (hc.get("LogConfig") or {}).get("Type") == "none",
+            "init": hc.get("Init") is True,
+            "image": info.get("Image") == self.cfg.image,
+            "user": (info.get("Config") or {}).get("User") == f"{os.getuid()}:{os.getgid()}",
+            "mounts_exact": binds == expected,
+            "no_owner_pi_mount": not any(str(s).startswith(owner_pi) for s, _d, _w in binds),
+        }
+        failed = sorted(k for k, ok in checks.items() if not ok)
+        if failed:
+            raise BoxError("box_not_sealed", "worker container is not sealed: " + ", ".join(failed))
+        return checks
+
+    # --- credentials and egress (host side) ---
+
+    def allow(self, count: int) -> None:
+        with self.lock:
+            self.allowance = count
+
+    def _host_pi_token(self, provider: str) -> str:
+        if self.cfg.mode == "rehearsal":
+            return str(((self.cfg.rehearsal or {}).get("tokens") or {}).get(provider) or "")
+        home = self.cfg.host_home or str(Path.home())
+        env = {"HOME": home, "LANG": "C.UTF-8",
+               "PATH": f"{Path(self.cfg.host_node).parent}:/usr/bin:/bin",
+               "PI_CODING_AGENT_DIR": f"{home}/.pi/agent", "PI_OFFLINE": "1",
+               "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0"}
+        try:
+            got = subprocess.run([self.cfg.host_node, self.cfg.host_pi, "auth",
+                                  "print-bearer-token", "--provider", provider,
+                                  "--min-expiry", "30m"], capture_output=True, timeout=30,
+                                 env=env)
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        return got.stdout.decode("utf-8", "replace").strip() if got.returncode == 0 else ""
+
+    def _handoff(self, conn: socket.socket) -> None:
+        provider = read_line(conn)
+        with self.lock:
+            ok = (provider == self.route.provider and self.allowance > 0
+                  and self.cfg.fault != "deny_handoff")
+            if ok:
+                self.allowance -= 1
+                self.handoffs += 1
+            else:
+                self.denied += 1
+        if not ok:
+            return
+        token = self.owner_token(provider)
+        if not token:
+            with self.lock:
+                self.denied += 1
+            return
+        # The redactor learns the token (and any account id inside it) before Pi has it.
+        self.redactor.add(token, *jwt_account_ids(token))
+        conn.sendall(token.encode())
+
+    def _connect_upstream(self, host: str) -> socket.socket:
+        if self.cfg.mode == "rehearsal":
+            port = int((self.cfg.rehearsal or {})["upstream_port"])
+            return socket.create_connection(("127.0.0.1", port), timeout=15)
+        return socket.create_connection((host, 443), timeout=15)
+
+    def _egress(self, conn: socket.socket) -> None:
+        conn.settimeout(30)
+        head = b""
+        while b"\r\n\r\n" not in head and len(head) <= 8192:
+            data = conn.recv(1024)
+            if not data:
+                break
+            head += data
+        first = head.split(b"\r\n", 1)[0].decode("latin-1", "replace").split()
+        method = first[0] if first else ""
+        target = first[1] if len(first) > 1 else ""
+        host, _, port = target.rpartition(":")
+        allowed = method == "CONNECT" and host == self.route.host and port == "443"
+        with self.lock:
+            self.tunnels.append({"host": self.route.host if host == self.route.host else "other",
+                                 "allowed": allowed})
+        if not allowed:
+            conn.sendall(FORBIDDEN)
+            return
+        upstream = self.connector(host)
+        conn.settimeout(None)
+        upstream.settimeout(None)
+        with self.lock:
+            self.live.update((conn, upstream))
+        conn.sendall(ESTABLISHED)
+        rest = head.split(b"\r\n\r\n", 1)[1] if b"\r\n\r\n" in head else b""
+        if rest:
+            upstream.sendall(rest)
+        threads = [threading.Thread(target=pipe, args=(conn, upstream, self.bytes, "up"),
+                                    daemon=True),
+                   threading.Thread(target=pipe, args=(upstream, conn, self.bytes, "down"),
+                                    daemon=True)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        with self.lock:
+            self.live.difference_update((conn, upstream))
+        upstream.close()
+
+    # --- fault injection (proof harness only) and teardown ---
+
+    def kill(self) -> None:
+        if self.created:
+            self._docker("kill", self.name, timeout=30)
+
+    def close(self) -> dict:
+        """Stop Pi, remove the container, close the sockets. Idempotent; never raises."""
+        receipt: dict[str, Any] = {"container": self.name[-8:], "created": self.created,
+                                   "sealed_checks": self.inspected}
+        try:
+            if self.rpc is not None:
+                receipt["rpc"] = self.rpc.close()
+        except Exception:  # noqa: BLE001
+            receipt["rpc"] = {"errors": ["rpc_close_failed"]}
+        removed = not self.created
+        if self.created:
+            try:
+                self._docker("rm", "--force", self.name, timeout=60)
+                left = self._docker("ps", "-a", "--filter", f"name=^{self.name}$",
+                                    "--format", "{{.ID}}", timeout=30)
+                removed = left.returncode == 0 and not left.stdout.strip()
+            except (OSError, subprocess.TimeoutExpired):
+                removed = False
+        receipt["container_removed"] = removed
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            with self.lock:
+                if not self.live:
+                    break
+            time.sleep(0.05)
+        with self.lock:
+            cut = len(self.live)
+            for s in list(self.live):
+                try:
+                    s.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+        for server in self.servers:
+            server.close()
+        if self.sock_dir is not None:
+            shutil.rmtree(self.sock_dir, ignore_errors=True)
+        with self.lock:
+            receipt.update({
+                "handoffs": self.handoffs, "handoffs_denied": self.denied,
+                "tunnels": len(self.tunnels),
+                "tunnels_allowed": sum(1 for t in self.tunnels if t["allowed"]),
+                "tunnels_refused": sum(1 for t in self.tunnels if not t["allowed"]),
+                "tunnels_cut_at_close": cut, "bytes_up": self.bytes["up"],
+                "bytes_down": self.bytes["down"],
+            })
+        return receipt

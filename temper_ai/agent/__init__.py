@@ -40,6 +40,11 @@ def register_agent_type(name: str, agent_class: type[AgentABC]):
     AGENT_TYPES[name] = agent_class
 
 
+# The Pi agent step registers itself only when its switch (TEMPER_PI_AGENT) is on.
+from temper_ai.pi_agent import register_if_enabled as _register_pi  # noqa: E402
+
+_register_pi()
+
 __all__ = [
     "AgentABC",
     "JevAgent",

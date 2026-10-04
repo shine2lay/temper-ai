@@ -7,6 +7,7 @@ import type { AgentStory, StoryItem } from '@/lib/agentStory';
 import { toolStepLabel } from '@/lib/toolLabels';
 import { agentDisplayName, UNNAMED_AGENT } from '@/lib/liveAgents';
 import { asList } from './asList';
+import { isPiAgent } from './piStory';
 
 const TERMINAL = new Set(['completed', 'failed', 'skipped', 'cancelled', 'timeout', 'interrupted', 'orphaned']);
 
@@ -149,8 +150,9 @@ export function buildRoster(
     group.agents.push({
       id,
       name,
+      // A Pi step lists each turn of its conversation as its own row.
       roundLabel: (agent.round ?? 1) > 1 || (nameCount.get(name) ?? 0) > 1
-        ? `round ${agent.round ?? 1}`
+        ? `${isPiAgent(agent) ? 'turn' : 'round'} ${agent.round ?? 1}`
         : null,
       model: agent.agent_config_snapshot?.agent?.model ?? null,
       status: agent.status,

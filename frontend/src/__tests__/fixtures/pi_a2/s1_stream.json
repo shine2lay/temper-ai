@@ -1,0 +1,1018 @@
+{
+ "scenario": "s1_stream",
+ "agent_id": "a2-s1_stream-agent",
+ "live": [
+  {
+   "type": "event",
+   "event_type": "workflow.started",
+   "data": {
+    "name": "pi-a2",
+    "workflow_name": "pi-a2",
+    "event_id": "a2-s1_stream-wf",
+    "status": "running"
+   },
+   "timestamp": "2026-10-04T03:45:17.338795+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "stage.started",
+   "data": {
+    "name": "pi",
+    "stage_name": "pi",
+    "event_id": "a2-s1_stream-stage",
+    "status": "running",
+    "parent_id": "a2-s1_stream-wf"
+   },
+   "timestamp": "2026-10-04T03:45:17.339106+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "agent.started",
+   "data": {
+    "agent_name": "pi-agent",
+    "name": "pi-agent",
+    "type": "pi",
+    "executed_by": "pi",
+    "agent_config": {
+     "type": "pi"
+    },
+    "event_id": "a2-s1_stream-agent",
+    "status": "running",
+    "parent_id": "a2-s1_stream-stage"
+   },
+   "timestamp": "2026-10-04T03:45:17.339300+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.started",
+   "data": {
+    "agent_id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s1_stream",
+    "llm_call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+    "call_kind": "model",
+    "iteration": 1,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "api": "openai-completions",
+    "streaming": true,
+    "event_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+    "status": "running",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.584513+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "Plan: read the notes ",
+      "chunk_type": "thinking",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "and run a short ",
+      "chunk_type": "thinking",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "progress check ✓.",
+      "chunk_type": "thinking",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "Reading the notes and ",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "running a check.",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "\n🔧 read(",
+      "chunk_type": "tool_call",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.584623+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "\n🔧 bash(",
+      "chunk_type": "tool_call",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.584637+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "{\"path\": \"notes.txt\"})",
+      "chunk_type": "tool_call",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.584662+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "{\"command\": \"for i in 1 2 3 4; do echo tick-$i; sleep 0.4; done; echo token=[redacted] | wc -c\"})",
+      "chunk_type": "tool_call",
+      "done": false,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.584676+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.completed",
+   "data": {
+    "agent_id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s1_stream",
+    "llm_call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+    "call_kind": "model",
+    "iteration": 1,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "prompt_tokens": 120,
+    "completion_tokens": 24,
+    "cached_prompt_tokens": 0,
+    "cache_write_tokens": 0,
+    "total_tokens": 144,
+    "cost_usd": 0.00072,
+    "cost_basis": "pi_estimate",
+    "latency_ms": 0,
+    "finish_reason": "toolUse",
+    "response_content": "Reading the notes and running a check.",
+    "reasoning": "Plan: read the notes and run a short progress check ✓.",
+    "thinking_exposed": true,
+    "thinking_redacted_blocks": 0,
+    "has_tool_calls": true,
+    "tool_calls_requested": [
+     {
+      "name": "read",
+      "id": "call_s1_read"
+     },
+     {
+      "name": "bash",
+      "id": "call_s1_bash"
+     }
+    ],
+    "unsupported_content": null,
+    "authoritative_final": true,
+    "event_id": "3b89d37d-4a93-586a-ab14-4900da0cbf79",
+    "status": "completed",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.584897+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "",
+      "chunk_type": "content",
+      "done": true,
+      "call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.584910+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "tool.call.started",
+   "data": {
+    "agent_id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s1_stream",
+    "tool_name": "read",
+    "raw_tool_name": "read",
+    "transport": "builtin",
+    "server": null,
+    "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_read",
+    "pi_tool_call_id": "call_s1_read",
+    "llm_call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+    "input_params": {
+     "path": "notes.txt"
+    },
+    "event_id": "ce90af4c-119b-5d77-8acb-cb679a5fa1e8",
+    "status": "running",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.827344+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "tool.call.started",
+   "data": {
+    "agent_id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s1_stream",
+    "tool_name": "bash",
+    "raw_tool_name": "bash",
+    "transport": "builtin",
+    "server": null,
+    "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash",
+    "pi_tool_call_id": "call_s1_bash",
+    "llm_call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+    "input_params": {
+     "command": "for i in 1 2 3 4; do echo tick-$i; sleep 0.4; done; echo token=[redacted] | wc -c"
+    },
+    "event_id": "800bc2f4-de2e-52a1-a72c-a3db5d8d814c",
+    "status": "running",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.827559+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "",
+      "chunk_type": "tool_progress",
+      "done": false,
+      "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "tick-1\n",
+      "chunk_type": "tool_progress",
+      "done": false,
+      "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.827777+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "tool.call.completed",
+   "data": {
+    "agent_id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s1_stream",
+    "tool_name": "read",
+    "raw_tool_name": "read",
+    "transport": "builtin",
+    "server": null,
+    "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_read",
+    "pi_tool_call_id": "call_s1_read",
+    "llm_call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+    "duration_ms": 0,
+    "output_chars": 86,
+    "output_clipped": false,
+    "content_parts": [
+     {
+      "type": "text",
+      "chars": 100
+     }
+    ],
+    "artifacts": null,
+    "truncation": null,
+    "output": "Grüße aus Köln ✓ 🚦 日本語テキスト\nZweite Zeile mit Zeilentrenner\nsecret-line: [redacted]\nend\n",
+    "event_id": "83ced5d1-645d-57f3-93e3-5778bd6d2a24",
+    "status": "completed",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.827774+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "tick-1\ntick-2\n",
+      "chunk_type": "tool_progress",
+      "done": false,
+      "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "tick-1\ntick-2\ntick-3\n",
+      "chunk_type": "tool_progress",
+      "done": false,
+      "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "tick-1\ntick-2\ntick-3\ntick-4\n",
+      "chunk_type": "tool_progress",
+      "done": false,
+      "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "tick-1\ntick-2\ntick-3\ntick-4\n31\n",
+      "chunk_type": "tool_progress",
+      "done": false,
+      "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.827982+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "tool.call.completed",
+   "data": {
+    "agent_id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s1_stream",
+    "tool_name": "bash",
+    "raw_tool_name": "bash",
+    "transport": "builtin",
+    "server": null,
+    "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash",
+    "pi_tool_call_id": "call_s1_bash",
+    "llm_call_id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+    "duration_ms": 0,
+    "output_chars": 31,
+    "output_clipped": false,
+    "content_parts": [
+     {
+      "type": "text",
+      "chars": 31
+     }
+    ],
+    "artifacts": null,
+    "truncation": null,
+    "output": "tick-1\ntick-2\ntick-3\ntick-4\n31\n",
+    "event_id": "8bbaa7e9-beef-51a5-8665-295dd6e7a692",
+    "status": "completed",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.827980+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.started",
+   "data": {
+    "agent_id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s1_stream",
+    "llm_call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6",
+    "call_kind": "model",
+    "iteration": 2,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "api": "openai-completions",
+    "streaming": true,
+    "event_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6",
+    "status": "running",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.828142+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "The notes mention ",
+      "chunk_type": "thinking",
+      "done": false,
+      "call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "[redacted]; never echo it. ",
+      "chunk_type": "thinking",
+      "done": false,
+      "call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "Four ticks.",
+      "chunk_type": "thinking",
+      "done": false,
+      "call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "Résumé ✓ 🚦 — notes read, ",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "ticks counted. Done.\n\n",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "{\"status\": \"ok\", \"ticks\": 4, ",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6"
+     },
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "\"label\": \"Grüße ✓\"}",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.828370+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.completed",
+   "data": {
+    "agent_id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s1_stream",
+    "llm_call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6",
+    "call_kind": "model",
+    "iteration": 2,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "prompt_tokens": 260,
+    "completion_tokens": 40,
+    "cached_prompt_tokens": 0,
+    "cache_write_tokens": 0,
+    "total_tokens": 300,
+    "cost_usd": 0.0013800000000000002,
+    "cost_basis": "pi_estimate",
+    "latency_ms": 0,
+    "finish_reason": "stop",
+    "response_content": "Résumé ✓ 🚦 — notes read, ticks counted. Done.\n\n{\"status\": \"ok\", \"ticks\": 4, \"label\": \"Grüße ✓\"}",
+    "reasoning": "The notes mention [redacted]; never echo it. Four ticks.",
+    "thinking_exposed": true,
+    "thinking_redacted_blocks": 0,
+    "has_tool_calls": false,
+    "tool_calls_requested": [],
+    "unsupported_content": null,
+    "authoritative_final": true,
+    "event_id": "a64d9f8c-9427-5438-a42b-71e3d959a87a",
+    "status": "completed",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.828369+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s1_stream-agent",
+      "content": "",
+      "chunk_type": "content",
+      "done": true,
+      "call_id": "0c1cec8d-a558-5d77-a807-baccf5b929b6"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:17.828381+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "agent.completed",
+   "data": {
+    "agent_name": "pi-agent",
+    "output": "Résumé ✓ 🚦 — notes read, ticks counted. Done.\n\n{\"status\": \"ok\", \"ticks\": 4, \"label\": \"Grüße ✓\"}",
+    "output_length": 95,
+    "has_structured_output": true,
+    "structured_output": {
+     "status": "ok",
+     "ticks": 4,
+     "label": "Grüße ✓"
+    },
+    "tokens": 444,
+    "prompt_tokens": 380,
+    "completion_tokens": 64,
+    "cost_usd": 0.0021,
+    "cost_basis": "pi_estimate",
+    "llm_calls": 2,
+    "tool_calls": 2,
+    "duration_seconds": null,
+    "executed_by": "pi",
+    "warnings": [],
+    "event_id": "7780b1e0-2f7f-5b82-a22f-3f4ae9f09ac0",
+    "status": "completed",
+    "parent_id": "a2-s1_stream-agent"
+   },
+   "timestamp": "2026-10-04T03:45:17.828680+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "stage.completed",
+   "data": {
+    "name": "pi",
+    "error": null,
+    "event_id": "a2-s1_stream-stage-end",
+    "status": "completed",
+    "parent_id": "a2-s1_stream-stage"
+   },
+   "timestamp": "2026-10-04T03:45:17.828803+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "workflow.completed",
+   "data": {
+    "name": "pi-a2",
+    "error": null,
+    "event_id": "a2-s1_stream-wf-end",
+    "status": "completed",
+    "parent_id": "a2-s1_stream-wf"
+   },
+   "timestamp": "2026-10-04T03:45:17.828916+00:00"
+  }
+ ],
+ "start": {
+  "index": 3,
+  "snapshot": {
+   "id": "a2-s1_stream",
+   "workflow_name": "pi-a2",
+   "status": "running",
+   "start_time": "2026-10-04T03:45:17.337491",
+   "end_time": null,
+   "duration_seconds": null,
+   "nodes": [
+    {
+     "id": "a2-s1_stream-stage",
+     "name": "pi",
+     "type": "agent",
+     "status": "running",
+     "start_time": "2026-10-04T03:45:17.338863",
+     "end_time": null,
+     "duration_seconds": null,
+     "cost_usd": 0,
+     "total_tokens": 0,
+     "total_llm_calls": 0,
+     "total_tool_calls": 0,
+     "agent": {
+      "id": "a2-s1_stream-agent",
+      "agent_name": "pi-agent",
+      "status": "running",
+      "start_time": "2026-10-04T03:45:17.339139",
+      "end_time": null,
+      "duration_seconds": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_llm_calls": 0,
+      "total_tool_calls": 0,
+      "llm_calls": [],
+      "tool_calls": [],
+      "output": null,
+      "structured_output": null,
+      "output_data": null,
+      "role": null,
+      "error_message": null,
+      "log": null,
+      "input_data": null,
+      "agent_config_snapshot": {
+       "agent": {
+        "type": "pi"
+       }
+      }
+     },
+     "agents": null,
+     "child_nodes": null,
+     "strategy": null,
+     "unresolved_inputs": null,
+     "depends_on": [],
+     "loop_to": null,
+     "max_loops": null,
+     "gate": null,
+     "gate_status": null,
+     "error_message": null,
+     "delegated_by": null,
+     "delegate_source": null
+    }
+   ],
+   "total_tokens": 0,
+   "total_cost_usd": 0,
+   "total_llm_calls": 0,
+   "total_tool_calls": 0,
+   "input_data": null,
+   "workspace_path": null,
+   "output_data": null,
+   "workflow_output": null,
+   "error_message": null,
+   "fork_source": null,
+   "agent_index": [
+    {
+     "id": "a2-s1_stream-agent",
+     "agent_name": "pi-agent",
+     "round": 1,
+     "status": "running",
+     "node_id": "a2-s1_stream-stage",
+     "node_name": "pi",
+     "start_time": "2026-10-04T03:45:17.339139",
+     "end_time": null,
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0,
+     "error_message": null,
+     "role": null,
+     "agent_type": "pi",
+     "provider": null,
+     "model": null
+    }
+   ],
+   "stopped": null,
+   "attempts": [],
+   "quiet": false,
+   "last_step": "pi-agent · working",
+   "last_activity": "2026-10-04T03:45:17.339139+00:00",
+   "waiting_on_you": false
+  }
+ },
+ "mid": {
+  "index": 10,
+  "snapshot": {
+   "id": "a2-s1_stream",
+   "workflow_name": "pi-a2",
+   "status": "running",
+   "start_time": "2026-10-04T03:45:17.337491",
+   "end_time": null,
+   "duration_seconds": null,
+   "nodes": [
+    {
+     "id": "a2-s1_stream-stage",
+     "name": "pi",
+     "type": "agent",
+     "status": "running",
+     "start_time": "2026-10-04T03:45:17.338863",
+     "end_time": null,
+     "duration_seconds": null,
+     "cost_usd": 0,
+     "total_tokens": 0,
+     "total_llm_calls": 1,
+     "total_tool_calls": 0,
+     "agent": {
+      "id": "a2-s1_stream-agent",
+      "agent_name": "pi-agent",
+      "status": "running",
+      "start_time": "2026-10-04T03:45:17.339139",
+      "end_time": null,
+      "duration_seconds": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_llm_calls": 1,
+      "total_tool_calls": 0,
+      "llm_calls": [
+       {
+        "id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+        "provider": "a2-local",
+        "model": "a2-fixture-v1",
+        "status": "completed",
+        "start_time": "2026-10-04T03:45:17.584245",
+        "end_time": "2026-10-04T03:45:17.584721",
+        "duration_seconds": null,
+        "prompt_tokens": 120,
+        "completion_tokens": 24,
+        "total_tokens": 144,
+        "estimated_cost_usd": 0.00072,
+        "prompt": null,
+        "response": "Reading the notes and running a check.",
+        "thinking": "Plan: read the notes and run a short progress check ✓.",
+        "tool_calls": null,
+        "error_message": null
+       }
+      ],
+      "tool_calls": [],
+      "output": null,
+      "structured_output": null,
+      "output_data": null,
+      "role": null,
+      "error_message": null,
+      "log": null,
+      "input_data": null,
+      "agent_config_snapshot": {
+       "agent": {
+        "type": "pi"
+       }
+      }
+     },
+     "agents": null,
+     "child_nodes": null,
+     "strategy": null,
+     "unresolved_inputs": null,
+     "depends_on": [],
+     "loop_to": null,
+     "max_loops": null,
+     "gate": null,
+     "gate_status": null,
+     "error_message": null,
+     "delegated_by": null,
+     "delegate_source": null
+    }
+   ],
+   "total_tokens": 0,
+   "total_cost_usd": 0,
+   "total_llm_calls": 1,
+   "total_tool_calls": 0,
+   "input_data": null,
+   "workspace_path": null,
+   "output_data": null,
+   "workflow_output": null,
+   "error_message": null,
+   "fork_source": null,
+   "agent_index": [
+    {
+     "id": "a2-s1_stream-agent",
+     "agent_name": "pi-agent",
+     "round": 1,
+     "status": "running",
+     "node_id": "a2-s1_stream-stage",
+     "node_name": "pi",
+     "start_time": "2026-10-04T03:45:17.339139",
+     "end_time": null,
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0,
+     "error_message": null,
+     "role": null,
+     "agent_type": "pi",
+     "provider": null,
+     "model": null
+    }
+   ],
+   "stopped": null,
+   "attempts": [],
+   "quiet": false,
+   "last_step": "pi-agent · thought",
+   "last_activity": "2026-10-04T03:45:17.584721+00:00",
+   "waiting_on_you": false
+  }
+ },
+ "final": {
+  "id": "a2-s1_stream",
+  "workflow_name": "pi-a2",
+  "status": "completed",
+  "start_time": "2026-10-04T03:45:17.828819",
+  "end_time": "2026-10-04T03:45:17.828819",
+  "duration_seconds": null,
+  "nodes": [
+   {
+    "id": "a2-s1_stream-stage",
+    "name": "pi",
+    "type": "agent",
+    "status": "running",
+    "start_time": "2026-10-04T03:45:17.338863",
+    "end_time": "2026-10-04T03:45:17.828700",
+    "duration_seconds": null,
+    "cost_usd": 0.0021,
+    "total_tokens": 444,
+    "total_llm_calls": 2,
+    "total_tool_calls": 2,
+    "agent": {
+     "id": "a2-s1_stream-agent",
+     "agent_name": "pi-agent",
+     "status": "completed",
+     "start_time": "2026-10-04T03:45:17.339139",
+     "end_time": "2026-10-04T03:45:17.828551",
+     "duration_seconds": null,
+     "prompt_tokens": 380,
+     "completion_tokens": 64,
+     "total_tokens": 444,
+     "estimated_cost_usd": 0.0021,
+     "total_llm_calls": 2,
+     "total_tool_calls": 2,
+     "llm_calls": [
+      {
+       "id": "dbd3fce5-484a-5dca-95dc-283ffffa71e1",
+       "provider": "a2-local",
+       "model": "a2-fixture-v1",
+       "status": "completed",
+       "start_time": "2026-10-04T03:45:17.584245",
+       "end_time": "2026-10-04T03:45:17.584721",
+       "duration_seconds": null,
+       "prompt_tokens": 120,
+       "completion_tokens": 24,
+       "total_tokens": 144,
+       "estimated_cost_usd": 0.00072,
+       "prompt": null,
+       "response": "Reading the notes and running a check.",
+       "thinking": "Plan: read the notes and run a short progress check ✓.",
+       "tool_calls": null,
+       "error_message": null
+      },
+      {
+       "id": "0c1cec8d-a558-5d77-a807-baccf5b929b6",
+       "provider": "a2-local",
+       "model": "a2-fixture-v1",
+       "status": "completed",
+       "start_time": "2026-10-04T03:45:17.828020",
+       "end_time": "2026-10-04T03:45:17.828250",
+       "duration_seconds": null,
+       "prompt_tokens": 260,
+       "completion_tokens": 40,
+       "total_tokens": 300,
+       "estimated_cost_usd": 0.0013800000000000002,
+       "prompt": null,
+       "response": "Résumé ✓ 🚦 — notes read, ticks counted. Done.\n\n{\"status\": \"ok\", \"ticks\": 4, \"label\": \"Grüße ✓\"}",
+       "thinking": "The notes mention [redacted]; never echo it. Four ticks.",
+       "tool_calls": null,
+       "error_message": null
+      }
+     ],
+     "tool_calls": [
+      {
+       "id": "ce90af4c-119b-5d77-8acb-cb679a5fa1e8",
+       "tool_name": "read",
+       "status": "completed",
+       "start_time": "2026-10-04T03:45:17.827056",
+       "end_time": "2026-10-04T03:45:17.827644",
+       "duration_seconds": null,
+       "input_data": {
+        "path": "notes.txt"
+       },
+       "output_data": "Grüße aus Köln ✓ 🚦 日本語テキスト\nZweite Zeile mit Zeilentrenner\nsecret-line: [redacted]\nend\n",
+       "error_message": null,
+       "transport": "builtin",
+       "server": null,
+       "executed_by": "pi",
+       "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_read"
+      },
+      {
+       "id": "800bc2f4-de2e-52a1-a72c-a3db5d8d814c",
+       "tool_name": "bash",
+       "status": "completed",
+       "start_time": "2026-10-04T03:45:17.827406",
+       "end_time": "2026-10-04T03:45:17.827852",
+       "duration_seconds": null,
+       "input_data": {
+        "command": "for i in 1 2 3 4; do echo tick-$i; sleep 0.4; done; echo token=[redacted] | wc -c"
+       },
+       "output_data": "tick-1\ntick-2\ntick-3\ntick-4\n31\n",
+       "error_message": null,
+       "transport": "builtin",
+       "server": null,
+       "executed_by": "pi",
+       "call_id": "pi:session-s1_stream:283ffffa71e1:call_s1_bash"
+      }
+     ],
+     "output": "Résumé ✓ 🚦 — notes read, ticks counted. Done.\n\n{\"status\": \"ok\", \"ticks\": 4, \"label\": \"Grüße ✓\"}",
+     "structured_output": {
+      "status": "ok",
+      "ticks": 4,
+      "label": "Grüße ✓"
+     },
+     "output_data": {
+      "status": "ok",
+      "ticks": 4,
+      "label": "Grüße ✓"
+     },
+     "role": null,
+     "error_message": null,
+     "log": null,
+     "input_data": null,
+     "agent_config_snapshot": {
+      "agent": {
+       "type": "pi"
+      }
+     }
+    },
+    "agents": null,
+    "child_nodes": null,
+    "strategy": null,
+    "unresolved_inputs": null,
+    "depends_on": [],
+    "loop_to": null,
+    "max_loops": null,
+    "gate": null,
+    "gate_status": null,
+    "error_message": null,
+    "delegated_by": null,
+    "delegate_source": null
+   }
+  ],
+  "total_tokens": 444,
+  "total_cost_usd": 0.0021,
+  "total_llm_calls": 2,
+  "total_tool_calls": 2,
+  "input_data": null,
+  "workspace_path": null,
+  "output_data": null,
+  "workflow_output": null,
+  "error_message": null,
+  "fork_source": null,
+  "agent_index": [
+   {
+    "id": "a2-s1_stream-agent",
+    "agent_name": "pi-agent",
+    "round": 1,
+    "status": "completed",
+    "node_id": "a2-s1_stream-stage",
+    "node_name": "pi",
+    "start_time": "2026-10-04T03:45:17.339139",
+    "end_time": "2026-10-04T03:45:17.828551",
+    "duration_seconds": null,
+    "prompt_tokens": 380,
+    "completion_tokens": 64,
+    "total_tokens": 444,
+    "estimated_cost_usd": 0.0021,
+    "error_message": null,
+    "role": null,
+    "agent_type": "pi",
+    "provider": null,
+    "model": null
+   }
+  ],
+  "stopped": null,
+  "attempts": [],
+  "quiet": false,
+  "last_step": "pi-a2 · workflow.completed",
+  "last_activity": null,
+  "waiting_on_you": false
+ },
+ "outcome": {
+  "status": "completed",
+  "errors": [],
+  "tokens": {
+   "prompt_tokens": 380,
+   "completion_tokens": 64,
+   "cached_prompt_tokens": 0,
+   "cache_write_tokens": 0,
+   "total_tokens": 444,
+   "cost_usd": 0.0021
+  },
+  "structured_output": {
+   "status": "ok",
+   "ticks": 4,
+   "label": "Grüße ✓"
+  }
+ }
+}

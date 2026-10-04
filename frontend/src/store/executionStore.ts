@@ -7,6 +7,7 @@ import { immer } from 'zustand/middleware/immer';
 import { enableMapSet } from 'immer';
 import { MAX_EVENT_LOG_SIZE } from '@/lib/constants';
 import { appendChunk, finishTool, newStory, startTool, type AgentStory } from '@/lib/agentStory';
+import * as piStory from '@/lib/piStory';
 import type { StatusFilter } from '@/lib/runSearch';
 import type {
   WorkflowExecution,
@@ -35,6 +36,82 @@ function _story(state: { stories: Map<string, AgentStory> }, agentId: string): A
     state.stories.set(agentId, story);
   }
   return story;
+}
+
+/* A Pi agent step's turn tells its story through piStory.ts; every other
+ * agent's events take exactly the paths they always took. */
+
+type PiState = { stories: Map<string, AgentStory>; agents: Map<string, AgentExecution> };
+
+function _isPiEvent(state: PiState, agentId: string, data: Record<string, unknown>): boolean {
+  return data.executed_by === 'pi'
+    || !!state.stories.get(agentId)?.pi
+    || piStory.isPiAgent(state.agents.get(agentId));
+}
+
+/** A Pi turn's story, marked as one so a reload still reads it the Pi way. */
+function _piStory(state: PiState, agentId: string): AgentStory {
+  const story = _story(state, agentId);
+  story.pi = true;
+  return story;
+}
+
+/**
+ * A Pi model call's final message (Pi says it is the whole reply): it replaces
+ * the live words of that call. Returns whether the event was one.
+ */
+function _piCallFinal(state: PiState, msg: WSEvent, data: Record<string, unknown>): boolean {
+  const agId = (data.agent_id ?? msg.agent_id) as string | undefined;
+  if (!agId || !data.llm_call_id || data.authoritative_final !== true) return false;
+  piStory.reconcileCall(_piStory(state, agId), {
+    callId: data.llm_call_id as string,
+    text: data.response_content as string | null | undefined,
+    thinking: data.reasoning as string | null | undefined,
+    error: msg.event_type === 'llm.call.failed'
+      ? ((data.error as string | undefined) || 'The model call failed.')
+      : null,
+    at: msg.timestamp ?? new Date().toISOString(),
+  });
+  return true;
+}
+
+/** A Pi tool step ended: found by its own call id, never by name. */
+function _piToolEnd(
+  state: PiState & { streamingContent: Map<string, StreamEntry> },
+  msg: WSEvent,
+  data: Record<string, unknown>,
+  agId: string,
+): void {
+  const failed = msg.event_type === 'tool.call.failed'
+    || (data.status != null && data.status !== 'success' && data.status !== 'completed');
+  // Pi's tool events say `error` and `duration_ms`; the stored row says
+  // `error_message` and `duration_seconds`.
+  const seconds = (data.duration_seconds as number | undefined)
+    ?? (typeof data.duration_ms === 'number' ? data.duration_ms / 1000 : undefined);
+  const entry = state.streamingContent.get(agId);
+  if (entry?.toolActivity) {
+    const toolName = data.tool_name as string;
+    const running = [...entry.toolActivity]
+      .reverse()
+      .find((t) => t.toolName === toolName && t.status === 'running');
+    if (running) {
+      running.status = failed ? 'failed' : 'completed';
+      running.completedAt = msg.timestamp ?? new Date().toISOString();
+      running.durationSeconds = seconds;
+    }
+  }
+  const toolId = (data.call_id ?? data.tool_execution_id ?? data.event_id) as string | undefined;
+  piStory.finishTool(_piStory(state, agId), {
+    toolId: toolId || undefined,
+    exact: data.call_id != null,
+    toolName: data.tool_name as string | undefined,
+    status: failed ? 'failed' : 'completed',
+    durationSeconds: seconds,
+    result: data.output_data ?? data.output,
+    error: (data.error_message ?? data.error) as string | undefined,
+    args: (data.input_params ?? data.input_data) as Record<string, unknown> | undefined,
+    at: msg.timestamp ?? new Date().toISOString(),
+  });
 }
 
 // Re-export StageExecution as NodeExecution for backward compat
@@ -603,6 +680,25 @@ export const useExecutionStore = create<ExecutionState>()(
           state.livePick = null;
         }
 
+        // A Pi agent step's turn: what this page heard begin and the run's
+        // record says has ended may have lost its end with the connection,
+        // so the record settles it (piStory.ts). Other agents: unchanged.
+        for (const [agentId, story] of state.stories) {
+          const agent = state.agents.get(agentId);
+          if (!agent || !(story.pi || piStory.isPiAgent(agent))) continue;
+          const heard = new Set([...(story.seqs?.keys() ?? []), ...story.streamedCalls]);
+          for (const id of heard) {
+            if (story.finalCalls?.has(id)) continue;
+            const final = piStory.storedFinal(agent, id);
+            if (final) piStory.reconcileCall(story, final);
+          }
+          for (const item of story.items) {
+            if (item.kind !== 'tool' || item.status !== 'running' || !item.toolId) continue;
+            const ended = piStory.storedToolEnd(agent, item.toolId);
+            if (ended) piStory.finishTool(story, ended);
+          }
+        }
+
         // Seed streamingContent for running agents so the graph's cards and
         // the header show activity even after a page refresh mid-execution.
         // (The live panel builds its own story; this is for everything else.)
@@ -819,6 +915,15 @@ export const useExecutionStore = create<ExecutionState>()(
           case 'llm.call.completed': {
             const llmId = (data.llm_call_id ?? data.event_id) as string;
             if (llmId) state.llmCalls.set(llmId, data as unknown as LLMCall);
+            _piCallFinal(state, msg, data);
+            break;
+          }
+
+          case 'llm.call.failed': {
+            // Only a Pi agent step's turn says its failed call's final message here.
+            if (!_piCallFinal(state, msg, data)) break;
+            const llmId = data.llm_call_id as string;
+            state.llmCalls.set(llmId, data as unknown as LLMCall);
             break;
           }
 
@@ -839,6 +944,16 @@ export const useExecutionStore = create<ExecutionState>()(
               startedAt: msg.timestamp ?? new Date().toISOString(),
               args: (data.input_params ?? data.input_data) as Record<string, unknown> | undefined,
             } satisfies ToolActivity);
+            if (_isPiEvent(state, agId, data)) {
+              piStory.startTool(_piStory(state, agId), {
+                // The call id both its start and its end carry.
+                toolId: (data.call_id ?? data.tool_execution_id ?? data.event_id) as string | undefined,
+                toolName: data.tool_name as string,
+                args: (data.input_params ?? data.input_data) as Record<string, unknown> | undefined,
+                at: msg.timestamp ?? new Date().toISOString(),
+              });
+              break;
+            }
             startTool(_story(state, agId), {
               toolId: (data.tool_execution_id ?? data.event_id) as string | undefined,
               toolName: data.tool_name as string,
@@ -854,7 +969,9 @@ export const useExecutionStore = create<ExecutionState>()(
             const toolId = (data.tool_execution_id ?? data.event_id) as string;
             if (toolId) state.toolCalls.set(toolId, data as unknown as ToolCall);
             const agId = (data.agent_id ?? msg.agent_id) as string;
-            if (agId) {
+            if (agId && _isPiEvent(state, agId, data)) {
+              _piToolEnd(state, msg, data, agId);
+            } else if (agId) {
               const failed = msg.event_type === 'tool.call.failed'
                 || (data.status != null && data.status !== 'success' && data.status !== 'completed');
               // Tool events say `error` and `duration_ms` (tool_execution.py, pi_stream.py);
@@ -899,6 +1016,7 @@ export const useExecutionStore = create<ExecutionState>()(
               content: string;
               done?: boolean;
               call_id?: string | null;
+              seq?: number | null;
             }>;
             for (const chunk of chunks) {
               const agId = chunk.agent_id;
@@ -913,7 +1031,23 @@ export const useExecutionStore = create<ExecutionState>()(
                 entry = { content: '', thinking: '', activeToolCall: '', done: false, toolActivity: [] };
                 state.streamingContent.set(agId, entry);
               }
-              appendChunk(_story(state, agId), chunk, msg.timestamp ?? new Date().toISOString());
+              const story = _story(state, agId);
+              const at = msg.timestamp ?? new Date().toISOString();
+              if (chunk.seq != null || chunk.chunk_type === 'tool_progress' || story.pi
+                || piStory.isPiAgent(state.agents.get(agId))) {
+                story.pi = true;
+                if (chunk.seq != null && chunk.call_id && !story.finalCalls?.has(chunk.call_id)) {
+                  // Words of a call the record says has ended (this page missed
+                  // its end): its final message comes first, so they are not news.
+                  const final = piStory.storedFinal(state.agents.get(agId), chunk.call_id);
+                  if (final) piStory.reconcileCall(story, final);
+                }
+                // A chunk heard before (a reconnect replays them) or a running
+                // tool's progress report is not more words for the card.
+                if (!piStory.appendChunk(story, chunk, at)) continue;
+              } else {
+                appendChunk(story, chunk, at);
+              }
               // `done` ends one model call, not the agent: output after it
               // is the agent's next call.
               if (chunk.content) entry.done = false;

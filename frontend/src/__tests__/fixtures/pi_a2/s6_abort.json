@@ -1,0 +1,579 @@
+{
+ "scenario": "s6_abort",
+ "agent_id": "a2-s6_abort-agent",
+ "live": [
+  {
+   "type": "event",
+   "event_type": "workflow.started",
+   "data": {
+    "name": "pi-a2",
+    "workflow_name": "pi-a2",
+    "event_id": "a2-s6_abort-wf",
+    "status": "running"
+   },
+   "timestamp": "2026-10-04T03:45:21.034513+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "stage.started",
+   "data": {
+    "name": "pi",
+    "stage_name": "pi",
+    "event_id": "a2-s6_abort-stage",
+    "status": "running",
+    "parent_id": "a2-s6_abort-wf"
+   },
+   "timestamp": "2026-10-04T03:45:21.034710+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "agent.started",
+   "data": {
+    "agent_name": "pi-agent",
+    "name": "pi-agent",
+    "type": "pi",
+    "executed_by": "pi",
+    "agent_config": {
+     "type": "pi"
+    },
+    "event_id": "a2-s6_abort-agent",
+    "status": "running",
+    "parent_id": "a2-s6_abort-stage"
+   },
+   "timestamp": "2026-10-04T03:45:21.034851+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.started",
+   "data": {
+    "agent_id": "a2-s6_abort-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s6_abort",
+    "llm_call_id": "dc3be080-f2f8-5c39-b55e-620ce0426065",
+    "call_kind": "model",
+    "iteration": 1,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "api": "openai-completions",
+    "streaming": true,
+    "event_id": "dc3be080-f2f8-5c39-b55e-620ce0426065",
+    "status": "running",
+    "parent_id": "a2-s6_abort-agent"
+   },
+   "timestamp": "2026-10-04T03:45:21.276925+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s6_abort-agent",
+      "content": "chunk 0 ✓ ",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "dc3be080-f2f8-5c39-b55e-620ce0426065"
+     },
+     {
+      "agent_id": "a2-s6_abort-agent",
+      "content": "chunk 1 ✓ ",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "dc3be080-f2f8-5c39-b55e-620ce0426065"
+     },
+     {
+      "agent_id": "a2-s6_abort-agent",
+      "content": "chunk 2 ✓ ",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "dc3be080-f2f8-5c39-b55e-620ce0426065"
+     },
+     {
+      "agent_id": "a2-s6_abort-agent",
+      "content": "chunk 3 ✓ ",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "dc3be080-f2f8-5c39-b55e-620ce0426065"
+     },
+     {
+      "agent_id": "a2-s6_abort-agent",
+      "content": "chunk 4 ✓ ",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "dc3be080-f2f8-5c39-b55e-620ce0426065"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:21.519328+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.failed",
+   "data": {
+    "agent_id": "a2-s6_abort-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s6_abort",
+    "llm_call_id": "dc3be080-f2f8-5c39-b55e-620ce0426065",
+    "call_kind": "model",
+    "iteration": 1,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "cached_prompt_tokens": 0,
+    "cache_write_tokens": 0,
+    "total_tokens": 0,
+    "cost_usd": 0.0,
+    "cost_basis": "pi_estimate",
+    "latency_ms": 242,
+    "finish_reason": "aborted",
+    "response_content": "chunk 0 ✓ chunk 1 ✓ chunk 2 ✓ chunk 3 ✓ chunk 4 ✓ ",
+    "reasoning": null,
+    "thinking_exposed": false,
+    "thinking_redacted_blocks": 0,
+    "has_tool_calls": false,
+    "tool_calls_requested": [],
+    "unsupported_content": null,
+    "authoritative_final": true,
+    "error_type": "aborted",
+    "error": "Request was aborted",
+    "event_id": "64d45b26-2702-5843-bb9a-bfad6b4c46c1",
+    "status": "failed",
+    "parent_id": "a2-s6_abort-agent"
+   },
+   "timestamp": "2026-10-04T03:45:21.519324+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s6_abort-agent",
+      "content": "",
+      "chunk_type": "content",
+      "done": true,
+      "call_id": "dc3be080-f2f8-5c39-b55e-620ce0426065"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:21.519353+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "agent.failed",
+   "data": {
+    "agent_name": "pi-agent",
+    "output": "",
+    "output_length": 0,
+    "has_structured_output": false,
+    "structured_output": null,
+    "tokens": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "cost_usd": 0.0,
+    "cost_basis": "pi_estimate",
+    "llm_calls": 1,
+    "tool_calls": 0,
+    "duration_seconds": null,
+    "executed_by": "pi",
+    "warnings": [],
+    "error": "the last model call was stopped: Request was aborted",
+    "event_id": "7b3ed2c4-4380-5098-a786-06b7997191eb",
+    "status": "failed",
+    "parent_id": "a2-s6_abort-agent"
+   },
+   "timestamp": "2026-10-04T03:45:21.519558+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "stage.failed",
+   "data": {
+    "name": "pi",
+    "error": "the last model call was stopped: Request was aborted",
+    "event_id": "a2-s6_abort-stage-end",
+    "status": "failed",
+    "parent_id": "a2-s6_abort-stage"
+   },
+   "timestamp": "2026-10-04T03:45:21.519705+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "workflow.failed",
+   "data": {
+    "name": "pi-a2",
+    "error": "the last model call was stopped: Request was aborted",
+    "event_id": "a2-s6_abort-wf-end",
+    "status": "failed",
+    "parent_id": "a2-s6_abort-wf"
+   },
+   "timestamp": "2026-10-04T03:45:21.519829+00:00"
+  }
+ ],
+ "start": {
+  "index": 3,
+  "snapshot": {
+   "id": "a2-s6_abort",
+   "workflow_name": "pi-a2",
+   "status": "running",
+   "start_time": "2026-10-04T03:45:21.034180",
+   "end_time": null,
+   "duration_seconds": null,
+   "nodes": [
+    {
+     "id": "a2-s6_abort-stage",
+     "name": "pi",
+     "type": "agent",
+     "status": "running",
+     "start_time": "2026-10-04T03:45:21.034549",
+     "end_time": null,
+     "duration_seconds": null,
+     "cost_usd": 0,
+     "total_tokens": 0,
+     "total_llm_calls": 0,
+     "total_tool_calls": 0,
+     "agent": {
+      "id": "a2-s6_abort-agent",
+      "agent_name": "pi-agent",
+      "status": "running",
+      "start_time": "2026-10-04T03:45:21.034733",
+      "end_time": null,
+      "duration_seconds": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_llm_calls": 0,
+      "total_tool_calls": 0,
+      "llm_calls": [],
+      "tool_calls": [],
+      "output": null,
+      "structured_output": null,
+      "output_data": null,
+      "role": null,
+      "error_message": null,
+      "log": null,
+      "input_data": null,
+      "agent_config_snapshot": {
+       "agent": {
+        "type": "pi"
+       }
+      }
+     },
+     "agents": null,
+     "child_nodes": null,
+     "strategy": null,
+     "unresolved_inputs": null,
+     "depends_on": [],
+     "loop_to": null,
+     "max_loops": null,
+     "gate": null,
+     "gate_status": null,
+     "error_message": null,
+     "delegated_by": null,
+     "delegate_source": null
+    }
+   ],
+   "total_tokens": 0,
+   "total_cost_usd": 0,
+   "total_llm_calls": 0,
+   "total_tool_calls": 0,
+   "input_data": null,
+   "workspace_path": null,
+   "output_data": null,
+   "workflow_output": null,
+   "error_message": null,
+   "fork_source": null,
+   "agent_index": [
+    {
+     "id": "a2-s6_abort-agent",
+     "agent_name": "pi-agent",
+     "round": 1,
+     "status": "running",
+     "node_id": "a2-s6_abort-stage",
+     "node_name": "pi",
+     "start_time": "2026-10-04T03:45:21.034733",
+     "end_time": null,
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0,
+     "error_message": null,
+     "role": null,
+     "agent_type": "pi",
+     "provider": null,
+     "model": null
+    }
+   ],
+   "stopped": null,
+   "attempts": [],
+   "quiet": false,
+   "last_step": "pi-agent · working",
+   "last_activity": "2026-10-04T03:45:21.034733+00:00",
+   "waiting_on_you": false
+  }
+ },
+ "mid": {
+  "index": 4,
+  "snapshot": {
+   "id": "a2-s6_abort",
+   "workflow_name": "pi-a2",
+   "status": "running",
+   "start_time": "2026-10-04T03:45:21.034180",
+   "end_time": null,
+   "duration_seconds": null,
+   "nodes": [
+    {
+     "id": "a2-s6_abort-stage",
+     "name": "pi",
+     "type": "agent",
+     "status": "running",
+     "start_time": "2026-10-04T03:45:21.034549",
+     "end_time": null,
+     "duration_seconds": null,
+     "cost_usd": 0,
+     "total_tokens": 0,
+     "total_llm_calls": 1,
+     "total_tool_calls": 0,
+     "agent": {
+      "id": "a2-s6_abort-agent",
+      "agent_name": "pi-agent",
+      "status": "running",
+      "start_time": "2026-10-04T03:45:21.034733",
+      "end_time": null,
+      "duration_seconds": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_llm_calls": 1,
+      "total_tool_calls": 0,
+      "llm_calls": [
+       {
+        "id": "dc3be080-f2f8-5c39-b55e-620ce0426065",
+        "provider": "a2-local",
+        "model": "a2-fixture-v1",
+        "status": "running",
+        "start_time": "2026-10-04T03:45:21.276636",
+        "end_time": null,
+        "duration_seconds": null,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "estimated_cost_usd": 0,
+        "prompt": null,
+        "response": null,
+        "thinking": null,
+        "tool_calls": null,
+        "error_message": null
+       }
+      ],
+      "tool_calls": [],
+      "output": null,
+      "structured_output": null,
+      "output_data": null,
+      "role": null,
+      "error_message": null,
+      "log": null,
+      "input_data": null,
+      "agent_config_snapshot": {
+       "agent": {
+        "type": "pi"
+       }
+      }
+     },
+     "agents": null,
+     "child_nodes": null,
+     "strategy": null,
+     "unresolved_inputs": null,
+     "depends_on": [],
+     "loop_to": null,
+     "max_loops": null,
+     "gate": null,
+     "gate_status": null,
+     "error_message": null,
+     "delegated_by": null,
+     "delegate_source": null
+    }
+   ],
+   "total_tokens": 0,
+   "total_cost_usd": 0,
+   "total_llm_calls": 1,
+   "total_tool_calls": 0,
+   "input_data": null,
+   "workspace_path": null,
+   "output_data": null,
+   "workflow_output": null,
+   "error_message": null,
+   "fork_source": null,
+   "agent_index": [
+    {
+     "id": "a2-s6_abort-agent",
+     "agent_name": "pi-agent",
+     "round": 1,
+     "status": "running",
+     "node_id": "a2-s6_abort-stage",
+     "node_name": "pi",
+     "start_time": "2026-10-04T03:45:21.034733",
+     "end_time": null,
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0,
+     "error_message": null,
+     "role": null,
+     "agent_type": "pi",
+     "provider": null,
+     "model": null
+    }
+   ],
+   "stopped": null,
+   "attempts": [],
+   "quiet": false,
+   "last_step": "pi-agent · thinking",
+   "last_activity": "2026-10-04T03:45:21.276636+00:00",
+   "waiting_on_you": false
+  }
+ },
+ "final": {
+  "id": "a2-s6_abort",
+  "workflow_name": "pi-a2",
+  "status": "failed",
+  "start_time": "2026-10-04T03:45:21.519723",
+  "end_time": "2026-10-04T03:45:21.519723",
+  "duration_seconds": null,
+  "nodes": [
+   {
+    "id": "a2-s6_abort-stage",
+    "name": "pi",
+    "type": "agent",
+    "status": "running",
+    "start_time": "2026-10-04T03:45:21.034549",
+    "end_time": "2026-10-04T03:45:21.519581",
+    "duration_seconds": null,
+    "cost_usd": 0.0,
+    "total_tokens": 0,
+    "total_llm_calls": 1,
+    "total_tool_calls": 0,
+    "agent": {
+     "id": "a2-s6_abort-agent",
+     "agent_name": "pi-agent",
+     "status": "failed",
+     "start_time": "2026-10-04T03:45:21.034733",
+     "end_time": "2026-10-04T03:45:21.519403",
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0.0,
+     "total_llm_calls": 1,
+     "total_tool_calls": 0,
+     "llm_calls": [
+      {
+       "id": "dc3be080-f2f8-5c39-b55e-620ce0426065",
+       "provider": "a2-local",
+       "model": "a2-fixture-v1",
+       "status": "failed",
+       "start_time": "2026-10-04T03:45:21.276636",
+       "end_time": "2026-10-04T03:45:21.519021",
+       "duration_seconds": null,
+       "prompt_tokens": 0,
+       "completion_tokens": 0,
+       "total_tokens": 0,
+       "estimated_cost_usd": 0.0,
+       "prompt": null,
+       "response": "chunk 0 ✓ chunk 1 ✓ chunk 2 ✓ chunk 3 ✓ chunk 4 ✓ ",
+       "thinking": null,
+       "tool_calls": null,
+       "error_message": "Request was aborted"
+      }
+     ],
+     "tool_calls": [],
+     "output": "",
+     "structured_output": null,
+     "output_data": null,
+     "role": null,
+     "error_message": "the last model call was stopped: Request was aborted",
+     "log": null,
+     "input_data": null,
+     "agent_config_snapshot": {
+      "agent": {
+       "type": "pi"
+      }
+     }
+    },
+    "agents": null,
+    "child_nodes": null,
+    "strategy": null,
+    "unresolved_inputs": null,
+    "depends_on": [],
+    "loop_to": null,
+    "max_loops": null,
+    "gate": null,
+    "gate_status": null,
+    "error_message": null,
+    "delegated_by": null,
+    "delegate_source": null
+   }
+  ],
+  "total_tokens": 0,
+  "total_cost_usd": 0,
+  "total_llm_calls": 1,
+  "total_tool_calls": 0,
+  "input_data": null,
+  "workspace_path": null,
+  "output_data": null,
+  "workflow_output": null,
+  "error_message": "the last model call was stopped: Request was aborted",
+  "fork_source": null,
+  "agent_index": [
+   {
+    "id": "a2-s6_abort-agent",
+    "agent_name": "pi-agent",
+    "round": 1,
+    "status": "failed",
+    "node_id": "a2-s6_abort-stage",
+    "node_name": "pi",
+    "start_time": "2026-10-04T03:45:21.034733",
+    "end_time": "2026-10-04T03:45:21.519403",
+    "duration_seconds": null,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0.0,
+    "error_message": "the last model call was stopped: Request was aborted",
+    "role": null,
+    "agent_type": "pi",
+    "provider": null,
+    "model": null
+   }
+  ],
+  "stopped": null,
+  "attempts": [],
+  "quiet": false,
+  "last_step": "pi-a2 · workflow.failed",
+  "last_activity": null,
+  "waiting_on_you": false
+ },
+ "outcome": {
+  "status": "failed",
+  "errors": [
+   "the last model call was stopped: Request was aborted"
+  ],
+  "tokens": {
+   "prompt_tokens": 0,
+   "completion_tokens": 0,
+   "cached_prompt_tokens": 0,
+   "cache_write_tokens": 0,
+   "total_tokens": 0,
+   "cost_usd": 0.0
+  },
+  "structured_output": null
+ }
+}

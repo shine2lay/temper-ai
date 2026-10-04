@@ -1,0 +1,58 @@
+{
+  "source_run_id": "a2-e21fd2bc94cd48da873461e8b9a0f3dd",
+  "pi": "0.87.1 (P0-fix1 harness-v2 bundle)",
+  "provider": "A2 scripted loopback provider (no model, no network)",
+  "image_id": "sha256:8cee32bd74cfacf0b0abfb8c919add49c74cf48dfcb967ac0ed73669cac121c0",
+  "marker": "A2-FIXTURE: system message removed",
+  "scenarios": {
+    "s1_stream": {
+      "source_sha256": "02f24248d82c790a668a747ece77a3df70782ae5301a7564d81db338234dda4e",
+      "fixture_sha256": "f96bef002c1791a49f647c2474317c849c79eec7d503fb4a2b8ac95f86fb3853",
+      "lines": 62,
+      "system_messages_replaced": 3,
+      "bytes": 21804
+    },
+    "s2_errors": {
+      "source_sha256": "8bba35c8e018da5b5ebaa84f352ea86414273c26a34a11f881638ba37ac121c9",
+      "fixture_sha256": "9b4415ca9b20e9557e25cebc1f64bc8d34b5abba0ee570fef027b52164567f17",
+      "lines": 44,
+      "system_messages_replaced": 3,
+      "bytes": 14870
+    },
+    "s3_large_untrusted": {
+      "source_sha256": "7eafcd80826f3cfe3f06cd86c0f731f143f5c34769b7a4eb11f43aa6bc9da1a4",
+      "fixture_sha256": "688bb42f8a4e669e20c3793b13cbf20e887718529b3b335b81379c75464576e7",
+      "lines": 650,
+      "system_messages_replaced": 3,
+      "bytes": 822319
+    },
+    "s4_retry_recover": {
+      "source_sha256": "21cf28f18f35f866a023bcece5f00a75bb6ec4f18ce3ccf8ac7d4795a605b1b3",
+      "fixture_sha256": "1804bffe0b06e0a87369752d0063806e8c4dfd10d9a2acc31b4eec872d9e4f7b",
+      "lines": 25,
+      "system_messages_replaced": 3,
+      "bytes": 6821
+    },
+    "s5_retry_fail": {
+      "source_sha256": "e17ae4f21e7ca471b0b016cbd7f3669defed1ff5cc29e6bc7e89c9d0509728e8",
+      "fixture_sha256": "9084fe768b28839066589a0c416fa055b74f2fad211ea33cdac53692baa3f48e",
+      "lines": 22,
+      "system_messages_replaced": 3,
+      "bytes": 6097
+    },
+    "s6_abort": {
+      "source_sha256": "4a065b3b04caa7d83d22f0e73674f3ef7d0b1d308f98597c928b2ee4620cb4e5",
+      "fixture_sha256": "0082e8c71c53a82c6e0d577dcf539d17692ed0a9a335f62eb4c290ee92aa9ec6",
+      "lines": 21,
+      "system_messages_replaced": 3,
+      "bytes": 5511
+    },
+    "s7_compaction": {
+      "source_sha256": "5b75d2bdb3684bd19a7e09cd455b6fc05856cae8a8f4f9d29e0ddad33ee949f8",
+      "fixture_sha256": "05085080d61c4d9969014110bf99d9c3604eb5f5d4e702216061d8e66f0f9105",
+      "lines": 33,
+      "system_messages_replaced": 3,
+      "bytes": 9648
+    }
+  }
+}

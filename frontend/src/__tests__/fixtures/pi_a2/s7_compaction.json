@@ -1,0 +1,725 @@
+{
+ "scenario": "s7_compaction",
+ "agent_id": "a2-s7_compaction-agent",
+ "live": [
+  {
+   "type": "event",
+   "event_type": "workflow.started",
+   "data": {
+    "name": "pi-a2",
+    "workflow_name": "pi-a2",
+    "event_id": "a2-s7_compaction-wf",
+    "status": "running"
+   },
+   "timestamp": "2026-10-04T03:45:21.764727+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "stage.started",
+   "data": {
+    "name": "pi",
+    "stage_name": "pi",
+    "event_id": "a2-s7_compaction-stage",
+    "status": "running",
+    "parent_id": "a2-s7_compaction-wf"
+   },
+   "timestamp": "2026-10-04T03:45:21.764919+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "agent.started",
+   "data": {
+    "agent_name": "pi-agent",
+    "name": "pi-agent",
+    "type": "pi",
+    "executed_by": "pi",
+    "agent_config": {
+     "type": "pi"
+    },
+    "event_id": "a2-s7_compaction-agent",
+    "status": "running",
+    "parent_id": "a2-s7_compaction-stage"
+   },
+   "timestamp": "2026-10-04T03:45:21.765073+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.started",
+   "data": {
+    "agent_id": "a2-s7_compaction-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s7_compaction",
+    "llm_call_id": "e63eb698-3419-5c25-aab7-5fd401de407b",
+    "call_kind": "model",
+    "iteration": 1,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "api": "openai-completions",
+    "streaming": true,
+    "event_id": "e63eb698-3419-5c25-aab7-5fd401de407b",
+    "status": "running",
+    "parent_id": "a2-s7_compaction-agent"
+   },
+   "timestamp": "2026-10-04T03:45:22.008111+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s7_compaction-agent",
+      "content": "First answer about Grüße ✓.",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "e63eb698-3419-5c25-aab7-5fd401de407b"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:22.008377+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.completed",
+   "data": {
+    "agent_id": "a2-s7_compaction-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s7_compaction",
+    "llm_call_id": "e63eb698-3419-5c25-aab7-5fd401de407b",
+    "call_kind": "model",
+    "iteration": 1,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "prompt_tokens": 100,
+    "completion_tokens": 10,
+    "cached_prompt_tokens": 0,
+    "cache_write_tokens": 0,
+    "total_tokens": 110,
+    "cost_usd": 0.00045000000000000004,
+    "cost_basis": "pi_estimate",
+    "latency_ms": 0,
+    "finish_reason": "stop",
+    "response_content": "First answer about Grüße ✓.",
+    "reasoning": null,
+    "thinking_exposed": false,
+    "thinking_redacted_blocks": 0,
+    "has_tool_calls": false,
+    "tool_calls_requested": [],
+    "unsupported_content": null,
+    "authoritative_final": true,
+    "event_id": "f1191c37-a38b-53a6-9e13-1695d0c2e41d",
+    "status": "completed",
+    "parent_id": "a2-s7_compaction-agent"
+   },
+   "timestamp": "2026-10-04T03:45:22.008374+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s7_compaction-agent",
+      "content": "",
+      "chunk_type": "content",
+      "done": true,
+      "call_id": "e63eb698-3419-5c25-aab7-5fd401de407b"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:22.008391+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.started",
+   "data": {
+    "agent_id": "a2-s7_compaction-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s7_compaction",
+    "llm_call_id": "fc3b2051-dd23-5820-a019-c29c8eaa308f",
+    "call_kind": "compaction",
+    "iteration": 2,
+    "reason": "manual",
+    "streaming": false,
+    "event_id": "fc3b2051-dd23-5820-a019-c29c8eaa308f",
+    "status": "running",
+    "parent_id": "a2-s7_compaction-agent"
+   },
+   "timestamp": "2026-10-04T03:45:22.251905+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.completed",
+   "data": {
+    "agent_id": "a2-s7_compaction-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s7_compaction",
+    "llm_call_id": "fc3b2051-dd23-5820-a019-c29c8eaa308f",
+    "call_kind": "compaction",
+    "iteration": 2,
+    "prompt_tokens": 300,
+    "completion_tokens": 50,
+    "cached_prompt_tokens": 0,
+    "cache_write_tokens": 0,
+    "total_tokens": 350,
+    "cost_usd": 0.00165,
+    "cost_basis": "pi_estimate",
+    "latency_ms": 0,
+    "reason": "manual",
+    "tokens_before": 110,
+    "estimated_tokens_after": 1388,
+    "summary_chars": 87,
+    "will_retry": false,
+    "authoritative_final": true,
+    "event_id": "63563454-8cba-5803-a219-a8c80307bc6a",
+    "status": "completed",
+    "parent_id": "a2-s7_compaction-agent"
+   },
+   "timestamp": "2026-10-04T03:45:22.252131+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.started",
+   "data": {
+    "agent_id": "a2-s7_compaction-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s7_compaction",
+    "llm_call_id": "16934dd5-8149-5574-993e-32d1380e387c",
+    "call_kind": "model",
+    "iteration": 3,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "api": "openai-completions",
+    "streaming": true,
+    "event_id": "16934dd5-8149-5574-993e-32d1380e387c",
+    "status": "running",
+    "parent_id": "a2-s7_compaction-agent"
+   },
+   "timestamp": "2026-10-04T03:45:22.252294+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s7_compaction-agent",
+      "content": "Second answer after compaction ✓.",
+      "chunk_type": "content",
+      "done": false,
+      "call_id": "16934dd5-8149-5574-993e-32d1380e387c"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:22.252488+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.completed",
+   "data": {
+    "agent_id": "a2-s7_compaction-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s7_compaction",
+    "llm_call_id": "16934dd5-8149-5574-993e-32d1380e387c",
+    "call_kind": "model",
+    "iteration": 3,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "prompt_tokens": 140,
+    "completion_tokens": 12,
+    "cached_prompt_tokens": 0,
+    "cache_write_tokens": 0,
+    "total_tokens": 152,
+    "cost_usd": 0.0006000000000000001,
+    "cost_basis": "pi_estimate",
+    "latency_ms": 0,
+    "finish_reason": "stop",
+    "response_content": "Second answer after compaction ✓.",
+    "reasoning": null,
+    "thinking_exposed": false,
+    "thinking_redacted_blocks": 0,
+    "has_tool_calls": false,
+    "tool_calls_requested": [],
+    "unsupported_content": null,
+    "authoritative_final": true,
+    "event_id": "685910eb-2251-515c-b6a8-5e72a879873f",
+    "status": "completed",
+    "parent_id": "a2-s7_compaction-agent"
+   },
+   "timestamp": "2026-10-04T03:45:22.252486+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s7_compaction-agent",
+      "content": "",
+      "chunk_type": "content",
+      "done": true,
+      "call_id": "16934dd5-8149-5574-993e-32d1380e387c"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:22.252501+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "agent.completed",
+   "data": {
+    "agent_name": "pi-agent",
+    "output": "Second answer after compaction ✓.",
+    "output_length": 33,
+    "has_structured_output": false,
+    "structured_output": null,
+    "tokens": 612,
+    "prompt_tokens": 540,
+    "completion_tokens": 72,
+    "cost_usd": 0.0027,
+    "cost_basis": "pi_estimate",
+    "llm_calls": 3,
+    "tool_calls": 0,
+    "duration_seconds": null,
+    "executed_by": "pi",
+    "warnings": [],
+    "event_id": "d0e87f6c-9c78-5aef-a591-08ea928504a7",
+    "status": "completed",
+    "parent_id": "a2-s7_compaction-agent"
+   },
+   "timestamp": "2026-10-04T03:45:22.252671+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "stage.completed",
+   "data": {
+    "name": "pi",
+    "error": null,
+    "event_id": "a2-s7_compaction-stage-end",
+    "status": "completed",
+    "parent_id": "a2-s7_compaction-stage"
+   },
+   "timestamp": "2026-10-04T03:45:22.252788+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "workflow.completed",
+   "data": {
+    "name": "pi-a2",
+    "error": null,
+    "event_id": "a2-s7_compaction-wf-end",
+    "status": "completed",
+    "parent_id": "a2-s7_compaction-wf"
+   },
+   "timestamp": "2026-10-04T03:45:22.252894+00:00"
+  }
+ ],
+ "start": {
+  "index": 3,
+  "snapshot": {
+   "id": "a2-s7_compaction",
+   "workflow_name": "pi-a2",
+   "status": "running",
+   "start_time": "2026-10-04T03:45:21.764448",
+   "end_time": null,
+   "duration_seconds": null,
+   "nodes": [
+    {
+     "id": "a2-s7_compaction-stage",
+     "name": "pi",
+     "type": "agent",
+     "status": "running",
+     "start_time": "2026-10-04T03:45:21.764763",
+     "end_time": null,
+     "duration_seconds": null,
+     "cost_usd": 0,
+     "total_tokens": 0,
+     "total_llm_calls": 0,
+     "total_tool_calls": 0,
+     "agent": {
+      "id": "a2-s7_compaction-agent",
+      "agent_name": "pi-agent",
+      "status": "running",
+      "start_time": "2026-10-04T03:45:21.764942",
+      "end_time": null,
+      "duration_seconds": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_llm_calls": 0,
+      "total_tool_calls": 0,
+      "llm_calls": [],
+      "tool_calls": [],
+      "output": null,
+      "structured_output": null,
+      "output_data": null,
+      "role": null,
+      "error_message": null,
+      "log": null,
+      "input_data": null,
+      "agent_config_snapshot": {
+       "agent": {
+        "type": "pi"
+       }
+      }
+     },
+     "agents": null,
+     "child_nodes": null,
+     "strategy": null,
+     "unresolved_inputs": null,
+     "depends_on": [],
+     "loop_to": null,
+     "max_loops": null,
+     "gate": null,
+     "gate_status": null,
+     "error_message": null,
+     "delegated_by": null,
+     "delegate_source": null
+    }
+   ],
+   "total_tokens": 0,
+   "total_cost_usd": 0,
+   "total_llm_calls": 0,
+   "total_tool_calls": 0,
+   "input_data": null,
+   "workspace_path": null,
+   "output_data": null,
+   "workflow_output": null,
+   "error_message": null,
+   "fork_source": null,
+   "agent_index": [
+    {
+     "id": "a2-s7_compaction-agent",
+     "agent_name": "pi-agent",
+     "round": 1,
+     "status": "running",
+     "node_id": "a2-s7_compaction-stage",
+     "node_name": "pi",
+     "start_time": "2026-10-04T03:45:21.764942",
+     "end_time": null,
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0,
+     "error_message": null,
+     "role": null,
+     "agent_type": "pi",
+     "provider": null,
+     "model": null
+    }
+   ],
+   "stopped": null,
+   "attempts": [],
+   "quiet": false,
+   "last_step": "pi-agent · working",
+   "last_activity": "2026-10-04T03:45:21.764942+00:00",
+   "waiting_on_you": false
+  }
+ },
+ "mid": {
+  "index": 7,
+  "snapshot": {
+   "id": "a2-s7_compaction",
+   "workflow_name": "pi-a2",
+   "status": "running",
+   "start_time": "2026-10-04T03:45:21.764448",
+   "end_time": null,
+   "duration_seconds": null,
+   "nodes": [
+    {
+     "id": "a2-s7_compaction-stage",
+     "name": "pi",
+     "type": "agent",
+     "status": "running",
+     "start_time": "2026-10-04T03:45:21.764763",
+     "end_time": null,
+     "duration_seconds": null,
+     "cost_usd": 0,
+     "total_tokens": 0,
+     "total_llm_calls": 1,
+     "total_tool_calls": 0,
+     "agent": {
+      "id": "a2-s7_compaction-agent",
+      "agent_name": "pi-agent",
+      "status": "running",
+      "start_time": "2026-10-04T03:45:21.764942",
+      "end_time": null,
+      "duration_seconds": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_llm_calls": 1,
+      "total_tool_calls": 0,
+      "llm_calls": [
+       {
+        "id": "e63eb698-3419-5c25-aab7-5fd401de407b",
+        "provider": "a2-local",
+        "model": "a2-fixture-v1",
+        "status": "completed",
+        "start_time": "2026-10-04T03:45:22.007831",
+        "end_time": "2026-10-04T03:45:22.008209",
+        "duration_seconds": null,
+        "prompt_tokens": 100,
+        "completion_tokens": 10,
+        "total_tokens": 110,
+        "estimated_cost_usd": 0.00045000000000000004,
+        "prompt": null,
+        "response": "First answer about Grüße ✓.",
+        "thinking": null,
+        "tool_calls": null,
+        "error_message": null
+       }
+      ],
+      "tool_calls": [],
+      "output": null,
+      "structured_output": null,
+      "output_data": null,
+      "role": null,
+      "error_message": null,
+      "log": null,
+      "input_data": null,
+      "agent_config_snapshot": {
+       "agent": {
+        "type": "pi"
+       }
+      }
+     },
+     "agents": null,
+     "child_nodes": null,
+     "strategy": null,
+     "unresolved_inputs": null,
+     "depends_on": [],
+     "loop_to": null,
+     "max_loops": null,
+     "gate": null,
+     "gate_status": null,
+     "error_message": null,
+     "delegated_by": null,
+     "delegate_source": null
+    }
+   ],
+   "total_tokens": 0,
+   "total_cost_usd": 0,
+   "total_llm_calls": 1,
+   "total_tool_calls": 0,
+   "input_data": null,
+   "workspace_path": null,
+   "output_data": null,
+   "workflow_output": null,
+   "error_message": null,
+   "fork_source": null,
+   "agent_index": [
+    {
+     "id": "a2-s7_compaction-agent",
+     "agent_name": "pi-agent",
+     "round": 1,
+     "status": "running",
+     "node_id": "a2-s7_compaction-stage",
+     "node_name": "pi",
+     "start_time": "2026-10-04T03:45:21.764942",
+     "end_time": null,
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0,
+     "error_message": null,
+     "role": null,
+     "agent_type": "pi",
+     "provider": null,
+     "model": null
+    }
+   ],
+   "stopped": null,
+   "attempts": [],
+   "quiet": false,
+   "last_step": "pi-agent · thought",
+   "last_activity": "2026-10-04T03:45:22.008209+00:00",
+   "waiting_on_you": false
+  }
+ },
+ "final": {
+  "id": "a2-s7_compaction",
+  "workflow_name": "pi-a2",
+  "status": "completed",
+  "start_time": "2026-10-04T03:45:22.252803",
+  "end_time": "2026-10-04T03:45:22.252803",
+  "duration_seconds": null,
+  "nodes": [
+   {
+    "id": "a2-s7_compaction-stage",
+    "name": "pi",
+    "type": "agent",
+    "status": "running",
+    "start_time": "2026-10-04T03:45:21.764763",
+    "end_time": "2026-10-04T03:45:22.252689",
+    "duration_seconds": null,
+    "cost_usd": 0.0027,
+    "total_tokens": 612,
+    "total_llm_calls": 3,
+    "total_tool_calls": 0,
+    "agent": {
+     "id": "a2-s7_compaction-agent",
+     "agent_name": "pi-agent",
+     "status": "completed",
+     "start_time": "2026-10-04T03:45:21.764942",
+     "end_time": "2026-10-04T03:45:22.252555",
+     "duration_seconds": null,
+     "prompt_tokens": 540,
+     "completion_tokens": 72,
+     "total_tokens": 612,
+     "estimated_cost_usd": 0.0027,
+     "total_llm_calls": 3,
+     "total_tool_calls": 0,
+     "llm_calls": [
+      {
+       "id": "e63eb698-3419-5c25-aab7-5fd401de407b",
+       "provider": "a2-local",
+       "model": "a2-fixture-v1",
+       "status": "completed",
+       "start_time": "2026-10-04T03:45:22.007831",
+       "end_time": "2026-10-04T03:45:22.008209",
+       "duration_seconds": null,
+       "prompt_tokens": 100,
+       "completion_tokens": 10,
+       "total_tokens": 110,
+       "estimated_cost_usd": 0.00045000000000000004,
+       "prompt": null,
+       "response": "First answer about Grüße ✓.",
+       "thinking": null,
+       "tool_calls": null,
+       "error_message": null
+      },
+      {
+       "id": "fc3b2051-dd23-5820-a019-c29c8eaa308f",
+       "provider": null,
+       "model": null,
+       "status": "completed",
+       "start_time": "2026-10-04T03:45:22.251634",
+       "end_time": "2026-10-04T03:45:22.251963",
+       "duration_seconds": null,
+       "prompt_tokens": 300,
+       "completion_tokens": 50,
+       "total_tokens": 350,
+       "estimated_cost_usd": 0.00165,
+       "prompt": null,
+       "response": null,
+       "thinking": null,
+       "tool_calls": null,
+       "error_message": null
+      },
+      {
+       "id": "16934dd5-8149-5574-993e-32d1380e387c",
+       "provider": "a2-local",
+       "model": "a2-fixture-v1",
+       "status": "completed",
+       "start_time": "2026-10-04T03:45:22.252171",
+       "end_time": "2026-10-04T03:45:22.252363",
+       "duration_seconds": null,
+       "prompt_tokens": 140,
+       "completion_tokens": 12,
+       "total_tokens": 152,
+       "estimated_cost_usd": 0.0006000000000000001,
+       "prompt": null,
+       "response": "Second answer after compaction ✓.",
+       "thinking": null,
+       "tool_calls": null,
+       "error_message": null
+      }
+     ],
+     "tool_calls": [],
+     "output": "Second answer after compaction ✓.",
+     "structured_output": null,
+     "output_data": null,
+     "role": null,
+     "error_message": null,
+     "log": null,
+     "input_data": null,
+     "agent_config_snapshot": {
+      "agent": {
+       "type": "pi"
+      }
+     }
+    },
+    "agents": null,
+    "child_nodes": null,
+    "strategy": null,
+    "unresolved_inputs": null,
+    "depends_on": [],
+    "loop_to": null,
+    "max_loops": null,
+    "gate": null,
+    "gate_status": null,
+    "error_message": null,
+    "delegated_by": null,
+    "delegate_source": null
+   }
+  ],
+  "total_tokens": 612,
+  "total_cost_usd": 0.0027,
+  "total_llm_calls": 3,
+  "total_tool_calls": 0,
+  "input_data": null,
+  "workspace_path": null,
+  "output_data": null,
+  "workflow_output": null,
+  "error_message": null,
+  "fork_source": null,
+  "agent_index": [
+   {
+    "id": "a2-s7_compaction-agent",
+    "agent_name": "pi-agent",
+    "round": 1,
+    "status": "completed",
+    "node_id": "a2-s7_compaction-stage",
+    "node_name": "pi",
+    "start_time": "2026-10-04T03:45:21.764942",
+    "end_time": "2026-10-04T03:45:22.252555",
+    "duration_seconds": null,
+    "prompt_tokens": 540,
+    "completion_tokens": 72,
+    "total_tokens": 612,
+    "estimated_cost_usd": 0.0027,
+    "error_message": null,
+    "role": null,
+    "agent_type": "pi",
+    "provider": null,
+    "model": null
+   }
+  ],
+  "stopped": null,
+  "attempts": [],
+  "quiet": false,
+  "last_step": "pi-a2 · workflow.completed",
+  "last_activity": null,
+  "waiting_on_you": false
+ },
+ "outcome": {
+  "status": "completed",
+  "errors": [],
+  "tokens": {
+   "prompt_tokens": 540,
+   "completion_tokens": 72,
+   "cached_prompt_tokens": 0,
+   "cache_write_tokens": 0,
+   "total_tokens": 612,
+   "cost_usd": 0.0027
+  },
+  "structured_output": null
+ }
+}

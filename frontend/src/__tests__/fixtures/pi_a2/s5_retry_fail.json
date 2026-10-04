@@ -1,0 +1,669 @@
+{
+ "scenario": "s5_retry_fail",
+ "agent_id": "a2-s5_retry_fail-agent",
+ "live": [
+  {
+   "type": "event",
+   "event_type": "workflow.started",
+   "data": {
+    "name": "pi-a2",
+    "workflow_name": "pi-a2",
+    "event_id": "a2-s5_retry_fail-wf",
+    "status": "running"
+   },
+   "timestamp": "2026-10-04T03:45:20.303335+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "stage.started",
+   "data": {
+    "name": "pi",
+    "stage_name": "pi",
+    "event_id": "a2-s5_retry_fail-stage",
+    "status": "running",
+    "parent_id": "a2-s5_retry_fail-wf"
+   },
+   "timestamp": "2026-10-04T03:45:20.303520+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "agent.started",
+   "data": {
+    "agent_name": "pi-agent",
+    "name": "pi-agent",
+    "type": "pi",
+    "executed_by": "pi",
+    "agent_config": {
+     "type": "pi"
+    },
+    "event_id": "a2-s5_retry_fail-agent",
+    "status": "running",
+    "parent_id": "a2-s5_retry_fail-stage"
+   },
+   "timestamp": "2026-10-04T03:45:20.303662+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.started",
+   "data": {
+    "agent_id": "a2-s5_retry_fail-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s5_retry_fail",
+    "llm_call_id": "edccb5e5-70ac-55fc-a1bf-17a8e7ad2cc9",
+    "call_kind": "model",
+    "iteration": 1,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "api": "openai-completions",
+    "streaming": true,
+    "event_id": "edccb5e5-70ac-55fc-a1bf-17a8e7ad2cc9",
+    "status": "running",
+    "parent_id": "a2-s5_retry_fail-agent"
+   },
+   "timestamp": "2026-10-04T03:45:20.546044+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.failed",
+   "data": {
+    "agent_id": "a2-s5_retry_fail-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s5_retry_fail",
+    "llm_call_id": "edccb5e5-70ac-55fc-a1bf-17a8e7ad2cc9",
+    "call_kind": "model",
+    "iteration": 1,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "cached_prompt_tokens": 0,
+    "cache_write_tokens": 0,
+    "total_tokens": 0,
+    "cost_usd": 0.0,
+    "cost_basis": "pi_estimate",
+    "latency_ms": 0,
+    "finish_reason": "error",
+    "response_content": "",
+    "reasoning": null,
+    "thinking_exposed": false,
+    "thinking_redacted_blocks": 0,
+    "has_tool_calls": false,
+    "tool_calls_requested": [],
+    "unsupported_content": null,
+    "authoritative_final": true,
+    "error_type": "provider_error",
+    "error": "503: {\"message\":\"A2 synthetic overload: service unavailable\",\"type\":\"server_error\",\"code\":\"a2_overloaded\"}",
+    "event_id": "ba0f3e67-a785-5335-9d2b-4898e6055513",
+    "status": "failed",
+    "parent_id": "a2-s5_retry_fail-agent"
+   },
+   "timestamp": "2026-10-04T03:45:20.546278+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s5_retry_fail-agent",
+      "content": "",
+      "chunk_type": "content",
+      "done": true,
+      "call_id": "edccb5e5-70ac-55fc-a1bf-17a8e7ad2cc9"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:20.546296+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.retry",
+   "data": {
+    "agent_id": "a2-s5_retry_fail-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s5_retry_fail",
+    "phase": "start",
+    "attempt": 1,
+    "max_attempts": 2,
+    "delay_ms": 50,
+    "error": "503: {\"message\":\"A2 synthetic overload: service unavailable\",\"type\":\"server_error\",\"code\":\"a2_overloaded\"}",
+    "event_id": "633a9636-9b10-5c47-b034-eefe4acb7f09",
+    "status": "running",
+    "parent_id": "a2-s5_retry_fail-agent"
+   },
+   "timestamp": "2026-10-04T03:45:20.789778+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.started",
+   "data": {
+    "agent_id": "a2-s5_retry_fail-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s5_retry_fail",
+    "llm_call_id": "c8a3800f-8ba1-5fca-a313-b6744b4dacaf",
+    "call_kind": "model",
+    "iteration": 2,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "api": "openai-completions",
+    "streaming": true,
+    "event_id": "c8a3800f-8ba1-5fca-a313-b6744b4dacaf",
+    "status": "running",
+    "parent_id": "a2-s5_retry_fail-agent"
+   },
+   "timestamp": "2026-10-04T03:45:20.789979+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.call.failed",
+   "data": {
+    "agent_id": "a2-s5_retry_fail-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s5_retry_fail",
+    "llm_call_id": "c8a3800f-8ba1-5fca-a313-b6744b4dacaf",
+    "call_kind": "model",
+    "iteration": 2,
+    "provider": "a2-local",
+    "model": "a2-fixture-v1",
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "cached_prompt_tokens": 0,
+    "cache_write_tokens": 0,
+    "total_tokens": 0,
+    "cost_usd": 0.0,
+    "cost_basis": "pi_estimate",
+    "latency_ms": 0,
+    "finish_reason": "error",
+    "response_content": "",
+    "reasoning": null,
+    "thinking_exposed": false,
+    "thinking_redacted_blocks": 0,
+    "has_tool_calls": false,
+    "tool_calls_requested": [],
+    "unsupported_content": null,
+    "authoritative_final": true,
+    "error_type": "provider_error",
+    "error": "400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}",
+    "event_id": "659568ea-f9c6-5802-b60f-f75deb287678",
+    "status": "failed",
+    "parent_id": "a2-s5_retry_fail-agent"
+   },
+   "timestamp": "2026-10-04T03:45:20.790158+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm_stream_batch",
+   "data": {
+    "chunks": [
+     {
+      "agent_id": "a2-s5_retry_fail-agent",
+      "content": "",
+      "chunk_type": "content",
+      "done": true,
+      "call_id": "c8a3800f-8ba1-5fca-a313-b6744b4dacaf"
+     }
+    ]
+   },
+   "timestamp": "2026-10-04T03:45:20.790174+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "llm.retry",
+   "data": {
+    "agent_id": "a2-s5_retry_fail-agent",
+    "agent_name": "pi-agent",
+    "node_path": "pi",
+    "executed_by": "pi",
+    "pi_session_id": "session-s5_retry_fail",
+    "phase": "end",
+    "attempt": 1,
+    "success": false,
+    "final_error": "400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}",
+    "event_id": "5b10b0e4-858c-575e-bd54-a71670f19be0",
+    "status": "failed",
+    "parent_id": "a2-s5_retry_fail-agent"
+   },
+   "timestamp": "2026-10-04T03:45:20.790316+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "agent.failed",
+   "data": {
+    "agent_name": "pi-agent",
+    "output": "",
+    "output_length": 0,
+    "has_structured_output": false,
+    "structured_output": null,
+    "tokens": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "cost_usd": 0.0,
+    "cost_basis": "pi_estimate",
+    "llm_calls": 2,
+    "tool_calls": 0,
+    "duration_seconds": null,
+    "executed_by": "pi",
+    "warnings": [],
+    "error": "the last model call failed: 400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}",
+    "event_id": "aa723835-46e0-5023-8987-afe9d3b26d2b",
+    "status": "failed",
+    "parent_id": "a2-s5_retry_fail-agent"
+   },
+   "timestamp": "2026-10-04T03:45:20.790460+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "stage.failed",
+   "data": {
+    "name": "pi",
+    "error": "the last model call failed: 400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}",
+    "event_id": "a2-s5_retry_fail-stage-end",
+    "status": "failed",
+    "parent_id": "a2-s5_retry_fail-stage"
+   },
+   "timestamp": "2026-10-04T03:45:20.790574+00:00"
+  },
+  {
+   "type": "event",
+   "event_type": "workflow.failed",
+   "data": {
+    "name": "pi-a2",
+    "error": "the last model call failed: 400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}",
+    "event_id": "a2-s5_retry_fail-wf-end",
+    "status": "failed",
+    "parent_id": "a2-s5_retry_fail-wf"
+   },
+   "timestamp": "2026-10-04T03:45:20.790680+00:00"
+  }
+ ],
+ "start": {
+  "index": 3,
+  "snapshot": {
+   "id": "a2-s5_retry_fail",
+   "workflow_name": "pi-a2",
+   "status": "running",
+   "start_time": "2026-10-04T03:45:20.303063",
+   "end_time": null,
+   "duration_seconds": null,
+   "nodes": [
+    {
+     "id": "a2-s5_retry_fail-stage",
+     "name": "pi",
+     "type": "agent",
+     "status": "running",
+     "start_time": "2026-10-04T03:45:20.303369",
+     "end_time": null,
+     "duration_seconds": null,
+     "cost_usd": 0,
+     "total_tokens": 0,
+     "total_llm_calls": 0,
+     "total_tool_calls": 0,
+     "agent": {
+      "id": "a2-s5_retry_fail-agent",
+      "agent_name": "pi-agent",
+      "status": "running",
+      "start_time": "2026-10-04T03:45:20.303542",
+      "end_time": null,
+      "duration_seconds": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_llm_calls": 0,
+      "total_tool_calls": 0,
+      "llm_calls": [],
+      "tool_calls": [],
+      "output": null,
+      "structured_output": null,
+      "output_data": null,
+      "role": null,
+      "error_message": null,
+      "log": null,
+      "input_data": null,
+      "agent_config_snapshot": {
+       "agent": {
+        "type": "pi"
+       }
+      }
+     },
+     "agents": null,
+     "child_nodes": null,
+     "strategy": null,
+     "unresolved_inputs": null,
+     "depends_on": [],
+     "loop_to": null,
+     "max_loops": null,
+     "gate": null,
+     "gate_status": null,
+     "error_message": null,
+     "delegated_by": null,
+     "delegate_source": null
+    }
+   ],
+   "total_tokens": 0,
+   "total_cost_usd": 0,
+   "total_llm_calls": 0,
+   "total_tool_calls": 0,
+   "input_data": null,
+   "workspace_path": null,
+   "output_data": null,
+   "workflow_output": null,
+   "error_message": null,
+   "fork_source": null,
+   "agent_index": [
+    {
+     "id": "a2-s5_retry_fail-agent",
+     "agent_name": "pi-agent",
+     "round": 1,
+     "status": "running",
+     "node_id": "a2-s5_retry_fail-stage",
+     "node_name": "pi",
+     "start_time": "2026-10-04T03:45:20.303542",
+     "end_time": null,
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0,
+     "error_message": null,
+     "role": null,
+     "agent_type": "pi",
+     "provider": null,
+     "model": null
+    }
+   ],
+   "stopped": null,
+   "attempts": [],
+   "quiet": false,
+   "last_step": "pi-agent · working",
+   "last_activity": "2026-10-04T03:45:20.303542+00:00",
+   "waiting_on_you": false
+  }
+ },
+ "mid": {
+  "index": 6,
+  "snapshot": {
+   "id": "a2-s5_retry_fail",
+   "workflow_name": "pi-a2",
+   "status": "running",
+   "start_time": "2026-10-04T03:45:20.303063",
+   "end_time": null,
+   "duration_seconds": null,
+   "nodes": [
+    {
+     "id": "a2-s5_retry_fail-stage",
+     "name": "pi",
+     "type": "agent",
+     "status": "running",
+     "start_time": "2026-10-04T03:45:20.303369",
+     "end_time": null,
+     "duration_seconds": null,
+     "cost_usd": 0,
+     "total_tokens": 0,
+     "total_llm_calls": 1,
+     "total_tool_calls": 0,
+     "agent": {
+      "id": "a2-s5_retry_fail-agent",
+      "agent_name": "pi-agent",
+      "status": "running",
+      "start_time": "2026-10-04T03:45:20.303542",
+      "end_time": null,
+      "duration_seconds": null,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "estimated_cost_usd": 0,
+      "total_llm_calls": 1,
+      "total_tool_calls": 0,
+      "llm_calls": [
+       {
+        "id": "edccb5e5-70ac-55fc-a1bf-17a8e7ad2cc9",
+        "provider": "a2-local",
+        "model": "a2-fixture-v1",
+        "status": "failed",
+        "start_time": "2026-10-04T03:45:20.545740",
+        "end_time": "2026-10-04T03:45:20.546113",
+        "duration_seconds": null,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "prompt": null,
+        "response": "",
+        "thinking": null,
+        "tool_calls": null,
+        "error_message": "503: {\"message\":\"A2 synthetic overload: service unavailable\",\"type\":\"server_error\",\"code\":\"a2_overloaded\"}"
+       }
+      ],
+      "tool_calls": [],
+      "output": null,
+      "structured_output": null,
+      "output_data": null,
+      "role": null,
+      "error_message": null,
+      "log": null,
+      "input_data": null,
+      "agent_config_snapshot": {
+       "agent": {
+        "type": "pi"
+       }
+      }
+     },
+     "agents": null,
+     "child_nodes": null,
+     "strategy": null,
+     "unresolved_inputs": null,
+     "depends_on": [],
+     "loop_to": null,
+     "max_loops": null,
+     "gate": null,
+     "gate_status": null,
+     "error_message": null,
+     "delegated_by": null,
+     "delegate_source": null
+    }
+   ],
+   "total_tokens": 0,
+   "total_cost_usd": 0,
+   "total_llm_calls": 1,
+   "total_tool_calls": 0,
+   "input_data": null,
+   "workspace_path": null,
+   "output_data": null,
+   "workflow_output": null,
+   "error_message": null,
+   "fork_source": null,
+   "agent_index": [
+    {
+     "id": "a2-s5_retry_fail-agent",
+     "agent_name": "pi-agent",
+     "round": 1,
+     "status": "running",
+     "node_id": "a2-s5_retry_fail-stage",
+     "node_name": "pi",
+     "start_time": "2026-10-04T03:45:20.303542",
+     "end_time": null,
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0,
+     "error_message": null,
+     "role": null,
+     "agent_type": "pi",
+     "provider": null,
+     "model": null
+    }
+   ],
+   "stopped": null,
+   "attempts": [],
+   "quiet": false,
+   "last_step": "pi-agent · a model call failed",
+   "last_activity": "2026-10-04T03:45:20.546113+00:00",
+   "waiting_on_you": false
+  }
+ },
+ "final": {
+  "id": "a2-s5_retry_fail",
+  "workflow_name": "pi-a2",
+  "status": "failed",
+  "start_time": "2026-10-04T03:45:20.790589",
+  "end_time": "2026-10-04T03:45:20.790589",
+  "duration_seconds": null,
+  "nodes": [
+   {
+    "id": "a2-s5_retry_fail-stage",
+    "name": "pi",
+    "type": "agent",
+    "status": "running",
+    "start_time": "2026-10-04T03:45:20.303369",
+    "end_time": "2026-10-04T03:45:20.790478",
+    "duration_seconds": null,
+    "cost_usd": 0.0,
+    "total_tokens": 0,
+    "total_llm_calls": 2,
+    "total_tool_calls": 0,
+    "agent": {
+     "id": "a2-s5_retry_fail-agent",
+     "agent_name": "pi-agent",
+     "status": "failed",
+     "start_time": "2026-10-04T03:45:20.303542",
+     "end_time": "2026-10-04T03:45:20.790353",
+     "duration_seconds": null,
+     "prompt_tokens": 0,
+     "completion_tokens": 0,
+     "total_tokens": 0,
+     "estimated_cost_usd": 0.0,
+     "total_llm_calls": 2,
+     "total_tool_calls": 0,
+     "llm_calls": [
+      {
+       "id": "edccb5e5-70ac-55fc-a1bf-17a8e7ad2cc9",
+       "provider": "a2-local",
+       "model": "a2-fixture-v1",
+       "status": "failed",
+       "start_time": "2026-10-04T03:45:20.545740",
+       "end_time": "2026-10-04T03:45:20.546113",
+       "duration_seconds": null,
+       "prompt_tokens": 0,
+       "completion_tokens": 0,
+       "total_tokens": 0,
+       "estimated_cost_usd": 0.0,
+       "prompt": null,
+       "response": "",
+       "thinking": null,
+       "tool_calls": null,
+       "error_message": "503: {\"message\":\"A2 synthetic overload: service unavailable\",\"type\":\"server_error\",\"code\":\"a2_overloaded\"}"
+      },
+      {
+       "id": "c8a3800f-8ba1-5fca-a313-b6744b4dacaf",
+       "provider": "a2-local",
+       "model": "a2-fixture-v1",
+       "status": "failed",
+       "start_time": "2026-10-04T03:45:20.789832",
+       "end_time": "2026-10-04T03:45:20.790023",
+       "duration_seconds": null,
+       "prompt_tokens": 0,
+       "completion_tokens": 0,
+       "total_tokens": 0,
+       "estimated_cost_usd": 0.0,
+       "prompt": null,
+       "response": "",
+       "thinking": null,
+       "tool_calls": null,
+       "error_message": "400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}"
+      }
+     ],
+     "tool_calls": [],
+     "output": "",
+     "structured_output": null,
+     "output_data": null,
+     "role": null,
+     "error_message": "the last model call failed: 400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}",
+     "log": null,
+     "input_data": null,
+     "agent_config_snapshot": {
+      "agent": {
+       "type": "pi"
+      }
+     }
+    },
+    "agents": null,
+    "child_nodes": null,
+    "strategy": null,
+    "unresolved_inputs": null,
+    "depends_on": [],
+    "loop_to": null,
+    "max_loops": null,
+    "gate": null,
+    "gate_status": null,
+    "error_message": null,
+    "delegated_by": null,
+    "delegate_source": null
+   }
+  ],
+  "total_tokens": 0,
+  "total_cost_usd": 0,
+  "total_llm_calls": 2,
+  "total_tool_calls": 0,
+  "input_data": null,
+  "workspace_path": null,
+  "output_data": null,
+  "workflow_output": null,
+  "error_message": "the last model call failed: 400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}",
+  "fork_source": null,
+  "agent_index": [
+   {
+    "id": "a2-s5_retry_fail-agent",
+    "agent_name": "pi-agent",
+    "round": 1,
+    "status": "failed",
+    "node_id": "a2-s5_retry_fail-stage",
+    "node_name": "pi",
+    "start_time": "2026-10-04T03:45:20.303542",
+    "end_time": "2026-10-04T03:45:20.790353",
+    "duration_seconds": null,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0,
+    "estimated_cost_usd": 0.0,
+    "error_message": "the last model call failed: 400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}",
+    "role": null,
+    "agent_type": "pi",
+    "provider": null,
+    "model": null
+   }
+  ],
+  "stopped": null,
+  "attempts": [],
+  "quiet": false,
+  "last_step": "pi-a2 · workflow.failed",
+  "last_activity": null,
+  "waiting_on_you": false
+ },
+ "outcome": {
+  "status": "failed",
+  "errors": [
+   "the last model call failed: 400: {\"message\":\"A2 controlled rejection\",\"type\":\"invalid_request_error\",\"code\":\"a2_expected\"}"
+  ],
+  "tokens": {
+   "prompt_tokens": 0,
+   "completion_tokens": 0,
+   "cached_prompt_tokens": 0,
+   "cache_write_tokens": 0,
+   "total_tokens": 0,
+   "cost_usd": 0.0
+  },
+  "structured_output": null
+ }
+}

@@ -1,0 +1,20 @@
+# Zero-LLM reviewer for `ci_gate_rounds`: says the same verdict every round.
+#
+# A script, so it costs nothing and needs no API key or network: the throwaway
+# stack `temper-ci box` runs has no model keys.
+#
+# Prints {"verdict": ..., "at": ...}. The verdict is the `verdict` input,
+# "again" when none is given, so a loop asking for another round never gets
+# what it wants and runs out of rounds.
+agent:
+  name: ci_verdict
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/bash
+    set -u
+    VERDICT={{ verdict | default("again", true) }} \
+    python3 - <<'PY'
+    import json, os, time
+    print(json.dumps({"verdict": os.environ["VERDICT"], "at": time.strftime("%H:%M:%S")}))
+    PY

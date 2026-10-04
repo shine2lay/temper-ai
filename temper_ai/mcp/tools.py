@@ -697,8 +697,25 @@ class TemperTools:
         """Approval gates this run is waiting on."""
         return self._routes.list_gates(execution_id)
 
-    def approve_gate(self, execution_id: str, node_name: str, response: str = "") -> dict:
-        """Release a waiting gate so the run continues, optionally with a
-        free-text response the gated node receives as ``gate.text``."""
-        body = self._routes.GateApproval(response=response) if response else None
-        return self._routes.approve_gate(execution_id, node_name, body)
+    def approve_gate(self, execution_id: str, node_name: str, response: str = "",
+                     event_id: str | None = None, request_id: str | None = None) -> dict:
+        """Release one waiting gate so the run continues, optionally with a
+        free-text response the gated node receives as ``gate.text``.
+
+        ``event_id`` (from ``list_gates``) says which wait; without it, the one open
+        wait at ``node_name``. ``request_id``: the same id sent again returns the
+        first result and decides nothing twice. A refusal -- the wait was already
+        answered or replaced, or several wait under that name -- comes back as
+        ``{"error": <plain message>, "status": 409, ...}``.
+        """
+        from fastapi import HTTPException
+
+        body = self._routes.GateApproval(response=response, event_id=event_id or None,
+                                         request_id=request_id or None, by="MCP")
+        try:
+            return self._routes.approve_gate(execution_id, node_name, body)
+        except HTTPException as exc:
+            detail = exc.detail
+            if isinstance(detail, dict):
+                return {**detail, "error": str(detail.get("message") or detail), "status": exc.status_code}
+            return {"error": str(detail), "status": exc.status_code}

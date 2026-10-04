@@ -303,6 +303,18 @@ class TestNormaliseResponse:
         assert got["text"] == "Q: host\nA: spark"
 
 
+def _approve_in_process(registry: dict, response: dict | None = None) -> None:
+    """Approve the wait as the API does in-process: through the signal it registered."""
+
+    def _go():
+        while not registry:
+            pass
+        signal = next(iter(registry.values()))
+        signal.response = response
+        signal.set()
+    threading.Thread(target=_go, daemon=True).start()
+
+
 class TestWaitForGate:
     def test_records_the_context_and_returns_the_in_process_response(self, monkeypatch):
         monkeypatch.setattr(executor_mod, "GATE_POLL_SECONDS", 0.05)
@@ -312,12 +324,7 @@ class TestWaitForGate:
         node = _make_agent_node("approve", depends_on=["draft"])
         outputs = {"draft": NodeResult(status=Status.COMPLETED, output="pitch", structured_output={"questions": ["Ship?"]})}
 
-        def _approve_when_registered():
-            while "run-1:approve" not in registry:
-                pass
-            registry["run-1:approve"].response = {"response": "yes", "answers": [], "text": "yes"}
-            registry["run-1:approve"].set()
-        threading.Thread(target=_approve_when_registered, daemon=True).start()
+        _approve_in_process(registry, {"response": "yes", "answers": [], "text": "yes"})
 
         got = _wait_for_gate(node, context, "parent", outputs)
 
@@ -330,7 +337,8 @@ class TestWaitForGate:
         approved = context.event_recorder.update_event.call_args.kwargs
         assert approved["status"] == "approved"
         assert approved["data"]["gate_response"] == got
-        assert "run-1:approve" not in registry
+        assert waiting["data"]["gate_path"] == "approve" and waiting["data"]["gate_round"] == 1
+        assert registry == {}, "the wait's signal goes when the wait ends"
 
     def test_database_approval_carries_the_response(self, monkeypatch):
         """A worker in another process never sees the in-memory signal: the
@@ -379,12 +387,7 @@ class TestGatedNodeInput:
         approve = _make_agent_node("approve", depends_on=["draft"])
         approve.config.gate = True
 
-        def _answer():
-            while "run-1:approve" not in registry:
-                pass
-            registry["run-1:approve"].response = {"response": "ship it", "answers": [], "text": "ship it"}
-            registry["run-1:approve"].set()
-        threading.Thread(target=_answer, daemon=True).start()
+        _approve_in_process(registry, {"response": "ship it", "answers": [], "text": "ship it"})
 
         result = execute_graph([draft, approve], {"task": "t"}, context)
 
@@ -401,11 +404,7 @@ class TestGatedNodeInput:
         approve = _make_agent_node("approve", input_map={"task": "workflow.task"})
         approve.config.gate = True
 
-        def _release():
-            while "run-1:approve" not in registry:
-                pass
-            registry["run-1:approve"].set()
-        threading.Thread(target=_release, daemon=True).start()
+        _approve_in_process(registry)
 
         execute_graph([approve], {"task": "t"}, context)
 

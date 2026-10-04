@@ -116,6 +116,36 @@ class EventRecorder:
         event = get_event(event_id)
         return dict(event.get("data") or {}) if event else None
 
+    def gate_events(self, name: str | None = None) -> list[dict]:
+        """This run's gate waits, oldest first (only those at steps called ``name``, when given).
+
+        Empty when not persisting: a run that keeps no events has no earlier waits to find.
+        """
+        if not self._persist:
+            return []
+        from temper_ai.observability.recorder import gate_events
+        return gate_events(self._execution_id, name)
+
+    def decide(self, event_id, *, expect, status, data=None) -> tuple[bool, dict | None]:
+        """Move one event to ``status`` only while it is still in one of ``expect``.
+
+        Returns ``(won, event)`` as :func:`~temper_ai.observability.recorder.decide_event`
+        does, and tells whoever watches the run when it won. Not persisting: nothing can have
+        decided it meanwhile, so it wins, with no event to show.
+        """
+        if not self._persist:
+            won, after = True, None
+        else:
+            from temper_ai.observability.recorder import decide_event
+            won, after = decide_event(event_id, expect=expect, status=status, data=data)
+        if won:
+            self._notifier.notify_event(
+                self._execution_id,
+                "event.updated",
+                {"event_id": event_id, "status": status, **(data or {})},
+            )
+        return won, after
+
     def update_event(self, event_id, status=None, data=None):
         if self._persist:
             from temper_ai.observability.recorder import update_event

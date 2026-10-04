@@ -184,9 +184,11 @@ export interface NodeExecution {
   // agent ran with nulls in their place (see stage/executor.py).
   unresolved_inputs?: string[];
   // Human gate (stage/executor.py `_wait_for_gate`): `gate` marks the node as
-  // gated at all, `gate_status` is 'waiting' until someone approves it.
+  // gated at all, `gate_status` is 'waiting' until someone approves it
+  // ('rejected': the run was stopped there; 'replaced': the run was picked up
+  // again and a later wait took this one's place).
   gate?: boolean;
-  gate_status?: 'waiting' | 'approved';
+  gate_status?: 'waiting' | 'approved' | 'rejected' | 'replaced';
   removed_children?: string[];       // (this node is a dispatcher) names it removed
   // Backward compat
   collaboration_events?: CollaborationEvent[];

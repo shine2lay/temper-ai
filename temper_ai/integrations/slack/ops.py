@@ -14,11 +14,22 @@ logger = logging.getLogger(__name__)
 
 
 class OpsError(RuntimeError):
-    """Something the person in Slack should be told, in plain words."""
+    """Something the person in Slack should be told, in plain words.
+
+    ``status`` is the HTTP status the API answered with, when it was the API that said no
+    (409: the approval was already answered, replaced, or named several waits).
+    """
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def _detail(exc: Exception) -> str:
-    return str(getattr(exc, "detail", None) or exc)
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, dict) and detail.get("message"):
+        return str(detail["message"])
+    return str(detail or exc)
 
 
 class TemperOps:
@@ -164,23 +175,26 @@ class TemperOps:
             return row is not None and row.status in ("queued", "running")
 
     def approve(self, execution_id: str, node: str, answers: list[dict[str, Any]] | None = None,
-                response: str = "", by: str = "") -> dict[str, Any]:
+                response: str = "", by: str = "", *, event_id: str | None = None,
+                request_id: str | None = None) -> dict[str, Any]:
         """Approve a waiting gate, with the answers to its questions.
 
         ``answers`` are {id, question, selected, custom}; ``by`` ("Name
-        (Telegram)") is written on the waiting events first: once the gate
-        is approved, the notify loop may close the other copies at any
-        moment, and they should say who answered.
+        (Telegram)") is kept with the decision, so the other copies of the
+        question, closed once it is approved, say who answered. ``event_id``
+        is the wait the message was about: an approval of one already
+        answered or replaced is refused (``OpsError`` with status 409) rather
+        than answering a later one. ``request_id`` (the button press) makes
+        the same press arriving twice decide once.
         """
         from temper_ai.api.routes import GateAnswer, GateApproval, approve_gate
 
-        if by:
-            self.record_who(execution_id, node, by)
-        body = GateApproval(response=response or "", answers=[GateAnswer(**a) for a in (answers or [])])
+        body = GateApproval(response=response or "", answers=[GateAnswer(**a) for a in (answers or [])],
+                            event_id=event_id or None, request_id=request_id or None, by=by)
         try:
             return approve_gate(execution_id, node, body)
         except Exception as exc:  # noqa: BLE001
-            raise OpsError(_detail(exc)) from exc
+            raise OpsError(_detail(exc), getattr(exc, "status_code", None)) from exc
 
     def record_who(self, execution_id: str, node: str | None, who: str) -> int:
         """Write ``gate_decided_by`` on the run's waiting gate events (one

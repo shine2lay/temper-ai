@@ -235,10 +235,14 @@ def build_server() -> FastMCP:
         return await _off_loop(tools.list_gates, execution_id)
 
     @mcp.tool()
-    async def approve_gate(execution_id: str, node_name: str, response: str = "") -> dict:
+    async def approve_gate(execution_id: str, node_name: str, response: str = "",
+                           event_id: str | None = None, request_id: str | None = None) -> dict:
         """Approve a waiting gate so the run continues past it. ``response`` is
         an optional free-text answer to whatever the previous node asked; the
-        gated node receives it as ``gate.text``."""
-        return await _off_loop(tools.approve_gate, execution_id, node_name, response)
+        gated node receives it as ``gate.text``. ``event_id`` (from list_gates)
+        names the wait to approve; without it, the one open wait at ``node_name``.
+        ``request_id`` makes a retry decide once. A refusal (already answered,
+        replaced, several waiting) returns ``error`` with ``status`` 409."""
+        return await _off_loop(tools.approve_gate, execution_id, node_name, response, event_id, request_id)
 
     return mcp

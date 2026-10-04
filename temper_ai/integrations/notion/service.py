@@ -85,7 +85,8 @@ class NotionService:
                 who = next((a for a in ctx["authors"] if a["type"] == "person"), None)
                 name = replies.person_name(self.client, who["id"]) if who else "someone"
                 return "answered: " + replies.answer(copy, str(comment.get("text") or ""), name, self.ops,
-                                                     self._notify_config())
+                                                     self._notify_config(),
+                                                     comment_id=str(comment.get("id") or ""))
         return self.start_rules(ctx)
 
     def _notify_config(self) -> Any:

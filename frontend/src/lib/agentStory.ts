@@ -15,6 +15,7 @@
  */
 import type { AgentExecution, LLMCall, ToolCall } from '@/types';
 import { asList } from './asList';
+import { ensureUTC } from './utils';
 
 export type StoryItemKind = 'text' | 'thinking' | 'tool';
 
@@ -261,8 +262,17 @@ export function storyFromStored(
   return sortByTime(out);
 }
 
+/**
+ * A stored time comes without a zone (the server keeps UTC); a live one carries
+ * its zone. Read both as UTC, or a page that joins halfway puts what it heard
+ * before what happened earlier wherever the browser is not on UTC.
+ */
+function parseTime(at: string | null | undefined): number {
+  return at ? Date.parse(ensureUTC(at)) : NaN;
+}
+
 function timeOf(item: StoryItem): number {
-  const t = item.at ? Date.parse(item.at) : NaN;
+  const t = parseTime(item.at);
   // No time of its own means it is happening now: it belongs at the end.
   return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
 }
@@ -293,7 +303,7 @@ export function fullStory(
   const callStart = new Map<string, number>();
   for (const call of asList(agent?.llm_calls)) {
     const id = callId(call);
-    const t = call.start_time ? Date.parse(call.start_time) : NaN;
+    const t = parseTime(call.start_time);
     if (id && !Number.isNaN(t)) callStart.set(id, t);
   }
   const liveIds = new Set(liveItems.map((item) => item.id));

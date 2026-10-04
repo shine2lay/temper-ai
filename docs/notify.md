@@ -24,7 +24,9 @@ The run waits at its gate until someone answers, as long as that takes and
 across restarts. The next step gets the answers (`gate.text`,
 `gate.answers`, `gate.response`). When a question is answered anywhere (the
 dashboard, Slack, Telegram, the API), every other copy loses its buttons and
-says who answered and where. When a quiet run ends, its "stuck" message
+says who answered and where. Each button answers the wait it was sent for: a
+press on a question already answered, or replaced after the run was picked
+up again, says so and changes nothing ([gates.md](gates.md)). When a quiet run ends, its "stuck" message
 says so and loses its Stop button.
 
 ## Where a message goes

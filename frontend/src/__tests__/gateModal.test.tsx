@@ -15,7 +15,8 @@ import type { WaitingGate } from '@/hooks/useGates';
 
 const authFetch = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/authFetch', () => ({ authFetch }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }));
+vi.mock('sonner', () => ({ toast }));
 
 const EXECUTION_ID = 'run-1';
 
@@ -75,6 +76,7 @@ function renderModal() {
 
 beforeEach(() => {
   authFetch.mockReset();
+  Object.values(toast).forEach((fn) => fn.mockReset());
   act(() => {
     useExecutionStore.setState({
       workflow: { ...(useExecutionStore.getState().workflow ?? ({} as never)), status: 'running' },
@@ -173,6 +175,8 @@ describe('GateModal', () => {
           custom: 'but index created_at',
         },
       ],
+      event_id: 'ev-1',
+      request_id: expect.any(String),
     });
   });
 
@@ -218,7 +222,113 @@ describe('GateModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /Approve & continue/ }));
 
     await waitFor(() => expect(posted).toHaveLength(1));
-    expect(posted[0].body).toEqual({ response: '', answers: [] });
+    expect(posted[0].body).toEqual({
+      response: '',
+      answers: [],
+      event_id: 'ev-1',
+      request_id: expect.any(String),
+    });
+  });
+
+  it('names the wait it answers and sends a new request id with each click', async () => {
+    const posted: { body: { event_id: string; request_id: string } }[] = [];
+    authFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posted.push({ body: JSON.parse(String(init.body)) });
+        // The first click fails for a reason that is not a refusal; the gate stays open.
+        return posted.length === 1
+          ? { ok: false, status: 502, json: async () => ({ detail: 'Bad gateway' }) }
+          : { ok: true, json: async () => ({ status: 'approved' }) };
+      }
+      return { ok: true, json: async () => ({ gates: [{ ...GATE, questions: [] }] }) };
+    });
+    renderModal();
+
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /Approve & continue/ }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Could not approve: Bad gateway'));
+    fireEvent.click(screen.getByRole('button', { name: /Approve & continue/ }));
+
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted.map((p) => p.body.event_id)).toEqual(['ev-1', 'ev-1']);
+    expect(posted[0].body.request_id).toBeTruthy();
+    expect(posted[1].body.request_id).toBeTruthy();
+    expect(posted[0].body.request_id).not.toBe(posted[1].body.request_id);
+  });
+
+  it('says plainly when the wait was already answered or replaced (409), and closes it', async () => {
+    const refusal = {
+      message:
+        'Already answered by Ana (Slack) at 2026-10-03T20:41:00+00:00: the approval at ' +
+        "'approve' round 1 is closed, so this one changed nothing.",
+      reason: 'already_answered',
+      event_id: 'ev-1',
+    };
+    let open = true;
+    authFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        open = false;
+        return { ok: false, status: 409, json: async () => ({ detail: refusal }) };
+      }
+      return { ok: true, json: async () => ({ gates: open ? [{ ...GATE, questions: [] }] : [] }) };
+    });
+    renderModal();
+
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /Approve & continue/ }));
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(refusal.message));
+    expect(toast.error).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('says the run needs Resume when it approved a run that is not running', async () => {
+    const message =
+      'Approved and kept. The run is not running, so it needs Resume; when it comes back it goes ' +
+      'on with this answer without asking again.';
+    authFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return { ok: true, json: async () => ({ status: 'approved', needs_resume: true, message }) };
+      }
+      return { ok: true, json: async () => ({ gates: [{ ...GATE, questions: [] }] }) };
+    });
+    renderModal();
+
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /Approve & continue/ }));
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(message));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('opens the wait it was asked for when two steps of one name are waiting', async () => {
+    const first = { ...GATE, event_id: 'ev-a', path: 'build.approve', questions: [] };
+    const second = { ...GATE, event_id: 'ev-b', path: 'ship.approve', round: 2, questions: [] };
+    const posted: { body: { event_id: string } }[] = [];
+    authFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posted.push({ body: JSON.parse(String(init.body)) });
+        return { ok: true, json: async () => ({ status: 'approved' }) };
+      }
+      return { ok: true, json: async () => ({ gates: [first, second] }) };
+    });
+    renderModal();
+
+    // The first opens by itself; "Later" brings up the next one, the other step of that name.
+    expect(await screen.findByRole('dialog')).not.toHaveTextContent('round 2');
+    fireEvent.click(screen.getByRole('button', { name: 'Later' }));
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveTextContent('round 2'));
+    fireEvent.click(screen.getByRole('button', { name: /Approve & continue/ }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0].body.event_id).toBe('ev-b');
+
+    // A card naming the first one's path opens that one, and approves that one.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    act(() => useExecutionStore.getState().openGate('build.approve'));
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('round 2');
+    fireEvent.click(screen.getByRole('button', { name: /Approve & continue/ }));
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted[1].body.event_id).toBe('ev-a');
   });
 
   it('"Later" leaves the run waiting and does not reopen on the next poll', async () => {

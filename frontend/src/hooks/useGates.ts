@@ -38,6 +38,9 @@ export interface WaitingGate {
   status: string;
   /** Id of the waiting event: a loop gating the same node again is a new gate. */
   event_id: string | null;
+  /** Where the step sits ("stage.step") and which time round a loop it is asking. */
+  path?: string;
+  round?: number;
   upstream: GateUpstream[];
   questions: GateQuestion[];
 }
@@ -52,8 +55,54 @@ export interface GateAnswer {
 
 export interface GateApproval {
   nodeName: string;
+  /** The wait being answered: one already answered or replaced is refused (409), never passed on. */
+  eventId?: string | null;
+  /** One per click: the same request arriving twice decides once. */
+  requestId: string;
   response?: string;
   answers?: GateAnswer[];
+}
+
+/** What the server says to an approval that went through. */
+export interface GateApprovalResult {
+  status?: string;
+  /** The same request again: nothing new was decided. */
+  repeated?: boolean;
+  /** The run is not running: the answer is kept, and Resume carries on with it. */
+  needs_resume?: boolean;
+  message?: string;
+}
+
+/** Why an approval did not go through, in words a person can act on. */
+export class GateApprovalError extends Error {
+  readonly status: number;
+  readonly reason: string | undefined;
+
+  constructor(status: number, message: string, reason?: string) {
+    super(message);
+    this.name = 'GateApprovalError';
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+/** A fresh id for one click on Approve. */
+export function newRequestId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** The plain message in a refusal: `detail` is a string, or `{message, reason, ...}`. */
+export function refusalMessage(status: number, detail: unknown): { message: string; reason?: string } {
+  if (detail && typeof detail === 'object') {
+    const d = detail as { message?: unknown; reason?: unknown };
+    if (typeof d.message === 'string' && d.message) {
+      return { message: d.message, reason: typeof d.reason === 'string' ? d.reason : undefined };
+    }
+  }
+  if (typeof detail === 'string' && detail) return { message: detail };
+  return { message: `HTTP ${status}` };
 }
 
 /** Statuses in which a run may still be parked at a gate. */
@@ -97,16 +146,22 @@ export function useGates(executionId: string | undefined) {
     refetchIntervalInBackground: isActive,
   });
 
-  const approve = useMutation({
-    mutationFn: async ({ nodeName, response, answers }: GateApproval) => {
-      const res = await authFetch(`/api/runs/${executionId}/approve/${nodeName}`, {
+  const approve = useMutation<GateApprovalResult, Error, GateApproval>({
+    mutationFn: async ({ nodeName, eventId, requestId, response, answers }: GateApproval) => {
+      const res = await authFetch(`/api/runs/${executionId}/approve/${encodeURIComponent(nodeName)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ response: response ?? '', answers: answers ?? [] }),
+        body: JSON.stringify({
+          response: response ?? '',
+          answers: answers ?? [],
+          event_id: eventId ?? null,
+          request_id: requestId,
+        }),
       });
       if (!res.ok) {
-        const detail = await res.json().catch(() => null);
-        throw new Error(detail?.detail ?? `HTTP ${res.status}`);
+        const body = await res.json().catch(() => null);
+        const { message, reason } = refusalMessage(res.status, body?.detail);
+        throw new GateApprovalError(res.status, message, reason);
       }
       return res.json();
     },
@@ -115,6 +170,13 @@ export function useGates(executionId: string | undefined) {
       // immediately and the DAG should follow without waiting for the poll.
       queryClient.invalidateQueries({ queryKey: ['gates', executionId] });
       queryClient.invalidateQueries({ queryKey: ['workflow', executionId] });
+    },
+    onError: (err) => {
+      // Refused because the wait was answered or replaced meanwhile: what is open now
+      // is what the page should show.
+      if (err instanceof GateApprovalError && err.status === 409) {
+        queryClient.invalidateQueries({ queryKey: ['gates', executionId] });
+      }
     },
   });
 

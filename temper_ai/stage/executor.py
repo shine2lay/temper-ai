@@ -9,16 +9,27 @@ import logging
 import os
 import re
 import time
+import uuid
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from temper_ai.observability.event_types import EventType
+from temper_ai.shared.clock import utcnow
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.conditions import evaluate_condition, source_value
 from temper_ai.stage.exceptions import CancellationError, CyclicDependencyError
 from temper_ai.stage.failure import FailurePolicy, RunStop, is_cleanup, undoes
-from temper_ai.stage.gate import EMPTY_RESPONSE, GateSignal, build_gate_context
+from temper_ai.stage.gate import (
+    APPROVED,
+    EMPTY_RESPONSE,
+    REPLACED,
+    WAITING,
+    GateSignal,
+    build_gate_context,
+    earlier_waits,
+    signal_key,
+)
 from temper_ai.stage.node import Node
 from temper_ai.stage.restore import Restore
 
@@ -417,6 +428,8 @@ def _run_batches(
             if rewind is not None:
                 batch_idx = rewind
                 continue
+            if result.metadata.get(RAN_OUT_OF_ROUNDS):
+                _record_ran_out(node, result, cp_prefix, context, cp)
         else:
             # For parallel batches, only run nodes not already checkpointed
             results = _execute_parallel_batch(remaining, input_data, node_outputs, context, graph_event_id, loop_feedback, node_map)
@@ -472,6 +485,45 @@ def _record_outcome(
             cp.save_cleanup_ran(path, undone)
         if isinstance(stop, RunStop):
             stop.note_cleanup_ran(path, undone)
+
+
+def ran_out_reason(count: int, max_loops: int, loop_to: str | None) -> str:
+    """Why a step that ran out of rounds failed, in the words the run page shows."""
+    back = f" (it still wanted to go back to '{loop_to}')" if loop_to else ""
+    return f"ran out of rounds: {count} of {max_loops}{back}"
+
+
+def _record_ran_out(
+    node: Node,
+    result: NodeResult,
+    cp_prefix: str,
+    context: ExecutionContext,
+    cp: Any,
+) -> None:
+    """Store a step that ran out of rounds as failed, with the reason.
+
+    Its run went well and was written down as done (``_record_outcome``) before its loop
+    found there was no round left. Written again here: its event turns red with the reason,
+    a failed checkpoint follows the completed one (replay drops the step, and a resume runs
+    it again with the loop's count kept, so it passes or fails the same way), and the run
+    stops here like at any other failure.
+    """
+    path = cp_prefix + node.name
+    event_id = result.metadata.get(NODE_EVENT_ID)
+    if event_id:
+        try:
+            context.event_recorder.update_event(
+                event_id,
+                status="failed",
+                data={"error": result.error, RAN_OUT_OF_ROUNDS: result.metadata.get(RAN_OUT_OF_ROUNDS)},
+            )
+        except Exception as exc:  # the checkpoint below is what a resume reads; keep going
+            logger.warning("Could not mark '%s' failed on its event: %s", path, exc)
+    if cp is not None:
+        cp.save_node_completed(path, result)
+    stop = getattr(context, "run_stop", None)
+    if isinstance(stop, RunStop):
+        stop.note_failure(path, result.error)
 
 
 def _held_or_skipped(
@@ -633,6 +685,11 @@ def _build_final_result(
         event_data["stopped"] = stopped
 
     failed_nodes = _failed_node_names(node_outputs) if is_workflow else []
+    if is_workflow and not failed_nodes and stopped and stopped.get("path"):
+        # The run stopped at a failure, but the failed attempt is no longer among the
+        # results: its loop sent it round again, which retired it, and then nothing more
+        # started. Nothing after it ran, so the run failed there -- not "completed".
+        failed_nodes = [str(stopped["path"])]
     final_status = Status.FAILED if failed_nodes else Status.COMPLETED
     if is_workflow and getattr(context, "run_only", None) is not None:
         # A pass that ran only the held clean-ups, once the wait was over. It says nothing
@@ -792,6 +849,7 @@ def _execute_single_node(
     )
 
     result = _run_node_with_events(node, resolved, context, node_event_id)
+    result.metadata[NODE_EVENT_ID] = node_event_id
     no_verdict = _loop_verdict_missing(node, result, {**node_outputs, node.name: result})
     if no_verdict:
         logger.warning("Node '%s' fails: %s", node.name, no_verdict)
@@ -846,6 +904,14 @@ def _required_file_missing(
 # Set on a node that failed because its loop could not read its verdict (see
 # _loop_verdict_missing): the loop does not go round again for it.
 NO_LOOP_VERDICT = "no_loop_verdict"
+
+# In-memory only (metadata is never stored): the id of the event a node's run was recorded
+# under, so a verdict reached after the run -- running out of rounds -- can be written onto it.
+NODE_EVENT_ID = "node_event_id"
+
+# Set on a node that completed but ran out of rounds with its loop still asking for another,
+# under ``on_max_loops: fail``: {"count", "max", "loop_to"}. _record_ran_out stores the failure.
+RAN_OUT_OF_ROUNDS = "ran_out_of_rounds"
 
 
 # The step a failure started from, at the end of every skip reason this module
@@ -1506,11 +1572,17 @@ def _handle_loop(
         )
         if policy == "ship_with_open_issues":
             _append_known_issues(node, result, loop_key, loop_counts[loop_key], input_data)
-        elif policy == "fail":
-            # Mark this node's result as failed so downstream fail-cascade applies
+        elif policy == "fail" and result.status != Status.FAILED:
+            # The step itself went well, but its loop still wants another round and there is
+            # none left: that is this step failing. Its outcome was already written as done, so
+            # _record_ran_out writes it again as the failure it is -- event, checkpoint and the
+            # run's stop -- or a resume would restore it as done and finish green. A step that
+            # failed by itself keeps its own error; it was written as failed already.
             result.status = Status.FAILED
-            if not result.error:
-                result.error = f"Loop {loop_key} exhausted max_loops={node.max_loops} with loop_condition still active"
+            result.error = ran_out_reason(loop_counts[loop_key], node.max_loops, node.loop_to)
+            result.metadata[RAN_OUT_OF_ROUNDS] = {
+                "count": loop_counts[loop_key], "max": node.max_loops, "loop_to": node.loop_to,
+            }
         # "silent" (default) → legacy behavior: stop looping, continue workflow silently
         return None
 
@@ -1900,6 +1972,12 @@ def _wait_for_gate(
       status to ``approved`` in the database — with ``gate_response`` in
       its data — and the worker polls for it.
 
+    Each wait is one event, and an approval names it (or names the step, when only one wait
+    is open there): see :mod:`temper_ai.stage.gate` for which wait is which. A run picked up
+    again does not ask twice: an approval given while it was down is used as the answer, a
+    wait still open from before is waited on again (the buttons already sent keep working),
+    and any other open wait at the step is closed as replaced.
+
     Returns the human's response (see :mod:`temper_ai.stage.gate`) or None
     for a plain approval.
     """
@@ -1907,65 +1985,158 @@ def _wait_for_gate(
     if gate_registry is None:
         gate_registry = {}
         logger.info("Node '%s' has gate=true and no in-process gate registry; approval via the database only", node.name)
+    recorder = context.event_recorder
+    path = f"{context.node_path}.{node.name}" if context.node_path else node.name
 
-    gate_key = f"{context.run_id}:{node.name}"
-    gate_event = GateSignal()
-    gate_registry[gate_key] = gate_event
+    # Waits someone in this process is still waiting on (the same step running twice at once)
+    # are theirs: neither taken over nor closed here.
+    history = [ev for ev in _gate_history(recorder, node.name)
+               if signal_key(context.run_id, str(ev.get("id"))) not in gate_registry]
+    earlier = earlier_waits(history, path, node.name)
+    new_id = str(uuid.uuid4())
+    answer, adopt = earlier.answer, earlier.adopt
+    for ev in earlier.retire:
+        approved_meanwhile = _retire_wait(recorder, ev, (answer or adopt or {}).get("id") or new_id)
+        if approved_meanwhile and answer is None:
+            answer = approved_meanwhile
+    if answer is not None:
+        if adopt is not None:
+            _retire_wait(recorder, adopt, str(answer.get("id")))
+        return _use_earlier_answer(recorder, answer, path)
 
-    # Record waiting event so the UI can show the gate — and what it is about
-    waiting_event_id = context.event_recorder.record(
-        EventType.STAGE_STARTED,
-        data={
-            **_build_node_event_data(node),
-            "gate": True,
-            "gate_status": "waiting",
-            "gate_context": build_gate_context(node.config.depends_on or [], node_outputs or {}),
-        },
-        parent_id=parent_event_id,
-        execution_id=context.run_id,
-        status="waiting",
-    )
+    if adopt is not None:
+        waiting_event_id = str(adopt["id"])
+        gate_round = (adopt.get("data") or {}).get("gate_round") or earlier.round
+        logger.info("Gate: '%s' is still waiting for the approval it asked for before the run "
+                    "stopped (event %s); waiting on it again", path, waiting_event_id)
+    else:
+        waiting_event_id, gate_round = new_id, earlier.round
+    gate_event = GateSignal(waiting_event_id, node.name, path, gate_round)
+    key = signal_key(context.run_id, waiting_event_id)
+    gate_registry[key] = gate_event
+    try:
+        if adopt is None:
+            # Record waiting event so the UI can show the gate — and what it is about
+            recorder.record(
+                EventType.STAGE_STARTED,
+                data={
+                    **_build_node_event_data(node),
+                    "gate": True,
+                    "gate_status": WAITING,
+                    "gate_path": path,
+                    "gate_round": gate_round,
+                    "gate_context": build_gate_context(node.config.depends_on or [], node_outputs or {}),
+                },
+                parent_id=parent_event_id,
+                execution_id=context.run_id,
+                status=WAITING,
+                event_id=waiting_event_id,
+            )
 
-    # Save checkpoint before waiting (so the run can resume if server crashes while waiting)
-    if context.checkpoint_service:
-        context.checkpoint_service._save(
-            event_type="gate_waiting",
-            node_name=node.name,
-            status="waiting",
-        )
+        # Save checkpoint before waiting (so the run can resume if server crashes while waiting)
+        if context.checkpoint_service:
+            context.checkpoint_service._save(
+                event_type="gate_waiting",
+                node_name=path,
+                status="waiting",
+            )
 
-    logger.info("Gate: waiting for approval on node '%s' (execution: %s)", node.name, context.run_id)
+        logger.info("Gate: waiting for approval on '%s', round %s (execution: %s, event %s)",
+                    path, gate_round, context.run_id, waiting_event_id)
+        _wait_for_approval(gate_event, recorder, context, waiting_event_id, path)
+    finally:
+        gate_registry.pop(key, None)
 
-    # Block until approved (in memory or in the database) or cancelled
-    while not gate_event.is_set():
-        _check_cancelled(context)
-        if gate_event.wait(timeout=GATE_POLL_SECONDS):
-            break
-        try:
-            if context.event_recorder.event_status(waiting_event_id) == "approved":
-                break
-        except Exception as exc:  # DB hiccup: keep waiting, the in-memory path still works
-            logger.warning("Gate: could not read approval state for '%s': %s", node.name, exc)
-
-    # Clean up; mark the waiting event approved so it is not listed twice.
     # The response came either with the in-process signal or with the
     # database approval — read the event for the latter.
-    gate_registry.pop(gate_key, None)
     response = gate_event.response
     if response is None:
         try:
-            persisted = context.event_recorder.event_data(waiting_event_id) or {}
+            persisted = recorder.event_data(waiting_event_id) or {}
         except Exception as exc:  # the approval already got through; the answer is best-effort
-            logger.warning("Gate: could not read the response for '%s': %s", node.name, exc)
+            logger.warning("Gate: could not read the response for '%s': %s", path, exc)
             persisted = {}
         if isinstance(persisted.get("gate_response"), dict):
             response = persisted["gate_response"]
-    context.event_recorder.update_event(
+    # Written as used: a run picked up again later must not take it for an unused answer.
+    recorder.update_event(
         waiting_event_id,
-        status="approved",
-        data={"gate_status": "approved", **({"gate_response": response} if response else {})},
+        status=APPROVED,
+        data={"gate_status": APPROVED, "gate_used_at": utcnow().isoformat(),
+              **({"gate_response": response} if response else {})},
     )
-    logger.info("Gate: node '%s' approved%s, continuing", node.name, " with a response" if response else "")
+    logger.info("Gate: '%s' approved%s, continuing", path, " with a response" if response else "")
+    return response
+
+
+def _wait_for_approval(
+    gate_event: GateSignal,
+    recorder: Any,
+    context: ExecutionContext,
+    event_id: str,
+    path: str,
+) -> None:
+    """Block until this wait is approved (in memory or in the database) or the run is stopped."""
+    while not gate_event.is_set():
+        _check_cancelled(context)
+        if gate_event.wait(timeout=GATE_POLL_SECONDS):
+            return
+        try:
+            status = recorder.event_status(event_id)
+        except Exception as exc:  # DB hiccup: keep waiting, the in-memory path still works
+            logger.warning("Gate: could not read approval state for '%s': %s", path, exc)
+            continue
+        if status == APPROVED:
+            return
+        if status == REPLACED:
+            # Another attempt of this run took this wait over: this one is not the run any more.
+            raise CancellationError(f"The approval at '{path}' was taken over by a later attempt of this run")
+
+
+def _gate_history(recorder: Any, name: str) -> list[dict[str, Any]]:
+    """This run's earlier waits at steps called ``name``; none when the run keeps no events."""
+    try:
+        found = recorder.gate_events(name)
+    except Exception as exc:  # cannot look: ask afresh, as before waits could be found
+        logger.warning("Gate: could not read the earlier approvals for '%s': %s", name, exc)
+        return []
+    return found if isinstance(found, list) else []
+
+
+def _retire_wait(recorder: Any, ev: dict[str, Any], took_over_by: str) -> dict[str, Any] | None:
+    """Close an open wait nobody waits on any more, as replaced by ``took_over_by``.
+
+    Its messages and buttons then say it was replaced. Returns the wait when someone approved
+    it just before it could be closed: that approval is the answer.
+    """
+    won, after = recorder.decide(
+        str(ev["id"]),
+        expect=(WAITING,),
+        status=REPLACED,
+        data={"gate_status": REPLACED, "gate_replaced_at": utcnow().isoformat(),
+              "gate_replaced_by": took_over_by},
+    )
+    if won:
+        logger.info("Gate: closed the approval %s at '%s' as replaced", ev.get("id"),
+                    (ev.get("data") or {}).get("gate_path") or (ev.get("data") or {}).get("name"))
+        return None
+    if after and after.get("status") == APPROVED and not (after.get("data") or {}).get("gate_used_at"):
+        return after
+    return None
+
+
+def _use_earlier_answer(recorder: Any, answer: dict[str, Any], path: str) -> dict[str, Any] | None:
+    """Go on with an approval given while nothing was waiting on it, without asking again."""
+    data = answer.get("data") or {}
+    response = data.get("gate_response") if isinstance(data.get("gate_response"), dict) else None
+    recorder.update_event(
+        str(answer["id"]),
+        status=APPROVED,
+        data={"gate_status": APPROVED, "gate_used_at": utcnow().isoformat()},
+    )
+    who = f" by {data['gate_decided_by']}" if data.get("gate_decided_by") else ""
+    logger.info("Gate: '%s' was approved%s at %s while the run was stopped; going on with that answer "
+                "without asking again", path, who, data.get("gate_decided_at") or "an earlier moment")
     return response
 
 

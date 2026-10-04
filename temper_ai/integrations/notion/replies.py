@@ -27,6 +27,7 @@ from temper_ai.integrations.notify.loop import question_notice
 from temper_ai.integrations.notify.notice import Copy, Decision, Notice
 from temper_ai.integrations.notion import store
 from temper_ai.integrations.notion.client import NotionClient, NotionError, normalize_id
+from temper_ai.integrations.slack.ops import OpsError
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +89,13 @@ def person_name(client: NotionClient, user_id: str) -> str:
         return "someone"
 
 
-def answer(copy: Copy, text: str, who: str, ops: Any, notify_cfg: Any) -> str:
-    """Answer the gate; returns what happened, in a few words."""
+def answer(copy: Copy, text: str, who: str, ops: Any, notify_cfg: Any, comment_id: str = "") -> str:
+    """Answer the gate; returns what happened, in a few words.
+
+    The approval names this question's own wait (``copy.event_id``) and the reply
+    (``comment_id``): one already answered or replaced is refused, not passed on to a
+    later one, and the same reply delivered twice decides once.
+    """
     raw = ops.gate_decision(copy.event_id) if copy.event_id else None
     if raw is None or raw.get("status") != "waiting":
         decision = Decision.from_event(raw)
@@ -109,11 +115,22 @@ def answer(copy: Copy, text: str, who: str, ops: Any, notify_cfg: Any) -> str:
         ops.cancel(eid, f"Rejected in Notion by {who}" + (f": {response}" if response else ""), by=by)
         decision = Decision("rejected", who, "Notion", response)
     else:
-        alive = ops.run_is_alive(eid)
-        ops.approve(eid, node, answers, response, by=by)
-        if not alive:
+        try:
+            out = ops.approve(eid, node, answers, response, by=by, event_id=copy.event_id or None,
+                              request_id=f"notion:{comment_id}" if comment_id else None)
+        except OpsError as exc:
+            if getattr(exc, "status", None) != 409:
+                raise
+            notify.close_question(copy.key, Decision.from_event(ops.gate_decision(copy.event_id)))
+            return "the question was already answered"
+        if out.get("repeated"):
+            return "the question was already answered"
+        resumed = bool(out.get("needs_resume"))
+        if resumed:
+            # Nothing was running the run: the answer is kept, and the resumed run goes on
+            # with it instead of asking again.
             ops.resume(eid)
         pairs = tuple((a["question"] or a["id"], ", ".join(a["selected"]) or a["custom"]) for a in answers)
-        decision = Decision("approved" if alive else "resumed", who, "Notion", response, pairs)
+        decision = Decision("resumed" if resumed else "approved", who, "Notion", response, pairs)
     notify.close_question(copy.key, decision)
     return f"{decision.verdict} run {eid[:8]}"

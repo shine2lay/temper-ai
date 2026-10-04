@@ -132,6 +132,7 @@ class FakeOps:
         self.cancelled: list[tuple[str, str]] = []
         self.approved: list[tuple[str, str]] = []
         self.answers: list[dict[str, Any]] = []   # what each approve carried
+        self.requests: dict[str, dict[str, Any]] = {}  # request id -> the first result
         self.resumed: list[str] = []
         self.gates: list[dict[str, Any]] = []      # waiting gate events
         self.decisions: dict[str, dict[str, Any]] = {}
@@ -231,21 +232,42 @@ class FakeOps:
         return execution_id in self.alive
 
     def approve(self, execution_id: str, node: str, answers: list[dict[str, Any]] | None = None,
-                response: str = "", by: str = "") -> dict[str, Any]:
-        waiting = [g for g in self.gates if g["execution_id"] == execution_id and g["data"]["name"] == node]
+                response: str = "", by: str = "", *, event_id: str | None = None,
+                request_id: str | None = None) -> dict[str, Any]:
+        """Like the real one: one wait, only while it is open; a request id decides once."""
+        if request_id and request_id in self.requests:
+            return {**self.requests[request_id], "repeated": True}
+        if event_id:
+            ev = self.decisions.get(event_id)
+            if ev is None:
+                raise OpsError(f"No approval {event_id}", 404)
+            if ev["status"] != "waiting":
+                who = ev["data"].get("gate_decided_by")
+                raise OpsError(f"Already {ev['data'].get('gate_status') or ev['status']}"
+                               + (f" by {who}" if who else ""), 409)
+            waiting = [g for g in self.gates if g["id"] == event_id]
+        else:
+            waiting = [g for g in self.gates if g["execution_id"] == execution_id and g["data"]["name"] == node]
         if not waiting:
-            raise OpsError(f"No gate waiting for node '{node}'")
+            raise OpsError(f"No gate waiting for node '{node}'", 404)
+        if len(waiting) > 1:
+            raise OpsError(f"{len(waiting)} approvals are waiting at '{node}'", 409)
         self.approved.append((execution_id, node))
         self.answers.append({"execution_id": execution_id, "node": node, "answers": list(answers or []),
-                             "response": response, "by": by})
-        for g in waiting:
-            ev = self.decisions[g["id"]]
-            ev["status"] = "approved"
-            ev["data"].update(gate_status="approved",
-                              gate_response={"response": response, "answers": list(answers or [])},
-                              **({"gate_decided_by": by} if by else {}))
-        self.gates = [g for g in self.gates if g not in waiting]
-        return {"status": "approved"}
+                             "response": response, "by": by, "event_id": event_id,
+                             "request_id": request_id})
+        g = waiting[0]
+        ev = self.decisions[g["id"]]
+        ev["status"] = "approved"
+        ev["data"].update(gate_status="approved",
+                          gate_response={"response": response, "answers": list(answers or [])},
+                          **({"gate_decided_by": by} if by else {}))
+        self.gates = [x for x in self.gates if x is not g]
+        out = {"status": "approved", "event_id": g["id"], "repeated": False,
+               "needs_resume": execution_id not in self.alive}
+        if request_id:
+            self.requests[request_id] = out
+        return out
 
     def record_who(self, execution_id: str, node: str | None, who: str) -> int:
         done = 0

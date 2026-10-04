@@ -155,7 +155,11 @@ interpreter at all.
 list to pick one from, a pick-any question has checkboxes, and each question
 has a box for a typed answer, plus one for anything else. Submitting it
 continues the run, and the next step gets the answers. **Approve** continues
-without answers.
+without answers. Each button answers the wait it was sent for; a press on a
+question answered elsewhere first, or replaced after the run was picked up
+again, says so and changes nothing. If the run was not running, Approve keeps
+the answer and resumes it, and it goes on without asking again
+([gates.md](gates.md)).
 
 Every notice about a run goes in one thread per place. A run started from
 Slack keeps its notices in the thread it was started in. When a gate is

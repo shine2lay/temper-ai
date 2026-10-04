@@ -678,15 +678,27 @@ class Handler:
         answers = self.answers(notice, state)
         response = str(state.get("response") or "")
         eid, node = copy.execution_id, copy.node or notice.node
-        if self.ops.run_is_alive(eid):
-            self.ops.approve(eid, node, answers, response, by=f"{who} (Telegram)")
-            verdict = "approved"
-        else:
-            # After a restart nothing waits on this gate: resuming the run
-            # brings it back to the gate, which asks again.
-            self.ops.approve(eid, node, answers, response, by=f"{who} (Telegram)")
+        try:
+            # This message's own wait, once: a press arriving twice decides once, and a press
+            # on a wait that was answered or replaced meanwhile is refused (409).
+            out = self.ops.approve(eid, node, answers, response, by=f"{who} (Telegram)",
+                                   event_id=copy.event_id or None,
+                                   request_id=f"telegram:{copy.id}:{copy.event_id}")
+        except OpsError as exc:
+            if exc.status != 409:
+                raise
+            raw = self.ops.gate_decision(copy.event_id) if copy.event_id else None
+            self.close(copy, notice, Decision.from_event(raw), state)
+            return str(exc)
+        if out.get("repeated"):
+            return "Already approved"
+        if out.get("needs_resume"):
+            # Nothing was running the run (temper restarted since it asked): the answer is
+            # kept, and the resumed run goes on with it instead of asking again.
             self.ops.resume(eid)
             verdict = "resumed"
+        else:
+            verdict = "approved"
         store.log_action(user.get("id", ""), who, "approve", eid,
                          f"{node} {copy.event_id} {verdict} {json.dumps(answers)[:400]}", chat_id=copy.target)
         pairs = tuple((a["question"] or a["id"], render.answer_text(a)) for a in answers)

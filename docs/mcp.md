@@ -47,7 +47,7 @@ curl -s -X POST http://localhost:8420/mcp \
 | `get_node_output` | What one node produced, including its tool calls |
 | `get_llm_call` | The prompt, response and thinking of one call |
 | `cancel_run` | Stop a running workflow |
-| `list_gates` / `approve_gate` | See and release approval gates |
+| `list_gates` / `approve_gate` | See and release approval gates (`approve_gate` takes an optional `event_id` and `request_id`; a refusal comes back with `status: 409` and why: [gates.md](gates.md)) |
 
 ## Why inspection is layered
 

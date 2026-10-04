@@ -58,7 +58,10 @@ of its questions:
   then stops the run.
 
 When it is answered anywhere else (the dashboard, Slack, the API), the
-message loses its buttons and says who answered and where.
+message loses its buttons and says who answered and where. If the run was
+not running (temper restarted while it waited), **Approve** keeps the answer
+and resumes the run, which goes on with it without asking again
+([gates.md](gates.md)).
 
 ## Agent tool
 

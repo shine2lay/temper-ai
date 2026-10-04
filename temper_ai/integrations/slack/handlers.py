@@ -417,7 +417,10 @@ class Handler:
                 return
         try:
             if action_id in (blocks.APPROVE, blocks.REJECT):
-                self.gate(action_id == blocks.APPROVE, value, user, name, channel, ts, message)
+                # One press, one request: Slack sending the same press again decides nothing twice.
+                press = str(act.get("action_ts") or p.get("trigger_id") or "")
+                self.gate(action_id == blocks.APPROVE, value, user, name, channel, ts, message,
+                          request_id=f"slack:{press}" if press else "")
             elif action_id == blocks.ANSWER:
                 self.open_form(value, str(p.get("trigger_id") or ""), user, channel, ts, message, p)
             elif action_id == blocks.STOP:
@@ -470,32 +473,60 @@ class Handler:
             return decision.get("status") == "waiting", decision
         return self.ops.gate_info(eid, node) is not None, decision
 
+    def _already(self, user: str, channel: str, ts: str, message: dict[str, Any], event_id: Any,
+                 decision: dict[str, Any] | None, said: str = "") -> None:
+        """A click on a question that was already answered (or replaced): say so, change nothing."""
+        data = (decision or {}).get("data") or {}
+        verdict = str(data.get("gate_status") or (decision or {}).get("status") or "closed")
+        who = data.get("gate_decided_by")
+        if said:
+            line = f":information_source: {said} (<@{user}>'s click)"
+        elif verdict == "replaced":
+            line = (":information_source: This question was replaced: the run was picked up again and "
+                    f"asks in a new message; <@{user}>'s click changed nothing.")
+        else:
+            line = (f":information_source: Already {verdict}" + (f" by {who}" if who else "")
+                    + f"; <@{user}>'s click changed nothing.")
+        if channel and ts:
+            self._decide(channel, ts, message, line, verdict)
+        self._close_everywhere(channel, ts, event_id, Decision.from_event(decision))
+
     def gate(self, approve: bool, value: dict[str, Any], user: str, name: str, channel: str, ts: str,
-             message: dict[str, Any], answers: list[dict[str, Any]] | None = None, response: str = "") -> None:
+             message: dict[str, Any], answers: list[dict[str, Any]] | None = None, response: str = "",
+             request_id: str = "") -> None:
         eid, node, event_id = str(value.get("run") or ""), str(value.get("node") or ""), value.get("event")
+        # The message may have been moved on to a later wait at the same step (see notify's
+        # rekey): what it shows now is what this click answers.
+        mine = notify_store.by_ref("slack", f"{channel}:{ts}") if channel and ts else None
+        if mine is not None and mine.event_id:
+            event_id = mine.event_id
         waiting, decision = self._waiting(eid, node, event_id)
         if not waiting:
-            data = (decision or {}).get("data") or {}
-            verdict = str(data.get("gate_status") or (decision or {}).get("status") or "closed")
-            who = data.get("gate_decided_by")
-            if channel and ts:
-                self._decide(channel, ts, message, f":information_source: Already {verdict}"
-                             + (f" by {who}" if who else "") + f"; <@{user}>'s click changed nothing.", verdict)
-            self._close_everywhere(channel, ts, event_id, Decision.from_event(decision))
+            self._already(user, channel, ts, message, event_id, decision)
             return
         by = f"{name or user} (Slack)"
         if approve:
-            if self.ops.run_is_alive(eid):
-                self.ops.approve(eid, node, answers, response, by=by)
-                line, verdict = f":white_check_mark: Approved by <@{user}>", "approved"
-            else:
-                # After a restart nothing waits on this gate: resuming the
-                # run brings it back to the gate, which asks again.
-                self.ops.approve(eid, node, answers, response, by=by)
+            try:
+                out = self.ops.approve(eid, node, answers, response, by=by,
+                                       event_id=str(event_id) if event_id else None, request_id=request_id or None)
+            except OpsError as exc:
+                if exc.status != 409:
+                    raise
+                # Someone answered first, or the run asked again meanwhile: the API said which.
+                self._already(user, channel, ts, message, event_id,
+                              self.ops.gate_decision(str(event_id)) if event_id else None, said=str(exc))
+                return
+            if out.get("repeated"):
+                return  # the same press again: the first one did all there was to do
+            if out.get("needs_resume"):
+                # Nothing was running the run (temper restarted since it asked): the answer is
+                # kept, and the resumed run goes on with it instead of asking again.
                 self.ops.resume(eid)
-                line = (f":arrows_counterclockwise: <@{user}> approved, but temper had restarted since this "
-                        "gate opened, so the run was resumed instead; it will ask again here.")
+                line = (f":arrows_counterclockwise: Approved by <@{user}>. The run was not running, so it "
+                        "was resumed; it goes on with this answer without asking again.")
                 verdict = "resumed"
+            else:
+                line, verdict = f":white_check_mark: Approved by <@{user}>", "approved"
             if answers:
                 line += f" with {len(answers)} answer(s)"
             store.log_action(user, name, "approve", eid,
@@ -572,7 +603,8 @@ class Handler:
                                     "upstream": info.get("upstream") or [], "questions": info.get("questions") or []},
                               self.config.get().run_url(eid))
         try:
-            self.gate(True, meta, user, name, channel, ts, message, answers=answers, response=response)
+            self.gate(True, meta, user, name, channel, ts, message, answers=answers, response=response,
+                      request_id=f"slack-form:{view.get('id')}:{view.get('hash')}")
         except OpsError as exc:
             try:
                 self.client.post(user, f":warning: Your answers were not sent: {exc}")

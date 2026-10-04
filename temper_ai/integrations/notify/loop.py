@@ -43,6 +43,7 @@ from temper_ai.integrations.notify.config import (
 )
 from temper_ai.integrations.notify.notice import Copy, Decision, Notice, Sender
 from temper_ai.runner import quiet
+from temper_ai.stage.gate import REPLACED, WAITING, gate_path
 
 logger = logging.getLogger(__name__)
 
@@ -377,25 +378,34 @@ class Notifier:
 
     def _questions(self, cfg: NotifyConfig, now: datetime, since: datetime,
                    runs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        # One question per open wait of a step: grouped by the step's path, so two steps of
+        # one name in different stages are two questions.
         newest: dict[tuple[str, str], dict[str, Any]] = {}
         for ev in self.ops.waiting_gates():     # newest first
             eid = str(ev.get("execution_id") or "")
-            node = str((ev.get("data") or {}).get("name") or "")
-            if eid and node:
-                newest.setdefault((eid, node), ev)
+            path = gate_path(ev.get("data") or {})
+            if eid and path:
+                newest.setdefault((eid, path), ev)
         out: list[dict[str, Any]] = []
-        for (eid, node), ev in newest.items():
+        for (eid, path), ev in newest.items():
             run = runs.get(eid) or {}
             if run.get("status") in ENDED:
                 continue
+            node = str((ev.get("data") or {}).get("name") or path)
             event_id = str(ev["id"])
             key = f"q:{event_id}"
-            # An older wait at this step that nobody answered: the run was
-            # resumed after a restart and asks again. Its messages now show
-            # this wait. (An answered one is closed, and this is news.)
+            # An older wait at this step that nobody answered: the run was picked up again
+            # and asks again (the old wait was replaced, or -- before waits were -- left
+            # open). Its messages now show this wait, so the run asks nothing twice and a
+            # button already sent answers the wait that is open. (An answered one is closed,
+            # and this is news.)
             older = {c.event_id for c in store.copies(kind="question", execution_id=eid)
-                     if c.node == node and c.key != key}
-            unanswered = [e for e in older if (self.ops.gate_decision(e) or {}).get("status") == "waiting"]
+                     if c.node == node and c.key != key and c.event_id}
+            unanswered = []
+            for e in older:
+                was = self.ops.gate_decision(e) or {}
+                if was.get("status") in (WAITING, REPLACED) and gate_path(was.get("data") or {}) in (path, ""):
+                    unanswered.append(e)
             moved = store.rekey_question(eid, node, key, event_id, unanswered)
             if moved:
                 logger.info("notify: %s asks again at %s; its %d open message(s) now show the new wait",

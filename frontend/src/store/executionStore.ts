@@ -855,6 +855,12 @@ export const useExecutionStore = create<ExecutionState>()(
             if (toolId) state.toolCalls.set(toolId, data as unknown as ToolCall);
             const agId = (data.agent_id ?? msg.agent_id) as string;
             if (agId) {
+              const failed = msg.event_type === 'tool.call.failed'
+                || (data.status != null && data.status !== 'success' && data.status !== 'completed');
+              // Tool events say `error` and `duration_ms` (tool_execution.py, pi_stream.py);
+              // the stored row says `error_message` and `duration_seconds`.
+              const seconds = (data.duration_seconds as number | undefined)
+                ?? (typeof data.duration_ms === 'number' ? data.duration_ms / 1000 : undefined);
               const entry = state.streamingContent.get(agId);
               if (entry?.toolActivity) {
                 const toolName = data.tool_name as string;
@@ -862,20 +868,18 @@ export const useExecutionStore = create<ExecutionState>()(
                   .reverse()
                   .find((t) => t.toolName === toolName && t.status === 'running');
                 if (running) {
-                  running.status = (data.status as string) === 'success' ? 'completed' : 'failed';
+                  running.status = failed ? 'failed' : 'completed';
                   running.completedAt = msg.timestamp ?? new Date().toISOString();
-                  running.durationSeconds = data.duration_seconds as number | undefined;
+                  running.durationSeconds = seconds;
                 }
               }
-              const failed = msg.event_type === 'tool.call.failed'
-                || (data.status != null && data.status !== 'success' && data.status !== 'completed');
               finishTool(_story(state, agId), {
                 toolId: toolId || undefined,
                 toolName: data.tool_name as string | undefined,
                 status: failed ? 'failed' : 'completed',
-                durationSeconds: data.duration_seconds as number | undefined,
+                durationSeconds: seconds,
                 result: data.output_data ?? data.output,
-                error: data.error_message as string | undefined,
+                error: (data.error_message ?? data.error) as string | undefined,
                 args: (data.input_params ?? data.input_data) as Record<string, unknown> | undefined,
                 at: msg.timestamp ?? new Date().toISOString(),
               });

@@ -26,7 +26,13 @@ from temper_ai.api.websocket import ws_manager
 from temper_ai.checkpoint.service import CheckpointService
 from temper_ai.observability.event_recorder import EventRecorder
 from temper_ai.observability.event_types import EventType
-from temper_ai.observability.recorder import get_events, update_event
+from temper_ai.observability.recorder import (
+    decide_event,
+    gate_events,
+    get_event,
+    get_events,
+    update_event,
+)
 from temper_ai.runner import holds
 from temper_ai.runner._helpers import (
     McpPreconnectError,
@@ -43,7 +49,18 @@ from temper_ai.runner.resume import (
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.failure import FailurePolicy
-from temper_ai.stage.gate import normalise_response
+from temper_ai.stage.gate import (
+    APPROVED,
+    REJECTED,
+    WAITING,
+    describe_gate,
+    gate_path,
+    names_gate,
+    normalise_response,
+    refusal,
+    several_waiting,
+    signal_key,
+)
 from temper_ai.stage.plan import build_restore, resume_plan
 from temper_ai.tools import TOOL_CLASSES
 from temper_ai.tools.executor import ToolExecutor
@@ -593,11 +610,12 @@ def cancel_run(execution_id: str, body: CancelRequest | None = None):
     can list the two side by side.
     """
     reason = (body.reason if body else "").strip()
-    rejected: dict[str, Any] = {"gate_status": "rejected", "gate_decided_at": _now_iso()}
+    rejected: dict[str, Any] = {"gate_status": REJECTED, "gate_decided_at": _now_iso()}
     if reason:
         rejected["gate_response"] = {"response": reason, "answers": [], "text": reason}
     for ev in _waiting_gate_events(execution_id):
-        update_event(ev["id"], status="rejected", data=rejected)
+        # Only a wait still open: an approval that got there first stands as it was given.
+        decide_event(str(ev["id"]), expect=(WAITING,), status=REJECTED, data=rejected)
     cancel_event = _state().running.get(execution_id)
     if cancel_event is not None:
         cancel_event.set()
@@ -1026,80 +1044,220 @@ class GateApproval(BaseModel):
 
     response: str = ""
     answers: list[GateAnswer] = Field(default_factory=list)
+    # Which wait this answers (the ``event_id`` /gates lists). With it, an approval made in a
+    # tab or message from an earlier round is refused (409) instead of answering the next one.
+    event_id: str | None = None
+    # One per click: the same request sent again returns the first result and changes nothing.
+    request_id: str | None = None
+    # Who is answering ("Ana (Slack)"), kept with the decision and named in a refusal.
+    by: str = ""
+
+
+NEEDS_RESUME = ("Approved and kept. The run is not running, so it needs Resume; when it comes "
+                "back it goes on with this answer without asking again.")
+
+# Without a database row to decide on, only the in-process signal can say whether an approval
+# was first; this keeps two of them from both getting through.
+_SIGNAL_LOCK = threading.Lock()
 
 
 @router.post("/api/runs/{execution_id}/approve/{node_name}")
 def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = None):
-    """Approve a gate node, allowing the workflow to continue.
+    """Approve one wait at a gate, allowing the workflow to continue.
 
-    The gate node must be in a 'waiting' state. In-process runs are
-    unblocked through the shared gate registry; runs executing in a worker
-    process/container (subprocess or external mode) cannot see that
-    registry, so the waiting event is also marked ``approved`` in the
-    database, which the worker polls.
+    Which wait: the body's ``event_id`` (what ``GET .../gates`` lists, and what every
+    message and button carries). Without one, the wait at ``node_name`` -- a step's name or
+    its path -- when exactly one is open there; several open there is a 409 listing them.
+
+    The approval lands only while that wait is still open, so of two at once exactly one
+    gets through; the other, and one aimed at a wait already answered or replaced (an older
+    round, a stale tab), gets a 409 saying who answered and when. A ``request_id`` sent
+    again returns the first result and touches nothing else.
+
+    In-process runs are unblocked through the shared gate registry; runs
+    executing in a worker process/container (subprocess or external mode)
+    poll the waiting event, which is marked ``approved`` in the database.
+    An approval of a run that is not running is kept (``needs_resume``):
+    when the run is resumed it goes on with it without asking again.
 
     The optional body carries the human's answers to the questions the
     previous node asked and/or a free-text response; the gated node
     receives it as its ``gate`` input (see :mod:`temper_ai.stage.gate`).
     """
-    gate_key = f"{execution_id}:{node_name}"
-    gate_event = _state().gates.get(gate_key)
-    waiting_events = _waiting_gate_events(execution_id, node_name)
-    if gate_event is None and not waiting_events:
+    body = body or GateApproval()
+    request_id = (body.request_id or "").strip() or None
+    if request_id:
+        first = _first_answer_to(execution_id, request_id)
+        if first is not None:
+            return first
+    event, signal = _gate_to_approve(execution_id, node_name, (body.event_id or "").strip() or None)
+    response = normalise_response(body.model_dump(include={"response", "answers"}))
+    alive = _run_is_alive(execution_id)
+    by = body.by.strip()
+    decided: dict[str, Any] = {
+        "gate_status": APPROVED, "gate_decided_at": _now_iso(),
+        **({"gate_decided_by": by} if by else {}),
+        **({"gate_request_id": request_id} if request_id else {}),
+        **({"gate_response": response} if response else {}),
+        **({} if alive else {"gate_kept_for_resume": True}),
+    }
+    if event is not None:
+        won, after = decide_event(str(event["id"]), expect=(WAITING,), status=APPROVED, data=decided)
+        if not won:
+            if after is None:
+                raise HTTPException(status_code=404, detail=f"Approval {event['id']} is gone")
+            if request_id and (after.get("data") or {}).get("gate_request_id") == request_id:
+                return _approval_reply(execution_id, after, repeated=True)
+            raise HTTPException(status_code=409, detail=refusal(describe_gate(after)))
+        gate = describe_gate(after or event)
+        signal = signal or _state().gates.get(signal_key(execution_id, str(event["id"])))
+    else:
+        assert signal is not None  # _gate_to_approve found one or raised
+        with _SIGNAL_LOCK:
+            if signal.is_set():
+                raise HTTPException(status_code=409, detail=refusal(_signal_gate(signal, APPROVED)))
+            signal.response = response
+            signal.set()
+        return {**_signal_gate(signal, APPROVED), "execution_id": execution_id, "response": response,
+                "request_id": request_id, "repeated": False, "needs_resume": False}
+    if signal is not None:
+        if response is not None:
+            signal.response = response
+        signal.set()
+    reply = _approval_reply(execution_id, {**(after or event), "status": APPROVED,
+                                           "data": {**(event.get("data") or {}), **decided}})
+    logger.info("Gate: approved '%s' round %s of %s (event %s)%s", gate["path"], gate["round"],
+                execution_id[:8], gate["event_id"], "" if alive else "; the run needs Resume")
+    return reply
+
+
+def _approval_reply(execution_id: str, ev: dict[str, Any], *, repeated: bool = False) -> dict[str, Any]:
+    """What an approval returns -- again, unchanged, for the same request sent twice."""
+    data = ev.get("data") or {}
+    needs_resume = bool(data.get("gate_kept_for_resume")) and not data.get("gate_used_at")
+    return {
+        **describe_gate(ev),
+        "status": APPROVED,
+        "execution_id": execution_id,
+        "node_name": data.get("name", ""),
+        "response": data.get("gate_response"),
+        "repeated": repeated,
+        "needs_resume": needs_resume,
+        **({"message": NEEDS_RESUME} if needs_resume else {}),
+    }
+
+
+def _first_answer_to(execution_id: str, request_id: str) -> dict[str, Any] | None:
+    """The result of the approval this request already made, if it made one."""
+    for ev in gate_events(execution_id):
+        if (ev.get("data") or {}).get("gate_request_id") == request_id:
+            return _approval_reply(execution_id, ev, repeated=True)
+    return None
+
+
+def _gate_to_approve(execution_id: str, node: str, event_id: str | None) -> tuple[dict | None, Any]:
+    """The wait an approval is for: its event (when the run keeps them) and in-process signal.
+
+    Raises 404 when there is none, 409 when the one named is no longer open, or when the
+    approval names only a step and several waits are open there.
+    """
+    registry = _state().gates
+    prefix = f"{execution_id}:"
+    if event_id:
+        event = get_event(event_id)
+        data = (event or {}).get("data") or {}
+        if event is not None and event.get("execution_id") == execution_id and data.get("gate"):
+            if not names_gate(data, node):
+                raise HTTPException(status_code=404, detail=(
+                    f"Approval {event_id} is at '{gate_path(data)}', not '{node}'"))
+            if event.get("status") != WAITING:
+                raise HTTPException(status_code=409, detail=refusal(describe_gate(event)))
+            return event, registry.get(signal_key(execution_id, event_id))
+        signal = registry.get(signal_key(execution_id, event_id))
+        if signal is not None and node in (signal.node_name, signal.path):
+            return None, signal
+        raise HTTPException(status_code=404, detail=(
+            f"No approval {event_id} at '{node}' in execution '{execution_id}'"))
+    open_waits = _waiting_gate_events(execution_id)
+    waits = [ev for ev in open_waits if names_gate(ev.get("data") or {}, node)]
+    known = {str(ev.get("id")) for ev in open_waits}
+    signals = [s for key, s in list(registry.items())
+               if key.startswith(prefix) and not s.is_set() and node in (s.node_name, s.path)
+               and s.event_id not in known]
+    if not waits and not signals:
         raise HTTPException(
             status_code=404,
-            detail=f"No gate waiting for node '{node_name}' in execution '{execution_id}'",
+            detail=f"No gate waiting for node '{node}' in execution '{execution_id}'",
         )
-    response = normalise_response(body.model_dump() if body else None)
-    approved = {"gate_status": "approved", "gate_decided_at": _now_iso(),
-                **({"gate_response": response} if response else {})}
-    for ev in waiting_events:
-        update_event(ev["id"], status="approved", data=approved)
-    if gate_event is not None:
-        if response is not None:
-            gate_event.response = response
-        gate_event.set()
-    return {
-        "status": "approved",
-        "execution_id": execution_id,
-        "node_name": node_name,
-        "response": response,
-    }
+    if len(waits) + len(signals) > 1:
+        listed = [describe_gate(ev) for ev in waits] + [_signal_gate(s, WAITING) for s in signals]
+        raise HTTPException(status_code=409, detail=several_waiting(node, listed))
+    if waits:
+        return waits[0], registry.get(signal_key(execution_id, str(waits[0]["id"])))
+    return None, signals[0]
+
+
+def _signal_gate(signal: Any, status: str) -> dict[str, Any]:
+    """A wait known only to this process (its run keeps no events), as a refusal shows it."""
+    return {"event_id": signal.event_id or None, "node_name": signal.node_name, "path": signal.path,
+            "round": signal.round, "status": status, "answered_by": None, "answered_at": None,
+            "request_id": None, "replaced_by": None, "opened_at": None}
+
+
+def _run_is_alive(execution_id: str) -> bool:
+    """Is some process running this run, so that an approval reaches it now?"""
+    if execution_id in _state().running:
+        return True
+    try:
+        from sqlmodel import select
+
+        from temper_ai.database import get_session
+        from temper_ai.runner.models import WorkflowRun
+
+        with get_session() as session:
+            row = session.exec(select(WorkflowRun).where(WorkflowRun.execution_id == execution_id)).first()
+            return row is not None and row.status in ("queued", "running")
+    except Exception as exc:  # noqa: BLE001 - cannot tell: say nothing about Resume
+        logger.warning("could not tell whether %s is running: %s", execution_id[:8], exc)
+        return True
 
 
 @router.get("/api/runs/{execution_id}/gates")
 def list_gates(execution_id: str):
     """List all gates currently waiting for approval in an execution.
 
-    Each gate carries what the human should see: ``upstream`` (the outputs
-    of the nodes the gated node depends on) and ``questions`` (the ones
-    those outputs asked, in the ask_user_question shape), plus the
-    ``event_id`` of the wait so a loop that gates the same node again is a
-    new gate to the dashboard.
+    One entry per open wait, ordered by step and round. Each carries what the human
+    should see: ``upstream`` (the outputs of the nodes the gated node depends on) and
+    ``questions`` (the ones those outputs asked, in the ask_user_question shape), plus
+    which wait it is -- ``event_id``, the step's ``path`` and the ``round`` -- which an
+    approval sends back so it answers this wait and no other.
     """
     prefix = f"{execution_id}:"
-    by_name: dict[str, dict] = {}
+    waiting: list[dict] = []
+    known: set[str] = set()
     for ev in _waiting_gate_events(execution_id):
         data = ev.get("data") or {}
         name = data.get("name", "")
         if not name:
             continue
         gate_context = data.get("gate_context") or {}
-        by_name[name] = {
+        known.add(str(ev.get("id")))
+        waiting.append({
             "node_name": name,
-            "status": "waiting",
+            "status": WAITING,
             "event_id": ev.get("id"),
+            "path": gate_path(data),
+            "round": data.get("gate_round"),
+            "opened_at": ev.get("timestamp"),
             "upstream": gate_context.get("upstream") or [],
             "questions": gate_context.get("questions") or [],
-        }
-    for key, signal in _state().gates.items():
-        if key.startswith(prefix) and not signal.is_set():
-            name = key.split(":", 1)[1]
-            by_name.setdefault(
-                name,
-                {"node_name": name, "status": "waiting", "event_id": None, "upstream": [], "questions": []},
-            )
-    waiting = [by_name[n] for n in sorted(by_name)]
+        })
+    for key, signal in list(_state().gates.items()):
+        if key.startswith(prefix) and not signal.is_set() and signal.event_id not in known:
+            waiting.append({"node_name": signal.node_name, "status": WAITING, "event_id": signal.event_id or None,
+                            "path": signal.path, "round": signal.round, "opened_at": None,
+                            "upstream": [], "questions": []})
+    waiting.sort(key=lambda g: (str(g["path"]), g["round"] or 0, str(g["opened_at"] or "")))
     return {"execution_id": execution_id, "gates": waiting}
 
 
@@ -1114,7 +1272,7 @@ def _waiting_gate_events(execution_id: str, node_name: str | None = None) -> lis
     return [
         ev for ev in events
         if (ev.get("data") or {}).get("gate")
-        and (node_name is None or (ev.get("data") or {}).get("name") == node_name)
+        and (node_name is None or names_gate(ev.get("data") or {}, node_name))
     ]
 
 
@@ -1131,9 +1289,11 @@ def list_decisions(execution_id: str):
     ``/gates`` is for the dashboard: what is waiting *now*, with the upstream
     output to read before deciding. This is the record afterwards: one entry
     per gate opened, in order, with ``status`` (``waiting`` / ``approved`` /
-    ``rejected``), when it opened and when it was decided, the questions it
-    asked and the ``response`` the human gave (answers and free text; a plain
-    approval has none). A loop that gates the same node twice lists it twice.
+    ``rejected`` / ``replaced`` -- a run picked up again asked in a new one),
+    which wait it was (``path``, ``round``), when it opened and when and by
+    whom it was decided, the questions it asked and the ``response`` the human
+    gave (answers and free text; a plain approval has none). A loop that gates
+    the same node twice lists it twice.
 
     The upstream outputs are left out on purpose: they are large, and the
     point of this listing is the decisions, which a caller keeping a record
@@ -1149,9 +1309,14 @@ def list_decisions(execution_id: str):
         decisions.append({
             "node_name": data.get("name", ""),
             "event_id": ev.get("id"),
+            "path": gate_path(data),
+            "round": data.get("gate_round"),
             "status": data.get("gate_status") or ev.get("status") or "waiting",
             "opened_at": ev.get("timestamp"),
             "decided_at": data.get("gate_decided_at"),
+            "decided_by": data.get("gate_decided_by"),
+            "request_id": data.get("gate_request_id"),
+            "replaced_by": data.get("gate_replaced_by"),
             "questions": gate_context.get("questions") or [],
             "response": data.get("gate_response"),
         })

@@ -5,10 +5,14 @@ The bus layer can be added on top later for real-time streaming.
 """
 
 import logging
+import threading
 import time
 import uuid
+from collections.abc import Iterable
+from contextlib import nullcontext
 from typing import Any
 
+from sqlalchemy import update as sa_update
 from sqlmodel import col, not_, or_, select
 
 from temper_ai.database import get_session
@@ -82,6 +86,55 @@ def update_event(
         session.add(event)
 
     _db_write_with_retry(_do_update)
+
+
+# SQLite has no row locks to wait on (and the tests' in-memory database shares one
+# connection between threads), so on SQLite one process lock lets one decision through
+# at a time. On Postgres the row lock does that, across processes too.
+_SQLITE_DECIDE_LOCK = threading.Lock()
+
+
+def decide_event(
+    event_id: str,
+    *,
+    expect: Iterable[str],
+    status: str,
+    data: dict[str, Any] | None = None,
+) -> tuple[bool, dict[str, Any] | None]:
+    """Change an event's status only while it still has one of ``expect``: compare-and-set.
+
+    Two answers to one gate at the same moment: exactly one gets through, and the other
+    finds the first one's answer. Returns ``(won, event)``, ``event`` being the event as it
+    is now (``None`` when there is no such event). ``data`` is merged into the event's data
+    in the same write, so who answered and when are never split from the answer itself.
+    """
+    wanted = list(expect)
+    with get_session() as session:
+        sqlite = session.get_bind().dialect.name == "sqlite"
+        with _SQLITE_DECIDE_LOCK if sqlite else nullcontext():
+            # FOR UPDATE: a second decision on Postgres waits here for the first to commit,
+            # then reads what it wrote. (SQLite ignores it; the lock above does that job.)
+            event = session.exec(select(Event).where(Event.id == event_id).with_for_update()).first()
+            if event is None:
+                return False, None
+            if event.status not in wanted:
+                return False, _event_to_dict(event)
+            before = _event_to_dict(event)
+            merged = {**(event.data or {}), **(data or {})}
+            # The status is checked again in the write itself, so a decision can only land
+            # on an event that has not been decided meanwhile, lock or no lock.
+            done = session.exec(  # type: ignore[call-overload]
+                sa_update(Event)
+                .where(col(Event.id) == event_id, col(Event.status).in_(wanted))
+                .values(status=status, data=merged)
+                .execution_options(synchronize_session=False)
+            )
+            if done.rowcount != 1:
+                session.rollback()
+                again = session.get(Event, event_id)
+                return False, _event_to_dict(again) if again else None
+            session.commit()  # inside the lock: the next decision reads this one
+            return True, {**before, "status": status, "data": merged}
 
 
 def _db_write_with_retry(fn, max_retries: int = 3, base_delay: float = 0.5) -> None:
@@ -262,6 +315,30 @@ def get_events(
             stmt = stmt.limit(limit)
         results = session.exec(stmt).all()
         return [_event_to_dict(e) for e in results]
+
+
+# The statuses of a gate's wait (``stage.started`` with ``gate: true``): open, answered, the
+# run stopped there, or a later wait for the same step took its place. A step's own
+# ``stage.started`` never has one of these, so they find the waits without reading the data.
+GATE_STATUSES = ("waiting", "approved", "rejected", "replaced")
+
+
+def gate_events(execution_id: str, name: str | None = None) -> list[dict[str, Any]]:
+    """Every gate wait of one run, oldest first; with ``name``, only waits at steps so named."""
+    with get_session() as session:
+        rows = session.exec(
+            select(Event)
+            .where(
+                Event.execution_id == execution_id,
+                Event.type == EventType.STAGE_STARTED,
+                col(Event.status).in_(GATE_STATUSES),
+            )
+            .order_by(col(Event.timestamp))
+        ).all()
+        events = [_event_to_dict(e) for e in rows if (e.data or {}).get("gate")]
+    if name is not None:
+        events = [e for e in events if (e.get("data") or {}).get("name") == name]
+    return events
 
 
 def get_event(event_id: str) -> dict[str, Any] | None:

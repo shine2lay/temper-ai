@@ -350,6 +350,15 @@ class TestQuestions:
         ops.alive.discard(eid)
         press(bot, question, data_of(telegram, question, "✅ Approve"))
         assert ops.resumed == [eid] and "resumed" in telegram.edits[-1]["text"].lower()
+        assert "without asking again" in telegram.edits[-1]["text"]
+        assert ops.answers[0]["event_id"] == "ev-1"
+
+    def test_the_approve_button_names_its_wait_and_decides_once(self, bot, telegram, ops, notifier, clock):
+        eid, question = start_and_gate(bot, telegram, ops, notifier, clock)
+        press(bot, question, data_of(telegram, question, "✅ Approve"))
+        assert ops.answers[0]["event_id"] == "ev-1"
+        assert ops.answers[0]["request_id"].startswith("telegram:")
+        assert len(ops.approved) == 1
 
     def test_a_stranger_cannot_press_and_old_buttons_are_refused(self, bot, telegram, ops, notifier, clock):
         eid, question = start_and_gate(bot, telegram, ops, notifier, clock)

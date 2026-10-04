@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { PauseCircle, X } from 'lucide-react';
 import { useExecutionStore } from '@/store/executionStore';
-import { useGates, type GateAnswer, type GateQuestion, type WaitingGate } from '@/hooks/useGates';
+import {
+  GateApprovalError,
+  newRequestId,
+  useGates,
+  type GateAnswer,
+  type GateQuestion,
+  type WaitingGate,
+} from '@/hooks/useGates';
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 
 interface GateModalProps {
@@ -34,7 +41,10 @@ export function GateModal({ executionId }: GateModalProps) {
   const seen = useRef<Set<string>>(new Set());
 
   const gateKey = (g: WaitingGate) => g.event_id ?? g.node_name;
-  const open = gates.find((g) => g.node_name === gateNodeName);
+  // Opened by its wait (the dialog opening by itself), or by a card naming its step.
+  const open =
+    gates.find((g) => gateKey(g) === gateNodeName) ??
+    gates.find((g) => g.node_name === gateNodeName || g.path === gateNodeName);
 
   // A run that stops at a gate should say so without being clicked.
   useEffect(() => {
@@ -42,7 +52,7 @@ export function GateModal({ executionId }: GateModalProps) {
     const next = gates.find((g) => !seen.current.has(gateKey(g)));
     if (next) {
       seen.current.add(gateKey(next));
-      openGate(next.node_name);
+      openGate(gateKey(next));
     }
   }, [gates, gateNodeName, openGate]);
 
@@ -55,13 +65,26 @@ export function GateModal({ executionId }: GateModalProps) {
       onClose={closeGate}
       onSubmit={(response, answers) =>
         approve.mutate(
-          { nodeName: open.node_name, response, answers },
+          // This wait and no other, and a new request for each click.
+          { nodeName: open.node_name, eventId: open.event_id, requestId: newRequestId(), response, answers },
           {
-            onSuccess: () => {
-              toast.success(`Approved "${open.node_name}"`);
+            onSuccess: (out) => {
+              if (out?.needs_resume) {
+                toast.warning(out.message || 'Approved and kept. The run is not running: press Resume to go on.');
+              } else {
+                toast.success(`Approved "${open.node_name}"`);
+              }
               closeGate();
             },
-            onError: (err: Error) => toast.error(`Could not approve: ${err.message}`),
+            onError: (err: Error) => {
+              if (err instanceof GateApprovalError && err.status === 409) {
+                // Answered, replaced or turned down meanwhile: say so plainly, and show what is open now.
+                toast.warning(err.message);
+                closeGate();
+                return;
+              }
+              toast.error(`Could not approve: ${err.message}`);
+            },
           },
         )
       }
@@ -145,6 +168,9 @@ function GateDialog({
           />
           <h2 className="text-sm font-semibold text-temper-text">
             Approval needed — <span className="font-mono">{gate.node_name}</span>
+            {(gate.round ?? 1) > 1 && (
+              <span className="ml-1.5 text-xs font-normal text-temper-text-muted">round {gate.round}</span>
+            )}
           </h2>
           <span className="text-xs text-temper-text-muted">This run is paused until you answer.</span>
           <button

@@ -58,7 +58,7 @@ class Copy:
 class Decision:
     """How a question was answered, and by whom, wherever that was."""
 
-    verdict: str                    # approved | rejected | resumed | cancelled | ...
+    verdict: str                    # approved | rejected | resumed | cancelled | replaced | ...
     who: str = ""                   # "Shine"
     where: str = ""                 # Slack | Telegram | "" (temper's dashboard or API)
     reason: str = ""
@@ -82,6 +82,9 @@ class Decision:
 
     def line(self) -> str:
         """"Approved by Shine in Telegram" -- plain words, no markup."""
+        if self.verdict == "replaced":
+            return ("Replaced: the run was picked up again, so this question is closed; if it still "
+                    "needs an answer, it asks in a new message")
         verb = {"approved": "Approved", "rejected": "Rejected", "resumed": "Approved",
                 "cancelled": "Closed: the run was stopped"}.get(self.verdict, f"Closed ({self.verdict})")
         by = f" by {self.who}" if self.who else ""
@@ -90,7 +93,8 @@ class Decision:
         if self.verdict == "rejected":
             text += "; the run is stopped"
         if self.verdict == "resumed":
-            text += ", but temper had restarted since this was asked, so the run was resumed; it will ask again"
+            text += ("; the run was not running, so it was resumed, and it goes on with this answer "
+                     "without asking again")
         return text
 
 

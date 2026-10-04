@@ -66,7 +66,8 @@ def click(handler: Handler, action_id: str, value: dict | str, message: dict, us
         "channel": {"id": message["channel"]}, "container": {"message_ts": message["ts"]},
         "message": {"ts": message["ts"], "text": message["text"], "blocks": message.get("blocks")},
         "response_url": "https://hooks.slack.test/click",
-        "actions": [{"action_id": action_id, "value": value if isinstance(value, str) else json.dumps(value)}]}})
+        "actions": [{"action_id": action_id, "action_ts": "1696390000.000100",
+                     "value": value if isinstance(value, str) else json.dumps(value)}]}})
 
 
 def said(slack) -> str:
@@ -199,6 +200,27 @@ class TestGateButtons:
         ops.alive.discard("run-1")  # temper restarted; nothing waits on the gate in memory
         click(handler, APPROVE, button_value(msg, APPROVE), msg)
         assert ops.resumed == ["run-1"] and "resumed" in str(slack.updates[-1]["blocks"])
+        assert "without asking again" in str(slack.updates[-1]["blocks"])
+
+    def test_the_button_approves_the_wait_it_was_sent_for(self, handler, slack, ops):
+        msg = gate_message(slack, ops)
+        click(handler, APPROVE, button_value(msg, APPROVE), msg)
+        assert ops.answers[0]["event_id"] == "ev-1"
+        assert ops.answers[0]["request_id"].startswith("slack:")
+
+    def test_a_refusal_from_the_api_closes_the_message_and_says_why(self, handler, slack, ops, monkeypatch):
+        """Answered elsewhere between the click and the approval: the API's 409, said plainly."""
+        from temper_ai.integrations.slack.ops import OpsError
+
+        msg = gate_message(slack, ops)
+
+        def refused(*a, **kw):
+            raise OpsError("Already answered by ana (dashboard) at 2026-10-03T20:00:00", 409)
+        monkeypatch.setattr(ops, "approve", refused)
+        click(handler, APPROVE, button_value(msg, APPROVE), msg)
+        update = str(slack.updates[-1]["blocks"])
+        assert "Already answered by ana (dashboard)" in update and ops.resumed == []
+        assert not any(b.get("type") == "actions" for b in slack.updates[-1]["blocks"])
 
     def test_answer_opens_a_form_and_its_answers_reach_the_gate(self, handler, slack, ops):
         questions = [

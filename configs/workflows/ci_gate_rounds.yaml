@@ -1,0 +1,58 @@
+workflow:
+  name: ci_gate_rounds
+  description: |
+    A gated step in a loop that runs out of rounds, with no model call: each
+    round of `review` waits for an approval, then says "again", so after its
+    second round it has none left and, with `on_max_loops: fail`, the step
+    and the run fail with "ran out of rounds: 2 of 2". Resume runs `review`
+    again with the loop's count kept: it asks once more and fails the same
+    way, never green. Give `verdict: done` and it passes after one approval
+    and `ship` runs.
+
+      temper run ci_gate_rounds
+      POST /api/runs {"workflow": "ci_gate_rounds"}
+      POST /api/runs {"workflow": "ci_gate_rounds", "inputs": {"verdict": "done"}}
+
+    What it is for: each round's approval is its own wait (an approval of
+    round 1 from a stale tab is refused once round 2 waits; two approvals at
+    once, one wins; the same request id twice decides once), and a loop that
+    runs out shows red with its reason. `gateRounds.spec.ts` and the live
+    check after a deploy use it. Script agents only: no API key, no spend.
+
+  inputs:
+    verdict:
+      type: string
+      required: false
+
+  outputs:
+    shipped: ship.output
+
+  nodes:
+    - name: draft
+      type: agent
+      agent: ci_step
+      input_map:
+        step: "draft"
+
+    - name: review
+      type: agent
+      agent: ci_verdict
+      depends_on: [draft]
+      gate: true
+      loop_to: review
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition:
+        source: review.structured.verdict
+        operator: equals
+        value: again
+      input_map:
+        verdict: input.verdict
+
+    - name: ship
+      type: agent
+      agent: ci_step
+      depends_on: [review]
+      input_map:
+        step: "ship"
+        saw: review.structured.verdict

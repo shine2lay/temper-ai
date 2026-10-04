@@ -17,7 +17,7 @@ from temper_ai.config import ConfigStore
 from temper_ai.memory import InMemoryStore, MemoryService
 from temper_ai.observability.event_types import EventType
 from temper_ai.observability.recorder import get_event, record
-from temper_ai.stage.gate import GateSignal
+from temper_ai.stage.gate import GateSignal, signal_key
 from temper_ai.stage.loader import GraphLoader
 
 RUN = "run-gate-1"
@@ -59,6 +59,13 @@ def _record_waiting(node_name="approve", gate_context=None, execution_id=RUN):
     )
 
 
+def _park(state, event_id: str = "mem-1", node_name: str = "approve") -> GateSignal:
+    """What an in-process run registers while it waits: one signal per wait, keyed by its event."""
+    signal = GateSignal(event_id=event_id, node_name=node_name)
+    state.gates[signal_key(RUN, event_id)] = signal
+    return signal
+
+
 class TestListGates:
     def test_a_waiting_gate_carries_its_upstream_output_and_questions(self, client):
         _record_waiting(gate_context={
@@ -85,21 +92,25 @@ class TestListGates:
             "node_name": "approve",
             "status": "waiting",
             "event_id": gates[0]["event_id"],
+            "path": "approve",
+            "round": None,
+            "opened_at": gates[0]["opened_at"],
             "upstream": [],
             "questions": [],
         }]
 
     def test_an_in_memory_only_gate_is_listed(self, client, state):
-        state.gates[f"{RUN}:approve"] = GateSignal()
+        _park(state, event_id="mem-1")
 
         gates = client.get(f"/api/runs/{RUN}/gates").json()["gates"]
 
         assert [g["node_name"] for g in gates] == ["approve"]
-        assert gates[0]["event_id"] is None
+        assert gates[0]["event_id"] == "mem-1"
 
     def test_a_gate_is_listed_once_when_both_sources_have_it(self, client, state):
-        _record_waiting(gate_context={"upstream": [{"node": "draft", "output": "pitch"}], "questions": []})
-        state.gates[f"{RUN}:approve"] = GateSignal()
+        event_id = _record_waiting(gate_context={"upstream": [{"node": "draft", "output": "pitch"}],
+                                                 "questions": []})
+        _park(state, event_id=event_id)
 
         gates = client.get(f"/api/runs/{RUN}/gates").json()["gates"]
 
@@ -107,9 +118,7 @@ class TestListGates:
         assert gates[0]["upstream"], "the persisted event wins — it is the one with the context"
 
     def test_a_released_gate_is_not_listed(self, client, state):
-        signal = GateSignal()
-        signal.set()
-        state.gates[f"{RUN}:approve"] = signal
+        _park(state).set()
 
         assert client.get(f"/api/runs/{RUN}/gates").json()["gates"] == []
 
@@ -121,9 +130,8 @@ class TestListGates:
 
 class TestApproveGate:
     def test_an_empty_approval_is_a_plain_approval(self, client, state):
-        signal = GateSignal()
-        state.gates[f"{RUN}:approve"] = signal
         event_id = _record_waiting()
+        signal = _park(state, event_id)
 
         r = client.post(f"/api/runs/{RUN}/approve/approve")
 
@@ -136,9 +144,8 @@ class TestApproveGate:
         assert "gate_response" not in data["data"]
 
     def test_answers_reach_the_signal_and_the_event(self, client, state):
-        signal = GateSignal()
-        state.gates[f"{RUN}:approve"] = signal
         event_id = _record_waiting()
+        signal = _park(state, event_id)
 
         r = client.post(f"/api/runs/{RUN}/approve/approve", json={
             "response": "Go, but keep it small.",
@@ -166,8 +173,7 @@ class TestApproveGate:
         assert get_event(event_id)["data"]["gate_response"]["text"] == "ship it"
 
     def test_an_approved_gate_stops_being_listed(self, client, state):
-        state.gates[f"{RUN}:approve"] = GateSignal()
-        _record_waiting()
+        _park(state, _record_waiting())
 
         client.post(f"/api/runs/{RUN}/approve/approve")
 
@@ -175,8 +181,8 @@ class TestApproveGate:
 
     def test_an_approval_is_stamped_with_when_it_was_decided(self, client, state):
         """How long the owner took is part of the record; the stamp is what makes it computable."""
-        state.gates[f"{RUN}:approve"] = GateSignal()
         event_id = _record_waiting()
+        _park(state, event_id)
 
         client.post(f"/api/runs/{RUN}/approve/approve")
 
@@ -191,8 +197,7 @@ class TestDecisionsRecord:
     """
 
     def test_an_approved_gate_is_listed_with_its_response_and_stamps(self, client, state):
-        state.gates[f"{RUN}:approve"] = GateSignal()
-        _record_waiting(gate_context={"questions": [{"id": "host", "question": "Which host?"}]})
+        _park(state, _record_waiting(gate_context={"questions": [{"id": "host", "question": "Which host?"}]}))
 
         client.post(f"/api/runs/{RUN}/approve/approve", json={
             "response": "Go.",
@@ -220,9 +225,9 @@ class TestDecisionsRecord:
 
     def test_cancelling_at_a_gate_records_a_rejection_with_the_reason(self, client, state):
         """Cancel is how the dashboard says no. The gate's own record says so, with why."""
-        state.gates[f"{RUN}:approve"] = GateSignal()
-        state.running[RUN] = cancel = threading.Event()  # an in-process run, parked at the gate
         event_id = _record_waiting()
+        _park(state, event_id)
+        state.running[RUN] = cancel = threading.Event()  # an in-process run, parked at the gate
 
         r = client.post(f"/api/runs/{RUN}/cancel", json={"reason": "Not this quarter."})
 
@@ -236,9 +241,9 @@ class TestDecisionsRecord:
         assert row["status"] == "rejected" and row["response"]["text"] == "Not this quarter."
 
     def test_a_cancel_with_no_body_still_rejects_the_waiting_gate(self, client, state):
-        state.gates[f"{RUN}:approve"] = GateSignal()
-        state.running[RUN] = threading.Event()
         event_id = _record_waiting()
+        _park(state, event_id)
+        state.running[RUN] = threading.Event()
 
         client.post(f"/api/runs/{RUN}/cancel")
 

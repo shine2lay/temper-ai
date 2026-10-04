@@ -318,6 +318,11 @@ class CheckpointService:
             if cp.event_type == "node_completed" and cp.status == "completed" and cp.node_name:
                 node_outputs[cp.node_name] = _checkpoint_to_node_result(cp)
 
+            elif cp.event_type == "node_completed" and cp.status == "failed" and cp.node_name:
+                # A failure written after a completion is the step's last word: one that ran
+                # out of rounds is stored done first and failed after. Its insides stay.
+                node_outputs.pop(cp.node_name, None)
+
             elif cp.event_type == "node_reset" and cp.node_name:
                 # Its insides stay: a stage run again goes on from its own last finished step.
                 node_outputs.pop(cp.node_name, None)

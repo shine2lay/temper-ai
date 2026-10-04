@@ -102,8 +102,16 @@ export const AgentNodeComponent = memo(function AgentNodeComponent({ data }: Nod
   }
 
   // Resolve which agent/stage to display based on selected iteration
-  const displayAgent = iterations ? (iterations[iterIndex]?.agent ?? agent) : agent;
+  const pickedAgent = iterations ? (iterations[iterIndex]?.agent ?? agent) : agent;
   const hasIterations = iterations && iterations.length > 1;
+  // A step can fail after its agent did its part: a loop that ran out of
+  // rounds (`on_max_loops: fail`). Its last round shows the step's failure
+  // and reason, so the card is red rather than a green "done".
+  const isLastRound = !iterations || iterIndex === iterations.length - 1;
+  const displayAgent = isLastRound && stage?.status === 'failed' && pickedAgent.status !== 'failed'
+    && stage.error_message
+    ? { ...pickedAgent, status: 'failed' as const, error_message: stage.error_message }
+    : pickedAgent;
 
   return (
     // Width from the layout's constant, not a class: the layout reserves

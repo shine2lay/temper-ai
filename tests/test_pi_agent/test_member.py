@@ -210,6 +210,24 @@ def test_the_box_loads_each_add_on_read_only_from_its_pinned_copy(tmp_path, shor
     assert pi[pi.index("--tools") + 1] == "read,tldr"
 
 
+def test_a_read_only_pinned_copy_loads_and_its_box_copy_stays_removable(tmp_path, short_root):
+    box = _box(tmp_path, short_root, ["pi-tldr"])
+    pinned = Path(box.cfg.add_ons["pi-tldr"].dir)
+    (pinned / "index.ts").chmod(0o444)
+    pinned.chmod(0o555)  # pinned copies are kept read only
+    try:
+        args = box.create_args()
+    finally:
+        pinned.chmod(0o755)
+        (pinned / "index.ts").chmod(0o644)
+    mount = next(a for a in args if "target=/ext/addons/pi-tldr" in a)
+    assert mount.endswith(",readonly")
+    copy = Path(mount.split("source=", 1)[1].split(",", 1)[0])
+    assert (copy / "node_modules").is_symlink() and (copy / "index.ts").is_file()
+    assert tree_sha256(copy) == box.cfg.add_ons["pi-tldr"].sha256
+    shutil.rmtree(copy)
+
+
 def test_a_box_without_add_ons_is_as_before(tmp_path, short_root):
     args = _box(tmp_path, short_root, []).create_args()
     assert not [a for a in args if "/ext/addons/" in a]

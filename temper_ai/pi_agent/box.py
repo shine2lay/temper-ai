@@ -204,6 +204,15 @@ def installed_pi_version(runtime_dir: Path) -> str | None:
         return None
 
 
+def _owner_writable(root: Path) -> None:
+    """Give the owner write on a copied tree's folders and read on its files. A pinned copy may
+    be read only on disk (copytree keeps the modes); this copy must still take the runtime link
+    and stay removable. The box sees it read only all the same: it is mounted read only."""
+    for path in [root, *root.rglob("*")]:
+        if not path.is_symlink():
+            path.chmod(path.stat().st_mode & 0o7777 | (0o700 if path.is_dir() else 0o600))
+
+
 def tree_sha256(root: Path) -> str:
     """One digest over a folder's regular files (relative path + content), node_modules and
     symlinks excluded -- the digest pinned for an extension."""
@@ -485,6 +494,7 @@ class WorkerBox:
         tmp = Path(tempfile.mkdtemp(prefix=f".{label}-", dir=dst.parent))
         shutil.copytree(src, tmp, dirs_exist_ok=True, symlinks=True,
                         ignore=shutil.ignore_patterns("node_modules"))
+        _owner_writable(tmp)
         os.symlink("/pi-runtime/pi/node_modules", tmp / "node_modules")
         try:
             os.rename(tmp, dst)

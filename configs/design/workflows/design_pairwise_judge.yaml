@@ -1,0 +1,31 @@
+# PAIRWISE DESIGN JUDGE (design role, queue #10). The host lays out one homepage, or two under neutral
+# letters, as screenshot tiles in judge/ (task.json, <page>/brief.md, desktop-NN.png, mobile-NN.png);
+# the judge rates each 1-5 on "would this wow its visitor?" and picks the stronger of a pair; check
+# validates judge/verdict.json:
+#
+#   judge (design_pairwise_judge) -> check (script)
+#
+# Advice only: Design's scoreboard (~/design-lab/scoreboard.md) records its picks beside the owner's
+# blind picks to measure agreement; which page is which version never leaves the host. Run each pair
+# twice with the letters swapped to see position bias. About $1-2 a pair.
+workflow:
+  name: design_pairwise_judge
+  version: 1
+  description: |
+    Advisory AI judge for Design's blind scoreboard: rates one homepage, or picks the stronger of two
+    shown under neutral letters, on whether it would wow its visitor, with reasons. Its agreement with
+    the owner's blind picks is measured; it never approves anything.
+  outputs:
+    mode: check.structured.mode
+    pick: check.structured.pick
+    strength: check.structured.strength
+    ratings: check.structured.ratings
+    consistent: check.structured.consistent
+  nodes:
+    - name: judge
+      type: agent
+      agent: design_pairwise_judge
+    - name: check
+      type: agent
+      agent: design_pairwise_judge_check
+      depends_on: [judge]

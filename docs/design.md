@@ -563,6 +563,20 @@ host (`~/design-lab/answers/craft-v1.yaml`, sealed before any model run;
 alarms on the clean pages and run-to-run stability. Nothing on the box may hint
 at the plants (`tests/test_design_craft_bench.py` checks).
 
+**Pairwise judge (queue #10, advice only).** `design_pairwise_judge` shows the
+judge (`design_pairwise_judge`, opus) one homepage, or two under neutral
+letters, as screenshot tiles the host lays out in the run's workspace:
+`judge/task.json` (`{"mode": "pair" | "single", "pages": ["A", "B"]}`) and, per
+letter, `judge/<letter>/brief.md`, `desktop-NN.png` (1440 wide) and
+`mobile-NN.png` (390 wide). It rates each page 1-5 on "would this wow its
+visitor?" and picks the stronger of a pair (no ties; strength slight, clear or
+strong); the `check` step validates `judge/verdict.json` and flags a pick that
+contradicts the ratings. Which page is which version stays on the host. Run
+each pair twice with the letters swapped to see position bias. Its picks are
+recorded beside the owner's blind picks on `~/design-lab/scoreboard.md` to
+measure agreement; they never approve anything. Tests:
+`tests/test_design_pairwise_judge.py`.
+
 Tests: `tests/test_design_homepage_v2.py` (recorded scenes in
 `tests/design_homepage_v2_scenes/`, fake Penpot), `tests/test_penpot_layout.py`
 (hand-made scenes: flex, wrap, grid, cards, fallbacks, variants, text line

@@ -1,0 +1,24 @@
+# @description Design-owned script step of design_pairwise_judge (queue #10): checks the judge's
+# judge/verdict.json against judge/task.json (every page rated 1-5, a pick and strength for a pair,
+# at least two reasons) and returns the verdict. No model. Which page is which version stays on the
+# host; the box only sees neutral letters.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
+agent:
+  name: design_pairwise_judge_check
+  version: 1
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    if not workspace:
+        raise SystemExit("the judge check needs a workspace")
+    cmd = [sys.executable, "/app/configs/design/bin/design_pairwise_judge.py", "check", "--workspace", workspace]
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

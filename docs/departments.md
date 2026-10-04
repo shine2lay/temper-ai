@@ -233,7 +233,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
 
-### design (34)
+### design (37)
 
 | Config | Kind |
 |---|---|
@@ -256,6 +256,9 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/workflows/design_homepage_v2_bench.yaml` | workflow (benchmark twin of v2 for the blind scoreboard; art director's recommended concept, no owner gates, never owner approval or taste) |
 | `design/workflows/design_craft_bench.yaml` | workflow (live craft critic on one craft-v1 test page; graded on the host) |
 | `design/agents/design_craft_bench_stage.yaml` | agent (script; prepare a test page and the critic's inputs, collect the verdict) |
+| `design/workflows/design_pairwise_judge.yaml` | workflow (advisory AI judge for the blind scoreboard: rate one homepage or pick the stronger of two under neutral letters) |
+| `design/agents/design_pairwise_judge.yaml` | agent (rates pages 1-5 and picks the stronger of a pair; advice only, agreement with the owner measured) |
+| `design/agents/design_pairwise_judge_check.yaml` | agent (script; checks the judge's verdict) |
 | `design/agents/design_homepage_stage_v2.yaml` | agent (script; contracts, taste file, copy checks, references, measure, runtime checks, HTML->Penpot convert, verify, handoff) |
 | `design/agents/design_homepage_copywriter_v2.yaml` | agent (copy deck before concepts; revises from the content review) |
 | `design/agents/design_homepage_content_critic_v2.yaml` | agent (content review of the deck and the built page; quoted findings) |

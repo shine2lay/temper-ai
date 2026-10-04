@@ -1,5 +1,9 @@
 {
-  "about": "Answer key for the runtime-check fixture (queue #8). planted.html is control.html with nine planted problems; every runtime check must find its plant, and the clean control must give no finding at all. design_runtime_checks.py --fixture-proof runs and grades both.",
+  "about": "Answer key for the runtime-check fixture (queue #8). planted.html is control.html with ten planted problems; every runtime check must find its plant, and the clean control must give no finding at all. design_runtime_checks.py --fixture-proof runs and grades both.",
+  "quiet": [
+    {"match": "Three steps", "why": "Screen-reader-only text (1 px box, clip: rect(0 0 0 0)) is meant to be clipped; it is never 'cut off' (a false alarm on the Morrow pilot page, 2026-10-04)."},
+    {"match": "Most booked", "why": "A fixed-width label whose text runs 17 px into free card space under the text-spacing override: nothing is cut off or covered and it stays readable, so it is not a 1.4.12 failure (F104); reported as a note only."}
+  ],
   "planted": "planted.html",
   "control": "control.html",
   "plants": [
@@ -20,7 +24,9 @@
     {"id": "P8", "check": "order", "criterion": "2.4.3", "match": "Questions",
      "what": "A footer link has tabindex=2 and jumps to the front of the focus order."},
     {"id": "P9", "check": "names", "criterion": "2.5.3", "match": "Start a trial",
-     "what": "The trial button's aria-label (Continue) does not contain its visible label."}
+     "what": "The trial button's aria-label (Continue) does not contain its visible label."},
+    {"id": "P10", "check": "spacing", "criterion": "1.4.12", "match": "Free tours",
+     "what": "A fixed-height dark notice: under the text-spacing override its light text wraps to a third line below the box, onto the light page where it cannot be read (it spills; nothing is clipped)."}
   ],
   "consequences": [
     {"plant": "P7", "check": "focus", "criterion": "2.4.11", "match": "Skip to content",

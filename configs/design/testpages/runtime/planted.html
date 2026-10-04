@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lantern Desk — runtime checks, planted problems</title>
-<!-- Runtime-check fixture (queue #8): control.html with nine planted problems, P1-P9 below
+<!-- Runtime-check fixture (queue #8): control.html with ten planted problems, P1-P10 below
      and in expected.json. Do not fix them; they are the answer key for the runtime checks. -->
 <style>
 :root { --ink: #1d1b18; --paper: #fbf7f0; --accent: #b4441c; --accent-dark: #8e3313; --on-accent: #ffffff;
@@ -59,6 +59,16 @@ h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); margin: 0 0 16px; }
 .steps h3 { margin: 0 0 8px; }
 .price-card { max-width: 380px; border: 1px solid var(--line); border-radius: 16px; padding: 24px 28px; background: #fff; }
 .price { font-size: 2rem; font-weight: 700; margin: 0; }
+/* Not problems (the checks must stay quiet): text for screen readers only, and a fixed-width label
+   whose text runs into free card space under the 1.4.12 override without being cut off or covered. */
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0);
+      white-space: nowrap; border: 0; }
+.tag { width: 11.5ch; margin: 0 0 8px; padding: 2px 0; white-space: nowrap; background: #efe6d8;
+       font: 700 0.875rem/1.5 "DejaVu Sans Mono", monospace; text-transform: uppercase; }
+/* P10: a fixed-height dark notice; under the 1.4.12 override its light text wraps to a third line that
+   runs below the box onto the light page, where it cannot be read (nothing is clipped: it spills) */
+.promo { width: 24ch; height: 3em; padding: 0 1ch; line-height: 1.5; background: var(--night); color: var(--on-night);
+         font-family: "DejaVu Sans Mono", monospace; }
 /* P4: a fixed-height note: two lines fit at normal spacing, the 1.4.12 override clips it */
 .price-note { line-height: 1.25; height: 2.5em; overflow: hidden; color: var(--muted); }
 details { border-top: 1px solid var(--line); padding: 12px 0; max-width: 46em; }
@@ -110,6 +120,7 @@ summary:hover { color: var(--accent); }
   </ul>
   <section id="how" data-section="How it works">
     <h2>How it works</h2>
+    <p class="sr">Three steps: pick a time, pick a room, walk in.</p>
     <ol class="steps">
       <li><h3>Pick a time</h3><p>Choose a slot on the shared board.</p></li>
       <li><h3>Pick a room</h3><p>Rooms that fit your group show first.</p></li>
@@ -119,12 +130,14 @@ summary:hover { color: var(--accent); }
   <section id="pricing" data-section="Pricing">
     <h2>Pricing</h2>
     <div class="price-card">
+      <p class="tag">Most booked</p>
       <h3>Team</h3>
       <p class="price">$24 per room a month</p>
       <p class="price-note">Billed monthly per room. Cancel any time from settings.</p>
       <!-- P9: the accessible name does not contain the visible label -->
       <a class="btn btn-primary" href="#start" aria-label="Continue">Start a trial</a>
     </div>
+    <p class="promo">Free tours daily at noon. Ask at desk</p>
   </section>
   <section id="faq" data-section="Questions">
     <h2>Questions</h2>

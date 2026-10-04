@@ -268,6 +268,75 @@ HELPERS = r"""(() => {
     }
     return t;
   };
+  // Text hidden on purpose: screen-reader-only boxes (1 px with overflow hidden, clip: rect(0 0 0 0),
+  // clip-path: inset(50%)) or parked off-screen. It is meant to be clipped, so it is never "cut off".
+  R.hiddenOnPurpose = (el) => {
+    for (let e = el; e && e.nodeType === 1 && e !== document.documentElement; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      const r = e.getBoundingClientRect();
+      const placed = cs.position === 'absolute' || cs.position === 'fixed';
+      const clips = cs.overflowX !== 'visible' || cs.overflowY !== 'visible' || (cs.clip && cs.clip !== 'auto') || (cs.clipPath && cs.clipPath !== 'none');
+      if (r.width <= 2 && r.height <= 2 && clips) return true;
+      if (/inset\(\s*50%/.test(cs.clipPath || '')) return true;
+      if (placed && /^rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)$/.test(cs.clip || '')) return true;
+      if (placed && (r.right + window.scrollX <= 0 || r.bottom + window.scrollY <= 0)) return true;
+    }
+    return false;
+  };
+  R.lineRects = (el) => {
+    const out = [], range = document.createRange();
+    for (const n of el.childNodes) {
+      if (n.nodeType !== 3 || !n.textContent.trim()) continue;
+      range.selectNodeContents(n);
+      for (const b of range.getClientRects()) if (b.width > 0 && b.height > 0) out.push({l: b.left, t: b.top, r: b.right, b: b.bottom});
+    }
+    return out;
+  };
+  R.meet = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 2 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 2;
+  R.SOLID = ['img', 'svg', 'video', 'canvas', 'iframe', 'input', 'select', 'textarea', 'button', 'picture', 'object', 'embed'];
+  // Text running out of its box loses nothing (WCAG 1.4.12, failure F104 is clipped or overlapped text)
+  // unless the part outside lands on other text or content, or on a background it cannot be read against.
+  R.spillHarm = (el, box) => {
+    const br = box.getBoundingClientRect();
+    const parts = [];
+    for (const b of R.lineRects(el)) {
+      if (b.r > br.right + 2) parts.push({l: Math.max(b.l, br.right), t: b.t, r: b.r, b: b.b});
+      if (b.b > br.bottom + 2) parts.push({l: b.l, t: Math.max(b.t, br.bottom), r: b.r, b: b.b});
+    }
+    if (!parts.length) return null;
+    for (const o of document.querySelectorAll('body *')) {
+      if (o === el || el.contains(o) || o.contains(el)) continue;
+      const tag = o.tagName.toLowerCase();
+      if (['script', 'style', 'noscript', 'template'].includes(tag) || !R.vis(o)) continue;
+      const cs = getComputedStyle(o);
+      const solid = R.SOLID.includes(tag) || R.alpha(cs.backgroundColor) > 0.05 || cs.backgroundImage !== 'none';
+      let boxes;
+      if (solid) { const r = o.getBoundingClientRect(); boxes = [{l: r.left, t: r.top, r: r.right, b: r.bottom}]; }
+      else boxes = R.lineRects(o);
+      for (const p of parts) for (const q of boxes) if (R.meet(p, q)) return {kind: 'overlap', with: R.desc(o)};
+    }
+    const cs = getComputedStyle(el);
+    const color = R.rgb(cs.color);
+    if (!color || R.alpha(cs.color) < 0.99) return null;
+    const inside = R.bgBehind(el);
+    const size = R.px(cs.fontSize), weight = parseInt(cs.fontWeight, 10) || 400;
+    const need = size >= 24 || (size >= 18.66 && weight >= 700) ? 3 : 4.5;
+    for (const p of parts) {
+      const cx = (p.l + p.r) / 2, cy = (p.t + p.b) / 2;
+      let host = box.parentElement;
+      while (host && host !== document.documentElement) {
+        const r = host.getBoundingClientRect();
+        if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) break;
+        host = host.parentElement;
+      }
+      const outside = R.bgBehind(host || document.body);
+      if (!outside) continue;  // an image or gradient behind: cannot be measured here
+      const ratio = R.ratio(color, outside);
+      if (ratio < need && (!inside || ratio < R.ratio(color, inside) - 0.01))
+        return {kind: 'contrast', ratio: Math.round(ratio * 100) / 100, against: 'rgb(' + outside.join(', ') + ')'};
+    }
+    return null;
+  };
   R.textEls = () => [...document.querySelectorAll('body *')].filter((el) => {
     if (['script', 'style', 'noscript', 'template', 'title'].includes(el.tagName.toLowerCase())) return false;
     if (!R.vis(el)) return false;
@@ -278,6 +347,7 @@ HELPERS = r"""(() => {
     const tr = R.textRect(el);
     const res = {i, ...R.desc(el), text: R.clean(el.textContent).slice(0, 90), clipped: null, spill: null};
     if (!tr) return res;
+    if (tr.r + window.scrollX <= 0 || tr.b + window.scrollY <= 0 || R.hiddenOnPurpose(el)) return {...res, hidden: true};
     for (const c of R.clipBoxes(el)) {
       if (c.scroll) continue;
       const over = Math.max(c.x ? c.l - tr.l : 0, c.x ? tr.r - c.r : 0, c.y ? c.t - tr.t : 0, c.y ? tr.b - c.b : 0);
@@ -289,7 +359,7 @@ HELPERS = r"""(() => {
       if (cs.position === 'absolute' || cs.position === 'fixed') break;
       const r = e.getBoundingClientRect();
       const over = Math.max(tr.b - r.bottom, tr.r - r.right);
-      if (over > 2) { res.spill = {box: R.desc(e), px: Math.round(over)}; break; }
+      if (over > 2) { res.spill = {box: R.desc(e), px: Math.round(over), harm: R.spillHarm(el, e)}; break; }
     }
     return res;
   });
@@ -604,6 +674,7 @@ def _norm(s: str) -> str:
 def judge(raw: dict) -> dict:
     """Turn raw browser measurements into findings (fixed rules, no model)."""
     findings: list[dict] = []
+    notes: list[str] = []  # measured and judged harmless: shown in the report, never a finding
     status: dict[str, dict] = {c: {"tested": 0, "findings": 0} for c in CHECKS}
     errors = list(raw.get("errors") or [])
 
@@ -768,6 +839,12 @@ def judge(raw: dict) -> dict:
         for w, res in sorted(spacing.items(), key=lambda kv: -int(kv[0])):
             status["spacing"]["tested"] += res.get("elements", 0)
             for p in res.get("problems") or []:
+                spill = p.get("spill") or {}
+                if not p.get("new_clip") and "harm" in spill and not spill["harm"]:
+                    # ran out of its box onto free space it can still be read on: nothing is lost (not F104)
+                    notes.append(f"spacing at {w} px: {_label(p)} runs {spill.get('px')} px out of "
+                                 f"{_label(spill.get('box') or {})} into free space; nothing is cut off or covered")
+                    continue
                 problems.append({**p, "width": int(w)})
             if (res.get("scroll_after") or 0) > (res.get("viewport") or 0) + 1 and (res.get("scroll_before") or 0) <= (res.get("viewport") or 0) + 1:
                 side.append({"tag": "page", "label": f"{res.get('scroll_after')} px wide at {w}", "section": "page", "width": int(w)})
@@ -779,8 +856,12 @@ def judge(raw: dict) -> dict:
         if uniq:
             items = list(uniq.values())
             p0 = items[0]
+            spill0 = p0.get("spill") or {}
+            harm0 = spill0.get("harm") or {}
+            onto = (f" onto {_label(harm0.get('with') or {})}" if harm0.get("kind") == "overlap" else
+                    f" onto a background where its contrast is {harm0.get('ratio')}:1" if harm0.get("kind") == "contrast" else "")
             how = (f"clipped by {_label((p0.get('clipped') or {}).get('by') or {})} by {(p0.get('clipped') or {}).get('px')} px"
-                   if p0.get("new_clip") else f"spills {(p0.get('spill') or {}).get('px')} px out of {_label((p0.get('spill') or {}).get('box') or {})}")
+                   if p0.get("new_clip") else f"spills {spill0.get('px')} px out of {_label(spill0.get('box') or {})}{onto}")
             findings.append(_group("spacing", "1.4.12", 3, "With WCAG text spacing (line 1.5, letters 0.12 em, words 0.16 em, paragraphs 2 em) text is cut off or runs out of its box.",
                                    items, f"at {p0.get('width')} px: {how}",
                                    "Use min-height instead of fixed heights and let boxes grow with their text.",
@@ -821,7 +902,7 @@ def judge(raw: dict) -> dict:
             s["status"] = "fail" if any(f["check"] == c and f["severity"] >= 2 for f in findings) else "pass"
     text = (focus or {}).get("text") or []
     return {"version": 1, "page": raw.get("page"), "checks": status, "findings": findings,
-            "failures": sum(1 for f in findings if f["severity"] >= 3), "errors": errors,
+            "failures": sum(1 for f in findings if f["severity"] >= 3), "errors": errors, "notes": notes[:20],
             "tab_order": [{"stop": n + 1, "element": _label(s), "focus_change": (s.get("changes") or ["none"])[0] if s.get("changes") is not None else "?"}
                           for n, s in enumerate((focus or {}).get("seq") or [])],
             "text_lines": len(text)}
@@ -855,6 +936,8 @@ def report_md(result: dict) -> str:
     for f in result["findings"]:
         lines += [f"- {f['id']} [{f['check']}, WCAG {f['criterion']}, severity {f['severity']}, {f['viewport']}] {f['problem']}",
                   f"  Element: {f['element']}", f"  Evidence: {f['evidence']}", f"  Suggestion: {f['suggestion']}"]
+    if result.get("notes"):
+        lines += ["", "## Measured and judged harmless", ""] + [f"- {n}" for n in result["notes"]]
     if result.get("errors"):
         lines += ["", "## Could not check", ""] + [f"- {e}" for e in result["errors"]]
     lines += ["", "## Tab order", ""]

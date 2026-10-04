@@ -459,11 +459,22 @@ def _docker_cli(*args: str, timeout: float = 60) -> subprocess.CompletedProcess:
                           env=env)
 
 
+def _no_such_container(answer: subprocess.CompletedProcess, name: str) -> bool:
+    """True only for the Docker daemon's own answer that no container has exactly this name.
+    Matched with the name in it, because an unreachable daemon also says "no such" ("dial unix
+    /var/run/docker.sock: connect: no such file or directory") and must never count as gone."""
+    if answer.returncode == 0:
+        return False
+    said = f"{answer.stdout or ''}\n{answer.stderr or ''}".lower()
+    return f"no such container: {name}" in said or f"no such object: {name}" in said
+
+
 def stop_leftover_box(name: str, docker: Callable[..., Any] | None = None) -> dict:
     """Confirm a cut-off turn's worker box is gone, stopping and removing it if it is not
-    (R2 C1, A3 rule 4). ``confirmed`` is True only when Docker says no such container is
-    left; anything else (Docker unreachable, the container still listed) is not confirmed, and
-    the caller must not take the turn over."""
+    (R2 C1, A3 rule 4). ``confirmed`` is True only when the Docker daemon answers that no
+    container of that exact name exists; anything else (Docker unreachable or erroring, the
+    container still there after removal) is not confirmed, and the caller must not take the
+    turn over."""
     run = docker or _docker_cli
     result: dict[str, Any] = {"box": name, "found": False, "was_running": False,
                               "removed": False, "confirmed": False, "error": None}
@@ -471,9 +482,10 @@ def stop_leftover_box(name: str, docker: Callable[..., Any] | None = None) -> di
         result["error"] = "not a worker box name"
         return result
     try:
-        got = run("inspect", "--format", "{{.State.Running}}", name, timeout=30)
+        got = run("inspect", "--type", "container", "--format", "{{.State.Running}}", name,
+                  timeout=30)
         if got.returncode != 0:
-            if "no such" in (got.stderr or "").lower():
+            if _no_such_container(got, name):
                 result["confirmed"] = True
                 return result
             result["error"] = "docker inspect failed"
@@ -483,12 +495,14 @@ def stop_leftover_box(name: str, docker: Callable[..., Any] | None = None) -> di
         if result["was_running"]:
             run("kill", name, timeout=30)
         run("rm", "--force", name, timeout=60)
-        left = run("ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.ID}}",
-                   timeout=30)
-        result["removed"] = left.returncode == 0 and not left.stdout.strip()
+        # Asked again by its exact name, not with a name filter (a filter is a pattern, and an
+        # empty listing could also be a failed or mismatched query).
+        left = run("inspect", "--type", "container", "--format", "{{.Id}}", name, timeout=30)
+        result["removed"] = _no_such_container(left, name)
         result["confirmed"] = result["removed"]
         if not result["confirmed"]:
-            result["error"] = "still listed after removal"
+            result["error"] = ("still there after removal" if left.returncode == 0
+                               else "docker inspect failed after removal")
     except (OSError, subprocess.TimeoutExpired) as exc:
         result["error"] = f"{type(exc).__name__}"
     return result

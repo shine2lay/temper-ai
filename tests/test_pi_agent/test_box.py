@@ -25,6 +25,7 @@ from temper_ai.pi_agent.box import (
     WorkerBox,
     check_session,
     jwt_account_ids,
+    stop_leftover_box,
 )
 from temper_ai.pi_agent.rpc import JsonLines, Rpc, RpcError
 from tests.test_pi_agent import support as sup
@@ -166,6 +167,120 @@ def test_close_removes_the_container_and_reports(tmp_path, short_root, monkeypat
     assert ("rm", "--force") in calls and receipt["container_removed"] is True
     never = _box(tmp_path, short_root)
     assert never.close()["container_removed"] is True  # nothing was created
+
+
+# --- a cut-off turn's leftover box (R2 C1) ------------------------------------------------
+
+LEFTOVER = "temper-pi-0123456789abcdef0123"
+# What Docker 29's CLI says (seen on this machine): a missing container, and a daemon it cannot
+# reach -- whose answer also contains "no such".
+NO_SUCH = "Error response from daemon: No such container: {name}\n"
+UNREACHABLE = ("failed to connect to the docker API at unix:///var/run/docker.sock; check if the "
+               "path is correct and if the daemon is running: dial unix /var/run/docker.sock: "
+               "connect: no such file or directory\n")
+
+
+class FakeDocker:
+    """Docker's answers to stop_leftover_box, from a small table of containers."""
+
+    def __init__(self, containers=None, *, rm_keeps=False, down_after=None, raises=None,
+                 gone_answer=NO_SUCH):
+        self.containers = dict(containers or {})  # name -> running
+        self.rm_keeps = rm_keeps
+        self.down_after = down_after  # the daemon stops answering after this many calls
+        self.raises = raises
+        self.gone_answer = gone_answer
+        self.calls: list[tuple] = []
+
+    def __call__(self, *args, timeout=60):
+        self.calls.append(args)
+        if self.raises is not None:
+            raise self.raises
+        if self.down_after is not None and len(self.calls) > self.down_after:
+            return subprocess.CompletedProcess(args, 1, "", UNREACHABLE)
+        verb, name = args[0], args[-1]
+        if verb == "inspect":
+            if name not in self.containers:
+                return subprocess.CompletedProcess(args, 1, "",
+                                                   self.gone_answer.format(name=name))
+            running = "true" if self.containers[name] else "false"
+            out = running if "{{.State.Running}}" in args else "4f1c0ffee"
+            return subprocess.CompletedProcess(args, 0, out + "\n", "")
+        if verb == "kill":
+            self.containers[name] = False
+        elif verb == "rm" and not self.rm_keeps:
+            self.containers.pop(name, None)
+        return subprocess.CompletedProcess(args, 0, name + "\n", "")
+
+    def verbs(self):
+        return [c[0] for c in self.calls]
+
+
+def test_c1_a_running_leftover_box_is_stopped_removed_and_confirmed():
+    docker = FakeDocker({LEFTOVER: True})
+    got = stop_leftover_box(LEFTOVER, docker=docker)
+    assert got == {"box": LEFTOVER, "found": True, "was_running": True, "removed": True,
+                   "confirmed": True, "error": None}
+    assert docker.verbs() == ["inspect", "kill", "rm", "inspect"]
+    assert all(c[1:3] == ("--type", "container") for c in docker.calls if c[0] == "inspect")
+    assert docker.containers == {}
+
+
+def test_c1_a_stopped_leftover_box_is_removed_without_a_kill():
+    docker = FakeDocker({LEFTOVER: False})
+    got = stop_leftover_box(LEFTOVER, docker=docker)
+    assert (got["found"], got["was_running"], got["confirmed"]) == (True, False, True)
+    assert docker.verbs() == ["inspect", "rm", "inspect"]
+
+
+@pytest.mark.parametrize("answer", [NO_SUCH, "Error: No such object: {name}\n"])
+def test_c1_a_box_already_gone_is_confirmed_by_dockers_own_answer(answer):
+    docker = FakeDocker(gone_answer=answer)
+    got = stop_leftover_box(LEFTOVER, docker=docker)
+    assert (got["found"], got["confirmed"], got["error"]) == (False, True, None)
+    assert docker.verbs() == ["inspect"]  # nothing to stop
+
+
+@pytest.mark.parametrize("down_after, error", [
+    (0, "docker inspect failed"),                 # unreachable from the start
+    (3, "docker inspect failed after removal"),   # stops answering before the re-check
+])
+def test_c1_an_unreachable_docker_never_confirms(down_after, error):
+    """An unreachable daemon also says "no such" (its socket file); that is never "gone"."""
+    docker = FakeDocker({LEFTOVER: True}, down_after=down_after)
+    got = stop_leftover_box(LEFTOVER, docker=docker)
+    assert (got["confirmed"], got["removed"], got["error"]) == (False, False, error)
+
+
+def test_c1_another_containers_no_such_answer_does_not_count():
+    docker = FakeDocker(gone_answer=NO_SUCH.replace("{name}", "temper-pi-ffffffffffffffffffff"))
+    got = stop_leftover_box(LEFTOVER, docker=docker)
+    assert (got["confirmed"], got["error"]) == (False, "docker inspect failed")
+
+
+def test_c1_a_box_still_there_after_removal_is_not_confirmed():
+    docker = FakeDocker({LEFTOVER: True}, rm_keeps=True)
+    got = stop_leftover_box(LEFTOVER, docker=docker)
+    assert (got["found"], got["removed"], got["confirmed"], got["error"]) == (
+        True, False, False, "still there after removal")
+
+
+@pytest.mark.parametrize("exc, error", [
+    (FileNotFoundError("docker"), "FileNotFoundError"),
+    (subprocess.TimeoutExpired(["docker"], 30), "TimeoutExpired"),
+])
+def test_c1_docker_missing_or_hanging_never_confirms(exc, error):
+    got = stop_leftover_box(LEFTOVER, docker=FakeDocker(raises=exc))
+    assert (got["confirmed"], got["error"]) == (False, error)
+
+
+@pytest.mark.parametrize("name", ["", "rollcall-prod", "temper-pi-XYZ",
+                                  "temper-run-0123456789abcdef0123", LEFTOVER + "0"])
+def test_c1_only_worker_box_names_are_touched(name):
+    docker = FakeDocker({name: True})
+    got = stop_leftover_box(name, docker=docker)
+    assert (got["confirmed"], got["error"]) == (False, "not a worker box name")
+    assert docker.calls == []
 
 
 # --- the two host-side sockets ------------------------------------------------------------

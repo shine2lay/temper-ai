@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Field Notes — converter fixture</title>
+<!-- Converter fixture A: editorial. Web fonts (Fraunces + Instrument Sans, OFL), CSS grid,
+     a JPEG illustration with radius + shadow, inline SVG icons, linear gradient, transparent PNG,
+     marked components (Button, RouteCard). Hand-written, model-free. -->
+<style>
+@font-face { font-family: "Fraunces"; font-weight: 600; font-style: normal; src: url("fonts/fraunces/Fraunces-600.ttf") format("truetype"); }
+@font-face { font-family: "Fraunces"; font-weight: 800; font-style: normal; src: url("fonts/fraunces/Fraunces-800.ttf") format("truetype"); }
+@font-face { font-family: "Instrument Sans"; font-weight: 400; font-style: normal; src: url("fonts/instrumentsans/InstrumentSans-400.ttf") format("truetype"); }
+@font-face { font-family: "Instrument Sans"; font-weight: 600; font-style: normal; src: url("fonts/instrumentsans/InstrumentSans-600.ttf") format("truetype"); }
+:root {
+  --paper: #FBF6EE;
+  --ink: #1F1A17;
+  --muted: #5F534B;
+  --rust: #B8482A;
+  --sand: #F1DFC7;
+  --moss: #3E5B4A;
+  --white: #FFFFFF;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: "Instrument Sans", sans-serif; font-size: 17px; line-height: 1.55; }
+a { color: inherit; text-decoration: none; }
+.wrap { width: min(1200px, 100% - 48px); margin: 0 auto; }
+.site-header { padding: 22px 0; }
+.header-inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.wordmark { display: flex; align-items: center; gap: 10px; font-family: "Fraunces", serif; font-weight: 800; font-size: 24px; letter-spacing: -0.01em; }
+.nav { display: flex; align-items: center; gap: 28px; font-weight: 600; font-size: 15px; }
+.btn { display: inline-block; padding: 13px 22px; border-radius: 999px; background: var(--rust); color: var(--white); font-weight: 600; font-size: 15px; line-height: 1.3; }
+.btn.ghost { background: transparent; color: var(--ink); border: 2px solid var(--ink); padding: 11px 20px; }
+.hero { padding: 56px 0 88px; }
+.hero-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 32px; align-items: center; }
+.hero-copy { grid-column: 1 / span 7; }
+.eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--rust); margin: 0 0 18px; }
+h1 { font-family: "Fraunces", serif; font-weight: 800; font-size: 76px; line-height: 1.02; letter-spacing: -0.02em; margin: 0 0 24px; }
+h1 em { font-style: normal; color: var(--moss); }
+.lede { font-size: 20px; color: var(--muted); max-width: 33em; margin: 0 0 32px; }
+.actions { display: flex; gap: 14px; flex-wrap: wrap; }
+.hero-art { grid-column: 8 / span 5; }
+.hero-art img { display: block; width: 100%; height: auto; border-radius: 28px; box-shadow: 0 24px 48px rgba(31, 26, 23, 0.18); }
+.routes { padding: 72px 0; background: var(--sand); }
+h2 { font-family: "Fraunces", serif; font-weight: 600; font-size: 44px; line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 12px; }
+.section-lede { color: var(--muted); margin: 0 0 40px; max-width: 36em; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.card { background: var(--white); border-radius: 18px; padding: 28px; box-shadow: 0 1px 2px rgba(31, 26, 23, 0.08), 0 8px 24px rgba(31, 26, 23, 0.08); }
+.card h3 { font-family: "Fraunces", serif; font-weight: 600; font-size: 24px; line-height: 1.2; margin: 18px 0 8px; }
+.card p { margin: 0 0 16px; color: var(--muted); font-size: 16px; }
+.meta { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--moss); }
+.icon { width: 44px; height: 44px; display: block; }
+.quote { padding: 88px 0; background: linear-gradient(135deg, var(--rust) 0%, var(--moss) 100%); color: var(--white); }
+.quote-inner { display: flex; align-items: center; gap: 48px; }
+.quote blockquote { margin: 0; font-family: "Fraunces", serif; font-weight: 600; font-size: 40px; line-height: 1.2; max-width: 22em; }
+.quote cite { display: block; margin-top: 20px; font-family: "Instrument Sans", sans-serif; font-style: normal; font-size: 16px; font-weight: 600; letter-spacing: 0.04em; }
+.badge { width: 120px; height: 120px; flex: none; }
+.site-footer { padding: 40px 0 56px; border-top: 1px solid rgba(31, 26, 23, 0.16); }
+.footer-inner { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; font-size: 15px; color: var(--muted); }
+.footer-links { display: flex; gap: 24px; }
+@media (max-width: 900px) {
+  h1 { font-size: 56px; }
+  .hero-copy { grid-column: 1 / -1; }
+  .hero-art { grid-column: 1 / -1; }
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  .quote blockquote { font-size: 32px; }
+}
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  .nav a.text-link { display: none; }
+  .hero { padding: 32px 0 56px; }
+  h1 { font-size: 42px; }
+  .lede { font-size: 18px; }
+  h2 { font-size: 32px; }
+  .cards { grid-template-columns: 1fr; }
+  .quote-inner { flex-direction: column; align-items: flex-start; gap: 28px; }
+  .quote blockquote { font-size: 26px; }
+  .badge { width: 80px; height: 80px; }
+}
+</style>
+</head>
+<body>
+<header class="site-header" data-name="Header">
+  <div class="wrap header-inner">
+    <a class="wordmark" href="#">
+      <svg class="logo" width="30" height="30" viewBox="0 0 30 30" aria-label="Atlas compass">
+        <circle cx="15" cy="15" r="13" fill="none" stroke="#1F1A17" stroke-width="2.5"/>
+        <path d="M15 5 L19 15 L15 25 L11 15 Z" fill="#B8482A"/>
+        <circle cx="15" cy="15" r="2.5" fill="#FBF6EE"/>
+      </svg>
+      Atlas Field Notes
+    </a>
+    <nav class="nav" data-name="Navigation">
+      <a class="text-link" href="#routes">Routes</a>
+      <a class="text-link" href="#journal">Journal</a>
+      <a class="btn" href="#join" data-component="Button">Get the notes</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <section class="hero" data-name="Section / Hero">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="eyebrow" data-typography="Eyebrow">Walks worth the early alarm</p>
+        <h1 data-typography="Display">Maps drawn by people who <em>walked</em> them.</h1>
+        <p class="lede" data-typography="Lede">Hand-checked routes, honest timings and the café at the end. Every walk is tested on foot in all four seasons.</p>
+        <div class="actions">
+          <a class="btn" href="#routes" data-component="Button">Browse routes</a>
+          <a class="btn ghost" href="#journal" data-component="Button">Read the journal</a>
+        </div>
+      </div>
+      <div class="hero-art">
+        <img src="images/atlas-landscape.jpg" width="1200" height="800" alt="Layered hills at sunrise, drawn in code">
+      </div>
+    </div>
+  </section>
+  <section class="routes" id="routes" data-name="Section / Routes">
+    <div class="wrap">
+      <h2 data-typography="Heading">This season’s routes</h2>
+      <p class="section-lede">Three walks we keep coming back to, with the hills, the hours and the honest truth about the mud.</p>
+      <div class="cards">
+        <article class="card" data-component="RouteCard">
+          <svg class="icon" viewBox="0 0 44 44" aria-label="Hill icon">
+            <rect x="0" y="0" width="44" height="44" rx="12" fill="#F1DFC7"/>
+            <path d="M8 32 L18 16 L24 25 L28 20 L36 32 Z" fill="#3E5B4A"/>
+          </svg>
+          <h3>Ridge &amp; river loop</h3>
+          <p>A steady climb to the ridge, then down along the river to the old mill.</p>
+          <div class="meta">9.4 km · 3 h 10</div>
+        </article>
+        <article class="card" data-component="RouteCard">
+          <svg class="icon" viewBox="0 0 44 44" aria-label="Coast icon">
+            <rect x="0" y="0" width="44" height="44" rx="12" fill="#F1DFC7"/>
+            <path d="M6 28 C12 22 16 34 22 28 C28 22 32 34 38 28 L38 36 L6 36 Z" fill="#B8482A"/>
+          </svg>
+          <h3>The quiet coast</h3>
+          <p>Cliff paths and two sheltered coves. Best before the tide turns.</p>
+          <div class="meta">12.1 km · 4 h</div>
+        </article>
+        <article class="card" data-component="RouteCard">
+          <svg class="icon" viewBox="0 0 44 44" aria-label="Forest icon">
+            <rect x="0" y="0" width="44" height="44" rx="12" fill="#F1DFC7"/>
+            <path d="M15 10 L23 26 L7 26 Z M29 14 L37 30 L21 30 Z" fill="#3E5B4A"/>
+            <line x1="15" y1="26" x2="15" y2="34" stroke="#1F1A17" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="29" y1="30" x2="29" y2="36" stroke="#1F1A17" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+          <h3>Old forest track</h3>
+          <p>Flat, shaded and good in the rain, with a tea hut at the halfway gate.</p>
+          <div class="meta">7.8 km · 2 h 20</div>
+        </article>
+      </div>
+    </div>
+  </section>
+  <section class="quote" id="journal" data-name="Section / Quote">
+    <div class="wrap quote-inner">
+      <img class="badge" src="images/badge.png" width="240" height="240" alt="Sun badge">
+      <blockquote data-typography="Quote">“The best map is the one with a pencil note that says: the view is better from the second bench.”
+        <cite>— Ines, walking since 1994</cite>
+      </blockquote>
+    </div>
+  </section>
+</main>
+<footer class="site-footer" data-name="Footer">
+  <div class="wrap footer-inner">
+    <span>© Atlas Field Notes · Made for walkers</span>
+    <span class="footer-links"><a href="#">Contact</a><a href="#">Privacy</a></span>
+  </div>
+</footer>
+</body>
+</html>

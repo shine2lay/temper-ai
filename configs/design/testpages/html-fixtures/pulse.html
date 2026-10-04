@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulse — converter fixture</title>
+<!-- Converter fixture B: product page. Web fonts (Bricolage Grotesque + Atkinson Hyperlegible incl. italic,
+     OFL), flex layouts, radial + linear gradients, a product screenshot PNG (demo data only), inline SVG
+     chart and stroke icons, pill badges, borders, layered shadows, marked components (Badge, FeatureCard,
+     PricingCard). Hand-written, model-free. -->
+<style>
+@font-face { font-family: "Bricolage Grotesque"; font-weight: 700; font-style: normal; src: url("fonts/bricolagegrotesque/BricolageGrotesque-700.ttf") format("truetype"); }
+@font-face { font-family: "Bricolage Grotesque"; font-weight: 800; font-style: normal; src: url("fonts/bricolagegrotesque/BricolageGrotesque-800.ttf") format("truetype"); }
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 400; font-style: normal; src: url("fonts/atkinsonhyperlegible/AtkinsonHyperlegible-400.ttf") format("truetype"); }
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 700; font-style: normal; src: url("fonts/atkinsonhyperlegible/AtkinsonHyperlegible-700.ttf") format("truetype"); }
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 400; font-style: italic; src: url("fonts/atkinsonhyperlegible/AtkinsonHyperlegible-400italic.ttf") format("truetype"); }
+:root {
+  --night: #18163A;
+  --violet: #5B4BDB;
+  --coral: #FF5C48;
+  --mist: #EEF0FA;
+  --slate: #4A4E69;
+  --line: #DCDFEE;
+  --white: #FFFFFF;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--white); color: var(--night); font-family: "Atkinson Hyperlegible", sans-serif; font-size: 17px; line-height: 1.5; }
+a { color: inherit; text-decoration: none; }
+.wrap { width: min(1160px, 100% - 40px); margin: 0 auto; }
+.top { background: radial-gradient(circle at 50% 0%, #3B2F9E 0%, #18163A 62%); color: var(--white); padding-bottom: 0; }
+.site-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 22px; }
+.links { display: flex; align-items: center; gap: 26px; font-size: 16px; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.28); font-size: 13px; font-weight: 700; letter-spacing: 0.04em; }
+.hero { text-align: center; padding: 64px 0 0; }
+.hero h1 { font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 84px; line-height: 0.98; letter-spacing: -0.03em; margin: 22px auto 22px; max-width: 11em; }
+.hero h1 span { color: var(--coral); }
+.hero p { font-size: 20px; color: #D6D3F5; max-width: 34em; margin: 0 auto 32px; }
+.cta { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-bottom: 56px; }
+.button { display: inline-block; padding: 14px 24px; border-radius: 12px; font-weight: 700; font-size: 16px; line-height: 1.25; }
+.button.primary { background: var(--coral); color: var(--white); box-shadow: 0 8px 20px rgba(255, 92, 72, 0.35); }
+.button.secondary { background: rgba(255, 255, 255, 0.08); color: var(--white); border: 1px solid rgba(255, 255, 255, 0.35); }
+.shot { display: block; width: 100%; max-width: 980px; height: auto; margin: 0 auto; border-radius: 18px 18px 0 0; box-shadow: 0 -10px 60px rgba(91, 75, 219, 0.45); }
+.logos { padding: 36px 0; border-bottom: 1px solid var(--line); }
+.logos-row { display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; }
+.logos-row svg { height: 28px; width: auto; }
+.features { padding: 80px 0; background: var(--mist); }
+.features h2, .pricing h2 { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 48px; line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 14px; }
+.kicker { font-size: 14px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet); margin: 0 0 12px; }
+.split { display: flex; gap: 48px; align-items: flex-start; }
+.split > div { flex: 1; }
+.feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.feature { background: var(--white); border: 1px solid var(--line); border-radius: 20px; padding: 24px; }
+.feature h3 { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 21px; margin: 14px 0 6px; }
+.feature p { margin: 0; color: var(--slate); font-size: 16px; }
+.feature svg { width: 40px; height: 40px; display: block; }
+.chart { background: var(--white); border-radius: 20px; padding: 24px; box-shadow: 0 2px 4px rgba(24, 22, 58, 0.06), 0 12px 32px rgba(24, 22, 58, 0.10); }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart-note { margin: 14px 0 0; font-style: italic; color: var(--slate); font-size: 15px; }
+.pricing { padding: 88px 0; }
+.plans { display: flex; gap: 20px; align-items: stretch; margin-top: 40px; }
+.plan { flex: 1; border: 1px solid var(--line); border-radius: 22px; padding: 28px; background: var(--white); }
+.plan.best { border: 2px solid var(--violet); box-shadow: 0 20px 40px rgba(91, 75, 219, 0.18); }
+.plan h3 { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 22px; margin: 0 0 6px; }
+.price { font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 52px; letter-spacing: -0.02em; line-height: 1.1; margin: 10px 0 18px; }
+.price small { font-family: "Atkinson Hyperlegible", sans-serif; font-weight: 400; font-size: 16px; letter-spacing: 0; color: var(--slate); }
+.plan ul { list-style: none; padding: 0; margin: 0; }
+.plan li { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 16px; }
+.plan li svg { width: 18px; height: 18px; flex: none; }
+.site-footer { background: var(--night); color: #C9C6EA; padding: 40px 0; font-size: 15px; }
+.footer-row { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+@media (max-width: 900px) {
+  .hero h1 { font-size: 60px; }
+  .split { flex-direction: column; }
+  .plans { flex-direction: column; }
+}
+@media (max-width: 560px) {
+  .links .optional { display: none; }
+  .hero { padding-top: 36px; }
+  .hero h1 { font-size: 44px; }
+  .hero p { font-size: 18px; }
+  .features h2, .pricing h2 { font-size: 34px; }
+  .feature-grid { grid-template-columns: 1fr; }
+  .logos-row { justify-content: center; }
+  .price { font-size: 44px; }
+}
+</style>
+</head>
+<body>
+<div class="top" data-name="Section / Top">
+  <div class="wrap">
+    <header class="site-header" data-name="Header">
+      <a class="brand" href="#">
+        <svg width="28" height="28" viewBox="0 0 28 28" aria-label="Pulse mark">
+          <rect width="28" height="28" rx="8" fill="#FF5C48"/>
+          <polyline points="5,15 10,15 12.5,8 16,20 18.5,13 23,13" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Pulse
+      </a>
+      <nav class="links" data-name="Navigation">
+        <a class="optional" href="#features">Features</a>
+        <a class="optional" href="#pricing">Pricing</a>
+        <span class="badge" data-component="Badge">New: alerts v2</span>
+      </nav>
+    </header>
+    <section class="hero" data-name="Section / Hero">
+      <span class="badge" data-component="Badge">Monitoring for small teams</span>
+      <h1 data-typography="Display">Know it broke <span>before</span> they do.</h1>
+      <p data-typography="Lede">Pulse watches your jobs, sites and queues, and tells the right person in plain words when something drifts.</p>
+      <div class="cta">
+        <a class="button primary" href="#pricing">Start free</a>
+        <a class="button secondary" href="#features">See how it works</a>
+      </div>
+      <img class="shot" src="images/pulse-dashboard.png" width="1200" height="760" alt="Pulse dashboard with demo data">
+    </section>
+  </div>
+</div>
+<section class="logos" data-name="Section / Logos">
+  <div class="wrap logos-row">
+    <svg viewBox="0 0 120 28" aria-label="Logo one"><circle cx="14" cy="14" r="12" fill="#4A4E69"/><rect x="34" y="8" width="80" height="12" rx="6" fill="#4A4E69"/></svg>
+    <svg viewBox="0 0 120 28" aria-label="Logo two"><path d="M2 26 L14 2 L26 26 Z" fill="#4A4E69"/><rect x="34" y="8" width="70" height="12" rx="2" fill="#4A4E69"/></svg>
+    <svg viewBox="0 0 120 28" aria-label="Logo three"><rect x="2" y="2" width="24" height="24" rx="4" fill="none" stroke="#4A4E69" stroke-width="4"/><rect x="34" y="8" width="84" height="12" rx="6" fill="#4A4E69"/></svg>
+    <svg viewBox="0 0 120 28" aria-label="Logo four"><path d="M2 14 C2 4 26 4 26 14 C26 24 2 24 2 14 Z" fill="#4A4E69"/><rect x="34" y="8" width="60" height="12" rx="6" fill="#4A4E69"/></svg>
+  </div>
+</section>
+<section class="features" id="features" data-name="Section / Features">
+  <div class="wrap split">
+    <div>
+      <p class="kicker" data-typography="Kicker">Why teams switch</p>
+      <h2 data-typography="Heading">Alerts that read like a colleague wrote them</h2>
+      <div class="feature-grid">
+        <article class="feature" data-component="FeatureCard">
+          <svg viewBox="0 0 40 40" aria-label="Bell icon"><rect width="40" height="40" rx="12" fill="#EEF0FA"/><path d="M13 26 L27 26 L25 23 L25 17 C25 14 23 12 20 12 C17 12 15 14 15 17 L15 23 Z" fill="none" stroke="#5B4BDB" stroke-width="2.2" stroke-linejoin="round"/><circle cx="20" cy="29" r="1.8" fill="#5B4BDB"/></svg>
+          <h3>Plain-words alerts</h3>
+          <p>What broke, since when, and who touched it last.</p>
+        </article>
+        <article class="feature" data-component="FeatureCard">
+          <svg viewBox="0 0 40 40" aria-label="Clock icon"><rect width="40" height="40" rx="12" fill="#EEF0FA"/><circle cx="20" cy="20" r="9" fill="none" stroke="#5B4BDB" stroke-width="2.2"/><path d="M20 15 L20 20 L24 22" fill="none" stroke="#5B4BDB" stroke-width="2.2" stroke-linecap="round"/></svg>
+          <h3>Quiet hours</h3>
+          <p>Night pages only for what truly cannot wait.</p>
+        </article>
+        <article class="feature" data-component="FeatureCard">
+          <svg viewBox="0 0 40 40" aria-label="People icon"><rect width="40" height="40" rx="12" fill="#EEF0FA"/><circle cx="16" cy="17" r="4" fill="#5B4BDB"/><circle cx="25" cy="18" r="3" fill="#FF5C48"/><path d="M9 29 C9 24 23 24 23 29 Z" fill="#5B4BDB"/></svg>
+          <h3>Owners, not crowds</h3>
+          <p>Every alert has one name on it, with a backup.</p>
+        </article>
+        <article class="feature" data-component="FeatureCard">
+          <svg viewBox="0 0 40 40" aria-label="Shield icon"><rect width="40" height="40" rx="12" fill="#EEF0FA"/><path d="M20 10 L28 13 L28 20 C28 25 24 28 20 30 C16 28 12 25 12 20 L12 13 Z" fill="none" stroke="#5B4BDB" stroke-width="2.2" stroke-linejoin="round"/></svg>
+          <h3>Private by default</h3>
+          <p>Logs stay in your region. Nothing is sold.</p>
+        </article>
+      </div>
+    </div>
+    <div class="chart" data-name="Chart card">
+      <p class="kicker">Last 24 hours</p>
+      <svg viewBox="0 0 400 220" aria-label="Runs chart">
+        <rect x="0" y="0" width="400" height="220" fill="#FFFFFF"/>
+        <line x1="0" y1="180" x2="400" y2="180" stroke="#DCDFEE" stroke-width="1"/>
+        <line x1="0" y1="120" x2="400" y2="120" stroke="#DCDFEE" stroke-width="1"/>
+        <line x1="0" y1="60" x2="400" y2="60" stroke="#DCDFEE" stroke-width="1"/>
+        <path d="M0 150 C40 140 60 100 100 110 C140 120 160 70 200 80 C240 90 260 40 300 50 C340 60 360 30 400 36 L400 180 L0 180 Z" fill="#5B4BDB" fill-opacity="0.14"/>
+        <path d="M0 150 C40 140 60 100 100 110 C140 120 160 70 200 80 C240 90 260 40 300 50 C340 60 360 30 400 36" fill="none" stroke="#5B4BDB" stroke-width="3"/>
+        <circle cx="300" cy="50" r="7" fill="#FFFFFF" stroke="#FF5C48" stroke-width="3"/>
+      </svg>
+      <p class="chart-note">Demo data. One spike at 03:10, handled in four minutes.</p>
+    </div>
+  </div>
+</section>
+<section class="pricing" id="pricing" data-name="Section / Pricing">
+  <div class="wrap">
+    <p class="kicker">Pricing</p>
+    <h2>Simple plans, no seat maths</h2>
+    <div class="plans">
+      <div class="plan" data-component="PricingCard">
+        <h3>Starter</h3>
+        <div class="price">$0 <small>/ month</small></div>
+        <ul>
+          <li><svg viewBox="0 0 18 18" aria-label="check"><circle cx="9" cy="9" r="9" fill="#EEF0FA"/><path d="M5 9 L8 12 L13 6" fill="none" stroke="#5B4BDB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>10 monitors</li>
+          <li><svg viewBox="0 0 18 18" aria-label="check"><circle cx="9" cy="9" r="9" fill="#EEF0FA"/><path d="M5 9 L8 12 L13 6" fill="none" stroke="#5B4BDB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Email alerts</li>
+        </ul>
+      </div>
+      <div class="plan best" data-component="PricingCard">
+        <h3>Team</h3>
+        <div class="price">$29 <small>/ month</small></div>
+        <ul>
+          <li><svg viewBox="0 0 18 18" aria-label="check"><circle cx="9" cy="9" r="9" fill="#EEF0FA"/><path d="M5 9 L8 12 L13 6" fill="none" stroke="#5B4BDB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>100 monitors</li>
+          <li><svg viewBox="0 0 18 18" aria-label="check"><circle cx="9" cy="9" r="9" fill="#EEF0FA"/><path d="M5 9 L8 12 L13 6" fill="none" stroke="#5B4BDB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Chat and phone alerts</li>
+        </ul>
+      </div>
+      <div class="plan" data-component="PricingCard">
+        <h3>Scale</h3>
+        <div class="price">$99 <small>/ month</small></div>
+        <ul>
+          <li><svg viewBox="0 0 18 18" aria-label="check"><circle cx="9" cy="9" r="9" fill="#EEF0FA"/><path d="M5 9 L8 12 L13 6" fill="none" stroke="#5B4BDB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited monitors</li>
+          <li><svg viewBox="0 0 18 18" aria-label="check"><circle cx="9" cy="9" r="9" fill="#EEF0FA"/><path d="M5 9 L8 12 L13 6" fill="none" stroke="#5B4BDB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Audit log</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+<footer class="site-footer" data-name="Footer">
+  <div class="wrap footer-row">
+    <span>© Pulse demo · Fixture page, not a real product</span>
+    <span>Status · Privacy · Terms</span>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# @description Design-owned script steps of design_homepage_v2: brief, reference capture,
+# concept checks (contract, fonts, renders, distinctness, contact sheet), the owner
+# direction gate, review rounds (measure + craft metrics, combine, loop control), the
+# HTML->Penpot conversion, its verification, the handoff packet and the owner final gate.
+# No model; standard library + mcp. Uses the existing authorized design-agent login in
+# temper's .env and the shared playwright-mcp browser. Never puts credentials in a task,
+# output, checkpoint or artifact. Stage receipts in homepage/job.json make resume safe.
+agent:
+  name: design_homepage_stage_v2
+  version: 1
+  type: script
+  timeout_seconds: 1800
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+
+    stage = os.environ.get("{{ stage | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    mode = os.environ.get("{{ mode | default('real', true) | env }}", "real")
+    phase = os.environ.get("{{ phase | default('draft', true) | env }}", "draft")
+    raw = os.environ.get("{{ data | default('', true) | env }}", "")
+    {% if gate is defined %}
+    raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
+    {% endif %}
+    if not stage or not workspace:
+        raise SystemExit("homepage stage/workspace required")
+    if mode not in ("real", "fixture"):
+        raise SystemExit("mode is real or fixture")
+    os.environ["HOMEPAGE_DATA"] = raw
+    cmd = [sys.executable, "/app/configs/design/bin/design_homepage_v2.py", stage, "--workspace", workspace,
+           "--phase", phase]
+    if mode == "fixture":
+        cmd.append("--fixture")
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

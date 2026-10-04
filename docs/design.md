@@ -269,3 +269,94 @@ Model-free fixtures: `tests/test_design_homepage.py` (schema/gates/three structu
 directions/editability/geometry/contrast/cache/budget/loop/errors). Actual run,
 deployment, pause/resume, editor persistence, exports, cost/time and residual
 issues: `/home/shinelay/design-lab/results/morrow-homepage/` on spark.
+
+## Homepage workflow v2: designed in code, converted to editable Penpot
+
+v1's look came from fixed templates, so it could be tidy but never bold. v2 lets
+the models design where they are strongest, real HTML and CSS, and then converts
+the rendered page into an editable Penpot file, which stays the editable master.
+v1 is unchanged.
+
+`design_homepage_v2`: brief -> 8-12 category references (screenshots, research
+only; never copied or traced) -> art director drafts three named concepts (a
+~400-word brief each, licensed display + text fonts, dominant colour + accent,
+imagery, one signature layout move, one motion idea; hero + one section at 1440
+and 390) -> automatic check -> art director refines from its renders -> check
+(up to 3 more refine loops) -> **owner direction gate** -> designer builds the
+full page -> measure (capture, axe, craft metrics) -> the unchanged
+`design_critic` x2 + `design_merge`, plus the new craft critic -> combine (at
+most 2 automatic revisions) -> convert to Penpot -> verify -> handoff -> **owner
+final gate** (approve, or request changes: one more revision round, at most twice).
+
+Agents (all `provider: claude`, `model: opus`, so they can read PNGs):
+`design_homepage_art_director_v2` (phase draft|refine),
+`design_homepage_designer_v2`, `design_homepage_craft_critic_v2` (writes to
+`review/craft/`, never `review/critic/`, so taste never mixes with usability
+findings; advisory, the owner decides taste) and `design_homepage_reviser_v2`.
+Everything else is the script stage `design_homepage_stage_v2`
+(`configs/design/bin/design_homepage_v2.py`).
+
+### Inputs and gate answers
+
+- `brief_json`: product, category, audience, purpose, cta (<=40 chars),
+  `fictional` (bool; fictional needs a disclosure line), at least three facts
+  (the only source for claims on the page), optional assets (path, alt, kind
+  screenshot|logo|photo) and brand.
+- `references_json`: 8-12 `{name, url (https), why}`.
+- Direction gate: `{"concept": "A"|"B"|"C", "approval": "owner-direction", "notes": "..."}`.
+- Final gate: `{"approval": "owner-final"}` or
+  `{"verdict": "request_changes", "notes": ["..."]}`.
+
+The fixture workflow accepts only `"approval": "fixture-test"` and records no
+owner approval; the real workflow refuses fixture briefs and fixture answers.
+
+### Concept check
+
+Each concept must meet its contract: no overused faces (Inter, Roboto, Open
+Sans, Lato, Space Grotesk, Arial, Helvetica, system defaults) unless the brand
+uses them; fonts fetched from Google Fonts with their licence file (OFL, Apache
+or UFL) saved beside them; WCAG contrast for text on the dominant and accent
+colours; a brief of real length; three layout-signature traits. Pages are local
+HTML/CSS only: no `<script>`, iframes or outside URLs. Distinctness between
+every pair: dominant colours at least 0.10 apart (OKLab), layout signatures
+share at most half their traits, thumbnails differ by at least 6%, and the
+display faces and pairings differ. A failed check sends the concepts back to the
+art director with the problems; it never reaches the owner.
+
+### Converter (`html_to_penpot.py` + `html_dom_extract.js`)
+
+The browser renders the page at 390, 768 and 1440 with motion frozen; the
+extractor walks the DOM and records boxes, fills (solid, linear and radial
+gradients, images), borders, radii, shadows, inline SVG as absolute paths, and
+text from the browser's own line boxes with real font, size, weight, colour,
+line height and letter spacing. The converter makes one Penpot board per width,
+sections as named boards or groups, CSS colour variables as shared colours,
+text styles as shared typographies, and elements marked `data-component` as
+Penpot components (one main, linked instances at every width). Page fonts are
+uploaded to the Penpot team as custom fonts only when a licence file sits beside
+them (recorded in the report); images become Penpot media.
+
+Verify reopens the saved file and checks every layer, text, colour, typography,
+component and instance; exports PNG and SVG from Penpot itself (SVG with its
+fonts and images embedded, same host only); and compares each width's Penpot PNG
+with the browser render. Fidelity bar per width (`FIDELITY`): same size; pixels
+differing by more than 48 (with a 1 px shift allowed) at most 2.0% overall,
+1.0% outside text and 12.0% inside text boxes (anti-aliasing and font
+hinting differ there); and in 32 px tiles at most 20% differing and a mean
+difference of at most 40, so a single lost card cannot hide in a page-wide
+average. Approximations (inset shadows other than rings, dash lengths, some
+background positions) are listed as issues, never hidden.
+
+Fixture pages: `configs/design/testpages/html-fixtures/` (atlas, pulse, harbor;
+vendored OFL fonts). `design_homepage_v2_fixture` runs the whole flow with
+script stand-ins and no models (fixture concepts, build and reviews) but the
+real gates, measure, convert and verify, so gates, resume and conversion are
+proven at $0.
+
+Stage receipts in `homepage/job.json` record each finished stage and its input
+fingerprint: a resumed or re-entered stage with the same inputs is reused, and a
+finished stage whose inputs changed is refused rather than repeated.
+
+Tests: `tests/test_design_homepage_v2.py` (recorded scenes in
+`tests/design_homepage_v2_scenes/`, fake Penpot). Live converter proofs, editor
+checks, fixture and paid runs: `/home/shinelay/design-lab/results/homepage-v2/` on spark.

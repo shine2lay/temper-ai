@@ -18,7 +18,7 @@ role tests and lands a change.
 |---|---|---|
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest, the opportunity brief and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
-| `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
+| `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot) and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
@@ -202,7 +202,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
 
-### design (20)
+### design (27)
 
 | Config | Kind |
 |---|---|
@@ -219,6 +219,13 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_logo_palette_v1.yaml` | agent (new shortlist and role palettes) |
 | `design/agents/design_logo_critic_v1.yaml` | agent (new logo rubric/contract board; taste advisory) |
 | `design/agents/design_logo_refine_v1.yaml` | agent (new bounded selected-direction refinement) |
+| `design/workflows/design_homepage_v2.yaml` | workflow (designed in HTML/CSS, converted to editable Penpot; direction/final owner gates) |
+| `design/workflows/design_homepage_v2_fixture.yaml` | workflow (model-free gate/resume/convert proof) |
+| `design/agents/design_homepage_stage_v2.yaml` | agent (script; contracts, references, measure, HTML->Penpot convert, verify, handoff) |
+| `design/agents/design_homepage_art_director_v2.yaml` | agent (three bold, distinct concepts) |
+| `design/agents/design_homepage_designer_v2.yaml` | agent (full page in HTML/CSS) |
+| `design/agents/design_homepage_craft_critic_v2.yaml` | agent (craft checklist; taste advisory) |
+| `design/agents/design_homepage_reviser_v2.yaml` | agent (bounded revision from the fix list) |
 | `epd/agents/epd_personas.yaml` | agent |
 | `epd/agents/epd_walk.yaml` | agent |
 | `design/agents/design_capture.yaml` | agent (script) |

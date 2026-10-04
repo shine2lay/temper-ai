@@ -1,0 +1,151 @@
+# Design-owned homepage workflow, v2 (design in code, then editable Penpot). The owner,
+# not an agent, answers the direction and final gates. v1 stays as it is.
+workflow:
+  name: design_homepage_v2
+  version: 1
+  description: |
+    Homepage designed by AI in real HTML/CSS, then converted to an editable Penpot file:
+    brief -> 8-12 category references (research only) -> art director drafts three bold,
+    distinct concepts (hero + one section at 1440 and 390) -> automatic check (contract,
+    licensed fonts, renders, distinctness) -> art director refines from the renders ->
+    OWNER DIRECTION -> designer builds the full page -> measure (capture, axe, craft
+    metrics) -> two unchanged usability critics + merge, and a craft critic -> combine
+    (at most 2 automatic revisions) -> convert to Penpot (named boards per width, text
+    layers, shared colours/typographies, components) -> verify fidelity and editability ->
+    handoff -> OWNER FINAL (approve, or request changes: back to a revision round, at most
+    twice). Stage receipts make cancel/resume safe; no paid stage repeats. No publication.
+    Gate answers and inputs are documented in docs/design.md.
+  inputs:
+    brief_json: {type: string, required: true}
+    references_json: {type: string, required: true}
+    direction_json: {type: string, default: ""}
+  outputs:
+    contact_sheet: check.structured.contact_sheet
+    handoff_path: handoff.structured.handoff_path
+    manifest_path: handoff.structured.manifest_path
+    penpot_url: handoff.structured.penpot_url
+    final_verdict: final.structured.verdict
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_homepage_stage_v2
+      input_map: {stage: brief, mode: real, data: input.brief_json}
+    - name: references
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [brief]
+      input_map: {stage: references, mode: real, data: input.references_json}
+    - name: concepts
+      type: agent
+      agent: design_homepage_art_director_v2
+      depends_on: [references]
+      input_map: {phase: draft}
+    - name: check_draft
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [concepts]
+      input_map: {stage: concepts_check, mode: real, phase: draft}
+    - name: refine
+      type: agent
+      agent: design_homepage_art_director_v2
+      depends_on: [check_draft]
+      input_map: {phase: refine}
+    - name: check
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [refine]
+      input_map: {stage: concepts_check, mode: real, phase: final}
+    - name: concepts_next
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [check]
+      loop_to: refine
+      max_loops: 3
+      on_max_loops: fail
+      loop_condition: {source: concepts_next.structured.verdict, operator: equals, value: retry}
+      input_map: {stage: concepts_next, mode: real}
+    - name: direction
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [concepts_next]
+      gate: true
+      input_map: {stage: direction, mode: real, data: input.direction_json}
+    - name: build
+      type: agent
+      agent: design_homepage_designer_v2
+      depends_on: [direction]
+    - name: plan_round
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [build]
+      input_map: {stage: plan_round, mode: real}
+    - name: revise
+      type: agent
+      agent: design_homepage_reviser_v2
+      depends_on: [plan_round]
+      condition: {source: plan_round.structured.action, operator: equals, value: revise}
+    - name: measure
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [revise]
+      input_map: {stage: measure, mode: real}
+    - name: critic_a
+      type: agent
+      agent: design_critic
+      depends_on: [measure]
+    - name: critic_b
+      type: agent
+      agent: design_critic
+      depends_on: [measure]
+    - name: craft
+      type: agent
+      agent: design_homepage_craft_critic_v2
+      depends_on: [measure]
+    - name: merge
+      type: agent
+      agent: design_merge
+      depends_on: [critic_a, critic_b]
+    - name: combine
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [merge, craft]
+      input_map: {stage: combine, mode: real}
+    - name: next_round
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [combine]
+      loop_to: plan_round
+      max_loops: 3
+      on_max_loops: fail
+      loop_condition: {source: next_round.structured.verdict, operator: equals, value: revise}
+      input_map: {stage: next_round, mode: real}
+    - name: convert
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [next_round]
+      input_map: {stage: convert, mode: real}
+    - name: verify
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [convert]
+      input_map: {stage: verify, mode: real}
+    - name: handoff
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [verify]
+      input_map: {stage: handoff, mode: real}
+    - name: final
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [handoff]
+      gate: true
+      input_map: {stage: final, mode: real}
+    - name: after_final
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [final]
+      loop_to: plan_round
+      max_loops: 3
+      on_max_loops: fail
+      loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
+      input_map: {stage: next_round, mode: real}

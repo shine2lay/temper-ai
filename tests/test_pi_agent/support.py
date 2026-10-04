@@ -574,9 +574,11 @@ _DROP_ENV = ("OPENAI_API_KEY", "OPENAI_OAUTH_TOKEN", "ANTHROPIC_API_KEY",
              "TEMPER_WEBHOOK_URL")
 
 
-def crash_child(url: str, tmp: Path, workflow: str, workspace: Path, box_json: Path) -> dict:
+def crash_child(url: str, tmp: Path, workflow: str, workspace: Path, box_json: Path,
+                die_at: str = "turn") -> dict:
     """Run ``workflow`` in a separate worker process on the test's private database; the
-    process SIGKILLs itself while the Pi turn is running (after the prompt reached Pi)."""
+    process SIGKILLs itself while the Pi turn is running (after the prompt reached Pi), or
+    with ``die_at="owner_wait"`` once the step waits for the owner."""
     import subprocess
     import sys
 
@@ -587,7 +589,8 @@ def crash_child(url: str, tmp: Path, workflow: str, workspace: Path, box_json: P
                 "TEMPER_EXECUTION_MODE": "inprocess", "TEMPER_LOG_DIR": str(tmp / "logs-child"),
                 "TEMPER_PICK_UP_INTERRUPTED": "0", "TEMPER_TRIGGER_SCHEDULER": "0",
                 "TEMPER_SLACK": "0", "TEMPER_PI_BOX_CONFIG": str(box_json)})
-    args = {"db_url": url, "workflow": workflow, "workspace": str(workspace), "give_up_s": 30}
+    args = {"db_url": url, "workflow": workflow, "workspace": str(workspace), "give_up_s": 30,
+            "die_at": die_at}
     proc = subprocess.run([sys.executable, "-m", "tests.test_pi_agent.child", json.dumps(args)],
                           cwd=WORKTREE, env=env, capture_output=True, text=True, timeout=90)
     lines = [json.loads(x) for x in proc.stdout.splitlines() if x.startswith("{")]
@@ -600,15 +603,25 @@ def crash_child(url: str, tmp: Path, workflow: str, workspace: Path, box_json: P
     return out
 
 
-def restart_service(now=None) -> dict:
+def reconcile_only() -> list[dict]:
+    """The first half of a restart: mark the runs the dead worker left open as interrupted
+    (so they are not running), without picking them up yet."""
+    from temper_ai.observability.reconcile import reconcile_and_report
+
+    return reconcile_and_report()
+
+
+def restart_service(now=None, marked: list[dict] | None = None) -> dict:
     """What the isolated service does when it comes back: mark the runs the dead worker
-    left open as interrupted, then pick them up through the Resume button's own path."""
+    left open as interrupted, then pick them up through the Resume button's own path.
+    ``marked`` is what an earlier :func:`reconcile_only` returned."""
     from temper_ai.observability.reconcile import reconcile_and_report
     from temper_ai.runner import pickup
     from temper_ai.shared.clock import utcnow
 
     since = utcnow()
-    marked = reconcile_and_report()
+    if marked is None:
+        marked = reconcile_and_report()
     told: list[str] = []
     picks = pickup.pick_up_interrupted(
         marked, now=now, settle_s=0, since=since, resume=pickup._resume_through_the_button,

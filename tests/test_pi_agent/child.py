@@ -1,5 +1,6 @@
 """The crash worker for the Pi step's restart test: start one run in a private in-process
-Temper, then SIGKILL itself while the Pi turn is running (after the prompt reached Pi).
+Temper, then SIGKILL itself while the Pi turn is running (after the prompt reached Pi), or
+-- with ``"die_at": "owner_wait"`` -- once the step waits for the owner after its turn.
 
 Run as ``python -m tests.test_pi_agent.child '<json>'`` by the restart test only. The JSON
 says ``{"db_url": "sqlite:////.../pi.db", "workflow": "pi_talk", "workspace": "...",
@@ -53,11 +54,18 @@ def main(raw: str) -> int:
             net_attempts=guard.attempts)
         os.kill(os.getpid(), signal.SIGKILL)
 
-    sup.FakeBox.on_prompt = die
+    at_wait = args.get("die_at") == "owner_wait"
+    if not at_wait:
+        sup.FakeBox.on_prompt = die
     client = TestClient(app)  # no lifespan: no start-up reconcile or pick-up in the worker
     eid = sup.start(client, args["workflow"], args["workspace"])
     say(event="started", execution_id=eid, pid=os.getpid())
     ANNOUNCED.set()
+    if at_wait:
+        wait = sup.open_wait(eid, "owner", timeout=float(args.get("give_up_s", 30)))
+        say(event="killing", wait_id=wait["wait_id"], pid=os.getpid(),
+            net_attempts=guard.attempts)
+        os.kill(os.getpid(), signal.SIGKILL)
     time.sleep(float(args.get("give_up_s", 30)))
     say(event="gave_up", execution_id=eid)
     return 3

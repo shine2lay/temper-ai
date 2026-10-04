@@ -13,6 +13,10 @@ commit that was live and well, so the machine check passes it at once
 instead of spending ten minutes proving the same tree twice. Then temper
 restarts onto it, and the owner gets a DM saying what failed and what was
 taken back out.
+
+Whichever way a failure goes, it is said once. The commit is written down as
+handled, and the watcher leaves it alone until master moves on; only a person
+running ``temper-ci deploy`` tries the same commit again.
 """
 
 from __future__ import annotations
@@ -136,58 +140,129 @@ def live_check(shots: Path) -> dict:
 
 # -- restarting --------------------------------------------------------------
 
-def ask_restart(sha: str, why: str) -> None:
+# temper-deploy's request: there while a restart is still to come, gone once it has been
+# dealt with. Read, never written: like LAST_RESTART, it is temper-deploy's own account.
+RESTART_REQUEST = DEPLOY_DIR / "request.json"
+RESTART_POLL = 10                   # seconds between looks at those two files
+
+
+def ask_restart(sha: str, why: str) -> str:
     """Ask for a restart and say which commit has to be live after it.
 
     `--commit` is temper-deploy's own check that the restart really carried
     this change: it refuses if the checkout is not that commit or newer.
+    Returns what temper-deploy answered.
     """
     r = _temper_deploy("restart", "--reason", why, "--commit", sha, timeout=120)
-    log(f"asked temper-deploy to restart for {sha[:12]}: {(r.stdout or r.stderr).strip()[:200]}")
+    answer = (r.stdout or r.stderr).strip()
+    log(f"asked temper-deploy to restart for {sha[:12]}: {answer[:200]}")
+    return answer
 
 
-def restart_done_after(when: dt.datetime, sha: str = "") -> dict | None:
-    """The restart record, once temper is on the commit we asked for.
+def restart_pending() -> bool:
+    """Is a restart still to come? temper-deploy holds its request until it has dealt with it."""
+    row = read_json(RESTART_REQUEST)
+    return isinstance(row, dict) and bool(row.get("reasons"))
 
-    A record newer than ``when`` means our own restart happened. An older one
-    is normally just the file lying around from last time, and reading it as
-    "the restart happened" would skip straight to checking a temper that never
-    came back -- which is why this is strict.
 
-    But there is one older record that answers the question honestly: the one
-    that already says temper is live on ``sha``. Then there is nothing to
-    restart, temper-deploy rightly does nothing, and no new record will ever
-    be written. Waiting for one waits the whole hour, and because the watcher
-    is a single loop it stops checking pushed commits the entire time -- that
-    is how a queued commit sat for half an hour behind "checking: nothing
-    right now".
-    """
-    row = read_json(LAST_RESTART)
-    if not row:
-        return None
+def carries(head: str, sha: str) -> bool:
+    """Was ``sha`` in the code temper-deploy restarted on? ``head`` is that code's commit, short."""
+    head = str(head or "").strip()
+    if not head or not sha:
+        return False
+    if sha.startswith(head) or head.startswith(sha):
+        return True
+    # master moved on before the restart: it carried a later commit, with this one in it.
+    r = sh("git", "-C", str(MAIN_REPO), "merge-base", "--is-ancestor", sha, head, timeout=60)
+    return r.returncode == 0
+
+
+def _record_time(row: dict) -> dt.datetime | None:
     try:
         at = dt.datetime.fromisoformat(str(row.get("at")))
     except ValueError:
         return None
-    if at.tzinfo is None:
-        at = at.replace(tzinfo=dt.UTC)
-    if at > when:
-        return row
-    head = str(row.get("head") or "").strip()
-    if sha and head and sha.startswith(head):
-        return row
-    return None
+    return at if at.tzinfo else at.replace(tzinfo=dt.UTC)
+
+
+def restart_outcome(when: dt.datetime, sha: str = "") -> tuple[str, dict | None]:
+    """Where a restart asked for at ``when`` stands, from temper-deploy's own two files.
+
+    "restarted"     a restart that began after ``when`` is on record, on ``sha``,
+                    and no other restart is still to come
+    "waiting"       temper-deploy still holds a request: a restart is to come.
+                    The record comes with it if our own restart is already done
+    "already live"  the request was let go with no new restart, and the last one
+                    already carried ``sha`` -- it was under way when we asked
+    "let go"        the request was let go with no restart onto ``sha``: a rebuild
+                    was needed, someone cancelled, or temper-deploy refused it
+
+    Nothing counts while a restart is still to come, because looking at temper
+    then can land in the middle of it. The old record used to count whenever
+    it already named ``sha``, on the idea that there was then nothing to
+    restart -- but temper-deploy restarts whenever it is asked, so on
+    2026-10-03 the live check went in two seconds after asking, in the middle
+    of the very restart it had asked for, and failed everything. Even our own
+    restart's record waits while someone else's restart is queued behind it:
+    temper-deploy starts that one straight after.
+
+    The request is read before the record, on purpose: temper-deploy writes
+    the record first and only then lets the request go, so a request already
+    gone means any restart that dealt with it is on record by now.
+    """
+    pending = restart_pending()
+    row = read_json(LAST_RESTART)
+    if not isinstance(row, dict):
+        row = None
+    at = _record_time(row) if row else None
+    newer = bool(at and at > when)
+    on_sha = bool(row) and (carries(str(row.get("head") or ""), sha) if sha else newer)
+    if pending:
+        return "waiting", (row if newer and on_sha else None)
+    if newer and on_sha:
+        return "restarted", row
+    if on_sha:
+        return "already live", row
+    return "let go", None
+
+
+def restart_done_after(when: dt.datetime, sha: str = "") -> dict | None:
+    """The restart record once temper is back on ``sha`` -- None until then, or if it never will be."""
+    outcome, row = restart_outcome(when, sha)
+    return row if outcome in ("restarted", "already live") else None
 
 
 def wait_for_restart(since: dt.datetime, sha: str = "",
                      patience: int = RESTART_PATIENCE) -> dict | None:
-    deadline = time.time() + patience
-    while time.time() < deadline:
-        row = restart_done_after(since, sha)
-        if row:
+    """Look every RESTART_POLL seconds until temper is back on ``sha``; return its record.
+
+    None once it is plain there will be no restart onto ``sha``: at once when
+    temper-deploy lets the request go without one, and after ``patience`` when
+    a restart is still waiting by then. Waiting out the whole hour for a
+    restart that is not coming would also stop the watcher -- a single loop --
+    from checking anything pushed meanwhile. For the same reason, if our own
+    restart is done but another one has sat waiting behind it for the whole
+    ``patience``, it looks now rather than wait on.
+    """
+    deadline = time.monotonic() + patience
+    while True:
+        outcome, row = restart_outcome(since, sha)
+        if row and outcome == "restarted":
+            log(f"{sha[:12]}: temper restarted at {row.get('at')} (code {row.get('head')}), "
+                "after the ask")
             return row
-        time.sleep(10)
-    return None
+        if row and outcome == "already live":
+            log(f"{sha[:12]}: temper-deploy let the request go without a new restart; the one "
+                f"at {row.get('at')} (code {row.get('head')}) already carried it")
+            return row
+        if outcome == "let go":
+            return None
+        if time.monotonic() >= deadline:
+            if row:
+                log(f"{sha[:12]}: temper restarted at {row.get('at')} (code {row.get('head')}), "
+                    "after the ask; another restart has waited behind it all this time")
+            return row
+        time.sleep(RESTART_POLL)
 
 
 # -- going back --------------------------------------------------------------
@@ -298,9 +373,26 @@ def deploy(sha: str) -> dict:
     asked_at = dt.datetime.now(dt.UTC)
     ask_restart(sha, f"temper-ci: {sha[:12]} landed on master")
     row = wait_for_restart(asked_at, sha)
+    outcome = ""
+    if not row:
+        # One more look, to say why -- and in case it came just as the wait ran out.
+        outcome, last = restart_outcome(asked_at, sha)
+        if outcome in ("restarted", "already live"):
+            row = last
     out: dict = {"sha": sha, "asked_at": asked_at.isoformat(), "restarted": bool(row)}
     if not row:
-        out["reason"] = "temper never restarted; nothing was rolled back, because nothing went live"
+        if outcome == "waiting":
+            out["reason"] = "temper never restarted; nothing was rolled back, because nothing went live"
+        else:
+            # temper-deploy let the request go: a rebuild is needed (it tells the owner
+            # itself), someone cancelled, or it refused (its answer is in the log above).
+            # Asked again, it would say the same -- every loop, now that the answer
+            # comes in seconds rather than after the hour -- so this commit is handled,
+            # like a failed live check, until master moves or `temper-ci deploy`.
+            out["reason"] = ("temper-deploy let the request go without restarting onto it "
+                             "(`temper-deploy status` says why); nothing was rolled back, "
+                             "because nothing went live")
+            data["handled"] = sha
         log(f"{sha[:12]}: {out['reason']}")
         data["last_deploy"] = out
         save(data)
@@ -315,12 +407,20 @@ def deploy(sha: str) -> dict:
         data["last_good"] = sha
         data["deployed"] = sha
         data["revert_outstanding"] = ""
+        if data.get("handled") == sha:
+            del data["handled"]
         save(data)
         log(f"{sha[:12]}: live and well")
         return out
 
     bad_parts = "; ".join(p["name"] for p in live["parts"] if not p["ok"])
     log(f"{sha[:12]}: the live check failed ({bad_parts})")
+    # Handled, whichever way it goes from here: the owner hears about this failure
+    # once, and the watcher leaves this commit alone until master moves on (or a
+    # person runs `temper-ci deploy`). Without this, a failure with nothing more to
+    # do came straight back on the next loop -- on 2026-10-03, six restarts and six
+    # "needs a person" DMs in ten minutes, until master happened to move.
+    data["handled"] = sha
     save(data)
     if not good or good == sha:
         dm(f"temper: the live check failed after {sha[:12]} ({bad_parts}), and there is no "
@@ -345,6 +445,7 @@ def deploy(sha: str) -> dict:
     data = state()
     data["last_deploy"] = out
     data["deployed"] = back.get("revert") or sha
+    data["handled"] = sha
     # Cleared once a deploy is well again; until then, no second revert.
     data["revert_outstanding"] = "" if back.get("ok") else (back.get("revert") or sha)
     save(data)
@@ -364,6 +465,10 @@ def watch_master() -> dict | None:
     data = state()
     sha = master_sha()
     if not sha or data.get("deployed") == sha:
+        return None
+    if data.get("handled") == sha:
+        # Already went wrong once, and the owner was told. Trying again would only
+        # say it again, every loop; it waits for master to move, or for a person.
         return None
     if not data.get("last_good"):
         # First time: what is live now is where we would go back to \u2014 but only if

@@ -75,7 +75,8 @@ temper-ci check <commit>      # run the whole thing by hand (also posts the stat
 temper-ci check <commit> --no-post     # ... without telling GitHub
 temper-ci watch               # the loop the service runs
 temper-ci report <commit>     # where that commit's report is
-temper-ci deploy <commit>     # restart onto a commit and check it live (the watcher does this)
+temper-ci deploy <commit>     # restart onto a commit and check it live (the watcher does this;
+                              # by hand, it also tries a held-back commit again)
 ```
 
 ## The throwaway stack, and why it cannot hurt anything
@@ -161,14 +162,35 @@ trail: the status says a person did it and why.
 
 ## When the deploy goes wrong
 
-The watcher restarts temper onto the new master once no run is going, then looks at it:
-`temper-deploy check`, `temper-deploy hooks`, one $0 run in a box, and the page. If any
-of those fail:
+The watcher asks `temper-deploy restart` for the new master, then waits for that restart
+to have happened: for temper-deploy's record of a restart that began after the ask and
+carried the commit (`~/.local/state/temper-deploy/last-restart.json`). It looks every
+10 s. Nothing counts while temper-deploy still holds a request (`request.json`): not an
+older record that already names the commit, because temper-deploy restarts whenever it
+is asked, and looking before that restart is done sees temper half-way down; and not
+even its own restart's record while someone else's restart waits behind it, since that
+one starts straight after. Only once temper-deploy has let the request go with no new
+restart does the old record answer: on the commit, temper is already on it (a restart
+under way when it asked carried it); not on it, nothing went live. A restart still
+waiting after an hour is left to the next loop, which asks again.
+
+Then it looks at the live temper: `temper-deploy check`, `temper-deploy hooks`, one $0
+run in a box, and the page. If any of those fail:
 
 * it makes a revert commit back to the last good commit and takes it through the gate
   (which passes it at once, since those files already passed);
 * it restarts temper onto the revert;
 * it DMs the owner: what failed, which commits went out, what was taken back.
+
+One revert at a time: if one is already outstanding, or no commit the gate passed is
+there to go back to, it DMs the owner and stops there.
+
+Each failure is said once. The commit is written down as handled (`handled` in
+`deploy.json`) and the watcher leaves it alone until master moves on — `temper-ci
+status` shows it as held back. The same goes for a commit temper-deploy let go without
+restarting onto it (a rebuild needed, which temper-deploy DMs about itself, or a
+cancel). After fixing what was wrong, `temper-ci deploy <commit>` tries that commit
+again.
 
 `master` never moves backwards — the history keeps the bad commit and the revert both.
 `temper-ci status` shows the last good commit and the last deploy at any time.

@@ -74,9 +74,10 @@ def cmd_status(_args) -> int:
     print()
     dep = d.get("last_deploy") or {}
     if dep:
-        print(f"  last deploy: {dep.get('sha', '')[:12]} "
-              f"{'live and well' if dep.get('ok') else 'FAILED its live check'} "
-              f"({dep.get('asked_at', '')})")
+        verdict = ("live and well" if dep.get("ok")
+                   else "temper never restarted onto it" if dep.get("restarted") is False
+                   else "FAILED its live check")
+        print(f"  last deploy: {dep.get('sha', '')[:12]} {verdict} ({dep.get('asked_at', '')})")
         for p in (dep.get("live") or {}).get("parts", []):
             print(f"      {'ok  ' if p['ok'] else 'FAIL'} {p['name']}")
         if dep.get("rollback"):
@@ -86,7 +87,11 @@ def cmd_status(_args) -> int:
                   f"{'' if r.get('ok') else ' — THE REVERT DID NOT GO THROUGH'}")
     print(f"  live now:    {str(d.get('deployed') or '?')[:12]}")
     print(f"  last good:   {str(d.get('last_good') or '?')[:12]}")
-    print(f"  master:      {deploy_mod.master_sha()[:12]}")
+    master = deploy_mod.master_sha()
+    print(f"  master:      {master[:12]}")
+    if master and d.get("handled") == master and d.get("deployed") != master:
+        print("  held back:   master went wrong once and the owner was told; it is not tried "
+              "again until master moves (`temper-ci deploy` tries it now)")
     print(f"\n  reports:    {REPORTS}  (served at {paths.REPORT_BASE})")
     print(f"  log:        {paths.LOG}")
     return 0

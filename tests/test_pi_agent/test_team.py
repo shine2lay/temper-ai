@@ -308,11 +308,11 @@ def test_a_member_needs_a_worker_route_and_pinned_add_ons(tmp_path):
     team[1].update(provider="openai-codex", model="gpt-6.1-sol")
     team[2]["add_ons"] = []
     assert check_team(team, RUNNABLE, inputs=GOAL, box=bare) == [
-        "member 'design': no pinned copy of add-on(s) billion-context-pi, pi-image-trim, "
-        "pi-tldr in the worker box config",
+        "member 'design': no pinned copy of add-on(s) pi-image-trim, pi-tldr in the worker box "
+        "config",
         "member 'frontend': no worker route for provider 'openai-codex' in the worker box config",
-        "member 'frontend': no pinned copy of add-on(s) billion-context-pi, pi-image-trim, "
-        "pi-tldr in the worker box config"]
+        "member 'frontend': no pinned copy of add-on(s) pi-image-trim, pi-tldr in the worker box "
+        "config"]
 
 
 # --- the pre-run check: goal and safety -----------------------------------------------------

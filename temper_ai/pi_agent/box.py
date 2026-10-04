@@ -536,9 +536,6 @@ class WorkerBox:
             "TEMPER_BOX_ROLE": self.spec.role, "TEMPER_BOX_TOOLS": ",".join(sorted(self.spec.tools)),
             "PI_MEMORY_DIR": "/w/memory", "PI_IDENTITY_DIR": "/w/memory/identities",
             "PI_IDENTITY_REINDEX": "0", "PI_TLDR_NUDGES": "off",
-            # billion-context-pi's own switch for its npm update check (the box has no
-            # internet; the check would only be refused at the tunnel).
-            "ACP_AUTO_UPDATE": "0",
         }
         if self.cfg.mode == "rehearsal":
             env["NODE_EXTRA_CA_CERTS"] = "/box-ca/ca.pem"

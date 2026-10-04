@@ -33,7 +33,7 @@ agent:
   message: "Read note.txt and tell me its first word. Topic: {{ topic }}."
   workspace_files: {note.txt: "..."}   # written once into the worker's folder
   # provider: anthropic  model: claude-opus-5-5  thinking: max   (the defaults)
-  # add_ons: [billion-context-pi, pi-image-trim, pi-tldr]       (the default: all allowed)
+  # add_ons: [pi-image-trim, pi-tldr]                           (the default: all allowed)
 ```
 
 ## Member settings (`temper_ai/pi_agent/member.py`)
@@ -45,12 +45,14 @@ agent:
   built-ins: Read→read, Edit→edit, Write→write, Bash→bash, Grep→grep, Glob→find+ls
   (default `[Read]`). A tool Pi has no equivalent for (WebFetch, NotionSearch, GitHub,
   Linear, ...) refuses the config by name; it is never dropped silently.
-- Add-ons: `add_ons:` defaults to every allowed add-on: `pi-tldr`, `pi-image-trim`,
-  `billion-context-pi` (its delegate tools are never launched: they start agents Temper can't
-  see). pi-identity always comes through `role`; a route's login extension stays route
-  config. Refused by name, with the reason: pi-worktree, pi-subagents, relays, pi-memory,
-  pi-mcp-adapter, pi-web-access, pi-web-search, pi-control-chrome, pi-multi-pass, pi-queue,
-  pi-company, and the team messaging add-on ("not available yet").
+- Add-ons: `add_ons:` defaults to every allowed add-on: `pi-tldr` and `pi-image-trim`, the
+  ones that passed the worker box test. pi-identity always comes through `role`; a route's
+  login extension stays route config. Refused by name, with the reason: pi-worktree,
+  pi-subagents, relays, pi-memory, pi-mcp-adapter, pi-web-access, pi-web-search,
+  pi-control-chrome, pi-multi-pass, pi-queue, pi-company, the team messaging add-on ("not
+  available yet"), and `billion-context-pi`, left out after the box test: it writes its own
+  file beside the Pi session (`<session>.jsonl.acp.json`), which the turn's private-session
+  check refuses.
 - Each add-on runs from a pinned copy named in the box config, never from the owner's live
   `~/.pi/agent`: `"add_ons": {"pi-tldr": {"dir": "...", "entry": "index.ts", "sha256":
   "<tree digest>"}}`. The copy is checked against its digest when the config loads and when

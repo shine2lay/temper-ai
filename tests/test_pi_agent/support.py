@@ -72,7 +72,7 @@ def make_box_config(root: Path, **over: Any) -> Path:
     return path
 
 
-ADD_ON_NAMES = ("billion-context-pi", "pi-image-trim", "pi-tldr")
+ADD_ON_NAMES = ("pi-image-trim", "pi-tldr")
 
 
 def make_add_ons(root: Path, names: tuple[str, ...] = ADD_ON_NAMES) -> dict:

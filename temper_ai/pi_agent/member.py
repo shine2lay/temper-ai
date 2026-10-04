@@ -7,9 +7,10 @@
 * **Tools.** One ``tools:`` list with Temper's tool names, as for every other Temper agent
   (owner m02525), mapped to Pi's built-ins. A tool with no Pi equivalent refuses the config by
   name; nothing is dropped silently.
-* **Add-ons.** ``add_ons:`` defaults to every allowed add-on; the risky ones are refused by name
-  with the reason. An add-on runs from a pinned copy named in the worker box config, never from
-  the owner's live ``~/.pi/agent`` (:class:`temper_ai.pi_agent.box.BoxConfig`).
+* **Add-ons.** ``add_ons:`` defaults to every allowed add-on; the risky ones, and any that failed
+  in the worker box, are refused by name with the reason. An add-on runs from a pinned copy named
+  in the worker box config, never from the owner's live ``~/.pi/agent``
+  (:class:`temper_ai.pi_agent.box.BoxConfig`).
 
 The checks here return plain problem texts: the Pi step prefixes them with ``pi:``, the team's
 pre-run check with the member's name. Only imported with the Pi switch (``TEMPER_PI_AGENT``) on.
@@ -49,12 +50,10 @@ class AddOn:
     tools: tuple[str, ...] = ()
 
 
-#: Allowed add-ons and the tools each one brings. billion-context-pi's delegate tools
-#: (acp_delegate, acp_delegate_cancel, acp_delegate_wait) start agents Temper can't see,
-#: count or limit, so they are never in a member's tool list.
+#: Allowed add-ons and the tools each one brings: the ones that passed the worker box test
+#: (M2, 2026-10-04: the turn finished, no network beyond the model route, files only in the
+#: run folder, no unexpected commands).
 ADD_ONS: dict[str, AddOn] = {
-    "billion-context-pi": AddOn(tools=("acp_cache", "acp_status", "compress", "decompress",
-                                       "search_context")),
     "pi-image-trim": AddOn(),
     "pi-tldr": AddOn(tools=("tldr",)),
 }
@@ -81,6 +80,9 @@ REFUSED_ADD_ONS: dict[str, str] = {
     "pi-identity": "always loaded through 'role'; don't list it",
     "pi-anthropic-auth": "the provider route's own login extension is route config (the worker "
                          "box config's routes), not an add-on",
+    "billion-context-pi": "left out after the worker box test: it writes its own file beside "
+                          "the Pi session (<session>.jsonl.acp.json), which the turn's private "
+                          "session check refuses, so every turn with it fails",
 }
 
 

@@ -93,18 +93,16 @@ def test_a_tool_pi_does_not_have_refuses_the_config_by_name():
 
 
 def test_add_ons_default_to_every_allowed_one():
-    assert add_on_names(PI_MEMBER) == ["billion-context-pi", "pi-image-trim", "pi-tldr"]
+    assert add_on_names(PI_MEMBER) == ["pi-image-trim", "pi-tldr"]
     assert sorted(ADD_ONS) == list(sup.ADD_ON_NAMES)
     assert add_on_names({**PI_MEMBER, "add_ons": []}) == []
     assert add_on_names({**PI_MEMBER, "add_ons": ["pi-tldr"]}) == ["pi-tldr"]
 
 
 def test_the_worker_starts_with_the_mapped_tools_plus_the_add_ons_own_tools():
-    assert launched_tools(PI_MEMBER) == ["acp_cache", "acp_status", "compress", "decompress",
-                                         "read", "search_context", "tldr"]
+    assert launched_tools(PI_MEMBER) == ["read", "tldr"]
     assert launched_tools({**PI_MEMBER, "tools": ["Glob"], "add_ons": []}) == ["find", "ls"]
-    # billion-context-pi's delegate tools start agents Temper can't see: never launched.
-    assert not [t for t in launched_tools(PI_MEMBER) if t.startswith("acp_delegate")]
+    assert launched_tools({**PI_MEMBER, "add_ons": ["pi-image-trim"]}) == ["read"]
 
 
 @pytest.mark.parametrize("name", sorted(REFUSED_ADD_ONS))
@@ -121,10 +119,20 @@ def test_the_refused_list_is_the_plans():
     assert not set(REFUSED_ADD_ONS) & set(ADD_ONS)
 
 
+def test_an_add_on_that_failed_in_the_box_is_left_out_with_the_reason():
+    """M2 box test (2026-10-04): billion-context-pi writes a file beside the Pi session, which
+    the turn's private-session check refuses. Left out and reported, not patched around."""
+    assert "billion-context-pi" not in ADD_ONS
+    assert config_problems({**PI_MEMBER, "add_ons": ["billion-context-pi"]}) == [
+        "add-on 'billion-context-pi' is not allowed: left out after the worker box test: it "
+        "writes its own file beside the Pi session (<session>.jsonl.acp.json), which the turn's "
+        "private session check refuses, so every turn with it fails"]
+
+
 def test_unknown_and_repeated_add_ons_are_refused():
     got = config_problems({**PI_MEMBER, "add_ons": ["pi-tldr", "pi-tldr", "pi-shiny"]})
-    assert got == ["unknown add-on 'pi-shiny' (allowed: billion-context-pi, pi-image-trim, "
-                   "pi-tldr)", "'add_ons' names an add-on more than once"]
+    assert got == ["unknown add-on 'pi-shiny' (allowed: pi-image-trim, pi-tldr)",
+                   "'add_ons' names an add-on more than once"]
     assert config_problems({**PI_MEMBER, "add_ons": "pi-tldr"}) == [
         "'add_ons' must be a list of add-on names"]
 
@@ -201,8 +209,6 @@ def test_the_box_loads_each_add_on_read_only_from_its_pinned_copy(tmp_path, shor
     assert not any(str(Path.home() / ".pi") in m for m in mounts)
     writable = [m for m in mounts if not m.endswith(",readonly")]
     assert len(writable) == 1 and "target=/w," in writable[0] + ","
-    env = [args[i + 1] for i, a in enumerate(args) if a == "--env"]
-    assert "ACP_AUTO_UPDATE=0" in env
     pi = args[args.index("/box/entry.py") + 1:]
     assert [pi[i + 1] for i, a in enumerate(pi) if a == "--extension"] == [
         "/ext/identity/index.ts", "/ext/temper-box/index.ts",

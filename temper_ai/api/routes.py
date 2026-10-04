@@ -1114,9 +1114,10 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
         raise
     response = normalise_response(body.model_dump(include={"response", "answers"}))
     alive = _run_is_alive(execution_id)
-    # A Pi run that let its worker go at this wait is carried on by the answer: it does not
-    # need Resume (runner/parked.py).
-    parked = None if alive else pi_parked.parked_attempt(execution_id)
+    # A Pi run that let its worker go at this wait, or is letting go (its box gone but not yet
+    # seen gone, or its thread ending), is carried on by the answer: it does not need Resume
+    # (runner/parked.py).
+    parked = pi_parked.parked_attempt(execution_id)
     by = body.by.strip()
     decided: dict[str, Any] = {
         "gate_status": APPROVED, "gate_decided_at": _now_iso(),
@@ -1156,14 +1157,32 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
     reply = _approval_reply(execution_id, {**(after or event), "status": APPROVED,
                                            "data": {**(event.get("data") or {}), **decided}})
     if parked is not None or carried:
-        reply["carries_on"] = carried
-        if not carried and pi_parked.parked_attempt(execution_id) is not None:
+        carries_on = carried or _carried_on_elsewhere(execution_id)
+        reply["carries_on"] = carries_on
+        if not carries_on and pi_parked.parked_attempt(execution_id) is not None:
             # It could not be started: the answer is kept, and Resume carries it on.
             reply.update(needs_resume=True, message=NEEDS_RESUME)
+    else:
+        carries_on = False
     logger.info("Gate: approved '%s' round %s of %s (event %s)%s", gate["path"], gate["round"],
                 execution_id[:8], gate["event_id"],
-                "; carrying the run on" if carried else "" if alive or parked else "; the run needs Resume")
+                "; carrying the run on" if carried
+                else "; the worker carries the run on as it lets go" if carries_on
+                else "" if alive or parked else "; the run needs Resume")
     return reply
+
+
+def _carried_on_elsewhere(execution_id: str) -> bool:
+    """Whether a parked Pi run this answer did not start itself carries on all the same.
+
+    Its worker is still letting go (and carries it on as it does: the run is still alive), or
+    someone else claimed it first (its newest attempt is no longer the parked one, and it was
+    not cancelled). False when it is still parked with nothing letting it go.
+    """
+    if pi_parked.parked_attempt(execution_id) is not None:
+        return _run_is_alive(execution_id)
+    latest = _find_latest_workflow_event(execution_id) or {}
+    return latest.get("status") != pi_parked.CANCELLED
 
 
 def _approval_reply(execution_id: str, ev: dict[str, Any], *, repeated: bool = False) -> dict[str, Any]:

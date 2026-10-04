@@ -298,3 +298,43 @@ def test_a_second_resume_never_starts_a_second_copy(pw_run):
     parked.release(attempt)
     assert parked.parked_attempt(eid) is not None, "put back: it still waits on you"
     assert pw.RAN == {"brief": 1}
+
+
+def test_an_answer_while_the_thread_is_letting_go_says_it_carries_on(pw_run):
+    """The attempt is written down as parked, but its thread has not ended yet: the answer
+    leaves the starting to the thread, which carries the run on as it lets go."""
+    import threading
+    from types import SimpleNamespace
+
+    from temper_ai.api import routes
+
+    c = pw_run.client
+    eid = sup.start(c, "pw_before_pi", pw_run.ws)
+    pw.wait_parked(pw_run.state, eid)
+    gate = pw.open_gate(c, eid, "check")
+    pw_run.state.running[eid] = threading.Event()  # the thread is still ending
+    r = pw.approve(c, eid, "check", event_id=gate["event_id"])
+    assert r.status_code == 200, r.text
+    assert r.json()["carries_on"] is True and r.json()["needs_resume"] is False, r.text
+    assert [a["status"] for a in pw.attempts(eid)] == ["waiting"], "not started twice"
+
+    pw_run.state.running.pop(eid)  # the thread's last step: it lets go, and sees the answer
+    routes._see_to_parked(eid, SimpleNamespace(park_at_gates=True, cancel_event=threading.Event()))
+    pw.finish_pi(c, eid)
+    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
+    assert pw.RAN == {"brief": 1, "check": 1}
+
+
+def test_the_reply_says_whether_someone_else_carries_it_on(pw_run):
+    from temper_ai.api.routes import _carried_on_elsewhere
+    from temper_ai.runner import parked
+
+    c = pw_run.client
+    eid = sup.start(c, "pw_before_pi", pw_run.ws)
+    attempt = pw.wait_parked(pw_run.state, eid)
+    assert _carried_on_elsewhere(eid) is False  # parked, nothing letting it go: needs Resume
+    assert parked.claim(attempt) is True  # someone else is starting it
+    assert _carried_on_elsewhere(eid) is True
+    parked.release(attempt)
+    assert parked.cancel_parked(eid, "no") is True
+    assert _carried_on_elsewhere(eid) is False  # cancelled meanwhile

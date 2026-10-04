@@ -130,8 +130,9 @@ beside the gate finish first and are kept.
 Your answer carries it on by itself, through Resume's own path: a new box (or
 thread) starts from the saved checkpoints, uses the answer without asking
 again, and runs nothing that already finished. The reply says
-`"carries_on": true`. It works however long the run waited and across
-restarts:
+`"carries_on": true` whichever of these starts it (only a run that could not
+be started says `"needs_resume": true` instead). It works however long the
+run waited and across restarts:
 
 - the approval carries it on when the worker has already let go;
 - the worker carries it on as it lets go, when the answer came first (in a

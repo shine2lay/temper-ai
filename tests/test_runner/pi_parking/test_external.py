@@ -119,7 +119,9 @@ def test_an_answer_while_the_worker_is_down_carries_on_when_it_is_back(ext, monk
     gate = pw.open_gate(c, eid, "check")
     r = pw.approve(c, eid, "check", event_id=gate["event_id"])
     assert r.status_code == 200, r.text
-    assert r.json()["needs_resume"] is False  # the worker carries it on when it is back
+    # The reply says so: the worker carries it on when it is back (and the same goes for an
+    # answer in the few seconds before the reaper sees a box gone).
+    assert r.json()["carries_on"] is True and r.json()["needs_resume"] is False, r.text
     assert _row(eid)["status"] == "running" and len(pw.attempts(eid)) == 1
 
     # A server restart meanwhile marks nothing interrupted.

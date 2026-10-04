@@ -67,6 +67,11 @@ back. Facts, claims, inference and creative name interpretations stay separate.
 - One new critic per review; initial shortlist plus maximum two selected reviews.
   Element/location/evidence/suggestion required, max14 observations, no quality
   score. Preserve advice, changes and declined points. Owner decides taste.
+- Advisory prose (critic element/location/evidence/suggestion/reasons, palette
+  rationale, revision notes, refinement changes/declined) that overruns its bound by
+  up to four times is shortened with an ellipsis instead of failing the paid stage
+  (real run ad5c270f lost a round-1 critic save to a 129-character location).
+  Ids, names, owner words, geometry and longer text stay strict.
 - Exactly two refinement rounds maximum. Engine max_loops=2 permits only one
   rewind (its threshold counts the stopping attempt); script bounds independently
   forbid a third. Failed final revision is not successful completion.

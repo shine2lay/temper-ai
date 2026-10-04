@@ -96,6 +96,19 @@ def text(value, length=1000):
     return value
 
 
+def prose(value, length):
+    """Model-written explanation: a modest overrun is shortened, not a failed paid stage.
+
+    Real run ad5c270f lost its round-1 critic save to one 129-character location
+    against a 120 bound. Ids, names, owner words and geometry stay strict (text());
+    only advisory prose is clipped, and anything beyond four times its bound is
+    still rejected as unbounded.
+    """
+    if isinstance(value, str) and length < len(value) <= 4 * length:
+        value = value[:length - 1].rstrip() + "\u2026"
+    return text(value, length)
+
+
 def number(value, low=0, high=100):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
         raise ValueError("non-finite or unbounded geometry/value")
@@ -286,8 +299,8 @@ def revision_contract(v, b, draft):
         if row["id"] not in {c["id"] for c in v["concepts"]} or row["id"] in seen:
             raise ValueError("revision note must name one concept once")
         seen.add(row["id"])
-        text(row["seen"], 500)
-        text(row["change"], 500)
+        row["seen"] = prose(row["seen"], 500)
+        row["change"] = prose(row["change"], 500)
     return v
 
 
@@ -324,13 +337,13 @@ def shortlist_contract(v, b, concepts):
         if row["id"] not in ids:
             raise ValueError("unknown shortlisted symbol")
         row["palette"] = palette_contract(row["palette"])
-        text(row["rationale"], 700)
+        row["rationale"] = prose(row["rationale"], 700)
     if len({r["id"] for r in v["shortlist"]}) != 3 or v["recommendation"] not in {r["id"] for r in v["shortlist"]}:
         raise ValueError("distinct shortlist and advisory recommendation required")
     family = {c["id"]: c["family"] for c in concepts}
     if len({family[r["id"]] for r in v["shortlist"]}) < 2:
         raise ValueError("shortlist needs at least two concept families")
-    text(v["recommendation_reason"], 900)
+    v["recommendation_reason"] = prose(v["recommendation_reason"], 900)
     return v
 
 
@@ -345,9 +358,9 @@ def critique_contract(v, b, ids):
         if row["kind"] not in ("measured", "visual", "taste", "similarity"):
             raise ValueError("facts and taste must remain separate")
         for k, n in (("element", 120), ("location", 120), ("evidence", 500), ("suggestion", 400)):
-            text(row[k], n)
-    text(v["recommendation_reason"], 900)
-    text(v["limitations"], 1000)
+            row[k] = prose(row[k], n)
+    v["recommendation_reason"] = prose(v["recommendation_reason"], 900)
+    v["limitations"] = prose(v["limitations"], 1000)
     return v
 
 
@@ -360,8 +373,7 @@ def refinement_contract(v, b, selected):
     for k in ("changes", "declined"):
         if not isinstance(v[k], list) or len(v[k]) > 8:
             raise ValueError("bounded review disposition required")
-        for row in v[k]:
-            text(row, 600)
+        v[k] = [prose(row, 600) for row in v[k]]
     return v
 
 

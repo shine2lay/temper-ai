@@ -168,6 +168,25 @@ def test_revision_pass_keeps_six_slots_and_bounded_notes():
         c.revision_contract({**value, "product": "Elsewhere"}, b, draft)
 
 
+def test_critic_prose_overrun_is_shortened_but_ids_and_unbounded_text_fail():
+    """A 129-character location once failed a paid real critic save; shorten advisory prose instead."""
+    b = brief()
+    row = {"scope": "concept", "id": "fixture-2", "kind": "visual", "element": "Symbol",
+           "location": "board " * 22, "evidence": "Seen at 32 px.", "suggestion": "Thicken it."}
+    value = {"product": b["product"], "observations": [row], "recommendation": "fixture-2",
+             "recommendation_reason": "Advice only.", "limitations": "Static PNGs."}
+    out = c.critique_contract(copy.deepcopy(value), b, {"fixture-2"})
+    location = out["observations"][0]["location"]
+    assert len(location) == 120 and location.endswith("\u2026") and location.startswith("board board")
+    for change in ({"location": "x" * 481}, {"location": "line\x00break"}, {"id": "invented"}, {"location": ""}):
+        with pytest.raises(ValueError):
+            c.critique_contract({**value, "observations": [{**row, **change}]}, b, {"fixture-2"})
+    with pytest.raises(ValueError):
+        c.critique_contract({**value, "limitations": "x" * 4001}, b, {"fixture-2"})
+    assert c.critique_contract(copy.deepcopy({**value, "observations": [{**row, "location": "board 4"}]}), b,
+                               {"fixture-2"})["observations"][0]["location"] == "board 4"
+
+
 def research_folder(tmp_path):
     folder = tmp_path / "research-source"
     folder.mkdir()

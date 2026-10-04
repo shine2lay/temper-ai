@@ -397,6 +397,19 @@ def fixture_job(tmp_path):
     return job
 
 
+def test_parallel_stages_keep_each_others_receipts(tmp_path):
+    """taste runs beside references (and runtime beside the fixture review): both save job.json."""
+    fixture_job(tmp_path)
+    first = v2.Job(str(tmp_path), fixture=True)  # both stages load the same state before either saves
+    second = v2.Job(str(tmp_path), fixture=True)
+    first.receipt("references", "fp-references", {"status": "completed"})
+    second.receipt("taste", "fp-taste", {"status": "completed"})
+    saved = v2.load(tmp_path / "homepage/job.json")["stages"]
+    assert {"brief", "references", "taste"} <= set(saved)
+    assert v2.Job(str(tmp_path), fixture=True).cached("references", "fp-references")["reused"]
+    assert not list((tmp_path / "homepage").glob(".job.json.*.tmp"))  # written in one step, nothing left over
+
+
 def test_fixture_and_real_workspaces_never_mix(tmp_path):
     job = fixture_job(tmp_path)
     assert (tmp_path / "homepage/BRIEF.md").exists() and (tmp_path / "homepage/PAGE_RULES.md").exists()

@@ -49,6 +49,7 @@ approval, never a taste entry.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import html.parser
 import json
@@ -162,7 +163,12 @@ def now() -> str:
 
 
 def save(path: Path, value: Any) -> None:
-    v1.save(path, value)
+    """Write JSON in one step: a stage loading the file meanwhile sees the old version or the new one, never half."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
 
 
 def load(path: Path) -> Any:
@@ -1028,7 +1034,18 @@ class Job:
                              "use a fresh workspace")
 
     def commit(self) -> None:
-        save(self.state_path, self.state)
+        """Save the state and keep receipts that stages on parallel branches saved meanwhile.
+
+        taste runs beside references, and in the fixture runtime beside the stand-in review: each
+        loads job.json, adds its receipt and saves. Without this merge the last writer dropped the
+        other's receipt (fixture run ead8a545 lost taste and review_fixture-1/2; pilot 1dd9858c lost taste).
+        """
+        with (self.packet / ".job.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if self.state_path.exists():
+                saved = load(self.state_path).get("stages", {})
+                self.state["stages"] = {**saved, **self.state["stages"]}
+            save(self.state_path, self.state)
 
     def receipt(self, stage: str, fingerprint: str, output: dict) -> dict:
         self.state["stages"][stage] = {"fingerprint": fingerprint, "completed_at": now(), "output": output}

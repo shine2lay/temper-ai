@@ -22,6 +22,11 @@ agent:
     Work only in the working directory with native Read, Write and Edit. No Bash,
     browsing, fetching, external assets or account files. Read:
       homepage/BRIEF.md          the product, audience, job, facts (the only source of claims)
+      homepage/copy/COPY.md      the page's words, already reviewed: headline options, subhead,
+                                 proof points, CTA labels, FAQ, terms, worked examples and
+                                 each required notice (said once, in its place)
+      homepage/TASTE.md          the owner's taste from earlier gates: what they chose,
+                                 rejected and said (private; never quote it on a page)
       homepage/PAGE_RULES.md     the HTML/CSS rules every page must follow (obey them)
       homepage/references/REFERENCES.md and its PNGs: acclaimed homepages in the
                                  category. Open several. Study what makes them memorable
@@ -48,11 +53,21 @@ agent:
     - motion: one orchestrated load reveal, described.
     - layout_signature: 3-8 short keywords for the layout (e.g. "asymmetric-split",
       "oversized-numerals", "full-bleed-colour"); the three sets must barely overlap.
+    - headline: one of the copy deck's headline options, word for word (each
+      direction may pick a different one).
+    - taste_use: one or two sentences on how this direction uses the owner's taste
+      file: which entries it follows or deliberately departs from, cited by id (T1,
+      T2 ...). When TASTE.md has no entries yet, say so.
+    Do not fall back on favourite type pairings: pick faces for this product, and
+    check TASTE.md for pairings the owner already rejected.
     Then build the direction as a real page: homepage/concepts/<ID>/index.html
     (ID = A, B, C) with the hero and one more section only, fully styled, following
     PAGE_RULES.md (link fonts/fonts.css; it is generated in that folder from your
-    font choices). Real copy from the brief's facts, the brief's CTA, the fictional
-    disclosure if any. Make each one look finished and specific to this product.
+    font choices). Use the deck's words as written: your headline, its subhead,
+    proof points and CTA labels. Show each required notice from the deck exactly
+    once (a slim bar in the header or footer, as the deck places it) and nowhere
+    else: no hedges such as "proposed" or "fictional" in other lines. Make each one
+    look finished and specific to this product.
 
     Write homepage/concepts/concepts.json:
     {"concepts": [{"id": "A", "name": "...", "brief": "...",
@@ -61,7 +76,8 @@ agent:
       "palette": {"dominant": "#RRGGBB", "accent": "#RRGGBB", "ink": "#RRGGBB",
                   "surface": "#RRGGBB", "on_dominant": "#RRGGBB", "on_accent": "#RRGGBB"},
       "imagery": "...", "signature_move": "...", "motion": "...",
-      "layout_signature": ["...", "..."], "page": "homepage/concepts/A/index.html"}, ...]}
+      "layout_signature": ["...", "..."], "headline": "<a deck headline option>",
+      "taste_use": "...", "page": "homepage/concepts/A/index.html"}, ...]}
     Do not edit other files, approve anything or claim the owner chose.
     Make your WHOLE final message a single ```json block, nothing before or after:
     {"status": "completed", "concepts": 3}

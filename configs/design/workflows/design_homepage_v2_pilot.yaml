@@ -1,26 +1,18 @@
-# Design-owned homepage workflow, v2 (design in code, then editable Penpot). The owner,
-# not an agent, answers the direction and final gates. v1 stays as it is.
+# Fictional-only companion of design_homepage_v2 (like design_homepage_pilot_v1 for v1).
+# Same nodes, agents and checks; every script stage runs with mode: pilot, which refuses
+# real deliverables and takes the worker's "provisional-fictional" direction pick (with
+# a reason) instead of owner approval. Pilot runs never write taste entries. The final
+# gate still needs the owner. tests/test_design_homepage_v2.py keeps it in step with v2.
 workflow:
-  name: design_homepage_v2
+  name: design_homepage_v2_pilot
   version: 1
   description: |
-    Homepage designed by AI in real HTML/CSS, then converted to an editable Penpot file:
-    brief + the owner's taste file -> copy deck (copywriter draft -> fixed word rules ->
-    content critic -> copywriter revision -> quotes checked, before/after written) and
-    8-12 category references (research only) -> art director drafts three bold,
-    distinct concepts (hero + one section at 1440 and 390) -> automatic check (contract,
-    licensed fonts, renders, distinctness) -> art director refines from the renders ->
-    OWNER DIRECTION -> designer builds the full page -> measure (capture, axe, craft
-    metrics) -> two unchanged usability critics + merge, a craft critic, runtime checks
-    in a real browser (Tab order and focus, names, 320 px reflow, 400% zoom, text
-    spacing, reduced motion, hover) and a content critic on the page's text -> combine
-    (at most 2 automatic revisions) -> convert to Penpot (named boards per width, text
-    layers, shared colours/typographies, components) -> verify fidelity and editability ->
-    handoff -> OWNER FINAL (approve, or request changes: back to a revision round, at most
-    twice). Each owner gate's choice, rejected options and notes are saved for the
-    host's private taste file, which the launcher passes back in as taste_md. Stage
-    receipts make cancel/resume safe; no paid stage repeats. No publication.
-    Gate answers and inputs are documented in docs/design.md.
+    Fictional-only trial of design_homepage_v2 (paid models, same stages and checks):
+    copy deck + content critic, three concepts, the worker's provisional direction
+    (approval "provisional-fictional", never owner approval, never a taste entry),
+    full build, review rounds with runtime checks and the content critic on the page,
+    Penpot conversion, handoff, and the owner final gate. Real products refuse this
+    workflow at the brief stage; they go through design_homepage_v2.
   inputs:
     brief_json: {type: string, required: true}
     references_json: {type: string, required: true}
@@ -37,17 +29,17 @@ workflow:
     - name: brief
       type: agent
       agent: design_homepage_stage_v2
-      input_map: {stage: brief, mode: real, data: input.brief_json}
+      input_map: {stage: brief, mode: pilot, data: input.brief_json}
     - name: references
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [brief]
-      input_map: {stage: references, mode: real, data: input.references_json}
+      input_map: {stage: references, mode: pilot, data: input.references_json}
     - name: taste
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [brief]
-      input_map: {stage: taste, mode: real, data: input.taste_md}
+      input_map: {stage: taste, mode: pilot, data: input.taste_md}
     - name: copy
       type: agent
       agent: design_homepage_copywriter_v2
@@ -57,7 +49,7 @@ workflow:
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [copy]
-      input_map: {stage: copy_check, mode: real, phase: draft}
+      input_map: {stage: copy_check, mode: pilot, phase: draft}
     - name: copy_review
       type: agent
       agent: design_homepage_content_critic_v2
@@ -72,7 +64,7 @@ workflow:
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [copy_revise]
-      input_map: {stage: copy_check, mode: real, phase: final}
+      input_map: {stage: copy_check, mode: pilot, phase: final}
     - name: copy_next
       type: agent
       agent: design_homepage_stage_v2
@@ -81,7 +73,7 @@ workflow:
       max_loops: 2
       on_max_loops: fail
       loop_condition: {source: copy_next.structured.verdict, operator: equals, value: retry}
-      input_map: {stage: copy_next, mode: real}
+      input_map: {stage: copy_next, mode: pilot}
     - name: concepts
       type: agent
       agent: design_homepage_art_director_v2
@@ -91,7 +83,7 @@ workflow:
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [concepts]
-      input_map: {stage: concepts_check, mode: real, phase: draft}
+      input_map: {stage: concepts_check, mode: pilot, phase: draft}
     - name: refine
       type: agent
       agent: design_homepage_art_director_v2
@@ -101,7 +93,7 @@ workflow:
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [refine]
-      input_map: {stage: concepts_check, mode: real, phase: final}
+      input_map: {stage: concepts_check, mode: pilot, phase: final}
     - name: concepts_next
       type: agent
       agent: design_homepage_stage_v2
@@ -110,13 +102,13 @@ workflow:
       max_loops: 3
       on_max_loops: fail
       loop_condition: {source: concepts_next.structured.verdict, operator: equals, value: retry}
-      input_map: {stage: concepts_next, mode: real}
+      input_map: {stage: concepts_next, mode: pilot}
     - name: direction
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [concepts_next]
       gate: true
-      input_map: {stage: direction, mode: real, data: input.direction_json}
+      input_map: {stage: direction, mode: pilot, data: input.direction_json}
     - name: build
       type: agent
       agent: design_homepage_designer_v2
@@ -125,7 +117,7 @@ workflow:
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [build]
-      input_map: {stage: plan_round, mode: real}
+      input_map: {stage: plan_round, mode: pilot}
     - name: revise
       type: agent
       agent: design_homepage_reviser_v2
@@ -135,7 +127,7 @@ workflow:
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [revise]
-      input_map: {stage: measure, mode: real}
+      input_map: {stage: measure, mode: pilot}
     - name: critic_a
       type: agent
       agent: design_critic
@@ -152,7 +144,7 @@ workflow:
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [measure]
-      input_map: {stage: runtime, mode: real}
+      input_map: {stage: runtime, mode: pilot}
     - name: content
       type: agent
       agent: design_homepage_content_critic_v2
@@ -166,7 +158,7 @@ workflow:
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [merge, craft, runtime, content]
-      input_map: {stage: combine, mode: real}
+      input_map: {stage: combine, mode: pilot}
     - name: next_round
       type: agent
       agent: design_homepage_stage_v2
@@ -175,28 +167,28 @@ workflow:
       max_loops: 3
       on_max_loops: fail
       loop_condition: {source: next_round.structured.verdict, operator: equals, value: revise}
-      input_map: {stage: next_round, mode: real}
+      input_map: {stage: next_round, mode: pilot}
     - name: convert
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [next_round]
-      input_map: {stage: convert, mode: real}
+      input_map: {stage: convert, mode: pilot}
     - name: verify
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [convert]
-      input_map: {stage: verify, mode: real}
+      input_map: {stage: verify, mode: pilot}
     - name: handoff
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [verify]
-      input_map: {stage: handoff, mode: real}
+      input_map: {stage: handoff, mode: pilot}
     - name: final
       type: agent
       agent: design_homepage_stage_v2
       depends_on: [handoff]
       gate: true
-      input_map: {stage: final, mode: real}
+      input_map: {stage: final, mode: pilot}
     - name: after_final
       type: agent
       agent: design_homepage_stage_v2
@@ -205,4 +197,4 @@ workflow:
       max_loops: 3
       on_max_loops: fail
       loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
-      input_map: {stage: next_round, mode: real}
+      input_map: {stage: next_round, mode: pilot}

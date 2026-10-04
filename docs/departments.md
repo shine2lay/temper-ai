@@ -212,7 +212,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
 
-### design (28)
+### design (31)
 
 | Config | Kind |
 |---|---|
@@ -231,7 +231,10 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_logo_refine_v1.yaml` | agent (new bounded selected-direction refinement) |
 | `design/workflows/design_homepage_v2.yaml` | workflow (designed in HTML/CSS, converted to editable Penpot; direction/final owner gates) |
 | `design/workflows/design_homepage_v2_fixture.yaml` | workflow (model-free gate/resume/convert proof) |
-| `design/agents/design_homepage_stage_v2.yaml` | agent (script; contracts, references, measure, HTML->Penpot convert, verify, handoff) |
+| `design/workflows/design_homepage_v2_pilot.yaml` | workflow (fictional-only trial of v2; worker's provisional direction, never owner approval or taste) |
+| `design/agents/design_homepage_stage_v2.yaml` | agent (script; contracts, taste file, copy checks, references, measure, runtime checks, HTML->Penpot convert, verify, handoff) |
+| `design/agents/design_homepage_copywriter_v2.yaml` | agent (copy deck before concepts; revises from the content review) |
+| `design/agents/design_homepage_content_critic_v2.yaml` | agent (content review of the deck and the built page; quoted findings) |
 | `design/agents/design_homepage_art_director_v2.yaml` | agent (three bold, distinct concepts) |
 | `design/agents/design_homepage_designer_v2.yaml` | agent (full page in HTML/CSS) |
 | `design/agents/design_homepage_craft_critic_v2.yaml` | agent (craft checklist; taste advisory) |

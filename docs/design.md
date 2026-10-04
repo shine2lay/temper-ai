@@ -314,18 +314,23 @@ the models design where they are strongest, real HTML and CSS, and then converts
 the rendered page into an editable Penpot file, which stays the editable master.
 v1 is unchanged.
 
-`design_homepage_v2`: brief -> 8-12 category references (screenshots, research
-only; never copied or traced) -> art director drafts three named concepts (a
+`design_homepage_v2`: brief + the owner's taste file -> copy deck (copywriter
+draft, word checks, content review, revision; see v2.1 below) and 8-12 category
+references (screenshots, research only; never copied or traced) -> art director
+drafts three named concepts (a
 ~400-word brief each, licensed display + text fonts, dominant colour + accent,
 imagery, one signature layout move, one motion idea; hero + one section at 1440
 and 390) -> automatic check -> art director refines from its renders -> check
 (up to 3 more refine loops) -> **owner direction gate** -> designer builds the
 full page -> measure (capture, axe, craft metrics) -> the unchanged
-`design_critic` x2 + `design_merge`, plus the new craft critic -> combine (at
+`design_critic` x2 + `design_merge`, plus the craft critic, runtime checks in a
+real browser and the content critic on the page's words -> combine (at
 most 2 automatic revisions) -> convert to Penpot -> verify -> handoff -> **owner
 final gate** (approve, or request changes: one more revision round, at most twice).
 
 Agents (all `provider: claude`, `model: opus`, so they can read PNGs):
+`design_homepage_copywriter_v2` (phase draft|revise),
+`design_homepage_content_critic_v2` (target deck|page),
 `design_homepage_art_director_v2` (phase draft|refine),
 `design_homepage_designer_v2`, `design_homepage_craft_critic_v2` (writes to
 `review/craft/`, never `review/critic/`, so taste never mixes with usability
@@ -340,12 +345,22 @@ Everything else is the script stage `design_homepage_stage_v2`
   (the only source for claims on the page), optional assets (path, alt, kind
   screenshot|logo|photo) and brand.
 - `references_json`: 8-12 `{name, url (https), why}`.
+- `taste_md` (optional, default empty): the owner's taste file, passed by the host
+  launcher; agents see only what is passed.
 - Direction gate: `{"concept": "A"|"B"|"C", "approval": "owner-direction", "notes": "..."}`.
 - Final gate: `{"approval": "owner-final"}` or
   `{"verdict": "request_changes", "notes": ["..."]}`.
 
 The fixture workflow accepts only `"approval": "fixture-test"` and records no
 owner approval; the real workflow refuses fixture briefs and fixture answers.
+
+`design_homepage_v2_pilot` is the fictional-only twin (same nodes, agents and
+checks; every script stage runs with `mode: pilot`, and a test keeps the two in
+step). Its brief stage refuses real products, and its direction gate takes only
+`{"concept": ..., "approval": "provisional-fictional", "notes": "why, 8+ words"}`:
+the worker's provisional pick, recorded as never owner-approved and never added
+to the owner's taste file. The final gate still needs `owner-final`. Use it for
+paid trials of the workflow on made-up products.
 
 ### Concept check
 
@@ -394,6 +409,65 @@ Stage receipts in `homepage/job.json` record each finished stage and its input
 fingerprint: a resumed or re-entered stage with the same inputs is reused, and a
 finished stage whose inputs changed is refused rather than repeated.
 
+### v2.1 (queue #8): words, real-use checks and the owner's taste
+
+**Copy deck before concepts.** The copywriter writes `homepage/copy/copy.json`
+from the brief: a one-sentence promise (<=25 words), 3-5 headline options
+(<=10 words, each with its angle), a subhead (<=35 words), exactly three proof
+points (each citing the brief facts it rests on, by number), CTA labels
+(verb first, <=4 words), 3-6 FAQ answers, voice notes, defined terms, worked
+examples wherever a price, number or rule appears, and each required notice
+stated once with its placement (a fictional brief has exactly one fictional
+notice; disclaimer words appear nowhere else). The script checks the contract
+(lengths, generic CTAs, hedges such as "proposed" or "in the demo", numbers the
+brief does not support, arithmetic in worked examples), then the content critic
+reviews it, the copywriter revises (one `CHANGES.md` line per finding) and the
+script checks again: every finding must quote the deck word for word (others are
+dropped), and every blocking finding (severity >= 3) must be gone or answered in
+`CHANGES.md`; up to two more revisions, then the run fails. `COPY-DIFF.md` keeps
+the words before and after. Concepts must use one of the deck's headlines word
+for word, and the built page must show each notice exactly once and no hedges
+outside it.
+
+**Content review of the page.** After each build or revision the content critic
+reads the page's text (from the runtime stage, as the browser shows it) and the
+screenshots, and checks clarity, specificity, jargon, consistent terms,
+scannability, CTA clarity, worked examples, notices, unsupported claims and drift
+from the deck. Findings carry element + quoted text + problem + suggestion +
+severity (anchored 0-4); the combine stage keeps only findings whose quote is on
+the page, and severity >= 3 blocks.
+
+**Runtime checks** (`configs/design/bin/design_runtime_checks.py`, no model) run
+the built page in the shared browser: Tab order (no keyboard trap, no positive
+tabindex, every visible control reachable), visible focus on every stop (a
+visible change against the unfocused page, an outline indicator at least 3:1,
+not hidden off screen or under sticky parts), accessible names (words in every
+name, alt on images, no placeholder-only fields, an aria-label that contains the
+visible label), reflow at 320 x 640 (no sideways scroll, no clipped text), 400%
+zoom (a 320 x 200 CSS viewport: fixed or sticky parts covering at most 40%, no
+sideways scroll or clipped text, zoom allowed), WCAG 1.4.12 text spacing at 1440
+and 390 (line height 1.5, paragraph 2 em, letter 0.12 em, word 0.16 em: no text
+newly clipped or spilling), reduced motion (no moving or looping animation still
+declared under `prefers-reduced-motion: reduce`; short fades allowed) and
+hover/focus states on links and buttons.
+Findings go to `review/runtime/` (RUNTIME.md, runtime.json); failures (severity
+3; missing hover 2) block like the other critics. Planted proof page
+`configs/design/testpages/runtime/planted.html` (nine plants listed in
+`expected.json`) and a clean control `control.html`: all nine found, 0 false
+alarms on the control (`design_runtime_checks.py --fixture-proof`).
+
+**Owner taste file.** The direction and final gate stages save each answer (the
+choice, the options passed over and the owner's own words) in the workspace
+(`homepage/taste/entries.json`). The host launcher
+(`~/design-lab/tools/homepage_v2_control.py`) appends each new answer once to
+`~/design-lab/taste/owner.md` (private, host only; fixture answers go to a
+separate `fixture.md`) and passes the file into the next run as `taste_md`. The
+art director must say for each concept how it uses the taste file (`taste_use`,
+citing entries T1, T2 ... once there are any); the contact sheet shows it.
+
 Tests: `tests/test_design_homepage_v2.py` (recorded scenes in
-`tests/design_homepage_v2_scenes/`, fake Penpot). Live converter proofs, editor
-checks, fixture and paid runs: `/home/shinelay/design-lab/results/homepage-v2/` on spark.
+`tests/design_homepage_v2_scenes/`, fake Penpot) and
+`tests/test_design_runtime_checks.py` (recorded browser results in
+`tests/design_runtime_scenes/`). Live converter proofs, editor
+checks, fixture and paid runs: `/home/shinelay/design-lab/results/homepage-v2/` on spark;
+v2.1 proofs in `/home/shinelay/design-lab/results/homepage-v2.1/`.

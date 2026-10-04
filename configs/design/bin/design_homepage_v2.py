@@ -8,35 +8,49 @@ editable master by converting the rendered page (html_to_penpot.py).
 Stages (one CLI, ``design_homepage_v2.py <stage> --workspace W``):
 
   brief           validate the brief, write homepage/BRIEF.md (+ copy assets)
+  taste           the owner's taste file (a run input) -> homepage/TASTE.md
+  copy_fixture    (fixture) stand-in copywriter draft, content review, revision
+  copy_check      the copy deck's fixed rules (draft), then after the content
+                  review: quotes checked, every blocking finding answered,
+                  before/after written (final)
+  copy_next       the final copy check's verdict, for the workflow's loop
   references      screenshot 8-12 acclaimed homepages, research only
   concepts_fixture  (model-free fixture) three hand-written concepts
   concepts_check  validate the art director's three concepts, fetch their
                   licensed fonts, render each at 1440 and 390, check they are
-                  distinct, and build the contact sheet for the owner
-  direction       OWNER DIRECTION gate decision -> prepare site/
+                  distinct and use the deck's words, and build the contact sheet
+  direction       OWNER DIRECTION gate decision -> prepare site/, taste entry
   build_fixture   (fixture) the chosen concept becomes the page
   plan_round      round bookkeeping: build, or revise with a fix list
   revise_fixture  (fixture) a tiny scripted revision
   measure         capture + axe + measured facts for the critics, craft metrics
+  runtime         keyboard, focus, names, 320 px reflow, 400% zoom, text
+                  spacing, reduced motion and hover in a real browser (no model)
   review_fixture  (fixture) stand-in critic/merge/craft files
-  combine         merge usability/accessibility findings with craft findings,
+  content_fixture (fixture) stand-in content review of the page's words
+  combine         merge usability/accessibility, craft, runtime and content
+                  findings (content quotes checked against the page text),
                   decide revise (at most two automatic revisions) or done
   next_round      the decision, for the workflow's loop
   convert         HTML -> editable Penpot (fonts, colours, typographies, components)
   verify          fresh reopen + fidelity bar; fails visibly
   handoff         packet with manifest
-  final           OWNER FINAL gate decision (approve or request changes)
+  final           OWNER FINAL gate decision (approve or request changes), taste entry
 
 Every completed stage leaves a receipt in homepage/job.json, keyed by its
 inputs. Re-entry with the same inputs reuses the receipt (no repeated paid or
 Penpot work); changed inputs for a completed stage fail instead of silently
 repeating. Gate decisions are saved JSON only; the fixture workflow labels its
-decisions "fixture-test" and can never record owner approval.
+decisions "fixture-test" and can never record owner approval. The pilot
+workflow (``--pilot``, fictional briefs only) runs the real models and checks,
+but its direction is the worker's "provisional-fictional" pick: never owner
+approval, never a taste entry.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import html.parser
 import json
 import math
 import os
@@ -56,6 +70,7 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import design_homepage_v1 as v1  # noqa: E402
+import design_runtime_checks as rtc  # noqa: E402
 import html_to_penpot as h2p  # noqa: E402
 
 VERSION = 1
@@ -116,8 +131,20 @@ Quality bar
 - Widths 390, 768 and 1440 without sideways scrolling (fluid grid, clamp()).
 - WCAG 2.2 AA: text contrast 4.5:1 (3:1 large text), one h1, headings in order, landmarks,
   alt text, visible :focus-visible styles, targets at least 44x44 px, body text >= 16 px.
-- Claims only from the brief's facts. A fictional product shows its disclosure. No invented
-  customers, logos, quotes, ratings or numbers.
+- Claims only from the brief's facts. No invented customers, logos, quotes, ratings or numbers.
+
+Words
+- Use the copy deck's words (homepage/copy/COPY.md): its headline options, subhead, proof points,
+  CTA labels, FAQ and terms. Show each required notice ONCE, where the deck places it (header or
+  footer); never sprinkle disclaimers or hedges ("in the proposed demo") through the page. Where a
+  price or rule appears, show the deck's worked example next to it.
+
+Use (runtime checks run on the built page)
+- Every link and button has a visible :hover and :focus-visible state; Tab order follows the page.
+- Nothing scrolls sideways at 320 px; nothing fixed or sticky covers much of a short screen.
+- Text boxes grow with their text (min-height, never a fixed height on text), so larger line,
+  letter and word spacing never clips text.
+- Icon-only controls get an aria-label; an aria-label starts with the visible label.
 """
 FIXTURE_BRIEF = {
     "product": "Fixture Studio", "fictional": True, "fixture": True,
@@ -292,6 +319,416 @@ def html_problems(path: Path) -> list[str]:
 
 def safe_gate(raw: str) -> dict:
     return v1.safe_gate(raw)
+
+
+# ---------------------------------------------------------------- words (copy deck)
+
+WORD = re.compile(r"[\w'\u2019-]+")
+SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+NUMBER = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)*(?![\w])")
+PRICE = re.compile(r"[$\u20ac\u00a3]\s?\d|\d\s?(?:usd|eur|gbp|dollars?)\b|\bper (?:hour|day|week|month|year|seat|room|person|member|user)\b|/\s?(?:hr|hour|mo|month|seat|room)\b", re.I)
+# Words that only belong in the single fictional notice (the Morrow run hedged every line).
+DISCLAIMER = re.compile(r"\b(fictional|fiction|not a real|isn't real|is not real|hypothetical|made[- ]up|imaginary|proposed|concept study|design study)\b", re.I)
+GENERIC_CTAS = {"learn more", "click here", "submit", "read more", "more", "go", "continue", "start", "here"}
+COPY_CHECKS = ("clarity", "specificity", "jargon", "terms", "scannability", "cta", "worked_example", "notice", "claims", "drift")
+TASTE_ID = re.compile(r"^##\s+(T\d+)\b", re.M)
+TASTE_CITE = re.compile(r"\bT\d+\b")
+MAX_TASTE_CHARS = 60_000
+
+
+def words(text: str) -> int:
+    return len(WORD.findall(str(text or "")))
+
+
+def norm_text(text: str) -> str:
+    """Whitespace-, case- and quote-insensitive form used to match quoted text."""
+    t = str(text or "").replace("\u2019", "'").replace("\u2018", "'").replace("\u201c", '"').replace("\u201d", '"')
+    t = t.replace("\u2013", "-").replace("\u2014", "-").replace("\u00a0", " ")
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def deck_fields(deck: dict) -> list[tuple[str, str]]:
+    """Every visitor-facing text of a copy deck with its path (notices and voice kept apart)."""
+    out: list[tuple[str, str]] = []
+    if not isinstance(deck, dict):
+        return out
+    out.append(("promise", str(deck.get("promise", ""))))
+    for i, h in enumerate(deck.get("headlines") or []):
+        out.append((f"headlines[{i + 1}]", str((h or {}).get("text", "") if isinstance(h, dict) else h)))
+    out.append(("subhead", str(deck.get("subhead", ""))))
+    for i, p in enumerate(deck.get("proof_points") or []):
+        if isinstance(p, dict):
+            out += [(f"proof_points[{i + 1}].title", str(p.get("title", ""))), (f"proof_points[{i + 1}].text", str(p.get("text", "")))]
+    ctas = deck.get("ctas") or {}
+    if isinstance(ctas, dict):
+        out += [(f"ctas.{k}", str(v)) for k, v in ctas.items() if isinstance(v, str)]
+    for i, f in enumerate(deck.get("faq") or []):
+        if isinstance(f, dict):
+            out += [(f"faq[{i + 1}].q", str(f.get("q", ""))), (f"faq[{i + 1}].a", str(f.get("a", "")))]
+    for i, t in enumerate(deck.get("terms") or []):
+        if isinstance(t, dict):
+            out.append((f"terms[{i + 1}]", f"{t.get('term', '')}: {t.get('meaning', '')}"))
+    for i, w in enumerate(deck.get("worked_examples") or []):
+        if isinstance(w, dict):
+            out.append((f"worked_examples[{i + 1}]", f"{w.get('topic', '')}: {w.get('example', '')}"))
+    return out
+
+
+def deck_text(deck: dict) -> str:
+    parts = [t for _, t in deck_fields(deck)]
+    for n in (deck.get("notices") or []) if isinstance(deck, dict) else []:
+        if isinstance(n, dict):
+            parts.append(str(n.get("text", "")))
+    parts += [str(v) for v in (deck.get("voice") or [])] if isinstance(deck, dict) else []
+    return "\n".join(parts)
+
+
+def arithmetic_problems(text: str) -> list[str]:
+    """Check written sums like '6 x $12 = $72' or '2 \u00d7 45 min = 90 min' (only what is spelled out)."""
+    problems = []
+    num = r"[$\u20ac\u00a3]?\s?(\d+(?:\.\d+)?)"
+    for m in re.finditer(num + r"(?:\s*[a-z%]+)?\s*([x\u00d7*+\u2212-])\s*" + num + r"(?:\s*[a-z%]+)?(?:\s*([x\u00d7*+\u2212-])\s*" + num
+                         + r"(?:\s*[a-z%]+)?)?\s*=\s*" + num, text, re.I):
+        a, op1, b, op2, c, result = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6)
+        if op1 == "-" and not re.search(r"\s-\s", m.group(0)):
+            continue  # a hyphen inside a range or a word, not a minus
+
+        def apply(x: float, op: str, y: float) -> float:
+            return x * y if op in "x\u00d7*" else x + y if op == "+" else x - y
+        value = apply(float(a), op1, float(b))
+        if op2 and c:
+            value = apply(value, op2, float(c))
+        if abs(value - float(result)) > 0.011:
+            problems.append(f"'{m.group(0).strip()}' does not add up (it makes {round(value, 2):g})")
+    return problems
+
+
+def copy_contract(deck: Any, brief: dict) -> list[str]:
+    """Problems with a copy deck (empty = fine). Fixed rules; the content critic judges the rest."""
+    if not isinstance(deck, dict):
+        return ["copy.json is not an object"]
+    problems: list[str] = []
+    facts = brief.get("facts") or []
+    promise = str(deck.get("promise", "")).strip()
+    if not promise:
+        problems.append("promise: missing (one sentence)")
+    else:
+        if len(SENTENCE_END.findall(promise)) > 1:
+            problems.append("promise: write one sentence, not several")
+        if words(promise) > 25:
+            problems.append(f"promise: {words(promise)} words; keep it to 25 or fewer")
+    heads = deck.get("headlines")
+    if not isinstance(heads, list) or not 3 <= len(heads) <= 5:
+        problems.append("headlines: give 3-5 options")
+    else:
+        seen = set()
+        for i, h in enumerate(heads, 1):
+            text = str(h.get("text", "") if isinstance(h, dict) else "").strip()
+            if not text or not isinstance(h, dict) or not str(h.get("angle", "")).strip():
+                problems.append(f"headlines[{i}]: needs text and angle")
+                continue
+            if words(text) > 10:
+                problems.append(f"headlines[{i}]: {words(text)} words; keep headlines to 10 or fewer")
+            if norm_text(text) in seen:
+                problems.append(f"headlines[{i}]: duplicate option")
+            seen.add(norm_text(text))
+    subhead = str(deck.get("subhead", "")).strip()
+    if not subhead or words(subhead) > 35:
+        problems.append(f"subhead: needs 1-35 words (has {words(subhead)})")
+
+    def fact_refs(item: dict, where: str) -> None:
+        refs = item.get("facts")
+        if not isinstance(refs, list) or not refs or not all(isinstance(r, int) and 1 <= r <= len(facts) for r in refs):
+            problems.append(f"{where}: facts must list the brief fact numbers it rests on (1-{len(facts)})")
+    proofs = deck.get("proof_points")
+    if not isinstance(proofs, list) or len(proofs) != 3:
+        problems.append("proof_points: give exactly 3")
+    else:
+        for i, p in enumerate(proofs, 1):
+            if not isinstance(p, dict) or not str(p.get("title", "")).strip() or not str(p.get("text", "")).strip():
+                problems.append(f"proof_points[{i}]: needs title and text")
+                continue
+            if words(p["text"]) > 40:
+                problems.append(f"proof_points[{i}]: {words(p['text'])} words; keep to 40 or fewer")
+            fact_refs(p, f"proof_points[{i}]")
+    ctas = deck.get("ctas")
+    if not isinstance(ctas, dict) or not str(ctas.get("primary", "")).strip():
+        problems.append("ctas: needs a primary label")
+    else:
+        for key, label in ctas.items():
+            if not isinstance(label, str) or not label.strip():
+                continue
+            if words(label) > 5:
+                problems.append(f"ctas.{key}: '{label}' is {words(label)} words; say the action in 5 or fewer")
+            if norm_text(label).strip("!. ") in GENERIC_CTAS:
+                problems.append(f"ctas.{key}: '{label}' does not say what happens; name the action")
+    faq = deck.get("faq")
+    if not isinstance(faq, list) or not 3 <= len(faq) <= 6:
+        problems.append("faq: give 3-6 questions")
+    else:
+        for i, f in enumerate(faq, 1):
+            if not isinstance(f, dict) or not str(f.get("q", "")).strip() or not str(f.get("a", "")).strip():
+                problems.append(f"faq[{i}]: needs q and a")
+                continue
+            if words(f["a"]) > 60:
+                problems.append(f"faq[{i}].a: {words(f['a'])} words; answer in 60 or fewer")
+            fact_refs(f, f"faq[{i}]")
+    voice = deck.get("voice")
+    if not isinstance(voice, list) or not 3 <= len(voice) <= 6 or not all(isinstance(v, str) and v.strip() for v in voice):
+        problems.append("voice: give 3-6 short voice notes")
+    terms = deck.get("terms", [])
+    if not isinstance(terms, list) or not all(isinstance(t, dict) and str(t.get("term", "")).strip() and str(t.get("meaning", "")).strip() for t in terms):
+        problems.append("terms: a list of {term, meaning}")
+    else:
+        names = [norm_text(t["term"]) for t in terms]
+        if len(names) != len(set(names)):
+            problems.append("terms: each term is defined once")
+    notices = deck.get("notices", [])
+    if not isinstance(notices, list) or not all(isinstance(n, dict) and str(n.get("text", "")).strip() for n in notices):
+        problems.append("notices: a list of {id, text, placement}")
+        notices = []
+    ids = [str(n.get("id", "")) for n in notices]
+    if len(ids) != len(set(ids)):
+        problems.append("notices: each notice is stated once")
+    for n in notices:
+        if n.get("placement") not in ("header", "footer"):
+            problems.append(f"notices.{n.get('id')}: placement is header or footer")
+    if brief.get("fictional"):
+        if ids.count("fictional") != 1:
+            problems.append("notices: a fictional brief needs exactly one notice with id 'fictional' (stated once)")
+    elif "fictional" in ids:
+        problems.append("notices: this product is real; drop the fictional notice")
+    if brief.get("fictional"):  # the Morrow run hedged every line; real products may say "proposed" honestly
+        for path, text in deck_fields(deck):
+            m = DISCLAIMER.search(text)
+            if m and not path.startswith("worked_examples"):
+                problems.append(f"{path}: '{m.group(0)}' belongs only in the single notice; say it once there, not here")
+    visitor = [(p, t) for p, t in deck_fields(deck) if not p.startswith("worked_examples")]
+    examples = [w for w in (deck.get("worked_examples") or []) if isinstance(w, dict)]
+    if not isinstance(deck.get("worked_examples", []), list):
+        problems.append("worked_examples: a list of {topic, example}")
+    priced = [p for p, t in visitor if PRICE.search(t)]
+    if priced and not examples:
+        problems.append(f"worked_examples: prices or rates appear ({', '.join(priced[:3])}); add a worked example with the maths")
+    for i, w in enumerate(examples, 1):
+        ex = str(w.get("example", ""))
+        if not str(w.get("topic", "")).strip() or len(NUMBER.findall(ex)) < 2:
+            problems.append(f"worked_examples[{i}]: needs a topic and an example with its numbers")
+        problems += [f"worked_examples[{i}]: {p}" for p in arithmetic_problems(ex)]
+    known = {n.replace(",", "") for f in facts for n in NUMBER.findall(str(f))}
+    known |= {n.replace(",", "") for w in examples for n in NUMBER.findall(str(w.get("example", "")))}
+    known |= {str(i) for i in range(0, 11)}  # small counts ("three steps") need no source
+    for path, text in visitor:
+        if path.startswith("terms"):
+            continue
+        for n in NUMBER.findall(text):
+            if n.replace(",", "") not in known:
+                problems.append(f"{path}: the number {n} is not in the brief's facts or a worked example")
+    return problems
+
+
+def copy_facts(deck: dict, brief: dict) -> dict:
+    """Measured facts about the deck for the content critic (numbers, not judgement)."""
+    fields = deck_fields(deck)
+    sentences = []
+    for path, text in fields:
+        for s in re.split(r"(?<=[.!?])\s+", text):
+            if s.strip():
+                sentences.append((words(s), path, s.strip()))
+    longest = sorted(sentences, reverse=True)[:3]
+    disclaimers = [{"field": p, "word": m.group(0)} for p, t in fields for m in [DISCLAIMER.search(t)] if m
+                   and not p.startswith("worked_examples")]
+    return {"words": sum(words(t) for _, t in fields), "fields": len(fields),
+            "longest_sentences": [{"words": w, "field": p, "text": s[:160]} for w, p, s in longest],
+            "priced_fields": [p for p, t in fields if PRICE.search(t)],
+            "disclaimer_words_outside_notice": disclaimers,
+            "notices": [{"id": n.get("id"), "placement": n.get("placement")} for n in deck.get("notices") or [] if isinstance(n, dict)],
+            "facts_in_brief": len(brief.get("facts") or [])}
+
+
+def render_copy(deck: dict, brief: dict, title: str) -> str:
+    facts = brief.get("facts") or []
+    lines = [f"# {title} — {brief.get('product', '')}", "",
+             "The page's words. Use them as written; change them only through review.", "",
+             "## Promise (one sentence)", str(deck.get("promise", "")), "", "## Headline options"]
+    for i, h in enumerate(deck.get("headlines") or [], 1):
+        if isinstance(h, dict):
+            lines.append(f"{i}. {h.get('text', '')}  — angle: {h.get('angle', '')}")
+    lines += ["", "## Subhead", str(deck.get("subhead", "")), "", "## Proof points"]
+    for i, p in enumerate(deck.get("proof_points") or [], 1):
+        if isinstance(p, dict):
+            refs = ", ".join(f"fact {r}" for r in p.get("facts") or [])
+            lines.append(f"{i}. **{p.get('title', '')}** — {p.get('text', '')} ({refs})")
+    ctas = deck.get("ctas") or {}
+    lines += ["", "## Calls to action"] + [f"- {k}: {v}" for k, v in ctas.items()] if isinstance(ctas, dict) else []
+    lines += ["", "## FAQ"]
+    for i, f in enumerate(deck.get("faq") or [], 1):
+        if isinstance(f, dict):
+            lines += [f"{i}. Q: {f.get('q', '')}", f"   A: {f.get('a', '')}"]
+    if deck.get("terms"):
+        lines += ["", "## Terms (use exactly these words, the same way everywhere)"]
+        lines += [f"- {t.get('term')}: {t.get('meaning')}" for t in deck["terms"] if isinstance(t, dict)]
+    if deck.get("worked_examples"):
+        lines += ["", "## Worked examples (show next to the price or rule they explain)"]
+        lines += [f"- {w.get('topic')}: {w.get('example')}" for w in deck["worked_examples"] if isinstance(w, dict)]
+    lines += ["", "## Required notices (each ONCE, in its place; never repeated elsewhere)"]
+    lines += [f"- {n.get('id')} ({n.get('placement')}): {n.get('text')}" for n in deck.get("notices") or [] if isinstance(n, dict)] or ["- none"]
+    lines += ["", "## Voice"] + [f"- {v}" for v in deck.get("voice") or []]
+    lines += ["", "## Brief facts (numbered; proof points and answers cite them)"] + [f"{i}. {f}" for i, f in enumerate(facts, 1)]
+    return "\n".join(lines) + "\n"
+
+
+def verify_quotes(findings: list, haystack: str) -> tuple[list[dict], list[dict]]:
+    """Split findings into those whose quote is really in the text and those that are not."""
+    hay = norm_text(haystack)
+    kept, dropped = [], []
+    for f in findings if isinstance(findings, list) else []:
+        if not isinstance(f, dict):
+            continue
+        quote = re.sub(r"^-?\s*\[[a-z0-9]+\]\s*", "", norm_text(f.get("quote", ""))).strip('"')  # page-text.md line prefix
+        if quote and quote in hay:
+            kept.append({**f, "verified": True})
+        else:
+            dropped.append({**f, "verified": False, "dropped": "quote not found in the text" if quote else "no quote"})
+    return kept, dropped
+
+
+def taste_ids(text: str) -> list[str]:
+    return TASTE_ID.findall(text or "")
+
+
+class _PageText(html.parser.HTMLParser):
+    """Visible words of a static page, roughly as a browser's innerText joins them."""
+    BLOCK = {"address", "article", "aside", "blockquote", "br", "button", "dd", "details", "div", "dl", "dt",
+             "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "label",
+             "li", "main", "nav", "ol", "p", "section", "summary", "table", "td", "th", "tr", "ul"}
+    SKIP = {"head", "noscript", "script", "style", "template", "title"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.skip = 0
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self.SKIP:
+            self.skip += 1
+        elif tag in self.BLOCK:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.SKIP:
+            self.skip = max(0, self.skip - 1)
+        elif tag in self.BLOCK:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.skip:
+            self.parts.append(data)
+
+
+def page_words(html_text: str) -> str:
+    parser = _PageText()
+    parser.feed(html_text)
+    parser.close()
+    return re.sub(r"\n\s*", "\n", re.sub(r"[ \t\r\f\v]+", " ", "".join(parser.parts))).strip()
+
+
+def page_copy_problems(html_text: str, deck: dict, headline: str | None, fictional: bool, where: str) -> list[str]:
+    """A page against its copy deck: each notice exactly once, no hedges outside it, the deck's headline used."""
+    text = norm_text(page_words(html_text))
+    problems = []
+    rest = text
+    for n in deck.get("notices") or []:
+        if not isinstance(n, dict) or not str(n.get("text", "")).strip():
+            continue
+        wanted = norm_text(n["text"])
+        count = text.count(wanted)
+        if count == 0:
+            problems.append(f"{where}: the notice '{n.get('id')}' is missing; show the deck's words once ({n.get('placement')})")
+        elif count > 1:
+            problems.append(f"{where}: the notice '{n.get('id')}' appears {count} times; show it once")
+        rest = rest.replace(wanted, " ")
+    if fictional:
+        hedges = sorted({m.group(0).lower() for m in DISCLAIMER.finditer(rest)})
+        if hedges:
+            problems.append(f"{where}: {', '.join(repr(h) for h in hedges)} appear outside the single notice; "
+                            "say it once in the notice and nowhere else")
+    if headline and norm_text(headline) not in text:
+        problems.append(f"{where}: the headline '{headline}' is not on the page")
+    return problems
+
+
+def concept_words_problems(concept: dict, deck: dict | None, taste: list[str]) -> list[str]:
+    """The words and taste fields every concept carries in v2.1."""
+    where = f"concept {concept.get('id')}"
+    problems = []
+    if deck is not None:
+        options = [norm_text(h.get("text", "")) for h in deck.get("headlines") or [] if isinstance(h, dict)]
+        head = concept.get("headline")
+        if not isinstance(head, str) or norm_text(head) not in options:
+            problems.append(f"{where}: headline must be one of the copy deck's headline options, word for word")
+    use = concept.get("taste_use")
+    if not isinstance(use, str) or len(use.split()) < 8:
+        problems.append(f"{where}: taste_use must say in a sentence or two how this concept uses the owner's taste file")
+    elif taste:
+        cited = set(TASTE_CITE.findall(use))
+        if not cited:
+            problems.append(f"{where}: taste_use must cite the taste entries it follows or departs from (T1, T2 ...)")
+        unknown = cited - set(taste)
+        if unknown:
+            problems.append(f"{where}: taste_use cites {', '.join(sorted(unknown))}, which the taste file does not have")
+    return problems
+
+
+def describe_concept(c: dict) -> str:
+    fonts = c.get("fonts") or {}
+    pair = " + ".join(str((fonts.get(r) or {}).get("family", "?")) for r in ("display", "text"))
+    pal = c.get("palette") or {}
+    text = f"{pair}; dominant {pal.get('dominant', '?')}, accent {pal.get('accent', '?')}; signature: {c.get('signature_move', '')}"
+    return text + (f"; headline: \"{c['headline']}\"" if c.get("headline") else "")
+
+
+def trim_taste(text: str) -> tuple[str, bool]:
+    """Keep the newest whole entries when the taste file outgrows MAX_TASTE_CHARS."""
+    if len(text) <= MAX_TASTE_CHARS:
+        return text, False
+    starts = [m.start() for m in TASTE_ID.finditer(text)]
+    head = text[:starts[0]] if starts else ""
+    for s in starts:
+        if len(head) + len(text) - s <= MAX_TASTE_CHARS:
+            return head + text[s:], True
+    return text[-MAX_TASTE_CHARS:], True
+
+
+FIXTURE_DECK = {
+    "promise": "Fixture Studio proves the homepage workflow end to end without paying for a model.",
+    "headlines": [{"text": "Three pages, every gate, no model", "angle": "what it covers"},
+                  {"text": "Prove the workflow before you pay", "angle": "why it matters"},
+                  {"text": "Hand-written pages, real conversions", "angle": "how it works"}],
+    "subhead": "Hand-written pages stand in for the art director, so the gates, reviews and Penpot conversion run for real at no cost.",
+    "proof_points": [{"title": "Three stand-in pages", "text": "Three hand-written pages stand in for model concepts.", "facts": [1]},
+                     {"title": "Licensed fonts", "text": "Fonts are vendored OFL files, so every export carries its licence.", "facts": [2]},
+                     {"title": "Images made in code", "text": "Every image is made in code; nothing is generated or stock.", "facts": [3]}],
+    "ctas": {"primary": "Read the fixture"},
+    "faq": [{"q": "Does a fixture run cost anything?", "a": "No. Hand-written pages replace every model step.", "facts": [1]},
+            {"q": "Where do the fonts come from?", "a": "They are vendored OFL files that travel with the pages.", "facts": [2]},
+            {"q": "Are the images real photos?", "a": "No. Every image is drawn in code.", "facts": [3]}],
+    "voice": ["Plain words", "Short sentences", "Say what each step proves"],
+    "terms": [{"term": "fixture", "meaning": "a hand-written stand-in page used to test the workflow"}],
+    "notices": [{"id": "fictional", "text": "Fixture pages for workflow tests; nothing here is a product.", "placement": "footer"}],
+    "worked_examples": [],
+}
+FIXTURE_COPY_REVIEW = [
+    {"id": "K1", "check": "specificity", "element": "subhead",
+     "quote": "so the gates, reviews and Penpot conversion run for real at no cost",
+     "problem": "Fixture finding: 'run for real' is vague about what is proven.",
+     "suggestion": "Say which steps are exercised.", "severity": 3},
+    {"id": "K2", "check": "clarity", "element": "faq[1].a", "quote": "this sentence is not in the deck",
+     "problem": "Fixture finding with a quote that is not in the deck: the check must drop it.",
+     "suggestion": "none", "severity": 2},
+]
+FIXTURE_SUBHEAD_AFTER = ("Hand-written pages stand in for the art director, so every gate, review and Penpot "
+                         "conversion is exercised without a model.")
 
 
 # ---------------------------------------------------------------- fonts
@@ -571,19 +1008,24 @@ def craft_metrics(site: Path) -> dict:
 
 
 class Job:
-    def __init__(self, workspace: str, fixture: bool):
+    def __init__(self, workspace: str, fixture: bool, pilot: bool = False):
+        if fixture and pilot:
+            raise ValueError("a run is the fixture or the pilot, not both")
         self.root = Path(workspace).resolve()
         self.fixture = fixture
+        self.pilot = pilot  # fictional trials: the worker's provisional direction, never owner approval
         self.packet = self.root / "homepage"
         self.packet.mkdir(parents=True, exist_ok=True)
         self.state_path = self.packet / "job.json"
+        workflow = "design_homepage_v2" + ("_fixture" if fixture else "_pilot" if pilot else "")
         self.state = load(self.state_path) if self.state_path.exists() else {
-            "version": VERSION, "workflow": "design_homepage_v2" + ("_fixture" if fixture else ""),
+            "version": VERSION, "workflow": workflow,
             "created_at": now(), "stages": {}, "round": 0, "revisions": 0, "owner_changes": 0,
             "decision_seq": 0, "planned_seq": -1, "owner_direction_approved": False,
             "owner_final_approved": False}
-        if self.state.get("workflow", "").endswith("_fixture") != fixture:
-            raise ValueError("workspace belongs to the other workflow (fixture vs real); use a fresh workspace")
+        if self.state.get("workflow") != workflow:
+            raise ValueError(f"workspace belongs to another workflow ({self.state.get('workflow')}, not {workflow}); "
+                             "use a fresh workspace")
 
     def commit(self) -> None:
         save(self.state_path, self.state)
@@ -609,6 +1051,32 @@ class Job:
     def site(self) -> Path:
         return self.packet / "site"
 
+    @property
+    def copy_dir(self) -> Path:
+        return self.packet / "copy"
+
+    def deck(self) -> dict | None:
+        path = self.copy_dir / "copy.json"
+        return load(path) if path.exists() else None
+
+    def taste_list(self) -> list[str]:
+        path = self.packet / "taste" / "source.json"
+        return list(load(path).get("entries", [])) if path.exists() else []
+
+    def record_taste(self, key: str, entry: dict) -> None:
+        """Save one owner gate answer for the host's taste file (homepage_v2_control.py taste-sync).
+
+        Pilot runs record nothing: their direction is the worker's provisional pick, not the owner's taste.
+        """
+        if self.pilot:
+            return
+        path = self.packet / "taste" / "entries.json"
+        data = load(path) if path.exists() else {"workflow": self.state["workflow"], "entries": []}
+        brief = load(self.packet / "brief.json")
+        item = {"key": key, "recorded_at": now(), "product": brief.get("product"), "fixture": self.fixture, **entry}
+        data["entries"] = [e for e in data["entries"] if e.get("key") != key] + [item]
+        save(path, data)
+
     # -- brief and research
 
     def brief(self, raw: str) -> dict:
@@ -617,6 +1085,8 @@ class Job:
             raise ValueError("the fixture workflow refuses real briefs")
         if not self.fixture and value.get("fixture"):
             raise ValueError("the real workflow refuses fixture briefs")
+        if self.pilot and not value["fictional"]:
+            raise ValueError("the pilot workflow refuses real deliverables; real products go through design_homepage_v2")
         fp = digest(value)
         cached = self.cached("brief", fp)
         if cached:
@@ -637,8 +1107,8 @@ class Job:
                  f"Category: {value['category']}", f"Audience: {value['audience']}",
                  f"Homepage job: {value['purpose']}", f"Primary action: {value['cta']}",
                  f"Fictional: {value['fictional']}" + (f" — disclosure: {value['disclosure']}" if value['fictional'] else ""),
-                 "", "## Facts (the only source for claims on the page)"]
-        lines += [f"- {f}" for f in value["facts"]]
+                 "", "## Facts (the only source for claims on the page; the copy deck cites these numbers)"]
+        lines += [f"{i}. {f}" for i, f in enumerate(value["facts"], 1)]
         for key in ("headline", "voice", "sections", "brand", "avoid"):
             if value.get(key):
                 lines += ["", f"## {key.title()}", json.dumps(value[key], ensure_ascii=False, indent=1)]
@@ -701,10 +1171,162 @@ class Job:
         return self.receipt("references", fp, {"status": "completed", "captured": len(good), "failed": len(refs) - len(good),
                                                "references_path": "homepage/references/REFERENCES.md"})
 
+    # -- the owner's taste and the words
+
+    def taste(self, raw: str) -> dict:
+        text, truncated = trim_taste((raw or "").replace("\r\n", "\n"))
+        ids = taste_ids(text)
+        fp = digest({"taste": text})
+        cached = self.cached("taste", fp)
+        if cached:
+            return cached
+        body = text.strip() or "No entries yet: the owner has not answered a design gate since the taste file started."
+        (self.packet / "TASTE.md").write_text(
+            "# The owner's taste (private; passed into this run)\n\n"
+            "What the owner chose, rejected and said at earlier design gates. Treat it as evidence of their taste:\n"
+            "follow what they liked, avoid what they rejected, and say how (concepts cite entry ids such as T3 in\n"
+            "taste_use). The brief and its facts still win. Never quote these notes on the page.\n"
+            + ("\n(Older entries left out: the file is longer than this run takes.)\n" if truncated else "")
+            + "\n---\n\n" + body + "\n")
+        save(self.packet / "taste" / "source.json", {"sha256": hashlib.sha256((raw or "").encode()).hexdigest(),
+                                                     "chars": len(raw or ""), "entries": ids, "truncated": truncated,
+                                                     "received_at": now()})
+        return self.receipt("taste", fp, {"status": "completed", "entries": len(ids), "truncated": truncated,
+                                          "taste_path": "homepage/TASTE.md"})
+
+    def copy_fixture(self, phase: str) -> dict:
+        """Model-free stand-ins for the copywriter (draft, revise) and the content critic (review)."""
+        if phase not in ("draft", "review", "revise"):
+            raise ValueError("phase is draft, review or revise")
+        fp = digest({"phase": phase, "deck": FIXTURE_DECK, "review": FIXTURE_COPY_REVIEW})
+        cached = self.cached(f"copy_fixture-{phase}", fp)
+        if cached:
+            return cached
+        cdir = self.copy_dir
+        if phase == "draft":
+            save(cdir / "copy.json", FIXTURE_DECK)
+        elif phase == "review":
+            save(cdir / "review.json", {"target": "deck", "fixture": True, "summary": "Fixture content review (no model).",
+                                        "findings": FIXTURE_COPY_REVIEW})
+        else:
+            deck = load(cdir / "copy.json")
+            save(cdir / "copy.json", {**deck, "subhead": FIXTURE_SUBHEAD_AFTER})
+            (cdir / "CHANGES.md").write_text("# Copy changes (fixture)\n\n- K1: rewrote the subhead to say which steps are exercised.\n"
+                                           "- K2: its quote is not in the deck; nothing to change.\n")
+        return self.receipt(f"copy_fixture-{phase}", fp, {"status": "completed", "phase": phase})
+
+    def copy_check(self, phase: str) -> dict:
+        if phase not in ("draft", "final"):
+            raise ValueError("phase is draft or final")
+        cdir = self.copy_dir
+        path = cdir / "copy.json"
+        if not path.exists():
+            raise ValueError("homepage/copy/copy.json missing: the copywriter wrote nothing")
+        raw_deck = path.read_text()
+        review_text = (cdir / "review.json").read_text() if phase == "final" and (cdir / "review.json").exists() else ""
+        changes = (cdir / "CHANGES.md").read_text() if phase == "final" and (cdir / "CHANGES.md").exists() else ""
+        fp = digest({"phase": phase, "deck": raw_deck, "review": review_text, "changes": changes})
+        attempt = self.state.setdefault("copy_checks", {}).get(phase, 0)
+        key = f"copy_check-{phase}-{attempt}"
+        prior = self.state["stages"].get(key)
+        if prior and prior["fingerprint"] == fp:
+            return {**prior["output"], "reused": True}
+        if prior:  # the copywriter changed the deck since the last check: a new attempt
+            attempt += 1
+            key = f"copy_check-{phase}-{attempt}"
+        self.state["copy_checks"][phase] = attempt
+        brief = load(self.packet / "brief.json")
+        try:
+            deck = json.loads(raw_deck)
+        except ValueError as exc:
+            deck, problems = {}, [f"copy.json is not valid JSON ({exc.msg} at line {exc.lineno})"]
+        else:
+            problems = copy_contract(deck, brief)
+        out: dict[str, Any] = {"status": "completed", "phase": phase, "attempt": attempt}
+        check: dict[str, Any] = {"phase": phase, "attempt": attempt, "checked_at": now(), "problems": problems,
+                                 "facts": copy_facts(deck, brief) if isinstance(deck, dict) else {}}
+        if phase == "draft":
+            if not (cdir / "copy-draft.json").exists():  # the 'before' of the before/after
+                (cdir / "copy-draft.json").write_text(raw_deck)
+                (cdir / "COPY-draft.md").write_text(render_copy(deck, brief, "Copy deck (draft, before review)"))
+            (cdir / "COPY.md").write_text(render_copy(deck, brief, "Copy deck (draft)"))
+        else:
+            if not review_text:
+                raise ValueError("homepage/copy/review.json missing: the content review wrote nothing")
+            review = json.loads(review_text)
+            draft = load(cdir / "copy-draft.json") if (cdir / "copy-draft.json").exists() else {}
+            good, malformed = [], []
+            for f in review.get("findings", []) if isinstance(review, dict) else []:
+                ok = (isinstance(f, dict) and f.get("check") in COPY_CHECKS and isinstance(f.get("severity"), int)
+                      and 0 <= f["severity"] <= 4 and all(str(f.get(k, "")).strip() for k in ("id", "element", "quote", "problem", "suggestion")))
+                (good if ok else malformed).append(f)
+            kept, dropped = verify_quotes(good, deck_text(draft) if draft else raw_deck)
+            dropped += [{**f, "verified": False, "dropped": "malformed finding"} for f in malformed if isinstance(f, dict)]
+            final_text = norm_text(deck_text(deck)) if isinstance(deck, dict) else ""
+            answers = {}
+            for f in kept:
+                answer = next((ln.strip() for ln in changes.splitlines() if re.search(rf"\b{re.escape(str(f['id']))}\b", ln)), "")
+                gone = norm_text(f["quote"]).strip('"') not in final_text
+                answers[f["id"]] = {"quote_gone": gone, "answer": answer}
+                if f["severity"] >= 3 and not gone and not answer:
+                    problems.append(f"{f['id']} (severity {f['severity']}) still has \"{f['quote'][:80]}\" and CHANGES.md does not answer it")
+            save(cdir / "review-checked.json", {"verified": kept, "dropped": dropped, "answers": answers})
+            changed = self.copy_diff(draft, deck if isinstance(deck, dict) else {}, kept, dropped, answers)
+            (cdir / "COPY.md").write_text(render_copy(deck, brief, "Copy deck (final, after content review)"))
+            check.update({"verified_findings": len(kept), "dropped_findings": len(dropped), "changed_fields": changed})
+            out.update({"verified_findings": len(kept), "dropped_findings": len(dropped), "changed_fields": changed,
+                        "diff_path": "homepage/copy/COPY-DIFF.md"})
+        check["verdict"] = "ok" if not problems else "retry"
+        save(cdir / "check.json", check)
+        save(cdir / f"check-{phase}-{attempt}.json", check)
+        out.update({"verdict": check["verdict"], "problems": len(problems), "copy_path": "homepage/copy/COPY.md"})
+        return self.receipt(key, fp, out)
+
+    def copy_diff(self, before: dict, after: dict, kept: list, dropped: list, answers: dict) -> int:
+        old, new = dict(deck_fields(before)), dict(deck_fields(after))
+        for n in before.get("notices") or []:
+            if isinstance(n, dict):
+                old[f"notice {n.get('id')}"] = f"{n.get('text')} ({n.get('placement')})"
+        for n in after.get("notices") or []:
+            if isinstance(n, dict):
+                new[f"notice {n.get('id')}"] = f"{n.get('text')} ({n.get('placement')})"
+        rows = [(k, old.get(k, ""), new.get(k, "")) for k in list(dict.fromkeys([*old, *new])) if old.get(k, "") != new.get(k, "")]
+        cell = lambda s: (s or "(none)").replace("|", "\\|").replace("\n", " ")  # noqa: E731
+        lines = ["# Copy deck \u2014 before and after the content review", "",
+                 "Before: homepage/copy/copy-draft.json (the copywriter's draft). After: homepage/copy/copy.json.",
+                 f"Content review: {len(kept)} findings checked against the draft's words, {len(dropped)} dropped "
+                 "(quote not in the draft, or malformed).", "", "## Findings and answers", ""]
+        for f in kept:
+            a = answers.get(f["id"], {})
+            lines += [f"- {f['id']} [{f['check']}, severity {f['severity']}] {f['element']}: \"{f['quote']}\"",
+                      f"  Problem: {f['problem']}", f"  Suggestion: {f['suggestion']}",
+                      f"  Result: {'quote gone from the deck' if a.get('quote_gone') else 'quote still in the deck'}"
+                      + (f"; copywriter: {a['answer']}" if a.get("answer") else "")]
+        for f in dropped:
+            lines.append(f"- DROPPED {f.get('id')} ({f.get('dropped')}): \"{str(f.get('quote', ''))[:120]}\"")
+        lines += ["", f"## Changed fields ({len(rows)} of {len(set(old) | set(new))})", "", "| field | before | after |", "|---|---|---|"]
+        lines += [f"| {k} | {cell(a)} | {cell(b)} |" for k, a, b in rows] or ["| (none) | | |"]
+        (self.copy_dir / "COPY-DIFF.md").write_text("\n".join(lines) + "\n")
+        return len(rows)
+
+    def copy_next(self) -> dict:
+        """Loop control after the final copy check: report its verdict, change nothing."""
+        path = self.copy_dir / "check.json"
+        if not path.exists():
+            raise ValueError("no copy check to act on")
+        check = load(path)
+        if check.get("phase") != "final":
+            raise ValueError("the last copy check was not the final one")
+        return {"status": "completed", "verdict": check["verdict"], "attempt": check.get("attempt"),
+                "problems": len(check.get("problems", []))}
+
     # -- concepts
 
     def concepts_fixture(self) -> dict:
-        fp = digest({"fixture": FIXTURE_CONCEPTS, "site": tree_digest(FIXTURE_SITE)})
+        deck = self.deck() or FIXTURE_DECK
+        heads = [h["text"] for h in deck.get("headlines", [])][:3]
+        taste = self.taste_list()
+        fp = digest({"fixture": FIXTURE_CONCEPTS, "site": tree_digest(FIXTURE_SITE), "heads": heads, "taste": taste})
         cached = self.cached("concepts_fixture", fp)
         if cached:
             return cached
@@ -728,9 +1350,12 @@ class Job:
             shutil.copytree(FIXTURE_SITE, dest, ignore=shutil.ignore_patterns("*.html"))
             shutil.copyfile(FIXTURE_SITE / page, dest / "index.html")
             words = ("Fixture concept " + name + " stands in for an art director's design brief. ") * 20
+            use = (f"Fixture stand-in: it follows {', '.join(taste)} from the owner's taste file." if taste else
+                   "Fixture stand-in: the taste file has no entries yet, so there is nothing to follow.")
             concepts.append({"id": cid, "name": name, "brief": words.strip(), "fonts": fonts, "palette": palette,
                              "imagery": "code-made images and inline SVG", "signature_move": sig[0],
-                             "motion": "none (fixture)", "layout_signature": sig, "page": f"homepage/concepts/{cid}/index.html"})
+                             "motion": "none (fixture)", "layout_signature": sig, "page": f"homepage/concepts/{cid}/index.html",
+                             "headline": heads[CONCEPT_IDS.index(cid) % len(heads)] if heads else "", "taste_use": use})
         save(self.concepts_dir / "concepts.json", {"concepts": concepts, "fixture": True})
         return self.receipt("concepts_fixture", fp, {"status": "completed", "concepts": len(concepts)})
 
@@ -764,9 +1389,16 @@ class Job:
             save(cdir / f"check-{phase}-{attempt}.json", check)
             return self.receipt(key, fp, {"status": "completed", "phase": phase, "attempt": attempt, "verdict": "retry",
                                           "problems": len(problems), "check_path": "homepage/concepts/check.json"})
+        deck = self.deck()
+        taste = self.taste_list()
         for c in concepts:
             problems += concept_contract(c, brand_fonts)
-            problems += html_problems(cdir / c["id"] / "index.html")
+            page = cdir / c["id"] / "index.html"
+            problems += html_problems(page)
+            problems += concept_words_problems(c, deck, taste)
+            if deck is not None and not spec.get("fixture") and page.is_file():  # fixture pages predate any deck
+                problems += page_copy_problems(page.read_text(errors="replace"), deck, c.get("headline"),
+                                               bool(brief.get("fictional")), f"concept {c['id']} page")
         font_issues: list[str] = []
         faces_by_concept: dict[str, list[dict]] = {}
         for c in concepts:
@@ -846,7 +1478,8 @@ class Job:
         output = {"status": "completed", "phase": phase, "attempt": attempt, "verdict": verdict, "problems": len(problems),
                   "contact_sheet": sheet, "check_path": "homepage/concepts/check.json"}
         if verdict == "ok":
-            output["questions"] = [{"id": "direction", "question": "Choose one concept (A, B or C) and add notes; this is the owner's taste decision",
+            output["questions"] = [{"id": "direction", "question": "Choose one concept (A, B or C) and add notes; this is the owner's taste decision "
+                                    "(your pick, the ones you pass over and your notes go into your private taste file)",
                                     "options": [f"{c['id']}: {c['name']}" for c in concepts]}]
         return self.receipt(key, fp, output)
 
@@ -873,11 +1506,14 @@ class Job:
             fonts = c.get("fonts") or {}
             pair = " + ".join(str(fonts.get(r, {}).get("family", "?")) for r in ("display", "text"))
             cols.append(f'<section><h2>{c["id"]} — {_esc(c.get("name", ""))}</h2><p class="m">{_esc(pair)}</p><p class="sw">{sw}</p>'
-                        f'<p>{_esc(c.get("signature_move", ""))}</p><div class="shots"><img src="shots/{c["id"].lower()}-1440.png" class="d">'
+                        f'<p>{_esc(c.get("signature_move", ""))}</p>'
+                        + (f'<p class="h">\u201c{_esc(c["headline"])}\u201d</p>' if c.get("headline") else "")
+                        + (f'<p class="t"><b>Your taste:</b> {_esc(c["taste_use"])}</p>' if c.get("taste_use") else "")
+                        + f'<div class="shots"><img src="shots/{c["id"].lower()}-1440.png" class="d">'
                         f'<img src="shots/{c["id"].lower()}-390.png" class="p"></div></section>')
         html = ('<!doctype html><meta charset="utf-8"><title>Concepts</title><style>body{margin:0;padding:32px;background:#e9e7e2;'
                 'font:16px/1.4 system-ui;color:#222}main{display:grid;grid-template-columns:repeat(3,1fr);gap:28px}h2{font-size:22px;margin:0 0 4px}'
-                '.m{color:#555;margin:0 0 6px}.sw span{display:inline-block;width:28px;height:28px;border-radius:4px;margin-right:4px;border:1px solid #0002}'
+                '.m{color:#555;margin:0 0 6px}.h{font-weight:700;margin:0 0 6px}.t{font-size:14px;color:#333;margin:0 0 10px}.sw span{display:inline-block;width:28px;height:28px;border-radius:4px;margin-right:4px;border:1px solid #0002}'
                 '.shots{display:grid;grid-template-columns:3fr 1fr;gap:10px;align-items:start}img{width:100%;border:1px solid #0003}</style>'
                 '<h1 style="margin:0 0 20px">Three directions — choose one</h1><main>' + "".join(cols) + "</main>")
         (cdir / "sheet.html").write_text(html)
@@ -896,9 +1532,12 @@ class Job:
             raise ValueError("concepts have not passed the final check; no direction can be recorded")
         if decision.get("concept") not in CONCEPT_IDS:
             raise ValueError("direction needs concept A, B or C")
-        want = "fixture-test" if self.fixture else "owner-direction"
+        want = "fixture-test" if self.fixture else "provisional-fictional" if self.pilot else "owner-direction"
         if decision.get("approval") != want:
             raise ValueError(f"this workflow's direction gate needs approval {want!r}")
+        if self.pilot and words(str(decision.get("notes", ""))) < 8:
+            raise ValueError("a provisional pick needs notes: why this concept (8 words or more)")
+        owner = not self.fixture and not self.pilot
         fp = digest(decision)
         cached = self.cached("direction", fp)
         if cached:
@@ -915,11 +1554,16 @@ class Job:
         if (self.packet / "assets").exists():
             shutil.copytree(self.packet / "assets", site / "images")
         save(self.packet / "direction.json", {**decision, "concept_name": chosen["name"], "saved_at": now(),
-                                              "owner_approved": not self.fixture})
+                                              "owner_approved": owner, "provisional": self.pilot})
+        self.record_taste("direction", {
+            "gate": "direction", "choice": f"{chosen['id']}: {chosen['name']}", "choice_summary": describe_concept(chosen),
+            "rejected": [{"option": f"{c['id']}: {c['name']}", "summary": describe_concept(c)}
+                         for c in spec["concepts"] if c["id"] != chosen["id"]],
+            "owner_words": decision.get("notes", "")})
         self.state["direction"] = {**decision, "concept_name": chosen["name"]}
-        self.state["owner_direction_approved"] = not self.fixture
+        self.state["owner_direction_approved"] = owner
         return self.receipt("direction", fp, {"status": "completed", "concept": chosen["id"], "concept_name": chosen["name"],
-                                              "owner_direction_approved": not self.fixture})
+                                              "owner_direction_approved": owner, "provisional": self.pilot})
 
     def build_fixture(self) -> dict:
         cid = self.state["direction"]["concept"]
@@ -999,7 +1643,7 @@ class Job:
         done = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if done.returncode != 0:
             raise ValueError("capture failed: " + (done.stderr or done.stdout)[-600:])
-        for sub in ("critic", "craft"):
+        for sub in ("critic", "craft", "content"):
             (review / sub).mkdir(exist_ok=True)
         brief = load(self.packet / "brief.json")
         direction = self.state.get("direction", {})
@@ -1038,6 +1682,49 @@ class Job:
                                                       "craft_facts": "review/craft-facts.md",
                                                       "scale_ratio_1440": metrics.get("1440", {}).get("scale_ratio")})
 
+    def runtime(self) -> dict:
+        """Use the page for real: keyboard, focus, names, reflow, zoom, text spacing, motion, hover."""
+        number = self.state["round"]
+        review = self.root / "review"
+        out = review / "runtime"
+        fp = digest({"round": number, "site": tree_digest(self.site)})
+        cached = self.cached(f"runtime-{number}", fp)
+        if cached:
+            if not (out / "runtime.json").exists() or not (review / "page-text.md").exists():
+                raise ValueError("saved runtime results missing; refusing a silent repeat")
+            return cached
+        if f"measure-{number}" not in self.state["stages"]:
+            raise ValueError(f"round {number} has not been measured yet")
+        raw = rtc.measure(self.site, "index.html", BROWSER, SERVE_HOST)
+        result = rtc.write_outputs(raw, out)
+        if all(s["status"] == "not run" for s in result["checks"].values()):
+            raise ValueError("runtime checks could not run: " + "; ".join(map(str, result.get("errors") or []))[:400])
+        shutil.copyfile(out / "page-text.md", review / "page-text.md")
+        save(self.packet / "rounds" / f"r{number:02d}" / "runtime.json", result)
+        return self.receipt(f"runtime-{number}", fp, {
+            "status": "completed", "round": number, "failures": result["failures"], "findings": len(result["findings"]),
+            "checks": {c: s["status"] for c, s in result["checks"].items()}, "errors": len(result.get("errors") or []),
+            "runtime_path": "review/runtime/RUNTIME.md", "page_text": "review/page-text.md"})
+
+    def content_fixture(self) -> dict:
+        """Stand-in content review of the page: one finding quoting the real page text, one that cannot be found."""
+        number = self.state["round"]
+        review = self.root / "review"
+        text = (review / "page-text.md").read_text() if (review / "page-text.md").exists() else ""
+        line = next((m.group(1).strip() for m in re.finditer(r"^- \[h[1-3]\] (.+)$", text, re.M)), "")
+        if not line:
+            raise ValueError("review/page-text.md has no heading to quote; run the runtime stage first")
+        fp = digest({"round": number, "line": line})
+        cached = self.cached(f"content_fixture-{number}", fp)
+        if cached:
+            return cached
+        save(review / "content" / "content.json", {"target": "page", "fixture": True, "summary": "Fixture content review (no model).", "findings": [
+            {"id": "K1", "check": "clarity", "element": "first heading", "quote": line, "problem": "fixture finding on real page text",
+             "suggestion": "fixture fix", "severity": 2},
+            {"id": "K2", "check": "drift", "element": "nowhere", "quote": "words that are not on this page",
+             "problem": "fixture finding whose quote is not on the page: combine must drop it", "suggestion": "none", "severity": 3}]})
+        return self.receipt(f"content_fixture-{number}", fp, {"status": "completed", "round": number, "quoted": line[:80]})
+
     def review_fixture(self) -> dict:
         number = self.state["round"]
         fp = digest({"round": number})
@@ -1061,11 +1748,34 @@ class Job:
         if not craft_files:
             raise ValueError("no craft review in review/craft/")
         craft = [load(f) for f in craft_files]
-        fp = digest({"round": number, "merged": merged, "craft": craft})
+        for need in ("runtime/runtime.json", "content/content.json", "page-text.md"):
+            if not (review / need).exists():
+                raise ValueError(f"review/{need} missing: the runtime checks and the content review run before combine")
+        runtime = load(review / "runtime" / "runtime.json")
+        content = load(review / "content" / "content.json")
+        page_text = (review / "page-text.md").read_text()
+        fp = digest({"round": number, "merged": merged, "craft": craft, "runtime": runtime, "content": content, "text": page_text})
         cached = self.cached(f"combine-{number}", fp)
         if cached:
             return cached
         blocking, minor = [], []
+        for f in runtime.get("findings", []):
+            item = {"source": "runtime", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
+                    "problem": f.get("problem"), "evidence": f.get("evidence"), "suggestion": f.get("suggestion"),
+                    "criterion": f.get("criterion"), "check": f.get("check"), "viewport": f.get("viewport")}
+            sev = f.get("severity") if isinstance(f.get("severity"), int) else 0
+            # fixture pages are converter fixtures, not designs: their runtime findings stay advisory
+            (blocking if sev >= 3 and not self.fixture else minor).append(item)
+        good = [f for f in content.get("findings", []) if isinstance(f, dict) and f.get("check") in COPY_CHECKS
+                and isinstance(f.get("severity"), int) and str(f.get("element", "")).strip() and str(f.get("problem", "")).strip()]
+        kept, dropped = verify_quotes(good, page_text)
+        dropped += [{**f, "verified": False, "dropped": "malformed finding"} for f in content.get("findings", [])
+                    if isinstance(f, dict) and f not in good]
+        for f in kept:
+            item = {"source": "content", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
+                    "problem": f.get("problem"), "evidence": f"quote: \"{f.get('quote')}\"", "suggestion": f.get("suggestion"),
+                    "check": f.get("check")}
+            (blocking if f["severity"] >= 3 and not self.fixture else minor).append(item)
         for f in merged.get("findings", []):
             item = {"source": "usability", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
                     "problem": f.get("problem"), "evidence": f.get("evidence"), "suggestion": f.get("suggestion"),
@@ -1090,14 +1800,19 @@ class Job:
         shutil.copytree(review, rdir / "review")
         summary = {"round": number, "verdict": verdict, "blocking": len(blocking), "minor": len(minor),
                    "unresolved_blocking": [] if verdict == "revise" else blocking,
-                   "template_test": template, "revisions_done": self.state["revisions"], "decided_at": now()}
+                   "template_test": template, "revisions_done": self.state["revisions"], "decided_at": now(),
+                   "by_source": {s: sum(1 for i in blocking + minor if i["source"] == s) for s in ("usability", "craft", "runtime", "content")},
+                   "runtime_checks": {c: s.get("status") for c, s in runtime.get("checks", {}).items()},
+                   "runtime_errors": runtime.get("errors") or [],
+                   "content_verified": len(kept), "content_dropped": [{k: f.get(k) for k in ("id", "quote", "dropped")} for f in dropped]}
         save(rdir / "decision.json", {**summary, "fixes": fixes})
         self.state["verdict"] = verdict
         self.state["fix_list"] = fixes
         self.state["decision_seq"] += 1
         self.state["last_round"] = summary
-        return self.receipt(f"combine-{number}", fp, {"status": "completed", **{k: summary[k] for k in ("round", "verdict", "blocking", "minor")},
-                                                      "unresolved_blocking": len(summary["unresolved_blocking"])})
+        return self.receipt(f"combine-{number}", fp, {"status": "completed", **{k: summary[k] for k in ("round", "verdict", "blocking", "minor", "by_source")},
+                                                      "unresolved_blocking": len(summary["unresolved_blocking"]),
+                                                      "content_dropped": len(summary["content_dropped"])})
 
     def next_round(self) -> dict:
         return {"status": "completed", "verdict": self.state.get("verdict"), "round": self.state["round"]}
@@ -1185,12 +1900,15 @@ class Job:
             shutil.copytree(self.packet / "rounds", dest / "rounds")
         if (self.packet / "references" / "REFERENCES.md").exists():
             shutil.copyfile(self.packet / "references" / "REFERENCES.md", dest / "REFERENCES.md")
+        if self.copy_dir.exists():  # the words; the owner's taste notes stay out of the packet
+            shutil.copytree(self.copy_dir, dest / "copy")
         brief = load(self.packet / "brief.json")
         last = self.state.get("last_round", {})
         fonts = conv.get("fonts", [])
         lines = [f"# Homepage handoff — {brief['product']} (round {number})", "",
                  f"Direction: {self.state['direction']['concept']} — {self.state['direction']['concept_name']}"
-                 + (" (fixture-test, not owner approval)" if self.fixture else " (owner direction)"),
+                 + (" (fixture-test, not owner approval)" if self.fixture
+                    else " (provisional fictional pick by the worker, not owner direction)" if self.pilot else " (owner direction)"),
                  f"Editable master: Penpot file {conv['file']['name']} — {conv['file']['url']}",
                  f"Boards: {', '.join(b['name'] for b in conv['boards'])}; components {len(conv['components'])}, instances {len(conv['instances'])},"
                  f" shared colours {len(conv['colors'])}, typographies {len(conv['typographies'])}.",
@@ -1203,11 +1921,24 @@ class Job:
             lines.append(f"- UNRESOLVED {item.get('source')} {item.get('id')}: {item.get('problem')} ({item.get('element')})")
         for t in last.get("template_test", []):
             lines.append(f"- Craft critic 'could this be a template?': {t.get('verdict')} — {t.get('evidence', '')}")
+        deck = self.deck() or {}
+        copy_check = load(self.copy_dir / "check.json") if (self.copy_dir / "check.json").exists() else {}
+        lines += ["", "## Words",
+                  f"Copy deck: copy/COPY.md; before/after the content review: copy/COPY-DIFF.md ({copy_check.get('verified_findings', 0)} findings checked,"
+                  f" {copy_check.get('dropped_findings', 0)} dropped, {copy_check.get('changed_fields', 0)} fields changed)."]
+        lines += [f"- Notice '{n.get('id')}' ({n.get('placement')}, shown once): {n.get('text')}" for n in deck.get("notices") or [] if isinstance(n, dict)]
+        lines.append(f"- Content review of the built page, last round: {last.get('content_verified', 0)} findings checked against the page text,"
+                     f" {len(last.get('content_dropped', []))} dropped (quote not on the page).")
+        checks = last.get("runtime_checks", {})
+        lines += ["", "## Runtime checks (real browser, fixed rules, no model; last round)",
+                  ", ".join(f"{c} {s}" for c, s in checks.items()) or "not run"]
+        lines += [f"- Could not check: {e}" for e in last.get("runtime_errors", [])]
         lines += ["", "## Fonts (licences travel with the files)"]
         lines += [f"- {f.get('family')} {f.get('weight')} {f.get('style')}: {f.get('licence', {}).get('file') if isinstance(f.get('licence'), dict) else f.get('licence')}" for f in fonts]
         lines += ["", "## Converter notes (approximations, never silent)"]
         lines += [f"- {k}: {v}" for k, v in sorted(conv["issue_counts"].items())] or ["- none"]
-        lines += ["", "## Not checked here", "- Motion as designed (renders use reduced motion), real keyboard/screen-reader use beyond axe and the critics,",
+        lines += ["", "## Not checked here", "- Real screen-reader, voice and switch use (the runtime checks cover Tab order, focus, names, reflow,",
+                  "  400% zoom, text spacing, reduced motion and hover), motion as designed (renders use reduced motion),",
                   "  real content beyond the brief's facts, publication. AI review is advisory; the owner decides taste.",
                   "", f"Owner taste approval: {'not applicable (fixture)' if self.fixture else 'pending the final gate'}."]
         (dest / "HANDOFF.md").write_text("\n".join(lines) + "\n")
@@ -1240,6 +1971,9 @@ class Job:
             if cached:
                 return cached
             save(self.packet / f"final-r{number:02d}.json", {**decision, "recorded_at": now()})
+            self.record_taste(f"final-r{number:02d}", {"gate": "final", "round": number, "about": self.final_about(),
+                                                        "choice": "request changes", "rejected": [{"option": "approve as it is"}],
+                                                        "owner_words": notes})
             self.state["verdict"] = "owner_changes"
             self.state["fix_list"] = [{"source": "owner", "id": f"O{i}", "severity": 4, "problem": n} for i, n in enumerate(notes, 1)]
             self.state["decision_seq"] += 1
@@ -1249,19 +1983,27 @@ class Job:
         if decision.get("approval") != want:
             raise ValueError(f"final gate needs approval {want!r} or verdict request_changes")
         save(self.packet / "owner-final.json", {**decision, "round": number, "recorded_at": now(), "owner_approved": not self.fixture})
+        self.record_taste(f"final-r{number:02d}", {"gate": "final", "round": number, "about": self.final_about(),
+                                                    "choice": "approve", "rejected": [{"option": "request changes"}],
+                                                    "owner_words": decision.get("notes") or decision.get("comment") or ""})
         self.state["owner_final_approved"] = not self.fixture
         self.commit()
         return {"status": "completed", "round": number, "verdict": "approved", "final_owner_approved": not self.fixture}
+
+
+    def final_about(self) -> str:
+        d = self.state.get("direction", {})
+        return f"the built homepage, direction {d.get('concept', '?')}: {d.get('concept_name', '?')}, round {self.state['round']}"
 
 
 def _esc(value: str) -> str:
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-STAGES = ("brief", "references", "concepts_fixture", "concepts_check", "concepts_next", "direction", "build_fixture",
-          "plan_round", "revise_fixture", "measure", "review_fixture", "combine", "next_round", "convert", "verify",
-          "handoff", "final")
-FIXTURE_ONLY = {"concepts_fixture", "build_fixture", "revise_fixture", "review_fixture"}
+STAGES = ("brief", "taste", "copy_fixture", "copy_check", "copy_next", "references", "concepts_fixture", "concepts_check",
+          "concepts_next", "direction", "build_fixture", "plan_round", "revise_fixture", "measure", "runtime", "review_fixture",
+          "content_fixture", "combine", "next_round", "convert", "verify", "handoff", "final")
+FIXTURE_ONLY = {"copy_fixture", "concepts_fixture", "build_fixture", "revise_fixture", "review_fixture", "content_fixture"}
 
 
 def main() -> None:
@@ -1270,6 +2012,7 @@ def main() -> None:
     parser.add_argument("stage", choices=STAGES)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--fixture", action="store_true")
+    parser.add_argument("--pilot", action="store_true", help="fictional trial: provisional direction, never owner approval")
     parser.add_argument("--phase", default="draft")
     parser.add_argument("--browser", default=None)
     parser.add_argument("--serve-host", default=None)
@@ -1278,10 +2021,15 @@ def main() -> None:
     SERVE_HOST = args.serve_host or SERVE_HOST
     if args.stage in FIXTURE_ONLY and not args.fixture:
         raise SystemExit(f"{args.stage} is a fixture-only stage")
-    job = Job(args.workspace, args.fixture)
+    try:
+        job = Job(args.workspace, args.fixture, args.pilot)
+    except ValueError as exc:
+        raise SystemExit(f"{args.stage}: {exc}") from None
     raw = os.environ.get("HOMEPAGE_DATA", "")
     methods = {
-        "brief": lambda: job.brief(raw), "references": lambda: job.references(raw),
+        "brief": lambda: job.brief(raw), "references": lambda: job.references(raw), "taste": lambda: job.taste(raw),
+        "copy_fixture": lambda: job.copy_fixture(args.phase), "copy_check": lambda: job.copy_check(args.phase),
+        "copy_next": job.copy_next, "runtime": job.runtime, "content_fixture": job.content_fixture,
         "concepts_fixture": job.concepts_fixture, "concepts_check": lambda: job.concepts_check(args.phase),
         "concepts_next": job.concepts_next,
         "direction": lambda: job.direction(raw), "build_fixture": job.build_fixture, "plan_round": job.plan_round,

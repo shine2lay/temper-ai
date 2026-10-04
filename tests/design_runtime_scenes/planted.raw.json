@@ -1,0 +1,1554 @@
+{
+"page": "planted.html",
+"errors": [],
+"motion": {
+"reduce": {
+"declared": [
+{
+"tag": "svg",
+"id": null,
+"cls": "hero-art",
+"label": "",
+"section": "Hero",
+"data_name": null,
+"pseudo": null,
+"name": "drift",
+"duration": 6,
+"iterations": "infinite",
+"play_state": "running",
+"props": [
+"transform"
+]
+}
+],
+"declared_count": 1,
+"running": 1
+},
+"allowed": {
+"declared": [
+{
+"tag": "h1",
+"id": null,
+"cls": null,
+"label": "A quiet desk for every team",
+"section": "Hero",
+"data_name": null,
+"pseudo": null,
+"name": "rise",
+"duration": 0.6,
+"iterations": "1",
+"play_state": "running",
+"props": [
+"opacity",
+"transform"
+]
+},
+{
+"tag": "svg",
+"id": null,
+"cls": "hero-art",
+"label": "",
+"section": "Hero",
+"data_name": null,
+"pseudo": null,
+"name": "drift",
+"duration": 6,
+"iterations": "infinite",
+"play_state": "running",
+"props": [
+"transform"
+]
+}
+],
+"declared_count": 2,
+"running": 2
+}
+},
+"focus": {
+"viewport_meta": "width=device-width, initial-scale=1",
+"title": "Lantern Desk — runtime checks, planted problems",
+"candidates": [
+{
+"i": 0,
+"tag": "a",
+"id": null,
+"cls": "skip",
+"label": "Skip to content",
+"section": "page",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 1,
+"tag": "a",
+"id": null,
+"cls": "logo",
+"label": "Lantern Desk",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 2,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "How it works",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 3,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Pricing",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 4,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Questions",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 5,
+"tag": "button",
+"id": null,
+"cls": "icon-btn",
+"label": "",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 6,
+"tag": "a",
+"id": null,
+"cls": "btn-primary",
+"label": "See plans",
+"section": "Hero",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 7,
+"tag": "a",
+"id": null,
+"cls": "btn-ghost",
+"label": "How it works",
+"section": "Hero",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 8,
+"tag": "a",
+"id": null,
+"cls": "btn.btn-primary",
+"label": "Continue",
+"section": "Pricing",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 9,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Can guests book?",
+"section": "Questions",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 10,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Does it work on phones?",
+"section": "Questions",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 11,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Can we try it first?",
+"section": "Questions",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 12,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Privacy",
+"section": "Footer",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 13,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Contact",
+"section": "Footer",
+"data_name": null,
+"tabindex": null,
+"visible": true,
+"disabled": false,
+"inert": false
+},
+{
+"i": 14,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Questions",
+"section": "Footer",
+"data_name": null,
+"tabindex": "2",
+"visible": true,
+"disabled": false,
+"inert": false
+}
+],
+"seq": [
+{
+"i": 14,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Questions",
+"section": "Footer",
+"data_name": null,
+"tabindex": "2",
+"rect": {
+"x": 195,
+"y": 768,
+"w": 64,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(244, 239, 230)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(244, 239, 230)",
+"against": "rgb(31, 42, 51)",
+"ratio": 12.76
+},
+"focus_visible": true
+},
+{
+"i": 0,
+"tag": "a",
+"id": null,
+"cls": "skip",
+"label": "Skip to content",
+"section": "page",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 16,
+"y": 8,
+"w": 121,
+"h": 40
+},
+"visible": true,
+"in_view": true,
+"covered": 5,
+"covered_by": {
+"tag": "a",
+"id": null,
+"cls": "logo",
+"label": "Lantern Desk",
+"section": "Header",
+"data_name": null
+},
+"changes": [
+"revealed on focus",
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 1,
+"tag": "a",
+"id": null,
+"cls": "logo",
+"label": "Lantern Desk",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 48,
+"y": 23,
+"w": 117,
+"h": 30
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 2,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "How it works",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 1091,
+"y": 16,
+"w": 87,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 3,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Pricing",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 1198,
+"y": 16,
+"w": 46,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 4,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Questions",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 1264,
+"y": 16,
+"w": 64,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 5,
+"tag": "button",
+"id": null,
+"cls": "icon-btn",
+"label": "",
+"section": "Header",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 1348,
+"y": 16,
+"w": 44,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 6,
+"tag": "a",
+"id": null,
+"cls": "btn-primary",
+"label": "See plans",
+"section": "Hero",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 48,
+"y": 396,
+"w": 104,
+"h": 52
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [],
+"indicator": {
+"kind": "other",
+"ratio": null
+},
+"focus_visible": true
+},
+{
+"i": 7,
+"tag": "a",
+"id": null,
+"cls": "btn-ghost",
+"label": "How it works",
+"section": "Hero",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 164,
+"y": 396,
+"w": 136,
+"h": 52
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 8,
+"tag": "a",
+"id": null,
+"cls": "btn.btn-primary",
+"label": "Continue",
+"section": "Pricing",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 77,
+"y": 426,
+"w": 120,
+"h": 48
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(255, 255, 255)",
+"ratio": 17.18
+},
+"focus_visible": true
+},
+{
+"i": 9,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Can guests book?",
+"section": "Questions",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 48,
+"y": 732,
+"w": 736,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 10,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Does it work on phones?",
+"section": "Questions",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 48,
+"y": 801,
+"w": 736,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 11,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Can we try it first?",
+"section": "Questions",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 48,
+"y": 856,
+"w": 736,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(29, 27, 24)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(29, 27, 24)",
+"against": "rgb(251, 247, 240)",
+"ratio": 16.09
+},
+"focus_visible": true
+},
+{
+"i": 12,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Privacy",
+"section": "Footer",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 48,
+"y": 768,
+"w": 49,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(244, 239, 230)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(244, 239, 230)",
+"against": "rgb(31, 42, 51)",
+"ratio": 12.76
+},
+"focus_visible": true
+},
+{
+"i": 13,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Contact",
+"section": "Footer",
+"data_name": null,
+"tabindex": null,
+"rect": {
+"x": 121,
+"y": 768,
+"w": 50,
+"h": 44
+},
+"visible": true,
+"in_view": true,
+"covered": 0,
+"covered_by": null,
+"changes": [
+"outline none 3px -> solid 3px rgb(244, 239, 230)"
+],
+"indicator": {
+"kind": "outline",
+"color": "rgb(244, 239, 230)",
+"against": "rgb(31, 42, 51)",
+"ratio": 12.76
+},
+"focus_visible": true
+}
+],
+"trap": null,
+"cycle_complete": true,
+"max_tabs": 150,
+"names": [
+{
+"tag": "a",
+"id": null,
+"cls": "skip",
+"label": "Skip to content",
+"section": "page",
+"data_name": null,
+"kind": "control",
+"name": "Skip to content",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Skip to content"
+},
+{
+"tag": "a",
+"id": null,
+"cls": "logo",
+"label": "Lantern Desk",
+"section": "Header",
+"data_name": null,
+"kind": "control",
+"name": "Lantern Desk",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Lantern Desk"
+},
+{
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "How it works",
+"section": "Header",
+"data_name": null,
+"kind": "control",
+"name": "How it works",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "How it works"
+},
+{
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Pricing",
+"section": "Header",
+"data_name": null,
+"kind": "control",
+"name": "Pricing",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Pricing"
+},
+{
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Questions",
+"section": "Header",
+"data_name": null,
+"kind": "control",
+"name": "Questions",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Questions"
+},
+{
+"tag": "button",
+"id": null,
+"cls": "icon-btn",
+"label": "",
+"section": "Header",
+"data_name": null,
+"kind": "control",
+"name": "",
+"from": "title",
+"has_alt": null,
+"aria_label": null,
+"visible_text": ""
+},
+{
+"tag": "a",
+"id": null,
+"cls": "btn-primary",
+"label": "See plans",
+"section": "Hero",
+"data_name": null,
+"kind": "control",
+"name": "See plans",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "See plans"
+},
+{
+"tag": "a",
+"id": null,
+"cls": "btn-ghost",
+"label": "How it works",
+"section": "Hero",
+"data_name": null,
+"kind": "control",
+"name": "How it works",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "How it works"
+},
+{
+"tag": "a",
+"id": null,
+"cls": "btn.btn-primary",
+"label": "Continue",
+"section": "Pricing",
+"data_name": null,
+"kind": "control",
+"name": "Continue",
+"from": "aria-label",
+"has_alt": null,
+"aria_label": "Continue",
+"visible_text": "Start a trial"
+},
+{
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Can guests book?",
+"section": "Questions",
+"data_name": null,
+"kind": "control",
+"name": "Can guests book?",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Can guests book?"
+},
+{
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Does it work on phones?",
+"section": "Questions",
+"data_name": null,
+"kind": "control",
+"name": "Does it work on phones?",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Does it work on phones?"
+},
+{
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Can we try it first?",
+"section": "Questions",
+"data_name": null,
+"kind": "control",
+"name": "Can we try it first?",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Can we try it first?"
+},
+{
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Privacy",
+"section": "Footer",
+"data_name": null,
+"kind": "control",
+"name": "Privacy",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Privacy"
+},
+{
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Contact",
+"section": "Footer",
+"data_name": null,
+"kind": "control",
+"name": "Contact",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Contact"
+},
+{
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Questions",
+"section": "Footer",
+"data_name": null,
+"kind": "control",
+"name": "Questions",
+"from": "content",
+"has_alt": null,
+"aria_label": null,
+"visible_text": "Questions"
+}
+],
+"text": [
+{
+"section": "page",
+"tag": "a",
+"text": "Skip to content"
+},
+{
+"section": "Header",
+"tag": "a",
+"text": "Lantern Desk"
+},
+{
+"section": "Header",
+"tag": "a",
+"text": "How it works"
+},
+{
+"section": "Header",
+"tag": "a",
+"text": "Pricing"
+},
+{
+"section": "Header",
+"tag": "a",
+"text": "Questions"
+},
+{
+"section": "Hero",
+"tag": "h1",
+"text": "A quiet desk for every team"
+},
+{
+"section": "Hero",
+"tag": "p",
+"text": "Book a room in two taps, see who is in, and stop arguing over the big table."
+},
+{
+"section": "Hero",
+"tag": "a",
+"text": "See plans"
+},
+{
+"section": "Hero",
+"tag": "a",
+"text": "How it works"
+},
+{
+"section": "Stats",
+"tag": "strong",
+"text": "12"
+},
+{
+"section": "Stats",
+"tag": "li",
+"text": "rooms"
+},
+{
+"section": "Stats",
+"tag": "strong",
+"text": "4"
+},
+{
+"section": "Stats",
+"tag": "li",
+"text": "floors"
+},
+{
+"section": "Stats",
+"tag": "strong",
+"text": "1"
+},
+{
+"section": "Stats",
+"tag": "li",
+"text": "booking page"
+},
+{
+"section": "How it works",
+"tag": "h2",
+"text": "How it works"
+},
+{
+"section": "How it works",
+"tag": "h3",
+"text": "Pick a time"
+},
+{
+"section": "How it works",
+"tag": "p",
+"text": "Choose a slot on the shared board."
+},
+{
+"section": "How it works",
+"tag": "h3",
+"text": "Pick a room"
+},
+{
+"section": "How it works",
+"tag": "p",
+"text": "Rooms that fit your group show first."
+},
+{
+"section": "How it works",
+"tag": "h3",
+"text": "Walk in"
+},
+{
+"section": "How it works",
+"tag": "p",
+"text": "The door screen shows your booking."
+},
+{
+"section": "Pricing",
+"tag": "h2",
+"text": "Pricing"
+},
+{
+"section": "Pricing",
+"tag": "h3",
+"text": "Team"
+},
+{
+"section": "Pricing",
+"tag": "p",
+"text": "$24 per room a month"
+},
+{
+"section": "Pricing",
+"tag": "p",
+"text": "Billed monthly per room. Cancel any time from settings."
+},
+{
+"section": "Pricing",
+"tag": "a",
+"text": "Start a trial"
+},
+{
+"section": "Questions",
+"tag": "h2",
+"text": "Questions"
+},
+{
+"section": "Questions",
+"tag": "summary",
+"text": "Can guests book?"
+},
+{
+"section": "Questions",
+"tag": "p",
+"text": "Guests book through a member's link."
+},
+{
+"section": "Questions",
+"tag": "summary",
+"text": "Does it work on phones?"
+},
+{
+"section": "Questions",
+"tag": "p",
+"text": "Yes, the board works on any screen."
+},
+{
+"section": "Questions",
+"tag": "summary",
+"text": "Can we try it first?"
+},
+{
+"section": "Questions",
+"tag": "p",
+"text": "A trial lasts fourteen days."
+},
+{
+"section": "Footer",
+"tag": "a",
+"text": "Privacy"
+},
+{
+"section": "Footer",
+"tag": "a",
+"text": "Contact"
+},
+{
+"section": "Footer",
+"tag": "a",
+"text": "Questions"
+},
+{
+"section": "Footer",
+"tag": "p",
+"text": "Fictional study page for runtime checks; Lantern Desk is not a real product."
+}
+]
+},
+"hover": {
+"tested": 14,
+"items": [
+{
+"k": 0,
+"tag": "a",
+"id": null,
+"cls": "logo",
+"label": "Lantern Desk",
+"section": "Header",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"color rgb(29, 27, 24) -> rgb(180, 68, 28)"
+]
+},
+{
+"k": 1,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "How it works",
+"section": "Header",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"text-decoration none -> underline"
+]
+},
+{
+"k": 2,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Pricing",
+"section": "Header",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"text-decoration none -> underline"
+]
+},
+{
+"k": 3,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Questions",
+"section": "Header",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"text-decoration none -> underline"
+]
+},
+{
+"k": 4,
+"tag": "button",
+"id": null,
+"cls": "icon-btn",
+"label": "",
+"section": "Header",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"background rgba(0, 0, 0, 0) -> rgb(239, 230, 216)"
+]
+},
+{
+"k": 5,
+"tag": "a",
+"id": null,
+"cls": "btn-primary",
+"label": "See plans",
+"section": "Hero",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"background rgb(180, 68, 28) -> rgb(142, 51, 19)"
+]
+},
+{
+"k": 6,
+"tag": "a",
+"id": null,
+"cls": "btn-ghost",
+"label": "How it works",
+"section": "Hero",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": []
+},
+{
+"k": 7,
+"tag": "a",
+"id": null,
+"cls": "btn.btn-primary",
+"label": "Continue",
+"section": "Pricing",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"background rgb(180, 68, 28) -> rgb(142, 51, 19)"
+]
+},
+{
+"k": 8,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Can guests book?",
+"section": "Questions",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"color rgb(29, 27, 24) -> rgb(180, 68, 28)"
+]
+},
+{
+"k": 9,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Does it work on phones?",
+"section": "Questions",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"color rgb(29, 27, 24) -> rgb(180, 68, 28)"
+]
+},
+{
+"k": 10,
+"tag": "summary",
+"id": null,
+"cls": null,
+"label": "Can we try it first?",
+"section": "Questions",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"color rgb(29, 27, 24) -> rgb(180, 68, 28)"
+]
+},
+{
+"k": 11,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Privacy",
+"section": "Footer",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"color rgb(244, 239, 230) -> rgb(255, 255, 255)",
+"underline style changed"
+]
+},
+{
+"k": 12,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Contact",
+"section": "Footer",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"color rgb(244, 239, 230) -> rgb(255, 255, 255)",
+"underline style changed"
+]
+},
+{
+"k": 13,
+"tag": "a",
+"id": null,
+"cls": null,
+"label": "Questions",
+"section": "Footer",
+"data_name": null,
+"hit": true,
+"covered_by": null,
+"changes": [
+"color rgb(244, 239, 230) -> rgb(255, 255, 255)",
+"underline style changed"
+]
+}
+]
+},
+"reflow": {
+"viewport": 320,
+"scroll_width": 528,
+"body_scroll_width": 528,
+"page_overflow_hidden": false,
+"offenders": [
+{
+"tag": "li",
+"id": null,
+"cls": null,
+"label": "4 floors",
+"section": "Stats",
+"data_name": null,
+"right": 352,
+"left": 192,
+"width": 160
+},
+{
+"tag": "li",
+"id": null,
+"cls": null,
+"label": "1 booking page",
+"section": "Stats",
+"data_name": null,
+"right": 528,
+"left": 368,
+"width": 160
+}
+],
+"text": []
+},
+"zoom": {
+"viewport": 320,
+"scroll_width": 528,
+"body_scroll_width": 528,
+"page_overflow_hidden": false,
+"offenders": [
+{
+"tag": "li",
+"id": null,
+"cls": null,
+"label": "4 floors",
+"section": "Stats",
+"data_name": null,
+"right": 352,
+"left": 192,
+"width": 160
+},
+{
+"tag": "li",
+"id": null,
+"cls": null,
+"label": "1 booking page",
+"section": "Stats",
+"data_name": null,
+"right": 528,
+"left": 368,
+"width": 160
+}
+],
+"text": [],
+"covering": [
+{
+"at": 0,
+"covered_rows": 171,
+"viewport_height": 200,
+"items": [
+{
+"tag": "header",
+"id": null,
+"cls": "site-header",
+"label": "Lantern Desk Main",
+"section": "Header",
+"data_name": null,
+"position": "sticky",
+"top": 0,
+"height": 171
+}
+]
+},
+{
+"at": 0.25,
+"covered_rows": 171,
+"viewport_height": 200,
+"items": [
+{
+"tag": "header",
+"id": null,
+"cls": "site-header",
+"label": "Lantern Desk Main",
+"section": "Header",
+"data_name": null,
+"position": "sticky",
+"top": 0,
+"height": 171
+}
+]
+},
+{
+"at": 0.5,
+"covered_rows": 171,
+"viewport_height": 200,
+"items": [
+{
+"tag": "header",
+"id": null,
+"cls": "site-header",
+"label": "Lantern Desk Main",
+"section": "Header",
+"data_name": null,
+"position": "sticky",
+"top": 0,
+"height": 171
+}
+]
+},
+{
+"at": 0.75,
+"covered_rows": 171,
+"viewport_height": 200,
+"items": [
+{
+"tag": "header",
+"id": null,
+"cls": "site-header",
+"label": "Lantern Desk Main",
+"section": "Header",
+"data_name": null,
+"position": "sticky",
+"top": 0,
+"height": 171
+}
+]
+}
+],
+"page_height": 2226
+},
+"spacing": {
+"390": {
+"elements": 38,
+"matched": true,
+"problems": [
+{
+"i": 25,
+"tag": "p",
+"id": null,
+"cls": "price-note",
+"label": "Billed monthly per room. Cancel any time from settings.",
+"section": "Pricing",
+"data_name": null,
+"text": "Billed monthly per room. Cancel any time from settings.",
+"clipped": {
+"by": {
+"tag": "p",
+"id": null,
+"cls": "price-note",
+"label": "Billed monthly per room. Cancel any time from settings.",
+"section": "Pricing",
+"data_name": null
+},
+"px": 4
+},
+"spill": null,
+"new_clip": true,
+"new_spill": false,
+"before_clipped": false
+}
+],
+"scroll_before": 528,
+"scroll_after": 528,
+"viewport": 390,
+"offenders_after": [
+{
+"tag": "li",
+"id": null,
+"cls": null,
+"label": "1 booking page",
+"section": "Stats",
+"data_name": null,
+"right": 528,
+"left": 368,
+"width": 160
+}
+]
+},
+"1440": {
+"elements": 38,
+"matched": true,
+"problems": [
+{
+"i": 25,
+"tag": "p",
+"id": null,
+"cls": "price-note",
+"label": "Billed monthly per room. Cancel any time from settings.",
+"section": "Pricing",
+"data_name": null,
+"text": "Billed monthly per room. Cancel any time from settings.",
+"clipped": {
+"by": {
+"tag": "p",
+"id": null,
+"cls": "price-note",
+"label": "Billed monthly per room. Cancel any time from settings.",
+"section": "Pricing",
+"data_name": null
+},
+"px": 4
+},
+"spill": null,
+"new_clip": true,
+"new_spill": false,
+"before_clipped": false
+}
+],
+"scroll_before": 1440,
+"scroll_after": 1440,
+"viewport": 1440,
+"offenders_after": []
+}
+}
+}

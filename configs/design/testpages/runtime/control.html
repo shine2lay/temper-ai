@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern Desk — runtime checks, clean control</title>
+<!-- Runtime-check fixture (queue #8): the clean control. planted.html is the same page with
+     nine planted problems (expected.json). Every runtime check must pass on this page. -->
+<style>
+:root { --ink: #1d1b18; --paper: #fbf7f0; --accent: #b4441c; --accent-dark: #8e3313; --on-accent: #ffffff;
+        --muted: #4f4a42; --night: #1f2a33; --on-night: #f4efe6; --line: #d9cfbf; }
+* { box-sizing: border-box; }
+html { font-size: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 1rem/1.5 Georgia, "DejaVu Serif", serif; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+.skip { position: absolute; left: -9999px; top: 8px; background: var(--ink); color: var(--paper); padding: 8px 12px; }
+.skip:focus { left: 16px; }
+.site-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px;
+               padding: 16px clamp(16px, 4vw, 48px); border-bottom: 1px solid var(--line); }
+.logo { font-weight: 700; font-size: 1.25rem; text-decoration: none; }
+.logo:hover { color: var(--accent); }
+.site-nav { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+.site-nav a { text-decoration: none; padding: 10px 0; }
+.site-nav a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid var(--line);
+            border-radius: 50%; background: transparent; color: var(--ink); cursor: pointer; }
+.icon-btn:hover { background: #efe6d8; }
+.hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 32px; align-items: center;
+        padding: clamp(32px, 6vw, 96px) clamp(16px, 4vw, 48px); }
+h1 { font-size: clamp(2.25rem, 7vw, 4.5rem); line-height: 1.05; margin: 0 0 16px; }
+.lede { font-size: 1.125rem; max-width: 34em; color: var(--muted); margin: 0 0 24px; }
+.ctas { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn, .btn-primary, .btn-ghost { display: inline-block; padding: 12px 20px; border-radius: 999px; text-decoration: none; font-weight: 700; }
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: var(--accent-dark); }
+.btn-ghost { border: 2px solid var(--ink); }
+.btn-ghost:hover { background: var(--ink); color: var(--paper); }
+.hero-art { width: 100%; max-width: 420px; height: auto; justify-self: center; }
+@media (prefers-reduced-motion: no-preference) {
+  .hero-art { animation: drift 6s ease-in-out infinite alternate; }
+  .hero h1 { animation: rise .6s ease-out both; }
+}
+@keyframes drift { from { transform: translateY(12px); } to { transform: translateY(-12px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; list-style: none;
+         margin: 0; padding: 24px clamp(16px, 4vw, 48px); background: #f2ebdf; }
+.stats li { font-size: 1.125rem; }
+.stats strong { display: block; font-size: 2rem; }
+section { padding: clamp(32px, 5vw, 72px) clamp(16px, 4vw, 48px); }
+h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); margin: 0 0 16px; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 24px; padding: 0; list-style: none; }
+.steps h3 { margin: 0 0 8px; }
+.price-card { max-width: 380px; border: 1px solid var(--line); border-radius: 16px; padding: 24px 28px; background: #fff; }
+.price { font-size: 2rem; font-weight: 700; margin: 0; }
+.price-note { line-height: 1.25; min-height: 2.5em; color: var(--muted); }
+details { border-top: 1px solid var(--line); padding: 12px 0; max-width: 46em; }
+summary { cursor: pointer; font-weight: 700; padding: 10px 0; }
+summary:hover { color: var(--accent); }
+.site-footer { background: var(--night); color: var(--on-night); padding: 32px clamp(16px, 4vw, 48px); }
+.site-footer :focus-visible { outline-color: var(--on-night); }
+.site-footer a { text-underline-offset: 3px; }
+.site-footer a:hover { text-decoration-thickness: 3px; color: #ffffff; }
+.foot-links { display: flex; flex-wrap: wrap; gap: 8px 24px; list-style: none; margin: 0 0 16px; padding: 0; }
+.foot-links a { display: inline-block; padding: 10px 0; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header" data-section="Header">
+  <a class="logo" href="#top">Lantern Desk</a>
+  <nav class="site-nav" aria-label="Main">
+    <a href="#how">How it works</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#faq">Questions</a>
+    <button class="icon-btn" type="button" aria-label="Search rooms">
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 15l5 5" stroke="currentColor" stroke-width="2"/></svg>
+    </button>
+  </nav>
+</header>
+<main id="main">
+  <div class="hero" data-section="Hero" id="top">
+    <div>
+      <h1>A quiet desk for every team</h1>
+      <p class="lede">Book a room in two taps, see who is in, and stop arguing over the big table.</p>
+      <div class="ctas">
+        <a class="btn-primary" href="#pricing">See plans</a>
+        <a class="btn-ghost" href="#how">How it works</a>
+      </div>
+    </div>
+    <svg class="hero-art" aria-hidden="true" viewBox="0 0 420 300" width="420" height="300">
+      <rect x="20" y="40" width="380" height="220" rx="24" fill="#efe6d8"/>
+      <rect x="60" y="90" width="120" height="80" rx="12" fill="#b4441c"/>
+      <rect x="200" y="90" width="160" height="40" rx="12" fill="#1f2a33"/>
+      <rect x="200" y="140" width="110" height="30" rx="10" fill="#d9cfbf"/>
+    </svg>
+  </div>
+  <ul class="stats" data-section="Stats">
+    <li><strong>12</strong> rooms</li>
+    <li><strong>4</strong> floors</li>
+    <li><strong>1</strong> booking page</li>
+  </ul>
+  <section id="how" data-section="How it works">
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li><h3>Pick a time</h3><p>Choose a slot on the shared board.</p></li>
+      <li><h3>Pick a room</h3><p>Rooms that fit your group show first.</p></li>
+      <li><h3>Walk in</h3><p>The door screen shows your booking.</p></li>
+    </ol>
+  </section>
+  <section id="pricing" data-section="Pricing">
+    <h2>Pricing</h2>
+    <div class="price-card">
+      <h3>Team</h3>
+      <p class="price">$24 per room a month</p>
+      <p class="price-note">Billed monthly per room. Cancel any time from settings.</p>
+      <a class="btn btn-primary" href="#start">Start a trial</a>
+    </div>
+  </section>
+  <section id="faq" data-section="Questions">
+    <h2>Questions</h2>
+    <details><summary>Can guests book?</summary><p>Guests book through a member's link.</p></details>
+    <details><summary>Does it work on phones?</summary><p>Yes, the board works on any screen.</p></details>
+    <details><summary>Can we try it first?</summary><p>A trial lasts fourteen days.</p></details>
+  </section>
+</main>
+<footer class="site-footer" data-section="Footer">
+  <ul class="foot-links">
+    <li><a href="#privacy">Privacy</a></li>
+    <li><a href="#contact">Contact</a></li>
+    <li><a href="#faq">Questions</a></li>
+  </ul>
+  <p>Fictional study page for runtime checks; Lantern Desk is not a real product.</p>
+</footer>
+</body>
+</html>

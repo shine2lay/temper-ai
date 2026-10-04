@@ -7,14 +7,19 @@ workflow:
   name: design_homepage_v2_fixture
   version: 1
   description: |
-    Model-free fixture of design_homepage_v2: fixture brief and references (local fixture
-    pages) -> fixture concepts (three converter test pages) -> real concept check ->
-    DIRECTION gate -> fixture build -> review round 1 (fixture findings, severity 3) ->
+    Model-free fixture of design_homepage_v2: fixture brief, the taste file passed in,
+    stand-in copy deck, content review and revision with the real copy checks
+    (quotes, before/after), references (local fixture pages) -> fixture concepts (three
+    converter test pages) -> real concept check -> DIRECTION gate (taste entry saved) ->
+    fixture build -> review round 1 (fixture findings, severity 3; real runtime checks,
+    advisory here; stand-in content review with one quote the page lacks) ->
     fixture revision -> round 2 (severity 1) -> convert to Penpot -> verify -> handoff ->
     FINAL gate (request changes loops back once; approve ends). Costs $0.
   inputs:
     direction_json: {type: string, default: ""}
+    taste_md: {type: string, default: ""}
   outputs:
+    copy_diff: copy_check.structured.diff_path
     contact_sheet: check.structured.contact_sheet
     handoff_path: handoff.structured.handoff_path
     penpot_url: handoff.structured.penpot_url
@@ -29,10 +34,49 @@ workflow:
       agent: design_homepage_stage_v2
       depends_on: [brief]
       input_map: {stage: references, mode: fixture}
+    - name: taste
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [brief]
+      input_map: {stage: taste, mode: fixture, data: input.taste_md}
+    - name: copy
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [taste]
+      input_map: {stage: copy_fixture, mode: fixture, phase: draft}
+    - name: copy_check_draft
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [copy]
+      input_map: {stage: copy_check, mode: fixture, phase: draft}
+    - name: copy_review
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [copy_check_draft]
+      input_map: {stage: copy_fixture, mode: fixture, phase: review}
+    - name: copy_revise
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [copy_review]
+      input_map: {stage: copy_fixture, mode: fixture, phase: revise}
+    - name: copy_check
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [copy_revise]
+      input_map: {stage: copy_check, mode: fixture, phase: final}
+    - name: copy_next
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [copy_check]
+      loop_to: copy_revise
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: copy_next.structured.verdict, operator: equals, value: retry}
+      input_map: {stage: copy_next, mode: fixture}
     - name: concepts
       type: agent
       agent: design_homepage_stage_v2
-      depends_on: [references]
+      depends_on: [references, copy_next]
       input_map: {stage: concepts_fixture, mode: fixture}
     - name: check
       type: agent
@@ -80,10 +124,20 @@ workflow:
       agent: design_homepage_stage_v2
       depends_on: [measure]
       input_map: {stage: review_fixture, mode: fixture}
+    - name: runtime
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [measure]
+      input_map: {stage: runtime, mode: fixture}
+    - name: content
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [runtime]
+      input_map: {stage: content_fixture, mode: fixture}
     - name: combine
       type: agent
       agent: design_homepage_stage_v2
-      depends_on: [review]
+      depends_on: [review, runtime, content]
       input_map: {stage: combine, mode: fixture}
     - name: next_round
       type: agent

@@ -1,0 +1,36 @@
+{
+  "about": "Answer key for the runtime-check fixture (queue #8). planted.html is control.html with nine planted problems; every runtime check must find its plant, and the clean control must give no finding at all. design_runtime_checks.py --fixture-proof runs and grades both.",
+  "planted": "planted.html",
+  "control": "control.html",
+  "plants": [
+    {"id": "P1", "check": "focus", "criterion": "2.4.7", "match": "See plans",
+     "what": "The hero's main button loses its focus ring (outline: none) and gets nothing in its place."},
+    {"id": "P2", "check": "reflow", "criterion": "1.4.10", "match": "booking page",
+     "what": "The stats strip cannot wrap (nowrap, min-width), so a 320 px screen scrolls sideways."},
+    {"id": "P3", "check": "motion", "criterion": "2.3.3", "match": "drift",
+     "what": "The drifting hero art is declared outside the prefers-reduced-motion query and keeps moving."},
+    {"id": "P4", "check": "spacing", "criterion": "1.4.12", "match": "Billed monthly",
+     "what": "The price note has a fixed height with overflow hidden; the WCAG text-spacing override clips it."},
+    {"id": "P5", "check": "names", "criterion": "4.1.2", "match": "button without text",
+     "what": "The icon-only search button has no accessible name."},
+    {"id": "P6", "check": "hover", "criterion": "none (usability/craft)", "match": "How it works",
+     "what": "The ghost button shows no hover state."},
+    {"id": "P7", "check": "zoom", "criterion": "1.4.10", "match": "Lantern Desk",
+     "what": "A sticky header that wraps at 320 px covers most of the screen at 400% zoom."},
+    {"id": "P8", "check": "order", "criterion": "2.4.3", "match": "Questions",
+     "what": "A footer link has tabindex=2 and jumps to the front of the focus order."},
+    {"id": "P9", "check": "names", "criterion": "2.5.3", "match": "Start a trial",
+     "what": "The trial button's aria-label (Continue) does not contain its visible label."}
+  ],
+  "consequences": [
+    {"plant": "P7", "check": "focus", "criterion": "2.4.11", "match": "Skip to content",
+     "why": "The sticky header (z-index 10) sits on top of the skip link when it appears on focus."},
+    {"plant": "P7", "check": "focus", "criterion": "2.4.12", "match": "",
+     "why": "The sticky header can partly cover a focused element."},
+    {"plant": "P4", "check": "reflow", "criterion": "1.4.10", "match": "Billed monthly",
+     "why": "The same fixed height clips the note at 320 px, where it wraps to three lines."},
+    {"plant": "P4", "check": "zoom", "criterion": "1.4.10", "match": "Billed monthly",
+     "why": "The same fixed height clips the note at 400% zoom."}
+  ],
+  "control_findings": 0
+}

@@ -33,6 +33,7 @@ def _load(name):
 h2p = _load("html_to_penpot")
 v2 = _load("design_homepage_v2")
 BASE = "http://172.21.0.1:42727"  # the recorded scenes' page address
+RUNTIME_SCENES = Path(__file__).resolve().parent / "design_runtime_scenes"  # recorded runtime-check results
 
 
 def scenes(widths=(390, 1440)):
@@ -48,25 +49,35 @@ def workflow(name):
     return raw, {n["name"]: n for n in raw["nodes"]}
 
 
-@pytest.mark.parametrize("name", ["design_homepage_v2", "design_homepage_v2_fixture"])
+@pytest.mark.parametrize("name", ["design_homepage_v2", "design_homepage_v2_fixture", "design_homepage_v2_pilot"])
 def test_workflow_native_gates_and_bounded_loops(name):
     raw, nodes = workflow(name)
     gates = sorted(n for n, v in nodes.items() if v.get("gate"))
     assert gates == ["direction", "final"]
     looping = {n: v for n, v in nodes.items() if v.get("loop_to")}
-    assert set(looping) == {"concepts_next", "next_round", "after_final"}
+    assert set(looping) == {"copy_next", "concepts_next", "next_round", "after_final"}
     for node in looping.values():
         assert node["max_loops"] <= 3 and node["on_max_loops"] == "fail"
         assert node["agent"] == "design_homepage_stage_v2"  # loop control never sits on a model or gate node
+    assert nodes["copy_next"]["loop_to"] == "copy_revise" and nodes["copy_next"]["max_loops"] == 2
+    assert nodes["copy_next"]["loop_condition"] == {"source": "copy_next.structured.verdict", "operator": "equals",
+                                                    "value": "retry"}
     assert nodes["next_round"]["loop_to"] == nodes["after_final"]["loop_to"] == "plan_round"
     assert nodes["after_final"]["loop_condition"] == {"source": "final.structured.verdict", "operator": "equals",
                                                       "value": "request_changes"}
     assert nodes["revise"]["condition"] == {"source": "plan_round.structured.action", "operator": "equals",
                                             "value": "revise"}
     assert not {"approval", "final_json", "mode"} & set(raw["inputs"])
+    assert raw["inputs"]["taste_md"] == {"type": "string", "default": ""}  # optional: v2 launches keep working
+    assert nodes["taste"]["input_map"]["data"] == "input.taste_md"
     order = [n["name"] for n in raw["nodes"]]
+    assert order.index("taste") < order.index("copy") < order.index("copy_check") < order.index("concepts")
+    assert "copy_next" in nodes["concepts"]["depends_on"]  # no concept is drawn before the words pass
     assert order.index("direction") < order.index("build") < order.index("convert") < order.index("verify") \
         < order.index("handoff") < order.index("final")
+    assert nodes["runtime"]["depends_on"] == ["measure"] and nodes["content"]["depends_on"] == ["runtime"]
+    assert {"runtime", "content"} <= set(nodes["combine"]["depends_on"])
+    assert nodes["copy_check"]["input_map"]["phase"] == "final" and nodes["copy_check_draft"]["input_map"]["phase"] == "draft"
 
 
 def test_real_workflow_reuses_unchanged_critics_and_new_model_agents():
@@ -79,7 +90,12 @@ def test_real_workflow_reuses_unchanged_critics_and_new_model_agents():
     assert nodes["check"]["input_map"]["phase"] == "final" and nodes["concepts_next"]["loop_to"] == "refine"
     assert nodes["build"]["agent"] == "design_homepage_designer_v2"
     assert nodes["revise"]["agent"] == "design_homepage_reviser_v2"
-    assert set(nodes["combine"]["depends_on"]) == {"merge", "craft"}
+    assert set(nodes["combine"]["depends_on"]) == {"merge", "craft", "runtime", "content"}
+    assert nodes["copy"]["agent"] == nodes["copy_revise"]["agent"] == "design_homepage_copywriter_v2"
+    assert nodes["copy"]["input_map"] == {"phase": "draft"} and nodes["copy_revise"]["input_map"] == {"phase": "revise"}
+    assert nodes["copy_review"]["agent"] == nodes["content"]["agent"] == "design_homepage_content_critic_v2"
+    assert nodes["copy_review"]["input_map"] == {"target": "deck"} and nodes["content"]["input_map"] == {"target": "page"}
+    assert nodes["runtime"]["input_map"]["stage"] == "runtime"  # deterministic browser checks, no model
     script = [v for v in nodes.values() if v["agent"] == "design_homepage_stage_v2"]
     assert all(v["input_map"]["mode"] == "real" for v in script)
 
@@ -91,10 +107,12 @@ def test_fixture_workflow_is_model_free():
     stages = {v["input_map"]["stage"] for v in nodes.values()}
     assert stages <= set(v2.STAGES)
     assert {"concepts_fixture", "build_fixture", "revise_fixture", "review_fixture", "convert", "verify"} <= stages
+    assert {"taste", "copy_fixture", "copy_check", "copy_next", "runtime", "content_fixture"} <= stages
+    assert set(nodes["combine"]["depends_on"]) == {"review", "runtime", "content"}
 
 
 def test_agents_use_claude_opus_and_script_wrapper_holds_no_secret():
-    for name in ("art_director", "designer", "craft_critic", "reviser"):
+    for name in ("art_director", "designer", "craft_critic", "reviser", "copywriter", "content_critic"):
         agent = yaml.safe_load((BIN.parent / "agents" / f"design_homepage_{name}_v2.yaml").read_text())["agent"]
         assert agent["type"] == "llm" and agent["provider"] == "claude" and agent["model"] == "opus"
         assert "tools" not in agent  # the Claude CLI's own Read shows PNGs; a tools: block breaks the provider
@@ -103,9 +121,18 @@ def test_agents_use_claude_opus_and_script_wrapper_holds_no_secret():
     assert stage["type"] == "script"
     template = stage["script_template"]
     assert "gate is defined" in template and "design_homepage_v2.py" in template
-    assert "PASSWORD" not in template and "--fixture" in template
+    assert "PASSWORD" not in template and '("real", "fixture", "pilot")' in template
+    assert 'if mode in ("fixture", "pilot"):\n    cmd.append("--" + mode)' in template
     craft = (BIN.parent / "agents/design_homepage_craft_critic_v2.yaml").read_text()
     assert "review/craft/" in craft  # never review/critic/: design_merge would reject taste findings
+    content = (BIN.parent / "agents/design_homepage_content_critic_v2.yaml").read_text()
+    assert "review/content/content.json" in content and "homepage/copy/review.json" in content
+    assert "review/critic/" not in content
+    for name in ("art_director", "designer"):  # both work from the deck's words and the taste file
+        text = (BIN.parent / "agents" / f"design_homepage_{name}_v2.yaml").read_text()
+        assert "COPY.md" in text
+    art = (BIN.parent / "agents/design_homepage_art_director_v2.yaml").read_text()
+    assert "TASTE.md" in art and "taste_use" in art and "headline" in art
 
 
 # --------------------------------------------------------------------------- converter
@@ -382,6 +409,53 @@ def test_fixture_and_real_workspaces_never_mix(tmp_path):
     assert job.brief("")["reused"] is True
 
 
+def test_pilot_workflow_is_v2_with_only_the_mode_changed():
+    real_raw, real = workflow("design_homepage_v2")
+    pilot_raw, pilot = workflow("design_homepage_v2_pilot")
+    assert list(pilot) == list(real)
+    assert pilot_raw["inputs"] == real_raw["inputs"] and pilot_raw["outputs"] == real_raw["outputs"]
+    for name, node in real.items():
+        twin = pilot[name]
+        assert {k: v for k, v in twin.items() if k != "input_map"} == {k: v for k, v in node.items() if k != "input_map"}
+        mine, theirs = dict(node.get("input_map") or {}), dict(twin.get("input_map") or {})
+        if node["agent"] == "design_homepage_stage_v2":
+            assert mine.pop("mode") == "real" and theirs.pop("mode") == "pilot"
+        assert theirs == mine
+
+
+def pilot_job(tmp_path):
+    job = v2.Job(str(tmp_path), fixture=False, pilot=True)
+    job.brief(json.dumps({**v2.FIXTURE_BRIEF, "fixture": False}))  # fictional, but not the fixture
+    return job
+
+
+def test_pilot_takes_a_provisional_pick_never_owner_approval_or_taste(tmp_path):
+    real_brief = json.dumps({**v2.FIXTURE_BRIEF, "fixture": False, "fictional": False})
+    with pytest.raises(ValueError, match="refuses real deliverables"):
+        v2.Job(str(tmp_path / "real"), fixture=False, pilot=True).brief(real_brief)
+    with pytest.raises(ValueError, match="fixture or the pilot"):
+        v2.Job(str(tmp_path / "both"), fixture=True, pilot=True)
+    job = pilot_job(tmp_path / "p")
+    with pytest.raises(ValueError, match="another workflow"):
+        v2.Job(str(tmp_path / "p"), fixture=False)
+    ready_for_direction(job)
+    why = "Clearest hierarchy and the most legible type at 390, so the build tests the deck best."
+    with pytest.raises(ValueError, match="provisional-fictional"):
+        job.direction(json.dumps({"concept": "B", "approval": "owner-direction", "notes": why}))
+    with pytest.raises(ValueError, match="needs notes"):
+        job.direction('{"concept": "B", "approval": "provisional-fictional", "notes": "looks good"}')
+    out = job.direction(json.dumps({"concept": "B", "approval": "provisional-fictional", "notes": why}))
+    assert out["owner_direction_approved"] is False and out["provisional"] is True
+    saved = v2.load(job.packet / "direction.json")
+    assert saved["owner_approved"] is False and saved["provisional"] is True
+    assert not (job.packet / "taste" / "entries.json").exists()  # the worker's pick is not the owner's taste
+    real = v2.Job(str(tmp_path / "r"), fixture=False)
+    real.brief(json.dumps({**v2.FIXTURE_BRIEF, "fixture": False}))
+    ready_for_direction(real)
+    with pytest.raises(ValueError, match="owner-direction"):  # the real gate never takes a provisional pick
+        real.direction(json.dumps({"concept": "B", "approval": "provisional-fictional", "notes": why}))
+
+
 def test_completed_stage_with_changed_inputs_is_refused_not_repeated(tmp_path):
     job = fixture_job(tmp_path)
     with pytest.raises(ValueError, match="inputs changed"):
@@ -435,9 +509,16 @@ def test_concepts_next_reports_only_the_final_check(tmp_path):
         job.concepts_next()
 
 
-def review_round(job, usability_sev, craft_sev, status="confirmed"):
+PAGE_TEXT = "# Page text\n\n## hero\n- [h1] Book a room in two taps\n- [p] Rooms for four to twelve people.\n"
+
+
+def review_round(job, usability_sev, craft_sev, status="confirmed", runtime=(), content=()):
     review = job.root / "review"
     (review / "craft").mkdir(parents=True, exist_ok=True)
+    v2.save(review / "runtime" / "runtime.json", {"checks": {c: {"status": "pass"} for c in ("focus", "reflow")},
+                                                 "findings": list(runtime), "errors": []})
+    v2.save(review / "content" / "content.json", {"target": "page", "findings": list(content)})
+    (review / "page-text.md").write_text(PAGE_TEXT)
     v2.save(review / "findings.json", {"findings": [{"id": "D1", "status": status, "severity": usability_sev,
                                                      "element": "hero", "problem": "p", "evidence": "e"}]})
     v2.save(review / "craft" / "craft.json", {"findings": [{"id": "C1", "severity": craft_sev, "check": "scale",
@@ -514,4 +595,202 @@ def test_fixture_concepts_pass_the_offline_contract(tmp_path):
     for c in spec["concepts"]:
         assert v2.concept_contract(c, set()) == []
         assert v2.html_problems(job.concepts_dir / c["id"] / "index.html") == []
+        assert v2.concept_words_problems(c, v2.FIXTURE_DECK, []) == []
     assert job.concepts_fixture()["reused"]
+
+
+# --------------------------------------------------------------------------- v2.1: words
+
+
+def test_copy_contract_catches_what_the_morrow_run_got_wrong():
+    assert v2.copy_contract(v2.FIXTURE_DECK, v2.FIXTURE_BRIEF) == []
+    bad = json.loads(json.dumps(v2.FIXTURE_DECK))
+    bad["ctas"] = {"primary": "Learn more"}
+    bad["subhead"] = "In the proposed room demo, rooms cost $45 per hour."
+    bad["proof_points"][0]["text"] = "Teams save 12 hours a week."
+    bad["notices"].append({"id": "fictional", "text": "Again: not a real product.", "placement": "header"})
+    problems = "\n".join(v2.copy_contract(bad, v2.FIXTURE_BRIEF))
+    assert "does not say what happens" in problems
+    assert "'proposed' belongs only in the single notice" in problems
+    assert "add a worked example" in problems
+    assert "the number 12 is not in the brief's facts" in problems
+    assert "each notice is stated once" in problems
+    real = {**v2.FIXTURE_BRIEF, "fictional": False}
+    honest = {**v2.FIXTURE_DECK, "notices": [], "subhead": "The proposed schedule is shared before anyone books."}
+    assert v2.copy_contract(honest, real) == []  # a real product may say "proposed" plainly
+
+
+@pytest.mark.parametrize("text, bad", [("2 x 45 min = 90 min", False), ("2 x 45 min = 80 min", True),
+                                       ("6 x $12 = $72", False), ("$45 + $10 = $55", False),
+                                       ("4 \u00d7 $30 = $100", True), ("rooms for 4-6 = small", False)])
+def test_worked_example_sums_are_checked(text, bad):
+    assert bool(v2.arithmetic_problems(text)) is bad
+
+
+def test_copy_deck_is_reviewed_revised_and_kept_before_and_after(tmp_path):
+    job = fixture_job(tmp_path)
+    job.taste("")
+    job.copy_fixture("draft")
+    first = job.copy_check("draft")
+    assert first["verdict"] == "ok", v2.load(job.copy_dir / "check.json")["problems"]
+    assert (job.copy_dir / "copy-draft.json").exists() and "Promise" in (job.copy_dir / "COPY.md").read_text()
+    job.copy_fixture("review")
+    early = job.copy_check("final")  # nothing revised yet: K1 (severity 3) is still in the deck, unanswered
+    assert early["verdict"] == "retry" and job.copy_next()["verdict"] == "retry"
+    job.copy_fixture("revise")
+    done = job.copy_check("final")
+    assert done["verdict"] == "ok" and done["attempt"] == 1
+    assert done["verified_findings"] == 1 and done["dropped_findings"] == 1  # K2 quoted words the deck never had
+    checked = v2.load(job.copy_dir / "review-checked.json")
+    assert checked["answers"]["K1"]["quote_gone"] is True and checked["dropped"][0]["id"] == "K2"
+    diff = (job.copy_dir / "COPY-DIFF.md").read_text()
+    assert "DROPPED K2" in diff and "| subhead |" in diff and v2.FIXTURE_SUBHEAD_AFTER in diff
+    assert v2.FIXTURE_DECK["subhead"] in (job.copy_dir / "COPY-draft.md").read_text()  # the before stays
+    assert job.copy_next()["verdict"] == "ok" and job.copy_check("final")["reused"]
+
+
+def test_page_shows_each_notice_once_and_no_hedges_elsewhere():
+    deck, head = v2.FIXTURE_DECK, v2.FIXTURE_DECK["headlines"][0]["text"]
+    notice = deck["notices"][0]["text"]
+    good = f"<h1>{head}</h1><p>Body.</p><footer>{notice}</footer>"
+    assert v2.page_copy_problems(good, deck, head, True, "page") == []
+    twice = f"<header>{notice}</header><h1>Other</h1><p>A proposed concept study.</p><footer>{notice}</footer>"
+    problems = " ".join(v2.page_copy_problems(twice, deck, head, True, "page"))
+    assert "appears 2 times" in problems and "'proposed'" in problems and "is not on the page" in problems
+    assert "missing" in " ".join(v2.page_copy_problems("<h1>x</h1>", deck, None, True, "page"))
+    hidden = f"<style>p{{}}</style><title>{notice}</title><h1>{head}</h1><footer>{notice}</footer>"
+    assert v2.page_copy_problems(hidden, deck, head, True, "page") == []  # only visible words count
+
+
+def test_concepts_use_a_deck_headline_and_say_how_they_use_the_taste_file():
+    deck = v2.FIXTURE_DECK
+    c = {"id": "A", "headline": deck["headlines"][0]["text"],
+         "taste_use": "Follows T1: a warm serif display and generous space, as the owner chose last time."}
+    assert v2.concept_words_problems(c, deck, ["T1"]) == []
+    empty = {**c, "taste_use": "No entries yet, so this concept sets its own direction from the brief."}
+    assert v2.concept_words_problems(empty, deck, []) == []
+    wrong = " ".join(v2.concept_words_problems({**c, "headline": "A brand new line",
+                                                "taste_use": "Uses T7 heavily with a lot more words here"}, deck, ["T1"]))
+    assert "headline must be one of" in wrong and "T7" in wrong
+    uncited = {**c, "taste_use": "A warm serif display and generous space, like the last pick."}
+    assert "must cite" in " ".join(v2.concept_words_problems(uncited, deck, ["T1"]))
+    assert "taste_use must say" in " ".join(v2.concept_words_problems({**c, "taste_use": ""}, deck, []))
+
+
+# --------------------------------------------------------------------------- v2.1: the owner's taste
+
+
+def test_taste_file_is_passed_in_and_every_gate_answer_is_saved(tmp_path):
+    job = fixture_job(tmp_path)
+    text = ("# Fixture taste file\n\n## T1 \u2014 2026-10-04 \u00b7 direction gate \u00b7 X\nChose: A\n\n"
+            "## T2 \u2014 2026-10-04 \u00b7 final gate \u00b7 X\nChose: approve\n")
+    out = job.taste(text)
+    assert out["entries"] == 2 and not out["truncated"] and job.taste_list() == ["T1", "T2"]
+    assert "## T2" in (job.packet / "TASTE.md").read_text() and job.taste(text)["reused"]
+    with pytest.raises(ValueError, match="inputs changed"):
+        job.taste("")
+    ready_for_direction(job)
+    answer = '{"concept": "B", "approval": "fixture-test", "notes": "warmer, less grey"}'
+    job.direction(answer)
+    job.direction(answer)  # a resumed gate reuses its receipt: no second entry
+    entries = v2.load(job.packet / "taste/entries.json")["entries"]
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["key"] == "direction" and e["gate"] == "direction" and e["choice"] == "B: Direction B"
+    assert e["fixture"] is True and e["owner_words"] == "warmer, less grey"
+    assert [r["option"] for r in e["rejected"]] == ["A: Direction A", "C: Direction C"]
+    assert "Bricolage Grotesque" in e["choice_summary"] and "Fraunces" in e["rejected"][0]["summary"]
+    job.state["round"] = 1
+    job.state["stages"]["handoff-1"] = {"fingerprint": "x", "completed_at": "t", "output": {}}
+    job.final('{"verdict": "request_changes", "notes": ["bigger headline"]}')
+    final = v2.load(job.packet / "taste/entries.json")["entries"][-1]
+    assert final["key"] == "final-r01" and final["choice"] == "request changes"
+    assert final["owner_words"] == ["bigger headline"] and "direction B" in final["about"]
+    assert final["rejected"] == [{"option": "approve as it is"}]
+
+
+def test_long_taste_files_keep_the_newest_whole_entries(monkeypatch):
+    monkeypatch.setattr(v2, "MAX_TASTE_CHARS", 200)
+    entries = "".join(f"## T{i} \u2014 entry\n" + "x" * 60 + "\n\n" for i in range(1, 6))
+    kept, cut = v2.trim_taste("# head\n\n" + entries)
+    assert cut and len(kept) <= 200 and kept.startswith("# head") and "## T5" in kept and "## T1 " not in kept
+    assert v2.trim_taste("short") == ("short", False)
+
+
+# --------------------------------------------------------------------------- v2.1: runtime checks and content review
+
+
+def runtime_ready(tmp_path, fixture=True):
+    job = fixture_job(tmp_path) if fixture else v2.Job(str(tmp_path), fixture=False)
+    job.site.mkdir(parents=True)
+    (job.site / "index.html").write_text("<title>x</title><h1>Lantern Desk</h1>")
+    job.state["round"] = 1
+    return job
+
+
+def test_runtime_stage_measures_once_and_feeds_the_content_review(tmp_path, monkeypatch):
+    job = runtime_ready(tmp_path)
+    with pytest.raises(ValueError, match="not been measured"):
+        job.runtime()
+    job.state["stages"]["measure-1"] = {"fingerprint": "x", "completed_at": "t", "output": {}}
+    planted = json.loads((RUNTIME_SCENES / "planted.raw.json").read_text())
+    calls = []
+    monkeypatch.setattr(v2.rtc, "measure", lambda site, page, browser, host: calls.append(page) or planted)
+    out = job.runtime()
+    assert out["failures"] == 9 and out["checks"]["motion"] == "fail" and calls == ["index.html"]
+    assert job.runtime()["reused"] and len(calls) == 1  # the same page is never measured twice
+    review = job.root / "review"
+    assert (review / "runtime/RUNTIME.md").exists() and (job.packet / "rounds/r01/runtime.json").exists()
+    assert "- [h1] " in (review / "page-text.md").read_text()
+    quoted = job.content_fixture()["quoted"]
+    assert quoted and quoted in (review / "page-text.md").read_text()
+    review_kept = {k: (review / k).read_text() for k in ("runtime/runtime.json", "content/content.json", "page-text.md")}
+    v2.save(review / "findings.json", {"findings": []})
+    v2.save(review / "craft" / "craft.json", {"findings": [], "template_test": {"verdict": "fixture"}})
+    combined = job.combine()
+    assert combined["verdict"] == "done" and combined["blocking"] == 0  # fixture pages: advisory only
+    assert combined["by_source"]["runtime"] == 10 and combined["by_source"]["content"] == 1
+    decision = v2.load(job.packet / "rounds/r01/decision.json")
+    assert [d["id"] for d in decision["content_dropped"]] == ["K2"] and decision["runtime_checks"]["focus"] == "fail"
+    assert all((review / k).read_text() == v for k, v in review_kept.items())
+
+
+def test_runtime_stage_refuses_a_browser_that_measured_nothing(tmp_path, monkeypatch):
+    job = runtime_ready(tmp_path)
+    job.state["stages"]["measure-1"] = {"fingerprint": "x", "completed_at": "t", "output": {}}
+    monkeypatch.setattr(v2.rtc, "measure", lambda *a: {"errors": ["browser unreachable"]})
+    with pytest.raises(ValueError, match="could not run: browser unreachable"):
+        job.runtime()
+    assert "runtime-1" not in job.state["stages"]
+
+
+def test_combine_needs_runtime_and_content_results(tmp_path):
+    job = fixture_job(tmp_path)
+    job.state["round"] = 1
+    review_round(job, usability_sev=1, craft_sev=1)
+    (job.root / "review/content/content.json").unlink()
+    with pytest.raises(ValueError, match="content/content.json missing"):
+        job.combine()
+
+
+def test_real_runs_block_on_runtime_failures_and_verified_content_findings(tmp_path):
+    job = v2.Job(str(tmp_path), fixture=False)
+    no_ring = {"id": "R1", "check": "focus", "criterion": "2.4.7", "severity": 3, "element": 'a "Book" (hero)',
+               "problem": "Keyboard focus is not visible", "evidence": "#1", "suggestion": "add a ring", "viewport": "desktop"}
+    no_hover = {**no_ring, "id": "R2", "check": "hover", "criterion": "none (usability/craft)", "severity": 2}
+    job.state["round"] = 1
+    review_round(job, usability_sev=1, craft_sev=1, runtime=[no_ring, no_hover])
+    first = job.combine()
+    assert first["verdict"] == "revise" and first["blocking"] == 1 and first["by_source"]["runtime"] == 2
+    vague = {"id": "K1", "check": "clarity", "element": "hero heading", "quote": "book a room in TWO taps",
+             "problem": "which two taps?", "suggestion": "name them", "severity": 3}
+    job.state["round"] = 2
+    review_round(job, usability_sev=1, craft_sev=1, content=[vague])
+    second = job.combine()
+    assert second["verdict"] == "revise" and second["by_source"]["content"] == 1
+    assert v2.load(job.packet / "rounds/r02/decision.json")["fixes"][0]["evidence"].startswith('quote: "book a room')
+    invented = {**vague, "quote": "Words the page never shows"}
+    job.state["round"] = 3
+    review_round(job, usability_sev=1, craft_sev=1, content=[invented, {"id": "K9", "check": "tone"}])
+    third = job.combine()
+    assert third["verdict"] == "done" and third["blocking"] == 0 and third["content_dropped"] == 2

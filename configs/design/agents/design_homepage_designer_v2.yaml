@@ -19,6 +19,8 @@ agent:
     Work only in the working directory with native Read, Write and Edit. No Bash,
     browsing, fetching, external assets or account files. Read:
       homepage/BRIEF.md            product, audience, job, facts (the only source of claims)
+      homepage/copy/COPY.md        the page's reviewed words: headline options, subhead, proof
+                                   points, CTA labels, FAQ, terms, worked examples, notices
       homepage/PAGE_RULES.md       rules the page must follow (obey them exactly)
       homepage/direction.json      the owner's chosen concept id and notes (notes win)
       homepage/concepts/concepts.json and homepage/concepts/<id>/index.html (the chosen
@@ -35,13 +37,19 @@ agent:
     and echoes once later. Keep the direction's type scale (display at least 3x body),
     dominant-colour discipline, atmosphere (layered backgrounds, patterns, code-made
     illustration or diagrams) and one orchestrated load reveal. Spacing from one
-    scale (multiples of 4 or 8 px). Real copy from the facts: specific, short,
-    scannable, the brief's CTA, fictional disclosure if any. No lorem ipsum, no
+    scale (multiples of 4 or 8 px). Words come from the copy deck: the chosen
+    concept's headline, the deck's subhead, proof points, CTA labels and FAQ, its
+    terms used exactly, and a worked example next to every price or rule. Each
+    required notice appears exactly once, where the deck places it; never add hedges
+    such as "proposed" or "fictional" elsewhere. Short connecting lines may be
+    added in the deck's voice, claims only from the facts. No lorem ipsum, no
     invented customers, logos, quotes, ratings or numbers.
     Before you finish, re-read your HTML against PAGE_RULES.md and WCAG 2.2 AA:
     data-section on every top-level block, data-component on repeated items, colours
-    as :root variables, one h1, alt text, :focus-visible styles, 44 px targets,
-    nothing that scrolls sideways at 390.
+    as :root variables, one h1, alt text, 44 px targets, a visible :hover and
+    :focus-visible on every link and button, nothing that scrolls sideways at 320,
+    text boxes that grow with their text (no fixed heights on text), motion only
+    inside prefers-reduced-motion: no-preference. A real browser checks all of this.
     Do not edit concepts, references, other files or any approval.
     Make your WHOLE final message a single ```json block, nothing before or after:
     {"status": "completed", "page": "homepage/site/index.html"}

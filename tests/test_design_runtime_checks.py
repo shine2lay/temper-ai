@@ -107,6 +107,14 @@ def test_outputs_are_written_for_the_reviser_and_the_content_review(tmp_path):
     assert "- [h1] " in text and "Lantern Desk" in text  # visible text in reading order, tagged
 
 
+def test_page_text_keeps_a_line_break_as_a_space():
+    """'4.<br>Oak' must not reach the content reviewer as '4.Oak': on the Morrow pilot it reported
+    'missing spaces' in all three rounds for lines no reader ever sees joined (2026-10-04)."""
+    text = rtc.page_text_md(raw("control"))
+    assert "- [p] Lantern Desk, 12 Harbour Street. Open weekdays 8:00 to 18:00.\n" in text
+    assert "Street.Open" not in text
+
+
 def test_fixture_proof_grades_recorded_results_without_a_browser(tmp_path):
     out = rtc.fixture_proof(tmp_path, raws={"planted": raw("planted"), "control": raw("control")})
     assert out["passed"] is True and out["recall"] == "10/10"
@@ -118,7 +126,8 @@ def test_browser_code_tests_what_the_rules_promise():
     code = rtc.RUNTIME_CODE
     for needle in ("emulateMedia", "reducedMotion", "'reduce'", "no-preference", "keyboard.press", "Tab", "focus-visible"):
         assert needle in code, needle
-    for needle in ("R.hiddenOnPurpose(el)", "harm: R.spillHarm(el, e)", "inset\\(\\s*50%", "kind: 'overlap'", "kind: 'contrast'"):
+    for needle in ("R.hiddenOnPurpose(el)", "harm: R.spillHarm(el, e)", "inset\\(\\s*50%", "kind: 'overlap'", "kind: 'contrast'",
+                   "node.tagName.toLowerCase() === 'br'"):
         assert needle in rtc.HELPERS, needle
     assert rtc.REFLOW_VIEWPORT == (320, 640) and rtc.ZOOM_VIEWPORT == (320, 200)  # 400% of a 1280 x 800 window
     assert rtc.STICKY_SHARE == 0.4 and rtc.SPACING_WIDTHS == (1440, 390)

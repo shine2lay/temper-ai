@@ -445,6 +445,9 @@ HELPERS = r"""(() => {
     while ((node = tw.nextNode())) {
       if (node.nodeType === 1) {
         if (node.tagName.toLowerCase() === 'img' && R.vis(node) && node.getAttribute('alt')) lines.push({section: R.section(node), tag: 'img alt', text: R.clean(node.getAttribute('alt'))});
+        // A line break separates words the way a space does (innerText); without it "4.<br>Oak" read as "4.Oak"
+        // and the content reviewer reported missing spaces that no reader sees (Morrow pilot, 2026-10-04).
+        if (node.tagName.toLowerCase() === 'br' && current && current.el && current.el.contains(node)) current.text += ' ';
         continue;
       }
       const t = node.textContent;

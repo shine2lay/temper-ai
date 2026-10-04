@@ -276,7 +276,7 @@
     "tabindex": "2",
     "rect": {
      "x": 195,
-     "y": 768,
+     "y": 704,
      "w": 64,
      "h": 44
     },
@@ -640,7 +640,7 @@
     "tabindex": null,
     "rect": {
      "x": 48,
-     "y": 608,
+     "y": 544,
      "w": 736,
      "h": 44
     },
@@ -670,7 +670,7 @@
     "tabindex": null,
     "rect": {
      "x": 48,
-     "y": 768,
+     "y": 704,
      "w": 49,
      "h": 44
     },
@@ -700,7 +700,7 @@
     "tabindex": null,
     "rect": {
      "x": 121,
-     "y": 768,
+     "y": 704,
      "w": 50,
      "h": 44
     },
@@ -1140,6 +1140,11 @@
     "section": "Footer",
     "tag": "p",
     "text": "Fictional study page for runtime checks; Lantern Desk is not a real product."
+   },
+   {
+    "section": "Footer",
+    "tag": "p",
+    "text": "Lantern Desk, 12 Harbour Street. Open weekdays 8:00 to 18:00."
    }
   ]
  },
@@ -1480,11 +1485,11 @@
     ]
    }
   ],
-  "page_height": 2331
+  "page_height": 2395
  },
  "spacing": {
   "390": {
-   "elements": 41,
+   "elements": 42,
    "matched": true,
    "problems": [
     {
@@ -1587,7 +1592,7 @@
    ]
   },
   "1440": {
-   "elements": 41,
+   "elements": 42,
    "matched": true,
    "problems": [
     {

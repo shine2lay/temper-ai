@@ -9,7 +9,8 @@ agent:
   provider: openai-codex
   model: gpt-6.1-sol
   thinking: medium
-  tools: [read]
+  tools: [Read]                # Temper's tool names (docs/pi-agent.md "Member settings")
+  add_ons: []                  # none: the check needs no add-on copies on its stand-in box
   message: "Read note.txt with the read tool and tell me its first word."
   workspace_files:
     note.txt: "quartzfinch is the first word."

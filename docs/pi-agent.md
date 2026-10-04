@@ -11,17 +11,29 @@ Switch: the environment setting `TEMPER_PI_AGENT=1` (also `true`, `on`, `yes`), 
 
 ## A step
 
+A step names an agent file, as every agent step does; the Pi settings live in that file
+(`configs/agents/ci_pi_talk.yaml` is a real one). The loader does not take an agent written
+inline in the workflow.
+
 ```yaml
+# configs/workflows/<workflow>.yaml
 - name: talk
+  type: agent
+  agent: scout_talk            # configs/agents/scout_talk.yaml
   depends_on: [brief]          # never the first node (see "Rules")
-  agent:
-    type: pi
-    role: scout                # a role folder under the box config's identities_dir
-    tools: [Read]              # Temper's tool names (see "Member settings")
-    message: "Read note.txt and tell me its first word. Topic: {{ topic }}."
-    workspace_files: {note.txt: "..."}   # written once into the worker's folder
-    # provider: anthropic  model: claude-opus-5-5  thinking: max   (the defaults)
-    # add_ons: [billion-context-pi, pi-image-trim, pi-tldr]       (the default: all allowed)
+```
+
+```yaml
+# configs/agents/scout_talk.yaml
+agent:
+  name: scout_talk
+  type: pi
+  role: scout                  # a role folder under the box config's identities_dir
+  tools: [Read]                # Temper's tool names (see "Member settings")
+  message: "Read note.txt and tell me its first word. Topic: {{ topic }}."
+  workspace_files: {note.txt: "..."}   # written once into the worker's folder
+  # provider: anthropic  model: claude-opus-5-5  thinking: max   (the defaults)
+  # add_ons: [billion-context-pi, pi-image-trim, pi-tldr]       (the default: all allowed)
 ```
 
 ## Member settings (`temper_ai/pi_agent/member.py`)
@@ -53,22 +65,38 @@ Switch: the environment setting `TEMPER_PI_AGENT=1` (also `true`, `on`, `yes`), 
 ## A team stage (`strategy: team`)
 
 A team is one stage, a fourth strategy beside parallel, sequential and leader. Its members
-are the stage's `agents:`, each a `type: pi` agent config pointing at an existing pi role
-(a run never creates a role), known in the team by its `name:`.
+are the stage's `agents:`, each the name of an agent file (`configs/agents/<name>.yaml`)
+holding a `type: pi` agent config that points at an existing pi role (a run never creates a
+role); the member is known in the team by that config's `name:`.
 
 ```yaml
+# configs/workflows/<workflow>.yaml
 - name: build
   type: stage
   strategy: team
-  agents: [design, frontend, qa]          # type: pi agent configs
+  agents: [design, frontend, qa]          # configs/agents/design.yaml, frontend.yaml, qa.yaml
   input_map: {goal: input.goal}           # the team's goal
   strategy_config:
     mode: {type: leader, leader: design}  # who gets the brief and says done
-    communication:                        # all (default), or edges: one-direction lists
-      type: edges
-      edges: {design: [frontend, qa], frontend: [qa]}
+    communication: {type: all}            # the default; edges isn't built yet (below)
     pause_after_rounds: 3                 # required, no default
 ```
+
+```yaml
+# configs/agents/design.yaml (frontend.yaml and qa.yaml alike, each with its own role)
+agent:
+  name: design
+  type: pi
+  role: architecture           # an existing role folder under the box config's identities_dir
+  tools: [Read, Grep, Glob]
+  # provider, model, thinking and add_ons as for a step (see "Member settings")
+```
+
+`communication` is `all` (any member may message any member) or `edges`, one-direction lists
+of whom each member may start a conversation with, e.g. `{type: edges, edges: {design:
+[frontend, qa], frontend: [qa]}}`. The first team runtime is `all` only (R2 rule B7): edges
+are parsed and checked like the rest, and the pre-run check refuses them with
+"communication: edges isn't built yet; use all" until a later slice builds them.
 
 Each section has a `type` plus that type's options (`temper_ai/pi_agent/team.py`, section
 models `LeaderMode`, `AllCommunication`, `EdgesCommunication`, `TeamSettings`). Unknown
@@ -83,11 +111,15 @@ start (`POST /api/runs` answers 400; `temper run` exits). It checks each member 
 config loads; a valid `type: pi` config; its role exists under that exact id, with a close
 name suggested but never picked; `identity.json` and `about.md` readable; `identity.json`
 names a home chat; a worker route for its provider; pinned copies of its add-ons), the team
-(leader is a member, edges name members, every member reachable from the leader,
-`pause_after_rounds` set, a goal) and the workflow (each `safety: policies:` entry is refused
+(leader is a member, edges name members, every member reachable from the leader, edges not
+used yet, `pause_after_rounds` set, a goal) and the workflow (each `safety: policies:` entry is refused
 by name, since a team can't enforce one yet). The role list is the box config's
 `identities_dir`, only read; unset means "role list not configured". A resume doesn't check
-again.
+again. The run-start problems, the graph's own and the Pi loop rule come in one error.
+
+A team's members are `type: pi` agents, so a workflow with a team stage is a Pi workflow
+(`stage/pi_workflows.py`, docs/gates.md "Pi workflows") even when it has no other Pi step:
+its gates park and its loops must say `on_max_loops: fail`.
 
 **The team node** (`temper_ai/pi_agent/team_node.py`, `TeamNode`): the stage holds one
 node, `<stage>.team`. Until the team runtime (T4 messaging, T5 inboxes, M1 leader mode) is

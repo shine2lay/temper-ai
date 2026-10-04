@@ -20,6 +20,7 @@ import pytest
 
 from temper_ai.pi_agent.member import REFUSED_ADD_ONS
 from temper_ai.pi_agent.team import (
+    EDGES_NOT_BUILT,
     LATER_SECTIONS,
     TEAM_NOT_BUILT,
     AllCommunication,
@@ -47,6 +48,8 @@ GOOD = {"mode": {"type": "leader", "leader": "design"},
         "communication": {"type": "edges", "edges": {"design": ["frontend", "qa"],
                                                      "frontend": ["qa"]}},
         "pause_after_rounds": 3}
+# What a run can use today (R2 rule B7: the first team runtime is communication: all only).
+RUNNABLE = {**GOOD, "communication": {"type": "all"}}
 GOAL = {"goal": "Add a sign-up page"}
 TOOLS = "Read, Edit, Write, Bash, Grep, Glob"
 
@@ -229,14 +232,30 @@ def test_a_members_own_config_problems_are_named_with_the_member():
 
 
 def test_a_good_team_passes_the_pre_run_check(box):
-    assert check_team(members(), GOOD, inputs=GOAL, box=box) == []
+    assert check_team(members(), RUNNABLE, inputs=GOAL, box=box) == []
+
+
+def test_edges_are_checked_but_refused_until_a_later_slice_builds_them(box):
+    """R2 rule B7: the first team runtime is communication: all only. Edges stay in the
+    format and are checked; the run-start check adds one problem until they are built."""
+    assert validate_team(members(), GOOD) == []
+    assert check_team(members(), GOOD, inputs=GOAL, box=box) == [
+        "communication: edges isn't built yet; use all"]
+    assert EDGES_NOT_BUILT == "edges isn't built yet; use all"
+    ghost = _with(communication={"type": "edges",
+                                 "edges": {"design": ["frontend", "qa", "ghost"]}})
+    assert check_team(members(), ghost, inputs=GOAL, box=box) == [
+        "communication: edges for 'design' name 'ghost', which is not a member",
+        "communication: edges isn't built yet; use all"]
+    left_out = _with(communication=None)  # all, the default
+    assert check_team(members(), left_out, inputs=GOAL, box=box) == []
 
 
 def test_a_missing_role_is_named_with_a_close_name_never_picked(box):
     team = members()
     team[0]["role"] = "architecure"
     team[2]["role"] = "zebra"
-    assert check_team(team, GOOD, inputs=GOAL, box=box) == [
+    assert check_team(team, RUNNABLE, inputs=GOAL, box=box) == [
         "member 'design': role 'architecure' is not in the role list (did you mean "
         "'architecture'? Not picked automatically)",
         "member 'qa': role 'zebra' is not in the role list"]
@@ -247,13 +266,13 @@ def test_a_role_needs_its_identity_its_about_page_and_a_home_chat(box):
     (roles / "frontend" / "about.md").unlink()
     (roles / "qa" / "identity.json").write_text(json.dumps({"id": "qa", "title": "QA"}))
     (roles / "architecture" / "identity.json").write_text("{not json")
-    assert check_team(members(), GOOD, inputs=GOAL, box=box) == [
+    assert check_team(members(), RUNNABLE, inputs=GOAL, box=box) == [
         "member 'design': role 'architecture': identity.json is missing or unreadable",
         "member 'frontend': role 'frontend': its about page (about.md) is missing or unreadable",
         "member 'qa': role 'qa': identity.json has no home chat"]
     (roles / "qa" / "identity.json").write_text(json.dumps({"id": "qa", "homeChat": "  "}))
     (roles / "architecture" / "identity.json").write_text("[]")
-    got = check_team(members(), GOOD, inputs=GOAL, box=box)
+    got = check_team(members(), RUNNABLE, inputs=GOAL, box=box)
     assert "member 'design': role 'architecture': identity.json is not an object" in got
     assert "member 'qa': role 'qa': identity.json has no home chat" in got
 
@@ -265,7 +284,7 @@ def test_the_check_only_reads_the_role_folders(box):
     for path in modes:  # read only, as the real role folders are mounted
         path.chmod(0o555 if path.is_dir() else 0o444)
     try:
-        assert check_team(members(), GOOD, inputs=GOAL, box=box) == []
+        assert check_team(members(), RUNNABLE, inputs=GOAL, box=box) == []
     finally:
         for path, mode in modes.items():
             path.chmod(mode)
@@ -274,7 +293,7 @@ def test_the_check_only_reads_the_role_folders(box):
 
 def test_the_role_list_must_be_configured(monkeypatch):
     monkeypatch.delenv("TEMPER_PI_BOX_CONFIG", raising=False)
-    assert check_team(members(), GOOD, inputs=GOAL) == [
+    assert check_team(members(), RUNNABLE, inputs=GOAL) == [
         "roles: role list not configured (set TEMPER_PI_BOX_CONFIG to the worker box config)"]
     assert RoleList(Path("/nonexistent/roles")).ids() == []
 
@@ -288,7 +307,7 @@ def test_a_member_needs_a_worker_route_and_pinned_add_ons(tmp_path):
     team = members()
     team[1].update(provider="openai-codex", model="gpt-6.1-sol")
     team[2]["add_ons"] = []
-    assert check_team(team, GOOD, inputs=GOAL, box=bare) == [
+    assert check_team(team, RUNNABLE, inputs=GOAL, box=bare) == [
         "member 'design': no pinned copy of add-on(s) billion-context-pi, pi-image-trim, "
         "pi-tldr in the worker box config",
         "member 'frontend': no worker route for provider 'openai-codex' in the worker box config",
@@ -344,6 +363,7 @@ def test_a_broken_team_gets_every_problem_at_once(box):
         "the owner",
         "mode: leader 'boss' is not a member (members: design, frontend, qa)",
         "communication: edges for 'design' name 'ghost', which is not a member",
+        "communication: edges isn't built yet; use all",
         "member 'design': role 'architecure' is not in the role list (did you mean "
         "'architecture'? Not picked automatically)",
         "goal: required: give the run a 'goal' input or map it in the stage's input_map",
@@ -412,7 +432,7 @@ def store(*stages: dict, safety: dict | None = None, extra: dict | None = None):
 
 def team_stage(name: str = "build", **over) -> dict:
     stage = {"name": name, "type": "stage", "strategy": "team",
-             "agents": ["design", "frontend", "qa"], "strategy_config": GOOD,
+             "agents": ["design", "frontend", "qa"], "strategy_config": RUNNABLE,
              "input_map": {"goal": "input.goal"}}
     stage.update(over)
     return stage
@@ -427,7 +447,7 @@ def test_a_good_team_stage_loads_as_one_team_node(team_on):
     assert len(nodes) == 1 and isinstance(nodes[0], StageNode)
     (team,) = nodes[0].child_nodes
     assert isinstance(team, TeamNode)
-    assert team.settings.as_dict() == GOOD
+    assert team.settings.as_dict() == RUNNABLE
     assert [m["role"] for m in team.members] == ["architecture", "frontend", "qa"]
     assert [c["name"] for c in nodes[0].agent_configs()] == ["design", "frontend", "qa"]
 
@@ -490,6 +510,50 @@ def test_a_resume_does_not_check_again(team_on):
         loader.load_workflow("team_wf", inputs=GOAL, run_start=True)
 
 
+STEP = {"agent:step": {"name": "step", "type": "script", "script": "echo done"}}
+
+
+def _looping_review(policy: str) -> dict:
+    return {"name": "review", "type": "agent", "agent": "step", "depends_on": ["build"],
+            "loop_to": "review", "max_loops": 2, "on_max_loops": policy,
+            "loop_condition": {"source": "review.structured.verdict", "operator": "equals",
+                               "value": "again"}}
+
+
+def test_a_workflow_whose_only_pi_agents_are_team_members_is_a_pi_workflow(team_on):
+    """The link to the Pi workflow rules (stage/pi_workflows.py): a team's members are
+    type: pi agents, so a workflow whose only Pi agents are a team's members is a Pi workflow.
+    Its gates park (api/routes.py and runner/execute.py pass
+    park_at_gates=is_pi_workflow(nodes)) and its loops must say on_max_loops: fail, when a run
+    starts and on a resume alike. TeamNode.agent_configs feeds it, and so does a stage its
+    run-start check refused, so that every problem shows at once."""
+    from temper_ai.stage.exceptions import ValidationError
+    from temper_ai.stage.loader import GraphLoader
+    from temper_ai.stage.pi_workflows import is_pi_workflow
+
+    nodes, _ = GraphLoader(store(team_stage(), _looping_review("fail"), extra=STEP)).load_workflow(
+        "team_wf", inputs=GOAL, run_start=True)
+    assert isinstance(nodes[0].child_nodes[0], TeamNode)
+    assert [cfg["name"] for cfg in nodes[0].agent_configs()] == ["design", "frontend", "qa"]
+    assert [cfg.get("type") for cfg in nodes[1].agent_configs()] == ["script"]
+    assert is_pi_workflow(nodes)
+
+    loop_rule = ("Node 'review' loops back to 'review' with on_max_loops: silent. In a workflow "
+                 "with a Pi step every loop must say on_max_loops: fail")
+    quiet = store(team_stage(), _looping_review("silent"), extra=STEP)
+    for run_start in (True, False):  # a run starting, and a resume
+        with pytest.raises(ValidationError) as err:
+            GraphLoader(quiet).load_workflow("team_wf", inputs=GOAL, run_start=run_start)
+        assert loop_rule in str(err.value)
+
+    refused = store(team_stage(strategy_config=GOOD), _looping_review("silent"), extra=STEP)
+    with pytest.raises(ValidationError) as err:
+        GraphLoader(refused).load_workflow("team_wf", inputs=GOAL, run_start=True)
+    lines = [line.removeprefix("  - ") for line in str(err.value).splitlines()[1:]]
+    assert lines[0] == "Stage 'build': communication: edges isn't built yet; use all"
+    assert lines[1].startswith(loop_rule) and len(lines) == 2
+
+
 def test_the_strategy_list_names_team_and_other_strategies_load_as_before(team_on):
     from temper_ai.stage.exceptions import ValidationError
     from temper_ai.stage.loader import GraphLoader
@@ -548,4 +612,4 @@ def test_the_check_needs_no_model_and_no_container(box, monkeypatch):
     monkeypatch.setattr(subprocess, "run", refuse)
     monkeypatch.setattr(subprocess, "Popen", refuse)
     monkeypatch.setattr(os, "system", refuse)
-    assert check_team(members(), GOOD, inputs=GOAL, box=box) == []
+    assert check_team(members(), RUNNABLE, inputs=GOAL, box=box) == []

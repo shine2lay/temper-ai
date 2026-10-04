@@ -8,13 +8,16 @@ type's options (build plan, "Team settings format"):
 
     strategy_config:
       mode:          {type: leader, leader: design}     # who gets the brief and says done
-      communication: {type: edges, edges: {design: [frontend, qa], frontend: [qa]}}
+      communication: {type: all}                        # or {type: edges, edges: {...}}
       pause_after_rounds: 3                             # required, no default
 
 * ``mode``: required; first type ``leader`` (``leader:`` names a member).
 * ``communication``: ``all`` (any member may message any member; the default when the section
   is left out) or ``edges`` (each member lists the members it may start a conversation with,
-  one direction). Every member must be reachable from the leader.
+  one direction, e.g. ``{design: [frontend, qa], frontend: [qa]}``). Every member must be
+  reachable from the leader. The first team runtime is ``all`` only (R2 rule B7): ``edges`` is
+  parsed and checked here, and the run-start check refuses it with ``EDGES_NOT_BUILT`` until
+  the later slice builds it.
 * ``pause_after_rounds``: how many rounds before the team pauses for the owner; required.
 
 Each section type brings its own parser and check (``MODE_TYPES``, ``COMMUNICATION_TYPES``),
@@ -42,6 +45,9 @@ from temper_ai.pi_agent.member import config_problems
 
 STRATEGY = "team"
 TEAM_NOT_BUILT = "team runtime not built yet (T4/T5/M1)"
+#: Said by the run-start check for ``communication: {type: edges}`` (R2 rule B7): the first
+#: team runtime is ``all`` only. Drop it when a later slice builds edges.
+EDGES_NOT_BUILT = "edges isn't built yet; use all"
 #: The name of the one node a team stage holds (its path is ``<stage>.team``).
 NODE_NAME = "team"
 SECTIONS = ("mode", "communication", "pause_after_rounds")

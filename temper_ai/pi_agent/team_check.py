@@ -13,7 +13,8 @@ not start. It checks:
   readable; ``identity.json`` names a home chat; its add-ons have pinned copies and its provider
   has a worker route in the worker box config;
 * the team: its sections (leader is a member, edges name members, every member reachable from
-  the leader, ``pause_after_rounds`` set) and its goal;
+  the leader, ``pause_after_rounds`` set) and its goal; ``communication: edges`` is refused for
+  now (R2 rule B7: the first team runtime is ``all`` only);
 * the workflow: every ``safety: policies:`` entry, since a team can't enforce one yet.
 
 The role list is the worker box config's ``identities_dir`` (``TEMPER_PI_BOX_CONFIG``), the same
@@ -32,7 +33,7 @@ from typing import TYPE_CHECKING
 from temper_ai.pi_agent import AGENT_TYPE
 from temper_ai.pi_agent.box import CONFIG_ENV, ROLE_RE, BoxConfig, BoxError
 from temper_ai.pi_agent.member import ADD_ONS, add_on_names, settings
-from temper_ai.pi_agent.team import member_name, stage_problems
+from temper_ai.pi_agent.team import EDGES_NOT_BUILT, member_name, stage_problems
 
 if TYPE_CHECKING:  # the stage package imports this module's registration; no import cycle
     from temper_ai.stage.topology import RunStart
@@ -145,6 +146,10 @@ def check_team(agent_configs: list[dict], strategy_config: object, *,
                 for name, error in (unloaded or {}).items()]
     problems += [f"{where}: {what}" for where, what in stage_problems(agent_configs,
                                                                      strategy_config)]
+    if _uses_edges(strategy_config):
+        # R2 rule B7: edges stay in the format and are checked above, but the first team
+        # runtime is ``all`` only, so a run can't use them yet.
+        problems.append(f"communication: {EDGES_NOT_BUILT}")
     if box is None:
         problems.append(f"roles: {box_problem}")
     else:
@@ -172,6 +177,11 @@ def check_team(agent_configs: list[dict], strategy_config: object, *,
         problems.append(goal)
     problems += safety_problems(safety)
     return problems
+
+
+def _uses_edges(strategy_config: object) -> bool:
+    section = strategy_config.get("communication") if isinstance(strategy_config, dict) else None
+    return isinstance(section, dict) and section.get("type") == "edges"
 
 
 def run_start_check(start: RunStart) -> list[str]:

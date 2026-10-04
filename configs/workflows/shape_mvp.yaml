@@ -1,0 +1,100 @@
+workflow:
+  name: shape_mvp
+  # PRODUCT SHAPING (product role; built 2026-10-03, queue #11). Shape Up (Ryan Singer,
+  # Basecamp): fix the time, vary the scope. Turns an evidenced opportunity into a bounded
+  # first-version pitch (problem, appetite, solution, rabbit holes, no-gos) plus checkable success
+  # criteria and a verification plan, keeping every unresolved assumption and prerequisite,
+  # before anyone commits to building it. A shaped pitch is input to the owner's betting table:
+  # not an approval to build, not a market choice, not a promise to anyone.
+  #
+  #   setup (script) -> draft -> critique -> revise -> check (script) -> grade -> finalize (script)
+  #
+  # setup checks the input contract with no model: a missing or placeholder buyer, job, evidence,
+  # appetite, constraints or upstream status, or an idea killed upstream and not reopened, blocks
+  # the run at $0 with what would unblock it (each model step's condition then skips it). Missing
+  # owner values (target price, success bar) become owner-input gaps, never invented. The model
+  # steps may also block: when the supplied evidence does not show the problem for the named buyer,
+  # or no version of the core job fits the appetite. Final status = the most conservative of
+  # setup, model, check and grade (blocked < revise < shaped). A value whose source is
+  # test_fixture is test data and is labelled as such everywhere.
+  #
+  # Contract and rules: configs/agents/shape_mvp_assets/contract.md; checker check_shape.py (same
+  # folder, standard library only). Bar, benchmark and replay evidence: product
+  # results/2026-10-03-shape-11/ and tests/test_shape_mvp/. How to run: docs/product-runs.md.
+  #
+  # provider: claude = Claude Code CLI; no temper tools: blocks. No web: the model steps work
+  # only from the opportunity's own evidence.
+  version: 1
+  description: |
+    Shape an evidenced opportunity into a bounded first-version pitch (Shape Up: problem,
+    appetite, solution, rabbit holes, no-gos) with checkable success criteria and a
+    verification plan, keeping every open assumption and prerequisite. A script checks the
+    input first (missing critical inputs or a killed idea block at no cost), then a drafter, an
+    independent critic and a reviser write the pitch, a script checks it, and a fixed grader
+    reviews it. Result: shaped, revise or blocked. Not an approval to build.
+  inputs:
+    opportunity_path:
+      type: string
+      required: true
+      description: "shape_mvp.opportunity/1 JSON inside the run workspace: buyer, job, quoted evidence, open unknowns, appetite (weeks x builders, source owner|test_fixture), constraints, upstream status; optional proposal and owner values."
+    assets_dir:
+      type: string
+      required: true
+      description: "configs/agents/shape_mvp_assets staged into the run workspace (check_shape.py, contract.md)."
+  outputs:
+    final_status: finalize.structured.final_status
+    case_id: finalize.structured.case_id
+    result_path: finalize.structured.result_path
+    pitch_path: finalize.structured.pitch_path
+    problems: finalize.structured.problems
+    setup_status: setup.structured.status
+    setup_problems: setup.structured.problems
+    owner_input_gaps: setup.structured.owner_input_gaps
+
+  nodes:
+    # Input contract, no model. Copies the opportunity, contract and checker into state/shape/.
+    - name: setup
+      type: agent
+      agent: shape_mvp_setup
+      input_map:
+        opportunity_path: input.opportunity_path
+        assets_dir: input.assets_dir
+
+    - name: draft
+      type: agent
+      agent: shape_mvp_draft
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready_to_shape}
+
+    - name: critique
+      type: agent
+      agent: shape_mvp_critique
+      depends_on: [draft]
+      condition: {source: setup.structured.status, operator: equals, value: ready_to_shape}
+
+    - name: revise
+      type: agent
+      agent: shape_mvp_revise
+      depends_on: [critique]
+      condition: {source: setup.structured.status, operator: equals, value: ready_to_shape}
+
+    # Deterministic check of the final pitch, no model.
+    - name: check
+      type: agent
+      agent: shape_mvp_check
+      depends_on: [revise]
+      condition: {source: setup.structured.status, operator: equals, value: ready_to_shape}
+
+    - name: grade
+      type: agent
+      agent: shape_mvp_grade
+      depends_on: [check]
+      condition: {source: setup.structured.status, operator: equals, value: ready_to_shape}
+
+    # Final status on every path, no model.
+    - name: finalize
+      type: agent
+      agent: shape_mvp_finalize
+      depends_on: [grade]
+      # After a failed model step too: the result says the run is not shaped.
+      run_after_failure: true

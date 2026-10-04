@@ -1,0 +1,31 @@
+# @description PRODUCT SHAPING step 1 (product role): stage the opportunity, the contract and
+# the checker, then check the opportunity against the input contract. No model: a missing or
+# placeholder critical input (buyer, job, evidence, appetite, constraints, upstream status) or an
+# idea killed upstream and not reopened blocks here at $0, with what would unblock it. Missing
+# owner values (target price, success bar) become owner-input gaps, never invented. Part of
+# workflows/shape_mvp.yaml.
+agent:
+  name: shape_mvp_setup
+  version: 1
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import os
+    import shutil
+    from pathlib import Path
+
+    opportunity = Path(os.environ['{{ opportunity_path | env }}']).resolve(strict=True)
+    assets = Path(os.environ['{{ assets_dir | env }}']).resolve(strict=True)
+    dest = Path('state/shape')
+    if dest.exists() and any(dest.iterdir()):
+        raise SystemExit('Refusing to overwrite an existing shaping run: use a fresh workspace')
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in ('check_shape.py', 'contract.md'):
+        shutil.copyfile(assets / name, dest / name)
+    shutil.copyfile(opportunity, dest / 'opportunity.json')
+    PY
+    python3 state/shape/check_shape.py input state/shape/opportunity.json

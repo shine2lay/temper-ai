@@ -1,0 +1,24 @@
+{
+  "derive_from": "r2_billing_denial_queue.json",
+  "set": {
+    "id": "f3-billing-denial-suite",
+    "title": "Denial-management suite for outsourced medical billing companies (Tebra first)",
+    "fixture": {
+      "is_fixture": true,
+      "fictional": false,
+      "label": "queue #11 benchmark case F3: a real opportunity from queue #10 (the billing-company runner-up) with a proposal written for the benchmark; the appetite and the proposal are test fixtures"
+    },
+    "proposed_solution": {
+      "source": "test_fixture",
+      "summary": "A denial-management suite for billing companies: one queue across all clients, appeal drafting, a Tebra API sync, automatic portal submission, root-cause analytics and a client portal.",
+      "features": [
+        {"id": "P1", "name": "Cross-client denial queue", "does": "Sort the posted 835 remittances of every client, from every PM system's export format, by denial reason (CARC/RARC), filing deadline and dollars", "proposer_estimate_builder_weeks": 1.0},
+        {"id": "P2", "name": "Appeal drafting", "does": "Draft payer-specific appeal letters for every denial reason, for staff review", "proposer_estimate_builder_weeks": 1.5},
+        {"id": "P3", "name": "Tebra API sync", "does": "Pull remittances and claim data from Tebra automatically through the Tebra API and write appeal status back", "proposer_estimate_builder_weeks": 1.5},
+        {"id": "P4", "name": "Automatic portal submission", "does": "Submit approved appeals to payer portals automatically with browser automation", "proposer_estimate_builder_weeks": 2.0},
+        {"id": "P5", "name": "Root-cause analytics", "does": "Dashboards of denial trends by client, payer and reason, with monthly PDF reports", "proposer_estimate_builder_weeks": 1.0},
+        {"id": "P6", "name": "Client portal", "does": "A portal where each client practice sees its denials and appeal status", "proposer_estimate_builder_weeks": 1.5}
+      ]
+    }
+  }
+}

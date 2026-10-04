@@ -1,0 +1,41 @@
+{
+  "derive_from": "g1_bookshop_returns_check.json",
+  "set": {
+    "id": "f2-bookshop-returns-check",
+    "open_unknowns": [
+      {"id": "U1", "fatal": false, "question": "Do smaller publishers send credit notes only as PDF, which would need manual entry?", "source": "queue #11 benchmark (fictional)"},
+      {"id": "U2", "fatal": false, "question": "Will independent shops pay the target price?", "source": "queue #11 benchmark (fictional)"},
+      {"id": "U3", "fatal": false, "question": "How often do the distributors change their CSV layout?", "source": "queue #11 benchmark (fictional)"}
+    ],
+    "evidence": [
+      {"id": "E1", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+       "claim": "A finance benchmark of 14 bookshop chains (fictional, 2026): 12 central finance teams name returns credit reconciliation as their largest manual task.",
+       "quote": "Twelve of the fourteen chain finance teams named returns credit reconciliation as their largest manual task",
+       "source": "Chain bookselling finance benchmark 2026, central finance teams of 14 chains (fictional test document)"},
+      {"id": "E2", "kind": "primary", "party": "interested", "checked": "test document (fictional)",
+       "claim": "A publisher's operations blog (fictional) says processing shops' returns is slow on the publisher's side.",
+       "quote": "Processing a returns batch takes our warehouse up to six weeks",
+       "source": "Publisher operations blog (fictional test document)"},
+      {"id": "E3", "kind": "assertion", "party": "interested", "checked": "test document (fictional)",
+       "claim": "The proposer believes independent bookshops have the same reconciliation problem as the chains.",
+       "quote": "",
+       "source": "Proposer's note (fictional test document)"},
+      {"id": "E4", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+       "claim": "The (fictional) guild has 340 member shops.",
+       "quote": "The Guild has 340 member shops",
+       "source": "Northvale Booksellers Guild about page (fictional test document)"},
+      {"id": "E5", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+       "claim": "The two largest distributors offer credit notes as CSV downloads with a documented column layout (fictional).",
+       "quote": "Credit notes are available as CSV with the columns ISBN, quantity, unit credit, returns authorisation number",
+       "source": "Fictional distributor help page (test document)"},
+      {"id": "E6", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+       "claim": "The shops' point-of-sale systems export returns lists as CSV (fictional).",
+       "quote": "Export returns as CSV: ISBN, title, quantity, supplier, returns authorisation number",
+       "source": "Fictional point-of-sale vendor manual (test document)"},
+      {"id": "E7", "kind": "secondary", "party": "neutral", "checked": "test document (fictional)",
+       "claim": "The guild's software list has no tool that matches returns to credit notes (fictional).",
+       "quote": "None of the listed systems matches returns to credit notes",
+       "source": "Northvale Booksellers Guild software list (fictional test document)"}
+    ]
+  }
+}

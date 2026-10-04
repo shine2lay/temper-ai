@@ -26,7 +26,7 @@ ROOT = Path(os.environ.get("PRODUCT_AUTOPILOT_DIR", Path.home() / "product-autop
 SHARED = Path(os.environ.get("PRODUCT_WORKSPACES_ROOT", Path.home() / "temper-ai/workspaces/product"))
 API = os.environ.get("PRODUCT_TEMPER_API", "http://127.0.0.1:8420").rstrip("/")
 UI = os.environ.get("PRODUCT_TEMPER_UI", "https://temper-dev.wai2shine.com/app").rstrip("/")
-LIVE = {"scan_market", "scan_serving", "signal_harvest", "opportunity_brief", "desk_check"}
+LIVE = {"scan_market", "scan_serving", "signal_harvest", "opportunity_brief", "desk_check", "shape_mvp"}
 TERMINAL = {"completed": 0, "failed": 1, "cancelled": 2}
 
 

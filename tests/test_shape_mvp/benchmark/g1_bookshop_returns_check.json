@@ -1,0 +1,84 @@
+{
+  "schema": "shape_mvp.opportunity/1",
+  "id": "g1-bookshop-returns-check",
+  "title": "Returns credit check for independent bookshops",
+  "fixture": {
+    "is_fixture": true,
+    "fictional": true,
+    "label": "queue #11 benchmark: a fictional opportunity written for the benchmark; every fact, source and value in it is test data"
+  },
+  "upstream_status": {
+    "state": "open",
+    "summary": "Fictional benchmark opportunity: no upstream screening was run (test data).",
+    "source": "queue #11 benchmark (fictional)",
+    "reopened": null
+  },
+  "buyer": "Owner-managers of independent bookshops with 1-3 staff, members of the (fictional) Northvale Booksellers Guild",
+  "user": "The shop's owner-manager, who does the returns paperwork",
+  "job": "Each month, match the books the shop returned to publishers and distributors against the credit notes they send back, find missing or short credits, and send each supplier a query listing them.",
+  "evidence": [
+    {"id": "E1", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+     "claim": "Guild member survey (fictional, 2026, 112 of 340 member shops answered): 71% reconcile returns credits by hand, a median of 5 hours a month.",
+     "quote": "71% of responding shops reconcile returns credits by hand, a median of 5 hours a month",
+     "source": "Northvale Booksellers Guild member survey 2026 (fictional test document)"},
+    {"id": "E2", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+     "claim": "Interviews with six owner-managers (fictional, September 2026): five had found at least one missing or short credit in the last quarter; the median amount missing was $180.",
+     "quote": "Five of the six owner-managers had found at least one missing or short credit in the last quarter; the median amount missing was $180",
+     "source": "Queue #11 interview notes, six owner-managers (fictional test document)"},
+    {"id": "E3", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+     "claim": "An owner-manager describes the manual check (fictional interview).",
+     "quote": "I print the returns list and the credit notes and tick them off with a pen. It takes most of a Sunday.",
+     "source": "Queue #11 interview notes, six owner-managers (fictional test document)"},
+    {"id": "E4", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+     "claim": "Owner-managers want to approve any query before it goes to a supplier (fictional interview).",
+     "quote": "I want to see what it's going to say to the rep before anything goes out",
+     "source": "Queue #11 interview notes, six owner-managers (fictional test document)"},
+    {"id": "E5", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+     "claim": "The two largest distributors offer credit notes as CSV downloads with a documented column layout (fictional).",
+     "quote": "Credit notes are available as CSV with the columns ISBN, quantity, unit credit, returns authorisation number",
+     "source": "Fictional distributor help page (test document)"},
+    {"id": "E6", "kind": "primary", "party": "neutral", "checked": "test document (fictional)",
+     "claim": "The shops' point-of-sale systems export returns lists as CSV (fictional).",
+     "quote": "Export returns as CSV: ISBN, title, quantity, supplier, returns authorisation number",
+     "source": "Fictional point-of-sale vendor manual (test document)"},
+    {"id": "E7", "kind": "secondary", "party": "neutral", "checked": "test document (fictional)",
+     "claim": "The guild's software list has no tool that matches returns to credit notes (fictional).",
+     "quote": "None of the listed systems matches returns to credit notes",
+     "source": "Northvale Booksellers Guild software list (fictional test document)"}
+  ],
+  "open_unknowns": [
+    {"id": "U1", "fatal": false,
+     "question": "Do smaller publishers send credit notes only as PDF, which would need manual entry?",
+     "source": "queue #11 benchmark (fictional)"},
+    {"id": "U2", "fatal": false,
+     "question": "Will shops beyond the ones interviewed pay the target price?",
+     "source": "queue #11 benchmark (fictional)"},
+    {"id": "U3", "fatal": false,
+     "question": "How often do the distributors change their CSV layout?",
+     "source": "queue #11 benchmark (fictional)"}
+  ],
+  "appetite": {
+    "time_weeks": 2,
+    "builders": 1,
+    "source": "test_fixture",
+    "note": "Test fixture for the queue #11 benchmark: not an owner commitment."
+  },
+  "constraints": [
+    {"id": "C1", "text": "No contact with real shops, suppliers or anyone else: this is a fictional benchmark case.", "source": "queue #11 plan"},
+    {"id": "C2", "text": "The owner-manager approves every supplier query before it is sent; the tool never sends anything itself.", "source": "test_fixture"},
+    {"id": "C3", "text": "Works from CSV files the shop downloads; no integration with point-of-sale or distributor systems in the first version.", "source": "test_fixture"}
+  ],
+  "proposed_solution": {
+    "source": "test_fixture",
+    "summary": "Upload the month's returns CSV and the distributors' credit-note CSVs; the tool matches lines by returns authorisation number and ISBN, lists missing and short credits, and drafts one query per supplier for the owner-manager to edit and approve before sending it from their own email.",
+    "features": [
+      {"id": "P1", "name": "CSV upload and matching", "does": "Match returns lines to credit-note lines by returns authorisation number and ISBN", "proposer_estimate_builder_weeks": 0.75},
+      {"id": "P2", "name": "Mismatch list", "does": "List missing and short credits per supplier, with amounts", "proposer_estimate_builder_weeks": 0.25},
+      {"id": "P3", "name": "Query drafts for approval", "does": "Draft one query per supplier listing its mismatches; the owner-manager edits, approves and sends it from their own email", "proposer_estimate_builder_weeks": 0.5}
+    ]
+  },
+  "owner_inputs": {
+    "target_price": {"value": "$29 per shop per month", "source": "test_fixture"},
+    "success_bar": {"value": "At least 4 of 6 pilot shops finish a month's returns check with the tool in under half the time they report today, and each finds or rules out missing credits, within 6 weeks of starting", "source": "test_fixture"}
+  }
+}

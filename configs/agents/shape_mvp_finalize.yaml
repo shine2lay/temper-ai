@@ -1,0 +1,19 @@
+# @description PRODUCT SHAPING last step (product role): the final status. No model. Runs on
+# every path (a blocked input, a failed model step, a full run) and combines setup, the model's
+# status, the deterministic check and the grade into state/shape/result.json and RESULT.md: the
+# most conservative wins (blocked < revise < shaped); a missing step output or usage-limit text
+# makes it revise. Owns the workflow outputs. Part of workflows/shape_mvp.yaml.
+agent:
+  name: shape_mvp_finalize
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    if [ ! -f state/shape/check_shape.py ] || [ ! -f state/shape/setup.json ]; then
+      echo '{"status": "completed", "final_status": "blocked", "case_id": "", "result_path": "", "pitch_path": "", "problems": ["setup did not finish: opportunity_path or assets_dir missing or unreadable, or the workspace was not fresh (see the setup step error)"]}'
+      exit 0
+    fi
+    python3 state/shape/check_shape.py finalize

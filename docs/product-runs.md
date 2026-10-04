@@ -142,6 +142,60 @@ the screen run like any other (in that workspace: the re-ranked `state/scan/shor
 the same three inputs; `retain_sources` (default false) is only for replays with an exact
 retained-page registry.
 
+## Shape a first version (`shape_mvp`)
+
+`shape_mvp` turns one evidenced opportunity into a bounded first-version pitch (Shape Up:
+problem, appetite, solution, rabbit holes, no-gos) with checkable success criteria and a
+verification plan, keeping every open assumption and prerequisite. Its result is input to the
+owner's betting table: not an approval to build, not a market choice, not a promise to anyone.
+
+Input: one `shape_mvp.opportunity/1` JSON; the contract and an example are in
+`configs/agents/shape_mvp_assets/contract.md`. It needs the buyer, the job, quoted evidence
+(each item with its kind, the party behind it and its source), the open unknowns (fatal or
+not), the appetite (`time_weeks` x `builders`, `source` `owner` or `test_fixture`), the
+constraints (each with a source) and the upstream status (`open`, `parked` or `killed`, with the
+decision's source). A proposed solution and owner values (target price, success bar) are
+optional. Never fill in a missing owner value: leave it out and the run carries it as an
+owner-input gap. Only the owner sets an appetite with `source: owner`.
+
+```sh
+JOB=shape-my-idea
+mkdir ~/temper-ai/workspaces/product/$JOB
+python3 ~/product-autopilot/server.py stage ~/temper-ai/configs/agents/shape_mvp_assets \
+  --workspace ~/temper-ai/workspaces/product/$JOB --relative _assets
+python3 ~/product-autopilot/server.py stage ~/product-autopilot/inputs/$JOB-opportunity.json \
+  --workspace ~/temper-ai/workspaces/product/$JOB --relative _case/opportunity.json
+~/product-autopilot/start.sh $JOB shape_mvp --workspace ~/temper-ai/workspaces/product/$JOB \
+  --inputs ~/product-autopilot/inputs/$JOB.json
+```
+
+The inputs file is `{"opportunity_path": "<workspace>/_case/opportunity.json", "assets_dir":
+"<workspace>/_assets"}` with the workspace's absolute path. Results land in the workspace's
+`state/shape/`: `RESULT.md` (final status, the pitch in brief, why, what would unblock it, owner
+inputs missing from the input and owner decisions the pitch raises), `pitch.md` (the pitch,
+appetite before solution, every test-fixture value labelled), `pitch.json`, `critique.md`,
+`check.json`, `grade.md` and `result.json`.
+
+The verification plan runs riskiest first, then cheapest: each fatal assumption gets a free desk
+step that can end it on its own within the first steps (the checker enforces the window), and the
+decisive contact, paid or patient-data step follows with the owner's approval. A pass or kill
+rule that rests on a stand-in figure says what the stand-in leaves out and has a test measure the
+buyer's real figure.
+
+The final status is the most conservative of setup, model, check and grade. `blocked`: a
+critical input is missing, the idea was killed upstream and not reopened, the evidence does not
+show the problem for the buyer, or no version of the core job fits the appetite; it says what
+would unblock it. A setup block calls no model and costs nothing. `revise`: the checker or the
+grader found a defect, or a step left no usable output (usage-limit text, say): fix the input or
+rerun. `shaped`: every structural check and the fixed grader passed. Read the pitch and the
+evidence it cites before taking it to the owner; a pass is not proof.
+
+Regression benchmark: `tests/test_shape_mvp/benchmark/` holds seven fixed cases (`build.py
+OUTDIR` writes them; `expected.json` says what each must produce and is never staged into a
+run; `score.py CASE=WORKSPACE` scores a finished run). A changed candidate reruns all seven
+through a namespaced registration; the bar, scores, costs and manual reviews of the first
+version are in `~/product-autopilot/results/2026-10-03-shape-11/` (`REPORT.md`).
+
 ## Checks
 
 Run Product helper checks once after revisions:
@@ -150,6 +204,7 @@ Run Product helper checks once after revisions:
 python3 -m unittest discover -s configs/product/bin/tests -v
 python3 ~/product-autopilot/tests/check_digest.py
 uv run pytest tests/test_scan_serving -q
+uv run pytest tests/test_shape_mvp -q
 ```
 
 These use fake status/config APIs, not model request fixtures or third-party services. New

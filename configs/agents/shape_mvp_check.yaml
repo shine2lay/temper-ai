@@ -1,0 +1,15 @@
+# @description PRODUCT SHAPING step 5 (product role): the deterministic check of the final pitch
+# (D1-D13 for a shaped pitch, B for a blocked record; criteria.md of queue #11). No model. It
+# re-runs the checker itself, so a model step cannot report a pass it did not get; a failed check
+# is data (verdict fail), and finalize turns it into status revise. Renders state/shape/pitch.md.
+# Part of workflows/shape_mvp.yaml.
+agent:
+  name: shape_mvp_check
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 state/shape/check_shape.py pitch state/shape/pitch.json --stage final

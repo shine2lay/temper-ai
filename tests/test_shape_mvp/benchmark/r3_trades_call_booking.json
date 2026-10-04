@@ -1,0 +1,56 @@
+{
+  "schema": "shape_mvp.opportunity/1",
+  "id": "r3-trades-call-booking",
+  "title": "AI call handling and missed-call booking for small electrical contractors",
+  "fixture": {
+    "is_fixture": true,
+    "fictional": false,
+    "label": "queue #11 benchmark case R3: a real idea from the product ideas register; the appetite is a test fixture"
+  },
+  "upstream_status": {
+    "state": "killed",
+    "summary": "Killed 2026-10-02 by its opportunity brief: Jobber Receptionist, Housecall Pro CSR AI and ServiceTitan AI Voice Agent bundle it; writing bookings into those suites is gated; plain AI receptionists cost $16.67-$49 (Beside, Rosie).",
+    "source": "~/product-autopilot/ideas.md (row trades-call-booking); ~/temper-ai/state/brief/history/2026-10-02-electrical/brief.md",
+    "reopened": null
+  },
+  "buyer": "Owner-operated electrical contractors with 1-3 technicians",
+  "user": "The owner, who misses calls while on a job",
+  "job": "Answer and follow up on the calls the owner misses while working, and book the work.",
+  "evidence": [
+    {"id": "E1", "kind": "primary", "party": "neutral", "checked": "2026-10-02 (opportunity brief, claim P2)",
+     "claim": "A trade-shop customer-service job posting ($20-24 an hour) lists following up on missed calls.",
+     "quote": "Follow up on missed calls, open opportunities, and customers who may still need service",
+     "source": "https://community.getro.com/companies/sila-services/jobs/89677941-customer-service-representative"},
+    {"id": "E2", "kind": "primary", "party": "neutral", "checked": "2026-10-02 (opportunity brief, claim P1)",
+     "claim": "A 1-star Housecall Pro App Store review says its AI answering acts like a robot pretending to be the owner.",
+     "quote": "a robot pretending to be me, starts a conversation with my prospective customers then leaves em hanging if I don't jump in",
+     "source": "https://itunes.apple.com/us/rss/customerreviews/page=1/id=692833651/sortby=mostrecent/json (review dated 2026-07-12)"},
+    {"id": "E3", "kind": "primary", "party": "neutral", "checked": "2026-10-02 (opportunity brief, claim C6)",
+     "claim": "Housecall Pro's CSR AI answers calls and books jobs.",
+     "quote": "answers every call, books the job, schedules the appointment, and provides a call log",
+     "source": "https://help.housecallpro.com/en/articles/9311875-ai-team-overview"},
+    {"id": "E4", "kind": "primary", "party": "neutral", "checked": "2026-10-02 (opportunity brief, claim C1)",
+     "claim": "Jobber Receptionist is included in Jobber's Plus plan and an add-on for Grow.",
+     "quote": "Jobber Receptionist is included with Plus plans and available as an add-on for Grow plans",
+     "source": "https://www.prnewswire.com/news-releases/jobber-launches-ai-powered-receptionist-to-answer-calls-and-texts-for-busy-home-service-businesses-302531125.html"},
+    {"id": "E5", "kind": "primary", "party": "neutral", "checked": "2026-10-02 (opportunity brief, claim V11)",
+     "claim": "Rosie's AI receptionist costs $49 a month for solo owners.",
+     "quote": "Professional $49 per month For solo owners and small businesses who can't always answer the phone.",
+     "source": "https://heyrosie.com/pricing"}
+  ],
+  "open_unknowns": [
+    {"id": "U1", "fatal": false,
+     "question": "Would a shop pay for call booking outside the field-service suite it already uses?",
+     "source": "opportunity brief 2026-10-02"}
+  ],
+  "appetite": {
+    "time_weeks": 2,
+    "builders": 1,
+    "source": "test_fixture",
+    "note": "Test fixture for the queue #11 benchmark: not the owner's appetite."
+  },
+  "constraints": [
+    {"id": "C1", "text": "No contact with contractors or anyone else without the owner's go-ahead.", "source": "product role about page"},
+    {"id": "C2", "text": "No real money (ads, deposits, paid tools) without the owner's rails and go-ahead.", "source": "product role about page"}
+  ]
+}

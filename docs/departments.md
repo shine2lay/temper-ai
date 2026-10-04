@@ -16,7 +16,7 @@ role tests and lands a change.
 
 | Role | Department | Looks after |
 |---|---|---|
-| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest, the opportunity brief and the validation engine. New products only: RollCall's loop is not its part. |
+| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest, the opportunity brief, the first-version shaping (`shape_mvp`) and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot) and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
@@ -123,7 +123,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (59)
+### product (69)
 
 | Config | Kind |
 |---|---|
@@ -163,6 +163,16 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/desk_final.yaml` | agent (script) |
 | `agents/desk_setup.yaml` | agent (script) |
 | `agents/desk_synthesize.yaml` | agent |
+| `workflows/shape_mvp.yaml` | workflow |
+| `agents/shape_mvp_setup.yaml` | agent (script) |
+| `agents/shape_mvp_draft.yaml` | agent |
+| `agents/shape_mvp_critique.yaml` | agent |
+| `agents/shape_mvp_revise.yaml` | agent |
+| `agents/shape_mvp_check.yaml` | agent (script) |
+| `agents/shape_mvp_grade.yaml` | agent |
+| `agents/shape_mvp_finalize.yaml` | agent (script) |
+| `agents/shape_mvp_assets/check_shape.py` | script |
+| `agents/shape_mvp_assets/contract.md` | contract |
 | `validation/workflows/validation_engine.yaml` | workflow |
 | `validation/agents/ve_campaign.yaml` | agent |
 | `validation/agents/ve_collect.yaml` | agent (script) |

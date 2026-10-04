@@ -1,0 +1,12 @@
+{
+  "derive_from": "r1_irf_admission_appeals.json",
+  "remove": ["appetite"],
+  "set": {
+    "id": "f1-irf-admission-appeals",
+    "fixture": {
+      "is_fixture": true,
+      "fictional": false,
+      "label": "queue #11 benchmark case F1: a real opportunity from queue #10 (H2)"
+    }
+  }
+}

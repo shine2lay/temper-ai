@@ -5,11 +5,13 @@ work, not a change to live design reviewers, EPD, app branding or engine access.
 
 ```
 sourced brief + pinned research -> BUDGET -> six original monochrome vectors
- -> native rough PNG -> explorer sees that render and redraws -> sketch PNG
+ -> native rough PNG + size check -> explorer sees that render and redraws
+ -> sketch PNG + size check + caption-free cold read and same-name check
  -> three different shortlists + role palettes -> native equal-scale boards
  -> new logo critic -> REAL OWNER DIRECTION (a direction, or explore-again: the
     run ends and the next run's brief carries the rejected round) -> FRESH BUDGET
- -> selected refinement -> native source/exports -> new logo critic -> handoff
+ -> selected refinement -> native source/exports + size check -> cold read and
+    same-name check -> new logo critic -> handoff
  -> REAL OWNER FINAL (or one bounded rewind for the second refinement; past that,
     one extra round only on the owner's own request, see below)
 ```
@@ -142,6 +144,51 @@ note (`extra_round_owner_note`). Neither alone starts paid work, and nothing all
 a fourth round. Round 3's refinement reads that note and the previous round's
 boards (each round now gets the boards of the round before it, not always round 1's).
 
+## Size check and cold read (queue #11, 2026-10-04)
+
+Task #4 showed two weak spots that only the critic or the owner caught: detail
+that vanishes at small sizes (the Ringing Fork's arcs, the Dovetail T's seam and
+the Keystone's seams at 16 px; the approved anvil's dovetail only from 48 px) and
+misreadings (psi/trident, funnel, jacket/trousers, and a round-1 anvil that looked
+like a goblet), plus a same-name closeness (the ontemper.com header mark) found late.
+
+`configs/design/bin/logo_size_check.py` is model-free. From the saved vectors (the
+symbol parts in the 100-unit box, as the native source holds them) it measures each
+part's width (median inward thickness along its outline), each seam between
+separate pieces of ink (exact closest distance) and each narrow opening inside a
+piece, in px at 16/24/32/48. A symbol's honest minimum is the smallest of those
+sizes where every feature and gap is at least 1 px (`floor_px`, configurable); it
+also reports where all reach 2 px (`clear_px`) and the exact sizes. Values are
+truncated, never rounded up to pass. It runs after exploration (`roughs.size.json`,
+read by the redraw pass), after the redraw (`sketches.size.json`, read by the
+shortlist and critic, printed on each actual-size board) and after every refinement
+(`selected-rNN.size.json`); the handoff's `minimum_symbol_px` and BRAND.md use the
+larger of the declared and measured minimum, never a smaller one. Geometry only:
+antialiasing, hinting and colour are not modelled, and 1 px is a floor, not a
+reading test.
+
+The cold read shows each symbol alone, in its own native Penpot file, at 32 px and
+128 px under neutral labels (S1.., seeded shuffle) to `design_logo_coldread_v1`,
+which sees no caption, brief, name or idea and writes three first readings per
+size. `design_logo_names_v1` separately compares each 32-px header lockup (symbol +
+live wordmark) with the research marks the brief lists in `research.same_name`
+(captures of other products using the name). The host validates both, maps labels
+back to ids and saves `coldread-<phase>.saved.json`. Shortlist rows and critic
+reviews must quote every saved reading exactly with `fits_idea` and a note, and
+carry every close same-name flag (`first_reads`, `name_marks`); the host rejects a
+missing, changed or extra reading. Readings are one model's first impressions, not
+user research, recognition rates or a trademark search. Refinement reads the size
+check and cold read of the artwork it refines.
+
+The contract board's plant A (a wordmark cut to 'Ast' after its metrics were taken)
+is now measured on the final saved objects: content text, rendered text cache,
+final width and position are read back from what is saved, so an edit after
+creation shows (`rendered_matches_content`, `content_matches_intended`).
+
+`design_logo_replay_v1` (test only) re-checks saved symbols of an earlier run: size
+check, caption-free boards, cold read and same-name check, with no gates, budget
+answers, refinement or packet.
+
 ## Measurable rubric versus judgement
 
 Measure source identity/set/geometry, live spelling/style refs, native text cache,
@@ -196,9 +243,14 @@ required after save; real editor verification remains additional host evidence.
 
 ## Budget and retries
 
-Full run estimate/reservation $8.90: initial exploration2.25 + revision pass.75 +
-shortlist1.00 + initial critic.85 + (refinement1.00 + critic.85)*2 =8.55, plus.35
-headroom (v1 before the revision pass: $8.15). These are conservative planning
+Full run estimate/reservation $11.60: initial exploration2.25 + revision pass.75 +
+cold read.50 + same-name check.40 + shortlist1.00 + initial critic.85 +
+(refinement1.00 + cold read.50 + same-name check.40 + critic.85)*2 =11.25, plus.35
+headroom (before the cold read: $8.90; v1 before the revision pass: $8.15).
+The estimate is now above the script's $10 Pacific-day and trial fence
+(`budget_contract`); a full run still fits when actual spend stays well under the
+caps, as in task #4 ($7.31 for the whole trial, three refinement rounds included). Lifting that fence to match the
+owner's 2026-10-04 no-limit rule is a separate change, not part of the cold read. These are conservative planning
 estimates, NOT per-Claude-CLI billing caps. Native
 budget policy8.90 checks between calls; an in-flight call can overshoot. CLI model
 iteration/time bounds do not replace financial supervision. Record all real
@@ -211,7 +263,7 @@ subscription/one-experiment checks. Gate waits may cross dates: recheck then.
 
 Budget JSON fields: pacific_day, reserve_usd, day_spent_usd, trial_spent_usd,
 trial_envelope_usd, subscription_checked:true, one_design_experiment:true and
-reconciliation. Initial stage reserve>=4.85; each refinement reserve>=1.85;
+reconciliation. Initial stage reserve>=5.75; each refinement reserve>=2.75;
 host must reserve the FULL outstanding trial in the shared ledger, not merely
 these stage minima. No paid call while allowance is near limits or deployment
 revision/duplicate work is uncertain. Native script and fictional tests cost0.

@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import logo_contracts as c
+import logo_size_check as size_check
 import penpot_homepage_source as p
 
 MONO = {"ink": "#161616", "paper": "#FFFFFF", "accent": "#777777", "accent_on": "#FFFFFF", "muted": "#555555", "surface": "#F2F2F2"}
@@ -193,17 +194,20 @@ class LogoCanvas:
                       color=palette + "/ink", bg=palette + "/surface")
         return board
 
-    def actual_sizes_board(self, concept, palette, *, origin=2400):
+    def actual_sizes_board(self, concept, palette, *, origin=2400, size=None):
+        """size: the concept's size-check row; its measured minimum replaces the declared one."""
         key = concept["id"]
         board = self.board("Actual sizes and backgrounds — " + key, 0, origin, 768, 620, key + "/paper")
         self.text(board, "Title", "Actual-size checks / " + self.product, 24, origin + 18, 720, 28, "600", key + "/ink", key + "/paper")
         x = 30
-        for size in c.SIZES:
-            self.symbol(board, concept, x, origin + 100, size, key + "/ink", key + "/accent")
-            self.text(board, "Size label", str(size) + " px", x, origin + 184, 85, 16, color=key + "/ink", bg=key + "/paper")
+        for px in c.SIZES:
+            self.symbol(board, concept, x, origin + 100, px, key + "/ink", key + "/accent")
+            self.text(board, "Size label", str(px) + " px", x, origin + 184, 85, 16, color=key + "/ink", bg=key + "/paper")
             x += 132
-        self.text(board, "Size limitation", f'Proposed symbol minimum: {concept["minimum_symbol_px"]}px. Lower sizes remain shown for inspection.', 24, origin + 226, 720, 16,
-                  color=key + "/ink", bg=key + "/paper")
+        note = (size_check.board_note(size) if size else
+                f'Proposed symbol minimum: {concept["minimum_symbol_px"]}px. Lower sizes remain shown for inspection.')
+        self.text(board, "Size limitation", note, 24, origin + 226, 720, 16,
+                  color=key + "/ink", bg=key + "/paper", max_lines=3)
         for index, width in enumerate((160, 320)):
             self.lockup_fit(board, concept, self.product, 30 + index * 290, origin + 300, width, key, colour=True)
             self.text(board, "Lockup size", str(width) + "px lockup", 30 + index * 290, origin + 388, 230, 16,
@@ -260,7 +264,32 @@ class LogoCanvas:
                 self.text(board, "Companion E", "Inspect workflow", bx, by + 80, 260, 16)
         return board
 
-    def final_boards(self, brief, concept, palette):
+    def coldread_boards(self, concepts, labels, palettes=None):
+        """Caption-free boards per symbol: alone at 32 px and 128 px, and a 32-px header lockup.
+
+        Board names carry only neutral labels and nothing but the symbol is drawn on the
+        32/128 boards: no caption, idea or name. The header board adds the live wordmark
+        for the same-name check only. Selected rounds use their palette, sketches monochrome.
+        """
+        palettes = palettes or {}
+        widths = [math.ceil(16 + 32 + 8 + self.fonts[o["wordmark_weight"]].width(self.product, 22) + 8 + 16) for o in concepts]
+        step = max(400, max(widths, default=0) + 80)
+        for i, (label, concept) in enumerate(zip(labels, concepts, strict=True)):
+            key = "mono"
+            if concept["id"] in palettes:
+                key = concept["id"]
+                self.palette(key, palettes[key])
+            accent = key + "/accent" if key != "mono" else None
+            x = i * step
+            glance = self.board(label + " glance", x, 0, 64, 64, key + "/paper")
+            self.symbol(glance, concept, x + 16, 16, 32, key + "/ink", accent)
+            close = self.board(label + " close", x, 100, 192, 192, key + "/paper")
+            self.symbol(close, concept, x + 32, 132, 128, key + "/ink", accent)
+            header = self.board(label + " header", x, 340, max(320, widths[i]), 64, key + "/paper")
+            self.lockup(header, concept, self.product, x + 16, 356, 32, 22, key, colour=accent is not None)
+        return self.boards
+
+    def final_boards(self, brief, concept, palette, size=None):
         key = concept["id"]
         self.palette(key, palette)
         x = 0
@@ -285,7 +314,7 @@ class LogoCanvas:
         self.text(wordmark, "Live wordmark", brief["product"], 672, 194, 276, 50, concept["wordmark_weight"], key + "/ink", key + "/paper", True)
         avatar = self.board("avatar-512", 0, 440, 512, 512, key + "/ink")
         self.symbol(avatar, concept, 88, 528, 336, key + "/paper", key + "/accent")
-        self.actual_sizes_board(concept, palette, origin=1100)
+        self.actual_sizes_board(concept, palette, origin=1100, size=size)
         return self.boards
 
     def state(self):
@@ -365,14 +394,47 @@ def whole_words(row):
             and (len(normal) == len(prefix) or not normal[len(prefix)].isalnum()))
 
 
+def _words(value):
+    return " ".join(str(value).split())
+
+
+def saved_text_facts(row, objects, boards):
+    """Text facts measured on the final saved object, not at creation.
+
+    A text edited after it was created (the contract board's cell A shows 'Ast'
+    for 'Aster') must show here: live content, rendered cache, final width and
+    final position are all read back from the object that is saved.
+    """
+    obj = objects.get(row["id"])
+    if obj is None or obj.get("type") != "text":
+        return {"saved_object": False, "inside": False, "advance_fit": False, "rendered_matches_content": False,
+                "content_matches_intended": False}
+    content = _words(" ".join("".join(leaf.get("text", "") for leaf in paragraph["children"])
+                               for paragraph in obj["content"]["children"][0]["children"]))
+    cache = obj.get("position-data") or []
+    rendered = _words(" ".join(str(line.get("text", "")) for line in cache))
+    box, frame = obj["selrect"], (boards.get(obj.get("frame-id")) or {}).get("selrect")
+    inside = bool(frame) and (box["x1"] >= frame["x1"] and box["y1"] >= frame["y1"]
+                              and box["x2"] <= frame["x2"] and box["y2"] <= frame["y2"])
+    return {"saved_object": True, "content_text": content, "rendered_text": rendered,
+            "content_matches_intended": content == _words(row["text"]),
+            "rendered_matches_content": rendered == content,
+            "inside": inside, "advance_fit": bool(cache) and all(line["width"] <= box["width"] + .01 for line in cache),
+            "final_width": box["width"]}
+
+
 def measurements(state, palettes):
+    objects = {o["id"]: o for o in state["objects"]}
+    boards = {b["id"]: b for b in state["boards"]}
     rows = []
     for obj in state["metrics"]:
         ratio = c.contrast(obj["fg"], obj["bg"])
-        rows.append({**obj, "contrast": ratio, "companion_aa": None if obj["logo_exempt"] else ratio >= (3 if obj["font_size"] >= 24 else 4.5)})
+        rows.append({**obj, **saved_text_facts(obj, objects, boards), "contrast": ratio,
+                     "companion_aa": None if obj["logo_exempt"] else ratio >= (3 if obj["font_size"] >= 24 else 4.5)})
     violations = [o for o in rows if not o["inside"] or not o["advance_fit"] or o["companion_aa"] is False
-                  or not whole_words(o)]
+                  or not whole_words(o) or not o["rendered_matches_content"] or not o["content_matches_intended"]]
     return {"text": rows, "violations": violations,
+            "measured_from": "final saved objects: live content, rendered text cache, final width and position",
             "palette": {name: {a + "/" + b: c.contrast(pal[a], pal[b]) for a, b in
                          (("ink", "paper"), ("muted", "paper"), ("ink", "surface"), ("accent_on", "accent"), ("accent", "paper"), ("accent", "ink"))}
                         for name, pal in palettes.items()},

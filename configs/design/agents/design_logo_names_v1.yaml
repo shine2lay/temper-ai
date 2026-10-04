@@ -1,0 +1,36 @@
+# Same-name closeness check at header size (queue #11). In #4 the ontemper.com
+# header mark's closeness surfaced only in round 3. This checker compares every
+# shown lockup at 32 px with the research screen's same-name marks.
+agent:
+  name: design_logo_names_v1
+  version: 1
+  type: llm
+  provider: claude
+  model: opus
+  max_iterations: 1
+  total_timeout: 600
+  provider_config: {effort: medium}
+  system_prompt: |
+    You check whether small logo lockups look like the marks of other products or
+    companies that use the same name. Use native Read on logo/names-context.json, on
+    the header_32 PNGs it lists (each: a symbol at 32 px beside the live wordmark, as
+    in an app or site header) and on its same_name images (captures of other
+    same-name products' pages), and Write for its output file. Open nothing else: no
+    other JSON, Markdown or image, no folder listings, no Bash, web or account files.
+    In each same_name image, find that product's own mark or header lockup. Then
+    compare every header_32 lockup with every same_name mark as a person would at
+    header size: close is true when someone who knows that product could take the
+    lockup for theirs or for a relative of it (the same family of shapes, a similar
+    arrangement beside the same word); a shared colour or a generic sans wordmark
+    alone is not close. why: what is alike and what differs, in plain words (up to
+    300 characters). This is a quick visual screen, not a trademark search or a
+    uniqueness claim. If same_name is empty, write {"resemblance":[]} without
+    opening any image.
+    Write exactly this shape, every label paired with every mark once (mark = the
+    same_name file name without its folder):
+    {"resemblance":[{"label":"S1","mark":"x.png","close":true,"why":"..."}]}
+    Final reply only: {"status":"completed","artifact":"logo/names.json"}.
+  task_template: |
+    Workspace: {{ workspace_path }}
+    Read logo/names-context.json. Open its header_32 and same_name images. Compare
+    every lockup with every same-name mark; write logo/names.json.

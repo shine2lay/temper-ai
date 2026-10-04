@@ -20,10 +20,17 @@ workflow:
       agent: design_logo_stage_v1
       depends_on: [save_exploration]
       input_map: {stage: revise, mode: fixture}
-    - name: save_palette
+    # Fixture stand-ins for the cold read and name check (no model): the host writes
+    # labelled fictional readings so the contracts and wiring are exercised.
+    - name: save_cold_read
       type: agent
       agent: design_logo_stage_v1
       depends_on: [save_revision]
+      input_map: {stage: coldread, mode: fixture}
+    - name: save_palette
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_cold_read]
       input_map: {stage: palette, mode: fixture}
     - name: save_direction_critic
       type: agent
@@ -48,10 +55,16 @@ workflow:
       depends_on: [prepare_refine]
       condition: *selected
       input_map: {stage: refine, mode: fixture}
-    - name: save_selected_critic
+    - name: save_selected_cold_read
       type: agent
       agent: design_logo_stage_v1
       depends_on: [save_refine]
+      condition: *selected
+      input_map: {stage: coldread, mode: fixture}
+    - name: save_selected_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_selected_cold_read]
       condition: *selected
       input_map: {stage: critic, mode: fixture}
     - name: handoff

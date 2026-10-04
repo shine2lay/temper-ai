@@ -4,7 +4,9 @@ workflow:
   version: 1
   description: |
     Sourced brief + pinned research screen -> six original monochrome vectors ->
-    the explorer sees its render and redraws -> three distinct symbols and role
+    the explorer sees its render and redraws -> model-free size check (honest
+    minimum px from the saved vectors) and caption-free cold read (first readings
+    at 32/128 px, same-name check) -> three distinct symbols and role
     palettes -> NEW bounded logo critic -> REAL OWNER DIRECTION (a shortlisted
     direction, or explore-again: this run ends and the next run carries the
     rejection as research) -> budget ->
@@ -16,7 +18,7 @@ workflow:
     budget_json: {type: string, required: true}
   safety:
     policies:
-      - {type: budget, max_cost_usd: 8.9}
+      - {type: budget, max_cost_usd: 11.6}
   nodes:
     - name: brief
       type: agent
@@ -48,10 +50,25 @@ workflow:
       agent: design_logo_stage_v1
       depends_on: [revise]
       input_map: {stage: revise, mode: real}
+    # Caption-free first readings (images only) and the same-name check (lockups vs
+    # research marks) of the six revised symbols, before anyone shortlists them.
+    - name: cold_read
+      type: agent
+      agent: design_logo_coldread_v1
+      depends_on: [save_revision]
+    - name: name_check
+      type: agent
+      agent: design_logo_names_v1
+      depends_on: [save_revision]
+    - name: save_cold_read
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [cold_read, name_check]
+      input_map: {stage: coldread, mode: real}
     - name: palette
       type: agent
       agent: design_logo_palette_v1
-      depends_on: [save_revision]
+      depends_on: [save_cold_read]
     - name: save_palette
       type: agent
       agent: design_logo_stage_v1
@@ -99,10 +116,26 @@ workflow:
       depends_on: [refine]
       condition: *selected
       input_map: {stage: refine, mode: real}
+    - name: selected_cold_read
+      type: agent
+      agent: design_logo_coldread_v1
+      depends_on: [save_refine]
+      condition: *selected
+    - name: selected_name_check
+      type: agent
+      agent: design_logo_names_v1
+      depends_on: [save_refine]
+      condition: *selected
+    - name: save_selected_cold_read
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [selected_cold_read, selected_name_check]
+      condition: *selected
+      input_map: {stage: coldread, mode: real}
     - name: selected_critic
       type: agent
       agent: design_logo_critic_v1
-      depends_on: [save_refine]
+      depends_on: [save_refine, save_selected_cold_read]
       condition: *selected
       input_map: {phase: selected, round_label: save_refine.structured.round_label}
     - name: save_selected_critic

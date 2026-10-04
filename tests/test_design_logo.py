@@ -600,23 +600,389 @@ def test_actual_workflow_schema_native_gates_loop_and_new_agents(name):
     if name == "design_logo_v1":
         assert nodes["initial_budget"]["gate"] and nodes["refine_budget"]["gate"]
         assert nodes["owner_final"]["loop_to"] == "refine_budget"
-        assert raw["safety"]["policies"][0]["max_cost_usd"] == c.FULL_ESTIMATE == 8.9
+        assert raw["safety"]["policies"][0]["max_cost_usd"] == c.FULL_ESTIMATE == 11.6
         assert nodes["explore"]["input_map"] == {"phase": "draft"} and nodes["revise"]["input_map"] == {"phase": "revise"}
-        assert nodes["palette"]["depends_on"] == ["save_revision"]
+        # Caption-free cold read and same-name check before the shortlist, and again before each selected critic.
+        assert nodes["cold_read"]["agent"] == "design_logo_coldread_v1" and nodes["name_check"]["agent"] == "design_logo_names_v1"
+        assert nodes["cold_read"]["depends_on"] == nodes["name_check"]["depends_on"] == ["save_revision"]
+        assert nodes["save_cold_read"]["depends_on"] == ["cold_read", "name_check"]
+        assert nodes["palette"]["depends_on"] == ["save_cold_read"]
+        assert nodes["selected_cold_read"]["agent"] == "design_logo_coldread_v1"
+        assert nodes["selected_cold_read"]["depends_on"] == nodes["selected_name_check"]["depends_on"] == ["save_refine"]
+        assert nodes["save_selected_cold_read"]["depends_on"] == ["selected_cold_read", "selected_name_check"]
+        assert nodes["selected_critic"]["depends_on"] == ["save_refine", "save_selected_cold_read"]
     else:
         assert all(n["agent"] == "design_logo_stage_v1" for n in nodes.values())
         assert all(n["input_map"]["mode"] == "fixture" for n in nodes.values())
+        assert nodes["save_cold_read"]["depends_on"] == ["save_revision"]
+        assert nodes["save_palette"]["depends_on"] == ["save_cold_read"]
+        assert nodes["save_selected_critic"]["depends_on"] == ["save_selected_cold_read"]
+    assert nodes["save_cold_read"]["input_map"]["stage"] == nodes["save_selected_cold_read"]["input_map"]["stage"] == "coldread"
 
 
 def test_template_has_native_gate_boundary_no_secret_no_hardcoded_generation():
     stage = yaml.safe_load((BIN.parent / "agents/design_logo_stage_v1.yaml").read_text())["agent"]["script_template"]
     assert "gate is defined" in stage and "--native-gate" in stage
     assert "PENPOT_AGENT_PASSWORD" not in stage
-    for name in ("explore", "palette", "critic", "refine"):
+    for name in ("explore", "palette", "critic", "refine", "coldread", "names"):
         agent = yaml.safe_load((BIN.parent / "agents" / f"design_logo_{name}_v1.yaml").read_text())["agent"]
         assert agent["provider"] == "claude" and agent["max_iterations"] == 1
     # Real exploration consumes model geometry; fixed fixtures are guarded.
     assert "c.brief_contract(brief, \"fixture\")" in (BIN / "design_logo_v1.py").read_text()
+
+
+# Queue #11 (2026-10-04): size check, cold read and same-name check, contract plant A.
+# Task #4 (run ad5c270f) found small-size loss and misreadings only through the critic or the owner.
+
+size_check = importlib.import_module("logo_size_check")
+SYMBOLS = json.loads((Path(__file__).parent / "design_logo_data/temper-logo-symbols.json").read_text())
+ANVIL = next(x for x in SYMBOLS["concepts"] if x["id"] == "approved-anvil")
+
+
+def size_rows(concepts=None, **kwargs):
+    return {r["id"]: r for r in size_check.check(concepts or SYMBOLS["concepts"], **kwargs)["symbols"]}
+
+
+def test_size_check_flags_round_two_details_that_vanished_at_16_px():
+    """Task #4: only the critic saw the fork arcs, the Dovetail T seam and the Keystone seams vanish at 16 px."""
+    rows = size_rows()
+    fork = rows["ringing-fork"]["failing"]["16"]
+    for arc in ("left echo arc", "right echo arc"):
+        assert f'width of "{arc}": 5.336 units = 0.85 px at 16 px' in fork
+        assert any(f.startswith(f'seam between "fork tines and stem" and "{arc}"') for f in fork)
+    assert rows["dovetail-t"]["failing"]["16"] == [
+        'seam between "crossbar with dovetail socket" and "stem with flared dovetail tail" at 28.3,22: '
+        "6 units = 0.96 px at 16 px"]
+    keystone = rows["keystone-gate"]["failing"]["16"]
+    for half in ("left half of gateway", "right half of gateway"):
+        assert any(f.startswith(f'seam between "{half}" and "keystone"') and "0.95 px" in f for f in keystone)
+    for ident in ("ringing-fork", "dovetail-t", "keystone-gate"):
+        row = rows[ident]
+        assert row["minimum_px"] == 24 and row["failing"]["24"] == [] and row["clear_from_px"] == 48
+        assert 16 < row["exact_minimum_px"] < 24 and "fails at 16 px" in row["summary"]
+
+
+def test_size_check_reports_the_approved_anvil_as_its_brand_sheet_does():
+    """Owner-approved packet BRAND.md: symbol minimum 24 px; the dovetail reads from about 48 px."""
+    row = size_rows()["approved-anvil"]
+    assert (row["minimum_px"], row["exact_minimum_px"], row["claim_px"]) == (24, 20.0, 24)
+    assert (row["clear_from_px"], row["exact_clear_from_px"]) == (48, 40.0)
+    seam = next(f for f in row["features"] if f["kind"] == "seam")
+    assert seam["units"] == 5.0 and seam["px"] == {"16": 0.8, "24": 1.2, "32": 1.6, "48": 2.4}
+    assert len(row["failing"]["16"]) == 2 and not row["failing"]["24"]
+    assert "at least 1 px from 24px and at least 2 px from 48px" in size_check.board_note(row)
+
+
+@pytest.mark.parametrize("shape", [{"kind": "rect", "name": "solid square", "x": 10, "y": 10, "w": 80, "h": 80},
+                                   {"kind": "ellipse", "name": "solid circle", "x": 10, "y": 10, "w": 80, "h": 80}])
+def test_size_check_passes_a_solid_control_at_16_px(shape):
+    row = size_rows([{"id": "control", "symbol": [shape], "minimum_symbol_px": 16}])["control"]
+    assert row["minimum_px"] == 16 and row["claim_px"] == 16 and row["failing"]["16"] == []
+    assert [f["kind"] for f in row["features"]] == ["width"] and row["features"][0]["units"] > 79.9
+    assert row["summary"].endswith("passes at 16 px")
+
+
+def test_size_check_is_honest_and_its_floor_configurable():
+    """Never rounded up to pass, never a smaller claim than measured; too thin everywhere says so."""
+    assert "0.96 px at 16 px" in size_rows()["dovetail-t"]["failing"]["16"][0]
+    low = size_rows([{**ANVIL, "minimum_symbol_px": 16}])["approved-anvil"]
+    assert low["claim_px"] == 24
+    assert "The concept declared 16px; the measurement sets the minimum." in size_check.board_note(low)
+    assert size_rows([ANVIL], floor_px=2.0, clear_px=2.0)["approved-anvil"]["minimum_px"] == 48
+    loose = size_rows([ANVIL], floor_px=0.5)["approved-anvil"]
+    assert loose["minimum_px"] == 16 and loose["claim_px"] == 24  # the declared 24 still stands
+    hair = size_rows([{"id": "hair", "minimum_symbol_px": 24,
+                       "symbol": [{"kind": "rect", "name": "hairline", "x": 10, "y": 49, "w": 80, "h": 1}]}])["hair"]
+    assert hair["minimum_px"] is None and hair["claim_px"] == 100
+    assert hair["summary"].startswith("not present at any checked size")
+    for floor, clear in ((0, 2), (3, 2), (1, 9)):
+        with pytest.raises(ValueError, match="thresholds"):
+            size_check.check([ANVIL], floor_px=floor, clear_px=clear)
+
+
+def test_cold_read_schema_three_distinct_readings_per_symbol_and_size():
+    labels = ["S1", "S2"]
+    good = {"readings": [{"label": s, "glance_32": [f"a letter T {s}", f"a hammer {s}", f"a stool {s}"],
+                          "close_128": [f"an anvil {s}", f"a letter T {s}", f"a table {s}"]} for s in labels]}
+    out = c.readings_contract({"readings": copy.deepcopy(good["readings"][::-1])}, labels)
+    assert [r["label"] for r in out["readings"]] == labels
+    one, two = good["readings"]
+    for rows in ([one], [one, two, one], [{**one, "label": "S9"}, two], [{**one, "glance_32": one["glance_32"][:2]}, two],
+                 [{**one, "close_128": ["a T", "A t.", "a table"]}, two], [{**one, "intended": "an anvil"}, two]):
+        with pytest.raises(ValueError):
+            c.readings_contract({"readings": copy.deepcopy(rows)}, labels)
+    with pytest.raises(ValueError):
+        c.readings_contract({**copy.deepcopy(good), "product": "Northline"}, labels)
+    long = copy.deepcopy(good)
+    long["readings"][0]["glance_32"][0] = "a very long reading " * 6
+    shortened = c.readings_contract(long, labels)["readings"][0]["glance_32"][0]
+    assert len(shortened) <= 80 and shortened.endswith("\u2026")
+
+
+def test_name_check_schema_pairs_every_lockup_with_every_same_name_mark():
+    labels, marks = ["S1", "S2"], ["peer-a.png", "peer-b.png"]
+    rows = [{"label": s, "mark": m, "close": (s, m) == ("S1", "peer-a.png"), "why": "Similar arch."}
+            for s in labels for m in marks]
+    assert len(c.names_contract({"resemblance": copy.deepcopy(rows)}, labels, marks)["resemblance"]) == 4
+    assert c.names_contract({"resemblance": []}, labels, []) == {"resemblance": []}
+    for bad in (rows[:3], rows + rows[:1], [{**rows[0], "mark": "other.png"}] + rows[1:],
+                [{**rows[0], "close": "yes"}] + rows[1:], [{**rows[0], "score": 3}] + rows[1:]):
+        with pytest.raises(ValueError):
+            c.names_contract({"resemblance": copy.deepcopy(bad)}, labels, marks)
+
+
+def cold_of(ids, close=("fixture-0",), mark="peer-a.png"):
+    """A saved cold read as the contracts take it: {id: {readings, close}}."""
+    return {i: {"readings": [{"size": "32", "reading": f"{i} glance {n}"} for n in "abc"] +
+                            [{"size": "128", "reading": f"{i} close {n}"} for n in "abc"],
+                "close": [mark] if i in close else []} for i in ids}
+
+
+def test_shortlist_and_critic_must_quote_every_first_reading_and_close_name_flag():
+    b = brief()
+    concepts = c.exploration_contract(job.fixture_exploration(b), b)["concepts"]
+    cold = cold_of([x["id"] for x in concepts])
+    good = job.fixture_palette(b, cold)
+    first = c.shortlist_contract(copy.deepcopy(good), b, concepts, cold)["shortlist"][0]
+    assert [r["reading"] for r in first["first_reads"]] == [r["reading"] for r in cold["fixture-0"]["readings"]]
+    assert first["name_marks"] == [{"mark": "peer-a.png", "note": "Fixture flag only; not evidence."}]
+    assert c.shortlist_contract(job.fixture_palette(b), b, concepts)  # rows of runs before the cold read
+    with pytest.raises(ValueError, match="unexpected or missing"):
+        c.shortlist_contract(job.fixture_palette(b), b, concepts, cold)
+
+    def broken(change):
+        bad = copy.deepcopy(good)
+        change(bad["shortlist"][0])
+        return bad
+
+    numbers = broken(lambda row: [r.update(size=int(r["size"])) for r in row["first_reads"]])
+    assert c.shortlist_contract(numbers, b, concepts, cold)["shortlist"][0]["first_reads"][0]["size"] == "32"
+    for change in (lambda row: row["first_reads"].pop(),                                # a reading left out
+                   lambda row: row["first_reads"][0].update(reading="an anvil"),        # a reading changed
+                   lambda row: row["first_reads"].append(dict(row["first_reads"][0])),  # quoted twice
+                   lambda row: row["first_reads"][0].update(size="128"),                # wrong size
+                   lambda row: row["first_reads"][0].update(fits_idea="yes"),
+                   lambda row: row["name_marks"].clear(),                               # close flag dropped
+                   lambda row: row["name_marks"].append({"mark": "peer-b.png", "note": "x"})):
+        with pytest.raises(ValueError):
+            c.shortlist_contract(broken(change), b, concepts, cold)
+    with pytest.raises(ValueError, match="no saved cold read"):
+        c.shortlist_contract(copy.deepcopy(good), b, concepts, {k: v for k, v in cold.items() if k != "fixture-1"})
+    reads, marks = job.fixture_first_reads(cold, "fixture-0", with_id=True)
+    review = {"product": b["product"], "observations": [], "recommendation": "fixture-0",
+              "recommendation_reason": "Advice only.", "limitations": "Static PNGs.", "first_reads": reads, "name_marks": marks}
+    assert c.critique_contract(copy.deepcopy(review), b, {"fixture-0"}, cold)["first_reads"][0]["id"] == "fixture-0"
+    for change in ({"first_reads": reads[1:]}, {"name_marks": []},
+                   {"first_reads": [{**reads[0], "id": "fixture-1"}] + reads[1:]}):
+        with pytest.raises(ValueError):
+            c.critique_contract({**copy.deepcopy(review), **change}, b, {"fixture-0"}, cold)
+    with pytest.raises(ValueError, match="unexpected or missing"):
+        c.critique_contract({k: v for k, v in copy.deepcopy(review).items() if k not in ("first_reads", "name_marks")},
+                            b, {"fixture-0"}, cold)
+
+
+def test_contract_plant_a_is_measured_after_its_edit(canvas):
+    """Task #4: the critic saw 'Ast' while the measurement, taken before the edit, said 'Aster' fits."""
+    canvas.contract_board()
+    facts = s.measurements(canvas.state(), {})
+    a = next(r for r in facts["text"] if r["name"] == "Wordmark/A")
+    assert (a["content_text"], a["rendered_text"], a["final_width"]) == ("Aster", "Ast", 50)
+    assert not a["rendered_matches_content"] and not a["advance_fit"]
+    assert {r["name"] for r in facts["violations"]} == {"Wordmark/A", "Companion C"}  # D exempt, E clean
+    assert facts["measured_from"].startswith("final saved objects")
+
+
+def offline_native(monkeypatch):
+    """Stand-in for Penpot save/reopen/export: the same canvas, placeholder PNGs, no service."""
+    monkeypatch.setattr(s.p, "FontMetrics", Font)
+
+    def native_file(self, label, build, kinds=("png", "svg")):
+        assets = self.root / "assets"
+        assets.mkdir(exist_ok=True)
+        for variant in ("regular", "semibold"):
+            (assets / f"sourcesanspro-{variant}.ttf").write_bytes(b"test")
+        file = {"id": s.p.nid(), "team-id": s.p.nid(), "project-id": s.p.nid(), "name": label, "data": {"pages": [s.p.nid()]}}
+        canvas = s.LogoCanvas(file, assets, job.load(self.root / "brief.json")["product"])
+        build(canvas)
+        state = canvas.state()
+        exports = []
+        for i, board in enumerate(state["boards"]):
+            for kind in kinds:
+                path = self.root / "exports" / f"{label}-{i:02}.{kind}"
+                path.parent.mkdir(exist_ok=True)
+                path.write_bytes(job.PNG + label.encode() + bytes([i]))
+                exports.append({"path": str(path.relative_to(self.root.parent)), "board": board["name"], "kind": kind,
+                                "width": board["width"], "height": board["height"]})
+        job.save(self.root / (label + ".source.json"), state)
+        job.save(self.root / (label + ".exports.json"), exports)
+        self.state["files"][label] = {"file_id": state["file_id"], "exports": exports, "url": "offline://" + label}
+        self.commit()
+        return state, exports
+
+    monkeypatch.setattr(job.Job, "native_file", native_file)
+
+
+def test_cold_read_is_caption_free_and_reaches_shortlist_and_critic(tmp_path, monkeypatch):
+    offline_native(monkeypatch)
+    files = {"comparison.md": "0" * 64, "peer-a.png": "1" * 64}
+    b = c.brief_contract({**brief(), "research": {"dir": "/research", "files": files, "same_name": ["peer-a.png"]}}, "fixture")
+    j = job.Job(str(tmp_path), RUN, "fixture")
+    job.save(j.root / "brief.json", b)
+    j.state["brief_hash"] = c.digest(b)
+    assert j.adopt_exploration()["size"] == "logo/roughs.size.json"
+    out = j.adopt_revision()
+    assert out["size"] == "logo/sketches.size.json" and out["coldread_context"] == "logo/coldread-context.json"
+    context, names = job.load(j.root / "coldread-context.json"), job.load(j.root / "names-context.json")
+    labels = context["labels"]
+    assert labels == [f"S{i}" for i in range(1, 7)] and set(context) == {"labels", "glance_32", "close_128", "output"}
+    assert context["glance_32"] == [f"logo/coldread-sketches/{x}-32.png" for x in labels]
+    assert context["close_128"] == [f"logo/coldread-sketches/{x}-128.png" for x in labels]
+    assert names["header_32"] == [f"logo/coldread-sketches/{x}-header.png" for x in labels]
+    assert names["same_name"] == ["logo/research/peer-a.png"]
+    assert all((j.root.parent / p).is_file() for p in context["glance_32"] + context["close_128"] + names["header_32"])
+    # Nothing tells the reader what a symbol is: no id, name or product, and no text on its boards.
+    concepts, shown = job.load(j.root / "sketches.saved.json")["concepts"], json.dumps(context)
+    assert not any(x["id"] in shown or x["name"] in shown for x in concepts) and "Northline" not in shown
+    mapping = j.state["cold"]["sketches"]["labels"]
+    assert sorted(mapping.values()) == sorted(x["id"] for x in concepts)
+    assert list(mapping.values()) != [x["id"] for x in concepts]  # seeded shuffle, not the board order
+    source_state = job.load(j.root / "coldread-sketches.source.json")
+    boards = {bd["id"]: bd["name"] for bd in source_state["boards"]}
+    texts = [o for o in source_state["objects"] if o["type"] == "text"]
+    assert texts and all(boards[o["frame-id"]].endswith(" header") for o in texts)
+    # Saved readings map the neutral labels back to ids.
+    j.adopt_cold_read()
+    saved = job.load(j.root / "coldread-sketches.saved.json")
+    assert set(saved["symbols"]) == set(mapping.values()) and saved["fictional_test"] is True
+    assert saved["symbols"][mapping["S1"]]["close"] == ["peer-a.png"] and len(saved["symbols"][mapping["S1"]]["readings"]) == 6
+    # The shortlist quotes them; its actual-size boards print the measured minimum.
+    j.adopt_palette()
+    rows = job.load(j.root / "palette.saved.json")["shortlist"]
+    for row in rows:
+        assert [r["reading"] for r in row["first_reads"]] == [r["reading"] for r in saved["symbols"][row["id"]]["readings"]]
+    notes = [m["text"] for m in job.load(j.root / "directions.measurements.json")["text"] if m["name"] == "Size limitation"]
+    assert len(notes) == 3 and all(n.startswith("Symbol minimum: ") for n in notes)
+    # The critic's review quotes every reading of every shortlisted id.
+    j.adopt_critic()
+    review = job.load(j.root / "critic-r00.json")
+    assert {r["id"] for r in review["first_reads"]} == {r["id"] for r in rows} and len(review["first_reads"]) == 18
+    # A real shortlist that skips the comparison is refused.
+    j.mode = "real"
+    job.save(j.root / "palette.json", job.fixture_palette(b))
+    with pytest.raises(ValueError, match="unexpected or missing"):
+        j.adopt_palette()
+
+
+def test_agents_cold_reader_sees_images_only_and_shortlist_and_critic_quote_it():
+    agents = {n: json.dumps(yaml.safe_load((BIN.parent / "agents" / f"design_logo_{n}_v1.yaml").read_text())["agent"])
+              for n in ("coldread", "names", "palette", "critic", "refine", "explore")}
+    assert "logo/coldread-context.json" in agents["coldread"]
+    assert "no caption, brief, product name or intended idea" in agents["coldread"]
+    for hidden in ("brief.json", "saved.json", "palette", "names-context", "comparison.md", "header", "research"):
+        assert hidden not in agents["coldread"], hidden
+    assert "logo/names-context.json" in agents["names"] and "not a trademark search" in agents["names"]
+    for name in ("palette", "critic"):
+        for expected in ("first_reads", "name_marks", ".size.json", "coldread-"):
+            assert expected in agents[name], (name, expected)
+    assert "roughs.size.json" in agents["explore"] and "cold_read" in agents["refine"]
+
+
+def test_refined_size_claim_reaches_boards_tokens_and_brand_sheet(tmp_path, monkeypatch):
+    """The packet claims the measured minimum when the concept declared a smaller one."""
+    offline_native(monkeypatch)
+    b = brief()
+    concept = {**job.fixture_exploration(b)["concepts"][2], "symbol": ANVIL["symbol"], "minimum_symbol_px": 16}
+    palette = job.fixture_palette(b)["shortlist"][2]["palette"]
+    j = job.Job(str(tmp_path), RUN, "fixture")
+    job.save(j.root / "brief.json", b)
+    job.save(j.root / "selected.json", {"concept": concept, "palette": palette})
+    j.state.update(brief_hash=c.digest(b), direction={**answer(fictional=True), "run_id": RUN})
+    j.state["files"]["directions"] = {"exports": [{"kind": "png", "path": "logo/exports/directions-00.png"}]}
+    j.commit()
+    j.prepare_refine()
+    out = j.adopt_refine()
+    assert out["minimum_px"] == 24 and out["size"] == "logo/selected-r01.size.json"
+    note = next(m["text"] for m in job.load(j.root / "selected-r01.measurements.json")["text"] if m["name"] == "Size limitation")
+    assert note.startswith("Symbol minimum: 24px.")
+    assert job.load(j.root / "coldread-context.json")["labels"] == ["S1"]
+    j.adopt_cold_read()
+    assert set(job.load(j.root / "coldread-r01.saved.json")["symbols"]) == {"fixture-2"}
+
+    class Fresh:
+        def login(self):
+            pass
+
+        def get(self, file_id):
+            return {"id": file_id}
+
+    monkeypatch.setattr(job.h, "Penpot", Fresh)
+    monkeypatch.setattr(job.source, "source_checks", lambda file, state: {"revn": 1, "checks": {"offline": True}})
+    job.save(j.root / "critic-r01.json", {"fixture": True})
+    j.handoff()
+    tokens = job.load(j.root / "tokens.json")
+    assert (tokens["minimum_symbol_px"], tokens["declared_minimum_symbol_px"]) == (24, 16)
+    assert tokens["measured_size"] == {"minimum_px": 24, "exact_minimum_px": 20.0, "clear_from_px": 48, "exact_clear_from_px": 40.0}
+    brand = (j.root / "BRAND.md").read_text()
+    assert "Symbol minimum: 24px." in brand and "The concept declared 16px; the measurement sets the minimum." in brand
+
+
+def fixture_round_two(path, **change):
+    """A fixture job after round 2, with the fictional round-2 final answer as final() saved it."""
+    j = job.Job(str(path), RUN, "fixture")
+    j.state.update({"round": 2, "brief_hash": "b", "final_artifact_hash": "a2",
+                    "direction": {**answer(fictional=True), "run_id": RUN},
+                    "files": {"selected-r02": {"exports": [{"kind": "png", "path": "logo/exports/selected-r02-00.png"}]}}})
+    job.save(j.root / "brief.json", brief())
+    job.save(j.root / "selected.json", {"concept": {}, "palette": {}})
+    record = {"approval": "fixture-test", "run_id": RUN, "brief_hash": "b", "artifact_hash": "a2", "decision": "revise",
+              "reason": "Fixture answer.", "owner_note": "Fixture: shorter base.", "fictional_test": True, **change}
+    job.save(j.root / "owner-final-r02.json", record)
+    j.commit()
+    return j
+
+
+@pytest.mark.parametrize("change", [{"owner_note": ""}, {"artifact_hash": "a1"}, {"fictional_test": False},
+                                    {"decision": "approve"}, {"run_id": "other"}, {"approval": "owner-final"}])
+def test_fixture_extra_round_needs_its_own_fictional_revise_note(tmp_path, change):
+    with pytest.raises(ValueError, match="two refinement"):
+        fixture_round_two(tmp_path, **change).prepare_refine()
+
+
+def test_fixture_extra_round_runs_once_like_the_real_one(tmp_path):
+    j = fixture_round_two(tmp_path)
+    j.prepare_refine()
+    context = job.load(j.root / "refine-context.json")
+    assert context["round"] == 3 and context["owner_note"] == "Fixture: shorter base."
+    assert context["pngs"] == ["logo/exports/selected-r02-00.png"] and j.state["extra_round"]["fictional_test"] is True
+    j.state["round"] = 3
+    j.commit()
+    with pytest.raises(ValueError, match="exhausted"):
+        j.prepare_refine()
+
+
+def test_replay_rechecks_saved_symbols_and_nothing_else(tmp_path, monkeypatch):
+    offline_native(monkeypatch)
+    j = job.Job(str(tmp_path), RUN, "replay")
+    job.save(j.root / "brief.json", c.brief_contract(brief(fictional=False), "real"))
+    concepts = job.fixture_exploration(brief())["concepts"][:2]
+    out = j.adopt_replay(json.dumps({"concepts": concepts, "source": "fixture symbols (test)"}))
+    assert out["symbols"] == 2 and out["size"] == "logo/replay.size.json"
+    assert job.load(j.root / "coldread-context.json")["labels"] == ["S1", "S2"]
+    for stage in (j.adopt_exploration, j.adopt_palette, j.adopt_critic, j.prepare_refine, j.handoff):
+        with pytest.raises(ValueError, match="not allowed"):
+            stage()
+    with pytest.raises(ValueError, match="not allowed"):
+        j.budget(json.dumps(reservation()), "initial")
+    for bad in ({"concepts": [], "source": "x"}, {"concepts": concepts + concepts[:1], "source": "x"},
+                {"concepts": concepts, "source": "x", "extra": 1}):
+        with pytest.raises(ValueError):
+            j.adopt_replay(json.dumps(bad))
+    raw = yaml.safe_load((BIN.parent / "workflows/design_logo_replay_v1.yaml").read_text())["workflow"]
+    assert WorkflowConfig.from_dict(raw).name == "design_logo_replay_v1"
+    nodes = {v["name"]: v for v in raw["nodes"]}
+    assert not any(n.get("gate") for n in nodes.values()) and raw["safety"]["policies"][0]["max_cost_usd"] <= 2
+    assert {n["input_map"]["mode"] for n in nodes.values() if n["agent"] == "design_logo_stage_v1"} == {"replay"}
+    assert nodes["save_cold_read"]["depends_on"] == ["cold_read", "name_check"]
 
 
 def run_native_wrapper(tmp_path, *, mode="fixture", stage="brief", workspace=None,

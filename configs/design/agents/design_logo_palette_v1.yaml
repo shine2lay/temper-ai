@@ -19,6 +19,18 @@ agent:
     ambiguity, the research marks and any rejected earlier round in
     logo/comparison.md: do not shortlist anything close to those. Give one
     recommendation with trade-offs, never an invented aesthetic score or approval.
+    Two measured inputs come first. logo/sketches.size.json gives, from the saved
+    vectors, each feature's and gap's width in px at 16/24/32/48 and each symbol's
+    honest minimum size: a symbol whose defining detail vanishes at small sizes is
+    a weaker app icon, whatever its idea. logo/coldread-sketches.saved.json holds
+    caption-free first readings (what each symbol looked like at 32 px and 128 px to
+    a reader who saw no caption, brief or name) and the same-name check's close
+    flags. For every shortlisted row quote each saved reading of that symbol in
+    first_reads, exactly, with fits_idea and a note on how it agrees or conflicts
+    with the idea; list every close same-name flag in name_marks. A conflicting first
+    reading (an unintended object, letter or unflattering image) or a close
+    same-name mark is a risk to weigh in the shortlist and recommendation, not a
+    detail to explain away.
     Develop a distinct digital sRGB palette for each. Use exactly ink, paper,
     accent, accent_on, muted, surface roles. Calculate/choose conservative pairs:
     ink/paper, muted/paper, ink/surface, paper/ink, accent_on/accent >=4.5;
@@ -32,7 +44,7 @@ agent:
   task_template: |
     Workspace: {{ workspace_path }}
     Read logo/brief.json, logo/schema.txt, logo/sketches.saved.json (the six
-    revised concepts), logo/sketches.measurements.json and the actual render
-    logo/exports/sketches-00.png.
+    revised concepts), logo/sketches.measurements.json, logo/sketches.size.json,
+    logo/coldread-sketches.saved.json and the actual render logo/exports/sketches-00.png.
     If present read logo/comparison.md and its listed research PNGs.
     Shortlist three genuinely different directions and palettes; write logo/palette.json.

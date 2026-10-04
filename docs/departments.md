@@ -237,7 +237,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
 
-### design (37)
+### design (40)
 
 | Config | Kind |
 |---|---|
@@ -249,11 +249,14 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_homepage_stage_v1.yaml` | agent (script; Penpot source, budget, evidence, handoff) |
 | `design/workflows/design_logo_v1.yaml` | workflow (real original vector identity; direction/final owner gates) |
 | `design/workflows/design_logo_fixture_v1.yaml` | workflow (model-free fictional gate/source/resume contract proof) |
+| `design/workflows/design_logo_replay_v1.yaml` | workflow (test only: size check and cold read of an earlier run's saved symbols; no gates, approves nothing) |
 | `design/agents/design_logo_stage_v1.yaml` | agent (script; schema, native source, receipts, budget, handoff) |
 | `design/agents/design_logo_explore_v1.yaml` | agent (new original monochrome vectors) |
 | `design/agents/design_logo_palette_v1.yaml` | agent (new shortlist and role palettes) |
 | `design/agents/design_logo_critic_v1.yaml` | agent (new logo rubric/contract board; taste advisory) |
 | `design/agents/design_logo_refine_v1.yaml` | agent (new bounded selected-direction refinement) |
+| `design/agents/design_logo_coldread_v1.yaml` | agent (caption-free first readings of symbols at 32 and 128 px; images only) |
+| `design/agents/design_logo_names_v1.yaml` | agent (same-name check: 32-px header lockups against research marks of same-name products) |
 | `design/workflows/design_homepage_v2.yaml` | workflow (designed in HTML/CSS, converted to editable Penpot; direction/final owner gates) |
 | `design/workflows/design_homepage_v2_fixture.yaml` | workflow (model-free gate/resume/convert proof) |
 | `design/workflows/design_homepage_v2_pilot.yaml` | workflow (fictional-only trial of v2; worker's provisional direction, never owner approval or taste) |

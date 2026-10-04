@@ -24,11 +24,16 @@ EXPLORE_AGAIN = "explore-again"
 # Optional per-shape colour: a part marked tone 'accent' draws in the palette accent in
 # colour versions (two-tone mark); one-colour versions draw every part alike.
 ACCENT_TONE = "accent"
-CAPS = {"explore": 2.25, "revise": .75, "palette": 1.0, "critic": .85, "refine": 1.0}
+CAPS = {"explore": 2.25, "revise": .75, "coldread": .5, "names": .4, "palette": 1.0, "critic": .85, "refine": 1.0}
+# Every shown set of symbols gets a caption-free cold read and a same-name check.
+COLD_RESERVE = round(CAPS["coldread"] + CAPS["names"], 2)  # .9
 # Stage reserves before each budget gate: everything up to the next owner gate.
-INITIAL_RESERVE = round(CAPS["explore"] + CAPS["revise"] + CAPS["palette"] + CAPS["critic"], 2)  # 4.85
-REFINE_RESERVE = round(CAPS["refine"] + CAPS["critic"], 2)  # 1.85
-FULL_ESTIMATE = round(INITIAL_RESERVE + 2 * REFINE_RESERVE + .35, 2)  # 8.9 incl. .35 headroom; not CLI caps
+INITIAL_RESERVE = round(CAPS["explore"] + CAPS["revise"] + COLD_RESERVE + CAPS["palette"] + CAPS["critic"], 2)  # 5.75
+REFINE_RESERVE = round(CAPS["refine"] + COLD_RESERVE + CAPS["critic"], 2)  # 2.75
+FULL_ESTIMATE = round(INITIAL_RESERVE + 2 * REFINE_RESERVE + .35, 2)  # 11.6 incl. .35 headroom; not CLI caps
+# Cold read: what a symbol looks like with no caption, at a glance (32 px) and close up (128 px).
+COLD_SIZES = ("32", "128")
+COLD_READINGS = 3
 SIZES = (16, 24, 32, 48, 64)
 SCHEMA = """Return only one JSON object (no Markdown/code fence).
 Explore: {product:<exact brief product>, concepts:[exactly six objects]}.
@@ -71,6 +76,22 @@ Refine: {product:<exact>,concept:<same concept schema and selected id>,
  declined:[up to8 reasoned strings]}. Respect real saved selection and owner note;
 no silent change to direction, product or owner approval. Max TWO planned rounds;
 the host allows one extra round only when the owner asks for it.
+Cold read: {readings:[one per shown symbol label: {label:<S1..>, glance_32:[exactly3
+ distinct readings, up to80 each, most likely first], close_128:[exactly3, same rule]}]}.
+A reading names what the image looks like (an object, letter, sign or shape), never
+what it is meant to be; there is no caption, brief or product name to go on.
+Name check: {resemblance:[one per lockup label and same-name mark: {label:<S1..>,
+ mark:<mark file name>, close:true|false, why:<up to300>}]}.
+First reads (palette rows and critic, whenever logo/coldread-*.saved.json exists):
+ every saved cold-read reading of a symbol, quoted exactly, with its size:
+ {reading:<exact saved text>, size:'32'|'128', fits_idea:true|false, note:<up to200:
+ how it agrees or conflicts with the concept's idea>}; fits_idea false is a conflict.
+ name_marks: one {mark, note:<up to300>} per same-name mark the check flagged close.
+Palette row with a cold read: {id, palette, rationale, first_reads:[all six readings
+ of that symbol], name_marks:[its close marks]}.
+Critic with a cold read adds first_reads:[{id, reading, size, fits_idea, note}] for
+ every reading of every reviewed id, and name_marks:[{id, mark, note}] for every close
+ flag of a reviewed id.
 Critic: {product:<exact>,observations:[up to14],recommendation:<id>,
  recommendation_reason:<up to900>,limitations:<up to1000>}.
 Observation: {scope:'concept'|'contract',id:<concept id or contract cell A..E>,
@@ -124,7 +145,7 @@ def research_contract(r):
     Files are research references (official pages, rejected earlier boards), never
     brand assets. The brief stage copies them into the run and re-checks hashes.
     """
-    keys(r, ("dir", "files"))
+    keys(r, ("dir", "files"), ("same_name",))
     folder = PurePosixPath(r["dir"]) if isinstance(r["dir"], str) else None
     if folder is None or not folder.is_absolute() or ".." in folder.parts or len(r["dir"]) > 300:
         raise ValueError("research folder must be an absolute path without ..")
@@ -136,6 +157,12 @@ def research_contract(r):
             raise ValueError("research file names are plain png/md names")
         if not isinstance(digest_value, str) or not re.fullmatch(r"[0-9a-f]{64}", digest_value):
             raise ValueError("research files are pinned by sha256")
+    # Marks of other products with the same name: the cold read's name check compares
+    # every shown lockup with each at small size.
+    same = r.get("same_name", [])
+    if (not isinstance(same, list) or len(same) > 6 or len(set(same)) != len(same)
+            or not all(isinstance(n, str) and n.endswith(".png") and n in files for n in same)):
+        raise ValueError("same-name marks must be distinct pinned research PNGs (at most six)")
     return r
 
 
@@ -330,17 +357,123 @@ def palette_contract(p):
     return {k: v.upper() for k, v in p.items()}
 
 
-def shortlist_contract(v, b, concepts):
+def _reading_key(value):
+    return " ".join(str(value).split()).casefold().rstrip(".!")
+
+
+def readings_contract(v, labels):
+    """Caption-free first readings: three distinct readings per symbol at 32 px and at 128 px."""
+    keys(v, ("readings",))
+    rows = v["readings"]
+    if not isinstance(rows, list) or len(rows) != len(labels):
+        raise ValueError("cold read must cover every shown symbol exactly once")
+    by_label = {}
+    for row in rows:
+        keys(row, ("label", "glance_32", "close_128"))
+        if row["label"] not in labels or row["label"] in by_label:
+            raise ValueError("cold read must cover every shown symbol exactly once")
+        for key in ("glance_32", "close_128"):
+            if not isinstance(row[key], list) or len(row[key]) != COLD_READINGS:
+                raise ValueError("three readings per symbol and size")
+            row[key] = [prose(reading, 80) for reading in row[key]]
+            if len({_reading_key(r) for r in row[key]}) != COLD_READINGS:
+                raise ValueError("three distinct readings per symbol and size")
+        by_label[row["label"]] = row
+    return {"readings": [by_label[label] for label in labels]}
+
+
+def names_contract(v, labels, marks):
+    """Same-name check: every shown lockup against every same-name mark, close or not."""
+    keys(v, ("resemblance",))
+    rows = v["resemblance"]
+    if not isinstance(rows, list):
+        raise ValueError("name check needs a resemblance list")
+    seen = {}
+    for row in rows:
+        keys(row, ("label", "mark", "close", "why"))
+        pair = (row["label"], row["mark"])
+        if row["label"] not in labels or row["mark"] not in marks or pair in seen or not isinstance(row["close"], bool):
+            raise ValueError("name check rows must pair a shown lockup with a same-name mark once")
+        row["why"] = prose(row["why"], 300)
+        seen[pair] = row
+    if len(seen) != len(labels) * len(marks):
+        raise ValueError("name check must compare every shown lockup with every same-name mark")
+    return {"resemblance": [seen[label, mark] for label in labels for mark in marks]}
+
+
+def first_reads_contract(rows, readings, intended_id=None):
+    """Every saved reading of one or more symbols, quoted exactly, each judged against the idea.
+
+    readings: {id: [{size, reading}]}. With intended_id the rows carry no id (one symbol).
+    """
+    if not isinstance(rows, list):
+        raise ValueError("first reads must be a list")
+    wanted = {(i, r["size"], _reading_key(r["reading"])): r["reading"] for i, items in readings.items() for r in items}
+    out, seen = [], set()
+    for row in rows:
+        if intended_id is None:
+            keys(row, ("id", "reading", "size", "fits_idea", "note"))
+            ident = row["id"]
+        else:
+            keys(row, ("reading", "size", "fits_idea", "note"))
+            ident = intended_id
+        # Sizes are the strings '32' and '128'; a model may write them as numbers.
+        size = str(row["size"]) if isinstance(row["size"], (int, str)) and not isinstance(row["size"], bool) else ""
+        reading = row["reading"] if isinstance(row["reading"], str) else ""
+        key = (ident, size, _reading_key(reading))
+        if key not in wanted or key in seen or not isinstance(row["fits_idea"], bool):
+            raise ValueError("first reads must quote each saved cold-read reading exactly once")
+        seen.add(key)
+        item = {"reading": wanted[key], "size": size, "fits_idea": row["fits_idea"], "note": prose(row["note"], 200)}
+        out.append(item if intended_id is not None else {"id": ident, **item})
+    if seen != set(wanted):
+        raise ValueError("first reads must cover every saved cold-read reading")
+    return out
+
+
+def name_marks_contract(rows, close, intended_id=None):
+    """One note per same-name mark the name check flagged close. close: {id: [mark]}."""
+    if not isinstance(rows, list):
+        raise ValueError("name marks must be a list")
+    wanted = {(i, m) for i, marks in close.items() for m in marks}
+    out, seen = [], set()
+    for row in rows:
+        if intended_id is None:
+            keys(row, ("id", "mark", "note"))
+            ident = row["id"]
+        else:
+            keys(row, ("mark", "note"))
+            ident = intended_id
+        if (ident, row["mark"]) not in wanted or (ident, row["mark"]) in seen:
+            raise ValueError("name marks must carry each close same-name flag exactly once")
+        seen.add((ident, row["mark"]))
+        item = {"mark": row["mark"], "note": prose(row["note"], 300)}
+        out.append(item if intended_id is not None else {"id": ident, **item})
+    if seen != wanted:
+        raise ValueError("name marks must carry every close same-name flag")
+    return out
+
+
+def shortlist_contract(v, b, concepts, cold=None):
+    """cold: the saved cold read of these concepts ({id: {readings, close}}); rows must quote it."""
     keys(v, ("product", "shortlist", "recommendation", "recommendation_reason"))
     if v["product"] != b["product"] or not isinstance(v["shortlist"], list) or len(v["shortlist"]) != 3:
         raise ValueError("three palette directions required")
     ids = {c["id"] for c in concepts}
     for row in v["shortlist"]:
-        keys(row, ("id", "palette", "rationale"))
+        if cold is None:
+            keys(row, ("id", "palette", "rationale"))
+        else:
+            keys(row, ("id", "palette", "rationale", "first_reads", "name_marks"))
         if row["id"] not in ids:
             raise ValueError("unknown shortlisted symbol")
         row["palette"] = palette_contract(row["palette"])
         row["rationale"] = prose(row["rationale"], 700)
+        if cold is not None:
+            if row["id"] not in cold:
+                raise ValueError("shortlisted symbol has no saved cold read")
+            row["first_reads"] = first_reads_contract(row["first_reads"], {row["id"]: cold[row["id"]]["readings"]}, row["id"])
+            row["name_marks"] = name_marks_contract(row["name_marks"], {row["id"]: cold[row["id"]]["close"]}, row["id"])
     if len({r["id"] for r in v["shortlist"]}) != 3 or v["recommendation"] not in {r["id"] for r in v["shortlist"]}:
         raise ValueError("distinct shortlist and advisory recommendation required")
     family = {c["id"]: c["family"] for c in concepts}
@@ -350,8 +483,15 @@ def shortlist_contract(v, b, concepts):
     return v
 
 
-def critique_contract(v, b, ids):
-    keys(v, ("product", "observations", "recommendation", "recommendation_reason", "limitations"))
+def critique_contract(v, b, ids, cold=None):
+    """cold: saved cold read ({id: {readings, close}}); the critic must quote and judge it."""
+    base = ("product", "observations", "recommendation", "recommendation_reason", "limitations")
+    keys(v, base if cold is None else base + ("first_reads", "name_marks"))
+    if cold is not None:
+        if not set(ids) <= set(cold):
+            raise ValueError("reviewed symbol has no saved cold read")
+        v["first_reads"] = first_reads_contract(v["first_reads"], {i: cold[i]["readings"] for i in ids})
+        v["name_marks"] = name_marks_contract(v["name_marks"], {i: cold[i]["close"] for i in ids})
     if v["product"] != b["product"] or v["recommendation"] not in ids or not isinstance(v["observations"], list) or len(v["observations"]) > 14:
         raise ValueError("bounded logo-specific critique required")
     for row in v["observations"]:

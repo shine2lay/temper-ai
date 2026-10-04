@@ -1,0 +1,43 @@
+# Test-only replay (queue #11): re-check saved symbols of an earlier logo run with
+# the model-free size check and the caption-free cold read + same-name check.
+# No gates, budget answers, refinement, packet or approval; one workspace per replay.
+workflow:
+  name: design_logo_replay_v1
+  version: 1
+  description: |
+    Real brief + saved symbols of an earlier run -> size check (honest minimum px
+    from the saved vectors) -> caption-free boards in their own native Penpot file
+    -> cold read (first readings at 32/128 px) + same-name check -> validated,
+    saved readings. Test evidence only; it decides and approves nothing.
+  inputs:
+    brief_json: {type: string, required: true}
+    replay_json: {type: string, required: true}
+  safety:
+    policies:
+      - {type: budget, max_cost_usd: 2.0}
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_logo_stage_v1
+      input_map: {stage: brief, mode: replay, brief_json: input.brief_json}
+    - name: replay
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [brief]
+      input_map: {stage: replay, mode: replay, replay_json: input.replay_json}
+    - name: cold_read
+      type: agent
+      agent: design_logo_coldread_v1
+      depends_on: [replay]
+    - name: name_check
+      type: agent
+      agent: design_logo_names_v1
+      depends_on: [replay]
+    - name: save_cold_read
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [cold_read, name_check]
+      input_map: {stage: coldread, mode: replay}
+  outputs:
+    saved: save_cold_read.structured.saved
+    minimum_px: replay.structured.minimum_px

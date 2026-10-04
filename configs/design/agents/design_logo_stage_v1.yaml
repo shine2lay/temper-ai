@@ -33,13 +33,19 @@ agent:
         raise SystemExit(22)
     if not workspace.strip() or not Path(workspace).is_absolute() or not Path(workspace).is_dir():
         raise SystemExit(23)
-    if mode not in ("real", "fixture"):
+    if mode not in ("real", "fixture", "replay"):
         raise SystemExit(24)
-    if stage not in ("brief", "budget", "explore", "revise", "palette", "critic", "direction", "prepare", "refine", "handoff", "final"):
+    if stage not in ("brief", "budget", "explore", "revise", "coldread", "palette", "critic", "direction", "prepare", "refine",
+                     "handoff", "final", "replay"):
         raise SystemExit(25)
     if budget_stage not in ("initial", "refine"):
         raise SystemExit(26)
-    raw = os.environ.get("{{ brief_json | default('', true) | env }}", "") if stage == "brief" else os.environ.get("{{ budget_json | default('', true) | env }}", "")
+    if stage == "brief":
+        raw = os.environ.get("{{ brief_json | default('', true) | env }}", "")
+    elif stage == "replay":
+        raw = os.environ.get("{{ replay_json | default('', true) | env }}", "")
+    else:
+        raw = os.environ.get("{{ budget_json | default('', true) | env }}", "")
     native_gate = False
     {% if gate is defined %}
     native_gate = True

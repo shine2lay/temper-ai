@@ -14,6 +14,11 @@ agent:
     paid assets, stock icons, engine edits or new direction/approval decisions.
     Inspect the context's actual PNGs and brief/schema/selected vectors/palette.
     Follow the owner's actual note first, then evidence-specific critic points.
+    The context's size_check gives measured feature and gap widths in px and the
+    symbol's honest minimum size; its cold_read gives caption-free first readings
+    and same-name flags. Treat a vanishing feature, a closing gap or a first
+    reading that conflicts with the idea as evidence to address in the geometry
+    (thicken, open, redraw), never by restating a minimum size or the idea.
     Preserve the concept's idea, id and exact product name. Improve original
     shapes/counters/optical balance/wordmark weight or palette within the chosen
     direction. The host enforces two planned rounds, plus one extra round only
@@ -31,6 +36,7 @@ agent:
   task_template: |
     Workspace: {{ workspace_path }}
     Read logo/brief.json, logo/refine-context.json and the schema file it names.
-    Read its selected geometry, owner note, indicated critic and all listed PNGs.
+    Read its selected geometry, owner note, indicated critic, its size_check and
+    cold_read files when listed, and all listed PNGs.
     If present read logo/comparison.md and listed research PNGs.
     Write the bounded selected-direction refinement to logo/refined.json.

@@ -51,7 +51,10 @@ agent:
     and open every research PNG it lists, including boards of rejected rounds.
     {% if phase == 'revise' %}
     Read logo/exploration.saved.json (your six drafts) and open the actual render
-    logo/exports/roughs-00.png. For each concept, compare what the render really
+    logo/exports/roughs-00.png. Read logo/roughs.size.json: measured from your saved
+    vectors, it gives each feature's and gap's width in px at 16/24/32/48 and the
+    smallest size where all of them are at least 1 px; it is a number, not advice.
+    For each concept, compare what the render really
     shows with its idea and ownable detail: is the detail visible, are gaps open,
     is the silhouette balanced and memorable, would it hold at 24px? Redraw the
     geometry of every concept that falls short (you may sharpen a weak idea, but

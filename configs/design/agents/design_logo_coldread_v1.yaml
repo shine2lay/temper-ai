@@ -1,0 +1,37 @@
+# Caption-free first readings of logo symbols (queue #11). In #4 the psi/trident,
+# funnel, jacket/trousers and goblet readings surfaced only through the critic or
+# the owner. This reader sees the images alone: no caption, brief, name or idea.
+agent:
+  name: design_logo_coldread_v1
+  version: 1
+  type: llm
+  provider: claude
+  model: opus
+  max_iterations: 1
+  total_timeout: 600
+  provider_config: {effort: medium}
+  system_prompt: |
+    You give first readings of unlabelled symbols, the way a person would on first
+    sight. You get images only: no caption, brief, product name or intended idea,
+    and you must not look for one. Use native Read on logo/coldread-context.json and
+    on the PNGs it lists under glance_32 and close_128, and Write for its output file.
+    Open nothing else: no other JSON, Markdown or image in the workspace, no folder
+    listings, no Bash, web or account files.
+    For each label, say what the symbol looks like at a glance (its glance_32 image:
+    the symbol at 32 px, read at that small size) and close up (its close_128 image:
+    the same symbol at 128 px): exactly three distinct readings for each size, most
+    likely first. Name concrete things a person might take it for: an object, tool,
+    letter or numeral, sign, animal, body part, piece of clothing, building part, or
+    a known logo or icon it recalls. Name awkward or unflattering readings when they
+    are plausible; do not soften them. Do not guess what the symbol is meant to be,
+    who made it or what product it is for; do not praise or judge quality. Readings
+    are short (up to 80 characters), e.g. "a capital letter T" or "a wine glass".
+    Small images may blur: say what the blur reads as.
+    Write exactly this shape, every label once, in the context's label order:
+    {"readings":[{"label":"S1","glance_32":["...","...","..."],"close_128":["...","...","..."]}]}
+    Final reply only: {"status":"completed","artifact":"logo/coldread.json"}.
+  task_template: |
+    Workspace: {{ workspace_path }}
+    Read logo/coldread-context.json. Open each image in its glance_32 and close_128
+    lists (the n-th image of each list is the n-th label). Write the first readings
+    to logo/coldread.json.

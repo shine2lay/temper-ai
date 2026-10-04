@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import random
 import shutil
 import time
 import uuid
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import design_homepage_v1 as h
 import logo_contracts as c
+import logo_size_check as size_check
 import penpot_homepage_source as p
 import penpot_logo_source as source
 
@@ -39,6 +41,11 @@ def sha(path):
 
 FIXTURE_FAMILIES = ("geometric", "letterform", "pictorial", "emblem", "geometric", "emblem")
 PNG = b"\x89PNG\r\n\x1a\n"
+COLD_VIEWS = ("32", "128", "header")
+COLD_METHOD = ("Caption-free first readings: each symbol alone on its paper colour, exported from its own native "
+               "Penpot file at 32 px (glance) and 128 px (close), under neutral labels in a seeded shuffled order. "
+               "The reader sees no caption, brief, name or idea. Same-name check: a second reader compares the "
+               "symbol at 32 px beside the live wordmark with the research screen's same-name marks.")
 
 
 def fixture_exploration(brief):
@@ -76,17 +83,36 @@ def fixture_revision(brief, draft):
     return {"product": brief["product"], "concepts": draft["concepts"], "revisions": []}
 
 
-def fixture_palette(brief):
+def fixture_first_reads(cold, ident, with_id=False):
+    """Model-free stand-in comparisons that quote every saved reading, as the contract demands."""
+    rows = [{"reading": r["reading"], "size": r["size"], "fits_idea": i == 0,
+             "note": "Fixture comparison only; not evidence about any mark."} for i, r in enumerate(cold[ident]["readings"])]
+    marks = [{"mark": m, "note": "Fixture flag only; not evidence."} for m in cold[ident]["close"]]
+    if with_id:
+        return [{"id": ident, **r} for r in rows], [{"id": ident, **m} for m in marks]
+    return rows, marks
+
+
+def fixture_palette(brief, cold=None):
+    """cold: saved cold read of the sketches; without it the rows have the earlier shape."""
     c.brief_contract(brief, "fixture")
     palette = {"ink": "#142E34", "paper": "#FFFFFF", "accent": "#277F88", "accent_on": "#FFFFFF", "muted": "#52616A", "surface": "#F1F4F2"}
-    return {"product": brief["product"], "shortlist": [{"id": "fixture-" + str(i), "palette": palette, "rationale": "Fictional fixture only."} for i in range(3)],
+    rows = []
+    for i in range(3):
+        row = {"id": "fixture-" + str(i), "palette": palette, "rationale": "Fictional fixture only."}
+        if cold is not None:
+            row["first_reads"], row["name_marks"] = fixture_first_reads(cold, row["id"])
+        rows.append(row)
+    return {"product": brief["product"], "shortlist": rows,
             "recommendation": "fixture-2", "recommendation_reason": "Fixture only; exercises editable cubic geometry."}
 
 
 class Job:
     def __init__(self, workspace, run_id, mode):
         uuid.UUID(run_id)
-        if mode not in ("real", "fixture"):
+        # replay: a real brief's saved symbols re-checked (size + cold read) with no gates,
+        # budget answers, refinement or packet; it can never approve anything.
+        if mode not in ("real", "fixture", "replay"):
             raise ValueError("explicit mode required")
         # RunRequest.workspace_path must name an existing mounted host folder.
         # Empty context otherwise creates per-script temporary artifacts that
@@ -127,7 +153,7 @@ class Job:
         return None
 
     def brief(self, raw):
-        b = c.brief_contract(json.loads(raw), self.mode)
+        b = c.brief_contract(json.loads(raw), "real" if self.mode == "replay" else self.mode)
         fingerprint = c.digest({"brief": b, "mode": self.mode, "schema": c.VERSION})
         cached = self.cached("brief", fingerprint)
         if cached:
@@ -186,7 +212,135 @@ class Job:
         (self.root / "comparison.md").write_text("\n".join(lines))
         return [*copies, self.root / "comparison.md"]
 
+    def only(self, *modes):
+        if self.mode not in modes:
+            raise ValueError("stage not allowed in this mode")
+
+    def size_report(self, name, concepts):
+        """Model-free size check of saved symbols; the honest minimum the packet may claim."""
+        report = size_check.check(concepts)
+        path = self.root / (name + ".size.json")
+        save(path, report)
+        return report, path
+
+    def cold_prepare(self, phase, concepts, palettes=None):
+        """Caption-free boards for the cold read, in a native file of their own.
+
+        Neutral labels (S1..) in a seeded shuffled order; the label map stays in state.
+        Copies go to logo/coldread-<phase>/ and the agents' context to logo/coldread-context.json.
+        """
+        order = list(range(len(concepts)))
+        random.Random(c.digest({"run": self.run_id, "phase": phase})).shuffle(order)
+        shown = [concepts[i] for i in order]
+        labels = ["S" + str(i + 1) for i in range(len(shown))]
+        state, exports = self.native_file("coldread-" + phase,
+            lambda canvas: canvas.coldread_boards(shown, labels, palettes), kinds=("png",))
+        facts = source.measurements(state, palettes or {})
+        if facts["violations"]:
+            raise ValueError("cold-read boards measured layout failed; source retained")
+        folder = self.root / ("coldread-" + phase)
+        folder.mkdir(parents=True, exist_ok=True)
+        views = {}
+        for receipt in exports:
+            label, view = receipt["board"].split(" ")
+            name = {"glance": "32", "close": "128", "header": "header"}[view]
+            target = folder / f"{label}-{name}.png"
+            shutil.copyfile(self.root.parent / receipt["path"], target)
+            views.setdefault(label, {})[name] = str(target.relative_to(self.root.parent))
+        brief = load(self.root / "brief.json")
+        marks = ["logo/research/" + m for m in brief.get("research", {}).get("same_name", [])]
+        # Two contexts: the cold reader's lists only its images (no mark names, header or
+        # wordmark), the name checker's only the header lockups and the same-name marks.
+        cold_context = {"labels": labels, "glance_32": [views[s]["32"] for s in labels],
+                        "close_128": [views[s]["128"] for s in labels], "output": "logo/coldread.json"}
+        names_context = {"labels": labels, "header_32": [views[s]["header"] for s in labels],
+                         "same_name": marks, "output": "logo/names.json"}
+        for stale in ("coldread.json", "names.json"):
+            (self.root / stale).unlink(missing_ok=True)
+        save(self.root / "coldread-context.json", cold_context)
+        save(self.root / "names-context.json", names_context)
+        save(self.root / ("coldread-" + phase + ".context.json"),
+             {"phase": phase, "method": COLD_METHOD, "cold_read": cold_context, "name_check": names_context})
+        save(self.root / ("coldread-" + phase + ".measurements.json"), facts)
+        self.state.setdefault("cold", {})[phase] = {"labels": dict(zip(labels, [v["id"] for v in shown], strict=True)),
+                                                  "marks": [m.rsplit("/", 1)[1] for m in marks]}
+        # The latest prepared phase; adopting it twice with the same files returns the saved receipt.
+        self.state["cold_phase"] = phase
+        self.commit()
+        return [self.root / ("coldread-" + phase + ".context.json"), self.root / ("coldread-" + phase + ".source.json"),
+                *(self.root.parent / p for row in views.values() for p in row.values())]
+
+    def adopt_cold_read(self):
+        """Validate the cold read and name check of the latest prepared phase; map labels back to ids."""
+        phase = self.state.get("cold_phase")
+        if not phase:
+            raise ValueError("no cold-read boards are waiting")
+        info = self.state["cold"][phase]
+        labels, marks = list(info["labels"]), info["marks"]
+        if self.mode == "fixture":
+            reads = {"readings": [{"label": s, "glance_32": [f"fixture reading {s} {n}" for n in "abc"],
+                                   "close_128": [f"fixture close reading {s} {n}" for n in "abc"]} for s in labels]}
+            names = {"resemblance": [{"label": s, "mark": m, "close": i == 0 and j == 0,
+                                      "why": "Fixture flag only; not a resemblance finding."}
+                                     for i, s in enumerate(labels) for j, m in enumerate(marks)]}
+        else:
+            reads = load(self.root / "coldread.json")
+            names = load(self.root / "names.json") if marks else {"resemblance": []}
+        reads = c.readings_contract(reads, labels)
+        names = c.names_contract(names, labels, marks)
+        label = "coldread-" + phase
+        fingerprint = c.digest({"readings": reads, "names": names, "labels": info})
+        if result := self.cached(label, fingerprint):
+            return result
+        symbols = {}
+        for row in reads["readings"]:
+            ident = info["labels"][row["label"]]
+            symbols[ident] = {"label": row["label"],
+                "readings": [{"size": "32", "reading": r} for r in row["glance_32"]] +
+                            [{"size": "128", "reading": r} for r in row["close_128"]],
+                "resemblance": [r for r in names["resemblance"] if r["label"] == row["label"]],
+                "close": [r["mark"] for r in names["resemblance"] if r["label"] == row["label"] and r["close"]]}
+        path = self.root / (label + ".saved.json")
+        save(path, {"phase": phase, "method": COLD_METHOD, "fictional_test": self.mode == "fixture",
+                    "same_name_marks": marks, "symbols": symbols,
+                    "limits": "Readings of one model at one time: first impressions to compare with the idea, not "
+                              "user research, recognition rates or a trademark search."})
+        return self.receipt(label, fingerprint, {"status": "completed", "phase": phase, "saved": "logo/" + path.name,
+            "symbols": len(symbols), "close_flags": sum(len(v["close"]) for v in symbols.values())}, [path])
+
+    def cold(self, phase):
+        """Saved cold read of a phase as the contracts take it: {id: {readings, close}}."""
+        saved = load(self.root / ("coldread-" + phase + ".saved.json"))
+        return {i: {"readings": v["readings"], "close": v["close"]} for i, v in saved["symbols"].items()}
+
+    def adopt_replay(self, raw):
+        """Replay mode: re-check saved symbols of a real run (size check + cold-read boards)."""
+        self.only("replay")
+        b = load(self.root / "brief.json")
+        v = json.loads(raw)
+        c.keys(v, ("concepts", "source"), ("palettes",))
+        if not isinstance(v["concepts"], list) or not 1 <= len(v["concepts"]) <= 12:
+            raise ValueError("replay needs one to twelve saved concepts")
+        concepts = [c.concept_contract(row, b) for row in v["concepts"]]
+        if len({row["id"] for row in concepts}) != len(concepts):
+            raise ValueError("replay concept ids must be distinct")
+        palettes = {k: c.palette_contract(p) for k, p in v.get("palettes", {}).items()}
+        if not set(palettes) <= {row["id"] for row in concepts}:
+            raise ValueError("replay palette for an unknown concept")
+        v = {"concepts": concepts, "palettes": palettes, "source": c.text(v["source"], 300)}
+        fingerprint = c.digest(v)
+        if result := self.cached("replay", fingerprint):
+            return result
+        save(self.root / "replay.saved.json", v)
+        report, size_path = self.size_report("replay", concepts)
+        artifacts = self.cold_prepare("replay", concepts, palettes)
+        return self.receipt("replay", fingerprint, {"status": "completed", "symbols": len(concepts),
+            "size": "logo/" + size_path.name, "context": "logo/coldread-context.json",
+            "minimum_px": {r["id"]: r["claim_px"] for r in report["symbols"]}},
+            [self.root / "replay.saved.json", size_path, *artifacts])
+
     def budget(self, raw, stage):
+        self.only("real", "fixture")
         if self.mode == "fixture":
             c.brief_contract(load(self.root / "brief.json"), "fixture")
             return {"status": "completed", "model_calls": 0, "fictional_test": True}
@@ -209,7 +363,7 @@ class Job:
         save(path, {**reservation, "recorded_at": h.now()})
         return {"status": "completed", "budget_receipt": "logo/" + path.name, "round": self.state["round"] + 1}
 
-    def native_file(self, label, build):
+    def native_file(self, label, build, kinds=("png", "svg")):
         """Recover only same known empty file or exact fully saved checkpoint.
 
         Ambiguous partial native saves fail closed, retaining UUID/objects; never
@@ -251,7 +405,7 @@ class Job:
         save(self.root / (label + ".reopen.json"), {"saved": checked, "fresh": reopened, "fresh_login": True, "at": h.now()})
         exports = []
         for i, board in enumerate(state["boards"]):
-            for kind in ("png", "svg"):
+            for kind in kinds:
                 path = self.root / "exports" / f"{label}-{i:02}.{kind}"
                 receipt = fresh.export(state, board, kind, path)
                 receipt["path"] = str(path.relative_to(self.root.parent))
@@ -267,6 +421,7 @@ class Job:
         return state, exports
 
     def adopt_exploration(self):
+        self.only("real", "fixture")
         b = load(self.root / "brief.json")
         v = fixture_exploration(b) if self.mode == "fixture" else load(self.root / "exploration.json")
         v = c.exploration_contract(v, b)
@@ -279,11 +434,14 @@ class Job:
         if facts["violations"]:
             raise ValueError("rough-board measured layout failed; preserve source identity")
         save(self.root / "roughs.measurements.json", facts)
-        out = {"status": "completed", "monochrome": exports[0]["path"], "product": b["product"], "concepts": [r["id"] for r in v["concepts"]]}
-        return self.receipt("exploration", fingerprint, out, [self.root / "exploration.saved.json", self.root / "roughs.source.json", self.root / "roughs.exports.json"])
+        report, size_path = self.size_report("roughs", v["concepts"])
+        out = {"status": "completed", "monochrome": exports[0]["path"], "product": b["product"], "concepts": [r["id"] for r in v["concepts"]],
+               "size": "logo/" + size_path.name, "minimum_px": {r["id"]: r["claim_px"] for r in report["symbols"]}}
+        return self.receipt("exploration", fingerprint, out, [self.root / "exploration.saved.json", self.root / "roughs.source.json", self.root / "roughs.exports.json", size_path])
 
     def adopt_revision(self):
         """Second explorer pass: it has seen its own render and redrawn what failed."""
+        self.only("real", "fixture")
         b, draft = load(self.root / "brief.json"), load(self.root / "exploration.saved.json")
         v = fixture_revision(b, draft) if self.mode == "fixture" else load(self.root / "exploration-revised.json")
         v = c.revision_contract(v, b, draft)
@@ -296,17 +454,24 @@ class Job:
         if facts["violations"]:
             raise ValueError("revised sketch board measured layout failed; preserve source identity")
         save(self.root / "sketches.measurements.json", facts)
-        out = {"status": "completed", "monochrome": exports[0]["path"], "revised": [r["id"] for r in v["revisions"]]}
-        return self.receipt("revision", fingerprint, out, [self.root / "sketches.saved.json", self.root / "sketches.source.json", self.root / "sketches.exports.json"])
+        report, size_path = self.size_report("sketches", v["concepts"])
+        cold = self.cold_prepare("sketches", v["concepts"])
+        out = {"status": "completed", "monochrome": exports[0]["path"], "revised": [r["id"] for r in v["revisions"]],
+               "size": "logo/" + size_path.name, "minimum_px": {r["id"]: r["claim_px"] for r in report["symbols"]},
+               "coldread_context": "logo/coldread-context.json"}
+        return self.receipt("revision", fingerprint, out, [self.root / "sketches.saved.json", self.root / "sketches.source.json", self.root / "sketches.exports.json", size_path, *cold])
 
     def concepts(self):
         return load(self.root / "sketches.saved.json")["concepts"]
 
     def adopt_palette(self):
+        self.only("real", "fixture")
         b, concepts = load(self.root / "brief.json"), self.concepts()
-        v = fixture_palette(b) if self.mode == "fixture" else load(self.root / "palette.json")
-        v = c.shortlist_contract(v, b, concepts)
-        fingerprint = c.digest({"exploration": c.digest(concepts), "palette": v})
+        cold = self.cold("sketches")
+        sizes = {r["id"]: r for r in load(self.root / "sketches.size.json")["symbols"]}
+        v = fixture_palette(b, cold) if self.mode == "fixture" else load(self.root / "palette.json")
+        v = c.shortlist_contract(v, b, concepts, cold)
+        fingerprint = c.digest({"exploration": c.digest(concepts), "palette": v, "cold": cold, "size": c.digest(sizes)})
         if result := self.cached("shortlist", fingerprint):
             return result
         save(self.root / "palette.saved.json", v)
@@ -314,7 +479,7 @@ class Job:
             canvas.comparison_board(concepts, v["shortlist"])
             for i, row in enumerate(v["shortlist"]):
                 concept = next(o for o in concepts if o["id"] == row["id"])
-                canvas.actual_sizes_board(concept, row["palette"], origin=2300 + i * 900)
+                canvas.actual_sizes_board(concept, row["palette"], origin=2300 + i * 900, size=sizes[row["id"]])
             canvas.contract_board()
         state, exports = self.native_file("directions", build)
         palettes = {r["id"]: r["palette"] for r in v["shortlist"]}
@@ -333,13 +498,24 @@ class Job:
         return self.receipt("shortlist", fingerprint, out, artifacts)
 
     def adopt_critic(self):
+        self.only("real", "fixture")
         b = load(self.root / "brief.json")
         round_number = self.state["round"]
         ids = ({self.state["direction"]["decision"]} if round_number else
                {r["id"] for r in load(self.root / "palette.saved.json")["shortlist"]})
-        v = ({"product": b["product"], "observations": [], "recommendation": self.state.get("direction", {}).get("decision", "fixture-2"), "recommendation_reason": "Fictional contract fixture; no aesthetic evaluation.", "limitations": "No model call; this is not critic evidence."}
-             if self.mode == "fixture" else load(self.root / "critic.json"))
-        v = c.critique_contract(v, b, ids)
+        cold = self.cold(f"r{round_number:02}" if round_number else "sketches")
+        if self.mode == "fixture":
+            reads, marks = [], []
+            for ident in sorted(ids):
+                rows, flags = fixture_first_reads(cold, ident, with_id=True)
+                reads += rows
+                marks += flags
+            v = {"product": b["product"], "observations": [], "recommendation": self.state.get("direction", {}).get("decision", "fixture-2"),
+                 "recommendation_reason": "Fictional contract fixture; no aesthetic evaluation.",
+                 "limitations": "No model call; this is not critic evidence.", "first_reads": reads, "name_marks": marks}
+        else:
+            v = load(self.root / "critic.json")
+        v = c.critique_contract(v, b, ids, cold)
         label = f"critic-r{round_number:02}"
         fingerprint = c.digest({"critique": v, "round": round_number, "source": self.state["files"]["directions" if not round_number else f"selected-r{round_number:02}"]["file_id"]})
         if result := self.cached(label, fingerprint):
@@ -350,6 +526,7 @@ class Job:
             "round": round_number, "advisory_only": True, "aesthetic_scores": False}, [path])
 
     def direction(self, raw, gate_only):
+        self.only("real", "fixture")
         rows = load(self.root / "palette.saved.json")["shortlist"]
         decision = c.approval_contract(json.loads(raw), kind="direction", run_id=self.run_id,
             brief_hash=self.state["brief_hash"], artifact_hash=self.state["direction_artifact_hash"],
@@ -381,9 +558,30 @@ class Job:
         extra = self.state.get("extra_round") or {}
         return c.EXTRA_ROUND if extra.get("round") == c.EXTRA_ROUND else c.PLANNED_ROUNDS
 
+    def fixture_extra_round(self):
+        """Fixture twin of the owner's extra round (real mode records it at the refine budget gate).
+
+        Only a fictional round-2 final answer of this run, revise with a note, about the current
+        artwork, opens round 3; the fixture workflow has no budget gate to carry it.
+        """
+        path = self.root / f"owner-final-r{c.PLANNED_ROUNDS:02}.json"
+        if self.mode != "fixture" or self.state["round"] != c.PLANNED_ROUNDS or self.state.get("extra_round") or not path.is_file():
+            return
+        record = load(path)
+        if (record.get("fictional_test") is not True or record.get("approval") != "fixture-test"
+                or record.get("decision") != "revise" or not str(record.get("owner_note") or "").strip()
+                or record.get("run_id") != self.run_id or record.get("brief_hash") != self.state["brief_hash"]
+                or record.get("artifact_hash") != self.state.get("final_artifact_hash")):
+            return
+        self.state["extra_round"] = {"round": c.EXTRA_ROUND, "owner_note": record["owner_note"], "owner_final": path.name,
+                                     "recorded_at": h.now(), "fictional_test": True}
+        self.commit()
+
     def prepare_refine(self):
+        self.only("real", "fixture")
         if not self.state.get("direction"):
             raise ValueError("no selected owner direction")
+        self.fixture_extra_round()
         if self.state["round"] >= self.round_cap():
             raise ValueError("two refinement rounds exhausted" + (" with the owner's extra round" if self.round_cap() > c.PLANNED_ROUNDS else ""))
         next_round = self.state["round"] + 1
@@ -399,6 +597,11 @@ class Job:
                    "selected": load(self.root / "selected.json"), "owner_note": feedback,
                    "critic": f'logo/critic-r{self.state["round"]:02}.json', "output": "logo/refined.json",
                    "pngs": [r["path"] for r in self.state["files"]["directions" if next_round == 1 else f'selected-r{self.state["round"]:02}']["exports"] if r["kind"] == "png"]}
+        # Measured size and caption-free first readings of the artwork being refined.
+        previous = "sketches" if next_round == 1 else f'selected-r{self.state["round"]:02}'
+        evidence = {"size_check": previous + ".size.json",
+                    "cold_read": "coldread-" + ("sketches" if next_round == 1 else f'r{self.state["round"]:02}') + ".saved.json"}
+        context.update({k: "logo/" + v for k, v in evidence.items() if (self.root / v).is_file()})
         fingerprint = c.digest(context)
         label = f"prepare-r{next_round:02}"
         if result := self.cached(label, fingerprint):
@@ -408,6 +611,7 @@ class Job:
             "context": "logo/refine-context.json", "output": "logo/refined.json"}, [])
 
     def adopt_refine(self):
+        self.only("real", "fixture")
         b = load(self.root / "brief.json")
         next_round = load(self.root / "refine-context.json")["round"]
         label = f"selected-r{next_round:02}"
@@ -421,22 +625,29 @@ class Job:
         if next_round != self.state["round"] + 1 or next_round > self.round_cap():
             raise ValueError("duplicate or unbounded refinement")
         save(self.root / (label + ".json"), v)
-        state, exports = self.native_file(label, lambda canvas: canvas.final_boards(b, v["concept"], v["palette"]))
+        report, size_path = self.size_report(label, [v["concept"]])
+        size = report["symbols"][0]
+        state, exports = self.native_file(label, lambda canvas: canvas.final_boards(b, v["concept"], v["palette"], size=size))
         facts = source.measurements(state, {v["concept"]["id"]: v["palette"]})
         if facts["violations"]:
             raise ValueError("selected identity measured layout failed; source retained")
         save(self.root / (label + ".measurements.json"), facts)
+        cold = self.cold_prepare(f"r{next_round:02}", [v["concept"]], {v["concept"]["id"]: v["palette"]})
         save(self.root / "selected.json", {"concept": v["concept"], "palette": v["palette"]})
         self.state["round"] = next_round
         self.commit()
         return self.receipt(label, fingerprint, {"status": "completed", "round": next_round, "round_label": f"{next_round:02}",
-            "pngs": [r["path"] for r in exports if r["kind"] == "png"], "source": self.state["files"][label]["url"]},
-            [self.root / (label + ".json"), self.root / (label + ".source.json"), self.root / (label + ".exports.json")])
+            "pngs": [r["path"] for r in exports if r["kind"] == "png"], "source": self.state["files"][label]["url"],
+            "size": "logo/" + size_path.name, "minimum_px": size["claim_px"], "coldread_context": "logo/coldread-context.json"},
+            [self.root / (label + ".json"), self.root / (label + ".source.json"), self.root / (label + ".exports.json"), size_path, *cold])
 
     def handoff(self):
+        self.only("real", "fixture")
         round_number = self.state["round"]
         label = f"selected-r{round_number:02}"
-        fingerprint = c.digest({"selected": sha(self.root / (label + ".json")), "critic": sha(self.root / f"critic-r{round_number:02}.json")})
+        size = load(self.root / (label + ".size.json"))["symbols"][0]
+        fingerprint = c.digest({"selected": sha(self.root / (label + ".json")), "critic": sha(self.root / f"critic-r{round_number:02}.json"),
+                                "size": sha(self.root / (label + ".size.json"))})
         if result := self.cached("handoff-r" + str(round_number), fingerprint):
             return result
         source_state = load(self.root / (label + ".source.json"))
@@ -447,7 +658,10 @@ class Job:
         b, selected = load(self.root / "brief.json"), load(self.root / "selected.json")
         save(self.root / "tokens.json", {"product": b["product"], "sRGB": selected["palette"],
              "font": {"family": "Source Sans Pro", "weight": selected["concept"]["wordmark_weight"], "licence": "SIL OFL 1.1", "assets": "assets/"},
-             "clear_space_unit": "0.25 of symbol nominal box on every side", "minimum_symbol_px": selected["concept"]["minimum_symbol_px"],
+             "clear_space_unit": "0.25 of symbol nominal box on every side", "minimum_symbol_px": size["claim_px"],
+             "declared_minimum_symbol_px": selected["concept"]["minimum_symbol_px"],
+             "measured_size": {k: size[k] for k in ("minimum_px", "exact_minimum_px", "clear_from_px", "exact_clear_from_px")},
+             "size_check": label + ".size.json",
              "proposed_minimum_lockup_px": 160, "not_publication_approved": True})
         brand = f'''# {b["product"]} / identity study
 
@@ -473,7 +687,8 @@ No raster-in-vector or remote-font fallback. Symbol negative spaces remain empty
 
 ## Use
 Clear space: at least 0.25 of the nominal symbol square on all sides; keep text
-and other marks outside it. Proposed symbol minimum: {selected["concept"]["minimum_symbol_px"]}px;
+and other marks outside it. {size_check.board_note(size)}
+The size check measures the saved vectors ({label}.size.json): {size["summary"]}.
 16/24/32/48/64px remain shown at actual size, not declared equally good. Proposed
 lockup minimum: 160px; visually confirm at 160 and 320, never squeeze the wordmark.
 512px avatar uses generous padding. Use monochrome if colour reproduction fails.
@@ -503,7 +718,8 @@ namesakes merit professional clearance before public use. No uniqueness claim.
         (self.root / "BRAND.md").write_text(brand)
         shutil.copyfile(self.root / "BRAND.md", self.root / f"BRAND-r{round_number:02}.md")
         shutil.copyfile(self.root / "tokens.json", self.root / f"tokens-r{round_number:02}.json")
-        artifacts = [self.root / (label + ".json"), self.root / (label + ".source.json"), self.root / (label + ".exports.json"), self.root / f"BRAND-r{round_number:02}.md", self.root / f"tokens-r{round_number:02}.json"]
+        artifacts = [self.root / (label + ".json"), self.root / (label + ".source.json"), self.root / (label + ".exports.json"),
+                     self.root / (label + ".size.json"), self.root / f"BRAND-r{round_number:02}.md", self.root / f"tokens-r{round_number:02}.json"]
         self.state["final_artifact_hash"] = c.digest({a.name: sha(a) for a in artifacts})
         self.commit()
         manifest = {"run_id": self.run_id, "mode": self.mode, "round": round_number,
@@ -520,6 +736,7 @@ namesakes merit professional clearance before public use. No uniqueness claim.
             "round": round_number}, artifacts)
 
     def final(self, raw, gate_only):
+        self.only("real", "fixture")
         decision = c.approval_contract(json.loads(raw), kind="final", run_id=self.run_id,
             brief_hash=self.state["brief_hash"], artifact_hash=self.state["final_artifact_hash"], choices={"approve", "revise"},
             gate_only=gate_only, fictional=self.mode == "fixture")
@@ -544,17 +761,19 @@ namesakes merit professional clearance before public use. No uniqueness claim.
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("stage", choices=("brief", "budget", "explore", "revise", "palette", "critic", "direction", "prepare", "refine", "handoff", "final"))
+    parser.add_argument("stage", choices=("brief", "budget", "explore", "revise", "coldread", "palette", "critic", "direction",
+                                          "prepare", "refine", "handoff", "final", "replay"))
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--mode", choices=("real", "fixture"), required=True)
+    parser.add_argument("--mode", choices=("real", "fixture", "replay"), required=True)
     parser.add_argument("--budget-stage", choices=("initial", "refine"), default="initial")
     parser.add_argument("--native-gate", action="store_true")
     args = parser.parse_args()
     job = Job(args.workspace, args.run_id, args.mode)
     raw = os.getenv("LOGO_DATA", "")
     methods = {"brief": lambda: job.brief(raw), "budget": lambda: job.budget(raw, args.budget_stage),
-        "explore": job.adopt_exploration, "revise": job.adopt_revision, "palette": job.adopt_palette, "critic": job.adopt_critic,
+        "explore": job.adopt_exploration, "revise": job.adopt_revision, "coldread": job.adopt_cold_read,
+        "replay": lambda: job.adopt_replay(raw), "palette": job.adopt_palette, "critic": job.adopt_critic,
         "direction": lambda: job.direction(raw, args.native_gate), "prepare": job.prepare_refine,
         "refine": job.adopt_refine, "handoff": job.handoff, "final": lambda: job.final(raw, args.native_gate)}
     started = time.monotonic()

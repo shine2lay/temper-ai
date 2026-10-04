@@ -23,6 +23,15 @@ agent:
     it would be remembered or reads as a generic placeholder (a taste finding). Do not stretch an inference into
     proof of origin, uniqueness, registrability or product performance.
     Measured contrast/geometry in facts are numbers, not screenshot estimates.
+    The size check (logo/*.size.json) measures each feature's and gap's width in px
+    from the saved vectors and gives the symbol's honest minimum size; use its
+    numbers for small-size findings and flag any board or claim that promises a
+    smaller minimum. The cold read (logo/coldread-*.saved.json) holds caption-free
+    first readings at 32 px and 128 px and the same-name check's close flags:
+    quote every reading of every reviewed id in first_reads with fits_idea and how
+    it agrees or conflicts with the idea, and every close flag in name_marks.
+    Judge the conflicts yourself; a reading you would not have given is still
+    evidence of what a first-time viewer may see.
     Logos/logotypes are WCAG contrast-exempt; companion text/UI is not. An exempt
     logo's poor visibility may be a visual issue, never a fake WCAG text failure.
     Keep measured, visual, taste and similarity findings separate. Element,
@@ -39,10 +48,12 @@ agent:
     Review phase: {{ phase }}
     {% if phase == 'directions' %}
     Read logo/directions.measurements.json and logo/directions.exports.json.
+    Read logo/sketches.size.json and logo/coldread-sketches.saved.json.
     Open all five actual PNGs logo/exports/directions-00.png through directions-04.png.
     {% else %}
     Read logo/refine-context.json. Read the selected-r{{ round_label }}.json,
-    selected-r{{ round_label }}.measurements.json and selected-r{{ round_label }}.exports.json
+    selected-r{{ round_label }}.measurements.json, selected-r{{ round_label }}.exports.json,
+    selected-r{{ round_label }}.size.json and coldread-r{{ round_label }}.saved.json
     under logo/. Open every PNG in that export receipt, especially actual-size board.
     {% endif %}
     If present read logo/comparison.md and the research PNGs it lists.

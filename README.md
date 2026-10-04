@@ -54,33 +54,26 @@ Watch your workflow execute as a live DAG. Click any node to inspect its inputs,
 
 ![DAG Execution View](docs/images/dag-execution.png)
 
-### CLI — Structured Terminal Output
+### CLI — Start a Run and Follow It
 
 ```
-$ temper run code_review --input task="Build a REST API" -v
-
-╭──────────────────────── code_review ─────────────────────────╮
-│ openai/gpt-4o-mini | budget: $5.00                            │
-╰──────────────────────────────────────────────────────────────╯
-
-━━━━━━━━━━━━━━━━ plan ━━━━━━━━━━━━━━━━
-  planner
-    input:  task="Build a REST API"
-    output: {"steps": ["Design endpoints", "Implement CRUD", ...]}
-  ✓ planner 9.7s | 206 tokens
-
-━━━━━━━━━━━━━━━━ code (parallel) ━━━━━━━━━━━━━━━━
-  coder_a ✓ 12.3s | 450 tokens
-  coder_b ✓ 11.1s | 380 tokens
-
-━━━━━━━━━━━━━━━━ review ━━━━━━━━━━━━━━━━
-  reviewer ✓ 8.2s | 290 tokens
-
-────────────────────────────────────────
-Completed in 31.2s | 1,326 tokens | $0.02
+$ temper run code_review --input task="Build a REST API"
+Started code_review on the temper server: run 6c0f9d1e-5b2a-4d8e-9f31-2a7c4e8b1d90
+  https://temper.wai2shine.com/app/workflow/6c0f9d1e-5b2a-4d8e-9f31-2a7c4e8b1d90
+Following it here; Ctrl+C stops following, the run keeps going.
+  started  plan
+  done     plan (10s)
+  started  code
+  done     code (12s)
+  started  review
+  done     review (8s)
+Run completed in 31s, $0.02: https://temper.wai2shine.com/app/workflow/6c0f9d1e-5b2a-4d8e-9f31-2a7c4e8b1d90
 ```
 
-Three verbosity levels: default (progress), `-v` (inputs/outputs), `-vv` (full dump — see every token).
+`temper run` starts the run on the server, the same way the dashboard does, so
+every run shows on the dashboard; the terminal only follows it. `-v` adds
+nested stages and the output at the end; `--detach` prints the link and
+returns at once.
 
 ### API — Programmatic Access
 
@@ -131,7 +124,8 @@ temper run smoke_test --input message="hello"
 ```
 
 `smoke_test` is two script nodes and no LLM calls, so it works before you
-have configured a provider. If it completes, the engine, the database, the
+have configured a provider. `temper run` asks the server you just started to
+run it (http://127.0.0.1:8420 unless `TEMPER_SERVER_URL` says otherwise). If it completes, the engine, the database, the
 event stream and the dashboard are all working.
 
 ### `.env` — pick one provider
@@ -263,7 +257,8 @@ workflow:
 temper run my_workflow --input task="Build a calculator in Python"
 ```
 
-Or via API:
+The server runs it with the configs in its own `configs/` folder, so save the
+file there. Or via API:
 
 ```bash
 curl -X POST http://localhost:8420/api/runs \
@@ -276,7 +271,7 @@ curl -X POST http://localhost:8420/api/runs \
 ## CLI
 
 ```bash
-temper run <workflow> --input key=value [-v] [-vv] [--no-db] [--debug]
+temper run <workflow> [--input key=value ...] [--workspace PATH] [--detach] [-v] [--server URL]
 temper serve [--port 8420] [--dev] [--debug]
 temper validate <workflow> [--debug]
 
@@ -287,11 +282,37 @@ temper watch-queue [--poll-interval N]            # daemon: claim queued runs
 
 | Flag | Description |
 |------|-------------|
-| `-v` | Show agent inputs/outputs (truncated) |
-| `-vv` | Full dump (no truncation) |
-| `--no-db` | Ephemeral run, no event persistence |
+| `--input`, `-i` | `key=value`, repeatable; a value that parses as JSON is sent as JSON |
+| `--workspace` | Workspace folder for the run's tools (a path the server can see) |
+| `--detach` | Print the run's dashboard link and return without following |
+| `-v` | While following, show nested stages and the output at the end |
+| `--server` | The temper server (default `$TEMPER_SERVER_URL`, else `http://127.0.0.1:8420`) |
 | `--dev` | Hot reload for server mode |
 | `--debug` | Enable debug logging (config loading, provider init, LLM requests) |
+
+### Starting runs
+
+Runs start only on the server: the dashboard, `POST /api/runs`, the
+`temper_start_run` MCP tool, Slack, Telegram, triggers, or `temper run`. The
+server runs the workflow with its own configs (its `configs/` folder; here the
+`~/temper-ai` master folder), not the folder you type the command in, and
+records it in its own database, so every run shows on the dashboard.
+
+`temper run` posts the workflow and inputs to `POST /api/runs`, prints the run
+id and its link (`$TEMPER_UI_URL/app/workflow/<id>`, default
+`https://temper.wai2shine.com`), then follows the run: a line as each stage
+starts or ends, and one line for each wait on you, which you answer on the
+dashboard or in Slack/Telegram. It exits 0 when the run completed, 1 when it
+failed, 2 when it was cancelled, 3 when nothing was started (the server isn't
+answering, or refused the start), 4 when it stopped following before the end,
+and 130 on Ctrl+C; after 4 and 130 the run keeps going on the server. Nothing
+ever runs in the terminal: when the server isn't answering, `temper run` says
+so and runs nothing. The old in-terminal flags (`--provider`, `--model`,
+`--config-dir`, `--no-db`) are refused, each with what to do instead.
+
+To try a config that hasn't landed, save it under a new name through the
+Studio config API ([docs/product-runs.md](docs/product-runs.md)) or start a
+throwaway stack (`scripts/temper_ci/stack.py`).
 
 ---
 
@@ -394,7 +415,7 @@ Same pattern for [providers](docs/reference/providers/index.md), [strategies](do
 temper_ai/
   agent/         Agent types (LLM, Script) + registry
   api/           REST API + WebSocket + data service
-  cli/           CLI + Rich terminal output
+  cli/           CLI: `temper run` (starts runs on the server), serve, worker entry points
   config/        DB-backed config store + YAML importer
   database/      SQLModel engine + sessions
   llm/           Tool-calling loop + 5 providers + prompt renderer

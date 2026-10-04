@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `temper run` starts runs on the server
+
+`temper run <workflow>` no longer runs the workflow in the terminal. It starts the run with `POST /api/runs` (server: `--server`, else `TEMPER_SERVER_URL`, else `http://127.0.0.1:8420`), prints the run's dashboard link, follows it (a line per stage, one per wait on you) and exits 0 completed, 1 failed, 2 cancelled. `--detach` returns after the link. A server that isn't answering means nothing is run. `--provider`, `--model`, `--config-dir` and `--no-db` are refused; `temper_ai/cli/printer.py` is gone. Runs the old command recorded in `data/dev.db` or another database never reached the dashboard and were not imported.
+
 ### Added — Worker Protocol v1 (server + worker split)
 
 Splits orchestration (server) from execution (worker) so engineers in workflows can actually exercise their code (pytest, npm, docker CLI, db clients) without bloating the server image. Opt-in via `TEMPER_EXECUTION_MODE`; default stays in-process so existing users see no change.

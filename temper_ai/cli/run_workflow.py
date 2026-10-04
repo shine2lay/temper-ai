@@ -1,10 +1,10 @@
 """`temper run-workflow --execution-id <id>` — standalone worker entry point.
 
 This is the CLI the spawner (phase 3) launches as a subprocess. Distinct
-from `temper run` which is the user-facing terminal command:
+from `temper run`, the user-facing command:
 
-  - `temper run` creates a fresh execution_id, prints to stdout, designed
-    for interactive single-shot use.
+  - `temper run` asks the server to start a run (POST /api/runs) and
+    follows it; it never executes anything itself (cli/run_on_server.py).
   - `temper run-workflow` reads an existing WorkflowRun row that the
     server (or another orchestrator) has pre-inserted, executes it, and
     writes the terminal status back. No interactive output — events flow

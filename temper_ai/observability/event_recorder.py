@@ -39,8 +39,8 @@ class NullNotifier:
 class EventRecorder:
     """Records events to DB and forwards to a notifier.
 
-    Used by both server mode (notifier=WebSocketManager) and
-    CLI mode (notifier=CLIPrinter).
+    The notifier is the server's WebSocketManager, or None in a worker
+    (``temper run-workflow``), whose events reach the dashboard via the DB.
     """
 
     def __init__(

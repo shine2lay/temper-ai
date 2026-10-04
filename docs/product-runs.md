@@ -1,8 +1,9 @@
 # Product runs on the shared Temper server
 
-Product uses the existing Studio config APIs and `POST /api/runs`. Direct `temper run`
-creates private execution history and is **not** a visibility fallback. Past CLI archives
-and `data/dev.db` remain local-only; no events have been injected into the server.
+Product uses the existing Studio config APIs and `POST /api/runs`. `temper run` starts its
+run through that same `POST /api/runs` (since queue #42, 2026-10-04), so it shows on the
+dashboard too. Runs the old in-terminal `temper run` recorded in `data/dev.db` or in another
+Postgres stay where they are; none were imported into the server.
 
 ## Proven path (queue 14, 2026-10-03)
 

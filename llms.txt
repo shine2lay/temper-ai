@@ -54,10 +54,14 @@ The `workflow` field is the `workflow.name` value from the YAML, not a file path
 
 **Via CLI:**
 ```bash
-temper run blog_writer --input task="Write about LLMs" -v
-temper run blog_writer --no-db       # ephemeral, no persistence
+temper run blog_writer --input task="Write about LLMs"   # starts it on the server, follows it
+temper run blog_writer --detach      # prints the run's dashboard link and returns
 temper validate blog_writer          # validate without executing
 ```
+`temper run` posts to `POST /api/runs` (server: `--server`, else `TEMPER_SERVER_URL`, else
+http://127.0.0.1:8420), prints the dashboard link, then follows the run and exits 0 completed,
+1 failed, 2 cancelled. The server runs it with its own configs; nothing runs in the terminal,
+and an unreachable server means nothing is run.
 
 **Other API endpoints:**
 ```

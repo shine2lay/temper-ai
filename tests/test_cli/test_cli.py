@@ -162,14 +162,6 @@ class TestRunSubcommandArgs:
         args = _parse_args_for(["temper", "run", "my_workflow"])
         assert args.workflow == "my_workflow"
 
-    def test_default_config_dir(self):
-        args = _parse_args_for(["temper", "run", "wf"])
-        assert args.config_dir == "configs"
-
-    def test_custom_config_dir(self):
-        args = _parse_args_for(["temper", "run", "wf", "--config-dir", "/tmp/cfgs"])
-        assert args.config_dir == "/tmp/cfgs"
-
     def test_verbose_default_is_zero(self):
         args = _parse_args_for(["temper", "run", "wf"])
         assert args.verbose == 0
@@ -182,25 +174,35 @@ class TestRunSubcommandArgs:
         args = _parse_args_for(["temper", "run", "wf", "-vv"])
         assert args.verbose == 2
 
-    def test_provider_flag(self):
-        args = _parse_args_for(["temper", "run", "wf", "--provider", "openai"])
-        assert args.provider == "openai"
-
-    def test_model_flag(self):
-        args = _parse_args_for(["temper", "run", "wf", "--model", "gpt-4o"])
-        assert args.model == "gpt-4o"
-
     def test_workspace_flag(self):
         args = _parse_args_for(["temper", "run", "wf", "--workspace", "/tmp/ws"])
         assert args.workspace == "/tmp/ws"
 
-    def test_no_db_flag(self):
-        args = _parse_args_for(["temper", "run", "wf", "--no-db"])
-        assert args.no_db is True
+    def test_detach_flag(self):
+        args = _parse_args_for(["temper", "run", "wf", "--detach"])
+        assert args.detach is True
 
-    def test_no_db_default_false(self):
+    def test_detach_default_false(self):
         args = _parse_args_for(["temper", "run", "wf"])
-        assert args.no_db is False
+        assert args.detach is False
+
+    def test_server_flag(self):
+        args = _parse_args_for(["temper", "run", "wf", "--server", "http://10.0.0.5:8420"])
+        assert args.server == "http://10.0.0.5:8420"
+
+    def test_server_default_is_none(self):
+        """None leaves the choice to $TEMPER_SERVER_URL, then http://127.0.0.1:8420."""
+        args = _parse_args_for(["temper", "run", "wf"])
+        assert args.server is None
+
+    def test_terminal_only_flags_are_still_parsed_so_they_can_be_refused(self):
+        args = _parse_args_for(["temper", "run", "wf", "--provider", "openai", "--model", "gpt-4o",
+                                "--config-dir", "/tmp/cfgs", "--no-db"])
+        assert (args.provider, args.model, args.config_dir, args.no_db) == ("openai", "gpt-4o", "/tmp/cfgs", True)
+
+    def test_terminal_only_flags_default_to_unset(self):
+        args = _parse_args_for(["temper", "run", "wf"])
+        assert (args.provider, args.model, args.config_dir, args.no_db) == (None, None, None, False)
 
     def test_input_flag_single(self):
         args = _parse_args_for(["temper", "run", "wf", "--input", "topic=cats"])
@@ -225,14 +227,6 @@ class TestRunSubcommandArgs:
     def test_debug_default_false(self):
         args = _parse_args_for(["temper", "run", "wf"])
         assert args.debug is False
-
-    def test_provider_default_is_none(self):
-        args = _parse_args_for(["temper", "run", "wf"])
-        assert args.provider is None
-
-    def test_model_default_is_none(self):
-        args = _parse_args_for(["temper", "run", "wf"])
-        assert args.model is None
 
     def test_workspace_default_is_none(self):
         args = _parse_args_for(["temper", "run", "wf"])

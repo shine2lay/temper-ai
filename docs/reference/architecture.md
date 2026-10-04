@@ -217,5 +217,6 @@ The reaper (`temper_ai/spawner/reaper.py`) runs on a 5s tick, polls `WorkflowRun
 - `temper_ai/streaming/` — Redis chunk publisher, subscriber, EventNotifier adapter
 - `temper_ai/cli/run_workflow.py` — worker entry point lifecycle (signals, row writes, notifier composition)
 - `temper_ai/cli/watch_queue.py` — long-lived watcher daemon (claim semantics, dispatch loop)
+- `temper_ai/cli/run_on_server.py` — `temper run`: starts the run with `POST /api/runs` and follows it over the API; nothing runs in the terminal (README "Starting runs")
 - `temper_ai/observability/jsonl_logger.py` — per-run JSONL writer
 - `temper_ai/worker_proto/` — wire-protocol Pydantic types (RunRequest, ProcessHandle, etc.)

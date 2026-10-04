@@ -56,6 +56,11 @@ Two owners are not departments:
 The same six steps for every role, built on what temper already has. A live
 config is never edited to try something.
 
+**Start runs only through the server**: the dashboard, the API
+(`POST /api/runs`), `temper_start_run`, Slack/Telegram, or `temper run`, which
+now goes through the server too. A run started anywhere else never shows on
+the dashboard.
+
 1. **Build a candidate next to the live config.** Either a `_next` copy that
    only a test workflow uses (as `task_implement_next` and `task_review_next`
    are for the build pair), or a config in a `local/` folder under `configs/`

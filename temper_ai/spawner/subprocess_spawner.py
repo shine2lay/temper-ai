@@ -24,6 +24,10 @@ from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
 logger = logging.getLogger(__name__)
 
+# How many finished boxes' exit codes are kept (oldest dropped first): enough for the reaper
+# and reap() to ask about a box after it ended, without growing for every run ever started.
+_KEEP_EXIT_CODES = 1000
+
 
 class SubprocessSpawner(Spawner):
     """Launches the worker via `python -m temper_ai.cli.main run-workflow`.
@@ -52,9 +56,11 @@ class SubprocessSpawner(Spawner):
         self._python = python_executable or sys.executable
         self._extra_env = extra_env or {}
         # Track live processes so the reaper can poll without rediscovery
-        # via the WorkflowRun.spawner_handle (PID) string. The dict is
-        # additive — entries removed only when reaped.
+        # via the WorkflowRun.spawner_handle (PID) string. Each child is
+        # collected the moment it ends (``_collect``): its entry moves to
+        # ``_exit_codes``, so no finished box stays a zombie.
         self._processes: dict[str, subprocess.Popen] = {}
+        self._exit_codes: dict[str, int] = {}
         self._lock = threading.Lock()
 
     def spawn(self, execution_id: str) -> ProcessHandle:
@@ -90,6 +96,11 @@ class SubprocessSpawner(Spawner):
 
         with self._lock:
             self._processes[execution_id] = proc
+            self._exit_codes.pop(execution_id, None)  # a new box for the same run
+        threading.Thread(
+            target=self._collect, args=(execution_id, proc),
+            name=f"spawner-collect-{execution_id}", daemon=True,
+        ).start()
 
         logger.info(
             "Spawned worker pid=%d for execution_id=%s", proc.pid, execution_id,
@@ -100,12 +111,37 @@ class SubprocessSpawner(Spawner):
             metadata={"execution_id": execution_id},
         )
 
+    def _collect(self, execution_id: str, proc: subprocess.Popen) -> None:
+        """Wait for one child to end and collect it at once, so it never stays a zombie.
+
+        A box that ends its run itself is never looked at again (the reaper polls only rows
+        still running), so nothing else would collect it. Its exit code is kept, so
+        ``is_alive``/``reap``/``kill`` still answer about it without asking the OS about a
+        pid that may since belong to someone else.
+        """
+        try:
+            code = proc.wait()
+        except Exception:  # noqa: BLE001 - the child is unknown to us now; nothing to keep
+            logger.warning("Could not collect worker pid=%d (%s)", proc.pid, execution_id,
+                           exc_info=True)
+            return
+        with self._lock:
+            if self._processes.get(execution_id) is not proc:
+                return  # already reaped, or a newer box for the same run took its place
+            del self._processes[execution_id]
+            self._exit_codes[execution_id] = code
+            while len(self._exit_codes) > _KEEP_EXIT_CODES:
+                del self._exit_codes[next(iter(self._exit_codes))]
+
     def is_alive(self, handle: ProcessHandle) -> bool:
         """Poll the subprocess. Returns False once it exits OR if we have
         no record of it (server restarted between spawn and poll)."""
         execution_id = handle.metadata.get("execution_id", "")
         with self._lock:
             proc = self._processes.get(execution_id)
+            ended = execution_id in self._exit_codes
+        if proc is None and ended:
+            return False
         if proc is None:
             # Best-effort: try the OS directly. signal 0 is a permissions
             # check that doesn't actually deliver — succeeds iff the PID
@@ -132,6 +168,12 @@ class SubprocessSpawner(Spawner):
             pid = int(handle.handle)
         except ValueError as exc:
             raise SpawnerError(f"Bad handle: {handle.handle!r}") from exc
+        with self._lock:
+            ended = execution_id in self._exit_codes and execution_id not in self._processes
+        if ended:
+            # Collected already: its pid may belong to another process by now.
+            logger.debug("Worker pid=%d already gone for execution_id=%s", pid, execution_id)
+            return
 
         try:
             # negative pid = kill the process group, not just the leader
@@ -154,14 +196,15 @@ class SubprocessSpawner(Spawner):
     def reap(self, execution_id: str) -> int | None:
         """Pop the Popen handle for a completed worker and return its exit code.
 
-        Called by the reaper after `is_alive()` returns False so the OS
-        can release the zombie entry. Returns None if we never tracked
-        the process (server restart) — caller falls back to "orphaned".
+        Every child is collected as it ends (``_collect``), so this only hands back the
+        exit code and forgets the box. Returns None if we never tracked the process
+        (server restart) or it was reaped already — caller falls back to "orphaned".
         """
         with self._lock:
             proc = self._processes.pop(execution_id, None)
+            code = self._exit_codes.pop(execution_id, None)
         if proc is None:
-            return None
+            return code
         try:
             return proc.wait(timeout=1)
         except subprocess.TimeoutExpired:

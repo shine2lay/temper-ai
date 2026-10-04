@@ -222,6 +222,10 @@ WORKFLOWS = {
                          sup.step("ship", ["team"])],
     # Without a Pi step: the step waits with its worker held, as a gate does there.
     "plain_ask": lambda: [sup.step("brief"), asking("ask", ["brief"]), sup.step("ship", ["ask"])],
+    # Without a Pi step, keeps its answer in its own record and stops once after taking it:
+    # run again, it finishes from the record without asking (#39's finding 5).
+    "plain_ask_stops": lambda: [sup.step("brief"), asking("ask", ["brief"], fail_once=True),
+                                sup.step("ship", ["ask"])],
 }
 
 

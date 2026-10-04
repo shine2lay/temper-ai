@@ -236,12 +236,21 @@ def spend_answers(context: ExecutionContext, path: str) -> None:
     """A step finished: the answers it was given are spent, and a later go asks afresh.
 
     Called by the executor when a step completes. Only a step that asked (in this process),
+    a step the run's Resume found holding an unspent answer (:func:`note_unspent_answers`),
     or any step of a Pi workflow -- a step carried on in a new box may finish from its own
     record without asking again -- has anything to look up: elsewhere this reads nothing.
+    After a step of this go failed holding an answer (:func:`forget_step`), the first step to
+    finish looks the run's unspent answers up once: a loop may have run the failed step
+    again, and it may have finished from its record without asking.
     Never raises: the step's result does not depend on it.
     """
+    pi = getattr(context, "park_at_gates", False)
     asked = _ASKED.pop((context.run_id, path), None) is not None
-    if not (asked or getattr(context, "park_at_gates", False)):
+    if not (asked or pi) and context.run_id in _LOOK_AGAIN:
+        _LOOK_AGAIN.discard(context.run_id)
+        note_unspent_answers(context)
+        asked = _ASKED.pop((context.run_id, path), None) is not None
+    if not (asked or pi):
         return
     recorder = context.event_recorder
     try:
@@ -268,10 +277,57 @@ def spend_answers(context: ExecutionContext, path: str) -> None:
                            ev.get("id"), path, exc)
 
 
+def note_unspent_answers(context: ExecutionContext) -> None:
+    """A run is resumed: note the steps that hold an answer they have not spent yet.
+
+    A step can take its answer, keep it in its own record, and then stop before it finished
+    (the process died, or the step failed). Run again, it may finish from its record without
+    asking, so nothing in this process knows it took an answer: noted here, its answer is
+    spent when it finishes, and its next go asks afresh. One read of the run's waits per
+    resume, none per step. Pi workflows always look when a step finishes, so they read
+    nothing here. Never raises: a resume does not depend on it.
+    """
+    if getattr(context, "park_at_gates", False):
+        return
+    recorder = context.event_recorder
+    try:
+        events = recorder.gate_events() if hasattr(recorder, "gate_events") else []
+    except Exception as exc:  # noqa: BLE001 - a later go would only find an old answer
+        logger.warning("Step wait: could not read the waits of run %s on resume: %s",
+                       context.run_id, exc)
+        return
+    for ev in events if isinstance(events, list) else []:
+        data = ev.get("data") or {}
+        if (data.get("type") == STEP_WAIT and data.get("gate_path")
+                and ev.get("status") == APPROVED and not data.get("gate_used_at")):
+            _ASKED[(context.run_id, str(data["gate_path"]))] = True
+
+
+def forget_step(context: ExecutionContext, path: str) -> None:
+    """The step failed: this go of it is over. Its answers stay unspent in the run's record
+    for the go that carries it on (a Resume notes them again: :func:`note_unspent_answers`),
+    so this process need not remember that it asked. A loop of this go may run it again,
+    though: the next step to finish looks the run's unspent answers up once (``_LOOK_AGAIN``)."""
+    if _ASKED.pop((context.run_id, path), None) is not None:
+        _LOOK_AGAIN.add(context.run_id)
+
+
+def forget_run(run_id: str) -> None:
+    """This go of the run is over (finished, failed, stopped, or let its worker go): forget
+    what its steps asked here. A go that carries it on asks again, or is noted on resume."""
+    for key in [k for k in list(_ASKED) if k[0] == run_id]:
+        _ASKED.pop(key, None)
+    _LOOK_AGAIN.discard(run_id)
+
+
 # --- inside ----------------------------------------------------------------------------
 
-#: (run, step path) of steps that took an answer in this process since they last finished.
+#: (run, step path) of steps that took an answer in this process since they last finished,
+#: or that a Resume found holding an unspent answer. Emptied for a run when its go ends.
 _ASKED: dict[tuple[str, str], bool] = {}
+#: Runs whose go had a step fail holding an answer (:func:`forget_step`); emptied with
+#: ``_ASKED`` when the go ends.
+_LOOK_AGAIN: set[str] = set()
 
 
 def _note_asked(context: ExecutionContext, path: str) -> None:

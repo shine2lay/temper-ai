@@ -175,6 +175,70 @@ def test_is_alive_via_os_kill_when_untracked():
     assert spawner.is_alive(dead_handle) is False
 
 
+def _zombie(pid: int) -> bool:
+    """Is ``pid`` a finished child of this process that nobody has collected?"""
+    try:
+        stat = open(f"/proc/{pid}/stat").read()  # noqa: PTH123, SIM115
+    except OSError:
+        return False  # collected: the process is gone
+    fields = stat.rsplit(")", 1)[-1].split()
+    return fields[0] == "Z" and fields[1] == str(os.getpid())
+
+
+def _box_that_ends_its_run_itself(tmp_path) -> str:
+    """A stand-in for ``python -m temper_ai.cli.main run-workflow ...``: takes the same
+    arguments and exits 0 straight away, the way a box that finished its run does."""
+    script = tmp_path / "box.sh"
+    script.write_text("#!/bin/sh\nexit 0\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+def test_a_box_that_ends_its_run_itself_leaves_no_zombie(tmp_path):
+    """#39's finding 4: a box that ends its run itself is never looked at again (the reaper
+    only polls running rows), so nothing collected it and it stayed a zombie, its Popen kept
+    for good. Every finished child is now collected as it ends, and its exit code is kept so
+    the spawner still answers about it."""
+    spawner = SubprocessSpawner(python_executable=_box_that_ends_its_run_itself(tmp_path))
+    handle = spawner.spawn("self-ending")
+    pid = int(handle.handle)
+    deadline = time.time() + 5.0
+    while time.time() < deadline and (os.path.exists(f"/proc/{pid}") and not _zombie(pid)):
+        time.sleep(0.02)  # still running
+    while time.time() < deadline and (_zombie(pid) or spawner._processes):
+        time.sleep(0.02)  # ended: give the spawner its moment to collect it
+    assert not _zombie(pid), "the box that ended its run is still a zombie child"
+    assert spawner._processes == {}, "the finished box's Popen is still held"
+    assert spawner.is_alive(handle) is False
+    spawner.kill(handle)  # ended: nothing to signal, and no error
+    assert spawner.reap("self-ending") == 0
+    assert spawner.reap("self-ending") is None
+
+
+def test_a_box_spawned_again_for_the_same_run_is_tracked_afresh(tmp_path):
+    """A parked run's next box has the same execution id: the old box's ending must not
+    stand in for the new one."""
+    spawner = SubprocessSpawner(python_executable=_box_that_ends_its_run_itself(tmp_path))
+    first = spawner.spawn("again")
+    deadline = time.time() + 5.0
+    while time.time() < deadline and spawner.is_alive(first):
+        time.sleep(0.02)
+    assert spawner.is_alive(first) is False
+    long_script = tmp_path / "long.sh"
+    long_script.write_text("#!/bin/sh\nexec sleep 60\n")
+    long_script.chmod(0o755)
+    spawner._python = str(long_script)
+    second = spawner.spawn("again")
+    try:
+        assert spawner.is_alive(second) is True
+    finally:
+        spawner.kill(second, force=True)
+    while time.time() < deadline and spawner.is_alive(second):
+        time.sleep(0.02)
+    assert spawner.is_alive(second) is False
+    assert not _zombie(int(second.handle))
+
+
 def test_a_run_never_gets_the_github_app_s_key(monkeypatch):
     """The server holds the app's key; a run asks it for short-lived tokens."""
     from temper_ai.spawner import subprocess_spawner

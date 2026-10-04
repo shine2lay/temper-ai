@@ -214,6 +214,93 @@ def test_spending_reads_nothing_for_a_step_that_never_asked_outside_a_pi_run():
     sw.spend_answers(_context(Untouchable(), park=False), "plain")
 
 
+class CountingRecorder(Recorder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads = 0
+
+    def gate_events(self, name: str | None = None) -> list[dict[str, Any]]:
+        self.reads += 1
+        return super().gate_events(name)
+
+
+def _answered_wait(rec: Recorder, path: str, *, used: bool = False) -> str:
+    event_id = f"wait-{path}"
+    rec.record(None, data={"name": sw.wait_name(path, "w"), "type": sw.STEP_WAIT,
+                           "gate_path": path, "gate_round": 1}, event_id=event_id,
+               status=sw.WAITING)
+    rec.answer(event_id, "go on")
+    if used:
+        rec.update_event(event_id, data={"gate_used_at": "earlier"})
+    return event_id
+
+
+def test_a_resume_reads_the_runs_waits_once_and_steps_that_never_asked_read_nothing():
+    """#39's finding 5, kept cheap: one read per resume, none per step that never asked."""
+    sw.forget_run("run-1")  # what earlier tests' steps asked in this process
+    rec = CountingRecorder()
+    unspent = _answered_wait(rec, "took")
+    spent = _answered_wait(rec, "done", used=True)
+    ctx = _context(rec, park=False)
+    try:
+        sw.note_unspent_answers(ctx)
+        assert rec.reads == 1
+        for path in ("plain", "other", "done"):
+            sw.spend_answers(ctx, path)
+        assert rec.reads == 1, "a step that never asked read the run's waits"
+        sw.spend_answers(ctx, "took")
+        assert rec.reads == 2 and rec.events[unspent]["data"].get("gate_used_at")
+        assert rec.events[spent]["data"]["gate_used_at"] == "earlier"
+        assert [k for k in sw._ASKED if k[0] == "run-1"] == []
+    finally:
+        sw.forget_run("run-1")
+
+
+def test_a_pi_run_reads_nothing_on_resume_because_it_always_looks_when_a_step_finishes():
+    sw.forget_run("run-1")
+    rec = CountingRecorder()
+    _answered_wait(rec, "took")
+    sw.note_unspent_answers(_context(rec, park=True))
+    assert rec.reads == 0 and [k for k in sw._ASKED if k[0] == "run-1"] == []
+
+
+def test_a_step_that_failed_holding_its_answer_and_ran_again_in_a_loop_spends_it():
+    """Outside a Pi workflow: the step took its answer and failed (nothing stays in memory),
+    then a loop of the same go ran it again and it finished from its record without asking.
+    Its answer is spent all the same: the first step to finish looks once."""
+    sw.forget_run("run-1")
+    rec = CountingRecorder()
+    took = _answered_wait(rec, "took")
+    ctx = _context(rec, park=False)
+    try:
+        sw._note_asked(ctx, "took")
+        sw.forget_step(ctx, "took")
+        assert [k for k in sw._ASKED if k[0] == "run-1"] == []
+        sw.spend_answers(ctx, "plain")  # the first step to finish after the failure looks once
+        sw.spend_answers(ctx, "other")
+        assert rec.reads == 1
+        sw.spend_answers(ctx, "took")
+        assert rec.events[took]["data"].get("gate_used_at")
+        assert [k for k in sw._ASKED if k[0] == "run-1"] == [] and "run-1" not in sw._LOOK_AGAIN
+    finally:
+        sw.forget_run("run-1")
+
+
+def test_forgetting_a_step_or_a_run_leaves_other_runs_alone():
+    sw.forget_run("run-1")  # what earlier tests' steps asked in this process
+    sw.forget_run("run-2")
+    sw._ASKED.update({("run-1", "a"): True, ("run-1", "b"): True, ("run-2", "a"): True})
+    try:
+        sw.forget_step(_context(), "a")
+        assert sorted(k for k in sw._ASKED if k[0] in ("run-1", "run-2")) == \
+            [("run-1", "b"), ("run-2", "a")]
+        sw.forget_run("run-1")
+        assert sorted(k for k in sw._ASKED if k[0] in ("run-1", "run-2")) == [("run-2", "a")]
+    finally:
+        sw.forget_run("run-1")
+        sw.forget_run("run-2")
+
+
 def test_owner_answer_text():
     plain = sw.OwnerAnswer(wait_id="w", event_id="e", round=1, response=None)
     said = sw.OwnerAnswer(wait_id="w", event_id="e", round=1,

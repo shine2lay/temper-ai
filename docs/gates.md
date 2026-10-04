@@ -36,7 +36,10 @@ Everything in the body is optional.
   sends it: the dashboard, Slack, Telegram, Notion and the MCP tool.
 - **`request_id`** names the click. The same request id again returns the
   first answer (`"repeated": true`) and changes nothing, so a retried
-  request never answers the next round.
+  request never answers the next round. The request id and `by` are kept
+  however fast the answer comes: a gate records its wait before it starts
+  listening for an answer, so even an approval in its first instant is
+  written on the wait.
 - **`{step}` alone** (no `event_id`) still works when exactly one wait of
   that name is open, as EPD's `approve_pr.py` and the CI smoke do. `{step}`
   may be the name (`approve`) or the path (`ship.approve`).
@@ -144,6 +147,12 @@ Whoever comes first claims the parked attempt with a compare-and-set, so the
 run is carried on once; a second Resume meanwhile gets a 409. The attempt that
 waited stays in the run's history as `parked`.
 
+A gated step or stage keeps its answer while any wait inside it lets the
+worker go: a gated stage whose inner step's approval (or a step's own wait)
+parks the run is carried on without asking the stage's approval again. Its
+wait says which inner wait it was kept for (`gate_kept_while`). A stage in a
+loop still asks on each new lap.
+
 A parked run never expires, never carries on by itself and never starts a new
 run. A restart does not mark it interrupted, and the start-up pick-up (with
 its 12-hour limit) leaves it alone: only an answer moves it. **Reject** or
@@ -209,12 +218,16 @@ pick-up leaves it alone. Carrying on runs the waiting step again (and only
 it: finished steps are kept). The step starts over from its own durable
 record, asks the same wait id, gets your answer back at once and goes on.
 A gated step whose own wait parks keeps its gate's answer for that, so the
-gate does not ask twice. Outside a Pi workflow the step waits with its
+gate does not ask twice (the same holds for a gated stage around it). Outside a Pi workflow the step waits with its
 worker held, as a gate does there.
 
 An answer belongs to the step's current go: when the step finishes, its
 answers are spent, so a loop's next lap asks afresh. A step that parks,
-fails or is cut off keeps them for the go that carries it on.
+fails or is cut off keeps them for the go that carries it on. That holds
+after a crash too: a Resume looks the run's unspent answers up once, so a
+step that finishes from its record without asking still spends them. A
+step that never asked reads nothing extra, and nothing about a run's waits
+stays in memory once its go ends.
 
 No shipped step asks this way yet: the team step (`type: team`) will, and
 the Pi step's own "what next" waits (`<step>~wait-<id>`) still hold their

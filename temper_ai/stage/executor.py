@@ -37,7 +37,13 @@ from temper_ai.stage.gate import (
 )
 from temper_ai.stage.node import Node
 from temper_ai.stage.restore import Restore
-from temper_ai.stage.step_waits import park, spend_answers
+from temper_ai.stage.step_waits import (
+    forget_run,
+    forget_step,
+    note_unspent_answers,
+    park,
+    spend_answers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +115,11 @@ def execute_graph(
         state = _resume_state(context)
         context.restore = Restore(initial_outputs, state.get("loops"), state.get("failed") or (),
                                   dispatches=state.get("dispatches"))
+    if is_workflow and initial_outputs is not None:
+        # A resume (whoever built its Restore): a step may finish from its own record this
+        # time without asking, and the answers it took before are still spent when it does.
+        # One read of the run's waits per resume, none per step.
+        note_unspent_answers(context)
     restore = getattr(context, "restore", None)
     # Where the run stopped, shared by every graph of the run: a failure inside a stage has to
     # stop the batches at the top as well, or the run goes on spending on work it cannot use.
@@ -221,6 +232,11 @@ def execute_graph(
     except Exception as exc:
         return _end_graph(exc, nodes, node_outputs, retired, input_data, context, graph_event_id,
                           start, is_workflow=is_workflow)
+
+    finally:
+        if is_workflow:
+            # This go of the run is over: what its steps asked stays in the run's record only.
+            forget_run(context.run_id)
 
 
 def _note_parked(
@@ -960,9 +976,11 @@ def _execute_single_node(
     try:
         result = _run_node_with_events(node, resolved, context, node_event_id)
     except RunParked as parked:
-        if node.config.gate and _asked_inside(parked):
-            # Its gate passed, then a wait inside the step let the worker go: the gate's
-            # answer stays this go's answer, so carrying the run on does not ask it again.
+        if node.config.gate:
+            # Its gate passed, then a wait inside the step let the worker go (one the step
+            # asked itself, or the approval of a step inside a stage): the gate's answer
+            # stays this go's answer, so carrying the run on does not ask it again. The
+            # step's own gate letting go never gets here: that happens before the step runs.
             _keep_gate_answer(context, node, parked)
         raise
     result.metadata[NODE_EVENT_ID] = node_event_id
@@ -982,6 +1000,9 @@ def _execute_single_node(
     if result.status == Status.COMPLETED:
         # The answers the step was given at its own waits are spent: a later go asks afresh.
         spend_answers(context, _step_path(context, node))
+    elif result.status == Status.FAILED:
+        # This go of the step is over; its answers stay unspent for the go that carries it on.
+        forget_step(context, _step_path(context, node))
     return result
 
 
@@ -2171,28 +2192,31 @@ def _wait_for_gate(
                     "stopped (event %s); waiting on it again", path, waiting_event_id)
     else:
         waiting_event_id, gate_round = new_id, earlier.round
+    if adopt is None:
+        # Record waiting event so the UI can show the gate — and what it is about. Recorded
+        # before the in-process signal is registered: an approval, however fast it comes,
+        # then finds the wait itself and is written on it with its request id and who sent
+        # it, so the same request sent again gets its first answer back. (Registered first,
+        # an approval in between found the signal alone and was answered there, unrecorded.)
+        recorder.record(
+            EventType.STAGE_STARTED,
+            data={
+                **_build_node_event_data(node),
+                "gate": True,
+                "gate_status": WAITING,
+                "gate_path": path,
+                "gate_round": gate_round,
+                "gate_context": build_gate_context(node.config.depends_on or [], node_outputs or {}),
+            },
+            parent_id=parent_event_id,
+            execution_id=context.run_id,
+            status=WAITING,
+            event_id=waiting_event_id,
+        )
     gate_event = GateSignal(waiting_event_id, node.name, path, gate_round)
     key = signal_key(context.run_id, waiting_event_id)
     gate_registry[key] = gate_event
     try:
-        if adopt is None:
-            # Record waiting event so the UI can show the gate — and what it is about
-            recorder.record(
-                EventType.STAGE_STARTED,
-                data={
-                    **_build_node_event_data(node),
-                    "gate": True,
-                    "gate_status": WAITING,
-                    "gate_path": path,
-                    "gate_round": gate_round,
-                    "gate_context": build_gate_context(node.config.depends_on or [], node_outputs or {}),
-                },
-                parent_id=parent_event_id,
-                execution_id=context.run_id,
-                status=WAITING,
-                event_id=waiting_event_id,
-            )
-
         # A Pi workflow does not hold its worker while it waits: it saves where it is, under
         # the wait's own id, and lets the worker go (docs/gates.md, runner/parked.py).
         if getattr(context, "park_at_gates", False):
@@ -2265,17 +2289,13 @@ def _step_path(context: ExecutionContext, node: Node) -> str:
     return f"{context.node_path}.{node.name}" if context.node_path else node.name
 
 
-def _asked_inside(parked: RunParked) -> bool:
-    """Whether a wait a step asked from inside its work (not a gate's) let the worker go."""
-    return parked.wait_id is not None or any((w or {}).get("wait_id") for w in parked.also)
-
-
 def _keep_gate_answer(context: ExecutionContext, node: Node, parked: RunParked) -> None:
     """Keep the answer a gated step went on with, for when the run carries the step on.
 
-    Its gate marked the answer used as the step started; the step then let its worker go at
-    a wait of its own (stage/step_waits.py) and will run again from the start. Without this
-    its gate would ask the owner a second time for the same go.
+    Its gate marked the answer used as the step started; then a wait inside the step let its
+    worker go (a wait the step asked itself, stage/step_waits.py, or the approval of a step
+    inside a gated stage), and the step will run again from the start. Without this its gate
+    would ask the owner a second time for the same go.
     """
     path = _step_path(context, node)
     recorder = context.event_recorder

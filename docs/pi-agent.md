@@ -125,14 +125,17 @@ its gates park and its loops must say `on_max_loops: fail`.
 
 **The team node** (`temper_ai/pi_agent/team_node.py`, `TeamNode`): the stage holds one
 node, `<stage>.team`. Until the team runtime (T4 messaging, T5 inboxes, M1 leader mode) is
-built it fails red with "team runtime not built yet (T4/T5/M1)"; it never passes.
+wired in it fails red with "team runtime not built yet (T4/T5/M1)"; it never passes.
+Messaging and inboxes are built ([pi-team-messages.md](pi-team-messages.md)); the leader
+loop (#38) wires them into the node.
 
 ## How it runs (ADR-A6-1)
 
 - The node keeps its conversation in its own ledger (`temper_ai/pi_agent/ledger.py`,
-  tables `pi_participants`, `pi_messages`, `pi_turns`, `pi_waits`; schema in the L2 proof
-  folder `schema.md`). One role = one participant = one Pi session, kept for the whole
-  run: a later turn, a Resume or a restart reopens the same session.
+  tables `pi_participants`, `pi_messages`, `pi_turns`, `pi_waits`, `pi_reviews`; schema in
+  the L2 proof folder `schema.md`, extended for teams in the T4T5 folder `tables.md`). One
+  role = one participant = one Pi session, kept for the whole run: a later turn, a Resume
+  or a restart reopens the same session.
 - A turn takes every message waiting for the role as one prompt and runs one worker box
   (`temper_ai/pi_agent/turn.py`). Each turn is its own agent on the run page
   (`agent.started` … `agent.completed|failed`, `executed_by: pi`) with its model calls,
@@ -144,9 +147,14 @@ built it fails red with "team runtime not built yet (T4/T5/M1)"; it never passes
   the service stopped) is never re-run on its own: it becomes *uncertain* and the owner
   answers `accept` or `retry`. A turn that failed visibly (box not sealed, settings not
   effective, role/tools/notebook not as launched, provider error) fails the step red; a
-  Resume then asks the owner `accept` or `retry`. After either decision, a session whose
-  active branch ends unfinished is moved back to its last settled entry, in the same
-  session file, before the next prompt.
+  Resume then asks the owner `retry` or `stop` (there is nothing to accept from a failed
+  turn). A retry gives the turn the same messages again, with the same ids, marked as
+  given again; they are never posted as new. After a decision, a session whose active
+  branch ends unfinished is moved back to its last settled entry, in the same session
+  file, before the next prompt.
+- Taking over a turn whose run was cut off first makes sure its old worker box is gone:
+  the box's name is recorded on the turn before the box is created, and the box is killed
+  and removed if it is still there. If that can't be confirmed the step fails red.
 
 ## The worker box
 
@@ -171,6 +179,6 @@ built it fails red with "team runtime not built yet (T4/T5/M1)"; it never passes
 
 - Not the first node of a workflow: an owner wait needs a checkpoint of an earlier node
   to resume from. The step refuses to run as a first node, before any worker starts.
-- One role per step; several roles work together only as a team stage, whose runtime is
-  not built yet.
+- One role per step; several roles work together only as a team stage, whose messaging
+  is built ([pi-team-messages.md](pi-team-messages.md)) but whose leader loop is not yet.
 - The step never raises and never returns empty output.

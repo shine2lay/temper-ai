@@ -40,3 +40,22 @@ def register_team_if_enabled() -> bool:
 
     register_topology(STRATEGY, team_topology, validate_team, run_start_check=run_start_check)
     return True
+
+
+def end_teams_on_cancel(run_id: str) -> int:
+    """A run cancelled through Temper's cancel path while parked ends its Pi conversations and
+    teams (R2 C2): every message they still held or had pending is recorded undelivered, open
+    waits are cancelled and members end. Nothing else would, because a parked run has no
+    attempt running. Switch on only, and only where the ``pi_`` tables already exist: this
+    never creates them. Returns how many teams or steps it ended."""
+    if not enabled():
+        return 0
+    import sqlalchemy as sa
+
+    from temper_ai.database import get_database
+    from temper_ai.pi_agent.ledger import Ledger
+
+    engine = get_database().engine
+    if not sa.inspect(engine).has_table("pi_participants"):
+        return 0
+    return len(Ledger(engine).end_teams_for_run(run_id, "run_cancelled", "cancel"))

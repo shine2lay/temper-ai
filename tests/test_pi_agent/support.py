@@ -15,6 +15,7 @@ import os
 import queue
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -215,6 +216,8 @@ class FakeBox:
         self.route = cfg.routes[spec.provider]
         self.redactor = redactor
         self.pdir = Path(spec.participant_dir)
+        # Named like a worker box; the name is on the turn before the box starts (R2 C1).
+        self.name = f"temper-pi-{uuid.uuid4().hex[:20]}"
         self.allowance = 0
         self.killed = False
         self.closed = False

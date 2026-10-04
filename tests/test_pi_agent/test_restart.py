@@ -123,3 +123,22 @@ def test_resume_after_a_failed_turn_asks_the_owner_first(pi):
     assert len({s["session_id"] for s in FakeBox.STARTS}) == 1
     sup.approve(pi.client, eid, owner["gate_name"], "done")
     assert sup.wait_ended(eid, 2)[-1]["status"] == "completed"
+
+
+def test_a_failed_turn_is_answered_retry_or_stop_never_accept(pi):
+    """R2 N1, a change from L2: a turn that failed visibly is never kept as if it had
+    finished. Its recovery wait offers retry or stop; an 'accept' stops the step, red."""
+    FakeBox.behaviour = "provider_error"
+    eid = sup.start(pi.client, "pi_talk", pi.ws)
+    assert sup.wait_ended(eid)[-1]["status"] == "failed"
+    assert pi.client.post(f"/api/runs/{eid}/resume", json={}).status_code == 200
+    rec = sup.open_wait(eid, "recovery")
+    assert rec["subject"]["options"] == ["retry", "stop"]
+    assert "accept" not in rec["subject"]["question"]
+    sup.approve(pi.client, eid, rec["gate_name"], "accept")
+    assert sup.wait_ended(eid, 2)[-1]["status"] == "failed"
+    assert len(FakeBox.STARTS) == 1, "nothing ran again"
+    snap = sup.ledger().snapshot(eid)
+    assert [t["state"] for t in snap["turns"]] == ["failed"]
+    assert snap["participants"][0]["state"] == "failed"
+    assert snap["waits"][0]["decision"]["recovery"] == "stop"

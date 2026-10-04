@@ -29,11 +29,23 @@ class Recorder:
 
 
 class Ledger:
-    def __init__(self):
-        self.effects: list[str] = []
+    """The turn's own writes, each fenced by the turn's epoch: ``taken`` = a newer attempt
+    took the turn over, so every write of this one is refused."""
 
-    def mark_effect(self, turn_id, state):
+    def __init__(self, taken: bool = False):
+        self.effects: list[str] = []
+        self.boxes: list[str | None] = []
+        self.taken = taken
+
+    def record_box(self, turn_id, epoch, name):
+        assert epoch == 1, "every write of the turn names its epoch"
+        self.boxes.append(name)
+        return not self.taken
+
+    def mark_effect(self, turn_id, state, *, epoch=None):
+        assert epoch == 1, "every write of the turn names its epoch"
         self.effects.append(state)
+        return not self.taken
 
 
 def _req(tmp_path: Path, rec: Recorder, **over) -> TurnRequest:
@@ -44,7 +56,8 @@ def _req(tmp_path: Path, rec: Recorder, **over) -> TurnRequest:
     (pdir / "workspace").mkdir(parents=True, exist_ok=True)
     (pdir / "workspace" / "note.txt").write_text(f"{sup.NOTE_WORD} is the first word.")
     values = dict(run_id="run-1", agent_name="talk", node_path="talk",
-                  participant={"participant_id": "p1"}, turn={"turn_id": "t1", "turn_no": 1},
+                  participant={"participant_id": "p1"},
+                  turn={"turn_id": "t1", "turn_no": 1, "epoch": 1},
                   text="Read note.txt with the read tool.", spec=sup.spec(pdir),
                   agent_event_id="agent-1", recorder=rec, first_start=True)
     values.update(over)

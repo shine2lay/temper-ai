@@ -385,6 +385,26 @@ def read_line(conn: socket.socket, limit: int = 256, timeout: float = 30) -> str
     return buf.split(b"\n", 1)[0].decode("ascii", "replace").strip()
 
 
+def read_json_line(conn: socket.socket, limit: int, timeout: float = 30) -> Any:
+    """One UTF-8 JSON object on one line, at most ``limit`` bytes; None if it is not one."""
+    conn.settimeout(timeout)
+    buf = b""
+    while b"\n" not in buf:
+        if len(buf) > limit:
+            return None
+        data = conn.recv(65536)
+        if not data:
+            break
+        buf += data
+    line = buf.split(b"\n", 1)[0]
+    if len(line) > limit:
+        return None
+    try:
+        return json.loads(line.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+
+
 def pipe(src: socket.socket, dst: socket.socket, counter: Counter, key: str) -> None:
     try:
         while data := src.recv(65536):
@@ -417,6 +437,61 @@ class BoxSpec:
     labels: dict[str, str] = field(default_factory=dict)
     #: The member's add-ons, each loaded from its pinned copy (``BoxConfig.add_ons``).
     add_ons: list[str] = field(default_factory=list)
+    #: A team member's message channel for this turn (``handle(payload) -> reply`` and
+    #: ``reachable``, the names it may message), or None for a single Pi step. With it the
+    #: box gets a third socket, ``team.sock``, and the send tool (``TEAM_TOOL``) in ``tools``.
+    team: Any = None
+
+
+#: The Pi tool name of Temper's team messaging (registered by the temper-box extension only
+#: when the box has a team socket). Pi's ``--tools`` allowlist must name it to activate it.
+TEAM_TOOL = "send_message"
+#: The largest send the team socket reads: a 65536-character body, JSON-escaped, and the rest.
+TEAM_LINE_LIMIT = 512 * 1024
+#: A worker box's container name, and nothing else, is what a takeover may stop (C1).
+BOX_NAME = re.compile(r"^temper-pi-[0-9a-f]{20}$")
+
+
+def _docker_cli(*args: str, timeout: float = 60) -> subprocess.CompletedProcess:
+    env = {k: os.environ[k] for k in DOCKER_ENV_KEYS if k in os.environ}
+    env["PATH"] = "/usr/bin:/bin:/usr/local/bin"
+    return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout,
+                          env=env)
+
+
+def stop_leftover_box(name: str, docker: Callable[..., Any] | None = None) -> dict:
+    """Confirm a cut-off turn's worker box is gone, stopping and removing it if it is not
+    (R2 C1, A3 rule 4). ``confirmed`` is True only when Docker says no such container is
+    left; anything else (Docker unreachable, the container still listed) is not confirmed, and
+    the caller must not take the turn over."""
+    run = docker or _docker_cli
+    result: dict[str, Any] = {"box": name, "found": False, "was_running": False,
+                              "removed": False, "confirmed": False, "error": None}
+    if not BOX_NAME.match(name or ""):
+        result["error"] = "not a worker box name"
+        return result
+    try:
+        got = run("inspect", "--format", "{{.State.Running}}", name, timeout=30)
+        if got.returncode != 0:
+            if "no such" in (got.stderr or "").lower():
+                result["confirmed"] = True
+                return result
+            result["error"] = "docker inspect failed"
+            return result
+        result["found"] = True
+        result["was_running"] = got.stdout.strip() == "true"
+        if result["was_running"]:
+            run("kill", name, timeout=30)
+        run("rm", "--force", name, timeout=60)
+        left = run("ps", "-a", "--filter", f"name=^{name}$", "--format", "{{.ID}}",
+                   timeout=30)
+        result["removed"] = left.returncode == 0 and not left.stdout.strip()
+        result["confirmed"] = result["removed"]
+        if not result["confirmed"]:
+            result["error"] = "still listed after removal"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        result["error"] = f"{type(exc).__name__}"
+    return result
 
 
 class WorkerBox:
@@ -436,6 +511,8 @@ class WorkerBox:
         self.allowance = 0
         self.handoffs = 0
         self.denied = 0
+        self.team_sends = 0
+        self.team_refused = 0
         self.tunnels: list[dict] = []
         self.bytes: Counter[str] = Counter()
         self.live: set[socket.socket] = set()
@@ -537,6 +614,10 @@ class WorkerBox:
             "PI_MEMORY_DIR": "/w/memory", "PI_IDENTITY_DIR": "/w/memory/identities",
             "PI_IDENTITY_REINDEX": "0", "PI_TLDR_NUDGES": "off",
         }
+        if self.spec.team is not None:
+            # The names only: who sent a message is Temper's to say, never the box's.
+            env["TEMPER_BOX_TEAM"] = "1"
+            env["TEMPER_BOX_TEAM_MEMBERS"] = json.dumps(list(self.spec.team.reachable))
         if self.cfg.mode == "rehearsal":
             env["NODE_EXTRA_CA_CERTS"] = "/box-ca/ca.pem"
         return env
@@ -588,6 +669,26 @@ class WorkerBox:
         os.chmod(self.sock_dir, 0o755)
         self.servers = [UnixServer(self.sock_dir / "handoff.sock", self._handoff),
                         UnixServer(self.sock_dir / "egress.sock", self._egress)]
+        if self.spec.team is not None:
+            self.servers.append(UnixServer(self.sock_dir / "team.sock", self._team))
+
+    def _team(self, conn: socket.socket) -> None:
+        """One send from the member's send tool: Temper stamps and routes it (R2 B2, B3).
+        The socket is the binding -- this box, this turn -- so there is no token to leak."""
+        payload = read_json_line(conn, TEAM_LINE_LIMIT)
+        if payload is None:
+            reply: dict[str, Any] = {"ok": False, "code": "invalid_message",
+                                     "detail": "the message must be one JSON object"}
+        else:
+            try:
+                reply = self.spec.team.handle(payload)
+            except Exception:  # noqa: BLE001 - a send never takes the turn down
+                reply = {"ok": False, "code": "invalid_channel",
+                         "detail": "Temper could not take the message"}
+        with self.lock:
+            self.team_sends += 1 if reply.get("ok") else 0
+            self.team_refused += 0 if reply.get("ok") else 1
+        conn.sendall((json.dumps(reply) + "\n").encode("utf-8"))
 
     def start(self, event_sink: Callable[[dict], None],
               command: list[str] | None = None) -> Rpc:
@@ -784,4 +885,7 @@ class WorkerBox:
                 "tunnels_cut_at_close": cut, "bytes_up": self.bytes["up"],
                 "bytes_down": self.bytes["down"],
             })
+            if self.spec.team is not None:
+                receipt.update({"team_sends": self.team_sends,
+                                "team_refused": self.team_refused})
         return receipt

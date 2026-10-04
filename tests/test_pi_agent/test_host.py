@@ -174,7 +174,12 @@ def test_a_worker_that_dies_mid_turn_is_held_for_the_owner_never_green(pi):
     snap = sup.ledger().snapshot(eid)
     assert [t["state"] for t in snap["turns"]] == ["superseded", "completed"]
     assert [t["turn_no"] for t in snap["turns"]] == [1, 2]
-    assert snap["messages"][1]["body"] == snap["messages"][0]["body"]
+    # The retry got the same message again, same id, marked as given again (R2 B1/G3):
+    # never re-posted as a new copy.
+    [goal] = snap["messages"]
+    assert (goal["turn_id"], goal["delivery_count"]) == (snap["turns"][1]["turn_id"], 2)
+    assert snap["turns"][1]["retry_of"] == snap["turns"][0]["turn_id"]
+    assert snap["turns"][1]["input_seqs"] == snap["turns"][0]["input_seqs"]
     assert len({s["session_id"] for s in FakeBox.STARTS}) == 1
     # The retry went on from the last settled entry of the same session file: the cut-off
     # branch (the unanswered prompt) stays in the file, off the active branch.

@@ -161,6 +161,12 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         report.checks["pin"] = "matched"  # compared by the host before this call
         # 3. the box
         box = box_factory(cfg, req.spec, redactor)
+        # The box's name is on the turn before its container exists, so a takeover can always
+        # find and stop it (R2 C1); a turn that is no longer this owner's starts nothing.
+        if not ledger.record_box(req.turn["turn_id"], req.turn.get("epoch"),
+                                 getattr(box, "name", None)):
+            raise TurnFailure("turn_taken_over", "the turn was taken over by another attempt; "
+                              "no worker was started")
         box.allow(0)
         rpc = box.start(sink)
         report.checks["sealed"] = box.inspected
@@ -205,7 +211,9 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
                               f"Pi asked for owner input ({', '.join(ui_refused)}); refused")
         # 7. the prompt
         box.allow(cfg.model_calls_per_turn)
-        ledger.mark_effect(req.turn["turn_id"], "intent")
+        if not ledger.mark_effect(req.turn["turn_id"], "intent", epoch=req.turn.get("epoch")):
+            raise TurnFailure("turn_taken_over", "the turn was taken over by another attempt; "
+                              "the prompt was not sent")
         report.prompt_sent = True
         feeding.set()
         if cfg.fault == "kill_after_prompt":

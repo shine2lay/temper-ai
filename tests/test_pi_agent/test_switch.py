@@ -5,6 +5,10 @@ Each check runs in a fresh Python process, so nothing a test registered leaks in
 agent type and the ``team`` strategy are absent, no strategy has a run-start check (so a run's
 workflow loads exactly as before), no Pi module is imported, no ``pi_`` table is created and the
 server's routes are exactly the same as with the switch on (the step adds no route at all).
+
+The team messaging pieces (#37) are covered the same way: their modules are not imported, a
+cancelled run's cancel path imports nothing and creates no table, and a team stage with Pi
+members is refused as an unknown strategy (R2 B14).
 """
 
 from __future__ import annotations
@@ -37,11 +41,25 @@ except ValueError as exc:
     created = str(exc)
 except Exception as exc:
     created = type(exc).__name__
+# A team stage with Pi members (R2 B14).
+try:
+    topology.build_topology("team", [{"name": "lead", "type": "pi", "role": "scout"},
+                                     {"name": "builder", "type": "pi", "role": "scout"}],
+                            {"mode": {"type": "leader", "leader": "lead"},
+                             "communication": {"type": "all"}, "pause_after_rounds": 3})
+    team_stage = "built"
+except Exception as exc:
+    team_stage = f"{type(exc).__name__}: {exc}"
+# The cancel path of a parked run (R2 C2): with the switch off it imports and creates nothing.
+from temper_ai.runner import parked
+parked._end_pi_teams("run-probe")
+tables_after = sorted(sa.inspect(get_database().engine).get_table_names())
 print(json.dumps({
     "types": sorted(agent.AGENT_TYPES),
     "pi_modules": sorted(m for m in sys.modules if m.startswith("temper_ai.pi_agent.")
                          or m == "temper_ai.llm.pi_stream"),
-    "pi_tables": [t for t in tables if t.startswith("pi_")],
+    "pi_tables": [t for t in tables_after if t.startswith("pi_")],
+    "team_stage": team_stage,
     "tables": len(tables),
     "routes": routes,
     "create": created,
@@ -82,6 +100,33 @@ def test_switched_off_the_pi_type_and_its_code_are_absent(probes, which):
     assert got["strategies"] == ["parallel", "sequential", "leader"]
     assert got["run_start"] == {}
     assert got["team_check"] is False
+    # R2 B14: a team stage with Pi members is refused with a clear message, and the cancel
+    # path (C2) neither imported the team code nor created a table (both checked above).
+    assert got["team_stage"].startswith("TopologyError: Unknown strategy: 'team'")
+
+
+def test_b14_switch_off_creates_nothing(probes):
+    """R2 B14 in one place: with TEMPER_PI_AGENT unset no ``pi_`` table is created (not even by
+    a cancel), no Pi or team module is imported, and a team stage with Pi members is refused
+    with a clear message -- #20's refusal (the strategy does not exist), not a second one."""
+    got = probes["unset"]
+    assert got["pi_tables"] == []
+    assert got["pi_modules"] == []
+    assert got["team_stage"].startswith("TopologyError: Unknown strategy: 'team'")
+    assert got["routes"] == probes["on"]["routes"]
+
+
+def test_switched_off_no_team_messaging_module_is_imported(probes):
+    """R2 B14 for #37: the router, inbox framing and team runtime stay out of a switched-off
+    Temper; switched on, the team runtime loads only when a team runs, never at start-up."""
+    team_modules = {"temper_ai.pi_agent.route", "temper_ai.pi_agent.route.router",
+                    "temper_ai.pi_agent.route.policy", "temper_ai.pi_agent.route.model",
+                    "temper_ai.pi_agent.inbox", "temper_ai.pi_agent.team_runtime",
+                    "temper_ai.pi_agent.ledger"}
+    for which in ("unset", "off"):
+        loaded = set(probes[which]["pi_modules"])
+        assert not loaded & team_modules, (which, sorted(loaded & team_modules))
+    assert "temper_ai.pi_agent.team_runtime" not in probes["on"]["pi_modules"]
 
 
 def test_switched_on_registers_only_the_type_and_the_team_strategy(probes):
@@ -92,9 +137,12 @@ def test_switched_on_registers_only_the_type_and_the_team_strategy(probes):
     assert on["strategies"] == ["parallel", "sequential", "leader", "team"]
     assert on["run_start"] == {"run_start": True}
     assert on["team_check"] is True
-    # The ledger is created by the first Pi step that runs, never at start-up.
+    # The ledger is created by the first Pi step that runs, never at start-up, and the cancel
+    # path never creates it (R2 C2).
     assert on["pi_tables"] == []
     assert on["tables"] == off["tables"]
+    # Switched on, the team stage builds (its runtime is not wired in yet: #38).
+    assert on["team_stage"] == "built"
 
 
 def test_the_switch_adds_no_route(probes):

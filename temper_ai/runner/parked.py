@@ -182,10 +182,22 @@ def cancel_parked(execution_id: str, reason: str | None = None, *, by: str = "ca
         return False
     _reject_open_waits(execution_id, reason)
     _end_row(execution_id, CANCELLED)
+    _end_pi_teams(execution_id)
     if held and on_cancel.get("mode") == "hold":
         _hold(execution_id, attempt, on_cancel, held, message)
     logger.info("Run %s: cancelled while it waited on you (%s)", execution_id, by)
     return True
+
+
+def _end_pi_teams(execution_id: str) -> None:
+    """The run's Pi teams end with it: what they still held or had pending is recorded
+    undelivered, never dropped (R2 C2, B12). Does nothing with the Pi switch off."""
+    from temper_ai.pi_agent import end_teams_on_cancel
+
+    try:
+        end_teams_on_cancel(execution_id)
+    except Exception:  # noqa: BLE001 - the cancel itself has already happened
+        logger.exception("Run %s: could not end its Pi teams after the cancel", execution_id)
 
 
 def _reject_open_waits(execution_id: str, reason: str | None) -> None:

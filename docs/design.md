@@ -104,6 +104,27 @@ key as text, and prints the score:
 fernway-v1 is too easy to tell versions apart: the next test site needs
 subtler plants.
 
+## Candidate: `design_review_next` (precision)
+
+A test workflow next to `design_review`, graded on the sealed test sites
+before anything replaces the live reviewer. It changes three things:
+
+- **Target size by WCAG 2.5.8 in full** (`design_measure_next.js`): a control's
+  labels count as part of its target, and an undersized target passes when a
+  24 px circle on it meets no other target or undersized target's circle (the
+  spacing exception). Text of inactive (disabled) controls is listed as exempt
+  from contrast. `facts.md` lists these measured passes, so critics stop
+  reporting them as failures.
+- **A facts check before the merge** (`design_review_verify_next.py`, no model):
+  every critic claim about target size, or about an inactive control's
+  contrast, is checked against the facts, page by page, and each finding is
+  marked checkable or not (element, page, and a screenshot tile or facts value).
+  The merge drops the claims the facts contradict, says why in the report, and
+  keeps a one-critic finding only when it is checkable.
+- **Anchored severity**: critics and merge rate on Nielsen's 0-4 scale with
+  definitions and worked examples from other products; when torn, the lower
+  level.
+
 ## Files
 
 | Path | What |
@@ -115,6 +136,10 @@ subtler plants.
 | `configs/design/bin/design_measure.js` | the in-page measurements |
 | `configs/design/bin/vendor/axe-4.13.0.min.js` | axe-core (MPL-2.0) |
 | `configs/design/bin/design_trial.py` | review + grade on a test site (host) |
+| `configs/design/workflows/design_review_next.yaml` | the candidate (test workflow) |
+| `configs/design/agents/design_{capture,critic,verify,merge}_next.yaml` | its steps |
+| `configs/design/bin/design_capture_next.py`, `design_measure_next.js` | candidate capture and measurements |
+| `configs/design/bin/design_review_verify_next.py` | the facts check of critic claims |
 | `configs/design/testpages/<site>/`, `<site>.json` | test sites and their brief and pages |
 
 ## Editable Penpot homepage workflow (v1)

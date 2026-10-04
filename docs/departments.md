@@ -202,7 +202,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
 
-### design (27)
+### design (32)
 
 | Config | Kind |
 |---|---|
@@ -233,6 +233,11 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_merge.yaml` | agent |
 | `design/agents/design_grade.yaml` | agent |
 | `design/agents/design_score.yaml` | agent (script) |
+| `design/workflows/design_review_next.yaml` | workflow (candidate reviewer; test only) |
+| `design/agents/design_capture_next.yaml` | agent (script; candidate capture) |
+| `design/agents/design_critic_next.yaml` | agent (candidate critic) |
+| `design/agents/design_verify_next.yaml` | agent (script; facts check of critic claims) |
+| `design/agents/design_merge_next.yaml` | agent (candidate merge) |
 
 ### architecture (23)
 

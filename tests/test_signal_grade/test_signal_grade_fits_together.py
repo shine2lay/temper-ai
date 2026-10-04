@@ -13,6 +13,7 @@ grades from another run and reports changed while grading; score.py applies expe
 matching rule. No model and no network: every review here is a hand-written review.json.
 """
 
+import ast
 import hashlib
 import json
 import os
@@ -204,6 +205,15 @@ def test_the_review_keeps_claude_codes_own_tools_and_works_from_the_files_only()
     for rule in ("do not browse the web", "Never rescore", "Write only state/signal_grade/review.json",
                  "verify --dry-run", "rubric.md"):
         assert rule in prompt, f"the review prompt lost {rule!r}"
+
+
+def test_the_product_launcher_starts_signal_grade_as_a_live_workflow():
+    """docs/product-runs.md starts it by name; the launcher refuses a name outside its LIVE set."""
+    tree = ast.parse((ROOT / "configs" / "product" / "bin" / "server_run.py").read_text())
+    live = next(ast.literal_eval(node.value) for node in tree.body
+                if isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets] == ["LIVE"])
+    assert {"signal_grade", "signal_harvest"} <= live
+    assert "start.sh $JOB signal_grade" in (ROOT / "docs" / "product-runs.md").read_text()
 
 
 def test_every_template_variable_is_fed_by_the_workflow():

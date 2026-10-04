@@ -5,7 +5,8 @@ CSV exports, and reports them apart: the survey's very-disappointed share, reten
 period, customer accounts paying the target price after refunds, and revenue (queue #13). Its
 configs: setup, the model step, the check and finalize run in that order; the model step and the
 check wait for setup to say measured; finalize runs on every path; script steps parse under /bin/sh;
-the model step keeps Claude Code's own tools; every template variable is fed. Its kit
+the model step keeps Claude Code's own tools; every template variable is fed; an input the run
+leaves out falls back to the deployed kit, never to the text 'None'. Its kit
 (pmf_evidence_assets/pmf_kit.py): every product-specific value is a required parameter with no
 default; the nine fixed synthetic cases (benchmark/) measure exactly as expected.json says, which a
 separately written calculation (independent.py) agrees with; the interpretation check catches each
@@ -200,6 +201,31 @@ def test_every_template_variable_is_fed_by_the_workflow():
         for template in templates_of(by_name(node["agent"])):
             used = meta.find_undeclared_variables(env.parse(template))
             assert used <= fed | INJECTED, f"{node['agent']} uses {sorted(used - fed - INJECTED)} that the workflow never passes"
+
+
+def test_an_input_the_run_left_out_is_the_deployed_kit_not_the_text_none(tmp_path, fixtures):
+    """The server passes an input the run did not give as None, not the workflow default: the first
+    live run (66f59019) looked for the kit in a folder named 'None' and blocked at setup."""
+    wf = workflow()
+    optional = {name for name, spec in wf["inputs"].items() if not spec.get("required")}
+    for node in wf["nodes"]:
+        for key, value in (node.get("input_map") or {}).items():
+            if value.split(".", 1)[1] not in optional:
+                continue
+            for template in templates_of(by_name(node["agent"])):
+                if key in meta.find_undeclared_variables(jinja().parse(template)):
+                    assert f"({key} or '')" in template, f"{node['agent']} renders {key} left out as 'None'"
+    deployed = Path(wf["inputs"]["assets_dir"]["default"])
+    assert f"'{deployed}'" in by_name("pmf_evidence_setup")["script_template"], "left out -> the deployed copy"
+    workspace = tmp_path / "ws"
+    shutil.copytree(fixtures / "S1", workspace / "_case")
+    done = step("pmf_evidence_setup", workspace, params_path=str(workspace / "_case" / "params.json"),
+                data_dir=str(workspace / "_case"), assets_dir=None)
+    if (deployed / "pmf_kit.py").is_file():  # inside the server image
+        assert done.returncode == 0 and last_json(done.stdout)["status"] == "measured", done.stderr
+    else:
+        assert done.returncode != 0 and f"assets_dir {deployed} has no pmf_kit.py" in done.stderr
+        assert "None" not in done.stderr
 
 
 def test_the_product_launcher_starts_pmf_evidence_as_a_live_workflow():

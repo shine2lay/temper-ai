@@ -20,12 +20,20 @@ agent:
     import sys
     from pathlib import Path
 
-    assets = Path(os.environ['{{ assets_dir | env }}']).resolve(strict=True)
+    KIT = ('pmf_kit.py', 'data_dictionary.md', 'interpretation_contract.md')
+    # `or ''`, not the workflow default: the server passes an input the run did not give as None,
+    # which the value stash hands over as the text 'None' (first live run, 66f59019). Left out,
+    # the kit is the deployed copy.
+    given = (os.environ.get('{{ (assets_dir or '') | env }}') or '').strip()
+    assets = Path(given or '/app/configs/agents/pmf_evidence_assets')
+    missing = [name for name in KIT if not (assets / name).is_file()]
+    if missing:
+        raise SystemExit('assets_dir ' + str(assets) + ' has no ' + ', '.join(missing))
     dest = Path('state/pmf')
     if dest.exists() and any(dest.iterdir()):
         raise SystemExit('Refusing to overwrite an existing fit and revenue run: use a fresh workspace')
     dest.mkdir(parents=True, exist_ok=True)
-    for name in ('pmf_kit.py', 'data_dictionary.md', 'interpretation_contract.md'):
+    for name in KIT:
         shutil.copyfile(assets / name, dest / name)
     sys.exit(subprocess.call([sys.executable, 'state/pmf/pmf_kit.py', 'setup',
                               os.environ['{{ params_path | env }}'], os.environ['{{ data_dir | env }}']]))

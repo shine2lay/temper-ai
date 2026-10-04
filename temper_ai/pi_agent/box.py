@@ -84,6 +84,16 @@ class Route:
 
 
 @dataclass(frozen=True)
+class AddOnPin:
+    """A pinned copy of an allowed add-on: its folder, its entry file and the digest the folder
+    must have (:func:`tree_sha256`). Never the owner's live ``~/.pi/agent``."""
+
+    dir: str
+    entry: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class BoxConfig:
     """Where the worker's runtime, role definitions and state live. Read from the JSON file
     named by ``TEMPER_PI_BOX_CONFIG`` when a Pi step runs; never read with the step off."""
@@ -111,6 +121,8 @@ class BoxConfig:
     model_calls_per_turn: int = 6
     #: Proof-harness failure injection only: ``deny_handoff`` or ``kill_after_prompt``.
     fault: str | None = None
+    #: The add-ons a member may load, each from a pinned copy (name -> :class:`AddOnPin`).
+    add_ons: dict[str, AddOnPin] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: str | None = None) -> BoxConfig:
@@ -121,7 +133,9 @@ class BoxConfig:
         try:
             raw = json.loads(Path(path).read_text(encoding="utf-8"))
             routes = {name: Route(**value) for name, value in raw.pop("routes").items()}
-            cfg = cls(routes=routes, **raw)
+            add_ons = {name: AddOnPin(**value)
+                       for name, value in (raw.pop("add_ons", None) or {}).items()}
+            cfg = cls(routes=routes, add_ons=add_ons, **raw)
         except (OSError, ValueError, TypeError, KeyError) as exc:
             raise BoxError("box_config_invalid",
                            f"the Pi worker box config could not be read: {type(exc).__name__}"
@@ -152,8 +166,28 @@ class BoxConfig:
             problems.append("identities_dir missing")
         if not self.routes:
             problems.append("no routes")
+        problems += self._add_on_problems()
         if problems:
             raise BoxError("box_config_invalid", "Pi worker box config: " + "; ".join(problems))
+
+    def _add_on_problems(self) -> list[str]:
+        """Each pinned add-on copy: present, outside the owner's live Pi folder, unchanged."""
+        problems = []
+        live = [Path(home).expanduser().resolve() / ".pi" / "agent"
+                for home in {str(Path.home()), self.host_home} if home]
+        for name, pin in sorted(self.add_ons.items()):
+            folder = Path(pin.dir)
+            if not ROLE_RE.match(name):
+                problems.append(f"add-on name {name[:40]!r} is not a plain name")
+            elif not folder.is_dir() or not (folder / pin.entry).is_file() \
+                    or ".." in Path(pin.entry).parts or Path(pin.entry).is_absolute():
+                problems.append(f"add-on {name}: pinned copy or its entry file missing")
+            elif any(folder.resolve().is_relative_to(root) for root in live):
+                problems.append(f"add-on {name}: must be a pinned copy, not the owner's "
+                                "live ~/.pi/agent")
+            elif tree_sha256(folder) != pin.sha256:
+                problems.append(f"add-on {name}: pinned copy changed (digest differs)")
+        return problems
 
     @property
     def sockets(self) -> Path:
@@ -372,6 +406,8 @@ class BoxSpec:
     thinking: str
     tools: list[str]
     labels: dict[str, str] = field(default_factory=dict)
+    #: The member's add-ons, each loaded from its pinned copy (``BoxConfig.add_ons``).
+    add_ons: list[str] = field(default_factory=list)
 
 
 class WorkerBox:
@@ -430,11 +466,23 @@ class WorkerBox:
         """The identity extension without its node_modules, plus a link to the runtime's
         modules as seen inside the box. Content-addressed, made once per state root."""
         src = Path(self.cfg.identity_extension)
-        dst = Path(self.cfg.state_root) / "_ext" / f"identity-{tree_sha256(src)[:16]}"
+        return self._sealed_copy(src, "identity", tree_sha256(src))
+
+    def _add_on_copy(self, name: str) -> Path:
+        """An add-on's pinned copy, made the same way as the identity extension's; refused when
+        the copy no longer has its pinned digest."""
+        pin = self.cfg.add_ons[name]
+        digest = tree_sha256(Path(pin.dir))
+        if digest != pin.sha256:
+            raise BoxError("add_on_changed", f"add-on {name}: pinned copy changed (digest differs)")
+        return self._sealed_copy(Path(pin.dir), f"addon-{name}", digest)
+
+    def _sealed_copy(self, src: Path, label: str, digest: str) -> Path:
+        dst = Path(self.cfg.state_root) / "_ext" / f"{label}-{digest[:16]}"
         if dst.is_dir():
             return dst
         dst.parent.mkdir(parents=True, exist_ok=True)
-        tmp = Path(tempfile.mkdtemp(prefix=".identity-", dir=dst.parent))
+        tmp = Path(tempfile.mkdtemp(prefix=f".{label}-", dir=dst.parent))
         shutil.copytree(src, tmp, dirs_exist_ok=True, symlinks=True,
                         ignore=shutil.ignore_patterns("node_modules"))
         os.symlink("/pi-runtime/pi/node_modules", tmp / "node_modules")
@@ -457,6 +505,8 @@ class WorkerBox:
         ]
         if self.route.extension:
             mounts.append((str(Path(self.route.extension).resolve()), "/ext/auth", False))
+        for name in self.spec.add_ons:
+            mounts.append((str(self._add_on_copy(name).resolve()), f"/ext/addons/{name}", False))
         ca_pem = (self.cfg.rehearsal or {}).get("ca_pem")
         if self.cfg.mode == "rehearsal" and ca_pem:
             mounts.append((str(Path(ca_pem).resolve()),
@@ -476,6 +526,9 @@ class WorkerBox:
             "TEMPER_BOX_ROLE": self.spec.role, "TEMPER_BOX_TOOLS": ",".join(sorted(self.spec.tools)),
             "PI_MEMORY_DIR": "/w/memory", "PI_IDENTITY_DIR": "/w/memory/identities",
             "PI_IDENTITY_REINDEX": "0", "PI_TLDR_NUDGES": "off",
+            # billion-context-pi's own switch for its npm update check (the box has no
+            # internet; the check would only be refused at the tunnel).
+            "ACP_AUTO_UPDATE": "0",
         }
         if self.cfg.mode == "rehearsal":
             env["NODE_EXTRA_CA_CERTS"] = "/box-ca/ca.pem"
@@ -488,6 +541,8 @@ class WorkerBox:
                 "--extension", "/ext/temper-box/index.ts"]
         if self.route.extension:
             args += ["--extension", f"/ext/auth/{self.route.extension_entry or 'index.ts'}"]
+        for name in self.spec.add_ons:
+            args += ["--extension", f"/ext/addons/{name}/{self.cfg.add_ons[name].entry}"]
         args += ["--provider", self.spec.provider, "--model", self.spec.model,
                  "--thinking", self.spec.thinking, "--tools", ",".join(self.spec.tools),
                  "--session-dir", "/w/sessions", "--session-id", self.spec.session_id]

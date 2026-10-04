@@ -190,10 +190,13 @@ def _start_run(body: RunRequest) -> RunResponse:
 
     # Validate workflow exists before starting. Pass inputs so any
     # `type: template` nodes can be expanded at load time. Both modes
-    # share this validation so a bad workflow name fails fast as 400.
+    # share this validation so a bad workflow name fails fast as 400. It includes
+    # the strategies' run-start checks (only the Pi team has one, with its switch
+    # on), so a refused team never becomes a run.
+    from temper_ai.stage.topology import run_start_options
     try:
         nodes, config = _state().graph_loader.load_workflow(
-            body.workflow, inputs=body.inputs
+            body.workflow, inputs=body.inputs, **run_start_options(),
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

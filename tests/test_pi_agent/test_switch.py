@@ -1,8 +1,10 @@
-"""The switch: with TEMPER_PI_AGENT off (the default) the Pi step does not exist.
+"""The switch: with TEMPER_PI_AGENT off (the default) the Pi step and the team strategy do not
+exist.
 
 Each check runs in a fresh Python process, so nothing a test registered leaks in: the ``pi``
-agent type is absent, no Pi module is imported, no ``pi_`` table is created and the server's
-routes are exactly the same as with the switch on (the step adds no route at all).
+agent type and the ``team`` strategy are absent, no strategy has a run-start check (so a run's
+workflow loads exactly as before), no Pi module is imported, no ``pi_`` table is created and the
+server's routes are exactly the same as with the switch on (the step adds no route at all).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from temper_ai.database import get_database
 tables = sorted(sa.inspect(get_database().engine).get_table_names())
 from temper_ai.server import app
 routes = sorted(f"{sorted(getattr(r, 'methods', None) or [])} {r.path}" for r in app.routes)
+from temper_ai.stage import topology
 try:
     agent.create_agent({"name": "talk", "type": "pi", "role": "scout"})
     created = "created"
@@ -42,6 +45,9 @@ print(json.dumps({
     "tables": len(tables),
     "routes": routes,
     "create": created,
+    "strategies": topology.available_strategies(),
+    "run_start": topology.run_start_options(),
+    "team_check": topology.run_start_check("team") is not None,
 }))
 """
 
@@ -73,13 +79,19 @@ def test_switched_off_the_pi_type_and_its_code_are_absent(probes, which):
     assert got["pi_modules"] == []
     assert got["pi_tables"] == []
     assert got["create"].startswith("Unknown agent type: 'pi'")
+    assert got["strategies"] == ["parallel", "sequential", "leader"]
+    assert got["run_start"] == {}
+    assert got["team_check"] is False
 
 
-def test_switched_on_registers_only_the_type(probes):
+def test_switched_on_registers_only_the_type_and_the_team_strategy(probes):
     on, off = probes["on"], probes["unset"]
     assert "pi" in on["types"]
     assert sorted(set(on["types"]) - set(off["types"])) == ["pi"]
     assert on["create"] == "created"
+    assert on["strategies"] == ["parallel", "sequential", "leader", "team"]
+    assert on["run_start"] == {"run_start": True}
+    assert on["team_check"] is True
     # The ledger is created by the first Pi step that runs, never at start-up.
     assert on["pi_tables"] == []
     assert on["tables"] == off["tables"]
@@ -101,3 +113,4 @@ def test_only_exact_on_words_switch_it_on(monkeypatch):
     monkeypatch.delenv(pi_agent.SWITCH_ENV)
     assert not pi_agent.enabled()
     assert pi_agent.register_if_enabled() is False
+    assert pi_agent.register_team_if_enabled() is False

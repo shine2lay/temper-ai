@@ -11,12 +11,15 @@ Handles:
 from __future__ import annotations
 
 import logging
+import threading
+from dataclasses import dataclass, field
 from typing import Any
 
 from temper_ai.agent import AGENT_TYPES
 from temper_ai.config.store import ConfigStore
+from temper_ai.shared.types import ExecutionContext, NodeResult
 from temper_ai.stage.agent_node import AgentNode
-from temper_ai.stage.exceptions import LoaderError, ValidationError
+from temper_ai.stage.exceptions import LoaderError, StageError, ValidationError
 from temper_ai.stage.models import NodeConfig, WorkflowConfig
 from temper_ai.stage.node import Node
 from temper_ai.stage.pi_workflows import pi_loop_problems
@@ -25,9 +28,57 @@ from temper_ai.stage.template_expansion import (
     TemplateExpansionError,
     expand_templates,
 )
-from temper_ai.stage.topology import build_topology
+from temper_ai.stage.topology import (
+    RunStart,
+    build_topology,
+    named_strategies,
+    run_start_check,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _RunStartScope:
+    """The run being started while its workflow loads (``load_workflow(..., run_start=True)``),
+    and the problems its strategies' run-start checks found."""
+
+    workflow: WorkflowConfig
+    inputs: dict
+    problems: list[str] = field(default_factory=list)
+
+
+# The run-start scope of the load running on this thread: one loader serves every run.
+_run_start = threading.local()
+
+
+def _member_label(agent_ref: Any) -> str:
+    """How a run-start problem names a stage member whose agent config didn't load."""
+    if isinstance(agent_ref, dict):
+        return str(agent_ref.get("name") or agent_ref.get("agent") or agent_ref.get("ref")
+                   or "unnamed")
+    return str(agent_ref)[:80]
+
+
+class _Refused(Node):
+    """Stands in for the sub-graph of a stage its run-start check refused. The run doesn't
+    start, but the stage's members still count for the workflow's other rules (a Pi
+    workflow's loop rule), so every problem shows at once. Never runs."""
+
+    def __init__(self, members: list[dict]):
+        super().__init__(NodeConfig(name="refused"))
+        self._members = [dict(m) for m in members]
+
+    def agent_configs(self) -> list[dict]:
+        return [dict(m) for m in self._members]
+
+    def run(self, input_data: dict, context: ExecutionContext) -> NodeResult:
+        raise ValidationError("a stage its run-start check refused never runs")
+
+
+def _validation_failed(workflow_name: str, errors: list[str]) -> str:
+    return f"Workflow '{workflow_name}' validation failed:\n" + "\n".join(
+        f"  - {e}" for e in errors)
 
 # Fields that are node-level concerns (not agent overrides)
 _NODE_FIELDS = {
@@ -91,6 +142,8 @@ class GraphLoader:
         self,
         workflow_ref: str,
         inputs: dict[str, Any] | None = None,
+        *,
+        run_start: bool = False,
     ) -> tuple[list[Node], WorkflowConfig]:
         """Load a workflow config and return resolved nodes + config.
 
@@ -99,23 +152,27 @@ class GraphLoader:
             inputs: Workflow inputs (the POST body's `inputs` field). Required
                 only if the workflow uses `type: template` nodes; otherwise
                 may be None.
+            run_start: True when a run is starting (not resuming). A stage whose
+                strategy registered a run-start check (topology
+                ``register_topology(..., run_start_check=...)``) is checked before it
+                is built, and every problem found is raised together, so the run
+                doesn't start. No built-in strategy has one.
 
         Returns:
             Tuple of (resolved_nodes, workflow_config).
 
         Raises:
             LoaderError: Config not found, invalid, or template expansion failed.
-            ValidationError: Config fails validation.
+            ValidationError: Config fails validation. One error lists every problem:
+                the run-start checks' (a starting run only), the graph's own, and a Pi
+                workflow's loop rule (stage/pi_workflows.py).
         """
-        nodes, config = self.resolve_workflow(workflow_ref, inputs)
-        errors = self._validate(nodes)
+        nodes, config, problems = self._resolve(workflow_ref, inputs, run_start=run_start)
+        errors = [*problems, *self._validate(nodes)]
         # Pi workflows only: a loop that runs out must stop the run red (stage/pi_workflows.py).
         errors.extend(pi_loop_problems(nodes))
         if errors:
-            raise ValidationError(
-                f"Workflow '{config.name}' validation failed:\n"
-                + "\n".join(f"  - {e}" for e in errors)
-            )
+            raise ValidationError(_validation_failed(config.name, errors))
 
         return nodes, config
 
@@ -129,6 +186,18 @@ class GraphLoader:
         Raises:
             LoaderError: Config not found, invalid, or template expansion failed.
         """
+        nodes, config, _ = self._resolve(workflow_ref, inputs, run_start=False)
+        return nodes, config
+
+    def _resolve(
+        self,
+        workflow_ref: str,
+        inputs: dict[str, Any] | None,
+        *,
+        run_start: bool,
+    ) -> tuple[list[Node], WorkflowConfig, list[str]]:
+        """resolve_workflow, plus, for a starting run, the problems its strategies' run-start
+        checks found (load_workflow raises them with the rest)."""
         raw = self._load_config(workflow_ref, "workflow")
         try:
             raw = expand_templates(raw, inputs)
@@ -139,7 +208,20 @@ class GraphLoader:
         # Store workflow defaults so agent resolution can apply them as fallbacks
         self._defaults = config.defaults or {}
 
-        return self._resolve_nodes(config.nodes), config
+        scope = _RunStartScope(config, dict(inputs or {})) if run_start else None
+        outer = getattr(_run_start, "scope", None)
+        _run_start.scope = scope
+        try:
+            nodes = self._resolve_nodes(config.nodes)
+        except StageError as exc:
+            if scope is None or not scope.problems:
+                raise
+            # Keep the run-start problems already found next to this one.
+            raise ValidationError(
+                _validation_failed(config.name, [*scope.problems, str(exc)])) from exc
+        finally:
+            _run_start.scope = outer
+        return nodes, config, (scope.problems if scope else [])
 
     def _resolve_nodes(self, node_configs: list[NodeConfig]) -> list[Node]:
         """Resolve a list of NodeConfigs into executable Nodes."""
@@ -200,43 +282,34 @@ class GraphLoader:
         if not nc.strategy:
             raise ValidationError(
                 f"Stage '{nc.name}' has 'agents' but no 'strategy'. "
-                "Specify a strategy (parallel, sequential, leader)."
+                f"Specify a strategy ({', '.join(named_strategies())})."
             )
+
+        scope: _RunStartScope | None = getattr(_run_start, "scope", None)
+        check = run_start_check(nc.strategy) if scope is not None else None
 
         # Resolve each agent ref to a full config dict
         agent_configs = []
+        unloaded: dict[str, str] = {}
         assert nc.agents is not None  # guaranteed by caller check # noqa: B101
         defaults = _agent_defaults(self._defaults)
         for agent_ref in nc.agents:
-            if isinstance(agent_ref, str):
-                agent_config = _merge_agent_config(
-                    defaults, self._load_agent_config(agent_ref), self._overrides,
-                )
-            elif isinstance(agent_ref, dict):
-                # Inline agent config or ref with overrides
-                if "agent" in agent_ref or "ref" in agent_ref:
-                    ref = agent_ref.get("agent") or agent_ref.get("ref") or ""
-                    base = self._load_agent_config(ref)
-                    overrides = {
-                        k: v for k, v in agent_ref.items()
-                        if k not in ("agent", "ref")
-                    }
-                    agent_config = _merge_agent_config(
-                        defaults, {**base, **overrides}, self._overrides,
-                    )
-                else:
-                    agent_config = _merge_agent_config(defaults, agent_ref, self._overrides)
-            else:
-                raise LoaderError(
-                    f"Invalid agent entry in stage '{nc.name}': {agent_ref}"
-                )
+            try:
+                agent_configs.append(self._resolve_member(nc, agent_ref, defaults))
+            except LoaderError as exc:
+                if check is None:
+                    raise
+                unloaded[_member_label(agent_ref)] = str(exc)
 
-            # Ensure agent has a name
-            if "name" not in agent_config:
-                agent_config["name"] = agent_config.get(
-                    "name", agent_ref if isinstance(agent_ref, str) else "unnamed"
-                )
-            agent_configs.append(agent_config)
+        if check is not None and scope is not None:
+            # This strategy checks the whole stage when a run starts, before it is built,
+            # and reports every problem at once; the run then doesn't start.
+            problems = check(RunStart(stage=nc, agent_configs=agent_configs,
+                                      workflow=scope.workflow, inputs=scope.inputs,
+                                      unloaded=unloaded))
+            if problems:
+                scope.problems.extend(f"Stage '{nc.name}': {p}" for p in problems)
+                return StageNode(nc, [_Refused(agent_configs)])
 
         # Child node names come from the agent name, so listing the same
         # agent twice in one stage produces two identically-named nodes. That
@@ -257,6 +330,38 @@ class GraphLoader:
         # Generate topology from strategy
         child_nodes: list[Node] = list(build_topology(nc.strategy, agent_configs, nc.strategy_config))
         return StageNode(nc, child_nodes)
+
+    def _resolve_member(self, nc: NodeConfig, agent_ref: Any, defaults: dict) -> dict:
+        """One entry of a strategy stage's ``agents:`` list as a full agent config."""
+        if isinstance(agent_ref, str):
+            agent_config = _merge_agent_config(
+                defaults, self._load_agent_config(agent_ref), self._overrides,
+            )
+        elif isinstance(agent_ref, dict):
+            # Inline agent config or ref with overrides
+            if "agent" in agent_ref or "ref" in agent_ref:
+                ref = agent_ref.get("agent") or agent_ref.get("ref") or ""
+                base = self._load_agent_config(ref)
+                overrides = {
+                    k: v for k, v in agent_ref.items()
+                    if k not in ("agent", "ref")
+                }
+                agent_config = _merge_agent_config(
+                    defaults, {**base, **overrides}, self._overrides,
+                )
+            else:
+                agent_config = _merge_agent_config(defaults, agent_ref, self._overrides)
+        else:
+            raise LoaderError(
+                f"Invalid agent entry in stage '{nc.name}': {agent_ref}"
+            )
+
+        # Ensure agent has a name
+        if "name" not in agent_config:
+            agent_config["name"] = agent_config.get(
+                "name", agent_ref if isinstance(agent_ref, str) else "unnamed"
+            )
+        return agent_config
 
     def _resolve_explicit_stage(self, nc: NodeConfig) -> StageNode:
         """Resolve a stage with explicit child nodes."""

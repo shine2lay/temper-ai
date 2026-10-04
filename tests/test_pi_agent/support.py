@@ -34,6 +34,8 @@ IMAGE = "sha256:" + "0" * 64
 ROLE = "scout"
 NOTE_WORD = "quartzfinch"
 CHECK_WORD = "lanternmoss"
+USAGE_LIMIT_ERROR = ("429 rate_limit_error: You have reached your usage limit; it resets at "
+                     "03:00.")
 
 # --- the box config and its folders --------------------------------------------------
 
@@ -68,6 +70,22 @@ def make_box_config(root: Path, **over: Any) -> Path:
     path = root / "box.json"
     path.write_text(json.dumps(raw))
     return path
+
+
+ADD_ON_NAMES = ("billion-context-pi", "pi-image-trim", "pi-tldr")
+
+
+def make_add_ons(root: Path, names: tuple[str, ...] = ADD_ON_NAMES) -> dict:
+    """Stand-in pinned add-on copies; returns the box config's ``add_ons`` section."""
+    from temper_ai.pi_agent.box import tree_sha256
+
+    pins = {}
+    for name in names:
+        folder = root / "addons" / name
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "index.ts").write_text(f"// {name} stand-in\nexport default function () {{}}\n")
+        pins[name] = {"dir": str(folder), "entry": "index.ts", "sha256": tree_sha256(folder)}
+    return pins
 
 
 def box_config(root: Path, **over: Any) -> BoxConfig:
@@ -179,6 +197,7 @@ class FakeBox:
     ``behaviour`` (class attribute, set by a test) says what Pi does with a prompt:
     ``answer`` (default: reads note.txt with the read tool when asked to, then answers with
     what it knows), ``provider_error`` (the provider refuses; Pi settles with an error),
+    ``usage_limit`` (the provider refuses with a usage limit; Pi settles with that error),
     ``die`` (the worker dies after the prompt), ``die_in_tool`` (the worker dies while a
     tool runs), ``hang`` (nothing more comes), ``ui`` (an extension asks the owner a
     question first). ``lie`` names a check the worker fails (``model``, ``identity``,
@@ -203,7 +222,8 @@ class FakeBox:
         self.leaf: str | None = None
         self.inspected = {"network_none": True, "read_only_root": True, "cap_drop_all": True}
         self.log: dict[str, Any] = {"session_id": spec.session_id, "prompts": 0,
-                                    "commands": [], "allowance_at_prompt": None}
+                                    "commands": [], "allowance_at_prompt": None,
+                                    "tools": list(spec.tools), "add_ons": list(spec.add_ons)}
         FakeBox.STARTS.append(self.log)
 
     # --- the WorkerBox surface ---
@@ -365,8 +385,9 @@ class FakeBox:
             self._append({"type": "message", "message": {**assistant(stop="toolUse")}})
             self.kill()
             return [*out, *ask]
-        if mode == "provider_error":
-            msg = assistant(stop="error", error="429 Too Many Requests")
+        if mode in ("provider_error", "usage_limit"):
+            msg = assistant(stop="error", error=USAGE_LIMIT_ERROR if mode == "usage_limit"
+                            else "400 invalid_request_error: the request was refused")
             self._append({"type": "message", "message": msg})
             return [*out, *said(msg), {"type": "agent_end", "messages": []}, SETTLED]
         # answer
@@ -425,7 +446,7 @@ def step(name: str, depends_on=()) -> AgentNode:
 
 def pi_node(name: str = "talk", depends_on=("brief",), **cfg: Any) -> AgentNode:
     values = {"name": name, "type": "pi", "role": ROLE, "provider": "openai-codex",
-              "model": "gpt-6.1-sol", "thinking": "medium", "tools": ["read"],
+              "model": "gpt-6.1-sol", "thinking": "medium", "tools": ["Read"], "add_ons": [],
               "message": "Read note.txt with the read tool and tell me its first word. "
                          "Topic: {{ topic }}.",
               "workspace_files": {"note.txt": f"{NOTE_WORD} is the first word."},
@@ -442,7 +463,7 @@ WORKFLOWS: dict[str, Callable[[], list]] = {
 
 
 class StubLoader:
-    def load_workflow(self, name: str, inputs: dict | None = None):
+    def load_workflow(self, name: str, inputs: dict | None = None, *, run_start: bool = False):
         cfg = SimpleNamespace(name=name, safety=None, outputs=None, on_failure=None,
                               defaults=None, notify=None)
         return WORKFLOWS[name](), cfg

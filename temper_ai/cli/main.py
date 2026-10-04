@@ -308,7 +308,7 @@ def _cmd_run(args) -> None:
     if args.model:
         cli_overrides["model"] = args.model
 
-    nodes, config = _load_workflow(args.workflow, cli_overrides)
+    nodes, config = _load_workflow(args.workflow, cli_overrides, inputs)
 
     # Reflect overrides in config.defaults so header display + dispatched-node
     # propagation see the effective values, not the pre-override YAML ones.
@@ -398,16 +398,22 @@ def _load_configs(config_dir_path: str) -> None:
         import_config_tree(config_dir, ConfigStore())
 
 
-def _load_workflow(workflow_name: str, overrides: dict | None = None):
-    """Load a workflow by name. Exits on failure."""
+def _load_workflow(workflow_name: str, overrides: dict | None = None,
+                   inputs: dict | None = None):
+    """Load a workflow by name for a run that is starting. Exits on failure."""
     from temper_ai.config import ConfigStore
     from temper_ai.stage.loader import GraphLoader
+    from temper_ai.stage.topology import run_start_options
 
     store = ConfigStore()
     loader = GraphLoader(store)
     if overrides:
         loader._overrides = overrides
+    # The strategies' run-start checks (only the Pi team has one, with its switch on).
+    start = run_start_options()
     try:
+        if start:
+            return loader.load_workflow(workflow_name, inputs=inputs, **start)
         return loader.load_workflow(workflow_name)
     except Exception as exc:  # noqa: BLE001
         print(f"Error loading workflow '{workflow_name}': {exc}", file=sys.stderr)

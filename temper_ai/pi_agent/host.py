@@ -42,7 +42,6 @@ from temper_ai.agent.base import AgentABC
 from temper_ai.observability.event_types import EventType
 from temper_ai.pi_agent.box import (
     PROBE_DIR,
-    ROLE_RE,
     WORKDIR,
     BoxConfig,
     BoxError,
@@ -50,12 +49,19 @@ from temper_ai.pi_agent.box import (
     tree_sha256,
 )
 from temper_ai.pi_agent.ledger import Ledger
+from temper_ai.pi_agent.member import (
+    DEFAULT_TOOLS,
+    add_on_names,
+    config_problems,
+    launched_tools,
+    settings,
+    usage_limit,
+)
 from temper_ai.shared.types import AgentResult, ExecutionContext, Status
 
 logger = logging.getLogger(__name__)
 
 AGENT_TYPE = "pi"
-THINKING = ("off", "minimal", "low", "medium", "high", "xhigh")
 FINISH_WORDS = ("", "done", "finish", "finished", "stop", "end")
 DEFAULT_QUESTION = ("{role} answered (turn {turn_no}). Reply with the next message for "
                     "{role}, or 'done' to finish this step.")
@@ -89,30 +95,13 @@ class PiHost(AgentABC):
     turn_runner: Any = None
 
     def validate_config(self) -> list[str]:
-        cfg = self.config
-        errors = []
-        role = cfg.get("role")
-        if not isinstance(role, str) or not ROLE_RE.match(role):
-            errors.append("pi: 'role' must be one role name (one role per Pi step)")
-        if "roles" in cfg:
-            errors.append("pi: one role per Pi step ('roles' is not supported)")
-        for key in ("provider", "model"):
-            if not isinstance(cfg.get(key), str) or not cfg.get(key):
-                errors.append(f"pi: '{key}' is required")
-        if cfg.get("thinking", "medium") not in THINKING:
-            errors.append(f"pi: 'thinking' must be one of {', '.join(THINKING)}")
-        tools = cfg.get("tools", ["read"])
-        if not isinstance(tools, list) or not tools or not all(
-                isinstance(t, str) and t.isidentifier() for t in tools):
-            errors.append("pi: 'tools' must be a non-empty list of tool names")
-        if not isinstance(cfg.get("message", ""), str):
-            errors.append("pi: 'message' must be text")
-        files = cfg.get("workspace_files", {})
-        if not isinstance(files, dict) or not all(
-                isinstance(k, str) and "/" not in k and not k.startswith(".")
-                and isinstance(v, str) for k, v in files.items()):
-            errors.append("pi: 'workspace_files' must map plain file names to text")
-        return errors
+        """Every problem with the config (role, model, Temper tool names, add-ons), all at once."""
+        return [f"pi: {problem}" for problem in config_problems(self.config)]
+
+    @property
+    def model_settings(self) -> dict:
+        """provider, model and thinking, the member defaults filled in (claude-opus-5-5 / max)."""
+        return settings(self.config)
 
     # --- entry ------------------------------------------------------------------------
 
@@ -155,10 +144,15 @@ class PiHost(AgentABC):
             box = BoxConfig.load()
         except BoxError as exc:
             return self._fail(str(exc), started)
-        if cfg["provider"] not in box.routes:
-            return self._fail(f"no worker route for provider {cfg['provider']!r}", started)
+        provider = self.model_settings["provider"]
+        if provider not in box.routes:
+            return self._fail(f"no worker route for provider {provider!r}", started)
         if not (Path(box.identities_dir) / cfg["role"]).is_dir():
             return self._fail(f"role {cfg['role']!r} is not defined", started)
+        unpinned = [name for name in add_on_names(cfg) if name not in box.add_ons]
+        if unpinned:
+            return self._fail("no pinned copy of add-on(s) " + ", ".join(unpinned)
+                              + " in the worker box config", started)
         self.box = box
         self.ledger = Ledger(get_database().engine)
         self.ledger.ensure()
@@ -236,13 +230,14 @@ class PiHost(AgentABC):
         from temper_ai.pi_agent.turn import TurnRequest, run_turn
 
         cfg = self.config
+        model = self.model_settings
         rec = self.ctx.event_recorder
         agent_event_id = rec.record(
             EventType.AGENT_STARTED, parent_id=self.ctx.parent_event_id,
             execution_id=self.run_id, status="running", data={
                 "agent_name": self.name, "node_path": self.host_path, "type": AGENT_TYPE,
-                "executed_by": "pi", "role": cfg["role"], "provider": cfg["provider"],
-                "model": cfg["model"], "thinking": cfg.get("thinking", "medium"),
+                "executed_by": "pi", "role": cfg["role"], "provider": model["provider"],
+                "model": model["model"], "thinking": model["thinking"],
                 "input_data": {"messages": len(batch)},
                 "pi_turn": {"turn_id": turn["turn_id"], "turn_no": turn["turn_no"],
                             "participant_id": participant["participant_id"],
@@ -252,10 +247,10 @@ class PiHost(AgentABC):
             })
         self.ledger.set_turn_agent_event(turn["turn_id"], agent_event_id)
         spec = BoxSpec(participant_dir=self.pdir, session_id=participant["session_id"],
-                       role=cfg["role"], provider=cfg["provider"], model=cfg["model"],
-                       thinking=cfg.get("thinking", "medium"),
-                       tools=list(cfg.get("tools", ["read"])),
-                       labels={"run": self.run_id[:36], "turn": turn["turn_id"][:16]})
+                       role=cfg["role"], provider=model["provider"], model=model["model"],
+                       thinking=model["thinking"], tools=launched_tools(cfg),
+                       labels={"run": self.run_id[:36], "turn": turn["turn_id"][:16]},
+                       add_ons=add_on_names(cfg))
         req = TurnRequest(run_id=self.run_id, agent_name=self.name, node_path=self.host_path,
                           participant=participant, turn=turn, text=_batch_text(batch),
                           spec=spec, agent_event_id=agent_event_id, recorder=rec,
@@ -289,6 +284,14 @@ class PiHost(AgentABC):
         if report.state == "uncertain":
             wait = self.ledger.hold_turn(turn["turn_id"], report.error or "cut off",
                                          report.model_call_ids, worker, self.attempt_id)
+            self._publish_wait(wait)
+            return None
+        limit = usage_limit(report.error)
+        if limit:
+            # A usage or rate limit pauses the step for the owner (retry once it resets),
+            # naming the limit; never a quiet switch to another model or account.
+            wait = self.ledger.hold_turn(turn["turn_id"], limit, report.model_call_ids,
+                                         worker, self.attempt_id)
             self._publish_wait(wait)
             return None
         error = f"{cfg['role']} turn {turn['turn_no']} failed: {report.error}"
@@ -413,13 +416,14 @@ class PiHost(AgentABC):
     def _public_config(self) -> dict:
         cfg = self.config
         return {"type": AGENT_TYPE, "name": self.name, "role": cfg.get("role"),
-                "provider": cfg.get("provider"), "model": cfg.get("model"),
-                "thinking": cfg.get("thinking", "medium"),
-                "tools": list(cfg.get("tools", ["read"]))}
+                **self.model_settings,
+                "tools": list(cfg.get("tools") or DEFAULT_TOOLS),
+                "add_ons": add_on_names(cfg)}
 
     def _pin(self, box: BoxConfig) -> dict:
         cfg = self.config
-        route = box.routes[cfg["provider"]]
+        model = self.model_settings
+        route = box.routes[model["provider"]]
         extensions = {"identity": tree_sha256(Path(box.identity_extension)),
                       "temper-box": tree_sha256(PROBE_DIR)}
         if route.extension:
@@ -427,9 +431,9 @@ class PiHost(AgentABC):
         config_sha = hashlib.sha256(json.dumps(
             {k: v for k, v in cfg.items() if k not in ("poll_seconds",)}, sort_keys=True,
             default=str).encode()).hexdigest()
-        return {"pi_version": box.pi_version, "image": box.image, "provider": cfg["provider"],
-                "model": cfg["model"], "thinking": cfg.get("thinking", "medium"),
-                "tools": sorted(cfg.get("tools", ["read"])), "extensions": extensions,
+        return {"pi_version": box.pi_version, "image": box.image, **model,
+                "tools": launched_tools(cfg), "extensions": extensions,
+                "add_ons": {name: box.add_ons[name].sha256 for name in add_on_names(cfg)},
                 "route_host": route.host, "workflow": self.ctx.workflow_name,
                 "agent_config_sha256": config_sha, "cwd": WORKDIR}
 

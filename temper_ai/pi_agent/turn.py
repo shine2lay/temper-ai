@@ -27,7 +27,7 @@ import hashlib
 import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -186,7 +186,8 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         commands = (_ok(rpc.command("get_commands", COMMAND_TIMEOUT), "get_commands")
                     .get("commands") or [])
         report.checks["extension_commands"] = _check_commands(
-            commands, box.route.extension, bundled_extensions(Path(cfg.runtime_dir)))
+            commands, box.route.extension, bundled_extensions(Path(cfg.runtime_dir)),
+            add_ons=req.spec.add_ons)
         # 5b. after the owner's decision about a cut-off turn: back to the last settled entry
         if not session["settled"]:
             report.checks["rewound"] = _rewind(rpc, pdir, session)
@@ -328,8 +329,13 @@ def bundled_extensions(runtime_dir: Path) -> frozenset[str]:
 
 
 def _check_commands(commands: list[dict], auth_extension: str | None,
-                    bundled: frozenset[str] = frozenset()) -> dict:
+                    bundled: frozenset[str] = frozenset(),
+                    add_ons: Sequence[str] = ()) -> dict:
+    """Every extension command must come from an extension this turn loaded: identity, the
+    box probe, the route's login extension, the member's add-ons (their pinned copies under
+    /ext/addons/<name>/) or the pinned runtime's own bundle."""
     seen: dict[str, str] = {}
+    from_add_ons: dict[str, list[str]] = {}
     stray = []
     builtin = []
     for row in commands:
@@ -338,9 +344,12 @@ def _check_commands(commands: list[dict], auth_extension: str | None,
         info = row.get("sourceInfo") or {}
         path = str(info.get("path") or "")
         name = str(row.get("name") or "")
+        add_on = next((a for a in add_ons if path.startswith(f"/ext/addons/{a}/")), None)
         if path.startswith("/ext/identity/") or path.startswith("/ext/temper-box/") or \
                 (auth_extension and path.startswith("/ext/auth/")):
             seen[name] = path
+        elif add_on:
+            from_add_ons.setdefault(add_on, []).append(name)
         elif (path.startswith("/pi-runtime/pi/") or info.get("source") == "inline") \
                 and name in bundled:
             builtin.append(name)
@@ -352,7 +361,8 @@ def _check_commands(commands: list[dict], auth_extension: str | None,
         raise TurnFailure("extensions_not_allowed",
                           "unexpected extension commands: " + ", ".join(sorted(stray)[:5]) if stray else
                           "an allowed extension did not load: " + ", ".join(missing))
-    return {"allowed": sorted(seen), "pinned_runtime_builtin": sorted(builtin), "stray": 0}
+    return {"allowed": sorted(seen), "pinned_runtime_builtin": sorted(builtin), "stray": 0,
+            "add_ons": {name: sorted(cmds) for name, cmds in sorted(from_add_ons.items())}}
 
 
 def _check_role(state: dict, spec: BoxSpec, notebook_sha: str | None) -> dict:

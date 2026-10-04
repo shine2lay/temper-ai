@@ -122,8 +122,11 @@ def execute_workflow(
     )
 
     # --- Workflow loading (raises on bad config; caller decides whether to surface) ---
+    # A new run also gets the strategies' run-start checks (only the Pi team has one,
+    # with its switch on); a resume doesn't check again.
+    from temper_ai.stage.topology import run_start_options
     nodes, config = runner_ctx.graph_loader.load_workflow(
-        workflow_name, inputs=inputs,
+        workflow_name, inputs=inputs, **({} if is_resume else run_start_options()),
     )
 
     # --- Tool executor + safety policy ---

@@ -69,7 +69,8 @@ from at least two different families.
 Refine: {product:<exact>,concept:<same concept schema and selected id>,
  palette:<same6role schema>, changes:[up to8 evidence-specific strings],
  declined:[up to8 reasoned strings]}. Respect real saved selection and owner note;
-no silent change to direction, product or owner approval. Max TWO rounds.
+no silent change to direction, product or owner approval. Max TWO planned rounds;
+the host allows one extra round only when the owner asks for it.
 Critic: {product:<exact>,observations:[up to14],recommendation:<id>,
  recommendation_reason:<up to900>,limitations:<up to1000>}.
 Observation: {scope:'concept'|'contract',id:<concept id or contract cell A..E>,
@@ -391,6 +392,27 @@ def budget_contract(v, cost_cap):
         raise ValueError("fresh allowance and one experiment checks required")
     text(v.get("reconciliation"), 1200)
     return v
+
+
+PLANNED_ROUNDS = 2
+EXTRA_ROUND = PLANNED_ROUNDS + 1  # one more, only on the owner's own request; never a fourth
+
+
+def extra_round_contract(record, reservation, *, run_id, brief_hash, artifact_hash):
+    """A round past the planned two needs both: the real owner's 'revise' with their own note,
+    recorded by the native final gate of the last planned round, and a fresh refine budget gate
+    answer naming that same note. Neither alone starts paid work."""
+    if record.get("approval") != "owner-final" or record.get("fictional_test") is not False:
+        raise ValueError("extra round needs the real owner's final-gate answer")
+    if (record.get("run_id"), record.get("brief_hash"), record.get("artifact_hash")) != (run_id, brief_hash, artifact_hash):
+        raise ValueError("extra-round request is for a different run/brief/artifact")
+    note = record.get("owner_note")
+    if record.get("decision") != "revise" or not isinstance(note, str) or not note.strip():
+        raise ValueError("extra round needs the owner's revise with their own note")
+    text(note, 1200)
+    if reservation.get("extra_round_owner_note") != note:
+        raise ValueError("refine budget gate must name the owner's extra-round note")
+    return note
 
 
 def approval_contract(v, *, kind, run_id, brief_hash, artifact_hash, choices, gate_only, fictional=False):

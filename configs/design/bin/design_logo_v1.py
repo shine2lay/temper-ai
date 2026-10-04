@@ -191,8 +191,19 @@ class Job:
             c.brief_contract(load(self.root / "brief.json"), "fixture")
             return {"status": "completed", "model_calls": 0, "fictional_test": True}
         reservation = c.budget_contract(json.loads(raw), c.INITIAL_RESERVE if stage == "initial" else c.REFINE_RESERVE)
-        if stage != "initial" and self.state["round"] >= 2:
-            raise ValueError("two refinement rounds exhausted; owner must decide reduced scope/new plan")
+        if stage != "initial" and self.state["round"] >= c.EXTRA_ROUND:
+            raise ValueError("refinement rounds exhausted, the owner's extra round included")
+        if stage != "initial" and self.state["round"] >= c.PLANNED_ROUNDS:
+            # Past the planned rounds only on the owner's own request: the last final gate
+            # recorded their revise with a note, and this fresh reservation names that note.
+            path = self.root / f'owner-final-r{self.state["round"]:02}.json'
+            if not path.is_file():
+                raise ValueError("two refinement rounds exhausted; no owner request for an extra round")
+            note = c.extra_round_contract(load(path), reservation, run_id=self.run_id,
+                brief_hash=self.state["brief_hash"], artifact_hash=self.state["final_artifact_hash"])
+            self.state["extra_round"] = {"round": c.EXTRA_ROUND, "owner_note": note, "owner_final": path.name,
+                                         "recorded_at": h.now()}
+            self.commit()
         label = "budget-initial" if stage == "initial" else f'budget-r{self.state["round"] + 1:02}'
         path = self.root / (label + ".json")
         save(path, {**reservation, "recorded_at": h.now()})
@@ -366,13 +377,20 @@ class Job:
             "outcome": "selected", "direction_owner_approved": self.mode == "real", "final_owner_approved": False},
             [self.root / "owner-direction.json"])
 
+    def round_cap(self):
+        extra = self.state.get("extra_round") or {}
+        return c.EXTRA_ROUND if extra.get("round") == c.EXTRA_ROUND else c.PLANNED_ROUNDS
+
     def prepare_refine(self):
         if not self.state.get("direction"):
             raise ValueError("no selected owner direction")
-        if self.state["round"] >= 2:
-            raise ValueError("two refinement rounds exhausted")
+        if self.state["round"] >= self.round_cap():
+            raise ValueError("two refinement rounds exhausted" + (" with the owner's extra round" if self.round_cap() > c.PLANNED_ROUNDS else ""))
         next_round = self.state["round"] + 1
-        feedback = self.state.get("final_feedback", {}).get("owner_note", self.state["direction"].get("owner_note", self.state["direction"]["reason"]))
+        if next_round == c.EXTRA_ROUND:
+            feedback = self.state["extra_round"]["owner_note"]
+        else:
+            feedback = self.state.get("final_feedback", {}).get("owner_note", self.state["direction"].get("owner_note", self.state["direction"]["reason"]))
         # The current schema (e.g. optional accent-toned parts) goes to its own file, so the
         # brief stage's pinned schema.txt receipt stays intact for resume checks.
         (self.root / "schema-refine.txt").write_text(c.SCHEMA)
@@ -380,7 +398,7 @@ class Job:
                    "schema": "logo/schema-refine.txt", "schema_digest": c.digest(c.SCHEMA),
                    "selected": load(self.root / "selected.json"), "owner_note": feedback,
                    "critic": f'logo/critic-r{self.state["round"]:02}.json', "output": "logo/refined.json",
-                   "pngs": [r["path"] for r in self.state["files"]["directions" if next_round == 1 else "selected-r01"]["exports"] if r["kind"] == "png"]}
+                   "pngs": [r["path"] for r in self.state["files"]["directions" if next_round == 1 else f'selected-r{self.state["round"]:02}']["exports"] if r["kind"] == "png"]}
         fingerprint = c.digest(context)
         label = f"prepare-r{next_round:02}"
         if result := self.cached(label, fingerprint):
@@ -400,7 +418,7 @@ class Job:
         fingerprint = c.digest({"refinement": v, "context": load(self.root / "refine-context.json")})
         if result := self.cached(label, fingerprint):
             return result
-        if next_round != self.state["round"] + 1 or next_round > 2:
+        if next_round != self.state["round"] + 1 or next_round > self.round_cap():
             raise ValueError("duplicate or unbounded refinement")
         save(self.root / (label + ".json"), v)
         state, exports = self.native_file(label, lambda canvas: canvas.final_boards(b, v["concept"], v["palette"]))

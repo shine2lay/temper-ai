@@ -10,7 +10,8 @@ sourced brief + pinned research -> BUDGET -> six original monochrome vectors
  -> new logo critic -> REAL OWNER DIRECTION (a direction, or explore-again: the
     run ends and the next run's brief carries the rejected round) -> FRESH BUDGET
  -> selected refinement -> native source/exports -> new logo critic -> handoff
- -> REAL OWNER FINAL (or one bounded rewind for the second refinement)
+ -> REAL OWNER FINAL (or one bounded rewind for the second refinement; past that,
+    one extra round only on the owner's own request, see below)
 ```
 
 Generation comes from a vision-capable Claude-provider LLM's own bounded vector
@@ -74,9 +75,10 @@ back. Facts, claims, inference and creative name interpretations stay separate.
   paid stage (real run ad5c270f lost a round-1 critic save to a 129-character
   location and its round-2 refinement save to a 49-character layer name). Ids,
   enums, brief and owner words, geometry and longer text stay strict.
-- Exactly two refinement rounds maximum. Engine max_loops=2 permits only one
-  rewind (its threshold counts the stopping attempt); script bounds independently
-  forbid a third. Failed final revision is not successful completion.
+- Two planned refinement rounds. Engine max_loops=2 permits only one rewind (its
+  threshold counts the stopping attempt). A third round runs only on the owner's own
+  request (next section); script bounds forbid a fourth in every case. Failed final
+  revision is not successful completion.
 
 ## Changes after the first real Temper round (2026-10-03)
 
@@ -124,6 +126,21 @@ refinement reads the current schema from `logo/schema-refine.txt` (named in
 `refine-context.json`), so a run started before this change keeps its pinned
 `schema.txt` intact for resume checks. The fixture's chosen direction has an
 accent part, so the $0 run proves native save, reopen and export of two-tone vectors.
+
+## Owner-requested extra round (2026-10-03)
+
+At the round-2 final gate of real run ad5c270f the owner asked for one more change
+("lets make the bottom part a bit shorter right now, the bottom part look a bit
+phallic") after being offered an extra round. A round-2 `revise` still records the
+owner's answer in `logo/owner-final-r02.json` and fails the run, because the loop is
+spent. The host then resumes that same run with `refine_budget` ticked to run again
+(Temper's resume `rerun`), so round 3 is one straight pass, not a further loop:
+fresh budget gate, prepare, refine, save, critic, handoff, final gate. The script
+starts round 3 only when both hold: the native final gate recorded the real owner's
+`revise` with their own note, and the fresh refine budget answer names that same
+note (`extra_round_owner_note`). Neither alone starts paid work, and nothing allows
+a fourth round. Round 3's refinement reads that note and the previous round's
+boards (each round now gets the boards of the round before it, not always round 1's).
 
 ## Measurable rubric versus judgement
 

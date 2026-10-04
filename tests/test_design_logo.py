@@ -509,6 +509,79 @@ def test_two_refinement_rounds_and_no_unguided_final_revision(tmp_path):
         j.prepare_refine()
 
 
+def extra_round_job(tmp_path, **change):
+    """A real-mode job after round 2, with the owner's round-2 final answer as the gate wrote it."""
+    j = job.Job(str(tmp_path), RUN, "real")
+    j.state.update({"round": 2, "brief_hash": "b", "final_artifact_hash": "a2",
+                    "direction": {**answer(), "run_id": RUN, "owner_note": "Round-1 note."},
+                    "final_feedback": {**answer("final"), "decision": "revise", "owner_note": "Round-1 final note."},
+                    "files": {f"selected-r{n:02}": {"exports": [{"kind": "png", "path": f"exports/selected-r{n:02}-00.png"},
+                                                             {"kind": "svg", "path": f"exports/selected-r{n:02}-00.svg"}]}
+                              for n in (1, 2)}})
+    job.save(j.root / "brief.json", brief())
+    job.save(j.root / "selected.json", {"concept": {}, "palette": {}})
+    record = {"approval": "owner-final", "run_id": RUN, "brief_hash": "b", "artifact_hash": "a2", "decision": "revise",
+              "reason": "Owner answer (test).", "owner_note": "Make the base shorter.", "recorded_at": "t",
+              "fictional_test": False, **change}
+    job.save(j.root / "owner-final-r02.json", {k: v for k, v in record.items() if v is not None})
+    j.commit()
+    return j
+
+
+def extra_budget(note="Make the base shorter."):
+    return json.dumps({**reservation(), "extra_round_owner_note": note})
+
+
+@pytest.mark.parametrize("change,payload", [
+    ({}, json.dumps(reservation())),                        # budget answer does not name the request
+    ({}, extra_budget("Something else.")),                  # names a different note
+    ({"decision": "approve"}, extra_budget()),              # owner approved, nothing to revise
+    ({"owner_note": None}, extra_budget(None)),             # revise without the owner's own words
+    ({"approval": "fixture-test"}, extra_budget()),         # fictional answer
+    ({"fictional_test": True}, extra_budget()),
+    ({"artifact_hash": "a1"}, extra_budget()),              # answer about other artwork
+    ({"run_id": "22222222-2222-4222-8222-222222222222"}, extra_budget()),
+])
+def test_extra_round_needs_owner_revise_note_and_named_budget(tmp_path, change, payload):
+    j = extra_round_job(tmp_path, **change)
+    with pytest.raises(ValueError):
+        j.budget(payload, "refine")
+    assert "extra_round" not in j.state
+    with pytest.raises(ValueError, match="two refinement"):
+        j.prepare_refine()
+
+
+def test_owner_requested_extra_round_runs_once_on_their_note_and_last_boards(tmp_path):
+    j = extra_round_job(tmp_path)
+    (j.root / "owner-final-r02.json").unlink()
+    with pytest.raises(ValueError, match="no owner request"):
+        j.budget(extra_budget(), "refine")
+    j = extra_round_job(tmp_path)
+    assert j.budget(extra_budget(), "refine")["round"] == 3
+    assert job.Job(str(tmp_path), RUN, "real").state["extra_round"]["owner_note"] == "Make the base shorter."
+    j.prepare_refine()
+    context = json.loads((j.root / "refine-context.json").read_text())
+    assert context["round"] == 3 and context["owner_note"] == "Make the base shorter."
+    assert context["pngs"] == ["exports/selected-r02-00.png"] and context["critic"] == "logo/critic-r02.json"
+    # Never a fourth round, whatever the owner record says.
+    j.state["round"] = 3
+    j.commit()
+    with pytest.raises(ValueError, match="exhausted"):
+        j.prepare_refine()
+    job.save(j.root / "owner-final-r03.json", json.loads((j.root / "owner-final-r02.json").read_text()))
+    with pytest.raises(ValueError, match="exhausted"):
+        j.budget(extra_budget(), "refine")
+
+
+def test_round_two_refinement_still_reads_round_one_boards_and_note(tmp_path):
+    j = extra_round_job(tmp_path)
+    j.state["round"] = 1
+    j.prepare_refine()
+    context = json.loads((j.root / "refine-context.json").read_text())
+    assert context["round"] == 2 and context["owner_note"] == "Round-1 final note."
+    assert context["pngs"] == ["exports/selected-r01-00.png"]
+
+
 @pytest.mark.parametrize("name", ["design_logo_v1", "design_logo_fixture_v1"])
 def test_actual_workflow_schema_native_gates_loop_and_new_agents(name):
     raw = yaml.safe_load((BIN.parent / "workflows" / (name + ".yaml")).read_text())["workflow"]

@@ -16,8 +16,9 @@ agent:
     Follow the owner's actual note first, then evidence-specific critic points.
     Preserve the concept's idea, id and exact product name. Improve original
     shapes/counters/optical balance/wordmark weight or palette within the chosen
-    direction. At most two rounds are enforced by the host; no critic loop or
-    autonomous third attempt. Say what changed and which advice was declined,
+    direction. The host enforces two planned rounds, plus one extra round only
+    when the owner asked for it at the final gate; no critic loop or autonomous
+    extra attempt. Say what changed and which advice was declined,
     with reasons. Taste advice is not measurable truth or an invented user study.
     Only allowlisted finite normalized editable vector objects, same installed
     Source Sans Pro type, and six measured role colours as the context's schema.

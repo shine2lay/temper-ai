@@ -1,0 +1,51 @@
+{
+  "site": "craft-v1",
+  "kind": "craft-benchmark",
+  "about": "Nine one-page homepages for two fictional products, for benchmarking the homepage craft critic (design_craft_bench). Which pages carry which measurable craft problems is kept off the box.",
+  "pages": ["page-01", "page-02", "page-03", "page-04", "page-05", "page-06", "page-07", "page-08", "page-09"],
+  "page_product": {
+    "page-01": "signalbox", "page-02": "claybird", "page-03": "claybird", "page-04": "signalbox", "page-05": "claybird",
+    "page-06": "signalbox", "page-07": "claybird", "page-08": "signalbox", "page-09": "claybird"
+  },
+  "fonts_css": "fonts.css",
+  "font_dirs": ["dmserifdisplay", "figtree", "bricolagegrotesque", "instrumentsans"],
+  "products": {
+    "claybird": {
+      "brief": {
+        "product": "Claybird Studio",
+        "fictional": true,
+        "disclosure": "Fictional pottery studio made for a design study: no real classes, bookings or payments.",
+        "audience": "Adults who have never touched clay, or tried it once and want to start again, choosing a first class.",
+        "purpose": "Show the three ways to start, what a class is like and what it costs, so a beginner books a taster class with confidence.",
+        "cta": "Book a taster class"
+      },
+      "concept": {
+        "id": "A",
+        "name": "Studio noticeboard",
+        "brief": "Warm, handmade and calm: an editorial serif over cream and sand, clay-red actions, ink bands for emphasis, generous space and simple flat illustrations of pots. It should feel like a small studio's well-kept noticeboard, not a marketplace.",
+        "signature_move": "A large serif headline beside a flat illustration of pots on a shelf; the clay colour marks every action.",
+        "motion": "Class cards rise gently into place on load (reduced motion respected).",
+        "imagery": "Flat inline SVG illustration of pots; no photos."
+      }
+    },
+    "signalbox": {
+      "brief": {
+        "product": "Signalbox",
+        "fictional": true,
+        "disclosure": "Fictional product made for a design study: no real accounts, alerts or payments.",
+        "audience": "Engineering leads at small software companies who want customers to hear about outages from them first.",
+        "purpose": "Show how a status page works with the tools the team already uses and what it costs, so a lead starts a free page.",
+        "cta": "Start free"
+      },
+      "concept": {
+        "id": "B",
+        "name": "Night console",
+        "brief": "Confident and technical without being cold: chunky grotesque headlines on deep navy, one electric lime action colour, panels that read like a calm console, and a live-looking status board as proof.",
+        "signature_move": "A live-looking status board in the hero; lime marks every action.",
+        "motion": "Feature cards rise gently into place on load (reduced motion respected).",
+        "imagery": "Interface fragments built in HTML/CSS and simple line icons; no photos."
+      }
+    }
+  },
+  "key": "~/design-lab/answers/craft-v1.yaml"
+}

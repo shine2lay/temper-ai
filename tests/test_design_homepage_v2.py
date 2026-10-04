@@ -121,8 +121,8 @@ def test_agents_use_claude_opus_and_script_wrapper_holds_no_secret():
     assert stage["type"] == "script"
     template = stage["script_template"]
     assert "gate is defined" in template and "design_homepage_v2.py" in template
-    assert "PASSWORD" not in template and '("real", "fixture", "pilot")' in template
-    assert 'if mode in ("fixture", "pilot"):\n    cmd.append("--" + mode)' in template
+    assert "PASSWORD" not in template and '("real", "fixture", "pilot", "bench")' in template
+    assert 'if mode in ("fixture", "pilot", "bench"):\n    cmd.append("--" + mode)' in template
     craft = (BIN.parent / "agents/design_homepage_craft_critic_v2.yaml").read_text()
     assert "review/craft/" in craft  # never review/critic/: design_merge would reject taste findings
     content = (BIN.parent / "agents/design_homepage_content_critic_v2.yaml").read_text()
@@ -133,6 +133,7 @@ def test_agents_use_claude_opus_and_script_wrapper_holds_no_secret():
         assert "COPY.md" in text
     art = (BIN.parent / "agents/design_homepage_art_director_v2.yaml").read_text()
     assert "TASTE.md" in art and "taste_use" in art and "headline" in art
+    assert '"recommended": {"concept": "A", "reason": "..."}' in art and "advice only" in art
 
 
 # --------------------------------------------------------------------------- converter
@@ -489,6 +490,127 @@ def test_pilot_workflow_is_v2_with_only_the_mode_changed():
         if node["agent"] == "design_homepage_stage_v2":
             assert mine.pop("mode") == "real" and theirs.pop("mode") == "pilot"
         assert theirs == mine
+
+
+def test_bench_workflow_is_v2_with_mode_bench_and_no_owner_gates():
+    real_raw, real = workflow("design_homepage_v2")
+    bench_raw, bench = workflow("design_homepage_v2_bench")
+    assert list(bench) == list(real)
+    assert bench_raw["inputs"] == real_raw["inputs"] and bench_raw["outputs"] == real_raw["outputs"]
+    assert not [n for n, v in bench.items() if v.get("gate")]  # nobody is asked: the owner judges blind later
+    for name, node in real.items():
+        twin = bench[name]
+        assert {k: v for k, v in twin.items() if k not in ("input_map", "gate")} == \
+            {k: v for k, v in node.items() if k not in ("input_map", "gate")}
+        mine, theirs = dict(node.get("input_map") or {}), dict(twin.get("input_map") or {})
+        if node["agent"] == "design_homepage_stage_v2":
+            assert mine.pop("mode") == "real" and theirs.pop("mode") == "bench"
+        if name == "direction":
+            assert mine.pop("data") == "input.direction_json"  # the art director's pick, never gate data
+        assert theirs == mine
+    looping = {n for n, v in bench.items() if v.get("loop_to")}
+    assert looping == {"copy_next", "concepts_next", "next_round", "after_final"}
+
+
+def bench_job(tmp_path):
+    job = v2.Job(str(tmp_path), fixture=False, bench=True)
+    job.brief(json.dumps({**v2.FIXTURE_BRIEF, "fixture": False}))  # fictional, but not the fixture
+    return job
+
+
+def recommend(job, rec):
+    spec = v2.load(job.concepts_dir / "concepts.json")
+    v2.save(job.concepts_dir / "concepts.json", {**spec, "recommended": rec})
+
+
+def test_bench_builds_the_recommended_concept_never_owner_approval_or_taste(tmp_path):
+    with pytest.raises(ValueError, match="benchmark workflow refuses real deliverables"):
+        v2.Job(str(tmp_path / "real"), fixture=False, bench=True).brief(
+            json.dumps({**v2.FIXTURE_BRIEF, "fixture": False, "fictional": False}))
+    with pytest.raises(ValueError, match="not more than one"):
+        v2.Job(str(tmp_path / "both"), fixture=False, pilot=True, bench=True)
+    job = bench_job(tmp_path / "b")
+    with pytest.raises(ValueError, match="another workflow"):
+        v2.Job(str(tmp_path / "b"), fixture=False, pilot=True)
+    ready_for_direction(job)
+    with pytest.raises(ValueError, match="no valid recommended"):
+        job.direction("")
+    recommend(job, {"concept": "D", "reason": "The strongest hierarchy of the three at both widths, by far."})
+    assert v2.recommendation(v2.load(job.concepts_dir / "concepts.json")) is None
+    recommend(job, {"concept": "C", "reason": "too short"})
+    with pytest.raises(ValueError, match="no valid recommended"):
+        job.direction("")
+    why = "The strongest hierarchy of the three at both widths, and the most specific imagery."
+    recommend(job, {"concept": "C", "reason": why})
+    with pytest.raises(ValueError, match="no direction gate"):  # an owner answer is never taken here
+        job.direction(json.dumps({"concept": "A", "approval": "owner-direction"}))
+    out = job.direction("")
+    assert out["concept"] == "C" and out["owner_direction_approved"] is False and out["benchmark"] is True
+    saved = v2.load(job.packet / "direction.json")
+    assert saved["approval"] == "benchmark-recommended" and saved["owner_approved"] is False and saved["benchmark"]
+    assert why in saved["notes"] and "not owner direction" in saved["notes"]
+    assert not (job.packet / "taste" / "entries.json").exists()  # the art director's pick is not the owner's taste
+    real = v2.Job(str(tmp_path / "r"), fixture=False)
+    real.brief(json.dumps({**v2.FIXTURE_BRIEF, "fixture": False}))
+    ready_for_direction(real)
+    recommend(real, {"concept": "C", "reason": why})
+    with pytest.raises(ValueError, match="owner-direction"):  # the real gate never takes the recommendation
+        real.direction(json.dumps({"concept": "C", "approval": "benchmark-recommended"}))
+
+
+def test_bench_final_is_skipped_and_labelled_not_owner_approved(tmp_path):
+    job = bench_job(tmp_path)
+    job.state["round"] = 1
+    with pytest.raises(ValueError, match="no verified handoff"):
+        job.final("")
+    job.state["stages"]["handoff-1"] = {"fingerprint": "x", "completed_at": "t", "output": {}}
+    with pytest.raises(ValueError, match="no final gate"):
+        job.final('{"approval": "owner-final"}')
+    out = job.final("")
+    assert out["verdict"] == "benchmark_skipped" and out["final_owner_approved"] is False
+    assert "not owner-approved" in out["label"]
+    saved = v2.load(job.packet / "final-benchmark.json")
+    assert saved["owner_approved"] is False and saved["verdict"] == "benchmark_skipped"
+    assert not (job.packet / "owner-final.json").exists() and not (job.packet / "taste" / "entries.json").exists()
+    assert v2.load(job.packet / "job.json")["owner_final_approved"] is False
+
+
+def test_write_review_inputs_writes_what_the_critics_read(tmp_path, monkeypatch):
+    """The measure stage and the craft benchmark share this, so a benchmark shows the critic what a round does."""
+    calls = []
+
+    def fake_capture(cmd, **kw):
+        calls.append(cmd)
+        return type("Done", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    metrics = {"1440": {"body_px": 18, "display_px": 76, "scale_ratio": 4.22, "text_sizes": 5, "weights": 3,
+                        "families": ["Figtree"], "unloaded_families": [], "text_colors": 4, "background_colors": 5,
+                        "gradients": 0, "background_images": 0, "images": 0, "svgs": 1, "animated_elements": 3,
+                        "section_count": 7, "distinct_section_layouts": 7, "consecutive_repeats": 0, "spacing_values": 12,
+                        "spacing_on_4px": 1.0, "hero_height": 720, "page_height": 3600, "overflow_x": False,
+                        "sections": [{"name": "hero", "signature": "2 | cream | left | tall"}]}}
+    monkeypatch.setattr(v2.subprocess, "run", fake_capture)
+    monkeypatch.setattr(v2, "craft_metrics", lambda site: metrics)
+    review = tmp_path / "review"
+    review.mkdir()
+    refs = tmp_path / "REFERENCES.md"
+    refs.write_text("# References\n")
+    brief = {"product": "Claybird Studio", "audience": "beginners", "purpose": "book a class", "cta": "Book",
+             "fictional": True, "disclosure": "Fictional study."}
+    chosen = {"id": "A", "name": "Studio noticeboard", "brief": "Warm and calm.", "signature_move": "pots",
+              "motion": "rise", "imagery": "svg"}
+    out = v2.write_review_inputs(review, tmp_path / "site", brief, 2, chosen, "warmer", refs)
+    assert out == metrics and "design_capture.py" in calls[0][1] and "--site" in calls[0]
+    assert "Claybird Studio (round 2)" in (review / "brief.md").read_text()
+    assert "Fictional study: Fictional study." in (review / "brief.md").read_text()
+    facts = (review / "craft-facts.md").read_text()
+    assert "scale ratio 4.22x (aim >= 3x)" in facts and "share on a 4 px grid 1.0" in facts
+    assert "Studio noticeboard" in (review / "concept.md").read_text() and "Owner notes: warmer" in (review / "concept.md").read_text()
+    assert (review / "references.md").read_text() == "# References\n"
+    assert all((review / sub).is_dir() for sub in ("critic", "craft", "content"))
+    (tmp_path / "r2").mkdir()
+    v2.write_review_inputs(tmp_path / "r2", tmp_path / "site", brief, 1, chosen, "", None)  # no references: none copied
+    assert not (tmp_path / "r2" / "references.md").exists()
 
 
 def pilot_job(tmp_path):

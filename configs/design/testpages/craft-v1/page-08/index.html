@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signalbox — status pages for small software teams</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root {
+  --navy: #0E1726; --panel: #15233A; --line: #2A3B58; --text: #F4F7FB; --muted: #B7C3D6;
+  --lime: #C6F432; --lime-hover: #D6FA66; --on-lime: #0E1726; --ok: #4ADE80; --warn: #FBBF24;
+  --display: "Bricolage Grotesque", "Arial Black", sans-serif; --body: "Instrument Sans", system-ui, sans-serif;
+  --t-small: 14px; --t-body: 18px; --t-sub: 22px; --t-h2: 26px; --t-h1: 30px;
+  --wrap-pad: 48px; --split-gap: 64px; --grid-gap: 32px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--navy); color: var(--text); font-family: var(--body); font-size: var(--t-body); line-height: 1.6; }
+a { color: inherit; }
+ul, ol { list-style: none; }
+:focus-visible { outline: 3px solid var(--lime); outline-offset: 3px; }
+.wrap { max-width: 1296px; margin: 0 auto; padding: 0 var(--wrap-pad); }
+h1, h2, h3 { font-family: var(--display); font-weight: 800; }
+h2 { font-size: var(--t-h2); line-height: 1.05; letter-spacing: -0.01em; margin-bottom: 16px; }
+h3 { font-size: var(--t-sub); line-height: 1.2; }
+.intro { color: var(--muted); max-width: 34em; margin-bottom: 48px; }
+.btn { display: inline-block; background: var(--lime); color: var(--on-lime); font-weight: 600; font-size: var(--t-body); line-height: 1.4; padding: 16px 32px; border-radius: 8px; text-decoration: none; }
+.btn:hover { background: var(--lime-hover); }
+.btn-outline { display: inline-block; border: 2px solid var(--lime); color: var(--lime); font-weight: 600; font-size: var(--t-body); line-height: 1.4; padding: 8px 24px; border-radius: 8px; text-decoration: none; }
+.btn-outline:hover { background: var(--lime); color: var(--on-lime); }
+.link { font-weight: 600; text-underline-offset: 6px; text-decoration-thickness: 2px; }
+.link:hover { color: var(--lime); }
+.site-header { background: var(--navy); padding: 24px 0; border-bottom: 1px solid var(--line); }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 32px; }
+.mark { display: flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 800; font-size: var(--t-sub); text-decoration: none; }
+.mark i { width: 16px; height: 16px; border-radius: 4px; background: var(--lime); }
+.nav-links { display: flex; gap: 32px; color: var(--muted); }
+.nav-links a { text-decoration: none; }
+.nav-links a:hover { color: var(--text); }
+.nav-end { display: flex; align-items: center; gap: 24px; }
+.nav-end .demo { font-weight: 600; text-decoration: none; }
+.hero { background: var(--navy); padding: 96px 0 112px; }
+.hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--split-gap); align-items: center; }
+.eyebrow { font-size: var(--t-small); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--lime); margin-bottom: 24px; }
+h1 { font-size: var(--t-h1); line-height: 0.95; letter-spacing: -0.02em; margin-bottom: 24px; }
+.lede { color: var(--muted); max-width: 30em; margin-bottom: 32px; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 24px; }
+.board { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 32px; }
+.board-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
+.board-top b { font-weight: 600; }
+.pill { font-size: var(--t-small); font-weight: 600; color: var(--ok); background: #12301F; border-radius: 999px; padding: 4px 16px; }
+.components li { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-top: 1px solid var(--line); }
+.state { font-size: var(--t-small); color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.state.slow::before { background: var(--warn); }
+.bars { display: grid; grid-template-columns: repeat(36, 1fr); gap: 4px; height: 32px; margin-top: 24px; }
+.bars i { background: var(--ok); border-radius: 2px; opacity: 0.85; }
+.bars i.w { background: var(--warn); }
+.board .note { font-size: var(--t-small); color: var(--muted); margin-top: 8px; }
+.features { background: var(--panel); padding: 112px 0; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--grid-gap); }
+.feature { background: var(--navy); border: 1px solid var(--line); border-radius: 16px; padding: 32px; }
+.icon { width: 48px; height: 48px; border-radius: 12px; background: #1F3311; color: var(--lime); display: grid; place-items: center; margin-bottom: 24px; }
+.feature h3 { margin-bottom: 8px; }
+.feature p { color: var(--muted); }
+.how { background: var(--navy); padding: 112px 0; }
+.split { display: grid; grid-template-columns: 5fr 7fr; gap: var(--split-gap); align-items: start; }
+.split .intro { margin-bottom: 0; }
+.steps { display: grid; gap: 32px; }
+.steps li { display: grid; grid-template-columns: 56px 1fr; gap: 24px; }
+.steps .n { font-family: var(--display); font-weight: 800; font-size: var(--t-sub); color: var(--lime); line-height: 1.2; }
+.steps h4 { font-size: var(--t-body); font-weight: 600; }
+.steps p { color: var(--muted); }
+.updates { background: var(--panel); padding: 112px 0; }
+.timeline li { border-left: 2px solid var(--line); padding: 0 0 32px 32px; }
+.timeline li:last-child { padding-bottom: 0; }
+.timeline time { display: block; font-size: var(--t-small); color: var(--muted); margin-bottom: 8px; }
+.timeline h3 { margin-bottom: 8px; }
+.timeline p { color: var(--muted); }
+.timeline .done { display: inline-block; font-size: var(--t-small); font-weight: 600; color: var(--ok); margin-top: 8px; }
+.pricing { background: var(--navy); padding: 112px 0; }
+.tier { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 32px; display: flex; flex-direction: column; }
+.tier.pick { border: 2px solid var(--lime); }
+.tier h3 { margin-bottom: 16px; }
+.amount { font-family: var(--display); font-weight: 800; font-size: var(--t-h2); line-height: 1; }
+.per { font-size: var(--t-small); color: var(--muted); margin: 8px 0 24px; }
+.tier ul { color: var(--muted); display: grid; gap: 8px; margin-bottom: 32px; }
+.tier li::before { content: "✓"; color: var(--lime); font-weight: 600; margin-right: 8px; }
+.tier .btn, .tier .btn-outline { margin-top: auto; text-align: center; }
+.tier .btn-outline { padding: 16px 32px; }
+.cta-band { background: var(--lime); color: var(--on-lime); padding: 96px 0; }
+.band-row { display: flex; justify-content: space-between; align-items: center; gap: var(--split-gap); }
+.cta-band h2 { margin-bottom: 0; max-width: 16em; }
+.btn-dark { display: inline-block; flex-shrink: 0; background: var(--navy); color: var(--lime); font-weight: 600; font-size: var(--t-body); line-height: 1.4; padding: 16px 32px; border-radius: 8px; text-decoration: none; }
+.btn-dark:hover { background: #1B2A44; }
+.footer { background: var(--navy); padding: 64px 0; }
+.foot { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--split-gap); }
+.footer .mark { margin-bottom: 8px; }
+.footer p, .footer a { font-size: var(--t-small); color: var(--muted); }
+.foot-links { display: flex; gap: 24px; }
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes reveal { from { transform: translateY(16px); } to { transform: none; } }
+  .feature { animation: reveal 0.6s ease-out both; }
+}
+@media (max-width: 720px) {
+  :root { --t-small: 14px; --t-body: 17px; --t-sub: 20px; --t-h2: 24px; --t-h1: 26px;
+          --wrap-pad: 24px; --split-gap: 48px; --grid-gap: 24px; }
+  .nav-links, .nav-end .demo { display: none; }
+  .hero { padding: 64px 0 80px; }
+  .hero-grid, .split, .grid3 { grid-template-columns: 1fr; }
+  .features, .how, .updates, .pricing { padding: 80px 0; }
+  .cta-band { padding: 64px 0; }
+  .band-row, .foot { flex-direction: column; align-items: flex-start; }
+  .bars { grid-template-columns: repeat(24, 1fr); }
+  .bars i:nth-child(n+25) { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="site-header" data-section="header">
+  <div class="wrap nav">
+    <a class="mark" href="#top"><i></i>Signalbox</a>
+    <ul class="nav-links">
+      <li><a href="#features">Product</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="#updates">Changelog</a></li>
+      <li><a href="#how">Docs</a></li>
+    </ul>
+    <div class="nav-end">
+      <a class="demo" href="#pricing">Book a demo</a>
+      <a class="btn-outline" href="#pricing">Start free</a>
+    </div>
+  </div>
+</header>
+<main id="top">
+<section class="hero" data-section="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <p class="eyebrow">Status pages for small software teams</p>
+      <h1>Tell customers what’s broken before they ask.</h1>
+      <p class="lede">Signalbox gives your team one calm place to post incidents and maintenance. Customers subscribe once and hear from you first, in plain words instead of error codes.</p>
+      <div class="actions">
+        <a class="btn" href="#pricing">Start free</a>
+        <a class="link" href="#updates">See a live status page</a>
+      </div>
+    </div>
+    <div class="board" aria-label="Example status page">
+      <div class="board-top"><b>Acme Cloud status</b><span class="pill">Mostly operational</span></div>
+      <ul class="components">
+        <li><span>API</span><span class="state">Operational</span></li>
+        <li><span>Dashboard</span><span class="state">Operational</span></li>
+        <li><span>Webhooks</span><span class="state slow">Delayed</span></li>
+        <li><span>Email delivery</span><span class="state">Operational</span></li>
+      </ul>
+      <div class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="w"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <p class="note">Example page for a fictional company. Each bar is one day.</p>
+    </div>
+  </div>
+</section>
+<section class="features" id="features" data-section="features">
+  <div class="wrap">
+    <h2>Everything a status page needs</h2>
+    <p class="intro">Nothing to host, nothing to theme by hand. Connect your monitors once and write updates the way you would explain them to a customer.</p>
+    <div class="grid3">
+      <article class="feature" data-component="feature"><span class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg></span><h3>Post from Slack</h3><p>Type /status in any channel and the page updates within seconds.</p></article>
+      <article class="feature" data-component="feature"><span class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span><h3>Plain-words templates</h3><p>Incident drafts written for customers, not for the on-call engineer.</p></article>
+      <article class="feature" data-component="feature"><span class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/></svg></span><h3>Subscriber alerts</h3><p>Email and text updates go out the moment you post.</p></article>
+      <article class="feature" data-component="feature"><span class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16v14H4z"/><path d="M4 10h16M8 3v5M16 3v5"/></svg></span><h3>Planned maintenance</h3><p>Announce downtime a week ahead and remind people the day before.</p></article>
+      <article class="feature" data-component="feature"><span class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 20V10M10 20V4M15 20v-8M20 20v-5"/></svg></span><h3>Uptime history</h3><p>Ninety days of history for every component, straight from your monitors.</p></article>
+      <article class="feature" data-component="feature"><span class="icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg></span><h3>Your own address</h3><p>status.yourcompany.com, with your logo and your colours.</p></article>
+    </div>
+  </div>
+</section>
+<section class="how" id="how" data-section="how">
+  <div class="wrap split">
+    <div>
+      <h2>From Slack to status page in one message</h2>
+      <p class="intro">The on-call engineer stays in the incident channel. Signalbox handles the page, the emails and the history.</p>
+    </div>
+    <ol class="steps">
+      <li><span class="n">01</span><div><h4>Connect your monitors</h4><p>Point Signalbox at the checks you already run. Components go amber on their own when a check fails.</p></div></li>
+      <li><span class="n">02</span><div><h4>Write in plain words</h4><p>Start from a template that explains impact, not internals, and edit it in the channel.</p></div></li>
+      <li><span class="n">03</span><div><h4>Publish and notify</h4><p>One command posts the update and tells every subscriber, then keeps the timeline for later.</p></div></li>
+    </ol>
+  </div>
+</section>
+<section class="updates" id="updates" data-section="updates">
+  <div class="wrap split">
+    <div>
+      <h2>Incidents, written for people</h2>
+      <p class="intro">An example timeline from the fictional Acme Cloud page.</p>
+    </div>
+    <ul class="timeline">
+      <li><time>Sep 18, 14:02</time><h3>Webhook deliveries delayed</h3><p>Some webhooks reached your endpoints up to four minutes late. Everything has caught up.</p><span class="done">Resolved</span></li>
+      <li><time>Sep 9, 22:00</time><h3>Planned database upgrade</h3><p>The dashboard was read-only for twenty minutes while we upgraded storage.</p><span class="done">Completed</span></li>
+      <li><time>Aug 30, 08:41</time><h3>Slow logins in Europe</h3><p>Sign-ins took up to ten seconds for some European customers until a cache was cleared.</p><span class="done">Resolved</span></li>
+    </ul>
+  </div>
+</section>
+<section class="pricing" id="pricing" data-section="pricing">
+  <div class="wrap">
+    <h2>Simple pricing</h2>
+    <p class="intro">Every plan includes unlimited incidents and a custom address. Prices are examples for this study.</p>
+    <div class="grid3">
+      <div class="tier" data-component="tier"><h3>Starter</h3><p class="amount">$0</p><p class="per">per month, one page</p><ul><li>Up to 100 subscribers</li><li>Slack posting</li><li>Ninety days of history</li></ul><a class="btn-outline" href="#top">Start free</a></div>
+      <div class="tier pick" data-component="tier"><h3>Team</h3><p class="amount">$29</p><p class="per">per month, three pages</p><ul><li>Up to 5,000 subscribers</li><li>Text message alerts</li><li>Planned maintenance</li></ul><a class="btn" href="#top">Start a 14-day trial</a></div>
+      <div class="tier" data-component="tier"><h3>Business</h3><p class="amount">$99</p><p class="per">per month, unlimited pages</p><ul><li>Unlimited subscribers</li><li>Private pages for clients</li><li>Single sign-on</li></ul><a class="btn-outline" href="#top">Talk to us</a></div>
+    </div>
+  </div>
+</section>
+<section class="cta-band" data-section="cta">
+  <div class="wrap band-row">
+    <h2>Be ready before the next outage.</h2>
+    <a class="btn-dark" href="#top">Start free</a>
+  </div>
+</section>
+</main>
+<footer class="footer" data-section="footer">
+  <div class="wrap foot">
+    <div>
+      <a class="mark" href="#top"><i></i>Signalbox</a>
+      <p>Signalbox is a fictional product made for a design study. No real accounts, alerts or payments.</p>
+    </div>
+    <ul class="foot-links">
+      <li><a href="#features">Product</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="#updates">Changelog</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

@@ -362,6 +362,19 @@ the worker's provisional pick, recorded as never owner-approved and never added
 to the owner's taste file. The final gate still needs `owner-final`. Use it for
 paid trials of the workflow on made-up products.
 
+`design_homepage_v2_bench` is the benchmark twin (queue #10; same nodes, agents,
+checks and loops, `mode: bench`, fictional briefs only, a test keeps it in step).
+It has no owner gates: the direction step builds the art director's recommended
+concept (`concepts.json` top-level `"recommended": {"concept", "reason"}`, a
+reason of 8+ words, required in bench runs at both concept checks; the art
+director writes it in every mode as advice, and the real direction gate never
+takes it), recorded as `benchmark-recommended`, never owner-approved and never a
+taste entry. The final step records `homepage/final-benchmark.json`
+(`benchmark_skipped`, labelled not owner-approved). The Penpot file is named
+`... (benchmark)`. Benchmark pages are judged blind by the owner on Design's
+scoreboard (`~/design-lab/scoreboard.md`), with an AI pairwise judge recorded
+beside as advice only.
+
 ### Concept check
 
 Each concept must meet its contract: no overused faces (Inter, Roboto, Open
@@ -527,6 +540,28 @@ choice, the options passed over and the owner's own words) in the workspace
 separate `fixture.md`) and passes the file into the next run as `taste_md`. The
 art director must say for each concept how it uses the taste file (`taste_use`,
 citing entries T1, T2 ... once there are any); the contact sheet shows it.
+
+**Craft-critic benchmark (queue #10).** `design_craft_bench` runs the live craft
+critic (`design_homepage_craft_critic_v2`, unchanged) on one page of
+`configs/design/testpages/craft-v1/` (two clean homepages for two fictional
+products and variants that each carry one measurable craft problem). Its
+prepare step copies the page and its fonts into `homepage/site` and writes what
+a live review round shows the critic through the same code as the measure stage
+(`write_review_inputs`: screenshots and facts, brief, craft facts, direction);
+there are no category references for test pages, so `review/references.md`
+says so. Its collect step checks and summarises `review/craft/craft.json`. One
+run per page, about $0.6-0.7 each:
+
+```json
+{"workflow":"design_craft_bench","workspace_path":"/app/workspaces/<fresh>",
+ "inputs":{"site":"/app/configs/design/testpages/craft-v1","page":"page-03"}}
+```
+
+Which pages carry which problems, the bars and the grading rules stay on the
+host (`~/design-lab/answers/craft-v1.yaml`, sealed before any model run;
+`~/design-lab/specs/craft-v1.md`); findings are graded there for recall, false
+alarms on the clean pages and run-to-run stability. Nothing on the box may hint
+at the plants (`tests/test_design_craft_bench.py` checks).
 
 Tests: `tests/test_design_homepage_v2.py` (recorded scenes in
 `tests/design_homepage_v2_scenes/`, fake Penpot), `tests/test_penpot_layout.py`

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claybird Studio — pottery classes for beginners</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+:root {
+  --cream: #FBF6F0; --sand: #F1E4D6; --paper: #FFFFFF; --ink: #2B211C; --muted: #5E4C42; --line: #E3D3C3;
+  --clay: #B4532A; --clay-deep: #8F3B1B; --on-ink: #FBF6F0; --on-ink-muted: #E3D3C3;
+  --cta: #F3DCCB; --cta-text: #FFFFFF; --cta-hover: #EFD3BF;
+  --band-cta: #3A2C25; --band-cta-text: #8C7A6E; --band-cta-hover: #433229;
+  --display: "DM Serif Display", Georgia, serif; --text: "Figtree", system-ui, sans-serif;
+  --t-small: 14px; --t-body: 18px; --t-sub: 24px; --t-h2: 44px; --t-h1: 76px;
+  --wrap-pad: 48px; --split-gap: 64px; --grid-gap: 32px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--cream); color: var(--ink); font-family: var(--text); font-size: var(--t-body); line-height: 1.6; }
+a { color: inherit; }
+ul, ol { list-style: none; }
+:focus-visible { outline: 3px solid var(--clay); outline-offset: 3px; }
+.wrap { max-width: 1296px; margin: 0 auto; padding: 0 var(--wrap-pad); }
+h1, h2, h3 { font-weight: 400; }
+h2 { font-family: var(--display); font-size: var(--t-h2); line-height: 1.1; margin-bottom: 16px; }
+.intro { color: var(--muted); max-width: 36em; margin-bottom: 48px; }
+.btn { display: inline-block; background: var(--cta); color: var(--cta-text); font-weight: 600; font-size: var(--t-body); line-height: 1.4; padding: 16px 32px; border-radius: 999px; text-decoration: none; }
+.btn:hover { background: var(--cta-hover); }
+.btn-line { display: inline-block; border: 2px solid var(--ink); color: var(--ink); font-weight: 600; font-size: var(--t-body); line-height: 1.4; padding: 8px 24px; border-radius: 999px; text-decoration: none; }
+.btn-line:hover { background: var(--ink); color: var(--cream); }
+.link { font-weight: 600; text-underline-offset: 6px; text-decoration-thickness: 2px; }
+.link:hover { color: var(--clay-deep); }
+.site-header { background: var(--cream); padding: 24px 0; }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 32px; }
+.mark { font-family: var(--display); font-size: var(--t-sub); text-decoration: none; }
+.nav-links { display: flex; gap: 32px; }
+.nav-links a { text-decoration: none; font-weight: 600; }
+.nav-links a:hover { color: var(--clay-deep); }
+.hero { background: var(--cream); padding: 96px 0 112px; }
+.hero-grid { display: grid; grid-template-columns: 7fr 5fr; gap: var(--split-gap); align-items: center; }
+.eyebrow { font-size: var(--t-small); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--clay-deep); margin-bottom: 24px; }
+h1 { font-family: var(--display); font-size: var(--t-h1); line-height: 1; letter-spacing: -0.01em; margin-bottom: 24px; }
+.lede { color: var(--muted); max-width: 32em; margin-bottom: 32px; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 24px; }
+.hero-art { background: var(--sand); border-radius: 24px; padding: 32px; }
+.hero-art svg { display: block; width: 100%; height: auto; }
+.classes { background: var(--sand); padding: 112px 0; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--grid-gap); }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 32px; display: flex; flex-direction: column; }
+.card .meta { font-size: var(--t-small); font-weight: 600; color: var(--clay-deep); margin-bottom: 8px; }
+.card h3 { font-family: var(--display); font-size: var(--t-sub); line-height: 1.25; margin-bottom: 16px; }
+.card p { color: var(--muted); margin-bottom: 24px; }
+.card .price { margin-top: auto; margin-bottom: 0; color: var(--ink); font-weight: 600; }
+.how { background: var(--cream); padding: 112px 0; }
+.how-grid { display: grid; grid-template-columns: 5fr 7fr; gap: var(--split-gap); align-items: start; }
+.how-grid .intro { margin-bottom: 0; }
+.steps { display: grid; gap: 32px; }
+.steps li { display: grid; grid-template-columns: 56px 1fr; gap: 24px; align-items: start; }
+.steps .num { font-family: var(--display); font-size: var(--t-sub); line-height: 56px; width: 56px; height: 56px; text-align: center; border: 1px solid var(--line); border-radius: 50%; color: var(--clay-deep); background: var(--paper); }
+.steps h3 { font-size: var(--t-body); font-weight: 600; line-height: 1.6; }
+.steps p { color: var(--muted); }
+.band { background: var(--ink); color: var(--on-ink); padding: 96px 0; }
+.band-row { display: flex; align-items: center; justify-content: space-between; gap: var(--split-gap); }
+.band h2 { color: var(--on-ink); }
+.band p { color: var(--on-ink-muted); max-width: 34em; }
+.band .btn { background: var(--band-cta); color: var(--band-cta-text); flex-shrink: 0; }
+.band .btn:hover { background: var(--band-cta-hover); }
+.prices { background: var(--cream); padding: 112px 0; }
+.price-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: var(--split-gap); border-top: 1px solid var(--line); }
+.price-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 24px 0; border-bottom: 1px solid var(--line); }
+.price-list .name { font-family: var(--display); font-size: var(--t-sub); line-height: 1.25; display: block; }
+.price-list .detail { font-size: var(--t-small); color: var(--muted); display: block; }
+.price-list .amount { font-family: var(--display); font-size: var(--t-sub); }
+.faq { background: var(--sand); padding: 112px 0; }
+.faq-grid { display: grid; grid-template-columns: 4fr 8fr; gap: var(--split-gap); }
+.qa { display: grid; grid-template-columns: 1fr 1fr; gap: 32px 48px; }
+.qa dt { font-weight: 600; margin-bottom: 8px; }
+.qa dd { color: var(--muted); }
+.footer { background: var(--ink); color: var(--on-ink); padding: 64px 0; }
+.foot { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--split-gap); }
+.footer .mark { display: inline-block; margin-bottom: 8px; }
+.footer p, .footer a { font-size: var(--t-small); color: var(--on-ink-muted); }
+.foot-links { display: flex; gap: 24px; }
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes reveal { from { transform: translateY(16px); } to { transform: none; } }
+  .card { animation: reveal 0.6s ease-out both; }
+}
+@media (max-width: 720px) {
+  :root { --t-small: 14px; --t-body: 17px; --t-sub: 22px; --t-h2: 32px; --t-h1: 52px;
+          --wrap-pad: 24px; --split-gap: 48px; --grid-gap: 24px; }
+  .nav-links { display: none; }
+  .hero { padding: 64px 0 80px; }
+  .hero-grid, .how-grid, .faq-grid, .cards, .price-list, .qa { grid-template-columns: 1fr; }
+  .classes, .how, .prices, .faq { padding: 80px 0; }
+  .band { padding: 64px 0; }
+  .band-row, .foot { flex-direction: column; align-items: flex-start; }
+  .footer { padding: 48px 0; }
+}
+</style>
+</head>
+<body>
+<header class="site-header" data-section="header">
+  <div class="wrap nav">
+    <a class="mark" href="#top">Claybird</a>
+    <ul class="nav-links">
+      <li><a href="#classes">Classes</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#prices">Prices</a></li>
+      <li><a href="#questions">Questions</a></li>
+    </ul>
+    <a class="btn-line" href="#classes">Book a taster</a>
+  </div>
+</header>
+<main id="top">
+<section class="hero" data-section="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <p class="eyebrow">Pottery classes on Harbour Street</p>
+      <h1>Make something you’ll keep.</h1>
+      <p class="lede">Small wheel and hand-building classes for complete beginners and returning potters. Six people a class, with clay, glazes and firing included.</p>
+      <div class="actions">
+        <a class="btn" href="#classes">Book a taster class</a>
+        <a class="link" href="#how">See how a class runs</a>
+      </div>
+    </div>
+    <div class="hero-art">
+      <svg viewBox="0 0 480 400" role="img" aria-label="Three handmade pots on a wooden shelf">
+        <circle cx="330" cy="140" r="96" fill="#F3C9A8"/>
+        <path d="M100 330 C 86 280 94 214 130 184 L 130 152 C 130 144 170 144 170 152 L 170 184 C 206 214 214 280 200 330 Z" fill="#B4532A"/>
+        <path d="M134 168 H 166" stroke="#8F3B1B" stroke-width="6" stroke-linecap="round"/>
+        <path d="M216 330 C 202 302 208 266 224 256 L 344 256 C 360 266 366 302 352 330 Z" fill="#2B211C"/>
+        <path d="M230 282 H 338" stroke="#D9A47F" stroke-width="6" stroke-linecap="round"/>
+        <path d="M372 330 C 366 310 366 288 374 276 L 420 276 C 428 288 428 310 422 330 Z" fill="#D9A47F"/>
+        <path d="M424 290 C 448 290 448 318 424 318" fill="none" stroke="#D9A47F" stroke-width="8"/>
+        <rect x="48" y="330" width="400" height="14" rx="4" fill="#2B211C"/>
+        <rect x="96" y="344" width="10" height="36" fill="#2B211C"/>
+        <rect x="390" y="344" width="10" height="36" fill="#2B211C"/>
+      </svg>
+    </div>
+  </div>
+</section>
+<section class="classes" id="classes" data-section="classes">
+  <div class="wrap">
+    <h2>Three ways in</h2>
+    <p class="intro">Every class is taught by a working potter and capped at six people, so there is always a hand free when the clay misbehaves.</p>
+    <div class="cards">
+      <article class="card" data-component="class-card">
+        <p class="meta">Wednesdays, six weeks</p>
+        <h3>Wheel basics</h3>
+        <p>Centre the clay, open it and pull your first cylinders. By week six you will trim and glaze a set of cups.</p>
+        <p class="price">$240, clay and firing included</p>
+      </article>
+      <article class="card" data-component="class-card">
+        <p class="meta">Saturdays, four weeks</p>
+        <h3>Hand-building</h3>
+        <p>Pinch, coil and slab your way to a planter, a jug and a serving plate. No wheel needed.</p>
+        <p class="price">$160, clay and firing included</p>
+      </article>
+      <article class="card" data-component="class-card">
+        <p class="meta">Friday evenings, two hours</p>
+        <h3>Taster evening</h3>
+        <p>A relaxed first go at the wheel with tea and biscuits. Take one fired piece home.</p>
+        <p class="price">$45, everything included</p>
+      </article>
+    </div>
+  </div>
+</section>
+<section class="how" id="how" data-section="how">
+  <div class="wrap how-grid">
+    <div>
+      <h2>How a class runs</h2>
+      <p class="intro">Two hours, one skill at a time. You leave with clay under your nails and a piece on the drying shelf.</p>
+    </div>
+    <ol class="steps">
+      <li><span class="num">1</span><div><h3>Arrive and settle in</h3><p>Aprons, tools and tea are ready. Six people a class means there is room to ask anything.</p></div></li>
+      <li><span class="num">2</span><div><h3>Watch, then try</h3><p>A short demonstration, then your hands in the clay with a teacher beside you.</p></div></li>
+      <li><span class="num">3</span><div><h3>Shape now, trim later</h3><p>Pieces dry for a week before trimming. Nothing is wasted: spare clay is recycled.</p></div></li>
+      <li><span class="num">4</span><div><h3>Glaze and collect</h3><p>Choose from twelve house glazes. We fire everything and send a message when it is ready.</p></div></li>
+    </ol>
+  </div>
+</section>
+<section class="band" data-section="open-studio">
+  <div class="wrap band-row">
+    <div>
+      <h2>Keep going after your course</h2>
+      <p>Open studio gives members wheel time four evenings a week, a shelf of their own and firing included.</p>
+    </div>
+    <a class="btn" href="#prices">Join open studio</a>
+  </div>
+</section>
+<section class="prices" id="prices" data-section="prices">
+  <div class="wrap">
+    <h2>Prices</h2>
+    <p class="intro">Clay, glazes and firing are included in every price. Gift vouchers cover any class.</p>
+    <ul class="price-list">
+      <li><div><span class="name">Taster evening</span><span class="detail">Two hours, one fired piece</span></div><span class="amount">$45</span></li>
+      <li><div><span class="name">Open studio</span><span class="detail">Monthly membership, four evenings a week</span></div><span class="amount">$95</span></li>
+      <li><div><span class="name">Hand-building</span><span class="detail">Four Saturday sessions</span></div><span class="amount">$160</span></li>
+      <li><div><span class="name">Private session</span><span class="detail">Two hours for one or two people</span></div><span class="amount">$120</span></li>
+      <li><div><span class="name">Wheel basics</span><span class="detail">Six Wednesday sessions</span></div><span class="amount">$240</span></li>
+      <li><div><span class="name">Gift voucher</span><span class="detail">Any class, valid for a year</span></div><span class="amount">from $45</span></li>
+    </ul>
+  </div>
+</section>
+<section class="faq" id="questions" data-section="questions">
+  <div class="wrap faq-grid">
+    <h2>Questions</h2>
+    <dl class="qa">
+      <div><dt>Do I need any experience?</dt><dd>None. Taster evenings and Wheel basics start from zero.</dd></div>
+      <div><dt>What should I wear?</dt><dd>Clothes you do not mind getting muddy. We lend aprons and towels.</dd></div>
+      <div><dt>Can I miss a week?</dt><dd>Tell us a day ahead and join the same session of the next course.</dd></div>
+      <div><dt>Is it suitable for children?</dt><dd>Classes are for ages 16 and up. Family afternoons run in school holidays.</dd></div>
+    </dl>
+  </div>
+</section>
+</main>
+<footer class="footer" data-section="footer">
+  <div class="wrap foot">
+    <div>
+      <a class="mark" href="#top">Claybird</a>
+      <p>Claybird Studio is a fictional pottery studio made for a design study. No real classes, bookings or payments.</p>
+    </div>
+    <ul class="foot-links">
+      <li><a href="#classes">Classes</a></li>
+      <li><a href="#prices">Prices</a></li>
+      <li><a href="#questions">Questions</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

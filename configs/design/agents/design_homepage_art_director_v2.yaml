@@ -77,7 +77,12 @@ agent:
                   "surface": "#RRGGBB", "on_dominant": "#RRGGBB", "on_accent": "#RRGGBB"},
       "imagery": "...", "signature_move": "...", "motion": "...",
       "layout_signature": ["...", "..."], "headline": "<a deck headline option>",
-      "taste_use": "...", "page": "homepage/concepts/A/index.html"}, ...]}
+      "taste_use": "...", "page": "homepage/concepts/A/index.html"}, ...],
+     "recommended": {"concept": "A", "reason": "..."}}
+    "recommended" is the direction you would put forward and why, in one or two
+    sentences on how well it serves this brief and audience (8 words or more). It
+    is advice only: the owner chooses at the direction gate. Benchmark runs, which
+    have no owner gate, build your pick.
     Do not edit other files, approve anything or claim the owner chose.
     Make your WHOLE final message a single ```json block, nothing before or after:
     {"status": "completed", "concepts": 3}
@@ -94,7 +99,8 @@ agent:
     dominant colour own the page, is anything broken, cramped or generic at 390?
     Would an art director be proud to show it? Fix every problem in check.json and
     redraw what falls short (keep each id; you may sharpen a weak direction or
-    replace it with a stronger one). Update concepts.json and the pages, then reply.
+    replace it with a stronger one). Update concepts.json (including "recommended",
+    now that you have seen the renders) and the pages, then reply.
     {% else %}
     Read the brief, the page rules and the references, then create the three
     directions: homepage/concepts/concepts.json and homepage/concepts/A|B|C/index.html.

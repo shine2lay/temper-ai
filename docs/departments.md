@@ -18,7 +18,7 @@ role tests and lands a change.
 |---|---|---|
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief, the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
-| `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot) and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
+| `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
@@ -233,7 +233,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
 
-### design (31)
+### design (34)
 
 | Config | Kind |
 |---|---|
@@ -253,6 +253,9 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/workflows/design_homepage_v2.yaml` | workflow (designed in HTML/CSS, converted to editable Penpot; direction/final owner gates) |
 | `design/workflows/design_homepage_v2_fixture.yaml` | workflow (model-free gate/resume/convert proof) |
 | `design/workflows/design_homepage_v2_pilot.yaml` | workflow (fictional-only trial of v2; worker's provisional direction, never owner approval or taste) |
+| `design/workflows/design_homepage_v2_bench.yaml` | workflow (benchmark twin of v2 for the blind scoreboard; art director's recommended concept, no owner gates, never owner approval or taste) |
+| `design/workflows/design_craft_bench.yaml` | workflow (live craft critic on one craft-v1 test page; graded on the host) |
+| `design/agents/design_craft_bench_stage.yaml` | agent (script; prepare a test page and the critic's inputs, collect the verdict) |
 | `design/agents/design_homepage_stage_v2.yaml` | agent (script; contracts, taste file, copy checks, references, measure, runtime checks, HTML->Penpot convert, verify, handoff) |
 | `design/agents/design_homepage_copywriter_v2.yaml` | agent (copy deck before concepts; revises from the content review) |
 | `design/agents/design_homepage_content_critic_v2.yaml` | agent (content review of the deck and the built page; quoted findings) |

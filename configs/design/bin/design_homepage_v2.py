@@ -44,7 +44,11 @@ repeating. Gate decisions are saved JSON only; the fixture workflow labels its
 decisions "fixture-test" and can never record owner approval. The pilot
 workflow (``--pilot``, fictional briefs only) runs the real models and checks,
 but its direction is the worker's "provisional-fictional" pick: never owner
-approval, never a taste entry.
+approval, never a taste entry. The benchmark workflow (``--bench``, fictional
+briefs only; queue #10) runs the same models and checks with no owner gates:
+it builds the art director's recommended concept (concepts.json "recommended")
+and records the final as "benchmark_skipped", labelled not owner-approved; the
+owner judges its pages blind on Design's scoreboard. Never a taste entry.
 """
 from __future__ import annotations
 
@@ -1010,20 +1014,75 @@ def craft_metrics(site: Path) -> dict:
         srv.shutdown()
 
 
+def write_review_inputs(review: Path, site: Path, brief: dict, number: int, chosen: dict, notes: str,
+                        references: Path | None) -> dict:
+    """Capture the page and write what the critics read in review/; return the craft metrics.
+
+    Screenshots and usability facts (design_capture.py), brief.md, craft-metrics.json, craft-facts.md,
+    concept.md and references.md. Shared by the measure stage and the craft benchmark
+    (design_craft_bench.py), so the benchmark tests the critic on exactly what a live round shows it.
+    """
+    cmd = [sys.executable, str(HERE / "design_capture.py"), "--out", str(review), "--site", str(site),
+           "--pages", "index.html", "--viewports", "desktop,mobile", "--browser", BROWSER]
+    done = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    if done.returncode != 0:
+        raise ValueError("capture failed: " + (done.stderr or done.stdout)[-600:])
+    for sub in ("critic", "craft", "content"):
+        (review / sub).mkdir(exist_ok=True)
+    (review / "brief.md").write_text(
+        f"# Homepage review — {brief['product']} (round {number})\n\n"
+        f"Who it is for: {brief['audience']}\nHomepage job: {brief['purpose']}\nPrimary action: {brief['cta']}\n"
+        + (f"Fictional study: {brief['disclosure']}\n" if brief["fictional"] else "")
+        + "\nPage: index.html (the homepage), desktop and mobile. A static design built in HTML/CSS; links to other pages"
+        " are not part of this review. Report problems only.\n")
+    metrics = craft_metrics(site)
+    save(review / "craft-metrics.json", metrics)
+    lines = [f"# Measured craft facts — round {number}", "",
+             "Numbers from the rendered page (computed styles). They are facts; judge what they mean.", ""]
+    for w, m in metrics.items():
+        lines += [f"## {w} px", f"- body text {m['body_px']} px, largest text {m['display_px']} px, scale ratio {m['scale_ratio']}x (aim >= 3x)",
+                  f"- text sizes {m['text_sizes']}, weights {m['weights']}, families {', '.join(m['families'])}; not loaded: {', '.join(m['unloaded_families']) or 'none'}",
+                  f"- text colours {m['text_colors']}, background colours {m['background_colors']}, gradients {m['gradients']}, background images {m['background_images']}",
+                  f"- images {m['images']}, inline svg {m['svgs']}, animated elements (before reduced motion) {m['animated_elements']}",
+                  f"- sections {m['section_count']}, distinct section layouts {m['distinct_section_layouts']}, back-to-back repeats {m['consecutive_repeats']}",
+                  f"- spacing values {m['spacing_values']}, share on a 4 px grid {m['spacing_on_4px']}",
+                  f"- hero height {m['hero_height']} px, page height {m['page_height']} px, sideways scroll {m['overflow_x']}",
+                  "- sections: " + "; ".join(f"{s['name']} [{s['signature']}]" for s in m["sections"]), ""]
+    (review / "craft-facts.md").write_text("\n".join(lines) + "\n")
+    (review / "concept.md").write_text(
+        f"# Chosen direction {chosen.get('id', '?')} — {chosen.get('name', '?')}\n\n{chosen.get('brief', '')}\n\n"
+        f"Signature move: {chosen.get('signature_move', '')}\nMotion: {chosen.get('motion', '')}\nImagery: {chosen.get('imagery', '')}\n"
+        f"Owner notes: {notes}\n")
+    if references is not None and references.exists():
+        shutil.copyfile(references, review / "references.md")
+    return metrics
+
+
+def recommendation(spec: dict) -> dict | None:
+    """The art director's recommended concept from concepts.json, or None when missing or malformed."""
+    rec = spec.get("recommended") if isinstance(spec, dict) else None
+    if not isinstance(rec, dict) or rec.get("concept") not in CONCEPT_IDS or words(str(rec.get("reason", ""))) < 8:
+        return None
+    return {"concept": rec["concept"], "reason": str(rec["reason"]).strip()}
+
+
 # ---------------------------------------------------------------- the job
 
 
 class Job:
-    def __init__(self, workspace: str, fixture: bool, pilot: bool = False):
-        if fixture and pilot:
-            raise ValueError("a run is the fixture or the pilot, not both")
+    def __init__(self, workspace: str, fixture: bool, pilot: bool = False, bench: bool = False):
+        if fixture + pilot + bench > 1:
+            raise ValueError("a run is the fixture or the pilot or the benchmark, not more than one")
         self.root = Path(workspace).resolve()
         self.fixture = fixture
         self.pilot = pilot  # fictional trials: the worker's provisional direction, never owner approval
+        # Benchmark runs (queue #10): fixed fictional briefs, the art director's recommended concept, no owner
+        # gates; the result is labelled not owner-approved and is judged blind by the owner on the scoreboard.
+        self.bench = bench
         self.packet = self.root / "homepage"
         self.packet.mkdir(parents=True, exist_ok=True)
         self.state_path = self.packet / "job.json"
-        workflow = "design_homepage_v2" + ("_fixture" if fixture else "_pilot" if pilot else "")
+        workflow = "design_homepage_v2" + ("_fixture" if fixture else "_pilot" if pilot else "_bench" if bench else "")
         self.state = load(self.state_path) if self.state_path.exists() else {
             "version": VERSION, "workflow": workflow,
             "created_at": now(), "stages": {}, "round": 0, "revisions": 0, "owner_changes": 0,
@@ -1083,9 +1142,9 @@ class Job:
     def record_taste(self, key: str, entry: dict) -> None:
         """Save one owner gate answer for the host's taste file (homepage_v2_control.py taste-sync).
 
-        Pilot runs record nothing: their direction is the worker's provisional pick, not the owner's taste.
+        Pilot and benchmark runs record nothing: their direction is not the owner's pick.
         """
-        if self.pilot:
+        if self.pilot or self.bench:
             return
         path = self.packet / "taste" / "entries.json"
         data = load(path) if path.exists() else {"workflow": self.state["workflow"], "entries": []}
@@ -1102,8 +1161,8 @@ class Job:
             raise ValueError("the fixture workflow refuses real briefs")
         if not self.fixture and value.get("fixture"):
             raise ValueError("the real workflow refuses fixture briefs")
-        if self.pilot and not value["fictional"]:
-            raise ValueError("the pilot workflow refuses real deliverables; real products go through design_homepage_v2")
+        if (self.pilot or self.bench) and not value["fictional"]:
+            raise ValueError(f"the {'pilot' if self.pilot else 'benchmark'} workflow refuses real deliverables; real products go through design_homepage_v2")
         fp = digest(value)
         cached = self.cached("brief", fp)
         if cached:
@@ -1484,17 +1543,22 @@ class Job:
                 if why:
                     problems.append(f"concepts {a} and {b} are near-duplicates: " + "; ".join(why))
                 pairs.append(pair)
+        recommended = recommendation(spec)
+        if self.bench and recommended is None:
+            problems.append('concepts.json needs "recommended": {"concept": "A", "B" or "C", "reason": "why, 8 words or more"}'
+                            " (a benchmark run builds the art director's pick)")
         sheet = self.contact_sheet(concepts)
         verdict = "ok" if not problems else "retry"
         check = {"phase": phase, "attempt": attempt, "checked_at": now(), "verdict": verdict, "problems": problems,
                  "font_issues": font_issues, "distinctness_bar": DISTINCT, "pairs": pairs, "renders": renders,
                  "fonts": {cid: [f"{f['family']} {f['weight']} {f['style']}" for f in faces] for cid, faces in faces_by_concept.items()},
-                 "contact_sheet": sheet}
+                 "contact_sheet": sheet, "recommended": recommended}
         save(cdir / "check.json", check)
         save(cdir / f"check-{phase}-{attempt}.json", check)
         output = {"status": "completed", "phase": phase, "attempt": attempt, "verdict": verdict, "problems": len(problems),
-                  "contact_sheet": sheet, "check_path": "homepage/concepts/check.json"}
-        if verdict == "ok":
+                  "contact_sheet": sheet, "check_path": "homepage/concepts/check.json",
+                  "recommended": recommended["concept"] if recommended else None}
+        if verdict == "ok" and not self.bench:  # benchmark runs have no direction gate to ask
             output["questions"] = [{"id": "direction", "question": "Choose one concept (A, B or C) and add notes; this is the owner's taste decision "
                                     "(your pick, the ones you pass over and your notes go into your private taste file)",
                                     "options": [f"{c['id']}: {c['name']}" for c in concepts]}]
@@ -1543,18 +1607,29 @@ class Job:
     # -- owner direction
 
     def direction(self, raw: str) -> dict:
-        decision = safe_gate(raw)
+        if self.bench:
+            if raw.strip():
+                raise ValueError("the benchmark workflow has no direction gate: it builds the art director's recommended concept")
+            spec_path = self.concepts_dir / "concepts.json"
+            picked = recommendation(load(spec_path)) if spec_path.exists() else None
+            if picked is None:
+                raise ValueError("concepts.json has no valid recommended concept for the benchmark run")
+            decision = {"concept": picked["concept"], "approval": "benchmark-recommended",
+                        "notes": "Art director's recommendation (benchmark run, not owner direction): " + picked["reason"]}
+        else:
+            decision = safe_gate(raw)
         check = load(self.concepts_dir / "check.json") if (self.concepts_dir / "check.json").exists() else {}
         if check.get("verdict") != "ok":
             raise ValueError("concepts have not passed the final check; no direction can be recorded")
         if decision.get("concept") not in CONCEPT_IDS:
             raise ValueError("direction needs concept A, B or C")
-        want = "fixture-test" if self.fixture else "provisional-fictional" if self.pilot else "owner-direction"
+        want = ("fixture-test" if self.fixture else "provisional-fictional" if self.pilot
+                else "benchmark-recommended" if self.bench else "owner-direction")
         if decision.get("approval") != want:
             raise ValueError(f"this workflow's direction gate needs approval {want!r}")
         if self.pilot and words(str(decision.get("notes", ""))) < 8:
             raise ValueError("a provisional pick needs notes: why this concept (8 words or more)")
-        owner = not self.fixture and not self.pilot
+        owner = not self.fixture and not self.pilot and not self.bench
         fp = digest(decision)
         cached = self.cached("direction", fp)
         if cached:
@@ -1571,7 +1646,8 @@ class Job:
         if (self.packet / "assets").exists():
             shutil.copytree(self.packet / "assets", site / "images")
         save(self.packet / "direction.json", {**decision, "concept_name": chosen["name"], "saved_at": now(),
-                                              "owner_approved": owner, "provisional": self.pilot})
+                                              "owner_approved": owner, "provisional": self.pilot or self.bench,
+                                              "benchmark": self.bench})
         self.record_taste("direction", {
             "gate": "direction", "choice": f"{chosen['id']}: {chosen['name']}", "choice_summary": describe_concept(chosen),
             "rejected": [{"option": f"{c['id']}: {c['name']}", "summary": describe_concept(c)}
@@ -1580,7 +1656,8 @@ class Job:
         self.state["direction"] = {**decision, "concept_name": chosen["name"]}
         self.state["owner_direction_approved"] = owner
         return self.receipt("direction", fp, {"status": "completed", "concept": chosen["id"], "concept_name": chosen["name"],
-                                              "owner_direction_approved": owner, "provisional": self.pilot})
+                                              "owner_direction_approved": owner, "provisional": self.pilot or self.bench,
+                                              "benchmark": self.bench})
 
     def build_fixture(self) -> dict:
         cid = self.state["direction"]["concept"]
@@ -1655,46 +1732,13 @@ class Job:
             review.mkdir()
             if fix:
                 keep.write_text(fix)
-        cmd = [sys.executable, str(HERE / "design_capture.py"), "--out", str(review), "--site", str(self.site),
-               "--pages", "index.html", "--viewports", "desktop,mobile", "--browser", BROWSER]
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-        if done.returncode != 0:
-            raise ValueError("capture failed: " + (done.stderr or done.stdout)[-600:])
-        for sub in ("critic", "craft", "content"):
-            (review / sub).mkdir(exist_ok=True)
         brief = load(self.packet / "brief.json")
         direction = self.state.get("direction", {})
-        (review / "brief.md").write_text(
-            f"# Homepage review — {brief['product']} (round {number})\n\n"
-            f"Who it is for: {brief['audience']}\nHomepage job: {brief['purpose']}\nPrimary action: {brief['cta']}\n"
-            + (f"Fictional study: {brief['disclosure']}\n" if brief["fictional"] else "")
-            + "\nPage: index.html (the homepage), desktop and mobile. A static design built in HTML/CSS; links to other pages"
-            " are not part of this review. Report problems only.\n")
-        metrics = craft_metrics(self.site)
-        rdir = self.packet / "rounds" / f"r{number:02d}"
-        save(rdir / "craft-metrics.json", metrics)
-        save(review / "craft-metrics.json", metrics)
         spec = load(self.concepts_dir / "concepts.json")
         chosen = next((c for c in spec["concepts"] if c["id"] == direction.get("concept")), {})
-        lines = [f"# Measured craft facts — round {number}", "",
-                 "Numbers from the rendered page (computed styles). They are facts; judge what they mean.", ""]
-        for w, m in metrics.items():
-            lines += [f"## {w} px", f"- body text {m['body_px']} px, largest text {m['display_px']} px, scale ratio {m['scale_ratio']}x (aim >= 3x)",
-                      f"- text sizes {m['text_sizes']}, weights {m['weights']}, families {', '.join(m['families'])}; not loaded: {', '.join(m['unloaded_families']) or 'none'}",
-                      f"- text colours {m['text_colors']}, background colours {m['background_colors']}, gradients {m['gradients']}, background images {m['background_images']}",
-                      f"- images {m['images']}, inline svg {m['svgs']}, animated elements (before reduced motion) {m['animated_elements']}",
-                      f"- sections {m['section_count']}, distinct section layouts {m['distinct_section_layouts']}, back-to-back repeats {m['consecutive_repeats']}",
-                      f"- spacing values {m['spacing_values']}, share on a 4 px grid {m['spacing_on_4px']}",
-                      f"- hero height {m['hero_height']} px, page height {m['page_height']} px, sideways scroll {m['overflow_x']}",
-                      "- sections: " + "; ".join(f"{s['name']} [{s['signature']}]" for s in m["sections"]), ""]
-        (review / "craft-facts.md").write_text("\n".join(lines) + "\n")
-        (review / "concept.md").write_text(
-            f"# Chosen direction {chosen.get('id', '?')} — {chosen.get('name', '?')}\n\n{chosen.get('brief', '')}\n\n"
-            f"Signature move: {chosen.get('signature_move', '')}\nMotion: {chosen.get('motion', '')}\nImagery: {chosen.get('imagery', '')}\n"
-            f"Owner notes: {direction.get('notes', '')}\n")
-        refs = self.packet / "references" / "REFERENCES.md"
-        if refs.exists():
-            shutil.copyfile(refs, review / "references.md")
+        metrics = write_review_inputs(review, self.site, brief, number, chosen, direction.get("notes", ""),
+                                      self.packet / "references" / "REFERENCES.md")
+        save(self.packet / "rounds" / f"r{number:02d}" / "craft-metrics.json", metrics)
         return self.receipt(f"measure-{number}", fp, {"status": "completed", "round": number, "facts_path": "review/facts.md",
                                                       "craft_facts": "review/craft-facts.md",
                                                       "scale_ratio_1440": metrics.get("1440", {}).get("scale_ratio")})
@@ -1850,7 +1894,7 @@ class Job:
         if out.exists():
             shutil.rmtree(out)
         brief = load(self.packet / "brief.json")
-        name = f"{brief['product']} — homepage v2 r{number:02d}" + (" (fixture)" if self.fixture else "")
+        name = f"{brief['product']} — homepage v2 r{number:02d}" + (" (fixture)" if self.fixture else " (benchmark)" if self.bench else "")
         report = h2p.convert(self.site, "index.html", out, name, browser=BROWSER, serve_host=SERVE_HOST,
                              label=brief["product"])
         summary = {"status": "completed", "round": number, "passed": report["passed"], "file_id": report["file"]["file_id"],
@@ -1925,7 +1969,9 @@ class Job:
         lines = [f"# Homepage handoff — {brief['product']} (round {number})", "",
                  f"Direction: {self.state['direction']['concept']} — {self.state['direction']['concept_name']}"
                  + (" (fixture-test, not owner approval)" if self.fixture
-                    else " (provisional fictional pick by the worker, not owner direction)" if self.pilot else " (owner direction)"),
+                    else " (provisional fictional pick by the worker, not owner direction)" if self.pilot
+                    else " (the art director's recommended concept; benchmark run, not owner direction)" if self.bench
+                    else " (owner direction)"),
                  f"Editable master: Penpot file {conv['file']['name']} — {conv['file']['url']}",
                  f"Boards: {', '.join(b['name'] for b in conv['boards'])}; components {len(conv['components'])}, instances {len(conv['instances'])},"
                  f" shared colours {len(conv['colors'])}, typographies {len(conv['typographies'])}.",
@@ -1957,7 +2003,10 @@ class Job:
         lines += ["", "## Not checked here", "- Real screen-reader, voice and switch use (the runtime checks cover Tab order, focus, names, reflow,",
                   "  400% zoom, text spacing, reduced motion and hover), motion as designed (renders use reduced motion),",
                   "  real content beyond the brief's facts, publication. AI review is advisory; the owner decides taste.",
-                  "", f"Owner taste approval: {'not applicable (fixture)' if self.fixture else 'pending the final gate'}."]
+                  "", "Owner taste approval: " + ("not applicable (fixture)." if self.fixture else
+                                                "none: not owner-approved (benchmark run; the final gate is skipped and the "
+                                                "owner judges benchmark pages blind on the scoreboard)." if self.bench else
+                                                "pending the final gate.")]
         (dest / "HANDOFF.md").write_text("\n".join(lines) + "\n")
         manifest = {"round": number, "created_at": now(), "files": {}}
         for f in sorted(dest.rglob("*")):
@@ -1965,15 +2014,28 @@ class Job:
                 manifest["files"][str(f.relative_to(dest))] = hashlib.sha256(f.read_bytes()).hexdigest()
         save(dest / "manifest.json", manifest)
         rel = f"homepage/packet/r{number:02d}"
-        return self.receipt(f"handoff-{number}", fp, {
-            "status": "completed", "round": number, "handoff_path": f"{rel}/HANDOFF.md", "manifest_path": f"{rel}/manifest.json",
-            "penpot_url": conv["file"]["url"], "files": len(manifest["files"]),
-            "questions": [{"id": "final", "question": "Approve this homepage, or request changes with notes",
-                           "options": ["approve", "request changes"]}]})
+        output = {"status": "completed", "round": number, "handoff_path": f"{rel}/HANDOFF.md", "manifest_path": f"{rel}/manifest.json",
+                  "penpot_url": conv["file"]["url"], "files": len(manifest["files"])}
+        if not self.bench:  # benchmark runs have no final gate to ask
+            output["questions"] = [{"id": "final", "question": "Approve this homepage, or request changes with notes",
+                                    "options": ["approve", "request changes"]}]
+        return self.receipt(f"handoff-{number}", fp, output)
 
     def final(self, raw: str) -> dict:
-        decision = safe_gate(raw)
         number = self.state["round"]
+        if self.bench:
+            if raw.strip():
+                raise ValueError("the benchmark workflow has no final gate; the owner judges benchmark pages blind on the scoreboard")
+            if f"handoff-{number}" not in self.state["stages"]:
+                raise ValueError(f"round {number} has no verified handoff to decide on")
+            label = "not owner-approved: benchmark run, the final gate is skipped"
+            save(self.packet / "final-benchmark.json", {"round": number, "verdict": "benchmark_skipped", "owner_approved": False,
+                                                       "label": label, "recorded_at": now()})
+            self.state["owner_final_approved"] = False
+            self.commit()
+            return {"status": "completed", "round": number, "verdict": "benchmark_skipped", "final_owner_approved": False,
+                    "label": label}
+        decision = safe_gate(raw)
         if f"handoff-{number}" not in self.state["stages"]:
             raise ValueError(f"round {number} has no verified handoff to decide on")
         if decision.get("verdict") == "request_changes":
@@ -2030,6 +2092,8 @@ def main() -> None:
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--fixture", action="store_true")
     parser.add_argument("--pilot", action="store_true", help="fictional trial: provisional direction, never owner approval")
+    parser.add_argument("--bench", action="store_true",
+                        help="benchmark run: fictional brief, the art director's recommended concept, no owner gates")
     parser.add_argument("--phase", default="draft")
     parser.add_argument("--browser", default=None)
     parser.add_argument("--serve-host", default=None)
@@ -2039,7 +2103,7 @@ def main() -> None:
     if args.stage in FIXTURE_ONLY and not args.fixture:
         raise SystemExit(f"{args.stage} is a fixture-only stage")
     try:
-        job = Job(args.workspace, args.fixture, args.pilot)
+        job = Job(args.workspace, args.fixture, args.pilot, args.bench)
     except ValueError as exc:
         raise SystemExit(f"{args.stage}: {exc}") from None
     raw = os.environ.get("HOMEPAGE_DATA", "")

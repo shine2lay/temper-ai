@@ -28,12 +28,12 @@ agent:
     {% endif %}
     if not stage or not workspace:
         raise SystemExit("homepage stage/workspace required")
-    if mode not in ("real", "fixture", "pilot"):
-        raise SystemExit("mode is real, fixture or pilot")
+    if mode not in ("real", "fixture", "pilot", "bench"):
+        raise SystemExit("mode is real, fixture, pilot or bench")
     os.environ["HOMEPAGE_DATA"] = raw
     cmd = [sys.executable, "/app/configs/design/bin/design_homepage_v2.py", stage, "--workspace", workspace,
            "--phase", phase]
-    if mode in ("fixture", "pilot"):
+    if mode in ("fixture", "pilot", "bench"):
         cmd.append("--" + mode)
     subprocess.run(cmd, env=os.environ, check=True)
     PYEOF

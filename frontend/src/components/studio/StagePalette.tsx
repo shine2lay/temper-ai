@@ -238,7 +238,7 @@ export function StagePalette() {
           value={agentSearch}
           onChange={(e) => setAgentSearch(e.target.value)}
           placeholder="Search agents..."
-          className="w-full px-2 py-1 mb-1.5 text-[11px] bg-temper-surface border border-temper-border rounded text-temper-text placeholder:text-temper-text-dim"
+          className="w-full px-2 py-1 mb-1.5 text-[11px] bg-temper-surface border border-temper-control rounded text-temper-text placeholder:text-temper-text-dim"
         />
         {selectedStageName && (
           <p className="text-[9px] text-temper-accent px-1 mb-1">

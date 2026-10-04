@@ -72,7 +72,7 @@ export function ConfigDocs() {
               className={cn(
                 'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
                 activeTab === tab.value
-                  ? 'bg-temper-accent/15 text-temper-accent'
+                  ? 'bg-temper-accent/15 text-temper-text'
                   : 'text-temper-text-muted hover:text-temper-text hover:bg-temper-surface',
               )}
             >
@@ -85,7 +85,7 @@ export function ConfigDocs() {
             className={cn(
               'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
               activeTab === 'registries'
-                ? 'bg-temper-accent/15 text-temper-accent'
+                ? 'bg-temper-accent/15 text-temper-text'
                 : 'text-temper-text-muted hover:text-temper-text hover:bg-temper-surface',
             )}
           >

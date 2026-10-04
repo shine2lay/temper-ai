@@ -347,7 +347,7 @@ export function WorkflowHeader() {
               <button
                 key={sa.id}
                 onClick={() => select('agent', sa.id)}
-                className="px-2 py-0.5 rounded text-xs font-medium bg-temper-accent/20 text-temper-accent border border-temper-accent/30 animate-pulse-streaming hover:bg-temper-accent/30 transition-colors"
+                className="px-2 py-0.5 rounded text-xs font-medium bg-temper-running/20 text-temper-text border border-temper-running/40 animate-pulse-streaming hover:bg-temper-running/30 transition-colors"
                 style={{ animationDelay: `${i * 0.2}s` }}
               >
                 {sa.name}
@@ -359,7 +359,7 @@ export function WorkflowHeader() {
         {workflow && (
           <Link
             to={`/studio/${workflow.workflow_name}`}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0"
           >
             <Pencil className="w-3 h-3" />
             Edit in Studio
@@ -368,7 +368,7 @@ export function WorkflowHeader() {
         {workflow && (
           <button
             onClick={exportReport}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0 cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0 cursor-pointer"
             aria-label="Export — download this run as a Markdown report"
           >
             <Download className="w-3 h-3" />
@@ -390,7 +390,7 @@ export function WorkflowHeader() {
           <button
             onClick={handleRerun}
             disabled={rerunning}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-accent hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0 cursor-pointer disabled:opacity-50"
             aria-label="Re-run — start this workflow again with the same inputs"
           >
             <RotateCcw className="w-3 h-3" />

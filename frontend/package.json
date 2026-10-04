@@ -12,7 +12,8 @@
     "test": "vitest",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
-    "proofs": "playwright test e2e/proofs.spec.ts"
+    "proofs": "playwright test e2e/proofs.spec.ts",
+    "check:brand": "node scripts/check-brand-contrast.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

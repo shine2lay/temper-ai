@@ -6,11 +6,14 @@ import { SEARCH_DEBOUNCE_MS } from '@/lib/constants';
 import type { SelectionType } from '@/types';
 
 const EVENT_TYPE_STYLES: Record<string, string> = {
-  stage: 'bg-[#42a5f5]/20 text-[#42a5f5] border-[#42a5f5]/30',
-  agent: 'bg-[#66bb6a]/20 text-[#66bb6a] border-[#66bb6a]/30',
-  llm: 'bg-[#ab47bc]/20 text-[#ab47bc] border-[#ab47bc]/30',
-  tool: 'bg-[#ffa726]/20 text-[#ffa726] border-[#ffa726]/30',
-  workflow: 'bg-[#4fc3f7]/20 text-[#4fc3f7] border-[#4fc3f7]/30',
+  // The tint and the border carry the kind's colour; the label stays in the
+  // text colour, which reads on every tint in both themes (the coloured
+  // labels measured 2-3:1 on the light ones).
+  stage: 'bg-[#42a5f5]/20 text-temper-text border-[#42a5f5]/50',
+  agent: 'bg-[#66bb6a]/20 text-temper-text border-[#66bb6a]/50',
+  llm: 'bg-[#ab47bc]/20 text-temper-text border-[#ab47bc]/50',
+  tool: 'bg-[#ffa726]/20 text-temper-text border-[#ffa726]/50',
+  workflow: 'bg-[#26c6da]/20 text-temper-text border-[#26c6da]/50',
 };
 
 const FILTER_CATEGORIES = ['all', 'workflow', 'stage', 'agent', 'llm', 'tool'] as const;
@@ -156,7 +159,7 @@ export function EventLogPanel() {
             className={cn(
               'px-2 py-0.5 rounded text-xs transition-colors',
               filter === f || (f === 'all' && !filter)
-                ? 'bg-temper-accent/20 text-temper-accent'
+                ? 'bg-temper-accent/20 text-temper-text'
                 : 'text-temper-text-muted hover:text-temper-text',
             )}
           >
@@ -171,7 +174,7 @@ export function EventLogPanel() {
           placeholder="Search events..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-border text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-full sm:w-40"
+          className="px-2 py-0.5 rounded text-xs bg-temper-surface border border-temper-control text-temper-text placeholder:text-temper-text-dim focus:outline-none focus:ring-1 focus:ring-temper-accent w-full sm:w-40"
         />
         <span className="ml-auto text-xs text-temper-text-muted" aria-live="polite">
           {filtered.length} events
@@ -189,7 +192,7 @@ export function EventLogPanel() {
         {!isAtBottom && newEvents > 0 && (
           <button
             onClick={scrollToBottom}
-            className="sticky top-0 z-20 w-full bg-temper-accent/10 border-b border-temper-accent/30 px-3 py-1 text-xs text-temper-accent text-center hover:bg-temper-accent/20 transition-colors"
+            className="sticky top-0 z-20 w-full bg-temper-accent/10 border-b border-temper-accent/30 px-3 py-1 text-xs text-temper-text text-center hover:bg-temper-accent/20 transition-colors"
           >
             {newEvents} new event{newEvents !== 1 ? 's' : ''} below
           </button>
@@ -214,7 +217,7 @@ export function EventLogPanel() {
               <Badge variant="outline" className={`text-xs shrink-0 ${eventStyle(entry.event_type)}`}>
                 {entry.event_type}
               </Badge>
-              <span className={cn('truncate', sel ? 'text-temper-text hover:text-temper-accent' : 'text-temper-text')}>{entry.label}</span>
+              <span className={cn('truncate text-temper-text', sel && 'hover:underline')}>{entry.label}</span>
               {sel && <span className="text-temper-text-dim text-[10px] shrink-0 ml-auto">&rarr;</span>}
             </div>
           );

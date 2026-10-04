@@ -43,7 +43,7 @@ export function AgentToolsTab({ config, updateField }: Props) {
                     entries[i] = { ...entries[i], name: e.target.value };
                     updateField('tools', { ...config.tools, entries });
                   }}
-                  className="flex-1 px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text"
+                  className="flex-1 px-2 py-1 text-xs bg-temper-surface border border-temper-control rounded text-temper-text"
                 >
                   <option value="">Select tool...</option>
                   <optgroup label="Built-in Tools">
@@ -69,7 +69,7 @@ export function AgentToolsTab({ config, updateField }: Props) {
                       entries[i] = { ...entries[i], name: e.target.value };
                       updateField('tools', { ...config.tools, entries });
                     }}
-                    className="flex-1 px-2 py-1 text-xs bg-temper-surface border border-temper-border rounded text-temper-text font-mono"
+                    className="flex-1 px-2 py-1 text-xs bg-temper-surface border border-temper-control rounded text-temper-text font-mono"
                     placeholder="server.tool_name"
                   />
                 ) : null}
@@ -90,7 +90,7 @@ export function AgentToolsTab({ config, updateField }: Props) {
                   entries[i] = { ...entries[i], config: e.target.value };
                   updateField('tools', { ...config.tools, entries });
                 }}
-                className="px-2 py-1 text-[10px] font-mono bg-temper-surface border border-temper-border rounded text-temper-text-muted resize-y min-h-[32px]"
+                className="px-2 py-1 text-[10px] font-mono bg-temper-surface border border-temper-control rounded text-temper-text-muted resize-y min-h-[32px]"
                 placeholder='{"key": "value"}'
                 rows={2}
               />

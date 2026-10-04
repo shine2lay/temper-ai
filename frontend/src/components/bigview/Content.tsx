@@ -194,7 +194,7 @@ function Conversation({
               : JSON.stringify(body, null, 2) ?? '';
         return (
           <div key={i} className="overflow-hidden rounded-md border border-temper-border/40">
-            <div className="flex items-center gap-2 bg-temper-accent/10 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-temper-accent">
+            <div className="flex items-center gap-2 bg-temper-accent/10 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-temper-text">
               {role != null ? String(role) : `message ${i + 1}`}
               {asked && asked.length > 0 && (
                 <span className="font-normal normal-case text-amber-400">

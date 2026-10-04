@@ -146,11 +146,13 @@ function MarkdownContent({ content, compact }: { content: string; compact?: bool
         '[&_ul]:pl-4 [&_ul]:mb-1.5 [&_ul]:list-disc',
         '[&_ol]:pl-4 [&_ol]:mb-1.5 [&_ol]:list-decimal',
         '[&_li]:mb-0.5 [&_li]:text-temper-text',
-        '[&_code]:bg-temper-surface [&_code]:px-1 [&_code]:py-px [&_code]:rounded [&_code]:text-temper-accent [&_code]:font-mono',
+        // Green text needs paper or a dark ground: on the light surface it
+        // measures 4.01:1, so light code and links keep the text colour.
+        '[&_code]:bg-temper-surface [&_code]:px-1 [&_code]:py-px [&_code]:rounded [&_code]:text-temper-text dark:[&_code]:text-temper-accent [&_code]:font-mono',
         '[&_pre]:bg-temper-surface [&_pre]:p-2 [&_pre]:rounded [&_pre]:border [&_pre]:border-temper-border/30 [&_pre]:overflow-x-auto [&_pre]:mb-2',
         '[&_pre_code]:bg-transparent [&_pre_code]:p-0',
         '[&_strong]:font-semibold [&_strong]:text-temper-text',
-        '[&_a]:text-temper-accent [&_a]:underline',
+        '[&_a]:text-temper-text dark:[&_a]:text-temper-accent [&_a]:underline',
         '[&_blockquote]:border-l-2 [&_blockquote]:border-temper-accent/30 [&_blockquote]:pl-3 [&_blockquote]:text-temper-text-dim [&_blockquote]:italic',
       )}
       dangerouslySetInnerHTML={{ __html: html }}

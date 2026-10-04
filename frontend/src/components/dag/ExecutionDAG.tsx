@@ -319,8 +319,8 @@ export function ExecutionDAG() {
           )}
         </Panel>
         <MiniMap
-          nodeColor="var(--temper-minimap-node, #1e2a4a)"
-          maskColor="var(--temper-minimap-mask, rgba(15, 23, 41, 0.7))"
+          nodeColor="var(--temper-minimap-node)"
+          maskColor="var(--temper-minimap-mask)"
           position="bottom-right"
           style={{ width: 120, height: 80 }}
           className="temper-minimap-opacity hover:!opacity-100 transition-opacity duration-200"

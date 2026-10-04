@@ -10,7 +10,7 @@ export function ValidationBanner() {
 
   if (validation.status === 'validating') {
     return (
-      <div className="px-4 py-1.5 bg-temper-accent/10 text-temper-accent text-xs border-b border-temper-border">
+      <div className="px-4 py-1.5 bg-temper-accent/10 text-temper-text text-xs border-b border-temper-border">
         Validating...
       </div>
     );

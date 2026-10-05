@@ -1,0 +1,41 @@
+{
+  "benchmark": "positioning_grade benchmark v1 (queue #1, Product marketing), frozen 2026-10-04 before the grader's first run",
+  "note": "Never staged into a run. Keys are opaque so a workspace never says which case it holds. A control must end with every criterion pass. A mutant's labelled criterion must be revise with a counted material finding whose document passage contains one of its markers; a criterion at revise that is neither labelled nor allowed is a false revise (at most 1 per mutant). script: the checker's own findings with no model (kind and a marker its document line contains); no other checker finding is expected.",
+  "criteria": ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"],
+  "bar": {
+    "B1": "Controls: C1 and C2 end with every criterion pass and overall pass.",
+    "B2": "Mutants: the labelled criterion is revise, with at least one counted material finding on it whose document passage contains one of the case's markers.",
+    "B3": "False revises: at most 1 per mutant (a criterion at revise that is neither labelled nor allowed).",
+    "B4": "Stability: two full runs of one grader version give the same overall verdict for all ten cases, each run meeting B1-B3, B5 and B6.",
+    "B5": "Files only: no WebFetch, WebSearch or Agent call by the reviewer in any run (temper events).",
+    "B6": "Integrity: quality.json integrity.unchanged is true in every run."
+  },
+  "cases": [
+    {"key": "q7tn", "case": "C1", "base": "c1", "mutant": null, "labelled": null, "allowed": [], "markers": [], "script": []},
+    {"key": "h3wd", "case": "C2", "base": "c2", "mutant": null, "labelled": null, "allowed": [], "markers": [], "script": []},
+    {"key": "z5kc", "case": "M1", "base": "c1", "mutant": "M1", "labelled": "P1", "allowed": [],
+     "markers": ["Competitive alternatives", "Brigadeboard: prep and station screens", "Coldroom Suite: full inventory", "Prep Sheets Club: free prep-list templates"],
+     "script": []},
+    {"key": "b8rv", "case": "M2", "base": "c1", "mutant": "M2", "labelled": "P2", "allowed": ["P7"],
+     "markers": ["adjusts the amounts for weather and local events"],
+     "script": []},
+    {"key": "f2mx", "case": "M3", "base": "c1", "mutant": "M3", "labelled": "P6", "allowed": [],
+     "markers": ["Phone app with voice logging and offline mode"],
+     "script": []},
+    {"key": "w9pl", "case": "M4", "base": "c1", "mutant": "M4", "labelled": "P7", "allowed": ["P3"],
+     "markers": ["from 35 minutes to 8"],
+     "script": [{"criterion": "P7", "kind": "number_mismatch", "marker": "from 35 minutes to 8"}]},
+    {"key": "d4gs", "case": "M5", "base": "c2", "mutant": "M5", "labelled": "P7", "allowed": ["P3", "P6"],
+     "markers": ["Now I can see every quart we throw out"],
+     "script": [{"criterion": "P7", "kind": "quote_not_found", "marker": "Now I can see every quart we throw out"}]},
+    {"key": "n6yj", "case": "M6", "base": "c2", "mutant": "M6", "labelled": "P4", "allowed": ["P6"],
+     "markers": ["every food business"],
+     "script": []},
+    {"key": "r1ha", "case": "M7", "base": "c2", "mutant": "M7", "labelled": "P5", "allowed": ["P8"],
+     "markers": ["Kitchen Intelligence Cloud", "the market is ready"],
+     "script": []},
+    {"key": "t5ue", "case": "M8", "base": "c2", "mutant": "M8", "labelled": "P8", "allowed": ["P3", "P6", "P7"],
+     "markers": ["the most powerful prep tool", "seamless, game-changing"],
+     "script": [{"criterion": "P8", "kind": "hype_word", "marker": "seamless, game-changing"}]}
+  ]
+}

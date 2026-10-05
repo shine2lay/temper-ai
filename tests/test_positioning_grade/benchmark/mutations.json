@@ -1,0 +1,93 @@
+{
+  "note": "Labelled defects planted in the two sound controls (queue #1, Product marketing). Each mutant has exactly one defect, made of exact edits that build.py applies in order: the document's edits to positioning.md, and the same change to positioning.json wherever section 6 is mirrored there, so the mirror never becomes a second defect. The evidence folder is never edited: it is what a grader must check the document against. Ops: replace (find occurs exactly count times, default 1), replace_lines (exactly one line contains start; the first line from there that contains end closes the range; both inclusive), json_set (positioning.json only: path is a list of keys and indexes; the old value must exist).",
+  "mutants": {
+    "M1": {
+      "base": "c1",
+      "criterion": "P1",
+      "what": "Section 1 cut to a list of competitor products only. The evidence says most kitchens use none of them and plan prep by hand (whiteboard, notebook, group chat).",
+      "ops": [
+        {"file": "positioning.md", "op": "replace_lines", "start": "- Doing it by hand comes first", "end": "- Coldroom Suite, a full inventory",
+         "with": "- Brigadeboard: prep and station screens for restaurant kitchens, at $189 per location per month. [market/competitor-notes.md: \"Brigadeboard: prep and station screens for restaurant kitchens. $189 per location per month.\"]\n- Coldroom Suite: full inventory, costing and ordering for restaurant groups, at $299 per location per month. [market/competitor-notes.md: \"Coldroom Suite: full inventory, costing and ordering for restaurant groups. $299 per location per month.\"]\n- Prep Sheets Club: free prep-list templates for spreadsheets. [market/competitor-notes.md: \"Prep Sheets Club: free prep-list templates for spreadsheets.\"]"}
+      ]
+    },
+    "M2": {
+      "base": "c1",
+      "criterion": "P2",
+      "what": "One unique attribute the evidence contradicts: prep amounts said to adjust for weather and local events; the support summary says Kettlemark does not use weather or event data today.",
+      "ops": [
+        {"file": "positioning.md", "op": "replace",
+         "find": "- Kettlemark suggests how much of each item to prep, from the sales of the last four same weekdays. [",
+         "with": "- Kettlemark suggests how much of each item to prep, from the sales of the last four same weekdays, and adjusts the amounts for weather and local events. ["}
+      ]
+    },
+    "M3": {
+      "base": "c1",
+      "criterion": "P6",
+      "what": "One pillar renamed to a feature (what the product has) instead of a benefit (what the reader gets).",
+      "ops": [
+        {"file": "positioning.md", "op": "replace",
+         "find": "### Pillar 3: Start without buying new hardware",
+         "with": "### Pillar 3: Phone app with voice logging and offline mode"},
+        {"file": "positioning.json", "op": "json_set", "path": ["pillars", 2, "benefit"],
+         "value": "Phone app with voice logging and offline mode"}
+      ]
+    },
+    "M4": {
+      "base": "c1",
+      "criterion": "P7",
+      "what": "One proof number changed so it no longer matches its quote: 12 minutes written as 8.",
+      "ops": [
+        {"file": "positioning.md", "op": "replace",
+         "find": "- The median time to write the daily prep list fell from 35 minutes to 12. [",
+         "with": "- The median time to write the daily prep list fell from 35 minutes to 8. ["},
+        {"file": "positioning.json", "op": "json_set", "path": ["pillars", 1, "proof_points", 0, "text"],
+         "value": "The median time to write the daily prep list fell from 35 minutes to 8."}
+      ]
+    },
+    "M5": {
+      "base": "c2",
+      "criterion": "P7",
+      "what": "One quote that is not in the evidence file it cites: an invented sous-chef quote in pillar 3.",
+      "ops": [
+        {"file": "positioning.md", "op": "replace",
+         "find": "A sous chef: \"Half my line speaks Spanish first, so the Spanish voice log matters.\" [interviews/jonas-bistro.md: \"Half my line speaks Spanish first, so the Spanish voice log matters.\"]",
+         "with": "A sous chef: \"Now I can see every quart we throw out, and why.\" [interviews/jonas-bistro.md: \"Now I can see every quart we throw out, and why.\"]"},
+        {"file": "positioning.json", "op": "json_set", "path": ["pillars", 2, "proof_points", 2],
+         "value": {"text": "A sous chef: \"Now I can see every quart we throw out, and why.\"",
+                   "citations": [{"file": "interviews/jonas-bistro.md", "quote": "Now I can see every quart we throw out, and why."}],
+                   "assumption": false}}
+      ]
+    },
+    "M6": {
+      "base": "c2",
+      "criterion": "P4",
+      "what": "The best-fit segment widened to every food business, including the groups the evidence shows fit badly (caterers, food trucks, hotel kitchens).",
+      "ops": [
+        {"file": "positioning.md", "op": "replace",
+         "find": "Segment: one- and two-location a la carte restaurants on Tillsy or Ordermint whose prep follows daily sales",
+         "with": "Segment: every food business, from food trucks and caterers to hotel kitchens and restaurant groups"}
+      ]
+    },
+    "M7": {
+      "base": "c2",
+      "criterion": "P5",
+      "what": "A buzzword new-category name and a reason line that gives no reason.",
+      "ops": [
+        {"file": "positioning.md", "op": "replace_lines", "start": "Style: subsegment", "end": "Reason: the kitchen software these chefs know",
+         "with": "Style: new category\n\nCategory: Kitchen Intelligence Cloud\n\nReason: the market is ready for a new kind of kitchen platform. (assumption)"}
+      ]
+    },
+    "M8": {
+      "base": "c2",
+      "criterion": "P8",
+      "what": "Hype words and an unproven superlative in the value proposition.",
+      "ops": [
+        {"file": "positioning.md", "op": "replace",
+         "find": "Kettlemark turns your POS sales into a daily prep list on your phone, so your kitchen preps closer to what it sells and throws out less. [",
+         "with": "Kettlemark is the most powerful prep tool for kitchens: a seamless, game-changing way to turn your POS sales into a daily prep list and throw out less. ["},
+        {"file": "positioning.json", "op": "json_set", "path": ["value_proposition", "text"],
+         "value": "Kettlemark is the most powerful prep tool for kitchens: a seamless, game-changing way to turn your POS sales into a daily prep list and throw out less."}
+      ]
+    }
+  }
+}

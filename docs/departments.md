@@ -27,7 +27,7 @@ role tests and lands a change.
 | Role | Department | Looks after |
 |---|---|---|
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief, the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
-| `marketing` | Product marketing | `blog_writer` and its agents; next, launch notes and positioning for what the loop ships. |
+| `marketing` | Product marketing | `blog_writer` and its agents, and `positioning_grade`; next, positioning and launch notes for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
@@ -129,6 +129,18 @@ the dashboard.
 | `epd_probe` | Claim, worktree, stack, deploy, verify and cleanup, pass or fail | systems |
 | `smoke_test`, `gate_smoke`, `ci_*` | An installation, at no model cost | systems |
 | `signal_grade` | A finished signal harvest, against its own evidence: arithmetic, confidence, candidates, provenance, blocked sources, scope and competitor claims (also runs at the end of every `signal_harvest`) | product |
+| `positioning_grade` | One positioning document, against its own evidence folder: Dunford's five components, the messaging hierarchy, every claim traced to a quote, plain words (soundness, not appeal) | marketing |
+
+To grade a positioning document, put `positioning.md`, `positioning.json` and its
+evidence folder in a run workspace (the format is
+`configs/agents/positioning_grade_assets/FORMAT.md`; the workspace needs the
+UID 999 ACL from [product-runs.md](product-runs.md#workspace-permissions)),
+then run `temper run positioning_grade --workspace DIR --detach` (add
+`-i document=PATH` when the document is not `positioning.md` at the top).
+The grade is in `state/positioning_grade/quality.md` and `quality.json`:
+pass, revise or unknown per criterion P1-P8 and overall. A grade costs about
+$0.40 and a minute. Grade each document in a fresh workspace. The fictional
+benchmark and its scorer are in `tests/test_positioning_grade/benchmark/`.
 
 Still to build: a grader for launch notes (marketing), the walks and the UI
 (design), the frontend side of a build (frontend), seeded defects for the
@@ -250,7 +262,7 @@ candidate with the supported Studio API; names absent from the deployed config t
 worker import without overwriting live definitions. Stage assets in a dedicated shared
 workspace. Past direct-CLI execution history stays local-only; do not inject old events.
 
-### marketing (4)
+### marketing (11)
 
 | Config | Kind |
 |---|---|
@@ -258,6 +270,13 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/blog_drafter.yaml` | agent |
 | `agents/editor.yaml` | agent |
 | `agents/topic_researcher.yaml` | agent |
+| `workflows/positioning_grade.yaml` | workflow |
+| `agents/positioning_grade_check.yaml` | agent (script) |
+| `agents/positioning_reviewer.yaml` | agent |
+| `agents/positioning_grade_report.yaml` | agent (script) |
+| `agents/positioning_grade_assets/check_positioning.py` | script |
+| `agents/positioning_grade_assets/rubric.md` | contract |
+| `agents/positioning_grade_assets/FORMAT.md` | contract |
 
 ### design (40)
 

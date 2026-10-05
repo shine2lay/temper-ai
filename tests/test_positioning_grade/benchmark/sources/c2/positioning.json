@@ -1,0 +1,103 @@
+{
+  "format": "positioning/1",
+  "product": "Kettlemark",
+  "value_proposition": {
+    "text": "Kettlemark turns your POS sales into a daily prep list on your phone, so your kitchen preps closer to what it sells and throws out less.",
+    "citations": [
+      {"file": "product/features.md", "quote": "Prep amounts come from your POS sales history."},
+      {"file": "product/features.md", "quote": "Kettlemark runs on iPhone and Android phones."},
+      {"file": "pilot/pilot-results.md", "quote": "Food thrown out fell from a median 11.2% of purchases ... to 7.9% in weeks 5-8."}
+    ],
+    "assumption": false
+  },
+  "pillars": [
+    {
+      "benefit": "Waste less food",
+      "proof_points": [
+        {
+          "text": "Food thrown out fell from a median 11.2% to 7.9% of purchases in the pilot.",
+          "citations": [{"file": "pilot/pilot-results.md", "quote": "Food thrown out fell from a median 11.2% of purchases ... to 7.9% in weeks 5-8."}],
+          "assumption": false
+        },
+        {
+          "text": "Kitchens on Tillsy or Ordermint get prep amounts straight from their POS sales history.",
+          "citations": [{"file": "product/features.md", "quote": "Prep amounts come from your POS sales history. Kettlemark syncs with Tillsy and Ordermint."}],
+          "assumption": false
+        },
+        {
+          "text": "Amounts follow the last four same weekdays of sales instead of a guess.",
+          "citations": [{"file": "product/features.md", "quote": "from the sales of the last four same weekdays."}],
+          "assumption": false
+        }
+      ]
+    },
+    {
+      "benefit": "Finish the prep list in minutes",
+      "proof_points": [
+        {
+          "text": "The median time to write the daily prep list fell from 35 minutes to 12.",
+          "citations": [{"file": "pilot/pilot-results.md", "quote": "The median time to write the daily prep list fell from 35 minutes to 12 minutes."}],
+          "assumption": false
+        },
+        {
+          "text": "A chef-owner: \"The list is on my phone before I get to the kitchen. I just check it and print it.\"",
+          "citations": [{"file": "interviews/rosa-taqueria.md", "quote": "The list is on my phone before I get to the kitchen. I just check it and print it."}],
+          "assumption": false
+        },
+        {
+          "text": "The list is ready by five in the morning and prints on most kitchen ticket printers.",
+          "citations": [{"file": "product/features.md", "quote": "The list is ready by 5 a.m. and can be printed on most kitchen ticket printers."}],
+          "assumption": false
+        }
+      ]
+    },
+    {
+      "benefit": "Know what your kitchen throws out",
+      "proof_points": [
+        {
+          "text": "Pilot kitchens logged a median 41 waste entries a week, against 6 in their paper logs.",
+          "citations": [{"file": "pilot/pilot-results.md", "quote": "Kitchens logged a median 41 waste entries a week, against 6 in the paper logs before."}],
+          "assumption": false
+        },
+        {
+          "text": "A sous chef: \"The waste log works because you just say it into your phone.\"",
+          "citations": [{"file": "interviews/jonas-bistro.md", "quote": "The waste log works because you just say it into your phone"}],
+          "assumption": false
+        },
+        {
+          "text": "A sous chef: \"Half my line speaks Spanish first, so the Spanish voice log matters.\"",
+          "citations": [{"file": "interviews/jonas-bistro.md", "quote": "Half my line speaks Spanish first, so the Spanish voice log matters."}],
+          "assumption": false
+        },
+        {
+          "text": "Each entry records the item, the amount and a reason.",
+          "citations": [{"file": "product/features.md", "quote": "Each entry records the item, the amount and a reason."}],
+          "assumption": false
+        }
+      ]
+    },
+    {
+      "benefit": "Start without new hardware or per-cook fees",
+      "proof_points": [
+        {
+          "text": "Kettlemark runs on iPhone and Android phones; there are no tablets or special devices to buy.",
+          "citations": [{"file": "product/features.md", "quote": "Kettlemark runs on iPhone and Android phones. There are no tablets or special devices to buy."}],
+          "assumption": false
+        },
+        {
+          "text": "There are no per-device or per-user fees.",
+          "citations": [{"file": "product/pricing.md", "quote": "There are no per-device or per-user fees."}],
+          "assumption": false
+        },
+        {
+          "text": "Each location pays $49 a month, and the first 30 days are a free trial with no card.",
+          "citations": [
+            {"file": "product/pricing.md", "quote": "Kettlemark costs $49 per location per month."},
+            {"file": "product/pricing.md", "quote": "Every plan starts with a free 30-day trial; no card is needed."}
+          ],
+          "assumption": false
+        }
+      ]
+    }
+  ]
+}

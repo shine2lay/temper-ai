@@ -1,0 +1,106 @@
+# @description POSITIONING QUALITY step 1 (Product marketing): stage the frozen rubric, the
+# document format and the checker, then check one positioning document with no model. Checks the
+# sections and their order, the label lines, the messaging hierarchy's shape, positioning.json
+# against section 6, every citation's file and verbatim quote, the numbers in cited lines, hype
+# words and sentence length, and lists the leads the review must resolve (elided quotes, the
+# evidence's limits and plans). Never changes the document. A missing document or evidence
+# folder, or a used grading folder, stops here at $0 (status not_checked). Part of
+# workflows/positioning_grade.yaml.
+agent:
+  name: positioning_grade_check
+  version: 1
+  type: script
+  timeout_seconds: 180
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import hashlib
+    import json
+    import os
+    import re
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    ASSETS = ('check_positioning.py', 'rubric.md', 'FORMAT.md')
+
+
+    def value(name):
+        return (os.environ.get(name) or '').strip()
+
+
+    def stop(problem):
+        print(json.dumps({"status": "not_checked", "check_path": "", "findings": 0, "leads": 0,
+                          "problems": [problem]}))
+        sys.exit(0)
+
+
+    here = Path.cwd().resolve()
+
+
+    def inside(text, what):
+        """A path the run gave, kept relative to the run workspace; stop when it leaves it."""
+        path = Path(text)
+        if path.is_absolute():
+            try:
+                path = path.resolve().relative_to(here)
+            except ValueError:
+                stop(f'{what} {text} is outside the run workspace')
+        if '..' in path.parts:
+            stop(f'{what} {text} leaves the run workspace')
+        return path
+
+
+    # `or ''`, not default(''): the server passes an input the run did not give as None, which the
+    # value stash would hand over as the text 'None' (signal_grade's first benchmark run, 1b7aef1a).
+    assets = Path(value('{{ (assets_dir or '') | env }}') or '/app/configs/agents/positioning_grade_assets')
+    document = value('{{ (document or '') | env }}') or 'positioning.md'
+    json_text = value('{{ (positioning_json or '') | env }}')
+    evidence_text = value('{{ (evidence or '') | env }}')
+    run_id = value('{{ (run_id or '') | env }}')
+    dest = Path('state/positioning_grade')
+    if dest.exists() and any(dest.iterdir()):
+        stop('state/positioning_grade already holds a grade: grade in a fresh workspace')
+    for name in ASSETS:
+        if not (assets / name).is_file():
+            stop(f'assets_dir {assets} has no {name}')
+
+    doc = inside(document, 'document')
+    if not doc.is_file():
+        stop(f'no document at {document}')
+    json_path = inside(json_text, 'positioning_json') if json_text else doc.with_name('positioning.json')
+
+    # The evidence folder: the input, else the document's own `Evidence: <folder>` line (relative
+    # to the document), else evidence/ next to the document.
+    if evidence_text:
+        folder, source = inside(evidence_text, 'evidence'), 'input evidence'
+    else:
+        named = None
+        for line in doc.read_text(errors='replace').splitlines():
+            if line.startswith('## '):
+                break
+            match = re.match(r'^\s*Evidence\s*:\s*(.+?)\s*$', line, re.I)
+            if match:
+                named = match.group(1).strip('`"\' ')
+                break
+        if named:
+            folder, source = inside(str(doc.parent / named), 'the document\'s Evidence folder'), 'Evidence: line'
+        else:
+            folder, source = doc.parent / 'evidence', 'evidence/ next to the document'
+    if not folder.is_dir():
+        stop(f'no evidence folder at {folder} ({source})')
+
+    dest.mkdir(parents=True, exist_ok=True)
+    copied = {}
+    for name in ASSETS:
+        shutil.copyfile(assets / name, dest / name)
+        copied[name] = hashlib.sha256((dest / name).read_bytes()).hexdigest()
+    (dest / 'setup.json').write_text(json.dumps({
+        'run_id': run_id, 'assets_dir': str(assets), 'document': str(doc), 'positioning_json': str(json_path),
+        'evidence': str(folder), 'evidence_from': source, 'sha256': copied}, indent=1))
+    sys.exit(subprocess.call([sys.executable, str(dest / 'check_positioning.py'), 'check', '--doc', str(doc),
+                              '--json', str(json_path), '--evidence', str(folder)]))
+    PY

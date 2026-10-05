@@ -1,0 +1,87 @@
+workflow:
+  name: positioning_grade
+  # POSITIONING QUALITY (Product marketing; built 2026-10-04, marketing queue #1). Grades one
+  # positioning document (configs/agents/positioning_grade_assets/FORMAT.md, positioning/1:
+  # positioning.md + positioning.json + an evidence folder) for soundness against its own
+  # evidence, so the positioning workflow, launch notes and articles are built against a stable
+  # grader. It is not a message test: whether the market will buy is out of scope, and the grader
+  # never rewrites the document.
+  #
+  #   check (script) -> review -> report (script)
+  #
+  # check validates the format with no model: sections and order, label lines, the hierarchy's
+  # shape, positioning.json against section 6, every citation's file and verbatim quote, numbers
+  # against their quotes, hype words, sentence length; it leaves leads (elided quotes, the
+  # evidence's limits and plans). review (one model, files only, no web) judges Dunford's five
+  # components, the pillars, whether each quote says what its line claims, and plain words, and
+  # resolves the leads. report keeps a finding only when its passages are verbatim in the files
+  # it names and one is from the document, and sets pass / revise / unknown per criterion:
+  # P1 alternatives, P2 attributes true today, P3 value and proof, P4 one best-fit segment,
+  # P5 category, P6 messaging hierarchy, P7 every claim traced, P8 plain words.
+  #
+  # Rubric (frozen): configs/agents/positioning_grade_assets/rubric.md; checker
+  # check_positioning.py (same folder, standard library only). Benchmark:
+  # tests/test_positioning_grade/benchmark/ (fictional). How to run: docs/departments.md.
+  version: 1
+  description: |
+    Grade one positioning document for soundness against its own evidence folder (not whether
+    the market will buy). A script checks the format, the hierarchy's shape, every citation and
+    number against the evidence, hype words and sentence length; a reviewer judges the
+    alternatives, attributes, value and proof, segment, category, pillars, whether each quote
+    says what its line claims, and plain words; a script keeps only findings whose passages are
+    verbatim in the files. Result per criterion P1-P8 and overall: pass, revise or unknown.
+    Never changes the document.
+  inputs:
+    document:
+      type: string
+      required: false
+      default: "positioning.md"
+      description: "The positioning document (FORMAT.md, positioning/1), a path in the run workspace."
+    positioning_json:
+      type: string
+      required: false
+      default: ""
+      description: "Its positioning.json (default: positioning.json next to the document)."
+    evidence:
+      type: string
+      required: false
+      default: ""
+      description: "The evidence folder (default: the document's 'Evidence: <folder>' line, relative to the document, else evidence/ next to it)."
+    assets_dir:
+      type: string
+      required: false
+      default: "/app/configs/agents/positioning_grade_assets"
+      description: "Folder with check_positioning.py, rubric.md and FORMAT.md: the deployed copy by default; a candidate run stages its own copy into the workspace."
+  outputs:
+    quality_status: report.structured.quality_status
+    quality_path: report.structured.quality_path
+    criteria: report.structured.criteria
+    material_findings: report.structured.findings
+    unverified: report.structured.unverified
+    problems: report.structured.problems
+    check_status: check.structured.status
+
+  nodes:
+    # Deterministic check, no model. Copies the rubric, the format and the checker into
+    # state/positioning_grade/.
+    - name: check
+      type: agent
+      agent: positioning_grade_check
+      input_map:
+        document: input.document
+        positioning_json: input.positioning_json
+        evidence: input.evidence
+        assets_dir: input.assets_dir
+
+    - name: review
+      type: agent
+      agent: positioning_reviewer
+      depends_on: [check]
+      condition: {source: check.structured.status, operator: equals, value: checked}
+
+    # Verification and the quality status on every path, no model.
+    - name: report
+      type: agent
+      agent: positioning_grade_report
+      depends_on: [review]
+      run_after_failure: true

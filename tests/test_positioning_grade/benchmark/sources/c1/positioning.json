@@ -1,0 +1,85 @@
+{
+  "format": "positioning/1",
+  "product": "Kettlemark",
+  "value_proposition": {
+    "text": "Kettlemark tells independent kitchens how much to prep each day from their own sales, so they throw out less food and spend less time on the prep list.",
+    "citations": [
+      {"file": "product/features.md", "quote": "Kettlemark suggests how much of each prep item to make, from the sales of the last four same weekdays."},
+      {"file": "pilot/pilot-results.md", "quote": "Food thrown out fell from a median 11.2% of purchases in the baseline weeks to 7.9% in weeks 5-8."},
+      {"file": "pilot/pilot-results.md", "quote": "The median time to write the daily prep list fell from 35 minutes to 12 minutes."}
+    ],
+    "assumption": false
+  },
+  "pillars": [
+    {
+      "benefit": "Throw out less food",
+      "proof_points": [
+        {
+          "text": "In the pilot, the median share of purchases thrown out fell from 11.2% to 7.9%.",
+          "citations": [{"file": "pilot/pilot-results.md", "quote": "Food thrown out fell from a median 11.2% of purchases in the baseline weeks to 7.9% in weeks 5-8."}],
+          "assumption": false
+        },
+        {
+          "text": "Pilot kitchens logged a median 41 waste entries a week, against 6 in their paper logs.",
+          "citations": [{"file": "pilot/pilot-results.md", "quote": "Kitchens logged a median 41 waste entries a week, against 6 in the paper logs before."}],
+          "assumption": false
+        },
+        {
+          "text": "Prep amounts come from the sales of the last four same weekdays, not from a guess.",
+          "citations": [{"file": "product/features.md", "quote": "Kettlemark suggests how much of each prep item to make, from the sales of the last four same weekdays."}],
+          "assumption": false
+        },
+        {
+          "text": "Each waste entry records the item, the amount and a reason.",
+          "citations": [{"file": "product/features.md", "quote": "Each entry records the item, the amount and a reason."}],
+          "assumption": false
+        }
+      ]
+    },
+    {
+      "benefit": "Get the prep list done in minutes",
+      "proof_points": [
+        {
+          "text": "The median time to write the daily prep list fell from 35 minutes to 12.",
+          "citations": [{"file": "pilot/pilot-results.md", "quote": "The median time to write the daily prep list fell from 35 minutes to 12 minutes."}],
+          "assumption": false
+        },
+        {
+          "text": "A chef-owner: \"The list is on my phone before I get to the kitchen. I just check it and print it.\"",
+          "citations": [{"file": "interviews/rosa-taqueria.md", "quote": "The list is on my phone before I get to the kitchen. I just check it and print it."}],
+          "assumption": false
+        },
+        {
+          "text": "The list is ready by 5 a.m. and prints on most kitchen ticket printers.",
+          "citations": [{"file": "product/features.md", "quote": "The list is ready by 5 a.m. and can be printed on most kitchen ticket printers."}],
+          "assumption": false
+        }
+      ]
+    },
+    {
+      "benefit": "Start without buying new hardware",
+      "proof_points": [
+        {
+          "text": "Kettlemark runs on iPhone and Android phones, and there are no tablets or special devices to buy.",
+          "citations": [{"file": "product/features.md", "quote": "Kettlemark runs on iPhone and Android phones. There are no tablets or special devices to buy."}],
+          "assumption": false
+        },
+        {
+          "text": "There are no per-device or per-user fees.",
+          "citations": [{"file": "product/pricing.md", "quote": "There are no per-device or per-user fees."}],
+          "assumption": false
+        },
+        {
+          "text": "Cooks log waste by voice on their own phones, in English or Spanish.",
+          "citations": [{"file": "product/features.md", "quote": "Cooks log waste by voice on their phones, in English or Spanish."}],
+          "assumption": false
+        },
+        {
+          "text": "Every plan starts with a free 30-day trial, and no card is needed.",
+          "citations": [{"file": "product/pricing.md", "quote": "Every plan starts with a free 30-day trial; no card is needed."}],
+          "assumption": false
+        }
+      ]
+    }
+  ]
+}

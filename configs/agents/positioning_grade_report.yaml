@@ -1,0 +1,41 @@
+# @description POSITIONING QUALITY last step (Product marketing): the quality status. No model.
+# Runs on every path. Keeps a review finding only when every passage it cites is verbatim in the
+# file it names and one passage is from the graded document (an absence only when the document
+# lacks the absent words), resolves every lead, and sets pass / revise / unknown per criterion
+# P1-P8 and overall; re-hashes the document, positioning.json and the evidence to prove grading
+# changed nothing. Writes state/positioning_grade/quality.json and quality.md and owns the
+# workflow outputs. A grade from another run, or none, is unknown. Part of
+# workflows/positioning_grade.yaml.
+agent:
+  name: positioning_grade_report
+  version: 1
+  type: script
+  timeout_seconds: 180
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    run_id = (os.environ.get('{{ (run_id or '') | env }}') or '').strip()
+    grade = Path('state/positioning_grade')
+    problem = None
+    try:
+        setup = json.loads((grade / 'setup.json').read_text())
+    except (OSError, ValueError):
+        setup, problem = None, 'the grading setup did not finish (see the check step)'
+    if setup is not None and setup.get('run_id') != run_id:
+        problem = 'state/positioning_grade holds a grade from another run: grade in a fresh workspace'
+    if problem is None and not (grade / 'check.json').is_file():
+        problem = 'the deterministic check did not run (see the check step)'
+    if problem:
+        print(json.dumps({"status": "completed", "quality_status": "unknown", "quality_path": "", "criteria": {},
+                          "findings": 0, "unverified": 0, "problems": [problem]}))
+        sys.exit(0)
+    sys.exit(subprocess.call([sys.executable, str(grade / 'check_positioning.py'), 'verify']))
+    PY

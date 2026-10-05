@@ -51,6 +51,8 @@ def L(tmp_path, monkeypatch):
     # Nothing in a test may reach either.
     monkeypatch.setenv("EPD_REPO_CHECKOUT", str(tmp_path / "checkout"))
     monkeypatch.setenv("EPD_PROD_ENV_FILE", str(tmp_path / "prod.env"))
+    # Nor the autopilot's real temper key, which a write reads from its file on this host.
+    monkeypatch.setenv("TEMPER_API_KEY_FILE", str(tmp_path / "no-api-key"))
     spec = importlib.util.spec_from_file_location("epd_loop_under_test", DRIVER)
     mod = importlib.util.module_from_spec(spec)
     sys.modules.pop("epd_loop_under_test", None)

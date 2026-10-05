@@ -90,6 +90,16 @@ merge, the same identity can be handed to an agent as an MCP server —
 `github-mcp epd-loop --profile pr-author` — where the profile, not the model,
 decides what it may do.
 
+## Temper API key
+
+temper names whoever writes to its API (`docs/api-access.md`). The driver's
+writes (start a run, fork one) and `push_configs.py` send the `autopilot` key as
+`Authorization: Bearer <key>`, read from its file at each write:
+`TEMPER_API_KEY_FILE`, else `~/.config/temper/api-keys/autopilot.key` (mode
+600, host only). Never put it in `.env`, inputs or a log. Inside a box the file
+isn't there and the driver doesn't need it (`turn` and `stage ship/deploy`
+write nothing to temper). GETs need no key.
+
 ## Screenshots on the PR
 
 A change the owner could see is shown, not only described. The QA browser

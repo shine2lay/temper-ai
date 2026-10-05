@@ -22,6 +22,9 @@ from pathlib import Path
 
 import yaml
 
+# The loop's own way to name itself to temper on a write (the autopilot key, from its file).
+from epd_loop import api_headers
+
 API = os.environ.get("TEMPER_API", "http://localhost:8420")
 CONFIG_DIR = Path(__file__).resolve().parent.parent
 KINDS = {"workflows": "workflow", "agents": "agent", "stages": "stage"}
@@ -45,7 +48,7 @@ def push(path: Path) -> str:
     before = served_version(kind, name)
     body = json.dumps({"config": raw, "schema_version": str(raw.get("schema_version", "1.0"))}).encode()
     req = urllib.request.Request(f"{API}/api/studio/configs/{kind}/{name}", data=body,
-                                 headers={"Content-Type": "application/json"}, method="PUT")
+                                 headers=api_headers(), method="PUT")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             resp.read()

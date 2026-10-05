@@ -391,10 +391,32 @@ def unstr(v):
 
 
 # ------------------------------------------------------------------ temper --
+#
+# temper names whoever writes to its API (docs/api-access.md): the host scripts send the autopilot's
+# key on every write, read from its file each time and never printed, logged or passed on. The file
+# is on the host only; inside a box (`turn`, `stage ship`) it isn't there, and nothing there writes.
+
+API_KEY_FILE = Path.home() / ".config" / "temper" / "api-keys" / "autopilot.key"
+
+
+def api_headers(request_id: str = "") -> dict:
+    """Headers for a write to temper: JSON, the autopilot's key when this host holds it, and an
+    X-Request-ID that ties the write to the caller's own log line when there is one."""
+    headers = {"Content-Type": "application/json"}
+    try:
+        key = Path(os.environ.get("TEMPER_API_KEY_FILE") or API_KEY_FILE).read_text().strip()
+    except OSError:
+        key = ""
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    if request_id:
+        headers["X-Request-ID"] = request_id
+    return headers
+
 
 def post_run(workflow: str, inputs: dict, workspace: str) -> str:
     body = json.dumps({"workflow": workflow, "workspace_path": workspace, "inputs": inputs}).encode()
-    req = urllib.request.Request(f"{API}/api/runs", data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(f"{API}/api/runs", data=body, headers=api_headers())
     with urllib.request.urlopen(req, timeout=60) as resp:
         return json.load(resp)["execution_id"]
 
@@ -3555,7 +3577,7 @@ def fork_run(source_run_id: str, sequence: int, workflow: str, inputs: dict, wor
     """A new run that starts from ``source_run_id``'s checkpoint ``sequence`` and runs the rest."""
     body = json.dumps({"workflow": workflow, "source_execution_id": source_run_id, "sequence": sequence,
                        "inputs": inputs, "workspace_path": workspace}).encode()
-    req = urllib.request.Request(f"{API}/api/runs/fork", data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(f"{API}/api/runs/fork", data=body, headers=api_headers())
     with urllib.request.urlopen(req, timeout=60) as resp:
         return json.load(resp)["execution_id"]
 

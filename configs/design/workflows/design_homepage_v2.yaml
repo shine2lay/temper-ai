@@ -9,7 +9,8 @@ workflow:
     content critic -> copywriter revision -> quotes checked, before/after written) and
     8-12 category references (research only) -> art director drafts three bold,
     distinct concepts (hero + one section at 1440 and 390) -> automatic check (contract,
-    licensed fonts, renders, distinctness) -> art director refines from the renders ->
+    licensed fonts, renders, distinctness, axe) -> only when that check fails, the art
+    director refines from the renders ->
     OWNER DIRECTION -> designer builds the full page -> measure (capture, axe, craft
     metrics) -> two unchanged usability critics + merge, a craft critic, runtime checks
     in a real browser (Tab order and focus, names, 320 px reflow, 400% zoom, text
@@ -101,6 +102,7 @@ workflow:
       type: agent
       agent: design_homepage_art_director_v2
       depends_on: [check_draft]
+      condition: {source: check_draft.structured.verdict, operator: equals, value: retry}
       input_map: {phase: refine}
     - name: check
       type: agent

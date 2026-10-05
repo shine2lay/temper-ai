@@ -1303,3 +1303,59 @@ def test_a_real_runs_concepts_that_repeat_recorded_pairings_must_pick_fresh_ones
     rows = [json.loads(line) for line in pairing_log_file.read_text().splitlines()]  # offered: later runs pick others
     assert [(r["display"], r["text"], r["kind"]) for r in rows] == [(*f, "offered") for f in FRESH]
     assert {r["workspace"] for r in rows} == {job.root.name} and out["pairings_recorded"] == 3
+
+
+@pytest.mark.parametrize("name", ["design_homepage_v2", "design_homepage_v2_pilot", "design_homepage_v2_bench"])
+def test_refine_runs_only_when_the_draft_check_fails(name):
+    _, nodes = workflow(name)  # queue #34: refining drafts that passed did not pay
+    assert nodes["refine"]["condition"] == {"source": "check_draft.structured.verdict", "operator": "equals", "value": "retry"}
+    assert nodes["refine"]["depends_on"] == ["check_draft"] and nodes["check"]["depends_on"] == ["refine"]
+    assert nodes["concepts_next"]["loop_to"] == "refine"  # a final check that fails after a refine sends it round again
+
+
+def passing_pilot_concepts(tmp_path, concept_browser):
+    """A pilot run's three concepts (the fixture pages) with fresh pairings: a check passes them."""
+    job = pilot_job(tmp_path)
+    fixture = fixture_job(tmp_path / "fx")
+    fixture.concepts_fixture()
+    shutil.copytree(fixture.concepts_dir, job.concepts_dir, dirs_exist_ok=True)
+    spec = v2.load(job.concepts_dir / "concepts.json")
+    spec.pop("fixture")
+    for c, (display, text) in zip(spec["concepts"], FRESH, strict=True):
+        c["fonts"]["display"]["family"], c["fonts"]["text"]["family"] = display, text
+    v2.save(job.concepts_dir / "concepts.json", spec)
+    concept_browser["families"] = {face for pair in FRESH for face in pair}
+    return job
+
+
+def test_the_final_check_after_a_skipped_refine_is_the_passed_draft_check(tmp_path, concept_browser, pairing_log_file):
+    job = passing_pilot_concepts(tmp_path, concept_browser)
+    assert job.concepts_check("draft")["verdict"] == "ok" and len(concept_browser["axe_calls"]) == 1
+    out = job.concepts_check("final")  # refine skipped: the same pages and spec as the passed draft check
+    check = v2.load(job.concepts_dir / "check.json")
+    assert out["verdict"] == "ok" and out["reused_draft_check"] == "check-draft-0.json" and out["axe_violations"] == 0
+    assert len(concept_browser["axe_calls"]) == 1  # nothing rendered or measured twice
+    assert check["phase"] == "final" and check["reused_draft_check"] == "check-draft-0.json"
+    assert check["axe"] == v2.load(job.concepts_dir / "check-draft-0.json")["axe"] and check["problems"] == []
+    assert out["pairings_recorded"] == 3 and out["questions"][0]["id"] == "direction"  # offered at the gate as before
+    rows = [json.loads(line) for line in pairing_log_file.read_text().splitlines()]
+    assert [(r["display"], r["text"], r["kind"]) for r in rows] == [(*f, "offered") for f in FRESH]
+    assert job.concepts_next()["verdict"] == "ok" and job.concepts_check("final")["reused"] is True
+
+
+def test_the_final_check_measures_again_when_the_pages_changed_after_a_passed_draft(tmp_path, concept_browser, pairing_log_file):
+    job = passing_pilot_concepts(tmp_path, concept_browser)
+    assert job.concepts_check("draft")["verdict"] == "ok"
+    page = job.concepts_dir / "B" / "index.html"
+    page.write_text(page.read_text() + "\n")
+    out = job.concepts_check("final")
+    assert out["verdict"] == "ok" and "reused_draft_check" not in out and len(concept_browser["axe_calls"]) == 2
+
+
+def test_the_final_check_measures_again_after_drafts_that_failed(tmp_path, concept_browser, pairing_log_file):
+    job = passing_pilot_concepts(tmp_path, concept_browser)
+    concept_browser["axe"]["A-390-settled"]["violations"] = [LOW_CONTRAST]
+    assert job.concepts_check("draft")["verdict"] == "retry"
+    concept_browser["axe"] = clean_axe()
+    out = job.concepts_check("final")  # refine ran: never the failed draft check, whatever the pages
+    assert out["verdict"] == "ok" and "reused_draft_check" not in out and len(concept_browser["axe_calls"]) == 2

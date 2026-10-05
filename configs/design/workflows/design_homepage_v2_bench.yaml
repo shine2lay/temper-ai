@@ -97,6 +97,7 @@ workflow:
       type: agent
       agent: design_homepage_art_director_v2
       depends_on: [check_draft]
+      condition: {source: check_draft.structured.verdict, operator: equals, value: retry}
       input_map: {phase: refine}
     - name: check
       type: agent

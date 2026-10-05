@@ -1986,8 +1986,9 @@ class Job:
         if not spec_path.exists():
             raise ValueError("homepage/concepts/concepts.json missing: the art director wrote nothing")
         spec = load(spec_path)
-        fp = digest({"phase": phase, "concepts": tree_digest(cdir / "A") + tree_digest(cdir / "B") + tree_digest(cdir / "C")
-                     if all((cdir / c).exists() for c in CONCEPT_IDS) else "", "spec": spec})
+        pages = (tree_digest(cdir / "A") + tree_digest(cdir / "B") + tree_digest(cdir / "C")
+                 if all((cdir / c).exists() for c in CONCEPT_IDS) else "")
+        fp = digest({"phase": phase, "concepts": pages, "spec": spec})
         attempt = self.state.setdefault("concept_checks", {}).get(phase, 0)
         key = f"concepts_check-{phase}-{attempt}"
         prior = self.state["stages"].get(key)
@@ -1997,6 +1998,10 @@ class Job:
             attempt += 1
             key = f"concepts_check-{phase}-{attempt}"
         self.state["concept_checks"][phase] = attempt
+        passed = self.passed_draft_check(pages, spec) if phase == "final" else None
+        if passed is not None:  # refine was skipped (queue #34): these are the drafts that passed, as they were checked
+            check = {**passed[1], "phase": "final", "attempt": attempt, "checked_at": now(), "reused_draft_check": passed[0]}
+            return self.finish_check(key, fp, check, spec["concepts"], bool(spec.get("fixture")))
         brief = load(self.packet / "brief.json")
         brand_fonts = {f.lower() for f in brief.get("brand", {}).get("fonts", [])}
         concepts = spec.get("concepts") if isinstance(spec, dict) else None
@@ -2105,7 +2110,26 @@ class Job:
                                 "violations": [{k: v.get(k) for k in ("id", "impact", "nodes", "targets")} for v in r.get("violations") or []]}
                          for name, r in sorted(axe.items())},
                  "contact_sheet": sheet, "recommended": recommended}
-        if verdict == "ok" and phase == "final" and not spec.get("fixture"):  # offered to the gate: later runs pick others
+        return self.finish_check(key, fp, check, concepts, bool(spec.get("fixture")))
+
+    def passed_draft_check(self, pages: str, spec: dict) -> tuple[str, dict] | None:
+        """The last draft check (file name, contents) when it passed on exactly these pages and spec, else None.
+
+        Refine runs only when the draft check fails (queue #34: on three benchmark briefs, refined concepts
+        beat their drafts on only 5 of the craft critic's 10 checklist items, at a third of the concept
+        stage's cost), so a final check after a skipped refine sees the same pages and spec."""
+        n = self.state.get("concept_checks", {}).get("draft")
+        receipt = self.state["stages"].get(f"concepts_check-draft-{n}") if n is not None else None
+        path = self.concepts_dir / f"check-draft-{n}.json"
+        if (not receipt or receipt["output"].get("verdict") != "ok" or not path.is_file()
+                or receipt["fingerprint"] != digest({"phase": "draft", "concepts": pages, "spec": spec})):
+            return None
+        return path.name, load(path)
+
+    def finish_check(self, key: str, fp: str, check: dict, concepts: list[dict], fixture: bool) -> dict:
+        """Save a concept check, record the pairings a passed final check offers the gate, answer the node."""
+        cdir, phase, attempt, verdict = self.concepts_dir, check["phase"], check["attempt"], check["verdict"]
+        if verdict == "ok" and phase == "final" and not fixture:  # offered to the gate: later runs pick others
             try:
                 check["pairings_recorded"] = record_pairings(pairing_log(self.root), self.root.name, "offered", concepts)
             except OSError as exc:
@@ -2114,10 +2138,13 @@ class Job:
         save(cdir / f"check-{phase}-{attempt}.json", check)
         if phase == "draft":
             self.keep_drafts()
-        output = {"status": "completed", "phase": phase, "attempt": attempt, "verdict": verdict, "problems": len(problems),
-                  "contact_sheet": sheet, "check_path": "homepage/concepts/check.json",
-                  "axe_violations": sum(len(r.get("violations") or []) for r in axe.values()),
+        recommended = check.get("recommended")
+        output = {"status": "completed", "phase": phase, "attempt": attempt, "verdict": verdict, "problems": len(check["problems"]),
+                  "contact_sheet": check.get("contact_sheet"), "check_path": "homepage/concepts/check.json",
+                  "axe_violations": sum(len(r.get("violations") or []) for r in (check.get("axe") or {}).values()),
                   "recommended": recommended["concept"] if recommended else None}
+        if check.get("reused_draft_check"):
+            output["reused_draft_check"] = check["reused_draft_check"]
         if phase == "draft":
             output["drafts"] = "homepage/concept-drafts"
         if "pairings_recorded" in check:

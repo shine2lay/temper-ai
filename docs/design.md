@@ -320,8 +320,9 @@ references (screenshots, research only; never copied or traced) -> art director
 drafts three named concepts (a
 ~400-word brief each, licensed display + text fonts, dominant colour + accent,
 imagery, one signature layout move, one motion idea; hero + one section at 1440
-and 390) -> automatic check -> art director refines from its renders -> check
-(up to 3 more refine loops) -> **owner direction gate** -> designer builds the
+and 390) -> automatic check -> only when that check fails, the art director
+refines from its renders -> check (up to 3 more refine loops) -> **owner
+direction gate** -> designer builds the
 full page -> measure (capture, axe, craft metrics) -> the unchanged
 `design_critic` x2 + `design_merge`, plus the craft critic, runtime checks in a
 real browser and the content critic on the page's words -> combine (at
@@ -410,8 +411,18 @@ Fresh type pairings and accessibility (queue #34):
   `testpages/html-fixtures/planted-contrast.html` (one low-contrast note, plus a
   fading headline and a looping badge that must not be reported) proves it.
 - **Drafts kept.** The draft check copies the concepts as checked (pages, fonts,
-  renders, `concepts.json`, `check.json`) to `homepage/concept-drafts/` before the
-  refine pass rewrites them, so draft and refined concepts can be compared.
+  renders, `concepts.json`, `check.json`) to `homepage/concept-drafts/` before a
+  refine pass can rewrite them, so draft and refined concepts can be compared.
+- **Refine only when the draft check fails.** The craft critic compared draft and
+  refined concepts on three fictional benchmark briefs (9 concepts, two blind
+  critic runs per page, summed severities per checklist item): refining won 5 of
+  the 10 items, short of the 6 needed to keep it, while costing a third of the
+  concept stage. So `refine` has the condition
+  `check_draft.structured.verdict == retry`. When it is skipped, the final check
+  sees the same pages and spec as the passed draft check and reuses it (nothing
+  rendered or measured twice; output `reused_draft_check`), then records the
+  offered pairings and asks the direction gate as before. Drafts that fail the
+  check are refined and re-checked in full, with up to 3 more refine loops.
 
 ### Converter (`html_to_penpot.py` + `html_dom_extract.js`)
 

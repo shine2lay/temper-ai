@@ -46,6 +46,14 @@ selects that code only; it still submits to the same server and is not private e
 API defaults to `http://127.0.0.1:8420`; UI defaults to `https://temper-dev.wai2shine.com/app`.
 `PRODUCT_TEMPER_API`/`PRODUCT_TEMPER_UI` may explicitly select a deployment, never credentials.
 
+Temper's write guard ([api-access.md](api-access.md)) names the writer. Every write the helper
+makes (run starts, config registers) sends `Authorization: Bearer <key>`, read at call time from
+the file named by `TEMPER_API_KEY_FILE`, else `~/.config/temper/api-keys/product.key` (host only,
+mode 600). Reads send no key. No readable file -> no header, so the guard decides (record mode
+logs an unknown caller; enforce mode refuses with 401). The value is never printed, logged,
+stored in a job record or passed into a run. Check: `GET /api/guard` lists Product's starts under
+`product`, not `null`.
+
 ## Launch a local candidate, including #20/#21
 
 1. Make changes only in your own `wt new` worktree. Use a distinct `_next` or local candidate

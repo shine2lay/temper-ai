@@ -69,11 +69,31 @@ def save(path: Path, value) -> None:
         os.close(fd)
 
 
+KEY_FILE = Path.home() / ".config/temper/api-keys/product.key"
+
+
+def auth_headers(method: str) -> dict:
+    """Name Product as the writer to Temper's write guard (docs/api-access.md).
+
+    Writes only; reads need no key. The key is read from its file at call time
+    (TEMPER_API_KEY_FILE, else product.key). No readable key -> no header: the guard decides.
+    The value is never printed, logged, stored or passed into a run.
+    """
+    if method.upper() in ("GET", "HEAD"):
+        return {}
+    path = Path(os.environ.get("TEMPER_API_KEY_FILE") or KEY_FILE).expanduser()
+    try:
+        key = path.read_text().strip()
+    except (OSError, UnicodeDecodeError):
+        return {}
+    return {"Authorization": "Bearer " + key} if key else {}
+
+
 def api(method: str, route: str, body=None, base: str | None = None):
     request = urllib.request.Request(
         (base or API) + route,
         data=None if body is None else json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"}, method=method,
+        headers={"Content-Type": "application/json", **auth_headers(method)}, method=method,
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:

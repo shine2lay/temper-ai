@@ -2,6 +2,7 @@
 import datetime as dt
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -10,6 +11,65 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server_run as server
+
+
+class WriterKeyTests(unittest.TestCase):
+    """Temper's write guard names Product only on writes; the key never leaves its header."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.key_file = Path(self.tmp.name) / "product.key"
+        self.key_file.write_text("fixture-key-value\n")
+        self.sent = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def fake_urlopen(self, request, timeout=None):
+        self.sent.append(request)
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read = Mock(return_value=b"{}")
+        return response
+
+    def call(self, method, env):
+        with patch.dict("os.environ", env, clear=False), \
+                patch.object(server.urllib.request, "urlopen", self.fake_urlopen):
+            server.api(method, "/api/runs", {"workflow": "w"} if method != "GET" else None)
+        return self.sent[-1]
+
+    def test_writes_send_the_key_from_the_named_file(self):
+        for method in ("POST", "PUT", "DELETE"):
+            request = self.call(method, {"TEMPER_API_KEY_FILE": str(self.key_file)})
+            self.assertEqual(request.get_header("Authorization"), "Bearer fixture-key-value")
+
+    def test_reads_send_no_key(self):
+        request = self.call("GET", {"TEMPER_API_KEY_FILE": str(self.key_file)})
+        self.assertIsNone(request.get_header("Authorization"))
+
+    def test_default_file_when_no_env(self):
+        env = {k: v for k, v in os.environ.items() if k != "TEMPER_API_KEY_FILE"}
+        with patch.dict("os.environ", env, clear=True), patch.object(server, "KEY_FILE", self.key_file):
+            self.assertEqual(server.auth_headers("POST"), {"Authorization": "Bearer fixture-key-value"})
+
+    def test_missing_or_empty_file_sends_no_header_and_still_writes(self):
+        request = self.call("POST", {"TEMPER_API_KEY_FILE": str(Path(self.tmp.name) / "absent.key")})
+        self.assertIsNone(request.get_header("Authorization"))
+        self.key_file.write_text("  \n")
+        request = self.call("POST", {"TEMPER_API_KEY_FILE": str(self.key_file)})
+        self.assertIsNone(request.get_header("Authorization"))
+
+    def test_a_refused_write_never_shows_the_key(self):
+        def refuse(request, timeout=None):
+            raise server.urllib.error.HTTPError(request.full_url, 401, "no", {}, None)
+        with patch.dict("os.environ", {"TEMPER_API_KEY_FILE": str(self.key_file)}), \
+                patch.object(server.urllib.request, "urlopen", refuse):
+            with self.assertRaises(server.APIError) as caught:
+                server.api("POST", "/api/runs", {"workflow": "w"})
+        self.assertEqual(caught.exception.status, 401)
+        self.assertNotIn("fixture-key-value", str(caught.exception))
+        self.assertIsNone(caught.exception.__cause__)
 
 
 class ServerRunTests(unittest.TestCase):
@@ -264,9 +324,12 @@ class WeeklyTests(unittest.TestCase):
 
 class DigestSharedTests(unittest.TestCase):
     def setUp(self):
-        spec = importlib.util.spec_from_file_location("product_digest", Path.home() / "product-autopilot/digest.py")
+        autopilot = Path.home() / "product-autopilot"
+        spec = importlib.util.spec_from_file_location("product_digest", autopilot / "digest.py")
         self.digest = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.digest)
+        # digest.py imports its siblings (report_policy) from its own folder.
+        with patch.object(sys, "path", [str(autopilot), *sys.path]):
+            spec.loader.exec_module(self.digest)
         self.tmp = tempfile.TemporaryDirectory()
         self.runs = Path(self.tmp.name)
         self.patch = patch.object(self.digest, "RUNS", self.runs)

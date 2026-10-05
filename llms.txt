@@ -73,6 +73,8 @@ POST /api/runs/fork                       # fork from checkpoint
 POST /api/runs/{id}/approve/{node_name}   # approve a gate node
 GET  /api/runs/{id}/gates                 # list waiting gates
 GET  /api/runs/{id}/checkpoints
+GET  /api/runs/{id}/tool-calls            # every tool call: attempt, agent, round, status, paths named (never contents)
+GET  /api/runs/{id}/tool-calls?contains=/secret/&contains=x  # + each call's hits: which strings its inputs held
 ```
 
 ---

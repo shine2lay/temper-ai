@@ -7,11 +7,15 @@ that the frontend expects: WorkflowExecution → NodeExecution → AgentExecutio
 
 from __future__ import annotations
 
+import json
 import logging
+from collections import deque
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 from temper_ai.observability import get_events
 from temper_ai.observability.event_types import EventType
+from temper_ai.observability.recorder import event_parents
 from temper_ai.observability.script_logs import SCRIPT_LOG_PREFIX
 from temper_ai.runner import quiet
 
@@ -65,6 +69,171 @@ def get_agent_index(execution_id: str) -> list[dict] | None:
     if not events:
         return None
     return _agent_index(events)
+
+
+# The inputs of a tool call that name a file or folder, in the order its paths are listed.
+# No other input of a call ever leaves the server (see get_tool_calls).
+TOOL_CALL_PATH_KEYS = ("path", "file_path", "notebook_path", "filename", "cwd", "worktree")
+
+_TOOL_CALL_ENDS = {"tool.call.completed": "completed", "tool.call.failed": "failed"}
+
+
+def get_tool_calls(execution_id: str, contains: Sequence[str] = ()) -> dict | None:
+    """Every tool call of a run and the files it named, never what was in them; None when
+    the run has no events.
+
+    For a script that checks, from inside its own run (no database there), which files
+    the run's agents went near. Each call says which attempt made it (the agent.started
+    id, as the run page and the agent index name it), its agent, node and round (from the
+    agent index), the tool, who ran it, its status (from its own end event) and when it
+    started. ``paths`` are the values under TOOL_CALL_PATH_KEYS, as the agent wrote them.
+    ``hits`` are the strings of ``contains`` found anywhere in the call's inputs: a Bash
+    ``cat`` names no path key. Nothing else of a call is returned: no Write content, no
+    Edit strings, no Bash command, no output, no result. ``blocked`` lists the tool calls
+    the run refused (tool.blocked); their error text names the refused path.
+
+    Every tool event of the run is read, however long the run (the run page keeps a long
+    run's newest 10,000 calls), and a model call only for its id and parent, never its
+    prompt. Read in Python: some events hold \\u0000, which Postgres cannot turn into text.
+    """
+    structure = get_events(
+        execution_id=execution_id, exclude_type_prefixes=_NOT_STRUCTURE_PREFIXES, limit=None,
+    )
+    tool_events = get_events(execution_id=execution_id, type_prefixes=("tool.",), limit=None)
+    if not structure and not tool_events:
+        return None
+    parents = {e["id"]: e.get("parent_id") for e in structure}
+    parents.update(event_parents(execution_id, ("llm.call.started",)))
+    attempts = {entry["id"]: entry for entry in _agent_index(structure)}
+    markers = list(dict.fromkeys(contains))
+
+    starts = [e for e in tool_events if e.get("type") == "tool.call.started"]
+    ends = _tool_call_ends(starts, [e for e in tool_events if e.get("type") in _TOOL_CALL_ENDS])
+    calls: list[dict] = []
+    open_until: list[str | None] = []  # when each call ended, for placing a refusal in it
+    for start in starts:
+        data = start.get("data") or {}
+        params = data.get("input_params")
+        attempt_id = _attempt_above(start, parents, attempts)
+        entry = attempts.get(attempt_id or "")
+        end = ends.get(start["id"])
+        text = json.dumps(params, ensure_ascii=False, default=str) if markers else ""
+        calls.append({
+            "call_id": data.get("call_id") or None,
+            "attempt_id": attempt_id,
+            "agent_name": entry["agent_name"] if entry else data.get("agent_name"),
+            "node_name": entry["node_name"] if entry else data.get("node_path"),
+            "round": entry["round"] if entry else None,
+            "tool_name": data.get("tool_name"),
+            "executed_by": data.get("executed_by"),
+            "server": data.get("server"),
+            "status": _TOOL_CALL_ENDS[end["type"]] if end else "running",
+            "start_time": start.get("timestamp"),
+            "paths": _named_paths(params),
+            "hits": [m for m in markers if m in text],
+        })
+        open_until.append(end.get("timestamp") if end else None)
+
+    blocked: list[dict] = []
+    for event in tool_events:
+        if event.get("type") != "tool.blocked":
+            continue
+        data = event.get("data") or {}
+        attempt_id = (_attempt_above(event, parents, attempts)
+                      or _attempt_of_the_call_refused(event, calls, open_until))
+        entry = attempts.get(attempt_id or "")
+        blocked.append({
+            "attempt_id": attempt_id,
+            "agent_name": entry["agent_name"] if entry else data.get("agent_name"),
+            "round": entry["round"] if entry else None,
+            "tool_name": data.get("tool_name"),
+            "reason": data.get("reason"),
+            "error": data.get("error"),
+        })
+    return {
+        "execution_id": execution_id,
+        "tool_calls": calls,
+        "blocked": blocked,
+        "counts": {"tool_calls": len(calls), "blocked": len(blocked)},
+    }
+
+
+def _attempt_above(event: dict, parents: dict[str, str | None], attempts: dict[str, dict]) -> str | None:
+    """The agent.started an event hangs under, up its parent_ids (a tool call's parent is its
+    model call, whose parent is the agent; a Pi agent's tool hangs right under the agent).
+    None when the chain breaks before one."""
+    seen: set[str] = set()
+    current = event.get("parent_id")
+    while current and current not in seen:
+        if current in attempts:
+            return current
+        seen.add(current)
+        current = parents.get(current)
+    return None
+
+
+def _tool_call_ends(starts: list[dict], ends: list[dict]) -> dict[str, dict]:
+    """Each tool call start's own end event (tool.call.completed or .failed), by start id.
+
+    By call_id when the start has one (a provider's or Pi's call). Temper's own calls have
+    none: like the run page, the first end not yet taken of the same tool under the same
+    model call, which runs its tools one at a time.
+    """
+    by_call_id: dict[str, dict] = {}
+    by_turn: dict[tuple[str | None, str | None], deque[dict]] = {}
+    for end in ends:
+        data = end.get("data") or {}
+        if data.get("call_id"):
+            by_call_id.setdefault(data["call_id"], end)
+        else:
+            by_turn.setdefault((end.get("parent_id"), data.get("tool_name")), deque()).append(end)
+    paired: dict[str, dict] = {}
+    for start in starts:
+        data = start.get("data") or {}
+        own: dict | None
+        if data.get("call_id"):
+            own = by_call_id.get(data["call_id"])
+        else:
+            waiting = by_turn.get((start.get("parent_id"), data.get("tool_name")))
+            own = waiting.popleft() if waiting else None
+        if own is not None:
+            paired[start["id"]] = own
+    return paired
+
+
+def _named_paths(params: object) -> list[str]:
+    """The strings (or lists of strings) under TOOL_CALL_PATH_KEYS, in that order, once each."""
+    if not isinstance(params, dict):
+        return []
+    paths: list[str] = []
+    for key in TOOL_CALL_PATH_KEYS:
+        value = params.get(key)
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str) and item not in paths:
+                paths.append(item)
+    return paths
+
+
+def _attempt_of_the_call_refused(block: dict, calls: list[dict], open_until: list[str | None]) -> str | None:
+    """The attempt a refusal recorded with no parent came from: that of the call it refused.
+
+    The tool executor is not told which model call asked, so its tool.blocked hangs under
+    nothing. It is recorded while the call it refuses is open: a call of that tool (and of
+    that agent, when the refusal names one) that had started and not yet ended. None when
+    no such call is open, or the open ones belong to different attempts.
+    """
+    data = block.get("data") or {}
+    at = block.get("timestamp") or ""
+    agent = data.get("agent_name")
+    found = {
+        call["attempt_id"]
+        for call, ended in zip(calls, open_until, strict=True)
+        if call["tool_name"] == data.get("tool_name")
+        and (not agent or call["agent_name"] == agent)
+        and (call["start_time"] or "") <= at
+        and (ended is None or at <= ended)
+    }
+    return found.pop() if len(found) == 1 else None
 
 
 def get_workflow_execution(execution_id: str) -> dict | None:

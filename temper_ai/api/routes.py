@@ -11,14 +11,15 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, WebSocket
+from fastapi import APIRouter, HTTPException, Query, WebSocket
 from pydantic import AliasChoices, BaseModel, Field
 
 from temper_ai.api.app_state import AppState
 from temper_ai.api.data_service import (
     get_agent_index,
+    get_tool_calls,
     get_workflow_execution,
     list_workflow_executions,
 )
@@ -507,6 +508,33 @@ def get_workflow_agents(execution_id: str):
     if agents is None:
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
     return {"execution_id": execution_id, "agents": agents}
+
+
+# contains= on GET /api/runs/{id}/tool-calls: how many strings, and how long each may be.
+MAX_CONTAINS = 20
+MAX_CONTAINS_CHARS = 300
+
+
+@router.get("/api/runs/{execution_id}/tool-calls")
+def get_run_tool_calls(execution_id: str, contains: Annotated[list[str] | None, Query()] = None):
+    """Every tool call of the run with the files it named, never what was in them.
+
+    For a script step auditing its own run (it has no database): each call's attempt,
+    agent, node, round, tool, status and the paths it named; the run's refused calls under
+    ``blocked``. Each ``contains=`` string found anywhere in a call's inputs is listed in its
+    ``hits``; the inputs themselves never leave the server. See data_service.get_tool_calls.
+    """
+    contains = contains or []
+    if len(contains) > MAX_CONTAINS:
+        raise HTTPException(status_code=400, detail=f"At most {MAX_CONTAINS} contains= strings")
+    if any(not 1 <= len(text) <= MAX_CONTAINS_CHARS for text in contains):
+        raise HTTPException(
+            status_code=400, detail=f"Each contains= string takes 1 to {MAX_CONTAINS_CHARS} characters",
+        )
+    result = get_tool_calls(execution_id, contains)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+    return result
 
 
 @router.get("/api/runs/{execution_id}/agents/{attempt_id}/log")

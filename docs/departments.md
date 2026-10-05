@@ -135,6 +135,11 @@ Still to build: a grader for launch notes (marketing), the walks and the UI
 build's test run and browser check (qa), seeded flaws for the security read
 (security), and docs (docs).
 
+A script step can check which files its own run's agents went near:
+`GET http://server:8420/api/runs/{{ run_id }}/tool-calls` lists every tool call
+with its attempt, agent, round and the paths it named, never their contents;
+`contains=` marks the calls whose inputs hold a given string (a hidden folder, say).
+
 ## The ownership table
 
 Paths are under `configs/`. *agent (script)* is an agent that runs a script

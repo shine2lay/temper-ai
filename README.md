@@ -79,6 +79,8 @@ returns at once.
 
 Every event is queryable: `GET /api/workflows/{id}` returns the full execution tree with all agent inputs, outputs, LLM calls, tool results, and timing data.
 
+For a script that audits its own run, `GET /api/runs/{id}/tool-calls` lists every tool call with its attempt, agent, round, status and the file paths it named, plus the calls the run refused. It never returns what a call was given or gave back (no Write content, Edit strings, Bash commands or outputs): ask with `contains=` (up to 20 strings) and each call's `hits` say which of them its inputs held.
+
 ### MCP — Agents Run Workflows
 
 Temper is an MCP server, so a coding agent can start a workflow and inspect

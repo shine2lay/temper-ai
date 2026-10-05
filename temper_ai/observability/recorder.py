@@ -317,6 +317,22 @@ def get_events(
         return [_event_to_dict(e) for e in results]
 
 
+def event_parents(execution_id: str, type_prefixes: tuple[str, ...]) -> dict[str, str | None]:
+    """``{id: parent_id}`` of one run's events of these types; their data is never read.
+
+    For following an event up the tree through events too big to load just for
+    that: a model call's start carries its whole prompt.
+    """
+    with get_session() as session:
+        rows = session.exec(
+            select(Event.id, Event.parent_id).where(
+                Event.execution_id == execution_id,
+                or_(*(col(Event.type).startswith(p) for p in type_prefixes)),
+            )
+        ).all()
+    return {event_id: parent_id for event_id, parent_id in rows}
+
+
 # The statuses of a gate's wait (``stage.started`` with ``gate: true``): open, answered, the
 # run stopped there, or a later wait for the same step took its place. A step's own
 # ``stage.started`` never has one of these, so they find the waits without reading the data.

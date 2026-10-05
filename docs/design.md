@@ -96,6 +96,11 @@ python3 configs/design/bin/design_trial.py fernway-v1 --workflow <candidate> # a
 python3 configs/design/bin/design_trial.py fernway-v1 --grade-only <review workspace>
 ```
 
+Both of its starts send the design role's named key, read from the file named
+by `TEMPER_API_KEY_FILE`, else `~/.config/temper/api-keys/design.key`, so
+temper's write guard names them `design` ([api-access.md](api-access.md)).
+Without a readable key file they go without one, as an unknown caller.
+
 `design_trial.py` reads `testpages/<site>.json` (brief, pages, key path),
 runs the review, then runs `design_review_grade` with the findings and the
 key as text, and prints the score:

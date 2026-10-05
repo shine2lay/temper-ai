@@ -10,6 +10,12 @@ design_review_grade with the review's findings.json and the answer key as text, 
 prints the score. The key is read here on the host and never enters the review's run (keys
 live in ~/design-lab/answers/, off every container mount). Standard library only.
 
+Each start sends the design role's named key, so temper's write guard (docs/api-access.md)
+names the caller: it is read at call time from the file named by TEMPER_API_KEY_FILE, else
+~/.config/temper/api-keys/design.key. With no readable key file the start goes without one
+(an unknown caller; refused once the guard enforces). The key is never printed, logged or
+passed into a run.
+
 Workspaces go under ~/temper-ai/workspaces (TEMPER_WORKSPACES), the folder run containers
 mount at the same path; the site is served from the server's /app/configs, so a test site
 must be on master before a trial can use it.
@@ -31,6 +37,17 @@ WORKSPACES = Path(
     os.environ.get("TEMPER_WORKSPACES", str(Path.home() / "temper-ai" / "workspaces"))
 )
 CONTAINER_SITES = "/app/configs/design/testpages"
+DEFAULT_KEY_FILE = Path.home() / ".config" / "temper" / "api-keys" / "design.key"
+
+
+def _key_headers() -> dict[str, str]:
+    """The Authorization header with the design key, or {} when its file can't be read."""
+    path = Path(os.environ.get("TEMPER_API_KEY_FILE") or DEFAULT_KEY_FILE).expanduser()
+    try:
+        key = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    return {"Authorization": f"Bearer {key}"} if key else {}
 
 
 def _post_run(workflow: str, workspace: Path, inputs: dict[str, str]) -> str:
@@ -43,6 +60,8 @@ def _post_run(workflow: str, workspace: Path, inputs: dict[str, str]) -> str:
         method="POST",
         headers={"Content-Type": "application/json"},
     )
+    for name, value in _key_headers().items():
+        req.add_unredirected_header(name, value)  # never follows a redirect elsewhere
     with urllib.request.urlopen(req, timeout=30) as resp:
         return str(json.load(resp)["execution_id"])
 

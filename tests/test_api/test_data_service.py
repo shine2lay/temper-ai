@@ -9,6 +9,7 @@ from temper_ai.api.data_service import (
     _find_children,
     _find_event_by_type,
     _get_end_time,
+    _merge_node_recursive,
     _resolve_status,
     get_agent_index,
     get_workflow_execution,
@@ -219,6 +220,80 @@ class TestGetWorkflowExecution:
             _evt("a1", "agent.started"),  # no workflow event
         ]
         assert get_workflow_execution("run-1") is None
+
+
+class TestAWaitsAnswerStaysOnItsStep:
+    """The run page shows a wait's answer and who gave it from the step's node.
+
+    A step with a wait in front of it is two stage events under one name: the
+    wait, then (once approved) the step's own run. The node used to be built
+    from the later one only, so the answer and "decided by" vanished the moment
+    the step started (temper #45: decisions name who made them).
+    """
+
+    _answer = {"gate_status": "approved", "gate_decided_by": "shine (Slack)",
+               "gate_decided_at": "2026-01-01T00:00:05", "gate_caller": "slack:U1"}
+
+    def _run(self, wait_status: str, answer: dict) -> list[dict]:
+        return [
+            _evt("wf", "workflow.started", status="completed", data={"name": "gate_smoke"}),
+            _evt("s1", "stage.started", parent_id="wf", status=wait_status,
+                 data={"name": "decide", "gate": True, **answer}, timestamp="2026-01-01T00:00:01"),
+            _evt("s2", "stage.started", parent_id="wf", status="completed",
+                 data={"name": "decide", "type": "agent"}, timestamp="2026-01-01T00:00:06"),
+        ]
+
+    def _decide(self, events: list[dict]) -> dict:
+        with patch("temper_ai.api.data_service.get_events", return_value=events):
+            result = get_workflow_execution("run-1")
+        assert result is not None
+        nodes = [n for n in result["nodes"] if n["name"] == "decide"]
+        assert len(nodes) == 1
+        return nodes[0]
+
+    def test_an_approval_and_who_gave_it_stay_after_the_step_runs(self):
+        node = self._decide(self._run("approved", self._answer))
+
+        assert node["status"] == "completed"  # the step's own run, not the wait
+        assert node["gate"] is True
+        assert node["gate_status"] == "approved"
+        assert node["gate_decided_by"] == "shine (Slack)"
+        assert node["gate_decided_at"] == "2026-01-01T00:00:05"
+        assert node["gate_caller"] == "slack:U1"
+
+    def test_an_answer_from_before_callers_were_kept_still_reads(self):
+        old = {"gate_status": "approved", "gate_decided_by": "shine"}
+        node = self._decide(self._run("approved", old))
+
+        assert node["gate_decided_by"] == "shine"
+        assert node["gate_caller"] is None
+
+    def test_a_replaced_wait_is_not_an_answer(self):
+        node = self._decide(self._run("replaced", {"gate_status": "replaced"}))
+
+        assert node["gate"] is None
+        assert node["gate_status"] is None
+
+    def test_a_wait_still_open_is_shown_as_it_is(self):
+        events = self._run("waiting", {"gate_status": "waiting"})[:2]
+        node = self._decide(events)
+
+        assert node["gate"] is True
+        assert node["gate_status"] == "waiting"
+        assert node["gate_decided_by"] is None
+
+    def test_an_answer_from_an_earlier_attempt_is_kept_too(self):
+        """Approved, then the run was picked up again and the step ran in the new attempt."""
+        wait = {"name": "decide", "start_time": "2026-01-01T00:00:01", "gate": True, **self._answer}
+        step = {"name": "decide", "start_time": "2026-01-01T00:10:00", "status": "completed",
+                "gate": None, "gate_status": None, "gate_decided_by": None,
+                "gate_decided_at": None, "gate_caller": None}
+
+        merged = _merge_node_recursive(latest=step, older=wait)
+
+        assert merged["status"] == "completed"
+        assert merged["gate_status"] == "approved"
+        assert merged["gate_caller"] == "slack:U1"
 
 
 class TestListWorkflowExecutions:

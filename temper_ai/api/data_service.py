@@ -18,6 +18,7 @@ from temper_ai.observability.event_types import EventType
 from temper_ai.observability.recorder import event_parents
 from temper_ai.observability.script_logs import SCRIPT_LOG_PREFIX
 from temper_ai.runner import quiet
+from temper_ai.stage.gate import APPROVED, REJECTED
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +319,8 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     for n in latest_nodes:
         key = n.get("name") or n.get("id")
         if key:
-            by_name[key] = n
+            # Oldest first, so a step's run after its approval comes after the wait.
+            by_name[key] = _keep_gate_answer(n, by_name[key]) if key in by_name else n
 
     for prior in workflow_candidates:
         if prior["id"] == workflow_event["id"]:
@@ -967,7 +969,7 @@ def _merge_node_recursive(*, latest: dict, older: dict) -> dict:
     (each producing different pipelines) would show only the second run's
     pipelines, dropping the first run's completed work from view.
     """
-    merged = dict(latest)
+    merged = _keep_gate_answer(dict(latest), older)
 
     # Merge child_nodes by name, recursively.
     older_kids = older.get("child_nodes") or []
@@ -1020,6 +1022,26 @@ def _merge_node_recursive(*, latest: dict, older: dict) -> dict:
         merged["agents"] = list(agent_by_name.values())
 
     return merged
+
+
+#: A wait's answer and who gave it, kept on its step's node (see ``_keep_gate_answer``).
+_GATE_ANSWER_FIELDS = ("gate", "gate_status", "gate_decided_by", "gate_decided_at", "gate_caller")
+
+
+def _keep_gate_answer(node: dict, earlier: dict) -> dict:
+    """``node`` with the answer to ``earlier``'s wait, when ``node`` has no wait of its own.
+
+    A step with a wait in front of it is two stage events under one name: the wait (``gate``,
+    its answer, who gave it, api/caller.py) and, once approved, the step's own run, which
+    knows nothing of the wait. The run page shows the answer and "decided by" from the node
+    (frontend bigview/shape.ts), so without this they vanish the moment the step starts.
+    Only an answer is carried: a wait still open, or one replaced by a later ask, is not one.
+    """
+    if node.get("gate") or not earlier.get("gate"):
+        return node
+    if earlier.get("gate_status") not in (APPROVED, REJECTED):
+        return node
+    return {**node, **{field: earlier.get(field) for field in _GATE_ANSWER_FIELDS}}
 
 
 def _pi_turns(node: dict) -> list[dict]:

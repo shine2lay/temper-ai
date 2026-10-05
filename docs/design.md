@@ -750,3 +750,52 @@ checks, fixture and paid runs: `/home/shinelay/design-lab/results/homepage-v2/` 
 v2.1 proofs in `/home/shinelay/design-lab/results/homepage-v2.1/`; reflow proofs
 (text and width edits in the real editor) in
 `/home/shinelay/design-lab/results/penpot-reflow/`.
+
+## Local image models (queue #36)
+
+Design steps can make pictures (3D objects, textures, backgrounds, product
+scenes, illustrations, patterns), edit a picture by instruction, and cut a
+picture into transparent RGBA layers, with open models that run on the host:
+no key, no cost, nothing leaves the machine. The models, their licences and
+the service itself live outside this repo (`~/opt/image-gen/README.md` and
+`LICENSES.md` on spark); every model in use is Apache-2.0, so the images can
+be used commercially.
+
+| Command | Model | What for |
+|---|---|---|
+| `generate` | Z-Image Turbo (default, 8 steps) or Z-Image (`--model z-image`, 30 steps) | text to image, 256-2048 px a side |
+| `edit` | Qwen-Image-Edit-2511 (`--quality fast`, `balanced` or `full`) | change an image by instruction, up to two reference images |
+| `layers` | Qwen-Image-Layered | transparent layers from a prompt or from an image |
+
+The helper is `configs/design/bin/design_image.py` (standard library only).
+In a run container:
+
+    "$TEMPER_PYTHON" /app/configs/design/bin/design_image.py generate \
+        --prompt "..." --size 1536x640 --seed 7 --out images/hero.png
+
+It finds the service at `$IMAGE_GEN_URL` (`http://HOST:PORT` or
+`unix:///path`), else at the socket `/app/local/image-gen/gateway.sock` (run
+containers mount the host's `local/` folder read-only, and unix sockets work
+through read-only mounts), else `~/temper-ai/local/image-gen/gateway.sock` on
+the host, else `http://127.0.0.1:8190`. No port is opened to the docker
+network.
+
+Every PNG is written with `<name>.provenance.json` beside it (schema
+`design-image-provenance/1`): model, weight files and revisions, licence,
+prompt, seed, size, settings, inputs (sha256), seconds and memory. `layers`
+writes `<name>-layer-N.png` and one provenance file for the set. One JSON line
+on stdout says where the files are.
+
+Exit codes: 0 written; 2 the call is wrong (bad option or input image);
+3 the service can't do it now (not running, busy, low on memory, timed out);
+4 the job failed. On 3 or 4 a design step makes the picture in code instead
+(CSS or SVG gradients, shapes, patterns); it never waits on the service.
+
+Rules (Design handbook 5.5): no words inside generated images (text stays live
+HTML on top; the helper warns when a prompt asks for words); keep the
+provenance file with the image; only models listed in the service's licence
+manifest; prompts carry the product's style family so a product's images
+look like one set.
+
+Tests: `tests/test_design_image.py` (a fake service on a unix socket or TCP; no
+model, GPU or real service).

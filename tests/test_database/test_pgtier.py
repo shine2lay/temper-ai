@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+import subprocess
 
 import pytest
 
@@ -30,7 +32,17 @@ class TestItRunsWhereItSays:
         from sqlalchemy import text
         with get_database().engine.connect() as conn:
             schema = conn.execute(text("SELECT current_schema()")).scalar()
-        assert schema == f"tier_{os.environ.get('PYTEST_XDIST_WORKER', 'master')}"
+        assert schema == pgtier.schema_name()
+        assert re.fullmatch(rf"tier_p\d+_{os.environ.get('PYTEST_XDIST_WORKER', 'master')}", schema)
+
+    def test_a_schema_is_left_behind_only_once_its_run_has_ended(self):
+        """Two runs share the test Postgres: one never drops a schema of a run still going."""
+        ended = subprocess.Popen(["true"])
+        ended.wait()
+
+        assert pgtier._run_is_gone(f"tier_p{ended.pid}_gw3")
+        assert not pgtier._run_is_gone(f"tier_p{os.getpid()}_gw3")
+        assert not pgtier._run_is_gone("tier_gw3")  # the old names: never dropped by anyone else
 
     def test_a_stored_time_comes_back_with_its_zone(self):
         """The bug that broke CI for eight days, on the database that matters."""

@@ -12,8 +12,13 @@ stay on SQLite, which keeps the whole suite at about twenty seconds.
 
 Isolation, because the tier runs under ``pytest -n``:
 
-* one **schema per xdist worker** (``tier_gw0``, ``tier_gw1``, ...), created
-  on demand and owned by that worker alone;
+* one **schema per xdist worker and run** (``tier_p<pid>_gw0``, ...: the pid
+  is the pytest run's own process), created on demand and owned by that
+  worker alone. The pid is there because several runs share one Postgres:
+  two chats' pre-commit hooks at once, on ``scripts/test-postgres.sh``, each
+  emptied the other's tables before every test (23 failures, 2026-10-04).
+  A worker drops its schema when it exits; one left by a run that died goes
+  when the next run starts;
 * every table truncated before each test, so no test sees another's rows.
 
 Safety: :func:`database_tier_url` refuses anything that could be a real
@@ -23,6 +28,7 @@ be pointed at may be called that, and the name must say ``test``.
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
 from urllib.parse import urlparse
@@ -94,6 +100,27 @@ def _worker() -> str:
     return os.environ.get("PYTEST_XDIST_WORKER", "master")
 
 
+def schema_name() -> str:
+    """This worker's schema: ``tier_p<pid>_<worker>``, the pid being the run's own process
+    (an xdist worker's parent, or this process when serial)."""
+    run_pid = os.getppid() if os.environ.get("PYTEST_XDIST_WORKER") else os.getpid()
+    return f"tier_p{run_pid}_{_worker()}"
+
+
+def _run_is_gone(schema: str) -> bool:
+    """Whether the run a ``tier_p<pid>_...`` schema belongs to has ended."""
+    found = re.fullmatch(r"tier_p(\d+)_\w+", schema)
+    if not found:
+        return False
+    try:
+        os.kill(int(found.group(1)), 0)
+    except ProcessLookupError:
+        return True
+    except OSError:  # alive, someone else's
+        return False
+    return False
+
+
 def database_tier_url(node: pytest.Item | None = None) -> str | None:
     """The Postgres URL this test should use, or None to stay on SQLite."""
     raw = os.environ.get(TIER_ENV, "").strip()
@@ -101,7 +128,7 @@ def database_tier_url(node: pytest.Item | None = None) -> str | None:
         return None
     if node is not None and not in_tier(str(getattr(node, "path", node.fspath))):  # type: ignore[attr-defined]
         return None
-    return _with_schema(check_url(raw), f"tier_{_worker()}")
+    return _with_schema(check_url(raw), schema_name())
 
 
 def _with_schema(url: str, schema: str) -> str:
@@ -119,9 +146,31 @@ def _create_schema(url: str, schema: str) -> None:
 
     engine = create_engine(url, poolclass=NullPool)
     try:
+        with engine.connect() as conn:
+            names = conn.execute(text("SELECT nspname FROM pg_namespace WHERE nspname LIKE 'tier_p%'")).scalars()
+            left_behind = [name for name in names if name != schema and _run_is_gone(name)]
+        for name in left_behind:
+            _drop_schema(url, name)
         with engine.begin() as conn:
             conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
             conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+    finally:
+        engine.dispose()
+    atexit.register(_drop_schema, url, schema)
+
+
+def _drop_schema(url: str, schema: str) -> None:
+    """Drop a schema, if nothing holds it for long; a later run takes it otherwise."""
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.pool import NullPool
+
+    engine = create_engine(url, poolclass=NullPool)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+    except Exception:  # noqa: BLE001 - tidying up; never fails a run
+        pass
     finally:
         engine.dispose()
 

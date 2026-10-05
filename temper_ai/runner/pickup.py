@@ -575,9 +575,12 @@ def pick_up_interrupted(
 
 def _resume_through_the_button(execution_id: str) -> None:
     """Resume exactly the way the Resume button does, so nothing behaves differently."""
+    from temper_ai.api.caller import acting_as
     from temper_ai.api.routes import ResumeRequest, resume_run
 
-    resume_run(execution_id, ResumeRequest())
+    # The server itself picks the run up at start-up: done under the name "pickup".
+    with acting_as("pickup", via="pickup"):
+        resume_run(execution_id, ResumeRequest())
 
 
 def _stamp_attempt(event_id: str, attempt: int) -> None:

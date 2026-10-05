@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from temper_ai.api.caller import acting_as
 from temper_ai.integrations.inbox import store
 from temper_ai.integrations.inbox.store import Event
 
@@ -149,6 +150,14 @@ def hold(source: str, delivery: str, raw: bytes, signature: str) -> tuple[int, s
 # -- handling -----------------------------------------------------------------------------------
 
 
+_PEOPLE_SOURCES = frozenset({"slack", "telegram"})
+
+
+def caller_name_for(source: str) -> str:
+    """The name an inbox source acts under: "slack", "telegram", or "hook:<source>"."""
+    return source if source in _PEOPLE_SOURCES else f"hook:{source}"
+
+
 def process(event_id: int, *, now: datetime | None = None) -> str:
     """Handle one saved event. Returns its status afterwards ("" if it wasn't there to take)."""
     row = store.get(event_id)
@@ -175,7 +184,11 @@ def process(event_id: int, *, now: datetime | None = None) -> str:
         return "done"
     token = _current.set(Current(event_id, event.started))
     try:
-        got = src.handle(event)
+        # The source checked this event on the way in (a signature, Slack's socket, Telegram's
+        # secret), so what it does is done under its name (api/caller.py). Slack and Telegram
+        # name the person inside.
+        with acting_as(caller_name_for(event.source), via=f"inbox {event.source}"):
+            got = src.handle(event)
     except Retry as exc:
         status = store.fail(event_id, str(exc) or "try again", now=now, result={"outcome": str(exc)})
         logger.warning("Inbox: %s event %s did not get done (%s): %s", event.source, event_id, status, exc)

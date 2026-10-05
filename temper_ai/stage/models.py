@@ -211,10 +211,15 @@ class WorkflowConfig:
     # Where its questions and notices go (docs/notify.md); read by the notify
     # loop from the stored config, kept here so the loader doesn't warn.
     notify: dict | str | None = None
+    # True when this workflow's script steps start or fork other runs through temper's API:
+    # the run then gets its own key, TEMPER_RUN_TOKEN, for its script steps only, which may
+    # start and fork runs and nothing else (docs/api-access.md). Only a literal `true` counts.
+    starts_runs: bool = False
 
     _KNOWN_FIELDS: frozenset = frozenset({
         "name", "description", "version", "nodes",
         "inputs", "outputs", "safety", "memory", "defaults", "notify", "on_failure",
+        "starts_runs",
     })
 
     @classmethod
@@ -244,4 +249,5 @@ class WorkflowConfig:
             defaults=data.get("defaults"),
             notify=data.get("notify"),
             on_failure=data.get("on_failure"),
+            starts_runs=data.get("starts_runs") is True,
         )

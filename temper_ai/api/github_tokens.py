@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from temper_ai.api.caller import require_caller_may
 from temper_ai.integrations.github.app import (
     GitHubAppError,
     NotInstalled,
@@ -41,6 +42,7 @@ class TokenRequest(BaseModel):
 @router.post("/token")
 def repo_token(body: TokenRequest) -> dict[str, Any]:
     """A token for one repository the app is installed on."""
+    require_caller_may("github_token")
     try:
         repo = check_repo(body.repo)
     except GitHubAppError as exc:

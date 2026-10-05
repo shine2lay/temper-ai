@@ -10,11 +10,16 @@ import { clearApiKey, getApiKey, setApiKey, setUnauthorizedHandler } from '@/lib
  * Shown on first load if the server reports auth_required and nothing is
  * stored, and again whenever a request comes back 401 — which is also how
  * a token that was revoked or mistyped surfaces.
+ *
+ * When only actions need a key (writes_need_key: reading stays open), it is
+ * first shown by the first action that comes back 401, and asks for the
+ * contents of the owner's key file instead.
  */
 export function TokenGate({ children }: { children: React.ReactNode }) {
   const [needsToken, setNeedsToken] = useState(false);
   const [value, setValue] = useState('');
   const [rejected, setRejected] = useState(false);
+  const [actionsOnly, setActionsOnly] = useState(false);
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -25,7 +30,8 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
     // A plain fetch: asking whether a token is needed must not need one.
     fetch('/api/runtime-config')
       .then((r) => (r.ok ? r.json() : null))
-      .then((config: { auth_required?: boolean } | null) => {
+      .then((config: { auth_required?: boolean; writes_need_key?: boolean } | null) => {
+        setActionsOnly(Boolean(config?.writes_need_key && !config?.auth_required));
         if (config?.auth_required && !getApiKey()) setNeedsToken(true);
       })
       .catch(() => {
@@ -52,13 +58,19 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
       >
         <div className="mb-4 flex items-center gap-2 text-temper-text">
           <KeyRound className="h-5 w-5 text-temper-text-muted" />
-          <h1 className="text-base font-semibold">This temper server needs a token</h1>
+          <h1 className="text-base font-semibold">
+            {actionsOnly ? 'This action needs your key' : 'This temper server needs a token'}
+          </h1>
         </div>
 
         <p className="mb-4 text-sm text-temper-text-muted">
-          {rejected
-            ? 'That token was rejected. Check the value of TEMPER_API_TOKEN on the server.'
-            : 'Paste the value of TEMPER_API_TOKEN. It stays in this browser.'}
+          {actionsOnly
+            ? rejected
+              ? 'That key was not accepted. Check you copied the whole key file.'
+              : 'Reading is open; starting, answering and stopping runs needs your key. Paste the contents of your key file. It stays in this browser. Then do the action again.'
+            : rejected
+              ? 'That token was rejected. Check the value of TEMPER_API_TOKEN on the server.'
+              : 'Paste the value of TEMPER_API_TOKEN. It stays in this browser.'}
         </p>
 
         <label htmlFor="api-token" className="mb-1 block text-xs text-temper-text-muted">
@@ -71,7 +83,7 @@ export function TokenGate({ children }: { children: React.ReactNode }) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           className="mb-4 w-full rounded border border-temper-control bg-temper-bg px-3 py-2 text-sm text-temper-text placeholder:text-temper-text-dim"
-          placeholder="TEMPER_API_TOKEN"
+          placeholder={actionsOnly ? 'your key' : 'TEMPER_API_TOKEN'}
         />
 
         <div className="flex gap-2">

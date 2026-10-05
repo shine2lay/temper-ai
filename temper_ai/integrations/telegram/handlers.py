@@ -26,6 +26,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from temper_ai.api.caller import acting_as
 from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.inbox.store import Event
 from temper_ai.integrations.notify import service as notify
@@ -79,6 +80,14 @@ def describe(update: dict[str, Any]) -> tuple[str, str]:
             word = text.split(maxsplit=1)[0] if text.startswith("/") else ""
             return (f"{kind} {word}".strip(), chat)
     return ("update", "")
+
+
+def update_user(update: dict[str, Any]) -> str:
+    """The Telegram user id an update came from (a message, a button press, a membership change)."""
+    for kind in ("message", "callback_query", "my_chat_member"):
+        if kind in update:
+            return str(((update.get(kind) or {}).get("from") or {}).get("id") or "")
+    return ""
 
 
 def display_name(user: dict[str, Any] | None) -> str:
@@ -152,6 +161,15 @@ class Handler:
             logger.exception("Telegram: handling update %s failed", update.get("update_id"))
 
     def handle(self, update: dict[str, Any]) -> None:
+        """One update, done under the name of who sent it ("telegram:<user id>").
+
+        allowed() still decides who may use the bot; the name is what temper's
+        write guard records (api/caller.py).
+        """
+        with acting_as(f"telegram:{update_user(update) or 'unknown-user'}", via="telegram"):
+            self._handle(update)
+
+    def _handle(self, update: dict[str, Any]) -> None:
         if not self._first_time(str(update.get("update_id", ""))):
             return
         if "my_chat_member" in update:

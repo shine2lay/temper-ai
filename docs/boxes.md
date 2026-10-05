@@ -60,6 +60,16 @@ work as before. The agent tools that act as a bot themselves (`SlackPost`,
 fail in a box with "..._TOKEN is not set" unless an install lists the token for
 the box's process, which puts it within every agent's reach ("Still exposed").
 
+## A run's own key
+
+A box holds no key that lets it change things on the server: with the write
+guard on ([api-access.md](api-access.md)), answering a wait, cancelling,
+resuming or cleaning up from a box is refused. A workflow whose script steps
+start other runs declares `starts_runs: true`; its run then makes a key of its
+own that its script steps get as `TEMPER_RUN_TOKEN` (never agent tools), which
+may only start and fork runs, and which dies with the run. The shared
+`TEMPER_API_TOKEN` a box's process may carry counts for nothing there.
+
 ## Emergency rollback
 
 `TEMPER_BOX_ENV=inherit` in the worker's environment brings back the old box: a copy

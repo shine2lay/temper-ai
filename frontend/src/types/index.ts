@@ -189,6 +189,11 @@ export interface NodeExecution {
   // again and a later wait took this one's place).
   gate?: boolean;
   gate_status?: 'waiting' | 'approved' | 'rejected' | 'replaced';
+  /** Who answered the wait: the person, or what they answered through. */
+  gate_decided_by?: string | null;
+  gate_decided_at?: string | null;
+  /** The caller that sent the answer: a named key, slack:<user id>, telegram:<user id>... */
+  gate_caller?: string | null;
   removed_children?: string[];       // (this node is a dispatcher) names it removed
   // Backward compat
   collaboration_events?: CollaborationEvent[];

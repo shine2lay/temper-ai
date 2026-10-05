@@ -225,6 +225,13 @@ def execute_workflow(
         if resume_metadata is not None:
             resume_metadata = {**resume_metadata, "replayed_dispatches": replayed}
 
+    # A workflow whose scripts start other runs gets its own key for them, for this process's
+    # life only (api/run_tokens.py); every other run gets none.
+    holds_run_key = bool(getattr(config, "starts_runs", False))
+    if holds_run_key:
+        from temper_ai.api.run_tokens import open_for_run
+        open_for_run(execution_id, config.name)
+
     # --- Execute (the real workflow engine) ---
     try:
         if is_resume:
@@ -261,6 +268,9 @@ def execute_workflow(
         # The executor is per run: its thread pool and its scratch directory
         # end with the run. (The API routes and `temper run` do the same.)
         run_tool_executor.shutdown(wait=False)
+        if holds_run_key:
+            from temper_ai.api.run_tokens import close_for_run
+            close_for_run(execution_id)
 
     logger.info(
         "Workflow '%s' %s: status=%s, cost=$%.4f, tokens=%d",

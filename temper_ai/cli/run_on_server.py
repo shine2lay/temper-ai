@@ -17,7 +17,9 @@ and one line for each wait on the owner, which is answered on the dashboard or i
 never here. It exits with the run's outcome; Ctrl+C stops following and the run carries on.
 
 The server is ``--server``, else ``TEMPER_SERVER_URL``, else http://127.0.0.1:8420 (right both on the
-host and inside the server container), with ``TEMPER_API_TOKEN`` when set. Dashboard links use
+host and inside the server container), with the key ``client_key()`` finds (TEMPER_API_KEY_FILE,
+TEMPER_RUN_TOKEN or TEMPER_API_TOKEN, api/api_keys.py; inside the server container none is needed,
+it is the caller "server"). Dashboard links use
 ``TEMPER_UI_URL``, else https://temper.wai2shine.com.
 """
 
@@ -137,7 +139,9 @@ def run(workflow: str, inputs: dict, *, workspace: str | None = None, server: st
     not_answering = (f"The temper server at {url} isn't answering; runs start only on the server "
                      "so they show on the dashboard. Nothing was run.")
     try:
-        api = Server(url, os.environ.get("TEMPER_API_TOKEN", "").strip() or None)
+        from temper_ai.api.api_keys import client_key
+
+        api = Server(url, client_key())
     except Unreachable:
         print(not_answering, file=err)
         return NOT_STARTED

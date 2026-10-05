@@ -178,6 +178,102 @@ def _is_public(path: str) -> bool:
     return any(path == prefix or path.startswith(prefix + "/") for prefix in PUBLIC_PREFIXES)
 
 
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_LOOPBACK = frozenset({"127.0.0.1", "::1"})
+SCOPE_CALLER_KEY = "temper.caller"
+
+
+def _write_key(scope: dict) -> str | None:
+    """The key a request carries for the write guard: a header only.
+
+    Not ``?token=`` and not the cookie, which the all-routes token above
+    still accepts: a key in a URL ends up in access logs and browser
+    history, and a cookie is sent by the browser on its own.
+    """
+    headers = scope.get("headers") or []
+    authorization = _header(headers, b"authorization")
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip() or None
+    direct = _header(headers, b"x-temper-token")
+    return direct.strip() if direct else None
+
+
+def _server_owns_loopback() -> bool:
+    """True when nothing but the server's own processes can call it from 127.0.0.1.
+
+    In a container the host's requests arrive from the network's gateway,
+    and runs' boxes from their own addresses, so 127.0.0.1 is someone inside
+    the server's own container: ``docker exec ... temper`` (measured
+    2026-10-05). That holds only while runs happen elsewhere: with
+    TEMPER_EXECUTION_MODE inprocess or subprocess an agent's Bash runs in
+    this container too, and loopback names nobody.
+    """
+    mode = (os.environ.get("TEMPER_EXECUTION_MODE") or "inprocess").strip().lower()
+    return mode == "external" and os.path.exists("/.dockerenv")
+
+
+def identify_caller_name(presented: str | None, source: str) -> str | None:
+    """Who a write comes from, before any run key is looked up (see CallerMiddleware).
+
+    The shared TEMPER_API_TOKEN does not name a writer: every run box's own
+    process carries it (docs/boxes.md), where an agent can read it. Only a
+    named key (the hashed keys file, or TEMPER_API_TOKENS_FILE, which stays
+    on the server) does.
+    """
+    from temper_ai.api.api_keys import identify_key
+
+    if presented:
+        named = identify_key(presented) or identify(presented)
+        return None if named == "shared" else named
+    if source in _LOOPBACK and _server_owns_loopback():
+        return "server"
+    return None
+
+
+class CallerMiddleware:
+    """Work out who sent each request and bind it for the request (api/caller.py).
+
+    This only names the caller; it refuses nothing. The guard runs inside
+    each operation that changes something (``require_caller_may``), so the
+    MCP tools, which call those operations in-process, meet the same check.
+    A key that matches nothing makes the caller unknown, the same as none.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        from temper_ai.api.caller import Caller, bound, clean_request_id
+
+        client = scope.get("client")
+        source = str(client[0]) if client else "unknown"
+        method = str(scope.get("method", "")).upper()
+        presented = _write_key(scope)
+        name: str | None = None
+        if method not in _READ_METHODS:
+            name = identify_caller_name(presented, source)
+            if name is None and presented:
+                from temper_ai.api.run_tokens import KEY_PREFIX, identify_run_token
+
+                if presented.startswith(KEY_PREFIX):
+                    import anyio
+
+                    run_id = await anyio.to_thread.run_sync(identify_run_token, presented)
+                    name = f"box:{run_id}" if run_id else None
+        caller = Caller(
+            name=name,
+            source=source,
+            request_id=clean_request_id(_header(scope.get("headers") or [], b"x-request-id")),
+            via=f"{method} {scope.get('path', '')}",
+        )
+        scope[SCOPE_CALLER_KEY] = caller
+        with bound(caller):
+            await self.app(scope, receive, send)
+
+
 class TokenAuthMiddleware:
     """Require a bearer token on everything that carries data."""
 
@@ -195,7 +291,19 @@ class TokenAuthMiddleware:
 
         # Constant-time comparison: a token that leaks through response
         # timing is not much of a token.
-        client = identify(_presented_token(scope))
+        presented = _presented_token(scope)
+        client = identify(presented)
+        if client is None and presented:
+            # A named key (api/api_keys.py) or a run's own key opens the door too: the
+            # write guard then decides what it may change (api/caller.py).
+            from temper_ai.api.api_keys import identify_key
+            from temper_ai.api.run_tokens import KEY_PREFIX, identify_run_token
+
+            client = identify_key(presented)
+            if client is None and presented.startswith(KEY_PREFIX):
+                import anyio
+
+                client = await anyio.to_thread.run_sync(identify_run_token, presented)
         if client is not None:
             await self.app(scope, receive, send)
             return

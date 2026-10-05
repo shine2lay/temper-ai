@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
+from temper_ai.api.caller import require_caller_may
 from temper_ai.integrations.inbox import service, store
 
 router = APIRouter(prefix="/api/events", tags=["events"])
@@ -54,6 +55,7 @@ def show_event(event_id: int) -> dict[str, Any]:
 
 @router.post("/{event_id}/replay")
 def replay_event(event_id: int) -> Any:
+    require_caller_may("replay_event")
     if store.get(event_id) is None:
         raise HTTPException(404, f"there is no event {event_id}")
     ok, why = service.replay(event_id)

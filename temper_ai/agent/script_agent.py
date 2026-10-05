@@ -23,6 +23,19 @@ from temper_ai.observability import EventType
 from temper_ai.observability import record as _default_record
 from temper_ai.shared.types import AgentResult, ExecutionContext, Status
 
+
+def _run_key_env(context: ExecutionContext) -> dict[str, str]:
+    """TEMPER_RUN_TOKEN for a run that holds its own key (``starts_runs: true``), else nothing.
+
+    Only script steps get it: an agent's own tools build their environment
+    without it (shared/agent_env.py), so a model never holds it.
+    """
+    from temper_ai.api.run_tokens import ENV_NAME, held
+
+    key = held(getattr(context, "run_id", None))
+    return {ENV_NAME: key} if key else {}
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -335,7 +348,7 @@ class ScriptAgent(AgentABC):
             # it is not compacted for a model's context the way a model's own calls are.
             params: dict[str, Any] = {
                 "command": script, "_skip_allowlist": True, "_raw_output": True, "timeout": timeout,
-                "env": {**stash.env, "TEMPER_PYTHON": sys.executable},
+                "env": {**stash.env, "TEMPER_PYTHON": sys.executable, **_run_key_env(context)},
             }
             # The attempt's log: what the script prints, saved and sent to the dashboard while it
             # runs (agent/script_log.py). Only its output goes in it, never the script or its env.

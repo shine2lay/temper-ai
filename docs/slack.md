@@ -402,7 +402,9 @@ for. Either way the bot must be in the channel.
 - **Who may act is in one file**, `configs/slack/access.yaml` (see [Who can
   do what](#who-can-do-what)); without it, anyone in the workspace can act.
   Every start, stop, gate answer and pick is logged with the Slack user
-  (table `slack_actions`; also in the server log), refused ones too.
+  (table `slack_actions`; also in the server log), refused ones too. temper's
+  write guard ([api-access.md](api-access.md)) sees these actions as
+  `slack:<user id>`, so they need no key and are recorded under that name.
 - **Only one process may hold the socket**, because Slack hands each event to
   any one open connection. Run any other server on the same app with
   `TEMPER_SLACK=0`. Tests run with it off.

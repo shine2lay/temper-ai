@@ -128,6 +128,9 @@ class Box:
     env_file: Path = field(default_factory=Path)
     built: dict[str, str] = field(default_factory=dict)
     up_at: float = 0.0
+    # The stack runs its write guard in enforce (docs/api-access.md): this key, made for the
+    # one check and kept only here in memory, is named "temper-ci-box" in its keys file.
+    write_key: str = ""
 
     # -- setting up ---------------------------------------------------------
 
@@ -194,9 +197,23 @@ class Box:
             "TEMPER_CI_LINEAR_SECRET=box-linear-secret",
             "TEMPER_CI_NOTION_SECRET=box-notion-secret",
             "TEMPER_SLACK_TEST_TOKEN=box-slack-test-token",
+            "TEMPER_CI_API_GUARD=enforce",
         ]
         self.env_file.parent.mkdir(parents=True, exist_ok=True)
         self.env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.write_keys_file()
+
+    def write_keys_file(self) -> None:
+        """A throwaway named key for this check's writes; only its hash goes to the stack."""
+        import hashlib
+        import secrets
+
+        self.write_key = "tk_" + secrets.token_urlsafe(32)
+        digest = hashlib.sha256(self.write_key.encode()).hexdigest()
+        keys = self.workspaces / ".api-keys.json"
+        keys.parent.mkdir(parents=True, exist_ok=True)
+        keys.write_text(json.dumps({"keys": {"temper-ci-box": f"sha256:{digest}"}}) + "\n",
+                        encoding="utf-8")
 
     def build(self) -> dict[str, str]:
         """Build the images this commit needs.
@@ -275,11 +292,15 @@ class Box:
     # -- talking to it ------------------------------------------------------
 
     def request(self, method: str, path: str, body=None, timeout: int = 30,
-                headers: dict[str, str] | None = None, raw: bytes | None = None):
+                headers: dict[str, str] | None = None, raw: bytes | None = None,
+                with_key: bool = True):
         data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+        # Writes carry the check's own key (write_keys_file); with_key=False shows what a
+        # caller without one gets.
+        keyed = {"Authorization": f"Bearer {self.write_key}"} if with_key and self.write_key else {}
         req = urllib.request.Request(  # noqa: S310 - a fixed loopback address
             self.api + path, data=data, method=method,
-            headers={"Content-Type": "application/json", **(headers or {})},
+            headers={"Content-Type": "application/json", **keyed, **(headers or {})},
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             text = resp.read().decode()
@@ -300,10 +321,10 @@ class Box:
         return self.request("POST", path, body, timeout=timeout, **kw)
 
     def status_of(self, method: str, path: str, raw: bytes = b"{}",
-                  headers: dict[str, str] | None = None) -> tuple[int, str]:
+                  headers: dict[str, str] | None = None, with_key: bool = True) -> tuple[int, str]:
         """The status code a call comes back with, errors included."""
         try:
-            self.request(method, path, raw=raw, headers=headers, timeout=20)
+            self.request(method, path, raw=raw, headers=headers, timeout=20, with_key=with_key)
             return 200, ""
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read().decode()[:400]

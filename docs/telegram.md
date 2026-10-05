@@ -99,7 +99,9 @@ it (boxes.md, "Still exposed").
    ```
 
    Your user id is in `temper telegram check` once you have written to the
-   bot (it lists refused chats), or ask @userinfobot.
+   bot (it lists refused chats), or ask @userinfobot. What an allowed person
+   does runs as `telegram:<user id>` for temper's write guard
+   ([api-access.md](api-access.md)): no key needed, recorded under that name.
 4. **Where messages go.** Add places to `configs/notify/local/notify.yaml`
    ([notify.md](notify.md)), e.g. `telegram: {telegram: 123456789}`.
 5. Restart the server and worker, then check it:

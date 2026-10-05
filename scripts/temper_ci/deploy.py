@@ -38,6 +38,19 @@ TEMPER_DEPLOY = Path.home() / ".local/bin/temper-deploy"
 LIVE_PORT_DEFAULT = 8420            # what docker-compose.yml publishes
 RESTART_PATIENCE = 60 * 60          # an hour: a long run may be going
 LIVE_CHECK_RUNS = "smoke_test"      # $0, script agents only
+# temper-ci's own key for the live check's run start (docs/api-access.md): a file on the host,
+# outside every folder mounted into temper's containers. No file, no key: fine until the
+# server's write guard is set to enforce.
+CI_KEY_FILE = Path.home() / ".config/temper/api-keys/temper-ci.key"
+
+
+def ci_key_headers(key_file: Path = CI_KEY_FILE) -> dict[str, str]:
+    """The Authorization header for temper-ci's writes, or none when it has no key."""
+    try:
+        key = key_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    return {"Authorization": f"Bearer {key}"} if key else {}
 
 
 def live_api() -> str:
@@ -107,7 +120,7 @@ def live_check(shots: Path) -> dict:
             f"{api}/api/runs", method="POST",
             data=json.dumps({"workflow": LIVE_CHECK_RUNS,
                              "inputs": {"message": "after the deploy"}}).encode(),
-            headers={"Content-Type": "application/json"})
+            headers={"Content-Type": "application/json", **ci_key_headers()})
         with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
             run_id = json.loads(resp.read()).get("execution_id") or ""
         status, deadline = "", time.time() + 240

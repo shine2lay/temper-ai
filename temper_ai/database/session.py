@@ -42,6 +42,7 @@ class DatabaseManager:
         # before create_all runs. Relying on some other import having happened
         # first is fragile: a table whose module is imported lazily (memory is
         # only constructed after init_database) would silently not be created.
+        from temper_ai.api import guard_models as _guard_models  # noqa: F401
         from temper_ai.checkpoint import models as _checkpoint_models  # noqa: F401
         from temper_ai.integrations.inbox import models as _inbox_models  # noqa: F401
         from temper_ai.integrations.notify import models as _notify_models  # noqa: F401

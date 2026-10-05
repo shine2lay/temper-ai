@@ -326,6 +326,16 @@ function stageShape(stageId: string, src: ShapeSources): ViewShape | null {
   ];
   if (stage.stage_type) facts.splice(1, 0, { label: 'kind', value: stage.stage_type });
   if (stage.strategy) facts.push({ label: 'strategy', value: stage.strategy });
+  // A wait someone answered: the answer, who gave it and what it came through.
+  if (stage.gate && stage.gate_status && stage.gate_status !== 'waiting') {
+    facts.push({ label: 'answer', value: stage.gate_status });
+    const by = stage.gate_decided_by;
+    const via = stage.gate_caller;
+    if (by || via) {
+      facts.push({ label: 'decided by', value: by && via && by !== via ? `${by} (${via})` : (by ?? via ?? '') });
+    }
+    if (stage.gate_decided_at) facts.push({ label: 'decided', value: formatTimestamp(stage.gate_decided_at) });
+  }
 
   const core: CoreBlock[] = [];
   const childStages = asList(stage.child_nodes);

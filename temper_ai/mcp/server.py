@@ -57,14 +57,51 @@ def _security_settings() -> TransportSecuritySettings:
     )
 
 
+def _caller_of_this_call(tool_name: str):
+    """Who sent the MCP request this tool call belongs to (api/caller.py).
+
+    The SDK runs tool calls in its session's own task group, not the HTTP
+    request's task, so what CallerMiddleware bound for the request never
+    reaches here by itself. The request the call came in on does: the SDK
+    hands it over as the call's request context, and the middleware left
+    the caller on its scope.
+    """
+    from dataclasses import replace
+
+    from temper_ai.api.auth import SCOPE_CALLER_KEY
+    from temper_ai.api.caller import current_caller
+
+    try:
+        from mcp.server.lowlevel.server import request_ctx
+
+        request = request_ctx.get().request
+    except (LookupError, ImportError):
+        request = None
+    scope = getattr(request, "scope", None) or {}
+    caller = scope.get(SCOPE_CALLER_KEY) or current_caller()
+    if caller is None:
+        return None
+    return replace(caller, via=f"mcp {tool_name}")
+
+
+def _run_as(caller, call):
+    from temper_ai.api.caller import bound
+
+    with bound(caller):
+        return call()
+
+
 async def _off_loop(fn, *args, **kwargs):
-    """Run a blocking tool body on a worker thread.
+    """Run a blocking tool body on a worker thread, as whoever sent the call.
 
     FastMCP invokes synchronous tools directly on the event loop, so every
     database read here would otherwise stall the dashboard, the API and
-    other agents for as long as it took.
+    other agents for as long as it took. The caller is bound on the thread
+    so a tool that changes something meets the same guard as its route.
     """
-    return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+    caller = _caller_of_this_call(getattr(fn, "__name__", "tool"))
+    call = functools.partial(fn, *args, **kwargs)
+    return await anyio.to_thread.run_sync(functools.partial(_run_as, caller, call))
 
 
 def build_server() -> FastMCP:

@@ -52,11 +52,12 @@ async def _serve(url: str, token: str | None = None) -> None:
 def run_bridge(url: str = DEFAULT_URL, token: str | None = None) -> None:
     """Serve temper's MCP tools over stdio by proxying to a running server.
 
-    The token defaults to TEMPER_API_TOKEN, so a bridge running beside the
-    server it proxies needs no extra configuration.
+    The token defaults to the key ``client_key()`` finds: the file named by
+    TEMPER_API_KEY_FILE (a named key, so what the bridge changes is recorded
+    under its name), else TEMPER_API_TOKEN.
     """
-    import os
-
     import anyio
 
-    anyio.run(_serve, url, token or os.environ.get("TEMPER_API_TOKEN") or None)
+    from temper_ai.api.api_keys import client_key
+
+    anyio.run(_serve, url, token or client_key())

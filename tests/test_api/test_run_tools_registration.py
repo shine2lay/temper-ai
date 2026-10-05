@@ -187,8 +187,9 @@ def test_every_run_path_that_builds_an_executor_registers_through_the_helper():
     builders = functions_building_a_tool_executor()
 
     # start_run's work is in _start_run (start_run only adds the note on the event that started it),
-    # and resume_run's in-process work is in _start_resume (resume_run first claims a parked attempt).
-    assert {"_start_run", "_start_resume", "fork_run"} <= set(builders), (
+    # and resume_run's in-process work is in _start_resume (resume_run first claims a parked attempt);
+    # fork_run checks and records its caller around _fork_run (api/caller.py).
+    assert {"_start_run", "_start_resume", "_fork_run"} <= set(builders), (
         f"expected the three run paths to build executors; found {sorted(builders)}"
     )
     for name, fn in builders.items():

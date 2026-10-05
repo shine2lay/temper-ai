@@ -1089,6 +1089,11 @@ def _build_node_execution(node_event: dict, all_events: list[dict]) -> dict:
         # opens the gate modal instead of the stage detail for a waiting one.
         "gate": data.get("gate"),
         "gate_status": data.get("gate_status"),
+        # Who answered the wait and when: the person (or what they answered through) and the
+        # caller that sent it, a named key, slack:<id>... (api/caller.py). None before it was kept.
+        "gate_decided_by": data.get("gate_decided_by"),
+        "gate_decided_at": data.get("gate_decided_at"),
+        "gate_caller": data.get("gate_caller"),
         # A Pi team's story (messages, reviews, owner waits, decision): the stage view's
         # Collaboration fold. Set only by a team node (temper_ai/pi_agent/team_leader.py).
         "collaboration_events": data.get("collaboration_events"),

@@ -19,7 +19,11 @@ the wait. It carries:
 
 `GET /api/runs/{id}/gates` lists the waits still open, one entry per wait,
 with these fields. `GET /api/runs/{id}/decisions` lists every wait the run
-ever opened, with who decided it, when, and with which request id.
+ever opened, with who decided it, when, and with which request id: `decided_by`
+(the answering side's own words, else its caller name) and `caller`,
+`caller_from`, `caller_request_id` (the key's or person's name, source address,
+request id; see [api-access.md](api-access.md)). With the write guard in
+`enforce`, approving needs a named key.
 
 ## Approving
 

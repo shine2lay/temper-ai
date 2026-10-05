@@ -150,6 +150,11 @@ services:
       # not exist makes Docker create a *directory* of that name, which
       # would break the feature for anyone who has not created one.
       TEMPER_API_TOKENS_FILE: ${TEMPER_API_TOKENS_FILE:-}
+      # The write guard (docs/api-access.md): off | record | enforce. Reads stay
+      # open; with enforce, starting, answering, cancelling... needs a named key.
+      # The keys file holds sha256 hashes only; default configs/api/local/keys.json.
+      TEMPER_API_GUARD: ${TEMPER_API_GUARD:-off}
+      TEMPER_API_KEYS_FILE: ${TEMPER_API_KEYS_FILE:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # ChatGPT Plus/Pro OAuth token (a JWT): routes to the Codex Responses
       # endpoint instead of api.openai.com. local/sync-openai-oauth-token.sh

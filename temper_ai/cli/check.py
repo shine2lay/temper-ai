@@ -337,6 +337,39 @@ def check_pi_loops(config_dir: str | Path = "configs") -> tuple[int, list[str]]:
     return seen, problems
 
 
+def check_api_guard(config_dir: str | Path = "configs") -> tuple[list[str], list[str]]:
+    """(workflows that hold their own run key, problems) for the write guard (docs/api-access.md).
+
+    Problems: a ``starts_runs`` that is not a plain true or false ("yes", "true" in quotes:
+    only a literal true counts, so such a workflow would quietly get no key), the named
+    keys file, and a TEMPER_API_GUARD value that is not off, record or enforce.
+    """
+    import os
+
+    from temper_ai.api.api_keys import check_keys_file
+    from temper_ai.api.caller import GUARD_ENV_VAR, MODES
+
+    root = Path(config_dir)
+    holders: list[str] = []
+    problems: list[str] = []
+    if root.is_dir():
+        files = _FileConfigs(root)
+        for name in files.workflows():
+            data = files.configs[("workflow", name)]
+            body = data.get("workflow") if isinstance(data.get("workflow"), dict) else data
+            value = body.get("starts_runs") if isinstance(body, dict) else None
+            if value is True:
+                holders.append(name)
+            elif value not in (None, False):
+                where = files.paths.get(("workflow", name), name)
+                problems.append(f"{where}: starts_runs is {value!r}; write true or false")
+    problems.extend(check_keys_file())
+    mode = (os.environ.get(GUARD_ENV_VAR) or "").strip().lower()
+    if mode and mode not in MODES:
+        problems.append(f"{GUARD_ENV_VAR}={mode!r} is not one of {', '.join(MODES)} (it counts as record)")
+    return sorted(holders), problems
+
+
 def check(config_dir: str | Path = "configs") -> int:
     """Print the report. 0 when every setting lands, 1 when one does not."""
     seen, problems = check_effort(config_dir)
@@ -400,7 +433,18 @@ def check(config_dir: str | Path = "configs") -> int:
         print("\nNo run can start while the list does not load (docs/boxes.md).")
     elif box_files:
         print("\u2713 the box allow-list loads")
-    return 1 if (problems or access_problems or loop_problems or box_problems) else 0
+
+    holders, guard_problems = check_api_guard(config_dir)
+    print()
+    print(f"Workflows whose scripts may start runs (starts_runs): {', '.join(holders) or 'none'}")
+    if guard_problems:
+        print(f"\n\u26a0 {len(guard_problems)} problem(s) for the write guard:")
+        for line in guard_problems:
+            print(f"  {line}")
+        print("\nSee docs/api-access.md.")
+    else:
+        print("\u2713 starts_runs, the named keys file and TEMPER_API_GUARD read cleanly")
+    return 1 if (problems or access_problems or loop_problems or box_problems or guard_problems) else 0
 
 
 def add_parser(subparsers) -> None:

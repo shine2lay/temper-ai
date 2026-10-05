@@ -106,6 +106,58 @@ def gate_through_api(box: Box) -> str:
     return f"gate on '{node}' answered through the API; {len(rows)} decision(s) recorded"
 
 
+def _waiting_node(box: Box, run_id: str, seconds: int = 180) -> str:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        gates = box.get(f"/api/runs/{run_id}/gates")
+        waiting = gates if isinstance(gates, list) else gates.get("gates", [])
+        if waiting:
+            return str(waiting[0].get("node_name") or waiting[0].get("node") or "")
+        time.sleep(2)
+    raise BoxError(f"no gate ever appeared on {run_id[:8]}")
+
+
+def write_guard(box: Box) -> str:
+    """The write guard in enforce (docs/api-access.md), the way security's repro goes.
+
+    A gate_smoke run parks; a keyless answer from outside is refused; a run whose
+    workflow holds its own key (ci_run_token) tries to answer and cancel it from its
+    box and is refused, and starts a smoke_test run, which it may. The wait is still
+    open after all that, and the check's own key then answers it, under its name.
+    """
+    waiting = box.start_run("gate_smoke")
+    node = _waiting_node(box, waiting)
+    status, _ = box.status_of("POST", f"/api/runs/{waiting}/approve/{node}",
+                              raw=b'{"response": "no key"}', with_key=False)
+    if status != 401:
+        raise BoxError(f"a keyless approve came back {status}, not 401")
+    probe = box.start_run("ci_run_token", {"wait_run": waiting, "wait_node": node})
+    box.wait_for(probe, ("completed",), seconds=180)
+    run = box.get(f"/api/workflows/{probe}")
+    seen = (run.get("workflow_output") or {}).get("seen") or run.get("output") or ""
+    text = seen if isinstance(seen, str) else json.dumps(seen)
+    started = ""
+    for line in reversed(text.splitlines()):
+        try:
+            started = str(json.loads(line).get("started") or "")
+            break
+        except (ValueError, AttributeError):
+            continue
+    if _waiting_node(box, waiting, seconds=10) != node:
+        raise BoxError("the wait is not open any more after the box tried to answer it")
+    if started:
+        box.wait_for(started, ("completed",), seconds=180)
+    box.post(f"/api/runs/{waiting}/approve/{node}", {"response": "the machine check's own key says yes"})
+    box.wait_for(waiting, ("completed",), seconds=180)
+    decisions = box.get(f"/api/runs/{waiting}/decisions")
+    rows = decisions if isinstance(decisions, list) else decisions.get("decisions", [])
+    callers = {str(r.get("caller") or "") for r in rows}
+    if "temper-ci-box" not in callers:
+        raise BoxError(f"the decision does not name its caller; callers seen: {sorted(callers)}")
+    return (f"keyless approve 401; box {probe[:8]} refused approve and cancel, started "
+            f"{started[:8] or '?'}; wait {waiting[:8]} stayed open, then answered by temper-ci-box")
+
+
 def stop_then_resume(box: Box) -> str:
     run_id = box.start_run("ci_slow", {"seconds": "40"})
     time.sleep(12)                     # let `before` finish and `work` start
@@ -263,7 +315,7 @@ def hooks(box: Box) -> str:
 
 # How many things the set checks, when it gets all the way through. Used to say
 # how much was not reached when it stops early.
-SET_SIZE = 9
+SET_SIZE = 10
 
 
 def run_all(box: Box, shots: Path) -> list[Result]:
@@ -298,6 +350,8 @@ def run_all(box: Box, shots: Path) -> list[Result]:
         lambda: parallel_and_stage(box))
     add("gate", "a gate parks the run and an API answer releases it",
         lambda: gate_through_api(box))
+    add("write guard", "a run's box can start a run but not answer or cancel a wait",
+        lambda: write_guard(box))
     add("stop and resume", "a stopped run comes back from its checkpoint",
         lambda: stop_then_resume(box))
     add("fork", "a fork of a finished run carries on by itself", lambda: fork(box))

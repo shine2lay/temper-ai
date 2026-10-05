@@ -11,12 +11,14 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+from contextlib import contextmanager
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket
 from pydantic import AliasChoices, BaseModel, Field
 
 from temper_ai.api.app_state import AppState
+from temper_ai.api.caller import Caller, record_action, require_caller_may, who
 from temper_ai.api.data_service import (
     get_agent_index,
     get_tool_calls,
@@ -162,8 +164,10 @@ def start_run(body: RunRequest):
     modes, the response shape is identical: returns execution_id + status,
     and the caller polls GET /api/workflows/{id} or watches the WebSocket.
     """
+    caller = require_caller_may("start")
     response = _start_run(body)
     _note_event_run(body.workflow, response.execution_id)
+    record_action(response.execution_id, "start", caller, workflow=body.workflow)
     return response
 
 
@@ -283,6 +287,7 @@ def _start_run(body: RunRequest) -> RunResponse:
     thread = threading.Thread(
         target=_run_workflow,
         args=(nodes, body.inputs, context, config.name, execution_id, config.outputs),
+        kwargs={"starts_runs": bool(getattr(config, "starts_runs", False))},
         daemon=True,
         name=f"temper-run-{execution_id}",
     )
@@ -604,6 +609,21 @@ class CancelRequest(BaseModel):
 
 @router.post("/api/runs/{execution_id}/cancel")
 def cancel_run(execution_id: str, body: CancelRequest | None = None):
+    """Cancel a running workflow execution (who asked is kept with the run)."""
+    caller = require_caller_may("cancel", run_id=execution_id)
+    reply = _cancel_run(execution_id, body, caller)
+    record_action(execution_id, "cancel", caller, reason=(body.reason if body else "").strip() or None)
+    return reply
+
+
+def _gate_who(caller: Caller) -> dict[str, str]:
+    """Who answered a wait, as kept on the wait's own record."""
+    w = who(caller)
+    return {"gate_caller": w["caller"], "gate_caller_from": w["caller_from"],
+            "gate_caller_request_id": w["caller_request_id"]}
+
+
+def _cancel_run(execution_id: str, body: CancelRequest | None, caller: Caller):
     """Cancel a running workflow execution.
 
     Three paths in priority order:
@@ -619,12 +639,15 @@ def cancel_run(execution_id: str, body: CancelRequest | None = None):
     can list the two side by side.
     """
     reason = (body.reason if body else "").strip()
-    rejected: dict[str, Any] = {"gate_status": REJECTED, "gate_decided_at": _now_iso()}
+    rejected: dict[str, Any] = {"gate_status": REJECTED, "gate_decided_at": _now_iso(), **_gate_who(caller)}
     if reason:
         rejected["gate_response"] = {"response": reason, "answers": [], "text": reason}
     for ev in _waiting_gate_events(execution_id):
         # Only a wait still open: an approval that got there first stands as it was given.
-        decide_event(str(ev["id"]), expect=(WAITING,), status=REJECTED, data=rejected)
+        # Who decided: what Slack or Telegram already wrote there (TemperOps.record_who), else
+        # the caller's name.
+        named = {} if (ev.get("data") or {}).get("gate_decided_by") else {"gate_decided_by": caller.label}
+        decide_event(str(ev["id"]), expect=(WAITING,), status=REJECTED, data={**rejected, **named})
     cancel_event = _state().running.get(execution_id)
     if cancel_event is not None:
         cancel_event.set()
@@ -742,6 +765,13 @@ def release_cleanups(execution_id: str):
     The run itself stays failed. Its box starts once more and runs those steps and nothing
     else, so the dev stack and the worktree it was keeping for a resume are let go.
     """
+    caller = require_caller_may("cleanup", run_id=execution_id)
+    reply = _release_cleanups(execution_id)
+    record_action(execution_id, "cleanup", caller)
+    return reply
+
+
+def _release_cleanups(execution_id: str) -> dict:
     run = get_workflow_execution(execution_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
@@ -784,6 +814,14 @@ def _queue_cleanup_pass(hold: dict) -> None:
 
 @router.post("/api/runs/{execution_id}/resume", response_model=RunResponse)
 def resume_run(execution_id: str, body: ResumeRequest | None = None):
+    """Resume a workflow from its last checkpoint (who asked is kept with the run)."""
+    caller = require_caller_may("resume", run_id=execution_id)
+    response = _resume_run(execution_id, body)
+    record_action(execution_id, "resume", caller, rerun=list(body.rerun) if body and body.rerun else None)
+    return response
+
+
+def _resume_run(execution_id: str, body: ResumeRequest | None = None):
     """Resume a workflow from its last checkpoint.
 
     Loads all checkpoints for the execution, reconstructs node_outputs,
@@ -945,7 +983,8 @@ def _start_resume(
     thread = threading.Thread(
         target=_run_workflow_with_checkpoints,
         args=(nodes, original_inputs, context, config.name, execution_id, restored_outputs),
-        kwargs={"workflow_outputs": config.outputs, "resume_metadata": resume_metadata},
+        kwargs={"workflow_outputs": config.outputs, "resume_metadata": resume_metadata,
+                "starts_runs": bool(getattr(config, "starts_runs", False))},
         daemon=True,
         name=f"temper-run-{execution_id}",
     )
@@ -956,6 +995,15 @@ def _start_resume(
 
 @router.post("/api/runs/fork", response_model=RunResponse)
 def fork_run(body: ForkRequest):
+    """Fork a new execution from a checkpoint of another (who asked is kept with the new run)."""
+    caller = require_caller_may("fork", run_id=body.source_execution_id)
+    response = _fork_run(body)
+    record_action(response.execution_id, "fork", caller, source_execution_id=body.source_execution_id,
+                  sequence=body.sequence, workflow=body.workflow)
+    return response
+
+
+def _fork_run(body: ForkRequest):
     """Fork a new execution from a specific checkpoint in another execution.
 
     Creates a new execution_id that shares history with the source up to
@@ -1040,7 +1088,7 @@ def fork_run(body: ForkRequest):
     thread = threading.Thread(
         target=_run_workflow_with_checkpoints,
         args=(nodes, inputs, context, config.name, new_execution_id, restored_outputs),
-        kwargs={"workflow_outputs": config.outputs},
+        kwargs={"workflow_outputs": config.outputs, "starts_runs": bool(getattr(config, "starts_runs", False))},
         daemon=True,
     )
     thread.start()
@@ -1135,7 +1183,11 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
     The optional body carries the human's answers to the questions the
     previous node asked and/or a free-text response; the gated node
     receives it as its ``gate`` input (see :mod:`temper_ai.stage.gate`).
+
+    Who answered is kept on the wait: ``gate_decided_by`` (the body's ``by``, else the
+    caller's name) and the caller's name, address and request id (api/caller.py).
     """
+    caller = require_caller_may("approve", run_id=execution_id)
     body = body or GateApproval()
     request_id = (body.request_id or "").strip() or None
     if request_id:
@@ -1158,10 +1210,10 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
     # seen gone, or its thread ending), is carried on by the answer: it does not need Resume
     # (runner/parked.py).
     parked = pi_parked.parked_attempt(execution_id)
-    by = body.by.strip()
+    by = body.by.strip() or caller.label
     decided: dict[str, Any] = {
         "gate_status": APPROVED, "gate_decided_at": _now_iso(),
-        **({"gate_decided_by": by} if by else {}),
+        "gate_decided_by": by, **_gate_who(caller),
         **({"gate_request_id": request_id} if request_id else {}),
         **({"gate_response": response} if response else {}),
         **({} if alive or parked else {"gate_kept_for_resume": True}),
@@ -1376,6 +1428,29 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+@router.get("/api/guard")
+def guard_seen():
+    """What the write guard has seen: its mode and, per caller and action, how often and when.
+
+    ``caller`` null is a writer nobody could name. Kept in the database, so it
+    survives restarts; names, addresses and run ids only, never a key.
+    """
+    from sqlmodel import select
+
+    from temper_ai.api.caller import guard_mode
+    from temper_ai.api.guard_models import GuardSeen
+    from temper_ai.database import get_session
+
+    with get_session() as session:
+        rows = session.exec(select(GuardSeen).order_by(GuardSeen.last_seen.desc())).all()
+        seen = [{
+            "caller": r.caller or None, "action": r.action, "count": r.count, "refused": r.refused,
+            "first_seen": r.first_seen.isoformat(), "last_seen": r.last_seen.isoformat(),
+            "last_via": r.last_via, "last_source": r.last_source, "last_run_id": r.last_run_id,
+        } for r in rows]
+    return {"mode": guard_mode(), "seen": seen}
+
+
 @router.get("/api/runs/{execution_id}/decisions")
 def list_decisions(execution_id: str):
     """Every gate this run has opened, and how each was answered.
@@ -1409,6 +1484,11 @@ def list_decisions(execution_id: str):
             "opened_at": ev.get("timestamp"),
             "decided_at": data.get("gate_decided_at"),
             "decided_by": data.get("gate_decided_by"),
+            # Who sent the answer (a key's name, slack:<id>, ...), from where, which request.
+            # Absent on waits decided before this was kept.
+            "caller": data.get("gate_caller"),
+            "caller_from": data.get("gate_caller_from"),
+            "caller_request_id": data.get("gate_caller_request_id"),
             "request_id": data.get("gate_request_id"),
             "replaced_by": data.get("gate_replaced_by"),
             "questions": gate_context.get("questions") or [],
@@ -1476,8 +1556,12 @@ def get_runtime_config():
     authentication.
     """
     from temper_ai.api.auth import auth_enabled
+    from temper_ai.api.caller import guard_mode
 
-    return {"auth_required": auth_enabled()}
+    # writes_need_key: reading is open, but starting, answering, cancelling... needs a named
+    # key (TEMPER_API_GUARD=enforce, docs/api-access.md); the dashboard asks for it on the
+    # first such action.
+    return {"auth_required": auth_enabled(), "writes_need_key": guard_mode() == "enforce"}
 
 
 @router.websocket("/ws/{execution_id}")
@@ -1488,8 +1572,32 @@ async def websocket_endpoint(websocket: WebSocket, execution_id: str):
 
 # --- Background execution ---
 
-def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None):
+@contextmanager
+def _run_key_if(starts_runs: bool, execution_id: str, workflow_name: str):
+    """A run in this process whose scripts start runs holds its own key while it runs.
+
+    The same as a run in its own box (runner/execute.py; api/run_tokens.py).
+    """
+    if not starts_runs:
+        yield
+        return
+    from temper_ai.api.run_tokens import close_for_run, open_for_run
+
+    open_for_run(execution_id, workflow_name)
+    try:
+        yield
+    finally:
+        close_for_run(execution_id)
+
+
+def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None,
+                  *, starts_runs: bool = False):
     """Run a workflow in a background thread."""
+    with _run_key_if(starts_runs, execution_id, workflow_name):
+        _run_workflow_now(nodes, inputs, context, workflow_name, execution_id, workflow_outputs)
+
+
+def _run_workflow_now(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None):
     try:
         logger.info("Starting workflow '%s' (execution: %s)", workflow_name, execution_id)
         result = execute_graph(
@@ -1516,6 +1624,19 @@ def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_
 
 
 def _run_workflow_with_checkpoints(
+    nodes, inputs, context, workflow_name, execution_id, restored_outputs,
+    *, workflow_outputs: dict[str, str] | None = None, resume_metadata: dict | None = None,
+    starts_runs: bool = False,
+):
+    """Run a workflow with pre-populated node_outputs from checkpoints (see below)."""
+    with _run_key_if(starts_runs, execution_id, workflow_name):
+        _run_workflow_with_checkpoints_now(
+            nodes, inputs, context, workflow_name, execution_id, restored_outputs,
+            workflow_outputs=workflow_outputs, resume_metadata=resume_metadata,
+        )
+
+
+def _run_workflow_with_checkpoints_now(
     nodes, inputs, context, workflow_name, execution_id, restored_outputs,
     *, workflow_outputs: dict[str, str] | None = None, resume_metadata: dict | None = None,
 ):

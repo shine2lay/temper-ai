@@ -17,6 +17,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from temper_ai.api.caller import require_caller_may
 from temper_ai.config import ConfigStore
 from temper_ai.config.helpers import ConfigNotFoundError
 
@@ -117,6 +118,7 @@ def _refuse_unrunnable_agent(config_type: str, config: dict) -> None:
 @router.post("/configs/{config_type}/{name}", status_code=201)
 def create_config(config_type: str, name: str, body: ConfigBody):
     """Create a new config."""
+    require_caller_may("config_write")
     _refuse_unrunnable_agent(config_type, body.config)
     try:
         config_id = _store().put(
@@ -133,6 +135,7 @@ def create_config(config_type: str, name: str, body: ConfigBody):
 @router.put("/configs/{config_type}/{name}")
 def update_config(config_type: str, name: str, body: ConfigBody):
     """Update an existing config."""
+    require_caller_may("config_write")
     _refuse_unrunnable_agent(config_type, body.config)
     try:
         config_id = _store().put(
@@ -149,6 +152,7 @@ def update_config(config_type: str, name: str, body: ConfigBody):
 @router.delete("/configs/{config_type}/{name}")
 def delete_config(config_type: str, name: str):
     """Delete a config."""
+    require_caller_may("config_write")
     try:
         deleted = _store().delete(name, config_type)
         if not deleted:

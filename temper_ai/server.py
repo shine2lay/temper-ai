@@ -21,7 +21,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from temper_ai.api.app_state import AppState
-from temper_ai.api.auth import TokenAuthMiddleware, auth_enabled
+from temper_ai.api.auth import CallerMiddleware, TokenAuthMiddleware, auth_enabled
 from temper_ai.api.docs import router as docs_router
 from temper_ai.api.events import router as events_router
 from temper_ai.api.github_tokens import router as github_tokens_router
@@ -563,6 +563,11 @@ class MCPPathMiddleware:
 
 app.mount("/mcp", _mcp_asgi)
 app.add_middleware(MCPPathMiddleware)
+
+# Names who sent each request (a named key, a run's own key, or nobody) for the write
+# guard, which runs inside each operation that changes state (api/caller.py). Outside
+# MCPPathMiddleware, so the MCP tools find the caller on the request they came in on.
+app.add_middleware(CallerMiddleware)
 
 # Added last, so it wraps everything else: /api, /mcp and /ws alike. Does
 # nothing unless TEMPER_API_TOKEN is set.

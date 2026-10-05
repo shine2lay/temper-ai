@@ -1,0 +1,55 @@
+# Zero-LLM agent for configs/workflows/ci_run_token.yaml: what a run's own key may do
+# (docs/api-access.md). From inside the run's box, over TEMPER_API, it:
+#
+#   * answers the wait `wait_run` is parked at, with its key   -> must be refused (403)
+#   * answers it with no key at all                           -> must be refused (401)
+#   * cancels `wait_run` with its key                         -> must be refused (403)
+#   * starts a smoke_test run with its key                    -> must start (200)
+#
+# and prints, as one JSON line, the statuses and the id of the run it started. Exit 1
+# when any of them is not what it must be. Never prints the key. Only meaningful with
+# TEMPER_API_GUARD=enforce (the machine check's stack); costs nothing.
+agent:
+  name: ci_run_token
+  type: script
+  timeout_seconds: 90
+  script_template: |
+    #!/bin/bash
+    set -u
+    WAIT_RUN={{ wait_run }} \
+    WAIT_NODE={{ wait_node }} \
+    python3 - <<'PY'
+    import json, os, sys, urllib.error, urllib.request
+
+    api = os.environ.get("TEMPER_API", "http://server:8420").rstrip("/")
+    key = os.environ.get("TEMPER_RUN_TOKEN", "")
+    run, node = os.environ["WAIT_RUN"], os.environ["WAIT_NODE"]
+
+    def post(path, body, with_key):
+        headers = {"Content-Type": "application/json"}
+        if with_key and key:
+            headers["Authorization"] = "Bearer " + key
+        req = urllib.request.Request(api + path, data=json.dumps(body).encode(), method="POST",
+                                     headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.status, json.loads(resp.read().decode() or "{}")
+        except urllib.error.HTTPError as exc:
+            return exc.code, {}
+
+    approve = f"/api/runs/{run}/approve/{node}"
+    seen = {
+        "has_key": bool(key),
+        "approve_with_key": post(approve, {"response": "a box must not answer this"}, True)[0],
+        "approve_without_key": post(approve, {"response": "nor this"}, False)[0],
+        "cancel_with_key": post(f"/api/runs/{run}/cancel", {"reason": "a box must not"}, True)[0],
+    }
+    status, started = post("/api/runs", {"workflow": "smoke_test",
+                                         "inputs": {"message": "started by a run's own key"}}, True)
+    seen["start_with_key"] = status
+    seen["started"] = started.get("execution_id", "")
+    print(json.dumps(seen))
+    ok = (seen["has_key"] and seen["approve_with_key"] == 403 and seen["approve_without_key"] == 401
+          and seen["cancel_with_key"] == 403 and status == 200 and seen["started"])
+    sys.exit(0 if ok else 1)
+    PY

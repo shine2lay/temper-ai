@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from temper_ai.api.caller import require_caller_may
 from temper_ai.triggers import scheduler
 
 router = APIRouter(prefix="/api/triggers", tags=["triggers"])
@@ -28,4 +29,5 @@ def list_fires(trigger: str | None = None, limit: int = 50) -> dict[str, Any]:
 
 @router.post("/tick")
 def tick() -> dict[str, Any]:
+    require_caller_may("trigger_tick")
     return {"decisions": scheduler.Scheduler().tick()}

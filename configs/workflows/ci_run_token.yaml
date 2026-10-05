@@ -1,0 +1,35 @@
+workflow:
+  name: ci_run_token
+  description: |
+    A run's own key, from inside its box (docs/api-access.md): with
+    TEMPER_API_GUARD=enforce its script step may start a run, and may not
+    answer or cancel another run's wait, with the key or without one.
+    Script agent only: no model, no key, no spend.
+
+      POST /api/runs {"workflow": "ci_run_token",
+                      "inputs": {"wait_run": "<a gate_smoke run waiting>", "wait_node": "decide"}}
+
+  # Its script starts a run, so the run holds its own key (TEMPER_RUN_TOKEN).
+  starts_runs: true
+
+  inputs:
+    wait_run:
+      type: string
+      required: true
+      description: A run parked at a wait, which the step must not be able to answer.
+    wait_node:
+      type: string
+      required: false
+      default: decide
+      description: The node that run waits at.
+
+  outputs:
+    seen: probe.output
+
+  nodes:
+    - name: probe
+      type: agent
+      agent: ci_run_token
+      input_map:
+        wait_run: input.wait_run
+        wait_node: input.wait_node

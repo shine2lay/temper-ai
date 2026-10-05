@@ -25,6 +25,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from temper_ai.api.caller import acting_as
 from temper_ai.integrations.inbox import service as inbox
 from temper_ai.integrations.inbox.store import Event
 from temper_ai.integrations.notify import service as notify
@@ -80,6 +81,16 @@ def describe(envelope: dict[str, Any]) -> str:
         event = payload.get("event") or {}
         return str(event.get("type") or "event")
     return str(kind or "envelope")
+
+
+def envelope_user(envelope: dict[str, Any]) -> str:
+    """The Slack user id an envelope came from (a slash command, a click, a form or a message)."""
+    p = _payload(envelope)
+    if envelope.get("type") == "slash_commands":
+        return str(p.get("user_id") or "")
+    if envelope.get("type") == "events_api":
+        return str((p.get("event") or {}).get("user") or "")
+    return str((p.get("user") or {}).get("id") or "")
 
 
 def inbox_key(envelope: dict[str, Any]) -> tuple[str, str, str]:
@@ -163,6 +174,15 @@ class Handler:
             logger.exception("Slack: handling a %s envelope failed", envelope.get("type"))
 
     def handle(self, envelope: dict[str, Any]) -> None:
+        """One envelope, done under the name of the person who sent it ("slack:<user id>").
+
+        What that person may do is decided by may() (access.py) as before; the
+        name is what temper's write guard records (api/caller.py).
+        """
+        with acting_as(f"slack:{envelope_user(envelope) or 'unknown-user'}", via="slack"):
+            self._handle(envelope)
+
+    def _handle(self, envelope: dict[str, Any]) -> None:
         kind = envelope.get("type")
         payload = envelope.get("payload") or {}
         if kind == "slash_commands":

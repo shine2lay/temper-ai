@@ -100,6 +100,11 @@ services:
       # here (no bot token), so nothing a fake does can reach the owner's
       # workspace.
       TEMPER_SLACK_TEST_TOKEN: ${TEMPER_CI_SLACK_TEST_TOKEN:-box-slack-test-token}
+      # The write guard on, as it would be live after the switch (docs/api-access.md): the
+      # check's own writes carry a throwaway key whose hash temper-ci writes here, and the
+      # smoke set proves a run's box can't answer a wait.
+      TEMPER_API_GUARD: ${TEMPER_CI_API_GUARD:-enforce}
+      TEMPER_API_KEYS_FILE: ${WORKSPACE_DIR}/.api-keys.json
 
   worker:
     build:

@@ -435,9 +435,12 @@ class Scheduler:
             inputs = render_inputs(p.trigger, event)
             start = self._start_run
             if start is None:
+                from temper_ai.api.caller import acting_as
                 from temper_ai.api.routes import RunRequest, start_run
 
-                response = start_run(RunRequest(workflow=p.trigger.workflow, inputs=inputs))
+                # A trigger rule in configs/ starts this run: done under the rule's name.
+                with acting_as(f"trigger:{p.trigger.name}", via="trigger"):
+                    response = start_run(RunRequest(workflow=p.trigger.workflow, inputs=inputs))
                 execution_id = response.execution_id
             else:
                 execution_id = start(p.trigger.workflow, inputs)

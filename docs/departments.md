@@ -152,6 +152,40 @@ A script step can check which files its own run's agents went near:
 with its attempt, agent, round and the paths it named, never their contents;
 `contains=` marks the calls whose inputs hold a given string (a hidden folder, say).
 
+## Releasing a leftover task
+
+`epd_leftovers` (systems) lists the claims, worktrees, branches and dev
+environments the build machinery left behind, and whose fix each one is. When a
+task is no longer needed (its source closed, its bet stopped), `epd_release`
+lets it go without losing anything:
+
+1. `task_save` writes what only this box has of the task to a private archive
+   and checks the copy: commits on neither `origin/<base>` nor `origin/<slug>`
+   (`branch.bundle`), uncommitted changes to tracked files (`changes.patch`),
+   untracked files that are not gitignored (`untracked.tar.gz`), and
+   `manifest.json` (branch, tip, base, commits, file names, the claim, restore
+   commands). Gitignored files are counted, not kept. With nothing unsaved it
+   writes nothing; a copy it cannot check fails the run and removes nothing.
+2. `task_cleanup` then removes the worktree and the local branch and moves the
+   claim to `claims/released/`. It runs only after a good save, and with
+   `force` only when something was saved.
+
+Inputs: `repo_url` (from the claim) and `task_name` (the claim's slug). Nothing
+is pushed or deleted on the remote. `task_save` does not fetch: a commit counts
+as pushed when the clone's `origin/<base>` or `origin/<slug>` has it, as of the
+clone's last fetch.
+
+The archive is `<workspaces>/archive/<repo>/<slug>.<UTC timestamp>/` (on the
+server `/app/workspaces/archive/`), mode 700, owned by the server's user, and
+gitignored with the rest of `workspaces/`. To restore it, in any clone of the
+repo that has `origin/<base>`:
+
+```sh
+git fetch <archive>/branch.bundle refs/heads/<slug>:refs/heads/<slug>
+git checkout <worktree_head from manifest.json> && git apply <archive>/changes.patch
+tar -xzf <archive>/untracked.tar.gz -C <the worktree>
+```
+
 ## The ownership table
 
 Paths are under `configs/`. *agent (script)* is an agent that runs a script
@@ -388,13 +422,14 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `epd/agents/task_test.yaml` | agent (script) |
 | `epd/agents/task_verify.yaml` | agent |
 
-### systems (25)
+### systems (27)
 
 | Config | Kind |
 |---|---|
 | `epd/workflows/epd_deploy.yaml` | workflow |
 | `epd/workflows/epd_leftovers.yaml` | workflow |
 | `epd/workflows/epd_probe.yaml` | workflow |
+| `epd/workflows/epd_release.yaml` | workflow |
 | `epd/workflows/epd_ship.yaml` | workflow |
 | `workflows/ci_nested.yaml` | workflow |
 | `workflows/ci_parallel.yaml` | workflow |
@@ -412,6 +447,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `epd/agents/task_claim.yaml` | agent (script) |
 | `epd/agents/task_cleanup.yaml` | agent (script) |
 | `epd/agents/task_deploy.yaml` | agent (script) |
+| `epd/agents/task_save.yaml` | agent (script) |
 | `epd/agents/task_stack_detect.yaml` | agent (script) |
 | `epd/agents/task_stack_down.yaml` | agent (script) |
 | `epd/agents/task_stack_up.yaml` | agent (script) |

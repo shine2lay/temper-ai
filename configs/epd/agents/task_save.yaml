@@ -1,0 +1,256 @@
+# EPD task pipeline: save what only this box has of a task, before it is released.
+#
+# Run before task_cleanup when a task is let go for good (epd_release). Writes a private archive of
+# the task's work that is nowhere else, checks the copy, and removes nothing:
+#   branch.bundle     commits on the local branch <slug> that are on neither origin/<base> nor
+#                     origin/<slug> (git bundle; verified, and its head must be the branch tip)
+#   changes.patch     uncommitted changes to tracked files in the worktree (git diff --binary HEAD;
+#                     verified by reverse-applying it in the worktree with --check)
+#   untracked.tar.gz  untracked files that are not gitignored (its listing must count them all)
+#   manifest.json     repo, branch, tip, base, the commits, the file names, the claim, restore commands
+# Gitignored files (build output, dependencies, env files) are not saved; only their count is noted.
+#
+# Archive: <workspaces>/archive/<repo>/<slug>.<UTC timestamp>/ next to the repos folder, mode 700,
+# written as <...>.partial and renamed once every check passed. Never pushed anywhere.
+#
+# "Nothing to save" is task_cleanup's own safe test plus a clean worktree: no worktree or a clean
+# one, and no branch or none of its commits off origin/<base> and origin/<slug>. Then no archive.
+# The output gives release_force: true only when something was saved, so cleanup's own checks
+# still guard the rest (epd_release passes it on).
+#
+# Fails loud (exit 1, the reason, nothing removed) on anything it cannot vouch for: a folder at the
+# worktree path that is not a registered worktree, a detached HEAD holding commits no ref has, no
+# origin/<base>, an archive folder it cannot write, or a copy that does not check out.
+# Output: names and counts only, never file contents.
+# Same path derivations as task_claim and task_cleanup. POSIX sh (the Bash tool runs /bin/sh); no
+# dollar-brace env syntax (the config loader rewrites it with the server's env at load time).
+agent:
+  name: task_save
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -eu
+    umask 077
+
+    REPO_URL={{ repo_url }}
+    TASK_NAME={{ task_name }}
+    RUN_ID={{ run_id | default('') }}
+    WORKSPACES_ROOT={{ workspaces_root | default('') }}
+    [ "$WORKSPACES_ROOT" = None ] && WORKSPACES_ROOT=""
+    [ "$RUN_ID" = None ] && RUN_ID=""
+
+    fail() {
+      MSG=$(printf '%s' "$1" | tr '\n' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g')
+      echo "{\"status\": \"failed\", \"error\": \"$MSG\"}"
+      exit 1
+    }
+
+    # Same derivations as task_claim and task_cleanup, so the three agree on paths.
+    if [ -z "$WORKSPACES_ROOT" ]; then
+      WD=$(printenv WORKSPACE_DIR || true)
+      if [ -d /app/workspaces ]; then
+        WORKSPACES_ROOT=/app/workspaces/repos
+      elif [ -n "$WD" ] && [ -d "$WD" ]; then
+        WORKSPACES_ROOT="$WD/repos"
+      else
+        WORKSPACES_ROOT="$HOME/workspaces/repos"
+      fi
+    fi
+    SLUG_PATH=$(printf '%s' "$REPO_URL" | sed -E 's#^(https?://[^/]+/|git@[^:]+:)##; s#\.git/?$##; s#/+$##')
+    REPO=${SLUG_PATH##*/}
+    [ -n "$REPO" ] || fail "could not parse repo from repo_url: $REPO_URL"
+    TASK_SLUG=$(printf '%s' "$TASK_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9._/-]+#-#g; s#/+#-#g; s#-+#-#g; s#\.\.+#.#g; s#^[-.]+##; s#[-.]+$##')
+    [ -n "$TASK_SLUG" ] || fail "task_name produced an empty slug: $TASK_NAME"
+
+    ROOT="$WORKSPACES_ROOT/$REPO"
+    MAIN="$ROOT/main"
+    WT="$ROOT/worktrees/$TASK_SLUG"
+    CLAIM="$ROOT/claims/$TASK_SLUG.json"
+    ARCHIVE_ROOT="$(dirname "$WORKSPACES_ROOT")/archive"
+
+    # Lists and error text go to a scratch folder (its own, removed on exit); no masking pipelines.
+    SCRATCH=$(mktemp -d) || fail "could not make a scratch folder"
+    trap 'rm -rf "$SCRATCH"' EXIT
+    count0() { tr -cd '\000' < "$1" | wc -c | tr -d ' '; }
+    lines() { wc -l < "$1" | tr -d ' '; }
+    said() { head -c 300 "$SCRATCH/err" 2>/dev/null | tr '\n' ' '; }
+
+    HAS_MAIN=false
+    [ -d "$MAIN/.git" ] && HAS_MAIN=true
+    CLAIMSTATE=absent
+    [ -f "$CLAIM" ] && CLAIMSTATE=present
+
+    # --- the worktree ------------------------------------------------------------
+    WORKTREE=absent
+    DIRTY=0
+    IGNORED=0
+    WT_HEAD=""
+    if [ -d "$WT" ]; then
+      [ "$HAS_MAIN" = true ] || fail "$WT exists but $MAIN is not a git clone; look at it by hand"
+      git -C "$MAIN" worktree list --porcelain > "$SCRATCH/worktrees" 2>"$SCRATCH/err" || fail "git worktree list failed in $MAIN: $(said)"
+      grep -qx "worktree $WT" "$SCRATCH/worktrees" || fail "$WT exists but is not a registered worktree of $MAIN; task_save cannot tell what in it is unsaved, look at it by hand"
+      WORKTREE=present
+      git -C "$WT" status --porcelain --untracked-files=all > "$SCRATCH/status" 2>"$SCRATCH/err" || fail "git status failed in $WT: $(said)"
+      DIRTY=$(lines "$SCRATCH/status")
+      git -C "$WT" ls-files -z --others --ignored --exclude-standard > "$SCRATCH/ignored" 2>"$SCRATCH/err" || fail "git ls-files failed in $WT: $(said)"
+      IGNORED=$(count0 "$SCRATCH/ignored")
+      WT_HEAD=$(git -C "$WT" rev-parse -q --verify HEAD) || fail "worktree $WT has no commit checked out"
+      if ! git -C "$WT" symbolic-ref -q HEAD >/dev/null; then
+        # Removing a worktree on a detached HEAD orphans commits that no branch, remote branch or tag has.
+        git -C "$WT" rev-list HEAD --not --branches --remotes --tags > "$SCRATCH/detached" 2>"$SCRATCH/err" || fail "git rev-list failed in $WT: $(said)"
+        LOST=$(lines "$SCRATCH/detached")
+        [ "$LOST" = 0 ] || fail "worktree $WT is on a detached HEAD with $LOST commit(s) on no branch, remote branch or tag; put them on a branch first"
+      fi
+    fi
+
+    # --- the branch: commits on neither origin/<base> nor origin/<slug> ----------
+    BRANCH=absent
+    TIP=""
+    BASE=""
+    COMMITS=0
+    if [ "$HAS_MAIN" = true ] && git -C "$MAIN" rev-parse -q --verify "refs/heads/$TASK_SLUG" >/dev/null; then
+      BRANCH=present
+      TIP=$(git -C "$MAIN" rev-parse "refs/heads/$TASK_SLUG")
+      BASE=$(git -C "$MAIN" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)
+      [ -n "$BASE" ] || BASE=$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)
+      git -C "$MAIN" rev-parse -q --verify "refs/remotes/origin/$BASE" >/dev/null \
+        || fail "origin/$BASE not found in $MAIN; cannot tell which commits of $TASK_SLUG are unpushed"
+      # The refs whose commits are already elsewhere: excluded from the count and the bundle.
+      set -- "^refs/remotes/origin/$BASE"
+      if git -C "$MAIN" rev-parse -q --verify "refs/remotes/origin/$TASK_SLUG" >/dev/null; then
+        set -- "$@" "^refs/remotes/origin/$TASK_SLUG"
+      fi
+      git -C "$MAIN" log --format='%H%x09%s' "refs/heads/$TASK_SLUG" "$@" > "$SCRATCH/commits" 2>"$SCRATCH/err" || fail "git log failed for $TASK_SLUG: $(said)"
+      COMMITS=$(lines "$SCRATCH/commits")
+    fi
+
+    if [ "$COMMITS" = 0 ] && [ "$DIRTY" = 0 ]; then
+      echo "save $REPO :: $TASK_SLUG -> nothing to save (worktree $WORKTREE, branch $BRANCH, claim $CLAIMSTATE, $IGNORED ignored file(s) not kept)"
+      python3 -c 'import json,sys; print(json.dumps({"status":"nothing_to_save","repo":sys.argv[1],"task_slug":sys.argv[2],"archive":"","worktree":sys.argv[3],"branch":sys.argv[4],"claim":sys.argv[5],"commits":0,"changed_files":0,"untracked_files":0,"ignored_files":int(sys.argv[6]),"release_force":False}))' \
+        "$REPO" "$TASK_SLUG" "$WORKTREE" "$BRANCH" "$CLAIMSTATE" "$IGNORED"
+      exit 0
+    fi
+
+    # --- the archive ---------------------------------------------------------------
+    TS=$(date -u +%Y%m%dT%H%M%SZ)
+    DEST="$ARCHIVE_ROOT/$REPO/$TASK_SLUG.$TS"
+    PART="$DEST.partial"
+    if [ -e "$DEST" ] || [ -e "$PART" ]; then fail "$DEST already exists"; fi
+    mkdir -p "$PART" 2>"$SCRATCH/err" || fail "cannot create archive folder $PART: $(said)"
+    chmod 700 "$PART" || fail "cannot make $PART private"
+
+    if [ "$COMMITS" != 0 ]; then
+      git -C "$MAIN" bundle create -q "$PART/branch.bundle" "refs/heads/$TASK_SLUG" "$@" 2>"$SCRATCH/err" \
+        || fail "git bundle create failed for $TASK_SLUG: $(said)"
+      git -C "$MAIN" bundle verify -q "$PART/branch.bundle" >/dev/null 2>"$SCRATCH/err" \
+        || fail "git bundle verify failed for $PART/branch.bundle: $(said)"
+      git -C "$MAIN" bundle list-heads "$PART/branch.bundle" > "$SCRATCH/heads" 2>"$SCRATCH/err" \
+        || fail "git bundle list-heads failed for $PART/branch.bundle: $(said)"
+      grep -qx "$TIP refs/heads/$TASK_SLUG" "$SCRATCH/heads" || fail "the bundle does not hold refs/heads/$TASK_SLUG at $TIP"
+    fi
+
+    CHANGED=0
+    UNTRACKED=0
+    : > "$SCRATCH/changed"
+    : > "$SCRATCH/untracked"
+    if [ "$DIRTY" != 0 ]; then
+      git -C "$WT" diff --name-only -z HEAD > "$SCRATCH/changed" 2>"$SCRATCH/err" || fail "git diff failed in $WT: $(said)"
+      CHANGED=$(count0 "$SCRATCH/changed")
+      if [ "$CHANGED" != 0 ]; then
+        git -C "$WT" diff --binary --no-color --no-ext-diff HEAD > "$PART/changes.patch" 2>"$SCRATCH/err" \
+          || fail "git diff --binary failed in $WT: $(said)"
+        git -C "$WT" apply --check -R "$PART/changes.patch" 2>"$SCRATCH/err" \
+          || fail "changes.patch does not reverse-apply in $WT: $(said)"
+      fi
+      git -C "$WT" ls-files -z --others --exclude-standard > "$SCRATCH/untracked" 2>"$SCRATCH/err" || fail "git ls-files failed in $WT: $(said)"
+      UNTRACKED=$(count0 "$SCRATCH/untracked")
+      if [ "$UNTRACKED" != 0 ]; then
+        tar -C "$WT" --null --verbatim-files-from -T "$SCRATCH/untracked" -czf "$PART/untracked.tar.gz" 2>"$SCRATCH/err" \
+          || fail "tar failed for the untracked files of $WT: $(said)"
+        tar -tzf "$PART/untracked.tar.gz" > "$SCRATCH/listed" 2>"$SCRATCH/err" || fail "cannot list untracked.tar.gz: $(said)"
+        LISTED=$(lines "$SCRATCH/listed")
+        [ "$LISTED" = "$UNTRACKED" ] || fail "untracked.tar.gz lists $LISTED entries, expected $UNTRACKED"
+      fi
+      [ "$CHANGED" != 0 ] || [ "$UNTRACKED" != 0 ] || fail "worktree $WT shows $DIRTY change(s) but none could be saved"
+    fi
+
+    python3 - "$PART" "$DEST" "$SCRATCH" "$CLAIM" "repo=$REPO" "repo_url=$REPO_URL" "task_slug=$TASK_SLUG" \
+      "branch=$BRANCH" "tip=$TIP" "base=$BASE" "worktree=$WORKTREE" "worktree_head=$WT_HEAD" \
+      "ignored=$IGNORED" "run_id=$RUN_ID" "excluded=$*" <<'PY' || fail "could not write manifest.json in $PART"
+    import datetime, hashlib, json, os, sys
+
+    part, dest, scratch, claim_path = sys.argv[1:5]
+    v = dict(a.split("=", 1) for a in sys.argv[5:])
+
+    def names(path):
+        with open(path, "rb") as f:
+            return [n.decode("utf-8", "surrogateescape") for n in f.read().split(b"\0") if n]
+
+    commits = []
+    with open(os.path.join(scratch, "commits"), encoding="utf-8", errors="replace") as f:
+        for line in f:
+            sha, _, subject = line.rstrip("\n").partition("\t")
+            commits.append({"sha": sha, "subject": subject})
+
+    files, prerequisites = {}, []
+    for name in sorted(os.listdir(part)):
+        with open(os.path.join(part, name), "rb") as f:
+            data = f.read()
+        files[name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        if name == "branch.bundle":
+            for raw in data.split(b"\n\n", 1)[0].split(b"\n")[1:]:
+                if raw.startswith(b"-"):
+                    prerequisites.append(raw[1:].split(b" ", 1)[0].decode())
+
+    claim = None
+    if os.path.isfile(claim_path):
+        with open(claim_path) as f:
+            claim = json.load(f)
+
+    slug, base = v["task_slug"], v["base"]
+    restore = {}
+    if "branch.bundle" in files:
+        restore["branch"] = [
+            f"# in any clone of {v['repo_url']} that has origin/{base} (the bundle needs: {' '.join(prerequisites)})",
+            f"git fetch {dest}/branch.bundle refs/heads/{slug}:refs/heads/{slug}",
+        ]
+    if "changes.patch" in files:
+        restore["changes"] = [
+            f"git checkout {v['worktree_head']}",
+            f"git apply {dest}/changes.patch",
+        ]
+    if "untracked.tar.gz" in files:
+        restore["untracked"] = [f"tar -xzf {dest}/untracked.tar.gz -C <the worktree>"]
+
+    manifest = {
+        "repo": v["repo"],
+        "repo_url": v["repo_url"],
+        "task_slug": slug,
+        "branch": slug if v["branch"] == "present" else None,
+        "tip": v["tip"] or None,
+        "base": base or None,
+        "excluded_refs": [r.lstrip("^") for r in v["excluded"].split()],
+        "bundle_prerequisites": prerequisites,
+        "commits": commits,
+        "worktree": v["worktree"],
+        "worktree_head": v["worktree_head"] or None,
+        "changed_files": names(os.path.join(scratch, "changed")),
+        "untracked_files": names(os.path.join(scratch, "untracked")),
+        "ignored_files_not_saved": int(v["ignored"]),
+        "claim": claim,
+        "saved_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "saved_by_run": v["run_id"] or None,
+        "files": files,
+        "restore": restore,
+    }
+    with open(os.path.join(part, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=2)
+    PY
+
+    mv "$PART" "$DEST" || fail "could not rename $PART to $DEST"
+
+    echo "save $REPO :: $TASK_SLUG -> saved $COMMITS commit(s), $CHANGED changed and $UNTRACKED untracked file(s) to $DEST ($IGNORED ignored file(s) not kept)"
+    python3 -c 'import json,sys; print(json.dumps({"status":"saved","repo":sys.argv[1],"task_slug":sys.argv[2],"archive":sys.argv[3],"worktree":sys.argv[4],"branch":sys.argv[5],"claim":sys.argv[6],"tip":sys.argv[7],"commits":int(sys.argv[8]),"changed_files":int(sys.argv[9]),"untracked_files":int(sys.argv[10]),"ignored_files":int(sys.argv[11]),"release_force":True}))' \
+      "$REPO" "$TASK_SLUG" "$DEST" "$WORKTREE" "$BRANCH" "$CLAIMSTATE" "$TIP" "$COMMITS" "$CHANGED" "$UNTRACKED" "$IGNORED"

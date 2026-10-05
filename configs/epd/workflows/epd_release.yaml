@@ -1,0 +1,65 @@
+# System engineering: let a finished task go for good, saving first (epd_release).
+#
+# For a task nothing live needs any more (a leftover epd_leftovers lists, a kept integration task
+# whose source closed): task_save writes a private archive of what only this box has of it
+# (commits off origin, uncommitted and untracked files) and checks the copy; then task_cleanup
+# removes the worktree and the local branch and releases the claim.
+#
+# Cleanup runs only after the save succeeded (a failed save fails the run and skips it). It gets
+# force only when something was saved: the archive then holds what its own checks would refuse
+# to lose. With nothing to save it runs without force, so its checks still guard the task.
+# Archive and restore: docs/departments.md, "Releasing a leftover task". No model: a run is free.
+workflow:
+  name: epd_release
+  version: 1
+  description: |
+    Release a finished task's leftovers safely: save what only this box has of it (unpushed
+    commits, uncommitted and untracked files) into a private, checked archive, then remove its
+    worktree and local branch and release its claim. No pushes, no model.
+  inputs:
+    repo_url:
+      type: string
+      required: true
+    # The task's name or slug, as its claim has it (claims/<slug>.json).
+    task_name:
+      type: string
+      required: true
+    # The repos folder; default: where task_claim puts the clones.
+    workspaces_root:
+      type: string
+      required: false
+
+  outputs:
+    save_status: save.structured.status
+    archive: save.structured.archive
+    commits: save.structured.commits
+    changed_files: save.structured.changed_files
+    untracked_files: save.structured.untracked_files
+    ignored_files: save.structured.ignored_files
+    worktree: cleanup.structured.worktree
+    branch: cleanup.structured.branch
+    claim: cleanup.structured.claim
+    released_claim_path: cleanup.structured.released_claim_path
+
+  nodes:
+    - name: save
+      type: agent
+      agent: task_save
+      input_map:
+        repo_url: input.repo_url
+        task_name: input.task_name
+        workspaces_root: input.workspaces_root
+
+    - name: cleanup
+      type: agent
+      agent: task_cleanup
+      depends_on: [save]
+      condition:
+        source: save.structured.status
+        operator: in
+        value: [saved, nothing_to_save]
+      input_map:
+        repo_url: input.repo_url
+        task_name: input.task_name
+        force: save.structured.release_force
+        workspaces_root: input.workspaces_root

@@ -86,7 +86,8 @@ def L(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "require_models", lambda what: None, raising=False)
     # No test reads the real paper keys: one that reaches Alpaca without stubbing it dies on "no keys".
     monkeypatch.setattr(mod, "PAPER_KEYS_FILE", tmp_path / "dev.env")
-    monkeypatch.setattr(mod, "standee_down", lambda env: calls["standee_down"].append(env))
+    mod._real_standee_down = mod.standee_down
+    monkeypatch.setattr(mod, "standee_down", lambda env: calls["standee_down"].append(env) or True)
     monkeypatch.setattr(mod, "release_task", lambda bet_id: calls["release_task"].append(bet_id))
     calls["push_branch"] = []
     mod._real_push_branch = mod.push_branch
@@ -654,6 +655,32 @@ def test_push_branch_pushes_from_the_checkout_and_drops_its_copy(L, monkeypatch)
     ran.clear()
     monkeypatch.setattr(L, "in_server", lambda cmd: subprocess.CompletedProcess(cmd, 1, "", ""))
     assert L._real_push_branch("b001") is True and ran == []
+
+
+def test_standee_down_tells_a_gone_stack_from_a_leftover(L, monkeypatch, capsys):
+    # standee exits 1 for an environment that is already gone and for a teardown it could not finish
+    # (ops queue #64: those never say "no environment named"). Only the second is a leftover.
+    def standee(rc, out="", err=""):
+        monkeypatch.setattr(L, "sh", lambda cmd, cwd=None, check=True: subprocess.CompletedProcess(cmd, rc, out, err))
+        return L._real_standee_down("rollcall-dev-epd-b001")
+
+    assert standee(0) is True
+    assert standee(1, err="no environment named 'rollcall-dev-epd-b001' (see `standee ls`)") is True
+    assert "LEFTOVER" not in capsys.readouterr().out
+    assert standee(1, err="volume rollcall-dev-epd-b001_rollcall_data is in use") is False
+    assert "LEFTOVER" in capsys.readouterr().out
+
+
+def test_down_by_hand_fails_when_a_stack_stays(L, monkeypatch):
+    propose(L)
+    st = L.load_state("b001")
+    st["stages"]["loop"] = {"env_name": "rollcall-dev-epd-b001"}
+    L.save_state(st)
+    L.cmd_down("b001")
+    assert L._calls["standee_down"][-1] == "rollcall-dev-epd-b001"
+    monkeypatch.setattr(L, "standee_down", lambda env: False)
+    with pytest.raises(SystemExit):
+        L.cmd_down("b001")
 
 
 def test_finish_loop_says_why_a_blocked_plan_built_nothing(L):

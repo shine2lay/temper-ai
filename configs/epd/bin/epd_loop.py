@@ -892,8 +892,21 @@ def paper_account_state(account: str = WALK_ACCOUNT) -> str:
     return "\n".join(lines)
 
 
-def standee_down(env: str) -> None:
-    sh(["standee", "down", env, "--volumes", "--images"], check=False)
+def standee_down(env: str) -> bool:
+    """Take a stack down with its volumes and built images. True when it is gone: taken down now, or
+    there was no such environment. False, said in the log, when standee left some of it.
+
+    standee exits 1 both for "no environment named ..." (already gone, fine) and for a teardown it
+    could not finish: a volume still attached, a refusal, a partial cleanup (ops queue #64's contract
+    keeps that phrase out of every such failure). Only the second is a leftover. The callers carry on
+    (what they record does not depend on the stack), so this says it loudly instead of stopping them.
+    """
+    r = sh(["standee", "down", env, "--volumes", "--images"], check=False)
+    if r.returncode == 0 or "no environment named" in f"{r.stdout}\n{r.stderr}".lower():
+        return True
+    log(f"note: LEFTOVER: `standee down {env} --volumes --images` exited {r.returncode}, so some of the "
+        f"stack or its volumes may still be there; see `standee doctor`, then run it again")
+    return False
 
 
 def ensure_qa_password() -> str:
@@ -3987,14 +4000,17 @@ def cmd_down(what: str) -> None:
     """Tear down a bet's stacks, or a proposal round's (`r001`)."""
     if what.startswith("r"):
         env = load_round(what).get("env")
-        if env:
-            standee_down(env)
+        if env and not standee_down(env):
+            die(f"{env} is not all down (above)")
         return
     st = load_state(what)
+    left = []
     for key in ("report", "build", "loop"):
         env = (st["stages"].get(key) or {}).get("env") or (st["stages"].get(key) or {}).get("env_name")
-        if env:
-            standee_down(str(env))
+        if env and not standee_down(str(env)):
+            left.append(str(env))
+    if left:
+        die(f"not all down: {', '.join(left)} (above)")
 
 
 def main() -> None:

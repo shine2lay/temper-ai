@@ -1,7 +1,7 @@
 """The Pi ledger: who is in each Pi conversation, what they were sent, what each turn did, and
 what the owner is being asked -- for one Pi step (L2) or a team of Pi members (T4/T5).
 
-Five tables in their own SQLAlchemy ``MetaData`` -- never Temper's SQLModel metadata, so
+Six tables in their own SQLAlchemy ``MetaData`` -- never Temper's SQLModel metadata, so
 Temper's ``create_all`` and migrations never see them. They are created on first use, on the
 database Temper's engine already points at; with the Pi agent switched off nothing creates or
 reads them. Schema: ``docs/pi-agent.md`` and ``docs/pi-team-messages.md``.
@@ -21,6 +21,7 @@ Identities kept apart on purpose:
   so a second process can never run or finish the same turn (B6, A3's lease).
 * wait -- one owner question at a time per team: while any is open no turn starts (B6, B11).
 * review -- the leader's review record (#38 writes it; read here for the quiet-team check).
+* act -- one review-tool call of the leader loop (#38), counted only once its turn settled.
 
 Every change is one transaction. What must hold across processes is enforced by the database
 (unique keys, compare-and-set updates); the process-wide lock only keeps one process's own
@@ -76,11 +77,15 @@ UNSETTLED = ("running", "uncertain")
 MESSAGE_STATES = ("held", "pending", "consumed", "undelivered")
 SENDER_KINDS = ("member", "owner", "temper")
 UNDELIVERED_REASONS = ("turn_failed", "turn_superseded", "turn_cancelled", "run_cancelled",
-                       "run_completed", "late", "recipient_retired", "recipient_unknown")
-END_REASONS = ("run_cancelled", "run_completed")
+                       "run_completed", "team_done", "team_stopped", "late",
+                       "recipient_retired", "recipient_unknown")
+#: Why a team ends: the run was cancelled or finished, or (the leader loop, #38) Temper
+#: recorded the team done, or the owner stopped it (never done, R2 B10).
+END_REASONS = ("run_cancelled", "run_completed", "team_done", "team_stopped")
 #: Wait kinds: ``owner`` (next message or finish), ``recovery`` (a turn that was cut off or
-#: failed), ``stalled`` (several members with nothing to do).
-WAIT_KINDS = ("owner", "recovery", "stalled")
+#: failed), ``stalled`` (several members with nothing to do), ``pause`` (the leader loop's
+#: pause after N keep-goings in a row, #38).
+WAIT_KINDS = ("owner", "recovery", "stalled", "pause")
 MAX_REFUSALS = 200
 
 participants = sa.Table(
@@ -232,7 +237,37 @@ reviews = sa.Table(
     sa.UniqueConstraint("run_id", "host_path", "round", name="uq_pi_review_round"),
 )
 
-TABLES = (participants, messages, turns, waits, reviews)
+#: The leader loop's review-tool calls (#38: request_review, give_view, decide), one row per
+#: call, recorded through the calling turn's fence. A call counts only once its turn settled
+#: completed or accepted, and Temper carries it out (state ``carried_out``) before the team's
+#: next turn; a call of a turn that failed, was superseded or cancelled is ``void``. Here, in
+#: the ledger's own metadata, so :meth:`Ledger.ensure` creates and checks it with the rest.
+acts = sa.Table(
+    "pi_team_acts", metadata,
+    sa.Column("act_id", sa.String(64), primary_key=True),
+    sa.Column("run_id", sa.String(64), nullable=False, index=True),
+    sa.Column("host_path", sa.String(255), nullable=False),
+    sa.Column("seq", sa.Integer, nullable=False),
+    sa.Column("participant_id", sa.String(64), nullable=False),
+    sa.Column("member", sa.String(128), nullable=False),
+    sa.Column("turn_id", sa.String(64), nullable=False),
+    sa.Column("epoch", sa.Integer, nullable=False),
+    sa.Column("client_msg_id", sa.String(128), nullable=False),
+    sa.Column("content_sha256", sa.String(64), nullable=False),
+    # request_review | give_view | decide
+    sa.Column("op", sa.String(16), nullable=False),
+    sa.Column("args", sa.JSON, nullable=False),
+    sa.Column("review_id", sa.String(64)),
+    # recorded | carried_out | void
+    sa.Column("state", sa.String(16), nullable=False),
+    sa.Column("result", sa.JSON),
+    sa.Column("created_at", sa.String(40)),
+    sa.Column("carried_at", sa.String(40)),
+    sa.UniqueConstraint("run_id", "host_path", "seq", name="uq_pi_team_act_seq"),
+    sa.UniqueConstraint("run_id", "participant_id", "client_msg_id", name="uq_pi_team_act_key"),
+)
+
+TABLES = (participants, messages, turns, waits, reviews, acts)
 
 
 class LedgerError(Exception):
@@ -1206,6 +1241,7 @@ class Ledger:
                 ("turns", turns, turns.c.started_at),
                 ("waits", waits, waits.c.opened_at),
                 ("reviews", reviews, reviews.c.round),
+                ("acts", acts, acts.c.seq),
             ):
                 out[name] = [dict(r) for r in conn.execute(
                     sa.select(table).where(table.c.run_id == run_id).order_by(order)).mappings()]

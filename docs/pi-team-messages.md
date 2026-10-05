@@ -9,8 +9,8 @@ turns, never in the middle of one. It is built to Architecture's R2 rules B1–B
 
 Everything is behind `TEMPER_PI_AGENT` (default off). With it off nothing is imported, no
 `pi_` table is created and a team stage is refused at load ("Unknown strategy: 'team'").
-The runtime is not wired into the team node yet: the leader loop (#38) drives it, and until
-then the node still fails red with "team runtime not built yet (T4/T5/M1)".
+The leader loop (#38, [pi-team-runtime.md](pi-team-runtime.md)) drives it from the team
+node.
 
 ## How a message goes
 

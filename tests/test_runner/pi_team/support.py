@@ -10,8 +10,10 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any
+
+import sqlalchemy as sa
 
 from temper_ai.pi_agent.ledger import UNSETTLED, Binding, Ledger
 from temper_ai.pi_agent.team_runtime import StepResult, Team, TeamMember
@@ -30,6 +32,8 @@ SCRIPTS: dict[str, list[list[dict]]] = defaultdict(list)
 PROMPTS: dict[str, list[str]] = defaultdict(list)
 #: Every send a member made, with Temper's answer.
 SENDS: list[dict] = []
+#: The binding of the turn being played now (a script's callable may read its run and team).
+CURRENT: dict[str, Binding] = {}
 
 
 def reset() -> None:
@@ -37,6 +41,7 @@ def reset() -> None:
     SCRIPTS.clear()
     PROMPTS.clear()
     SENDS.clear()
+    CURRENT.clear()
     Team.turn_runner = None
     Team.stop_box = None
 
@@ -87,6 +92,7 @@ class TeamFakeBox(FakeBox):
         if team is None or self.behaviour != "answer" or not self._branch_settled():
             return super()._model_turn(rid, message, ok)
         member = team.binding.member
+        CURRENT["binding"] = team.binding
         self.log["prompts"] += 1
         self.log["allowance_at_prompt"] = self.allowance
         self.log["member"] = member
@@ -274,6 +280,31 @@ def message(led: Ledger, run_id: str, message_id: str) -> dict:
 
 # --- the invariants (tables.md I1-I8), after every scenario ------------------------------
 
+
+def team_keys(led: Ledger) -> set[tuple[str, str]]:
+    """Every (run, team) with rows in the ledger's team tables."""
+    from temper_ai.pi_agent.ledger import messages, participants, turns
+
+    out: set[tuple[str, str]] = set()
+    with led.engine.connect() as conn:
+        for table in (participants, messages, turns):
+            if not sa.inspect(conn).has_table(table.name):
+                continue
+            q = sa.select(table.c.run_id, table.c.host_path).distinct()
+            out |= {(r[0], r[1]) for r in conn.execute(q)}
+    return out
+
+
+def check_all_invariants(led: Ledger, before: set[tuple[str, str]] | frozenset = frozenset()
+                         ) -> int:
+    """I1-I8 for every team that has rows now and had none in ``before``; the number checked.
+    The autouse teardown runs it after every team scenario (#37's land check, binding 3)."""
+    keys = sorted(team_keys(led) - set(before))
+    for run_id, host in keys:
+        check_invariants(led, run_id, host)
+    return len(keys)
+
+
 def check_invariants(led: Ledger, run_id: str, host: str = HOST) -> None:
     snap = rows(led, run_id, host)
     parts = {p["participant_id"]: p for p in snap["participants"]}
@@ -353,4 +384,27 @@ def check_invariants(led: Ledger, run_id: str, host: str = HOST) -> None:
     if parts and all(p["state"] == "ended" for p in parts.values()):
         assert not [m for m in msgs if m["state"] in ("held", "pending")], "I8 messages"
         assert not [t for t in turns.values() if t["state"] in UNSETTLED], "I8 turns"
+
+    # The leader loop's review-tool calls (#38; Architecture's answer 6e). A1 a call is
+    # carried out only once its own turn settled completed or accepted: never for a turn still
+    # running, nor for one that failed, was superseded by a retry or was cancelled.
+    acts = {a["act_id"]: a for a in snap.get("acts") or []}
+    for a in acts.values():
+        t = turns.get(a["turn_id"])
+        assert t is not None and t["participant_id"] == a["participant_id"], ("A1", a["act_id"])
+        if a["state"] == "carried_out":
+            assert t["state"] in ("completed", "accepted"), ("A1", a["act_id"], t["state"])
+    # A2 each view the leader gets is exactly one carried-out give_view call, from that
+    # reviewer's own turn, for that review; never two rows for one call.
+    for m in msgs:
+        if m["kind"] != "view":
+            continue
+        a = acts.get((m["client_msg_id"] or "").removeprefix("view:"))
+        assert a is not None and a["op"] == "give_view" and a["state"] == "carried_out", \
+            ("A2 a view without its call", m["seq"])
+        assert (a["participant_id"], a["turn_id"], a["review_id"]) == (
+            m["sender_participant"], m["sender_turn"], m["review_id"]), ("A2", m["seq"])
+    twice = [k for k, n in Counter(m["client_msg_id"] for m in msgs
+                                   if m["kind"] == "view").items() if n > 1]
+    assert not twice, ("A2 a view twice", twice)
     _ = by_seq

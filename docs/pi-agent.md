@@ -114,20 +114,24 @@ config loads; a valid `type: pi` config; its role exists under that exact id, wi
 name suggested but never picked; `identity.json` and `about.md` readable; `identity.json`
 names a home chat; a worker route for its provider; pinned copies of its add-ons), the team
 (leader is a member, edges name members, every member reachable from the leader, edges not
-used yet, `pause_after_rounds` set, a goal) and the workflow (each `safety: policies:` entry is refused
-by name, since a team can't enforce one yet). The role list is the box config's
-`identities_dir`, only read; unset means "role list not configured". A resume doesn't check
-again. The run-start problems, the graph's own and the Pi loop rule come in one error.
+used yet, `pause_after_rounds` set, a goal, no two members with the same role, no member
+named like one of Temper's own ids -- `owner`, `system`, `all`, ... from
+`pi_agent/route/model.py` `RESERVED_IDS`) and the workflow (each `safety: policies:` entry
+is refused by name, since a team can't enforce one yet). The role list is the box config's
+`identities_dir`, only read; unset means "role list not configured". A resume or a fork
+never runs this check (they run the workflow config as it is now), so the team node runs it
+again when it starts, with the goal it was handed, and fails red before any member is set
+up. The run-start problems, the graph's own and the Pi loop rule come in one error.
 
 A team's members are `type: pi` agents, so a workflow with a team stage is a Pi workflow
 (`stage/pi_workflows.py`, docs/gates.md "Pi workflows") even when it has no other Pi step:
 its gates park and its loops must say `on_max_loops: fail`.
 
 **The team node** (`temper_ai/pi_agent/team_node.py`, `TeamNode`): the stage holds one
-node, `<stage>.team`. Until the team runtime (T4 messaging, T5 inboxes, M1 leader mode) is
-wired in it fails red with "team runtime not built yet (T4/T5/M1)"; it never passes.
-Messaging and inboxes are built ([pi-team-messages.md](pi-team-messages.md)); the leader
-loop (#38) wires them into the node.
+node, `<stage>.team`, which runs the leader loop on the team's messages and inboxes:
+review rounds, the pause after `pause_after_rounds` keep-goings, done recorded by Temper
+([pi-team-runtime.md](pi-team-runtime.md); messaging and inboxes:
+[pi-team-messages.md](pi-team-messages.md)). A failed team fails its stage too.
 
 ## How it runs (ADR-A6-1)
 

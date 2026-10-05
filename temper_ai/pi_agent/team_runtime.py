@@ -189,7 +189,21 @@ class Team:
 
     def pin(self, member: TeamMember) -> dict:
         return pin_for(self.box, member.config, workflow=self.workflow,
-                       tools=member_tools(member.config), team=self.digest)
+                       tools=self.tools_for(member), team=self.digest)
+
+    # --- seams for the leader loop (#38); the defaults are this module's own behaviour ---
+
+    def tools_for(self, member: TeamMember) -> list[str]:
+        """The Pi tools ``member``'s box launches with, pinned with its settings (R2 B16)."""
+        return member_tools(member.config)
+
+    def channel_for(self, binding: Binding, reachable_names: list[str]) -> TeamChannel:
+        """The team socket's handler for one turn, bound by Temper (R2 B2)."""
+        return TeamChannel(self.ledger, binding, reachable_names)
+
+    def prompt_for(self, member: TeamMember, turn: dict, batch: list[dict]) -> str:
+        """The turn's prompt: the batch framed by Temper (R2 B5)."""
+        return render_batch(batch, team=True)
 
     def open(self, values: dict | None = None) -> str | None:
         """Attach every member -- one row and one session each -- or find them again.
@@ -283,8 +297,7 @@ class Team:
         roster = [roster_entry(self.run_id, r)
                   for r in self.ledger.participants_of(self.run_id, self.host_path)]
         policy = policy_for(self.communication, self.run_id)
-        channel = TeamChannel(
-            self.ledger,
+        channel = self.channel_for(
             Binding(run_id=self.run_id, host_path=self.host_path,
                     participant_id=part["participant_id"], member=name,
                     session_id=part["session_id"], turn_id=turn["turn_id"],
@@ -307,11 +320,12 @@ class Team:
         pdir = Path(part["session_dir"]).parent
         spec = BoxSpec(participant_dir=pdir, session_id=part["session_id"], role=cfg["role"],
                        provider=model["provider"], model=model["model"],
-                       thinking=model["thinking"], tools=member_tools(cfg),
+                       thinking=model["thinking"], tools=self.tools_for(member),
                        labels={"run": self.run_id[:36], "turn": turn["turn_id"][:16]},
                        add_ons=add_on_names(cfg), team=channel)
         req = TurnRequest(run_id=self.run_id, agent_name=name, node_path=self.host_path,
-                          participant=part, turn=turn, text=render_batch(batch, team=True),
+                          participant=part, turn=turn,
+                          text=self.prompt_for(member, turn, batch),
                           spec=spec, agent_event_id=agent_event_id, recorder=self.recorder,
                           cancel_event=self.cancel_event,
                           first_start=not any((pdir / "sessions").glob("*.jsonl")),

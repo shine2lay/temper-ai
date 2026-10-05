@@ -204,7 +204,9 @@ class FakeBox:
     ``die`` (the worker dies after the prompt), ``die_in_tool`` (the worker dies while a
     tool runs), ``hang`` (nothing more comes), ``ui`` (an extension asks the owner a
     question first). ``lie`` names a check the worker fails (``model``, ``identity``,
-    ``tools``, ``notebook``, ``stray_extension``). Every start is logged in ``STARTS``.
+    ``tools``, ``notebook``, ``stray_extension``, and for the add-on read-back
+    ``add_on_missing``, ``add_on_extra``, ``image_trim_off``). Every start is logged in
+    ``STARTS``.
     """
 
     behaviour = "answer"
@@ -226,6 +228,7 @@ class FakeBox:
         self.rpc: FakeRpc | None = None
         self.leaf: str | None = None
         self.inspected = {"network_none": True, "read_only_root": True, "cap_drop_all": True}
+        self.launched: dict | None = None
         self.log: dict[str, Any] = {"session_id": spec.session_id, "prompts": 0,
                                     "commands": [], "allowance_at_prompt": None,
                                     "tools": list(spec.tools), "add_ons": list(spec.add_ons)}
@@ -244,8 +247,23 @@ class FakeBox:
         # Pi reopens a session at its file's last entry.
         entries = self._entries()[1:]
         self.leaf = entries[-1]["id"] if entries else None
+        # What Docker would report: the extensions on Pi's command line and the environment.
+        extensions = self.expected_extensions()
+        env: dict[str, str] = {}
+        if FakeBox.lie == "add_on_missing" and self.spec.add_ons:
+            extensions = extensions[:-1]
+        elif FakeBox.lie == "add_on_extra":
+            extensions = [*extensions, "/ext/addons/stray/index.ts"]
+        elif FakeBox.lie == "image_trim_off":
+            env["PI_IMAGE_TRIM"] = "off"
+        self.launched = {"extensions": extensions, "env": env}
         self.rpc = FakeRpc(self, sink)
         return self.rpc
+
+    def expected_extensions(self) -> list[str]:
+        from temper_ai.pi_agent.box import pi_extensions
+
+        return pi_extensions(self.cfg, self.spec, self.route)
 
     def kill(self) -> None:
         self.killed = True

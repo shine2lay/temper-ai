@@ -4,7 +4,8 @@ A team is one stage: its members are the stage's ``agents:`` (``type: pi`` confi
 existing pi roles) and its ``strategy_config`` has sections, each a ``type`` plus that type's
 options. The pre-run check runs when a run starts, before any node, with no model call and no
 container; it reports every problem at once and a refused team never becomes a run. The team
-node itself fails red until the team runtime (T4/T5/M1) is built.
+node runs the same check again when it starts (#38); its runs are tested in
+tests/test_runner/pi_team and tests/test_runner/pi_parking.
 Sealed: role folders are fixtures, read only; no container, no network, no model.
 """
 
@@ -19,10 +20,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from temper_ai.pi_agent.member import REFUSED_ADD_ONS
+from temper_ai.pi_agent.route.model import RESERVED_IDS
 from temper_ai.pi_agent.team import (
     EDGES_NOT_BUILT,
     LATER_SECTIONS,
-    TEAM_NOT_BUILT,
     AllCommunication,
     EdgesCommunication,
     LeaderMode,
@@ -39,7 +40,6 @@ from temper_ai.pi_agent.team_check import (
     safety_problems,
 )
 from temper_ai.pi_agent.team_node import TeamNode
-from temper_ai.shared.types import ExecutionContext, Status
 from tests.test_pi_agent import support as sup
 from tests.test_pi_agent.support import FakeBox
 
@@ -261,6 +261,37 @@ def test_a_missing_role_is_named_with_a_close_name_never_picked(box):
         "member 'qa': role 'zebra' is not in the role list"]
 
 
+def test_two_members_with_the_same_role_are_refused(box):
+    """M2 binding B8: one member per role, until the owner decides about the same role twice.
+    Checked before any member runs: here, and again when the team node starts."""
+    team = members()
+    team[2]["role"] = "frontend"
+    team.append({"name": "reviewer", "type": "pi", "role": "architecture"})
+    assert check_team(team, RUNNABLE, inputs=GOAL, box=box) == [
+        "member 'qa': same role 'frontend' as member 'frontend'; a team has one member per role",
+        "member 'reviewer': same role 'architecture' as member 'design'; a team has one "
+        "member per role"]
+    assert check_team(members(), RUNNABLE, inputs=GOAL, box=box) == []  # one each: fine
+
+
+@pytest.mark.parametrize("reserved", sorted(RESERVED_IDS))
+def test_a_member_named_like_one_of_temper_s_own_ids_is_refused(box, reserved):
+    """T4T5 note N3: a member called ``owner`` (or any reserved id) could not be reached under
+    the ``all`` policy. The list is A7's own (route/model.py), never a copy."""
+    team = members()
+    team[1]["name"] = reserved.upper() if reserved != "*" else reserved
+    settings = {**RUNNABLE, "mode": {"type": "leader", "leader": "design"}}
+    got = check_team(team, settings, inputs=GOAL, box=box)
+    assert (f"member '{team[1]['name']}': the name is reserved for Temper's own use; pick "
+            "another") in got
+
+
+def test_the_reserved_ids_are_a7s_list():
+    assert RESERVED_IDS == frozenset({"owner", "system", "router", "policy", "runtime",
+                                      "temper", "scheduler", "admin", "all", "any",
+                                      "everyone", "broadcast", "*"})
+
+
 def test_a_role_needs_its_identity_its_about_page_and_a_home_chat(box):
     roles = Path(box.identities_dir)
     (roles / "frontend" / "about.md").unlink()
@@ -374,19 +405,15 @@ def test_a_broken_team_gets_every_problem_at_once(box):
 # --- the team node ------------------------------------------------------------------------
 
 
-def test_the_team_node_fails_red_until_the_runtime_is_built():
+def test_a_team_stage_is_one_team_node_that_fails_its_stage_and_has_no_stage_timeout():
+    """The node the leader loop runs (#38; its runs: tests/test_runner/pi_team/)."""
     nodes = team_topology(members(), GOOD)
     assert len(nodes) == 1 and isinstance(nodes[0], TeamNode)
     node = nodes[0]
     assert node.name == "team" and node.depends_on == []
     assert [m["name"] for m in node.agent_configs()] == ["design", "frontend", "qa"]
-    result = node.run({"goal": "Add a sign-up page"},
-                      ExecutionContext(run_id="r1", workflow_name="w", node_path="build",
-                                       agent_name="", event_recorder=None, tool_executor=None))
-    assert result.status == Status.FAILED
-    assert result.error == TEAM_NOT_BUILT == "team runtime not built yet (T4/T5/M1)"
-    assert result.metadata["team"] == {"members": ["design", "frontend", "qa"],
-                                       "settings": GOOD}
+    # a failed team node fails its stage (M2-roles P2); the pause has no deadline (B10)
+    assert TeamNode.fails_stage is True and TeamNode.no_stage_timeout is True
 
 
 # --- at run start: the loader -----------------------------------------------------------------
@@ -589,17 +616,6 @@ def test_a_refused_team_never_becomes_a_run(pi, team_on, monkeypatch):
                     "goal: the stage reads it from the run input 'goal', which is not set"):
         assert f"Stage 'build': {problem}" in detail
     assert get_events(event_type="workflow.started", limit=1000) == []
-    assert FakeBox.STARTS == []
-
-
-def test_a_checked_team_runs_and_its_node_fails_red_without_any_worker(pi, team_on):
-    from temper_ai.stage.loader import GraphLoader
-
-    pi.state.graph_loader = GraphLoader(store(team_stage()))
-    eid = sup.start(pi.client, "team_wf", pi.ws, inputs=GOAL)
-    assert sup.wait_ended(eid)[-1]["status"] == "failed"
-    said = [e for e in sup.events(eid) if TEAM_NOT_BUILT in json.dumps(e["data"], default=str)]
-    assert said, "the run says the team runtime is not built yet"
     assert FakeBox.STARTS == []
 
 

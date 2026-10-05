@@ -35,7 +35,7 @@ import threading
 import time
 import uuid
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -489,6 +489,23 @@ TEAM_LINE_LIMIT = 512 * 1024
 BOX_NAME = re.compile(r"^temper-pi-[0-9a-f]{20}$")
 
 
+def pi_extensions(cfg: BoxConfig, spec: BoxSpec, route: Route) -> list[str]:
+    """The in-box entry of every extension a worker's Pi is started with, in order: Temper's
+    identity and box extensions, the model route's sign-in extension, then the member's pinned
+    add-ons."""
+    out = ["/ext/identity/index.ts", "/ext/temper-box/index.ts"]
+    if route.extension:
+        out.append(f"/ext/auth/{route.extension_entry or 'index.ts'}")
+    out += [f"/ext/addons/{name}/{cfg.add_ons[name].entry}" for name in spec.add_ons]
+    return out
+
+
+def extension_entries(argv: Sequence[str]) -> list[str]:
+    """The entry after every ``--extension`` of a Pi command line, in order."""
+    args = [str(a) for a in argv]
+    return [args[i + 1] for i, a in enumerate(args[:-1]) if a == "--extension"]
+
+
 def _docker_cli(*args: str, timeout: float = 60) -> subprocess.CompletedProcess:
     env = {k: os.environ[k] for k in DOCKER_ENV_KEYS if k in os.environ}
     env["PATH"] = "/usr/bin:/bin:/usr/local/bin"
@@ -573,6 +590,9 @@ class WorkerBox:
         self.created = False
         self.rpc: Rpc | None = None
         self.inspected: dict | None = None
+        #: How the container was really started, read back from Docker: the ``--extension``
+        #: entries of Pi's command line and the environment (the turn checks the add-ons).
+        self.launched: dict | None = None
 
     # --- setup ---
 
@@ -674,14 +694,12 @@ class WorkerBox:
         return env
 
     def pi_args(self) -> list[str]:
+        # ``--no-extensions`` and then only these: Pi 0.87.1 stops (exit 1) when any of them
+        # fails to load, so a running Pi has loaded every one (the turn reads them back).
         args = ["--mode", "rpc", "--offline", "--no-approve", "--no-extensions", "--no-skills",
-                "--no-prompt-templates", "--no-themes", "--no-context-files",
-                "--extension", "/ext/identity/index.ts",
-                "--extension", "/ext/temper-box/index.ts"]
-        if self.route.extension:
-            args += ["--extension", f"/ext/auth/{self.route.extension_entry or 'index.ts'}"]
-        for name in self.spec.add_ons:
-            args += ["--extension", f"/ext/addons/{name}/{self.cfg.add_ons[name].entry}"]
+                "--no-prompt-templates", "--no-themes", "--no-context-files"]
+        for entry in pi_extensions(self.cfg, self.spec, self.route):
+            args += ["--extension", entry]
         args += ["--provider", self.spec.provider, "--model", self.spec.model,
                  "--thinking", self.spec.thinking, "--tools", ",".join(self.spec.tools),
                  "--session-dir", "/w/sessions", "--session-id", self.spec.session_id]
@@ -793,7 +811,14 @@ class WorkerBox:
         failed = sorted(k for k, ok in checks.items() if not ok)
         if failed:
             raise BoxError("box_not_sealed", "worker container is not sealed: " + ", ".join(failed))
+        config = info.get("Config") or {}
+        self.launched = {"extensions": extension_entries(config.get("Cmd") or []),
+                         "env": dict(str(e).partition("=")[::2] for e in config.get("Env") or [])}
         return checks
+
+    def expected_extensions(self) -> list[str]:
+        """The in-box entry of every extension Pi is started with, in order."""
+        return pi_extensions(self.cfg, self.spec, self.route)
 
     # --- credentials and egress (host side) ---
 

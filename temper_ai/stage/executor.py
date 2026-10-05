@@ -809,7 +809,20 @@ def _build_final_result(
     if stopped:
         event_data["stopped"] = stopped
 
-    failed_nodes = _failed_node_names(node_outputs) if is_workflow else []
+    held_back: list[NodeResult] = []
+    if is_workflow:
+        failed_nodes = _failed_node_names(node_outputs)
+    else:
+        # Stages stay tolerant, except where a node's result is its stage's
+        # (``Node.fails_stage``): such a stage completes only when that node completed. It
+        # fails when the node failed or never ran, and is cancelled or skipped with it when
+        # the run was cancelled, or stopped at a failure elsewhere, before the node could
+        # finish -- never "completed" over work that was not done.
+        own = [n.name for n in nodes if getattr(n, "fails_stage", False)]
+        failed_nodes = [name for name in own if name not in node_outputs
+                        or node_outputs[name].status == Status.FAILED]
+        held_back = [node_outputs[name] for name in own if name in node_outputs
+                     and node_outputs[name].status in (Status.CANCELLED, Status.SKIPPED)]
     if is_workflow and not failed_nodes and stopped and stopped.get("path"):
         # The run stopped at a failure, but the failed attempt is no longer among the
         # results: its loop sent it round again, which retired it, and then nothing more
@@ -822,8 +835,23 @@ def _build_final_result(
         # whatever reads a run's outcome -- the EPD driver, the dashboard -- sees what it saw.
         final_status = Status.FAILED
     error: str | None = None
+    if held_back and not failed_nodes:
+        # The run was cancelled, or stopped before the node started: the stage says so, with
+        # the node's own reason (a skip's reason ends "... failed", so whatever depends on the
+        # stage is skipped for that failure too, never run as after a condition's skip).
+        cancelled = [r for r in held_back if r.status == Status.CANCELLED]
+        final_status = Status.CANCELLED if cancelled else Status.SKIPPED
+        error = (cancelled or held_back)[0].error or final_status.value
+        event_data["error"] = error
     if failed_nodes:
         error = f"{len(failed_nodes)} node(s) failed: {', '.join(failed_nodes)}"
+        if not is_workflow:
+            # Say why, as the failed node said it: the stage row is where it is read.
+            why = [f"{name}: {node_outputs[name].error}" if name in node_outputs
+                   else f"{name}: it never ran" for name in failed_nodes
+                   if name not in node_outputs or node_outputs[name].error]
+            if why:
+                error = f"{error} ({'; '.join(why)})"
         event_data["error"] = error
         event_data["failed_nodes"] = failed_nodes
 

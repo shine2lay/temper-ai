@@ -14,6 +14,11 @@
 //   message to the box's team socket and shows Temper's answer. The socket is bound by Temper
 //   to this member's running turn, so the tool sends no identity and no token: who sent a
 //   message is Temper's to say. Pi activates the tool only when --tools names it.
+// - Also in a team member's box: the review tools of the leader loop (task #38), over the same
+//   socket: "request_review" and "decide" (the leader's) and "give_view" (a reviewer's). Each
+//   records a request with Temper for this turn; Temper carries it out once the turn has
+//   finished, and decides who may use which (it refuses a call from the wrong member). Pi
+//   activates only the ones --tools names, so a member sees only its own.
 import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createHash } from "node:crypto";
@@ -173,6 +178,69 @@ export default function (pi: ExtensionAPI) {
           content: [{ type: "text" as const, text }],
           details: { ok: !!reply?.ok, code: reply?.code ?? null, message_id: reply?.message_id ?? null },
         };
+      },
+    });
+
+    // The leader loop's review tools. Temper's answer says what it recorded; nothing happens
+    // until this turn has finished.
+    const reviewCall = async (op: string, toolCallId: string, params: any, keys: string[]) => {
+      const payload: Record<string, unknown> = { op, client_msg_id: String(toolCallId).slice(0, 128) };
+      for (const key of keys) {
+        if (params?.[key] !== undefined && params?.[key] !== null) payload[key] = params[key];
+      }
+      const reply = await teamSend(payload);
+      const text = reply?.ok
+        ? String(reply.detail ?? "Recorded.") +
+          (reply.duplicate ? " (already recorded: the same request, recorded once)" : "")
+        : `Not recorded (${reply?.code ?? "invalid_channel"}): ${reply?.detail ?? ""}`;
+      return {
+        content: [{ type: "text" as const, text }],
+        details: { ok: !!reply?.ok, code: reply?.code ?? null, act_id: reply?.act_id ?? null },
+      };
+    };
+    pi.registerTool({
+      name: "request_review",
+      label: "Request review",
+      description:
+        "Ask the other members to review your work as it is when this turn finishes. Temper " +
+        "commits your project copy, gives every reviewer exactly that version, and brings " +
+        "you their views (satisfied or changes, with a note).",
+      parameters: Type.Object({
+        note: Type.Optional(Type.String({ description: "What to look at, in a sentence or two" })),
+      }),
+      async execute(toolCallId: string, params: any) {
+        return reviewCall("request_review", toolCallId, params, ["note"]);
+      },
+    });
+    pi.registerTool({
+      name: "give_view",
+      label: "Give view",
+      description:
+        "Give your view on the version under review: satisfied, or changes (say which in " +
+        "the note). Name the review by the id in the review request.",
+      parameters: Type.Object({
+        review_id: Type.String({ description: "The review's id, from the review request" }),
+        verdict: Type.String({ description: "satisfied or changes" }),
+        note: Type.String({ description: "A short note: what is good, or what to change" }),
+      }),
+      async execute(toolCallId: string, params: any) {
+        return reviewCall("give_view", toolCallId, params, ["review_id", "verdict", "note"]);
+      },
+    });
+    pi.registerTool({
+      name: "decide",
+      label: "Decide",
+      description:
+        "After the views of a review have reached you: done (the reviewed version is the " +
+        "result) or keep_going (another round). Done counts only if your copy is still " +
+        "exactly the reviewed version and nothing new has reached you since this turn began.",
+      parameters: Type.Object({
+        review_id: Type.String({ description: "The review's id" }),
+        decision: Type.String({ description: "done or keep_going" }),
+        summary: Type.String({ description: "A short summary of the result or of what comes next" }),
+      }),
+      async execute(toolCallId: string, params: any) {
+        return reviewCall("decide", toolCallId, params, ["review_id", "decision", "summary"]);
       },
     });
   }

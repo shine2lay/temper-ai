@@ -48,6 +48,19 @@ COMMAND_TIMEOUT = 60.0
 UI_SILENT = ("notify", "setStatus", "setWidget", "setTitle", "set_editor_text")
 #: Extension commands each allowed extension must register, by its folder in the box.
 EXPECTED_COMMANDS = {"identity": "/ext/identity/", "temper-box-state": "/ext/temper-box/"}
+#: How a running worker shows each allowed add-on loaded (R2 LR8, M2 binding). Pi is started
+#: with ``--no-extensions`` and then exactly the pinned entries (box.py ``pi_args``), and Pi
+#: 0.87.1 exits with status 1 when any ``--extension`` fails to load (dist/main.js, "Failed
+#: to load extension"): so a worker that answers ``get_state`` with an add-on's entry on its
+#: container's command line has loaded that add-on. Each add-on also proves it is at work:
+#: ``tool`` -- the tool it brings is active (``tools_exact`` reads the active list back);
+#: ``env_not_off`` -- its switch variable is not set to off. An add-on with no entry here is
+#: refused (fail closed). A Pi other than 0.87.1 needs A4 rerun before this holds.
+ADD_ON_PROOFS: dict[str, dict[str, str]] = {
+    "pi-tldr": {"tool": "tldr"},
+    "pi-image-trim": {"env_not_off": "PI_IMAGE_TRIM"},
+}
+_OFF = {"0", "off", "false", "no"}
 
 
 @dataclass
@@ -206,6 +219,7 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         box_state = json.loads(state_file.read_text(encoding="utf-8"))
         notebook = file_sha256(pdir / "memory" / "identities" / req.spec.role / "notebook.md")
         report.checks["role"] = _check_role(box_state, req.spec, notebook)
+        report.checks["add_ons"] = _check_add_ons(box, req.spec, box_state)
         if ui_refused:
             raise TurnFailure("ui_request_refused",
                               f"Pi asked for owner input ({', '.join(ui_refused)}); refused")
@@ -300,7 +314,7 @@ def _record_end(recorder: Any, mapper: PiEventMapper, outcome: Any, duration: fl
 
 def _public_checks(checks: dict) -> dict:
     return {k: v for k, v in checks.items()
-            if k in ("pin", "extension_commands", "role", "rewound")}
+            if k in ("pin", "extension_commands", "role", "rewound", "add_ons")}
 
 
 def _rewind(rpc: Any, pdir: Path, session: dict) -> dict:
@@ -390,6 +404,41 @@ def _check_role(state: dict, spec: BoxSpec, notebook_sha: str | None) -> dict:
         raise TurnFailure("role_not_verified",
                           "the worker is not the role it was started as: " + ", ".join(failed))
     return {**checks, "has_ui": state.get("has_ui")}
+
+
+def _check_add_ons(box: Any, spec: BoxSpec, state: dict) -> dict:
+    """Read back that the worker loaded exactly the pinned extensions and that each listed
+    add-on is at work, before any model call (R2 LR8; see :data:`ADD_ON_PROOFS`)."""
+    launched = getattr(box, "launched", None)
+    expected = box.expected_extensions() if hasattr(box, "expected_extensions") else None
+    if not isinstance(launched, dict) or expected is None:
+        raise TurnFailure("add_ons_not_verified",
+                          "how the worker was started could not be read back")
+    actual = list(launched.get("extensions") or [])
+    if actual != list(expected):
+        missing = [e for e in expected if e not in actual]
+        extra = [e for e in actual if e not in expected]
+        what = (["missing " + ", ".join(missing)] if missing else []) + \
+               (["unexpected " + ", ".join(extra)] if extra else []) or ["out of order"]
+        raise TurnFailure("add_ons_not_loaded",
+                          "the worker was not started with exactly the pinned extensions: "
+                          + "; ".join(what))
+    env = launched.get("env") or {}
+    active = set(state.get("active_tools") or [])
+    proven: dict[str, str] = {}
+    for name in spec.add_ons:
+        proof = ADD_ON_PROOFS.get(name)
+        if not proof:
+            raise TurnFailure("add_on_unproven",
+                              f"add-on '{name}' has no way to read back that it loaded")
+        if "tool" in proof and proof["tool"] not in active:
+            raise TurnFailure("add_on_not_loaded",
+                              f"add-on '{name}': its tool {proof['tool']} is not active")
+        var = proof.get("env_not_off")
+        if var and str(env.get(var, "")).strip().lower() in _OFF and var in env:
+            raise TurnFailure("add_on_not_loaded", f"add-on '{name}' is switched off ({var})")
+        proven[name] = "loaded"
+    return {"extensions": len(actual), "add_ons": proven}
 
 
 def _wait_settled(rpc: Any, rid: str, mapper: PiEventMapper, timeout: float,

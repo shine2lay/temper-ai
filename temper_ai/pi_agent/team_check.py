@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 from temper_ai.pi_agent import AGENT_TYPE
 from temper_ai.pi_agent.box import CONFIG_ENV, ROLE_RE, BoxConfig, BoxError
 from temper_ai.pi_agent.member import ADD_ONS, add_on_names, settings
+from temper_ai.pi_agent.route.model import RESERVED_IDS
 from temper_ai.pi_agent.team import EDGES_NOT_BUILT, member_name, stage_problems
 
 if TYPE_CHECKING:  # the stage package imports this module's registration; no import cycle
@@ -146,6 +147,7 @@ def check_team(agent_configs: list[dict], strategy_config: object, *,
                 for name, error in (unloaded or {}).items()]
     problems += [f"{where}: {what}" for where, what in stage_problems(agent_configs,
                                                                      strategy_config)]
+    problems += member_problems(agent_configs)
     if _uses_edges(strategy_config):
         # R2 rule B7: edges stay in the format and are checked above, but the first team
         # runtime is ``all`` only, so a run can't use them yet.
@@ -177,6 +179,34 @@ def check_team(agent_configs: list[dict], strategy_config: object, *,
         problems.append(goal)
     problems += safety_problems(safety)
     return problems
+
+
+def member_problems(agent_configs: list[dict]) -> list[str]:
+    """Members the first team runtime can't tell apart or reach: two members with the same
+    role (M2 binding B8, until the owner decides about the same role twice), and a member
+    named like one of Temper's own ids (T4T5 N3: a member called ``owner`` could not be
+    reached under the ``all`` policy). The team's own open refuses those names too."""
+    out: list[str] = []
+    first_with: dict[str, str] = {}
+    seen: set[str] = set()
+    for cfg in agent_configs:
+        name = member_name(cfg)
+        if name in seen:
+            continue  # the same member listed twice: reported once, as a repeated name
+        seen.add(name)
+        if name.strip().lower() in RESERVED_IDS:
+            out.append(f"member '{name}': the name is reserved for Temper's own use; pick "
+                       "another")
+        role = cfg.get("role")
+        if not isinstance(role, str) or not role.strip():
+            continue  # already reported with the member's config
+        key = role.strip().casefold()
+        if key in first_with:
+            out.append(f"member '{name}': same role '{role}' as member '{first_with[key]}'; "
+                       "a team has one member per role")
+        else:
+            first_with[key] = name
+    return out
 
 
 def _uses_edges(strategy_config: object) -> bool:

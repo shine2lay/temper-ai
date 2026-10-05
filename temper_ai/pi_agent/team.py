@@ -26,8 +26,8 @@ are refused by name. The strategy's check (:func:`validate_team`) reports every 
 the run-start check (:mod:`temper_ai.pi_agent.team_check`) adds the members' roles, the
 workflow's safety policies and the goal.
 
-The team node itself (:class:`temper_ai.pi_agent.team_node.TeamNode`) is a stub until the team
-runtime is built (T4 messaging, T5 inboxes, M1 leader mode): it always fails red, never passes.
+The team node itself (:class:`temper_ai.pi_agent.team_node.TeamNode`) runs the leader loop
+(:mod:`temper_ai.pi_agent.team_leader`) on the team runtime (T4 messaging, T5 inboxes).
 Registered only with the Pi switch (``TEMPER_PI_AGENT``) on.
 
 This module imports nothing from ``temper_ai.stage``: the stage package imports the topology
@@ -44,7 +44,6 @@ from temper_ai.pi_agent import AGENT_TYPE
 from temper_ai.pi_agent.member import config_problems
 
 STRATEGY = "team"
-TEAM_NOT_BUILT = "team runtime not built yet (T4/T5/M1)"
 #: Said by the run-start check for ``communication: {type: edges}`` (R2 rule B7): the first
 #: team runtime is ``all`` only. Drop it when a later slice builds edges.
 EDGES_NOT_BUILT = "edges isn't built yet; use all"

@@ -16,7 +16,7 @@ import time
 from dataclasses import replace
 from typing import Any
 
-from temper_ai.shared.types import ExecutionContext, NodeResult
+from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.failure import policy_for
 from temper_ai.stage.input_defaults import with_default
@@ -59,6 +59,20 @@ class StageNode(Node):
             node_path=node_path,
             failure_policy=policy_for(self.config, context.failure_policy),
         )
+
+        # A node that waits on the owner without expiry cannot sit under a stage timeout,
+        # which would end the wait (checked here too: a resume or fork runs the workflow
+        # config as it is now, without the run-start check).
+        if self.config.timeout_seconds and any(
+                getattr(n, "no_stage_timeout", False) for n in self.child_nodes):
+            error = (f"stage '{self.name}': timeout_seconds is not allowed here: the stage "
+                     "waits on the owner for as long as the owner takes")
+            # Said on the stage's own row (the executor runs it under its row's event, as
+            # the parent): nothing inside the stage ran to say it.
+            if context.parent_event_id:
+                context.event_recorder.update_event(context.parent_event_id, status="failed",
+                                                    data={"error": error})
+            return NodeResult(status=Status.FAILED, error=error)
 
         # 1. Input gate
         gated_input = self._apply_input_gate(input_data)

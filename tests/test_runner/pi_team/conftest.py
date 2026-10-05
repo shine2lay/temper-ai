@@ -27,6 +27,20 @@ def _no_network(monkeypatch):
     assert guard.attempts == [], f"network connection attempted: {guard.attempts}"
 
 
+@pytest.fixture(autouse=True)
+def _invariants_after_every_scenario(request):
+    """tables.md I1-I8 after every team scenario, by construction (#37's land check, binding 3):
+    every team a test left rows for is checked once the test is over, whether or not the test
+    checked it itself. A test that stores rows takes ``led``; one that does not stores none."""
+    if "led" not in request.fixturenames:
+        yield
+        return
+    led = request.getfixturevalue("led")  # set up first, so it is torn down after this check
+    before = ts.team_keys(led)
+    yield
+    ts.check_all_invariants(led, before)
+
+
 @pytest.fixture
 def db_url(request, tmp_path) -> str:
     """The URL every connection of this test uses (a child process too)."""

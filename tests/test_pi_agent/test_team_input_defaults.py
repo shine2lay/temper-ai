@@ -2,16 +2,16 @@
 
 The run-start check reads the run's inputs (team_check.goal_problem); it must see the default,
 not refuse the run with "goal: ... not set". The run records the goal it used and the team node
-is handed it. (The team node's own check on a resume or a fork comes with the team runtime,
-queue #38; it reads the same filled inputs.)
+is handed it. (The team node's own check at a fresh start, after a resume and after a fork,
+queue #38, reads the same filled inputs: tests/test_runner/pi_parking/test_team_runs.py.)
 """
 
 from __future__ import annotations
 
 import pytest
 
-from temper_ai.pi_agent.team import TEAM_NOT_BUILT
 from temper_ai.pi_agent.team_node import TeamNode
+from temper_ai.shared.types import NodeResult, Status
 from tests.test_pi_agent import support as sup
 from tests.test_pi_agent import test_team
 from tests.test_pi_agent.support import FakeBox
@@ -80,11 +80,11 @@ def test_a_team_run_started_without_its_goal_records_it_and_its_node_gets_it(pi,
     from temper_ai.stage.loader import GraphLoader
 
     handed = []
-    real_run = TeamNode.run
+    stopped = "stopped here by the test: only the goal handed to the team node is checked"
 
-    def run(self, input_data, context):
+    def run(self, input_data, context):  # the team itself is never run here (no member)
         handed.append(dict(input_data))
-        return real_run(self, input_data, context)
+        return NodeResult(status=Status.FAILED, error=stopped)
 
     monkeypatch.setattr(TeamNode, "run", run)
     pi.state.graph_loader = GraphLoader(defaulted())
@@ -94,8 +94,8 @@ def test_a_team_run_started_without_its_goal_records_it_and_its_node_gets_it(pi,
     assert r.status_code == 200, r.text  # not refused with "goal: ... not set"
     eid = r.json()["execution_id"]
     attempts = sup.wait_ended(eid)
-    assert attempts[-1]["status"] == "failed"  # the team node fails red until the runtime exists
+    assert attempts[-1]["status"] == "failed"  # the stand-in node fails red, and the run with it
     assert (attempts[-1]["data"] or {})["input_data"] == {"goal": GOAL_DEFAULT}
     assert [h.get("goal") for h in handed] == [GOAL_DEFAULT]
-    assert any(TEAM_NOT_BUILT in str(e["data"]) for e in sup.events(eid))
+    assert any(stopped in str(e["data"]) for e in sup.events(eid))
     assert FakeBox.STARTS == []

@@ -334,6 +334,83 @@ def test_a_member_whose_add_ons_have_no_pinned_copy_fails_before_any_worker(pi, 
     assert said, "the failure names the add-ons without a pinned copy"
 
 
+# --- every listed add-on is read back as loaded (R2 LR8, M2 binding; #38) -------------------
+
+
+def _defaults_member(pi, monkeypatch) -> None:
+    """``pi_defaults``: a member with the defaults, so it gets every allowed add-on, pinned."""
+    _add_box_settings(pi, add_ons=sup.make_add_ons(pi.tmp / "pins"), routes={
+        "anthropic": {"provider": "anthropic", "host": "api.anthropic.com"},
+        "openai-codex": {"provider": "openai-codex", "host": "chatgpt.com"}})
+    monkeypatch.setitem(sup.WORKFLOWS, "pi_defaults", lambda: [
+        sup.step("brief"), _member_node(provider=None, model=None, thinking=None, add_ons=None)])
+
+
+def _refused_before_the_model(eid: str, code: str) -> None:
+    assert sup.wait_ended(eid)[-1]["status"] == "failed"
+    assert [s["prompts"] for s in FakeBox.STARTS] == [0], "no model prompt was sent"
+    end = sup.agent_end(eid, sup.turn_agents(eid)[0]["id"])
+    assert end["type"] == "agent.failed" and code in end["data"]["error"]
+    turn = sup.ledger().snapshot(eid)["turns"][0]
+    assert turn["state"] == "failed" and turn["effect_state"] == "none"
+
+
+def test_lr8_every_listed_add_on_is_read_back_as_loaded_before_the_model(pi, monkeypatch):
+    """How the worker was really started (its command line, read back from Docker) carries
+    exactly the pinned extensions, and each listed add-on shows it is at work: pi-tldr by its
+    active tldr tool, pi-image-trim (which brings no tool or command) by its switch not being
+    off. Pi 0.87.1 exits when an extension fails to load, so a worker that answers has loaded
+    every one. The single Pi step and every team member's turn go through the same check."""
+    _defaults_member(pi, monkeypatch)
+    eid = sup.start(pi.client, "pi_defaults", pi.ws)
+    sup.open_wait(eid, "owner")
+    turn = sup.ledger().snapshot(eid)["turns"][0]
+    assert turn["worker"]["checks"]["add_ons"] == {
+        "extensions": 2 + len(sup.ADD_ON_NAMES),
+        "add_ons": {name: "loaded" for name in sup.ADD_ON_NAMES}}
+    end = sup.agent_end(eid, sup.turn_agents(eid)[0]["id"])
+    assert end["data"]["pi_turn_checks"]["add_ons"]["add_ons"] == {
+        name: "loaded" for name in sup.ADD_ON_NAMES}, "the run view shows them"
+
+
+@pytest.mark.parametrize("lie, code", [
+    ("add_on_missing", "add_ons_not_loaded"),
+    ("add_on_extra", "add_ons_not_loaded"),
+    ("image_trim_off", "add_on_not_loaded"),
+])
+def test_lr8_a_worker_without_exactly_its_pinned_add_ons_never_reaches_the_model(
+        pi, monkeypatch, lie, code):
+    """A missing or an extra extension on the worker's command line, or an add-on switched off
+    inside the worker, is refused before any model call."""
+    _defaults_member(pi, monkeypatch)
+    FakeBox.lie = lie
+    _refused_before_the_model(sup.start(pi.client, "pi_defaults", pi.ws), code)
+
+
+def test_lr8_an_add_on_whose_tool_is_not_active_never_reaches_the_model(pi, monkeypatch):
+    from temper_ai.pi_agent import turn as turn_module
+
+    _defaults_member(pi, monkeypatch)
+    monkeypatch.setitem(turn_module.ADD_ON_PROOFS, "pi-tldr", {"tool": "tldr_gone"})
+    _refused_before_the_model(sup.start(pi.client, "pi_defaults", pi.ws), "add_on_not_loaded")
+
+
+def test_lr8_an_add_on_with_no_way_to_read_it_back_is_refused_fail_closed(pi, monkeypatch):
+    """Every allowed add-on needs a declared read-back; one without it is refused, never
+    assumed loaded."""
+    from temper_ai.pi_agent import turn as turn_module
+
+    _defaults_member(pi, monkeypatch)
+    monkeypatch.delitem(turn_module.ADD_ON_PROOFS, "pi-image-trim")
+    _refused_before_the_model(sup.start(pi.client, "pi_defaults", pi.ws), "add_on_unproven")
+
+
+def test_lr8_every_allowed_add_on_has_a_read_back():
+    from temper_ai.pi_agent.turn import ADD_ON_PROOFS
+
+    assert set(ADD_ONS) == set(ADD_ON_PROOFS)
+
+
 def test_a_usage_limit_pauses_for_the_owner_naming_the_limit(pi):
     FakeBox.behaviour = "usage_limit"
     eid = sup.start(pi.client, "pi_talk", pi.ws)

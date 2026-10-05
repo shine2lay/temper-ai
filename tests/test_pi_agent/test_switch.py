@@ -50,9 +50,11 @@ try:
     team_stage = "built"
 except Exception as exc:
     team_stage = f"{type(exc).__name__}: {exc}"
-# The cancel path of a parked run (R2 C2): with the switch off it imports and creates nothing.
+# The cancel path of a parked run (R2 C2) and the sweep that ends a cancelled run's teams
+# later (G-a, #38): with the switch off they import and create nothing.
 from temper_ai.runner import parked
 parked._end_pi_teams("run-probe")
+swept = parked.end_cancelled_pi_teams()
 tables_after = sorted(sa.inspect(get_database().engine).get_table_names())
 print(json.dumps({
     "types": sorted(agent.AGENT_TYPES),
@@ -66,6 +68,7 @@ print(json.dumps({
     "strategies": topology.available_strategies(),
     "run_start": topology.run_start_options(),
     "team_check": topology.run_start_check("team") is not None,
+    "swept": swept,
 }))
 """
 
@@ -101,8 +104,10 @@ def test_switched_off_the_pi_type_and_its_code_are_absent(probes, which):
     assert got["run_start"] == {}
     assert got["team_check"] is False
     # R2 B14: a team stage with Pi members is refused with a clear message, and the cancel
-    # path (C2) neither imported the team code nor created a table (both checked above).
+    # path (C2) and the G-a sweep neither imported the team code nor created a table (both
+    # checked above).
     assert got["team_stage"].startswith("TopologyError: Unknown strategy: 'team'")
+    assert got["swept"] == 0
 
 
 def test_b14_switch_off_creates_nothing(probes):
@@ -137,11 +142,12 @@ def test_switched_on_registers_only_the_type_and_the_team_strategy(probes):
     assert on["strategies"] == ["parallel", "sequential", "leader", "team"]
     assert on["run_start"] == {"run_start": True}
     assert on["team_check"] is True
-    # The ledger is created by the first Pi step that runs, never at start-up, and the cancel
-    # path never creates it (R2 C2).
+    # The ledger is created by the first Pi step that runs, never at start-up, and neither the
+    # cancel path nor the G-a sweep creates it (R2 C2).
     assert on["pi_tables"] == []
+    assert on["swept"] == 0
     assert on["tables"] == off["tables"]
-    # Switched on, the team stage builds (its runtime is not wired in yet: #38).
+    # Switched on, the team stage builds; its team node runs the leader loop (#38).
     assert on["team_stage"] == "built"
 
 

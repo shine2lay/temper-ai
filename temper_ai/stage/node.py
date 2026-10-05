@@ -8,6 +8,7 @@ implement the same interface.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 from temper_ai.shared.types import ExecutionContext, NodeResult
 from temper_ai.stage.models import NodeConfig
@@ -19,7 +20,15 @@ class Node(ABC):
     Attributes:
         name: Unique name within the parent graph.
         config: The resolved NodeConfig for this node.
+        fails_stage: When this node fails, the stage holding it fails too. Stages are
+            otherwise tolerant (a parallel stage with one failed lane still completes);
+            a node whose failure must never read as a completed stage says so here.
+        no_stage_timeout: This node may wait on the owner for as long as the owner takes:
+            the stage holding it may not set ``timeout_seconds``, which would end the wait.
     """
+
+    fails_stage: ClassVar[bool] = False
+    no_stage_timeout: ClassVar[bool] = False
 
     def __init__(self, config: NodeConfig):
         self.name = config.name

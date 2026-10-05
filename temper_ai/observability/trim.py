@@ -640,6 +640,11 @@ def run_trim(
                 # One bad run must not stop the pass, but a pass that fails
                 # everywhere must not read as "nothing to do" either.
                 logger.exception("Trim failed for run %s; leaving it whole", execution_id)
+        # Not a trim: the Pi teams of cancelled runs whose teams were never ended get ended
+        # here too (G-a), so their undelivered messages are recorded within a week.
+        from temper_ai.runner.parked import end_cancelled_pi_teams
+
+        end_cancelled_pi_teams()
     else:
         stats.runs_trimmed = len(todo)
 

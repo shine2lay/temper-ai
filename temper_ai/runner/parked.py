@@ -194,6 +194,20 @@ def _end_pi_teams(execution_id: str) -> None:
         logger.exception("Run %s: could not end its Pi teams after the cancel", execution_id)
 
 
+def end_cancelled_pi_teams() -> int:
+    """End the Pi teams of runs that were cancelled but whose teams were not ended: a cancel
+    ends the run's row first and its teams after (above), so a process that died between the
+    two left them (G-a). Ending is idempotent; this runs at start-up and in the trim sweep
+    (and a team's open runs it too). Does nothing with the Pi switch off."""
+    from temper_ai.pi_agent import end_cancelled_teams
+
+    try:
+        return end_cancelled_teams()
+    except Exception:  # noqa: BLE001 - a sweep; the next one tries again
+        logger.exception("Could not end the Pi teams of cancelled runs")
+        return 0
+
+
 def _reject_open_waits(execution_id: str, reason: str | None) -> None:
     from temper_ai.observability.recorder import decide_event, gate_events
     from temper_ai.stage.gate import REJECTED
@@ -303,6 +317,7 @@ def carry_on_at_startup(start: Callable[[str], Any] | None = None) -> list[str]:
         from temper_ai.runner.pickup import _resume_through_the_button
 
         start = _resume_through_the_button
+    end_cancelled_pi_teams()
     carried = []
     for execution_id in parked_runs():
         try:

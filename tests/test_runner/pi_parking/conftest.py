@@ -28,6 +28,24 @@ def _no_network(monkeypatch):
     assert guard.attempts == [], f"network connection attempted: {guard.attempts}"
 
 
+@pytest.fixture(autouse=True)
+def _team_invariants_after_every_scenario(request):
+    """tables.md I1-I8 after every team scenario here, by construction (#37's land check,
+    binding 3): every Pi team a run left rows for is checked once the test is over, whether or
+    not the test checked it itself. Only tests with a database (``pw_run``) can store rows."""
+    if "pw_run" not in request.fixturenames:
+        yield
+        return
+    request.getfixturevalue("pw_run")  # set up first, so it is torn down after this check
+    from temper_ai.database import get_database
+    from temper_ai.pi_agent.ledger import Ledger
+    from tests.test_runner.pi_team import support as ts
+
+    before = ts.team_keys(Ledger(get_database().engine))
+    yield
+    ts.check_all_invariants(Ledger(get_database().engine), before)
+
+
 @pytest.fixture
 def pw_run(tmp_path, request, monkeypatch, _no_network):
     from fastapi.testclient import TestClient

@@ -984,3 +984,135 @@ def test_real_runs_block_on_runtime_failures_and_verified_content_findings(tmp_p
     review_round(job, usability_sev=1, craft_sev=1, content=[invented, {"id": "K9", "check": "tone"}])
     third = job.combine()
     assert third["verdict"] == "done" and third["blocking"] == 0 and third["content_dropped"] == 2
+
+
+# ---------------------------------------------------------------- queue #32: the signature, repeats, kept text
+
+CONCEPT = {"id": "A", "signature_move": "A split-flap room board as the hero: rooms listed on flap tiles with their seats.",
+           "layout_signature": ["split-flap-board", "monospace-display"]}
+
+
+def sig_raw(v390, v1440, height=500, first=True, found=True):
+    def screen(top, visible):
+        return {"found": found, "shown": True, "how": "data-signature", "matched": [], "name": "Room board", "section": "Hero",
+                "in_first_section": first, "top": top, "height": height, "cover": 0, "visible_px": visible}
+    return {"screens": {"390": screen(844 - v390, v390), "1440": screen(900 - v1440, v1440)}}
+
+
+def test_signature_is_found_by_its_words_and_measured_against_the_first_screen():
+    words = v2.signature_words(CONCEPT)
+    assert words == ["split", "flap", "room", "board"]
+    below = v2.judge_signature(sig_raw(0, 193), CONCEPT, words)
+    assert below["status"] == "fail" and below["expected_first_screen"]
+    assert below["screens"]["390x844"]["needs_px"] == 211 and below["screens"]["1440x900"]["needs_px"] == 225
+    finding = v2.signature_finding(below)
+    assert finding["source"] == "measure" and finding["severity"] == 3 and finding["section"] == "Hero"
+    assert "0 of the 211 px" in finding["problem"] and "193 of the 225 px" in finding["problem"]
+    assert "at least 211 px of it at 390x844" in finding["suggestion"]
+    shown = v2.judge_signature(sig_raw(211, 225), CONCEPT, words, previous=below)
+    assert shown["status"] == "pass" and v2.signature_finding(shown) is None
+    assert shown["previous_round"]["390x844"] == {"visible_px": 0, "needs_px": 211}
+    assert "previous round: 0 of 211 px" in v2.signature_md(shown, 2)
+    short = v2.judge_signature(sig_raw(120, 120, height=120), CONCEPT, words)  # a short signature shown whole passes
+    assert short["status"] == "pass"
+    later = {"signature_move": "Rooms on flap tiles, read like a station board."}  # not meant for the first screen
+    assert v2.judge_signature(sig_raw(0, 0, first=False), later, words)["status"] == "not meant for the first screen"
+    missing = v2.judge_signature(sig_raw(0, 0, found=False), CONCEPT, words)
+    assert missing["status"] == "not found" and v2.signature_finding(missing)["severity"] == 2
+
+
+def test_page_rules_and_reviser_carry_the_signature_mark_and_the_kept_text_rule():
+    assert "data-signature" in v2.PAGE_RULES and "data-signature" in v2.SIGNATURE_CODE
+    reviser = yaml.safe_load((ROOT / "configs/design/agents/design_homepage_reviser_v2.yaml").read_text())
+    prompt = json.dumps(reviser)
+    for needle in ("REDESIGN", "REWRITE", "RAISED BEFORE", "aria-hidden", "data-signature", "review/signature.md", "REVISION.md"):
+        assert needle in prompt, needle
+
+
+def signature_review(job, number, visible, craft=()):
+    job.state["round"] = number
+    review_round(job, usability_sev=1, craft_sev=1)
+    review = job.root / "review"
+    v2.save(review / "craft" / "craft.json", {"findings": list(craft), "template_test": {"verdict": "distinctive"}})
+    v2.save(review / "signature.json", v2.judge_signature(sig_raw(*visible), CONCEPT, v2.signature_words(CONCEPT)))
+    return job.combine()
+
+
+def test_a_blocker_raised_again_sends_its_section_back_for_a_redesign(tmp_path):
+    job = v2.Job(str(tmp_path), fixture=False)
+    job.state["direction"] = {"concept": "A"}
+    v2.save(job.concepts_dir / "concepts.json", {"concepts": [CONCEPT]})
+    first = signature_review(job, 1, (0, 120))
+    assert first["verdict"] == "revise" and first["by_source"]["measure"] == 1
+    m1 = next(f for f in v2.load(job.packet / "rounds/r01/decision.json")["fixes"] if f["id"] == "M1")
+    assert m1["severity"] == 3 and "0 of the 211 px" in m1["problem"] and "repeat" not in m1
+    # The reviser answers M1 with a tweak that does not bring the board up; a critic words it differently.
+    job.site.mkdir(parents=True, exist_ok=True)
+    (job.site / "REVISION.md").write_text("# Revision \u2014 round 2\n\n- M1 (measure, 3) \u2014 fixed: tightened the hero padding.\n")
+    job.state["revisions"] = 1
+    again = {"id": "C4", "severity": 3, "check": "direction", "element": "Room board",
+             "problem": "The signature board still does not make it into the first mobile screen."}
+    other = {"id": "C5", "severity": 3, "check": "rhythm", "element": "FAQ list", "problem": "Answers sit too close together.",
+             "suggestion": "Add 24 px between answers."}
+    assert signature_review(job, 2, (90, 300), craft=[again, other])["verdict"] == "revise"
+    decision = v2.load(job.packet / "rounds/r02/decision.json")
+    blockers = {b["id"]: b for b in decision["blockers"]}
+    assert blockers["M1"]["seen_in"] == [1, 2] and blockers["M1"]["action"] == "redesign"
+    assert blockers["C4"]["seen_in"] == [1, 2] and blockers["C4"]["action"] == "redesign"  # same problem, other words
+    assert blockers["C5"]["seen_in"] == [2] and blockers["C5"]["action"] == "fix"
+    fixes = {f["id"]: f for f in decision["fixes"]}
+    assert fixes["M1"]["suggestion"].startswith("REDESIGN, not a tweak") and "the Hero section" in fixes["M1"]["suggestion"]
+    assert fixes["M1"]["repeat"]["earlier"][0]["answer"].startswith("M1 (measure, 3)")
+    assert fixes["C5"]["suggestion"] == "Add 24 px between answers."  # raised once: a normal fix
+    # No revision left: a blocker still there is handed off with its history, never silently dropped.
+    job.state["revisions"] = 2
+    last = signature_review(job, 3, (90, 300))
+    assert last["verdict"] == "done" and last["unresolved_blocking"] == 1
+    unresolved = v2.load(job.packet / "rounds/r03/decision.json")["unresolved_blocking"][0]
+    assert unresolved["id"] == "M1" and unresolved["repeat"]["seen_in"] == [1, 2, 3] and unresolved["action"] == "no revision left"
+    lines = v2.round_by_round(job.packet / "rounds", 3)
+    assert lines[1].startswith("- Round 2: verdict revise; blockers: measure M1 (also round 1; redesign)")
+    assert "signature fail 390x844 90/211 px" in lines[2]
+
+
+def test_a_content_finding_raised_again_joins_the_fix_list_past_the_cap(tmp_path):
+    """Only the top six minor items reach the reviser, so a low-severity content finding could come back every round."""
+    job = v2.Job(str(tmp_path), fixture=False)
+    text = PAGE_TEXT + "".join(f"- [p] Line number {i} says something about room {i} here.\n" for i in range(1, 15))
+    text += "- [p] Cedar for 1 hour: 1 hour x $18 = $18. Oak for 2 hours: 2 hours x $30 = $60.\n"
+
+    def finding(i, sev, quote, element):
+        return {"id": f"K{i}", "check": "clarity", "element": element, "quote": quote, "problem": "unclear",
+                "suggestion": "say it plainly", "severity": sev}
+
+    def content_round(number, others, bases_element):
+        job.state["round"] = number
+        bases = finding(9, 1, "Oak for 2 hours: 2 hours x $30 = $60.", bases_element)
+        review_round(job, usability_sev=1, craft_sev=1, content=others + [bases])
+        (job.root / "review" / "page-text.md").write_text(text)
+        return job.combine()
+
+    content_round(1, [finding(i, 2, f"Line number {i} says something", f"paragraph {i}") for i in range(1, 8)], "card examples")
+    assert "K9" not in [f["id"] for f in v2.load(job.packet / "rounds/r01/decision.json")["fixes"]]  # past the cap
+    content_round(2, [finding(i, 2, f"Line number {i + 7} says something", f"paragraph {i + 7}") for i in range(1, 8)],
+                  "Oak card example")
+    decision = v2.load(job.packet / "rounds/r02/decision.json")
+    assert [(c["id"], c["seen_in"]) for c in decision["content_repeats"]] == [("K9", [1, 2])]
+    k9 = next(f for f in decision["fixes"] if f["id"] == "K9" and f["source"] == "content")
+    assert k9["suggestion"].startswith("RAISED BEFORE in round 1") and k9["action"] == "fix or explain"
+    assert len(decision["fixes"]) == 7  # the repeat plus the usual six minor items
+
+
+@pytest.mark.parametrize("a, b, same", [
+    ({"quote": "Explore demo rooms", "element": "Hero button"},
+     {"quote": "Pick a room, then explore demo rooms with the team before you book", "element": "Footer note"}, False),
+    ({"quote": "Tell us who is coming", "element": "How it works: step 1"},
+     {"quote": "Pick a time that suits", "element": "How it works: step 3"}, False),
+    ({"quote": "Start by picking a room.", "element": "FAQ: How do I start? answer"},
+     {"quote": "Choose a room first.", "element": "FAQ answer: How do I start?"}, True),
+    ({"quote": "Oak for 2 hours: 2 hours x $30 = $60.", "element": "Oak card"},
+     {"quote": "Oak for 2 hours: 2 hours x $30 = $60.", "element": "card examples"}, True),
+])
+def test_content_findings_are_the_same_problem_by_their_words_not_a_shared_label(a, b, same):
+    a, b = {"source": "content", **a}, {"source": "content", **b}
+    assert v2.same_problem(a, b) is same

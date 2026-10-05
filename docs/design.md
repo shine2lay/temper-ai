@@ -570,6 +570,40 @@ Findings go to `review/runtime/` (RUNTIME.md, runtime.json); failures (severity
 `expected.json`) and a clean control `control.html`: all nine found, 0 false
 alarms on the control (`design_runtime_checks.py --fixture-proof`).
 
+**Revision loop (v2.2, queue #32).** Three fixed rules, no model, keep
+revisions honest:
+
+- *The signature in the first screen.* The measure stage finds the chosen
+  concept's signature element (`data-signature`, which the page rules ask the
+  designer for, or else the element whose name shares the most words with the
+  signature move) and measures its bounding box at 390 x 844 and 1440 x 900,
+  reduced motion, page at the top, minus any fixed bar over it
+  (`review/signature.md`, `signature.json`). When the concept puts it first (its
+  move says hero, first screen and the like, or it sits in the first section),
+  the first screen must show a quarter of its height of it (211 px on mobile,
+  225 px on desktop) or all of it if shorter; otherwise the fix list gets a
+  severity-3 `measure` item with the numbers. The next round measures again.
+- *Repeats.* A blocker that matches one the reviser was already asked to fix
+  (same rule for measure and runtime; the same words for content; the same
+  check and enough shared words for craft and usability; any finding about the
+  signature missing from the first screen matches the measure item) goes back
+  as REDESIGN (rework that section, not a tweak) or, for words, REWRITE, with
+  the earlier rounds and the reviser's answers from `REVISION.md`. A content
+  finding raised in an earlier round joins the fix list past the six-minor cap
+  as RAISED BEFORE: fix it or say why the words stay. `decision.json` records
+  per round the blockers with the rounds they were seen in, the content repeats,
+  the signature numbers and kept text; the handoff lists them round by round.
+- *Kept text.* The runtime stage records, per block at 1440 and 390, what is
+  shown and what assistive tech reaches (text outside `aria-hidden`/`inert`,
+  visually hidden text, alt, aria-label). From round 2 it compares with the
+  previous round's `raw.json`: words a matched block no longer gives assistive
+  tech, or screen-reader-only text that is gone, are a severity-3 `kept_text`
+  finding (WCAG 1.3.1, 4.1.2). Rewritten or removed visible content is the
+  content review's business, moved words and spelled-out letter tiles are not
+  losses, and a loss stays flagged in later rounds until it is given back. A
+  previous round recorded before this check is reported "not compared", never
+  passed. Each round's page is kept in `homepage/rounds/rNN/site/`.
+
 **Owner taste file.** The direction and final gate stages save each answer (the
 choice, the options passed over and the owner's own words) in the workspace
 (`homepage/taste/entries.json`). The host launcher

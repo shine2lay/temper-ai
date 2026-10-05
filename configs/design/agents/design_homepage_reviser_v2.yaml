@@ -3,7 +3,7 @@
 # the HTML/CSS homepage. Read/Write/Edit only.
 agent:
   name: design_homepage_reviser_v2
-  version: 1
+  version: 2
   type: llm
   provider: claude
   model: opus
@@ -30,8 +30,21 @@ agent:
     within PAGE_RULES.md and WCAG 2.2 AA. Claims only from the brief's facts. Keep
     the deck's terms and its notices said once; never fix words by adding hedges or
     disclaimers.
-    Write homepage/site/REVISION.md: one line per fix-list item, what you changed
-    or why you did not.
+    Items with source measure are browser measurements (review/signature.md: how
+    much of the concept's signature the first screen shows, in px); the next round
+    measures again with the same rule, so meet the numbers. An item whose
+    suggestion starts REDESIGN was raised in an earlier round and survived the
+    last revision: rework that section's layout (order, sizes, what comes first)
+    instead of nudging values. REWRITE: rewrite those words from the deck.
+    RAISED BEFORE: fix it, or say in REVISION.md why the words stay.
+    Never remove or hide words assistive tech reaches (visually hidden text, alt,
+    aria-label, labels) to quiet a finding, with aria-hidden, display:none or
+    deletion: the runtime stage compares them with earlier rounds and a loss
+    blocks the round. If a runtime finding looks wrong, leave the page and say so
+    in REVISION.md. Keep data-signature on the signature's outermost element
+    (add it if missing).
+    Write homepage/site/REVISION.md: one line per fix-list item, starting with its
+    id ("- C1 (craft, 3) - fixed: ..."), what you changed or why you did not.
     Do not edit reviews, concepts, approvals or other files.
     Make your WHOLE final message a single ```json block, nothing before or after:
     {"status": "completed", "fixed": <count>, "not_fixed": <count>}

@@ -114,6 +114,9 @@ Structure the converter reads
   (Header, Hero, ...). Give meaningful elements data-name="...".
 - Repeated items with the same structure (cards, stats, steps, buttons) carry
   data-component="Name"; each becomes a Penpot component, the copies its instances.
+- The concept's signature element (the one its signature move names) carries
+  data-signature="Name" on its outermost element. The review measures how much of it
+  the first screen shows at 390x844 and 1440x900.
 - Text styles may carry data-typography="Display" / "Body" ...
 - Colours are CSS custom properties on :root (--dominant, --accent, --ink, --surface, ...);
   use var(--...) everywhere so they become shared Penpot colours.
@@ -1058,6 +1061,352 @@ def write_review_inputs(review: Path, site: Path, brief: dict, number: int, chos
     return metrics
 
 
+# ---------------------------------------------------------------- the signature in the first screen (queue #32)
+
+# The Morrow pilot (#8, run 1dd9858c) raised "the board is not in the first mobile screen" in all three rounds
+# and the reviser tweaked it twice. The measure stage now finds the concept's signature element and measures,
+# with the browser's bounding box, how much of it the first screen shows; the reviser gets the numbers and
+# the next round measures again.
+SIGNATURE_SCREENS = ((390, 844), (1440, 900))
+SIGNATURE_SHARE = 0.25  # the first screen shows a quarter of its height of the signature, or all of it if shorter
+# The concept puts its signature first when its signature move says so.
+SIGNATURE_FIRST = re.compile(r"\bhero\b|first (?:mobile |desktop )?(?:screen|view|viewport)|above the fold|on arrival|"
+                             r"top of the page|opening (?:screen|view|moment)|\bopens? (?:on|with)\b", re.I)
+SIGNATURE_GENERIC = frozenset("the and as with of on in for to its your our this that from into one page hero section top first "
+                              "screen fold opening full bleed big large huge giant oversized single main central".split())
+
+SIGNATURE_CODE = r"""async (page) => {
+  const A = __ARGS__;
+  const out = {screens: {}};
+  for (const [w, h] of A.screens) {
+    await page.setViewportSize({width: w, height: h});
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await page.goto(A.url, {waitUntil: 'networkidle'});
+    if (A.css) await page.addStyleTag({content: A.css});
+    out.screens[w] = await page.evaluate(async ([words, h]) => {
+      const within = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
+      await within(document.fonts.ready, 8000);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      window.scrollTo(0, 0);
+      const stem = (x) => (x.length > 3 && x.endsWith('s') ? x.slice(0, -1) : x);
+      const split = (s) => (s || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length > 2).map(stem);
+      const want = new Set(words.map(stem));
+      const shown = (el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden'; };
+      let el = document.querySelector('[data-signature]'), how = el ? 'data-signature' : null, matched = [];
+      if (!el && want.size) {
+        // No mark: the element whose own name shares the most words with the signature move. Ties go to
+        // the outermost element (the board, not its rows), then the larger one.
+        const fields = [['data-name', 2], ['data-component', 1.5], ['aria-label', 1], ['id', 1], ['data-section', 1]];
+        let best = null;
+        for (const e of document.querySelectorAll('[data-name], [data-component], [aria-label], [id], [data-section]')) {
+          let score = 0; const hits = new Set();
+          for (const [attr, weight] of fields) {
+            const got = split(e.getAttribute(attr)).filter((x) => want.has(x));
+            if (got.length) { score = Math.max(score, new Set(got).size * weight); got.forEach((x) => hits.add(x)); }
+          }
+          if (!score) continue;
+          let depth = 0;
+          for (let p = e.parentElement; p; p = p.parentElement) depth++;
+          const r = e.getBoundingClientRect();
+          const c = {e, score, depth, area: r.width * r.height, hits: [...hits]};
+          if (!best || c.score > best.score || (c.score === best.score && (c.depth < best.depth || (c.depth === best.depth && c.area > best.area)))) best = c;
+        }
+        if (best) { el = best.e; how = 'name words'; matched = best.hits; }
+      }
+      if (!el) return {found: false};
+      const r = el.getBoundingClientRect();
+      let cover = 0;  // a fixed or sticky bar over the top of the screen hides what is under it
+      for (const e of document.querySelectorAll('body *')) {
+        if (e === el || e.contains(el) || el.contains(e)) continue;
+        const cs = getComputedStyle(e);
+        if (cs.position !== 'fixed' && cs.position !== 'sticky') continue;
+        const er = e.getBoundingClientRect();
+        if (er.top <= 1 && er.bottom > 0 && er.bottom < h * 0.5 && er.width >= window.innerWidth * 0.5 && shown(e)) cover = Math.max(cover, er.bottom);
+      }
+      const sec = el.closest('[data-section]');
+      const content = [...document.querySelectorAll('[data-section]')].filter((s) => shown(s)
+        && !/^(site )?(header|nav|navigation|banner|top ?bar|skip|menu)/i.test(s.dataset.section || ''));
+      const first = content[0] || null;
+      return {found: true, how, matched,
+              name: el.dataset.signature || el.dataset.name || el.getAttribute('aria-label') || el.dataset.component || el.id || el.tagName.toLowerCase(),
+              section: sec ? sec.dataset.section : null, in_first_section: !!(first && first.contains(el)),
+              shown: shown(el), top: Math.round(r.top + window.scrollY), height: Math.round(r.height), cover: Math.round(cover),
+              visible_px: Math.max(0, Math.round(Math.min(r.bottom, h) - Math.max(r.top, cover)))};
+    }, [A.words, h]);
+  }
+  return out;
+}"""
+
+
+def signature_words(concept: dict) -> list[str]:
+    """Words that name the concept's signature element: the lead phrase of its signature move and its first
+    layout signature ("A split-flap departure board as the hero: ..." -> split, flap, departure, board)."""
+    move = str(concept.get("signature_move") or "")
+    lead = re.split(r":|\s+as\s+|,|;|\s[-\u2013\u2014]\s|\.\s", move, maxsplit=1)[0]
+    layout = concept.get("layout_signature") or []
+    first = str(layout[0]) if isinstance(layout, list) and layout else ""
+    out: list[str] = []
+    for w in re.findall(r"[a-z0-9]+", f"{lead} {first}".lower()):
+        if len(w) > 2 and w not in SIGNATURE_GENERIC and w not in out:
+            out.append(w)
+    return out
+
+
+def measure_signature(site: Path, words: list[str]) -> dict:
+    host = SERVE_HOST or urllib.parse.urlparse(BROWSER).hostname or "playwright-mcp"
+    base, srv = h2p.serve(site, site, host)
+    try:
+        code = SIGNATURE_CODE.replace("__ARGS__", json.dumps({"url": base + "/index.html", "words": words, "css": h2p.FREEZE_CSS,
+                                                             "screens": [list(s) for s in SIGNATURE_SCREENS]}))
+        return h2p.browser_run(BROWSER, [code])[0]
+    finally:
+        srv.shutdown()
+
+
+def judge_signature(raw: dict, concept: dict, words: list[str], previous: dict | None = None) -> dict:
+    """Where the signature element sits against each first screen, and whether that is a problem (fixed rule)."""
+    move = str(concept.get("signature_move") or "").strip()
+    screens: dict[str, dict] = {}
+    for w, h in SIGNATURE_SCREENS:
+        m = (raw.get("screens") or {}).get(str(w)) or (raw.get("screens") or {}).get(w) or {}
+        if not m.get("found"):
+            screens[f"{w}x{h}"] = {"found": False}
+            continue
+        needs = min(int(m.get("height") or 0), round(SIGNATURE_SHARE * h)) if m.get("shown") else round(SIGNATURE_SHARE * h)
+        visible = int(m.get("visible_px") or 0) if m.get("shown") else 0
+        screens[f"{w}x{h}"] = {"found": True, **{k: m.get(k) for k in ("name", "how", "matched", "section", "in_first_section", "shown",
+                                                                     "top", "height", "cover")},
+                               "visible_px": visible, "needs_px": max(needs, 1), "passes": visible >= max(needs, 1)}
+    found = [s for s in screens.values() if s["found"]]
+    by_text = bool(SIGNATURE_FIRST.search(move))
+    expected = by_text or any(s.get("in_first_section") for s in found)
+    if not move:
+        status = "no signature move"
+    elif not found:
+        status = "not found"
+    elif not expected:
+        status = "not meant for the first screen"
+    else:
+        status = "pass" if all(s["passes"] for s in found) else "fail"
+    first = found[0] if found else {}
+    out = {"version": 1, "status": status, "signature_move": move, "words": words, "expected_first_screen": expected,
+           "why_expected": "the signature move puts it first" if by_text else "it sits in the first section" if expected else "",
+           "name": first.get("name"), "how": first.get("how"), "matched": first.get("matched") or [], "section": first.get("section"),
+           "screens": screens}
+    if previous and previous.get("screens"):
+        out["previous_round"] = {k: {"visible_px": s.get("visible_px"), "needs_px": s.get("needs_px")}
+                                 for k, s in previous["screens"].items() if s.get("found")}
+    return out
+
+
+def signature_md(sig: dict, number: int) -> str:
+    lines = [f"# The signature in the first screen \u2014 round {number}", "",
+             "Measured by the browser (bounding box, reduced motion, page at the top); a fixed rule, no model.",
+             f"The first screen must show at least {round(SIGNATURE_SHARE * 100)}% of its height of the signature, or all of it if shorter.",
+             "", f"Signature move: {sig.get('signature_move') or '(none)'}",
+             f"Element: {sig.get('name') or 'not found'}" + (f" (section {sig['section']}; found by "
+                                                            + ("its data-signature mark" if sig.get("how") == "data-signature"
+                                                               else "its name words: " + ", ".join(sig.get("matched") or [])) + ")"
+                                                            if sig.get("name") else ""),
+             f"Result: {sig['status']}" + (f" ({sig['why_expected']})" if sig.get("why_expected") else ""), ""]
+    for k, s in sig["screens"].items():
+        if not s["found"]:
+            lines.append(f"- {k}: not found")
+            continue
+        before = (sig.get("previous_round") or {}).get(k)
+        lines.append(f"- {k}: shows {s['visible_px']} of the {s['needs_px']} px needed; top at {s['top']} px, height {s['height']} px"
+                     + (f", under a {s['cover']} px fixed bar" if s.get("cover") else "") + ("" if s["shown"] else ", hidden at this size")
+                     + (f" (previous round: {before['visible_px']} of {before['needs_px']} px)" if before else "")
+                     + (" \u2014 pass" if s["passes"] else " \u2014 FAIL"))
+    return "\n".join(lines) + "\n"
+
+
+def signature_finding(sig: dict | None) -> dict | None:
+    """The measure stage's finding about the signature, as a fix-list item (source measure), or None."""
+    if not sig:
+        return None
+    lead = re.split(r":|\s+as\s+|;", sig.get("signature_move") or "", maxsplit=1)[0].strip()
+    if sig.get("status") == "fail":
+        bad = {k: s for k, s in sig["screens"].items() if s["found"] and not s["passes"]}
+        return {"source": "measure", "id": "M1", "check": "signature", "severity": 3, "section": sig.get("section"),
+                "element": f"{sig.get('name')} (the concept's signature: {lead[:80]})",
+                "problem": "The concept's signature does not show in the first screen: " + "; ".join(
+                    f"at {k} it shows {s['visible_px']} of the {s['needs_px']} px it needs (its top sits at {s['top']} px"
+                    + (f", under a {s['cover']} px fixed bar" if s.get("cover") else "") + ")" for k, s in bad.items()) + ".",
+                "evidence": "browser bounding box at reduced motion with the page at the top (review/signature.md)"
+                            + ("" if sig.get("how") == "data-signature" else f"; found by its name words ({', '.join(sig.get('matched') or [])})"),
+                "suggestion": "Bring the signature into the first screen at every size: " + ", ".join(
+                    f"at least {s['needs_px']} px of it at {k}" for k, s in bad.items())
+                    + ", without scrolling. Rework the order and sizes of what comes before it; never shrink the signature into a token"
+                      " or hide it. Mark its outermost element data-signature=\"Name\". The next round measures again.",
+                "viewport": ", ".join("mobile" if k.startswith("390") else "desktop" for k in bad),
+                "measured": {k: {x: s[x] for x in ("visible_px", "needs_px", "top", "height")} for k, s in sig["screens"].items() if s["found"]}}
+    if sig.get("status") == "not found" and sig.get("expected_first_screen"):
+        return {"source": "measure", "id": "M1", "check": "signature", "severity": 2, "section": None,
+                "element": f"the concept's signature ({lead[:80]})",
+                "problem": "The measure stage could not find the signature element on the page, so it cannot check the first screen.",
+                "evidence": f"no [data-signature] and no element named with: {', '.join(sig.get('words') or []) or '(no words)'}",
+                "suggestion": "Mark the signature's outermost element data-signature=\"Name\".", "viewport": "mobile, desktop"}
+    return None
+
+
+# ---------------------------------------------------------------- the same problem again (queue #32)
+
+# A repeated blocker means the last revision's tweak did not work: that section goes back for a redesign.
+# A content finding raised again joins the fix list beyond the cap on minor items, and the reviser fixes it
+# or says why the words stay. Matching is a fixed rule over the findings' own words, no model.
+FIRST_SCREEN_TOPIC = re.compile(r"first (?:mobile |desktop )?(?:screen|view|viewport|scroll)|above the fold|below the fold|"
+                                r"\bthe fold\b|on arrival|without scrolling|initial view", re.I)
+MATCH_STOP = frozenset("the and are but for from has have its into not now one only out that the their them then there these "
+                       "this those too was what when where which while who why will with you your our page section element "
+                       "still more less very just also each every all any some same".split())
+CRAFT_MATCH = 0.3  # word overlap (Jaccard) of element + problem that makes two craft or usability findings one problem
+CONTENT_MATCH = 0.6  # word overlap of the elements named, for content findings whose quotes differ
+REPEAT_LABEL = {"redesign": "REDESIGN", "rewrite": "REWRITE"}
+
+
+def _bag(text) -> set[str]:
+    out = set()
+    for w in re.findall(r"[a-z0-9$]+", str(text or "").lower()):
+        if (len(w) < 3 and not w.isdigit()) or w in MATCH_STOP:  # numbers stay: step 1 is not step 3
+            continue
+        out.add(w[:-1] if len(w) > 3 and w.endswith("s") else w)
+    return out
+
+
+def _jaccard(a: set, b: set) -> float:
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
+def _quote(item: dict) -> str:
+    q = item.get("quote")
+    if not q:
+        m = re.match(r'quote: "(.*)"$', str(item.get("evidence") or ""), re.S)
+        q = m.group(1) if m else ""
+    return " ".join(re.findall(r"[a-z0-9$]+", str(q).lower()))
+
+
+def signature_topic(item: dict, sig_words: set[str]) -> bool:
+    """The finding is about the signature missing from the first screen (measured, or raised by any critic)."""
+    if item.get("source") == "measure" and item.get("check") == "signature":
+        return True
+    text = f"{item.get('element', '')} {item.get('problem', '')}"
+    return bool(FIRST_SCREEN_TOPIC.search(text)) and (bool(_bag(text) & sig_words) or "signature" in text.lower())
+
+
+def same_problem(a: dict, b: dict, sig_words: set[str] = frozenset()) -> bool:
+    if signature_topic(a, sig_words) and signature_topic(b, sig_words):
+        return True
+    if a.get("source") != b.get("source"):
+        return False
+    if a.get("source") in ("measure", "runtime"):
+        return a.get("check") == b.get("check") and a.get("criterion") == b.get("criterion")
+    if a.get("source") == "content":
+        short, long = sorted((_quote(a), _quote(b)), key=len)
+        n, m = len(short.split()), len(long.split())
+        # the same words: near-identical quotes, or a long quote inside another (a shared 3-word label is not enough)
+        if short and n >= 3 and f" {short} " in f" {long} " and (n >= 0.6 * m or n >= 6):
+            return True
+        ea, eb = _bag(a.get("element")), _bag(b.get("element"))
+        na, nb = {w for w in ea if w.isdigit()}, {w for w in eb if w.isdigit()}
+        if na and nb and na != nb:  # step 1 and step 3 are different elements
+            return False
+        return _jaccard(ea, eb) >= CONTENT_MATCH
+    if a.get("source") == "owner":
+        return False
+    if (a.get("check") or a.get("criterion")) != (b.get("check") or b.get("criterion")):
+        return False
+    return _jaccard(_bag(f"{a.get('element')} {a.get('problem')}"), _bag(f"{b.get('element')} {b.get('problem')}")) >= CRAFT_MATCH
+
+
+def revision_answers(path: Path) -> dict[str, str]:
+    """The reviser's line per fix-list item in a REVISION.md: id -> line."""
+    out: dict[str, str] = {}
+    if path.exists():
+        for m in re.finditer(r"^\s*[-*]\s*\**([A-Z]{1,2}\d+)\b[^\n]*", path.read_text(errors="replace"), re.M):
+            out.setdefault(m.group(1), m.group(0).strip().lstrip("-* ")[:300])
+    return out
+
+
+def round_items(merged: dict, craft: list[dict], runtime: dict, content: dict, page_text: str, sig: dict | None,
+                fixture: bool) -> dict:
+    """One review round's findings as fix-list items, split into blocking and minor (the combine rules)."""
+    blocking, minor = [], []
+    for f in runtime.get("findings", []):
+        item = {"source": "runtime", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
+                "problem": f.get("problem"), "evidence": f.get("evidence"), "suggestion": f.get("suggestion"),
+                "criterion": f.get("criterion"), "check": f.get("check"), "viewport": f.get("viewport")}
+        sev = f.get("severity") if isinstance(f.get("severity"), int) else 0
+        # fixture pages are converter fixtures, not designs: their runtime findings stay advisory
+        (blocking if sev >= 3 and not fixture else minor).append(item)
+    measured = signature_finding(sig)
+    if measured:
+        (blocking if measured["severity"] >= 3 and not fixture else minor).append(measured)
+    good = [f for f in content.get("findings", []) if isinstance(f, dict) and f.get("check") in COPY_CHECKS
+            and isinstance(f.get("severity"), int) and str(f.get("element", "")).strip() and str(f.get("problem", "")).strip()]
+    kept, dropped = verify_quotes(good, page_text)
+    dropped += [{**f, "verified": False, "dropped": "malformed finding"} for f in content.get("findings", [])
+                if isinstance(f, dict) and f not in good]
+    for f in kept:
+        item = {"source": "content", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
+                "problem": f.get("problem"), "evidence": f"quote: \"{f.get('quote')}\"", "suggestion": f.get("suggestion"),
+                "check": f.get("check"), "quote": f.get("quote")}
+        (blocking if f["severity"] >= 3 and not fixture else minor).append(item)
+    for f in merged.get("findings", []):
+        item = {"source": "usability", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
+                "problem": f.get("problem"), "evidence": f.get("evidence"), "suggestion": f.get("suggestion"),
+                "criterion": f.get("criterion") or f.get("heuristic")}
+        sev = f.get("severity") if isinstance(f.get("severity"), int) else 0
+        (blocking if sev >= 4 or (sev >= 3 and f.get("status") == "confirmed") else minor).append(item)
+    template = []
+    for c in craft:
+        for f in c.get("findings", []):
+            item = {"source": "craft", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
+                    "problem": f.get("problem"), "evidence": f.get("evidence"), "suggestion": f.get("suggestion"),
+                    "check": f.get("check")}
+            sev = f.get("severity") if isinstance(f.get("severity"), int) else 0
+            (blocking if sev >= 3 else minor).append(item)
+        template.append(c.get("template_test", {}))
+    return {"blocking": blocking, "minor": minor, "kept": kept, "dropped": dropped, "template": template}
+
+
+def load_round(review: Path) -> tuple | None:
+    """A saved review folder's inputs for round_items, or None when it is incomplete."""
+    need = [review / "findings.json", review / "runtime" / "runtime.json", review / "content" / "content.json", review / "page-text.md"]
+    if not all(p.exists() for p in need):
+        return None
+    sig = load(review / "signature.json") if (review / "signature.json").exists() else None
+    return (load(need[0]), [load(f) for f in sorted((review / "craft").glob("*.json"))], load(need[1]), load(need[2]),
+            need[3].read_text(), sig)
+
+
+def round_by_round(rounds: Path, number: int) -> list[str]:
+    """One handoff line per round from its decision.json: blockers (and repeats), content raised again, the
+    signature's first-screen numbers and kept text."""
+    lines = []
+    for k in range(1, number + 1):
+        path = rounds / f"r{k:02d}" / "decision.json"
+        if not path.exists():
+            continue
+        dec = load(path)
+        blockers = []
+        for b in dec.get("blockers") or []:
+            others = [str(r) for r in b.get("seen_in") or [] if r != k]
+            blockers.append(f"{b.get('source')} {b.get('id')}" + (f" (also round {', '.join(others)}; {b.get('action')})" if others else ""))
+        line = f"- Round {k}: verdict {dec.get('verdict')}; blockers: {', '.join(blockers) or 'none'}"
+        repeats = dec.get("content_repeats") or []
+        if repeats:
+            line += "; content raised again: " + ", ".join(f"{c.get('id')} (rounds {', '.join(map(str, c.get('seen_in') or []))})" for c in repeats)
+        sig = dec.get("signature") or {}
+        if sig:
+            line += f"; signature {sig.get('status')} " + ", ".join(f"{w} {v[0]}/{v[1]} px" for w, v in (sig.get("screens") or {}).items())
+        kept = dec.get("kept_text") or {}
+        if kept:
+            line += f"; kept text {kept.get('status')}" + (f" (lost: {kept['lost']})" if kept.get("lost") else "")
+        lines.append(line)
+    return lines or ["- no round decisions recorded"]
+
+
 def recommendation(spec: dict) -> dict | None:
     """The art director's recommended concept from concepts.json, or None when missing or malformed."""
     rec = spec.get("recommended") if isinstance(spec, dict) else None
@@ -1718,11 +2067,11 @@ class Job:
             problems += [p for p in html_problems(f) if "missing" not in p]
         if problems:
             raise ValueError("site breaks the page contract: " + "; ".join(sorted(set(problems))))
-        fp = digest({"round": number, "site": tree_digest(self.site)})
+        fp = digest({"round": number, "site": tree_digest(self.site), "signature": 1})
         cached = self.cached(f"measure-{number}", fp)
         review = self.root / "review"
         if cached:
-            if not (review / "facts.md").exists():
+            if not (review / "facts.md").exists() or not (review / "signature.json").exists():
                 raise ValueError("saved measurement artifacts missing; refusing a silent repeat")
             return cached
         if review.exists():
@@ -1738,17 +2087,43 @@ class Job:
         chosen = next((c for c in spec["concepts"] if c["id"] == direction.get("concept")), {})
         metrics = write_review_inputs(review, self.site, brief, number, chosen, direction.get("notes", ""),
                                       self.packet / "references" / "REFERENCES.md")
-        save(self.packet / "rounds" / f"r{number:02d}" / "craft-metrics.json", metrics)
+        rdir = self.packet / "rounds" / f"r{number:02d}"
+        save(rdir / "craft-metrics.json", metrics)
+        # The concept's signature against the first screen; the reviser gets the numbers, the next round measures again.
+        words = signature_words(chosen)
+        before = self.packet / "rounds" / f"r{number - 1:02d}" / "signature.json"
+        sig = judge_signature(measure_signature(self.site, words), chosen, words, load(before) if before.exists() else None)
+        save(review / "signature.json", sig)
+        (review / "signature.md").write_text(signature_md(sig, number))
+        save(rdir / "signature.json", sig)
+        # Keep the page as measured (with the reviser's REVISION.md): the next rounds compare with it.
+        if (rdir / "site").exists():
+            shutil.rmtree(rdir / "site")
+        shutil.copytree(self.site, rdir / "site", ignore=shutil.ignore_patterns("fonts"))
         return self.receipt(f"measure-{number}", fp, {"status": "completed", "round": number, "facts_path": "review/facts.md",
                                                       "craft_facts": "review/craft-facts.md",
-                                                      "scale_ratio_1440": metrics.get("1440", {}).get("scale_ratio")})
+                                                      "scale_ratio_1440": metrics.get("1440", {}).get("scale_ratio"),
+                                                      "signature": sig["status"], "signature_path": "review/signature.md",
+                                                      "signature_px": {k: [s.get("visible_px"), s.get("needs_px")]
+                                                                       for k, s in sig["screens"].items() if s.get("found")}})
 
     def runtime(self) -> dict:
         """Use the page for real: keyboard, focus, names, reflow, zoom, text spacing, motion, hover."""
         number = self.state["round"]
         review = self.root / "review"
         out = review / "runtime"
-        fp = digest({"round": number, "site": tree_digest(self.site)})
+        # Kept text: the previous round's recording, and any earlier round whose lost words are still missing.
+        prev, bases, base_rounds = None, [], []
+        pdir = self.packet / "rounds" / f"r{number - 1:02d}"
+        if number > 1 and (pdir / "review" / "runtime" / "raw.json").exists():
+            prev = load(pdir / "review" / "runtime" / "raw.json")
+            pkept = (load(pdir / "runtime.json") if (pdir / "runtime.json").exists() else {}).get("kept_text") or {}
+            for b in pkept.get("base_rounds") or []:
+                braw = self.packet / "rounds" / f"r{int(b):02d}" / "review" / "runtime" / "raw.json"
+                if braw.exists():
+                    bases.append(load(braw))
+                    base_rounds.append(int(b))
+        fp = digest({"round": number, "site": tree_digest(self.site), "prev": digest(prev) if prev else None, "bases": base_rounds})
         cached = self.cached(f"runtime-{number}", fp)
         if cached:
             if not (out / "runtime.json").exists() or not (review / "page-text.md").exists():
@@ -1757,13 +2132,19 @@ class Job:
         if f"measure-{number}" not in self.state["stages"]:
             raise ValueError(f"round {number} has not been measured yet")
         raw = rtc.measure(self.site, "index.html", BROWSER, SERVE_HOST)
-        result = rtc.write_outputs(raw, out)
+        result = rtc.write_outputs(raw, out, prev, bases or None)
         if all(s["status"] == "not run" for s in result["checks"].values()):
             raise ValueError("runtime checks could not run: " + "; ".join(map(str, result.get("errors") or []))[:400])
+        kept = result["kept_text"]
+        kept["against_round"] = number - 1 if prev is not None else None
+        kept["base_rounds"] = [b for b, st in zip(base_rounds, kept.get("vs_bases") or [], strict=False) if st == "fail"] \
+            + ([number - 1] if kept.get("vs_previous") == "fail" else [])
+        save(out / "runtime.json", result)
         shutil.copyfile(out / "page-text.md", review / "page-text.md")
         save(self.packet / "rounds" / f"r{number:02d}" / "runtime.json", result)
         return self.receipt(f"runtime-{number}", fp, {
             "status": "completed", "round": number, "failures": result["failures"], "findings": len(result["findings"]),
+            "kept_text": kept["status"],
             "checks": {c: s["status"] for c, s in result["checks"].items()}, "errors": len(result.get("errors") or []),
             "runtime_path": "review/runtime/RUNTIME.md", "page_text": "review/page-text.md"})
 
@@ -1801,6 +2182,51 @@ class Job:
         save(review / "craft" / "craft.json", {"critic": "craft", "fixture": True, "findings": [], "template_test": {"verdict": "fixture"}})
         return self.receipt(f"review_fixture-{number}", fp, {"status": "completed", "round": number, "severity": sev})
 
+    def chosen_concept(self) -> dict:
+        direction = self.state.get("direction") or {}
+        path = self.concepts_dir / "concepts.json"
+        spec = load(path) if path.exists() else {}
+        return next((c for c in spec.get("concepts") or [] if isinstance(c, dict) and c.get("id") == direction.get("concept")), {})
+
+    def round_history(self, number: int) -> dict[int, dict]:
+        """Earlier rounds: what the reviser was asked to fix, every verified content finding, and the reviser's answers."""
+        history: dict[int, dict] = {}
+        for k in range(1, number):
+            rdir = self.packet / "rounds" / f"r{k:02d}"
+            asked = load(rdir / "decision.json").get("fixes", []) if (rdir / "decision.json").exists() else []
+            saved = load_round(rdir / "review")
+            found = round_items(*saved, self.fixture) if saved else {"blocking": [], "minor": []}
+            content = [i for i in found["blocking"] + found["minor"] if i["source"] == "content"]
+            answer_file = self.packet / "rounds" / f"r{k + 1:02d}" / "site" / "REVISION.md"
+            if not answer_file.exists() and k + 1 == number:
+                answer_file = self.site / "REVISION.md"
+            history[k] = {"asked": [i for i in asked if isinstance(i, dict)], "content": content, "answers": revision_answers(answer_file)}
+        return history
+
+    @staticmethod
+    def mark_repeat(item: dict, earlier: list, history: dict, number: int, can_revise: bool, action: str) -> None:
+        seen = sorted({k for k, _ in earlier} | {number})
+        item["repeat"] = {"seen_in": seen, "earlier": [
+            {"round": k, "source": e.get("source"), "id": e.get("id"), "problem": str(e.get("problem"))[:200],
+             "answer": history[k]["answers"].get(str(e.get("id")))} for k, e in earlier][:6]}
+        if not can_revise:
+            item["action"] = "no revision left"
+            return
+        item["action"] = action
+        rounds = ", ".join(str(k) for k in seen[:-1])
+        before = item.get("suggestion") or ""
+        if action == "redesign":
+            where = f"the {item['section']} section" if item.get("section") else "the section it sits in"
+            item["suggestion"] = (f"REDESIGN, not a tweak: raised in round {rounds} too, and the last revision did not remove it. Rework "
+                                  f"{where} (its order, sizes and what comes first) so the problem cannot come back, keeping the "
+                                  f"direction's signature, its words and the strengths to keep. {before}").strip()
+        elif action == "rewrite":
+            item["suggestion"] = (f"REWRITE, not a tweak: raised in round {rounds} too, and the last revision did not remove it. "
+                                  f"Rewrite the words named from the reviewed deck so the problem cannot come back. {before}").strip()
+        else:
+            item["suggestion"] = (f"RAISED BEFORE in round {rounds}: fix it this time, or say in REVISION.md why these words stay "
+                                  f"(for example: they are the reviewed deck's words). {before}").strip()
+
     def combine(self) -> dict:
         number = self.state["round"]
         review = self.root / "review"
@@ -1815,57 +2241,58 @@ class Job:
         runtime = load(review / "runtime" / "runtime.json")
         content = load(review / "content" / "content.json")
         page_text = (review / "page-text.md").read_text()
-        fp = digest({"round": number, "merged": merged, "craft": craft, "runtime": runtime, "content": content, "text": page_text})
+        sig = load(review / "signature.json") if (review / "signature.json").exists() else None
+        fp = digest({"round": number, "merged": merged, "craft": craft, "runtime": runtime, "content": content, "text": page_text,
+                     "signature": sig, "rules": 2})
         cached = self.cached(f"combine-{number}", fp)
         if cached:
             return cached
-        blocking, minor = [], []
-        for f in runtime.get("findings", []):
-            item = {"source": "runtime", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
-                    "problem": f.get("problem"), "evidence": f.get("evidence"), "suggestion": f.get("suggestion"),
-                    "criterion": f.get("criterion"), "check": f.get("check"), "viewport": f.get("viewport")}
-            sev = f.get("severity") if isinstance(f.get("severity"), int) else 0
-            # fixture pages are converter fixtures, not designs: their runtime findings stay advisory
-            (blocking if sev >= 3 and not self.fixture else minor).append(item)
-        good = [f for f in content.get("findings", []) if isinstance(f, dict) and f.get("check") in COPY_CHECKS
-                and isinstance(f.get("severity"), int) and str(f.get("element", "")).strip() and str(f.get("problem", "")).strip()]
-        kept, dropped = verify_quotes(good, page_text)
-        dropped += [{**f, "verified": False, "dropped": "malformed finding"} for f in content.get("findings", [])
-                    if isinstance(f, dict) and f not in good]
-        for f in kept:
-            item = {"source": "content", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
-                    "problem": f.get("problem"), "evidence": f"quote: \"{f.get('quote')}\"", "suggestion": f.get("suggestion"),
-                    "check": f.get("check")}
-            (blocking if f["severity"] >= 3 and not self.fixture else minor).append(item)
-        for f in merged.get("findings", []):
-            item = {"source": "usability", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
-                    "problem": f.get("problem"), "evidence": f.get("evidence"), "suggestion": f.get("suggestion"),
-                    "criterion": f.get("criterion") or f.get("heuristic")}
-            sev = f.get("severity") if isinstance(f.get("severity"), int) else 0
-            (blocking if sev >= 4 or (sev >= 3 and f.get("status") == "confirmed") else minor).append(item)
-        template = []
-        for c in craft:
-            for f in c.get("findings", []):
-                item = {"source": "craft", "id": f.get("id"), "severity": f.get("severity"), "element": f.get("element"),
-                        "problem": f.get("problem"), "evidence": f.get("evidence"), "suggestion": f.get("suggestion"),
-                        "check": f.get("check")}
-                sev = f.get("severity") if isinstance(f.get("severity"), int) else 0
-                (blocking if sev >= 3 else minor).append(item)
-            template.append(c.get("template_test", {}))
+        items = round_items(merged, craft, runtime, content, page_text, sig, self.fixture)
+        blocking, minor, kept, dropped, template = (items[k] for k in ("blocking", "minor", "kept", "dropped", "template"))
         can_revise = self.state["revisions"] < MAX_AUTO_REVISIONS
+        history = self.round_history(number)
+        sig_words = _bag(" ".join(signature_words(self.chosen_concept())))
+        # A blocker the reviser was already asked to fix: that section goes back for a redesign, not a tweak.
+        for item in blocking:
+            earlier = [(k, e) for k, h in history.items() for e in h["asked"] if same_problem(item, e, sig_words)]
+            if earlier:
+                self.mark_repeat(item, earlier, history, number, can_revise, "rewrite" if item["source"] == "content" else "redesign")
+        # A content finding raised before (fixed or not): it joins the fix list, past the cap on minor items.
+        repeats = []
+        for item in minor:
+            if item["source"] != "content":
+                continue
+            earlier = [(k, e) for k, h in history.items() for e in h["content"] if same_problem(item, e, sig_words)]
+            if earlier:
+                self.mark_repeat(item, earlier, history, number, can_revise, "fix or explain")
+                repeats.append(item)
+        rest = [i for i in minor if i not in repeats]
         verdict = "revise" if blocking and can_revise else "done"
-        fixes = blocking + sorted(minor, key=lambda x: -(x["severity"] or 0))[:6]
+        fixes = blocking + repeats + sorted(rest, key=lambda x: -(x["severity"] or 0))[:6]
         rdir = self.packet / "rounds" / f"r{number:02d}"
         if rdir.joinpath("review").exists():
             shutil.rmtree(rdir / "review")
         shutil.copytree(review, rdir / "review")
+        kept_text = runtime.get("kept_text") or {}
         summary = {"round": number, "verdict": verdict, "blocking": len(blocking), "minor": len(minor),
                    "unresolved_blocking": [] if verdict == "revise" else blocking,
                    "template_test": template, "revisions_done": self.state["revisions"], "decided_at": now(),
-                   "by_source": {s: sum(1 for i in blocking + minor if i["source"] == s) for s in ("usability", "craft", "runtime", "content")},
+                   "by_source": {s: sum(1 for i in blocking + minor if i["source"] == s)
+                                 for s in ("usability", "craft", "runtime", "content", "measure")},
                    "runtime_checks": {c: s.get("status") for c, s in runtime.get("checks", {}).items()},
                    "runtime_errors": runtime.get("errors") or [],
-                   "content_verified": len(kept), "content_dropped": [{k: f.get(k) for k in ("id", "quote", "dropped")} for f in dropped]}
+                   "content_verified": len(kept), "content_dropped": [{k: f.get(k) for k in ("id", "quote", "dropped")} for f in dropped],
+                   "blockers": [{"source": i["source"], "id": i["id"], "severity": i["severity"], "problem": str(i.get("problem"))[:200],
+                                 "seen_in": (i.get("repeat") or {}).get("seen_in", [number]), "action": i.get("action", "fix")}
+                                for i in blocking],
+                   "content_repeats": [{"id": i["id"], "seen_in": i["repeat"]["seen_in"], "quote": i.get("quote")} for i in repeats],
+                   "signature": {"status": sig["status"], "name": sig.get("name"),
+                                 "screens": {k: [s.get("visible_px"), s.get("needs_px")] for k, s in sig["screens"].items() if s.get("found")}}
+                   if sig else None,
+                   "kept_text": {"status": kept_text.get("status"), "against_round": kept_text.get("against_round"),
+                                 "base_rounds": kept_text.get("base_rounds") or [],
+                                 "lost": {w: v.get("lost") for w, v in (kept_text.get("viewports") or {}).items() if v.get("lost")}}
+                   if kept_text else None}
         save(rdir / "decision.json", {**summary, "fixes": fixes})
         self.state["verdict"] = verdict
         self.state["fix_list"] = fixes
@@ -1981,9 +2408,14 @@ class Job:
         lines += ["", "## Review", f"Rounds: {number}; automatic revisions {self.state['revisions']}, owner change rounds {self.state['owner_changes']}.",
                   f"Last round: {last.get('blocking', 0)} blocking, {last.get('minor', 0)} minor; unresolved blocking: {len(last.get('unresolved_blocking', []))}."]
         for item in last.get("unresolved_blocking", []):
-            lines.append(f"- UNRESOLVED {item.get('source')} {item.get('id')}: {item.get('problem')} ({item.get('element')})")
+            rep = item.get("repeat") or {}
+            lines.append(f"- UNRESOLVED {item.get('source')} {item.get('id')}: {item.get('problem')} ({item.get('element')})"
+                         + (f"; raised in rounds {', '.join(map(str, rep.get('seen_in', [])))}, earlier answers: "
+                            + " | ".join(f"r{e.get('round')} {e.get('id')}: {e.get('answer') or 'no answer recorded'}" for e in rep.get("earlier", []))
+                            if rep else ""))
         for t in last.get("template_test", []):
             lines.append(f"- Craft critic 'could this be a template?': {t.get('verdict')} — {t.get('evidence', '')}")
+        lines += ["", "## Round by round (blockers, repeats, the signature, kept text)"] + round_by_round(self.packet / "rounds", number)
         deck = self.deck() or {}
         copy_check = load(self.copy_dir / "check.json") if (self.copy_dir / "check.json").exists() else {}
         lines += ["", "## Words",

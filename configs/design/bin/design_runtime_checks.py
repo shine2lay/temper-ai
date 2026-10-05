@@ -24,6 +24,10 @@ This script drives the page the way people do, with no model and fixed rules:
            loops is still declared (page rule; WCAG 2.3.3). Short fades are allowed.
   hover    every link and button changes visibly under the pointer (a usability and
            craft check, not a WCAG criterion; severity 2).
+  kept_text  from the second round on, against the previous round's raw.json: words a
+           screen reader reached (screen-reader-only text, alt, aria-label, visible text)
+           may not vanish for it while the page still shows the same block (1.3.1, 4.1.2;
+           severity 3). Removed or rewritten visible content is the content review's call.
 
 The browser part only measures (raw.json); judge() applies the rules, so recorded
 raw results can be re-judged and tested without a browser.
@@ -31,6 +35,7 @@ raw results can be re-judged and tested without a browser.
     design_runtime_checks.py --site DIR [--page index.html] --out DIR
                              [--browser URL] [--serve-host HOST]
     design_runtime_checks.py --raw raw.json --out DIR      # judge a recorded result
+    ... [--prev PREVIOUS_ROUND/raw.json]                   # also compare kept text
 
 Writes OUT/runtime.json (summary + findings), OUT/RUNTIME.md, OUT/page-text.md
 (visible text in reading order, for the content review) and OUT/raw.json.
@@ -53,7 +58,10 @@ import html_to_penpot as h2p  # noqa: E402
 
 BROWSER = os.environ.get("DESIGN_BROWSER", "http://playwright-mcp:8931/mcp")
 SERVE_HOST = os.environ.get("DESIGN_SERVE_HOST") or None
-CHECKS = ("focus", "order", "names", "reflow", "zoom", "spacing", "motion", "hover")
+CHECKS = ("focus", "order", "names", "reflow", "zoom", "spacing", "motion", "hover")  # one page each
+# Needs the previous round's recording; listed in a result's checks only when there was one to compare.
+COMPARE_CHECKS = ("kept_text",)
+A11Y_VIEWPORTS = ((1440, 900), (390, 844))
 MAX_TABS = 150
 MAX_HOVER = 60
 STICKY_SHARE = 0.40          # of the 400 % zoom viewport height
@@ -465,6 +473,66 @@ HELPERS = r"""(() => {
     }
     return lines.map((l) => ({section: l.section, tag: l.tag, text: R.clean(l.text)})).filter((l) => l.text);
   };
+  // Kept text: every piece of text a screen reader can reach and every piece a sighted reader sees, in page
+  // order and grouped into blocks, so a revision can be compared with the round before it (Morrow pilot r01
+  // -> r02 deleted its board's screen-reader labels and hid others to quiet two false alarms).
+  R.INLINE_TAGS = /^(span|a|b|i|em|strong|small|abbr|code|kbd|mark|q|s|sub|sup|u|time|var|bdi|bdo|cite|dfn|data|font|samp|del|ins|img|svg|picture|wbr|br)$/;
+  // ARIA 1.2 does not allow naming these roles, so an aria-label on them is not announced.
+  R.GENERIC_TAGS = /^(div|span|p|b|i|em|strong|small|code|del|ins|sub|sup|s|u|font|data|pre|q|var|kbd|samp|mark|abbr|time|cite|dfn|bdi|bdo)$/;
+  R.NAME_FROM = ['aria-labelledby', 'aria-label', 'alt', 'svg-title', 'title'];
+  R.shown = (el) => {
+    if (el.checkVisibility) return el.checkVisibility({visibilityProperty: true});
+    if (getComputedStyle(el).visibility !== 'visible') return false;
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) if (getComputedStyle(e).display === 'none') return false;
+    return true;
+  };
+  R.atHidden = (el) => !!el.closest('[aria-hidden="true"], [inert]');
+  // An ancestor whose own name stands in for its content: a graphic, or a link/button-like control named by aria-label.
+  R.replacedBy = (el, self) => {
+    for (let e = self ? el : el.parentElement; e && e !== document.body; e = e.parentElement) {
+      const role = (e.getAttribute('role') || '').trim().toLowerCase();
+      const tag = e.tagName.toLowerCase();
+      if (role === 'img' || tag === 'svg' || tag === 'math') return e;
+      const named = R.clean(e.getAttribute('aria-label')) || e.hasAttribute('aria-labelledby');
+      if (named && (e.matches('a[href], button, summary') || /^(button|link|tab|menuitem|switch|checkbox|radio|option)$/.test(role))) return e;
+    }
+    return null;
+  };
+  R.a11yItems = () => {
+    const items = [], blocks = new Map();
+    const blockOf = (el) => {
+      let b = el;
+      while (b && b !== document.body && R.INLINE_TAGS.test(b.tagName.toLowerCase())) b = b.parentElement;
+      b = b || document.body;
+      if (!blocks.has(b)) blocks.set(b, blocks.size);
+      return blocks.get(b);
+    };
+    const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = tw.nextNode()) && items.length < 4000) {
+      const el = node.parentElement;
+      const t = R.clean(node.textContent);
+      if (!t || !el || el.closest('script, style, noscript, template, svg, math, title')) continue;
+      if (!R.shown(el)) continue;
+      const at = !R.atHidden(el) && !R.replacedBy(el, true);
+      const vis = R.vis(el) && !R.hiddenOnPurpose(el);
+      if (at || vis) items.push({k: 't', t: t.slice(0, 300), at, vis, b: blockOf(el), sec: R.section(el)});
+    }
+    for (const el of document.querySelectorAll('img, svg, [role=img], input[type=image], area, [aria-label], [aria-labelledby]')) {
+      if (items.length >= 5000) break;
+      const tag = el.tagName.toLowerCase(), role = (el.getAttribute('role') || '').trim().toLowerCase();
+      if (tag !== 'svg' && el.closest('svg')) continue;
+      if (!role && R.GENERIC_TAGS.test(tag)) continue;
+      const nm = R.name(el);
+      const t = R.NAME_FROM.includes(nm.from) ? R.clean(nm.name) : '';
+      // Graphics are recorded even without a name, so an image whose alt was emptied is still matched to itself.
+      const graphic = /^(img|svg|area|input)$/.test(tag) || role === 'img';
+      if ((!t && !graphic) || !R.shown(el)) continue;
+      const at = !R.atHidden(el) && !R.replacedBy(el, false) && !/^(presentation|none)$/.test(role);
+      items.push({k: 'n', t: t.slice(0, 300), at, vis: R.vis(el), b: blockOf(el), sec: R.section(el), tag, from: nm.from});
+    }
+    return items;
+  };
   window.__rtc = R;
   return true;
 })()"""
@@ -565,6 +633,15 @@ RUNTIME_CODE = r"""async (page) => {
     });
     const text = await page.evaluate(() => window.__rtc.pageText());
     return {...meta, seq, trap, cycle_complete: cycle, max_tabs: A.maxTabs, names, text};
+  });
+
+  await step('a11y', async () => {
+    const out = {};
+    for (const [w, h] of A.a11yViewports) {
+      await open(w, h, 'reduce', A.freeze);
+      out[w] = await page.evaluate(() => window.__rtc.a11yItems());
+    }
+    return out;
   });
 
   await step('hover', async () => {
@@ -674,8 +751,211 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
 
-def judge(raw: dict) -> dict:
-    """Turn raw browser measurements into findings (fixed rules, no model)."""
+# ---------------------------------------------------------------- kept text (this round against the last)
+
+STOPWORDS = frozenset("a an and are as at be by for from in is it its of on or our per that the this to we with you your".split())
+NAME_FROM = ("aria-labelledby", "aria-label", "alt", "svg-title", "title")
+_TOKEN = re.compile(r"\$?\d(?:[\d,.]*\d)?%?|[^\W\d_]+(?:['\u2019-][^\W\d_]+)*")
+
+
+def _tokens(text: str) -> list[str]:
+    """Words and numbers that carry meaning, in order. Single letters, runs of single characters
+    (split-flap tiles 'C E D A R', '0 1') and filler words are left out."""
+    raw = _TOKEN.findall((text or "").lower())
+    out = []
+    for i, t in enumerate(raw):
+        if len(t) == 1 and (not t.isdigit() or (i > 0 and len(raw[i - 1]) == 1) or (i + 1 < len(raw) and len(raw[i + 1]) == 1)):
+            continue
+        if t not in STOPWORDS:
+            out.append(t)
+    return out
+
+
+def _blocks(items: list[dict]) -> list[dict]:
+    """Group one viewport's recorded items (R.a11yItems) into blocks: what each block shows and what
+    assistive tech reaches in it."""
+    found: dict = {}
+    for it in items or []:
+        b = found.setdefault(it.get("b"), {"sec": it.get("sec") or "page", "vis": [], "at": [], "graphic": False, "shape": []})
+        if it.get("vis") and it.get("k") == "t":
+            b["vis"].append(it.get("t") or "")
+        if it.get("vis") and it.get("k") == "n":
+            b["graphic"] = True
+            b["shape"].append(it.get("tag") or "graphic")
+        if it.get("at"):
+            b["at"].append(it.get("t") or "")
+    out = []
+    for b in found.values():
+        vis_text = _norm(" ".join(b["vis"]))
+        at = set(_tokens(" ".join(b["at"])))
+        out.append({"sec": b["sec"], "vis_key": vis_text, "vis_tokens": set(_tokens(" ".join(b["vis"]))), "at_tokens": at,
+                    "has_visible": bool(vis_text) or b["graphic"], "shape": " ".join(b["shape"]),
+                    "label": (" ".join(b["vis"]) or " ".join(b["at"]) or (b["shape"][0] if b["shape"] else ""))[:70]})
+    return out
+
+
+def _block_key(b: dict) -> str:
+    return b["vis_key"] or "@" + " ".join(sorted(b["at_tokens"]))
+
+
+def _compare_blocks(prev: list[dict], cur: list[dict]) -> tuple[dict[str, int], list[dict]]:
+    """Words assistive tech lost between two recordings of one viewport, and where.
+
+    A block of the last round is matched to this round's block that shows the same text (same section
+    first, then anywhere; blocks that show nothing match on what they say). A matched block that now
+    gives assistive tech fewer words lost them. A block that showed something and has no match was
+    removed or rewritten: that is the content review's business, not a loss. A block that showed
+    nothing (screen-reader-only text) and has no match is lost. Words that moved to another block
+    are not lost: per word, the loss is capped by the drop in blocks that carry it."""
+    used: set[int] = set()
+    by_sec: dict = {}
+    by_key: dict = {}
+    by_shape: dict = {}  # blocks that show only graphics: the same graphics in the same section
+    for j, c in enumerate(cur):
+        by_sec.setdefault((c["sec"], _block_key(c)), []).append(j)
+        by_key.setdefault(_block_key(c), []).append(j)
+        if not c["vis_key"] and c["shape"]:
+            by_shape.setdefault((c["sec"], c["shape"]), []).append(j)
+    loss: dict[str, int] = {}
+    where: list[dict] = []
+    for p in prev:
+        if not p["at_tokens"]:
+            continue
+        key = _block_key(p)
+        j = next((j for j in by_sec.get((p["sec"], key), []) if j not in used), None)
+        if j is None:
+            j = next((j for j in by_key.get(key, []) if j not in used), None)
+        if j is None and not p["vis_key"] and p["shape"]:
+            j = next((j for j in by_shape.get((p["sec"], p["shape"]), []) if j not in used), None)
+        if j is not None:
+            used.add(j)
+            gone = p["at_tokens"] - cur[j]["at_tokens"]
+            how = "hidden from assistive tech" if gone & cur[j]["vis_tokens"] else "screen-reader text removed"
+        elif not p["has_visible"]:
+            gone, how = set(p["at_tokens"]), "screen-reader-only text removed"
+        else:
+            continue
+        if gone:
+            for t in gone:
+                loss[t] = loss.get(t, 0) + 1
+            where.append({"section": p["sec"], "block": p["label"], "lost": sorted(gone), "how": how})
+    carried_prev: dict[str, int] = {}
+    carried_cur: dict[str, int] = {}
+    for blocks, into in ((prev, carried_prev), (cur, carried_cur)):
+        for b in blocks:
+            for t in b["at_tokens"]:
+                into[t] = into.get(t, 0) + 1
+    lost = {t: min(n, carried_prev.get(t, 0) - carried_cur.get(t, 0)) for t, n in loss.items()}
+    lost = {t: n for t, n in lost.items() if n > 0}
+    where = [{**w, "lost": [t for t in w["lost"] if t in lost]} for w in where]
+    return lost, [w for w in where if w["lost"]]
+
+
+def _legacy_counts(raw: dict) -> dict[str, int]:
+    """Per word, the page-text lines (1440 px, what a screen reader reaches) and attribute names that
+    carry it: all an older recording without the a11y step can tell."""
+    focus = raw.get("focus") or {}
+    counts: dict[str, int] = {}
+    for line in focus.get("text") or []:
+        for t in set(_tokens(line.get("text"))):
+            counts[t] = counts.get(t, 0) + 1
+    for n in focus.get("names") or []:
+        if n.get("from") in NAME_FROM and n.get("name"):
+            for t in set(_tokens(n["name"])):
+                counts[t] = counts.get(t, 0) + 1
+    return counts
+
+
+def kept_text(prev: dict | None, cur: dict, base: dict | list | None = None) -> dict:
+    """Compare what assistive tech reaches on this round's page with the previous round's recording.
+
+    base: the recording (or recordings) of earlier rounds whose words a later round had already lost.
+    Those words stay lost, and flagged, until a round gives them back, so comparing only neighbours
+    cannot let a loss drop out of sight. vs_bases lists each base's own status, in order."""
+    if prev is None:
+        return {"status": "not run", "note": "first round: nothing to compare", "viewports": {}}
+    out = _kept_pair(prev, cur)
+    out["vs_previous"] = out["status"]
+    out["vs_bases"] = []
+    for older_raw in (base if isinstance(base, list) else [base] if base is not None else []):
+        older = _kept_pair(older_raw, cur)
+        out["vs_bases"].append(older["status"])
+        for w, v in older["viewports"].items():
+            mine = out["viewports"].setdefault(w, {"compared": v["compared"], "lost": {}, "where": []})
+            for t, n in v["lost"].items():
+                mine["lost"][t] = max(mine["lost"].get(t, 0), n)
+            seen = {(e["section"], e["block"]) for e in mine["where"]}
+            mine["where"] += [{**e, "how": e["how"] + " in an earlier round, not given back"} for e in v["where"]
+                              if (e["section"], e["block"]) not in seen]
+        if older.get("note") and not out.get("note"):
+            out["note"] = older["note"]
+        if out["status"] == "not run" and older["status"] != "not run":
+            out["status"] = "pass"
+    if any(v["lost"] for v in out["viewports"].values()):
+        out["status"] = "fail"
+    return out
+
+
+def _kept_pair(prev: dict, cur: dict) -> dict:
+    pa, ca = prev.get("a11y") or {}, cur.get("a11y") or {}
+    if not pa:
+        return {"status": "not run", "note": "the previous round was recorded before this check: not compared", "viewports": {}}
+    out: dict = {"status": "pass", "viewports": {}}
+    if not ca:
+        # This round was recorded without the a11y step (only for checking a recorded page against a newer
+        # recording of the round before): only screen-reader-only words can be judged, from page-text lines.
+        pb = _blocks(pa.get("1440") or pa.get(1440) or [])
+        sr: dict[str, int] = {}
+        for b in pb:
+            for t in b["at_tokens"] - b["vis_tokens"]:
+                sr[t] = sr.get(t, 0) + 1
+        before, after = _legacy_counts(prev), _legacy_counts(cur)
+        lost = {t: min(n, before.get(t, 0) - after.get(t, 0)) for t, n in sr.items()}
+        lost = {t: n for t, n in lost.items() if n > 0}
+        where = [{"section": b["sec"], "block": b["label"], "lost": sorted((b["at_tokens"] - b["vis_tokens"]) & set(lost)),
+                  "how": "screen-reader text removed"} for b in pb if (b["at_tokens"] - b["vis_tokens"]) & set(lost)]
+        out["note"] = "this round was recorded without the a11y step: screen-reader-only words compared by page-text lines"
+        out["viewports"]["1440"] = {"compared": len(pb), "lost": lost, "where": where}
+    else:
+        for w in sorted(set(map(str, pa)) & set(map(str, ca)), key=lambda x: -int(x)):
+            pb, cb = _blocks(pa.get(w) or pa.get(int(w))), _blocks(ca.get(w) or ca.get(int(w)))
+            lost, where = _compare_blocks(pb, cb)
+            out["viewports"][w] = {"compared": sum(1 for b in pb if b["at_tokens"]), "lost": lost, "where": where}
+    if any(v["lost"] for v in out["viewports"].values()):
+        out["status"] = "fail"
+    return out
+
+
+def _kept_finding(kept: dict) -> dict | None:
+    views = {w: v for w, v in kept.get("viewports", {}).items() if v["lost"]}
+    if not views:
+        return None
+    words: dict[str, int] = {}
+    for v in views.values():
+        for t, n in v["lost"].items():
+            words[t] = max(words.get(t, 0), n)
+    entries, seen = [], set()
+    for v in views.values():
+        for e in v["where"]:
+            lab = f'{e["section"]}: "{e["block"][:50]}" lost {", ".join(e["lost"][:5])} ({e["how"]})'
+            if lab not in seen:
+                seen.add(lab)
+                entries.append(lab)
+    named = ", ".join(f"'{t}'" + (f" x{n}" if n > 1 else "") for t, n in sorted(words.items(), key=lambda x: (-x[1], x[0]))[:12])
+    evidence = "; ".join(f"{w} px: {sum(v['lost'].values())} words lost in {len(v['where'])} blocks" for w, v in views.items())
+    return {"check": "kept_text", "criterion": "1.3.1, 4.1.2", "severity": 3,
+            "viewport": ", ".join("desktop" if w == "1440" else "mobile" for w in views),
+            "element": "; ".join(entries[:GROUP_LIMIT]) + (f"; and {len(entries) - GROUP_LIMIT} more" if len(entries) > GROUP_LIMIT else ""),
+            "count": len(entries),
+            "problem": f"Words a screen reader reached in an earlier round are gone for it now, while the page still shows the same content: {named}.",
+            "evidence": f"compared with the earlier rounds' recordings ({evidence})" + (f"; {kept['note']}" if kept.get("note") else ""),
+            "suggestion": "Give the words back to assistive tech (visually hidden text, alt or aria-label), or take the visible content "
+                          "away too if it should go. Never hide labels (aria-hidden, display:none) or delete screen-reader text to quiet a finding."}
+
+
+def judge(raw: dict, prev: dict | None = None, base: dict | None = None) -> dict:
+    """Turn raw browser measurements into findings (fixed rules, no model). With prev (the previous
+    round's raw recording) the kept-text check also runs; base: see kept_text."""
     findings: list[dict] = []
     notes: list[str] = []  # measured and judged harmless: shown in the report, never a finding
     status: dict[str, dict] = {c: {"tested": 0, "findings": 0} for c in CHECKS}
@@ -892,19 +1172,26 @@ def judge(raw: dict) -> dict:
                                    f"with prefers-reduced-motion: reduce, {name} {what}, {a0.get('duration')} s x {a0.get('iterations')}",
                                    "Wrap the animation in @media (prefers-reduced-motion: no-preference), or replace movement with a short fade."))
 
+    # -- kept text: nothing a screen reader reached in the last round may vanish while the page still shows it
+    kept = kept_text(prev, raw, base)
+    if prev is not None:
+        status["kept_text"] = {"tested": sum(v["compared"] for v in kept["viewports"].values()), "findings": 0}
+    lost = _kept_finding(kept)
+    if lost:
+        findings.append(lost)
+
     for i, f in enumerate(findings, 1):
         f["id"] = f"R{i}"
         status[f["check"]]["findings"] += 1
     ran = {"focus": "focus", "order": "focus", "names": "focus", "hover": "hover", "reflow": "reflow", "zoom": "zoom",
            "spacing": "spacing", "motion": "motion"}
-    for c in CHECKS:
-        s = status[c]
-        if not raw.get(ran[c]):
+    for c, s in status.items():
+        if (c == "kept_text" and kept["status"] == "not run") or (c in ran and not raw.get(ran[c])):
             s["status"] = "not run"
         else:
             s["status"] = "fail" if any(f["check"] == c and f["severity"] >= 2 for f in findings) else "pass"
     text = (focus or {}).get("text") or []
-    return {"version": 1, "page": raw.get("page"), "checks": status, "findings": findings,
+    return {"version": 1, "page": raw.get("page"), "checks": status, "findings": findings, "kept_text": kept,
             "failures": sum(1 for f in findings if f["severity"] >= 3), "errors": errors, "notes": notes[:20],
             "tab_order": [{"stop": n + 1, "element": _label(s), "focus_change": (s.get("changes") or ["none"])[0] if s.get("changes") is not None else "?"}
                           for n, s in enumerate((focus or {}).get("seq") or [])],
@@ -939,6 +1226,11 @@ def report_md(result: dict) -> str:
     for f in result["findings"]:
         lines += [f"- {f['id']} [{f['check']}, WCAG {f['criterion']}, severity {f['severity']}, {f['viewport']}] {f['problem']}",
                   f"  Element: {f['element']}", f"  Evidence: {f['evidence']}", f"  Suggestion: {f['suggestion']}"]
+    kept = result.get("kept_text") or {}
+    if kept:
+        lines += ["", "## Kept text (against the previous round)", "", f"- {kept.get('status')}" + (f": {kept['note']}" if kept.get("note") else "")]
+        for w, v in kept.get("viewports", {}).items():
+            lines.append(f"- {w} px: {v['compared']} blocks compared, words lost: " + (", ".join(f"{t} x{n}" for t, n in v["lost"].items()) or "none"))
     if result.get("notes"):
         lines += ["", "## Measured and judged harmless", ""] + [f"- {n}" for n in result["notes"]]
     if result.get("errors"):
@@ -949,9 +1241,9 @@ def report_md(result: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_outputs(raw: dict, out: Path) -> dict:
+def write_outputs(raw: dict, out: Path, prev: dict | None = None, base: dict | None = None) -> dict:
     out.mkdir(parents=True, exist_ok=True)
-    result = judge(raw)
+    result = judge(raw, prev, base)
     (out / "raw.json").write_text(json.dumps(raw, indent=1, ensure_ascii=False))
     (out / "runtime.json").write_text(json.dumps(result, indent=1, ensure_ascii=False))
     (out / "RUNTIME.md").write_text(report_md(result))
@@ -1030,7 +1322,7 @@ def measure(site: Path, page: str = "index.html", browser: str | None = None, se
     try:
         args = {"base": base, "page": page.lstrip("/"), "helpers": HELPERS, "freeze": FREEZE_CSS, "spacing": SPACING_CSS,
                 "maxTabs": MAX_TABS, "maxHover": MAX_HOVER, "reflow": list(REFLOW_VIEWPORT), "zoom": list(ZOOM_VIEWPORT),
-                "spacingWidths": list(SPACING_WIDTHS)}
+                "spacingWidths": list(SPACING_WIDTHS), "a11yViewports": [list(v) for v in A11Y_VIEWPORTS]}
         raw = h2p.browser_run(browser, [RUNTIME_CODE.replace("__ARGS__", json.dumps(args))], timeout=600)[0]
     finally:
         srv.shutdown()
@@ -1047,6 +1339,8 @@ def main() -> int:
     p.add_argument("--browser", default=None)
     p.add_argument("--serve-host", default=None)
     p.add_argument("--raw", default=None, help="judge a recorded raw.json instead of opening a browser")
+    p.add_argument("--prev", default=None, help="the previous round's raw.json: also check that no accessible text was lost")
+    p.add_argument("--base", default=None, help="with --prev: an earlier round's raw.json whose lost words must come back")
     p.add_argument("--fixture-proof", action="store_true", help="run the planted page and clean control and grade them")
     a = p.parse_args()
     if a.fixture_proof:
@@ -1060,7 +1354,9 @@ def main() -> int:
         if not a.site:
             raise SystemExit("--site or --raw required")
         raw = measure(Path(a.site).resolve(), a.page, a.browser, a.serve_host)
-    result = write_outputs(raw, Path(a.out))
+    prev = json.loads(Path(a.prev).read_text()) if a.prev else None
+    base = json.loads(Path(a.base).read_text()) if a.base else None
+    result = write_outputs(raw, Path(a.out), prev, base)
     print(json.dumps({"page": result["page"], "failures": result["failures"], "findings": len(result["findings"]),
                       "checks": {c: s["status"] for c, s in result["checks"].items()}, "errors": result["errors"]}))
     return 0

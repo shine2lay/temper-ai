@@ -178,6 +178,103 @@ def test_spill_judgment_reads_overlap_and_keeps_old_recordings_strict():
     assert [f["criterion"] for f in rtc.judge(old)["findings"]] == ["1.4.12"]
 
 
+# ---------------------------------------------------------------- kept text (queue #32)
+# A fictional page, recorded as the a11y step records it: per block, text items (k t) and names (k n),
+# with at = reached by assistive tech and vis = shown on screen.
+
+def t(text, b, sec="Hero", at=True, vis=True):
+    return {"k": "t", "t": text, "at": at, "vis": vis, "b": b, "sec": sec}
+
+
+def n(text, b, sec="Hero", at=True, vis=True):
+    return {"k": "n", "t": text, "at": at, "vis": vis, "b": b, "sec": sec, "tag": "img", "from": "alt"}
+
+
+PAGE = [t("Book a quiet room in two taps", 1), t("Cedar", 2), t("Seats", 3, vis=False), t("4", 3),
+        t("Example price", 4, vis=False), t("$18 an hour", 4), n("Map of the three rooms", 5),
+        t("C", 6), t("E", 6), t("D", 6), t("A", 6), t("R", 6), t("Ask about the rooms", 7, sec="FAQ")]
+
+
+def page(items):
+    return {"page": "index.html", "a11y": {"1440": copy.deepcopy(items), "390": copy.deepcopy(items)}}
+
+
+def changed(**edits):
+    """PAGE with some items replaced (index -> item, or None to delete)."""
+    items = list(PAGE)
+    for i, item in sorted(((int(k[1:]), v) for k, v in edits.items()), reverse=True):
+        if item is None:
+            del items[i]
+        else:
+            items[i] = item
+    return items
+
+
+def test_kept_text_passes_an_unchanged_page_and_skips_the_first_round():
+    assert rtc.kept_text(page(PAGE), page(PAGE))["status"] == "pass"
+    assert rtc.kept_text(None, page(PAGE))["status"] == "not run"
+    first = rtc.judge(page(PAGE))
+    assert "kept_text" not in first["checks"] and not first["findings"]
+    unchanged = rtc.judge(page(PAGE), page(PAGE))
+    assert unchanged["checks"]["kept_text"]["status"] == "pass" and not unchanged["findings"]
+
+
+@pytest.mark.parametrize("edits, lost", [
+    ({"i2": None}, {"seats": 1}),                                              # screen-reader label deleted
+    ({"i2": t("Seats", 3, vis=False, at=False)}, {"seats": 1}),                # the same label aria-hidden
+    ({"i0": t("Book a quiet room in two taps", 1, at=False)}, {"book": 1, "quiet": 1, "room": 1, "two": 1, "taps": 1}),
+    ({"i6": n("Map of the three rooms", 5, at=False)}, {"map": 1, "three": 1, "rooms": 1}),  # image aria-hidden
+    ({"i6": n("", 5)}, {"map": 1, "three": 1, "rooms": 1}),                              # its alt emptied
+    ({"i4": None, "i2": None}, {"seats": 1, "example": 1, "price": 1}),
+])
+def test_kept_text_flags_words_screen_readers_lose(edits, lost):
+    result = rtc.kept_text(page(PAGE), page(changed(**edits)))
+    assert result["status"] == "fail"
+    assert result["viewports"]["1440"]["lost"] == lost == result["viewports"]["390"]["lost"]
+    finding = rtc.judge(page(changed(**edits)), page(PAGE))["findings"][0]
+    assert finding["check"] == "kept_text" and finding["severity"] == 3 and finding["criterion"] == "1.3.1, 4.1.2"
+    assert all(f"'{w}'" in finding["problem"] for w in lost) and "Hero" in finding["element"]
+
+
+@pytest.mark.parametrize("edits", [
+    {"i0": t("Reserve a room for your team", 1)},                     # copy rewritten: the content review's business
+    {"i1": None},                                                       # visible heading removed with its words
+    {"i2": t("Seats", 6, vis=False)},                                  # the label moved to another block
+    {f"i{k}": t(c, 6, at=False) for k, c in zip(range(7, 12), "CEDAR", strict=True)},  # spelled-out tiles hidden: never words
+])
+def test_kept_text_leaves_rewrites_removals_moves_and_spelled_tiles_alone(edits):
+    assert rtc.kept_text(page(PAGE), page(changed(**edits)))["status"] == "pass"
+
+
+def test_kept_text_skips_older_recordings_and_keeps_a_loss_flagged_until_given_back():
+    legacy = {"page": "index.html", "focus": {"text": [], "names": []}}
+    assert rtc.kept_text(legacy, page(PAGE))["status"] == "not run"  # recorded before this check: honest, not a pass
+    r1, r2 = page(PAGE), page(changed(i2=None))
+    assert rtc.kept_text(r1, r2)["status"] == "fail"
+    r3 = page(changed(i2=None))  # the next revision leaves the label out too: nothing new lost against r2...
+    carried = rtc.kept_text(r2, r3, [r1])
+    assert carried["vs_previous"] == "pass" and carried["vs_bases"] == ["fail"] and carried["status"] == "fail"
+    assert carried["viewports"]["1440"]["lost"] == {"seats": 1}
+    assert rtc.kept_text(r2, page(PAGE), [r1])["status"] == "pass"  # ...until a round gives it back
+
+
+def test_kept_text_against_an_older_recording_of_this_round_uses_page_text_lines():
+    """A round recorded before the a11y step (only the queue #32 pilot check) is judged by its page-text lines."""
+    prev = page(PAGE)
+    prev["focus"] = {"text": [{"text": "Seats"}, {"text": "4"}, {"text": "Example price"}], "names": []}
+    same = {"page": "index.html", "focus": {"text": [{"text": "Seats"}, {"text": "4"}, {"text": "Example price"}], "names": []}}
+    lost = {"page": "index.html", "focus": {"text": [{"text": "4"}, {"text": "Example price"}], "names": []}}
+    assert rtc.kept_text(prev, same)["status"] == "pass"
+    result = rtc.kept_text(prev, lost)
+    assert result["status"] == "fail" and result["viewports"]["1440"]["lost"] == {"seats": 1} and result["note"]
+
+
+def test_browser_records_what_assistive_tech_reaches_per_block():
+    code = rtc.RUNTIME_CODE
+    for needle in ("a11yItems", "aria-hidden", "inert", "checkVisibility", "hiddenOnPurpose", "aria-labelledby", "alt"):
+        assert needle in code or needle in rtc.HELPERS, needle
+
+
 @pytest.mark.parametrize("args", [["--raw", "planted"], ["--raw", "control"]])
 def test_cli_judges_a_recorded_result(tmp_path, monkeypatch, capsys, args):
     name = args[1]

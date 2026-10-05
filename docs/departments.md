@@ -3,8 +3,18 @@
 temper's agents and workflows are looked after by **department roles**: AI
 roles that each stand in for one department of a tech company (product,
 design, QA and so on) and use temper to test, improve and automate that
-department's part of the work. A role does nothing on its own: it works only
-when the owner starts a chat as it.
+department's part of the work.
+
+Each role runs its department on its own (since 2026-10-04). The
+department's work is done by temper workflows the role designs, builds, tests
+and keeps improving, one for each of its processes. The role orchestrates
+from its home chat: small things it does itself, bigger work goes into its
+queue as tasks with complete plans, and it checks what comes back. It is its
+field's expert and makes the final call in its area: what to build next, how,
+which trials to run, what to land. Another role's area is that role's call.
+Only three things go to the owner first (see the trial rules below). On days
+it worked, a role sends the owner a report at 6 am Pacific time, built from
+its entries in the daily log.
 
 Each role has a charter (what it covers, what it owns, how it tests and lands
 a change) and a journal of its discipline's best practices, applied to its
@@ -94,11 +104,13 @@ the dashboard.
 **Trial rules**
 
 - Never trial on live bets: forks and replays only.
-- Trials up to $10 go ahead; above that, the owner decides on an estimate,
-  unless the owner has set a role a rule of its own (product has no cap
-  since 2026-10-01).
-- Check the spare subscription allowance first, and wait when an account is
-  near its weekly limit.
+- Trials have no spending cap: the role decides what to run.
+- Before a big run, check the spare subscription allowance, and wait when a
+  subscription is near its weekly limit.
+- Only three things go to the owner first: spending real money (buying
+  something or signing up for a paid service), anything public or sent to
+  people outside, and deleting something that can't be restored. Everything
+  else in its area the role decides, and notes why.
 - Delete local candidates when the trial is over.
 
 ### Graders and test workflows

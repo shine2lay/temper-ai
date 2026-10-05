@@ -569,10 +569,28 @@ def wait_for(fn: Callable[[], Any], timeout: float = 20.0, every: float = 0.02,
 
 
 def wait_ended(eid: str, n_attempts: int = 1, timeout: float = 20.0) -> list[dict]:
+    """Wait until attempt ``n_attempts`` has ended and the thread that ran it has let go. The
+    attempt row ends before that thread leaves the server's running runs, so a Resume sent in
+    between is refused as already running (409)."""
     def ended():
         a = attempts(eid)
-        return a if len(a) >= n_attempts and a[-1]["status"] not in ACTIVE else None
+        if len(a) < n_attempts or a[-1]["status"] in ACTIVE:
+            return None
+        return None if run_held(eid) else a
     return wait_for(ended, timeout, what=f"attempt {n_attempts} of {eid} to end")
+
+
+def run_held(eid: str) -> bool:
+    """Whether this server still holds the run: in its running runs, or a live thread named
+    after it (in-process mode)."""
+    from temper_ai.api.routes import _state
+
+    try:
+        running = _state().running
+    except RuntimeError:  # no server state installed in this test
+        running = {}
+    return eid in running or any(t.name == f"temper-run-{eid}" and t.is_alive()
+                                 for t in threading.enumerate())
 
 
 def ledger():

@@ -128,11 +128,13 @@ def wait_parked(state, eid: str, n_attempts: int = 1, timeout: float = 20.0) -> 
 
 
 def wait_ended(eid: str, n_attempts: int, timeout: float = 20.0) -> list[dict]:
-    """Wait until attempt ``n_attempts`` has finished (completed, failed or cancelled)."""
+    """Wait until attempt ``n_attempts`` has finished (completed, failed or cancelled) and the
+    thread that ran it has let go. The attempt row ends before that thread leaves the server's
+    running runs, so a Resume sent in between is refused as already running (409)."""
     def ended():
         a = attempts(eid)
         if len(a) >= n_attempts and a[-1]["status"] in ("completed", "failed", "cancelled"):
-            return a
+            return None if sup.run_held(eid) else a
         return None
     return sup.wait_for(ended, timeout, what=f"attempt {n_attempts} of {eid} to end")
 

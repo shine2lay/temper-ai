@@ -301,6 +301,44 @@ CASE=WORKSPACE` scores a finished run). A changed kit reruns all nine; the bar, 
 reviews of the first version are in `~/product-autopilot/results/2026-10-04-pmf-kit-13/`
 (`REPORT.md`).
 
+## Screen candidate features (`feature_screen`)
+
+`feature_screen` asks which feature could make people pick a product, and how to test it
+cheaply before building it. From the product's evidence it writes 8-12 candidate features
+(every seed given is one of them, included, not favoured), then four lenses rate every
+candidate side by side with cited web sources or labelled guesses: would people see it within
+seconds (users pick what they see, something new that fits them), do the big players already
+give it away free, does it fix one of the idea's real problems, and can the idea's own assets
+and data access build it. A fixed rule ranks them (a candidate already given away free is out);
+the top three get a test design with numbers fixed in advance: a free or first-party rung, then
+a paid or contact rung marked as needing the owner's go-ahead. It never spends, posts or
+contacts anyone. The rules are frozen in `configs/agents/feature_screen_assets/method.md`.
+
+The last step is a script: it fails the screen when a part left no usable output (a missing or
+invalid file, or an account-limit message as a file or final answer), a rating is missing or
+not what its sub-scores give, a cited quote is not on the page saved for it, the ranking is not
+the rule's, or a test design is incomplete. Outputs: `state/feature/report.md` (shortlist, every
+rating, the test designs), `check.md`, and `sample.md` (10 claims drawn by the run id for a hand
+check on the saved pages in `state/feature/pages/`).
+
+```sh
+JOB=features-my-idea
+mkdir ~/temper-ai/workspaces/product/$JOB
+python3 ~/product-autopilot/server.py stage /path/to/evidence-folder \
+  --workspace ~/temper-ai/workspaces/product/$JOB --relative _evidence
+~/product-autopilot/start.sh $JOB feature_screen --workspace ~/temper-ai/workspaces/product/$JOB \
+  --inputs ~/product-autopilot/inputs/$JOB.json
+```
+
+The inputs file needs `idea`, `problems` (the idea's real problems, with their numbers) and
+`evidence_dir` (`<workspace>/_evidence`); optional `seeds` (one per line, `S1: ...`), `players`
+(platforms and rivals the taken lens checks), `build_on` (the idea's own data, code and
+partners) and `planted_taken` (seed ids known to be taken already, seen only by the check: a
+test of the screen itself). A candidate run also stages its own
+`configs/agents/feature_screen_assets` as `_assets` and passes `"assets_dir": "<workspace>/_assets"`.
+The first run (travel matcher, queue #26) and its hand check are in
+`~/product-autopilot/research/feature-screen/`.
+
 ## Checks
 
 Run Product helper checks once after revisions:
@@ -312,6 +350,7 @@ uv run pytest tests/test_scan_serving -q
 uv run pytest tests/test_shape_mvp -q
 uv run pytest tests/test_signal_grade -q
 uv run pytest tests/test_pmf_evidence -q
+uv run pytest tests/test_feature_screen -q
 ```
 
 These use fake status/config APIs, not model request fixtures or third-party services. New

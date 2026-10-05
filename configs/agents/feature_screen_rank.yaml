@@ -1,0 +1,20 @@
+# @description PRODUCT FEATURE SCREEN step 4 (product role, queue #26): rank the candidates by
+# the fixed rule in method.md section 4, no model. A candidate rated taken is out; points for
+# newness, problem, build and how open the ground is; candidates with newness and problem both
+# medium or better first. Writes state/feature/ranking.json; status ranked when three candidates
+# are not taken (short when fewer, not_ranked when a lens left no file), and the design step
+# runs only on ranked. Part of workflows/feature_screen.yaml.
+agent:
+  name: feature_screen_rank
+  version: 1
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    if [ ! -f state/feature/check_features.py ]; then
+      echo '{"status": "not_ranked", "top": [], "ranking_path": "", "problems": ["the setup did not finish (see the setup step)"]}'
+      exit 0
+    fi
+    python3 state/feature/check_features.py rank

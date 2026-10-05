@@ -1,0 +1,33 @@
+# @description PRODUCT FEATURE SCREEN last step (product role, queue #26): the mechanical check,
+# the report and the hand-check sample. No model; runs on every path. Fails the screen when a
+# part left no usable output (its files missing, invalid or an account-limit message, or its
+# final answer such a message: the queue #23 guard), a rating is missing, off its scale or not
+# what its sub-scores give, a cited quote is not on the page saved for it, a taken rating rests
+# on no checked web source, a known-taken case (planted_taken: seed ids given to this step only)
+# does not come out taken with such a source, the ranking is not the fixed rule's, or a test
+# design is incomplete. Writes state/feature/check.json, check.md, report.md and sample.md (10
+# claims drawn by the run id for a hand check) and owns the workflow outputs. Part of
+# workflows/feature_screen.yaml.
+agent:
+  name: feature_screen_check
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    {% set ga = generate_answer[:4000] if generate_answer is string else '__unwired__' %}
+    {% set na = newness_answer[:4000] if newness_answer is string else '__unwired__' %}
+    {% set ta = taken_answer[:4000] if taken_answer is string else '__unwired__' %}
+    {% set pa = problem_answer[:4000] if problem_answer is string else '__unwired__' %}
+    {% set ba = build_answer[:4000] if build_answer is string else '__unwired__' %}
+    {% set da = design_answer[:4000] if design_answer is string else '__unwired__' %}
+    if [ ! -f state/feature/check_features.py ]; then
+      echo '{"status": "fail", "report_path": "", "check_path": "", "sample_path": "", "shortlist": [], "candidates": 0, "claims": 0, "planted": {}, "problems": ["the setup did not finish (see the setup step)"]}'
+      exit 0
+    fi
+    python3 state/feature/check_features.py check \
+      --run-id {{ (run_id or '') | env }} --planted {{ (planted_taken or '') | env }} \
+      --answer generate={{ ga | env }} --answer newness={{ na | env }} --answer taken={{ ta | env }} \
+      --answer problem={{ pa | env }} --answer build={{ ba | env }} --answer design={{ da | env }}

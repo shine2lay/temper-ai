@@ -26,7 +26,7 @@ role tests and lands a change.
 
 | Role | Department | Looks after |
 |---|---|---|
-| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief, the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
+| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief, the feature screen (`feature_screen`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents, and `positioning_grade`; next, positioning and launch notes for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
@@ -192,7 +192,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (94)
+### product (104)
 
 | Config | Kind |
 |---|---|
@@ -267,6 +267,16 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/pmf_evidence_assets/templates/activity.csv` | template |
 | `agents/pmf_evidence_assets/templates/survey.csv` | template |
 | `agents/pmf_evidence_assets/templates/payments.csv` | template |
+| `workflows/feature_screen.yaml` | workflow |
+| `agents/feature_screen_setup.yaml` | agent (script) |
+| `agents/feature_screen_generate.yaml` | agent |
+| `agents/feature_screen_lens.yaml` | agent |
+| `agents/feature_screen_rank.yaml` | agent (script) |
+| `agents/feature_screen_design.yaml` | agent |
+| `agents/feature_screen_check.yaml` | agent (script) |
+| `agents/feature_screen_assets/check_features.py` | script |
+| `agents/feature_screen_assets/cite.py` | script |
+| `agents/feature_screen_assets/method.md` | contract |
 | `validation/workflows/validation_engine.yaml` | workflow |
 | `validation/agents/ve_campaign.yaml` | agent |
 | `validation/agents/ve_collect.yaml` | agent (script) |

@@ -1,0 +1,152 @@
+workflow:
+  name: feature_screen
+  # PRODUCT FEATURE SCREEN (product role; built 2026-10-05, queue #26). Which feature could make
+  # people pick a product, and what is the cheapest way to test it before building? Generates
+  # candidate features from the product's evidence and screens each on the owner's three tests:
+  # (1) would people see it within seconds (users pick what they see, something new that fits
+  # them), (2) do the big players already give it away free, (3) does it fix one of the idea's
+  # real problems (for example reaching people cheaply, or earning per user); plus a build check
+  # against the idea's own assets and data access. A fixed rule ranks them; the top three get a
+  # test design with numbers fixed in advance: a free or first-party rung first, then a paid or
+  # contact rung that waits for the owner's go-ahead. Also the desirability step the travel
+  # research asked for (#20 REPORT section 11, fix 6).
+  #
+  #   setup (script) -> generate -> lens x4 side by side -> rank (script) -> design -> check (script)
+  #
+  # Method (frozen): configs/agents/feature_screen_assets/method.md; checker check_features.py and
+  # page fetcher cite.py (same folder, standard library only). planted_taken names seeds known to
+  # be taken already; only the check sees it, and the screen fails when they do not come out taken
+  # with a checked web source. Bar, runs and hand checks: product
+  # research/feature-screen/. How to run: docs/product-runs.md.
+  version: 1
+  description: |
+    Find the feature that could make people pick a product, from its evidence, and design the
+    cheapest test for the best three. Candidates (8-12, seeds included) are rated on would
+    people see it within seconds, do the big players already give it away free, does it fix
+    one of the idea's real problems, and can we build it; every rating has cited sources or
+    labelled guesses. A fixed rule ranks them; the top three get a free or first-party test
+    and a paid or contact test (owner's go-ahead) with numbers fixed in advance. Never spends,
+    posts or contacts anyone.
+  inputs:
+    idea:
+      type: string
+      required: true
+      description: "The product idea, in a few sentences: who it is for and what it does."
+    evidence_dir:
+      type: string
+      required: true
+      description: "Folder in the run workspace with the product's evidence (research reports, notes, docs; README.md first if any). Copied into state/feature/evidence/."
+    problems:
+      type: string
+      required: true
+      description: "The idea's real problems that test 3 asks about (for example reaching people cheaply, earning per user), with the numbers behind them."
+    seeds:
+      type: string
+      required: false
+      default: ""
+      description: "Candidate features to include, not to favour: one per line as 'S1: ...'."
+    players:
+      type: string
+      required: false
+      default: ""
+      description: "Big platforms and close rivals test 2 checks (default: taken from the evidence)."
+    build_on:
+      type: string
+      required: false
+      default: ""
+      description: "What the idea already has to build with: data, code, partners (the build lens)."
+    planted_taken:
+      type: string
+      required: false
+      default: ""
+      description: "Seed ids known to be taken already (e.g. 'S4,S5'); only the check sees them. Leave empty outside a test of the screen."
+    assets_dir:
+      type: string
+      required: false
+      default: "/app/configs/agents/feature_screen_assets"
+      description: "Folder with check_features.py, cite.py and method.md: the deployed copy by default; a candidate run stages its own copy into the workspace."
+  outputs:
+    status: check.structured.status
+    report_path: check.structured.report_path
+    shortlist: check.structured.shortlist
+    candidates: check.structured.candidates
+    claims: check.structured.claims
+    planted: check.structured.planted
+    sample_path: check.structured.sample_path
+    check_path: check.structured.check_path
+    problems: check.structured.problems
+
+  nodes:
+    # No model: stages the method, fetcher and checker, copies the evidence, writes input.md.
+    - name: setup
+      type: agent
+      agent: feature_screen_setup
+      input_map:
+        idea: input.idea
+        evidence_dir: input.evidence_dir
+        problems: input.problems
+        seeds: input.seeds
+        players: input.players
+        build_on: input.build_on
+        assets_dir: input.assets_dir
+
+    - name: generate
+      type: agent
+      agent: feature_screen_generate
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+
+    # The four lenses rate every candidate, side by side.
+    - name: lens_newness
+      type: agent
+      agent: feature_screen_lens
+      depends_on: [generate]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {lens: newness}
+    - name: lens_taken
+      type: agent
+      agent: feature_screen_lens
+      depends_on: [generate]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {lens: taken}
+    - name: lens_problem
+      type: agent
+      agent: feature_screen_lens
+      depends_on: [generate]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {lens: problem}
+    - name: lens_build
+      type: agent
+      agent: feature_screen_lens
+      depends_on: [generate]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {lens: build}
+
+    # No model: the fixed rule's ranking.
+    - name: rank
+      type: agent
+      agent: feature_screen_rank
+      depends_on: [lens_newness, lens_taken, lens_problem, lens_build]
+      run_after_failure: true
+
+    - name: design
+      type: agent
+      agent: feature_screen_design
+      depends_on: [rank]
+      condition: {source: rank.structured.status, operator: equals, value: ranked}
+
+    # No model, every path: the mechanical check, the report and the hand-check sample. It gets
+    # each part's final answer, so a part an account limit stopped fails the screen by name.
+    - name: check
+      type: agent
+      agent: feature_screen_check
+      depends_on: [design]
+      run_after_failure: true
+      input_map:
+        generate_answer: generate.output
+        newness_answer: lens_newness.output
+        taken_answer: lens_taken.output
+        problem_answer: lens_problem.output
+        build_answer: lens_build.output
+        design_answer: design.output
+        planted_taken: input.planted_taken

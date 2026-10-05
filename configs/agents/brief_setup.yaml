@@ -225,7 +225,18 @@ agent:
     which the workflow passes in as --answer <lens>=<environment variable>, must not be one
     either. Run 99732fd1 lost its competition lens to "You've hit your session limit" and its
     brief still passed.
+
+    It checks the brief's derived figures (brief.json "figures"): each is recomputed from its
+    inputs, its units are followed through its formula (only like units add; the result is the
+    figure's unit), and each sourced input holds to its source's own words: its value is a number
+    the quote states, and what its unit counts (clicks, leads, installs, payers) is what the source
+    counts. A derived number in the viability or go-to-market row or the recommendation that is
+    neither a figure nor quoted fails, and so does a comparison of figures counted over different
+    things. Quote checks passed run 57dc513d, which weighed $175 per paying user against $9.50 of
+    margin per active user, and run fc575760, which divided a $2.14 cost per click by a 5.83% lead
+    rate (leads / clicks) as if it were the share of clickers who start the quiz.
     """
+    import ast
     import glob
     import hashlib
     import json
@@ -264,6 +275,70 @@ agent:
     # with no result event: <stderr>". Its finish_reason "error" is not read yet (temper #55).
     PROVIDER_ERROR = re.compile(r"\[claude_code error\]", re.I)
     NOT_PASSED = "__unwired__"  # what the workflow passes for an answer it could not find
+    # Derived figures (queue #25). Rows whose derived numbers must each be a figure:
+    FIGURE_ROWS = ("viability", "go_to_market")
+    CURRENCY = {"usd": "USD", "us$": "USD", "$": "USD", "dollar": "USD", "eur": "EUR", "euro": "EUR",
+                "gbp": "GBP", "pound": "GBP"}
+    TIME = {"year": "year", "yr": "year", "annum": "year", "month": "month", "mo": "month", "week": "week",
+            "wk": "week", "day": "day", "hour": "hour", "hr": "hour", "minute": "minute", "min": "minute"}
+    # One counted thing under its usual names; a unit may use any of them.
+    SAME_THING = {
+        "payer": ("payer", "paying_user", "paid_user", "paying_customer", "paid_customer", "subscriber",
+                  "paid_subscriber", "paying_subscriber", "purchaser"),
+        "install": ("install", "installation", "download", "app_install", "app_download"),
+        "click": ("click", "ad_click", "paid_click", "tap"),
+        "lead": ("lead", "enquiry", "inquiry", "form_fill", "form_submission"),
+        "active_user": ("active_user", "active_planner", "monthly_active_user", "mau"),
+        "booking": ("booking", "booked_trip", "reservation"),
+        "trip": ("trip", "vacation", "holiday", "journey"),
+        "person": ("person", "people", "adult", "resident", "individual"),
+        "visit": ("visit", "session", "site_visit"),
+        "conversation": ("conversation", "chat", "planning_conversation"),
+        # An API prices its calls as billable events (run 57dc513d: Places calls priced per 1000 events).
+        "event": ("event", "call", "api_call", "billable_event", "api_request"),
+    }
+    # The words a source uses when that thing is what it counts.
+    SAYS = {
+        "payer": ("pay", "paid", "payer", "paying", "subscriber", "subscription", "purchase", "purchaser",
+                  "buyer", "premium"),
+        "install": ("install", "installation", "download"),
+        "click": ("click", "cpc", "tap"),
+        "lead": ("lead",),
+        "active_user": ("active",),
+        "booking": ("book", "booking", "booked", "reservation"),
+        "trip": ("trip", "travel", "vacation", "holiday", "journey"),
+        "person": ("person", "people", "adult", "resident", "population", "individual", "american", "consumer"),
+        "visit": ("visit", "session"),
+        "conversation": ("conversation", "chat", "query", "request"),
+        "event": ("event", "call", "request", "api"),
+    }
+    # A price is paid by whoever buys it: USD / payer needs no source word for the payer.
+    PRICE_PAYERS = ("payer", "customer", "user", "seat", "account", "member", "site", "location", "office")
+    VAGUE = ("conversion", "rate", "share", "percent", "percentage", "ratio", "fraction", "number", "count",
+             "amount", "value", "unit", "thing", "item")
+    CONVERSIONS = {("month", "year"): 12, ("week", "year"): 52, ("day", "year"): 365, ("day", "week"): 7,
+                   ("hour", "day"): 24, ("day", "month"): 30.4, ("week", "month"): 4.35, ("minute", "hour"): 60}
+    # A count kept in thousands or millions ("$32.00 per 1000 events", "$2 / MTok") is a thing of its own,
+    # k_event or m_token, and a DEFINITION input (1000 event / k_event) converts between them.
+    SCALES = {"k": "k", "1k": "k", "thousand": "k", "1000": "k", "m": "m", "1m": "m", "mm": "m", "million": "m",
+              "1000000": "m"}
+    SCALE_FACTORS = {"k": 1000, "m": 1000000}
+    SCALED_WORDS = {"ktok": ("k", "token"), "mtok": ("m", "token"), "mtoken": ("m", "token")}
+    # A source limited to one kind of trip or one region carries that limit into what it measures.
+    LIMITS = (("international", r"\binternational\b|outside (?:of )?the (?:united states|u\.?s\.?a?\b)|\boverseas\b"
+                                r"|\babroad\b|\boutbound\b|\bforeign\b"),
+              ("domestic", r"\bdomestic\b|within the (?:united states|u\.?s\.?a?\b)"))
+    REGIONS = (("the US", r"\bU\.?S\.?A?(?![A-Za-z])|[Uu]nited [Ss]tates|\bAmericans?\b"),
+               ("Europe", r"[Ee]urope|\bEU\b|\bUK\b|[Uu]nited [Kk]ingdom|[Bb]ritain|[Gg]ermany|[Ff]rance"))
+    COMPARE = re.compile(r"\b(?:repa(?:y|ys|id)|pa(?:y|ys|id)(?: (?:it|itself|them|for itself))? back|payback"
+                         r"|recoup\w*|cover(?:s|ed)?|against|versus|vs\b|while|exceed\w*|more than|less than"
+                         r"|outweigh\w*|cheaper than|higher than|lower than|above|below)", re.I)
+    MONEY = re.compile(r"(?:US)?\$\s?(\d[\d,]*(?:\.\d+)?)(?:\s?(k|thousand|m|mn|million|b|bn|billion)\b)?", re.I)
+    PERCENT = re.compile(r"(?<![\w.$])(\d+(?:\.\d+)?)\s?%")
+    COUNT = re.compile(r"(?<![\w.$,])(\d[\d,]*(?:\.\d+)?)\s?(k|thousand|m|mn|million|b|bn|billion)\b", re.I)
+    SCALE = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mn": 1e6, "million": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9}
+    # What the text says a number is per: "$9.50 of gross margin per active user".
+    PER = re.compile(r"[^$;.]{0,40}?\bper\s+(?:a |an |each |one |every )?([a-z][a-z-]*)(?: ([a-z][a-z-]*))?", re.I)
 
 
     def norm(s):
@@ -367,6 +442,523 @@ agent:
                     found.append("its final answer is " + why)
             parts[lens] = "; ".join(found) or "ok"
         return parts
+
+
+    def singular(word):
+        for tail, new in (("ies", "y"), ("sses", "ss"), ("ches", "ch"), ("shes", "sh"), ("xes", "x"), ("s", "")):
+            if word.endswith(tail) and not word.endswith("ss") and len(word) - len(tail) >= 3:
+                return word[:len(word) - len(tail)] + new
+        return word
+
+
+    def stem(word):
+        word = word.lower()
+        for tail in ("ings", "ing", "ers", "er", "ies", "es", "ed", "s"):
+            if word.endswith(tail) and len(word) - len(tail) >= 3:
+                return word[:len(word) - len(tail)]
+        return word
+
+
+    def canon(phrase):
+        """A counted thing's one name: 'Paying users' -> payer, 'downloads' -> install, 'a year' -> year."""
+        text = re.sub(r"(?<=\d),(?=\d\d\d)", "", phrase.lower().replace("us$", "usd"))
+        words = [singular(w) for w in re.findall(r"[a-z0-9$]+", text)]
+        words = [w for w in words if w not in ("a", "an", "the", "each", "every", "one", "per", "of")]
+        if any(w in CURRENCY for w in words):
+            return CURRENCY[next(w for w in words if w in CURRENCY)]
+        scale = ""
+        if len(words) > 1 and words[0] in SCALES:
+            scale, words = SCALES[words[0]], words[1:]
+        elif len(words) == 1 and words[0] in SCALED_WORDS:
+            scale, words = SCALED_WORDS[words[0]][0], [SCALED_WORDS[words[0]][1]]
+        name = "_".join(words)
+        if name in TIME:
+            name = TIME[name]
+        for thing, names in SAME_THING.items():
+            if name in names:
+                name = thing
+        return scale + "_" + name if scale and name else name
+
+
+    def conversion(pair):
+        """The factor a DEFINITION input may carry for [thing above, thing below]: 12 month / year,
+        1000 event / k_event, or the other way round."""
+        known = dict(CONVERSIONS)
+        for a, b in [pair, pair[::-1]]:
+            scale, _, base = b.partition("_")
+            if scale in SCALE_FACTORS and base == a:
+                known[(a, b)] = SCALE_FACTORS[scale]
+        if tuple(pair) in known:
+            return known[tuple(pair)]
+        if tuple(pair[::-1]) in known:
+            return 1.0 / known[tuple(pair[::-1])]
+        return None
+
+
+    def parse_unit(text):
+        """'USD / active_user / year' (or 'USD per active user per year') -> ({thing: power}, '') or (None, why)."""
+        text = text.strip().lower() if isinstance(text, str) else ""
+        if not text:
+            return None, "is missing: write what is counted per what, like USD / active_user / year"
+        if "%" in text:
+            return None, ("'%s' is a percentage: write what is counted over what, like lead / click, and "
+                          "the value as a fraction" % text)
+        unit = {}
+        for i, part in enumerate(re.split(r"/|\bper\b", text)):
+            for factor in re.split(r"\*|\u00d7|\bx\b|\btimes\b", part):
+                if factor.strip() in ("", "1"):
+                    continue
+                thing = canon(factor)
+                if not thing:
+                    continue
+                if any(w in VAGUE for w in thing.split("_")):
+                    return None, ("'%s' names a rate or a share, not what is counted: write the counted "
+                                  "things, like lead / click or payer / install" % factor.strip())
+                unit[thing] = unit.get(thing, 0) + (1 if i == 0 else -1)
+        return {t: e for t, e in unit.items() if e}, ""
+
+
+    def times(a, b, sign):
+        out = dict(a)
+        for thing, power in b.items():
+            out[thing] = out.get(thing, 0) + sign * power
+        return {t: e for t, e in out.items() if e}
+
+
+    def show(unit):
+        order = sorted(unit, key=lambda t: (t in TIME.values(), t not in CURRENCY.values(), t))
+        top = [t for t in order for _ in range(unit[t]) if unit[t] > 0]
+        text = " * ".join(top) or "1"
+        for t in order:
+            text += " / " + t if unit[t] < 0 else ""
+            text += (" / " + t) * (-unit[t] - 1) if unit[t] < -1 else ""
+        return text
+
+
+    def counted(unit):
+        """What a unit is counted per: its non-money, non-time things below the line."""
+        return frozenset(t for t, e in unit.items()
+                         if e < 0 and t not in TIME.values() and t not in CURRENCY.values())
+
+
+    def is_money(unit):
+        return any(unit.get(c, 0) > 0 for c in set(CURRENCY.values()))
+
+
+    class FormulaError(Exception):
+        pass
+
+
+    class KindError(Exception):
+        pass
+
+
+    def evaluate(formula, env):
+        """(value, unit, names used) of a formula over its inputs: + - * / and brackets, no number but 1."""
+        try:
+            tree = ast.parse(formula, mode="eval")
+        except SyntaxError:
+            raise FormulaError("does not parse: use its inputs' names, + - * / and brackets")
+        used = set()
+
+        def ev(node):
+            if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)):
+                (lv, lu), (rv, ru) = ev(node.left), ev(node.right)
+                if isinstance(node.op, (ast.Add, ast.Sub)):
+                    if lu != ru:
+                        raise KindError("it adds or subtracts %s and %s" % (show(lu), show(ru)))
+                    return (lv + rv if isinstance(node.op, ast.Add) else lv - rv), lu
+                if isinstance(node.op, ast.Mult):
+                    return lv * rv, times(lu, ru, 1)
+                if rv == 0:
+                    raise FormulaError("divides by zero")
+                return lv / rv, times(lu, ru, -1)
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+                value, unit = ev(node.operand)
+                return (-value if isinstance(node.op, ast.USub) else value), unit
+            if isinstance(node, ast.Name):
+                if node.id not in env:
+                    raise FormulaError("uses %s, which is not one of its inputs" % node.id)
+                used.add(node.id)
+                return env[node.id]
+            if isinstance(node, ast.Constant) and not isinstance(node.value, bool) and node.value == 1:
+                return 1.0, {}
+            raise FormulaError("may use only its inputs' names, + - * / and brackets, and no number but 1 "
+                               "(every number is an input with its source)")
+
+        value, unit = ev(tree.body)
+        return value, unit, used
+
+
+    def number(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return float(value)
+
+
+    def fmt(value):
+        return ("%.6g" % value) if value is not None else "?"
+
+
+    def half_unit(digits):
+        """Half the last written digit: '175' -> 0.5, '9.50' -> 0.005."""
+        return 0.5 * 10 ** -len(digits.partition(".")[2])
+
+
+    def close(a, b, rel, slack=0.0):
+        return abs(a - b) <= max(rel * max(abs(a), abs(b)), slack)
+
+
+    def stated_numbers(text):
+        """Every number a text states, as written and as meant: 5.83% -> 5.83 and 0.0583, $1.2M -> 1.2e6.
+        Each comes with half its last digit, so a number written rounded still matches."""
+        found = []
+        for m in re.finditer(r"(\d[\d,]*(?:\.\d+)?)\s?(%|percent\b|k\b|thousand\b|m\b|mn\b|million\b|b\b|bn\b|billion\b)?",
+                             text or "", re.I):
+            digits = m.group(1).replace(",", "")
+            try:
+                n = float(digits)
+            except ValueError:
+                continue
+            half = half_unit(digits)
+            tail = (m.group(2) or "").lower()
+            found.append((n, half))
+            if tail in ("%", "percent"):
+                found.append((n / 100, half / 100))
+            elif tail:
+                found.append((n * SCALE[tail], half * SCALE[tail]))
+        return found
+
+
+    def mentions(text):
+        """Money amounts, percentages and large counts in a brief's text: (start, end, kind, [(value, half)])."""
+        found = []
+        for m in MONEY.finditer(text):
+            digits = m.group(1).replace(",", "")
+            scale = SCALE.get((m.group(2) or "").lower(), 1)
+            values = [(float(digits) * scale, half_unit(digits) * scale)]
+            found.append((m.start(), m.end(), "money", values))
+        for m in PERCENT.finditer(text):
+            n, half = float(m.group(1)), half_unit(m.group(1))
+            found.append((m.start(), m.end(), "percent", [(n, half), (n / 100, half / 100)]))
+        for m in COUNT.finditer(text):
+            digits = m.group(1).replace(",", "")
+            scale = SCALE[m.group(2).lower()]
+            found.append((m.start(), m.end(), "count", [(float(digits) * scale, half_unit(digits) * scale)]))
+        return sorted(found)
+
+
+    def says(thing, stems):
+        """Do these words (stemmed) count this thing?"""
+        scale, _, base = thing.partition("_")
+        if scale in SCALE_FACTORS and base:
+            thing = base
+        if thing in SAYS:
+            return any(stem(w) in stems for w in SAYS[thing])
+        words = [w for w in thing.split("_") if len(w) >= 3 and w not in ("the", "and", "who", "that", "with")]
+        return bool(words) and all(stem(w) in stems for w in words)
+
+
+    def marks(text):
+        """The trip kinds and regions a text limits itself to."""
+        found = {name for name, pattern in LIMITS if re.search(pattern, text or "", re.I)}
+        return found | {name for name, pattern in REGIONS if re.search(pattern, text or "")}
+
+
+    def check_figures(brief, resolve, input_text):
+        """brief.json "figures": each derived figure recomputed from its inputs, its units followed through
+        its formula, each sourced input held to its source's own words; and the brief's text read for
+        derived numbers with no figure and for comparisons of figures counted over different things.
+        Returns (ok, problems, claim ids the figures cite, notes)."""
+        problems, notes, cited = [], [], set()
+        raw = brief.get("figures")
+        if raw is None:
+            raw = []
+        if not isinstance(raw, list):
+            return False, ["figures: must be a list of derived figures"], cited, notes
+        figures = {}
+        for n, f in enumerate(raw, 1):
+            fid = str(f.get("id", "")) if isinstance(f, dict) else ""
+            if not re.match(r"D\d+$", fid):
+                problems.append("figure %d: needs an id D1, D2.. (D for derived)" % n)
+            elif fid in figures:
+                problems.append("figure %s: the id is used twice" % fid)
+            else:
+                figures[fid] = f
+        settled, state, built_from, inputs_seen = {}, {}, {}, []
+
+        def settle(fid):
+            """(value, unit) the figure declares, once it has been checked; None if unusable."""
+            if state.get(fid) == "busy":
+                problems.append("figure %s: its inputs loop back to itself" % fid)
+                return None
+            if fid not in settled:
+                state[fid] = "busy"
+                settled[fid] = check_one(fid, figures[fid])
+                state[fid] = "done"
+            return settled[fid]
+
+        def check_one(fid, f):
+            label = "figure %s (%s)" % (fid, text_of(f.get("name")) or "no name")
+            unit, why = parse_unit(f.get("unit"))
+            value = number(f.get("value"))
+            if why:
+                problems.append("%s: unit %s" % (label, why))
+            if value is None:
+                problems.append("%s: value must be a number" % label)
+            for field in ("population", "scope"):
+                if len(text_of(f.get(field))) < 2:
+                    problems.append("%s: say its %s" % (label, field))
+            declared = (value, unit) if unit is not None and value is not None else None
+            formula, inputs = text_of(f.get("formula")), f.get("inputs")
+            if not formula or not isinstance(inputs, list) or not inputs:
+                problems.append("%s: needs a formula and the inputs it uses" % label)
+                return declared
+            built_from[fid] = set()
+            env, complete = {}, True
+            where_text = text_of(f.get("population")) + " " + text_of(f.get("scope"))
+            for inp in inputs:
+                got = check_input(label, fid, inp, where_text)
+                if got is None:
+                    complete = False
+                    continue
+                name, got_value, got_unit = got
+                if name in env:
+                    problems.append("%s: two inputs are named %s" % (label, name))
+                env[name] = (got_value, got_unit)
+            if not complete or declared is None:
+                return declared
+            try:
+                got_value, got_unit, used = evaluate(formula, env)
+            except FormulaError as exc:
+                problems.append("%s: formula %s %s" % (label, formula, exc))
+                return declared
+            except KindError as exc:
+                problems.append("%s: inputs don't match in kind: %s (%s). Add or subtract only like with "
+                                "like" % (label, exc, formula))
+                return declared
+            unused = sorted(set(env) - used)
+            if unused:
+                problems.append("%s: inputs %s are listed but the formula does not use them" % (label, ", ".join(unused)))
+            if got_unit != unit:
+                over = times(got_unit, unit, -1)
+                extra = [t for t, e in over.items() if e > 0] + [t for t, e in over.items() if e < 0]
+                problems.append(
+                    "%s: inputs don't match in kind: %s gives %s, but the figure is %s (left over: %s). A number "
+                    "counted over one thing is used for another; take each input's unit from what its source "
+                    "counts, and table the step between them as an input with its own source or as an "
+                    "ASSUMPTION that says why" % (label, formula, show(got_unit), show(unit),
+                                                   show(over) if extra else "nothing"))
+            elif not close(got_value, value, 0.03):
+                problems.append("%s: arithmetic: %s gives %s, but the figure says %s"
+                                % (label, formula, fmt(got_value), fmt(value)))
+            return declared
+
+        def check_input(label, fid, inp, where_text):
+            if not isinstance(inp, dict):
+                problems.append("%s: an input is not an object" % label)
+                return None
+            name = text_of(inp.get("name"))
+            if not re.match(r"[A-Za-z_][A-Za-z0-9_]*$", name):
+                problems.append("%s: input name '%s' must be one word (letters, digits, _)" % (label, name))
+                return None
+            where = "%s, input %s" % (label, name)
+            source = text_of(inp.get("source"))
+            value = number(inp.get("value"))
+            if value is not None:
+                inputs_seen.append(value)
+            if re.match(r"D\d+$", source):
+                if source not in figures:
+                    problems.append("%s: there is no figure %s" % (where, source))
+                    return None
+                built_from[fid].add(source)
+                got = settle(source)
+                if got is None:
+                    return None
+                if value is not None and not close(value, got[0], 0.03):
+                    problems.append("%s: value %s, but %s is %s" % (where, fmt(value), source, fmt(got[0])))
+                if text_of(inp.get("unit")):
+                    unit, why = parse_unit(inp.get("unit"))
+                    if unit is not None and unit != got[1]:
+                        problems.append("%s: unit %s, but %s is %s" % (where, show(unit), source, show(got[1])))
+                return name, got[0], got[1]
+            unit, why = parse_unit(inp.get("unit"))
+            if value is None:
+                problems.append("%s: value must be a number" % where)
+            if why:
+                problems.append("%s: unit %s" % (where, why))
+            if value is None or unit is None:
+                return None
+            if source.upper() == "DEFINITION":
+                pair = [t for t, e in unit.items() if e > 0] + [t for t, e in unit.items() if e < 0]
+                expect = conversion(pair) if len(unit) == 2 and len(pair) == 2 else None
+                if expect is None or not close(value, expect, 0.01):
+                    problems.append("%s: DEFINITION is only for unit conversions (12 month / year, 1000 event / "
+                                    "k_event, 1000000 token / m_token)"
+                                    % where)
+                    return None
+                return name, value, unit
+            if source.upper() == "ASSUMPTION":
+                if len(text_of(inp.get("why"))) < 10:
+                    problems.append("%s: an ASSUMPTION says why (what it is set against)" % where)
+                return name, value, unit
+            claim = resolve(source) if source else None
+            if claim is None:
+                problems.append("%s: source must be a claim id that exists, a figure D.., ASSUMPTION or "
+                                "DEFINITION (it is '%s')" % (where, source))
+                return None
+            cited.add(source)
+            for field in ("population", "scope"):
+                if len(text_of(inp.get(field))) < 2:
+                    problems.append("%s: say its %s" % (where, field))
+            quote = text_of(claim.get("quote"))
+            measures = text_of(inp.get("measures"))
+            meta, page = kept_page(text_of(claim.get("url")))
+            pages = [p for p in (quote, page, input_text if claim.get("how") == "input" else "") if p]
+            if not measures:
+                problems.append("%s: measures: copy the words on %s's page that say what the number counts"
+                                % (where, source))
+            elif not any(norm(measures).lower() in norm(p).lower() for p in pages):
+                problems.append("%s: its measures words are not on %s's kept page or in its quote" % (where, source))
+                measures = ""
+            words = quote + " " + measures
+            if not any(close(value, n, 0.005, half) for n, half in stated_numbers(words)):
+                problems.append("%s: value %s is not a number that %s's quote or measures words state (a "
+                                "percentage goes in as a fraction: 5.83%% -> 0.0583; anything computed from it "
+                                "is a step in the formula)" % (where, fmt(value), source))
+            found = re.findall(r"[a-z]+", words.lower())
+            stems = {stem(w) for w in found} | {SCALED_WORDS[w][1] for w in found if w in SCALED_WORDS}
+            for thing, power in sorted(unit.items()):
+                if thing in TIME.values() or thing in CURRENCY.values():
+                    continue
+                if power < 0 and thing in PRICE_PAYERS and is_money(unit):
+                    continue  # a price is paid by whoever buys it
+                if not says(thing, stems):
+                    problems.append(
+                        "%s: its unit counts %s, but %s's own words (quote and measures) never do: a number "
+                        "measures what its source counts. Use the source's thing in the unit and make the "
+                        "step to %s an input of its own" % (where, thing, source, thing))
+            source_marks = marks(words)
+            own_marks = marks(text_of(inp.get("population")) + " " + text_of(inp.get("scope")))
+            unsaid = sorted((source_marks - own_marks) & {n for n, _ in LIMITS})
+            if unsaid:
+                problems.append("%s: %s's words limit it to %s; say so in its scope"
+                                % (where, source, " and ".join(unsaid)))
+            figure_marks = marks(where_text)
+            narrower = sorted(m for m in (source_marks | own_marks) & {n for n, _ in LIMITS} if m not in figure_marks)
+            regions = {n for n, _ in REGIONS}
+            mine, theirs = (source_marks | own_marks) & regions, figure_marks & regions
+            clash = sorted(mine - theirs) if mine and theirs and not mine & theirs else []
+            if narrower or clash:
+                limit = " and ".join(narrower or clash)
+                if len(text_of(inp.get("bridge"))) >= 20:
+                    notes.append("%s covers only %s; bridged: %s" % (where, limit, text_of(inp["bridge"])))
+                else:
+                    problems.append("%s: covers only %s, but the figure does not: use a source that covers "
+                                    "the figure, or say in bridge why it carries over" % (where, limit))
+            return name, value, unit
+
+        for fid in figures:
+            settle(fid)
+
+        def below(fid, seen=None):
+            seen = set() if seen is None else seen
+            for src in built_from.get(fid, ()):
+                if src not in seen:
+                    seen.add(src)
+                    below(src, seen)
+            return seen
+
+        tabled = [v for v, _ in (settled[f] for f in settled if settled[f])] + inputs_seen
+        money = {fid: settled[fid] for fid in settled if settled[fid] and is_money(settled[fid][1])}
+        quoted = []
+        for c in brief.get("claims") or []:
+            if isinstance(c, dict):
+                quoted += stated_numbers(text_of(c.get("quote")))
+        for cid in cited:
+            quoted += stated_numbers(text_of((resolve(cid) or {}).get("quote")))
+
+        def figures_at(values):
+            # A number in the text is that figure when they agree within 5%, not within its last digit:
+            # "$1 or more per session" is not a figure of 0.89.
+            return [fid for fid, (v, u) in money.items() if any(close(n, v, 0.05) for n, half in values)]
+
+        rows = {text_of(r.get("row")): r for r in brief.get("risks") or [] if isinstance(r, dict)}
+        rec = brief.get("recommendation") if isinstance(brief.get("recommendation"), dict) else {}
+        texts = [("risk row " + row, text_of((rows.get(row) or {}).get("why"))) for row in ROWS]
+        texts.append(("recommendation", text_of(rec.get("reason"))))
+        for q in brief.get("questions") or []:
+            if isinstance(q, dict):
+                texts.append(("question %s" % q.get("n"), text_of(q.get("answer"))))
+        for n, k in enumerate(brief.get("kill_criteria") or [], 1):
+            texts.append(("kill criterion %d" % n, text_of(k)))
+        for n, a in enumerate(brief.get("assumptions") or [], 1):
+            if isinstance(a, dict):
+                texts.append(("assumption %d" % n, " ".join(text_of(a.get(f)) for f in ("assumption", "kill_if"))))
+
+        flagged = set()
+        for where, text in texts:
+            found = mentions(text)
+            # A derived number in the viability and go-to-market rows or the recommendation is tabled.
+            if where in ["risk row " + r for r in FIGURE_ROWS] + ["recommendation"]:
+                for start, end, kind, values in found:
+                    if any(close(n, v, 0.05, half) for n, half in values for v in tabled):
+                        continue
+                    if any(close(n, q, 0.01, max(half, qh)) for n, half in values for q, qh in quoted):
+                        continue
+                    problems.append('%s: "%s" is a derived number with no figure: table it in figures (D..) '
+                                    "with its formula and inputs, or cite the claim that states it"
+                                    % (where, norm(text[max(0, start - 30):end + 30])))
+            spots = [(start, end, figures_at(values)) for start, end, kind, values in found if kind == "money"]
+            spots = [s for s in spots if s[2]]
+            # The text says what a figure is per; the figure's unit must agree.
+            for start, end, fids in spots:
+                per = PER.match(text[end:end + 60])
+                if not per:
+                    continue
+                one, two = canon(per.group(1)), canon(per.group(1) + " " + (per.group(2) or ""))
+                thing = two if per.group(2) and two in SAME_THING else one
+                if thing in TIME.values() or not thing:
+                    continue
+                wanted = {stem(w) for w in thing.split("_")}
+                if not any(thing in counted(money[f][1])
+                           or wanted & {stem(w) for t in counted(money[f][1]) for w in t.split("_")} for f in fids):
+                    problems.append('%s: "%s" says per %s, but figure %s is %s' % (
+                        where, norm(text[start:end + per.end()]), thing, fids[0], show(money[fids[0]][1])))
+            # Weighing one figure against another compares like with like.
+            for cue in COMPARE.finditer(text):
+                bounds = [0] + [m.end() for m in re.finditer(r"[.!?;](?=\s)", text)] + [len(text)]
+                s0 = max(b for b in bounds if b <= cue.start())
+                s1 = min(b for b in bounds if b > cue.start())
+                before = [s for s in spots if s[1] <= cue.start() and s[0] >= s0]
+                after = [s for s in spots if s[0] >= cue.end() and s[0] < s1]
+                if not before:
+                    continue
+                a = before[-1]
+                b = after[0] if after else None
+                if b is None:
+                    for s in reversed([s for s in spots if s[1] <= a[0]]):
+                        if not any(x in below(y) or y in below(x) for x in a[2] for y in s[2]):
+                            b = s
+                            break
+                if b is None:
+                    continue
+                if any(x == y or x in below(y) or y in below(x) or not counted(money[x][1])
+                       or not counted(money[y][1]) or counted(money[x][1]) == counted(money[y][1])
+                       for x in a[2] for y in b[2]):
+                    continue
+                x, y = a[2][0], b[2][0]
+                if (where, x, y) in flagged:
+                    continue
+                flagged.add((where, x, y))
+                problems.append(
+                    '%s weighs "%s" (figure %s, %s) against "%s" (figure %s, %s): figures counted per %s and '
+                    "per %s don't match in kind. Compare like with like, or table the comparison as a figure "
+                    "whose units work out" % (
+                        where, norm(text[a[0]:a[1]]), x, show(money[x][1]), norm(text[b[0]:b[1]]), y,
+                        show(money[y][1]), " and ".join(sorted(counted(money[x][1]))),
+                        " and ".join(sorted(counted(money[y][1])))))
+        return not problems, problems, cited, notes
 
 
     def check():
@@ -518,6 +1110,12 @@ agent:
             problems.append("recommendation change_wedge: name the new wedge")
         items["recommendation"] = rec_ok
 
+        # 6. Derived figures: shown, recomputed, and counted over matching things (queue #25).
+        figures_ok, figure_problems, figure_claims, figure_notes = check_figures(brief, resolve, input_text)
+        cited.update(figure_claims)
+        problems.extend(figure_problems)
+        items["figures"] = figures_ok
+
         # Every cited claim: exists, and a cite.py claim's quote is on the page cite.py kept.
         quote_ok = True
         resolved = {}
@@ -561,6 +1159,8 @@ agent:
             "primary_cited": sum(1 for c in resolved.values() if c.get("quality") == "primary"),
             "spot_check": sample,
             "spot_check_reserve": order[10:],
+            "figures_checked": len(brief.get("figures") or []) if isinstance(brief.get("figures"), list) else 0,
+            "figure_notes": figure_notes,
             "brief_path": os.path.join(BRIEF_DIR, "brief.md"),
         }
 

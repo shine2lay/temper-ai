@@ -6,8 +6,11 @@ workflow output names a field its step prints. Its two helpers, which brief_setu
 workspace: cite.py answers from the pages it kept (a kept block stays a block), and check_brief.py passes
 a brief that meets the bar and names what is missing in one that doesn't, including a lens that left no
 usable output (queue #23: run 99732fd1's competition lens answered "You've hit your session limit" and
-its brief still passed). Nothing here reaches the network: every page comes from cite.py's own cache,
-and a proxy that refuses every connection stands in front of curl in case a page is ever looked up.
+its brief still passed) and a derived figure whose arithmetic is off or whose inputs don't match in kind
+(queue #25: run 57dc513d weighed ads per paying user against margin per active user, and run fc575760
+used a lead rate as the share of clickers who start a quiz; every quote in both was real). Nothing here
+reaches the network: every page comes from cite.py's own cache, and a proxy that refuses every
+connection stands in front of curl in case a page is ever looked up.
 """
 
 import hashlib
@@ -48,10 +51,17 @@ NO_NETWORK = {"http_proxy": REFUSED, "https_proxy": REFUSED, "HTTPS_PROXY": REFU
 RULE = "https://www.example.gov/rule"
 PRICES = "https://www.example.com/pricing"
 BLOCKED = "https://www.example.org/forum"
+ADS = "https://www.example.net/search-ads"
+APPS = "https://www.example.com/app-report"
 PAGES = {
     RULE: ("200", "Section 1. A plan must decide a standard request within 30 calendar days of receipt."),
     PRICES: ("200", "Pricing. Eligibility check: $0.30 per check for the first 250 a month."),
     BLOCKED: ("403", ""),
+    ADS: ("200", "Search ad benchmarks. Average cost per click: $2.00. Average conversion rate: 5.0%, the number "
+                 "of leads you get divided by clicks."),
+    APPS: ("200", "App report. Median cost per install: $4.00. Freemium apps convert 2.0% of downloads to paid. "
+                  "Offices outside the United States pay $50 a month for the plan. Map loads cost $7.00 per "
+                  "1,000 events."),
 }
 
 
@@ -198,8 +208,16 @@ def good_brief(questions, rows):
     }
 
 
-LENS_CLAIMS = {"feasibility": CLAIMS, "viability": [dict(CLAIMS[0], id="V1")], "gtm": [dict(CLAIMS[1], id="G1")],
-               "competition": [dict(CLAIMS[2], id="C1")]}
+FIGURE_CLAIMS = {
+    "viability": [claim("V2", ADS, "Average cost per click: $2.00", "benchmark", "secondary"),
+                  claim("V3", ADS, "Average conversion rate: 5.0%", "benchmark", "secondary")],
+    "gtm": [claim("G2", APPS, "Median cost per install: $4.00", "benchmark", "secondary"),
+            claim("G3", APPS, "convert 2.0% of downloads to paid", "benchmark", "primary"),
+            claim("G4", APPS, "Offices outside the United States pay $50 a month", "price", "primary"),
+            claim("G5", APPS, "Map loads cost $7.00 per 1,000 events", "price", "primary")],
+}
+LENS_CLAIMS = {"feasibility": CLAIMS, "viability": [dict(CLAIMS[0], id="V1"), *FIGURE_CLAIMS["viability"]],
+               "gtm": [dict(CLAIMS[1], id="G1"), *FIGURE_CLAIMS["gtm"]], "competition": [dict(CLAIMS[2], id="C1")]}
 
 
 @pytest.fixture
@@ -405,3 +423,260 @@ def test_the_workflow_outputs_name_fields_their_steps_print(workspace):
     for ref in workflow()["outputs"].values():
         node, _, field = ref.partition(".structured.")
         assert field in printed[node], f"{ref}: {node} never prints `{field}`"
+
+
+# Derived figures (queue #25): each one recomputed from its inputs, its units followed through its formula,
+# and each sourced input held to what its source counts.
+
+def sourced(name, value, unit, source, measures, population="search-ad clicks", scope="search ads, 2026"):
+    return {"name": name, "value": value, "unit": unit, "population": population, "scope": scope,
+            "source": source, "measures": measures}
+
+
+def assumed(name, value, unit, why="set against the vendor's per-check price [F2]"):
+    return {"name": name, "value": value, "unit": unit, "source": "ASSUMPTION", "why": why}
+
+
+def figure(fid, name, value, unit, formula, inputs, population="our paying users", scope="our first market"):
+    return {"id": fid, "name": name, "value": value, "unit": unit, "population": population, "scope": scope,
+            "formula": formula, "inputs": inputs}
+
+
+CPC = sourced("cpc", 2.00, "USD / click", "V2", "Average cost per click")
+LEAD_RATE = sourced("lead_rate", 0.05, "lead / click", "V3", "the number of leads you get divided by clicks")
+
+
+def figured_brief(questions, rows):
+    """A brief whose money numbers are all tabled and counted over matching things."""
+    brief = good_brief(questions, rows)
+    brief["figures"] = [
+        figure("D1", "cost of one search lead", 40, "USD / lead", "cpc / lead_rate", [CPC, LEAD_RATE],
+               "search-ad leads", "search ads, 2026"),
+        figure("D2", "app-store ads per paying user", 200, "USD / payer", "cpi / paid_share", [
+            sourced("cpi", 4.00, "USD / install", "G2", "Median cost per install", "app installs", "app stores"),
+            sourced("paid_share", 0.02, "payer / install", "G3", "convert 2.0% of downloads to paid",
+                    "app installs", "app stores")]),
+        figure("D3", "revenue per paying user a year", 120, "USD / payer / year", "price * months", [
+            assumed("price", 10, "USD / payer / month"),
+            {"name": "months", "value": 12, "unit": "month / year", "source": "DEFINITION"}]),
+        figure("D4", "years for a payer to repay the ads", 1.67, "year", "ads / revenue",
+               [{"name": "ads", "source": "D2"}, {"name": "revenue", "source": "D3"}]),
+    ]
+    why = {
+        "viability": "Revenue is about $120 a year per paying user (D3) on an assumed $10 a month price, and no "
+                     "source gives our cost to serve yet.",
+        "go_to_market": "A search lead costs about $40 (D1, from V2 V3); a paying user costs about $200 in "
+                        "app-store ads (D2) against about $120 a year of revenue per payer (D3), so the ads are "
+                        "repaid in about 1.7 years (D4).",
+    }
+    for row in brief["risks"]:
+        row["why"] = why.get(row["row"], row["why"])
+    brief["recommendation"]["reason"] = ("Change the wedge: a paying user costs about $200 in ads, which "
+                                         "revenue of about $120 a year per payer repays in under two years, "
+                                         "but the first wedge is crowded.")
+    return brief
+
+
+@pytest.fixture
+def figured(workspace):
+    checker = load(workspace / "check_brief.py")
+    path = workspace / "state" / "brief" / "brief.json"
+    path.write_text(json.dumps(figured_brief(checker.QUESTIONS, checker.ROWS)))
+    return workspace
+
+
+def rewrite(ws, mutate):
+    path = ws / "state" / "brief" / "brief.json"
+    brief = json.loads(path.read_text())
+    mutate(brief)
+    path.write_text(json.dumps(brief))
+
+
+def fig(brief, fid):
+    return next(f for f in brief["figures"] if f["id"] == fid)
+
+
+def inp(brief, fid, name):
+    return next(i for i in fig(brief, fid)["inputs"] if i["name"] == name)
+
+
+def row(brief, name):
+    return next(r for r in brief["risks"] if r["row"] == name)
+
+
+def margin_per_active_user(brief):
+    brief["figures"].append(figure("D6", "margin per active user a year", 9, "USD / active_user / year",
+                                   "commission * bookings", [
+                                       assumed("commission", 30, "USD / booking"),
+                                       assumed("bookings", 0.3, "booking / active_user / year")],
+                                   "active users"))
+
+
+def weigh(text):
+    def mutate(brief):
+        margin_per_active_user(brief)
+        brief["recommendation"]["reason"] = text
+    return mutate
+
+
+def ads_per_active_user(brief):
+    brief["figures"].append(figure("D7", "app-store ads per active user", 10, "USD / active_user",
+                                   "ads * paying_share", [
+                                       {"name": "ads", "source": "D2"},
+                                       assumed("paying_share", 0.05, "payer / active_user")], "active users"))
+
+
+def office_price(bridge=None, scope="offices outside the United States"):
+    def mutate(brief):
+        price = sourced("price", 50, "USD / office / month", "G4", "pay $50 a month", "offices", scope)
+        if bridge:
+            price["bridge"] = bridge
+        brief["figures"].append(figure("D8", "revenue per office a year", 600, "USD / office / year",
+                                       "price * months", [price, {"name": "months", "value": 12,
+                                                              "unit": "month / year", "source": "DEFINITION"}],
+                                       "offices", "every office we sell to"))
+    return mutate
+
+
+def test_a_brief_whose_figures_add_up_and_match_in_kind_passes(figured):
+    result = check(figured)
+    assert result["verdict"] == "pass", result["problems"]
+    assert result["items"]["figures"] and result["figures_checked"] == 4
+    assert {"V2", "V3", "G2", "G3"} <= {c["id"] for c in result["spot_check"] + [{"id": i} for i in
+                                                                                   result["spot_check_reserve"]]}
+
+
+FIGURE_PASSES = [
+    ("like with like, through a tabled step",
+     lambda b: (margin_per_active_user(b), ads_per_active_user(b), b["recommendation"].update(
+         reason="Change the wedge: margin is about $9 per active user a year (D6), while one active user costs "
+                "about $10 in ads (D7), and the first wedge is crowded."))),
+    ("a narrower source carried over with a reason",
+     office_price(bridge="the vendor lists one price for every country on the same page")),
+    ("a price per thousand, converted by a DEFINITION",
+     lambda b: b["figures"].append(figure("D9", "map cost per paying user a year", 42, "USD / payer / year",
+                                          "loads * price / per_k", [
+                                              assumed("loads", 6000, "event / payer / year"),
+                                              sourced("price", 7, "USD per 1,000 events", "G5",
+                                                      "Map loads cost $7.00 per 1,000 events", "map loads",
+                                                      "the map vendor's list price"),
+                                              {"name": "per_k", "value": 1000, "unit": "event / k_event",
+                                               "source": "DEFINITION"}]))),
+    # Run 57dc513d's Places calls, priced per 1,000 events: an API call is a billable event.
+    ("API calls priced per thousand events",
+     lambda b: b["figures"].append(figure("D9", "map cost per paying user a year", 42, "USD / payer / year",
+                                          "loads * price / per_k", [
+                                              assumed("loads", 6000, "api call / payer / year"),
+                                              sourced("price", 7, "USD per 1,000 events", "G5",
+                                                      "Map loads cost $7.00 per 1,000 events", "map loads",
+                                                      "the map vendor's list price"),
+                                              {"name": "per_k", "value": 1000, "unit": "event / k_event",
+                                               "source": "DEFINITION"}]))),
+    # Run 57dc513d's feasibility row: "$1 or more per session" is not its $0.89 subscription figure.
+    ("a round number near a figure is not that figure",
+     lambda b: (b["figures"].append(figure("D10", "subscription per active user a year", 0.89,
+                                           "USD / active_user / year", "paying_share * price", [
+                                               assumed("paying_share", 0.021, "payer / active_user"),
+                                               assumed("price", 42.49, "USD / payer / year")], "active users")),
+                row(b, "feasibility").update(why="Hosting the model costs about $1 or more per session, which "
+                                                   "no tier we found avoids."))),
+]
+
+
+@pytest.mark.parametrize("mutate", [p[1] for p in FIGURE_PASSES], ids=[p[0] for p in FIGURE_PASSES])
+def test_figures_that_hold_pass(figured, mutate):
+    rewrite(figured, mutate)
+    result = check(figured)
+    assert result["verdict"] == "pass", result["problems"]
+
+
+def test_a_bridged_scope_is_noted(figured):
+    rewrite(figured, office_price(bridge="the vendor lists one price for every country on the same page"))
+    assert check(figured)["figure_notes"] == [
+        "figure D8 (revenue per office a year), input price covers only international; bridged: the vendor lists "
+        "one price for every country on the same page"]
+
+
+FIGURE_BREAKS = [
+    ("arithmetic off", lambda b: fig(b, "D1").update(value=36),
+     "figure D1 (cost of one search lead): arithmetic: cpc / lead_rate gives 40, but the figure says 36"),
+    ("a lead rate used as the share who start (run fc575760)",
+     lambda b: b["figures"].append(figure("D5", "cost per quiz start", 40, "USD / quiz_start", "cpc / start_rate", [
+         CPC, dict(LEAD_RATE, name="start_rate", unit="quiz_start / click")])),
+     "figure D5 (cost per quiz start), input start_rate: its unit counts quiz_start, but V3's own words "
+     "(quote and measures) never do"),
+    ("a lead rate kept as leads, the figure called per start",
+     lambda b: b["figures"].append(figure("D5", "cost per quiz start", 40, "USD / quiz_start", "cpc / lead_rate",
+                                          [CPC, LEAD_RATE])),
+     "figure D5 (cost per quiz start): inputs don't match in kind: cpc / lead_rate gives USD / lead, but the "
+     "figure is USD / quiz_start"),
+    ("ads per payer weighed against margin per active user (run 57dc513d)",
+     weigh("Kill: margin is about $9 per active user a year (D6), while one paying user costs about $200 in ads "
+           "(D2), so paid acquisition never pays back."),
+     'recommendation weighs "$9" (figure D6, USD / active_user / year) against "$200" (figure D2, USD / payer): '
+     "figures counted per active_user and per payer don't match in kind"),
+    ("a figure said to be per something it is not",
+     lambda b: row(b, "go_to_market").update(why="A user costs about $200 per active user in ads (D2), so the "
+                                                 "first channel has to be free."),
+     'risk row go_to_market: "$200 per active user" says per active_user, but figure D2 is USD / payer'),
+    ("a derived number with no figure",
+     lambda b: row(b, "go_to_market").update(why=row(b, "go_to_market")["why"] + " A demo costs about $55."),
+     'A demo costs about $55." is a derived number with no figure'),
+    ("a number its source never states", lambda b: inp(b, "D1", "cpc").update(value=2.5),
+     "figure D1 (cost of one search lead), input cpc: value 2.5 is not a number that V2's quote or measures "
+     "words state"),
+    ("measures words that are not on the page", lambda b: inp(b, "D1", "cpc").update(measures="cost per lead"),
+     "figure D1 (cost of one search lead), input cpc: its measures words are not on V2's kept page or in its quote"),
+    ("a rate written as a percentage", lambda b: inp(b, "D1", "lead_rate").update(unit="%"),
+     "figure D1 (cost of one search lead), input lead_rate: unit '%' is a percentage"),
+    ("a rate that names no counted thing", lambda b: inp(b, "D1", "lead_rate").update(unit="conversion / click"),
+     "input lead_rate: unit 'conversion' names a rate or a share, not what is counted"),
+    ("a number hidden in the formula", lambda b: fig(b, "D1").update(formula="cpc / lead_rate * 1.1"),
+     "figure D1 (cost of one search lead): formula cpc / lead_rate * 1.1 may use only its inputs' names"),
+    ("unlike things added", lambda b: fig(b, "D1").update(formula="cpc + lead_rate"),
+     "figure D1 (cost of one search lead): inputs don't match in kind: it adds or subtracts USD / click and "
+     "lead / click"),
+    ("an input the formula leaves out", lambda b: fig(b, "D1")["inputs"].append(dict(CPC, name="spare")),
+     "figure D1 (cost of one search lead): inputs spare are listed but the formula does not use them"),
+    ("a figure built on itself", lambda b: fig(b, "D4")["inputs"].append({"name": "again", "source": "D4"}),
+     "figure D4: its inputs loop back to itself"),
+    ("a DEFINITION that converts nothing", lambda b: inp(b, "D3", "months").update(value=10),
+     "figure D3 (revenue per paying user a year), input months: DEFINITION is only for unit conversions"),
+    ("an ASSUMPTION with no reason", lambda b: inp(b, "D3", "price").update(why=""),
+     "figure D3 (revenue per paying user a year), input price: an ASSUMPTION says why"),
+    ("a source that does not exist", lambda b: inp(b, "D1", "cpc").update(source="V9"),
+     "figure D1 (cost of one search lead), input cpc: source must be a claim id that exists"),
+    ("a figure with no population", lambda b: fig(b, "D2").update(population=""),
+     "figure D2 (app-store ads per paying user): say its population"),
+    ("a source's limit left out of the input", office_price(scope="every office"),
+     "figure D8 (revenue per office a year), input price: G4's words limit it to international; say so in its "
+     "scope"),
+    ("a narrower source with no reason it carries over", office_price(),
+     "figure D8 (revenue per office a year), input price: covers only international, but the figure does not"),
+]
+
+
+@pytest.mark.parametrize(("mutate", "problem"), [b[1:] for b in FIGURE_BREAKS], ids=[b[0] for b in FIGURE_BREAKS])
+def test_a_figure_that_does_not_hold_fails_and_says_why(figured, mutate, problem):
+    rewrite(figured, mutate)
+    result = check(figured)
+    assert result["verdict"] == "fail" and not result["items"]["figures"]
+    assert any(problem in p for p in result["problems"]), result["problems"]
+
+
+def test_the_check_reads_the_units_it_is_given(workspace):
+    checker = load(workspace / "check_brief.py")
+    assert checker.parse_unit("USD per paying user per year") == ({"USD": 1, "payer": -1, "year": -1}, "")
+    assert checker.parse_unit("downloads / active users") == ({"install": 1, "active_user": -1}, "")
+    assert checker.parse_unit("trip / person / yr") == ({"trip": 1, "person": -1, "year": -1}, "")
+    assert checker.parse_unit("USD / MTok") == ({"USD": 1, "m_token": -1}, "")
+    assert checker.parse_unit("USD per 1,000 events") == ({"USD": 1, "k_event": -1}, "")
+    assert checker.conversion(["token", "m_token"]) == 1000000 and checker.conversion(["year", "month"]) == 1 / 12
+    assert checker.evaluate("(a - b) / c", {"a": (10.0, {"USD": 1}), "b": (4.0, {"USD": 1}),
+                                            "c": (2.0, {"payer": 1})})[:2] == (3.0, {"USD": 1, "payer": -1})
+
+
+def test_the_synthesizer_is_told_to_table_its_figures():
+    prompt = by_name("brief_synthesize")["system_prompt"]
+    assert "DERIVED FIGURES" in prompt and '"figures": [<every derived figure' in prompt
+    assert "An input's unit is what ITS SOURCE counts" in prompt

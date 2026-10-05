@@ -49,6 +49,17 @@ box_env:
 - At each spawn the worker logs the names it left out (`left out N variable(s) not
   on the box list: ...`), never a value.
 
+## What a box no longer gets
+
+The server keeps everything only it reads: the Slack and Telegram bots' tokens,
+the Linear, Notion and GitHub webhook secrets, the API's token file, the Slack
+test entry's token, and the worker's own settings. Temper's notices, questions
+and answers in Slack and Telegram are sent by the server, so runs started there
+work as before. The agent tools that act as a bot themselves (`SlackPost`,
+`SlackReply`, `SlackReadThread`, `TelegramSend`; no shipped workflow uses them)
+fail in a box with "..._TOKEN is not set" unless an install lists the token for
+the box's process, which puts it within every agent's reach ("Still exposed").
+
 ## Emergency rollback
 
 `TEMPER_BOX_ENV=inherit` in the worker's environment brings back the old box: a copy
@@ -63,7 +74,12 @@ What temper cannot close by itself yet, handed to Architecture:
 
 - The box's own process holds the database URL (full write access), the secret key
   (decrypts stored sign-ins) and the model providers' keys and token pool, because
-  it records the run, opens stored MCP sign-ins and calls the models.
+  it records the run, opens stored MCP sign-ins and calls the models. It also holds
+  the other credentials its own tools use: `NOTION_TOKEN`, the Linear MCP's client
+  credentials (`LINEAR_CLIENT_SECRET`), `TEMPER_GITHUB_TOKEN`, `TEMPER_API_TOKEN`
+  (asks the server for GitHub tokens and starts runs) and whatever secrets an
+  install's local list gives the process (a browser bridge's token, a design
+  tool's password).
 - Agent tools run as the same user as that process, so they can read
   `/proc/1/environ` and the main process's `/proc/<pid>/environ` and find those
   values there. Scrubbing the tool environment stops a casual `env`, not a
@@ -76,6 +92,11 @@ What temper cannot close by itself yet, handed to Architecture:
 ## Checking it
 
 - `temper check` loads both files.
+- `ci_box_env` (no model, $0) lists the names in a box's tool environment and in
+  every `/proc/*/environ` it can read, and fails on a server-only name anywhere in
+  the box or a secret in a tool's environment. The machine check runs it on every
+  commit ([ci-gate.md](ci-gate.md)); after a change to a list, run it live:
+  `POST /api/runs {"workflow": "ci_box_env"}`.
 - `tests/test_spawner/test_docker_spawner.py` (TestBoxEnvAllowList),
   `tests/test_shared/test_box_env.py` and `tests/test_shared/test_agent_env.py`.
 - In a live box, list names only, never values:

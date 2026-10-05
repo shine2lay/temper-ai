@@ -70,6 +70,13 @@ run was started from, under the run's first message) or to a place the
 notify file's `agents:` list names. Chat ids are refused, so text an agent
 reads can't talk it into messaging anyone else.
 
+It acts with `TELEGRAM_BOT_TOKEN`, which a run box does not get
+([boxes.md](boxes.md)): in a box it fails with "TELEGRAM_BOT_TOKEN is not set".
+No shipped workflow uses it; temper's own notices and questions are sent by the
+server. An install that needs it lists the token for the box's process in
+`configs/boxes/local/env.yaml`, knowing every agent in every run can then reach
+it (boxes.md, "Still exposed").
+
 ## Setup
 
 1. **The bot.** In Telegram, message @BotFather: `/newbot`, a name, and a

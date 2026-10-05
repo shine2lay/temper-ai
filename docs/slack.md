@@ -199,6 +199,13 @@ read a thread, as the bot. An agent can reach only the places on the
 `agents:` list, plus threads temper opened for a run, so text an agent reads
 can't talk it into messaging anyone else.
 
+They act with `SLACK_BOT_TOKEN`, which a run box does not get
+([boxes.md](boxes.md)): in a box they fail with "SLACK_BOT_TOKEN is not set".
+No shipped workflow uses them; temper's own notices and questions are sent by
+the server. An install that needs them lists the token for the box's process in
+`configs/boxes/local/env.yaml`, knowing every agent in every run can then reach
+it (boxes.md, "Still exposed").
+
 ## Setup
 
 Once, by a Slack workspace admin:

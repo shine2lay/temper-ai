@@ -103,7 +103,9 @@ services:
       # The write guard on, as it would be live after the switch (docs/api-access.md): the
       # check's own writes carry a throwaway key whose hash temper-ci writes here, and the
       # smoke set proves a run's box can't answer a wait.
-      TEMPER_API_GUARD: ${TEMPER_CI_API_GUARD:-enforce}
+      # off unless the checker asks: the gate runs master's checker against the commit's
+      # stack, and a checker that predates the guard sends no key (scripts/temper_ci/stack.py).
+      TEMPER_API_GUARD: ${TEMPER_CI_API_GUARD:-off}
       TEMPER_API_KEYS_FILE: ${WORKSPACE_DIR}/.api-keys.json
 
   worker:

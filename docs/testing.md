@@ -63,15 +63,36 @@ what happened with the time-zone bug below.
 So the tests that store things also run against a real Postgres:
 
 ```bash
-scripts/test-postgres.sh up                      # a throwaway, port 5455, in RAM
 TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ -n 8
-scripts/test-postgres.sh down
 ```
 
-With that variable set, the tests listed in `tests/pgtier.py` use Postgres
-and the rest stay on SQLite, so the whole suite still takes about twenty
-seconds. Each xdist worker gets a schema of its own, truncated before every
-test.
+`url` starts the test Postgres if it is not up (port 5455, everything in
+RAM), waits until it answers and prints its URL. With that variable set, the
+tests listed in `tests/pgtier.py` use Postgres and the rest stay on SQLite,
+so the whole suite still takes about twenty seconds.
+
+**One container, shared: leave it up.** `temper-test-postgres` serves every
+worktree, every chat's pre-commit hook and every run by hand, often at the
+same time. Runs keep apart by schema: each xdist worker of each run gets one
+of its own (`tier_p<pid>_gw0`, the pid being the run's own pytest process),
+truncated before every test and dropped when the worker exits; the schemas of
+a run that was killed go when the next run starts. When every run used the
+same `tier_gw0`, two runs at once emptied each other's tables (25 failures in
+each of two runs, 2026-10-04).
+
+`scripts/test-postgres.sh down` would remove it under everyone, so it refuses
+while a run is using it (an open connection, or a schema of a run still
+going) and says why; `down --force` removes it anyway. Starting it is safe at
+any time: callers take turns on a lock, and a running container is never
+replaced.
+
+A long or heavy run can have a container of its own, by name and port:
+
+```bash
+export TEMPER_TEST_PG_NAME=temper-test-postgres-mine TEMPER_TEST_PG_PORT=5481
+TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ -n 8
+scripts/test-postgres.sh down                    # it is yours alone: remove it after
+```
 
 **It cannot touch anything real.** `tests/pgtier.py` refuses a URL on port
 5433 (where live temper's database is), refuses a database not named

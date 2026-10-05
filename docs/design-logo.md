@@ -172,7 +172,13 @@ The cold read shows each symbol alone, in its own native Penpot file, at 32 px a
 which sees no caption, brief, name or idea and writes three first readings per
 size. `design_logo_names_v1` separately compares each 32-px header lockup (symbol +
 live wordmark) with the research marks the brief lists in `research.same_name`
-(captures of other products using the name). The host validates both, maps labels
+(captures of other products using the name). It reads the run's research notes
+(`logo/research/comparison.md`: how each same-name mark looks and what to avoid) and
+judges what a glance at 32 px takes in (outline, main pieces, stacking), so a shared
+shape counts even when the two depict different things up close; a shared word,
+colour or generic sans alone does not. An earlier prompt without the notes missed
+both known cases (#4's anvil and round 1's Declared Indent beside the ontemper.com
+mark); this one caught both with no extra flags. The host validates both, maps labels
 back to ids and saves `coldread-<phase>.saved.json`. Shortlist rows and critic
 reviews must quote every saved reading exactly with `fits_idea` and a note, and
 carry every close same-name flag (`first_reads`, `name_marks`); the host rejects a

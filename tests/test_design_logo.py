@@ -881,6 +881,9 @@ def test_agents_cold_reader_sees_images_only_and_shortlist_and_critic_quote_it()
     for hidden in ("brief.json", "saved.json", "palette", "names-context", "comparison.md", "header", "research"):
         assert hidden not in agents["coldread"], hidden
     assert "logo/names-context.json" in agents["names"] and "not a trademark search" in agents["names"]
+    # The name check reads the run's research notes on each same-name mark: without them
+    # it missed both known ontemper.com cases (queue #11 replays A and D).
+    assert "logo/research/comparison.md" in agents["names"] and "a colour difference does not undo a shared shape" in agents["names"]
     for name in ("palette", "critic"):
         for expected in ("first_reads", "name_marks", ".size.json", "coldread-"):
             assert expected in agents[name], (name, expected)

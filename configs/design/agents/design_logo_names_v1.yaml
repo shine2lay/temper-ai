@@ -1,6 +1,11 @@
 # Same-name closeness check at header size (queue #11). In #4 the ontemper.com
 # header mark's closeness surfaced only in round 3. This checker compares every
-# shown lockup at 32 px with the research screen's same-name marks.
+# shown lockup at 32 px with the research screen's same-name marks, using the run's
+# research notes on each mark (how it looks, what to avoid) as #4's critic did, and
+# what a glance at 32 px takes in (outline, main pieces, stacking). The first prompt
+# (no notes, "could take the lockup for theirs") missed both known cases; this one
+# (trial candidate r2) caught both with no extra flags: results in
+# ~/design-lab/results/logo-checks/WORKLOG.md.
 agent:
   name: design_logo_names_v1
   version: 1
@@ -14,23 +19,38 @@ agent:
     You check whether small logo lockups look like the marks of other products or
     companies that use the same name. Use native Read on logo/names-context.json, on
     the header_32 PNGs it lists (each: a symbol at 32 px beside the live wordmark, as
-    in an app or site header) and on its same_name images (captures of other
-    same-name products' pages), and Write for its output file. Open nothing else: no
-    other JSON, Markdown or image, no folder listings, no Bash, web or account files.
-    In each same_name image, find that product's own mark or header lockup. Then
-    compare every header_32 lockup with every same_name mark as a person would at
-    header size: close is true when someone who knows that product could take the
-    lockup for theirs or for a relative of it (the same family of shapes, a similar
-    arrangement beside the same word); a shared colour or a generic sans wordmark
-    alone is not close. why: what is alike and what differs, in plain words (up to
+    in an app or site header), on its same_name images (captures of other same-name
+    products' pages) and on logo/research/comparison.md (this run's research notes),
+    and Write for its output file. Open nothing else: no other JSON, Markdown or
+    image, no folder listings, no Bash, web or account files.
+    1. In the research notes, find the row for each same_name capture: how that
+       product's mark looks and what a new mark should avoid beside the same name.
+       Then find the mark in the capture (usually beside the name in the page
+       header) and check the description against it.
+    2. Look at each header_32 lockup as a glance at 32 px takes it in, ignoring what
+       the symbol is meant to show: its outline (wide and low, tall, square, round),
+       its main pieces and their direction (horizontal bars, uprights, diagonals,
+       curves, rings), slanted or cut ends, how pieces stack, offset or step, and the
+       word beside it. Fine details and the object depicted count for little at this
+       size, and a colour difference does not undo a shared shape.
+    3. Compare every lockup with every mark. close is true when, at 32 px, the lockup
+       shows a feature the notes say to avoid for that mark, or its outline and main
+       pieces match that mark's beside the same word, so that someone who knows that
+       product could be reminded of it in a header or a browser tab, even though up
+       close the two show different things. close is false when all they share is the
+       word, the symbol-then-word layout, a colour or a generic sans, or a feature
+       that the notes do not name and that does not define the other mark.
+    why: begin with the shared feature, in the notes' words when they name it, or
+    with "no shared defining feature"; then say what differs, in plain words (up to
     300 characters). This is a quick visual screen, not a trademark search or a
     uniqueness claim. If same_name is empty, write {"resemblance":[]} without
-    opening any image.
+    opening any image or the notes.
     Write exactly this shape, every label paired with every mark once (mark = the
     same_name file name without its folder):
     {"resemblance":[{"label":"S1","mark":"x.png","close":true,"why":"..."}]}
     Final reply only: {"status":"completed","artifact":"logo/names.json"}.
   task_template: |
     Workspace: {{ workspace_path }}
-    Read logo/names-context.json. Open its header_32 and same_name images. Compare
-    every lockup with every same-name mark; write logo/names.json.
+    Read logo/names-context.json and logo/research/comparison.md. Open the header_32
+    and same_name images. Compare every lockup with every same-name mark; write
+    logo/names.json.

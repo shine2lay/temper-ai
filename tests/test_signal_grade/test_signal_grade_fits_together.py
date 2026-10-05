@@ -62,6 +62,9 @@ CONTROLS = {"r3kx": 4, "w2hc": 4, "f9mb": 7, "n6vs": 4, "b7ye": 4}  # key: table
 LENS_ANSWERS = {"search_answer": "signal_search", "money_answer": "signal_jobs", "pain_answer": "signal_pain",
                 "competitors_answer": "signal_competitors"}
 LIMIT = "You've hit your session limit \u00b7 resets 10:50pm (UTC)"
+# What the Claude provider returns as an answer when its call failed (finish_reason "error", not read yet).
+TIMED_OUT = "Error: Claude Code CLI timed out"
+STREAM_ENDED = "[claude_code error] stream ended with no result event: " + " | ".join(["node: stderr line"] * 40)
 
 
 def unwired_default(template, name):
@@ -518,6 +521,10 @@ LOST_LENS = [
     ("the money answer a limit message", "r3kx", lambda case: None,
      {"money_answer": LIMIT, "search_answer": '```json\n{"status": "completed", "note": "rate limit hit once"}\n```',
       "pain_answer": None}, "money lens left no usable output: its final answer is an account-limit or error message"),
+    ("the pain file a CLI timeout", "w2hc", lambda case: (case / "signal" / "pain.md").write_text(TIMED_OUT + "\n"),
+     {}, "pain lens left no usable output: "),
+    ("the competitors answer a failed call", "r3kx", lambda case: None, {"competitors_answer": STREAM_ENDED},
+     "competitors lens left no usable output: its final answer is an account-limit or error message"),
 ]
 
 
@@ -541,7 +548,8 @@ def test_a_lens_that_left_no_usable_output_is_named_and_the_grade_never_passes(t
     assert final["quality_status"] != "pass" and final["criteria"]["Q3"] != "pass"
     assert any(p.startswith(problem) for p in final["problems"]), final["problems"]
     if answers:
-        assert check["answers_checked"] == ["search", "money"], "an answer the workflow could not find is left out"
+        passed = [s for s in ("search", "money", "pain", "competitors") if answers.get(f"{s}_answer")]
+        assert check["answers_checked"] == passed, "an answer the workflow could not find is left out"
 
 
 # ---- score.py -----------------------------------------------------------------------------------

@@ -351,8 +351,12 @@ agent:
         r"session limit|usage limit|weekly limit|daily limit|rate[ _-]?limit|limit (?:reached|exceeded)"
         r"|hit (?:your|the) (?:\w+ )?limit|quota|overloaded|too many requests|credit balance"
         r"|pool exhausted|try again later|resets? (?:at |in |on )?\d|api error|authentication_error"
-        r"|oauth token|not logged in|/login|invalid api key|out of (?:extra )?usage|prompt is too long",
+        r"|oauth token|not logged in|/login|invalid api key|out of (?:extra )?usage|prompt is too long"
+        r"|\Aerror: ",  # the Claude provider's failed call: "Error: <stderr>", "Error: Claude Code CLI timed out"
         re.I)
+    # The Claude provider's other failed call, whatever its length: "[claude_code error] stream ended
+    # with no result event: <stderr>". Its finish_reason "error" is not read yet (temper #55).
+    PROVIDER_ERROR = re.compile(r"\[claude_code error\]", re.I)
     NOT_PASSED = "__unwired__"  # what the workflow passes for an answer it could not find
 
 
@@ -378,12 +382,14 @@ agent:
 
 
     def non_answer(text):
-        """Why a part's text is no research ('' when it may be): empty, or a short message about
-        an account limit, a quota, an overload or a login, with no JSON in it."""
+        """Why a part's text is no research ('' when it may be): empty, a short message about an
+        account limit, a quota, an overload, a login or a failed call with no JSON in it, or the
+        Claude provider's failed-call text."""
         text = (text or "").strip()
         if not text:
             return "empty"
-        if len(text) <= 600 and text[0] not in "{[" and "```" not in text and NON_ANSWER.search(text):
+        if PROVIDER_ERROR.match(text) or (
+                len(text) <= 600 and text[0] not in "{[" and "```" not in text and NON_ANSWER.search(text)):
             return 'an account-limit or error message ("%s")' % norm(text)[:160]
         return ""
 

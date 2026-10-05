@@ -39,6 +39,9 @@ WORKFLOW = ROOT / "configs" / "workflows" / "opportunity_brief.yaml"
 INJECTED = {"workspace_path", "run_id"}  # the agents add these to every template
 LENSES = {"brief_feasibility", "brief_viability", "brief_gtm", "brief_competition"}
 LIMIT = "You've hit your session limit \u00b7 resets 10:50pm (UTC)"  # 99732fd1's competition lens, verbatim
+# What the Claude provider returns as an answer when its call failed (finish_reason "error", not read yet).
+TIMED_OUT = "Error: Claude Code CLI timed out"
+STREAM_ENDED = "[claude_code error] stream ended with no result event: " + " | ".join(["node: stderr line"] * 40)
 REFUSED = "http://127.0.0.1:9"
 NO_NETWORK = {"http_proxy": REFUSED, "https_proxy": REFUSED, "HTTPS_PROXY": REFUSED, "ALL_PROXY": REFUSED}
 
@@ -306,6 +309,8 @@ LOST = [
      "feasibility lens left no usable output: lenses/feasibility.json has no claims"),
     ("a limit message for a write-up", lambda ws: lens_file(ws, "competition.md").write_text(LIMIT),
      "competition lens left no usable output: lenses/competition.md is an account-limit or error message"),
+    ("a failed call for a write-up", lambda ws: lens_file(ws, "feasibility.md").write_text(STREAM_ENDED),
+     "feasibility lens left no usable output: lenses/feasibility.md is an account-limit or error message"),
 ]
 
 
@@ -332,8 +337,10 @@ def test_the_lost_competition_lens_of_run_99732fd1_fails_the_brief(workspace):
     assert result["answers_checked"] == ["competition"]
 
 
-def test_a_lens_whose_final_answer_is_a_limit_message_fails_even_with_its_files(workspace):
-    result = check(workspace, gtm="API Error: 529 Overloaded. Try again later.")
+@pytest.mark.parametrize("answer", ["API Error: 529 Overloaded. Try again later.", TIMED_OUT, STREAM_ENDED],
+                         ids=["overloaded", "timed out", "stream ended"])
+def test_a_lens_whose_final_answer_is_a_limit_message_fails_even_with_its_files(workspace, answer):
+    result = check(workspace, gtm=answer)
     assert result["verdict"] == "fail"
     assert result["problems"][0].startswith("gtm lens left no usable output: its final answer is an account-limit")
 
@@ -352,10 +359,17 @@ def test_research_answers_and_answers_not_passed_in_leave_the_brief_passing(work
     ("Credit balance is too low", True),
     ("Invalid API key \u00b7 Please run /login", True),
     ("", True),
+    ("Error: claude token pool exhausted \u2014 all 3 tokens cooling; soonest reset 2026-10-05 22:50Z", True),
+    (TIMED_OUT, True),
+    ("Error: spawn claude ENOENT", True),
+    (STREAM_ENDED, True),
     ("Done: wrote lenses/gtm.json and lenses/gtm.md.", False),
+    ("No error: both files written.", False),
     ("The vendor's API has a rate limit of 100 calls a minute. " * 12, False),
     ('{"status": "completed", "note": "quota of 250 checks"}', False),
-], ids=["session limit", "usage limit", "credit", "login", "empty", "short research", "long research", "json"])
+    ('[{"claim": "F1", "note": "[claude_code error] seen in the vendor forum"}]', False),
+], ids=["session limit", "usage limit", "credit", "login", "empty", "pool exhausted", "timed out", "cli failed",
+        "stream ended", "short research", "error mid-text", "long research", "json", "json array"])
 def test_a_non_answer_is_empty_or_a_short_limit_or_error_message(workspace, text, lost):
     assert bool(load(workspace / "check_brief.py").non_answer(text)) is lost
 

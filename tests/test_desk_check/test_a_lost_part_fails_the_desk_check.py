@@ -35,6 +35,9 @@ AGENTS_DIR = ROOT / "configs" / "agents"
 WORKFLOW = ROOT / "configs" / "workflows" / "desk_check.yaml"
 INJECTED = {"workspace_path", "run_id"}  # the script agent adds these to every template
 LIMIT = "You've hit your session limit \u00b7 resets 10:50pm (UTC)"
+# What the Claude provider returns as an answer when its call failed (finish_reason "error", not read yet).
+TIMED_OUT = "Error: Claude Code CLI timed out"
+STREAM_ENDED = "[claude_code error] stream ended with no result event: " + " | ".join(["node: stderr line"] * 40)
 SLOTS = ("A1", "A2")
 
 
@@ -163,6 +166,8 @@ LOST = [
      "A2: state/desk/checks/A2.json is an account-limit or error message"),
     ("a limit message for a write-up", lambda ws: checks(ws, "A1.md").write_text("API Error: 529 overloaded_error"),
      "A1: state/desk/checks/A1.md is an account-limit or error message"),
+    ("a failed call for a write-up", lambda ws: checks(ws, "A2.md").write_text(STREAM_ENDED),
+     "A2: state/desk/checks/A2.md is an account-limit or error message"),
 ]
 
 
@@ -181,6 +186,15 @@ def test_a_researcher_whose_final_answer_is_a_limit_message_fails_the_check(work
     assert result["verdict"] == "fail"
     assert result["problems"] == [f'A2: its final answer is an account-limit or error message ("{LIMIT}")']
     assert result["parts"]["A2"] == f'its final answer is an account-limit or error message ("{LIMIT}")'
+
+
+@pytest.mark.parametrize("answer", [TIMED_OUT, "Error: claude token pool exhausted \u2014 all 3 tokens cooling",
+                                    STREAM_ENDED], ids=["timed out", "pool exhausted", "stream ended"])
+def test_a_researcher_whose_final_answer_is_a_failed_call_fails_the_check(workspace, answer):
+    result = final(workspace, A1=answer)
+    assert result["verdict"] == "fail"
+    assert result["problems"][0].startswith("A1: its final answer is an account-limit or error message")
+    assert [s for s, why in result["parts"].items() if why != "ok"] == ["A1"]
 
 
 def test_research_answers_and_answers_not_passed_in_leave_the_check_passing(workspace):

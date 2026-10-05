@@ -192,7 +192,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (93)
+### product (94)
 
 | Config | Kind |
 |---|---|
@@ -200,6 +200,7 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/scan_check.yaml` | agent |
 | `agents/scan_check_strict.yaml` | agent |
 | `agents/scan_setup.yaml` | agent (script) |
+| `agents/scan_pick_industries.yaml` | agent |
 | `agents/scan_lens_demand.yaml` | agent |
 | `agents/scan_lens_market.yaml` | agent |
 | `agents/scan_lens_timing.yaml` | agent |

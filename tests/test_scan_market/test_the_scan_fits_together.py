@@ -14,6 +14,10 @@ segment; primary pain only from a community, gov, association, academic or indep
 source (v3.1); a real price only for the job itself (scope job), its job words on the page and in
 the candidate's own name or wedge (v3.1); it names the ranked candidates as scan_serving does. No
 model and no network: every input here is synthetic.
+
+v4 (queue #18) adds a first step, pick (scan_pick_industries): it chooses each run's 6-9 industries,
+mostly ground past scans never searched, and the demand lens hunts there instead of a fixed list of
+nine; setup clears the last run's pick.
 """
 
 import hashlib
@@ -43,10 +47,10 @@ ROOT = Path(__file__).resolve().parents[2]
 AGENTS_DIR = ROOT / "configs" / "agents"
 WORKFLOW = ROOT / "configs" / "workflows" / "scan_market.yaml"
 SCRIPTS = ["scan_setup", "scan_sources", "scan_trace"]
-MODELS = ["scan_lens_demand", "scan_lens_market", "scan_lens_timing", "scan_synthesize", "scan_check",
-          "scan_check_strict"]
-CHANGED = ["scan_setup", "scan_sources", "scan_trace", "scan_lens_demand", "scan_lens_market", "scan_lens_timing",
-           "scan_synthesize", "scan_check_strict"]
+MODELS = ["scan_pick_industries", "scan_lens_demand", "scan_lens_market", "scan_lens_timing", "scan_synthesize",
+          "scan_check", "scan_check_strict"]
+CHANGED = ["scan_setup", "scan_sources", "scan_trace", "scan_pick_industries", "scan_lens_demand", "scan_lens_market",
+           "scan_lens_timing", "scan_synthesize", "scan_check_strict"]
 INJECTED = {"workspace_path", "run_id"}  # the agents add these to every template
 # The frozen grader every scan version is compared on (product PLAN.md, notebook n3).
 SCAN_CHECK_SHA256 = "8072a8227b6eac351b50829b664ae1f6d77daaf94a589d76d75d93497031f4eb"
@@ -109,9 +113,13 @@ serving = module_of(SERVING_CHECKER.read_text(), "scan_serving_check", str(SERVI
 def test_the_workflow_checks_sources_before_ranking_and_grades_twice():
     wf = workflow()
     nodes = {n["name"]: n for n in wf["nodes"]}
-    assert list(nodes) == ["setup", "demand", "research", "sources", "synthesize", "trace", "check", "check_strict"]
+    assert list(nodes) == ["setup", "pick", "demand", "research", "sources", "synthesize", "trace", "check",
+                           "check_strict"]
     assert nodes["setup"]["agent"] == "scan_setup" and not nodes["setup"].get("depends_on")
-    assert (nodes["demand"]["agent"], nodes["demand"]["depends_on"]) == ("scan_lens_demand", ["setup"])
+    assert (nodes["pick"]["agent"], nodes["pick"]["depends_on"]) == ("scan_pick_industries", ["setup"])
+    assert nodes["pick"]["input_map"] == {"frame": "input.frame"}, "the picker reads the explored ideas in the frame"
+    assert (nodes["demand"]["agent"], nodes["demand"]["depends_on"]) == ("scan_lens_demand", ["pick"]), \
+        "the demand lens hunts in the run's pick"
     research = nodes["research"]
     assert (research["type"], research["strategy"], research["depends_on"]) == ("stage", "parallel", ["demand"]), \
         "the market and timing lenses work on the demand lens's pockets"
@@ -184,7 +192,8 @@ TRACE_PRINTS = {"status", "trace_path", "ok", "c2", "c4", "problems"}
 
 
 def test_the_workflow_outputs_name_fields_their_steps_print():
-    fields = {"check": printed("scan_check"), "check_strict": printed("scan_check_strict"), "trace": TRACE_PRINTS}
+    fields = {"check": printed("scan_check"), "check_strict": printed("scan_check_strict"), "trace": TRACE_PRINTS,
+              "pick": printed("scan_pick_industries")}
     for ref in workflow()["outputs"].values():
         node, _, field = ref.partition(".structured.")
         assert field in fields[node], f"{ref}: {node} never prints `{field}`"
@@ -200,6 +209,50 @@ def test_the_strict_grader_never_reads_the_frozen_graders_verdict():
     text = "\n".join(templates_of(by_name("scan_check_strict")))
     assert "Never read or cite state/scan/grade.md" in text
     assert "state/scan/grade-strict.md" in text and "state/scan/trace.json" in text
+
+
+def test_the_demand_lens_hunts_in_the_runs_pick_not_a_fixed_list():
+    text = "\n".join(templates_of(by_name("scan_lens_demand")))
+    assert "state/scan/industries.md" in text
+    assert "Cover these domains" not in text and "logistics & trucking" not in text, \
+        "the nine fixed industries (through v3) are the picker's explored ground now, not the hunting ground"
+    # Trial run 4 (76c5b77e): pockets became the record or roster beside a priced course, device or
+    # medical evaluation, a job with no price; a pocket is the job the pick priced.
+    flat = " ".join(text.split())
+    assert "a pocket is that job itself" in flat and "is a different job, with no price" in flat
+
+
+def test_the_picker_widens_the_ground_and_bans_nothing():
+    cfg = by_name("scan_pick_industries")
+    text = "\n".join(templates_of(cfg))
+    assert "6 to 9 industries" in text and "At most 2 from the explored ground" in text
+    assert "no industry is off limits" in text, "owner rule: no blanket sector exclusion"
+    assert "state/scan/industries.json" in text and "state/scan/industries.md" in text
+    # Trial run 1 (88aaab5c) picked industries whose software sells only as suites, so the market lens
+    # had no job's own price for 5 of 12 pockets: a pick must show a job sold at a price.
+    flat = " ".join(text.split())
+    assert "THAT SAME JOB" in flat and "a whole suite's price" in flat and '"priced_jobs"' in flat
+    assert "Open that pricing page with cite.py" in flat
+    # Trial run 2 (2613d31d) picked industries nobody measures (breweries' TTB filing, machine shops'
+    # calibration), so the demand lens counted one brewer's Reddit comment relayed by a newsletter:
+    # a pick must also show a pain number a named body measured for one of its jobs.
+    assert "MEASURED PAIN NUMBER" in flat and '"pain_numbers"' in flat and '"measured_by"' in flat
+    assert "one person's story or comment" in flat and "even when a newsletter" in flat
+    assert "Open that page with cite.py" in flat
+    # Trial run 3 (a03874a3): the picker saw the nonprofits' own-job price (Tax990) only through
+    # WebFetch's summary; the page draws its prices with a script, so the market lens's cite.py saw
+    # none and counted a neighbouring job's price. Both pages are now read with cite.py (a FOUND
+    # quote), for the SAME job, and the pain number is measured 2016 or later.
+    assert "python3 state/desk/cite.py quote" in flat and "keep only a FOUND quote" in flat
+    assert "never as the check" in flat and "A product for a neighbouring job" in flat
+    assert "2016 or later" in flat and '"quote"' in flat and '"year"' in flat
+    # Trial run 4 (76c5b77e): three picks priced a device, a training course and a medical
+    # evaluation, so the ideas built beside them (audit trail, certification records, roster) had
+    # no price. The product must do the job the way a software company could.
+    assert "the way a software company could" in flat and "hardware (an ID scanner" in flat
+    assert "a training course" in flat and "a licensed or certified person performs" in flat
+    assert "not a device, a course or a licensed person's examination" in flat
+    assert "frame" in meta.find_undeclared_variables(jinja().parse(cfg["task_template"]))
 
 
 def test_setup_writes_desk_setups_own_cite_helper():
@@ -223,7 +276,8 @@ def setup(workspace):
 def test_setup_clears_the_last_run_and_writes_both_helpers(tmp_path):
     scan, desk = tmp_path / "state" / "scan", tmp_path / "state" / "desk"
     stale = [scan / "evidence" / "demand.json", desk / "pages" / "old.txt", scan / "shortlist.md",
-             scan / "shortlist.json", scan / "sources.json", scan / "trace.json", scan / "grade-strict.md"]
+             scan / "shortlist.json", scan / "sources.json", scan / "trace.json", scan / "grade-strict.md",
+             scan / "industries.md", scan / "industries.json"]
     kept = scan / "history" / "2026-10-01" / "shortlist.md"
     for path in [*stale, kept]:
         path.parent.mkdir(parents=True, exist_ok=True)

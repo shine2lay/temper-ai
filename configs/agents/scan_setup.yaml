@@ -4,7 +4,8 @@
 # file as scan_serving_assets/cite.py and desk_setup's) and check_sources.py (the mechanical
 # source check: a figure counts as primary pain or a real price only when the one sentence
 # holding it is on its page's saved copy). The lenses, the sources and trace steps and the
-# synthesizer run check_sources.py. Part of workflows/scan_market.yaml.
+# synthesizer run check_sources.py. v4 (queue #18, 2026-10-05): also clears the previous run's
+# industry pick (industries.md, industries.json). Part of workflows/scan_market.yaml.
 # POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution) and
 # no Jinja delimiters inside the helpers.
 agent:
@@ -21,7 +22,7 @@ agent:
     mkdir -p state/desk state/scan
     rm -rf state/desk/pages state/scan/evidence
     for f in demand.md market.md timing.md shortlist.md shortlist.json grade.md grade-strict.md \
-             sources.json sources.md trace.json trace.md; do
+             sources.json sources.md trace.json trace.md industries.md industries.json; do
       rm -f "state/scan/$f"
     done
     mkdir -p state/desk/pages state/scan/evidence

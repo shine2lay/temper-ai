@@ -45,11 +45,28 @@ workflow:
   # Landed 2026-10-04 after trial runs d1bb2902 ($10.48) and 49ec4d05 ($16.68) both met the
   # bar: frozen scan_check 5/5, every counted figure confirmed, a hand fetch of the top 3
   # agreed. scan_check_strict said revise on both (proxy pain stats; queue #33).
+  # v4 (queue #18, 2026-10-05): the demand lens no longer hunts the same nine industries every
+  # week. A first step (pick, scan_pick_industries) chooses 6-9 business industries for the
+  # run, at most 2 from the ground past scans searched (the nine plus the ideas register's
+  # industries, read from the frame), with reasons, and bans none; each pick names one job with
+  # both a pain number a named body measured in 2016 or later (one person's relayed story does
+  # not pass) and a product sold for that same job at a price on the seller's own page (a suite's
+  # price or an audit fee does not pass), both pages read by the picker with the lenses' own
+  # reader (state/desk/cite.py, a FOUND quote); v5: that product does the job the way a software
+  # company could (not a device, a course or a licensed person's examination), and the demand
+  # lens's pockets are that priced job itself. The demand lens hunts only
+  # in that pick and the market and timing lenses work on its pockets, so all three still
+  # share one ground and every idea keeps a pain number and a price.
+  # Landed 2026-10-05 after trial runs 5fb5e1c5 ($13.07) and 8ec86827 ($11.87) both met the bar:
+  # 8 of 8 shortlist ideas outside the ground past scans searched (at least 4 required), frozen
+  # scan_check 5/5, scan_check_strict pass, every counted figure confirmed, and a hand fetch of
+  # the top 3 agreed. Run d2b4feb2 did not count: its demand lens hit an account's session limit.
   #
-  #     setup -> demand -> [ market | timing ] -> sources -> synthesize -> trace -> [ check | check_strict ]
+  #     setup -> pick -> demand -> [ market | timing ] -> sources -> synthesize -> trace -> [ check | check_strict ]
   version: 2
   description: |
-    Market-research Scan v3: from an open frame, produce a ranked
+    Market-research Scan v4: from an open frame, pick this run's industries
+    (mostly ground past scans have not searched), then produce a ranked
     shortlist of market/wedge candidates for a profitable software/AI product,
     each a 7-field record whose counted pain stats and prices carry an exact
     quote a script confirmed on a saved copy of the page; graded by the frozen
@@ -66,6 +83,7 @@ workflow:
     strict_grade_path: check_strict.structured.grade_path
     strict_issues: check_strict.structured.issues
     trace_ok: trace.structured.ok
+    industries: pick.structured.industries
 
   nodes:
     # Clear the previous run's outputs; write cite.py and check_sources.py.
@@ -73,12 +91,22 @@ workflow:
       type: agent
       agent: scan_setup
 
-    # Demand first: the pain pockets (demand.md) and their pain records
-    # (evidence/demand.json) the other two lenses work on.
+    # Choose this run's 6-9 industries (state/scan/industries.md and .json),
+    # mostly outside the ground past scans searched; the frame lists the
+    # ideas already explored.
+    - name: pick
+      type: agent
+      agent: scan_pick_industries
+      depends_on: [setup]
+      input_map:
+        frame: input.frame
+
+    # Demand next, inside the pick: the pain pockets (demand.md) and their pain
+    # records (evidence/demand.json) the other two lenses work on.
     - name: demand
       type: agent
       agent: scan_lens_demand
-      depends_on: [setup]
+      depends_on: [pick]
       input_map:
         frame: input.frame
 

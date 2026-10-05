@@ -8,6 +8,10 @@
 # counts as primary pain. It now runs first; the market and timing lenses work on its pockets.
 # v3.2 records the measurer itself (measured_by + the page's sentence naming it): a vendor's
 # platform data published on an association page, or one person's story, is never primary pain.
+# v4 (queue #18, 2026-10-05): no fixed hunting ground. It hunts inside this run's industries, which
+# the picker (scan_pick_industries) chose and wrote to state/scan/industries.md; every
+# other rule is v3.3's, unchanged. v5: a pocket is the job the pick priced, not a record or roster
+# beside a priced service, course or device (a different job, with no price).
 # Part of workflows/scan_market.yaml (product role).
 agent:
   name: scan_lens_demand
@@ -26,19 +30,27 @@ agent:
     pay software/AI to solve. Research first; never opine, never rank, never
     recommend a product. You surface signal; a later synthesizer decides.
 
-    HUNTING GROUND (stay inside it so the other lenses can price what you find):
-      Hunt for pain inside VERTICAL B2B / SMB WORKFLOW software domains where a
-      painful recurring manual workflow coexists with software people already
-      PAY for. Cover these domains (the market lens prices the SAME ones, so
-      overlap is what makes a candidate usable): healthcare admin / revenue-
-      cycle (prior-auth, denials, coding, billing), logistics & trucking
-      (dispatch, BOL, detention, factoring), legal / compliance ops,
-      accounting & tax prep, field-service trades (HVAC/plumbing/electrical),
-      veterinary / dental practice ops, insurance (claims, ACORD), property
-      management, recruiting/HR ops. For every pain pocket, name the domain and
-      prefer pockets where a paid incumbent tool already exists (that is proof
-      someone pays). Avoid pure consumer and avoid horizontal "AI assistant"
-      ideas with no paid incumbent.
+    HUNTING GROUND (this run's pick; stay inside it so the other lenses can price what you find):
+      Read {{ workspace_path }}/state/scan/industries.md first: the 6-9
+      industries a picker chose for this run, most of them outside the ground
+      past scans searched every week. Hunt for pain only inside those
+      industries, in VERTICAL B2B / SMB WORKFLOWS where a painful recurring
+      manual workflow coexists with software people already PAY for. Cover
+      every picked industry: look for pockets in each, and keep at least one
+      per industry where you find a quantified pain (the market lens prices
+      the SAME pockets, so overlap is what makes a candidate usable). For
+      every pain pocket, name the domain exactly as industries.md names the
+      industry, and prefer pockets where a paid incumbent tool already exists
+      (that is proof someone pays). industries.md also names, for each
+      industry, a pain number a named body measured for one of its jobs and
+      jobs its businesses already buy a priced tool or service for: leads to
+      search, never evidence; every figure still needs its own page and must
+      pass the rules below. Hunt first in the job industries.md priced for
+      each industry: a pocket is that job itself. A record, roster or audit
+      trail beside a priced service, course or device is a different job,
+      with no price.
+      Avoid pure consumer and avoid horizontal "AI assistant" ideas with no
+      paid incumbent.
 
     WHAT A QUANTIFIED PRIMARY PAIN STAT IS (this is the bar that matters):
       A number that measures the PAIN ITSELF — time lost, error/denial rate,
@@ -240,9 +252,11 @@ agent:
     Search-space frame (constraints on what we could build): {{ frame | default("Open: any software/AI product a small team can build to make money. No vertical constraint; find the most attractive market.", true) }}
 
     Steps (run commands from the working directory):
-      1. `mkdir -p state/scan/evidence`
-      2. 8-14 WebSearches for PRIMARY demand/pain signals inside the frame,
-         hunting specifically for a quantified pain NUMBER per pocket.
+      1. `mkdir -p state/scan/evidence`; read state/scan/industries.md (this
+         run's industries: hunt only inside them).
+      2. 8-14 WebSearches for PRIMARY demand/pain signals inside the picked
+         industries and the frame, hunting specifically for a quantified pain
+         NUMBER per pocket.
       3. Read the 10-20 most informative pages with cite.py; confirm each
          quote with `cite.py quote` before recording it.
       4. Write state/scan/evidence/demand.json and state/scan/demand.md per

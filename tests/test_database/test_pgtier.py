@@ -104,3 +104,9 @@ class TestWhatIsInTheTier:
     ])
     def test_out(self, path):
         assert not pgtier.in_tier(path)
+
+    def test_every_entry_names_something_that_exists(self):
+        """A dead entry silently covers nothing, and passing TIER to pytest exits 5."""
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        missing = [entry for entry in pgtier.TIER if not os.path.exists(os.path.join(root, entry))]
+        assert missing == []

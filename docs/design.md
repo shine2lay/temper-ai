@@ -469,14 +469,52 @@ differing by more than 48 (with a 1 px shift allowed) at most 2.0% overall,
 1.0% outside text and 12.0% inside text boxes (anti-aliasing and font
 hinting differ there); and in 32 px tiles at most 20% differing and a mean
 difference of at most 40, so a single lost card cannot hide in a page-wide
-average. Borders on some sides only become thin rectangles snapped to whole
-pixels, as the browser paints them (a hairline between two pixel rows would
-smear). Approximations (inset shadows other than rings, dash lengths, a dotted
-or dashed side drawn solid (`border-style-approximated`), some background
-positions) are listed as issues, never hidden.
+average.
 
-Fixture pages: `configs/design/testpages/html-fixtures/` (atlas, pulse, harbor;
-vendored OFL fonts). `design_homepage_v2_fixture` runs the whole flow with
+**Rich details (queue #31).** What real designed pages use comes across as
+native, editable Penpot shapes:
+
+- *Borders.* Four equal borders are one native stroke (dashed and dotted
+  included); a double border is the box's stroke for the outer line plus an
+  inset layer `Border / double (inner line)` for the inner one. Borders on some
+  sides only: a side whose corners are square is a rectangle (solid), two
+  rectangles (double) or a line with a native dashed or dotted stroke, snapped
+  to whole pixels as the browser paints them. A rounded box with borders on
+  some sides (a ticket notch, an arch with no bottom border) gets one path
+  layer `Border / <sides>` following the rounded outline: a stroked centre line
+  when the sides match, or a filled ring when widths differ or a border tapers
+  out at a rounded corner. Inline boxes (a dotted underline on a word) and form
+  controls get their side borders too.
+- *Radii* are the browser's used radii: when corners would overlap (a
+  `12rem` top radius on a short card) all of them shrink by the same factor,
+  as CSS and Penpot both do; elliptical corners are listed as
+  `radius-elliptical-approximated`.
+- *Backgrounds.* Every layer is kept, bottom to top: colours and gradients
+  that cover the box are native gradient fills (radial size keywords and
+  explicit sizes, transparent stops fading the neighbouring colour, not grey).
+  A layer Penpot can't draw (a tiled or repeating pattern, a gradient smaller
+  than its box) is drawn by the browser alone at the box's size and becomes a
+  picture fill on a layer named `Background texture (raster)`, in its place
+  between the native layers (`Background layers` above it); each is listed as
+  a `background-rasterized` issue. Never a wrong approximation.
+- *Paint order.* Positioned children and their contents stack as in CSS
+  (stacking contexts, z-index, then tree order), also inside flex and grid
+  boards: a step number drawn over a route line stays on top.
+- *Whole pixels.* A painted box (fill or border) sits on whole pixels, as
+  Chrome paints it; Penpot would draw half-tone seams at fractional edges. A
+  fixed size inside a layout never grows by the snap (a full row can't wrap
+  when Penpot lays it out again), and component copies compare with their
+  main by the unsnapped boxes.
+- Text in `aria-hidden` elements is drawn: it hides text from screen readers,
+  not from the screen.
+
+What stays approximate (inset shadows other than rings, Penpot's own dash
+lengths, groove/ridge/inset/outset borders drawn solid as
+`border-style-approximated`, some background positions) is listed as issues,
+never hidden.
+
+Fixture pages: `configs/design/testpages/html-fixtures/` (atlas, pulse, harbor,
+rich: the queue #31 details; vendored OFL fonts). `design_homepage_v2_fixture` runs the whole flow with
 script stand-ins and no models (fixture concepts, build and reviews) but the
 real gates, measure, convert and verify, so gates, resume and conversion are
 proven at $0.

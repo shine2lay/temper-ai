@@ -172,7 +172,21 @@
     }
     let last = 0;
     for (const s of stops) { s.offset = r2(Math.max(last, Math.min(1, s.offset))); last = s.offset; }
-    return stops;
+    // CSS mixes gradient colours premultiplied, so a fully transparent stop only fades the colours next
+    // to it. SVG (Penpot) mixes colour and opacity apart: a transparent stop takes its neighbour's colour
+    // (two stops at one offset when the neighbours differ), else the fade passes through grey.
+    const seen = (from, step) => { for (let j = from; j >= 0 && j < stops.length; j += step) if (stops[j].opacity > 0.001) return stops[j]; return null; };
+    const out = [];
+    stops.forEach((s, i) => {
+      if (s.opacity > 0.001) { out.push(s); return; }
+      const prev = seen(i - 1, -1), next = seen(i + 1, 1);
+      if (prev && next && prev.color !== next.color) {
+        out.push({color: prev.color, opacity: 0, offset: s.offset}, {color: next.color, opacity: 0, offset: s.offset});
+      } else {
+        out.push({color: (prev || next || s).color, opacity: 0, offset: s.offset});
+      }
+    });
+    return out;
   };
   const linear = (args, w, h) => {
     let parts = splitTop(args);
@@ -211,12 +225,14 @@
   };
   const radial = (args, w, h) => {
     let parts = splitTop(args);
-    let cx = 0.5, cy = 0.5, shape = 'ellipse';
+    let cx = 0.5, cy = 0.5, shape = 'ellipse', size = [];
     const head = parts[0];
     if (!/^(rgba?\(|#)/.test(head)) {
       parts = parts.slice(1);
-      if (/circle/.test(head)) shape = 'circle';
-      const at = head.split(' at ')[1];
+      const hm = head.match(/^(.*?)(?:^|\s)at\s+(.*)$/);
+      const pre = (hm ? hm[1] : head).trim(), at = hm ? hm[2] : null;
+      size = pre ? pre.split(/\s+/) : [];
+      if (size.includes('circle')) shape = 'circle';
       if (at) {
         const kw = {left: 0, center: 0.5, right: 1, top: 0, bottom: 1};
         const [ax, ay] = at.trim().split(/\s+/);
@@ -225,52 +241,174 @@
         if ((ax === 'top' || ax === 'bottom') && !ay) { cy = kw[ax]; cx = 0.5; }
       }
     }
-    // farthest-corner radius, in pixels
+    // Ending shape (CSS Images 3): explicit lengths, or an extent keyword (farthest-corner by default).
     const px = cx * w, py = cy * h;
-    const fx = Math.max(px, w - px), fy = Math.max(py, h - py);
-    let rx = fx * Math.SQRT2, ry = fy * Math.SQRT2;
-    if (shape === 'circle') { rx = ry = Math.hypot(fx, fy); }
-    const stops = stopsOf(parts, ry);
+    const near = [Math.min(Math.abs(px), Math.abs(w - px)), Math.min(Math.abs(py), Math.abs(h - py))];
+    const far = [Math.max(Math.abs(px), Math.abs(w - px)), Math.max(Math.abs(py), Math.abs(h - py))];
+    const lens = size.filter((t) => !/^(circle|ellipse|(closest|farthest)-(side|corner))$/.test(t));
+    const extent = size.find((t) => /^(closest|farthest)-(side|corner)$/.test(t)) || 'farthest-corner';
+    if (lens.length === 1 && !size.includes('ellipse')) shape = 'circle';
+    let rx, ry;
+    if (lens.length) {
+      rx = len(lens[0], w);
+      ry = shape === 'circle' ? rx : len(lens[1] || lens[0], h);
+    } else if (shape === 'circle') {
+      rx = ry = extent === 'closest-side' ? Math.min(...near) : extent === 'farthest-side' ? Math.max(...far)
+        : extent === 'closest-corner' ? Math.hypot(...near) : Math.hypot(...far);
+    } else {
+      const k = /corner$/.test(extent) ? Math.SQRT2 : 1;
+      [rx, ry] = (/^closest/.test(extent) ? near : far).map((v) => v * k);
+    }
+    if (!(rx > 0.01) || !(ry > 0.01)) return null;
+    // Stop lengths run along the gradient ray, which points right: 100% is the horizontal radius.
+    const stops = stopsOf(parts, rx);
     if (!stops) return null;
     return {type: 'radial', start: [r2(cx), r2(cy)], end: [r2(cx), r2(cy + ry / h)], width: r2((rx / w) / (ry / h)), stops};
   };
-  const backgroundFills = (cs, el, rect) => {
-    const fills = [];
+  // ---------- backgrounds ----------
+  // Background layers (CSS lists the top one first). Penpot fills carry a colour, a gradient drawn
+  // once over the whole box and an image that covers the box. Layers above the first one they can't
+  // carry (tiles, repeating gradients, positioned images, other kinds) keep their order as runs: a
+  // picture of those layers (a raster texture, counted as an issue) or native fills on a layer of
+  // their own. The page body and form controls keep the old approximations (layered false).
+  const textures = [];
+  const fnv = (s) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, '0');
+  };
+  const FULL_SIZE = /^(auto|auto auto|100%|100% 100%|100% auto|auto 100%|cover|contain)$/;
+  const pickOf = (list, i) => (list.length ? list[i % list.length] : '').trim();
+  // The box drawn alone in another page (same size, borders, padding, corners, those layers only),
+  // saved as <key>.png next to the scene.
+  const texture = (el, cs, rect, ids, lists) => {
+    const val = (k) => ids.map((i) => pickOf(lists[k], i)).join(', ');
+    const w = r2(rect.width), h = r2(rect.height);
+    const widths = ['Top', 'Right', 'Bottom', 'Left'].map((s) => (parseFloat(cs['border' + s + 'Width']) || 0) + 'px').join(' ');
+    const pad = ['Top', 'Right', 'Bottom', 'Left'].map((s) => cs['padding' + s]).join(' ');
+    const css = `position:absolute;left:0;top:0;margin:0;box-sizing:border-box;width:${w}px;height:${h}px;` +
+      `border-style:solid;border-color:transparent;border-width:${widths};padding:${pad};border-radius:${cs.borderRadius};` +
+      `background-color:transparent;background-image:${val('image')};background-size:${val('size')};` +
+      `background-position:${val('position')};background-repeat:${val('repeat')};background-origin:${val('origin')};` +
+      `background-clip:${val('clip')}`;
+    const key = `tex-${Math.round(w)}x${Math.round(h)}-${fnv(css)}`;
+    if (!textures.some((t) => t.key === key)) textures.push({key, w, h, css});
+    issue('background-rasterized', el, val('image').slice(0, 100));
+    return key + '.png';
+  };
+  const bgPlan = (cs, el, rect, layered) => {
+    const base = [], runs = [];
     const bg = parseColor(cs.backgroundColor);
-    if (visibleColor(bg)) fills.push({type: 'color', color: bg.color, opacity: bg.opacity});
-    if (cs.backgroundImage && cs.backgroundImage !== 'none') {
-      const layers = splitTop(cs.backgroundImage);
-      // Size, repeat and position are per-layer lists that repeat when shorter (CSS Backgrounds 3).
-      const sizes = splitTop(cs.backgroundSize), repeats = splitTop(cs.backgroundRepeat);
-      const positions = splitTop(cs.backgroundPosition);
-      const pick = (list, i) => (list.length ? list[i % list.length] : '').trim();
-      // CSS lists the top layer first; fills are listed bottom to top here.
-      for (let i = layers.length - 1; i >= 0; i--) {
-        const layer = layers[i];
-        let m;
-        if ((m = layer.match(/^(repeating-)?linear-gradient\((.*)\)$/s))) {
-          const g = linear(m[2], rect.width, rect.height);
-          if (g && !m[1]) fills.push(g); else issue('gradient-approximated', el, layer.slice(0, 80));
-        } else if ((m = layer.match(/^(repeating-)?radial-gradient\((.*)\)$/s))) {
-          const g = radial(m[2], rect.width, rect.height);
-          if (g && !m[1]) fills.push(g); else issue('gradient-approximated', el, layer.slice(0, 80));
-        } else if ((m = layer.match(/^url\(\s*["']?([^"')]+)["']?\s*\)$/))) {
-          const size = pick(sizes, i), repeat = pick(repeats, i), position = pick(positions, i);
-          fills.push({type: 'image', src: new URL(m[1], location.href).href, fit: size === 'contain' ? 'contain' : (size === 'cover' ? 'cover' : 'fill')});
-          if (!/^(cover|contain)$/.test(size) && repeat !== 'no-repeat') issue('background-repeat-approximated', el, size + ' ' + repeat);
+    if (visibleColor(bg)) base.push({type: 'color', color: bg.color, opacity: bg.opacity});
+    if (!cs.backgroundImage || cs.backgroundImage === 'none') return {base, runs};
+    // Size, repeat and position are per-layer lists that repeat when shorter (CSS Backgrounds 3).
+    const L = {image: splitTop(cs.backgroundImage), size: splitTop(cs.backgroundSize), position: splitTop(cs.backgroundPosition),
+      repeat: splitTop(cs.backgroundRepeat), origin: splitTop(cs.backgroundOrigin), clip: splitTop(cs.backgroundClip)};
+    if (/fixed/.test(cs.backgroundAttachment || '')) issue('background-fixed-approximated', el, cs.backgroundAttachment);
+    const add = (raster, item) => {
+      const last = runs[runs.length - 1];
+      if (!raster && !runs.length) base.push(item);
+      else if (last && last.raster === raster) (raster ? last.ids : last.fills).push(item);
+      else runs.push(raster ? {raster, ids: [item]} : {raster, fills: [item]});
+    };
+    for (let i = L.image.length - 1; i >= 0; i--) {  // fills go bottom to top
+      const layer = L.image[i], size = pickOf(L.size, i), repeat = pickOf(L.repeat, i), position = pickOf(L.position, i);
+      if (layer === 'none') continue;
+      const shifted = /calc|[1-9][\d.]*px/.test(position);
+      let m, exact = null, approx = null, why = 'background-unsupported';
+      if ((m = layer.match(/^(repeating-)?(linear|radial)-gradient\((.*)\)$/s))) {
+        const g = m[2] === 'linear' ? linear(m[3], rect.width, rect.height) : radial(m[3], rect.width, rect.height);
+        if (g && !m[1] && FULL_SIZE.test(size) && !shifted) exact = g;
+        else if (g && !m[1]) { approx = g; why = 'background-tile-approximated'; }
+        else why = 'gradient-approximated';
+      } else if ((m = layer.match(/^url\(\s*["']?([^"')]+)["']?\s*\)$/))) {
+        const img = {type: 'image', src: new URL(m[1], location.href).href, fit: size === 'contain' ? 'contain' : (size === 'cover' ? 'cover' : 'fill')};
+        if (/^(cover|contain|100% 100%)$/.test(size)) {
+          exact = img;
           if (/^(cover|contain)$/.test(size) && !/^(50% 50%|center( center)?)$/.test(position)) issue('background-position-approximated', el, position);
-        } else {
-          issue('background-unsupported', el, layer.slice(0, 80));
-        }
+        } else { approx = img; why = 'background-repeat-approximated'; }
+      }
+      if (exact) add(false, exact);
+      else if (layered) add(true, i);
+      else {
+        if (approx) add(false, approx);
+        issue(why, el, why === 'background-repeat-approximated' ? size + ' ' + repeat : layer.slice(0, 80));
       }
     }
-    return fills;
+    for (const run of runs) if (run.raster) run.src = texture(el, cs, rect, run.ids.slice().sort((a, b) => a - b), L);
+    return {base, runs};
   };
-  const radiiOf = (cs, rect) => {
-    const v = ['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius']
-      .map((k) => { const p = cs[k].split(' ')[0]; return p.endsWith('%') ? parseFloat(p) / 100 * Math.min(rect.width, rect.height) : parseFloat(p) || 0; });
-    const cap = Math.min(rect.width, rect.height) / 2;
-    return v.map((x) => r2(Math.min(x, cap)));
+
+  // ---------- corners and outlines (paths in page pixels) ----------
+  const KAPPA = 0.5522847498;  // a quarter ellipse as one cubic
+  const pt = (x, y) => r2(x) + ' ' + r2(y);
+  const arc = (C, P0, P1) => 'C' + pt(P0[0] + KAPPA * (C[0] - P0[0]), P0[1] + KAPPA * (C[1] - P0[1])) + ' ' +
+    pt(P1[0] + KAPPA * (C[0] - P1[0]), P1[1] + KAPPA * (C[1] - P1[1])) + ' ' + pt(P1[0], P1[1]);
+  // Corner k (tl, tr, br, bl) of a rounded box: the corner point, where its curve leaves the side
+  // before it (a) and where it reaches the side after it (b), going clockwise.
+  const cornerPoints = (x0, y0, x1, y1, c) => [
+    {C: [x0, y0], a: [x0, y0 + c[0][1]], b: [x0 + c[0][0], y0]},
+    {C: [x1, y0], a: [x1 - c[1][0], y0], b: [x1, y0 + c[1][1]]},
+    {C: [x1, y1], a: [x1, y1 - c[2][1]], b: [x1 - c[2][0], y1]},
+    {C: [x0, y1], a: [x0 + c[3][0], y1], b: [x0, y1 - c[3][1]]}];
+  const roundRect = (x0, y0, x1, y1, c, ccw) => {
+    const q = cornerPoints(x0, y0, x1, y1, c);
+    let d = 'M' + pt(...(ccw ? q[0].a : q[0].b));
+    for (const k of (ccw ? [3, 2, 1, 0] : [1, 2, 3, 0])) {
+      d += ccw ? 'L' + pt(...q[k].b) + arc(q[k].C, q[k].b, q[k].a) : 'L' + pt(...q[k].a) + arc(q[k].C, q[k].a, q[k].b);
+    }
+    return d + 'Z';
+  };
+  // CSS "corner overlap": all radii scale down together when two corners would meet; a corner with
+  // either radius zero is square.
+  const fitCorners = (c, w, h) => {
+    c = c.map(([x, y]) => (x > 0 && y > 0 ? [x, y] : [0, 0]));
+    let f = 1;
+    for (const [a, b, side] of [[c[0][0], c[1][0], w], [c[1][1], c[2][1], h], [c[2][0], c[3][0], w], [c[3][1], c[0][1], h]]) {
+      if (a + b > side && a + b > 0) f = Math.min(f, Math.max(0, side) / (a + b));
+    }
+    return c.map(([x, y]) => [x * f, y * f]);
+  };
+  // A box [x0, y0, x1, y1] inset by [top, right, bottom, left]; its corners shrink by the same widths
+  // (the browser's inner border edge).
+  const insetBox = (bx, c, t) => {
+    const nb = [bx[0] + t[3], bx[1] + t[0], bx[2] - t[1], bx[3] - t[2]];
+    const nc = [[c[0][0] - t[3], c[0][1] - t[0]], [c[1][0] - t[1], c[1][1] - t[0]], [c[2][0] - t[1], c[2][1] - t[2]], [c[3][0] - t[3], c[3][1] - t[2]]];
+    return [nb, fitCorners(nc, nb[2] - nb[0], nb[3] - nb[1])];
+  };
+  // A filled band between two outlines (clockwise outside, counter-clockwise inside: non-zero fill).
+  const ring = (outer, oc, inner, ic) => roundRect(...outer, oc, false) +
+    (inner[2] - inner[0] > 0.01 && inner[3] - inner[1] > 0.01 ? roundRect(...inner, ic, true) : '');
+  // The middle line of equal-width border sides (present: top, right, bottom, left), with their
+  // rounded corners; open where a side is missing (that corner is square).
+  const centreLine = (bx, present, w, c) => {
+    const [L, T, R, B] = bx;
+    const x0 = present[3] ? L + w / 2 : L, x1 = present[1] ? R - w / 2 : R, y0 = present[0] ? T + w / 2 : T, y1 = present[2] ? B - w / 2 : B;
+    const cc = c.map(([h, v]) => (h > 0 && v > 0 ? [Math.max(0, h - w / 2), Math.max(0, v - w / 2)] : [0, 0]));
+    if (present.every(Boolean)) return roundRect(x0, y0, x1, y1, cc, false);
+    const q = cornerPoints(x0, y0, x1, y1, cc);
+    const startOf = [[L, y0], [x1, T], [R, y1], [x0, B]], endOf = [[R, y0], [x1, B], [L, y1], [x0, T]];
+    const s = [0, 1, 2, 3].find((k) => present[k] && !present[(k + 3) % 4]);
+    let d = 'M' + pt(...startOf[s]);
+    for (let k = s, n = 0; n < 4; k = (k + 1) % 4, n++) {
+      const next = (k + 1) % 4;
+      if (!present[next]) { d += 'L' + pt(...endOf[k]); break; }
+      d += 'L' + pt(...q[next].a) + arc(q[next].C, q[next].a, q[next].b);
+    }
+    return d;
+  };
+  // Used corner radii [h, v] (tl, tr, br, bl; percentages of the width and the height).
+  const cornersOf = (cs, rect) => fitCorners(['borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius']
+    .map((k) => {
+      const parts = String(cs[k] || '0').trim().split(/\s+/);
+      const v = (s, ref) => Math.max(0, s.endsWith('%') ? parseFloat(s) / 100 * ref : parseFloat(s) || 0);
+      return [v(parts[0], rect.width), v(parts[1] || parts[0], rect.height)];
+    }), rect.width, rect.height);
+  // Penpot corners are circular: an elliptical corner keeps its smaller radius (reported).
+  const radiiOf = (cs, rect, el) => {
+    const c = cornersOf(cs, rect);
+    if (el && c.some(([h, v]) => Math.abs(h - v) > 0.5)) issue('radius-elliptical-approximated', el, cs.borderRadius);
+    return c.map(([h, v]) => r2(Math.min(h, v)));
   };
   const shadowsOf = (cs, el) => {
     if (!cs.boxShadow || cs.boxShadow === 'none') return [];
@@ -288,29 +426,108 @@
     // CSS paints the first shadow on top.
     return out.reverse();
   };
-  const bordersOf = (cs) => {
-    const sides = ['Top', 'Right', 'Bottom', 'Left'].map((s) => ({
-      side: s.toLowerCase(), width: parseFloat(cs['border' + s + 'Width']) || 0,
-      style: cs['border' + s + 'Style'], color: parseColor(cs['border' + s + 'Color'])}));
-    return sides.filter((s) => s.width > 0 && s.style !== 'none' && s.style !== 'hidden' && visibleColor(s.color));
+  // ---------- borders ----------
+  const SIDES = ['top', 'right', 'bottom', 'left'];
+  const LINE = {solid: 'solid', dashed: 'dashed', dotted: 'dotted'};
+  const bordersOf = (cs) => SIDES.map((side) => {
+    const S = side[0].toUpperCase() + side.slice(1);
+    return {side, width: parseFloat(cs['border' + S + 'Width']) || 0, style: cs['border' + S + 'Style'], color: parseColor(cs['border' + S + 'Color'])};
+  }).filter((s) => s.width > 0 && s.style !== 'none' && s.style !== 'hidden' && visibleColor(s.color))
+    // A double border under 3 px has no room for its gap: the browser draws it solid.
+    .map((s) => (s.style === 'double' && s.width < 3 ? {...s, style: 'solid'} : s));
+  const sameBorder = (a, b) => a.width === b.width && a.style === b.style && a.color.color === b.color.color && a.color.opacity === b.color.opacity;
+  // A double border's lines (Blink's rounding): the outer line is o wide, the inner one runs from s to the width.
+  const doubleStripes = (w) => [Math.floor((w + 1) / 3), Math.floor((2 * w + 1) / 3)];
+  // Borders one stroke can't draw. Sides away from rounded corners are drawn one by one: a rectangle,
+  // two for double, a dashed or dotted line along the middle. Round a rounded corner, sides of one
+  // colour and style become one path: a stroked middle line (equal widths), else a filled outline that
+  // follows the browser's inner curve (a border thinning out round a corner, unequal widths, double).
+  const borderLayers = (el, dec, bx) => {
+    const [L, T, R, B] = bx;
+    const sides = dec.border.sides;
+    const by = Object.fromEntries(sides.map((s) => [s.side, s]));
+    const present = SIDES.map((s) => !!by[s]);
+    const w = SIDES.map((s) => (by[s] ? by[s].width : 0));
+    const c = fitCorners(dec.corners, R - L, B - T);
+    const round = c.map(([h, v]) => h > 0 && v > 0);
+    const paint = (s) => [{type: 'color', color: s.color.color, opacity: s.color.opacity}];
+    const band = (k, a, t) => (k === 0 ? [L, T + a, R - L, t] : k === 2 ? [L, B - a - t, R - L, t] : k === 3 ? [L + a, T, t, B - T] : [R - a - t, T, t, B - T]);
+    const rect = (name, [x, y, bw, bh], s) => ({kind: 'rect', name, box: {x, y, w: bw, h: bh}, fills: paint(s), strokes: [],
+      radius: [0, 0, 0, 0], shadows: [], opacity: 1, deco: 'over', z: 0});
+    const path = (name, d, fills, strokes, bb) => ({kind: 'path', name, d, box: bb || {x: L, y: T, w: R - L, h: B - T}, fills, strokes,
+      opacity: 1, deco: 'over', z: 0});
+    const out = [];
+    const first = sides[0];
+    const nearRound = sides.some((s) => { const k = SIDES.indexOf(s.side); return round[k] || round[(k + 1) % 4]; });
+    const uniform = sides.every((s) => s.color.color === first.color.color && s.color.opacity === first.color.opacity && s.style === first.style);
+    if (nearRound && !uniform) {
+      for (const s of sides) out.push(rect('Border / ' + s.side, band(SIDES.indexOf(s.side), 0, s.width), s));
+      issue('border-sides-approximated', el, 'sides of different colours or styles on a rounded box');
+      return out;
+    }
+    if (!nearRound) {
+      for (const s of sides) {
+        const k = SIDES.indexOf(s.side);
+        if (s.style === 'double') {
+          const [o, st] = doubleStripes(s.width);
+          out.push(rect('Border / ' + s.side + ' (outer line)', band(k, 0, o), s), rect('Border / ' + s.side + ' (inner line)', band(k, st, s.width - st), s));
+        } else if (s.style === 'dashed' || s.style === 'dotted') {
+          const [x, y, bw, bh] = band(k, 0, s.width);
+          const d = k % 2 === 0 ? 'M' + pt(x, y + bh / 2) + 'L' + pt(x + bw, y + bh / 2) : 'M' + pt(x + bw / 2, y) + 'L' + pt(x + bw / 2, y + bh);
+          out.push(path('Border / ' + s.side, d, [], [{color: s.color.color, opacity: s.color.opacity, width: s.width, align: 'center', style: s.style}],
+            {x, y, w: bw, h: bh}));
+        } else {
+          out.push(rect('Border / ' + s.side, band(k, 0, s.width), s));
+          if (s.style !== 'solid') issue('border-style-approximated', el, s.side + ' ' + s.style + ' drawn solid');
+        }
+      }
+      return out;
+    }
+    const name = 'Border / ' + sides.map((s) => s.side).join(' ');
+    const style = first.style;
+    const even = sides.every((s) => s.width === first.width);
+    // where a side meets a missing one round a rounded corner, the border thins out to nothing
+    const tapers = round.some((r, k) => r && present[k] !== present[(k + 3) % 4]);
+    // a joint corner that is square or tighter than the line (its inner edge is square in CSS)
+    const sharp = present.some((p, k) => p && present[(k + 3) % 4] && (!round[k] || Math.min(...c[k]) < first.width));
+    if (LINE[style] && even && !tapers && (style !== 'solid' || !sharp)) {
+      out.push(path(name, centreLine(bx, present, first.width, c), [],
+        [{color: first.color.color, opacity: first.color.opacity, width: first.width, align: 'center', style}]));
+      return out;
+    }
+    if (style === 'double') {
+      const [b1, c1] = insetBox(bx, c, w.map((x) => doubleStripes(x)[0]));
+      const [b2, c2] = insetBox(bx, c, w.map((x) => doubleStripes(x)[1]));
+      const [b3, c3] = insetBox(bx, c, w);
+      out.push(path(name + ' (double)', ring(bx, c, b1, c1) + ring(b2, c2, b3, c3), paint(first), []));
+      return out;
+    }
+    if (style !== 'solid') issue('border-style-approximated', el, style + ' border round a rounded corner drawn solid');
+    const [ib, ic] = insetBox(bx, c, w);
+    out.push(path(name, ring(bx, c, ib, ic), paint(first), []));
+    return out;
   };
-  const decoration = (el, cs, rect) => {
-    const fills = backgroundFills(cs, el, rect);
+  const decoration = (el, cs, rect, layered) => {
+    const plan = bgPlan(cs, el, rect, !!layered);
+    const fills = plan.base;
     const borders = bordersOf(cs);
     const shadows = shadowsOf(cs, el);
-    const radius = radiiOf(cs, rect);
-    let strokes = [], sideRects = [];
-    if (borders.length === 4 && borders.every((b) => b.width === borders[0].width && b.color.color === borders[0].color.color && b.style === borders[0].style && b.color.opacity === borders[0].color.opacity)) {
+    const corners = cornersOf(cs, rect);
+    const radius = radiiOf(cs, rect, el);
+    let strokes = [], border = null;
+    if (borders.length === 4 && borders.every((b) => sameBorder(b, borders[0]))) {
       const b = borders[0];
-      strokes = [{color: b.color.color, opacity: b.color.opacity, width: b.width, align: 'inner',
-        style: b.style === 'dashed' ? 'dashed' : b.style === 'dotted' ? 'dotted' : 'solid'}];
-      if (!['solid', 'dashed', 'dotted'].includes(b.style)) issue('border-style-approximated', el, b.style + ' border drawn solid');
+      if (b.style === 'double' && layered) {
+        // two native strokes: the box's own (the outer line) and an inset layer's (the inner line)
+        const [o, s] = doubleStripes(b.width);
+        strokes = [{color: b.color.color, opacity: b.color.opacity, width: o, align: 'inner', style: 'solid'}];
+        border = {double: {inset: s, width: b.width - s, color: b.color}};
+      } else {
+        strokes = [{color: b.color.color, opacity: b.color.opacity, width: b.width, align: 'inner', style: LINE[b.style] || 'solid'}];
+        if (!LINE[b.style]) issue('border-style-approximated', el, b.style + ' border drawn solid');
+      }
     } else if (borders.length) {
-      sideRects = borders.map((b) => ({side: b.side, width: b.width, color: b.color.color, opacity: b.color.opacity}));
-      if (radius.some((x) => x > 0)) issue('border-sides-approximated', el, 'unequal borders on a rounded box');
-      // A side is a plain rectangle: a dotted or dashed side (a dotted leader) comes out as a solid line.
-      const styled = borders.filter((b) => b.style !== 'solid');
-      if (styled.length) issue('border-style-approximated', el, styled.map((b) => b.side + ' ' + b.style).join(', ') + ' drawn solid');
+      border = {sides: borders};
     }
     // An outline (focus rings) is drawn as its own layer outside the box.
     let outline = null;
@@ -320,8 +537,8 @@
       if (visibleColor(oc)) outline = {width: ow, offset: parseFloat(cs.outlineOffset) || 0, color: oc.color, opacity: oc.opacity,
         style: cs.outlineStyle === 'dashed' ? 'dashed' : cs.outlineStyle === 'dotted' ? 'dotted' : 'solid'};
     }
-    const visible = fills.length > 0 || strokes.length > 0 || sideRects.length > 0 || shadows.length > 0 || !!outline;
-    return {fills, strokes, sideRects, shadows, radius, visible, outline};
+    const visible = fills.length > 0 || plan.runs.length > 0 || strokes.length > 0 || !!border || shadows.length > 0 || !!outline;
+    return {fills, runs: plan.runs, strokes, border, shadows, radius, corners, visible, outline};
   };
 
   // ---------- naming ----------
@@ -669,9 +886,20 @@
       if (cs.display === 'none' || cs.visibility === 'hidden') return;
       const dec = decoration(node, cs, node.getBoundingClientRect());
       if (dec.visible) {
-        for (const rc of node.getClientRects()) {
+        const rects = [...node.getClientRects()];
+        for (const rc of rects) {
           decor.push({kind: 'rect', name: nameOf(node) + ' (inline box)', box: box(rc), fills: dec.fills, strokes: dec.strokes,
             radius: dec.radius, shadows: dec.shadows, opacity: 1, deco: 'under', z: 0});
+        }
+        // Side borders (a dotted leader, an underline border) under the words; a box split over lines
+        // keeps its fill only.
+        if (dec.border && dec.border.sides && rects.length === 1) {
+          const b = box(rects[0]);
+          for (const k of borderLayers(node, dec, [Math.round(b.x), Math.round(b.y), Math.round(b.x + b.w), Math.round(b.y + b.h)])) {
+            decor.push({...k, deco: 'under'});
+          }
+        } else if (dec.border) {
+          issue('border-sides-approximated', node, 'borders of an inline box split over lines not carried');
         }
       }
       for (const c of node.childNodes) visit(c);
@@ -748,14 +976,24 @@
   };
 
   // ---------- elements ----------
+  // Paint order within the nearest stacking context (CSS 2.1 appendix E): negative z-index, the boxes
+  // in flow, then positioned boxes and z-index 0 stacking contexts in tree order, then positive
+  // z-index. A static box that makes a stacking context (opacity, transform, filter, isolation,
+  // blend mode, clip path, mask, containment) paints with the positioned ones; a flex or grid item
+  // with a z-index acts as if positioned.
+  const stacking = (cs) => parseFloat(cs.opacity) < 1 || (cs.transform || 'none') !== 'none' || (cs.filter || 'none') !== 'none' ||
+    cs.isolation === 'isolate' || (cs.mixBlendMode || 'normal') !== 'normal' || (cs.backdropFilter || 'none') !== 'none' ||
+    (cs.clipPath || 'none') !== 'none' || (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none' ||
+    /\b(paint|layout|strict|content)\b/.test(cs.contain || '');
   const paintKey = (el) => {
     if (el.nodeType !== Node.ELEMENT_NODE) return 0;
     const cs = getComputedStyle(el);
     const z = parseInt(cs.zIndex, 10);
-    const positioned = cs.position !== 'static';
+    const pd = el.parentElement ? getComputedStyle(el.parentElement).display : '';
+    const positioned = cs.position !== 'static' || (Number.isFinite(z) && /flex|grid/.test(pd));
     if (positioned && Number.isFinite(z) && z < 0) return -1 + z / 1e6;
     if (positioned && Number.isFinite(z) && z > 0) return 2 + z / 1e6;
-    if (positioned) return 1;
+    if (positioned || stacking(cs)) return 1;
     return 0;
   };
   const isSectionEl = (el) => {
@@ -922,20 +1160,27 @@
     if (tag === 'video' || tag === 'canvas' || tag === 'iframe') { issue('media-unsupported', el, tag); return; }
     if (tag === 'input' || tag === 'textarea' || tag === 'select') {
       const dec = decoration(el, cs, rect);
-      out.push(...tagged([{kind: 'board', name: nameOf(el), box: box(rect), fills: dec.fills, strokes: dec.strokes, radius: dec.radius,
-        shadows: dec.shadows, opacity: parseFloat(cs.opacity) || 1, clip: true, children: [], formControl: tag}]));
+      const fb = box(rect);
+      const sides = dec.border && dec.border.sides
+        ? borderLayers(el, dec, [Math.round(fb.x), Math.round(fb.y), Math.round(fb.x + fb.w), Math.round(fb.y + fb.h)]) : [];
+      out.push(...tagged([{kind: 'board', name: nameOf(el), box: fb, fills: dec.fills, strokes: dec.strokes, radius: dec.radius,
+        shadows: dec.shadows, opacity: parseFloat(cs.opacity) || 1, clip: true, children: sides, formControl: tag}]));
       issue('form-control-text-not-carried', el, 'value/placeholder not converted');
       stats.boards += 1;
       return;
     }
     const section = isSectionEl(el);
     const component = el.dataset ? el.dataset.component || null : null;
-    const dec = decoration(el, cs, rect);
+    const dec = decoration(el, cs, rect, true);
     const named = el.dataset && el.dataset.name;
     const opacity = parseFloat(cs.opacity);
     const kids = [];
     processChildren(el, kids, cs);
     const own = section || component || dec.visible || named || opacity < 1;
+    // A static box that paints nothing and holds only positioned content is no layer of its own in
+    // CSS: that content paints among the positioned boxes, in tree order, so the box takes their place.
+    let zz = z;
+    if (z === 0 && !dec.visible && kids.length && kids.every((k) => (k.z || 0) > 0)) zz = Math.min(...kids.map((k) => k.z));
     const b = box(rect);
     if (!own) {
       if (!kids.length) return;  // empty spacers: the layout margins keep their space
@@ -954,17 +1199,22 @@
     const node = {kind: 'board', name: nameOf(el, section ? 'section' : 'element'), box: b, fills: dec.fills, strokes: dec.strokes,
       radius: dec.radius, shadows: dec.shadows, opacity: Number.isFinite(opacity) ? opacity : 1,
       clip: cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible' || false,
-      section, component, layout: layoutOf(el, cs), item: itemOf(el, cs, pcs), z, tag, children: kids};
+      section, component, layout: layoutOf(el, cs), item: itemOf(el, cs, pcs), z: zz, tag, children: kids};
     if (!own) node.wrapper = true;
     // The browser paints borders on whole pixels (it snaps the border box's edges to the pixel
     // grid); Penpot draws a layer where it is put, so a hairline at y 247.56 would smear over two rows.
     const L = Math.round(b.x), T = Math.round(b.y), R = Math.round(b.x + b.w), B = Math.round(b.y + b.h);
-    for (const s of dec.sideRects) {
-      const sr = s.side === 'top' ? {x: L, y: T, w: R - L, h: s.width} : s.side === 'bottom' ? {x: L, y: B - s.width, w: R - L, h: s.width}
-        : s.side === 'left' ? {x: L, y: T, w: s.width, h: B - T} : {x: R - s.width, y: T, w: s.width, h: B - T};
-      kids.push({kind: 'rect', name: 'Border / ' + s.side, box: sr, fills: [{type: 'color', color: s.color, opacity: s.opacity}], strokes: [],
-        radius: [0, 0, 0, 0], shadows: [], opacity: 1, deco: 'over', z: 0});
+    if (dec.border && dec.border.sides) kids.push(...borderLayers(el, dec, [L, T, R, B]));
+    if (dec.border && dec.border.double) {
+      const db = dec.border.double, s = db.inset;
+      kids.push({kind: 'rect', name: 'Border / double (inner line)', box: {x: r2(b.x + s), y: r2(b.y + s), w: r2(b.w - 2 * s), h: r2(b.h - 2 * s)},
+        fills: [], strokes: [{color: db.color.color, opacity: db.color.opacity, width: db.width, align: 'inner', style: 'solid'}],
+        radius: dec.radius.map((r) => r2(Math.max(0, r - s))), shadows: [], opacity: 1, deco: 'over', z: 0});
     }
+    // Background layers above the first one the box's own fills can't carry: under everything else.
+    dec.runs.forEach((run, k) => kids.push({kind: 'rect', name: run.raster ? 'Background texture (raster)' : 'Background layers',
+      box: {...b}, fills: run.raster ? [{type: 'image', src: run.src, texture: true, fit: 'fill'}] : run.fills, strokes: [],
+      radius: dec.radius, shadows: [], opacity: 1, deco: 'under', bg: k, z: -100 + k}));
     if (dec.outline) {
       const o = dec.outline, g = o.offset + o.width;
       kids.push({kind: 'rect', name: 'Focus ring', box: {x: r2(b.x - g), y: r2(b.y - g), w: r2(b.w + 2 * g), h: r2(b.h + 2 * g)}, fills: [],
@@ -1043,5 +1293,5 @@
     viewport: [window.innerWidth, window.innerHeight], background: pageFills, vars,
     body: {box: box(body.getBoundingClientRect()), layout: layoutOf(body, bodyCs)},
     fonts: fonts.filter((f) => usedFonts.has(f.family.toLowerCase() + '|' + f.weight + '|' + f.style)),
-    fontsUsed: [...usedFonts.values()], nodes, issues, stats};
+    fontsUsed: [...usedFonts.values()], nodes, textures, issues, stats};
 }

@@ -1335,7 +1335,8 @@ def _apply(n: dict, res: dict, other: list[dict]) -> None:
             _refit_label(f["label"], f["n"])
     for c in other:
         for g in (_promoted(c) if _is_zero(c) else [c]):
-            z = -1 if g.get("deco") == "under" else ranks.get(id(c), 0)
+            # background layers lie under all else, the lowest first; other layers drawn under at -1
+            z = (-50 + int(g["bg"])) if g.get("bg") is not None else -1 if g.get("deco") == "under" else ranks.get(id(c), 0)
             _pp(g)["item"] = {**_item({"hs": "fix", "vs": "fix", "m": [0, 0, 0, 0]}, absolute=True, z=z),
                               **_constraints(g, n)}
 

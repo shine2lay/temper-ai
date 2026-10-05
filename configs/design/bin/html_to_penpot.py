@@ -26,6 +26,7 @@ import functools
 import hashlib
 import http.server
 import json
+import math
 import mimetypes
 import re
 import socket
@@ -243,7 +244,37 @@ def capture_code(base: str, page: str, widths: tuple[int, ...]) -> str:
     if (!r.ok()) throw new Error('upload screenshot failed ' + r.status());
     r = await page.request.put(A.base + '/__put/scene-' + w + '.json', {data: JSON.stringify(scene), headers: {'content-type': 'application/octet-stream'}});
     if (!r.ok()) throw new Error('upload scene failed ' + r.status());
-    out.push({width: w, height: scene.height, viewport: scene.viewport, issues: scene.issues.length, stats: scene.stats});
+    // Background layers Penpot can't draw (tiles, repeating gradients): each box's layers drawn alone
+    // on a transparent page, at the box's size, for a picture fill.
+    if ((scene.textures || []).length) {
+      const tp = await page.context().newPage();
+      try {
+        await tp.goto(A.base + '/__blank', {waitUntil: 'load'});
+        for (const t of scene.textures) {
+          await tp.setViewportSize({width: Math.min(4000, Math.max(16, Math.ceil(t.w))), height: Math.min(4000, Math.max(16, Math.ceil(t.h)))});
+          await tp.evaluate(async (css) => {
+            document.documentElement.style.background = 'transparent';
+            document.body.style.cssText = 'margin:0;background:transparent';
+            document.body.innerHTML = '';
+            const d = document.createElement('div');
+            d.setAttribute('style', css);
+            document.body.appendChild(d);
+            const urls = [...css.matchAll(/url\\(\\s*"?([^")]+)"?\\s*\\)/g)].map((m) => m[1]);
+            await Promise.race([Promise.all(urls.map((u) => new Promise((r) => { const i = new Image(); i.onload = r; i.onerror = r; i.src = u; }))),
+              new Promise((r) => setTimeout(r, 10000))]);
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          }, t.css);
+          const png = await tp.screenshot({clip: {x: 0, y: 0, width: t.w, height: t.h}, fullPage: true, omitBackground: true,
+            animations: 'disabled', caret: 'hide', scale: 'css'});
+          r = await page.request.put(A.base + '/__put/' + t.key + '.png', {data: png, headers: {'content-type': 'application/octet-stream'}});
+          if (!r.ok()) throw new Error('upload texture failed ' + r.status());
+        }
+      } finally {
+        await tp.close();
+      }
+    }
+    out.push({width: w, height: scene.height, viewport: scene.viewport, issues: scene.issues.length, stats: scene.stats,
+              textures: (scene.textures || []).length});
   }
   return out;
 }""".replace("__ARGS__", json.dumps(args))
@@ -418,8 +449,9 @@ def image_kind(data: bytes) -> str | None:
     return None
 
 
-def collect_assets(scenes: dict[int, dict], site: Path, base: str) -> dict:
-    """Font faces and images the scenes use, read from the site folder only."""
+def collect_assets(scenes: dict[int, dict], site: Path, base: str, out: Path | None = None) -> dict:
+    """Font faces and images the scenes use, read from the site folder only (background textures:
+    the pictures the capture drew into the output folder)."""
     faces: dict[tuple, dict] = {}
     images: dict[str, dict] = {}
     issues: list[dict] = []
@@ -444,8 +476,10 @@ def collect_assets(scenes: dict[int, dict], site: Path, base: str) -> dict:
             for n in nodes:
                 for fill in n.get("fills", []):
                     if fill.get("type") == "image" and fill["src"] not in images:
-                        images[fill["src"]] = read_image(fill["src"], site, base, issues)
+                        images[fill["src"]] = (read_texture(fill["src"], out, issues) if fill.get("texture")
+                                               else read_image(fill["src"], site, base, issues))
                 walk(n.get("children", []))
+                walk(list((n.get("states") or {}).values()))
 
         walk(scene["nodes"])
         for fill in scene.get("background", []):
@@ -472,6 +506,17 @@ def read_image(src: str, site: Path, base: str, issues: list[dict]) -> dict:
         return {"src": src, "ok": False}
     name = Path(urllib.parse.urlsplit(src).path).name[:120] if not src.startswith("data:") else "inline-image"
     return {"src": src, "ok": True, "data": data, "mtype": mtype, "name": name or "image",
+            "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+
+
+def read_texture(src: str, out: Path | None, issues: list[dict]) -> dict:
+    """A background texture the capture drew (tex-<w>x<h>-<hash>.png in the output folder)."""
+    path = out / src if out is not None and PUT_NAME.fullmatch(src) else None
+    data = path.read_bytes() if path is not None and path.is_file() else None
+    if not data or image_kind(data) != "image/png":
+        issues.append({"kind": "texture-missing", "where": src[:120], "detail": "the background texture was not drawn"})
+        return {"src": src, "ok": False}
+    return {"src": src, "ok": True, "data": data, "mtype": "image/png", "name": "background-texture.png",
             "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
 
 
@@ -630,6 +675,7 @@ class Builder:
         self.made: dict[int, str] = {}       # id(scene node) -> its Penpot layer (grid cells name their layer)
         self.paths: dict[str, tuple] = {}    # Penpot layer -> its path under its component root (links instances)
         self.variants: list[dict] = []
+        self.exact: dict[str, dict] = {}     # Penpot layer -> its box before pixel snapping (copy vs main)
         self.all_mains: list[dict] = []      # every component main, variant states included
         self._segment: dict | None = None
         self._noted: set[tuple] = set()
@@ -671,7 +717,9 @@ class Builder:
         A positioned board paints :shapes first to last, so children go by paint order (z). A layout
         board lays :shapes out last to first and, at equal z-index, paints lower indexes on top: its
         flow children go in reverse flow order (later ones on top, as in CSS), after the layers drawn
-        over them (borders, focus rings, positioned children) and before the ones drawn under.
+        over them (borders, focus rings) and before the ones drawn under (lowest last). Children out
+        of the flow (positioned ones) slot in by tree order: at an equal z-index CSS paints the later
+        one on top.
         """
         kids = list(enumerate(n.get("children", [])))
         pp = n.get("pp") or {}
@@ -679,9 +727,14 @@ class Builder:
             return sorted(kids, key=lambda ic: float(ic[1].get("z") or 0))
         rank = {id(c): i for i, c in enumerate(pp.get("order") or [])}
         flow = sorted((ic for ic in kids if id(ic[1]) in rank), key=lambda ic: rank[id(ic[1])])
-        under = [ic for ic in kids if id(ic[1]) not in rank and ic[1].get("deco") == "under"]
-        over = [ic for ic in kids if id(ic[1]) not in rank and ic[1].get("deco") != "under"]
-        return list(reversed(over)) + list(reversed(flow)) + under
+        rest = [ic for ic in kids if id(ic[1]) not in rank]
+        under = sorted((ic for ic in rest if ic[1].get("deco") == "under"), key=lambda ic: -float(ic[1].get("z") or 0))
+        over = [ic for ic in rest if ic[1].get("deco") and ic[1].get("deco") != "under"]
+        stack = list(reversed(flow))
+        for ic in (ic for ic in rest if not ic[1].get("deco")):  # tree order
+            at = next((k for k, s in enumerate(stack) if s[0] < ic[0]), len(stack))
+            stack.insert(at, ic)
+        return list(reversed(over)) + stack + under
 
     def children(self, obj: dict, n: dict, dx: float, dy: float, in_component: bool, path: tuple) -> None:
         for i, c in self.ordered(n):
@@ -800,6 +853,24 @@ class Builder:
             obj["opacity"] = round(float(n["opacity"]), 3)
 
     # -- nodes
+    def place(self, n: dict, dx: float, dy: float, root: bool = False) -> tuple[float, float, float, float]:
+        """Where a box goes. A painted box sits on whole pixels, as Chrome paints it (each edge rounded
+        to the pixel grid); at fractional edges Penpot would draw half-tone seams. A fixed size in a
+        layout never grows by it, so a full row can't wrap when Penpot lays it out again."""
+        b = n["box"]
+        if not (n.get("fills") or n.get("strokes")):
+            return b["x"] + dx, b["y"] + dy, b["w"], b["h"]
+        item = {} if root else ((n.get("pp") or {}).get("item") or {})
+        flow = not item.get("layout-item-absolute")
+        got: list[float] = []
+        for a, s, key in ((b["x"], b["w"], "layout-item-h-sizing"), (b["y"], b["h"], "layout-item-v-sizing")):
+            a0 = math.floor(a + 0.5)
+            s1 = math.floor(a + s + 0.5) - a0
+            if flow and item.get(key) == "fix" and s1 > s:
+                s1 = math.floor(s)
+            got += [a, s] if s1 < 1 else [a0, s1]
+        return got[0] + dx, got[2] + dy, got[1], got[3]
+
     def node(self, n: dict, parent: str, frame: str, dx: float, dy: float, in_component: bool = False,
              path: tuple = (), plain: bool = False, root: bool = False) -> None:
         """One scene node -> Penpot layers. plain: build a component's board itself (main or instance
@@ -816,8 +887,9 @@ class Builder:
                 return
             if n.get("component") and in_component and not plain:
                 self.note("nested-component-flattened", n["name"], "a component inside a component stays a plain board")
-            obj = p.shape("frame", n["name"], parent, frame, b["x"] + dx, b["y"] + dy, b["w"], b["h"],
+            obj = p.shape("frame", n["name"], parent, frame, *self.place(n, dx, dy, root),
                           self.fills(n.get("fills", []), n["name"]))
+            self.exact[obj["id"]] = {"x": b["x"] + dx, "y": b["y"] + dy, "width": b["w"], "height": b["h"]}
             obj["show-content"] = not n.get("clip", False)
             self.decorate(obj, n)
             if (n.get("pp") or {}).get("mode"):
@@ -842,8 +914,9 @@ class Builder:
             b = n["box"]
             if b["w"] < 0.5 or b["h"] < 0.5:
                 return
-            obj = p.shape("rect", n["name"], parent, frame, b["x"] + dx, b["y"] + dy, b["w"], b["h"],
+            obj = p.shape("rect", n["name"], parent, frame, *self.place(n, dx, dy, root),
                           self.fills(n.get("fills", []), n["name"]))
+            self.exact[obj["id"]] = {"x": b["x"] + dx, "y": b["y"] + dy, "width": b["w"], "height": b["h"]}
             self.decorate(obj, n)
             self.item(obj, n, root)
             self.put(obj, n, path)
@@ -1003,7 +1076,7 @@ class Builder:
         for where, obj in mine.items():  # by place in the tree: layout boards list children in their own order
             src = main["paths"][where]
             obj["shape-ref"] = src["id"]
-            touched = sorted(touched_groups(obj, src, root, mroot, self.paths))
+            touched = sorted(touched_groups(obj, src, root, mroot, self.paths, self.exact))
             if touched:
                 obj["touched"] = touched
                 touched_count += 1
@@ -1091,11 +1164,13 @@ def text_diff(a: Any, b: Any) -> set[str]:
     return out
 
 
-def touched_groups(obj: dict, src: dict, root: dict, mroot: dict, paths: dict[str, tuple] | None = None) -> set[str]:
+def touched_groups(obj: dict, src: dict, root: dict, mroot: dict, paths: dict[str, tuple] | None = None,
+                   exact: dict[str, dict] | None = None) -> set[str]:
     """Penpot sync groups where a component copy differs from its main (paths: layer -> place in the
-    component, to compare grid cells, which name their layers)."""
+    component, to compare grid cells, which name their layers; exact: boxes before pixel snapping, so
+    a copy that only snaps to other whole pixels keeps its main's geometry)."""
     def rel(o: dict, r: dict) -> list[float]:
-        s, rs = o["selrect"], r["selrect"]
+        s, rs = (exact or {}).get(o["id"], o["selrect"]), (exact or {}).get(r["id"], r["selrect"])
         if o is r:
             return [round(s["width"], 1), round(s["height"], 1)]
         return [round(s["x"] - rs["x"], 1), round(s["y"] - rs["y"], 1), round(s["width"], 1), round(s["height"], 1)]
@@ -1503,7 +1578,7 @@ def convert(site: Path, page: str, out: Path, name: str, widths: tuple[int, ...]
     cap = capture(site, page, out, widths, browser, serve_host)
     scenes = cap["scenes"]
     report["capture"] = cap["summary"]
-    assets = collect_assets(scenes, site, cap["base"])
+    assets = collect_assets(scenes, site, cap["base"], out)
     client = client or penpot_client()
     if not client.profile:
         client.login()

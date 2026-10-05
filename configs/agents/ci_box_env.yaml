@@ -1,0 +1,52 @@
+# Zero-LLM agent: what a run box and its agent tools can read, by NAME only.
+#
+# A script step is an agent tool process, so its own environment shows what an
+# agent's Bash sees; /proc/*/environ shows what every process in the box started
+# with (the box's own process included), as far as this user can read it.
+# Prints names, never values, and fails (exit 1) when it finds a name that must
+# not be there (docs/boxes.md). Used by the machine check's smoke set and as the
+# live probe after a change to the box list.
+agent:
+  name: ci_box_env
+  type: script
+  timeout_seconds: 60
+  script_template: |
+    #!/bin/bash
+    set -u
+    python3 - <<'PY'
+    import json, os, sys
+    from pathlib import Path
+
+    # Never in a box at all: only the server reads them.
+    SERVER_ONLY = {
+        "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_SIGNING_SECRET", "TELEGRAM_BOT_TOKEN",
+        "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET", "GITHUB_APP_CLIENT_SECRET",
+        "LINEAR_WEBHOOK_SECRET", "NOTION_WEBHOOK_SECRET", "TEMPER_SLACK_TEST_TOKEN",
+        "INTERNAL_API_TOKEN", "TEMPER_API_TOKENS_FILE", "TEMPER_SPAWNER",
+        "TEMPER_EXECUTION_MODE", "TEMPER_DOCKER_TEMPLATE_CONTAINER",
+    }
+    # Never in an agent tool's own environment.
+    NOT_FOR_TOOLS = SERVER_ONLY | {
+        "TEMPER_DATABASE_URL", "DATABASE_URL", "TEMPER_SECRET_KEY", "TEMPER_REDIS_URL",
+        "REDIS_URL", "TEMPER_API_TOKEN",
+    }
+    SECRET_ENDINGS = ("_KEY", "_TOKEN", "_TOKENS", "_SECRET", "_PASSWORD", "_CREDENTIALS")
+
+    tool = sorted(os.environ)
+    box, unreadable = set(), 0
+    for path in Path("/proc").glob("[0-9]*/environ"):
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            unreadable += 1
+            continue
+        for item in raw.split(b"\0"):
+            if b"=" in item:
+                box.add(item.split(b"=", 1)[0].decode("ascii", "replace"))
+
+    leaks = sorted({n for n in tool if n in NOT_FOR_TOOLS or n.endswith(SECRET_ENDINGS)}
+                   | (box & SERVER_ONLY))
+    print(json.dumps({"tool_env": tool, "box_env": sorted(box),
+                      "unreadable_proc": unreadable, "leaks": leaks}))
+    sys.exit(1 if leaks else 0)
+    PY

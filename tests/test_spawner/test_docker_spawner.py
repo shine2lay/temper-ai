@@ -8,11 +8,13 @@ it reads docker's answers, which is the whole contract.
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from dataclasses import dataclass, field
 
 import pytest
 
+from temper_ai.shared.box_env import BoxEnv, BoxEnvError
 from temper_ai.spawner.base import SpawnerBusy, SpawnerError
 from temper_ai.spawner.docker_spawner import (
     TEMPLATE_GRACE_SECONDS,
@@ -25,6 +27,15 @@ from temper_ai.spawner.docker_spawner import (
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
 WORKSPACES = "/srv/temper/workspaces"
+
+#: The box list these tests run with, unless a test passes its own.
+LISTED = BoxEnv(names=frozenset({"TEMPER_DATABASE_URL", "OPENAI_API_KEY", "PATH", "GITHUB_APP_ID", "KEY"}),
+                agent_tools=frozenset({"PATH"}))
+
+
+@pytest.fixture(autouse=True)
+def _box_env_list_mode(monkeypatch):
+    monkeypatch.delenv("TEMPER_BOX_ENV", raising=False)
 
 
 def _inspect_json(**overrides) -> str:
@@ -80,7 +91,7 @@ def _spawner(docker: FakeDocker, workspace_path: str | None, **kwargs) -> Docker
         template_container="worker-self",
         workspace_lookup=lambda _eid: workspace_path,
         run=docker,
-        **kwargs,
+        **{"box_env": lambda: LISTED, **kwargs},
     )
 
 
@@ -122,7 +133,7 @@ class TestRunContainer:
             "uv", "run", "python", "-m", "temper_ai.cli.main", "run-workflow",
             "--execution-id", "exec-1",
         ]
-        # env: everything the worker had, plus its own name
+        # env: what the worker had that the box list names, plus its own name
         assert set(_envs(cmd)) == {
             "TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1", "PATH=/usr/bin",
             "TEMPER_RUN_CONTAINER=temper-run-exec-1",
@@ -145,6 +156,14 @@ class TestRunContainer:
         _spawner(docker, str(workspace)).spawn("exec-1")
         assert set(_envs(_run_cmd(docker))) == {
             "PATH=/usr/bin", "GITHUB_APP_ID=1234", "TEMPER_RUN_CONTAINER=temper-run-exec-1"}
+
+    def test_github_app_s_key_stays_out_even_when_inheriting(self, workspace, monkeypatch):
+        monkeypatch.setenv("TEMPER_BOX_ENV", "inherit")
+        info = json.loads(_inspect_json())[0]
+        info["Config"]["Env"] = ["PATH=/usr/bin", "GITHUB_APP_PRIVATE_KEY=-----BEGIN leak"]
+        docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
+        _spawner(docker, str(workspace)).spawn("exec-1")
+        assert not any(e.startswith("GITHUB_APP_PRIVATE_KEY=") for e in _envs(_run_cmd(docker)))
 
     def test_never_gets_the_docker_socket(self, workspace):
         docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), "")]})
@@ -279,6 +298,91 @@ class TestRunContainer:
         creds = next(m for m in _mounts(cmd) if m.endswith(".credentials.json,readonly")
                      or ".credentials.json" in m)
         assert cmd.index("--tmpfs") < cmd.index(creds)
+
+
+def _with_env(env: list[str]) -> str:
+    info = json.loads(_inspect_json())[0]
+    info["Config"]["Env"] = env
+    return json.dumps([info])
+
+
+SERVER_ENV = [
+    "PATH=/usr/bin", "TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1",
+    "SLACK_BOT_TOKEN=xoxb-fake", "TELEGRAM_BOT_TOKEN=tg-fake", "INTERNAL_API_TOKEN=it-fake",
+    "TEMPER_RUN_CONTAINER=temper-ai-server-1",
+]
+
+
+class TestBoxEnvAllowList:
+    """A box gets only the listed names: a new secret in .env stays out by default."""
+
+    def test_an_unlisted_variable_never_reaches_docker_run(self, workspace, caplog):
+        docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
+        with caplog.at_level(logging.INFO, logger="temper_ai.spawner.docker_spawner"):
+            _spawner(docker, str(workspace)).spawn("exec-1")
+        names = {e.split("=", 1)[0] for e in _envs(_run_cmd(docker))}
+        assert names == {"PATH", "TEMPER_DATABASE_URL", "OPENAI_API_KEY", "TEMPER_RUN_CONTAINER"}
+        # The worker logs the NAMES it left out, never a value.
+        line = next(r.getMessage() for r in caplog.records if "left out" in r.getMessage())
+        assert "INTERNAL_API_TOKEN, SLACK_BOT_TOKEN, TELEGRAM_BOT_TOKEN" in line
+        assert "fake" not in caplog.text
+
+    def test_temper_run_container_is_always_its_own_name(self, workspace):
+        empty = BoxEnv(names=frozenset(), agent_tools=frozenset())
+        docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
+        _spawner(docker, str(workspace), box_env=lambda: empty).spawn("exec-1")
+        assert _envs(_run_cmd(docker)) == ["TEMPER_RUN_CONTAINER=temper-run-exec-1"]
+
+    def test_the_list_is_read_again_for_every_run(self, workspace):
+        lists = [LISTED, BoxEnv(names=frozenset({"SLACK_BOT_TOKEN"}), agent_tools=frozenset())]
+        docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
+        spawner = _spawner(docker, str(workspace), box_env=lambda: lists.pop(0))
+        spawner.spawn("exec-1")
+        spawner.spawn("exec-2")
+        second = {e.split("=", 1)[0] for e in _envs(docker.commands("run")[1])}
+        assert second == {"SLACK_BOT_TOKEN", "TEMPER_RUN_CONTAINER"}
+
+    def test_a_broken_list_fails_the_spawn_loudly(self, workspace):
+        def broken():
+            raise BoxEnvError("configs/boxes/env.yaml: missing")
+
+        docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
+        with pytest.raises(SpawnerError, match="allow-list is broken"):
+            _spawner(docker, str(workspace), box_env=broken).spawn("exec-1")
+        assert docker.commands("run") == []
+
+    def test_inherit_restores_the_old_copy_and_warns(self, workspace, monkeypatch, caplog):
+        monkeypatch.setenv("TEMPER_BOX_ENV", "inherit")
+
+        def never_read():
+            raise AssertionError("inherit does not read the list")
+
+        docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
+        with caplog.at_level(logging.WARNING, logger="temper_ai.spawner.docker_spawner"):
+            _spawner(docker, str(workspace), box_env=never_read).spawn("exec-1")
+        envs = set(_envs(_run_cmd(docker)))
+        assert envs == {
+            "PATH=/usr/bin", "TEMPER_DATABASE_URL=postgresql://x", "OPENAI_API_KEY=sk-1",
+            "SLACK_BOT_TOKEN=xoxb-fake", "TELEGRAM_BOT_TOKEN=tg-fake", "INTERNAL_API_TOKEN=it-fake",
+            "TEMPER_BOX_ENV=inherit", "TEMPER_RUN_CONTAINER=temper-run-exec-1",
+        }
+        assert any(r.levelno == logging.WARNING and "inherit" in r.getMessage() for r in caplog.records)
+
+    def test_a_mistyped_switch_keeps_the_list(self, workspace, monkeypatch):
+        monkeypatch.setenv("TEMPER_BOX_ENV", "inherrit")
+        docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
+        _spawner(docker, str(workspace)).spawn("exec-1")
+        assert not any(e.startswith("SLACK_BOT_TOKEN=") for e in _envs(_run_cmd(docker)))
+
+    def test_the_real_spawner_reads_the_repo_list(self, workspace, monkeypatch):
+        # No box_env passed: the default loader reads configs/boxes/env.yaml.
+        monkeypatch.delenv("TEMPER_CONFIG_DIR", raising=False)
+        docker = FakeDocker(answers={"inspect": [(0, _with_env(SERVER_ENV), "")]})
+        DockerSpawner(template_container="worker-self", workspace_lookup=lambda _e: str(workspace),
+                      run=docker).spawn("exec-1")
+        names = {e.split("=", 1)[0] for e in _envs(_run_cmd(docker))}
+        assert {"PATH", "TEMPER_DATABASE_URL", "TEMPER_RUN_CONTAINER"} <= names
+        assert not {"SLACK_BOT_TOKEN", "TELEGRAM_BOT_TOKEN", "INTERNAL_API_TOKEN"} & names
 
 
 class TestAllWorkspaces:

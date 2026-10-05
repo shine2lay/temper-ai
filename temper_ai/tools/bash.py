@@ -20,6 +20,7 @@ import time
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
+from temper_ai.shared.agent_env import env_for_agent_tool
 from temper_ai.tools._output_compaction import DEFAULT_MAX_CHARS
 from temper_ai.tools._output_compaction import compact as compact_output
 from temper_ai.tools.base import BaseTool, ToolResult
@@ -638,31 +639,10 @@ def _decode_error_text(e: UnicodeDecodeError, offset: int) -> str:
 
 
 def _safe_env(extra: dict[str, str] | None = None) -> dict[str, str]:
-    """Build a restricted environment for subprocess execution.
+    """The command's environment: env_for_agent_tool (shared/agent_env.py), plus ``extra``.
 
-    Strips secrets, API keys, and tokens to prevent LLM agents from
-    exfiltrating credentials via commands like `env | grep KEY`.
+    Only PATH, HOME, the locale, the proxies and the box list's agent_tools names, so
+    an agent's `env` shows no secret. ``extra`` (how script agents pass data to a
+    script) is added as given.
     """
-    env = os.environ.copy()
-    # Remove keys matching sensitive patterns
-    sensitive_suffixes = ("_API_KEY", "_SECRET", "_SECRET_KEY", "_TOKEN", "_PASSWORD", "_PRIVATE_KEY")
-    sensitive_exact = {
-        "SUDO_ASKPASS", "SSH_AUTH_SOCK", "DATABASE_URL", "TEMPER_DATABASE_URL",
-        "TEMPER_DASHBOARD_TOKEN", "CLAUDE_CONFIG_DIR",
-        # The GitHub app's keys: with them anyone can act as the app (integrations.github).
-        "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_WEBHOOK_SECRET", "GITHUB_APP_CLIENT_SECRET",
-    }
-    to_remove = set()
-    for key in env:
-        if key in sensitive_exact:
-            to_remove.add(key)
-        elif any(key.endswith(s) for s in sensitive_suffixes):
-            to_remove.add(key)
-    for key in to_remove:
-        env.pop(key, None)
-    if extra:
-        # Caller-supplied values, applied after stripping so they are never mistaken for inherited
-        # secrets and removed. This is how script agents pass data to a script: a value in the
-        # environment is data the shell will never parse as code, whoever wrote it.
-        env.update({str(k): str(v) for k, v in extra.items()})
-    return env
+    return env_for_agent_tool(extra=extra)

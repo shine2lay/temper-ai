@@ -1,0 +1,18 @@
+workflow:
+  name: ci_box_env
+  description: |
+    What a run box holds, by variable NAME only (docs/boxes.md): one script
+    step lists the names in its own environment (what an agent's tools see)
+    and in every /proc/*/environ it can read (what the box started with),
+    and fails if a server-only name is anywhere in the box or a secret is in
+    a tool's environment. Script agent only: no model, no key, no spend.
+
+      POST /api/runs {"workflow": "ci_box_env"}
+
+  outputs:
+    names: probe.output
+
+  nodes:
+    - name: probe
+      type: agent
+      agent: ci_box_env

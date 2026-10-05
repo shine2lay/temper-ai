@@ -53,6 +53,14 @@ def plain_run(box: Box) -> str:
     return f"smoke_test {run_id[:8]} completed ({out.get('status')})"
 
 
+def box_env(box: Box) -> str:
+    # The probe step fails itself when a server-only name is anywhere in the box or a
+    # secret is in a tool's environment (configs/agents/ci_box_env.yaml, docs/boxes.md).
+    run_id = box.start_run("ci_box_env")
+    box.wait_for(run_id, ("completed",), seconds=180)
+    return f"ci_box_env {run_id[:8]} completed: no server-only name in the box, no secret in its tools"
+
+
 def parallel_and_stage(box: Box) -> str:
     run_id = box.start_run("ci_parallel")
     box.wait_for(run_id, ("completed",), seconds=240)
@@ -255,7 +263,7 @@ def hooks(box: Box) -> str:
 
 # How many things the set checks, when it gets all the way through. Used to say
 # how much was not reached when it stops early.
-SET_SIZE = 8
+SET_SIZE = 9
 
 
 def run_all(box: Box, shots: Path) -> list[Result]:
@@ -284,6 +292,8 @@ def run_all(box: Box, shots: Path) -> list[Result]:
         return r
 
     add("plain run", "a workflow runs end to end", lambda: plain_run(box))
+    add("box env", "a box holds only the listed variables, its tools no secret",
+        lambda: box_env(box))
     add("parallel and stage", "branches run side by side, with a stage inside one",
         lambda: parallel_and_stage(box))
     add("gate", "a gate parks the run and an API answer releases it",

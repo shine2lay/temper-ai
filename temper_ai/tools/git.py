@@ -8,6 +8,7 @@ import logging
 import subprocess  # noqa: B404
 from typing import Any
 
+from temper_ai.shared.agent_env import env_for_agent_tool
 from temper_ai.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,8 @@ class Git(BaseTool):
                 text=True,
                 timeout=self.timeout,
                 cwd=self.cwd,
+                # A repository's hooks run with git's environment: no secrets in it.
+                env=env_for_agent_tool(),
             )
 
             output = result.stdout

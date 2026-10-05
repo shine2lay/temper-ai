@@ -38,20 +38,20 @@ def test_it_stops_at_the_first_failure(monkeypatch, tmp_path):
             return f"{name} ok"
         return fn
 
-    for fn_name in ("plain_run", "parallel_and_stage", "gate_through_api",
+    for fn_name in ("plain_run", "box_env", "parallel_and_stage", "gate_through_api",
                     "stop_then_resume", "fork", "restart_mid_run", "hooks"):
         monkeypatch.setattr(smoke, fn_name, named(fn_name))
     monkeypatch.setattr(smoke, "finished_run_page", lambda box, shots: ("page ok", []))
 
     results = smoke.run_all(_Box(), tmp_path)
 
-    assert [r.name for r in results] == ["plain run", "parallel and stage", "gate"]
+    assert [r.name for r in results] == ["plain run", "box env", "parallel and stage", "gate"]
     assert results[-1].ok is False
     assert "stop_then_resume" not in called, "it carried on after the answer was in"
 
 
 def test_everything_passing_runs_the_whole_set(monkeypatch, tmp_path):
-    for fn_name in ("plain_run", "parallel_and_stage", "gate_through_api",
+    for fn_name in ("plain_run", "box_env", "parallel_and_stage", "gate_through_api",
                     "stop_then_resume", "fork", "restart_mid_run", "hooks"):
         monkeypatch.setattr(smoke, fn_name, lambda *a, **k: "ok")
     monkeypatch.setattr(smoke, "finished_run_page", lambda box, shots: ("page ok", ["a.png"]))
@@ -66,12 +66,13 @@ def test_everything_passing_runs_the_whole_set(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("promised", ["plain run", "parallel and stage", "gate",
                                       "stop and resume", "fork", "server restart mid-run",
-                                      "the page", "hooks"])
-def test_the_set_is_the_eight_things_that_were_promised(monkeypatch, tmp_path, promised):
-    """The eight in the task. If one is dropped, the gate goes on saying it
-    checked, and nobody finds out until the thing it covered breaks live.
+                                      "the page", "hooks", "box env"])
+def test_the_set_is_the_things_that_were_promised(monkeypatch, tmp_path, promised):
+    """The eight in the first task, and the box's environment (docs/boxes.md). If one
+    is dropped, the gate goes on saying it checked, and nobody finds out until the
+    thing it covered breaks live.
     """
-    for fn_name in ("plain_run", "parallel_and_stage", "gate_through_api",
+    for fn_name in ("plain_run", "box_env", "parallel_and_stage", "gate_through_api",
                     "stop_then_resume", "fork", "restart_mid_run", "hooks"):
         monkeypatch.setattr(smoke, fn_name, lambda *a, **k: "ok")
     monkeypatch.setattr(smoke, "finished_run_page", lambda box, shots: ("page ok", []))

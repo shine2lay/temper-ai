@@ -19,8 +19,12 @@ What a run container is, precisely:
 
   image     the template's image (so the run has the same toolchain and
             the same temper_ai), unless TEMPER_DOCKER_IMAGE says otherwise
-  env       the template's environment (DB URL, Redis URL, provider keys)
-            plus TEMPER_RUN_CONTAINER=<its own name>
+  env       only the template's variables named on the box's allow-list
+            (configs/boxes/env.yaml + configs/boxes/local/env.yaml,
+            shared/box_env.py), plus TEMPER_RUN_CONTAINER=<its own name>;
+            each spawn logs the names it left out. TEMPER_BOX_ENV=inherit
+            (emergency rollback) copies everything but the GitHub app's
+            keys, and warns on every spawn
   network   the template's first network (postgres/redis by compose name)
   command   `uv run python -m temper_ai.cli.main run-workflow`, or
             TEMPER_DOCKER_RUN_COMMAND
@@ -73,6 +77,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from temper_ai.integrations.github import secret as github_secret
+from temper_ai.shared import box_env as box_env_list
 from temper_ai.spawner.base import Spawner, SpawnerBusy, SpawnerError
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
@@ -97,6 +102,38 @@ def _says_gone(stderr: str) -> bool:
     """Whether docker's error says the container does not exist (any docker version's wording)."""
     said = stderr.lower()
     return any(marker in said for marker in _NO_SUCH)
+
+
+@dataclass(frozen=True)
+class BoxEnvSplit:
+    """The template's variables a box gets, and the names it leaves out."""
+
+    mode: str
+    kept: tuple[str, ...]      # NAME=value entries, as docker run takes them
+    dropped: tuple[str, ...]   # names only, sorted
+
+    @classmethod
+    def of(cls, template_env: Iterable[str], mode: str,
+           allowed: box_env_list.BoxEnv | None) -> BoxEnvSplit:
+        kept: list[str] = []
+        dropped: set[str] = set()
+        for var in template_env:
+            name = var.split("=", 1)[0]
+            if name == box_env_list.RUN_CONTAINER_ENV:
+                continue  # set below to the box's own name
+            # The GitHub app's key stays in the server, in every mode: a box's shell
+            # could read the environment the box started with (integrations.github.secret).
+            if name in github_secret.SERVER_ONLY:
+                dropped.add(name)
+            elif mode == box_env_list.MODE_INHERIT or (allowed is not None and allowed.allows(name)):
+                kept.append(var)
+            else:
+                dropped.add(name)
+        if mode == box_env_list.MODE_INHERIT:
+            # The box's tools read the switch too (shared/agent_env.py).
+            kept = [v for v in kept if v.split("=", 1)[0] != box_env_list.MODE_ENV]
+            kept.append(f"{box_env_list.MODE_ENV}={box_env_list.MODE_INHERIT}")
+        return cls(mode=mode, kept=tuple(kept), dropped=tuple(sorted(dropped)))
 
 
 def container_name(execution_id: str) -> str:
@@ -279,6 +316,7 @@ class DockerSpawner(Spawner):
         workspace_lookup: Callable[[str], str | None] = _lookup_workspace_path,
         run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
         clock: Callable[[], float] = time.monotonic,
+        box_env: Callable[[], box_env_list.BoxEnv] = box_env_list.load_box_env,
     ) -> None:
         self._docker = docker_bin
         self._template_container = (
@@ -290,6 +328,7 @@ class DockerSpawner(Spawner):
         self._workspace_lookup = workspace_lookup
         self._run = run
         self._clock = clock
+        self._box_env = box_env
         self._template: Template | None = None
         self._template_missing_since: float | None = None
 
@@ -301,7 +340,19 @@ class DockerSpawner(Spawner):
             raise SpawnerError(f"No WorkflowRun row for execution_id={execution_id}")
         template = self.template()
         name = container_name(execution_id)
-        cmd = self.run_command(execution_id, workspace_path, template)
+        env = self.env_split(template)
+        if env.mode == box_env_list.MODE_INHERIT:
+            logger.warning(
+                "Run container %s inherits the template's whole environment "
+                "(%s=inherit, the emergency rollback): its agents can read every secret in it",
+                name, box_env_list.MODE_ENV,
+            )
+        if env.dropped:
+            logger.info(
+                "Run container %s: left out %d variable(s) not on the box list: %s",
+                name, len(env.dropped), ", ".join(env.dropped),
+            )
+        cmd = self.run_command(execution_id, workspace_path, template, env)
 
         result = self._docker_run(cmd)
         if result.returncode != 0:
@@ -411,8 +462,24 @@ class DockerSpawner(Spawner):
             )
         return template
 
+    def env_split(self, template: Template) -> BoxEnvSplit:
+        """Which of the template's variables the box gets: the allow-list, read for every run.
+
+        A list that cannot be read fails the spawn: a box with no list would get either
+        nothing it needs or everything it must not have.
+        """
+        mode = box_env_list.box_env_mode()
+        if mode == box_env_list.MODE_INHERIT:
+            return BoxEnvSplit.of(template.env, mode, None)
+        try:
+            allowed = self._box_env()
+        except box_env_list.BoxEnvError as exc:
+            raise SpawnerError(f"The box's allow-list is broken, so no run can start: {exc}") from exc
+        return BoxEnvSplit.of(template.env, mode, allowed)
+
     def run_command(
         self, execution_id: str, workspace_path: str, template: Template,
+        env: BoxEnvSplit | None = None,
     ) -> list[str]:
         name = container_name(execution_id)
         cmd = [
@@ -427,13 +494,10 @@ class DockerSpawner(Spawner):
             cmd += ["--network", network]
         for host in template.extra_hosts:
             cmd += ["--add-host", host]
-        for var in template.env:
-            var_name = var.split("=", 1)[0]
-            # The GitHub app's key stays in the server: a box's shell could read
-            # the environment the box started with (integrations.github.secret).
-            if var_name != "TEMPER_RUN_CONTAINER" and var_name not in github_secret.SERVER_ONLY:
-                cmd += ["--env", var]
-        cmd += ["--env", f"TEMPER_RUN_CONTAINER={name}"]
+        env = env or self.env_split(template)
+        for var in env.kept:
+            cmd += ["--env", var]
+        cmd += ["--env", f"{box_env_list.RUN_CONTAINER_ENV}={name}"]
         all_workspaces = _all_workspaces()
         inherited = [m for m in template.mounts if _passes_through(m, all_workspaces)]
         for home in _claude_homes(inherited):

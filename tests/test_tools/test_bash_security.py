@@ -82,11 +82,13 @@ class TestSafeEnv:
 
     def test_an_agent_s_shell_never_sees_the_github_app_s_key(self, monkeypatch):
         monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "-----BEGIN RSA PRIVATE KEY-----leak-test")
-        monkeypatch.setenv("GITHUB_APP_ID", "1234")  # the id is no secret
+        monkeypatch.setenv("TEMPER_API", "http://server:8420")  # listed for agent tools
+        monkeypatch.setenv("GITHUB_APP_ID", "1234")  # listed for the box's process only
         r = Bash().execute(command="env")
         assert r.success
         assert "leak-test" not in r.result and "GITHUB_APP_PRIVATE_KEY" not in r.result
-        assert "GITHUB_APP_ID=1234" in r.result
+        assert "TEMPER_API=http://server:8420" in r.result
+        assert "GITHUB_APP_ID" not in r.result
 
 
 class TestAllowlistBypass:

@@ -20,6 +20,9 @@ And for the loops of workflows with a Pi step: each must end the run red when it
 runs out of rounds (``on_max_loops: fail``), so a Pi workflow never counts as
 done because a loop stopped going round. A run start refuses one that does not;
 this names it first.
+
+And for the box's allow-list (``configs/boxes/env.yaml`` and its local file): a
+list that does not load stops every run from starting, so it is named here first.
 """
 
 from __future__ import annotations
@@ -381,12 +384,29 @@ def check(config_dir: str | Path = "configs") -> int:
               "such a workflow is refused when it starts.")
     elif pi_seen:
         print("\u2713 every loop in a Pi workflow says on_max_loops: fail")
-    return 1 if (problems or access_problems or loop_problems) else 0
+
+    from temper_ai.shared.box_env import check_box_env
+
+    box_files, box_problems = check_box_env(config_dir)
+    print()
+    if not box_files:
+        print("Box allow-list: none here (a docker box needs boxes/env.yaml)")
+    else:
+        print(f"Box allow-list read: {', '.join(box_files)}")
+    if box_problems:
+        print(f"\n\u26a0 {len(box_problems)} problem(s) in the box allow-list:")
+        for line in box_problems:
+            print(f"  {line}")
+        print("\nNo run can start while the list does not load (docs/boxes.md).")
+    elif box_files:
+        print("\u2713 the box allow-list loads")
+    return 1 if (problems or access_problems or loop_problems or box_problems) else 0
 
 
 def add_parser(subparsers) -> None:
     parser = subparsers.add_parser(
-        "check", help="Settings the provider cannot honour (effort), Slack's access rules, and Pi workflows' loops",
+        "check", help="Settings the provider cannot honour (effort), Slack's access rules, Pi workflows' loops "
+             "and the box allow-list",
     )
     parser.add_argument("--config-dir", default="configs", help="Config directory")
 

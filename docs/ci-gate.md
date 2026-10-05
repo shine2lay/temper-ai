@@ -36,7 +36,7 @@ once. So does a commit whose files are exactly those of a commit that already pa
 which is why a revert is quick, and why a rebase that changed nothing does not sit
 through the stack again.
 
-## The eight things the throwaway temper has to do
+## The nine things the throwaway temper has to do
 
 Run `temper-ci check <commit>` to watch it happen. Each one is a thing that has broken
 before, or that would be expensive to find broken in front of a person:
@@ -44,6 +44,7 @@ before, or that would be expensive to find broken in front of a person:
 | # | What | Why it is in the set |
 |---|------|----------------------|
 | 1 | a plain run | the engine starts, runs, and finishes |
+| 1b | a run box's environment (`ci_box_env`) | the box holds only the listed variables and its tools no secret, by name ([boxes.md](boxes.md)) |
 | 2 | parallel branches with a nested stage | the fan-out, the join, and a stage inside a branch |
 | 3 | a gate answered through the API | a run can wait for a person and carry on |
 | 4 | Stop, then Resume | checkpoints are written and can be picked up |
@@ -52,7 +53,7 @@ before, or that would be expensive to find broken in front of a person:
 | 7 | the page of a finished run | the UI renders it (screenshot in the report) |
 | 8 | the public hooks | unsigned requests are refused; signed test entries from Slack, Telegram, Linear and Notion are taken |
 
-All eight use script agents only, so a check costs $0. There are no model keys in the
+All nine use script agents only, so a check costs $0. There are no model keys in the
 box at all — if something ever tries to call a model, it fails rather than spends.
 
 ## Where everything lives

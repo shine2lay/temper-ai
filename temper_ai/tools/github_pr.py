@@ -62,6 +62,7 @@ from typing import Any
 
 import httpx
 
+from temper_ai.shared.agent_env import env_for_agent_tool
 from temper_ai.tools.base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ def _workspace_roots() -> list[Path]:
 
 def _clean_git_env(home: str) -> dict[str, str]:
     """No system or global config, no prompts: only what the command line says."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = {k: v for k, v in env_for_agent_tool().items() if not k.startswith("GIT_")}
     env.update({
         "HOME": home,
         "GIT_CONFIG_NOSYSTEM": "1",

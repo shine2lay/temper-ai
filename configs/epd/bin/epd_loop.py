@@ -3800,6 +3800,13 @@ def finish_loop(st: dict, out: dict, keep: bool) -> None:
         st["status"], outcome = "stopped", f"plan BLOCKED: {out.get('blocked_because')}"
     else:
         st["status"], outcome = "stopped", f"stopped after build={out.get('build_verdict')}"
+    # A stopped bet collected with --keep holds its worktree, branch and claim on purpose (a hand fix
+    # goes on in them); `held` says so, for temper's leftovers audit (epd_leftovers), which reads
+    # state.json. Without --keep it is released below, so nothing is held.
+    if st["status"] == "stopped" and keep:
+        st["held"] = {"since": out["_collected"], "why": "collected with --keep: kept for a hand fix"}
+    else:
+        st.pop("held", None)
     save_state(st)
     drop_plan_snapshot(bet_id)  # the plan is in the bet dir; a resume at `tasks` makes a new snapshot
     ledger_upsert(bet_id, title=bet.get("title") or "", threshold=bet.get("threshold") or "",
@@ -3817,6 +3824,38 @@ def finish_loop(st: dict, out: dict, keep: bool) -> None:
         standee_down(str(out["env_name"]))
     if shipped in ("shipped", "changes_requested", "closed"):
         release_task(bet_id)
+    elif st["status"] == "stopped" and not keep:
+        # Stopped short of a PR: nothing waits for the owner's word, so nothing would ever release it
+        # (b047/b052 held a claim, worktree, branch and stack volume from 09-25 to 10-04). Its commits
+        # are on no PR, so the branch goes to origin first; a resume builds on it from there
+        # (task_worktree picks a pushed branch back up).
+        if push_branch(bet_id):
+            release_task(bet_id)
+
+
+def push_branch(bet_id: str) -> bool:
+    """Push a stopped bet's branch to origin, so release_task can delete the local one. True when
+    the commits are safe: pushed, or there is no branch. False (and nothing released) otherwise.
+
+    The same way `ship` pushes (the branch is fetched from the main clone into REPO_CHECKOUT, then
+    pushed); the copy in REPO_CHECKOUT is dropped afterwards, origin has it. A push to a branch
+    other than master runs no CI (rollcall's ci.yml: push to master, pull requests).
+    """
+    slug = f"epd-{bet_id}"
+    main = f"{CONTAINER_WORKSPACES}/repos/{REPO_NAME}/main"
+    if in_server(f"git -C {main} rev-parse -q --verify refs/heads/{slug}").returncode != 0:
+        return True
+    trust_main_clone()
+    ok = sh(["git", "fetch", "-q", "--force", str(MAIN_CLONE), f"{slug}:refs/heads/{slug}"],
+            cwd=REPO_CHECKOUT, check=False).returncode == 0
+    ok = ok and sh(["git", "push", "-q", "--force-with-lease", "origin", slug],
+                   cwd=REPO_CHECKOUT, check=False).returncode == 0
+    sh(["git", "branch", "-D", "-q", slug], cwd=REPO_CHECKOUT, check=False)
+    if not ok:
+        log(f"note: could not push {slug} to origin; its worktree, branch and claim stay (nothing released)")
+        return False
+    log(f"pushed {slug} to origin, so its commits outlive the release")
+    return True
 
 
 def release_task(bet_id: str) -> None:

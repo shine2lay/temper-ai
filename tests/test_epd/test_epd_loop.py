@@ -88,6 +88,9 @@ def L(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "PAPER_KEYS_FILE", tmp_path / "dev.env")
     monkeypatch.setattr(mod, "standee_down", lambda env: calls["standee_down"].append(env))
     monkeypatch.setattr(mod, "release_task", lambda bet_id: calls["release_task"].append(bet_id))
+    calls["push_branch"] = []
+    mod._real_push_branch = mod.push_branch
+    monkeypatch.setattr(mod, "push_branch", lambda bet_id: calls["push_branch"].append(bet_id) or True)
     monkeypatch.setattr(mod, "require_tools", lambda *names: None)
     monkeypatch.setattr(mod, "run_cost", lambda run_id, upto=None: (None, None))
     monkeypatch.setattr(mod, "config_versions", lambda wf: {"workflow:" + wf: 1})
@@ -598,6 +601,59 @@ def test_finish_loop_records_the_owners_no_on_the_pr(L):
     L.finish_loop(st, {"shipped": "changes_requested", "pr": "https://x/pull/3", "build_verdict": "approve"}, keep=False)
     assert L.ledger_rows()[0]["status"] == "changes_requested"
     assert L.open_bet() is None and L._calls["release_task"] == ["b001"]
+
+
+def test_a_stopped_bet_pushes_its_branch_then_lets_go(L):
+    # b047/b052 stopped short of a PR on 09-25 and held a claim, worktree, branch and stack volume until
+    # 10-04: release_task ran only after the owner's word on a PR (Systems, epd_leftovers 8fd8530f).
+    propose(L)
+    L.approve("b001", None)
+    L.pick_bet()
+    st = L.load_state("b001")
+    L.finish_loop(st, {"build_verdict": "request_changes", "env_name": "epd-b001"}, keep=False)
+    assert L.load_state("b001")["status"] == "stopped" and "held" not in L.load_state("b001")
+    assert L._calls["push_branch"] == ["b001"] and L._calls["release_task"] == ["b001"]
+    assert L._calls["standee_down"][-1] == "epd-b001"
+
+
+def test_a_stopped_bet_whose_push_fails_keeps_everything(L, monkeypatch):
+    propose(L)
+    L.approve("b001", None)
+    L.pick_bet()
+    monkeypatch.setattr(L, "push_branch", lambda bet_id: False)
+    L.finish_loop(L.load_state("b001"), {"build_verdict": "request_changes"}, keep=False)
+    assert L._calls["release_task"] == [], "unpushed commits are never released"
+
+
+def test_a_stopped_bet_collected_with_keep_is_held_and_says_so(L):
+    propose(L)
+    L.approve("b001", None)
+    L.pick_bet()
+    L.finish_loop(L.load_state("b001"), {"build_verdict": "request_changes", "env_name": "epd-b001"}, keep=True)
+    st = L.load_state("b001")
+    assert st["held"]["why"].startswith("collected with --keep")
+    assert L._calls["push_branch"] == [] and L._calls["release_task"] == []
+    assert "epd-b001" not in L._calls["standee_down"]
+
+
+def test_push_branch_pushes_from_the_checkout_and_drops_its_copy(L, monkeypatch):
+    ran = []
+    monkeypatch.setattr(L, "in_server", lambda cmd: subprocess.CompletedProcess(cmd, 0, "", ""))
+    monkeypatch.setattr(L, "trust_main_clone", lambda: None)
+    monkeypatch.setattr(L, "sh", lambda cmd, cwd=None, check=True: ran.append(cmd)
+                        or subprocess.CompletedProcess(cmd, 0, "", ""))
+    assert L._real_push_branch("b001") is True
+    assert [c[1] for c in ran] == ["fetch", "push", "branch"]
+    assert ran[1][-2:] == ["origin", "epd-b001"]
+    # the push fails -> False, and the copy in the checkout still goes
+    ran.clear()
+    monkeypatch.setattr(L, "sh", lambda cmd, cwd=None, check=True: ran.append(cmd)
+                        or subprocess.CompletedProcess(cmd, 1 if cmd[1] == "push" else 0, "", ""))
+    assert L._real_push_branch("b001") is False and ran[-1][1] == "branch"
+    # no branch at all -> nothing to lose
+    ran.clear()
+    monkeypatch.setattr(L, "in_server", lambda cmd: subprocess.CompletedProcess(cmd, 1, "", ""))
+    assert L._real_push_branch("b001") is True and ran == []
 
 
 def test_finish_loop_says_why_a_blocked_plan_built_nothing(L):

@@ -17,8 +17,10 @@ environment down with its volumes kept).
 Each item gets a class:
   in_use          something live still needs it
   kept_by_design  kept on purpose: github_work, linear_work and notion_work run epd_task with
-                  keep: true so a later reply continues on the branch; a dev environment nothing
-                  names whose ttl has not run out (standee takes it down then)
+                  keep: true so a later reply continues on the branch; a stopped or build_failed
+                  bet held for a hand fix ("held" in its state.json, from collecting it with
+                  --keep); a dev environment nothing names whose ttl has not run out (standee
+                  takes it down then)
   leftover        nothing needs it; `reason` says why it stayed, `fix_owner` whose fix that is
   unknown         the audit could not tell (a run the runs API does not know or cannot be reached,
                   git records that do not resolve, a status it does not know). Never a guess.
@@ -27,7 +29,9 @@ How a class is decided:
   - EPD items (slug epd-bNNN, env <repo>-dev-epd-bNNN) go by the bet's state.json status: being
     built (epd_loop.py LIVE) or shipped with its measure pending -> in_use; finished (TERMINAL,
     stopped, build_failed) -> leftover for RollCall, whose driver releases a bet's claim, worktree and
-    branch only after the owner's word on its PR (epd_loop.py release_task).
+    branch after the owner's word on its PR, or for a stopped bet once it is collected without --keep
+    and its branch is pushed (epd_loop.py release_task); a stopped or build_failed bet whose
+    state.json has "held" (collected with --keep, for a hand fix) -> kept_by_design, RollCall's.
   - Other claims go by the status of the run that made them (GET /api/workflows/<run_id>): active ->
     in_use; finished and holding its clean-ups for a resume -> in_use; finished in a workflow that
     keeps its task -> kept_by_design (temper's: nothing ever releases them); finished otherwise ->
@@ -315,16 +319,22 @@ def bet_verdict(workspaces: Path, repo: str, bet_id: str) -> dict:
     path = workspaces / "epd" / repo / "bets" / bet_id / "state.json"
     if not path.is_file():
         return verdict("unknown", f"bet {bet_id} has no state.json at {path}", bet=bet_id)
-    status = read_json(path).get("status")
+    state = read_json(path)
+    status = state.get("status")
     changed = iso(mtime(path))
     ev = {"bet": bet_id, "bet_status": status, "state_path": str(path), "state_changed": changed}
     if status in BET_IN_USE:
         what = "shipped, its measure still to run" if status == "shipped" else "being built"
         return verdict("in_use", f"bet {bet_id} is {status} ({what})", **ev)
     if status in BET_FINISHED:
+        held = state.get("held")
+        if status in ("stopped", "build_failed") and isinstance(held, dict):
+            # epd_loop.py collect --keep writes it; collecting the bet again without --keep drops it.
+            return verdict("kept_by_design", f"bet {bet_id} is {status} and held since {held.get('since')}: "
+                                             f"{held.get('why')}", "RollCall", **ev, held_since=held.get("since"))
         if status in ("stopped", "build_failed"):
-            why = ("epd_loop.py releases a bet's claim, worktree and branch (release_task) only after the "
-                   "owner's word on its PR, and this run stopped short of one")
+            why = ("this run stopped short of a PR, and epd_loop.py releases such a bet's claim, worktree and "
+                   "branch (release_task) only when it is collected without --keep and its branch pushed")
         else:
             why = "release_task, which runs when its PR is decided, did not release it"
         return verdict("leftover", f"bet {bet_id} is {status} (state.json last changed {changed}); {why}",

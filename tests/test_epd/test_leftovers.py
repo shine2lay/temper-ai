@@ -148,10 +148,10 @@ def world(tmp_path, monkeypatch):
             "status": "worktree_ready", "task_slug": slug, "branch": slug, "run_id": run_id,
             "claimed_at": iso(NOW - dt.timedelta(days=days_ago)), "root": str(app)}))
 
-    def bet(bet_id: str, status: str) -> None:
+    def bet(bet_id: str, status: str, **state) -> None:
         d = ws / "epd" / "app" / "bets" / bet_id
         d.mkdir(parents=True)
-        (d / "state.json").write_text(json.dumps({"status": status}))
+        (d / "state.json").write_text(json.dumps({"status": status, **state}))
 
     # EPD bets: their items go by the bet's status.
     bet("b001", "pr_opened")                                   # a. live
@@ -169,6 +169,10 @@ def world(tmp_path, monkeypatch):
     bet("b004", "stopped")                                     # d. + i. unpushed commits
     claim("epd-b004")
     commit(worktree("epd-b004"), "b004")
+    bet("b005", "stopped", held={"since": iso(NOW - dt.timedelta(days=1)),  # n. collected with --keep
+                                  "why": "collected with --keep: kept for a hand fix"})
+    claim("epd-b005")
+    commit(worktree("epd-b005"), "b005")                       # the hand fix goes on here, unpushed
 
     # Other claims: their items go by their run.
     claim("linear-roa-1", "r-linear")                          # e. finished linear_work
@@ -197,6 +201,7 @@ def world(tmp_path, monkeypatch):
     (fake / "ls.json").write_text(json.dumps({"entries": [
         env("app-dev-epd-b001", ttl="8h", expires_at=iso(NOW + dt.timedelta(hours=4))),   # l.
         env("app-dev-epd-b003", ttl="8h", expires_at=iso(NOW + dt.timedelta(hours=4))),   # k.
+        env("app-dev-epd-b005", ttl="8h", expires_at=iso(NOW + dt.timedelta(hours=4))),   # n.
         env("app-dev-scratch", ttl="3d", expires_at=iso(NOW + dt.timedelta(days=2))),
         env("app-dev-old", ttl="8h", expires_at=iso(NOW - dt.timedelta(days=2))),
         env("app-dev-forever", ttl=None, expires_at=None),
@@ -262,6 +267,15 @@ def test_each_item_gets_its_class_reason_and_fix_owner(world, capsys):
     i = item(result, "claim", "epd-b004")
     assert (i["class"], i["fix_owner"]) == ("leftover", "RollCall") and "stopped" in i["reason"]
     assert i["evidence"]["bet_status"] == "stopped" and i["evidence"]["state_changed"]
+    assert "held" not in i["reason"] and "held_since" not in i["evidence"]
+    # n. a stopped bet held for a hand fix: kept on purpose, RollCall's, with when and why
+    for kind in ("claim", "worktree", "branch", "env"):
+        name = "app-dev-epd-b005" if kind == "env" else "epd-b005"
+        i = item(result, kind, name)
+        assert (i["class"], i["fix_owner"]) == ("kept_by_design", "RollCall"), kind
+        assert "held since" in i["reason"] and "kept for a hand fix" in i["reason"]
+        assert i["evidence"]["bet_status"] == "stopped" and i["evidence"]["held_since"]
+    assert item(result, "worktree", "epd-b005")["not_sweepable"] is True  # its commit is not pushed
     # e. a finished linear_work run keeps its task on purpose: temper's
     for kind in ("claim", "worktree", "branch"):
         i = item(result, kind, "linear-roa-1")
@@ -309,7 +323,8 @@ def test_worktrees_and_branches_say_whether_a_sweep_would_lose_work(world, capsy
 def test_dev_environments_follow_their_bet_or_their_ttl(world, capsys):
     _, result, _ = run(world, capsys)
     envs = {i["name"]: i for i in result["items"] if i["kind"] == "env"}
-    assert set(envs) == {"app-dev-epd-b001", "app-dev-epd-b003", "app-dev-scratch", "app-dev-old", "app-dev-forever"}
+    assert set(envs) == {"app-dev-epd-b001", "app-dev-epd-b003", "app-dev-epd-b005", "app-dev-scratch", "app-dev-old",
+                         "app-dev-forever"}
     assert envs["app-dev-epd-b001"]["class"] == "in_use"                                # l.
     assert (envs["app-dev-epd-b003"]["class"], envs["app-dev-epd-b003"]["fix_owner"]) == ("leftover", "RollCall")  # k.
     assert envs["app-dev-epd-b003"]["expires_at"]
@@ -417,6 +432,13 @@ def test_its_statuses_match_epd_loop():
 
     assert literal("LIVE") == leftovers.LIVE
     assert literal("TERMINAL") == leftovers.TERMINAL
+
+
+def test_it_reads_the_held_mark_epd_loop_writes():
+    """collect --keep marks a stopped bet held in its state.json; the audit keys on that exact shape."""
+    source = EPD_LOOP.read_text()
+    assert re.search(r'st\["held"\] = \{"since": [^,]+, "why": ', source), "epd_loop.py no longer writes held"
+    assert 'st.pop("held", None)' in source  # collecting it again without --keep drops it
 
 
 def test_the_workflows_that_keep_their_task_are_the_ones_it_knows():

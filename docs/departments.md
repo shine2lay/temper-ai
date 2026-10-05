@@ -33,7 +33,7 @@ role tests and lands a change.
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
 | `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts. |
-| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, and the CI and smoke workflows temper-ci runs. |
+| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, and the CI and smoke workflows temper-ci runs. |
 | `security` | Security | The build's security read and its diff scan, and the security reviewer of `code_review`. |
 | `data` | Data & analytics | The measure stage, the stage scorecard and its judge, the walk report, and the plan stage's numbers engineer. |
 | `docs` | Docs | The knowledge-folder check (`.temper/`) and capability maps; next, a docs grader, a doc step for builds, changelogs. |
@@ -364,11 +364,12 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `epd/agents/task_test.yaml` | agent (script) |
 | `epd/agents/task_verify.yaml` | agent |
 
-### systems (22)
+### systems (25)
 
 | Config | Kind |
 |---|---|
 | `epd/workflows/epd_deploy.yaml` | workflow |
+| `epd/workflows/epd_leftovers.yaml` | workflow |
 | `epd/workflows/epd_probe.yaml` | workflow |
 | `epd/workflows/epd_ship.yaml` | workflow |
 | `workflows/ci_nested.yaml` | workflow |
@@ -381,6 +382,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/gate_smoke_use.yaml` | agent (script) |
 | `agents/smoke_echo.yaml` | agent (script) |
 | `epd/agents/epd_deploy.yaml` | agent (script) |
+| `epd/agents/epd_leftovers.yaml` | agent (script) |
 | `epd/agents/epd_ship.yaml` | agent (script) |
 | `epd/agents/task_branch_check.yaml` | agent (script) |
 | `epd/agents/task_claim.yaml` | agent (script) |
@@ -390,6 +392,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `epd/agents/task_stack_down.yaml` | agent (script) |
 | `epd/agents/task_stack_up.yaml` | agent (script) |
 | `epd/agents/task_worktree.yaml` | agent (script) |
+| `epd/bin/leftovers.py` | script |
 
 ### security (3)
 

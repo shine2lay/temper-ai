@@ -1,0 +1,31 @@
+# System engineering: what the build machinery left on spark, and why it stayed (epd_leftovers).
+#
+# Lists every claim, worktree, local branch and dev environment the task pipeline left, says for
+# each whether something live still needs it (in_use, kept_by_design, leftover, unknown) and, for a
+# leftover, why it stayed and whose fix that is. Plus the count of docker volumes attached to
+# nothing. The logic is configs/epd/bin/leftovers.py (its docstring has the rules).
+#
+# Read-only: it removes, moves and releases nothing. Standee only as `standee ls --json` and
+# `standee doctor --json`, over the forced-command ssh key task_stack_down uses. The only thing it
+# writes is its report, <workspaces>/leftovers/<UTC timestamp>.json, so later runs give a trend.
+# No model: a run costs nothing.
+#
+# Fails loud: a source it cannot read (no workspaces root, standee unreachable, a file that is not
+# JSON) exits 1 with the reason. A runs API it cannot reach is not a failure: those claims are
+# `unknown`, with the run id.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: epd_leftovers
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -eu
+    WORKSPACES_ROOT={{ workspaces_root | default('') }}
+    # An optional workflow input that was not given arrives as Python None.
+    [ "$WORKSPACES_ROOT" = None ] && WORKSPACES_ROOT=""
+    if [ -n "$WORKSPACES_ROOT" ]; then
+      exec python3 -u /app/configs/epd/bin/leftovers.py --workspaces-root "$WORKSPACES_ROOT"
+    fi
+    exec python3 -u /app/configs/epd/bin/leftovers.py

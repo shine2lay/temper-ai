@@ -1,0 +1,36 @@
+# System engineering's leftover audit: one free, read-only step (epd_leftovers).
+#
+# Every claim, worktree, local branch and dev environment the build machinery left on spark, with
+# whether something live still needs it and, when nothing does, why it stayed and whose fix that is
+# (systems, RollCall or temper). Its counts pick what to fix first and are the "nothing left
+# behind" measure; each run's full report stays in <workspaces>/leftovers/ for the trend.
+#
+# No trigger and no sweep in v1: both come later, from its numbers.
+workflow:
+  name: epd_leftovers
+  version: 1
+  description: |
+    Read-only audit of what the build machinery left behind: claims, worktrees, local branches and
+    dev environments, each in_use, kept_by_design, leftover (with why and whose fix) or unknown,
+    plus the count of docker volumes attached to nothing. No model, no changes.
+  inputs:
+    # The repos folder; default: where task_claim puts the clones.
+    workspaces_root:
+      type: string
+      required: false
+
+  outputs:
+    counts: leftovers.structured.counts
+    by_kind: leftovers.structured.by_kind
+    leftovers_by_fix_owner: leftovers.structured.leftovers_by_fix_owner
+    not_sweepable: leftovers.structured.not_sweepable
+    volumes_attached_to_nothing: leftovers.structured.volumes_attached_to_nothing
+    items: leftovers.structured.items
+    report_path: leftovers.structured.report_path
+
+  nodes:
+    - name: leftovers
+      type: agent
+      agent: epd_leftovers
+      input_map:
+        workspaces_root: input.workspaces_root

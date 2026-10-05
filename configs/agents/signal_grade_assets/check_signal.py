@@ -3,12 +3,15 @@
 one signal_harvest report, and the verifier of the semantic review. Rubric: rubric.md next to
 this file (signal_grade/1). Standard library only. Run from the run workspace.
 
-    check_signal.py check [--report-dir state]
+    check_signal.py check [--report-dir state] [--answer LENS=VARIABLE ...]
         Read the report (shortlist, scorecard, lens files), recompute what can be recomputed
         (every signal cell, weighted total, arithmetic line, overall confidence, the ranking,
         candidate and required-player coverage), trace every figure, quote and URL of the
         scorecard to the lens files, and list the leads the review must resolve. Writes
-        state/signal_grade/check.json and check.md.
+        state/signal_grade/check.json and check.md. A lens that left no usable output (its
+        file missing, empty or an account-limit message, or its final answer, read from the
+        environment variable --answer names, such a message) is named in problems and leaves
+        Q3 unknown: its evidence cannot be traced, so the grade can never pass.
     check_signal.py verify [--dry-run]
         Verify the review (state/signal_grade/review.json) against the files: a finding counts
         only when every passage it cites is in the file it names; an allegation that something is
@@ -31,6 +34,7 @@ import bisect
 import hashlib
 import json
 import operator
+import os
 import re
 import sys
 from pathlib import Path
@@ -56,6 +60,16 @@ CONF_RANK = {"low": 0, "med": 1, "high": 2}
 TOL = 0.005 + 1e-9
 LEAD_CAP = 60  # leads of one type beyond this are listed together, not one by one
 USAGE_LIMIT = re.compile(r"hit your (?:session|usage) limit|usage limit reached|rate limit exceeded", re.I)
+# What a lens says when its account or the service stopped it, instead of research (the same
+# words as opportunity_brief's and desk_check's checks).
+NON_ANSWER = re.compile(
+    r"session limit|usage limit|weekly limit|daily limit|rate[ _-]?limit|limit (?:reached|exceeded)"
+    r"|hit (?:your|the) (?:\w+ )?limit|quota|overloaded|too many requests|credit balance"
+    r"|pool exhausted|try again later|resets? (?:at |in |on )?\d|api error|authentication_error"
+    r"|oauth token|not logged in|/login|invalid api key|out of (?:extra )?usage|prompt is too long",
+    re.I)
+NOT_PASSED = "__unwired__"  # what the workflow passes for an answer it could not find
+FIXED_LENSES = ("search", "pain", "competitors")  # the money lens's file is named by its column
 
 # ---- text --------------------------------------------------------------------------------------
 
@@ -687,6 +701,73 @@ def load_report(report_dir: Path) -> tuple[dict, list[str]]:
     return files, problems
 
 
+def non_answer(text: str | None) -> str:
+    """Why a lens's text is no research ('' when it may be): empty, or a short message about an
+    account limit, a quota, an overload or a login, with no JSON in it."""
+    text = (text or "").strip()
+    if not text:
+        return "empty"
+    if len(text) <= 600 and text[0] not in "{[" and "```" not in text and NON_ANSWER.search(text):
+        return f'an account-limit or error message ("{flat(text)[:160]}")'
+    return ""
+
+
+def money_lens(lenses: dict, money_name: str | None) -> str:
+    """The money lens's file stem: the scorecard's money column (jobs, spend ...) when that file is
+    there, else the one lens file that is not search, pain or competitors, else the column's name."""
+    if money_name and money_name in lenses:
+        return money_name
+    others = [stem for stem in lenses if stem not in FIXED_LENSES]
+    if len(others) == 1:
+        return others[0]
+    return money_name or "jobs"
+
+
+def passed_answers(items: list[str]) -> dict:
+    """--answer LENS=VARIABLE: that lens's final answer, read from the environment. An answer the
+    workflow could not find (signal_grade has none) is left out; the lens files are still checked."""
+    answers = {}
+    for item in items or []:
+        lens, _, variable = item.partition("=")
+        value = os.environ.get(variable)
+        if lens in SIGNALS and value is not None and value != NOT_PASSED:
+            answers[lens] = value
+    return answers
+
+
+def guard_parts(result: dict, report_dir: Path, answers: dict) -> None:
+    """Name each lens that left no usable output in problems, and leave Q3 unknown for it."""
+    lenses = result["files"].get("lenses", {})
+    stems = {"search": "search", "money": money_lens(lenses, result.get("money_signal")), "pain": "pain",
+             "competitors": "competitors"}
+    parts, lost = {}, []
+    for signal in SIGNALS:
+        found = []
+        path = lenses.get(stems[signal])
+        if not path:
+            found.append(f"{report_dir / 'signal' / (stems[signal] + '.md')} is missing")
+        else:
+            try:
+                why = non_answer(Path(path).read_text(errors="replace"))
+            except OSError as exc:
+                why = f"unreadable ({exc})"
+            if why:
+                found.append(f"{path} is {why}")
+        if signal in answers:
+            why = non_answer(answers[signal])
+            if why:
+                found.append("its final answer is " + why)
+        parts[signal] = "; ".join(found) or "ok"
+        if found:
+            lost.append(f"{signal} lens left no usable output: {parts[signal]}")
+    result["parts"] = parts
+    result["answers_checked"] = [s for s in SIGNALS if s in answers]
+    if lost:
+        result["problems"][:0] = lost
+        before = result["unknown"].get("Q3")
+        result["unknown"]["Q3"] = "; ".join([x for x in (before, "; ".join(lost)) if x])
+
+
 def report_paths(files: dict) -> list[str]:
     return [p for p in [files.get("scorecard"), files.get("shortlist"), *files.get("lenses", {}).values()] if p]
 
@@ -696,7 +777,7 @@ def finding(fid, criterion, candidate, kind, claim, problem, passages, severity=
             "claim": claim, "problem": problem, "passages": passages, "source": "check"}
 
 
-def run_check(report_dir: Path) -> dict:
+def run_check(report_dir: Path, answers: dict | None = None) -> dict:
     files, problems = load_report(report_dir)
     result = {"version": "signal_grade_check/1", "rubric": RUBRIC_VERSION,
               "checker_sha256": sha(Path(__file__)), "files": files, "problems": problems,
@@ -708,6 +789,7 @@ def run_check(report_dir: Path) -> dict:
         for c in CRITERIA:
             result["unknown"][c] = "no scorecard to check"
         result["status"] = "no_report"
+        guard_parts(result, report_dir, answers or {})
         return result
 
     card = Doc(files["scorecard"], Path(files["scorecard"]).read_text(errors="replace"))
@@ -1043,6 +1125,7 @@ def run_check(report_dir: Path) -> dict:
     result["evidence"] = {"figures": traced_figures, "quotes": traced_quotes, "blocked": blocked,
                           "absence_lines": absence_lines}
     result["status"] = "checked"
+    guard_parts(result, report_dir, answers or {})
     return result
 
 
@@ -1122,7 +1205,7 @@ def write_packet(result: dict, out: Path) -> None:
 def cmd_check(args) -> int:
     report_dir = Path(args.report_dir)
     GRADE_DIR.mkdir(parents=True, exist_ok=True)
-    result = run_check(report_dir)
+    result = run_check(report_dir, passed_answers(args.answer))
     (GRADE_DIR / "check.json").write_text(json.dumps(result, indent=1, ensure_ascii=False))
     write_packet(result, GRADE_DIR / "check.md")
     print(json.dumps({"status": result["status"], "check_path": str(GRADE_DIR / "check.md"),
@@ -1496,6 +1579,8 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("check")
     p.add_argument("--report-dir", default="state")
+    p.add_argument("--answer", action="append", default=[], metavar="LENS=VARIABLE",
+                   help="a lens's final answer, in the environment variable named (search, money, pain, competitors)")
     p = sub.add_parser("verify")
     p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("passage")

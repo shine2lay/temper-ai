@@ -4,6 +4,12 @@
 # neutral decisive claim per pass or kill), the report's coverage and its hypothesis status.
 # Prints the verdict and each assumption's decisive claims for the hand check. Part of
 # workflows/desk_check.yaml.
+#
+# It also fails a check that a researcher left without usable output, naming the assumption: its
+# checks/<id>.json and .md missing, empty, not valid JSON or an account-limit message, or its final
+# answer such a message. Each researcher's final answer comes in through the workflow's input_map
+# (a1..a6); one the workflow could not find arrives as __unwired__ and only its files are checked.
+# The first 4000 characters are enough: a non-answer is short.
 agent:
   name: desk_final
   version: 1
@@ -16,4 +22,12 @@ agent:
     cd "$WS" || exit 1
     PY=python3
     command -v python3 >/dev/null 2>&1 || PY="$TEMPER_PYTHON"
-    "$PY" state/desk/check_desk.py --final
+    {% set v1 = a1[:4000] if a1 is string else '__unwired__' %}
+    {% set v2 = a2[:4000] if a2 is string else '__unwired__' %}
+    {% set v3 = a3[:4000] if a3 is string else '__unwired__' %}
+    {% set v4 = a4[:4000] if a4 is string else '__unwired__' %}
+    {% set v5 = a5[:4000] if a5 is string else '__unwired__' %}
+    {% set v6 = a6[:4000] if a6 is string else '__unwired__' %}
+    "$PY" state/desk/check_desk.py --final --answer A1={{ v1 | env }} --answer A2={{ v2 | env }} \
+      --answer A3={{ v3 | env }} --answer A4={{ v4 | env }} --answer A5={{ v5 | env }} \
+      --answer A6={{ v6 | env }}

@@ -218,6 +218,13 @@ agent:
     page cite.py kept, and that the brief invents no source. It draws the 10-claim spot-check
     sample (seed 7) that a person re-fetches by hand. Whether a source is really primary is
     for that person to judge, not this script.
+
+    With --final it also fails a brief that a research lens left without usable output, and
+    names the lens: lenses/<lens>.json (an object with claims) and lenses/<lens>.md must exist
+    and be neither empty nor an account-limit or error message, and the lens's final answer,
+    which the workflow passes in as --answer <lens>=<environment variable>, must not be one
+    either. Run 99732fd1 lost its competition lens to "You've hit your session limit" and its
+    brief still passed.
     """
     import glob
     import hashlib
@@ -244,6 +251,15 @@ agent:
         "Given the above, what's the recommendation? (go or no-go)",
     ]
     BRIEF_DIR = os.path.join("state", "brief")
+    LENSES = ["feasibility", "viability", "gtm", "competition"]
+    # What a part says when its account or the service stopped it, instead of research.
+    NON_ANSWER = re.compile(
+        r"session limit|usage limit|weekly limit|daily limit|rate[ _-]?limit|limit (?:reached|exceeded)"
+        r"|hit (?:your|the) (?:\w+ )?limit|quota|overloaded|too many requests|credit balance"
+        r"|pool exhausted|try again later|resets? (?:at |in |on )?\d|api error|authentication_error"
+        r"|oauth token|not logged in|/login|invalid api key|out of (?:extra )?usage|prompt is too long",
+        re.I)
+    NOT_PASSED = "__unwired__"  # what the workflow passes for an answer it could not find
 
 
     def norm(s):
@@ -286,15 +302,76 @@ agent:
         return value.strip() if isinstance(value, str) else ""
 
 
+    def non_answer(text):
+        """Why a part's text is no research ('' when it may be): empty, or a short message about
+        an account limit, a quota, an overload or a login, with no JSON in it."""
+        text = (text or "").strip()
+        if not text:
+            return "empty"
+        if len(text) <= 600 and text[0] not in "{[" and "```" not in text and NON_ANSWER.search(text):
+            return 'an account-limit or error message ("%s")' % norm(text)[:160]
+        return ""
+
+
+    def passed_answers(argv):
+        """--answer <lens>=<variable>: that lens's final answer, read from the environment. An
+        answer the workflow could not find is left out; that lens's files are still checked."""
+        answers = {}
+        for i, arg in enumerate(argv[:-1]):
+            if arg == "--answer":
+                lens, _, variable = argv[i + 1].partition("=")
+                value = os.environ.get(variable)
+                if lens in LENSES and value is not None and value != NOT_PASSED:
+                    answers[lens] = value
+        return answers
+
+
+    def lens_parts(answers):
+        """{lens: 'ok' or why it left no usable output}, from its two files and its final answer."""
+        parts = {}
+        for lens in LENSES:
+            found = []
+            for ext in ("json", "md"):
+                name = "lenses/%s.%s" % (lens, ext)
+                try:
+                    with open(os.path.join(BRIEF_DIR, name), encoding="utf-8") as f:
+                        text = f.read()
+                except FileNotFoundError:
+                    found.append(name + " is missing")
+                    continue
+                except (OSError, ValueError) as exc:
+                    found.append("%s is unreadable (%s)" % (name, exc))
+                    continue
+                why = non_answer(text)
+                if why:
+                    found.append("%s is %s" % (name, why))
+                elif ext == "json":
+                    try:
+                        data = json.loads(text)
+                    except ValueError as exc:
+                        found.append("%s is not valid JSON (%s)" % (name, exc))
+                        continue
+                    if not isinstance(data, dict):
+                        found.append(name + " is not a JSON object")
+                    elif not isinstance(data.get("claims"), list) or not data["claims"]:
+                        found.append(name + " has no claims")
+            if lens in answers:
+                why = non_answer(answers[lens])
+                if why:
+                    found.append("its final answer is " + why)
+            parts[lens] = "; ".join(found) or "ok"
+        return parts
+
+
     def check():
         problems = []
         index = {}
         for path in sorted(glob.glob(os.path.join(BRIEF_DIR, "lenses", "*.json"))):
             data, err = load_json(path)
-            if err:
-                problems.append("%s is %s" % (path, err))
+            if err or not isinstance(data, dict):
+                problems.append("%s is %s" % (path, err or "not a JSON object"))
                 continue
-            for claim in (data or {}).get("claims", []):
+            for claim in data.get("claims") or []:
                 if isinstance(claim, dict) and claim.get("id"):
                     index[str(claim["id"])] = dict(claim, _file=os.path.basename(path))
         brief_path = os.path.join(BRIEF_DIR, "brief.json")
@@ -485,6 +562,14 @@ agent:
     def main(argv):
         result = check()
         if "--final" in argv:
+            answers = passed_answers(argv)
+            parts = lens_parts(answers)
+            lost = ["%s lens left no usable output: %s" % (lens, why) for lens, why in parts.items() if why != "ok"]
+            result["parts"] = parts
+            result["answers_checked"] = [lens for lens in LENSES if lens in answers]
+            if lost:
+                result["problems"] = lost + result["problems"]
+                result["verdict"] = "fail"
             print(json.dumps(result, indent=1))
             return 0
         for name, ok in result.get("items", {}).items():

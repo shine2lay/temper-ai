@@ -70,7 +70,8 @@ workflow:
           role: leader
 
     # Quality check of the report just written (no model; report defaults to state/, where the
-    # synthesizer writes it). Never changes the report.
+    # synthesizer writes it). Never changes the report. It gets each lens's final answer, so a lens
+    # an account limit stopped is named and the grade cannot pass.
     - name: quality_setup
       type: agent
       agent: signal_grade_setup
@@ -78,6 +79,10 @@ workflow:
       input_map:
         shortlist: input.shortlist
         assets_dir: input.quality_assets_dir
+        search_answer: synthesize.signal_search.output
+        money_answer: synthesize.signal_jobs.output
+        pain_answer: synthesize.signal_pain.output
+        competitors_answer: synthesize.signal_competitors.output
 
     - name: quality_review
       type: agent

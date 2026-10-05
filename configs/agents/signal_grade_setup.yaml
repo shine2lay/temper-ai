@@ -6,6 +6,13 @@
 # changes the report. A missing report or a used grading folder stops here at $0 (status
 # not_checked). Part of workflows/signal_grade.yaml and the post-synthesis quality check of
 # workflows/signal_harvest.yaml.
+#
+# A lens that left no usable output (its signal/<lens>.md missing, empty or an account-limit
+# message, or its final answer such a message) is named in the check's problems and leaves Q3
+# unknown, so the grade never passes. signal_harvest passes each lens's final answer in
+# (search_answer, money_answer, pain_answer, competitors_answer); signal_grade has none, and an
+# answer not passed arrives as __unwired__, so only the files are checked. The first 4000
+# characters are enough: a non-answer is short.
 agent:
   name: signal_grade_setup
   version: 1
@@ -15,6 +22,10 @@ agent:
     #!/bin/sh
     set -eu
     cd "{{ workspace_path }}"
+    {% set sa = search_answer[:4000] if search_answer is string else '__unwired__' %}
+    {% set ma = money_answer[:4000] if money_answer is string else '__unwired__' %}
+    {% set pa = pain_answer[:4000] if pain_answer is string else '__unwired__' %}
+    {% set ca = competitors_answer[:4000] if competitors_answer is string else '__unwired__' %}
     python3 - <<'PY'
     import hashlib
     import json
@@ -84,5 +95,8 @@ agent:
     (dest / 'setup.json').write_text(json.dumps({
         'run_id': run_id, 'assets_dir': str(assets), 'report_dir': str(folder), 'shortlist': source,
         'sha256': copied}, indent=1))
-    sys.exit(subprocess.call([sys.executable, str(dest / 'check_signal.py'), 'check', '--report-dir', str(folder)]))
+    answers = ['--answer', 'search={{ sa | env }}', '--answer', 'money={{ ma | env }}',
+               '--answer', 'pain={{ pa | env }}', '--answer', 'competitors={{ ca | env }}']
+    sys.exit(subprocess.call([sys.executable, str(dest / 'check_signal.py'), 'check', '--report-dir', str(folder)]
+                             + answers))
     PY

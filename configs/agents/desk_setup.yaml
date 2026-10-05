@@ -324,6 +324,12 @@ agent:
     changed, and its hypothesis status follows from the verdicts. The final output lists each
     verdict's decisive claims for the person who re-reads them by hand: whether a verdict follows
     from its sources is that person's call, not this script's.
+
+    An assumption whose researcher left no usable output fails by name: its checks/<id>.json and
+    .md missing, empty, not valid JSON or an account-limit message. With --final, each
+    researcher's final answer, which the workflow passes in as --answer <id>=<environment
+    variable>, must not be such a message either (an account limit can end a researcher's turn
+    with "You've hit your session limit" and nothing else).
     """
     import glob
     import hashlib
@@ -340,6 +346,14 @@ agent:
     QUALITIES = ("primary", "secondary", "vendor", "listicle")
     HOWS = ("cite", "data", "webfetch", "snippet")
     CONFIDENCE = ("low", "med", "high")
+    # What a part says when its account or the service stopped it, instead of research.
+    NON_ANSWER = re.compile(
+        r"session limit|usage limit|weekly limit|daily limit|rate[ _-]?limit|limit (?:reached|exceeded)"
+        r"|hit (?:your|the) (?:\w+ )?limit|quota|overloaded|too many requests|credit balance"
+        r"|pool exhausted|try again later|resets? (?:at |in |on )?\d|api error|authentication_error"
+        r"|oauth token|not logged in|/login|invalid api key|out of (?:extra )?usage|prompt is too long",
+        re.I)
+    NOT_PASSED = "__unwired__"  # what the workflow passes for an answer it could not find
 
 
     def norm(s):
@@ -361,6 +375,50 @@ agent:
             return None, "missing"
         except ValueError as exc:
             return None, "not valid JSON (%s)" % exc
+
+
+    def non_answer(text):
+        """Why a part's text is no research ('' when it may be): empty, or a short message about
+        an account limit, a quota, an overload or a login, with no JSON in it."""
+        text = (text or "").strip()
+        if not text:
+            return "empty"
+        if len(text) <= 600 and text[0] not in "{[" and "```" not in text and NON_ANSWER.search(text):
+            return 'an account-limit or error message ("%s")' % norm(text)[:160]
+        return ""
+
+
+    def read_part(path):
+        """A researcher's file: (its text, '') or (None, why it is no usable output)."""
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        except FileNotFoundError:
+            return None, "missing"
+        except (OSError, ValueError) as exc:
+            return None, "unreadable (%s)" % exc
+        why = non_answer(text)
+        return (None, why) if why else (text, "")
+
+
+    def split_args(argv):
+        """(--final given, {id: final answer}, the other words). Each --answer <id>=<variable>
+        reads that researcher's final answer from the environment; one the workflow could not
+        find is left out, and that assumption's files are still checked."""
+        final, answers, rest = False, dict(), []
+        words = list(argv[1:])
+        while words:
+            word = words.pop(0)
+            if word == "--final":
+                final = True
+            elif word == "--answer" and words:
+                slot, _, variable = words.pop(0).partition("=")
+                value = os.environ.get(variable)
+                if value is not None and value != NOT_PASSED:
+                    answers[slot] = value
+            else:
+                rest.append(word)
+        return final, answers, rest
 
 
     def kept_page(url):
@@ -464,12 +522,19 @@ agent:
 
 
     def check_assumption(slot, runs):
-        data, err = load_json(os.path.join(DESK, "checks", slot + ".json"))
+        text, err = read_part(os.path.join(DESK, "checks", slot + ".json"))
+        data = None
+        if not err:
+            try:
+                data = json.loads(text)
+            except ValueError as exc:
+                err = "not valid JSON (%s)" % exc
         if err or not isinstance(data, dict):
             return None, ["%s: state/desk/checks/%s.json is %s" % (slot, slot, err or "not a JSON object")]
         problems = []
-        if not os.path.exists(os.path.join(DESK, "checks", slot + ".md")):
-            problems.append("%s: state/desk/checks/%s.md is missing" % (slot, slot))
+        _, err = read_part(os.path.join(DESK, "checks", slot + ".md"))
+        if err:
+            problems.append("%s: state/desk/checks/%s.md is %s" % (slot, slot, err))
         if text_of(data.get("id")) != slot:
             problems.append("%s: its id should be %s" % (slot, slot))
         verdict = data.get("verdict")
@@ -574,8 +639,7 @@ agent:
 
 
     def main(argv):
-        final = "--final" in argv
-        args = [a for a in argv[1:] if a != "--final"]
+        final, answers, args = split_args(argv)
         only = args[0] if args else ""
         slots = slots_listed()
         if only and only not in slots:
@@ -587,6 +651,13 @@ agent:
             problems += found
             if res:
                 results[slot] = res
+        lost = [p for p in problems if re.match(r"^A[1-9]: state/desk/checks/A[1-9]\.(json|md) is ", p)]
+        if final:
+            for slot in slots:
+                why = non_answer(answers[slot]) if slot in answers else ""
+                if why:
+                    lost.append("%s: its final answer is %s" % (slot, why))
+            problems = lost + [p for p in problems if p not in lost]
         report = None
         if not only and (final or os.path.exists(os.path.join(DESK, "report.json"))):
             report, found = check_report(slots, results)
@@ -618,9 +689,12 @@ agent:
             per[slot] = {"researcher_verdict": res["verdict"], "verdict": row.get("verdict", res["verdict"]),
                          "decisive": items}
             hand += items
+        parts = dict((slot, "; ".join(p[len(slot) + 2:] for p in lost if p.startswith(slot + ": ")) or "ok")
+                     for slot in slots)
         print(json.dumps({"verdict": "fail" if problems else "pass", "problems": problems,
                           "hypothesis_status": (report or dict()).get("hypothesis_status"),
-                          "assumptions": per, "spot_check": hand,
+                          "assumptions": per, "spot_check": hand, "parts": parts,
+                          "answers_checked": [slot for slot in slots if slot in answers],
                           "report_path": "state/desk/report.md"}, indent=1))
         return 0
 

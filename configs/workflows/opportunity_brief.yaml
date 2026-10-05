@@ -68,8 +68,14 @@ workflow:
         - agent: brief_synthesize
           role: leader
 
-    # The brief's mechanical check and the spot-check sample. No model.
+    # The brief's mechanical check and the spot-check sample. No model. It gets each lens's final
+    # answer, so a lens an account limit stopped fails the brief by name (run 99732fd1).
     - name: check
       type: agent
       agent: brief_check
       depends_on: [brief]
+      input_map:
+        feasibility_answer: brief.brief_feasibility.output
+        viability_answer: brief.brief_viability.output
+        gtm_answer: brief.brief_gtm.output
+        competition_answer: brief.brief_competition.output

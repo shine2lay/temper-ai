@@ -10,7 +10,9 @@ revise or unknown per criterion Q1-Q6. Here: the configs run in that order, the 
 the benchmark stay frozen; the checker reproduces every row of the five retained reports and finds
 the planted table defects; finalize refuses findings it cannot verify, leads it cannot resolve,
 grades from another run and reports changed while grading; score.py applies expected.json's
-matching rule. No model and no network: every review here is a hand-written review.json.
+matching rule; a lens that left no usable output (its file missing, empty or an account-limit
+message, or its final answer such a message, queue #23) is named and the grade never passes.
+No model and no network: every review here is a hand-written review.json.
 """
 
 import ast
@@ -56,6 +58,15 @@ FROZEN = {
     "tests/test_signal_grade/benchmark/build.py": "37dd46ec14f5d7fece47995a1cbc0b60721c2dae3cf29374ddf1646a844adb18",
 }
 CONTROLS = {"r3kx": 4, "w2hc": 4, "f9mb": 7, "n6vs": 4, "b7ye": 4}  # key: table rows
+# signal_harvest hands the quality check each lens's final answer (queue #23).
+LENS_ANSWERS = {"search_answer": "signal_search", "money_answer": "signal_jobs", "pain_answer": "signal_pain",
+                "competitors_answer": "signal_competitors"}
+LIMIT = "You've hit your session limit \u00b7 resets 10:50pm (UTC)"
+
+
+def unwired_default(template, name):
+    """Left unfed, the value arrives as __unwired__ (an answer the workflow could not find), never as text."""
+    return f"{name} is string else '__unwired__'" in template
 
 
 def served(path):
@@ -224,7 +235,7 @@ def test_every_template_variable_is_fed_by_the_workflow():
         for value in (node.get("input_map") or {}).values():
             assert value.startswith("input.") and value.split(".", 1)[1] in wf["inputs"], f"{value} is not an input"
         for template in templates_of(by_name(node["agent"])):
-            used = meta.find_undeclared_variables(env.parse(template))
+            used = {v for v in meta.find_undeclared_variables(env.parse(template)) if not unwired_default(template, v)}
             assert used <= fed | INJECTED, f"{node['agent']} uses {sorted(used - fed - INJECTED)} that the workflow never passes"
 
 
@@ -251,10 +262,16 @@ def test_signal_harvest_grades_its_report_after_the_unchanged_research():
     for name in ("quality_status", "quality_path", "quality_criteria"):
         node, _, field = harvest["outputs"][name].partition(".structured.")
         assert f"{printed[node]}.structured.{field}" in grade_outputs, f"{name} names a field finalize prints"
+    answers = {name: f"synthesize.{lens}.output" for name, lens in LENS_ANSWERS.items()}
+    assert {k: v for k, v in quality[0]["input_map"].items() if k in answers} == answers, "setup gets each lens's answer"
+    lenses = {a["agent"] for a in synthesize["agents"] if a.get("role") != "leader"}
+    assert set(LENS_ANSWERS.values()) == lenses
     env = jinja()
     for node in quality:
         fed = node.get("input_map") or {}
         for value in fed.values():
+            if value in answers.values():
+                continue  # a lens's final answer, from the stage the check waits for
             assert value.startswith("input.") and value.split(".", 1)[1] in harvest["inputs"], f"{value} is not an input"
         for template in templates_of(by_name(node["agent"])):
             for used in meta.find_undeclared_variables(env.parse(template)) - set(fed) - INJECTED:
@@ -483,6 +500,48 @@ def test_a_grade_from_another_run_or_a_spent_account_is_not_a_pass(tmp_path):
     out = finalize(spent)
     assert out["quality_status"] == "unknown"
     assert all(out["criteria"][c] == "unknown" for c in ("Q3", "Q4", "Q5", "Q6"))
+
+
+# ---- a lens that left no usable output (queue #23) ----------------------------------------------
+
+
+LOST_LENS = [
+    ("nothing lost", "r3kx", lambda case: None, {}, None),
+    ("the competitors file gone", "r3kx", lambda case: (case / "signal" / "competitors.md").unlink(), {},
+     "competitors lens left no usable output: "),
+    ("the pain file a limit message", "r3kx", lambda case: (case / "signal" / "pain.md").write_text(LIMIT + "\n"),
+     {}, "pain lens left no usable output: "),
+    ("the search file empty", "w2hc", lambda case: (case / "signal" / "search.md").write_text(""), {},
+     "search lens left no usable output: "),
+    ("the spend file gone", "b7ye", lambda case: (case / "signal" / "spend.md").unlink(), {},
+     "money lens left no usable output: "),
+    ("the money answer a limit message", "r3kx", lambda case: None,
+     {"money_answer": LIMIT, "search_answer": '```json\n{"status": "completed", "note": "rate limit hit once"}\n```',
+      "pain_answer": None}, "money lens left no usable output: its final answer is an account-limit or error message"),
+]
+
+
+@pytest.mark.parametrize(("key", "lose", "answers", "problem"), [x[1:] for x in LOST_LENS], ids=[x[0] for x in LOST_LENS])
+def test_a_lens_that_left_no_usable_output_is_named_and_the_grade_never_passes(tmp_path, key, lose, answers, problem):
+    workspace = stage(tmp_path, key)
+    lose(workspace / "_case")
+    out = setup(workspace, **answers)
+    assert out["status"] == "checked", "the review still runs on what the report holds"
+    check = check_of(workspace)
+    write_review(workspace, all_ok(check))
+    final = finalize(workspace)
+    if problem is None:
+        assert set(check["parts"].values()) == {"ok"} and check["answers_checked"] == []
+        assert final["quality_status"] == "pass"
+        return
+    lens = problem.split()[0]
+    assert [p for p in check["problems"] if "left no usable output" in p][0].startswith(problem), check["problems"]
+    assert [s for s, why in check["parts"].items() if why != "ok"] == [lens]
+    assert problem in check["unknown"]["Q3"], "its evidence could not be traced: Q3 is unknown"
+    assert final["quality_status"] != "pass" and final["criteria"]["Q3"] != "pass"
+    assert any(p.startswith(problem) for p in final["problems"]), final["problems"]
+    if answers:
+        assert check["answers_checked"] == ["search", "money"], "an answer the workflow could not find is left out"
 
 
 # ---- score.py -----------------------------------------------------------------------------------

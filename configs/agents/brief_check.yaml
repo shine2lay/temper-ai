@@ -5,6 +5,13 @@
 # reason, every cited claim exists with a URL and a date, and each quoted claim's words are on
 # the page cite.py kept. Prints the verdict and the 10-claim spot-check sample (seed 7) a person
 # re-fetches by hand. Part of workflows/opportunity_brief.yaml.
+#
+# It also fails a brief that a research lens left without usable output, naming the lens: its
+# lenses/<lens>.json and .md missing, empty, not valid JSON or an account-limit message, or its
+# final answer such a message (run 99732fd1's competition lens answered "You've hit your session
+# limit" and the brief still passed). Each lens's final answer comes in through the workflow's
+# input_map; one the workflow could not find arrives as __unwired__ and only its files are checked.
+# The first 4000 characters are enough: a non-answer is short.
 agent:
   name: brief_check
   version: 1
@@ -15,4 +22,9 @@ agent:
     cd {{ workspace_path }}
     PY=python3
     command -v python3 >/dev/null 2>&1 || PY="$TEMPER_PYTHON"
-    "$PY" check_brief.py --final
+    {% set fa = feasibility_answer[:4000] if feasibility_answer is string else '__unwired__' %}
+    {% set va = viability_answer[:4000] if viability_answer is string else '__unwired__' %}
+    {% set ga = gtm_answer[:4000] if gtm_answer is string else '__unwired__' %}
+    {% set ca = competition_answer[:4000] if competition_answer is string else '__unwired__' %}
+    "$PY" check_brief.py --final --answer feasibility={{ fa | env }} --answer viability={{ va | env }} \
+      --answer gtm={{ ga | env }} --answer competition={{ ca | env }}

@@ -4,9 +4,10 @@ Its configs: every script step parses under /bin/sh, the model steps keep Claude
 template variable is fed by the workflow (a stage hands its input_map to each of its agents) and every
 workflow output names a field its step prints. Its two helpers, which brief_setup writes into the
 workspace: cite.py answers from the pages it kept (a kept block stays a block), and check_brief.py passes
-a brief that meets the bar and names what is missing in one that doesn't. Nothing here reaches the
-network: every page comes from cite.py's own cache, and a proxy that refuses every connection stands in
-front of curl in case a page is ever looked up.
+a brief that meets the bar and names what is missing in one that doesn't, including a lens that left no
+usable output (queue #23: run 99732fd1's competition lens answered "You've hit your session limit" and
+its brief still passed). Nothing here reaches the network: every page comes from cite.py's own cache,
+and a proxy that refuses every connection stands in front of curl in case a page is ever looked up.
 """
 
 import hashlib
@@ -37,6 +38,7 @@ AGENTS = sorted((ROOT / "configs" / "agents").glob("brief_*.yaml"))
 WORKFLOW = ROOT / "configs" / "workflows" / "opportunity_brief.yaml"
 INJECTED = {"workspace_path", "run_id"}  # the agents add these to every template
 LENSES = {"brief_feasibility", "brief_viability", "brief_gtm", "brief_competition"}
+LIMIT = "You've hit your session limit \u00b7 resets 10:50pm (UTC)"  # 99732fd1's competition lens, verbatim
 REFUSED = "http://127.0.0.1:9"
 NO_NETWORK = {"http_proxy": REFUSED, "https_proxy": REFUSED, "HTTPS_PROXY": REFUSED, "ALL_PROXY": REFUSED}
 
@@ -79,10 +81,10 @@ def runs(node):
     return [(node["agent"], fed)]
 
 
-def jinja():
+def jinja(stash=None):
     """Jinja as the script agent sets it up, with its value filters."""
     env = SandboxedEnvironment(loader=BaseLoader(), undefined=ChainableUndefined)
-    stash = _ValueStash()
+    stash = stash if stash is not None else _ValueStash()
     env.filters[QUOTED_FILTER] = stash.quoted
     env.filters[BARE_FILTER] = stash.bare
     env.filters[ENV_FILTER] = stash.name
@@ -120,15 +122,31 @@ def test_the_model_steps_keep_claude_codes_own_tools(path):
     assert "tools" not in cfg, "provider claude refuses temper tool schemas; it uses its own Bash/Read/Write/Web tools"
 
 
+def fed_by_the_workflow(wf, node, value):
+    """An input_map value is a workflow input, or the final answer of a lens in a stage the node waits for."""
+    if value.startswith("input."):
+        return value.split(".", 1)[1] in wf["inputs"]
+    stage, lens, field = (value.split(".") + ["", ""])[:3]
+    stages = {n["name"]: n for n in wf["nodes"] if n.get("type") == "stage"}
+    return (stage in (node.get("depends_on") or []) and stage in stages and field == "output"
+            and value.count(".") == 2 and lens in LENSES and lens in {a["agent"] for a in stages[stage]["agents"]})
+
+
 def test_every_template_variable_is_fed_by_the_workflow():
     env = jinja()
     wf = workflow()
     for node in wf["nodes"]:
         for value in (node.get("input_map") or {}).values():
-            assert value.startswith("input.") and value.split(".", 1)[1] in wf["inputs"], f"{value} is not an input"
+            assert fed_by_the_workflow(wf, node, value), f"{value} is neither an input nor a lens's answer"
         for name, fed in runs(node):
             used = meta.find_undeclared_variables(env.parse(template_of(by_name(name))))
             assert used <= fed | INJECTED, f"{name} uses {sorted(used - fed - INJECTED)} that the workflow never passes"
+
+
+def test_the_check_gets_each_lens_answer():
+    check = next(n for n in workflow()["nodes"] if n["name"] == "check")
+    assert check["input_map"] == {f"{lens}_answer": f"brief.brief_{lens}.output"
+                                  for lens in ("feasibility", "viability", "gtm", "competition")}
 
 
 def helper(name):
@@ -177,9 +195,13 @@ def good_brief(questions, rows):
     }
 
 
+LENS_CLAIMS = {"feasibility": CLAIMS, "viability": [dict(CLAIMS[0], id="V1")], "gtm": [dict(CLAIMS[1], id="G1")],
+               "competition": [dict(CLAIMS[2], id="C1")]}
+
+
 @pytest.fixture
 def workspace(tmp_path):
-    """A finished run's workspace: both helpers, the pages cite.py kept, one lens file and the brief."""
+    """A finished run's workspace: both helpers, the pages cite.py kept, the four lenses' files and the brief."""
     for name in ("cite.py", "check_brief.py"):
         (tmp_path / name).write_text(helper(name))
     brief_dir = tmp_path / "state" / "brief"
@@ -190,7 +212,9 @@ def workspace(tmp_path):
                   "fetched": "2026-10-01 21:35 PDT"}
         page = brief_dir / "pages" / (hashlib.sha1(url.encode()).hexdigest()[:16] + ".txt")
         page.write_text(json.dumps(record) + "\n" + text)
-    (brief_dir / "lenses" / "feasibility.json").write_text(json.dumps({"lens": "feasibility", "claims": CLAIMS}))
+    for lens, claims in LENS_CLAIMS.items():
+        (brief_dir / "lenses" / f"{lens}.json").write_text(json.dumps({"lens": lens, "claims": claims}))
+        (brief_dir / "lenses" / f"{lens}.md").write_text(f"# The {lens} lens\nWhat it found, with its sources.\n")
     (brief_dir / "input.md").write_text("# Idea\nDental insurance verification.\n")
     (brief_dir / "brief.md").write_text("# Opportunity brief\n")
     checker = load(tmp_path / "check_brief.py")
@@ -198,9 +222,14 @@ def workspace(tmp_path):
     return tmp_path
 
 
-def check(ws):
-    done = subprocess.run([sys.executable, "check_brief.py", "--final"], cwd=ws, capture_output=True, text=True,
-                          timeout=30)
+def check(ws, **answers):
+    """check_brief.py --final, with each given lens's final answer passed the way brief_check passes it."""
+    args, env = [], dict(os.environ)
+    for lens, text in answers.items():
+        env[f"ANSWER_{lens.upper()}"] = text
+        args += ["--answer", f"{lens}=ANSWER_{lens.upper()}"]
+    done = subprocess.run([sys.executable, "check_brief.py", "--final", *args], cwd=ws, capture_output=True,
+                          text=True, timeout=30, env=env)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
 
@@ -222,6 +251,7 @@ def test_a_brief_that_meets_the_bar_passes_and_draws_its_spot_check(workspace):
     result = check(workspace)
     assert result["verdict"] == "pass", result["problems"]
     assert all(result["items"].values())
+    assert result["parts"] == {lens: "ok" for lens in ("feasibility", "viability", "gtm", "competition")}
     assert {c["id"] for c in result["spot_check"]} == {"F1", "F2"}, "only cited claims are drawn"
     assert [c["id"] for c in check(workspace)["spot_check"]] == [c["id"] for c in result["spot_check"]], "seed 7"
 
@@ -257,6 +287,93 @@ def test_a_brief_short_of_the_bar_fails_and_says_why(workspace, mutate, problem)
     result = check(workspace)
     assert result["verdict"] == "fail"
     assert any(problem in p for p in result["problems"]), result["problems"]
+
+
+def lens_file(ws, name):
+    return ws / "state" / "brief" / "lenses" / name
+
+
+LOST = [
+    ("both files gone", lambda ws: [lens_file(ws, f"competition.{ext}").unlink() for ext in ("json", "md")],
+     "competition lens left no usable output: lenses/competition.json is missing; lenses/competition.md is missing"),
+    ("an empty write-up", lambda ws: lens_file(ws, "viability.md").write_text("\n"),
+     "viability lens left no usable output: lenses/viability.md is empty"),
+    ("broken JSON", lambda ws: lens_file(ws, "gtm.json").write_text('{"lens": "gtm", "claims": ['),
+     "gtm lens left no usable output: lenses/gtm.json is not valid JSON"),
+    ("JSON that is no object", lambda ws: lens_file(ws, "gtm.json").write_text("[]"),
+     "gtm lens left no usable output: lenses/gtm.json is not a JSON object"),
+    ("no claims", lambda ws: lens_file(ws, "feasibility.json").write_text('{"lens": "feasibility", "claims": []}'),
+     "feasibility lens left no usable output: lenses/feasibility.json has no claims"),
+    ("a limit message for a write-up", lambda ws: lens_file(ws, "competition.md").write_text(LIMIT),
+     "competition lens left no usable output: lenses/competition.md is an account-limit or error message"),
+]
+
+
+@pytest.mark.parametrize(("lose", "problem"), [x[1:] for x in LOST], ids=[x[0] for x in LOST])
+def test_a_lens_that_left_no_usable_output_fails_the_brief_by_name(workspace, lose, problem):
+    lose(workspace)
+    result = check(workspace)
+    assert result["verdict"] == "fail"
+    assert any(p.startswith(problem) for p in result["problems"]), result["problems"]
+    lens = problem.split()[0]
+    assert result["parts"][lens] != "ok" and [k for k, v in result["parts"].items() if v != "ok"] == [lens]
+
+
+def test_the_lost_competition_lens_of_run_99732fd1_fails_the_brief(workspace):
+    """No competition files and a final answer that is the account's limit message: the brief still cites
+    enough from the other lenses to meet every item, as 99732fd1's did, and fails all the same."""
+    for ext in ("json", "md"):
+        lens_file(workspace, f"competition.{ext}").unlink()
+    result = check(workspace, competition=LIMIT)
+    assert result["verdict"] == "fail" and all(result["items"].values())
+    assert result["problems"][0] == (
+        "competition lens left no usable output: lenses/competition.json is missing; lenses/competition.md is "
+        f'missing; its final answer is an account-limit or error message ("{LIMIT}")')
+    assert result["answers_checked"] == ["competition"]
+
+
+def test_a_lens_whose_final_answer_is_a_limit_message_fails_even_with_its_files(workspace):
+    result = check(workspace, gtm="API Error: 529 Overloaded. Try again later.")
+    assert result["verdict"] == "fail"
+    assert result["problems"][0].startswith("gtm lens left no usable output: its final answer is an account-limit")
+
+
+def test_research_answers_and_answers_not_passed_in_leave_the_brief_passing(workspace):
+    research = '```json\n{"status": "completed", "lens": "feasibility", "claims": ["F1"], "note": "rate limit 100/min"}\n```'
+    result = check(workspace, feasibility=research, viability='{"status": "completed", "lens": "viability"}',
+                   gtm="__unwired__")
+    assert result["verdict"] == "pass", result["problems"]
+    assert result["answers_checked"] == ["feasibility", "viability"], "an answer not passed in leaves the files to judge"
+
+
+@pytest.mark.parametrize(("text", "lost"), [
+    (LIMIT, True),
+    ("Claude AI usage limit reached|1759630800", True),
+    ("Credit balance is too low", True),
+    ("Invalid API key \u00b7 Please run /login", True),
+    ("", True),
+    ("Done: wrote lenses/gtm.json and lenses/gtm.md.", False),
+    ("The vendor's API has a rate limit of 100 calls a minute. " * 12, False),
+    ('{"status": "completed", "note": "quota of 250 checks"}', False),
+], ids=["session limit", "usage limit", "credit", "login", "empty", "short research", "long research", "json"])
+def test_a_non_answer_is_empty_or_a_short_limit_or_error_message(workspace, text, lost):
+    assert bool(load(workspace / "check_brief.py").non_answer(text)) is lost
+
+
+def test_the_check_step_passes_each_lens_answer_to_the_checker(workspace):
+    """brief_check rendered the way the script agent renders it: a lens's answer reaches check_brief.py, and
+    an answer the workflow could not find (None, or a node the workflow never had) is left to the files."""
+    cfg = by_name("brief_check")
+    stash = _ValueStash()
+    script = jinja(stash).from_string(_rewrite_interpolations(cfg["script_template"], cfg["name"])).render(
+        workspace_path=str(workspace), competition_answer=LIMIT, feasibility_answer="x" * 9000, viability_answer=None)
+    done = subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=60, cwd=workspace,
+                          env={**os.environ, **stash.env})
+    assert done.returncode == 0, done.stderr
+    result = json.loads(done.stdout)
+    assert result["answers_checked"] == ["feasibility", "competition"]
+    assert result["verdict"] == "fail" and result["problems"][0].startswith("competition lens left no usable output")
+    assert max(len(v) for v in stash.env.values()) <= 4000, "a long answer is cut to its first 4000 characters"
 
 
 def test_cite_answers_from_the_pages_it_kept(workspace):

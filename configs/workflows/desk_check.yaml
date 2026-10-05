@@ -99,8 +99,16 @@ workflow:
       agent: desk_synthesize
       depends_on: [check_1, check_2, check_3, check_4, check_5, check_6]
 
-    # The report's mechanical check and the hand-check list. No model.
+    # The report's mechanical check and the hand-check list. No model. It gets each researcher's
+    # final answer, so an assumption an account limit stopped fails the check by name.
     - name: final
       type: agent
       agent: desk_final
       depends_on: [synth]
+      input_map:
+        a1: check_1.output
+        a2: check_2.output
+        a3: check_3.output
+        a4: check_4.output
+        a5: check_5.output
+        a6: check_6.output

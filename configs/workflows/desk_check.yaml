@@ -22,6 +22,15 @@ workflow:
   # research only (no sign-ups, demos, quotes or contact). check_desk.py checks each verdict's
   # support and lists its decisive claims for a person to re-read by hand.
   #
+  # The bar governs (queue #24, after run 2a2f6850 held an assumption at unknown under a neutral-
+  # source rule its bar had set aside). Evidence rules, listed in each run's state/desk/input.md:
+  # fixed F1-F3 (checkable claims; no listicles or snippets; a pass or kill rests on at least one
+  # claim read with cite.py or counted from data) and the defaults D1 two sources, D2 a neutral
+  # source, D3 a primary source, held only where an assumption's own pass_if or kill_if is
+  # silent on them. A bar sets a default aside only in its own words; a verdict that relies on
+  # that quotes them (rules.set_aside), and an unknown held back by a default names it
+  # (rules.decided_by). check_desk.py checks both against the bar and the decisive claims.
+  #
   # provider: claude = Claude Code CLI (its own WebSearch/WebFetch/Bash); no temper tools: blocks.
   version: 1
   description: |
@@ -29,8 +38,10 @@ workflow:
     up to 6) judges it pass / kill / unknown against the pass and kill bars given with it, from
     fetched and quoted primary documents and public datasets it counts itself; then a
     synthesizer reviews each verdict against its bar and says what the verdicts mean for the
-    hypothesis. A script checks every verdict's support and lists the decisive claims for a
-    hand check.
+    hypothesis. The bars govern: the evidence defaults (two sources, a neutral source, a
+    primary source) hold only where a bar is silent, and each verdict names any default its bar
+    set aside or that decided it. A script checks every verdict's support and lists the
+    decisive claims for a hand check.
   inputs:
     hypothesis:
       type: string
@@ -38,6 +49,16 @@ workflow:
     assumptions:
       type: string
       required: true    # JSON list, 1-6 entries: [{"id": "A1", "assumption", "pass_if", "kill_if", "pointers"}], ids A1..An in order
+      description: >-
+        JSON list of 1-6 assumptions, ids A1..An in order, each {"id", "assumption", "pass_if",
+        "kill_if", "fatal", "pointers"}. Each is judged by its own pass_if and kill_if. Evidence
+        rules: fixed, a pass or kill rests on at least one claim quoted from a kept page or
+        counted from a public dataset, never on listicles or search snippets; defaults, held
+        only where the bar is silent: D1 at least 2 sources, D2 one checked claim from a
+        neutral party (not the company, vendor or group with a stake in the answer), D3 that
+        claim primary. To set a default aside, say so in pass_if or kill_if, for example "the
+        operator's own stated figure counts" (D2) or "one source is enough" (D1).
+        The hypothesis text never sets one aside.
   outputs:
     report_path: synth.structured.report_path
     hypothesis_status: synth.structured.hypothesis_status
@@ -45,6 +66,7 @@ workflow:
     check_verdict: final.structured.verdict
     check_problems: final.structured.problems
     spot_check: final.structured.spot_check
+    rules: final.structured.rules    # per assumption: decided_by (defaults that held it back), set_aside (with the bar's words)
 
   nodes:
     # Input files + the two helpers (cite.py, check_desk.py) into the workspace. No model.

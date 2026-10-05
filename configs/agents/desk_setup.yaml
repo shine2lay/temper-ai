@@ -1,5 +1,6 @@
 # @description DESK CHECK step 0 (product role). No model. Writes the run's input (state/desk/
-# input.md: the hypothesis and every assumption with its pass and kill bars; one file per
+# input.md: the hypothesis, the evidence rules - fixed ones and the defaults a bar may set aside
+# in its own words - and every assumption with its pass and kill bars; one file per
 # assumption in state/desk/assumptions/) and two helpers into state/desk/: cite.py (exact page
 # text through curl's default user agent, PDFs through pdftotext, every page read kept in
 # state/desk/pages/; public datasets downloaded whole into state/desk/data/) and check_desk.py
@@ -63,8 +64,42 @@ agent:
         if os.path.exists(os.path.join(DESK, name)):
             os.remove(os.path.join(DESK, name))
 
+    # The evidence rules check_desk.py applies to a pass or a kill. The bar governs: D1-D3 are
+    # defaults, held only where an assumption's own pass or kill words are silent on them.
+    rules = [
+        "## Evidence rules",
+        "",
+        "Each assumption is judged by its own pass and kill bars, below. state/desk/check_desk.py "
+        "checks every pass or kill against these rules.",
+        "",
+        "Fixed, whatever the bar says:",
+        "- F1 checkable claims: every claim has a URL, a date and its tags (quality, party, how); "
+        "a quoted claim's words are on the page cite.py kept; a counted claim's script, run again, "
+        "prints its result.",
+        "- F2 no listicles or snippets: listicles and search-snippet claims never count as support.",
+        "- F3 one checked claim: a pass or a kill rests on at least one usable decisive claim read "
+        "with cite.py or counted from a public dataset (a WebFetch summary has no checked quote).",
+        "",
+        "Defaults, held only where an assumption's own bar is silent on them:",
+        "- D1 two sources: a pass or a kill rests on at least 2 usable decisive claims from at "
+        "least 2 different sources.",
+        "- D2 a neutral source: the F3 claim comes from a party with no stake in the answer, not "
+        "a company about its own product, a vendor about its own results or a group about its "
+        "own cause.",
+        "- D3 a primary source: the F3 claim is the original document (the study, the dataset, "
+        "the company's own page about its own product), not a report about it.",
+        "",
+        "A bar sets a default aside only by saying so in its own pass or kill words, for example "
+        "\"the operator's own stated figure counts\" (D2), \"one source is enough\" (D1) or "
+        "\"a trade-press report of the figure counts\" (D3). A verdict that relies on that names "
+        "the default and quotes those words (rules.set_aside). The hypothesis, the pointers and a "
+        "researcher's or reviewer's judgement never set a default aside. A verdict held at unknown "
+        "because its evidence meets the bar's words but not a default names that default "
+        "(rules.decided_by).",
+        "",
+    ]
     parts = ["# Desk check input", "", "Written by desk_setup, " + time.strftime("%Y-%m-%d %H:%M %Z") + ".",
-             "", "## Hypothesis", "", hypothesis, "",
+             "", "## Hypothesis", "", hypothesis, ""] + rules + [
              "## Assumptions (bars fixed before the run: judge against them as written, never move them)", ""]
     slots = []
     for item in items:
@@ -314,16 +349,22 @@ agent:
       python3 state/desk/check_desk.py --final   the whole check as one JSON object (the last step)
 
     Per assumption (state/desk/checks/<id>.json): a verdict, pass, kill or unknown, with its
-    reason and how the evidence compares with each bar. A pass or a kill rests on its decisive
-    claims: at least 2 usable ones from at least 2 sources, at least 1 of them primary, from a
-    neutral party, and read with cite.py or counted from a dataset. An unknown says what was
-    looked for and the next cheapest test. Every claim has a URL and a date; a quoted claim's
-    words are on the page cite.py kept; a counted claim's datasets were fetched with cite.py and
-    its script, run again, prints the claimed result. Listicles and search snippets never count
-    as support. The report (state/desk/report.json) covers every assumption, says why a verdict
-    changed, and its hypothesis status follows from the verdicts. The final output lists each
-    verdict's decisive claims for the person who re-reads them by hand: whether a verdict follows
-    from its sources is that person's call, not this script's.
+    reason and how the evidence compares with each bar. The bar governs, and the evidence rules
+    (input.md lists them) apply to a pass or a kill: fixed F3, at least one usable decisive claim
+    read with cite.py or counted from a dataset; and the defaults, held only where the
+    assumption's own bar is silent on them: D1, at least 2 usable decisive claims from at least 2
+    sources; D2 and D3, that one of the F3 claims is from a neutral party (D2) and primary (D3).
+    Each verdict states its rules: set_aside, each default the bar sets aside, quoting the bar's
+    own words (found in its pass_if or kill_if), and decided_by, each default that held an
+    unknown back (the decisive claims must really fail it). An unknown says what was looked for
+    and the next cheapest test. Every claim has a URL and a date; a quoted claim's words are on
+    the page cite.py kept; a counted claim's datasets were fetched with cite.py and its script,
+    run again, prints the claimed result. Listicles and search snippets never count as support.
+    The report (state/desk/report.json) covers every assumption, says why a verdict changed, and
+    its hypothesis status follows from the verdicts. The final output lists each verdict's
+    decisive claims and rules for the person who re-reads them by hand: whether a verdict follows
+    from its sources, and whether the quoted bar words really set a default aside, is that
+    person's call, not this script's.
 
     An assumption whose researcher left no usable output fails by name: its checks/<id>.json and
     .md missing, empty, not valid JSON or an account-limit message. With --final, each
@@ -346,6 +387,8 @@ agent:
     QUALITIES = ("primary", "secondary", "vendor", "listicle")
     HOWS = ("cite", "data", "webfetch", "snippet")
     CONFIDENCE = ("low", "med", "high")
+    # The evidence rules a bar may set aside in its own words (input.md lists them all).
+    DEFAULT_RULES = ("D1", "D2", "D3")
     # What a part says when its account or the service stopped it, instead of research.
     NON_ANSWER = re.compile(
         r"session limit|usage limit|weekly limit|daily limit|rate[ _-]?limit|limit (?:reached|exceeded)"
@@ -511,20 +554,117 @@ agent:
         return ""
 
 
-    def support_problem(ids, claims, bad):
-        """Why these decisive claims can't carry a pass or a kill, or an empty string."""
+    def support_failures(ids, claims, bad, aside=()):
+        """What keeps these decisive claims from carrying a pass or a kill, as {rule: why}; empty
+        when nothing does. F3 is fixed: at least one usable decisive claim read with cite.py or
+        counted from data. The defaults count unless the bar set them aside (aside): D1, at least
+        2 usable decisive claims from at least 2 sources; D2 and D3, that one F3 claim is from a
+        neutral party (D2) and primary (D3). When no F3 claim meets D2 and D3 together, the
+        defaults named are the ones that, set aside alone, would leave one that does; when neither
+        alone would, both."""
         usable = [claims[c] for c in ids if c in claims and not bad.get(c)
                   and claims[c].get("quality") != "listicle" and claims[c].get("how") != "snippet"]
         sources = set(text_of(c.get("url")) for c in usable)
-        anchors = [c for c in usable if c.get("quality") == "primary"
-                   and c.get("party", "neutral") == "neutral" and c.get("how") in ("cite", "data")]
-        if len(usable) < 2 or len(sources) < 2:
-            return ("%d usable decisive claims from %d sources; a pass or a kill needs at least 2 "
-                    "from at least 2" % (len(usable), len(sources)))
-        if not anchors:
-            return ("no decisive claim is primary, from a neutral party and read with cite.py or "
-                    "counted from data")
-        return ""
+        checked = [c for c in usable if c.get("how") in ("cite", "data")]
+        failed = dict()
+        if "D1" not in aside and (len(usable) < 2 or len(sources) < 2):
+            failed["D1"] = ("%d usable decisive claims from %d sources; default D1 asks for at least 2 "
+                            "from at least 2" % (len(usable), len(sources)))
+        if not checked:
+            failed["F3"] = ("no usable decisive claim is read with cite.py or counted from data (fixed "
+                            "rule F3: a pass or a kill always needs one)")
+            return failed
+        tests = {"D2": lambda c: c.get("party", "neutral") == "neutral",
+                 "D3": lambda c: c.get("quality") == "primary"}
+        wanted = [rule for rule in ("D2", "D3") if rule not in aside]
+        if any(all(tests[rule](c) for rule in wanted) for c in checked):
+            return failed
+        alone = [rule for rule in wanted
+                 if any(all(tests[other](c) for other in wanted if other != rule) for c in checked)]
+        words = {"D2": "from a neutral party", "D3": "primary"}
+        failing = alone or wanted
+        why = ("no decisive claim read with cite.py or counted from data is %s (default %s)"
+               % (" and ".join(words[rule] for rule in wanted), (" or " if alone else " and ").join(failing)))
+        for rule in failing:
+            failed[rule] = why
+        return failed
+
+
+    def support_problem(ids, claims, bad, aside=()):
+        """Why these decisive claims can't carry a pass or a kill, or an empty string."""
+        said = []
+        for why in support_failures(ids, claims, bad, aside).values():
+            if why not in said:
+                said.append(why)
+        return "; ".join(said)
+
+
+    def bar_of(slot):
+        """The assumption's own bar: its pass_if and kill_if, as written in state/desk/assumptions/."""
+        spec, _ = load_json(os.path.join(DESK, "assumptions", slot + ".json"))
+        spec = spec if isinstance(spec, dict) else dict()
+        return [norm(text_of(spec.get(key))).lower() for key in ("pass_if", "kill_if")]
+
+
+    def rules_problems(where, rules, verdict, bar, ids, claims, bad):
+        """A verdict's rules: {"decided_by": [default, ...], "set_aside": [{"rule", "bar_words",
+        "why"}, ...]}. Returns (the defaults set aside, problems). A default is set aside only by
+        at least 3 words found in the assumption's own pass_if or kill_if; a default named in
+        decided_by must really fail on the decisive claims, and only an unknown has one."""
+        if not isinstance(rules, dict):
+            return set(), ["%s: rules is missing: {\"decided_by\": [...], \"set_aside\": [...]} "
+                           "(each may be an empty list)" % where]
+        problems, aside = [], set()
+        entries = rules.get("set_aside")
+        if not isinstance(entries, list):
+            problems.append("%s: rules.set_aside must be a list" % where)
+            entries = []
+        for entry in entries:
+            entry = entry if isinstance(entry, dict) else dict()
+            rule = text_of(entry.get("rule"))
+            words = norm(text_of(entry.get("bar_words"))).lower()
+            if rule not in DEFAULT_RULES:
+                problems.append("%s: rules.set_aside names %r: only the defaults D1, D2 and D3 can be "
+                                "set aside" % (where, rule))
+            elif rule in aside:
+                problems.append("%s: rules.set_aside names %s twice" % (where, rule))
+            elif len(words.split()) < 3 or not any(words in part for part in bar):
+                problems.append("%s: setting %s aside needs bar_words: at least 3 words exactly as this "
+                                "assumption's pass_if or kill_if has them (only the bar's own words set "
+                                "a default aside)" % (where, rule))
+            elif len(text_of(entry.get("why"))) < 20:
+                problems.append("%s: setting %s aside needs its why" % (where, rule))
+            else:
+                aside.add(rule)
+        decided = rules.get("decided_by")
+        if not isinstance(decided, list):
+            problems.append("%s: rules.decided_by must be a list" % where)
+            decided = []
+        decided = [text_of(rule) for rule in decided]
+        if decided and verdict != "unknown":
+            problems.append("%s: rules.decided_by names a default that held the verdict back, so it "
+                            "belongs to an unknown, not a %s" % (where, verdict))
+        elif decided:
+            failed = support_failures(ids, claims, bad, aside)
+            for rule in decided:
+                if rule not in DEFAULT_RULES:
+                    problems.append("%s: rules.decided_by names %r: only D1, D2 or D3" % (where, rule))
+                elif rule in aside:
+                    problems.append("%s: rules.decided_by names %s, which the bar sets aside" % (where, rule))
+                elif rule not in failed:
+                    problems.append("%s: rules.decided_by names %s, but the decisive claims meet it"
+                                    % (where, rule))
+        return aside, problems
+
+
+    def rules_of(rules):
+        """A verdict's rules for the hand check, as given."""
+        rules = rules if isinstance(rules, dict) else dict()
+        aside = rules.get("set_aside") if isinstance(rules.get("set_aside"), list) else []
+        decided = rules.get("decided_by") if isinstance(rules.get("decided_by"), list) else []
+        return {"decided_by": [text_of(r) for r in decided],
+                "set_aside": [{"rule": text_of(e.get("rule")), "bar_words": text_of(e.get("bar_words")),
+                               "why": text_of(e.get("why"))} for e in aside if isinstance(e, dict)]}
 
 
     def check_assumption(slot, runs):
@@ -571,13 +711,16 @@ agent:
                             % (slot, ", ".join(unknown_ids)))
         if len(decisive) > 5:
             problems.append("%s: at most 5 decisive claims" % slot)
+        aside, found = rules_problems(slot, data.get("rules"), verdict, bar_of(slot), decisive, claims, bad)
+        problems += found
         if verdict in ("pass", "kill"):
-            why_not = support_problem(decisive, claims, bad)
+            why_not = support_problem(decisive, claims, bad, aside)
             if why_not:
                 problems.append("%s: %s" % (slot, why_not))
         if verdict == "unknown" and not (data.get("not_found") or data.get("searched")):
             problems.append("%s: an unknown lists what was looked for and not found" % slot)
-        return {"verdict": verdict, "claims": claims, "bad": bad, "decisive": decisive}, problems
+        return {"verdict": verdict, "claims": claims, "bad": bad, "decisive": decisive,
+                "rules": rules_of(data.get("rules"))}, problems
 
 
     def check_report(slots, results):
@@ -614,8 +757,11 @@ agent:
             if stray:
                 problems.append("report: %s: decisive names claims %s's check doesn't have: %s"
                                 % (slot, slot, ", ".join(stray)))
+            aside, found = rules_problems("report: " + slot, row.get("rules"), verdict, bar_of(slot), decisive,
+                                          res["claims"], res["bad"])
+            problems += found
             if verdict in ("pass", "kill"):
-                why_not = support_problem(decisive, res["claims"], res["bad"])
+                why_not = support_problem(decisive, res["claims"], res["bad"], aside)
                 if why_not:
                     problems.append("report: %s: %s" % (slot, why_not))
             if verdict == "unknown" and len(text_of(row.get("next_test"))) < 20:
@@ -693,6 +839,7 @@ agent:
                                   "party": c.get("party", "neutral"), "how": c.get("how"),
                                   "result": c.get("result", ""), "problem": res["bad"].get(cid, "")})
             per[slot] = {"researcher_verdict": res["verdict"], "verdict": row.get("verdict", res["verdict"]),
+                         "rules": rules_of(row["rules"]) if isinstance(row.get("rules"), dict) else res["rules"],
                          "decisive": items}
             hand += items
         parts = dict((slot, "; ".join(p[len(slot) + 2:] for p in lost if p.startswith(slot + ": ")) or "ok")
@@ -700,6 +847,7 @@ agent:
         print(json.dumps({"verdict": "fail" if problems else "pass", "problems": problems,
                           "hypothesis_status": (report or dict()).get("hypothesis_status"),
                           "assumptions": per, "spot_check": hand, "parts": parts,
+                          "rules": dict((slot, per[slot]["rules"]) for slot in per),
                           "answers_checked": [slot for slot in slots if slot in answers],
                           "report_path": "state/desk/report.md"}, indent=1))
         return 0

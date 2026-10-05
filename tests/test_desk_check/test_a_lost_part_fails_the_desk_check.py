@@ -81,6 +81,7 @@ def findings(slot):
             "why": "No public source states the share either way; two registries were searched in full.",
             "against_bar": "Neither the pass bar nor the kill bar can be judged from what was found.",
             "next_test": "Ask five offices how they verify coverage today.",
+            "rules": {"decided_by": [], "set_aside": []},
             "searched": ["the state registry", "the trade association's survey"],
             "not_found": "a count of offices that still verify by phone"}
 
@@ -98,7 +99,8 @@ def workspace(tmp_path):
     write(desk / "report.json", {
         "verdicts": [{"id": s, "verdict": "unknown", "researcher_verdict": "unknown",
                       "why": "Nothing public settles it; the next test is a short call round.",
-                      "next_test": "Ask five offices how they verify coverage today."} for s in SLOTS],
+                      "next_test": "Ask five offices how they verify coverage today.",
+                      "rules": {"decided_by": [], "set_aside": []}} for s in SLOTS],
         "hypothesis_status": "open", "status_why": "Both assumptions are still unknown after the desk research.",
         "next_steps": ["Ask five offices how they verify coverage today."]})
     write(desk / "report.md", "# Desk check\n")

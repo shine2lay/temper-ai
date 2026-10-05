@@ -8,6 +8,9 @@ Each was a run that ended "completed" with the damage found later:
 - task_deploy (gap 13, b009 round 2): one Docker Hub "TLS handshake timeout" killed the deploy.
 - epd_deploy (gap 5, b023 on 2026-09-22): GitHub refused to merge a PR that conflicted with master,
   and `ssh ... | tee` handed the step tee's exit code, 0.
+- task_stack_down (the leftover audit, 2026-10-04): 9 test stacks' volumes were still on the box.
+  Each stack's ttl ran out while its bet waited, standee prune forgot it but kept its volumes, and
+  the teardown read "no environment named" as done.
 
 The real agents and scripts, run by /bin/sh as the Bash tool runs them; ssh is a fake on PATH.
 """
@@ -290,3 +293,80 @@ def test_a_deploy_the_driver_did_is_read_back(ship):
     status, out, said = ship_deploy(ship, 'echo "deployed"\nexit 0\n')
     assert status == "completed", said
     assert out["status"] == "shipped"
+
+
+# ---- task_stack_down: a stack standee forgot still loses its volumes, or the step fails ----------------
+
+ENV = "rollcall-dev-epd-b047"
+VOLUME = f"{ENV}_rollcall_data"
+# standee says $SAYS on stdout and $COMPLAINS on stderr, exits $CODE, and keeps what it was asked.
+STANDEE_DOWN = r"""
+while [ $# -gt 0 ]; do case "$1" in shinelay@*) shift; break ;; *) shift ;; esac; done
+[ "$1" = standee ] && shift
+echo "$*" > "$ASKED"
+[ -z "$SAYS" ] || printf '%s\n' "$SAYS"
+[ -z "$COMPLAINS" ] || printf '%s\n' "$COMPLAINS" >&2
+exit "$CODE"
+"""
+# The words of ops' contract for standee 0.25.0 (ops queue #64) about a stack it has no record of.
+SKIPPED = f"Image cleanup skipped for '{ENV}': environment record missing."
+INCOMPLETE = f"Error: leftover volume cleanup incomplete for '{ENV}'."
+
+
+def stack_down(tmp_path: Path, code: int, says: str = "", complains: str = ""):
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    (keys / "id_ed25519").write_text("not a key\n")
+    fake(tmp_path / "bin", "ssh", STANDEE_DOWN)
+    asked = tmp_path / "asked"
+    env = {"SAYS": says, "COMPLAINS": complains, "CODE": str(code), "ASKED": str(asked)}
+    got = run_step("task_stack_down", {"env_name": ENV}, tmp_path, bin_dir=tmp_path / "bin", env=env,
+                   swap={"/app/standee-ssh": str(keys)})
+    assert asked.read_text().split() == ["down", ENV, "--volumes", "--images"]
+    return got
+
+
+def test_a_stack_that_was_up_comes_down(tmp_path):
+    status, out, said = stack_down(tmp_path, 0, says=f" Container {ENV}-db-1  Removed\n Volume {VOLUME}  Removed")
+    assert status == "completed", said
+    assert out == {"status": "down", "env_name": ENV, "volumes_left": "none", "leftover_volumes_removed": []}
+
+
+def test_the_volumes_of_a_stack_standee_forgot_are_removed(tmp_path):
+    says = f"{SKIPPED}\nRemoved leftover volume '{VOLUME}' for '{ENV}'.\nRemoved 1 leftover volume(s) for '{ENV}'."
+    status, out, said = stack_down(tmp_path, 0, says=says)
+    assert status == "completed", said
+    assert out == {"status": "absent", "env_name": ENV, "volumes_left": "none",
+                   "leftover_volumes_removed": [VOLUME]}
+
+
+def test_a_stack_standee_forgot_with_no_volumes_left_is_absent(tmp_path):
+    status, out, said = stack_down(tmp_path, 0, says=f"{SKIPPED}\nNo leftover volumes for '{ENV}'.")
+    assert status == "completed", said
+    assert out == {"status": "absent", "env_name": ENV, "volumes_left": "none", "leftover_volumes_removed": []}
+
+
+@pytest.mark.parametrize("complains", [
+    f"{INCOMPLETE}\n  {VOLUME}: attached to container {ENV}-db-1, not removed",
+    # The contract keeps the old "absent" words out of a failure; were they there anyway, it still fails.
+    f"{INCOMPLETE}\n  Error: no environment named '{ENV}' (see `standee ls`)",
+])
+def test_a_volume_standee_could_not_remove_fails_the_step(tmp_path, complains):
+    says = f"{SKIPPED}\nRemoved leftover volume '{ENV}_cache' for '{ENV}'."
+    status, _, said = stack_down(tmp_path, 1, says=says, complains=complains)
+    assert status == "failed"
+    assert "could not remove every leftover volume" in said
+    assert INCOMPLETE in said
+
+
+def test_an_older_standee_that_forgot_the_stack_leaves_its_volumes_unknown(tmp_path):
+    status, out, said = stack_down(tmp_path, 1, complains=f"Error: no environment named '{ENV}' (see `standee ls`)")
+    assert status == "completed", said
+    assert out == {"status": "absent", "env_name": ENV, "volumes_left": "unknown", "leftover_volumes_removed": []}
+    assert "may still be there" in said
+
+
+def test_any_other_standee_failure_fails_the_step(tmp_path):
+    status, _, said = stack_down(tmp_path, 1, complains="Error: docker compose down failed (exit 1)")
+    assert status == "failed"
+    assert f"standee down failed for {ENV}" in said

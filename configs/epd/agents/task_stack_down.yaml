@@ -4,11 +4,14 @@
 #
 # A task environment is disposable: its data and the images built for it go
 # with it. Idempotent: an environment that does not exist is "absent".
+# Output: {status: down | absent, env_name, volumes_left: none | unknown,
+# leftover_volumes_removed: [volume, ...]}; a volume standee could not remove
+# fails the step.
 # Same forced-command ssh path as task_stack_up.
 # POSIX sh; no dollar-brace env syntax (config-loader substitution).
 agent:
   name: task_stack_down
-  version: 1
+  version: 2  # v2 2026-10-04: reads standee 0.25.0's leftover-volume report; a volume left behind fails the step
   type: script
   timeout_seconds: 300
   script_template: |
@@ -28,12 +31,32 @@ agent:
           -o BatchMode=yes -o ConnectTimeout=10 shinelay@host.docker.internal standee "$@"
     }
 
-    OUT=$(standee down "$ENV_NAME" --volumes --images 2>&1) && STATE=down || {
-      case "$OUT" in
-        *"no environment named"*) STATE=absent ;;
-        *) printf '%s\n' "$OUT"; fail "standee down failed for $ENV_NAME" ;;
-      esac
-    }
+    OUT=$(standee down "$ENV_NAME" --volumes --images 2>&1) && CODE=0 || CODE=$?
     printf '%s\n' "$OUT"
+    said() { printf '%s\n' "$OUT" | grep -q "$@"; }
+
+    # A stack standee no longer has a record of is "absent": its ttl ran out while the
+    # build waited, and standee prune took it down but kept its volumes. From standee
+    # 0.25.0 (ops #64) down still removes that stack's volumes, found by their compose
+    # project label, and says how it went, on stdout or stderr:
+    #   Removed leftover volume '<volume>' for '<env>'.         one line per volume, then
+    #   Removed <n> leftover volume(s) for '<env>'.              exit 0: all of them went
+    #   No leftover volumes for '<env>'.                         exit 0: there were none
+    #   Error: leftover volume cleanup incomplete for '<env>'.   exit 1: some are still there
+    # Older standee said only "no environment named" and left every volume behind (the
+    # leftover audit found 9 on 2026-10-04), so after it the volumes are "unknown".
+    REMOVED=$(printf '%s\n' "$OUT" | sed -n "s/^Removed leftover volume '\(.*\)' for '$ENV_NAME'\.\$/\1/p")
+    if said -F "leftover volume cleanup incomplete"; then
+      fail "standee could not remove every leftover volume of $ENV_NAME (its words above)"
+    elif [ "$CODE" -ne 0 ]; then
+      said -F "no environment named" || fail "standee down failed for $ENV_NAME"
+      echo "note: this standee is older than 0.25.0 and leaves a forgotten stack's volumes; they may still be there"
+      STATE=absent LEFT=unknown
+    elif [ -n "$REMOVED" ] || said -xF "No leftover volumes for '$ENV_NAME'." \
+        || said -xE "Removed [0-9]+ leftover volume\(s\) for '$ENV_NAME'\."; then
+      STATE=absent LEFT=none
+    else
+      STATE=down LEFT=none
+    fi
     echo "stack down: $ENV_NAME -> $STATE"
-    python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[2], "env_name": sys.argv[1]}))' "$ENV_NAME" "$STATE"
+    printf '%s\n' "$REMOVED" | python3 -c 'import json,sys; print(json.dumps({"status": sys.argv[2], "env_name": sys.argv[1], "volumes_left": sys.argv[3], "leftover_volumes_removed": [v for v in sys.stdin.read().splitlines() if v]}))' "$ENV_NAME" "$STATE" "$LEFT"

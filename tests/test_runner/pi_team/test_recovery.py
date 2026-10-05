@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import pytest
 
+from temper_ai.pi_agent.host import owner_reply, recovery_word
 from temper_ai.pi_agent.ledger import Binding, TakeoverRefused
 from temper_ai.pi_agent.team_runtime import Team
+from temper_ai.stage.gate import normalise_response
 from tests.test_runner.pi_team import support as ts
 from tests.test_runner.pi_team.support import (
     PROMPTS,
@@ -56,6 +58,38 @@ def _dead_turn(led, run_id, *, box_name=BOX, effect="intent", sends=()):
             for i, s in enumerate(sends)]
     assert all(s["ok"] for s in sent), sent
     return turn, batch, binding, sent
+
+
+# --- M3 F1: what the owner said at a recovery wait --------------------------------------
+
+
+@pytest.mark.parametrize(("text", "options", "word"), [
+    ("retry", ["accept", "retry"], "retry"),
+    ("Retry.", ["retry", "stop"], "retry"),
+    ("accept, it is fine", ["accept", "retry"], "accept"),
+    ("stop", ["accept", "retry"], "stop"),
+    ("STOP", ["retry", "stop"], "stop"),
+    ("Q: lead's turn 1 did not finish\nA: retry", ["accept", "retry"], None),
+    ("", ["accept", "retry"], None),
+    ("not sure yet", ["accept", "retry"], None),
+    ("accept", ["retry", "stop"], None),
+])
+def test_f1_a_recovery_answer_names_one_of_its_choices_or_nothing(text, options, word):
+    assert recovery_word(text, options) == word
+
+
+def test_f1_a_picked_option_reads_as_the_pick_never_as_the_rendered_text():
+    """The run page's GateModal sends ``answers[{selected}]``; the stored response's ``text``
+    is "Q: ...\\nA: retry". What the owner said is the pick (then any words written with it)."""
+    picked = normalise_response({"answers": [{"id": "q1", "question": "lead turn 1?",
+                                              "selected": ["retry"]}]})
+    assert picked["text"].startswith("Q: ")
+    assert owner_reply(picked) == "retry"
+    written = normalise_response({"answers": [{"id": "q1", "question": "q",
+                                               "selected": ["accept"], "custom": "looks done"}]})
+    assert owner_reply(written) == "accept looks done"
+    assert owner_reply(normalise_response({"response": "retry"})) == "retry"
+    assert owner_reply(None) == ""
 
 
 # --- B1: a retried turn gets the same messages, same ids, in the same conversation -----
@@ -317,14 +351,30 @@ def test_n1_failed_turn_retry_or_stop(led, box, run_id):
     check_invariants(led, run_id)
 
 
-def test_n1_failed_turn_accept_means_stop(led, box, run_id):
+def test_n1_f1_accept_at_a_failed_turn_is_asked_again_never_a_stop(led, box, run_id):
+    """A failed turn is answered retry or stop (N1). ``accept`` names neither: it decides
+    nothing -- no stop by default -- and the owner is asked again, at a new wait for the same
+    turn (M3 F1); ``stop`` there then stops the team."""
     team = open_team(led, box, run_id=run_id)
     _goal(team, run_id)
     SCRIPTS["lead"] = [[{"error": "400 invalid_request_error: refused"}]]
     run_until_quiet(team)
     again = _restart(led, box, run_id)
     wait = again.resume()[0]
-    stopped = again.decide(wait, "accept")
+    assert again.decide(wait, "accept") is None
+    (asked,) = led.open_waits(run_id, ts.HOST)
+    assert asked["wait_id"] != wait["wait_id"] and asked["kind"] == "recovery"
+    assert asked["subject"]["turn_id"] == wait["subject"]["turn_id"]
+    assert asked["subject"]["options"] == ["retry", "stop"]
+    assert asked["subject"]["question"].startswith("That answer was not one of: retry, stop.")
+    assert asked["subject"]["question"].endswith(wait["subject"]["question"])
+    (first,) = [w for w in ts.rows(led, run_id, ts.HOST)["waits"]
+                if w["wait_id"] == wait["wait_id"]]
+    assert (first["state"], first["decision"]["recovery"]) == ("decided", "invalid")
+    assert again.step().kind == "waiting"
+    assert led.member_row(run_id, ts.HOST, "lead")["state"] == "uncertain", "nothing decided"
+
+    stopped = again.decide(asked, "stop")
     assert stopped == "lead turn 1 failed and the owner stopped the team"
     lead = led.member_row(run_id, ts.HOST, "lead")
     assert lead["state"] == "failed"

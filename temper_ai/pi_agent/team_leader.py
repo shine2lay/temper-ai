@@ -53,6 +53,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
+from temper_ai.pi_agent.host import owner_reply
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
     _LOCK,
@@ -150,15 +151,7 @@ def usage_of(outcome: Any) -> dict:
 def owner_words(answer: Any) -> tuple[str, str]:
     """(first word, the rest) of the owner's answer: the typed response, else the first
     answered question's pick and custom text."""
-    r = getattr(answer, "response", None) or {}
-    text = str(r.get("response") or "").strip()
-    if not text:
-        for a in r.get("answers") or []:
-            text = (" ".join(a.get("selected") or []) + " " + str(a.get("custom") or "")).strip()
-            if text:
-                break
-    if not text:
-        text = str(getattr(answer, "text", "") or "").strip()
+    text = owner_reply(getattr(answer, "response", None))
     m = re.match(r"\s*([A-Za-z_-]+)\s*[:,.;\-]*\s*(.*)\Z", text, re.S)
     if not m:
         return "", text
@@ -921,7 +914,9 @@ class LeaderTeam(Team):
         text = str(getattr(answer, "text", "") or "")
         sha = hashlib.sha256(text.encode()).hexdigest()
         if kind == "recovery":
-            self.decide(wait, text)
+            # The typed answer or the picked option, never the rendered "Q: ... A: ..." text
+            # (M3 F1): a pick of "retry" is a retry.
+            self.decide(wait, owner_reply(getattr(answer, "response", None)))
             return
         word, rest = owner_words(answer)
         if kind == "pause":

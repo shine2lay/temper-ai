@@ -157,6 +157,20 @@ def approve(client, eid: str, name: str, *, event_id: str | None = None,
     return client.post(f"/api/runs/{eid}/approve/{name}", json=body)
 
 
+def pick(client, eid: str, name: str, *selected: str, event_id: str | None = None,
+         question: str = "", custom: str = ""):
+    """Answer the way the run page's GateModal does (useGates approve): ``answers`` with the
+    picked option(s) and any written words, no typed ``response``. Nothing picked and nothing
+    written is a plain approval."""
+    body: dict[str, Any] = {}
+    if selected or custom:
+        body["answers"] = [{"id": "q1", "question": question, "selected": list(selected),
+                            "custom": custom}]
+    if event_id:
+        body["event_id"] = event_id
+    return client.post(f"/api/runs/{eid}/approve/{name}", json=body)
+
+
 def answer_pi(client, eid: str) -> int:
     """Answer the Pi step's own "what next" wait with ``done``; returns how many attempts the
     run had when it was answered."""

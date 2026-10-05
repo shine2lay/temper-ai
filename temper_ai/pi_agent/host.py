@@ -41,6 +41,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import shutil
 import time
 import uuid
@@ -376,13 +377,20 @@ class PiHost(AgentABC):
         decision: dict[str, Any] = {"text_sha256": hashlib.sha256(text.encode()).hexdigest()}
         deliveries: list[tuple[str, str]] = []
         recovery = None
+        reask = None
         states: list[tuple[str, str]] = []
         if wait["kind"] == "recovery":
-            word = recovery_word(text, subject.get("options") or ["accept", "retry"])
-            decision["recovery"] = word
-            # A retry gives the turn's own messages again -- same ids, marked as given again --
-            # never new copies (R2 B1); what the turn sent is never delivered (B4).
-            recovery = (word, subject["turn_id"])
+            word = recovery_word(owner_reply(answer.response),
+                                 subject.get("options") or ["accept", "retry"])
+            if word is None:
+                # No choice named: nothing is decided by default; the owner is asked again.
+                decision["recovery"] = INVALID
+                reask = recovery_asked_again(subject)
+            else:
+                decision["recovery"] = word
+                # A retry gives the turn's own messages again -- same ids, marked as given
+                # again -- never new copies (R2 B1); what the turn sent is never delivered (B4).
+                recovery = (word, subject["turn_id"])
         elif text.lower() in FINISH_WORDS:
             decision["owner"] = "finish"
             states = [(subject.get("participant_id") or self.participant_id, "retired")]
@@ -391,7 +399,7 @@ class PiHost(AgentABC):
             deliveries = [(self.config["role"], text)]
         if self.ledger.decide_wait(wait["wait_id"], decision, self.attempt_id,
                                    deliveries=deliveries, recovery=recovery,
-                                   participant_states=states):
+                                   participant_states=states, reask=reask):
             return self._settled(wait, decision)
         # Another attempt settled it first (compare-and-set): go by what it recorded.
         row = wait_row(self.ledger, wait["wait_id"]) or {}
@@ -555,16 +563,57 @@ def owner_decided_before(ledger: Ledger, turn: dict) -> bool:
         "accepted", "superseded")
 
 
-def recovery_word(text: str, options: list[str]) -> str:
-    """The owner's answer to a recovery wait. A cut-off turn: ``retry``, ``stop`` or (anything
-    else) ``accept``. A failed turn is answered ``retry`` or ``stop`` only (R2 N1): anything
-    but ``retry`` stops."""
-    first = text.lower().split()[0] if text.strip() else ""
-    if first == "retry":
-        return "retry"
-    if first == "stop" or "accept" not in options:
-        return "stop"
-    return "accept"
+INVALID = "invalid"
+"""A recovery wait's decision when the answer named none of its choices: nothing was done and
+the owner is asked again, at a new wait for the same turn."""
+
+
+def recovery_word(text: str, options: list[str]) -> str | None:
+    """The owner's choice at a recovery wait: the answer's first word when it is one of the
+    wait's options, or ``stop`` (the owner may always stop). A cut-off turn is answered
+    ``accept``, ``retry`` or ``stop``; a failed turn ``retry`` or ``stop`` (R2 N1). Anything
+    else -- an empty answer, another word, ``accept`` at a failed turn -- is None: it never
+    accepts or stops by default, and the owner is asked again (M3 F1)."""
+    m = re.match(r"\s*([A-Za-z]+)", text or "")
+    word = m.group(1).lower() if m else ""
+    if word == "stop" or (word in ("accept", "retry") and word in options):
+        return word
+    return None
+
+
+def recovery_asked_again(subject: dict) -> dict:
+    """A recovery wait's subject when the owner's answer named none of its choices: the same
+    turn and choices, asked again with the reason first."""
+    choices = [str(o) for o in subject.get("options") or []]
+    if "stop" not in choices:
+        choices.append("stop")
+    first = str(subject.get("first_question") or subject.get("question") or "")
+    return {**subject, "first_question": first,
+            "asked_again": int(subject.get("asked_again") or 0) + 1,
+            "question": (f"That answer was not one of: {', '.join(choices)}. Nothing was "
+                         f"decided. {first}").strip()}
+
+
+def owner_reply(response: Any) -> str:
+    """What the owner said at a wait, to read a choice from: the typed response, else the first
+    answered question's pick(s) then its written text -- how the run page sends a picked option
+    (``answers[{selected}]``). Never the rendered ``Q: ... A: ...`` text, whose first word is
+    ``Q:`` (M3 F1)."""
+    if isinstance(response, str):
+        return response.strip()
+    if not isinstance(response, dict):
+        return ""
+    text = str(response.get("response") or "").strip()
+    if text:
+        return text
+    for answer in response.get("answers") or []:
+        if not isinstance(answer, dict):
+            continue
+        picked = " ".join(str(s).strip() for s in answer.get("selected") or [] if str(s).strip())
+        text = f"{picked} {str(answer.get('custom') or '').strip()}".strip()
+        if text:
+            return text
+    return ""
 
 
 def _reply_text(response: Any) -> str:

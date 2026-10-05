@@ -135,6 +135,50 @@ def test_a_stop_at_a_failed_turns_recovery_wait_is_asked_and_stops_the_step(pw_r
     assert said, "the step says the owner stopped it"
 
 
+def test_f1_a_recovery_answer_naming_no_choice_is_asked_again_and_a_picked_retry_counts(pw_run):
+    """M3 F1 for the single Pi step: words naming no choice decide nothing -- never an accept
+    by default -- and the owner is asked again at a new wait for the same turn; a picked
+    option, sent the way the run page sends it (``answers``), is that choice."""
+    c, state = pw_run.client, pw_run.state
+    FakeBox.behaviour = "usage_limit"
+    eid = sup.start(c, "pi_talk", pw_run.ws)
+    pw.wait_parked(state, eid, 1)
+    r1 = sup.open_wait(eid, "recovery")
+    r = pw.pick(c, eid, r1["gate_name"], event_id=r1["ask_event_id"],
+                question=r1["subject"]["question"], custom="not sure yet")
+    assert r.status_code == 200, r.text
+
+    pw.wait_parked(state, eid, 2)
+    r2 = sup.open_wait(eid, "recovery", other_than=r1["wait_id"])
+    assert r2["subject"]["turn_id"] == r1["subject"]["turn_id"]
+    assert r2["subject"]["options"] == ["accept", "retry"]
+    assert r2["subject"]["question"].startswith("That answer was not one of: accept, retry, stop.")
+    snap = sup.ledger().snapshot(eid)
+    assert [t["state"] for t in snap["turns"]] == ["uncertain"], "nothing was accepted"
+    decided = {w["wait_id"]: (w["decision"] or {}).get("recovery") for w in snap["waits"]}
+    assert decided[r1["wait_id"]] == "invalid"
+    assert _prompts() == 1
+
+    r = pw.pick(c, eid, r2["gate_name"], "retry", event_id=r2["ask_event_id"],
+                question=r2["subject"]["question"])
+    assert r.status_code == 200, r.text
+    pw.wait_parked(state, eid, 3)
+    r3 = sup.open_wait(eid, "recovery", other_than=r2["wait_id"])
+    assert _prompts() == 2, "the picked retry ran the turn once more (held again)"
+    snap = sup.ledger().snapshot(eid)
+    decided = {w["wait_id"]: (w["decision"] or {}).get("recovery") for w in snap["waits"]}
+    assert decided[r2["wait_id"]] == "retry"
+
+    r = pw.pick(c, eid, r3["gate_name"], "accept", event_id=r3["ask_event_id"],
+                question=r3["subject"]["question"])
+    assert r.status_code == 200, r.text
+    pw.wait_parked(state, eid, 4)
+    sup.open_wait(eid, "owner")
+    n = pw.finish_pi(c, eid)
+    assert pw.wait_ended(eid, n)[-1]["status"] == "completed"
+    assert _prompts() == 2
+
+
 # --- (c) a Pi step as the first node -----------------------------------------------------
 
 def test_a_first_node_pi_step_parks_survives_a_restart_and_the_answer_completes_it(pw_run):

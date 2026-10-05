@@ -159,8 +159,11 @@ review rounds, the pause after `pause_after_rounds` keep-goings, done recorded b
   answers `accept` or `retry`. A turn that failed visibly (box not sealed, settings not
   effective, role/tools/notebook not as launched, provider error) fails the step red; a
   Resume then asks the owner `retry` or `stop` (there is nothing to accept from a failed
-  turn). A retry gives the turn the same messages again, with the same ids, marked as
-  given again; they are never posted as new. After a decision, a session whose active
+  turn). The owner may always answer `stop`. A picked option on the run page counts the
+  same as typing it; any other answer (empty, another word, `accept` at a failed turn)
+  decides nothing, and the owner is asked again at a new wait for the same turn. A retry
+  gives the turn the same messages again, with the same ids, marked as given again; they
+  are never posted as new. After a decision, a session whose active
   branch ends unfinished is moved back to its last settled entry, in the same session
   file, before the next prompt.
 - Taking over a turn whose run was cut off first makes sure its old worker box is gone:

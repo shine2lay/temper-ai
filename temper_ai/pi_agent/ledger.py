@@ -1056,13 +1056,16 @@ class Ledger:
     def decide_wait(self, wait_id: str, decision: dict, attempt_id: str,
                     deliveries: Sequence[tuple[str, str]] = (),
                     recovery: tuple[str, str] | None = None,
-                    participant_states: Sequence[tuple[str, str]] = ()) -> bool:
+                    participant_states: Sequence[tuple[str, str]] = (),
+                    reask: dict | None = None) -> bool:
         """Compare-and-set open -> decided, with everything the decision does, exactly once.
 
         ``deliveries``: (to_member, body) from the owner. ``recovery``: (word, turn_id) with
         word ``accept`` (the turn stands; what it sent leaves), ``retry`` (superseded; what it
         sent is never delivered; its messages go back to the member with the same ids, B1) or
-        ``stop`` (failed). ``participant_states``: (participant_id, new state)."""
+        ``stop`` (failed). ``participant_states``: (participant_id, new state). ``reask``: the
+        subject of a new open wait of the same kind, opened in the same transaction -- the
+        owner is asked again (an answer that named none of the wait's choices)."""
         team = self._team_of(waits, waits.c.wait_id, wait_id)
         if team is None:
             return False
@@ -1084,6 +1087,9 @@ class Ledger:
             for i, (to_member, body) in enumerate(deliveries):
                 self.post(w["run_id"], w["host_path"], to_member, body,
                           dedupe_key=f"{wait_id}:decision:{i}", conn=conn)
+            if reask is not None:
+                self._open_wait(conn, w["run_id"], w["host_path"], w["kind"], reask,
+                                attempt_id)
             return True
 
     def _recover(self, conn: Any, word: str, turn_id: str) -> None:

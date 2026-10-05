@@ -88,7 +88,10 @@ finished turn is run again. Team code never catches `RunParked`.
 - **Recovery** (R2 B11): a turn that was cut off, or whose result is uncertain (including
   the 900 s hang guard), opens a recovery wait that pauses the whole team. A cut-off turn is
   answered `accept`, `retry` or `stop`; a failed turn `retry` or `stop`. Retry re-sends the
-  turn with the same message ids; stop ends the team red, never done.
+  turn with the same message ids; stop ends the team red, never done. A picked option on
+  the run page counts the same as typing it. Any other answer (empty, another word,
+  `accept` at a failed turn) decides nothing: the owner is asked again, at a new wait for
+  the same turn.
 - **Owner questions** from a member are answered back to that member.
 
 ## Ending

@@ -37,12 +37,14 @@ from typing import Any
 from temper_ai.observability.event_types import EventType
 from temper_ai.pi_agent.box import TEAM_TOOL, BoxConfig, BoxSpec, stop_leftover_box
 from temper_ai.pi_agent.host import (
+    INVALID,
     _jsonable,
     _slug,
     changed_keys,
     owner_decided_before,
     pin_for,
     prepare_participant,
+    recovery_asked_again,
     recovery_word,
 )
 from temper_ai.pi_agent.inbox import render_batch
@@ -370,14 +372,22 @@ class Team:
         """Apply the owner's answer to a recovery wait once: ``retry`` gives the turn's own
         messages again (same ids) and drops what it sent; ``accept`` keeps a cut-off turn and
         releases what it sent; ``stop`` ends the member's turn failed. A failed turn is
-        answered retry or stop only (N1). Returns an error text when the team must stop."""
+        answered retry or stop only (N1). Anything else (empty, another word, accept at a
+        failed turn) decides nothing: the wait closes ``invalid`` and the owner is asked again
+        at a new wait for the same turn (M3 F1). ``answer`` is what the owner said
+        (:func:`~temper_ai.pi_agent.host.owner_reply`). Returns an error text when the team
+        must stop."""
         if wait["kind"] != "recovery":
             raise ValueError("only recovery waits are answered here")
         subject = wait["subject"] or {}
         options = subject.get("options") or ["accept", "retry"]
         word = recovery_word(answer, options)
-        decision = {"recovery": word,
-                    "text_sha256": hashlib.sha256(answer.encode()).hexdigest()}
+        sha = hashlib.sha256(answer.encode()).hexdigest()
+        if word is None:
+            self.ledger.decide_wait(wait["wait_id"], {"recovery": INVALID, "text_sha256": sha},
+                                    self.attempt_id, reask=recovery_asked_again(subject))
+            return None
+        decision = {"recovery": word, "text_sha256": sha}
         if not self.ledger.decide_wait(wait["wait_id"], decision, self.attempt_id,
                                        recovery=(word, subject["turn_id"])):
             return None

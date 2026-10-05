@@ -133,7 +133,9 @@ def test_resume_after_a_failed_turn_asks_the_owner_first(pi):
 
 def test_a_failed_turn_is_answered_retry_or_stop_never_accept(pi):
     """R2 N1, a change from L2: a turn that failed visibly is never kept as if it had
-    finished. Its recovery wait offers retry or stop; an 'accept' stops the step, red."""
+    finished. Its recovery wait offers retry or stop. An 'accept' names neither: nothing is
+    decided (no stop by default either) and the owner is asked again at a new wait for the
+    same turn (M3 F1); a 'stop' there stops the step, red."""
     FakeBox.behaviour = "provider_error"
     eid = sup.start(pi.client, "pi_talk", pi.ws)
     assert sup.wait_ended(eid)[-1]["status"] == "failed"
@@ -142,9 +144,20 @@ def test_a_failed_turn_is_answered_retry_or_stop_never_accept(pi):
     assert rec["subject"]["options"] == ["retry", "stop"]
     assert "accept" not in rec["subject"]["question"]
     sup.approve(pi.client, eid, rec["gate_name"], "accept")
-    assert sup.wait_ended(eid, 2)[-1]["status"] == "failed"
+    again = sup.open_wait(eid, "recovery", other_than=rec["wait_id"])
+    assert again["subject"]["turn_id"] == rec["subject"]["turn_id"]
+    assert again["subject"]["options"] == ["retry", "stop"]
+    snap = sup.ledger().snapshot(eid)
+    assert [t["state"] for t in snap["turns"]] == ["failed"]
+    decided = {w["wait_id"]: (w["decision"] or {}).get("recovery") for w in snap["waits"]}
+    assert decided[rec["wait_id"]] == "invalid"
+
+    sup.approve(pi.client, eid, again["gate_name"], "stop")
+    sup.wait_for(lambda: sup.attempts(eid)[-1]["status"] == "failed",
+                 what=f"the stop to end {eid}'s step")
     assert len(FakeBox.STARTS) == 1, "nothing ran again"
     snap = sup.ledger().snapshot(eid)
     assert [t["state"] for t in snap["turns"]] == ["failed"]
     assert snap["participants"][0]["state"] == "failed"
-    assert snap["waits"][0]["decision"]["recovery"] == "stop"
+    decided = {w["wait_id"]: (w["decision"] or {}).get("recovery") for w in snap["waits"]}
+    assert decided[again["wait_id"]] == "stop"

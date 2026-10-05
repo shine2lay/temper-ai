@@ -475,6 +475,102 @@ def test_b13_a_failed_team_fails_its_stage_row_and_the_run_while_other_stages_st
     assert prompts() == {"design": 1, "frontend": 0, "qa": 0}
 
 
+# --- M3 F1: the owner's pick at a recovery wait, through the approve route --------------------
+
+
+CUT_OFF = [ts.send("frontend", "an early note"), {"die": True}]  # sent, then the worker dies
+REFUSED = [{"error": "400 invalid_request_error: the request was refused"}]
+
+
+def pick(tr, eid: str, row: dict, gate: dict, *selected: str, custom: str = "") -> dict:
+    """The owner answers on the run page: a picked option and/or written words (GateModal's
+    ``answers``), no typed response; nothing at all is a plain approval."""
+    r = pw.pick(tr.client, eid, row["gate_name"], *selected, event_id=gate["event_id"],
+                question=row["subject"]["question"], custom=custom)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def recovery_decisions(tr, eid: str) -> list:
+    rows = sorted((w for w in team_waits(tr, eid) if w["kind"] == "recovery"),
+                  key=lambda w: _when(w["opened_at"]))
+    return [(w["decision"] or {}).get("recovery") for w in rows]
+
+
+def test_f1_retry_picked_at_a_cut_off_turn_runs_it_again(tr):
+    """Picking "retry" on the run page at a cut-off turn's wait retries the turn; it was read
+    as accept while the rendered answer ("Q: ...\\nA: retry") was read."""
+    install(tr, tt.team_stage())
+    script(tr.led, ["done"])
+    ts.SCRIPTS["design"].insert(0, CUT_OFF)
+    eid = start(tr, {"goal": GOAL})
+    row, gate = parked_at(tr, eid, 1, "f1_cut_off_retry")
+    assert (row["kind"], row["subject"]["options"]) == ("recovery", ["accept", "retry"])
+
+    assert pick(tr, eid, row, gate, "retry")["carries_on"] is True
+    assert pw.wait_ended(eid, 2)[-1]["status"] == "completed", stage_error(eid, "build")
+    assert recovery_decisions(tr, eid) == ["retry"]
+    assert turns_by_member(tr, eid)["design"][0] == "superseded"
+    early = ts.message(tr.led, eid, ts.SENDS[0]["reply"]["message_id"])
+    assert (early["state"], early["undelivered_reason"]) == ("undelivered", "turn_superseded")
+    assert stage_row(eid)[-1] == "completed" and team_row(eid)[-1] == "completed"
+
+
+def test_f1_retry_picked_at_a_failed_turn_runs_it_again(tr):
+    """After a Resume, picking "retry" at a failed turn's wait retries it; it was read as stop
+    and ended the team."""
+    install(tr, tt.team_stage())
+    script(tr.led, ["done"])
+    ts.SCRIPTS["design"].insert(0, REFUSED)
+    eid = start(tr, {"goal": GOAL})
+    assert pw.wait_ended(eid, 1)[-1]["status"] == "failed"
+    assert tr.client.post(f"/api/runs/{eid}/resume", json={}).status_code == 200
+    row, gate = parked_at(tr, eid, 2, "f1_failed_retry")
+    assert (row["kind"], row["subject"]["options"]) == ("recovery", ["retry", "stop"])
+
+    assert pick(tr, eid, row, gate, "retry")["carries_on"] is True
+    assert pw.wait_ended(eid, 3)[-1]["status"] == "completed", stage_error(eid, "build")
+    assert recovery_decisions(tr, eid) == ["retry"]
+    assert turns_by_member(tr, eid)["design"][0] == "superseded"
+    assert stage_row(eid)[-1] == "completed" and team_row(eid)[-1] == "completed"
+
+
+def test_f1_an_answer_naming_no_choice_never_accepts_or_stops_and_is_asked_again(tr):
+    """A plain approval, or words naming no choice, decide nothing at a recovery wait: the turn
+    and what it sent stay held, the team goes on waiting, and the owner is asked again at a
+    new wait for the same turn. A picked retry then runs it again."""
+    install(tr, tt.team_stage())
+    script(tr.led, ["done"])
+    ts.SCRIPTS["design"].insert(0, CUT_OFF)
+    eid = start(tr, {"goal": GOAL})
+    row, gate = parked_at(tr, eid, 1, "f1_no_choice_1")
+    held = ts.SENDS[0]["reply"]["message_id"]
+
+    assert pick(tr, eid, row, gate)["carries_on"] is True  # approved with nothing said
+    second, gate2 = parked_at(tr, eid, 2, "f1_no_choice_2")
+    assert pick(tr, eid, second, gate2, custom="not sure yet")["carries_on"] is True
+    third, gate3 = parked_at(tr, eid, 3, "f1_no_choice_3")
+
+    assert len({row["wait_id"], second["wait_id"], third["wait_id"]}) == 3
+    for again in (second, third):
+        assert again["kind"] == "recovery"
+        assert again["subject"]["turn_id"] == row["subject"]["turn_id"]
+        assert again["subject"]["options"] == ["accept", "retry"]
+        assert again["subject"]["question"] == ("That answer was not one of: accept, retry, "
+                                                 "stop. Nothing was decided. "
+                                                 + row["subject"]["question"])
+    assert third["subject"]["asked_again"] == 2
+    assert recovery_decisions(tr, eid) == ["invalid", "invalid", None]
+    assert turns_by_member(tr, eid) == {"design": ["uncertain"]}, "not accepted, not stopped"
+    assert ts.message(tr.led, eid, held)["state"] == "held", "what it sent was not released"
+    assert prompts() == {"design": 1, "frontend": 0, "qa": 0}
+
+    assert pick(tr, eid, third, gate3, "retry")["carries_on"] is True
+    assert pw.wait_ended(eid, 4)[-1]["status"] == "completed", stage_error(eid, "build")
+    assert recovery_decisions(tr, eid) == ["invalid", "invalid", "retry"]
+    assert ts.message(tr.led, eid, held)["undelivered_reason"] == "turn_superseded"
+
+
 # --- the first node, through a resume and restarts --------------------------------------------
 
 

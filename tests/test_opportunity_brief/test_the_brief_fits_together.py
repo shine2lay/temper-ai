@@ -1,7 +1,9 @@
 """The opportunity brief (configs/workflows/opportunity_brief.yaml, product role) fits together.
 
-Its configs: every script step parses under /bin/sh, the model steps keep Claude Code's own tools, every
-template variable is fed by the workflow (a stage hands its input_map to each of its agents) and every
+It comes in two versions: opportunity_brief for software sold to businesses and opportunity_brief_consumer
+(queue #27) for consumer ideas, with consumer lenses and synthesizer and the same setup, check, inputs and
+outputs. Their configs: every script step parses under /bin/sh, the model steps keep Claude Code's own tools,
+every template variable is fed by the workflow (a stage hands its input_map to each of its agents) and every
 workflow output names a field its step prints. Its two helpers, which brief_setup writes into the
 workspace: cite.py answers from the pages it kept (a kept block stays a block), and check_brief.py passes
 a brief that meets the bar and names what is missing in one that doesn't, including a lens that left no
@@ -38,9 +40,12 @@ from temper_ai.config.helpers import substitute_env_vars
 
 ROOT = Path(__file__).resolve().parents[2]
 AGENTS = sorted((ROOT / "configs" / "agents").glob("brief_*.yaml"))
-WORKFLOW = ROOT / "configs" / "workflows" / "opportunity_brief.yaml"
+# Each version and the suffix of its lenses and synthesizer; both run the same brief_setup and brief_check.
+VERSIONS = {"opportunity_brief": "", "opportunity_brief_consumer": "_consumer"}
+WORKFLOWS = [ROOT / "configs" / "workflows" / f"{name}.yaml" for name in VERSIONS]
+SHARED = {"brief_setup", "brief_check"}
 INJECTED = {"workspace_path", "run_id"}  # the agents add these to every template
-LENSES = {"brief_feasibility", "brief_viability", "brief_gtm", "brief_competition"}
+LENS_PARTS = ("feasibility", "viability", "gtm", "competition")
 LIMIT = "You've hit your session limit \u00b7 resets 10:50pm (UTC)"  # 99732fd1's competition lens, verbatim
 # What the Claude provider returns as an answer when its call failed (finish_reason "error", not read yet).
 TIMED_OUT = "Error: Claude Code CLI timed out"
@@ -78,8 +83,12 @@ def by_name(name):
     return agent(ROOT / "configs" / "agents" / f"{name}.yaml")
 
 
-def workflow():
-    return served(WORKFLOW)["workflow"]
+def workflow(name="opportunity_brief"):
+    return served(ROOT / "configs" / "workflows" / f"{name}.yaml")["workflow"]
+
+
+def lenses(suffix):
+    return {f"brief_{part}{suffix}" for part in LENS_PARTS}
 
 
 def template_of(cfg):
@@ -104,15 +113,52 @@ def jinja(stash=None):
     return env
 
 
-def test_four_lenses_run_side_by_side_and_the_synthesizer_leads():
+def test_every_brief_agent_is_named_after_its_file_and_run_by_a_version():
     names = {agent(p)["name"] for p in AGENTS}
     assert {p.stem for p in AGENTS} == names, "each agent file is named after its agent"
-    nodes = workflow()["nodes"]
-    assert {name for n in nodes for name, _ in runs(n)} == names, "the workflow runs every agent, and only these"
+    run = {name for version in VERSIONS for n in workflow(version)["nodes"] for name, _ in runs(n)}
+    assert run == names, "the two versions run every brief agent, and only these"
+
+
+@pytest.mark.parametrize("version, suffix", VERSIONS.items())
+def test_four_lenses_run_side_by_side_and_the_synthesizer_leads(version, suffix):
+    nodes = workflow(version)["nodes"]
+    leader = f"brief_synthesize{suffix}"
+    assert {name for n in nodes for name, _ in runs(n)} == SHARED | lenses(suffix) | {leader}
     stage = next(n for n in nodes if n.get("type") == "stage")
     assert stage["strategy"] == "leader"
-    assert [a["agent"] for a in stage["agents"] if a.get("role") == "leader"] == ["brief_synthesize"]
-    assert {a["agent"] for a in stage["agents"]} == LENSES | {"brief_synthesize"}
+    assert [a["agent"] for a in stage["agents"] if a.get("role") == "leader"] == [leader]
+    assert {a["agent"] for a in stage["agents"]} == lenses(suffix) | {leader}
+
+
+def test_the_consumer_version_takes_and_gives_what_the_business_one_does():
+    """Same inputs, outputs, setup and check: a consumer brief lands in the same files and is checked the same."""
+    business, consumer = workflow("opportunity_brief"), workflow("opportunity_brief_consumer")
+    assert consumer["inputs"] == business["inputs"] and consumer["outputs"] == business["outputs"]
+    for name in ("setup", "check"):
+        b, c = (next(n for n in wf["nodes"] if n["name"] == name) for wf in (business, consumer))
+        assert c["agent"] == b["agent"] and c.get("depends_on") == b.get("depends_on")
+        assert set(c["input_map"]) == set(b["input_map"])
+
+
+# What the travel study's consumer bar scored, and the consumer version asks for (research/travel-discovery/
+# inputs/brief-candidate-bar.md items a-f): revenue per active user a year with a low and high case, how often
+# the need comes back from a sampled source, consumer channels, distribution inside AI assistants, a row for
+# every named player, and serving barriers apart from the build.
+CONSUMER_ASKS = {
+    "brief_viability_consumer": ["Revenue per ACTIVE USER per year", "a survey that states its sample"],
+    "brief_gtm_consumer": ["Distribution inside AI assistants", "creators and social video"],
+    "brief_competition_consumer": ["give EVERY named player a row", '"overlap": "low|med|high"'],
+    "brief_feasibility_consumer": ["Barriers to serving users"],
+    "brief_synthesize_consumer": ["revenue per active user per year (low and", "list the serving barriers"],
+}
+
+
+@pytest.mark.parametrize("name", CONSUMER_ASKS)
+def test_the_consumer_version_asks_for_what_its_bar_scored(name):
+    prompt = re.sub(r"\s+", " ", by_name(name)["system_prompt"])
+    for words in CONSUMER_ASKS[name]:
+        assert words in prompt, f"{name} no longer asks for: {words}"
 
 
 @pytest.mark.parametrize("path", [p for p in AGENTS if agent(p).get("type") == "script"], ids=lambda p: p.stem)
@@ -123,7 +169,7 @@ def test_every_script_step_parses_under_sh(path):
     assert done.returncode == 0, f"{path.name} does not parse under /bin/sh: {done.stderr.strip()}"
 
 
-@pytest.mark.parametrize("path", [*AGENTS, WORKFLOW], ids=lambda p: p.stem)
+@pytest.mark.parametrize("path", [*AGENTS, *WORKFLOWS], ids=lambda p: p.stem)
 def test_no_file_holds_the_config_stores_env_syntax(path):
     assert "${" not in path.read_text(), "the config store would substitute it as an env var"
 
@@ -142,12 +188,14 @@ def fed_by_the_workflow(wf, node, value):
     stage, lens, field = (value.split(".") + ["", ""])[:3]
     stages = {n["name"]: n for n in wf["nodes"] if n.get("type") == "stage"}
     return (stage in (node.get("depends_on") or []) and stage in stages and field == "output"
-            and value.count(".") == 2 and lens in LENSES and lens in {a["agent"] for a in stages[stage]["agents"]})
+            and value.count(".") == 2
+            and lens in {a["agent"] for a in stages[stage]["agents"] if a.get("role") != "leader"})
 
 
-def test_every_template_variable_is_fed_by_the_workflow():
+@pytest.mark.parametrize("version", VERSIONS)
+def test_every_template_variable_is_fed_by_the_workflow(version):
     env = jinja()
-    wf = workflow()
+    wf = workflow(version)
     for node in wf["nodes"]:
         for value in (node.get("input_map") or {}).values():
             assert fed_by_the_workflow(wf, node, value), f"{value} is neither an input nor a lens's answer"
@@ -156,10 +204,10 @@ def test_every_template_variable_is_fed_by_the_workflow():
             assert used <= fed | INJECTED, f"{name} uses {sorted(used - fed - INJECTED)} that the workflow never passes"
 
 
-def test_the_check_gets_each_lens_answer():
-    check = next(n for n in workflow()["nodes"] if n["name"] == "check")
-    assert check["input_map"] == {f"{lens}_answer": f"brief.brief_{lens}.output"
-                                  for lens in ("feasibility", "viability", "gtm", "competition")}
+@pytest.mark.parametrize("version, suffix", VERSIONS.items())
+def test_the_check_gets_each_lens_answer(version, suffix):
+    check = next(n for n in workflow(version)["nodes"] if n["name"] == "check")
+    assert check["input_map"] == {f"{part}_answer": f"brief.brief_{part}{suffix}.output" for part in LENS_PARTS}
 
 
 def helper(name):
@@ -415,12 +463,13 @@ def test_cite_answers_from_the_pages_it_kept(workspace):
     assert "INACCESSIBLE" in blocked and "never work around it" in blocked
 
 
-def test_the_workflow_outputs_name_fields_their_steps_print(workspace):
-    prompt = by_name("brief_synthesize")["system_prompt"]
+@pytest.mark.parametrize("version, suffix", VERSIONS.items())
+def test_the_workflow_outputs_name_fields_their_steps_print(workspace, version, suffix):
+    prompt = by_name(f"brief_synthesize{suffix}")["system_prompt"]
     contract = re.search(r'(\{"status": "completed",.*?"problems_left": 0\})', prompt, re.S)
-    assert contract, "brief_synthesize no longer shows the JSON it finishes with"
+    assert contract, f"brief_synthesize{suffix} no longer shows the JSON it finishes with"
     printed = {"brief": set(json.loads(contract.group(1))), "check": set(check(workspace))}
-    for ref in workflow()["outputs"].values():
+    for ref in workflow(version)["outputs"].values():
         node, _, field = ref.partition(".structured.")
         assert field in printed[node], f"{ref}: {node} never prints `{field}`"
 
@@ -676,7 +725,8 @@ def test_the_check_reads_the_units_it_is_given(workspace):
                                             "c": (2.0, {"payer": 1})})[:2] == (3.0, {"USD": 1, "payer": -1})
 
 
-def test_the_synthesizer_is_told_to_table_its_figures():
-    prompt = by_name("brief_synthesize")["system_prompt"]
+@pytest.mark.parametrize("name", ["brief_synthesize", "brief_synthesize_consumer"])
+def test_the_synthesizer_is_told_to_table_its_figures(name):
+    prompt = by_name(name)["system_prompt"]
     assert "DERIVED FIGURES" in prompt and '"figures": [<every derived figure' in prompt
     assert "An input's unit is what ITS SOURCE counts" in prompt

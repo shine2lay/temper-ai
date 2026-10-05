@@ -26,7 +26,7 @@ role tests and lands a change.
 
 | Role | Department | Looks after |
 |---|---|---|
-| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief, the feature screen (`feature_screen`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
+| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents, and `positioning_grade`; next, positioning and launch notes for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with owner gates ([design.md](design.md), [design-logo.md](design-logo.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
@@ -192,7 +192,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (104)
+### product (110)
 
 | Config | Kind |
 |---|---|
@@ -238,6 +238,12 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/brief_setup.yaml` | agent (script) |
 | `agents/brief_synthesize.yaml` | agent |
 | `agents/brief_viability.yaml` | agent |
+| `workflows/opportunity_brief_consumer.yaml` | workflow |
+| `agents/brief_competition_consumer.yaml` | agent |
+| `agents/brief_feasibility_consumer.yaml` | agent |
+| `agents/brief_gtm_consumer.yaml` | agent |
+| `agents/brief_synthesize_consumer.yaml` | agent |
+| `agents/brief_viability_consumer.yaml` | agent |
 | `workflows/desk_check.yaml` | workflow |
 | `agents/desk_assumption.yaml` | agent |
 | `agents/desk_final.yaml` | agent (script) |

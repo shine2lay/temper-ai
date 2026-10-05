@@ -263,11 +263,14 @@ class CallerMiddleware:
 
                     run_id = await anyio.to_thread.run_sync(identify_run_token, presented)
                     name = f"box:{run_id}" if run_id else None
+        headers = scope.get("headers") or []
         caller = Caller(
             name=name,
             source=source,
-            request_id=clean_request_id(_header(scope.get("headers") or [], b"x-request-id")),
+            request_id=clean_request_id(_header(headers, b"x-request-id")),
             via=f"{method} {scope.get('path', '')}",
+            # A hint for record mode only (the dashboard without its key); never vouches.
+            from_browser=name is None and _header(headers, b"sec-fetch-mode") is not None,
         )
         scope[SCOPE_CALLER_KEY] = caller
         with bound(caller):

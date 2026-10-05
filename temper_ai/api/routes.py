@@ -1435,8 +1435,11 @@ def _now_iso() -> str:
 def guard_seen():
     """What the write guard has seen: its mode and, per caller and action, how often and when.
 
-    ``caller`` null is a writer nobody could name. Kept in the database, so it
-    survives restarts; names, addresses and run ids only, never a key.
+    ``caller`` null is a writer nobody could name; "?browser" is one whose
+    request looked like a browser's (most likely the dashboard without its key:
+    a hint, not an identity); "box" is every run's own key. Kept in the
+    database, so it survives restarts; names, addresses and run ids only,
+    never a key.
     """
     from sqlmodel import select
 

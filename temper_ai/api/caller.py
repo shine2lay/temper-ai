@@ -68,12 +68,18 @@ class Caller:
     request came from ("in-process" for Slack, Telegram, hooks...). ``via``
     says how it arrived: "POST /api/runs", "mcp temper_cancel_run",
     "slack", ...
+
+    ``from_browser`` is a hint, never an identity: the request carried the
+    Sec-Fetch-Mode header every browser adds to its fetches (and curl or a
+    script does not). An unknown caller with it is most likely the dashboard
+    without its key, so record mode counts those apart ("?browser").
     """
 
     name: str | None
     source: str = "in-process"
     request_id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
     via: str = ""
+    from_browser: bool = False
 
     @property
     def is_box(self) -> bool:
@@ -184,7 +190,7 @@ def require_caller_may(action: str, *, run_id: str | None = None) -> Caller:
         "api guard (%s): %s %s action %s via %s from %s run %s",
         mode,
         "refused" if refusing else "allowed",
-        "unknown caller" if caller.name is None else f"caller {caller.name}",
+        _unknown_label(caller) if caller.name is None else f"caller {caller.name}",
         action,
         caller.via or "?",
         caller.source,
@@ -249,13 +255,32 @@ _seen_lock = threading.Lock()
 _seen: dict[tuple[str, str], dict] = {}
 
 
+# Where record mode counts an unknown caller whose request looked like a browser's. No
+# key name can take it: names are [a-z0-9._-] (api_keys.py).
+UNKNOWN_BROWSER = "?browser"
+
+
+def _unknown_label(caller: Caller) -> str:
+    return "unknown caller (browser)" if caller.from_browser else "unknown caller"
+
+
+def _seen_name(caller: Caller) -> str:
+    """The row a write is counted under: the caller's name, "box" for every run key,
+    "?browser" for an unknown browser, "" for any other unknown caller."""
+    if caller.is_box:
+        return "box"
+    if caller.name:
+        return caller.name
+    return UNKNOWN_BROWSER if caller.from_browser else ""
+
+
 def _note(caller: Caller, action: str, run_id: str | None, *, refused: bool) -> None:
     """Count one write in memory and in api_guard_seen (best effort).
 
     Run keys count together as "box" (the run is in last_run_id), so the
     table stays one row per kind of caller, not one per run.
     """
-    key = ("box" if caller.is_box else caller.name or "", action)
+    key = (_seen_name(caller), action)
     now = utcnow()
     with _seen_lock:
         row = _seen.setdefault(key, {"count": 0, "refused": 0, "first_seen": now.isoformat()})

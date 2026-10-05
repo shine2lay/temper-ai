@@ -23,8 +23,12 @@ address and the run id. Never a key.
 
 `GET /api/guard` (open, read-only) shows the mode and, per caller and action,
 how often and when it was last seen; `caller: null` is a writer nobody could
-name. Before switching to `enforce`, run `record` until that list has no null
-row you can't explain.
+name. `caller: "?browser"` is an unknown writer whose request carried the
+`Sec-Fetch-Mode` header every browser sends (most likely the dashboard before
+anyone typed its key in; `enforce` will ask for it). That is a hint for
+reading the record, never an identity: anyone can send the header, and
+`enforce` refuses it like any other unknown caller. Before switching to
+`enforce`, run `record` until that list has no null row you can't explain.
 
 Rollback: set the mode back to `record` (or `off`) and restart.
 

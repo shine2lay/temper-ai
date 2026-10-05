@@ -503,6 +503,33 @@ class TestEdge:
         monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
         assert auth.identify_caller_name(None, "127.0.0.1") is None
 
+    @pytest.mark.parametrize(("headers", "row", "says"), [
+        ({"Sec-Fetch-Mode": "cors"}, "?browser", "unknown caller (browser)"),
+        ({}, None, "unknown caller action"),
+    ])
+    def test_record_counts_an_unknown_browser_apart(self, client, monkeypatch, caplog, headers, row, says):
+        """The dashboard without its key looks like this in record mode; it is a hint only."""
+        monkeypatch.setenv("TEMPER_API_GUARD", "record")
+        _record_waiting()
+
+        with caplog.at_level(logging.WARNING, logger="temper_ai.api.caller"):
+            client.post(f"/api/runs/{RUN}/approve/decide", json={"response": "yes"}, headers=headers)
+
+        lines = [r.getMessage() for r in caplog.records if "api guard" in r.getMessage()]
+        assert len(lines) == 1 and says in lines[0]
+        seen = client.get("/api/guard").json()["seen"]
+        assert [r["caller"] for r in seen if r["action"] == "approve"] == [row]
+
+    def test_a_browser_hint_never_gets_past_enforce(self, client, monkeypatch):
+        monkeypatch.setenv("TEMPER_API_GUARD", "enforce")
+        ev = _record_waiting()
+
+        response = client.post(f"/api/runs/{RUN}/approve/decide", json={"response": "yes"},
+                               headers={"Sec-Fetch-Mode": "cors", "Sec-Fetch-Site": "same-origin"})
+
+        assert response.status_code == 401
+        assert _gate_status(ev) == "waiting"
+
     def test_the_shared_token_does_not_name_a_writer(self, monkeypatch, keys_file):
         """Every box's own process carries TEMPER_API_TOKEN, so it can't vouch for a write."""
         from temper_ai.api import auth

@@ -1,6 +1,6 @@
 workflow:
   name: design_review
-  # DESIGN REVIEW (design role; v1 2026-10-02, v2 2026-10-04). An expert review of a
+  # DESIGN REVIEW (design role; v1 2026-10-02, v2 2026-10-04, v3 2026-10-05). An expert review of a
   # product's pages: measured facts first, then two independent AI critics, a no-model check of
   # their claims against the facts, then a merge that keeps what holds up. The critic and grader
   # every later design workflow reuses (owner's pick).
@@ -13,19 +13,26 @@ workflow:
   #   inactive controls are exempt from contrast, and facts.md lists measured passes next to the
   #   problems. The critics judge hierarchy, wording, flow, consistency, states and the WCAG 2.2
   #   AA points no tool measures, from the screenshots and the facts; they never contradict a
-  #   measured number and rate severity on anchored Nielsen 0-4 definitions. verify: each critic
+  #   measured number and rate severity on anchored Nielsen 0-4 definitions plus severity rules
+  #   (how far a measured failure is below its WCAG threshold, main navigation or the page's main
+  #   task, how many pages it hits). verify: each critic
   #   claim on target size or on an inactive control's contrast against the facts, and whether
   #   the finding cites checkable evidence. merge: drops what the facts contradict (saying why);
   #   confirmed = measured or found by both critics; single = one critic with checkable evidence,
-  #   kept for a person to check; rejected = contradicted, uncheckable or taste.
+  #   kept for a person to check; rejected = contradicted, uncheckable or taste. The merge sets
+  #   severity by the same rules (the critics' ratings are input, not votes).
   # Graded on planted-problem test pages by design_review_grade (answer keys kept off the box's
   # container mounts). v2, queue #7: 3 runs (2 on a 14-plant site with 10 traps, 1 on a 22-plant
   # site): every plant found, no invented findings or overclaims, all traps held; severity equal
-  # to the key on 11 of 14 (v1: 6 of 14); about $1.8-2.0 and 4-5 minutes a run.
+  # to the key on 11 of 14 (v1: 6 of 14); about $1.8-2.0 and 4-5 minutes a run. v3, queue #33
+  # (severity rules in the critic and merge, everything else unchanged): 4 runs (2 on each site):
+  # every plant found, no invented findings or overclaims, all traps held, no plant two steps
+  # off; severity equal to the key on 13 of 14 in both runs and on 21 and 20 of 22 (v2: 11 of
+  # 14 and 13 of 22); about $1.7-2.0 and 4 minutes a run.
   # docs/design.md has how to run and grade it.
   #
   # provider: claude = Claude Code CLI (Read shows PNGs to the model); no temper tools: blocks.
-  version: 2
+  version: 3
   description: |
     Expert design review of a site's pages: screenshots and measured accessibility facts
     (axe-core, contrast, target sizes by WCAG 2.5.8 in full, field names, focus, reflow) per

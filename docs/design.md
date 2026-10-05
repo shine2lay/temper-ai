@@ -77,7 +77,7 @@ curl -s -X POST http://127.0.0.1:8420/api/runs -H 'Content-Type: application/jso
 - `workspace_path` is needed (without it the steps get an empty workspace),
   and the folder must be writable by the run's container user.
 
-A run of four or five pages takes about 4-5 minutes and $1.80-2.00 (v2).
+A run of four or five pages takes about 4 minutes and $1.70-2.00 (v3).
 
 ## Grading it
 
@@ -124,6 +124,10 @@ key as text, and prints the score:
 | 2026-10-04 | morrow-v2 (14 plants, 10 traps), v2 candidate | f99200aa | 14/14 | 23, all true | 0 | 0 | $1.80 |
 | 2026-10-04 | morrow-v2, v2 candidate | cfbd55a0 | 14/14 | 24, all true | 0 | 0 | $1.82 |
 | 2026-10-04 | fernway-v1, v2 candidate | 52ddd192 | 22/22 | 33, all true | 0 | 0 | $1.96 |
+| 2026-10-05 | morrow-v2, v3 candidate | aa9f8b31 | 14/14 | 23 (21 true, 2 taste) | 0 | 0 | $1.68 |
+| 2026-10-05 | morrow-v2, v3 candidate | 05815f1e | 14/14 | 23 (22 true, 1 taste) | 0 | 0 | $1.83 |
+| 2026-10-05 | fernway-v1, v3 candidate | 0c448d7f | 22/22 | 31, all true | 0 | 0 | $2.03 |
+| 2026-10-05 | fernway-v1, v3 candidate | f09f5b2f | 22/22 | 29, all true | 0 | 0 | $2.01 |
 
 fernway-v1 is too easy to tell versions apart; morrow-v2 adds traps (things
 that look wrong but are fine) and severity per plant.
@@ -140,19 +144,18 @@ findings or overclaims in three runs, all 10 traps held in each morrow-v2 run
 v1. The three changes are the measured passes (capture), the facts check
 (verify) and the anchored severity (critic and merge) described above.
 
-Known residual: on fernway-v1 the anchored scale rates some WCAG failures one
-step below its key (equal on 13 of 22 plants; v1: 17-18). Results and the
-hand check of every unmatched finding: `~/design-lab/results/review-precision/`
-(host only).
+Known residual (fixed in v3, below): on fernway-v1 the anchored scale rates
+some WCAG failures one step below its key (equal on 13 of 22 plants; v1:
+17-18). Results and the hand check of every unmatched finding:
+`~/design-lab/results/review-precision/` (host only).
 
-## Severity candidate (queue #33, on trial)
+## v3 (queue #33, 2026-10-05): severity rules
 
-v2 gives similar WCAG failures a 2 whether they sit just under the threshold
-or far below it, and whether or not they block the main navigation; the
+v2 gave similar WCAG failures a 2 whether they sat just under the threshold
+or far below it, and whether or not they blocked the main navigation; the
 homepage revisions act only on confirmed severity 3 or more, so a problem
-rated one step low slips through. `design_review_next` (a test workflow) runs
-the live capture and facts check with `design_critic_next` and
-`design_merge_next`: the live prompts word for word plus severity rules
+rated one step low slipped through. v3 keeps capture, the facts check and the
+rest of the critic and merge prompts word for word, and adds severity rules
 that set the step between minor (2) and major (3):
 
 - **how far below the threshold**: text contrast from 3:1 to just under 4.5:1
@@ -174,10 +177,22 @@ that set the step between minor (2) and major (3):
 
 The merge sets each level by these rules (critics' ratings are input, not
 votes) and may go one level above the critics only for a measured finding a
-rule sets from the facts. It replaces the live reviewer only if two runs on
-each test site keep recall, traps, 0 invented findings and 0 overclaims and
-raise severity agreement (results: `~/design-lab/results/review-severity/`,
-host only).
+rule sets from the facts. Worked examples in the prompts come from other
+products; no test site is named.
+
+It was built as a test workflow next to the live one (`design_review_next`)
+and promoted only after four graded runs (two per site) met every bar: all
+plants found, no invented findings or overclaims, all 10 traps held in each
+morrow-v2 run (and fernway-v1's 4 things that are fine), no plant two steps
+off, severity equal to the key on 13 of 14 in both morrow-v2 runs (v2: 11)
+and on 21 and 20 of 22 on fernway-v1 (v2: 13). Cost per run 0.92-1.03x v2.
+
+Known residual: fernway-v1's 16 px week arrows are rated 1 where the key says
+2. They pass WCAG 2.5.8 by the spacing exception, so the key's reason no longer
+holds; a corrected key needs a new fernway version. morrow-v2's sole red
+"Delete workspace" button is rated 3 where the key says 2 (as in v2). Results
+and the hand check of every unmatched finding:
+`~/design-lab/results/review-severity/` (host only).
 
 ## Files
 
@@ -185,7 +200,6 @@ host only).
 |---|---|
 | `configs/design/workflows/design_review.yaml` | the review |
 | `configs/design/workflows/design_review_grade.yaml` | the grader |
-| `configs/design/workflows/design_review_next.yaml`, `agents/design_{critic,merge}_next.yaml` | severity candidate on trial (queue #33; test only) |
 | `configs/design/agents/design_{capture,critic,verify,merge,grade,score}.yaml` | its steps |
 | `configs/design/bin/design_capture.py` | capture: serves a site, drives playwright-mcp, writes `review/shots`, `review/facts`, `capture.json` |
 | `configs/design/bin/design_measure.js` | the in-page measurements |

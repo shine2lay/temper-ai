@@ -1,6 +1,7 @@
-"""Model-free contracts for Design's reviewer (design_review v2, queue #7).
+"""Model-free contracts for Design's reviewer (design_review v3; v2 queue #7, v3 queue #33).
 
-No models, accounts or browsers. The target-size geometry in design_measure.js is a pure
+No models, accounts or browsers. The critic and merge prompts carry the severity rules (one
+shared text) and name no test site. The target-size geometry in design_measure.js is a pure
 function between two markers, run here in node on hand-made generic layouts (among them a
 spaced pair of small buttons and a small checkbox inside a tall label). The facts lines and the
 claim check (design_review_verify.py) run on small hand-made facts and critic files.
@@ -69,13 +70,10 @@ def test_review_agents_import(name):
     assert parsed["name"] == name and parsed["config_type"] == "agent"
 
 
-# The candidate on trial (queue #33: anchored severity), graded on the sealed test sites before
-# anything replaces the live reviewer. Promotion renames it to the live names and empties this.
-CANDIDATE_ON_TRIAL = {
-    "design_review_next.yaml": "design_review",
-    "design_critic_next.yaml": "design_critic",
-    "design_merge_next.yaml": "design_merge",
-}
+# A reviewer candidate on trial ("<file>_next.yaml": "<live name>"), graded on the sealed test
+# sites before anything replaces the live reviewer. Promotion renames it to the live names and
+# empties this (queue #33's severity candidate became design_review v3 on 2026-10-05).
+CANDIDATE_ON_TRIAL: dict[str, str] = {}
 
 
 def test_review_steps_run_the_promoted_scripts():
@@ -145,14 +143,11 @@ def test_review_prompts_name_no_benchmark_site():
             assert anchor in prompt
 
 
-# --------------------------------------------------------------------------- severity candidate (#33)
-
-on_trial = pytest.mark.skipif(
-    not CANDIDATE_ON_TRIAL, reason="no reviewer candidate on trial"
-)
+# --------------------------------------------------------------------------- severity rules (v3, #33)
 
 # Rules that anchor the step between minor and major (queue #33): how far a measured failure is
 # below its WCAG threshold, main navigation or main task, how many pages; passing small targets.
+# Graded as a candidate on both sealed sites, then promoted (design_review v3).
 SEVERITY_RULES = (
     "SEVERITY RULES.",
     "A. How far below the threshold",
@@ -188,62 +183,20 @@ def _rules_block(prompt):
     return prompt[start:end]
 
 
-def _outside_severity(prompt):
-    start = prompt.index("\nSEVERITY")
-    ends = (prompt.find("\nEACH FINDING"), prompt.find("\nOUTPUT:"))
-    return prompt[:start] + prompt[min(i for i in ends if i > start) :]
-
-
-@on_trial
-def test_candidate_workflow_swaps_only_the_critics_and_the_merge():
-    live = yaml.safe_load((DESIGN / "workflows/design_review.yaml").read_text())[
-        "workflow"
-    ]
-    cand = yaml.safe_load((DESIGN / "workflows/design_review_next.yaml").read_text())[
-        "workflow"
-    ]
-    assert WorkflowConfig.from_dict(cand).name == "design_review_next"
-    swap = {"design_critic": "design_critic_next", "design_merge": "design_merge_next"}
-    assert [(n["name"], n["agent"], n.get("depends_on")) for n in cand["nodes"]] == [
-        (n["name"], swap.get(n["agent"], n["agent"]), n.get("depends_on"))
-        for n in live["nodes"]
-    ]
-    assert cand["inputs"].keys() == live["inputs"].keys()
-    assert cand["outputs"] == live["outputs"]
-    for name in ("design_critic_next", "design_merge_next"):
-        assert parse_yaml(DESIGN / "agents" / f"{name}.yaml")["name"] == name
-
-
-@on_trial
-@pytest.mark.parametrize("name", ["design_critic_next", "design_merge_next"])
-def test_candidate_prompts_carry_the_severity_rules(name):
+@pytest.mark.parametrize("name", ["design_critic", "design_merge"])
+def test_prompts_carry_the_severity_rules(name):
     prompt = _flat(_prompt(name))
     for anchor in SEVERITY_RULES:
         assert anchor in prompt, anchor
     assert "severity 1 or 2" not in prompt  # a passing small target is rated by rule D
 
 
-@on_trial
-def test_critic_and_merge_candidates_share_one_rule_text():
-    assert _rules_block(_prompt("design_critic_next")) == _rules_block(
-        _prompt("design_merge_next")
-    )
+def test_critic_and_merge_share_one_rule_text():
+    assert _rules_block(_prompt("design_critic")) == _rules_block(_prompt("design_merge"))
 
 
-@on_trial
-@pytest.mark.parametrize("name", ["design_critic", "design_merge"])
-def test_candidate_changes_only_the_severity_text(name):
-    """The trial isolates severity: outside it, the candidate prompt is the live one."""
-    live = _outside_severity(_prompt(name))
-    assert live.count("severity 1 or 2") == 1
-    assert _outside_severity(_prompt(f"{name}_next")) == live.replace(
-        "severity 1 or 2", "severity by rule D below"
-    )
-
-
-@on_trial
-def test_candidate_merge_sets_levels_by_the_rules_not_by_votes():
-    merge = _flat(_prompt("design_merge_next"))
+def test_merge_sets_levels_by_the_rules_not_by_votes():
+    merge = _flat(_prompt("design_merge"))
     assert "The critics' ratings and reasons are input, not votes" in merge
     assert "When the critics differ and the rules don't settle it, take the lower." in merge
     assert (

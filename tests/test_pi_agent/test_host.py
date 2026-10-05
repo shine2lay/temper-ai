@@ -40,7 +40,8 @@ def test_two_turns_in_one_session_then_done(pi):
     tools = [e for e in sup.events(eid) if e["type"].startswith("tool.call")
              and e["parent_id"] == agents[0]["id"]]
     assert tools, "the read tool call is recorded under the turn"
-    assert first["gate_name"].startswith("talk~wait-")
+    # Asked through ask_owner under the ledger row's own id (C7).
+    assert first["gate_name"] == f"talk~ask-{first['wait_id']}"
 
     r = sup.approve(pi.client, eid, first["gate_name"],
                     "Without using any tools: what was the first word of the note?")
@@ -80,9 +81,7 @@ def test_the_run_page_shows_each_turn_after_a_refresh(pi):
     eid = sup.start(pi.client, "pi_talk", pi.ws)
     w = sup.open_wait(eid, "owner")
     sup.approve(pi.client, eid, w["gate_name"], "And once more, without tools?")
-    w2 = sup.wait_for(lambda: next((x for x in sup.ledger().snapshot(eid)["waits"]
-                                    if x["state"] == "open" and x["event_recorded"]
-                                    and x["wait_id"] != w["wait_id"]), None))
+    w2 = sup.open_wait(eid, "owner", other_than=w["wait_id"])
     sup.approve(pi.client, eid, w2["gate_name"], "done")
     _run_status(eid)
     page = pi.client.get(f"/api/workflows/{eid}")
@@ -95,7 +94,7 @@ def test_the_run_page_shows_each_turn_after_a_refresh(pi):
         assert a["status"] == "completed"
         assert a["output"]
         assert a.get("llm_calls"), "the turn's model calls are listed"
-    waits = [c for c in talk.get("child_nodes") or [] if "~wait-" in c.get("name", "")]
+    waits = [c for c in talk.get("child_nodes") or [] if "~ask-" in c.get("name", "")]
     assert len(waits) == 2 and all(c["status"] == "approved" for c in waits)
 
 
@@ -211,22 +210,27 @@ def test_a_tool_that_never_ends_is_uncertain_and_accept_goes_on(pi):
     agents = _turn_ended(eid, 2)
     assert sup.agent_end(eid, agents[1]["id"])["type"] == "agent.completed"
     assert len(FakeBox.STARTS[-1].get("rewinds") or []) == 1
-    last = sup.wait_for(lambda: next((w for w in sup.ledger().snapshot(eid)["waits"]
-                                      if w["state"] == "open" and w["event_recorded"]
-                                      and w["kind"] == "owner"), None))
+    last = sup.open_wait(eid, "owner", other_than=owner["wait_id"])
     sup.approve(pi.client, eid, last["gate_name"], "done")
     assert _run_status(eid) == "completed"
     assert [t["state"] for t in sup.ledger().snapshot(eid)["turns"]] == ["accepted", "completed"]
 
 
-def test_a_pi_step_as_first_node_is_refused_before_any_worker(pi):
+def test_a_pi_step_may_be_the_first_node(pi):
+    """C7: nothing runs before the Pi step, and its owner wait still lets the worker go --
+    under the wait's own checkpoint -- and the answer carries the run on to the end."""
     eid = sup.start(pi.client, "pi_first", pi.ws)
-    assert _run_status(eid) == "failed"
-    assert FakeBox.STARTS == []
-    failed = [e for e in sup.events(eid, event_type="stage.started")
-              if (e["data"] or {}).get("name") == "talk"]
-    assert failed and failed[-1]["status"] == "failed"
-    assert "first node" in str(sup.events(eid))
+    w = sup.open_wait(eid, "owner")
+    first = sup.wait_for(lambda: next((a for a in sup.attempts(eid)[:1]
+                                       if (a["data"] or {}).get("parked")), None),
+                         what="the first attempt to let its worker go")
+    assert first["data"]["parked"]["path"] == "talk"
+    assert first["data"]["parked"]["wait_id"] == w["wait_id"]
+    assert sup.approve(pi.client, eid, w["gate_name"], "done").status_code == 200
+    assert _run_status(eid) == "completed"
+    assert len(FakeBox.STARTS) == 1, "the answer never runs the settled turn again"
+    assert sup.node_status(eid, "audit")[-1] == "completed"
+    assert [t["state"] for t in sup.ledger().snapshot(eid)["turns"]] == ["completed"]
 
 
 def test_one_role_per_step(pi):
@@ -235,14 +239,20 @@ def test_one_role_per_step(pi):
     assert FakeBox.STARTS == []
 
 
-def test_cancel_while_waiting_closes_the_wait(pi):
+def test_cancel_while_waiting_closes_the_wait(pi, monkeypatch):
+    # The wait lets the worker go (C7), so the cancel finds the run parked: the parked run's
+    # cancel ends its Pi conversations, with the switch on as it is wherever Pi steps run.
+    monkeypatch.setenv("TEMPER_PI_AGENT", "1")
     eid = sup.start(pi.client, "pi_talk", pi.ws)
     w = sup.open_wait(eid, "owner")
     assert pi.client.post(f"/api/runs/{eid}/cancel").status_code in (200, 202)
     sup.wait_ended(eid)
-    snap = sup.ledger().snapshot(eid)
+    # The parked run's cancel ends the attempt first (its compare-and-set), then the ledger.
+    snap = sup.wait_for(
+        lambda: (s := sup.ledger().snapshot(eid))["waits"][0]["state"] != "open" and s,
+        what="the cancel to end the Pi conversation")
     assert [x["state"] for x in snap["waits"]] == ["cancelled"]
-    gate = [e for e in sup.events(eid) if e["id"] == w["event_id"]][0]
+    gate = [e for e in sup.events(eid) if e["id"] == w["ask_event_id"]][0]
     assert gate["status"] == "rejected"
     assert sup.approve(pi.client, eid, w["gate_name"], "too late").status_code == 404
 
@@ -252,16 +262,13 @@ def test_an_owner_wait_is_answered_once_through_the_gate_engine(pi):
     a double click) gets a 409 and the role hears only the first."""
     eid = sup.start(pi.client, "pi_talk", pi.ws)
     w = sup.open_wait(eid, "owner")
-    body = {"response": "What was the word?", "event_id": w["event_id"]}
+    body = {"response": "What was the word?", "event_id": w["ask_event_id"]}
     first = pi.client.post(f"/api/runs/{eid}/approve/{w['gate_name']}", json=body)
     assert first.status_code == 200, first.text
     again = pi.client.post(f"/api/runs/{eid}/approve/{w['gate_name']}",
                            json={**body, "response": "a second answer"})
     assert again.status_code == 409
-    owner2 = sup.wait_for(lambda: next((x for x in sup.ledger().snapshot(eid)["waits"]
-                                        if x["state"] == "open" and x["event_recorded"]
-                                        and x["wait_id"] != w["wait_id"]), None),
-                          what="the next owner wait")
+    owner2 = sup.open_wait(eid, "owner", other_than=w["wait_id"])
     messages = [m["body"] for m in sup.ledger().snapshot(eid)["messages"]]
     assert "What was the word?" in messages and "a second answer" not in messages
     assert owner2["gate_name"] != w["gate_name"], "every wait has its own name"
@@ -269,15 +276,66 @@ def test_an_owner_wait_is_answered_once_through_the_gate_engine(pi):
     assert _run_status(eid) == "completed"
 
 
-def test_a_gate_steps_resume_never_takes_a_pi_wait():
+def test_a_gate_steps_resume_never_takes_a_pi_wait(pi):
     """A gate step sorting out its earlier waits on resume (adopt one, retire the rest as
-    replaced) never matches a Pi step's waits: their names are their own."""
+    replaced) never matches a Pi step's waits: a gate reads the waits named after it, and a
+    Pi wait's name is its own (``<step>~ask-<wait id>``), even at the same step path."""
+    from temper_ai.observability.recorder import gate_events
     from temper_ai.stage.gate import earlier_waits
 
-    pi_wait = {"id": "e1", "status": "waiting",
-               "data": {"name": "talk~wait-0123456789ab", "gate": True, "type": "pi_wait"}}
-    gate = {"id": "e2", "status": "waiting",
-            "data": {"name": "talk", "gate": True, "gate_path": "talk", "gate_round": 1}}
-    for history, path in (([pi_wait, gate], "talk"), ([pi_wait], "talk")):
-        got = earlier_waits(history, path, "talk")
-        assert pi_wait not in got.retire and got.adopt is not pi_wait and got.answer is None
+    eid = sup.start(pi.client, "pi_talk", pi.ws)
+    w = sup.open_wait(eid, "owner")
+    [pi_wait] = [e for e in gate_events(eid) if e["id"] == w["ask_event_id"]]
+    assert (pi_wait["data"]["gate_path"], pi_wait["data"]["type"]) == ("talk", "step_wait")
+    history = gate_events(eid, "talk")
+    assert pi_wait["id"] not in [e["id"] for e in history]
+    got = earlier_waits(history, "talk", "talk")
+    assert (got.answer, got.adopt, got.retire) == (None, None, [])
+    sup.approve(pi.client, eid, w["gate_name"], "done")
+    assert _run_status(eid) == "completed"
+
+
+_PIN_IN_A_NEW_PROCESS = """
+import json, sys
+from types import SimpleNamespace
+from temper_ai.pi_agent.host import pin_for
+from temper_ai.stage.loader import GraphLoader
+from temper_ai.stage.models import NodeConfig
+
+class Store:
+    def get(self, name, config_type):
+        return {"agent": {"name": "scout_talk", "type": "pi", "role": "scout",
+                          "provider": "openai-codex", "model": "gpt-6.1-sol",
+                          "thinking": "medium", "tools": ["Read"], "add_ons": [],
+                          "message": "Read note.txt and tell me its first word."}}
+
+node = GraphLoader(config_store=Store())._resolve_agent_node(NodeConfig.from_dict(
+    {"name": "talk", "type": "agent", "agent": "scout_talk", "depends_on": ["brief"]}))
+box = SimpleNamespace(pi_version="0.87.1", image="img", add_ons={},
+                      routes={"openai-codex": SimpleNamespace(extension=None, host="h")},
+                      identity_extension=sys.argv[1])
+print(json.dumps(pin_for(box, node.agent_config, workflow="w"), sort_keys=True))
+"""
+
+
+def test_the_settings_pin_is_the_same_in_every_worker_process(tmp_path):
+    """An answered wait carries the run on in a new worker process, which reopens the Pi
+    conversation only if its settings pin matches the first worker's. The pin is taken from
+    the step's config as the real loader resolves it -- which carries the node's
+    ``_KNOWN_FIELDS`` set, printed in an order that changes with each process's string-hash
+    salt -- so three processes with three hash seeds must agree (C7's rehearsal found it)."""
+    import os
+    import subprocess
+    import sys
+
+    (tmp_path / "identity").mkdir()
+    (tmp_path / "identity" / "index.ts").write_text("export {}\n")
+    pins = set()
+    for seed in ("1", "2", "3"):
+        env = {**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": str(sup.WORKTREE)}
+        out = subprocess.run([sys.executable, "-c", _PIN_IN_A_NEW_PROCESS,
+                              str(tmp_path / "identity")],
+                             cwd=sup.WORKTREE, env=env, capture_output=True, text=True,
+                             timeout=60, check=True)
+        pins.add(out.stdout.strip())
+    assert len(pins) == 1, "the same settings gave different pins in different processes"

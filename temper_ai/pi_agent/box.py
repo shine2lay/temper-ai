@@ -336,7 +336,15 @@ def _active_branch(entries: list[dict]) -> list[dict]:
 
 
 class UnixServer:
-    """A Unix socket server, one thread per connection; handler errors are swallowed."""
+    """A Unix socket server, one thread per connection; handler errors are swallowed.
+
+    :meth:`close` ends every thread it started -- the accept loop and each connection's -- so
+    none is left behind in the process that ran the box (the server itself, in in-process
+    mode: one box per turn, three servers per team turn; C7).
+    """
+
+    #: How long :meth:`close` waits for its threads to end, all together.
+    JOIN_SECONDS = 5.0
 
     def __init__(self, path: Path, handler: Callable[[socket.socket], None]):
         self.path = path
@@ -345,7 +353,11 @@ class UnixServer:
         self.sock.bind(str(path))
         os.chmod(path, 0o600)
         self.sock.listen(32)
-        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self._lock = threading.Lock()
+        self._closed = False
+        self._conns: dict[socket.socket, threading.Thread] = {}
+        self.thread = threading.Thread(target=self._serve, daemon=True,
+                                       name=f"pi-box-{path.stem}-accept")
         self.thread.start()
 
     def _serve(self) -> None:
@@ -354,7 +366,14 @@ class UnixServer:
                 conn, _ = self.sock.accept()
             except OSError:
                 return
-            threading.Thread(target=self._one, args=(conn,), daemon=True).start()
+            with self._lock:
+                if self._closed:
+                    conn.close()
+                    return
+                worker = threading.Thread(target=self._one, args=(conn,), daemon=True,
+                                          name=f"pi-box-{self.path.stem}-conn")
+                self._conns[conn] = worker
+            worker.start()
 
     def _one(self, conn: socket.socket) -> None:
         try:
@@ -362,16 +381,34 @@ class UnixServer:
         except Exception:  # noqa: BLE001 - a broken client never takes the host down
             pass
         finally:
+            with self._lock:
+                self._conns.pop(conn, None)
             try:
                 conn.close()
             except OSError:
                 pass
 
-    def close(self) -> None:
+    def close(self, timeout: float | None = None) -> None:
+        """Stop accepting, cut every open connection, and wait (at most ``timeout`` seconds,
+        default :attr:`JOIN_SECONDS`) for the threads to end. Idempotent; never raises."""
+        with self._lock:
+            self._closed = True
+            open_ = dict(self._conns)
+        # On Linux closing a listening socket does not wake a thread blocked in accept();
+        # shutting it down does. A connection's shutdown ends its handler's reads.
+        for s in (self.sock, *open_):
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
         try:
             self.sock.close()
         except OSError:
             pass
+        deadline = time.monotonic() + (self.JOIN_SECONDS if timeout is None else timeout)
+        for thread in (self.thread, *open_.values()):
+            if thread is not threading.current_thread():
+                thread.join(max(0.0, deadline - time.monotonic()))
 
 
 def read_line(conn: socket.socket, limit: int = 256, timeout: float = 30) -> str:

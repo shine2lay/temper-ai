@@ -4,7 +4,8 @@ A Pi workflow is one whose config contains the Pi agent step (``type: pi``, see
 docs/pi-agent.md), at any depth. Three things are different for them (docs/gates.md,
 "Pi workflows"):
 
-* a gate does not hold its worker while it waits: the run saves where it is and lets the
+* a gate does not hold its worker while it waits, nor does a wait inside a step (the Pi
+  step's own included, stage/step_waits.py): the run saves where it is and lets the
   worker go, and the owner's answer carries it on (runner/parked.py);
 * Resume works before the first step has finished (a Pi run often starts by asking);
 * every loop must end the run red when it runs out of rounds (``on_max_loops: fail``),

@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -354,6 +355,47 @@ def test_a_denied_handoff_fault_hands_over_nothing(tmp_path, short_root):
         assert _talk(box.sock_dir / "handoff.sock", b"openai-codex\n") == b""
     finally:
         assert box.close()["handoffs"] == 0
+
+
+class _Team:
+    """A team member's message channel, as far as the box's team socket needs one."""
+
+    reachable = ["checker"]
+
+    def handle(self, payload: dict) -> dict:
+        return {"ok": True}
+
+
+def test_closed_boxes_leave_no_thread_behind(tmp_path, short_root):
+    """F3 (T4T5 and PARK land checks; C7): in in-process mode every turn's box runs in the
+    server, so its socket servers must end every thread they started. Ten boxes -- five a single
+    Pi step's turn (two sockets), five a team turn's (three) -- each with a client still
+    connected to every socket, are closed: the thread count is back where it started, and no
+    close waits out its time limit."""
+    before = set(threading.enumerate())
+    for n in range(10):
+        team = _Team() if n % 2 else None
+        box = WorkerBox(sup.box_config(tmp_path / f"c{n}", socket_root=str(short_root)),
+                        sup.spec(tmp_path / f"p{n}", team=team), Redactor(),
+                        owner_token=lambda _p: "", connector=lambda _host: socket.socketpair()[0])
+        mine = set(threading.enumerate())
+        box._open_sockets()
+        clients = []
+        for server in box.servers:
+            c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            c.connect(str(server.path))
+            clients.append(c)
+        assert len(clients) == (3 if team else 2)
+        # An accept thread and a connection thread per socket.
+        sup.wait_for(lambda: len(set(threading.enumerate()) - mine) >= 2 * len(clients),
+                     timeout=5, what="every socket's connection thread started")
+        t0 = time.monotonic()
+        box.close()
+        assert time.monotonic() - t0 < 5.0, "a close waited out its time limit"
+        for c in clients:
+            c.close()
+    left = [t.name for t in set(threading.enumerate()) - before]
+    assert left == [], left
 
 
 def test_account_ids_are_found_inside_a_jwt():

@@ -992,6 +992,16 @@ def _merge_node_recursive(*, latest: dict, older: dict) -> dict:
                     kid_by_name[key] = _merge_node_recursive(latest=existing, older=kid)
         merged["child_nodes"] = list(kid_by_name.values()) or None
 
+    # A Pi step's turns: every attempt's turns stay, each its own agent, oldest first. An
+    # owner wait between two turns lets the worker go, so the next turn runs in a new attempt
+    # (docs/pi-agent.md), and the turns share the step's name.
+    older_turns, latest_turns = _pi_turns(older), _pi_turns(latest)
+    if older_turns:
+        by_id = {a["id"]: a for a in older_turns + latest_turns}  # latest wins per turn
+        turns = sorted(by_id.values(), key=lambda a: a.get("start_time") or "")
+        merged["agent"], merged["agents"] = (turns[0], None) if len(turns) == 1 else (None, turns)
+        return merged
+
     # Merge leaf agents by agent_name. Latest's data wins per agent.
     older_agents = older.get("agents") or []
     latest_agents = latest.get("agents") or []
@@ -1010,6 +1020,13 @@ def _merge_node_recursive(*, latest: dict, older: dict) -> dict:
         merged["agents"] = list(agent_by_name.values())
 
     return merged
+
+
+def _pi_turns(node: dict) -> list[dict]:
+    """The Pi turns on one attempt's node, whether one (``agent``) or several (``agents``)."""
+    agents = node.get("agents") or ([node["agent"]] if node.get("agent") else [])
+    return [a for a in agents
+            if ((a.get("agent_config_snapshot") or {}).get("agent") or {}).get("type") == "pi"]
 
 
 def _build_node_execution(node_event: dict, all_events: list[dict]) -> dict:

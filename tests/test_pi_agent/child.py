@@ -1,6 +1,7 @@
 """The crash worker for the Pi step's restart test: start one run in a private in-process
 Temper, then SIGKILL itself while the Pi turn is running (after the prompt reached Pi), or
--- with ``"die_at": "owner_wait"`` -- once the step waits for the owner after its turn.
+-- with ``"die_at": "owner_wait"`` -- once the step has asked the owner after its turn and
+the run has let its worker go (parked, C7).
 
 Run as ``python -m tests.test_pi_agent.child '<json>'`` by the restart test only. The JSON
 says ``{"db_url": "sqlite:////.../pi.db", "workflow": "pi_talk", "workspace": "...",
@@ -62,9 +63,12 @@ def main(raw: str) -> int:
     say(event="started", execution_id=eid, pid=os.getpid())
     ANNOUNCED.set()
     if at_wait:
-        wait = sup.open_wait(eid, "owner", timeout=float(args.get("give_up_s", 30)))
-        say(event="killing", wait_id=wait["wait_id"], pid=os.getpid(),
-            net_attempts=guard.attempts)
+        give_up = float(args.get("give_up_s", 30))
+        wait = sup.open_wait(eid, "owner", timeout=give_up)
+        sup.wait_for(lambda: (sup.attempts(eid)[-1]["data"] or {}).get("parked"), give_up,
+                     what="the run to let its worker go")
+        say(event="killing", wait_id=wait["wait_id"], ask_event_id=wait["ask_event_id"],
+            pid=os.getpid(), net_attempts=guard.attempts)
         os.kill(os.getpid(), signal.SIGKILL)
     time.sleep(float(args.get("give_up_s", 30)))
     say(event="gave_up", execution_id=eid)

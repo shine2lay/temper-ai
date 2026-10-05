@@ -140,8 +140,8 @@ def test_an_answer_in_the_first_instant_of_a_pi_wait_is_kept_and_carries_the_run
     assert sup.wait_for(answered_or_lost, what="the first instant's answer") == "answered", (
         f"the run let go at a wait the owner had answered: {first.when}, "
         f"{first.reply.json() if first.reply is not None else None}")
-    pw.finish_pi(c, eid)
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
+    n = pw.finish_pi(c, eid)  # the Pi step's own wait lets go too (C7)
+    assert [a["status"] for a in pw.wait_ended(eid, n)] == ["parked", "parked", "completed"]
     assert first.reply.status_code == 200, first.reply.text
 
     (wait,) = pw.waits(eid, "check")

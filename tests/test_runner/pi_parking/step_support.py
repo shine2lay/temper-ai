@@ -272,9 +272,10 @@ def held(state: Any, eid: str, *, before: set[int], test: str, mode: str = "inpr
     and child processes.
 
     A pytest worker runs many tests in one process, and threads an earlier test left behind
-    are still there (a Pi box's socket servers stay blocked in ``accept()`` after their
-    socket is closed). Those were alive before this run started, so they cannot be held for
-    it: they are listed apart, as ``older_threads_in_temper_code``.
+    may still be there. Those were alive before this run started, so they cannot be held for
+    it: they are listed apart, as ``older_threads_in_temper_code``. (A Pi box's socket
+    servers used to be among them, blocked in ``accept()`` after their socket was closed;
+    since C7 a closed box takes its threads down with it.)
 
     Written to the evidence file when ``PW_PARK_EVIDENCE`` names one.
     """
@@ -320,10 +321,17 @@ def step_waits(eid: str, path: str) -> list[dict]:
             and (e.get("data") or {}).get("gate_path") == path]
 
 
-def checkpoints(client, eid: str, kind: str) -> list[dict]:
-    """The run's checkpoints of one kind (``step_parked``, ``gate_parked``, ...)."""
+#: The Pi step in these workflows (tests/test_pi_agent/support.py names it so).
+PI_STEP = "talk"
+
+
+def checkpoints(client, eid: str, kind: str, *, pi: bool = False) -> list[dict]:
+    """The run's checkpoints of one kind (``step_parked``, ``gate_parked``, ...). The Pi
+    step's own waits park too (C7); their ``step_parked`` checkpoints are left out unless
+    ``pi`` is set, so a test reads the asking step's alone."""
     r = client.get(f"/api/runs/{eid}/checkpoints")
     assert r.status_code == 200, r.text
     body = r.json()
     rows = body.get("checkpoints", body) if isinstance(body, dict) else body
-    return [c for c in rows if c.get("event_type") == kind]
+    return [c for c in rows if c.get("event_type") == kind
+            and (pi or (c.get("metadata") or {}).get("path") != PI_STEP)]

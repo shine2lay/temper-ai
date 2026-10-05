@@ -55,6 +55,7 @@ from temper_ai.pi_agent.route.router import (
     route,
     route_reply,
 )
+from temper_ai.stage.step_waits import wait_name
 
 logger = logging.getLogger(__name__)
 
@@ -190,9 +191,11 @@ waits = sa.Table(
     sa.Column("run_id", sa.String(64), nullable=False, index=True),
     sa.Column("host_path", sa.String(255), nullable=False),
     sa.Column("kind", sa.String(16), nullable=False),
+    # The name ``ask_owner`` files the wait's events under (``<step path>~ask-<wait id>``):
+    # a wait's events are found by it (C7).
     sa.Column("gate_name", sa.String(255), nullable=False),
-    # Pre-assigned, so a crash between writing the wait and recording its event can never
-    # produce a second event for the same wait.
+    # Not read since C7 (a wait's events are ask_owner's own, found by gate_name); still
+    # written, because a database made before keeps the column NOT NULL.
     sa.Column("event_id", sa.String(64), nullable=False),
     # open | decided | cancelled
     sa.Column("state", sa.String(16), nullable=False),
@@ -202,6 +205,7 @@ waits = sa.Table(
     sa.Column("decided_attempt", sa.String(64)),
     sa.Column("opened_at", sa.String(40)),
     sa.Column("decided_at", sa.String(40)),
+    # Not read or set since C7; kept for databases made before (NOT NULL).
     sa.Column("event_recorded", sa.Boolean, nullable=False, default=False),
 )
 
@@ -290,8 +294,10 @@ def _new_id() -> str:
 
 
 def gate_name_for(host_path: str, wait_id: str) -> str:
-    """A gate name no other wait can share: a stale approval of an old wait finds nothing."""
-    return f"{host_path}~wait-{wait_id[:12]}"
+    """The wait's name: the one ``ask_owner`` asks it under (``<step path>~ask-<wait id>``,
+    stage/step_waits.py), so the row names its events from the start. No other wait shares
+    it: a stale approval of an old wait finds nothing."""
+    return wait_name(host_path, wait_id)
 
 
 def team_claim_key(run_id: str, host_path: str) -> str:
@@ -1011,11 +1017,6 @@ class Ledger:
                 waits.c.run_id == run_id, waits.c.host_path == host_path,
                 waits.c.state == "open").order_by(waits.c.opened_at)).mappings().all()
             return [dict(r) for r in rows]
-
-    def mark_event_recorded(self, wait_id: str) -> None:
-        with _LOCK, self._tx() as conn:
-            conn.execute(waits.update().where(waits.c.wait_id == wait_id).values(
-                event_recorded=True))
 
     def decide_wait(self, wait_id: str, decision: dict, attempt_id: str,
                     deliveries: Sequence[tuple[str, str]] = (),

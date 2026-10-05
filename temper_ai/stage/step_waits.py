@@ -25,9 +25,9 @@ An answer belongs to the step's current go: once the step finishes, its answers 
 worker stops keeps them: the run carrying it on, a Resume, or the pick-up after a restart
 runs it again and it reads them again. docs/gates.md "Waits inside a step".
 
-The Pi step's own waits (``<path>~wait-<id>``, temper_ai/pi_agent/host.py) do not come
-through here: they still hold their worker (task #39 builds the path; moving those onto it
-is a later task).
+The Pi step's own waits come through here too (temper_ai/pi_agent/host.py, C7): each is
+written first as a row in the Pi ledger and asked under that row's id, through
+temper_ai/pi_agent/owner_waits.py.
 """
 
 from __future__ import annotations
@@ -64,8 +64,8 @@ STEP_PARKED = "step_parked"
 #: The checkpoint a step's wait saves when it holds its worker (a gate's is ``gate_waiting``).
 STEP_WAITING = "step_waiting"
 
-#: A wait id: letters, digits, dot, dash, underscore; no ``~``, so it can never be taken for
-#: the Pi step's own ``~wait-`` waits.
+#: A wait id: letters, digits, dot, dash, underscore; no ``~``, so a wait's name
+#: (``<path>~ask-<wait id>``) reads one way only.
 WAIT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 

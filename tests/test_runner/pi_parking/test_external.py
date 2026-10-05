@@ -5,7 +5,6 @@ the next box through Resume's own path (temper_ai/runner/parked.py)."""
 from __future__ import annotations
 
 import argparse
-import threading
 from datetime import timedelta
 
 import pytest
@@ -56,21 +55,25 @@ def _row(eid: str) -> dict:
 
 
 def _box(ext, eid: str, monkeypatch, *, finish_pi: bool = False) -> int:
-    """One box for the run, as the worker starts it: claim the queued row, run to the end."""
+    """One box for the run, as the worker starts it: claim the queued row, run to the end.
+
+    ``finish_pi``: the box comes to the Pi step's own wait, which lets go too (C7), so it
+    exits there; the wait is answered ``done``, the reaper frees and queues the run, and the
+    box that carries it on runs. Returns that box's exit code."""
     from temper_ai.cli.run_workflow import cmd_run_workflow
     from temper_ai.cli.watch_queue import _claim_row
 
     assert _row(eid)["status"] == "queued"
     assert _claim_row(eid, spawner_kind="docker")
     monkeypatch.setenv("TEMPER_RUN_CONTAINER", f"temper-run-{eid}")
-    helper = None
-    if finish_pi:
-        helper = threading.Thread(target=pw.finish_pi, args=(ext.client, eid), daemon=True)
-        helper.start()
     code = cmd_run_workflow(argparse.Namespace(execution_id=eid, config_dir=None, debug=False))
-    if helper is not None:
-        helper.join(timeout=20)
-    return code
+    if not finish_pi:
+        return code
+    last = pw.attempts(eid)[-1]
+    assert code == 0 and last["status"] == "waiting" and pw.parked(last)["path"] == "talk"
+    pw.answer_pi(ext.client, eid)
+    _reaper().tick()
+    return _box(ext, eid, monkeypatch)
 
 
 def _reaper():
@@ -103,7 +106,7 @@ def test_the_box_exits_at_the_approval_and_the_answer_queues_the_next_one(ext, m
     assert again.status_code == 409 and again.json()["detail"]["reason"] == "already_answered"
 
     assert _box(ext, eid, monkeypatch, finish_pi=True) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]
     assert _row(eid)["status"] == "completed"
     assert pw.RAN == {"brief": 1, "check": 1} and len(FakeBox.STARTS) == 1
 
@@ -131,7 +134,7 @@ def test_an_answer_while_the_worker_is_down_carries_on_when_it_is_back(ext, monk
     assert row["status"] == "queued" and row["meta"].get("start") == "resume"
     _reaper().tick()  # a queued row with no box yet is the queue's, not the reaper's
     assert _box(ext, eid, monkeypatch, finish_pi=True) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]
     assert pw.RAN == {"brief": 1, "check": 1}
 
 
@@ -152,7 +155,7 @@ def test_a_first_node_wait_in_a_box_resumes_without_a_checkpoint(ext, monkeypatc
     r = pw.approve(c, eid, "ask", event_id=asked["event_id"])
     assert r.status_code == 200 and r.json()["carries_on"] is True, r.text
     assert _box(ext, eid, monkeypatch, finish_pi=True) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked"] * 3 + ["completed"]
     assert pw.RAN == {"ask": 1, "audit": 1}
 
 
@@ -204,4 +207,4 @@ def test_a_box_wait_of_days_is_left_alone_by_restarts_and_pick_up(ext, monkeypat
     gate = pw.open_gate(c, eid, "check")
     assert pw.approve(c, eid, "check", event_id=gate["event_id"]).json()["carries_on"] is True
     assert _box(ext, eid, monkeypatch, finish_pi=True) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]

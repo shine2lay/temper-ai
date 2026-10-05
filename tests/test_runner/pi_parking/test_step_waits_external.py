@@ -60,10 +60,10 @@ def test_the_box_exits_where_the_step_asks_and_the_answer_queues_the_next_one(sw
     c = swx.client
     eid = sup.start(c, "sw_after_pi", swx.ws)
     assert _box(swx, eid, monkeypatch, finish_pi=True) == 0
-    wait = _let_go(swx, eid, "ask", 1, "box_exits", attempt=1)
+    wait = _let_go(swx, eid, "ask", 1, "box_exits", attempt=2)
     assert [cp["id"] for cp in ask.checkpoints(c, eid, "step_parked")] == [wait["event_id"]]
     _reaper().tick()  # nothing more to do: no answer yet
-    assert _row(eid)["status"] == "waiting" and len(pw.attempts(eid)) == 1
+    assert _row(eid)["status"] == "waiting" and len(pw.attempts(eid)) == 2
     seen = pw.detail(c, eid)
     assert seen["status"] == "waiting" and seen.get("waiting_on_you") is True
     assert pw.listed(c, eid)["status"] == "waiting"
@@ -78,7 +78,7 @@ def test_the_box_exits_where_the_step_asks_and_the_answer_queues_the_next_one(sw
     assert repeat.status_code == 200 and repeat.json()["repeated"] is True, repeat.text
 
     assert _box(swx, eid, monkeypatch) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]
     assert _row(eid)["status"] == "completed"
     assert ask.RUNS["ask"] == 2 and ask.WORK == {("ask", 1): 1}
     assert ask.READ == [("ask", "pause-after-round-1", "go on")]
@@ -89,11 +89,11 @@ def test_each_round_lets_go_in_its_own_box_with_its_own_checkpoint(swx, monkeypa
     c = swx.client
     eid = sup.start(c, "sw_rounds", swx.ws)
     assert _box(swx, eid, monkeypatch, finish_pi=True) == 0
-    first = _let_go(swx, eid, "ask", 1, "box_rounds", attempt=1)
+    first = _let_go(swx, eid, "ask", 1, "box_rounds", attempt=2)
     assert pw.approve(c, eid, ask.name_of("ask", 1),
                       event_id=first["event_id"]).json()["carries_on"] is True
     assert _box(swx, eid, monkeypatch) == 0
-    second = _let_go(swx, eid, "ask", 2, "box_rounds", attempt=2)
+    second = _let_go(swx, eid, "ask", 2, "box_rounds", attempt=3)
     stale = pw.approve(c, eid, ask.name_of("ask", 1), event_id=first["event_id"],
                        request_id="old-tab")
     assert stale.status_code == 409 and stale.json()["detail"]["reason"] == "already_answered"
@@ -102,7 +102,7 @@ def test_each_round_lets_go_in_its_own_box_with_its_own_checkpoint(swx, monkeypa
     assert pw.approve(c, eid, ask.name_of("ask", 2),
                       event_id=second["event_id"]).json()["carries_on"] is True
     assert _box(swx, eid, monkeypatch) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked"] * 3 + ["completed"]
     assert ask.RUNS["ask"] == 3 and ask.WORK == {("ask", 1): 1, ("ask", 2): 1}
     assert pw.RAN == {"brief": 1, "ship": 1} and len(FakeBox.STARTS) == 1
 
@@ -136,7 +136,7 @@ def test_a_first_step_asking_in_a_box_survives_worker_and_server_restarts(swx, m
     row = _row(eid)
     assert row["status"] == "queued" and row["meta"].get("start") == "resume"
     assert _box(swx, eid, monkeypatch, finish_pi=True) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]
     assert ask.RUNS["ask"] == 2 and ask.READ == [("ask", "pause-after-round-1", "go on")]
     assert pw.RAN == {"audit": 1} and len(FakeBox.STARTS) == 1
 
@@ -153,7 +153,7 @@ def test_an_answer_while_the_worker_is_down_carries_on_when_it_is_back(swx, monk
     r = pw.approve(c, eid, ask.name_of("ask"), event_id=wait["event_id"])
     assert r.status_code == 200, r.text
     assert r.json()["carries_on"] is True and r.json()["needs_resume"] is False, r.text
-    assert _row(eid)["status"] == "running" and len(pw.attempts(eid)) == 1
+    assert _row(eid)["status"] == "running" and len(pw.attempts(eid)) == 2
     assert eid not in [m["execution_id"] for m in reconcile_and_report(started_before=utcnow())]
 
     _reaper().tick()
@@ -161,7 +161,7 @@ def test_an_answer_while_the_worker_is_down_carries_on_when_it_is_back(swx, monk
     assert row["status"] == "queued" and row["meta"].get("start") == "resume"
     _reaper().tick()  # a queued row with no box yet is the queue's, not the reaper's
     assert _box(swx, eid, monkeypatch) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]
     assert ask.RUNS["ask"] == 2 and ask.READ == [("ask", "pause-after-round-1", "go on")]
 
 
@@ -173,10 +173,10 @@ def test_cancel_a_step_wait_whose_box_is_gone(swx, monkeypatch):
     r = c.post(f"/api/runs/{eid}/cancel", json={"reason": "no longer needed"})
     assert r.status_code == 200 and r.json()["status"] == "cancelled", r.text
     assert _row(eid)["status"] == "cancelled"
-    assert [a["status"] for a in pw.attempts(eid)] == ["cancelled"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "cancelled"]
     assert ask.step_waits(eid, "ask")[0]["status"] == "rejected"
     _reaper().tick()
-    assert _row(eid)["status"] == "cancelled" and len(pw.attempts(eid)) == 1
+    assert _row(eid)["status"] == "cancelled" and len(pw.attempts(eid)) == 2
     assert ask.RUNS["ask"] == 1 and pw.RAN == {"brief": 1}
 
 
@@ -191,7 +191,7 @@ def test_reject_while_the_box_is_letting_go_ends_it_once_the_box_is_gone(swx, mo
     assert out["status"] == "cancelling", out
     _reaper().tick()
     assert _row(eid)["status"] == "cancelled"
-    assert [a["status"] for a in pw.attempts(eid)] == ["cancelled"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "cancelled"]
     (asked,) = ask.step_waits(eid, "ask")
     assert asked["status"] == "rejected"
     assert "Rejected in Slack by Owner" in str(asked["data"].get("gate_response"))
@@ -207,22 +207,22 @@ def test_a_step_in_a_stage_waits_days_in_boxes_and_carries_on(swx, monkeypatch):
     c = swx.client
     eid = sup.start(c, "sw_stage", swx.ws)
     assert _box(swx, eid, monkeypatch, finish_pi=True) == 0
-    first = _let_go(swx, eid, "team.asker", 1, "box_stage_days", attempt=1)
+    first = _let_go(swx, eid, "team.asker", 1, "box_stage_days", attempt=2)
     _age(eid, timedelta(days=4))
     marked = reconcile_and_report(started_before=utcnow())
     assert eid not in [m["execution_id"] for m in marked]
     assert eid not in str(sup.restart_service(now=utcnow(), marked=marked))
     assert parked.carry_on_at_startup() == []
     _reaper().tick()
-    assert _row(eid)["status"] == "waiting" and len(pw.attempts(eid)) == 1
+    assert _row(eid)["status"] == "waiting" and len(pw.attempts(eid)) == 2
 
     assert pw.approve(c, eid, ask.name_of("team.asker", 1),
                       event_id=first["event_id"]).json()["carries_on"] is True
     assert _box(swx, eid, monkeypatch) == 0
-    second = _let_go(swx, eid, "team.asker", 2, "box_stage_days", attempt=2)
+    second = _let_go(swx, eid, "team.asker", 2, "box_stage_days", attempt=3)
     assert pw.approve(c, eid, ask.name_of("team.asker", 2),
                       event_id=second["event_id"]).json()["carries_on"] is True
     assert _box(swx, eid, monkeypatch) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked"] * 3 + ["completed"]
     assert ask.RUNS["asker"] == 3 and ask.WORK == {("asker", 1): 1, ("asker", 2): 1}
     assert pw.RAN == {"brief": 1, "ship": 1}

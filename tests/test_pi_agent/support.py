@@ -29,7 +29,9 @@ from temper_ai.shared.types import AgentResult, Status
 from temper_ai.stage.agent_node import AgentNode
 from temper_ai.stage.models import NodeConfig
 
-ACTIVE = ("running", "queued", "waiting", "pending")
+# An attempt carried on ("parked") is followed by the next one within moments (C7: a Pi
+# step's owner wait lets the worker go, and the answer carries the run on).
+ACTIVE = ("running", "queued", "waiting", "pending", "parked")
 PI_VERSION = "0.87.1"
 IMAGE = "sha256:" + "0" * 64
 ROLE = "scout"
@@ -564,11 +566,26 @@ def ledger():
     return led
 
 
-def open_wait(eid: str, kind: str | None = None, timeout: float = 20.0) -> dict:
+def asked_event(eid: str, wait: dict) -> dict | None:
+    """The event a Pi wait was asked under (``ask_owner``'s, named after the wait), the
+    latest still waiting; None before the step asked it."""
+    found = [e for e in events(eid, event_type="stage.started")
+             if (e["data"] or {}).get("name") == wait["gate_name"] and e["status"] == "waiting"]
+    return found[-1] if found else None
+
+
+def open_wait(eid: str, kind: str | None = None, timeout: float = 20.0,
+              other_than: str | None = None) -> dict:
+    """An open Pi wait the step has asked (its event is waiting), with that event's id as
+    ``ask_event_id``. ``other_than``: a wait id to skip (the one just answered)."""
     def find():
         for w in ledger().snapshot(eid)["waits"]:
-            if w["state"] == "open" and w["event_recorded"] and (kind is None or w["kind"] == kind):
-                return w
+            if (w["state"] != "open" or (kind is not None and w["kind"] != kind)
+                    or w["wait_id"] == other_than):
+                continue
+            ev = asked_event(eid, w)
+            if ev is not None:
+                return {**w, "ask_event_id": ev["id"]}
         return None
     return wait_for(find, timeout, what=f"an open {kind or ''} wait in {eid}")
 
@@ -699,15 +716,28 @@ class NetGuard:
         return self
 
 
+def _run_threads_left() -> list[threading.Thread]:
+    return [t for t in threading.enumerate()
+            if t.name.startswith("temper-run-") and t.is_alive()]
+
+
 def stop_running(state) -> None:
-    for entry in list(state.running.values()):
-        cancel = getattr(entry, "set", None) or getattr(getattr(entry, "cancel_event", None),
-                                                        "set", None)
-        if cancel:
-            cancel()
+    """Cancel what still runs, then wait for every run thread to end -- also one that has
+    let go at a wait (no longer in ``state.running``) but is still seeing to its parked run:
+    the test's database is closed right after, under any thread still using it."""
     end = time.monotonic() + 10
-    while state.running and time.monotonic() < end:
-        time.sleep(0.05)
+    while time.monotonic() < end:
+        for entry in list(state.running.values()):
+            cancel = getattr(entry, "set", None) or getattr(
+                getattr(entry, "cancel_event", None), "set", None)
+            if cancel:
+                cancel()
+        left = _run_threads_left()
+        if not state.running and not left:
+            return
+        for thread in left:
+            thread.join(timeout=0.05)
+        time.sleep(0.01)
 
 
 _ = threading  # used by tests through this module

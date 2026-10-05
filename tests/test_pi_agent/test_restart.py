@@ -49,41 +49,47 @@ def test_a_worker_killed_mid_turn_comes_back_as_the_same_run_and_session(pi):
     assert sup.wait_ended(eid, 2)[-1]["status"] == "completed"
 
 
-def test_an_owner_answer_given_while_the_run_is_down_is_used_on_pick_up(pi):
-    """The gate engine keeps an approval of a run that is not running (needs_resume); the
-    picked-up step reads it from its wait's event and goes on, asking nothing again."""
+def test_an_owner_answer_given_while_the_run_is_down_is_used_on_pick_up(pi, monkeypatch):
+    """The Pi step's owner wait lets the worker go (C7), so a worker that dies while the run
+    waits loses nothing: the run is not marked interrupted, an answer given while nothing
+    can act on it is kept, and start-up carries the run on from the parked step -- the
+    settled turn is not run again, the answer starts the next turn in the same session, and
+    nothing is asked twice."""
+    from temper_ai.api import routes
+    from temper_ai.runner import parked
+
     out = sup.crash_child(pi.url, pi.tmp, "pi_talk", pi.ws, pi.box_json, die_at="owner_wait")
     eid = out["execution_id"]
     w = sup.open_wait(eid, "owner")
     assert w["wait_id"] == out["killing"]["wait_id"]
+    assert w["ask_event_id"] == out["killing"]["ask_event_id"]
     session_id = sup.ledger().snapshot(eid)["participants"][0]["session_id"]
     starts_before = len(FakeBox.STARTS)
 
     marked = sup.reconcile_only()
-    assert eid in [m["execution_id"] for m in marked]
-    r = pi.client.post(f"/api/runs/{eid}/approve/{w['gate_name']}",
-                       json={"response": "What was the word?", "event_id": w["event_id"]})
+    assert eid not in [m["execution_id"] for m in marked], "parked: no worker was lost"
+    with monkeypatch.context() as down:  # the answer lands, then the server stops
+        down.setattr(routes, "_carry_on_parked", lambda execution_id, by: False)
+        r = pi.client.post(f"/api/runs/{eid}/approve/{w['gate_name']}",
+                           json={"response": "What was the word?",
+                                 "event_id": w["ask_event_id"]})
     assert r.status_code == 200, r.text
-    assert r.json()["needs_resume"] is True, "kept for the Resume, not lost"
-    assert len(FakeBox.STARTS) == starts_before, "nothing ran while the run was down"
+    assert r.json()["needs_resume"] is True, "kept for start-up, not lost"
+    assert len(FakeBox.STARTS) == starts_before, "nothing ran while no worker did"
 
-    picked = sup.restart_service(marked=marked)
-    assert eid in picked["picked"]
+    assert parked.carry_on_at_startup() == [eid]
     # The kept answer is used: a new turn, then a new wait (the first closes as decided).
-    owner2 = sup.wait_for(lambda: next((x for x in sup.ledger().snapshot(eid)["waits"]
-                                        if x["state"] == "open" and x["event_recorded"]
-                                        and x["wait_id"] != w["wait_id"]), None),
-                          what="the next owner wait")
+    owner2 = sup.open_wait(eid, "owner", other_than=w["wait_id"])
     snap = sup.ledger().snapshot(eid)
     assert "What was the word?" in [m["body"] for m in snap["messages"]]
     assert [s["session_id"] for s in FakeBox.STARTS[starts_before:]] == [session_id]
     first = next(x for x in snap["waits"] if x["wait_id"] == w["wait_id"])
     assert first["state"] == "decided"
-    used = sup.events(eid)
-    ev = next(e for e in used if e["id"] == w["event_id"])
-    assert ev["data"].get("gate_used_at"), "the gate engine sees the answer as used"
     sup.approve(pi.client, eid, owner2["gate_name"], "done")
-    assert sup.wait_ended(eid, 2)[-1]["status"] == "completed"
+    assert sup.wait_ended(eid, 3)[-1]["status"] == "completed"
+    ev = next(e for e in sup.events(eid) if e["id"] == w["ask_event_id"])
+    assert ev["data"].get("gate_used_at"), "used once the step completed"
+    assert parked.carry_on_at_startup() == [], "carried on once"
 
 
 def test_changed_settings_refuse_to_reopen_the_session(pi):

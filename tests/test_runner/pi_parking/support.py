@@ -155,11 +155,23 @@ def approve(client, eid: str, name: str, *, event_id: str | None = None,
     return client.post(f"/api/runs/{eid}/approve/{name}", json=body)
 
 
-def finish_pi(client, eid: str) -> None:
-    """Answer the Pi step's own "what next" wait with ``done``: the step finishes."""
+def answer_pi(client, eid: str) -> int:
+    """Answer the Pi step's own "what next" wait with ``done``; returns how many attempts the
+    run had when it was answered."""
     wait = sup.open_wait(eid, "owner")
+    n = len(attempts(eid))
     r = sup.approve(client, eid, wait["gate_name"], "done")
     assert r.status_code == 200, r.text
+    return n
+
+
+def finish_pi(client, eid: str) -> int:
+    """Answer the Pi step's own wait with ``done``: the step finishes. The wait let go of the
+    worker too (C7), so the answer carries the run on in a new attempt (in-process mode);
+    returns that attempt's number once it has started."""
+    n = answer_pi(client, eid)
+    sup.wait_for(lambda: len(attempts(eid)) > n, what=f"the answer to carry {eid} on")
+    return n + 1
 
 
 def detail(client, eid: str) -> dict:

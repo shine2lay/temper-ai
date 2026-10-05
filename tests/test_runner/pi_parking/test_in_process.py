@@ -22,8 +22,8 @@ def _gate_checkpoints(client, eid: str) -> list[dict]:
 def test_a_pi_gate_lets_go_of_the_worker_and_the_answer_carries_it_on(pw_run):
     c = pw_run.client
     eid = sup.start(c, "pw_after_pi", pw_run.ws)
-    pw.finish_pi(c, eid)
-    first = pw.wait_parked(pw_run.state, eid)
+    n = pw.finish_pi(c, eid)  # the Pi step's own wait let go too (C7)
+    first = pw.wait_parked(pw_run.state, eid, n_attempts=n)
 
     # Saved where it waits, with the wait's own id; no thread holds the run.
     gate = pw.open_gate(c, eid, "check")
@@ -40,8 +40,8 @@ def test_a_pi_gate_lets_go_of_the_worker_and_the_answer_carries_it_on(pw_run):
     r = pw.approve(c, eid, "check", event_id=gate["event_id"], request_id="tab-1")
     assert r.status_code == 200, r.text
     assert r.json()["carries_on"] is True and r.json()["needs_resume"] is False
-    attempts = pw.wait_ended(eid, 2)
-    assert [a["status"] for a in attempts] == ["parked", "completed"]
+    attempts = pw.wait_ended(eid, n + 1)
+    assert [a["status"] for a in attempts] == ["parked", "parked", "completed"]
 
     # Nothing finished ran again: one brief, one Pi turn, the gated step once, then ship.
     assert pw.RAN == {"brief": 1, "check": 1, "ship": 1}
@@ -73,24 +73,36 @@ def test_a_first_node_wait_resumes_and_is_waited_on_again_not_asked_twice(pw_run
 
     r = pw.approve(c, eid, "ask", event_id=asked["event_id"])
     assert r.status_code == 200 and r.json()["carries_on"] is True, r.text
-    pw.finish_pi(c, eid)
-    attempts = pw.wait_ended(eid, 3)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "completed"]
+    n = pw.finish_pi(c, eid)
+    attempts = pw.wait_ended(eid, n)
+    assert [a["status"] for a in attempts] == ["parked", "parked", "parked", "completed"]
     assert pw.RAN == {"ask": 1, "audit": 1} and len(FakeBox.STARTS) == 1
 
 
-def test_a_first_node_pi_step_is_handed_back_by_resume(pw_run):
-    """C6: Resume hands a first-node Pi step back to the step, as it hands any node back.
-    (L2's own rule still refuses a Pi step as a first node, so it fails again the same way.)"""
+def test_a_first_node_pi_step_parks_and_resume_waits_on_the_same_question(pw_run):
+    """C7: a Pi step may come first. Its owner wait lets the worker go under the wait's own
+    checkpoint, and Resume starts the step again from there: it waits on the same question,
+    asked once, and its settled turn never runs again."""
     c = pw_run.client
     eid = sup.start(c, "pi_first", pw_run.ws)
-    assert pw.wait_ended(eid, 1)[-1]["status"] == "failed"
+    first = pw.wait_parked(pw_run.state, eid)
+    w = sup.open_wait(eid, "owner")
+    assert pw.parked(first)["path"] == "talk" and pw.parked(first)["wait_id"] == w["wait_id"]
+    assert pw.parked(first)["event_id"] == w["ask_event_id"]
+    assert len(FakeBox.STARTS) == 1
+
     r = c.post(f"/api/runs/{eid}/resume", json={})
     assert r.status_code == 200, r.text
-    attempts = pw.wait_ended(eid, 2)
-    assert [a["status"] for a in attempts] == ["failed", "failed"]
-    assert sup.node_status(eid, "talk").count("failed") == 2, "the Pi step ran in each attempt"
-    assert FakeBox.STARTS == []
+    second = pw.wait_parked(pw_run.state, eid, n_attempts=2)
+    assert pw.parked(second)["event_id"] == w["ask_event_id"], "the same wait, asked once"
+    again = sup.open_wait(eid, "owner")
+    assert (again["wait_id"], again["ask_event_id"]) == (w["wait_id"], w["ask_event_id"])
+    assert len(FakeBox.STARTS) == 1, "the settled turn did not run again"
+
+    n = pw.finish_pi(c, eid)
+    attempts = pw.wait_ended(eid, n)
+    assert [a["status"] for a in attempts] == ["parked", "parked", "completed"]
+    assert len(FakeBox.STARTS) == 1 and sup.node_status(eid, "audit")[-1] == "completed"
 
 
 def test_resume_with_no_checkpoint_starts_a_pi_run_again_and_not_any_other(pw_run):
@@ -145,21 +157,21 @@ def test_each_wait_lets_go_with_its_own_checkpoint_and_old_answers_get_409s(pw_r
 
     r = pw.approve(c, eid, "second", event_id=second["event_id"])
     assert r.status_code == 200 and r.json()["carries_on"] is True, r.text
-    pw.finish_pi(c, eid)
-    attempts = pw.wait_ended(eid, 3)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "completed"]
+    n = pw.finish_pi(c, eid)
+    attempts = pw.wait_ended(eid, n)
+    assert [a["status"] for a in attempts] == ["parked", "parked", "parked", "completed"]
     assert pw.RAN == {"brief": 1, "first": 1, "second": 1}
 
 
 def test_each_round_of_a_loop_waits_with_its_own_checkpoint_and_running_out_fails(pw_run):
     c = pw_run.client
     eid = sup.start(c, "pw_loop", pw_run.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(pw_run.state, eid)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(pw_run.state, eid, n_attempts=n)
     round1 = pw.open_gate(c, eid, "review")
     assert round1["round"] == 1
     assert pw.approve(c, eid, "review", event_id=round1["event_id"]).status_code == 200
-    pw.wait_parked(pw_run.state, eid, n_attempts=2)
+    pw.wait_parked(pw_run.state, eid, n_attempts=n + 1)
     round2 = pw.open_gate(c, eid, "review")
     assert round2["round"] == 2 and round2["event_id"] != round1["event_id"]
     stale = pw.approve(c, eid, "review", event_id=round1["event_id"], request_id="old-tab")
@@ -167,8 +179,8 @@ def test_each_round_of_a_loop_waits_with_its_own_checkpoint_and_running_out_fail
     assert [cp["id"] for cp in _gate_checkpoints(c, eid)] == [round1["event_id"],
                                                                round2["event_id"]]
     assert pw.approve(c, eid, "review", event_id=round2["event_id"]).status_code == 200
-    attempts = pw.wait_ended(eid, 3)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "failed"]
+    attempts = pw.wait_ended(eid, n + 2)
+    assert [a["status"] for a in attempts] == ["parked", "parked", "parked", "failed"]
     assert "ran out of rounds: 2 of 2" in str(sup.events(eid, event_type="stage.started"))
     assert pw.RAN == {"brief": 1, "review": 2} and len(FakeBox.STARTS) == 1
 
@@ -180,8 +192,8 @@ def test_a_gate_next_to_a_running_step_lets_go_once_that_step_is_done(pw_run):
     assert pw.RAN == {"brief": 1, "right": 1}
     gate = pw.open_gate(c, eid, "left")
     assert pw.approve(c, eid, "left", event_id=gate["event_id"]).status_code == 200
-    pw.finish_pi(c, eid)
-    assert pw.wait_ended(eid, 2)[-1]["status"] == "completed"
+    n = pw.finish_pi(c, eid)
+    assert pw.wait_ended(eid, n)[-1]["status"] == "completed"
     assert pw.RAN == {"brief": 1, "right": 1, "left": 1}
 
 
@@ -228,8 +240,8 @@ def test_a_wait_of_days_across_restarts_is_never_dropped_or_carried_on_by_itself
 
     c = pw_run.client
     eid = sup.start(c, "pw_after_pi", pw_run.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(pw_run.state, eid)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(pw_run.state, eid, n_attempts=n)
     _age(eid, timedelta(days=3))
 
     for _restart in range(2):
@@ -240,12 +252,12 @@ def test_a_wait_of_days_across_restarts_is_never_dropped_or_carried_on_by_itself
         assert parked.carry_on_at_startup() == [], "no answer: it stays put"
     attempt = pw.attempts(eid)[-1]
     assert attempt["status"] == "waiting" and pw.parked(attempt)
-    assert len(pw.attempts(eid)) == 1 and pw.detail(c, eid)["status"] == "waiting"
+    assert len(pw.attempts(eid)) == n and pw.detail(c, eid)["status"] == "waiting"
 
     gate = pw.open_gate(c, eid, "check")
     r = pw.approve(c, eid, "check", event_id=gate["event_id"])
     assert r.status_code == 200 and r.json()["carries_on"] is True, r.text
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 1)] == ["parked", "parked", "completed"]
     assert pw.RAN == {"brief": 1, "check": 1, "ship": 1} and len(FakeBox.STARTS) == 1
 
 
@@ -257,8 +269,8 @@ def test_an_answer_given_while_the_worker_was_down_is_applied_at_start_up(pw_run
 
     c = pw_run.client
     eid = sup.start(c, "pw_after_pi", pw_run.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(pw_run.state, eid)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(pw_run.state, eid, n_attempts=n)
     gate = pw.open_gate(c, eid, "check")
     with monkeypatch.context() as down:
         down.setattr(routes, "_carry_on_parked", lambda execution_id, by: False)
@@ -266,12 +278,12 @@ def test_an_answer_given_while_the_worker_was_down_is_applied_at_start_up(pw_run
     assert r.status_code == 200, r.text
     assert r.json()["carries_on"] is False and r.json()["needs_resume"] is True
     _age(eid, timedelta(days=2))
-    assert len(pw.attempts(eid)) == 1
+    assert len(pw.attempts(eid)) == n
 
     marked = reconcile_and_report_now()
     assert eid not in [m["execution_id"] for m in marked]
     assert parked.carry_on_at_startup() == [eid]
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 1)] == ["parked", "parked", "completed"]
     assert pw.RAN == {"brief": 1, "check": 1, "ship": 1} and len(FakeBox.STARTS) == 1
     # Only once: a second start-up finds nothing to carry on.
     assert parked.carry_on_at_startup() == []
@@ -320,8 +332,8 @@ def test_an_answer_while_the_thread_is_letting_go_says_it_carries_on(pw_run):
 
     pw_run.state.running.pop(eid)  # the thread's last step: it lets go, and sees the answer
     routes._see_to_parked(eid, SimpleNamespace(park_at_gates=True, cancel_event=threading.Event()))
-    pw.finish_pi(c, eid)
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
+    n = pw.finish_pi(c, eid)
+    assert [a["status"] for a in pw.wait_ended(eid, n)] == ["parked", "parked", "completed"]
     assert pw.RAN == {"brief": 1, "check": 1}
 
 

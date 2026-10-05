@@ -39,11 +39,6 @@ CARRIED_ON = "parked"
 CANCELLED = "cancelled"
 CANCEL_MESSAGE = "Workflow cancelled by user"
 
-# Pi's own conversation waits are named ``<step>~wait-<id>``: they belong to the Pi step,
-# which waits on them itself (docs/pi-agent.md). Gates and a step's ask_owner waits
-# (``<step>~ask-<id>``) park a run; those do not.
-_PI_OWN_WAIT = "~wait-"
-
 # A claimed attempt's next attempt starts within moments (a thread, or a queued box row). A
 # claim older than this with nothing after it is one whose start was lost: Resume may retry.
 CLAIM_STARTS_WITHIN = timedelta(minutes=2)
@@ -103,8 +98,7 @@ def answered(execution_id: str, attempt: dict) -> dict | None:
     for event in gate_events(execution_id):
         data = event.get("data") or {}
         if (str(event.get("id")) in wanted and event.get("status") == APPROVED
-                and not data.get("gate_used_at")
-                and _PI_OWN_WAIT not in str(data.get("gate_path") or "")):
+                and not data.get("gate_used_at")):
             return event
     return None
 

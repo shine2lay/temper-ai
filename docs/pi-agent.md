@@ -20,7 +20,7 @@ inline in the workflow.
 - name: talk
   type: agent
   agent: scout_talk            # configs/agents/scout_talk.yaml
-  depends_on: [brief]          # never the first node (see "Rules")
+  depends_on: [brief]          # optional: a Pi step may be the first node
 ```
 
 ```yaml
@@ -140,9 +140,16 @@ loop (#38) wires them into the node.
   (`temper_ai/pi_agent/turn.py`). Each turn is its own agent on the run page
   (`agent.started` … `agent.completed|failed`, `executed_by: pi`) with its model calls,
   tool calls and live words below it (`temper_ai/llm/pi_stream.py`).
-- After each turn the owner is asked what next through a wait with its own gate name,
-  `<node path>~wait-<id>`, answered through the ordinary approve route. A reply is the
-  role's next message in the same session; `done` finishes the step.
+- After each turn the owner is asked what next, answered through the ordinary approve
+  route. A reply is the role's next message in the same session; `done` finishes the
+  step. Every owner wait ("what next", and the recovery waits below) is written first as a
+  `pi_waits` row, then asked through `ask_owner` under that row's own id
+  (`temper_ai/pi_agent/owner_waits.py`): its name is `<node path>~ask-<wait id>`, one id
+  per turn and per recovery. Like any wait in a Pi workflow it lets the worker go (the run
+  parks, [gates.md](gates.md) "Pi workflows"); the answer carries the run on, the step
+  runs again, finds the answer at the same wait id and goes on from its ledger -- a
+  settled turn is never run again. Where the run cannot save where it is, the wait holds
+  the worker instead, and a cancel there ends the conversation before the step stops.
 - A turn cut off after its prompt was sent (worker gone, timeout, a tool that never ended,
   the service stopped) is never re-run on its own: it becomes *uncertain* and the owner
   answers `accept` or `retry`. A turn that failed visibly (box not sealed, settings not
@@ -177,8 +184,11 @@ loop (#38) wires them into the node.
 
 ## Rules
 
-- Not the first node of a workflow: an owner wait needs a checkpoint of an earlier node
-  to resume from. The step refuses to run as a first node, before any worker starts.
+- May be the first node of a workflow: an owner wait saves where the run is under the
+  wait's own id (a `step_parked` checkpoint), so the answer carries the run on from there
+  even when nothing ran before it.
 - One role per step; several roles work together only as a team stage, whose messaging
   is built ([pi-team-messages.md](pi-team-messages.md)) but whose leader loop is not yet.
-- The step never raises and never returns empty output.
+- The step never returns empty output, and raises only `RunParked` (its run let the worker
+  go at an owner wait) and `CancellationError` (the run was stopped while the step held its
+  worker at a wait).

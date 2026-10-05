@@ -10,9 +10,14 @@ state in its own ledger (:mod:`temper_ai.pi_agent.ledger`):
   no message can pass for another sender (:mod:`temper_ai.pi_agent.inbox`), runs one worker
   box (:func:`temper_ai.pi_agent.turn.run_turn`), and is shown on the run page as its own
   agent (``agent.started`` .. ``agent.completed|failed``) with its model calls and tools;
-* after a turn the owner is asked what next through a wait with its own gate name
-  (``<node path>~wait-<id>``), answered through Temper's ordinary approve route: a reply is
-  the role's next message in the same session; ``done`` finishes the step;
+* after a turn the owner is asked what next: a reply is the role's next message in the same
+  session; ``done`` finishes the step. Every owner wait is written first as a ``pi_waits``
+  row, then asked through ``ask_owner`` under that row's own id
+  (:mod:`temper_ai.pi_agent.owner_waits`), named ``<node path>~ask-<wait id>`` and answered
+  through Temper's ordinary approve route. In a Pi workflow an unanswered wait lets the
+  worker go (the run parks, ``RunParked``); the answer carries the run on, this step runs
+  again, finds the answer at the same wait id and goes on from its ledger -- a settled turn
+  is never run again. Each wait has its own id (every turn, every recovery);
 * a turn that was cut off (worker gone, timeout, a tool that never ended, the service
   stopped) is never re-run: it becomes ``uncertain`` -- once its worker box is confirmed
   stopped -- and the owner decides (accept / retry; a retry gives the same messages again,
@@ -20,10 +25,15 @@ state in its own ledger (:mod:`temper_ai.pi_agent.ledger`):
 * a turn that failed visibly (the worker could not be started or checked, the provider
   refused, the login was not handed over) fails the step -- red, never green. A Resume of
   the run then asks the owner whether to retry that turn or stop;
-* the step never raises and never returns empty output, so AgentNode never re-runs it blind.
+* the step raises only ``RunParked`` (its run let the worker go at an owner wait; AgentNode
+  passes it up) and ``CancellationError`` (the run was stopped while the step held its
+  worker at a wait, which ends the conversation first; AgentNode's retry then stops at
+  once). Otherwise it never raises and never returns empty output, so AgentNode never
+  re-runs it blind.
 
-The step refuses to be a workflow's first node (R1 C6): an owner wait needs a checkpoint of
-an earlier node to resume from.
+A Pi step may be a workflow's first node (C7): an owner wait saves where the run is under
+the wait's own id (a ``step_parked`` checkpoint), so the answer carries the run on from
+there even when nothing ran before it.
 """
 
 from __future__ import annotations
@@ -32,10 +42,8 @@ import hashlib
 import json
 import logging
 import shutil
-import threading
 import time
 import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +70,10 @@ from temper_ai.pi_agent.member import (
     settings,
     usage_limit,
 )
+from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait, wait_row
 from temper_ai.shared.types import AgentResult, ExecutionContext, Status
+from temper_ai.stage.exceptions import CancellationError, RunParked
+from temper_ai.stage.gate import REJECTED, WAITING
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +101,7 @@ class PiHost(AgentABC):
     ``provider``, ``model``, ``thinking``, ``tools`` (default ``[read]``), ``message`` (the
     first message, a template over the node's input), ``workspace_files`` (name -> template,
     written once into the worker's working folder), ``ask_owner`` (the question after each
-    turn), ``poll_seconds``.
+    turn). ``poll_seconds`` is accepted and ignored (waits are asked through ``ask_owner``).
     """
 
     uses_llm_settings = False
@@ -116,6 +127,10 @@ class PiHost(AgentABC):
         started = time.monotonic()
         try:
             result = self._run(input_data, context, started)
+        except (RunParked, CancellationError):
+            # The run let its worker go at an owner wait, or was stopped while the step held
+            # its worker at one (the conversation has ended): neither is the step failing.
+            raise
         except Exception as exc:  # noqa: BLE001 - a raising agent is re-run blind by AgentNode
             logger.exception("Pi step %s failed", self.name)
             text = f"Pi step failed: {type(exc).__name__}"
@@ -141,10 +156,6 @@ class PiHost(AgentABC):
         problems = self.validate_config()
         if problems:
             return self._fail("; ".join(problems), started)
-        if not self._has_completed_predecessor(context):
-            return self._fail("a Pi step cannot be a workflow's first node: put an ordinary "
-                              "node before it (it gives an owner wait a checkpoint to resume "
-                              "from)", started)
         if context.event_recorder is None:
             return self._fail("a Pi step needs the run's event recorder", started)
         try:
@@ -199,29 +210,23 @@ class PiHost(AgentABC):
             self._close_turn_event(turn, "the turn was cut off: the service stopped during it")
         # A Resume after a failed turn: the owner decides (retry / stop), never a re-run.
         self.ledger.open_recovery_for_failed(self.run_id, self.host_path, self.attempt_id)
-        for wait in self.ledger.open_waits(self.run_id, self.host_path):
-            self._publish_wait(wait)
 
-        poll = float(cfg.get("poll_seconds", 0.5))
         while True:
             cancel = context.cancel_event
             if cancel is not None and cancel.is_set():
                 # Nothing queued is dropped: it is recorded undelivered (R2 B12).
-                ended = self.ledger.end_team(self.run_id, self.host_path, "run_cancelled",
-                                             self.attempt_id)
-                rec = context.event_recorder
-                for w in ended["cancelled_waits"]:
-                    if rec.event_status(w["event_id"]) == "waiting":
-                        rec.update_event(w["event_id"], status="rejected", data={
-                            "gate_status": "rejected", "pi_cancelled": True})
+                self._end_conversation()
                 return self._result(Status.CANCELLED, "Pi step cancelled", started,
                                     error="cancelled")
-            for wait in self.ledger.open_waits(self.run_id, self.host_path):
-                failed = self._try_decide(wait)
-                if failed:
-                    return self._result(Status.FAILED, failed, started, error=failed)
-            if self.ledger.open_waits(self.run_id, self.host_path):
-                (cancel or threading.Event()).wait(poll)
+            # The open waits are asked one at a time, oldest first. In a Pi workflow an
+            # unanswered one lets the worker go right here (RunParked goes up); its answer
+            # carries the run on, and this step runs again and finds it at the same wait id.
+            waiting = self.ledger.open_waits(self.run_id, self.host_path)
+            if waiting:
+                ends = self._settle(waiting[0])
+                if ends is not None:
+                    status, text, error = ends
+                    return self._result(status, text, started, error=error)
                 continue
             p = self.ledger.participant(self.participant_id) or {}
             if p.get("state") == "retired":
@@ -235,9 +240,10 @@ class PiHost(AgentABC):
             claimed = self.ledger.claim_turn(self.run_id, self.host_path,
                                              attempt_id=self.attempt_id)
             if claimed is None:
-                wait = self.ledger.open_wait(self.run_id, self.host_path, "owner",
-                                             self._ask(p, None), self.attempt_id)
-                self._publish_wait(wait)
+                # Nothing for the role (an accepted turn stands, say): the owner says what
+                # comes next, asked about the last turn.
+                self.ledger.open_wait(self.run_id, self.host_path, "owner",
+                                      self._ask(p, self._last_turn()), self.attempt_id)
                 continue
             turn, batch = claimed
             failure = self._do_turn(p, turn, batch)
@@ -295,28 +301,24 @@ class PiHost(AgentABC):
                            "tokens": 0, "cost_usd": 0.0})
         if report.state == "completed":
             self.last_output = report.output
+            # The owner's "what next" wait is written with the turn's end, in one go: the
+            # loop asks it next.
             res = self.ledger.finish_turn(turn["turn_id"], epoch=turn["epoch"],
                                           output=report.output,
                                           model_call_ids=report.model_call_ids, worker=worker,
                                           ask_owner=self._ask(participant, turn),
                                           attempt_id=self.attempt_id)
-            if res is None:
-                return LOST_TURN
-            if res["wait"]:
-                self._publish_wait(res["wait"])
-            return None
+            return LOST_TURN if res is None else None
         limit = usage_limit(report.error) if report.state != "uncertain" else None
         if report.state == "uncertain" or limit:
             # Cut off: the owner decides (never a blind re-run). A usage or rate limit pauses
             # the step the same way (retry once it resets), naming the limit; never a quiet
             # switch to another model or account.
+            # Its recovery wait is written with the hold; the loop asks it next.
             wait = self.ledger.hold_turn(turn["turn_id"], limit or report.error or "cut off",
                                          report.model_call_ids, worker, self.attempt_id,
                                          epoch=turn["epoch"])
-            if wait is None:
-                return LOST_TURN
-            self._publish_wait(wait)
-            return None
+            return LOST_TURN if wait is None else None
         error = f"{cfg['role']} turn {turn['turn_no']} failed: {report.error}"
         if not self.ledger.fail_turn(turn["turn_id"], error, report.model_call_ids, worker,
                                      epoch=turn["epoch"]):
@@ -344,89 +346,101 @@ class PiHost(AgentABC):
                                             turn_no=(turn or {}).get("turn_no", 0)),
                 "options": ["done"]}
 
-    def _publish_wait(self, wait: dict) -> None:
-        """Make a wait visible and answerable: its one gate event, recorded once."""
-        rec = self.ctx.event_recorder
-        if not wait["event_recorded"]:
-            if rec.event_status(wait["event_id"]) is None:
-                subject = wait["subject"] or {}
-                rec.record(EventType.STAGE_STARTED, data={
-                    "name": wait["gate_name"], "type": "pi_wait", "depends_on": [],
-                    "gate": True, "gate_status": "waiting",
-                    "gate_context": {"upstream": [], "questions": [{
-                        "question": subject.get("question", ""), "header": wait["kind"],
-                        "options": [{"label": o} for o in subject.get("options", [])]}]},
-                    "pi_wait": {"wait_id": wait["wait_id"], "kind": wait["kind"],
-                                "host_path": self.host_path, "role": subject.get("role"),
-                                "turn_id": subject.get("turn_id"),
-                                "opened_attempt": wait["opened_attempt"]},
-                }, parent_id=self.ctx.parent_event_id, execution_id=self.run_id,
-                    status="waiting", event_id=wait["event_id"])
-            self.ledger.mark_event_recorded(wait["wait_id"])
+    def _settle(self, wait: dict) -> tuple[Status, str, str] | None:
+        """Ask the owner at one open wait and apply the answer, once.
 
-    def _try_decide(self, wait: dict) -> str | None:
-        """Apply the owner's answer once. Returns an error text when the step must fail."""
-        rec = self.ctx.event_recorder
-        if rec.event_status(wait["event_id"]) != "approved":
-            return None
-        data = rec.event_data(wait["event_id"]) or {}
-        text = _reply_text(data.get("gate_response"))
+        Returns how the step ends -- (status, text, error) -- when the answer ends it, None
+        when it goes on. ``RunParked`` goes up untouched: the run lets its worker go here and
+        the answer carries it on (this step runs again and gets the answer at the same id).
+        ``CancellationError`` -- the run was stopped while the step held its worker here, as a
+        wait does when the run cannot save where it is -- goes up too, once the conversation
+        has ended.
+        """
         subject = wait["subject"] or {}
+        try:
+            answer = ask_owner_for_wait(
+                self.ctx, self.ledger, wait["wait_id"],
+                question=str(subject.get("question") or "The Pi step is waiting for you."),
+                header=str(wait["kind"]),
+                options=[str(o) for o in subject.get("options") or []])
+        except WaitDecided as settled:
+            return self._settled_meanwhile(wait, settled.state, settled.decision)
+        except CancellationError:
+            # Not when a later attempt of the run took the wait over: the conversation is
+            # that attempt's now.
+            cancel = self.ctx.cancel_event
+            if cancel is not None and cancel.is_set():
+                self._end_conversation()
+            raise
+        text = _reply_text(answer.response)
         decision: dict[str, Any] = {"text_sha256": hashlib.sha256(text.encode()).hexdigest()}
         deliveries: list[tuple[str, str]] = []
         recovery = None
         states: list[tuple[str, str]] = []
-        failure = None
         if wait["kind"] == "recovery":
             word = recovery_word(text, subject.get("options") or ["accept", "retry"])
             decision["recovery"] = word
             # A retry gives the turn's own messages again -- same ids, marked as given again --
             # never new copies (R2 B1); what the turn sent is never delivered (B4).
             recovery = (word, subject["turn_id"])
-            if word == "stop":
-                did = ("failed" if "accept" not in (subject.get("options") or [])
-                       else "did not finish")
-                failure = (f"{subject.get('role')} turn {subject.get('turn_no')} {did} and the "
-                           "owner stopped the step")
         elif text.lower() in FINISH_WORDS:
             decision["owner"] = "finish"
             states = [(subject.get("participant_id") or self.participant_id, "retired")]
         else:
             decision["owner"] = "message"
             deliveries = [(self.config["role"], text)]
-        applied = self.ledger.decide_wait(wait["wait_id"], decision, self.attempt_id,
-                                          deliveries=deliveries, recovery=recovery,
-                                          participant_states=states)
-        if applied:
-            rec.update_event(wait["event_id"], data={
-                "pi_applied": True, "pi_decision": {k: v for k, v in decision.items()
-                                                    if k != "text_sha256"},
-                "pi_decided_attempt": self.attempt_id,
-                # Temper's gates read this as "the answer was used" (no Resume needed).
-                "gate_used_at": datetime.now(UTC).isoformat()})
-            if decision.get("recovery") == "accept":
-                # The accepted turn stands; the owner says what comes next.
-                p = self.ledger.participant(self.participant_id) or {}
-                nxt = self.ledger.open_wait(self.run_id, self.host_path, "owner",
-                                            self._ask(p, {"turn_no": subject.get("turn_no")}),
-                                            self.attempt_id)
-                self._publish_wait(nxt)
-            return failure
-        return None
+        if self.ledger.decide_wait(wait["wait_id"], decision, self.attempt_id,
+                                   deliveries=deliveries, recovery=recovery,
+                                   participant_states=states):
+            return self._settled(wait, decision)
+        # Another attempt settled it first (compare-and-set): go by what it recorded.
+        row = wait_row(self.ledger, wait["wait_id"]) or {}
+        return self._settled_meanwhile(wait, str(row.get("state") or "cancelled"),
+                                       row.get("decision"))
+
+    def _settled(self, wait: dict, decision: Any) -> tuple[Status, str, str] | None:
+        """What a decided wait means for the step: a stop at a recovery wait fails it (the
+        owner stopped it); anything else was done by the decision itself (the ledger's same
+        transaction), so the step goes on."""
+        if not (isinstance(decision, dict) and decision.get("recovery") == "stop"):
+            return None
+        subject = wait["subject"] or {}
+        did = "failed" if "accept" not in (subject.get("options") or []) else "did not finish"
+        text = (f"{subject.get('role')} turn {subject.get('turn_no')} {did} and the owner "
+                "stopped the step")
+        return Status.FAILED, text, text
+
+    def _settled_meanwhile(self, wait: dict, state: str,
+                           decision: Any) -> tuple[Status, str, str] | None:
+        """The wait was settled elsewhere (another attempt of the run): go on from its row.
+        Decided: its decision was applied with it, so the step goes on from it -- the same way
+        as when this attempt decided it. Cancelled: the conversation has ended (its run was
+        stopped), so the step stops; neither fails the step."""
+        if state == "decided":
+            return self._settled(wait, decision)
+        text = ("the Pi conversation ended while the step waited for the owner (its run was "
+                "cancelled)")
+        return Status.CANCELLED, text, "cancelled"
+
+    def _end_conversation(self) -> None:
+        """The run was stopped: the conversation ends (unsettled turns cancelled, everything
+        queued recorded undelivered, R2 B12; open waits cancelled), and every event of each
+        cancelled wait still waiting is closed -- found by the wait's name: ``ask_owner`` may
+        have asked it more than once."""
+        ended = self.ledger.end_team(self.run_id, self.host_path, "run_cancelled",
+                                     self.attempt_id)
+        rec = self.ctx.event_recorder
+        for w in ended["cancelled_waits"]:
+            for ev in rec.gate_events(w["gate_name"]) or []:
+                if ev.get("status") == WAITING:
+                    rec.decide(str(ev["id"]), expect=(WAITING,), status=REJECTED,
+                               data={"gate_status": REJECTED, "pi_cancelled": True})
 
     # --- helpers ----------------------------------------------------------------------
 
-    @staticmethod
-    def _has_completed_predecessor(context: ExecutionContext) -> bool:
-        state = context.run_state or {}
-        own = (context.node_path or "").rsplit(".", 1)[-1]
-        for name, result in state.items():
-            if name == own:
-                continue
-            status = getattr(result, "status", None)
-            if status == Status.COMPLETED or str(status) in ("completed", "Status.COMPLETED"):
-                return True
-        return False
+    def _last_turn(self) -> dict | None:
+        turns = self.ledger.turns_of(self.participant_id)
+        return max(turns, key=lambda t: t["turn_no"]) if turns else None
 
     def _public_config(self) -> dict:
         cfg = self.config
@@ -482,9 +496,7 @@ def pin_for(box: BoxConfig, cfg: dict, *, workflow: str | None,
                   "temper-box": tree_sha256(PROBE_DIR)}
     if route.extension:
         extensions["auth"] = tree_sha256(Path(route.extension))
-    config_sha = hashlib.sha256(json.dumps(
-        {k: v for k, v in cfg.items() if k not in ("poll_seconds",)}, sort_keys=True,
-        default=str).encode()).hexdigest()
+    config_sha = config_digest(cfg)
     pin = {"pi_version": box.pi_version, "image": box.image, **model,
            "tools": sorted(tools) if tools is not None else launched_tools(cfg),
            "extensions": extensions,
@@ -494,6 +506,24 @@ def pin_for(box: BoxConfig, cfg: dict, *, workflow: str | None,
     if team is not None:
         pin["team"] = team
     return pin
+
+
+def config_digest(cfg: dict) -> str:
+    """The step's settings as one digest, the same in every worker process: a reopen in a new
+    worker (an answered wait carries the run on in one) must find what the first one pinned.
+
+    Left out: ``poll_seconds`` (ignored) and keys starting with ``_``, which are not settings
+    (a node's ``_KNOWN_FIELDS`` reaches every resolved agent config through the loader's
+    merge). A set is hashed sorted: its order follows string hashing, salted per process."""
+    def _plain(value: Any) -> Any:
+        if isinstance(value, (set, frozenset)):
+            return sorted(str(v) for v in value)
+        return str(value)
+
+    settings_only = {k: v for k, v in cfg.items()
+                     if k != "poll_seconds" and not str(k).startswith("_")}
+    return hashlib.sha256(json.dumps(settings_only, sort_keys=True,
+                                     default=_plain).encode()).hexdigest()
 
 
 def prepare_participant(box: BoxConfig, pdir: Path, cfg: dict, values: dict) -> None:

@@ -159,7 +159,8 @@ its 12-hour limit) leaves it alone: only an answer moves it. **Reject** or
 **Cancel** ends it (`cancelled`), as for any run. Stale, parallel and repeated
 approvals get the answers above (409s, `repeated: true`). You are told once,
 when the wait starts; there are no reminders. The Pi step's own "what next"
-waits are the step's and still hold its worker (pi-agent.md).
+and recovery waits let the worker go the same way: each is a wait inside the
+step (below; pi-agent.md).
 
 **Resume works before anything finished.** A Pi run often starts by asking
 you something, so Resume of a Pi run with no checkpoint yet starts it again
@@ -229,10 +230,12 @@ step that finishes from its record without asking still spends them. A
 step that never asked reads nothing extra, and nothing about a run's waits
 stays in memory once its go ends.
 
-No shipped step asks this way yet: the team step (`type: team`) will, and
-the Pi step's own "what next" waits (`<step>~wait-<id>`) still hold their
-worker. The test step in `tests/test_runner/pi_parking/step_support.py`
-shows the pattern.
+The Pi step (`type: pi`) asks this way: its "what next" and recovery waits
+are written first as rows in its own ledger, then asked under each row's id
+(`<step>~ask-<wait id>`, one id per turn and per recovery, so no answer is
+ever reused), and a Pi step may be a workflow's first step. The team step
+(`type: team`) will too. The test step in
+`tests/test_runner/pi_parking/step_support.py` shows the pattern.
 
 ## Trying it
 

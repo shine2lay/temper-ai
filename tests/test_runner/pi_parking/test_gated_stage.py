@@ -77,15 +77,15 @@ def _approve(c, eid: str, name: str, wait: dict, **kw) -> None:
     assert r.json()["carries_on"] is True, r.text
 
 
-def _stage_then_inner(gs, eid: str) -> tuple[dict, dict]:
-    """The stage's gate lets go, its answer carries the run on, then the inner step's gate
-    lets go. Returns (the stage's wait, the inner step's wait)."""
+def _stage_then_inner(gs, eid: str, n: int) -> tuple[dict, dict]:
+    """In attempt ``n`` the stage's gate lets go, its answer carries the run on, then the
+    inner step's gate lets go. Returns (the stage's wait, the inner step's wait)."""
     c = gs.client
-    first = pw.wait_parked(gs.state, eid)
+    first = pw.wait_parked(gs.state, eid, n_attempts=n)
     stage_wait = pw.open_gate(c, eid, "stage")
     assert pw.parked(first)["path"] == "stage"
     _approve(c, eid, "stage", stage_wait)
-    second = pw.wait_parked(gs.state, eid, n_attempts=2)
+    second = pw.wait_parked(gs.state, eid, n_attempts=n + 1)
     inner_wait = pw.open_gate(c, eid, "inner")
     assert pw.parked(second)["path"] == "stage.inner"
     assert pw.parked(second)["event_id"] == inner_wait["event_id"]
@@ -95,16 +95,16 @@ def _stage_then_inner(gs, eid: str) -> tuple[dict, dict]:
 def test_a_gated_stage_whose_inner_approval_lets_go_is_approved_once(gs):
     c = gs.client
     eid = sup.start(c, "gs_stage", gs.ws)
-    pw.finish_pi(c, eid)
-    stage_wait, inner_wait = _stage_then_inner(gs, eid)
+    n = pw.finish_pi(c, eid)
+    stage_wait, inner_wait = _stage_then_inner(gs, eid, n)
     # The stage's answer is kept for the go that carries the stage on.
     (asked,) = pw.waits(eid, "stage")
     assert asked["status"] == "approved" and not asked["data"].get("gate_used_at")
     assert asked["data"].get("gate_kept_while") == inner_wait["event_id"]
 
     _approve(c, eid, "inner", inner_wait)
-    attempts = _settled(gs.state, eid, 3)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "completed"], (
+    attempts = _settled(gs.state, eid, n + 2)
+    assert [a["status"] for a in attempts] == ["parked"] * (n + 1) + ["completed"], (
         f"the stage's gate was asked again: {pw.waits(eid, 'stage')}")
     (stage,) = pw.waits(eid, "stage")
     assert stage["id"] == stage_wait["event_id"] and stage["data"].get("gate_used_at")
@@ -123,13 +123,13 @@ def test_a_rejected_inner_approval_stops_the_run_and_the_stage_is_not_asked_agai
 
     c = gs.client
     eid = sup.start(c, "gs_stage", gs.ws)
-    pw.finish_pi(c, eid)
-    stage_wait, inner_wait = _stage_then_inner(gs, eid)
+    n = pw.finish_pi(c, eid)
+    stage_wait, inner_wait = _stage_then_inner(gs, eid, n)
 
     # Reject (Slack's button): the run stops, as a rejected approval stops it today.
     out = TemperOps().cancel(eid, "Rejected in Slack by Owner", by="Owner (Slack)")
     assert out["status"] == "cancelled", out
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "cancelled"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked"] * n + ["cancelled"]
     (inner,) = pw.waits(eid, "inner")
     assert inner["status"] == "rejected"
     assert "Rejected in Slack by Owner" in str(inner["data"].get("gate_response"))
@@ -142,15 +142,16 @@ def test_a_rejected_inner_approval_stops_the_run_and_the_stage_is_not_asked_agai
     # approval was rejected asks again.
     r = c.post(f"/api/runs/{eid}/resume", json={})
     assert r.status_code == 200, r.text
-    third = pw.wait_parked(gs.state, eid, n_attempts=3)
+    third = pw.wait_parked(gs.state, eid, n_attempts=n + 2)
     assert pw.parked(third)["path"] == "stage.inner", pw.parked(third)
     assert [w["id"] for w in pw.waits(eid, "stage")] == [stage_wait["event_id"]]
     again = pw.open_gate(c, eid, "inner")
     assert again["event_id"] != inner_wait["event_id"]
     assert [w["status"] for w in pw.waits(eid, "inner")] == ["rejected", "waiting"]
     _approve(c, eid, "inner", again)
-    attempts = _settled(gs.state, eid, 4)
-    assert [a["status"] for a in attempts] == ["parked", "cancelled", "parked", "completed"]
+    attempts = _settled(gs.state, eid, n + 3)
+    assert [a["status"] for a in attempts] == (["parked"] * n
+                                               + ["cancelled", "parked", "completed"])
     assert len(pw.waits(eid, "stage")) == 1
     assert pw.RAN == {"brief": 1, "inner": 1, "ship": 1}
 
@@ -158,25 +159,25 @@ def test_a_rejected_inner_approval_stops_the_run_and_the_stage_is_not_asked_agai
 def test_a_gated_stage_in_a_loop_still_asks_on_each_new_lap(gs):
     c = gs.client
     eid = sup.start(c, "gs_loop", gs.ws)
-    pw.finish_pi(c, eid)
-    lap1_stage, lap1_inner = _stage_then_inner(gs, eid)
+    n = pw.finish_pi(c, eid)
+    lap1_stage, lap1_inner = _stage_then_inner(gs, eid, n)
     _approve(c, eid, "inner", lap1_inner)
 
     # Lap 1 finishes (the judge says "again"), and lap 2 asks the stage's gate afresh.
-    third = _settled(gs.state, eid, 3)[-1]
+    third = _settled(gs.state, eid, n + 2)[-1]
     assert pw.RAN["judge"] == 1, f"lap 1 did not finish: {pw.waits(eid, 'stage')}"
     assert pw.parked(third)["path"] == "stage" and pw.parked(third)["round"] == 2
     lap2_stage = pw.open_gate(c, eid, "stage")
     assert lap2_stage["event_id"] != lap1_stage["event_id"]
     _approve(c, eid, "stage", lap2_stage)
-    fourth = _settled(gs.state, eid, 4)[-1]
+    fourth = _settled(gs.state, eid, n + 3)[-1]
     assert pw.parked(fourth)["path"] == "stage.inner" and pw.parked(fourth)["round"] == 2
     lap2_inner = pw.open_gate(c, eid, "inner")
 
     pw.VERDICT["say"] = "done"
     _approve(c, eid, "inner", lap2_inner)
-    attempts = _settled(gs.state, eid, 5)
-    assert [a["status"] for a in attempts] == ["parked"] * 4 + ["completed"]
+    attempts = _settled(gs.state, eid, n + 4)
+    assert [a["status"] for a in attempts] == ["parked"] * (n + 3) + ["completed"]
     stage_waits = pw.waits(eid, "stage")
     assert [w["id"] for w in stage_waits] == [lap1_stage["event_id"], lap2_stage["event_id"]]
     assert all(w["status"] == "approved" and w["data"].get("gate_used_at") for w in stage_waits)
@@ -230,7 +231,7 @@ def test_a_gated_stage_whose_inner_approval_lets_go_of_its_box_is_approved_once(
     assert _row(eid)["status"] == "queued"
 
     assert _box(gsx, eid, monkeypatch) == 0
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "completed"], (
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked"] * 3 + ["completed"], (
         f"the stage's gate was asked again: {pw.waits(eid, 'stage')}")
     assert _row(eid)["status"] == "completed"
     (stage,) = pw.waits(eid, "stage")

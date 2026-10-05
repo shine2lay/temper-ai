@@ -48,13 +48,16 @@ def test_a_step_that_asks_lets_go_of_its_worker_and_the_answer_carries_it_on(sw)
     c = sw.client
     sw.before = ask.threads_now()
     eid = sup.start(c, "sw_after_pi", sw.ws)
-    # The Pi step's own wait still holds its worker, as before this task.
-    sup.open_wait(eid, "owner")
-    assert pw.attempts(eid)[-1]["status"] == "running" and pw.run_threads(eid)
-    pw.finish_pi(c, eid)
+    # The Pi step's own wait lets go of its worker too (C7), under its own checkpoint.
+    w = sup.open_wait(eid, "owner")
+    talk = pw.wait_parked(sw.state, eid)
+    assert pw.parked(talk)["path"] == "talk" and pw.parked(talk)["wait_id"] == w["wait_id"]
+    n = pw.finish_pi(c, eid)
 
-    wait = _parked_here(sw, eid, 1, "ask", 1, "lets_go_and_carries_on")
+    wait = _parked_here(sw, eid, n, "ask", 1, "lets_go_and_carries_on")
     assert wait["round"] == 1 and "Round 1 of ask is done" in str(wait["questions"])
+    assert [cp["metadata"]["path"] for cp in ask.checkpoints(c, eid, "step_parked", pi=True)
+            ] == ["talk", "ask"]
     # Saved under the wait's own id; no approval checkpoint.
     (saved,) = ask.checkpoints(c, eid, "step_parked")
     assert saved["id"] == wait["event_id"] and saved["node_name"] == "ask"
@@ -70,7 +73,7 @@ def test_a_step_that_asks_lets_go_of_its_worker_and_the_answer_carries_it_on(sw)
     r = pw.approve(c, eid, ask.name_of("ask"), event_id=wait["event_id"], request_id="tab-1")
     assert r.status_code == 200, r.text
     assert r.json()["carries_on"] is True and r.json()["needs_resume"] is False
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 1)] == ["parked", "parked", "completed"]
 
     # Finished steps did not run again; the step ran again exactly once and read its answer.
     assert pw.RAN == {"brief": 1, "ship": 1} and len(FakeBox.STARTS) == 1
@@ -87,8 +90,8 @@ def test_each_round_waits_with_its_own_id_and_checkpoint_and_old_answers_get_409
     c = sw.client
     sw.before = ask.threads_now()
     eid = sup.start(c, "sw_rounds", sw.ws)
-    pw.finish_pi(c, eid)
-    first = _parked_here(sw, eid, 1, "ask", 1, "two_rounds")
+    n = pw.finish_pi(c, eid)
+    first = _parked_here(sw, eid, n, "ask", 1, "two_rounds")
 
     r = pw.approve(c, eid, ask.name_of("ask", 1), event_id=first["event_id"], request_id="tab-1")
     assert r.status_code == 200 and r.json()["carries_on"] is True, r.text
@@ -97,13 +100,13 @@ def test_each_round_waits_with_its_own_id_and_checkpoint_and_old_answers_get_409
                        request_id="tab-1")
     assert again.status_code == 200 and again.json()["repeated"] is True, again.text
 
-    second = _parked_here(sw, eid, 2, "ask", 2, "two_rounds")
+    second = _parked_here(sw, eid, n + 1, "ask", 2, "two_rounds")
     assert second["event_id"] != first["event_id"]
     # Another tab answering the first wait late gets a 409 naming who answered.
     late = pw.approve(c, eid, ask.name_of("ask", 1), event_id=first["event_id"],
                       request_id="tab-2")
     assert late.status_code == 409 and late.json()["detail"]["reason"] == "already_answered"
-    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "waiting"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "parked", "waiting"]
     saved = ask.checkpoints(c, eid, "step_parked")
     assert [cp["id"] for cp in saved] == [first["event_id"], second["event_id"]]
     assert [cp["metadata"]["wait_id"] for cp in saved] == ["pause-after-round-1",
@@ -111,7 +114,7 @@ def test_each_round_waits_with_its_own_id_and_checkpoint_and_old_answers_get_409
 
     r = pw.approve(c, eid, ask.name_of("ask", 2), event_id=second["event_id"], response="done")
     assert r.status_code == 200 and r.json()["carries_on"] is True, r.text
-    assert [a["status"] for a in pw.wait_ended(eid, 3)] == ["parked", "parked", "completed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 2)] == ["parked"] * 3 + ["completed"]
     assert pw.RAN == {"brief": 1, "ship": 1} and len(FakeBox.STARTS) == 1
     # Three goes: asked round 1; read it and asked round 2; read that and finished. Each
     # round's work was done once.
@@ -140,9 +143,9 @@ def test_a_first_step_that_asks_parks_and_resume_waits_on_the_same_wait(sw):
 
     r = pw.approve(c, eid, ask.name_of("ask"), event_id=asked["event_id"])
     assert r.status_code == 200 and r.json()["carries_on"] is True, r.text
-    pw.finish_pi(c, eid)
-    attempts = pw.wait_ended(eid, 3)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "completed"]
+    n = pw.finish_pi(c, eid)
+    attempts = pw.wait_ended(eid, n)
+    assert [a["status"] for a in attempts] == ["parked"] * 3 + ["completed"]
     assert ask.RUNS["ask"] == 3 and ask.WORK == {("ask", 1): 1}
     assert ask.READ == [("ask", "pause-after-round-1", "go on")]
     assert pw.RAN == {"audit": 1} and len(FakeBox.STARTS) == 1
@@ -178,8 +181,8 @@ def test_a_first_step_wait_of_days_survives_restarts_and_an_answer_while_the_ser
     assert r.json()["carries_on"] is False and r.json()["needs_resume"] is True
     assert eid not in [m["execution_id"] for m in reconcile_and_report_now()]
     assert parked.carry_on_at_startup() == [eid]
-    pw.finish_pi(c, eid)
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
+    n = pw.finish_pi(c, eid)
+    assert [a["status"] for a in pw.wait_ended(eid, n)] == ["parked", "parked", "completed"]
     assert parked.carry_on_at_startup() == [], "only once"
     assert ask.RUNS["ask"] == 2 and ask.READ == [("ask", "pause-after-round-1", "go on")]
     assert pw.RAN == {"audit": 1}
@@ -190,13 +193,13 @@ def test_cancel_while_a_step_waits_stops_the_run(sw):
 
     c = sw.client
     eid = sup.start(c, "sw_after_pi", sw.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(sw.state, eid)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(sw.state, eid, n_attempts=n)
     wait = pw.open_gate(c, eid, ask.name_of("ask"))
 
     r = c.post(f"/api/runs/{eid}/cancel", json={})
     assert r.status_code == 200 and r.json()["status"] == "cancelled", r.text
-    assert [a["status"] for a in pw.attempts(eid)] == ["cancelled"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "cancelled"]
     assert ask.step_waits(eid, "ask")[0]["status"] == "rejected"
     late = pw.approve(c, eid, ask.name_of("ask"), event_id=wait["event_id"])
     assert late.status_code in (404, 409)
@@ -212,8 +215,8 @@ def test_reject_while_a_step_waits_stops_the_run_and_says_why(sw):
 
     c = sw.client
     eid = sup.start(c, "sw_rounds", sw.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(sw.state, eid)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(sw.state, eid, n_attempts=n)
     wait = pw.open_gate(c, eid, ask.name_of("ask"))
     out = TemperOps().cancel(eid, "Rejected in Slack by Owner", by="Owner (Slack)")
     assert out["status"] == "cancelled", out
@@ -223,7 +226,7 @@ def test_reject_while_a_step_waits_stops_the_run_and_says_why(sw):
     late = pw.approve(c, eid, ask.name_of("ask"), event_id=wait["event_id"])
     assert late.status_code in (404, 409)
     assert parked.carry_on_at_startup() == []
-    assert [a["status"] for a in pw.attempts(eid)] == ["cancelled"]
+    assert [a["status"] for a in pw.attempts(eid)] == ["parked", "cancelled"]
     assert ask.RUNS["ask"] == 1 and ask.WORK == {("ask", 1): 1}
 
 
@@ -234,8 +237,8 @@ def test_two_answers_at_once_one_wins_and_the_run_carries_on_once(sw):
 
     c = sw.client
     eid = sup.start(c, "sw_after_pi", sw.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(sw.state, eid)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(sw.state, eid, n_attempts=n)
     wait = pw.open_gate(c, eid, ask.name_of("ask"))
 
     start = threading.Barrier(2)
@@ -258,8 +261,8 @@ def test_two_answers_at_once_one_wins_and_the_run_carries_on_once(sw):
     (lost,) = [r for r in replies.values() if r.status_code == 409]  # type: ignore[attr-defined]
     assert lost.json()["detail"]["reason"] == "already_answered"  # type: ignore[attr-defined]
 
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
-    assert len(pw.attempts(eid)) == 2, "carried on once"
+    assert [a["status"] for a in pw.wait_ended(eid, n + 1)] == ["parked", "parked", "completed"]
+    assert len(pw.attempts(eid)) == n + 1, "carried on once"
     assert ask.RUNS["ask"] == 2
     assert ask.READ == [("ask", "pause-after-round-1", f"answer {won[-1]}")]
 
@@ -269,15 +272,15 @@ def test_a_gated_step_that_asks_is_approved_once(sw):
     after that answer does not ask the approval again."""
     c = sw.client
     eid = sup.start(c, "sw_gated", sw.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(sw.state, eid)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(sw.state, eid, n_attempts=n)
     gate = pw.open_gate(c, eid, "ask")
     assert pw.approve(c, eid, "ask", event_id=gate["event_id"]).json()["carries_on"] is True
 
     sw.before = ask.threads_now()
-    wait = _parked_here(sw, eid, 2, "ask", 1, "gated_step")
+    wait = _parked_here(sw, eid, n + 1, "ask", 1, "gated_step")
     assert pw.approve(c, eid, ask.name_of("ask"), event_id=wait["event_id"]).status_code == 200
-    assert [a["status"] for a in pw.wait_ended(eid, 3)] == ["parked", "parked", "completed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 2)] == ["parked"] * 3 + ["completed"]
     (approval,) = pw.waits(eid, "ask")
     assert approval["status"] == "approved" and approval["data"].get("gate_used_at")
     assert [cp["id"] for cp in ask.checkpoints(c, eid, "gate_parked")] == [gate["event_id"]]
@@ -291,13 +294,13 @@ def test_a_loop_lap_asks_afresh_and_running_out_of_rounds_fails(sw):
     wait id, round 2, its own checkpoint), and the loop still ends red when it runs out."""
     c = sw.client
     eid = sup.start(c, "sw_loop", sw.ws)
-    pw.finish_pi(c, eid)
+    n = pw.finish_pi(c, eid)
     sw.before = ask.threads_now()
-    lap1 = _parked_here(sw, eid, 1, "ask", 1, "loop_laps")
+    lap1 = _parked_here(sw, eid, n, "ask", 1, "loop_laps")
     assert lap1["round"] == 1
     assert pw.approve(c, eid, ask.name_of("ask"), event_id=lap1["event_id"],
                       response="again").status_code == 200
-    lap2 = _parked_here(sw, eid, 2, "ask", 1, "loop_laps")
+    lap2 = _parked_here(sw, eid, n + 1, "ask", 1, "loop_laps")
     assert lap2["round"] == 2 and lap2["event_id"] != lap1["event_id"]
     stale = pw.approve(c, eid, ask.name_of("ask"), event_id=lap1["event_id"],
                        request_id="old-tab")
@@ -306,8 +309,8 @@ def test_a_loop_lap_asks_afresh_and_running_out_of_rounds_fails(sw):
                                                                          lap2["event_id"]]
     assert pw.approve(c, eid, ask.name_of("ask"), event_id=lap2["event_id"],
                       response="again").status_code == 200
-    attempts = pw.wait_ended(eid, 3)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "failed"]
+    attempts = pw.wait_ended(eid, n + 2)
+    assert [a["status"] for a in attempts] == ["parked"] * 3 + ["failed"]
     assert "ran out of rounds: 2 of 2" in str(sup.events(eid, event_type="stage.started"))
     waits = ask.step_waits(eid, "ask")
     assert [w["status"] for w in waits] == ["approved", "approved"]
@@ -323,8 +326,8 @@ def test_a_step_that_asks_next_to_a_running_step_lets_go_once_that_step_is_done(
     wait = _parked_here(sw, eid, 1, "left", 1, "side_by_side")
     assert pw.RAN == {"brief": 1, "right": 1}
     assert pw.approve(c, eid, ask.name_of("left"), event_id=wait["event_id"]).status_code == 200
-    pw.finish_pi(c, eid)
-    assert pw.wait_ended(eid, 2)[-1]["status"] == "completed"
+    n = pw.finish_pi(c, eid)
+    assert pw.wait_ended(eid, n)[-1]["status"] == "completed"
     assert pw.RAN == {"brief": 1, "right": 1} and ask.RUNS["left"] == 2
 
 
@@ -333,17 +336,18 @@ def test_a_step_that_fails_after_its_answer_reads_it_again_on_resume(sw):
     with no new wait (this step keeps no record of its own)."""
     c = sw.client
     eid = sup.start(c, "sw_fails", sw.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(sw.state, eid)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(sw.state, eid, n_attempts=n)
     wait = pw.open_gate(c, eid, ask.name_of("ask"))
     assert pw.approve(c, eid, ask.name_of("ask"), event_id=wait["event_id"]).status_code == 200
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "failed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 1)] == ["parked", "parked", "failed"]
     (asked,) = ask.step_waits(eid, "ask")
     assert asked["status"] == "approved" and not asked["data"].get("gate_used_at")
 
     r = c.post(f"/api/runs/{eid}/resume", json={})
     assert r.status_code == 200, r.text
-    assert [a["status"] for a in pw.wait_ended(eid, 3)] == ["parked", "failed", "completed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 2)] == ["parked", "parked", "failed",
+                                                                "completed"]
     (asked,) = ask.step_waits(eid, "ask")
     assert asked["data"].get("gate_used_at"), "spent once the step finished"
     assert ask.READ == [("ask", "pause-after-round-1", "go on")] * 2
@@ -355,14 +359,14 @@ def test_a_step_inside_a_stage_asks_under_its_own_path(sw):
     c = sw.client
     sw.before = ask.threads_now()
     eid = sup.start(c, "sw_stage", sw.ws)
-    pw.finish_pi(c, eid)
-    first = _parked_here(sw, eid, 1, "team.asker", 1, "inside_a_stage")
+    n = pw.finish_pi(c, eid)
+    first = _parked_here(sw, eid, n, "team.asker", 1, "inside_a_stage")
     assert pw.approve(c, eid, ask.name_of("team.asker", 1),
                       event_id=first["event_id"]).status_code == 200
-    second = _parked_here(sw, eid, 2, "team.asker", 2, "inside_a_stage")
+    second = _parked_here(sw, eid, n + 1, "team.asker", 2, "inside_a_stage")
     assert pw.approve(c, eid, ask.name_of("team.asker", 2),
                       event_id=second["event_id"]).status_code == 200
-    assert [a["status"] for a in pw.wait_ended(eid, 3)] == ["parked", "parked", "completed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 2)] == ["parked"] * 3 + ["completed"]
     assert [cp["id"] for cp in ask.checkpoints(c, eid, "step_parked")] == [first["event_id"],
                                                                          second["event_id"]]
     assert ask.RUNS["asker"] == 3 and ask.WORK == {("asker", 1): 1, ("asker", 2): 1}

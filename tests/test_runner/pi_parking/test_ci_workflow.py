@@ -43,10 +43,10 @@ def _answer(ci, eid: str, name: str, n_attempts: int) -> None:
 def test_ci_pi_waits_ships_after_two_answers_and_one_pi_turn(ci):
     eid = sup.start(ci.client, "ci_pi_waits", ci.ws, {"verdict": "done"})
     _answer(ci, eid, "ask", 1)  # the first node: nothing ran before it
-    pw.finish_pi(ci.client, eid)
-    _answer(ci, eid, "review", 2)
-    attempts = pw.wait_ended(eid, 3)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "completed"]
+    n = pw.finish_pi(ci.client, eid)  # the Pi step's own wait lets go too (C7)
+    _answer(ci, eid, "review", n)
+    attempts = pw.wait_ended(eid, n + 1)
+    assert [a["status"] for a in attempts] == ["parked"] * 3 + ["completed"]
     assert len(FakeBox.STARTS) == 1
     for name in ("ask", "talk", "review", "ship"):
         assert sup.node_status(eid, name).count("completed") == 1, name
@@ -55,10 +55,10 @@ def test_ci_pi_waits_ships_after_two_answers_and_one_pi_turn(ci):
 def test_ci_pi_waits_goes_red_when_its_loop_runs_out(ci):
     eid = sup.start(ci.client, "ci_pi_waits", ci.ws, {"verdict": "again"})
     _answer(ci, eid, "ask", 1)
-    pw.finish_pi(ci.client, eid)
-    _answer(ci, eid, "review", 2)
-    _answer(ci, eid, "review", 3)
-    attempts = pw.wait_ended(eid, 4)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "parked", "failed"]
+    n = pw.finish_pi(ci.client, eid)
+    _answer(ci, eid, "review", n)
+    _answer(ci, eid, "review", n + 1)
+    attempts = pw.wait_ended(eid, n + 2)
+    assert [a["status"] for a in attempts] == ["parked"] * 4 + ["failed"]
     assert "ran out of rounds: 2 of 2" in str(sup.events(eid, event_type="stage.started"))
     assert "completed" not in sup.node_status(eid, "ship")

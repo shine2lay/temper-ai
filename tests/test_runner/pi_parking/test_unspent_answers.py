@@ -93,15 +93,15 @@ def test_a_go_that_lets_its_worker_go_leaves_nothing_in_memory_and_carries_on(sw
     over, so nothing of it stays in memory; carrying it on still spends both answers."""
     c = sw.client
     eid = sup.start(c, "sw_rounds", sw.ws)
-    pw.finish_pi(c, eid)
-    pw.wait_parked(sw.state, eid, n_attempts=1)
+    n = pw.finish_pi(c, eid)
+    pw.wait_parked(sw.state, eid, n_attempts=n)
     first = pw.open_gate(c, eid, ask.name_of("ask", 1))
     assert pw.approve(c, eid, ask.name_of("ask", 1), event_id=first["event_id"]).status_code == 200
-    pw.wait_parked(sw.state, eid, n_attempts=2)
+    pw.wait_parked(sw.state, eid, n_attempts=n + 1)
     second = pw.open_gate(c, eid, ask.name_of("ask", 2))
     assert _remembered(eid) == [], "a parked go left what its step asked in memory"
     assert pw.approve(c, eid, ask.name_of("ask", 2), event_id=second["event_id"]).status_code == 200
-    assert [a["status"] for a in pw.wait_ended(eid, 3)] == ["parked", "parked", "completed"]
+    assert [a["status"] for a in pw.wait_ended(eid, n + 2)] == ["parked"] * 3 + ["completed"]
     assert [bool(w["data"].get("gate_used_at")) for w in ask.step_waits(eid, "ask")] == [True, True]
     assert _remembered(eid) == []
 

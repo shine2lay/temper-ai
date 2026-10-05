@@ -13,8 +13,8 @@ workflow:
     At each approval the run saves where it is and its box (or thread) exits:
     the run shows "waiting on you" with nothing running. Your answer carries
     it on in a new box, without running finished steps again, however long
-    it waited and across restarts. The Pi step's own "what next" waits still
-    hold the worker (docs/pi-agent.md); answer `done` to finish it.
+    it waited and across restarts. The Pi step's own "what next" waits let
+    the worker go the same way (docs/pi-agent.md); answer `done` to finish it.
 
       POST /api/runs {"workflow": "ci_pi_waits"}
       POST /api/runs {"workflow": "ci_pi_waits", "inputs": {"verdict": "done"}}

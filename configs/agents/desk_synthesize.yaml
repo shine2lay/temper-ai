@@ -2,7 +2,9 @@
 # against its pass and kill bars and its decisive sources, changes a verdict only when the
 # evidence doesn't reach the bar or the researcher misread it (the bar governs: an evidence
 # default holds only where the bar is silent), then writes what the verdicts mean for the
-# hypothesis and what to test next. No new research. Part of workflows/desk_check.yaml.
+# hypothesis and what to test next. Each verdict shows what carried it (pays, does, says or fact)
+# and who is speaking (neutral or interested sources, with their stake). No new research. Part of
+# workflows/desk_check.yaml.
 agent:
   name: desk_synthesize
   version: 1
@@ -36,6 +38,17 @@ agent:
         bar as written, the verdict is the one the bar gives: record the set_aside with the
         bar's words. Only the bar's own words set a default aside, never the hypothesis
         text, the pointers or your own view of a source.
+      - Check each decisive claim's tags on its page: party (a seller's own survey or a
+        company about its own product is interested, with its stake), source, and signal (a
+        survey's account of what people did or spent is says, not does or pays). You can't
+        edit the researchers' files: when a party tag is wrong and, with the right party, a
+        default the bar keeps (D2) is no longer met, the evidence doesn't reach the bar (to
+        unknown; say so in changed_because); when a signal tag is wrong, say so in why.
+      - carried_by is the strongest signal among a verdict's usable decisive claims: pays,
+        then does, then says, then fact ("none" without one; check_desk.py works it out from
+        the tags). Money weighs more than behaviour and behaviour more than words: a verdict
+        carried by says, or resting only on interested sources, states that caveat in why.
+        The tags never move a bar or a rule.
       - Keep the verdict when it follows. Change it only when the evidence doesn't reach the
         bar (to unknown), or when the researcher misread the bar, or applied a default the
         bar sets aside, and the cited claims meet a bar (to that verdict). Say why in
@@ -58,6 +71,7 @@ agent:
             {"id": "A1", "assumption": "...", "researcher_verdict": "pass|kill|unknown",
              "verdict": "pass|kill|unknown", "changed_because": "",
              "why": "2-4 sentences, citing claim ids", "decisive": ["A1-3", "A1-5"],
+             "carried_by": "pays|does|says|fact|none",
              "confidence": "low|med|high", "next_test": "...",
              "rules": {"decided_by": [], "set_aside": [{"rule": "D2", "bar_words": "...", "why": "..."}]}}
           ],
@@ -65,15 +79,16 @@ agent:
           "status_why": "2-4 sentences",
           "next_steps": ["..."]}
          One entry per assumption, in order. decisive: the claims the final verdict rests on,
-         from that assumption's own claims. rules: the final verdict's own, the researcher's
-         unless your review changed them; empty lists when no default was set aside or
-         decided it.
+         from that assumption's own claims. carried_by: from those claims' signal tags, as
+         above. rules: the final verdict's own, the researcher's unless your review changed
+         them; empty lists when no default was set aside or decided it.
       2. state/desk/report.md, plain words for a busy reader: the hypothesis; a table
-         (assumption, verdict, confidence, the one fact it turns on, evidence rule: a default
-         the bar set aside, with its words, or a default that decided an unknown; "-" when
-         none); per assumption a short
-         paragraph quoting its decisive evidence with links; what the verdicts mean; next
-         steps.
+         (assumption, verdict, confidence, carried by: pays, does, says or fact, who is
+         speaking: neutral, interested or both, the one fact it turns on, evidence rule: a
+         default the bar set aside, with its words, or a default that decided an unknown;
+         "-" when none); per assumption a short paragraph quoting its decisive evidence with
+         links, naming each source and, for an interested one, its stake; what the verdicts
+         mean; next steps.
       3. Run `python3 state/desk/check_desk.py` again and fix every problem it lists in
          report.json (never edit the researchers' files).
       4. Finish with a single ```json block as your WHOLE final message: no sentence before

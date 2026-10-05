@@ -31,6 +31,14 @@ workflow:
   # that quotes them (rules.set_aside), and an unknown held back by a default names it
   # (rules.decided_by). check_desk.py checks both against the bar and the decisive claims.
   #
+  # PDFs and who is speaking (queue #28, after the travel study left PDF reports unread: the run
+  # containers have no pdftotext). cite.py reads PDFs with pdftext.py, a standard-library reader
+  # desk_setup writes next to it, so a PDF reads the same everywhere; a PDF its publisher locks
+  # stays unread. Every claim carries party (neutral or interested), stake (an interested
+  # source's gain), source and signal (pays, does, says or fact); each verdict states carried_by,
+  # the strongest signal among its decisive claims (money over behaviour over words), checked
+  # by check_desk.py. The tags inform a verdict and its caveats; they never move a bar or rule.
+  #
   # provider: claude = Claude Code CLI (its own WebSearch/WebFetch/Bash); no temper tools: blocks.
   version: 1
   description: |
@@ -41,7 +49,9 @@ workflow:
     hypothesis. The bars govern: the evidence defaults (two sources, a neutral source, a
     primary source) hold only where a bar is silent, and each verdict names any default its bar
     set aside or that decided it. A script checks every verdict's support and lists the
-    decisive claims for a hand check.
+    decisive claims for a hand check. Each verdict also shows what carried it (pays, does, says
+    or fact) and who is speaking (neutral or interested sources, with their stake). PDF
+    reports are read like any page.
   inputs:
     hypothesis:
       type: string
@@ -67,9 +77,11 @@ workflow:
     check_problems: final.structured.problems
     spot_check: final.structured.spot_check
     rules: final.structured.rules    # per assumption: decided_by (defaults that held it back), set_aside (with the bar's words)
+    evidence: final.structured.evidence    # per assumption: carried_by (pays, does, says, fact or none), signals, speaking (neutral, interested or both), sources with party and stake
 
   nodes:
-    # Input files + the two helpers (cite.py, check_desk.py) into the workspace. No model.
+    # Input files + the three helpers (cite.py, pdftext.py, check_desk.py) into the workspace.
+    # No model.
     - name: setup
       type: agent
       agent: desk_setup

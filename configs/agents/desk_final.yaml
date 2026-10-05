@@ -2,8 +2,9 @@
 # check (state/desk/check_desk.py, written by desk_setup): every verdict's support (quotes on
 # their kept pages, count scripts re-run against their kept datasets, at least one primary and
 # neutral decisive claim per pass or kill), the report's coverage and its hypothesis status.
-# Prints the verdict and each assumption's decisive claims for the hand check. Part of
-# workflows/desk_check.yaml.
+# Prints the verdict and each assumption's decisive claims for the hand check, with what carried
+# each verdict (evidence: carried_by, signals, who is speaking) and each claim's party, stake,
+# source and signal. Part of workflows/desk_check.yaml.
 #
 # It also fails a check that a researcher left without usable output, naming the assumption: its
 # checks/<id>.json and .md missing, empty, not valid JSON or an account-limit message, or its final

@@ -36,6 +36,9 @@ PAGES = {
     "https://quizvendor.example.com/blog/swiss-tourism-quiz":
         "Of the people who started the quiz, 80% completed it, and many went on to plan a trip.",
 }
+# Who is speaking on each page (queue #28): the platform's success story and the quiz vendor's blog.
+SPEAKERS = [("Example Business, the quiz platform", "sells the platform the success story promotes"),
+            ("QuizVendor", "sells the quiz software")]
 # The bar of run 2a2f6850's A2, cut short: it counts the operator's and the vendor's own figures.
 SAYS_SO = ("At least one named travel destination quiz has an operator-stated or case-study-stated completion rate "
            "of 50% or more. A quiz-software vendor's case study is primary for its stated figure but tag it party: "
@@ -57,14 +60,15 @@ def claims(how="cite"):
     """Both decisive claims come from interested parties: the operator's platform and the quiz vendor."""
     return [{"id": f"A1-{n}", "claim": "The Switzerland Tourism quiz finished at 80%.", "quote": text.split(",")[0],
              "url": url, "date": "2020", "fetched": "2026-10-05", "kind": "count", "quality": "primary",
-             "party": "interested", "how": how} for n, (url, text) in enumerate(PAGES.items(), 1)]
+             "party": "interested", "stake": stake, "source": source, "signal": "does", "how": how}
+            for n, ((url, text), (source, stake)) in enumerate(zip(PAGES.items(), SPEAKERS, strict=True), 1)]
 
 
 def findings(verdict, rules, how="cite"):
     data = {"id": "A1", "assumption": "Most travelers who start a destination quiz finish it.", "verdict": verdict,
             "why": "The operator's platform and the quiz vendor both state an 80% completion rate for the quiz.",
             "against_bar": "80% is above the pass bar's 50%; nothing near the kill bar's 25% was found.",
-            "decisive": ["A1-1", "A1-2"], "counter": [], "confidence": "med",
+            "decisive": ["A1-1", "A1-2"], "counter": [], "confidence": "med", "carried_by": "does",
             "next_test": "Ask the operator for the quiz's completion rate by market.", "claims": claims(how),
             "searched": ["travel quiz completion rate"], "not_found": ["a neutral source for the quiz's figure"]}
     if rules is not None:
@@ -87,7 +91,7 @@ def desk(ws, bar, verdict, rules, how="cite", row=None):
         write(d / "report.json", {
             "verdicts": [{"id": "A1", "assumption": "Most travelers who start a destination quiz finish it.",
                           "researcher_verdict": verdict, "why": "Both the operator and the vendor state 80%.",
-                          "decisive": ["A1-1", "A1-2"], "confidence": "med",
+                          "decisive": ["A1-1", "A1-2"], "confidence": "med", "carried_by": "does",
                           "next_test": "Ask the operator for the quiz's completion rate by market.", **row}],
             "hypothesis_status": "holds" if row["verdict"] == "pass" else "open",
             "status_why": "The only assumption is judged against its own bar as written.",

@@ -1,16 +1,19 @@
 # @description DESK CHECK step 0 (product role). No model. Writes the run's input (state/desk/
 # input.md: the hypothesis, the evidence rules - fixed ones and the defaults a bar may set aside
 # in its own words - and every assumption with its pass and kill bars; one file per
-# assumption in state/desk/assumptions/) and two helpers into state/desk/: cite.py (exact page
-# text through curl's default user agent, PDFs through pdftotext, every page read kept in
-# state/desk/pages/; public datasets downloaded whole into state/desk/data/) and check_desk.py
-# (the mechanical check, run by the researchers, the synthesizer and desk_final). Clears the
+# assumption in state/desk/assumptions/) and three helpers into state/desk/: cite.py (exact page
+# text through curl's default user agent, every page read kept in state/desk/pages/; public
+# datasets downloaded whole into state/desk/data/), pdftext.py (the PDF reader cite.py uses:
+# standard library only, so a PDF reads the same in every container; pdftotext only when it finds
+# no text) and check_desk.py (the mechanical check, run by the researchers, the synthesizer and
+# desk_final; it also works out what kind of evidence carried each verdict). Clears the
 # previous run's files first (state/desk/history/ is left alone). Prints the assumption slots
 # (A1..An) that decide which researcher slots run. Part of workflows/desk_check.yaml.
 # From the command line, run it with --workspace <folder>: without it `temper run` gives script
 # steps no workspace_path, and this step stops rather than write into the home folder.
 # POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution) and
-# no Jinja delimiters inside the helpers.
+# no Jinja delimiters inside the helpers. The script runs as one `sh -c` argument and Linux caps
+# one argument at 128 KB: keep the rendered script under 120,000 bytes (a test checks it).
 agent:
   name: desk_setup
   version: 1
@@ -73,9 +76,9 @@ agent:
         "checks every pass or kill against these rules.",
         "",
         "Fixed, whatever the bar says:",
-        "- F1 checkable claims: every claim has a URL, a date and its tags (quality, party, how); "
-        "a quoted claim's words are on the page cite.py kept; a counted claim's script, run again, "
-        "prints its result.",
+        "- F1 checkable claims: every claim has a URL, a date and its tags (quality, party, stake "
+        "when interested, source, signal, how); a quoted claim's words are on the page cite.py "
+        "kept; a counted claim's script, run again, prints its result.",
         "- F2 no listicles or snippets: listicles and search-snippet claims never count as support.",
         "- F3 one checked claim: a pass or a kill rests on at least one usable decisive claim read "
         "with cite.py or counted from a public dataset (a WebFetch summary has no checked quote).",
@@ -96,6 +99,29 @@ agent:
         "researcher's or reviewer's judgement never set a default aside. A verdict held at unknown "
         "because its evidence meets the bar's words but not a default names that default "
         "(rules.decided_by).",
+        "",
+        "## Who is speaking, and what the evidence shows",
+        "",
+        "Every claim carries these tags. check_desk.py checks them and shows them on each verdict. "
+        "They inform a verdict and its caveats; they never move a bar or a rule above.",
+        "- party: neutral, or interested when its source gains from the answer (a seller's own "
+        "survey, a vendor's case study, a company about its own product, a group about its own "
+        "cause).",
+        "- stake (interested claims): who gains from the answer and how, in a few words.",
+        "- source: who stands behind the evidence (the body that ran the survey, published the "
+        "data or made the statement), as the page names it. One source has one party within an "
+        "assumption.",
+        "- signal: what the evidence shows. pays: money actually spent (revenue, paid users, "
+        "purchases, paid bookings). does: behaviour observed or logged (usage, searches, visits, "
+        "trips or completions counted by a system or an observer). says: what people tell a survey "
+        "or an interviewer (opinions, intentions, preferences, or their own account of what they "
+        "did or spent). fact: not about what people say, do or pay (a rule, a price, a feature, a "
+        "count of firms, an event).",
+        "",
+        "A verdict is carried by the strongest signal among its usable decisive claims: pays, then "
+        "does, then says, then fact (none without a usable decisive claim). Money weighs more than "
+        "behaviour and behaviour more than words, so a verdict carried by says, or only by "
+        "interested sources, states that as a caveat; the bar still decides the verdict.",
         "",
     ]
     parts = ["# Desk check input", "", "Written by desk_setup, " + time.strftime("%Y-%m-%d %H:%M %Z") + ".",
@@ -128,13 +154,16 @@ agent:
         f.write("\n".join(parts))
     with open(os.path.join(DESK, "setup.json"), "w", encoding="utf-8") as f:
         json.dump({"status": "completed", "input_path": "state/desk/input.md", "slots": slots,
-                   "helpers": ["state/desk/cite.py", "state/desk/check_desk.py"]}, f)
+                   "helpers": ["state/desk/cite.py", "state/desk/pdftext.py",
+                               "state/desk/check_desk.py"]}, f)
     PYEOF
     cat > state/desk/cite.py <<'CITEEOF'
     #!/usr/bin/env python3
     """Exact page text for citing, and public datasets for counting (desk_check). Plain curl with
-    its default user agent; PDFs through pdftotext. A page or file that doesn't answer 200 is
-    INACCESSIBLE: log it and move on, never work around it. Run from the workspace root.
+    its default user agent; PDFs through pdftext.py (pdftotext only when it finds no text). A page
+    or file that doesn't answer 200 is INACCESSIBLE: log it and move on, never work around it. A
+    PDF its publisher locks (a password, or copying its text not allowed) is not read either.
+    Run from the workspace root.
 
       python3 state/desk/cite.py page <url> [kw1,kw2]   status, dates on the page, text near the keywords
       python3 state/desk/cite.py quote <url> "<words>"  FOUND / NOT FOUND: are these exact words on the page?
@@ -170,14 +199,61 @@ agent:
         return re.sub(r"\s+", " ", s).strip()
 
 
+    LOCKED = {
+        "password": "a PDF that needs a password: INACCESSIBLE, log it and move on",
+        "no-copy": ("a PDF whose publisher does not allow copying its text: not read; log it and "
+                    "cite a page that publishes the figure instead"),
+        "encrypted": "an encrypted PDF the reader can't open: INACCESSIBLE, log it and move on",
+    }
+
+
     def pdf_text(path):
+        """(text, note, info) of a saved PDF: pdftext.py first, the same text in every container;
+        pdftotext only when that finds none. A locked PDF stays unread, never worked around."""
+        info = {"pdf_reader": "pdftext.py"}
+        with open(path, "rb") as f:
+            data = f.read()
         try:
-            out = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True,
-                                 timeout=120)
-            return norm(out.stdout.decode("utf-8", "replace")), ""
+            sys.dont_write_bytecode = True
+            if HERE not in sys.path:
+                sys.path.insert(0, HERE)
+            import pdftext
+            pages, total, why = pdftext.pdf_pages(data)
+        except Exception as e:    # a PDF the reader can't parse: pdftotext may
+            pages, total, why = [], 0, "reader: " + type(e).__name__
+            if isinstance(e, ImportError):    # a copy of this file with no pdftext.py beside it
+                info["pdf_reader"], why = "none", "no reader"
+            if b"/Encrypt" in data:    # a lock the reader couldn't check: pdftotext ignores locks
+                why = "encrypted"
+        info["pdf_pages"] = "%d of %d" % (len(pages), total)
+        if why in LOCKED:
+            info["pdf_locked"] = why
+            return "", LOCKED[why], info
+        if why:
+            info["pdf_reader_note"] = "stopped after 60 s" if why == "time" else why
+        text = norm(" ".join(pages))
+        if text:
+            return text, "", info
+        try:
+            out = subprocess.run(["pdftotext", path, "-"], capture_output=True, timeout=120)
+            text = norm(out.stdout.decode("utf-8", "replace"))
         except (OSError, subprocess.TimeoutExpired):
-            return "", ("PDF but no pdftotext here: read it with WebFetch and tag its claims "
-                        "how: webfetch, with no quote")
+            text = ""
+        if text:
+            info["pdf_reader"] = "pdftotext"
+            return text, "", info
+        if why == "no reader":
+            return "", ("PDF but no PDF reader here: read it with WebFetch and tag its claims "
+                        "how: webfetch, with no quote"), info
+        return "", ("PDF with no text to read (a scan without a text layer?): read it with "
+                    "WebFetch and tag its claims how: webfetch, with no quote"), info
+
+
+    def forms(text):
+        """The page text as quote() and check_desk.py match it: lower case, and with a word broken
+        at a line end ("classifica- tion", "cross- border") joined both ways."""
+        flat = norm(text).lower()
+        return (flat, re.sub(r"(\w)- (\w)", r"\1\2", flat), re.sub(r"(\w)- (\w)", r"\1-\2", flat))
 
 
     def html_text(raw):
@@ -217,8 +293,9 @@ agent:
             with open(raw_path, "rb") as f:
                 raw = f.read()
             if "pdf" in meta["content_type"].lower() or raw[:5] == b"%PDF-":
-                text, note = pdf_text(raw_path)
+                text, note, info = pdf_text(raw_path)
                 meta["pdf"] = True
+                meta.update(info)
             else:
                 text, meta["dates_on_page"] = html_text(raw)
                 note = ""
@@ -246,6 +323,9 @@ agent:
         if meta["http"] != "200":
             print("-> INACCESSIBLE (%s): log it, never work around it" % meta.get("error", "status"))
             return False
+        if meta.get("pdf"):
+            print("PDF read by", meta.get("pdf_reader", "?"), "| pages:", meta.get("pdf_pages", "?"),
+                  meta.get("pdf_reader_note", ""))
         if meta.get("dates_on_page") or meta.get("dated_text"):
             print("dates on page:", meta.get("dates_on_page", []), meta.get("dated_text", []))
         if meta.get("note"):
@@ -278,12 +358,12 @@ agent:
         if not header(meta):
             return
         want = norm(words).lower()
-        flat = norm(text)
-        at = flat.lower().find(want)
-        if at < 0:
-            print("NOT FOUND on the page: don't cite these words; quote what the page says")
-            return
-        print("FOUND: ..." + flat[max(0, at - 200):at + len(want) + 200] + "...")
+        for flat in forms(text):
+            at = flat.find(want)
+            if at >= 0:
+                print("FOUND: ..." + flat[max(0, at - 200):at + len(want) + 200] + "...")
+                return
+        print("NOT FOUND on the page: don't cite these words; quote what the page says")
 
 
     def data(url, name):
@@ -340,6 +420,1292 @@ agent:
     if __name__ == "__main__":
         main(sys.argv)
     CITEEOF
+    cat > state/desk/pdftext.py <<'PDFEOF'
+    #!/usr/bin/env python3
+    """Plain text of a PDF, Python standard library only (desk_check: cite.py reads PDFs with it).
+
+      python3 state/desk/pdftext.py <file.pdf>    the text, pages split by a form feed
+
+    Reads the text a PDF draws, in the order it draws it: fonts with a ToUnicode map, the standard
+    encodings and custom ones, embedded Type 1 encodings, two-byte fonts; words are spaced from
+    the glyph widths and positions. An encrypted PDF is read the way any viewer opens it (no
+    password, RC4 or AES) when its publisher allows copying its text; one that needs a password
+    or forbids copying stays unread. It cannot see words inside images (a scan without a text
+    layer): those give no text.
+    """
+    import hashlib
+    import math
+    import re
+    import struct
+    import sys
+    import time
+    import unicodedata
+    import zlib
+
+
+    class PdfError(Exception):
+        pass
+
+
+    class Name(str):
+        pass
+
+
+    class Ref(object):
+        __slots__ = ("num", "gen")
+
+        def __init__(self, num, gen):
+            self.num, self.gen = num, gen
+
+
+    class Stream(object):
+        __slots__ = ("dict", "raw", "_data", "num", "gen")
+
+        def __init__(self, sdict, raw, num=0, gen=0):
+            self.dict, self.raw, self._data, self.num, self.gen = sdict, raw, None, num, gen
+
+
+    LEX = re.compile(
+        rb"(?P<sp>[\x00\t\n\x0c\r ]+|%[^\r\n]*)"
+        rb"|(?P<num>[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+))"
+        rb"|(?P<name>/[^\x00\t\n\x0c\r ()<>\[\]{}/%]*)"
+        rb"|(?P<lit>\()"
+        rb"|(?P<hex><(?!<)[^>]*>)"
+        rb"|(?P<open><<|\[|\{)"
+        rb"|(?P<close>>>|\]|\})"
+        rb"|(?P<op>[^\x00\t\n\x0c\r ()<>\[\]{}/%]+)"
+        rb"|(?P<bad>[\s\S])")
+    SPECIAL = re.compile(rb"[\\()]")
+    ESCAPES = {ord("n"): b"\n", ord("r"): b"\r", ord("t"): b"\t", ord("b"): b"\b", ord("f"): b"\f"}
+    OBJ = re.compile(rb"(?<![0-9])([0-9]{1,10})\s+([0-9]{1,5})\s+obj(?![A-Za-z])")
+    HEXDIGITS = re.compile(rb"[^0-9A-Fa-f]")
+    NAME_ESC = re.compile(r"#([0-9A-Fa-f]{2})")
+
+
+    def lit_string(data, i):
+        """The literal string whose '(' ends at i: (its bytes, the index after its ')')."""
+        out, depth = [], 1
+        while True:
+            m = SPECIAL.search(data, i)
+            if not m:
+                out.append(data[i:])
+                return b"".join(out), len(data)
+            j = m.start()
+            out.append(data[i:j])
+            c = data[j]
+            if c == 0x5c:
+                k = j + 1
+                if k >= len(data):
+                    return b"".join(out), len(data)
+                e = data[k]
+                if e in ESCAPES:
+                    out.append(ESCAPES[e])
+                    i = k + 1
+                elif 0x30 <= e <= 0x37:
+                    end = k
+                    while end < len(data) and end < k + 3 and 0x30 <= data[end] <= 0x37:
+                        end += 1
+                    out.append(bytes([int(data[k:end], 8) & 255]))
+                    i = end
+                elif e == 0x0d:
+                    i = k + 2 if data[k + 1:k + 2] == b"\n" else k + 1
+                elif e == 0x0a:
+                    i = k + 1
+                else:
+                    out.append(data[k:k + 1])
+                    i = k + 1
+            elif c == 0x28:
+                depth += 1
+                out.append(b"(")
+                i = j + 1
+            else:
+                depth -= 1
+                if depth == 0:
+                    return b"".join(out), j + 1
+                out.append(b")")
+                i = j + 1
+
+
+    def unhex(body):
+        body = HEXDIGITS.sub(b"", body)
+        if len(body) % 2:
+            body += b"0"
+        return bytes.fromhex(body.decode("ascii"))
+
+
+    def unname(raw):
+        text = raw[1:].decode("latin-1")
+        if "#" in text:
+            text = NAME_ESC.sub(lambda m: chr(int(m.group(1), 16)), text)
+        return Name(text)
+
+
+    def number(raw):
+        try:
+            return float(raw) if b"." in raw else int(raw)
+        except ValueError:
+            return 0
+
+
+    def to_dict(items):
+        out = dict()
+        for k in range(0, len(items) - 1, 2):
+            if isinstance(items[k], Name):
+                out[str(items[k])] = items[k + 1]
+        return out
+
+
+    def parse(data, i=0, stop_at_keyword=True):
+        """Objects from data[i:] up to a keyword at the top level (endobj, stream, ...) or the end:
+        (list of top-level values, index of the keyword or the end, the keyword or b'')."""
+        stack = [[]]
+        n = len(data)
+        while i < n:
+            m = LEX.match(data, i)
+            kind = m.lastgroup
+            start, i = i, m.end()
+            if kind == "sp" or kind == "bad":
+                continue
+            top = stack[-1]
+            if kind == "num":
+                top.append(number(m.group()))
+            elif kind == "name":
+                top.append(unname(m.group()))
+            elif kind == "lit":
+                s, i = lit_string(data, i)
+                top.append(s)
+            elif kind == "hex":
+                top.append(unhex(m.group()[1:-1]))
+            elif kind == "open":
+                stack.append([m.group()])
+            elif kind == "close":
+                if len(stack) == 1:
+                    continue
+                items = stack.pop()
+                stack[-1].append(to_dict(items[1:]) if items[0] == b"<<" else items[1:])
+            else:
+                word = m.group()
+                if word == b"R" and len(top) >= 2 and type(top[-1]) is int and type(top[-2]) is int:
+                    gen = top.pop()
+                    top[-1] = Ref(top[-1], gen)
+                elif word == b"true" or word == b"false":
+                    top.append(word == b"true")
+                elif word == b"null":
+                    top.append(None)
+                elif len(stack) == 1 and stop_at_keyword:
+                    return top, start, word
+        while len(stack) > 1:
+            items = stack.pop()
+            stack[-1].append(to_dict(items[1:]) if items[0] == b"<<" else items[1:])
+        return stack[0], n, b""
+
+
+    # ---- filters ----------------------------------------------------------------------------------
+
+
+    def inflate(data):
+        for wbits in (15, -15):
+            d = zlib.decompressobj(wbits)
+            out = []
+            try:
+                for k in range(0, len(data), 1 << 16):
+                    out.append(d.decompress(data[k:k + (1 << 16)]))
+                out.append(d.flush())
+            except zlib.error:
+                pass
+            got = b"".join(out)
+            if got or wbits == -15:
+                return got
+        return b""
+
+
+    def lzw(data, early=1):
+        out, table = bytearray(), [bytes([k]) for k in range(256)] + [b"", b""]
+        bits, buf, nbits, prev = 9, 0, 0, None
+        for byte in data:
+            buf, nbits = (buf << 8) | byte, nbits + 8
+            while nbits >= bits:
+                nbits -= bits
+                code = (buf >> nbits) & ((1 << bits) - 1)
+                if code == 256:
+                    table, bits, prev = table[:258], 9, None
+                    continue
+                if code == 257:
+                    return bytes(out)
+                if code < len(table):
+                    entry = table[code]
+                    if prev is not None:
+                        table.append(prev + entry[:1])
+                elif prev is not None:
+                    entry = prev + prev[:1]
+                    table.append(entry)
+                else:
+                    continue
+                out += entry
+                prev = entry
+                if len(table) + early >= (1 << bits) and bits < 12:
+                    bits += 1
+        return bytes(out)
+
+
+    def ascii85(data):
+        data = re.sub(rb"\s", b"", data)
+        if data.startswith(b"<~"):
+            data = data[2:]
+        data = data.split(b"~>")[0]
+        out, group = bytearray(), []
+        for c in data:
+            if c == 0x7a and not group:
+                out += b"\0\0\0\0"
+                continue
+            if not 0x21 <= c <= 0x75:
+                continue
+            group.append(c - 33)
+            if len(group) == 5:
+                v = 0
+                for g in group:
+                    v = v * 85 + g
+                out += (v & 0xffffffff).to_bytes(4, "big")
+                group = []
+        if group:
+            n = len(group)
+            v = 0
+            for g in group + [84] * (5 - n):
+                v = v * 85 + g
+            out += (v & 0xffffffff).to_bytes(4, "big")[:n - 1]
+        return bytes(out)
+
+
+    def runlength(data):
+        out, k = bytearray(), 0
+        while k < len(data):
+            n = data[k]
+            if n == 128:
+                break
+            if n < 128:
+                out += data[k + 1:k + 2 + n]
+                k += n + 2
+            else:
+                out += data[k + 1:k + 2] * (257 - n)
+                k += 2
+        return bytes(out)
+
+
+    def unpredict(data, parms):
+        predictor = parms.get("Predictor", 1) if isinstance(parms, dict) else 1
+        if not isinstance(predictor, int) or predictor < 10:
+            return data
+        colors = parms.get("Colors", 1) or 1
+        bpc = parms.get("BitsPerComponent", 8) or 8
+        cols = parms.get("Columns", 1) or 1
+        bpp = max(1, colors * bpc // 8)
+        row = (cols * colors * bpc + 7) // 8
+        out, prev = bytearray(), bytearray(row)
+        for k in range(0, len(data), row + 1):
+            kind, line = data[k], bytearray(data[k + 1:k + 1 + row])
+            line += bytes(row - len(line))
+            if kind == 1:
+                for x in range(bpp, row):
+                    line[x] = (line[x] + line[x - bpp]) & 255
+            elif kind == 2:
+                for x in range(row):
+                    line[x] = (line[x] + prev[x]) & 255
+            elif kind == 3:
+                for x in range(row):
+                    left = line[x - bpp] if x >= bpp else 0
+                    line[x] = (line[x] + ((left + prev[x]) >> 1)) & 255
+            elif kind == 4:
+                for x in range(row):
+                    a = line[x - bpp] if x >= bpp else 0
+                    b, c = prev[x], prev[x - bpp] if x >= bpp else 0
+                    p = a + b - c
+                    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                    line[x] = (line[x] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+            out += line
+            prev = line
+        return bytes(out)
+
+
+    IMAGE_FILTERS = ("DCTDecode", "DCT", "JPXDecode", "CCITTFaxDecode", "CCF", "JBIG2Decode", "Crypt")
+
+
+    # ---- encryption: the standard security handler, opened without a password ----------------------
+
+    PASSWORD_PAD = bytes.fromhex("28BF4E5E4E758A4164004E56FFFA01082E2E00B6D0683E802F0CA9FE6453697A")
+
+
+    def rc4(key, data):
+        s, j = list(range(256)), 0
+        for i in range(256):
+            j = (j + s[i] + key[i % len(key)]) & 255
+            s[i], s[j] = s[j], s[i]
+        out, i, j = bytearray(len(data)), 0, 0
+        for k, byte in enumerate(data):
+            i = (i + 1) & 255
+            j = (j + s[i]) & 255
+            s[i], s[j] = s[j], s[i]
+            out[k] = byte ^ s[(s[i] + s[j]) & 255]
+        return bytes(out)
+
+
+    class Aes(object):
+        """AES (FIPS-197) with a 16- or 32-byte key: CBC decryption for streams, CBC encryption for
+        the revision 6 password hash."""
+        tables = None
+
+        @classmethod
+        def _tables(cls):
+            if cls.tables:
+                return cls.tables
+            exp, log, x = [0] * 510, [0] * 256, 1
+            for i in range(255):
+                exp[i], log[x] = x, i
+                x ^= (x << 1) ^ (0x11B if x & 0x80 else 0)
+            for i in range(255, 510):
+                exp[i] = exp[i - 255]
+
+            def mul(a, b):
+                return exp[log[a] + log[b]] if a and b else 0
+
+            sbox, inv = [0] * 256, [0] * 256
+            for a in range(256):
+                b = exp[255 - log[a]] if a else 0
+                s = b ^ 0x63
+                for k in range(1, 5):
+                    s ^= ((b << k) | (b >> (8 - k))) & 255
+                sbox[a], inv[s] = s, a
+            te, td = [[0] * 256 for _ in range(4)], [[0] * 256 for _ in range(4)]
+            for a in range(256):
+                s, r = sbox[a], inv[a]
+                w = (mul(s, 2) << 24) | (s << 16) | (s << 8) | mul(s, 3)
+                v = (mul(r, 14) << 24) | (mul(r, 9) << 16) | (mul(r, 13) << 8) | mul(r, 11)
+                for k in range(4):
+                    te[k][a], td[k][a] = w, v
+                    w, v = ((w >> 8) | (w << 24)) & 0xFFFFFFFF, ((v >> 8) | (v << 24)) & 0xFFFFFFFF
+            cls.tables = (sbox, inv, te, td)
+            return cls.tables
+
+        def __init__(self, key):
+            sbox, inv, te, td = self._tables()
+            nk = len(key) // 4
+            self.rounds = nr = nk + 6
+            w, rcon = list(struct.unpack(">%dI" % nk, key)), 1
+
+            def sub(t):
+                return sbox[t >> 24] << 24 | sbox[(t >> 16) & 255] << 16 | sbox[(t >> 8) & 255] << 8 | sbox[t & 255]
+
+            for i in range(nk, 4 * (nr + 1)):
+                t = w[i - 1]
+                if i % nk == 0:
+                    t = sub(((t << 8) | (t >> 24)) & 0xFFFFFFFF) ^ (rcon << 24)
+                    rcon = (rcon << 1) ^ (0x11B if rcon & 0x80 else 0)
+                elif nk > 6 and i % nk == 4:
+                    t = sub(t)
+                w.append(w[i - nk] ^ t)
+            self.ek, self.dk = w, []
+            for r in range(nr, -1, -1):
+                words = w[4 * r:4 * r + 4]
+                if 0 < r < nr:
+                    words = [td[0][sbox[x >> 24]] ^ td[1][sbox[(x >> 16) & 255]] ^ td[2][sbox[(x >> 8) & 255]]
+                             ^ td[3][sbox[x & 255]] for x in words]
+                self.dk.extend(words)
+
+        def encrypt_block(self, s0, s1, s2, s3):
+            sbox, _, (t0, t1, t2, t3), _ = self.tables
+            ek = self.ek
+            s0, s1, s2, s3, k = s0 ^ ek[0], s1 ^ ek[1], s2 ^ ek[2], s3 ^ ek[3], 4
+            for _ in range(self.rounds - 1):
+                s0, s1, s2, s3 = (
+                    t0[s0 >> 24] ^ t1[(s1 >> 16) & 255] ^ t2[(s2 >> 8) & 255] ^ t3[s3 & 255] ^ ek[k],
+                    t0[s1 >> 24] ^ t1[(s2 >> 16) & 255] ^ t2[(s3 >> 8) & 255] ^ t3[s0 & 255] ^ ek[k + 1],
+                    t0[s2 >> 24] ^ t1[(s3 >> 16) & 255] ^ t2[(s0 >> 8) & 255] ^ t3[s1 & 255] ^ ek[k + 2],
+                    t0[s3 >> 24] ^ t1[(s0 >> 16) & 255] ^ t2[(s1 >> 8) & 255] ^ t3[s2 & 255] ^ ek[k + 3])
+                k += 4
+            return (
+                (sbox[s0 >> 24] << 24 | sbox[(s1 >> 16) & 255] << 16 | sbox[(s2 >> 8) & 255] << 8 | sbox[s3 & 255]) ^ ek[k],
+                (sbox[s1 >> 24] << 24 | sbox[(s2 >> 16) & 255] << 16 | sbox[(s3 >> 8) & 255] << 8 | sbox[s0 & 255]) ^ ek[k + 1],
+                (sbox[s2 >> 24] << 24 | sbox[(s3 >> 16) & 255] << 16 | sbox[(s0 >> 8) & 255] << 8 | sbox[s1 & 255]) ^ ek[k + 2],
+                (sbox[s3 >> 24] << 24 | sbox[(s0 >> 16) & 255] << 16 | sbox[(s1 >> 8) & 255] << 8 | sbox[s2 & 255]) ^ ek[k + 3])
+
+        def cbc_encrypt(self, iv, data):
+            """Whole blocks, no padding."""
+            words, (c0, c1, c2, c3), out = struct.unpack(">%dI" % (len(data) // 4), data), struct.unpack(">4I", iv), []
+            for b in range(0, len(words), 4):
+                c0, c1, c2, c3 = self.encrypt_block(words[b] ^ c0, words[b + 1] ^ c1, words[b + 2] ^ c2, words[b + 3] ^ c3)
+                out.extend((c0, c1, c2, c3))
+            return struct.pack(">%dI" % len(out), *out)
+
+        def cbc_decrypt(self, iv, data):
+            """Whole blocks; a stray tail shorter than a block is dropped."""
+            data = data[:len(data) // 16 * 16]
+            if not data:
+                return b""
+            _, inv, _, (t0, t1, t2, t3) = self.tables
+            dk, words, out = self.dk, struct.unpack(">%dI" % (len(data) // 4), data), []
+            for b in range(0, len(words), 4):
+                s0, s1, s2, s3, k = words[b] ^ dk[0], words[b + 1] ^ dk[1], words[b + 2] ^ dk[2], words[b + 3] ^ dk[3], 4
+                for _ in range(self.rounds - 1):
+                    s0, s1, s2, s3 = (
+                        t0[s0 >> 24] ^ t1[(s3 >> 16) & 255] ^ t2[(s2 >> 8) & 255] ^ t3[s1 & 255] ^ dk[k],
+                        t0[s1 >> 24] ^ t1[(s0 >> 16) & 255] ^ t2[(s3 >> 8) & 255] ^ t3[s2 & 255] ^ dk[k + 1],
+                        t0[s2 >> 24] ^ t1[(s1 >> 16) & 255] ^ t2[(s0 >> 8) & 255] ^ t3[s3 & 255] ^ dk[k + 2],
+                        t0[s3 >> 24] ^ t1[(s2 >> 16) & 255] ^ t2[(s1 >> 8) & 255] ^ t3[s0 & 255] ^ dk[k + 3])
+                    k += 4
+                out.extend((
+                    (inv[s0 >> 24] << 24 | inv[(s3 >> 16) & 255] << 16 | inv[(s2 >> 8) & 255] << 8 | inv[s1 & 255]) ^ dk[k],
+                    (inv[s1 >> 24] << 24 | inv[(s0 >> 16) & 255] << 16 | inv[(s3 >> 8) & 255] << 8 | inv[s2 & 255]) ^ dk[k + 1],
+                    (inv[s2 >> 24] << 24 | inv[(s1 >> 16) & 255] << 16 | inv[(s0 >> 8) & 255] << 8 | inv[s3 & 255]) ^ dk[k + 2],
+                    (inv[s3 >> 24] << 24 | inv[(s2 >> 16) & 255] << 16 | inv[(s1 >> 8) & 255] << 8 | inv[s0 & 255]) ^ dk[k + 3]))
+            plain = struct.pack(">%dI" % len(out), *out)
+            chain = iv + data[:-16]
+            return (int.from_bytes(plain, "big") ^ int.from_bytes(chain, "big")).to_bytes(len(plain), "big")
+
+
+    def unpad(data):
+        n = data[-1] if data else 0
+        return data[:-n] if 1 <= n <= 16 and data.endswith(bytes([n]) * n) else data
+
+
+    def hash_r6(password, salt, udata):
+        """The revision 6 password hash (ISO 32000-2, algorithm 2.B)."""
+        k, i = hashlib.sha256(password + salt + udata).digest(), 0
+        while True:
+            e = Aes(k[:16]).cbc_encrypt(k[16:32], (password + k + udata) * 64)
+            k = (hashlib.sha256, hashlib.sha384, hashlib.sha512)[sum(e[:16]) % 3](e).digest()
+            i += 1
+            if i >= 64 and e[-1] <= i - 32:
+                return k[:32]
+
+
+    class Security(object):
+        """An encrypted PDF opened the way any viewer opens it: the standard security handler with
+        the empty user password. note says why its text stays unread: 'password' (it needs one),
+        'no-copy' (its publisher does not allow copying its text) or 'encrypted' (another handler)."""
+
+        def __init__(self, doc, enc, ids):
+            self.note, self.key, self.cipher, self.streams = "", b"", "", True
+            try:
+                self._open(doc, enc, ids)
+            except Exception:
+                self.note = "encrypted"
+
+        def _open(self, doc, enc, ids):
+            get = doc.get
+            if not isinstance(enc, dict) or get(enc.get("Filter")) != "Standard":
+                self.note = "encrypted"
+                return
+            v, r, p = get(enc.get("V")) or 0, get(enc.get("R")) or 0, get(enc.get("P"))
+            o, u = get(enc.get("O")) or b"", get(enc.get("U")) or b""
+            p = p if isinstance(p, int) else 0
+            if v >= 4:
+                cf, stmf = get(enc.get("CF")), get(enc.get("StmF")) or "Identity"
+                cfd = get(cf.get(stmf)) if isinstance(cf, dict) else None
+                cfm = get(cfd.get("CFM")) if isinstance(cfd, dict) else None
+                self.streams = stmf != "Identity" and cfm not in (None, "None")
+                self.cipher = {"V2": "rc4", "AESV2": "aes", "AESV3": "aes"}.get(cfm, "") if self.streams else "none"
+            else:
+                self.cipher = "rc4"
+            if r >= 5:
+                u = bytes(u[:48])
+                if r == 5:
+                    ok = hashlib.sha256(u[32:40]).digest() == u[:32]
+                    inter = hashlib.sha256(u[40:48]).digest()
+                else:
+                    ok = hash_r6(b"", u[32:40], b"") == u[:32]
+                    inter = hash_r6(b"", u[40:48], b"") if ok else b""
+                if ok:
+                    self.key = Aes(inter).cbc_decrypt(bytes(16), bytes(get(enc.get("UE")) or b"")[:32])
+            else:
+                n = 5 if r == 2 else max(5, min(16, (get(enc.get("Length")) or 40) // 8 if v in (2, 3) else 16))
+                id0 = ids[0] if isinstance(ids, list) and ids and isinstance(ids[0], bytes) else b""
+                h = hashlib.md5(PASSWORD_PAD + bytes(o[:32]) + struct.pack("<i", p if p < 2 ** 31 else p - 2 ** 32) + id0)
+                if r >= 4 and get(enc.get("EncryptMetadata")) is False:
+                    h.update(b"\xff\xff\xff\xff")
+                key = h.digest()[:n]
+                if r >= 3:
+                    for _ in range(50):
+                        key = hashlib.md5(key).digest()[:n]
+                    x = rc4(key, hashlib.md5(PASSWORD_PAD + id0).digest())
+                    for i in range(1, 20):
+                        x = rc4(bytes(b ^ i for b in key), x)
+                    ok = x == bytes(u[:16])
+                else:
+                    ok = rc4(key, PASSWORD_PAD) == bytes(u[:32])
+                self.key = key if ok else b""
+            if not self.key:
+                self.note = "password"
+            elif not p & 16:    # bit 5: copy or otherwise extract text and graphics
+                self.note, self.key = "no-copy", b""
+            elif not self.cipher:
+                self.note, self.key = "encrypted", b""
+
+        def stream(self, stream, data):
+            if not self.streams or stream.dict.get("Type") == "XRef":
+                return data
+            if len(self.key) == 32:
+                return unpad(Aes(self.key).cbc_decrypt(data[:16], data[16:]))
+            salt = b"sAlT" if self.cipher == "aes" else b""
+            key = hashlib.md5(self.key + struct.pack("<I", stream.num)[:3] + struct.pack("<I", stream.gen)[:2]
+                              + salt).digest()[:min(len(self.key) + 5, 16)]
+            if self.cipher == "aes":
+                return unpad(Aes(key).cbc_decrypt(data[:16], data[16:]))
+            return rc4(key, data)
+
+
+    # ---- the document -----------------------------------------------------------------------------
+
+
+    class Document(object):
+        def __init__(self, data):
+            self.data, self.security = data, None
+            self.objects, self.where, self.trailers = dict(), dict(), []
+            self._scan()
+
+        def _scan(self):
+            data, pos = self.data, 0
+            streams = []
+            while True:
+                m = OBJ.search(data, pos)
+                if not m:
+                    break
+                num, gen, at = int(m.group(1)), int(m.group(2)), m.start()
+                values, end, word = parse(data, m.end())
+                if word == b"obj":    # no endobj: the next object's header ended this one
+                    values, pos = values[:-2], m.end()
+                else:
+                    pos = end + len(word) if word else end
+                value = values[0] if values else None
+                if word == b"stream" and isinstance(value, dict):
+                    s = end + 6
+                    if data[s:s + 2] == b"\r\n":
+                        s += 2
+                    elif data[s:s + 1] in (b"\n", b"\r"):
+                        s += 1
+                    length, e = value.get("Length"), -1
+                    if isinstance(length, int) and length >= 0 and \
+                            data[s + length:s + length + 40].lstrip().startswith(b"endstream"):
+                        e = s + length
+                    else:
+                        e = data.find(b"endstream", s)
+                        if e < 0:
+                            e = len(data)
+                        while e > s and data[e - 1:e] in (b"\n", b"\r"):
+                            e -= 1
+                    value = Stream(value, data[s:e], num, gen)
+                    pos = e
+                    if value.dict.get("Type") == "ObjStm":
+                        streams.append((at, value))
+                    if value.dict.get("Type") == "XRef":
+                        self.trailers.append((at, value.dict))
+                self._put(num, value, at)
+            for m in re.finditer(rb"trailer\s*<<", data):
+                values, _, _ = parse(data, m.end() - 2)
+                if values and isinstance(values[0], dict):
+                    self.trailers.append((m.start(), values[0]))
+            last = [t for _, t in sorted(self.trailers, key=lambda x: x[0]) if "Encrypt" in t]
+            if last:
+                self.security = Security(self, self.get(last[-1].get("Encrypt")), self.get(last[-1].get("ID")))
+            for at, stream in streams:
+                self._unpack(at, stream)
+
+        def _put(self, num, value, at):
+            if num not in self.where or at >= self.where[num]:
+                self.objects[num], self.where[num] = value, at
+
+        def _unpack(self, at, stream):
+            data = self.decode(stream)
+            first, count = stream.dict.get("First"), stream.dict.get("N")
+            if not data or not isinstance(first, int) or not isinstance(count, int):
+                return
+            head = parse(data[:first], 0, False)[0]
+            pairs = [(head[k], head[k + 1]) for k in range(0, min(len(head) - 1, 2 * count), 2)]
+            for k, (num, off) in enumerate(pairs):
+                if not isinstance(num, int) or not isinstance(off, int):
+                    continue
+                end = pairs[k + 1][1] if k + 1 < len(pairs) and isinstance(pairs[k + 1][1], int) else len(data) - first
+                values = parse(data[first + off:first + end], 0, False)[0]
+                if values:
+                    self._put(num, values[0], at)
+
+        def get(self, value, depth=0):
+            while isinstance(value, Ref) and depth < 32:
+                value, depth = self.objects.get(value.num), depth + 1
+            return value
+
+        def decode(self, stream):
+            """A stream's decoded bytes, or b'' for images and filters this reader can't undo."""
+            if not isinstance(stream, Stream):
+                return b""
+            if stream._data is not None:
+                return stream._data
+            filters = self.get(stream.dict.get("Filter"))
+            parms = self.get(stream.dict.get("DecodeParms"))
+            filters = filters if isinstance(filters, list) else [filters] if filters else []
+            parms = parms if isinstance(parms, list) else [parms] * len(filters)
+            data = stream.raw
+            if self.security is not None:
+                data = self.security.stream(stream, data) if self.security.key else b""
+            for k, f in enumerate(self.get(f) for f in filters):
+                p = self.get(parms[k]) if k < len(parms) else None
+                p = p if isinstance(p, dict) else dict()
+                if f in ("FlateDecode", "Fl"):
+                    data = unpredict(inflate(data), p)
+                elif f in ("LZWDecode", "LZW"):
+                    data = unpredict(lzw(data, p.get("EarlyChange", 1)), p)
+                elif f in ("ASCIIHexDecode", "AHx"):
+                    data = unhex(data.split(b">")[0])
+                elif f in ("ASCII85Decode", "A85"):
+                    data = ascii85(data)
+                elif f in ("RunLengthDecode", "RL"):
+                    data = runlength(data)
+                else:
+                    data = b""
+                    break
+            stream._data = data
+            return data
+
+        def pages(self):
+            """[(page dict, resources)] in page order (all page objects if the page tree is broken)."""
+            roots = [self.get(t.get("Root")) for _, t in sorted(self.trailers, key=lambda x: x[0])]
+            roots = [r for r in roots if isinstance(r, dict)]
+            if not roots:
+                roots = self._of_type("Catalog")
+            out, seen = [], set()
+            if roots:
+                self._walk(roots[-1].get("Pages"), None, out, seen, 0)
+            if not out:
+                out = [(o, self.get(o.get("Resources"))) for o in self._of_type("Page")]
+            return out
+
+        def _of_type(self, kind):
+            """The objects of one /Type in file order (the objects packed in one stream by number)."""
+            return [self.objects[n] for n in sorted(self.objects, key=lambda n: (self.where[n], n))
+                    if isinstance(self.objects[n], dict) and self.objects[n].get("Type") == kind]
+
+        def _walk(self, node, resources, out, seen, depth):
+            node = self.get(node)
+            if not isinstance(node, dict) or id(node) in seen or depth > 64:
+                return
+            seen.add(id(node))
+            res = self.get(node.get("Resources"))
+            res = res if isinstance(res, dict) else resources
+            kids = self.get(node.get("Kids"))
+            if isinstance(kids, list) and node.get("Type") != "Page":
+                for kid in kids:
+                    self._walk(kid, res, out, seen, depth + 1)
+            elif node.get("Type") == "Page" or "Contents" in node:
+                out.append((node, res))
+
+
+    # ---- fonts ------------------------------------------------------------------------------------
+
+    # AFM widths of codes 32-126 for the standard fonts a PDF may use without a /Widths array.
+    HELVETICA = [int(w) for w in (
+        "278 278 355 556 556 889 667 191 333 333 389 584 278 333 278 278 556 556 556 556 556 556 556 "
+        "556 556 556 278 278 584 584 584 556 1015 667 667 722 722 667 611 778 722 278 500 667 556 833 "
+        "722 778 667 778 722 667 611 722 667 944 667 667 611 278 278 278 469 556 333 556 556 500 556 "
+        "556 278 556 556 222 222 500 222 833 556 556 556 556 333 500 278 556 500 722 500 500 500 334 "
+        "260 334 584").split()]
+    TIMES = [int(w) for w in (
+        "250 333 408 500 500 833 778 180 333 333 500 564 250 333 250 278 500 500 500 500 500 500 500 "
+        "500 500 500 278 278 564 564 564 444 921 722 667 667 722 611 556 722 722 333 389 722 611 889 "
+        "722 722 556 722 667 556 611 722 722 944 722 722 611 333 278 333 469 500 333 444 500 444 500 "
+        "444 333 500 500 278 278 500 278 778 500 500 500 500 333 389 278 500 500 722 500 500 444 480 "
+        "200 480 541").split()]
+    STANDARD_HIGH = dict(zip(
+        list(range(0xa1, 0xb0)) + list(range(0xb1, 0xb5)) + list(range(0xb6, 0xbe)) + [0xbf]
+        + list(range(0xc1, 0xc9)) + [0xca, 0xcb, 0xcd, 0xce, 0xcf, 0xd0, 0xe1, 0xe3, 0xe8, 0xe9, 0xea,
+                                     0xeb, 0xf1, 0xf5, 0xf8, 0xf9, 0xfa, 0xfb],
+        "\u00a1\u00a2\u00a3\u2044\u00a5\u0192\u00a7\u00a4'\u201c\u00ab\u2039\u203a\ufb01\ufb02"
+        "\u2013\u2020\u2021\u00b7\u00b6\u2022\u201a\u201e\u201d\u00bb\u2026\u2030\u00bf"
+        "`\u00b4\u02c6\u02dc\u00af\u02d8\u02d9\u00a8"
+        "\u02da\u00b8\u02dd\u02db\u02c7\u2014\u00c6\u00aa\u0141\u00d8\u0152\u00ba\u00e6\u0131\u0142"
+        "\u00f8\u0153\u00df"))
+    # Glyph names (Adobe Glyph List, the ones text uses most) -> code point, in hex.
+    GLYPHS = dict((name, chr(int(code, 16))) for name, code in (pair.split(":") for pair in (
+        "space:20 exclam:21 quotedbl:22 numbersign:23 dollar:24 percent:25 ampersand:26 quotesingle:27 "
+        "quoteright:2019 parenleft:28 parenright:29 asterisk:2a plus:2b comma:2c hyphen:2d period:2e "
+        "slash:2f zero:30 one:31 two:32 three:33 four:34 five:35 six:36 seven:37 eight:38 nine:39 "
+        "colon:3a semicolon:3b less:3c equal:3d greater:3e question:3f at:40 bracketleft:5b backslash:5c "
+        "bracketright:5d asciicircum:5e underscore:5f grave:60 quoteleft:2018 braceleft:7b bar:7c "
+        "braceright:7d asciitilde:7e exclamdown:a1 cent:a2 sterling:a3 currency:a4 yen:a5 brokenbar:a6 "
+        "section:a7 dieresis:a8 copyright:a9 ordfeminine:aa guillemotleft:ab logicalnot:ac registered:ae "
+        "macron:af degree:b0 plusminus:b1 twosuperior:b2 threesuperior:b3 acute:b4 mu:b5 paragraph:b6 "
+        "periodcentered:b7 cedilla:b8 onesuperior:b9 ordmasculine:ba guillemotright:bb onequarter:bc "
+        "onehalf:bd threequarters:be questiondown:bf multiply:d7 divide:f7 AE:c6 ae:e6 Oslash:d8 "
+        "oslash:f8 Eth:d0 eth:f0 Thorn:de thorn:fe germandbls:df dotlessi:131 dotlessj:237 Lslash:141 "
+        "lslash:142 OE:152 oe:153 florin:192 circumflex:2c6 caron:2c7 breve:2d8 dotaccent:2d9 ring:2da "
+        "ogonek:2db tilde:2dc hungarumlaut:2dd endash:2013 emdash:2014 quotesinglbase:201a "
+        "quotedblleft:201c quotedblright:201d quotedblbase:201e dagger:2020 daggerdbl:2021 bullet:2022 "
+        "ellipsis:2026 perthousand:2030 guilsinglleft:2039 guilsinglright:203a fraction:2044 Euro:20ac "
+        "trademark:2122 minus:2212 fi:fb01 fl:fb02 ff:fb00 ffi:fb03 ffl:fb04 nbspace:a0 "
+        "nonbreakingspace:a0 sfthyphen:ad softhyphen:ad visiblespace:2423 arrowright:2192 "
+        "arrowleft:2190 arrowup:2191 arrowdown:2193 lessequal:2264 greaterequal:2265 notequal:2260 "
+        "approxequal:2248 infinity:221e similar:223c element:2208 asteriskmath:2217 circlecopyrt:a9 "
+        "checkmark:2713 Alpha:391 Beta:392 Gamma:393 Delta:394 Epsilon:395 Zeta:396 Eta:397 Theta:398 "
+        "Iota:399 Kappa:39a Lambda:39b Mu:39c Nu:39d Xi:39e Omicron:39f Pi:3a0 Rho:3a1 Sigma:3a3 "
+        "Tau:3a4 Upsilon:3a5 Phi:3a6 Chi:3a7 Psi:3a8 Omega:3a9 alpha:3b1 beta:3b2 gamma:3b3 delta:3b4 "
+        "epsilon:3b5 zeta:3b6 eta:3b7 theta:3b8 iota:3b9 kappa:3ba lambda:3bb nu:3bd xi:3be "
+        "omicron:3bf pi:3c0 rho:3c1 sigma:3c3 tau:3c4 upsilon:3c5 phi:3c6 chi:3c7 psi:3c8 omega:3c9 "
+        "ffsmall:fb00 hyphenminus:2d").split()))
+    ACCENTS = {"acute": "\u0301", "grave": "\u0300", "circumflex": "\u0302", "dieresis": "\u0308",
+               "tilde": "\u0303", "ring": "\u030a", "cedilla": "\u0327", "caron": "\u030c",
+               "macron": "\u0304", "breve": "\u0306", "ogonek": "\u0328", "dotaccent": "\u0307",
+               "hungarumlaut": "\u030b"}
+    ACCENTED = re.compile(r"^([A-Za-z])(" + "|".join(ACCENTS) + r")$")
+    UNI = re.compile(r"^uni((?:[0-9A-Fa-f]{4})+)$|^u([0-9A-Fa-f]{4,6})$")
+    LIGATURES = {"\ufb00": "ff", "\ufb01": "fi", "\ufb02": "fl", "\ufb03": "ffi", "\ufb04": "ffl",
+                 "\ufb05": "st", "\ufb06": "st", "\u00ad": "-", "\u2010": "-", "\u2011": "-"}
+    CLEAN = re.compile("[\ufb00-\ufb06\u00ad\u2010\u2011]|[\x00-\x08\x0b-\x1f\x7f\ufffd]")
+
+
+    def glyph_text(name):
+        """The text of a glyph name ('' when unknown)."""
+        if not name:
+            return ""
+        if name in GLYPHS:
+            return GLYPHS[name]
+        m = UNI.match(name)
+        if m:
+            hexes = m.group(1) or m.group(2)
+            try:
+                if m.group(1):
+                    return "".join(chr(int(hexes[k:k + 4], 16)) for k in range(0, len(hexes), 4))
+                return chr(int(hexes, 16))
+            except ValueError:
+                return ""
+        base = name.split(".")[0]
+        if base != name:
+            return glyph_text(base)
+        if "_" in name:
+            return "".join(glyph_text(part) for part in name.split("_"))
+        if len(name) == 1 and name.isalpha():
+            return name
+        m = ACCENTED.match(name)
+        if m:
+            return unicodedata.normalize("NFC", m.group(1) + ACCENTS[m.group(2)])
+        if len(name) == 2 and name[0] in "AEIOUaeiou" and name[1] in "EeJj":
+            return name
+        return ""
+
+
+    def base_encoding(name):
+        """Code -> text for a named encoding (WinAnsi, MacRoman, Standard)."""
+        table = dict()
+        for code in range(256):
+            byte = bytes([code])
+            if name == "MacRomanEncoding":
+                ch = byte.decode("mac_roman")
+            elif name in ("WinAnsiEncoding", "PDFDocEncoding"):
+                try:
+                    ch = byte.decode("cp1252")
+                except UnicodeDecodeError:
+                    ch = byte.decode("latin-1")
+            elif code in STANDARD_HIGH:
+                ch = STANDARD_HIGH[code]
+            elif 32 <= code < 127:
+                ch = {39: "\u2019", 96: "\u2018"}.get(code, chr(code))
+            else:
+                ch = ""
+            table[code] = ch if code >= 32 else ""
+        return table
+
+
+    ENCODINGS = dict()
+
+
+    def encoding_table(name):
+        if name not in ENCODINGS:
+            ENCODINGS[name] = base_encoding(name)
+        return ENCODINGS[name]
+
+
+    def parse_cmap(data):
+        """A CMap's (code -> text, codespace [(bytes, low, high)], code -> CID)."""
+        values, pos, texts, spaces, cids = [], 0, dict(), [], dict()
+        mode = ""
+        while pos < len(data):
+            got, pos, word = parse(data, pos)
+            values += got
+            if not word:
+                break
+            pos += len(word)
+            word = word.decode("latin-1")
+            if word.startswith("begin"):
+                mode, values = word, []
+                continue
+            if word == "endcodespacerange":
+                for k in range(0, len(values) - 1, 2):
+                    lo, hi = values[k], values[k + 1]
+                    if isinstance(lo, bytes) and isinstance(hi, bytes) and lo:
+                        spaces.append((len(lo), int.from_bytes(lo, "big"), int.from_bytes(hi, "big")))
+            elif word == "endbfchar":
+                for k in range(0, len(values) - 1, 2):
+                    src, dst = values[k], values[k + 1]
+                    if isinstance(src, bytes) and src:
+                        texts[int.from_bytes(src, "big")] = utf16(dst) if isinstance(dst, bytes) else \
+                            glyph_text(dst) if isinstance(dst, Name) else ""
+            elif word == "endbfrange":
+                for k in range(0, len(values) - 2, 3):
+                    lo, hi, dst = values[k], values[k + 1], values[k + 2]
+                    if not (isinstance(lo, bytes) and isinstance(hi, bytes) and lo):
+                        continue
+                    a, b = int.from_bytes(lo, "big"), int.from_bytes(hi, "big")
+                    if b < a or b - a > 65535:
+                        continue
+                    if isinstance(dst, list):
+                        for n, item in enumerate(dst[:b - a + 1]):
+                            texts[a + n] = utf16(item) if isinstance(item, bytes) else ""
+                    elif isinstance(dst, bytes) and dst:
+                        base = int.from_bytes(dst, "big")
+                        for n in range(b - a + 1):
+                            texts[a + n] = utf16((base + n).to_bytes(len(dst), "big", signed=False)
+                                                 if base + n < 256 ** len(dst) else dst)
+            elif word in ("endcidrange", "endcidchar"):
+                step = 3 if word == "endcidrange" else 2
+                for k in range(0, len(values) - step + 1, step):
+                    if step == 3:
+                        lo, hi, cid = values[k:k + 3]
+                        if isinstance(lo, bytes) and isinstance(hi, bytes) and isinstance(cid, int):
+                            a, b = int.from_bytes(lo, "big"), int.from_bytes(hi, "big")
+                            for n in range(min(b - a + 1, 65536)):
+                                cids[a + n] = cid + n
+                    else:
+                        src, cid = values[k:k + 2]
+                        if isinstance(src, bytes) and isinstance(cid, int):
+                            cids[int.from_bytes(src, "big")] = cid
+            if word.startswith("end"):
+                mode, values = "", []
+        return texts, spaces, cids
+
+
+    def utf16(raw):
+        if len(raw) == 1:
+            return chr(raw[0])
+        if len(raw) % 2:
+            raw = b"\0" + raw
+        return raw.decode("utf-16-be", "replace")
+
+
+    def standard_widths(base):
+        base = base.split("+")[-1]
+        if "Courier" in base:
+            return lambda code: 600
+        table, other = (HELVETICA, 556) if ("Helvetica" in base or "Arial" in base) else (TIMES, 500)
+        return lambda code: table[code - 32] if 32 <= code <= 126 else other
+
+
+    class Font(object):
+        def __init__(self, doc, fdict):
+            get = doc.get
+            self.simple, self.scale, self.size_scale = True, 1.0, 1.0
+            self.spaces = [(1, 0, 255)]
+            self.texts, self.cids, self.widths = dict(), dict(), dict()
+            self.default_width = 0
+            self.width_fn = None
+            subtype = get(fdict.get("Subtype"))
+            base = str(get(fdict.get("BaseFont")) or "")
+            encoding = get(fdict.get("Encoding"))
+            if subtype == "Type0":
+                self.simple = False
+                self.spaces = [(2, 0, 0xffff)]
+                if isinstance(encoding, Stream):
+                    _, spaces, self.cids = parse_cmap(doc.decode(encoding))
+                    self.spaces = spaces or self.spaces
+                descendants = get(fdict.get("DescendantFonts"))
+                desc = get(descendants[0]) if isinstance(descendants, list) and descendants else dict()
+                desc = desc if isinstance(desc, dict) else dict()
+                dw = get(desc.get("DW"))
+                self.default_width = dw if isinstance(dw, (int, float)) else 1000
+                self._cid_widths(get(desc.get("W")), get)
+            else:
+                first = get(fdict.get("FirstChar"))
+                widths = get(fdict.get("Widths"))
+                descriptor = get(fdict.get("FontDescriptor"))
+                descriptor = descriptor if isinstance(descriptor, dict) else dict()
+                if isinstance(widths, list) and isinstance(first, int):
+                    for n, w in enumerate(widths):
+                        w = get(w)
+                        if isinstance(w, (int, float)):
+                            self.widths[first + n] = w
+                    missing = get(descriptor.get("MissingWidth"))
+                    self.default_width = missing if isinstance(missing, (int, float)) else 0
+                else:
+                    self.width_fn = standard_widths(base)
+                if subtype == "Type3":
+                    matrix = get(fdict.get("FontMatrix"))
+                    if isinstance(matrix, list) and len(matrix) >= 4 and all(
+                            isinstance(get(v), (int, float)) for v in matrix[:4]):
+                        self.scale = abs(get(matrix[0])) * 1000 or 1.0
+                        self.size_scale = abs(get(matrix[3])) * 1000 or 1.0
+                self.texts = self._simple_texts(doc, subtype, encoding, descriptor)
+            tounicode = get(fdict.get("ToUnicode"))
+            if isinstance(tounicode, Stream):
+                texts, spaces, _ = parse_cmap(doc.decode(tounicode))
+                self.texts.update(texts)
+                if not self.simple and spaces and not isinstance(encoding, Stream) and \
+                        str(encoding) not in ("Identity-H", "Identity-V"):
+                    self.spaces = spaces
+
+        def _cid_widths(self, w, get):
+            if not isinstance(w, list):
+                return
+            k = 0
+            while k < len(w) - 1:
+                start, nxt = get(w[k]), get(w[k + 1])
+                if isinstance(nxt, list) and isinstance(start, int):
+                    for n, width in enumerate(nxt):
+                        width = get(width)
+                        if isinstance(width, (int, float)):
+                            self.widths[start + n] = width
+                    k += 2
+                elif k + 2 < len(w) and isinstance(start, int) and isinstance(nxt, int):
+                    width = get(w[k + 2])
+                    if isinstance(width, (int, float)):
+                        for cid in range(start, min(nxt, start + 65535) + 1):
+                            self.widths[cid] = width
+                    k += 3
+                else:
+                    k += 1
+
+        def _simple_texts(self, doc, subtype, encoding, descriptor):
+            get = doc.get
+            differences = []
+            name = ""
+            if isinstance(encoding, dict):
+                name = str(get(encoding.get("BaseEncoding")) or "")
+                differences = get(encoding.get("Differences")) or []
+            elif isinstance(encoding, Name):
+                name = str(encoding)
+            flags = get(descriptor.get("Flags"))
+            symbolic = isinstance(flags, int) and bool(flags & 4) and not (flags & 32)
+            builtin = dict()
+            if not name:
+                builtin = self._type1_encoding(doc, descriptor)
+            if not name:
+                name = "StandardEncoding" if subtype in ("Type1", "MMType1") and not symbolic else \
+                    "WinAnsiEncoding" if not symbolic else ""
+            table = dict(encoding_table(name)) if name else dict(
+                (c, chr(c)) for c in range(32, 127))
+            table.update(builtin)
+            code = 0
+            for item in differences if isinstance(differences, list) else []:
+                item = get(item)
+                if isinstance(item, int):
+                    code = item
+                elif isinstance(item, Name):
+                    table[code] = glyph_text(str(item))
+                    code += 1
+            return table
+
+        def _type1_encoding(self, doc, descriptor):
+            """The encoding inside an embedded Type 1 font program, from its clear-text part."""
+            program = doc.get(descriptor.get("FontFile"))
+            if not isinstance(program, Stream):
+                return dict()
+            data = doc.decode(program)
+            clear = doc.get(program.dict.get("Length1"))
+            head = data[:clear] if isinstance(clear, int) and 0 < clear <= len(data) else data[:65536]
+            if b"/Encoding StandardEncoding" in head:
+                return dict()
+            table = dict()
+            for m in re.finditer(rb"dup\s+([0-9]{1,3})\s*/([^\s/\[\]()<>{}]+)\s+put", head):
+                table[int(m.group(1)) & 255] = glyph_text(m.group(2).decode("latin-1"))
+            return table
+
+        def codes(self, raw):
+            """The string's character codes."""
+            if self.simple:
+                return list(raw)
+            out, k, n = [], 0, len(raw)
+            spaces = self.spaces
+            while k < n:
+                for size, lo, hi in spaces:
+                    if k + size <= n:
+                        code = int.from_bytes(raw[k:k + size], "big")
+                        if lo <= code <= hi:
+                            out.append(code)
+                            k += size
+                            break
+                else:
+                    size = min(s for s, _, _ in spaces) if spaces else 1
+                    out.append(int.from_bytes(raw[k:k + size], "big"))
+                    k += size
+            return out
+
+        def width(self, code):
+            if not self.simple:
+                code = self.cids.get(code, code)
+                w = self.widths.get(code)
+                return self.default_width if w is None else w
+            if self.width_fn is not None:
+                return self.width_fn(code)
+            w = self.widths.get(code)
+            return self.default_width if w is None else w
+
+        def text(self, code):
+            t = self.texts.get(code)
+            if t is None:
+                return chr(code) if self.simple and 32 <= code < 127 else ""
+            return t
+
+
+    class FallbackFont(Font):
+        def __init__(self):
+            self.simple, self.scale, self.size_scale = True, 1.0, 1.0
+            self.spaces, self.texts, self.cids, self.widths = [(1, 0, 255)], dict(), dict(), dict()
+            self.default_width, self.width_fn = 500, None
+
+
+    # ---- page text --------------------------------------------------------------------------------
+
+
+    def mult(m, n):
+        a, b, c, d, e, f = m
+        A, B, C, D, E, F = n
+        return (a * A + b * C, a * B + b * D, c * A + d * C, c * B + d * D, e * A + f * C + E, e * B + f * D + F)
+
+
+    IDENTITY = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    INLINE_IMAGE_END = re.compile(rb"\sEI(?=[\x00\t\n\x0c\r ]|$)")
+
+
+    class PageReader(object):
+        def __init__(self, doc, fonts, deadline):
+            self.doc, self.fonts, self.deadline = doc, fonts, deadline
+            self.out, self.line, self.last, self.last_size = [], [], None, 0.0
+
+        def font(self, resources, name):
+            fonts = self.doc.get(resources.get("Font")) if isinstance(resources, dict) else None
+            fdict = self.doc.get(fonts.get(str(name))) if isinstance(fonts, dict) else None
+            if not isinstance(fdict, dict):
+                return FallbackFont()
+            key = id(fdict)
+            if key not in self.fonts:
+                try:
+                    self.fonts[key] = Font(self.doc, fdict)
+                except Exception:
+                    self.fonts[key] = FallbackFont()
+            return self.fonts[key]
+
+        def emit(self, text, x, y, ux, uy, size):
+            """One glyph's text at (x, y) on a baseline running (ux, uy), font size size. A glyph on a
+            new baseline (or far back on this one) starts a new line; on the same line, the gap
+            from the previous glyph's end, in ems, decides a word space when the line is done."""
+            gap = None
+            if self.last is not None:
+                lx, ly = self.last
+                dx, dy = x - lx, y - ly
+                along, across = dx * ux + dy * uy, dy * ux - dx * uy
+                big = max(size, self.last_size, 0.01)
+                if abs(across) > 0.6 * big or along < -2.0 * big:
+                    self.flush()
+                else:
+                    gap = along / big
+            self.line.append((gap, text))
+            self.last_size = size
+
+        def flush(self):
+            """The line so far, spaced: a gap is a word space when it is wider than 0.12 em and than
+            the line's own letter spacing (its median gap between glyphs, as in letter-spaced
+            chart labels) by half again plus 0.06 em."""
+            line, self.line = self.line, []
+            if not line:
+                return
+            gaps = sorted(g for k, (g, t) in enumerate(line)
+                          if k and g is not None and t[:1] != " " and line[k - 1][1][-1:] != " ")
+            base = max(0.0, gaps[len(gaps) // 2]) if gaps else 0.0
+            limit = max(0.12, 1.5 * base + 0.06)
+            parts = []
+            for k, (g, t) in enumerate(line):
+                if k and g is not None and g > limit and t[:1] != " " and parts[-1][-1:] != " ":
+                    parts.append(" ")
+                parts.append(t)
+            self.out.append("".join(parts) + "\n")
+
+        def run(self, content, resources, ctm, depth=0):
+            doc = self.doc
+            gs = [ctm, None, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]   # ctm, font, size, tc, tw, th, tl, rise
+            stack = []
+            tm = tlm = IDENTITY
+            operands = []
+            data, pos, n = content, 0, len(content)
+            nested = [[]]
+            while pos < n:
+                m = LEX.match(data, pos)
+                kind = m.lastgroup
+                pos = m.end()
+                if kind == "sp" or kind == "bad":
+                    continue
+                top = nested[-1]
+                if kind == "num":
+                    top.append(number(m.group()))
+                    continue
+                if kind == "name":
+                    top.append(unname(m.group()))
+                    continue
+                if kind == "lit":
+                    s, pos = lit_string(data, pos)
+                    top.append(s)
+                    continue
+                if kind == "hex":
+                    top.append(unhex(m.group()[1:-1]))
+                    continue
+                if kind == "open":
+                    nested.append([m.group()])
+                    continue
+                if kind == "close":
+                    if len(nested) > 1:
+                        items = nested.pop()
+                        nested[-1].append(to_dict(items[1:]) if items[0] == b"<<" else items[1:])
+                    continue
+                op = m.group()
+                operands, nested = nested[0], [[]]
+                if op == b"BI":
+                    end = INLINE_IMAGE_END.search(data, pos)
+                    pos = end.end() if end else n
+                    continue
+                if time.time() > self.deadline:
+                    raise PdfError("time")
+                try:
+                    if op in (b"Tj", b"'", b'"', b"TJ"):
+                        if op != b"Tj" and op != b"TJ":
+                            if op == b'"' and len(operands) >= 3:
+                                gs[4], gs[3] = operands[-3], operands[-2]
+                            tlm = (tlm[0], tlm[1], tlm[2], tlm[3], tlm[4] - gs[6] * tlm[2], tlm[5] - gs[6] * tlm[3])
+                            tm = tlm
+                        arg = operands[-1] if operands else b""
+                        items = arg if isinstance(arg, list) else [arg]
+                        tm = self.show(items, gs, tm)
+                    elif op == b"Td" or op == b"TD":
+                        tx, ty = operands[-2], operands[-1]
+                        if op == b"TD":
+                            gs[6] = -ty
+                        tlm = (tlm[0], tlm[1], tlm[2], tlm[3], tx * tlm[0] + ty * tlm[2] + tlm[4],
+                               tx * tlm[1] + ty * tlm[3] + tlm[5])
+                        tm = tlm
+                    elif op == b"Tm" and len(operands) >= 6:
+                        tm = tlm = tuple(float(v) for v in operands[-6:])
+                    elif op == b"T*":
+                        tlm = (tlm[0], tlm[1], tlm[2], tlm[3], tlm[4] - gs[6] * tlm[2], tlm[5] - gs[6] * tlm[3])
+                        tm = tlm
+                    elif op == b"BT":
+                        tm = tlm = IDENTITY
+                    elif op == b"Tf":
+                        gs[1] = self.font(resources, operands[-2])
+                        gs[2] = operands[-1]
+                    elif op == b"Tc":
+                        gs[3] = operands[-1]
+                    elif op == b"Tw":
+                        gs[4] = operands[-1]
+                    elif op == b"Tz":
+                        gs[5] = operands[-1] / 100.0
+                    elif op == b"TL":
+                        gs[6] = operands[-1]
+                    elif op == b"Ts":
+                        gs[7] = operands[-1]
+                    elif op == b"q":
+                        stack.append(list(gs))
+                    elif op == b"Q":
+                        if stack:
+                            gs = stack.pop()
+                    elif op == b"cm" and len(operands) >= 6:
+                        gs[0] = mult(tuple(float(v) for v in operands[-6:]), gs[0])
+                    elif op == b"Do" and depth < 8:
+                        self.form(resources, operands[-1], gs[0], depth)
+                except (IndexError, TypeError, ValueError, ZeroDivisionError):
+                    pass
+
+        def show(self, items, gs, tm):
+            font = gs[1] or FallbackFont()
+            fs, tc, tw, th, rise = gs[2], gs[3], gs[4], gs[5], gs[7]
+            ctm = gs[0]
+            for item in items:
+                if isinstance(item, (int, float)):
+                    tx = -item / 1000.0 * fs * th
+                    tm = (tm[0], tm[1], tm[2], tm[3], tm[4] + tx * tm[0], tm[5] + tx * tm[1])
+                    continue
+                if not isinstance(item, bytes):
+                    continue
+                mm = mult(tm, ctm)
+                norm_x = math.hypot(mm[0], mm[1]) or 1.0
+                ux, uy = mm[0] / norm_x, mm[1] / norm_x
+                size = abs(fs) * (math.hypot(mm[2], mm[3]) or norm_x) * font.size_scale
+                x, y = mm[4] + rise * mm[2], mm[5] + rise * mm[3]
+                advance = 0.0
+                for code in font.codes(item):
+                    tx = (font.width(code) * font.scale / 1000.0 * fs + tc
+                          + (tw if code == 32 and font.simple else 0.0)) * th
+                    text = font.text(code)
+                    if text:    # a glyph with no text (an unmapped space, say) leaves its gap
+                        self.emit(text, x, y, ux, uy, size)
+                    x, y = x + tx * mm[0], y + tx * mm[1]
+                    if text:
+                        self.last = (x, y)
+                    advance += tx
+                tm = (tm[0], tm[1], tm[2], tm[3], tm[4] + advance * tm[0], tm[5] + advance * tm[1])
+            return tm
+
+        def form(self, resources, name, ctm, depth):
+            xobjects = self.doc.get(resources.get("XObject")) if isinstance(resources, dict) else None
+            xobj = self.doc.get(xobjects.get(str(name))) if isinstance(xobjects, dict) else None
+            if not isinstance(xobj, Stream) or xobj.dict.get("Subtype") != "Form":
+                return
+            matrix = self.doc.get(xobj.dict.get("Matrix"))
+            if isinstance(matrix, list) and len(matrix) == 6 and all(isinstance(v, (int, float)) for v in matrix):
+                ctm = mult(tuple(float(v) for v in matrix), ctm)
+            res = self.doc.get(xobj.dict.get("Resources"))
+            self.run(self.doc.decode(xobj), res if isinstance(res, dict) else resources, ctm, depth + 1)
+
+
+    def page_content(doc, page):
+        contents = doc.get(page.get("Contents"))
+        parts = contents if isinstance(contents, list) else [contents]
+        return b"\n".join(doc.decode(doc.get(p)) for p in parts)
+
+
+    def clean(text):
+        return CLEAN.sub(lambda m: LIGATURES.get(m.group(), ""), text)
+
+
+    def pdf_pages(data, budget=60.0):
+        """(the text of each page read, how many pages the PDF has, a note: '' when all were read)."""
+        deadline = time.time() + budget
+        doc = Document(data)
+        if doc.security is not None and doc.security.note:
+            return [], 0, doc.security.note
+        pages = doc.pages()
+        fonts, texts, note = dict(), [], ""
+        for page, resources in pages:
+            reader = PageReader(doc, fonts, deadline)
+            try:
+                reader.run(page_content(doc, page), resources if isinstance(resources, dict) else dict(), IDENTITY)
+            except PdfError:
+                note = "time"
+            except Exception:    # a broken page: keep what was read of it, go on to the next
+                pass
+            reader.flush()
+            texts.append(clean("".join(reader.out)))
+            if note:
+                break
+        return texts, len(pages), note
+
+
+    def main(argv):
+        if len(argv) != 2:
+            print(__doc__)
+            return 2
+        with open(argv[1], "rb") as f:
+            texts, total, note = pdf_pages(f.read())
+        sys.stdout.write("\f".join(texts) + "\n")
+        if note:
+            sys.stderr.write("%s: %d of %d pages read\n" % (note, len(texts), total))
+        return 0
+
+
+    if __name__ == "__main__":
+        sys.exit(main(sys.argv))
+    PDFEOF
     cat > state/desk/check_desk.py <<'CHECKEOF'
     #!/usr/bin/env python3
     """Mechanical check of a desk check (desk_check workflow). Run from the workspace root.
@@ -360,6 +1726,12 @@ agent:
     and the next cheapest test. Every claim has a URL and a date; a quoted claim's words are on
     the page cite.py kept; a counted claim's datasets were fetched with cite.py and its script,
     run again, prints the claimed result. Listicles and search snippets never count as support.
+    Every claim also says who is speaking and what it shows: party (neutral or interested), stake
+    (an interested claim: who gains, and how), source (who stands behind it; one source has one
+    party within an assumption) and signal (pays, does, says or fact). Each verdict states
+    carried_by: the strongest signal among its usable decisive claims, pays, then does, then
+    says, then fact (none without one). The tags inform a verdict; the support rules never read
+    them (D2 reads party, as it always has), so they never move one.
     The report (state/desk/report.json) covers every assumption, says why a verdict changed, and
     its hypothesis status follows from the verdicts. The final output lists each verdict's
     decisive claims and rules for the person who re-reads them by hand: whether a verdict follows
@@ -387,6 +1759,8 @@ agent:
     QUALITIES = ("primary", "secondary", "vendor", "listicle")
     HOWS = ("cite", "data", "webfetch", "snippet")
     CONFIDENCE = ("low", "med", "high")
+    # What a claim shows, strongest first: money spent, behaviour observed, words, other facts.
+    SIGNALS = ("pays", "does", "says", "fact")
     # The evidence rules a bar may set aside in its own words (input.md lists them all).
     DEFAULT_RULES = ("D1", "D2", "D3")
     # What a part says when its account or the service stopped it, instead of research.
@@ -408,6 +1782,13 @@ agent:
                      ("\u2013", "-"), ("\u2014", "-"), ("\u00a0", " ")):
             s = s.replace(a, b)
         return re.sub(r"\s+", " ", s).strip()
+
+
+    def forms(text):
+        """A kept page's text as cite.py's quote matches it: lower case, and with a word broken at a
+        line end ("classifica- tion", "cross- border") joined both ways."""
+        flat = norm(text).lower()
+        return (flat, re.sub(r"(\w)- (\w)", r"\1\2", flat), re.sub(r"(\w)- (\w)", r"\1-\2", flat))
 
 
     def text_of(value):
@@ -509,8 +1890,14 @@ agent:
             return "no date"
         if claim.get("quality") not in QUALITIES:
             return "quality must be one of: " + ", ".join(QUALITIES)
-        if claim.get("party", "neutral") not in ("neutral", "interested"):
+        if claim.get("party") not in ("neutral", "interested"):
             return "party must be neutral or interested"
+        if claim.get("party") == "interested" and not text_of(claim.get("stake")):
+            return "party is interested, but no stake (who gains from the answer, and how)"
+        if not text_of(claim.get("source")):
+            return "no source (who stands behind the evidence, as the page names it)"
+        if claim.get("signal") not in SIGNALS:
+            return "signal must be one of: " + ", ".join(SIGNALS)
         how = claim.get("how")
         if how not in HOWS:
             return "how must be one of: " + ", ".join(HOWS)
@@ -521,7 +1908,7 @@ agent:
                 return "how is cite, but cite.py never read this URL"
             if not words:
                 return "how is cite, but no quote"
-            if words not in norm(page).lower():
+            if not any(words in form for form in forms(page)):
                 return "its quote is not on the page cite.py kept"
         if how == "data":
             files = claim.get("data_files") or []
@@ -574,7 +1961,7 @@ agent:
             failed["F3"] = ("no usable decisive claim is read with cite.py or counted from data (fixed "
                             "rule F3: a pass or a kill always needs one)")
             return failed
-        tests = {"D2": lambda c: c.get("party", "neutral") == "neutral",
+        tests = {"D2": lambda c: c.get("party") == "neutral",
                  "D3": lambda c: c.get("quality") == "primary"}
         wanted = [rule for rule in ("D2", "D3") if rule not in aside]
         if any(all(tests[rule](c) for rule in wanted) for c in checked):
@@ -588,6 +1975,35 @@ agent:
         for rule in failing:
             failed[rule] = why
         return failed
+
+
+    def evidence_of(ids, claims, bad):
+        """Who is speaking and what the usable decisive claims show: carried_by, the strongest
+        signal among them (pays, does, says, fact; none without one), how many show each, speaking
+        (neutral, interested, both or none) and each source with its party and its stake."""
+        usable = [claims[c] for c in ids if c in claims and not bad.get(c)
+                  and claims[c].get("quality") != "listicle" and claims[c].get("how") != "snippet"]
+        signals = dict((s, sum(1 for c in usable if c.get("signal") == s)) for s in SIGNALS)
+        sources, seen = [], set()
+        for c in usable:
+            key = (norm(text_of(c.get("source"))).lower(), c.get("party"))
+            if key not in seen:
+                seen.add(key)
+                entry = {"source": text_of(c.get("source")), "party": c.get("party")}
+                if c.get("party") == "interested":
+                    entry["stake"] = text_of(c.get("stake"))
+                sources.append(entry)
+        parties = set(s["party"] for s in sources)
+        return {"carried_by": next((s for s in SIGNALS if signals[s]), "none"), "signals": signals,
+                "speaking": "both" if len(parties) > 1 else (parties.pop() if parties else "none"),
+                "sources": sources}
+
+
+    def carried_problem(where, stated, evidence):
+        if stated != evidence["carried_by"]:
+            return ["%s: carried_by should be %s, the strongest signal among its usable decisive claims "
+                    "(pays, then does, then says, then fact; none without one)" % (where, evidence["carried_by"])]
+        return []
 
 
     def support_problem(ids, claims, bad, aside=()):
@@ -703,6 +2119,15 @@ agent:
         bad = dict((cid, claim_problem(c, slot, runs)) for cid, c in claims.items())
         for cid in sorted(c for c in bad if bad[c]):
             problems.append("%s: claim %s: %s" % (slot, cid, bad[cid]))
+        party_of = dict()
+        for cid, c in sorted(claims.items()):
+            key = norm(text_of(c.get("source"))).lower()
+            if key and c.get("party") in ("neutral", "interested"):
+                party_of.setdefault(key, dict()).setdefault(c["party"], cid)
+        for key, seen in sorted(party_of.items()):
+            if len(seen) > 1:
+                problems.append("%s: source %r is neutral in %s and interested in %s: one source has one party"
+                                % (slot, key, seen["neutral"], seen["interested"]))
         decisive = [text_of(c) for c in data.get("decisive") or []]
         listed = decisive + [text_of(c) for c in data.get("counter") or []]
         unknown_ids = [c for c in listed if c not in claims]
@@ -719,8 +2144,10 @@ agent:
                 problems.append("%s: %s" % (slot, why_not))
         if verdict == "unknown" and not (data.get("not_found") or data.get("searched")):
             problems.append("%s: an unknown lists what was looked for and not found" % slot)
+        evidence = evidence_of(decisive, claims, bad)
+        problems += carried_problem(slot, data.get("carried_by"), evidence)
         return {"verdict": verdict, "claims": claims, "bad": bad, "decisive": decisive,
-                "rules": rules_of(data.get("rules"))}, problems
+                "rules": rules_of(data.get("rules")), "evidence": evidence}, problems
 
 
     def check_report(slots, results):
@@ -766,6 +2193,8 @@ agent:
                     problems.append("report: %s: %s" % (slot, why_not))
             if verdict == "unknown" and len(text_of(row.get("next_test"))) < 20:
                 problems.append("report: %s: an unknown needs its next_test" % slot)
+            problems += carried_problem("report: " + slot, row.get("carried_by"),
+                                        evidence_of(decisive, res["claims"], res["bad"]))
             spec, _ = load_json(os.path.join(DESK, "assumptions", slot + ".json"))
             if verdict == "kill" and (spec or {}).get("fatal", True):
                 killed = True
@@ -830,16 +2259,18 @@ agent:
             if not res:
                 continue
             row = rows.get(slot) or dict()
-            items = []
-            for cid in [text_of(c) for c in row.get("decisive") or res["decisive"]]:
+            items, ids = [], [text_of(c) for c in row.get("decisive") or res["decisive"]]
+            for cid in ids:
                 c = res["claims"].get(cid)
                 if c:
                     items.append({"id": cid, "claim": c.get("claim"), "quote": c.get("quote"),
                                   "url": c.get("url"), "quality": c.get("quality"),
-                                  "party": c.get("party", "neutral"), "how": c.get("how"),
+                                  "party": c.get("party"), "stake": c.get("stake", ""),
+                                  "source": c.get("source"), "signal": c.get("signal"), "how": c.get("how"),
                                   "result": c.get("result", ""), "problem": res["bad"].get(cid, "")})
             per[slot] = {"researcher_verdict": res["verdict"], "verdict": row.get("verdict", res["verdict"]),
                          "rules": rules_of(row["rules"]) if isinstance(row.get("rules"), dict) else res["rules"],
+                         "evidence": evidence_of(ids, res["claims"], res["bad"]),
                          "decisive": items}
             hand += items
         parts = dict((slot, "; ".join(p[len(slot) + 2:] for p in lost if p.startswith(slot + ": ")) or "ok")
@@ -848,6 +2279,7 @@ agent:
                           "hypothesis_status": (report or dict()).get("hypothesis_status"),
                           "assumptions": per, "spot_check": hand, "parts": parts,
                           "rules": dict((slot, per[slot]["rules"]) for slot in per),
+                          "evidence": dict((slot, per[slot]["evidence"]) for slot in per),
                           "answers_checked": [slot for slot in slots if slot in answers],
                           "report_path": "state/desk/report.md"}, indent=1))
         return 0

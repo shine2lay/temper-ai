@@ -77,7 +77,7 @@ def write(path, data):
 
 def findings(slot):
     """A researcher's checks/<id>.json for an honest unknown (no claims to verify against kept pages)."""
-    return {"id": slot, "verdict": "unknown", "confidence": "low", "claims": [], "decisive": [],
+    return {"id": slot, "verdict": "unknown", "confidence": "low", "claims": [], "decisive": [], "carried_by": "none",
             "why": "No public source states the share either way; two registries were searched in full.",
             "against_bar": "Neither the pass bar nor the kill bar can be judged from what was found.",
             "next_test": "Ask five offices how they verify coverage today.",
@@ -99,7 +99,7 @@ def workspace(tmp_path):
     write(desk / "report.json", {
         "verdicts": [{"id": s, "verdict": "unknown", "researcher_verdict": "unknown",
                       "why": "Nothing public settles it; the next test is a short call round.",
-                      "next_test": "Ask five offices how they verify coverage today.",
+                      "next_test": "Ask five offices how they verify coverage today.", "carried_by": "none",
                       "rules": {"decided_by": [], "set_aside": []}} for s in SLOTS],
         "hypothesis_status": "open", "status_why": "Both assumptions are still unknown after the desk research.",
         "next_steps": ["Ask five offices how they verify coverage today."]})

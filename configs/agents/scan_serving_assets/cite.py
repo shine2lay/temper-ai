@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Exact page text for citing, and public datasets for counting (desk_check). Plain curl with
-its default user agent; PDFs through pdftotext. A page or file that doesn't answer 200 is
-INACCESSIBLE: log it and move on, never work around it. Run from the workspace root.
+its default user agent; PDFs through pdftext.py (pdftotext only when it finds no text). A page
+or file that doesn't answer 200 is INACCESSIBLE: log it and move on, never work around it. A
+PDF its publisher locks (a password, or copying its text not allowed) is not read either.
+Run from the workspace root.
 
   python3 state/desk/cite.py page <url> [kw1,kw2]   status, dates on the page, text near the keywords
   python3 state/desk/cite.py quote <url> "<words>"  FOUND / NOT FOUND: are these exact words on the page?
@@ -37,14 +39,61 @@ def norm(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
+LOCKED = {
+    "password": "a PDF that needs a password: INACCESSIBLE, log it and move on",
+    "no-copy": ("a PDF whose publisher does not allow copying its text: not read; log it and "
+                "cite a page that publishes the figure instead"),
+    "encrypted": "an encrypted PDF the reader can't open: INACCESSIBLE, log it and move on",
+}
+
+
 def pdf_text(path):
+    """(text, note, info) of a saved PDF: pdftext.py first, the same text in every container;
+    pdftotext only when that finds none. A locked PDF stays unread, never worked around."""
+    info = {"pdf_reader": "pdftext.py"}
+    with open(path, "rb") as f:
+        data = f.read()
     try:
-        out = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True,
-                             timeout=120)
-        return norm(out.stdout.decode("utf-8", "replace")), ""
+        sys.dont_write_bytecode = True
+        if HERE not in sys.path:
+            sys.path.insert(0, HERE)
+        import pdftext
+        pages, total, why = pdftext.pdf_pages(data)
+    except Exception as e:    # a PDF the reader can't parse: pdftotext may
+        pages, total, why = [], 0, "reader: " + type(e).__name__
+        if isinstance(e, ImportError):    # a copy of this file with no pdftext.py beside it
+            info["pdf_reader"], why = "none", "no reader"
+        if b"/Encrypt" in data:    # a lock the reader couldn't check: pdftotext ignores locks
+            why = "encrypted"
+    info["pdf_pages"] = "%d of %d" % (len(pages), total)
+    if why in LOCKED:
+        info["pdf_locked"] = why
+        return "", LOCKED[why], info
+    if why:
+        info["pdf_reader_note"] = "stopped after 60 s" if why == "time" else why
+    text = norm(" ".join(pages))
+    if text:
+        return text, "", info
+    try:
+        out = subprocess.run(["pdftotext", path, "-"], capture_output=True, timeout=120)
+        text = norm(out.stdout.decode("utf-8", "replace"))
     except (OSError, subprocess.TimeoutExpired):
-        return "", ("PDF but no pdftotext here: read it with WebFetch and tag its claims "
-                    "how: webfetch, with no quote")
+        text = ""
+    if text:
+        info["pdf_reader"] = "pdftotext"
+        return text, "", info
+    if why == "no reader":
+        return "", ("PDF but no PDF reader here: read it with WebFetch and tag its claims "
+                    "how: webfetch, with no quote"), info
+    return "", ("PDF with no text to read (a scan without a text layer?): read it with "
+                "WebFetch and tag its claims how: webfetch, with no quote"), info
+
+
+def forms(text):
+    """The page text as quote() and check_desk.py match it: lower case, and with a word broken
+    at a line end ("classifica- tion", "cross- border") joined both ways."""
+    flat = norm(text).lower()
+    return (flat, re.sub(r"(\w)- (\w)", r"\1\2", flat), re.sub(r"(\w)- (\w)", r"\1-\2", flat))
 
 
 def html_text(raw):
@@ -84,8 +133,9 @@ def fetch(url):
         with open(raw_path, "rb") as f:
             raw = f.read()
         if "pdf" in meta["content_type"].lower() or raw[:5] == b"%PDF-":
-            text, note = pdf_text(raw_path)
+            text, note, info = pdf_text(raw_path)
             meta["pdf"] = True
+            meta.update(info)
         else:
             text, meta["dates_on_page"] = html_text(raw)
             note = ""
@@ -113,6 +163,9 @@ def header(meta):
     if meta["http"] != "200":
         print("-> INACCESSIBLE (%s): log it, never work around it" % meta.get("error", "status"))
         return False
+    if meta.get("pdf"):
+        print("PDF read by", meta.get("pdf_reader", "?"), "| pages:", meta.get("pdf_pages", "?"),
+              meta.get("pdf_reader_note", ""))
     if meta.get("dates_on_page") or meta.get("dated_text"):
         print("dates on page:", meta.get("dates_on_page", []), meta.get("dated_text", []))
     if meta.get("note"):
@@ -145,12 +198,12 @@ def quote(url, words):
     if not header(meta):
         return
     want = norm(words).lower()
-    flat = norm(text)
-    at = flat.lower().find(want)
-    if at < 0:
-        print("NOT FOUND on the page: don't cite these words; quote what the page says")
-        return
-    print("FOUND: ..." + flat[max(0, at - 200):at + len(want) + 200] + "...")
+    for flat in forms(text):
+        at = flat.find(want)
+        if at >= 0:
+            print("FOUND: ..." + flat[max(0, at - 200):at + len(want) + 200] + "...")
+            return
+    print("NOT FOUND on the page: don't cite these words; quote what the page says")
 
 
 def data(url, name):

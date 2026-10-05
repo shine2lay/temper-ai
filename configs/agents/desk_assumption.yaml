@@ -4,8 +4,11 @@
 # defaults (two sources, a neutral source, a primary source) hold only where the bar is silent,
 # and the verdict names any default the bar sets aside (quoting its words) or that held it back.
 # Looks for what would kill it as hard as for what supports it. Every load-bearing claim has an
-# exact quote checked on the page, or a count its own kept script makes from a kept public
-# dataset. Part of workflows/desk_check.yaml (one per assumption slot, A1..A6).
+# exact quote checked on the page (PDF reports included: cite.py reads their text), or a count
+# its own kept script makes from a kept public dataset. Every claim says who is speaking (party,
+# stake, source) and what it shows (signal: pays, does, says or fact), and the verdict states
+# what carried it (carried_by); the tags never move a bar. Part of workflows/desk_check.yaml
+# (one per assumption slot, A1..A6).
 agent:
   name: desk_assumption
   version: 1
@@ -80,6 +83,13 @@ agent:
         kept for the check). Before recording a quote, confirm it with
         `python3 state/desk/cite.py quote <url> "<words>"`: record only a FOUND quote.
         Quote 6-40 contiguous words exactly as the page has them (no "..." inside).
+      - PDFs too: agency reports, studies, research-house and industry reports, fact sheets
+        and company filings are often PDFs, and often the neutral, primary source. cite.py
+        reads a PDF's text ("PDF read by ... | pages: <read> of <total>") and keeps it, so
+        page, quote and the check work on it like any page; a word split at a line end
+        matches either way. A PDF its publisher locks (a password, or copying its text not
+        allowed) stays unread: log it as inaccessible and cite a page that publishes the
+        figure, never another copy of the file.
       - WebFetch returns a model's summary, not the page: never quote from it. If cite.py
         reports "200 but no readable text" you may read the page with WebFetch, then tag
         the claim how: webfetch with an empty quote; such a claim never decides a verdict.
@@ -90,11 +100,29 @@ agent:
         prices or product); secondary = someone describing another's document or data;
         vendor = a company's marketing claim about outcomes, markets or competitors;
         listicle = "top N" roundups and SEO stat pages (never counts).
-      - party: neutral, or interested when the source gains from the answer (an advocacy
-        group's survey, a vendor's own study). A pass or a kill always rests on at least
-        one decisive claim read with cite.py or counted from data (F3); unless the bar sets
-        them aside, also on at least 2 usable decisive claims from 2 different sources (D1),
-        with one of the cite.py or data claims from a neutral party (D2) and primary (D3).
+      - WHO IS SPEAKING. party: neutral, or interested when the source gains from the
+        answer (a seller's own survey, a vendor's own study or case study, a company about
+        its own product, an advocacy group's or trade association's survey about its own
+        cause). stake, for an interested claim: who gains from the answer and how, in a few
+        words ("sells the trips its survey says travellers want"). source: who stands behind
+        the evidence, as the page names it (the agency, the research house that ran the
+        survey, the company); a news story about a survey has the survey's owner as its
+        source. One source has one party within your assumption.
+      - WHAT IT SHOWS. signal: pays = money actually spent (revenue, paid users, purchases,
+        paid bookings); does = behaviour observed or logged (usage, searches, visits, trips
+        or completions counted by a system or an observer); says = what people tell a
+        survey or an interviewer (opinions, intentions, preferences, or their own account of
+        what they did or spent); fact = not about what people say, do or pay (a rule, a
+        price, a feature, a count of firms, an event).
+      - A pass or a kill always rests on at least one decisive claim read with cite.py or
+        counted from data (F3); unless the bar sets them aside, also on at least 2 usable
+        decisive claims from 2 different sources (D1), with one of the cite.py or data
+        claims from a neutral party (D2) and primary (D3).
+      - carried_by: the strongest signal among your usable decisive claims: pays, then does,
+        then says, then fact ("none" without one); check_desk.py works it out too. Money
+        weighs more than behaviour and behaviour more than words: when a verdict is carried
+        by says, or rests only on interested sources, say so in why as a caveat. The tags
+        never move a bar or a rule: the bar decides the verdict.
       - kind: count | rule | deadline | price | date | finding | fact.
       - Never invent a URL, number, quote or date. Can't find it: say so, and what you
         searched.
@@ -119,6 +147,7 @@ agent:
           "why": "2-5 sentences: the verdict and the facts it rests on",
           "against_bar": "how the evidence compares with pass_if, and with kill_if",
           "decisive": ["<slot>-3", "<slot>-7"],
+          "carried_by": "pays|does|says|fact|none",
           "counter": ["ids of claims that point the other way"],
           "confidence": "low|med|high",
           "next_test": "the cheapest next test that would settle it or raise confidence",
@@ -130,6 +159,8 @@ agent:
              "url": "https://...", "date": "2026-05-01 or undated", "fetched": "2026-10-02",
              "kind": "count|rule|deadline|price|date|finding|fact",
              "quality": "primary|secondary|vendor|listicle", "party": "neutral|interested",
+             "stake": "who gains and how (interested claims only)",
+             "source": "who stands behind the evidence", "signal": "pays|does|says|fact",
              "how": "cite|data|webfetch|snippet",
              "data_files": [], "script": "", "result": ""}
           ],
@@ -141,9 +172,11 @@ agent:
          always present; decided_by and set_aside are empty lists when no default was set
          aside and none held the verdict back.
       2. Write state/desk/checks/<slot>.md: the assumption and both bars; the verdict and
-         why, in plain words; the evidence, citing claim ids like [A2-3]; which default the
-         bar set aside (with its words) or which default decided an unknown, if any; what
-         points the other way; what you could not find or reach; the next test.
+         why, in plain words; the evidence, citing claim ids like [A2-3]; what carried the
+         verdict (pays, does, says or fact) and who is speaking (each decisive source,
+         neutral or interested, with its stake); which default the bar set aside (with its
+         words) or which default decided an unknown, if any; what points the other way; what
+         you could not find or reach; the next test.
       3. Run `python3 state/desk/check_desk.py <slot>` and fix every problem it lists (it
          re-checks each quote against the kept page and re-runs each count script).
       4. Finish with a single ```json block and make it your WHOLE final message: no

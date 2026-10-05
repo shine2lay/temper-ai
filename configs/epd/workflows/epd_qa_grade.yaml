@@ -1,0 +1,77 @@
+# QA's seeded-defect grade (epd_qa_grade): how far the build's two checks can be trusted.
+#
+# A corpus plants known bugs in copies of past merged changes, one small edit to app code each,
+# spread over test-design classes (a boundary off by one, an inverted condition, a removed guard, a
+# skipped state change, a swallowed error, a wrong figure on one screen of a same-value pair, a changed
+# label, data that no longer saves), plus controls with no bug. Its manifest says, before any run,
+# what each bug breaks, the symptom a person would see and which check should catch it.
+#
+# Each case goes through epd_qa_case (task_test, and task_verify when asked); a host driver starts
+# one run per case and writes each run's result to a folder, one JSON file per case (the format is
+# in configs/epd/bin/qa_grade_score.py). This workflow scores that folder against the manifest:
+#
+#   - the catch rate of task_test, of task_verify and of the two together on the planted bugs;
+#   - the false alarms on the controls;
+#   - the harness faults (a skipped verdict, a check that never ran), listed apart, never misses;
+#   - cost and time per case; and, with compare_with, where two rounds of the same cases disagree,
+#     down to each CI check whose result flipped (a flaky check).
+#
+# No model: the grade costs nothing and is the same every time for the same files. It grades every
+# change QA makes to task_test and task_verify (docs/departments.md, "How a change is tested").
+workflow:
+  name: epd_qa_grade
+  version: 1
+  description: |
+    Score a seeded-defect round: catch rates of task_test, task_verify and both together on planted
+    bugs, false alarms on controls, harness faults apart, cost and time per case. Deterministic
+    script, no model. Cases are run by epd_qa_case.
+  inputs:
+    # The corpus manifest (JSON), written before any run.
+    manifest:
+      type: string
+      required: true
+    # The round's result folder(s), comma-separated; each check of a case comes from the first
+    # folder that asked for it.
+    results:
+      type: string
+      required: true
+    # Where grade.json and grade.md are written.
+    out:
+      type: string
+      required: true
+    # Another round's result folder for the same cases, set beside the first.
+    compare_with:
+      type: string
+      required: false
+    # A trial scorer under /app/configs/epd/bin (default: qa_grade_score.py there).
+    scorer:
+      type: string
+      required: false
+
+  outputs:
+    grade_json: score.structured.grade_json
+    grade_md: score.structured.grade_md
+    planted: score.structured.planted
+    controls: score.structured.controls
+    test_catch_rate: score.structured.test_catch_rate
+    verify_catch_rate: score.structured.verify_catch_rate
+    together_catch_rate: score.structured.together_catch_rate
+    test_caught: score.structured.test_caught
+    verify_caught: score.structured.verify_caught
+    together_caught: score.structured.together_caught
+    false_alarms: score.structured.false_alarms
+    harness_faults: score.structured.harness_faults
+    cost_usd: score.structured.cost_usd
+    seconds: score.structured.seconds
+    compare: score.structured.compare
+
+  nodes:
+    - name: score
+      type: agent
+      agent: epd_qa_score
+      input_map:
+        manifest: input.manifest
+        results: input.results
+        out: input.out
+        compare_with: input.compare_with
+        scorer: input.scorer

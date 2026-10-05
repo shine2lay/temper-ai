@@ -1,0 +1,105 @@
+# QA's seeded-defect test: lay one case out for the checks under test (epd_qa_case's first step).
+#
+# A case is a branch in a git bundle: a past merged change with one known bug planted on top of it,
+# or a control with none. The bundle is how the case gets in: it is a plain file, so a run reads it
+# whoever owns it, where a clone of another user's repository would be refused as dubious ownership.
+# This step clones it into a folder of its own and checks the case out detached, so task_test runs
+# the repository's CI on exactly the case's commit, beside the clean commit it was planted on.
+#
+# For the browser check it also makes a bare repository from the bundle, named after the project
+# (remote/<project>.git), for task_claim and task_worktree to clone as the build does. Nothing is
+# pushed anywhere: a case never leaves the machine.
+#
+# Fails loud: no bundle, no such branch, a clean commit the case does not build on, or a case that
+# IS the clean commit (task_test counts every failure as old when HEAD is the base, so a control
+# needs a commit on top of it; an empty one will do).
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: epd_qa_prepare
+  version: 1
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    #!/bin/sh
+    set -eu
+    BUNDLE={{ bundle }}
+    PROJECT={{ project }}
+    CASE_ID={{ case_id }}
+    CASE_BRANCH={{ case_branch }}
+    CLEAN={{ clean_commit }}
+    CASE_COMMIT={{ case_commit | default('') }}
+    RUN_TEST={{ run_test | default('') }}
+    RUN_VERIFY={{ run_verify | default('') }}
+    WORK_ROOT={{ work_root | default('') }}
+    # An optional workflow input that was not given arrives as Python None.
+    [ "$CASE_COMMIT" = None ] && CASE_COMMIT=""
+    [ "$WORK_ROOT" = None ] && WORK_ROOT=""
+    case "$RUN_TEST" in false|False|0|no) RUN_TEST=false ;; *) RUN_TEST=true ;; esac
+    case "$RUN_VERIFY" in true|True|1|yes) RUN_VERIFY=true ;; *) RUN_VERIFY=false ;; esac
+
+    CASE_ROOT=""
+    fail() {
+      [ -n "$CASE_ROOT" ] && rm -rf "$CASE_ROOT"
+      python3 -c 'import json, sys; print(json.dumps({"status": "failed", "error": sys.argv[1]}))' "$1"
+      exit 1
+    }
+
+    case "$CASE_ID" in ''|*[!A-Za-z0-9._-]*) fail "case_id must be letters, digits, dots, dashes or underscores: $CASE_ID" ;; esac
+    case "$PROJECT" in ''|*[!a-z0-9._-]*) fail "project must be lower-case letters, digits, dots or dashes: $PROJECT" ;; esac
+    [ -f "$BUNDLE" ] || fail "no bundle at $BUNDLE"
+    HEADS=$(git bundle list-heads "$BUNDLE" 2>/dev/null) || fail "not a git bundle: $BUNDLE"
+    printf '%s\n' "$HEADS" | grep -q " refs/heads/$CASE_BRANCH\$" || fail "the bundle has no branch $CASE_BRANCH"
+    [ "$RUN_TEST" = true ] || [ "$RUN_VERIFY" = true ] || fail "nothing to run: run_test and run_verify are both off"
+
+    [ -n "$WORK_ROOT" ] || WORK_ROOT="$(dirname "$BUNDLE")/cases"
+    mkdir -p "$WORK_ROOT"
+    CASE_ROOT=$(mktemp -d "$WORK_ROOT/$CASE_ID.XXXXXX")
+    # The stack is built on the host from this folder, by another user than the run's.
+    chmod 755 "$CASE_ROOT"
+
+    REPO="$CASE_ROOT/repo"
+    git clone -q --no-checkout "$BUNDLE" "$REPO" 2>/dev/null || fail "git clone failed for $BUNDLE"
+    git -C "$REPO" checkout -q --detach "origin/$CASE_BRANCH" 2>/dev/null || fail "the bundle has no branch $CASE_BRANCH"
+    HEAD=$(git -C "$REPO" rev-parse HEAD)
+    if [ -n "$CASE_COMMIT" ]; then
+      WANT=$(git -C "$REPO" rev-parse -q --verify "$CASE_COMMIT^{commit}" 2>/dev/null) || fail "the case commit $CASE_COMMIT is not in the bundle"
+      [ "$WANT" = "$HEAD" ] || fail "$CASE_BRANCH is at $HEAD, not at the case commit $CASE_COMMIT"
+    fi
+    CLEAN_FULL=$(git -C "$REPO" rev-parse -q --verify "$CLEAN^{commit}" 2>/dev/null) || fail "the clean commit $CLEAN is not in the bundle"
+    git -C "$REPO" merge-base --is-ancestor "$CLEAN_FULL" "$HEAD" || fail "$CASE_BRANCH does not build on the clean commit $CLEAN"
+    [ "$CLEAN_FULL" != "$HEAD" ] || fail "$CASE_BRANCH is the clean commit itself; put a commit on top (an empty one will do)"
+    CHANGED=$(git -C "$REPO" diff --name-only "$CLEAN_FULL" "$HEAD" | wc -l | tr -d ' ')
+
+    REPO_URL=""
+    REPOS=""
+    if [ "$RUN_VERIFY" = true ]; then
+      REMOTE="$CASE_ROOT/remote/$PROJECT.git"
+      mkdir -p "$CASE_ROOT/remote"
+      git clone -q --bare "$BUNDLE" "$REMOTE" 2>/dev/null || fail "git clone --bare failed for $BUNDLE"
+      git -C "$REMOTE" rev-parse -q --verify "refs/heads/$CASE_BRANCH" >/dev/null || fail "the bare copy has no branch $CASE_BRANCH"
+      REPO_URL="file://$REMOTE"
+      REPOS="$CASE_ROOT/repos"
+      mkdir -p "$REPOS"
+    fi
+    chmod -R a+rX "$CASE_ROOT"
+
+    echo "case $CASE_ID: $CASE_BRANCH at $(printf %.12s "$HEAD") on clean $(printf %.12s "$CLEAN_FULL"), $CHANGED files differ; test $RUN_TEST, verify $RUN_VERIFY"
+    python3 - "$CASE_ID" "$CASE_ROOT" "$REPO" "$HEAD" "$CLEAN_FULL" "$CHANGED" "$RUN_TEST" "$RUN_VERIFY" "$REPO_URL" "$REPOS" "$CASE_BRANCH" <<'PY'
+    import json, sys
+    case_id, root, repo, head, clean, changed, run_test, run_verify, repo_url, repos, branch = sys.argv[1:]
+    print(json.dumps({
+        "status": "ready",
+        "case_id": case_id,
+        "case_root": root,
+        "workspace_path": repo,
+        "head": head,
+        "clean_commit": clean,
+        "files_changed": int(changed),
+        "run_test": run_test == "true",
+        "run_verify": run_verify == "true",
+        "repo_url": repo_url or None,
+        "workspaces_root": repos or None,
+        "base_branch": branch,
+        "claim_name": "qa " + case_id,
+    }))
+    PY

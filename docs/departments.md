@@ -32,7 +32,7 @@ role tests and lands a change.
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
-| `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts. |
+| `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`). |
 | `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, the CI and smoke workflows temper-ci runs, and the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests). |
 | `security` | Security | The build's security read and its diff scan, and the security reviewer of `code_review`. |
 | `data` | Data & analytics | The measure stage, the stage scorecard and its judge, the walk report, and the plan stage's numbers engineer. |
@@ -130,6 +130,7 @@ the dashboard.
 | `smoke_test`, `gate_smoke`, `ci_*` | An installation, at no model cost | systems |
 | `signal_grade` | A finished signal harvest, against its own evidence: arithmetic, confidence, candidates, provenance, blocked sources, scope and competitor claims (also runs at the end of every `signal_harvest`) | product |
 | `positioning_grade` | One positioning document, against its own evidence folder: Dunford's five components, the messaging hierarchy, every claim traced to a quote, plain words (soundness, not appeal) | marketing |
+| `epd_qa_grade`, `epd_qa_case` | The build's test run and browser check, on copies of past changes with known bugs planted and on clean controls: what each check caught, its false alarms, harness faults apart, cost and time | qa |
 
 To grade a positioning document, put `positioning.md`, `positioning.json` and its
 evidence folder in a run workspace (the format is
@@ -142,10 +143,29 @@ pass, revise or unknown per criterion P1-P8 and overall. A grade costs about
 $0.40 and a minute. Grade each document in a fresh workspace. The fictional
 benchmark and its scorer are in `tests/test_positioning_grade/benchmark/`.
 
+To grade the build's checks on planted bugs, make a corpus first: a git bundle
+with one branch per case, each on a past merged commit (a planted case changes
+one thing in app code, never a test; a control has no bug, for instance an
+empty commit on top), and a manifest written before any run, with each case's
+expected catcher, the criterion it breaks and the symptom a person would see
+(the formats are in `configs/epd/bin/qa_grade_score.py`). A planted bug that
+turns out to change nothing (an equivalent mutant) moves to the manifest's
+`replaced` list, with why, and a new case takes its place; the grade lists it
+and never counts it. Keep a private
+project's corpus out of this repository; put the bundle and the manifest under
+`workspaces/`, where runs see them at the same path. Start one `epd_qa_case`
+run per case: it runs the live `task_test` on the case with the clean commit as
+base and, with `run_verify`, deploys the case to a dev stack from a copy of the
+bundle (nothing is pushed) and runs the live `task_verify` with the bet's task,
+criteria and a seeded login. Write each finished run as `<case>.json`, then run
+`epd_qa_grade` (`manifest`, `results`, `out`, and `compare_with` for a second
+round of the same cases: checks that pass in one round and fail in the other
+are flaky). The grade is `grade.md` and `grade.json` in `out`. `task_test`
+costs no model money; the browser half costs what `task_verify` costs.
+
 Still to build: a grader for launch notes (marketing), the walks and the UI
-(design), the frontend side of a build (frontend), seeded defects for the
-build's test run and browser check (qa), seeded flaws for the security read
-(security), and docs (docs).
+(design), the frontend side of a build (frontend), seeded flaws for the
+security read (security), and docs (docs).
 
 A script step can check which files its own run's agents went near:
 `GET http://server:8420/api/runs/{{ run_id }}/tool-calls` lists every tool call
@@ -428,16 +448,22 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `epd/agents/task_minors.yaml` | agent (script) |
 | `epd/agents/task_plan.yaml` | agent |
 
-### qa (6)
+### qa (12)
 
 | Config | Kind |
 |---|---|
 | `epd/agents/epd_lens_break.yaml` | agent |
 | `epd/agents/epd_lens_reach.yaml` | agent |
 | `epd/agents/epd_plan_qa.yaml` | agent |
+| `epd/agents/epd_qa_finish.yaml` | agent (script) |
+| `epd/agents/epd_qa_prepare.yaml` | agent (script) |
+| `epd/agents/epd_qa_score.yaml` | agent (script) |
 | `epd/agents/task_seed_slot.yaml` | agent (script) |
 | `epd/agents/task_test.yaml` | agent (script) |
 | `epd/agents/task_verify.yaml` | agent |
+| `epd/bin/qa_grade_score.py` | script |
+| `epd/workflows/epd_qa_case.yaml` | workflow |
+| `epd/workflows/epd_qa_grade.yaml` | workflow |
 
 ### systems (27)
 

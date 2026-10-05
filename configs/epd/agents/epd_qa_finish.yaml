@@ -1,0 +1,72 @@
+# QA's seeded-defect test: keep a case's reports and remove its folder (epd_qa_case's last step).
+#
+# Runs after everything else in the case, failed or not. Copies what the checks wrote in the case's
+# trees (task_test's .epd/tests.md and its logs; whatever the browser check left in its worktree's
+# .epd) to keep_reports_in/test and keep_reports_in/verify, readable and replaceable by the host user,
+# then removes the case folder unless keep is set. Only a folder that prepare made is removed: one
+# that holds repo/ and sits under a cases/ folder.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: epd_qa_finish
+  version: 1
+  type: script
+  timeout_seconds: 600
+  script_template: |
+    #!/bin/sh
+    set -eu
+    # Out of any folder this step may remove.
+    cd /
+    CASE_ROOT={{ case_root | default('') }}
+    TEST_TREE={{ test_tree | default('') }}
+    VERIFY_TREE={{ verify_worktree | default('') }}
+    KEEP_IN={{ keep_reports_in | default('') }}
+    KEEP={{ keep | default('') }}
+    # An optional value that was not given, or came from a step that never ran, arrives as None.
+    [ "$CASE_ROOT" = None ] && CASE_ROOT=""
+    [ "$TEST_TREE" = None ] && TEST_TREE=""
+    [ "$VERIFY_TREE" = None ] && VERIFY_TREE=""
+    [ "$KEEP_IN" = None ] && KEEP_IN=""
+    case "$KEEP" in true|True|1|yes) KEEP=true ;; *) KEEP=false ;; esac
+
+    KEPT=""
+    if [ -n "$KEEP_IN" ]; then
+      mkdir -p "$KEEP_IN"
+      for pair in "test:$TEST_TREE" "verify:$VERIFY_TREE"; do
+        name=$(printf '%s' "$pair" | cut -d: -f1)
+        tree=$(printf '%s' "$pair" | cut -d: -f2-)
+        if [ -n "$tree" ] && [ -d "$tree/.epd" ]; then
+          rm -rf "$KEEP_IN/$name"
+          cp -R "$tree/.epd" "$KEEP_IN/$name"
+          KEPT="$KEPT $name"
+        fi
+      done
+      chmod -R a+rwX "$KEEP_IN" 2>/dev/null || true
+    fi
+
+    REMOVED=false
+    if [ -n "$CASE_ROOT" ] && [ "$KEEP" != true ]; then
+      case "$CASE_ROOT" in
+        */cases/*)
+          if [ -d "$CASE_ROOT/repo" ]; then
+            # A file the stack's builder left may not be the run's to remove: say so, do not fail.
+            rm -rf "$CASE_ROOT" 2>/dev/null || true
+            [ -e "$CASE_ROOT" ] || REMOVED=true
+          fi ;;
+      esac
+    fi
+    SAID_ROOT="$CASE_ROOT"
+    [ -n "$SAID_ROOT" ] || SAID_ROOT="(none)"
+    SAID_KEPT="$KEPT"
+    [ -n "$SAID_KEPT" ] || SAID_KEPT=" none"
+    echo "case folder $SAID_ROOT: removed $REMOVED; reports kept:$SAID_KEPT"
+    python3 - "$CASE_ROOT" "$REMOVED" "$KEEP_IN" "$KEPT" <<'PY'
+    import json, sys
+    root, removed, keep_in, kept = sys.argv[1:]
+    print(json.dumps({
+        "status": "finished",
+        "case_root": root or None,
+        "removed": removed == "true",
+        "reports": keep_in or None,
+        "kept": kept.split(),
+    }))
+    PY

@@ -1,0 +1,39 @@
+# QA's seeded-defect test: turn a round's case results into a grade (epd_qa_grade's step).
+#
+# Runs configs/epd/bin/qa_grade_score.py (its docstring has the manifest and result formats and the
+# rules) over a corpus manifest and the result folders a round wrote, one JSON file per case, and
+# writes grade.json and grade.md to `out`: the catch rate of task_test, of task_verify and of the two
+# together on the planted bugs, the false alarms on the controls, the harness faults (listed apart,
+# never counted as misses), and cost and time per case. compare_with sets a second round of the same
+# cases beside the first, check by check, to show what is not stable.
+#
+# No model: a run costs nothing, and the same files always give the same grade.
+# `scorer` may name another script under /app/configs/epd/bin (a trial copy in bin/local/); nothing
+# outside that folder runs.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: epd_qa_score
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -eu
+    MANIFEST={{ manifest }}
+    RESULTS={{ results }}
+    OUT={{ out }}
+    COMPARE={{ compare_with | default('') }}
+    SCORER={{ scorer | default('') }}
+    # An optional workflow input that was not given arrives as Python None.
+    [ "$COMPARE" = None ] && COMPARE=""
+    [ "$SCORER" = None ] && SCORER=""
+    [ -n "$SCORER" ] || SCORER=/app/configs/epd/bin/qa_grade_score.py
+    case "$SCORER" in
+      *..*) echo "{\"status\": \"failed\", \"error\": \"scorer may not leave /app/configs/epd/bin\"}"; exit 1 ;;
+      /app/configs/epd/bin/*.py) ;;
+      *) echo "{\"status\": \"failed\", \"error\": \"scorer must be a script under /app/configs/epd/bin\"}"; exit 1 ;;
+    esac
+    if [ -n "$COMPARE" ]; then
+      exec python3 -u "$SCORER" --manifest "$MANIFEST" --results "$RESULTS" --out "$OUT" --compare "$COMPARE"
+    fi
+    exec python3 -u "$SCORER" --manifest "$MANIFEST" --results "$RESULTS" --out "$OUT"

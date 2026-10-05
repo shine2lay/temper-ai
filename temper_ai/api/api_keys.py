@@ -37,7 +37,8 @@ _HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
 # Names the server gives callers itself; a key may not pose as one of them.
 RESERVED_PREFIXES = ("box:", "slack:", "telegram:", "hook:", "trigger:")
-RESERVED_NAMES = frozenset({"server", "pickup", "unknown", "shared", "box", "slack", "telegram"})
+RESERVED_NAMES = frozenset({"server", "pickup", "carry-on", "unknown", "shared", "box", "slack",
+                            "telegram"})
 
 _lock = threading.Lock()
 _cache: tuple[str, tuple[int, int], dict[str, str]] | None = None

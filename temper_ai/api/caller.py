@@ -15,8 +15,8 @@ Two halves:
 Ways in that never come through HTTP name themselves with ``acting_as``,
 after their own checks: Slack "slack:<user id>", Telegram
 "telegram:<user id>", signed hooks "hook:<source>", triggers
-"trigger:<name>", start-up pickup "pickup". Anything left unnamed is an
-unknown caller.
+"trigger:<name>", start-up pickup "pickup", a parked run carried on after
+its answer "carry-on". Anything left unnamed is an unknown caller.
 
 ``TEMPER_API_GUARD`` decides what an unknown caller gets:
 

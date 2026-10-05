@@ -307,6 +307,16 @@ def parked_runs() -> list[str]:
     return [eid for eid in found if parked_attempt(eid) is not None]
 
 
+def _carry_on_as_pickup(execution_id: str) -> None:
+    """Start-up's carry-on: Resume's path, under the name "pickup", only while still parked
+    on an answered wait (routes.resume_answered_parked_run)."""
+    from temper_ai.api.caller import acting_as
+    from temper_ai.api.routes import resume_answered_parked_run
+
+    with acting_as("pickup", via="pickup"):
+        resume_answered_parked_run(execution_id)
+
+
 def carry_on_at_startup(start: Callable[[str], Any] | None = None) -> list[str]:
     """Carry on every parked run whose answer came while nothing could act on it.
 
@@ -314,9 +324,7 @@ def carry_on_at_startup(start: Callable[[str], Any] | None = None) -> list[str]:
     deadline, however long it has waited.
     """
     if start is None:
-        from temper_ai.runner.pickup import _resume_through_the_button
-
-        start = _resume_through_the_button
+        start = _carry_on_as_pickup
     end_cancelled_pi_teams()
     carried = []
     for execution_id in parked_runs():

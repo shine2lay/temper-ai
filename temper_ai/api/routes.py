@@ -821,7 +821,8 @@ def resume_run(execution_id: str, body: ResumeRequest | None = None):
     return response
 
 
-def _resume_run(execution_id: str, body: ResumeRequest | None = None):
+def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
+                answered_parked_only: bool = False):
     """Resume a workflow from its last checkpoint.
 
     Loads all checkpoints for the execution, reconstructs node_outputs,
@@ -860,6 +861,8 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None):
     # A Pi run parked at a gate is carried on once, by whoever claims its parked attempt
     # first: the owner's answer, the worker that let go, start-up, or this button.
     parked = pi_parked.parked_attempt(execution_id) if pi_run else None
+    if answered_parked_only and (parked is None or pi_parked.answered(execution_id, parked) is None):
+        raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is no longer parked on an answered wait")
     if parked is not None and not pi_parked.claim(parked):
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
     if pi_run and parked is None:
@@ -1717,6 +1720,33 @@ def _carry_on_parked(execution_id: str, *, by: str) -> bool:
     worker holds it."""
     if _run_is_alive(execution_id):
         return False
-    return pi_parked.carry_on(
-        execution_id, start=lambda eid: resume_run(eid, ResumeRequest()), by=by,
-    )
+    return pi_parked.carry_on(execution_id, start=resume_answered_parked_run, by=by)
+
+
+def resume_answered_parked_run(execution_id: str) -> RunResponse:
+    """Resume a parked Pi run, but only while it is still parked with its wait answered.
+
+    For whoever carries a run on after an answer (the answer itself, the run's thread
+    letting go, start-up). Its check that the wait was answered and this start are apart
+    in time: the answer's own carry-on can start, finish and leave nothing parked in
+    between. Plain Resume would then start the finished run again, so this one refuses
+    (409) unless the latest attempt is still parked on an answered wait.
+
+    An answer made through the API carries the run on under the answerer's name; with no
+    one named (the run's thread, start-up) it is done under the name "carry-on": the
+    server's own step after an answer someone was allowed to give.
+    """
+    from temper_ai.api.caller import acting_as, current_caller
+
+    caller = current_caller()
+    if caller is not None and caller.name is not None:
+        return _resume_parked(execution_id)
+    with acting_as("carry-on", via="carry-on"):
+        return _resume_parked(execution_id)
+
+
+def _resume_parked(execution_id: str) -> RunResponse:
+    caller = require_caller_may("resume", run_id=execution_id)
+    response = _resume_run(execution_id, None, answered_parked_only=True)
+    record_action(execution_id, "resume", caller)
+    return response

@@ -76,6 +76,7 @@ Not behind the guard, each with its own check:
 | Linear, Notion, GitHub hooks | `hook:linear`, `hook:notion`, `hook:github` |
 | triggers | `trigger:<trigger name>` |
 | start-up pickup | `pickup` |
+| carrying a parked run on after its answer, when no one is bound (the run's own thread letting go) | `carry-on`: only while the run is still parked on an answered wait; inside an answer it stays the answerer |
 | a run's script steps (`starts_runs: true`) | `box:<run id>`: start and fork runs only |
 
 Source addresses, as the server sees them in a compose install: the host, a
@@ -96,7 +97,7 @@ The server keeps only sha256 hashes, in `configs/api/local/keys.json`
 It re-reads the file when it changes: removing a name stops that key on the
 next request, no restart. A malformed file accepts no key (and `temper check`
 says why); a raw value instead of a hash is refused. Names are lower-case
-`[a-z0-9._-]`; names the server gives itself (`server`, `pickup`, `box:...`,
+`[a-z0-9._-]`; names the server gives itself (`server`, `pickup`, `carry-on`, `box:...`,
 `slack:...`, `telegram:...`, `hook:...`, `trigger:...`) can't be taken by a key.
 
 ```bash

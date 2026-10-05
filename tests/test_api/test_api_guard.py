@@ -337,6 +337,28 @@ class TestInProcessNames:
             approve_gate(RUN, "decide", GateApproval(response="ok"))
         assert _gate_status(ev) == "waiting"
 
+    @pytest.mark.parametrize("answerer", [None, "owner-dashboard"])
+    def test_carrying_a_parked_run_on_is_named_and_passes_enforce(self, state, keys_file,
+                                                                  monkeypatch, answerer):
+        """The run's own thread and start-up carry a run on after an answer with no one
+        bound: that is "carry-on" (allowed); inside an answer it stays the answerer."""
+        from temper_ai.api import routes
+
+        monkeypatch.setenv("TEMPER_API_GUARD", "enforce")
+        seen = []
+
+        def fake_resume(execution_id, body, *, answered_parked_only):
+            seen.append((caller.current_caller().name, answered_parked_only))
+            return {"execution_id": execution_id}
+
+        monkeypatch.setattr(routes, "_resume_run", fake_resume)
+        if answerer is None:
+            routes.resume_answered_parked_run(RUN)
+        else:
+            with caller.bound(caller.Caller(name=answerer, source="10.0.0.2")):
+                routes.resume_answered_parked_run(RUN)
+        assert seen == [(answerer or "carry-on", True)]
+
 
 # --- a run's own key ----------------------------------------------------------------------
 

@@ -146,6 +146,16 @@ def test_a_first_step_that_asks_parks_and_resume_waits_on_the_same_wait(sw):
     n = pw.finish_pi(c, eid)
     attempts = pw.wait_ended(eid, n)
     assert [a["status"] for a in attempts] == ["parked"] * 3 + ["completed"]
+    # A carry-on that saw the wait answered before the answer's own carry-on ran the run
+    # to the end must not start the finished run again (it used to: one attempt too many).
+    from fastapi import HTTPException
+
+    from temper_ai.api import routes
+
+    with pytest.raises(HTTPException) as late:
+        routes.resume_answered_parked_run(eid)
+    assert late.value.status_code == 409
+    assert len(pw.attempts(eid)) == 4
     assert ask.RUNS["ask"] == 3 and ask.WORK == {("ask", 1): 1}
     assert ask.READ == [("ask", "pause-after-round-1", "go on")]
     assert pw.RAN == {"audit": 1} and len(FakeBox.STARTS) == 1

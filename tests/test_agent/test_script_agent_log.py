@@ -21,6 +21,7 @@ class Recorder:
         self.events: list[dict] = []
         self.rows: dict[str, list[tuple[int, dict]]] = {}
         self.first_row_at: dict[str, float] = {}
+        self.saves: dict[str, list[list[tuple[int, dict]]]] = {}  # each save's rows, in order
         self.lock = threading.Lock()
 
     def record(self, event_type, data=None, parent_id=None, execution_id=None, status=None, event_id=None):
@@ -34,6 +35,7 @@ class Recorder:
         with self.lock:
             self.first_row_at.setdefault(attempt_id, time.monotonic())
             self.rows.setdefault(attempt_id, []).extend(rows)
+            self.saves.setdefault(attempt_id, []).append(list(rows))
         return [f"{attempt_id}.log.{seq:08d}" for seq, _ in rows]
 
     def started(self) -> list[dict]:
@@ -50,6 +52,14 @@ class Recorder:
     def text(self, attempt: str, stream: str | None = None) -> str:
         return "".join(e["text"] for e in self.entries(attempt)
                        if e["stream"] != "temper" and (stream is None or e["stream"] == stream))
+
+    def first_output_saved(self, attempt: str) -> str:
+        """What the script printed, as the first save that held any of it had it."""
+        for rows in self.saves.get(attempt, []):
+            text = "".join(e["text"] for _, data in rows for e in data["entries"] if e["stream"] != "temper")
+            if text:
+                return text
+        return ""
 
     def end_note(self, attempt: str) -> dict:
         note = self.entries(attempt)[-1]
@@ -82,7 +92,7 @@ def _agent(script: str, **config) -> ScriptAgent:
 
 
 TALKER = (
-    "echo 'step 1'; sleep 0.8; echo 'careful' >&2; printf 'half a line, '; sleep 0.2; "
+    "echo 'step 1'; sleep 1.2; echo 'careful' >&2; printf 'half a line, '; sleep 0.2; "
     "echo 'then the rest'; echo '{\"answer\": 42}'"
 )
 
@@ -91,7 +101,6 @@ def test_the_log_is_saved_while_the_script_runs_and_the_result_is_unchanged(tmp_
     rec = Recorder()
     t0 = time.monotonic()
     result = _agent(TALKER).run({}, _context(tmp_path, rec))
-    ended = time.monotonic()
     [started] = rec.started()
     attempt = started["id"]
 
@@ -103,7 +112,11 @@ def test_the_log_is_saved_while_the_script_runs_and_the_result_is_unchanged(tmp_
     # The log: each stream labelled, saved while the script ran, ended with how it ended.
     assert rec.text(attempt, "stdout") == "step 1\nhalf a line, then the rest\n{\"answer\": 42}\n"
     assert rec.text(attempt, "stderr") == "careful\n"
-    assert ended - rec.first_row_at[attempt] >= 0.5, "nothing was saved before the script ended"
+    # Saved while it ran: the first save of its output holds only what it printed before its
+    # 1.2 s pause (rows are saved every half second), not everything at the end. Checked by
+    # content, not by the clock: "saved at least 0.5 s before the end" of a 1 s script sat
+    # right at the expected margin and failed on a loaded machine (0.496 s).
+    assert rec.first_output_saved(attempt) == "step 1\n", "nothing was saved before the script ended"
     assert rec.end_note(attempt)["text"] == "[finished: exit code 0]"
     assert rec.rows[attempt][-1][1]["end"] == {"outcome": "completed", "exit_code": 0}
     assert [seq for seq, _ in rec.rows[attempt]] == list(range(1, len(rec.rows[attempt]) + 1))

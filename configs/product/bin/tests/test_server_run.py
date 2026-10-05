@@ -231,6 +231,37 @@ class ServerRunTests(unittest.TestCase):
         with self.assertRaises(server.Refused):
             server.assert_idle()
 
+    def test_own_unit_is_not_another_workflow(self):
+        # The weekly cadence launches from inside its own product-weekly-cadence-* unit (#19 hand-off);
+        # on 2026-10-05 it refused itself. Its own unit is skipped; any other product unit still blocks.
+        own = "product-weekly-cadence-2026-10-05.service"
+        line = f"{own} loaded active running Product weekly cadence\n"
+        with patch.object(server, "own_unit", return_value=own), \
+                patch.object(server.subprocess, "run", return_value=Mock(stdout=line)), \
+                patch.object(server, "api", return_value={"runs": [], "total": 0}):
+            server.assert_idle()
+        other = line + "product-desk-c9.service loaded active running monitor\n"
+        with patch.object(server, "own_unit", return_value=own), \
+                patch.object(server.subprocess, "run", return_value=Mock(stdout=other)), \
+                patch.object(server, "api", return_value={"runs": [], "total": 0}):
+            with self.assertRaises(server.Refused) as caught:
+                server.assert_idle()
+        self.assertIn("product-desk-c9.service", str(caught.exception))
+        with patch.object(server, "own_unit", return_value=None), \
+                patch.object(server.subprocess, "run", return_value=Mock(stdout=line)), \
+                patch.object(server, "api", return_value={"runs": [], "total": 0}):
+            with self.assertRaises(server.Refused):
+                server.assert_idle()
+
+    def test_own_unit_reads_the_service_from_cgroup(self):
+        text = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/product-weekly-cadence-2026-10-05.service\n"
+        with patch.object(server.Path, "read_text", return_value=text):
+            self.assertEqual(server.own_unit(), "product-weekly-cadence-2026-10-05.service")
+        with patch.object(server.Path, "read_text", return_value="0::/user.slice/user-1000.slice/session-3.scope\n"):
+            self.assertIsNone(server.own_unit())
+        with patch.object(server.Path, "read_text", side_effect=OSError):
+            self.assertIsNone(server.own_unit())
+
     def test_server_active_job_blocks_even_without_local_record(self):
         with patch.object(server.subprocess, "run", return_value=Mock(stdout="")), \
                 patch.object(server, "api", return_value={"runs": [{"id": "existing", "workflow_name": "desk_check"}], "total": 1}):

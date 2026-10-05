@@ -332,6 +332,23 @@ def no_secrets(value):
         raise Refused("credential-shaped value refused")
 
 
+def own_unit() -> str | None:
+    """The systemd unit this process runs in, e.g. product-weekly-cadence-<date>.service.
+
+    The weekly cadence hands itself to such a unit and then launches from inside it; that unit
+    is the caller, not another workflow, so assert_idle must not count it.
+    """
+    try:
+        text = Path("/proc/self/cgroup").read_text()
+    except OSError:
+        return None
+    for line in text.splitlines():
+        last = line.rsplit("/", 1)[-1].strip()
+        if last.endswith(".service"):
+            return last
+    return None
+
+
 def assert_idle():
     for record in (ROOT / "runs").glob("*.job.json"):
         job = load(record)
@@ -341,8 +358,10 @@ def assert_idle():
         ["systemctl", "--user", "list-units", "--plain", "--no-legend", "--state=active,activating", "product-*.service"],
         check=True, capture_output=True, text=True, timeout=20,
     )
-    if out.stdout.strip():
-        raise Refused("another product unit is active: one workflow at a time")
+    me = own_unit()
+    others = [line.split()[0] for line in out.stdout.splitlines() if line.split() and line.split()[0] != me]
+    if others:
+        raise Refused(f"another product unit is active ({others[0]}): one workflow at a time")
     for state in ("pending", "queued", "running", "waiting"):
         offset = 0
         while True:

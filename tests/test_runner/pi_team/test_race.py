@@ -69,8 +69,14 @@ def test_b6_double_pickup_one_turn(led, box, db_url, run_id, tmp_path):
 
 def test_b6_double_takeover_one_recovery(led, box, db_url, run_id, tmp_path):
     """R2 B6 + B11 (C1): the owner of a running turn is gone; three processes take over at the
-    same moment. One moves the turn's epoch on, confirms the box gone and opens one recovery
-    wait; the others take nothing. The turn is never claimed twice or replayed."""
+    same moment. Exactly one confirms the box gone and opens one recovery wait; the others take
+    nothing. The turn is never claimed twice or replayed.
+
+    Each process that still reads the turn running moves its epoch on once, so the epoch can
+    move on more than once: a process that reads the turn after another moved it on moves it
+    on again, and the first one's take-over then fails its fence (made certain in
+    test_b6_takeover_overtaken_while_stopping_the_box). It failed CI once (run 37335739068)
+    when this test still expected exactly one move."""
     team = open_team(led, box, run_id=run_id)
     team.post("lead", "Write the README.", sender="temper", sender_kind="temper", kind="goal",
               dedupe_key=f"{run_id}:goal")
@@ -81,14 +87,51 @@ def test_b6_double_takeover_one_recovery(led, box, db_url, run_id, tmp_path):
     assert len(took) == 1, outs
     ((turn_id, wait_id),) = took[0]["took"]
     after = led.turn(turn_id)
-    assert (turn_id, after["state"], after["epoch"]) == (turn["turn_id"], "uncertain",
-                                                        turn["epoch"] + 1)
+    assert (turn_id, after["state"]) == (turn["turn_id"], "uncertain")
+    # Moved on at least once (the old owner's writes fail), and at most once per process.
+    assert turn["epoch"] < after["epoch"] <= turn["epoch"] + 3, (turn["epoch"], after["epoch"])
     assert after["box_stop"]["box"] == "temper-pi-deadbeef" and after["box_stop"]["confirmed"]
     waits = rows(led, run_id)["waits"]
     assert [(w["wait_id"], w["kind"], w["state"]) for w in waits] == [
         (wait_id, "recovery", "open")]
     # The old owner's late writes fail their fence.
     assert not led.mark_effect(turn_id, "committed", epoch=turn["epoch"])
+    assert led.claim_turn(run_id, HOST, attempt_id="next") is None
+    check_invariants(led, run_id)
+
+
+def test_b6_takeover_overtaken_while_stopping_the_box(led, box, run_id):
+    """The interleaving behind the race above, made certain. A moves the cut-off turn's epoch
+    on; while A stops the old box, B reads the turn (still running), moves the epoch on again,
+    confirms the box gone and opens the recovery wait. A's take-over then fails its fence and
+    takes nothing: one recovery wait, and a late write at either older epoch fails."""
+    team = open_team(led, box, run_id=run_id)
+    team.post("lead", "Write the README.", sender="temper", sender_kind="temper", kind="goal",
+              dedupe_key=f"{run_id}:goal")
+    turn, _batch = led.claim_turn(run_id, HOST, attempt_id="dead-owner")
+    assert led.record_box(turn["turn_id"], turn["epoch"], "temper-pi-deadbeef")
+
+    def gone(name: str) -> dict:
+        return {"box": name, "found": False, "was_running": False, "removed": False,
+                "confirmed": True, "error": None}
+
+    b_took: list = []
+
+    def a_stops_the_box(name: str) -> dict:
+        b_took.extend(led.take_over(run_id, HOST, "attempt-b", stop_box=gone))
+        return gone(name)
+
+    assert led.take_over(run_id, HOST, "attempt-a", stop_box=a_stops_the_box) == []
+    ((took, wait),) = b_took
+    after = led.turn(turn["turn_id"])
+    assert (took["turn_id"], after["state"], after["epoch"]) == (
+        turn["turn_id"], "uncertain", turn["epoch"] + 2)
+    waits = rows(led, run_id)["waits"]
+    assert [(w["wait_id"], w["kind"], w["state"]) for w in waits] == [
+        (wait["wait_id"], "recovery", "open")]
+    # The old owner's late write fails its fence, and so does A's at the epoch it moved to.
+    assert not led.mark_effect(turn["turn_id"], "committed", epoch=turn["epoch"])
+    assert not led.mark_effect(turn["turn_id"], "committed", epoch=turn["epoch"] + 1)
     assert led.claim_turn(run_id, HOST, attempt_id="next") is None
     check_invariants(led, run_id)
 

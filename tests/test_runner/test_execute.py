@@ -69,6 +69,53 @@ def test_the_executor_is_shut_down_when_the_run_raises(
     assert not scratch.exists()
 
 
+def test_a_run_in_its_box_holds_its_github_key_only_while_it_runs(
+    runner_ctx, monkeypatch, tmp_path
+):
+    """A run without the app's private key asks the server for GitHub tokens with its own key
+    (api/run_tokens.py): made when it starts, never in the environment, gone when it ends."""
+    import os
+
+    from temper_ai.api import run_tokens
+    from temper_ai.integrations.github import app as github_app
+    from temper_ai.integrations.github import secret
+
+    monkeypatch.setattr(secret, "private_key", lambda: None)
+    seen: dict = {}
+
+    def graph(ctx):
+        seen["key"] = run_tokens.held("run-1", run_tokens.GITHUB_TOKENS)
+        seen["asks_with"] = github_app._this_run_key
+        seen["in_env"] = any(v.startswith(run_tokens.GITHUB_TOKENS.prefix) for v in os.environ.values())
+        return SimpleNamespace(status="completed", cost_usd=0.0, total_tokens=0)
+
+    result, _ = _run(runner_ctx, monkeypatch, tmp_path, graph=graph)
+
+    assert result.status == "completed"
+    assert seen["key"] is not None and seen["key"].startswith(run_tokens.GITHUB_TOKENS.prefix)
+    assert seen["asks_with"] == seen["key"]
+    assert run_tokens.identify_run_key(seen["key"]) is None  # its hash went with the run
+    assert seen["in_env"] is False
+    assert github_app._this_run_key is None
+    assert run_tokens.held("run-1", run_tokens.GITHUB_TOKENS) is None
+
+
+def test_the_server_s_own_runs_hold_no_github_key(runner_ctx, monkeypatch, tmp_path):
+    """Where the app's private key is (the server), a run makes its own tokens and needs no key."""
+    from temper_ai.api import run_tokens
+    from temper_ai.integrations.github import secret
+
+    monkeypatch.setattr(secret, "private_key", lambda: "a private key")
+    seen: dict = {}
+
+    def graph(ctx):
+        seen["key"] = run_tokens.held("run-1", run_tokens.GITHUB_TOKENS)
+        return SimpleNamespace(status="completed", cost_usd=0.0, total_tokens=0)
+
+    _run(runner_ctx, monkeypatch, tmp_path, graph=graph)
+    assert seen["key"] is None
+
+
 def test_a_run_without_a_safety_block_gets_the_platform_baseline(
     runner_ctx, monkeypatch, tmp_path
 ):

@@ -20,7 +20,9 @@ box whose shell an agent drives, so the key is kept out of it (the spawners
 drop it, see ``secret.SERVER_ONLY``): a run's ``get_app()`` is a
 ``ServerApp``, which asks the server for a token for one repository
 (``POST /api/github/token``, api.github_tokens) and never holds more than
-that token.
+that token. It asks with the run's own GitHub-token key, which the run's
+process makes when the run starts (``use_run_key``; api/run_tokens.py) and
+which may do nothing else through the API.
 
 Which repos. The app works on the repos it is installed on, and nowhere
 else: ``installed_repos`` asks GitHub (every installation, every repo), and
@@ -408,7 +410,10 @@ class ServerApp(_Base):
         self._api_token = api_token
 
     def _ask_server(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
-        headers = {"Authorization": f"Bearer {self._api_token}"} if self._api_token else {}
+        # The run's own key names the run to the server's write guard; the server's shared
+        # API token, when a box has one, would name nobody.
+        key = _this_run_key or self._api_token
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
         try:
             with httpx.Client(timeout=30.0, transport=self._transport, headers=headers) as client:
                 return client.request(method, f"{self.server_url}{path}", **kwargs)
@@ -447,6 +452,22 @@ class ServerApp(_Base):
 App = GitHubApp | ServerApp
 _app: App | None = None
 _app_lock = threading.Lock()
+
+# The GitHub-token key of the run this process runs (one run per box), set by the runner
+# while the run goes on (runner/execute.py) and read by ServerApp when it asks the server.
+_this_run_key: str | None = None
+
+
+def asks_server_for_tokens() -> bool:
+    """Whether this process gets its GitHub tokens from temper's server (a run in its box,
+    without the app's private key) rather than making them itself (the server)."""
+    return not secret.private_key()
+
+
+def use_run_key(key: str | None) -> None:
+    """Ask the server for tokens with this run's own GitHub-token key; None when the run ends."""
+    global _this_run_key
+    _this_run_key = key
 
 
 def app_id() -> str | None:

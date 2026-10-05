@@ -54,7 +54,7 @@ HTTP route alone would let the MCP side door straight past.
 | write a config | `POST`/`PUT`/`DELETE /api/studio/configs/{type}/{name}` | | |
 | replay an inbox event | `POST /api/events/{id}/replay` | | |
 | run the triggers now | `POST /api/triggers/tick` | | |
-| mint a GitHub repo token | `POST /api/github/token` | | a run's own process (GitHub app tools) |
+| mint a GitHub repo token | `POST /api/github/token` | | a run's own process, with its GitHub-token key (GitHub app tools) |
 
 Not behind the guard, each with its own check:
 
@@ -82,6 +82,7 @@ Not behind the guard, each with its own check:
 | start-up pickup | `pickup` |
 | carrying a parked run on after its answer, when no one is bound (the run's own thread letting go) | `carry-on`: only while the run is still parked on an answered wait; inside an answer it stays the answerer |
 | a run's script steps (`starts_runs: true`) | `box:<run id>`: start and fork runs only |
+| a run's own process asking for a GitHub token | `box:<run id>`: GitHub tokens only (counted as `box-github`) |
 
 Source addresses, as the server sees them in a compose install: the host, a
 host-network container and anything through a reverse proxy on the host all
@@ -146,6 +147,31 @@ A script sends it like any key: `Authorization: Bearer $TEMPER_RUN_TOKEN`.
 A workflow without `starts_runs` gets no key; `temper check` lists the ones
 that hold one and flags a `starts_runs` that isn't `true` or `false`.
 
+## A run's GitHub-token key
+
+A run in its own box acts as temper's GitHub app (its comments, reviews and
+pull requests) without the app's private key: it asks the server for a token
+for one repository at a time ([github.md](github.md)). It asks with a second
+key of its own, made the same way as the one above:
+
+- every run whose process does not hold the app's private key gets one when
+  it starts (in practice every run in a box). Not only workflows that list a
+  GitHub tool: an agent's Delegate or AddNode, or a dispatch, can bring in an
+  agent with one while the run goes on, so the workflow file can't tell;
+- only the run's own process holds it, in memory: no script step gets it (it
+  is not `TEMPER_RUN_TOKEN`) and no agent tool does (`env_for_agent_tool`
+  drops it by name and by look);
+- it may ask for GitHub tokens (`POST /api/github/token`) and nothing else:
+  never start, fork, answer, cancel, resume or clean up (403). Behind
+  `TEMPER_API_TOKEN` it opens only the `/api/github/` paths;
+- every token handed out is logged with `box:<run id>` and the repository, and
+  counted under `box-github` in `GET /api/guard` (the run in `last_run_id`);
+- the server stores its sha256 with the run (table `run_github_keys`); it dies
+  with the run.
+
+A script step or an agent's Bash asking that route has no key, so record mode
+counts it as an unknown caller and enforce refuses it.
+
 ## What is recorded
 
 - On every answered or rejected wait (the event's data): `gate_decided_by`
@@ -166,8 +192,11 @@ that hold one and flags a `starts_runs` that isn't `true` or `false`.
 - A box's own process holds the database URL ([boxes.md](boxes.md), "Still
   exposed"), and an agent in the box can read it: a direct database write
   goes around this guard. That is Architecture's to close.
-- `POST /api/github/token` is guarded, and a run's own process asks it for
-  repo tokens: until that has its own key, `enforce` refuses it.
+- A run's own keys (start/fork and GitHub tokens) live in the run's process,
+  and an agent in the same box runs as the same user: until the box keeps its
+  process apart from its agents (temper #57, the protected runner), a
+  determined agent could dig a key out of that process, as it could the run's
+  other tokens today. Neither key can answer a wait, cancel, resume or clean up.
 
 ## Checking it
 

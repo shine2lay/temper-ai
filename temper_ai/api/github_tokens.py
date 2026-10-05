@@ -11,6 +11,10 @@ and gets a token that works on one repository, for at most an hour:
 Only repositories the app is installed on get a token. These paths are not
 public (the gateway passes only /api/hooks/...), and they sit behind the API
 token like the rest of the API when one is set.
+
+A run asks with its own GitHub-token key (api/run_tokens.py), which may do
+nothing else; the write guard names it ``box:<run id>`` (api/caller.py), and
+every token handed out is logged with that name and the repository.
 """
 
 from __future__ import annotations
@@ -42,7 +46,7 @@ class TokenRequest(BaseModel):
 @router.post("/token")
 def repo_token(body: TokenRequest) -> dict[str, Any]:
     """A token for one repository the app is installed on."""
-    require_caller_may("github_token")
+    caller = require_caller_may("github_token")
     try:
         repo = check_repo(body.repo)
     except GitHubAppError as exc:
@@ -53,7 +57,8 @@ def repo_token(body: TokenRequest) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except GitHubAppError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    logger.info("GitHub token handed out for %s", repo)
+    logger.info("GitHub token for %s handed to %s (from %s, request %s)",
+                repo, caller.label, caller.source, caller.request_id)
     return {
         "repo": repo,
         "token": token.value,

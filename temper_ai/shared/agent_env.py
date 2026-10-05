@@ -12,7 +12,9 @@ is in its environment the agent can print, so it gets only:
 
 Never the database URL, the secret key, another provider's keys, or anything
 not on the box's list. The box's own Python process may hold those
-(docs/boxes.md); its tools do not inherit them.
+(docs/boxes.md); its tools do not inherit them. A run's GitHub-token key never
+gets through, not even among the explicit variables: it is the run's own
+process's alone (api/run_tokens.py).
 
 With ``TEMPER_BOX_ENV=inherit`` (the emergency rollback) a tool process gets
 the old deny-list environment instead: everything but secret-looking names.
@@ -107,4 +109,10 @@ def env_for_agent_tool(
         # inherited secrets and removed. This is how script agents pass data to a script:
         # a value in the environment is data the shell will never parse as code.
         env.update({str(k): str(v) for k, v in extra.items()})
-    return env
+    return _without_run_github_key(env)
+
+
+def _without_run_github_key(env: dict[str, str]) -> dict[str, str]:
+    """``env`` minus a run's GitHub-token key, by its name or by its look, wherever it came from."""
+    return {k: v for k, v in env.items()
+            if k != box_env.RUN_GITHUB_KEY_ENV and not v.startswith(box_env.RUN_GITHUB_KEY_PREFIX)}

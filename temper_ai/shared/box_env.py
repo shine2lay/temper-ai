@@ -49,10 +49,18 @@ MODE_INHERIT = "inherit"
 #: Always set by the spawner to the box's own container name.
 RUN_CONTAINER_ENV = "TEMPER_RUN_CONTAINER"
 
+#: A run's GitHub-token key (api/run_tokens.py) is for the run's own process only. It is put in
+#: no environment today; should a later way of handing keys to the box ever put it in the box's
+#: own, this name, and any value that looks like one of these keys, still never reaches a tool
+#: process (shared/agent_env.py).
+RUN_GITHUB_KEY_ENV = "TEMPER_RUN_GITHUB_KEY"
+RUN_GITHUB_KEY_PREFIX = "tghk_"
+
 #: Never handed to an agent tool process, listed or not.
 NEVER_FOR_AGENT_TOOLS = frozenset({
     "TEMPER_DATABASE_URL", "DATABASE_URL", "TEMPER_SECRET_KEY",
     "TEMPER_REDIS_URL", "REDIS_URL", "TEMPER_HOST_DATABASE_URL",
+    RUN_GITHUB_KEY_ENV,
 }) | SERVER_ONLY
 #: A name ending like this holds a secret: the box's process may hold it, its tools may not.
 SECRET_SUFFIXES = ("_KEY", "_TOKEN", "_TOKENS", "_SECRET", "_PASSWORD", "_CREDENTIALS")

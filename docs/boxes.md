@@ -87,9 +87,11 @@ What temper cannot close by itself yet, handed to Architecture:
   it records the run, opens stored MCP sign-ins and calls the models. It also holds
   the other credentials its own tools use: `NOTION_TOKEN`, the Linear MCP's client
   credentials (`LINEAR_CLIENT_SECRET`), `TEMPER_GITHUB_TOKEN`, `TEMPER_API_TOKEN`
-  (asks the server for GitHub tokens and starts runs) and whatever secrets an
-  install's local list gives the process (a browser bridge's token, a design
-  tool's password).
+  (when an install sets one) and whatever secrets an install's local list gives
+  the process (a browser bridge's token, a design tool's password). In memory
+  only, it holds the run's own keys: one to ask the server for GitHub tokens,
+  and, for a `starts_runs` workflow, one its script steps use to start runs
+  ([api-access.md](api-access.md)).
 - Agent tools run as the same user as that process, so they can read
   `/proc/1/environ` and the main process's `/proc/<pid>/environ` and find those
   values there. Scrubbing the tool environment stops a casual `env`, not a

@@ -253,16 +253,19 @@ class CallerMiddleware:
         method = str(scope.get("method", "")).upper()
         presented = _write_key(scope)
         name: str | None = None
+        may: frozenset[str] | None = None
         if method not in _READ_METHODS:
             name = identify_caller_name(presented, source)
             if name is None and presented:
-                from temper_ai.api.run_tokens import KEY_PREFIX, identify_run_token
+                from temper_ai.api.run_tokens import identify_run_key, is_run_key
 
-                if presented.startswith(KEY_PREFIX):
+                if is_run_key(presented):
                     import anyio
 
-                    run_id = await anyio.to_thread.run_sync(identify_run_token, presented)
-                    name = f"box:{run_id}" if run_id else None
+                    found = await anyio.to_thread.run_sync(identify_run_key, presented)
+                    if found:
+                        # A run's own key: named for its run, and may only what its kind may.
+                        name, may = f"box:{found[0]}", found[1].powers
         headers = scope.get("headers") or []
         caller = Caller(
             name=name,
@@ -271,6 +274,7 @@ class CallerMiddleware:
             via=f"{method} {scope.get('path', '')}",
             # A hint for record mode only (the dashboard without its key); never vouches.
             from_browser=name is None and _header(headers, b"sec-fetch-mode") is not None,
+            may=may,
         )
         scope[SCOPE_CALLER_KEY] = caller
         with bound(caller):
@@ -300,13 +304,15 @@ class TokenAuthMiddleware:
             # A named key (api/api_keys.py) or a run's own key opens the door too: the
             # write guard then decides what it may change (api/caller.py).
             from temper_ai.api.api_keys import identify_key
-            from temper_ai.api.run_tokens import KEY_PREFIX, identify_run_token
+            from temper_ai.api.run_tokens import identify_run_key, is_run_key
 
             client = identify_key(presented)
-            if client is None and presented.startswith(KEY_PREFIX):
+            if client is None and is_run_key(presented):
                 import anyio
 
-                client = await anyio.to_thread.run_sync(identify_run_token, presented)
+                found = await anyio.to_thread.run_sync(identify_run_key, presented)
+                # A GitHub-token key opens only the GitHub paths; a start/fork key, any.
+                client = found[0] if found and found[1].opens(scope.get("path", "")) else None
         if client is not None:
             await self.app(scope, receive, send)
             return

@@ -1,6 +1,6 @@
 """Tables behind the API write guard (api/caller.py).
 
-Both are new tables, created by ``create_all``: nothing existing changes,
+All are new tables, created by ``create_all``: nothing existing changes,
 so an older server and a newer one can share the database.
 """
 
@@ -22,6 +22,23 @@ class RunToken(SQLModel, table=True):
     """
 
     __tablename__ = "run_tokens"
+
+    execution_id: str = Field(primary_key=True)
+    token_hash: str = Field(index=True)
+    workflow_name: str = Field(default="")
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class RunGithubKey(SQLModel, table=True):
+    """The key one run's own process uses to ask the server for GitHub tokens.
+
+    Only the sha256 of the key is kept; the key itself lives in the run's
+    process and goes nowhere else, not to its script steps nor its agents'
+    tools (api/run_tokens.py). One row per run, removed when the run's
+    process ends.
+    """
+
+    __tablename__ = "run_github_keys"
 
     execution_id: str = Field(primary_key=True)
     token_hash: str = Field(index=True)

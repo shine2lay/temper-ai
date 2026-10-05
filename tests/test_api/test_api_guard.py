@@ -450,6 +450,147 @@ class TestRunKey:
         assert WorkflowConfig.from_dict({**base, "starts_runs": "true"}).starts_runs is False
         assert WorkflowConfig.from_dict(base).starts_runs is False
 
+    def test_it_may_not_ask_for_github_tokens(self, client, monkeypatch):
+        monkeypatch.setenv("TEMPER_API_GUARD", "enforce")
+        _running("box-run-8")
+        key = run_tokens.open_for_run("box-run-8", "dispatcher")
+
+        asked = client.post("/api/github/token", json={"repo": "shine2lay/temper-ai"},
+                            headers={"Authorization": f"Bearer {key}"})
+        assert asked.status_code == 403
+
+
+# --- a run's GitHub-token key ---------------------------------------------------------------
+
+
+GH = run_tokens.GITHUB_TOKENS
+
+
+@pytest.fixture
+def fake_app(monkeypatch):
+    """The server's GitHub app, handing out a made-up token for any repository."""
+    from types import SimpleNamespace
+
+    from temper_ai.api import github_tokens
+
+    fake = SimpleNamespace(token=lambda repo: SimpleNamespace(value="ghs_made_up_for_tests",
+                                                              expires_at=time.time() + 3600))
+    monkeypatch.setattr(github_tokens, "server_app", lambda: fake)
+    return fake
+
+
+def _ask_github_token(client, key, repo="shine2lay/temper-ai"):
+    return client.post("/api/github/token", json={"repo": repo},
+                       headers={"Authorization": f"Bearer {key}"} if key else {})
+
+
+class TestRunGithubKey:
+    def test_it_may_ask_for_a_token_and_nothing_else(self, client, fake_app, monkeypatch):
+        monkeypatch.setenv("TEMPER_API_GUARD", "enforce")
+        _running("gh-run-1")
+        key = run_tokens.open_for_run("gh-run-1", "coder", kind=GH)
+        ev = _record_waiting()
+        bearer = {"Authorization": f"Bearer {key}"}
+
+        assert _ask_github_token(client, key).status_code == 200
+        assert _approve(client, key=key).status_code == 403
+        assert client.post(f"/api/runs/{RUN}/cancel", json={}, headers=bearer).status_code == 403
+        assert client.post(f"/api/runs/{RUN}/resume", json={}, headers=bearer).status_code == 403
+        assert client.post(f"/api/runs/{RUN}/cleanup", headers=bearer).status_code == 403
+        assert client.post("/api/runs", json={"workflow": "nothing_here"}, headers=bearer).status_code == 403
+        forked = client.post("/api/runs/fork", headers=bearer,
+                             json={"source_execution_id": RUN, "sequence": 1, "workflow": "nothing_here"})
+        assert forked.status_code == 403
+        assert _gate_status(ev) == "waiting"
+
+    def test_enforce_refuses_a_token_to_a_caller_without_it(self, client, fake_app, monkeypatch):
+        """A script step or an agent's Bash asking with no key, as before this key existed."""
+        monkeypatch.setenv("TEMPER_API_GUARD", "enforce")
+
+        assert _ask_github_token(client, None).status_code == 401
+
+    def test_it_is_recorded_as_its_run_with_the_repository(self, client, fake_app, monkeypatch, caplog):
+        from temper_ai.api.guard_models import GuardSeen
+        from temper_ai.database import get_session
+
+        monkeypatch.setenv("TEMPER_API_GUARD", "record")
+        _running("gh-run-2")
+        key = run_tokens.open_for_run("gh-run-2", "coder", kind=GH)
+
+        with caplog.at_level(logging.INFO, logger="temper_ai.api.github_tokens"):
+            assert _ask_github_token(client, key).status_code == 200
+
+        said = [r.getMessage() for r in caplog.records if r.name == "temper_ai.api.github_tokens"]
+        assert any("shine2lay/temper-ai" in line and "box:gh-run-2" in line for line in said), said
+        assert not any(key in line or "ghs_made_up_for_tests" in line for line in said)
+        with get_session() as session:
+            row = session.get(GuardSeen, ("box-github", "github_token"))
+            assert row is not None and row.last_run_id == "gh-run-2"
+            assert row.refused == 0
+
+    def test_it_dies_with_its_run(self, keys_file):
+        _running("gh-run-3")
+        key = run_tokens.open_for_run("gh-run-3", "coder", kind=GH)
+        assert run_tokens.identify_run_key(key) == ("gh-run-3", GH)
+
+        run_tokens.close_for_run("gh-run-3", kind=GH)
+
+        assert run_tokens.identify_run_key(key) is None
+        assert run_tokens.held("gh-run-3", GH) is None
+
+    def test_a_finished_run_s_key_does_not_count(self, keys_file):
+        _running("gh-run-4")
+        key = run_tokens.open_for_run("gh-run-4", "coder", kind=GH)
+        _running("gh-run-4", status="failed")
+
+        assert run_tokens.identify_run_key(key) is None
+
+    def test_the_two_kinds_are_apart(self, keys_file):
+        """A run holding both keeps them apart: closing one leaves the other, and neither is the other."""
+        _running("gh-run-5")
+        starts = run_tokens.open_for_run("gh-run-5", "dispatcher")
+        github = run_tokens.open_for_run("gh-run-5", "dispatcher", kind=GH)
+
+        assert starts != github
+        assert run_tokens.identify_run_token(github) is None
+        run_tokens.close_for_run("gh-run-5", kind=GH)
+        assert run_tokens.held("gh-run-5") == starts
+        assert run_tokens.identify_run_token(starts) == "gh-run-5"
+
+    def test_no_script_step_and_no_agent_tool_ever_gets_it(self, keys_file):
+        from temper_ai.agent.script_agent import _run_key_env
+        from temper_ai.shared.agent_env import env_for_agent_tool
+        from temper_ai.shared.box_env import RUN_GITHUB_KEY_ENV
+
+        _running("gh-run-6")
+        key = run_tokens.open_for_run("gh-run-6", "coder", kind=GH)
+        context = MagicMock()
+        context.run_id = "gh-run-6"
+
+        assert key not in os.environ.values()
+        # A script step of a run without starts_runs gets no key at all, not this one.
+        assert _run_key_env(context) == {}
+        # Dropped by name and by look, from the box's environment and from a config's extras alike.
+        env = env_for_agent_tool(
+            environ={RUN_GITHUB_KEY_ENV: key, "HOME": key, "PATH": "/bin"},
+            extra={"GH_KEY": key, "OTHER": "fine"},
+            credential={"ANTHROPIC_API_KEY": key},
+        )
+        assert key not in env.values()
+        assert RUN_GITHUB_KEY_ENV not in env
+        assert env["OTHER"] == "fine"
+
+    def test_it_opens_only_the_github_paths_behind_the_shared_token(self, client, fake_app, monkeypatch):
+        """With TEMPER_API_TOKEN on every route, the key gets in to /api/github/ only."""
+        monkeypatch.setenv("TEMPER_API_TOKEN", "shared-test-token-0123456789")
+        _running("gh-run-7")
+        key = run_tokens.open_for_run("gh-run-7", "coder", kind=GH)
+        bearer = {"Authorization": f"Bearer {key}"}
+
+        assert _ask_github_token(client, key).status_code == 200
+        assert client.get("/api/runs/whatever", headers=bearer).status_code == 401
+        assert client.get("/api/workflows", headers=bearer).status_code == 401
+
 
 # --- the record ---------------------------------------------------------------------------
 

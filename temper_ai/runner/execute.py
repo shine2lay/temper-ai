@@ -231,6 +231,16 @@ def execute_workflow(
     if holds_run_key:
         from temper_ai.api.run_tokens import open_for_run
         open_for_run(execution_id, config.name)
+    # A run that gets its GitHub tokens from the server (every run in its own box) holds a key to
+    # ask with, for this process's life only, and gives it to nobody: not its script steps, not its
+    # agents' tools (api/run_tokens.py GITHUB_TOKENS). Every such run, not only those listing a
+    # GitHub tool, because Delegate, AddNode and dispatch can bring one in while the run goes on.
+    from temper_ai.integrations.github import app as github_app
+    holds_github_key = github_app.asks_server_for_tokens()
+    if holds_github_key:
+        from temper_ai.api.run_tokens import GITHUB_TOKENS
+        from temper_ai.api.run_tokens import open_for_run as open_key_for_run
+        github_app.use_run_key(open_key_for_run(execution_id, config.name, kind=GITHUB_TOKENS))
 
     # --- Execute (the real workflow engine) ---
     try:
@@ -271,6 +281,11 @@ def execute_workflow(
         if holds_run_key:
             from temper_ai.api.run_tokens import close_for_run
             close_for_run(execution_id)
+        if holds_github_key:
+            from temper_ai.api.run_tokens import GITHUB_TOKENS
+            from temper_ai.api.run_tokens import close_for_run as close_key_for_run
+            github_app.use_run_key(None)
+            close_key_for_run(execution_id, kind=GITHUB_TOKENS)
 
     logger.info(
         "Workflow '%s' %s: status=%s, cost=$%.4f, tokens=%d",

@@ -23,7 +23,7 @@ its answer "carry-on". Anything left unnamed is an unknown caller.
 * ``off`` (the default): nothing is checked or counted.
 * ``record``: allowed, with one log line and a count per write.
 * ``enforce``: refused (401 unknown; 403 for a run's own key used beyond
-  starting and forking runs), with the same log line.
+  what its kind may do), with the same log line.
 
 Whoever made it, every decision and run action records the caller's name,
 address and request id (``who()``), so the record shows who did what.
@@ -50,11 +50,19 @@ logger = logging.getLogger(__name__)
 GUARD_ENV_VAR = "TEMPER_API_GUARD"
 MODES = ("off", "record", "enforce")
 
-# What a run's own key (RunToken) may do. Never answers, cancels, resumes or
-# cleans up: an agent in a run that holds one must not be able to approve
-# its own deploy gate.
+# What a run's own keys (api/run_tokens.py) may do. Neither ever answers, cancels,
+# resumes or cleans up: an agent in a run must not be able to approve its own
+# deploy gate.
+#   BOX_ACTIONS: the key a starts_runs run's script steps get (TEMPER_RUN_TOKEN).
+#   GITHUB_TOKEN_ACTIONS: the key only the run's own process holds, to ask for
+#   GitHub tokens (integrations/github/app.py ServerApp).
 BOX_ACTIONS = frozenset({"start", "fork"})
+GITHUB_TOKEN_ACTIONS = frozenset({"github_token"})
 BOX_PREFIX = "box:"
+# Per kind of run key: what it may do in words (for its refusal), and the
+# api_guard_seen row it is counted under.
+_RUN_KEY_SAYS = {BOX_ACTIONS: "start and fork runs", GITHUB_TOKEN_ACTIONS: "ask for GitHub tokens"}
+_RUN_KEY_SEEN_AS = {BOX_ACTIONS: "box", GITHUB_TOKEN_ACTIONS: "box-github"}
 
 # Bounds on what a request may say about itself.
 _REQUEST_ID_MAX = 100
@@ -73,6 +81,9 @@ class Caller:
     Sec-Fetch-Mode header every browser adds to its fetches (and curl or a
     script does not). An unknown caller with it is most likely the dashboard
     without its key, so record mode counts those apart ("?browser").
+
+    ``may`` is what a run's own key may do (BOX_ACTIONS or
+    GITHUB_TOKEN_ACTIONS), set by the edge from the kind of key presented.
     """
 
     name: str | None
@@ -80,10 +91,24 @@ class Caller:
     request_id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
     via: str = ""
     from_browser: bool = False
+    may: frozenset[str] | None = None
 
     @property
     def is_box(self) -> bool:
         return bool(self.name and self.name.startswith(BOX_PREFIX))
+
+    @property
+    def run_id(self) -> str | None:
+        """The run a run's own key belongs to; None for anyone else."""
+        return self.name[len(BOX_PREFIX):] if self.is_box and self.name else None
+
+    @property
+    def powers(self) -> frozenset[str] | None:
+        """What this caller may change: None for anything (a named key, an in-process way
+        in); a run's own key only what its kind may do, start and fork when not said."""
+        if not self.is_box:
+            return None
+        return self.may if self.may is not None else BOX_ACTIONS
 
     @property
     def label(self) -> str:
@@ -169,9 +194,8 @@ def require_caller_may(action: str, *, run_id: str | None = None) -> Caller:
 
     Called first thing inside every operation that changes state. In
     ``record`` and ``enforce`` every write is counted under its caller's
-    name; an unknown caller, or a run's own key used for anything but
-    starting and forking runs, gets one log line, and in ``enforce`` a
-    401/403 instead of the action.
+    name; an unknown caller, or a run's own key used beyond what its kind may
+    do, gets one log line, and in ``enforce`` a 401/403 instead of the action.
     """
     caller = _current.get()
     if caller is None:
@@ -180,7 +204,8 @@ def require_caller_may(action: str, *, run_id: str | None = None) -> Caller:
     if mode == "off":
         return caller
 
-    allowed = caller.name is not None and (not caller.is_box or action in BOX_ACTIONS)
+    powers = caller.powers
+    allowed = caller.name is not None and (powers is None or action in powers)
     if allowed:
         _note(caller, action, run_id, refused=False)
         return caller
@@ -207,9 +232,10 @@ def require_caller_may(action: str, *, run_id: str | None = None) -> Caller:
                 ),
                 headers={"WWW-Authenticate": 'Bearer realm="temper"'},
             )
+        says = _RUN_KEY_SAYS.get(powers or BOX_ACTIONS) or " and ".join(sorted(powers or ()))
         raise CallerRefused(
             status_code=403,
-            detail=f"A run's own key may only start and fork runs, not {action}.",
+            detail=f"A run's own key may only {says}, not {action}.",
         )
     return caller
 
@@ -265,10 +291,11 @@ def _unknown_label(caller: Caller) -> str:
 
 
 def _seen_name(caller: Caller) -> str:
-    """The row a write is counted under: the caller's name, "box" for every run key,
-    "?browser" for an unknown browser, "" for any other unknown caller."""
+    """The row a write is counted under: the caller's name, "box" for every run's
+    start/fork key, "box-github" for every run's GitHub-token key, "?browser" for an
+    unknown browser, "" for any other unknown caller."""
     if caller.is_box:
-        return "box"
+        return _RUN_KEY_SEEN_AS.get(caller.powers or BOX_ACTIONS, "box")
     if caller.name:
         return caller.name
     return UNKNOWN_BROWSER if caller.from_browser else ""
@@ -277,10 +304,12 @@ def _seen_name(caller: Caller) -> str:
 def _note(caller: Caller, action: str, run_id: str | None, *, refused: bool) -> None:
     """Count one write in memory and in api_guard_seen (best effort).
 
-    Run keys count together as "box" (the run is in last_run_id), so the
-    table stays one row per kind of caller, not one per run.
+    Run keys count together per kind, "box" or "box-github" (the run is in
+    last_run_id), so the table stays one row per kind of caller, not one per run.
     """
     key = (_seen_name(caller), action)
+    # The run acted on, else the run whose own key asked (a start, a GitHub token).
+    run_id = run_id or caller.run_id
     now = utcnow()
     with _seen_lock:
         row = _seen.setdefault(key, {"count": 0, "refused": 0, "first_seen": now.isoformat()})

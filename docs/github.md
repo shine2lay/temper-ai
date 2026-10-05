@@ -205,7 +205,9 @@ agent's shell (the Bash tool strips it too), a run's box, a CLI model. A
 run that acts as the app asks the server for a token for one repository
 (`POST /api/github/token`, not public), which works for at most an hour; the
 server makes those from the key and reuses each until five minutes before
-it runs out.
+it runs out. The run asks with its own GitHub-token key, which may do nothing
+else and dies with the run; the server logs each token with the run and the
+repository ([api-access.md](api-access.md), "A run's GitHub-token key").
 
 A token is only ever for that one repository, and carries only what temper
 uses there — contents, issues and pull requests (read and write), metadata

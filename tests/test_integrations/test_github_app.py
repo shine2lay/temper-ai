@@ -316,6 +316,20 @@ class TestARunsApp:
         with pytest.raises(GitHubAppError, match="one repository at a time"):
             run_app.installation_token()
 
+    def test_asks_with_the_run_s_own_key_while_the_run_goes_on(self, run_app, server):
+        """The run's GitHub-token key names the run to the server's write guard (api/run_tokens.py)."""
+        github_app.use_run_key("tghk_this_run")
+        try:
+            run_app.installation_token("shine2lay/temper-ai")
+            run_app.installed_repos()
+        finally:
+            github_app.use_run_key(None)
+        assert server.auth[:2] == ["Bearer tghk_this_run", "Bearer tghk_this_run"]
+
+    def test_without_a_run_key_it_asks_as_before(self, run_app, server):
+        run_app.installed_repos()
+        assert server.auth == ["Bearer api-token"]
+
     def test_the_server_down(self, clock):
         def down(request):
             raise httpx.ConnectError("refused")
@@ -349,6 +363,11 @@ class TestWhereTheKeyIs:
         monkeypatch.setenv(github_app.APP_ID_ENV, "1234")
         assert isinstance(github_app.get_app(), GitHubApp)
         assert isinstance(github_app.server_app(), GitHubApp)
+
+    def test_only_a_process_without_the_key_asks_the_server(self, monkeypatch, pem):
+        assert github_app.asks_server_for_tokens() is True
+        monkeypatch.setenv(secret.PRIVATE_KEY_ENV, pem)
+        assert github_app.asks_server_for_tokens() is False
 
     def test_a_run_holds_only_a_way_to_ask_the_server(self, monkeypatch):
         monkeypatch.setenv(github_app.APP_ID_ENV, "1234")

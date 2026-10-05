@@ -73,10 +73,15 @@ workflow:
       on_max_loops: fail
       loop_condition: {source: copy_next.structured.verdict, operator: equals, value: retry}
       input_map: {stage: copy_next, mode: fixture}
+    - name: pairings
+      type: agent
+      agent: design_homepage_stage_v2
+      depends_on: [copy_next]
+      input_map: {stage: pairings, mode: fixture}
     - name: concepts
       type: agent
       agent: design_homepage_stage_v2
-      depends_on: [references, copy_next]
+      depends_on: [references, copy_next, pairings]
       input_map: {stage: concepts_fixture, mode: fixture}
     - name: check
       type: agent

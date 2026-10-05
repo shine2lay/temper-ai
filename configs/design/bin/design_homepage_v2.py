@@ -87,6 +87,16 @@ FIXTURE_CONCEPTS = {"A": "atlas.html", "B": "pulse.html", "C": "harbor.html"}
 BANNED_FONTS = {"inter", "roboto", "open sans", "lato", "space grotesk", "arial", "helvetica",
                 "helvetica neue", "system-ui", "-apple-system", "segoe ui", "times new roman",
                 "georgia", "verdana", "montserrat", "poppins", "sans-serif", "serif", "monospace"}
+# Type pairings earlier runs and the fixtures used (queue #34): a concept whose display + text pairing is
+# recorded must pick a fresh one unless the brand owns both faces. The tracked seed is read-only at run
+# time (configs are mounted read-only), so runs append to a shared log beside the workspaces.
+PAIRING_SEED = HERE.parent / "knowledge" / "type-pairings.json"
+# axe-core on every concept render (queue #34), with the same rules as the page measure (design_capture.py).
+# Measured with reduced motion and, separately, with motion once the page's animations have ended:
+# mid-animation measures gave 2-5 false contrast failures per page (#5).
+AXE_SRC = HERE / "vendor" / "axe-4.13.0.min.js"
+AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
+AXE_SETTLE_MS = 8000  # longest wait for a concept's load animations to end
 FONT_HOSTS = {"fonts.googleapis.com", "fonts.gstatic.com", "raw.githubusercontent.com"}
 LICENCE_URLS = (("ofl", "OFL.txt"), ("apache", "LICENSE.txt"), ("ufl", "UFL.txt"))
 MAX_AUTO_REVISIONS = 2
@@ -312,6 +322,104 @@ def concept_contract(concept: Any, brand_fonts: set[str]) -> list[str]:
             if ratio < 4.5:
                 problems.append(f"{where}: {fg} on {bg} contrast {ratio}:1 is below 4.5:1 (WCAG 1.4.3)")
     return problems
+
+
+# ---------------------------------------------------------------- type pairings (queue #34)
+
+def pairing_key(display: str, text: str) -> str:
+    """One key per pairing, whichever face plays which role."""
+    return " + ".join(sorted(face.strip().lower() for face in (display, text)))
+
+
+def concept_pairing(concept: dict) -> tuple[str, str] | None:
+    fonts = concept.get("fonts") if isinstance(concept.get("fonts"), dict) else {}
+    faces = [str(fonts[role].get("family", "")).strip() if isinstance(fonts.get(role), dict) else ""
+             for role in ("display", "text")]
+    return (faces[0], faces[1]) if all(faces) else None
+
+
+def pairing_log(workspace: Path) -> Path:
+    """The shared log every run appends its pairings to, beside the run workspaces."""
+    if os.environ.get("DESIGN_PAIRING_LOG"):
+        return Path(os.environ["DESIGN_PAIRING_LOG"])
+    root = os.environ.get("WORKSPACE_DIR")
+    return (Path(root) if root else workspace.parent) / ".design" / "type-pairings.jsonl"
+
+
+def recorded_pairings(log: Path, workspace: str) -> list[dict]:
+    """The seed's pairings plus those logged by other workspaces (a run never blocks its own concepts)."""
+    seed = load(PAIRING_SEED).get("pairings", []) if PAIRING_SEED.exists() else []
+    out = [{"display": p["display"], "text": p["text"], "source": p.get("source", "recorded")} for p in seed]
+    if log.exists():
+        for line in log.read_text(errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if (isinstance(event, dict) and event.get("workspace") != workspace
+                    and str(event.get("display", "")).strip() and str(event.get("text", "")).strip()):
+                out.append({"display": event["display"], "text": event["text"],
+                            "source": f"{event.get('kind', 'used')} in run {event.get('workspace', '?')}"})
+    return out
+
+
+def pairing_problems(concepts: list[dict], recorded: list[dict], brand_fonts: set[str]) -> list[str]:
+    """A concept that reuses a recorded pairing must pick a fresh one, unless the brand owns both faces."""
+    seen: dict[str, str] = {}
+    for r in recorded:
+        seen.setdefault(pairing_key(r["display"], r["text"]), r["source"])
+    problems = []
+    for c in concepts:
+        pair = concept_pairing(c)
+        if not pair or {face.lower() for face in pair} <= brand_fonts:
+            continue  # missing faces are the contract's problem; a brand-owned pairing stays
+        source = seen.get(pairing_key(*pair))
+        if source:
+            problems.append(f"concept {c.get('id')}: the type pairing {pair[0]} + {pair[1]} was already used ({source}); "
+                            "pick a fresh pairing chosen for this product (homepage/PAIRINGS.md lists the used ones)")
+    return problems
+
+
+def record_pairings(log: Path, workspace: str, kind: str, concepts: list[dict]) -> int:
+    rows = [json.dumps({"display": pair[0], "text": pair[1], "kind": kind, "concept": c.get("id"),
+                        "workspace": workspace, "recorded_at": now()}, ensure_ascii=False)
+            for c in concepts if (pair := concept_pairing(c))]
+    if not rows:
+        return 0
+    log.parent.mkdir(parents=True, exist_ok=True)
+    fresh = not log.exists()
+    with log.open("a") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.write("\n".join(rows) + "\n")
+    if fresh:  # the server, the workers and the host run as different users: all of them append
+        try:
+            os.chmod(log, 0o666)
+        except OSError:
+            pass
+    return len(rows)
+
+
+def pairings_brief(recorded: list[dict], brand_fonts: set[str]) -> str:
+    """homepage/PAIRINGS.md: what the art director reads before drafting."""
+    pairs: dict[str, dict] = {}
+    for r in recorded:
+        pairs.setdefault(pairing_key(r["display"], r["text"]), r)
+    faces: dict[str, list] = {}
+    for r in pairs.values():
+        for face in {r["display"].strip(), r["text"].strip()}:
+            faces.setdefault(face.lower(), [face, 0])[1] += 1
+    common = sorted((v for v in faces.values() if v[1] >= 2), key=lambda v: (-v[1], v[0].lower()))
+    lines = ["# Type pairings already used", "",
+             "Earlier runs and the test fixtures used these display + text pairings. The concept check rejects a",
+             "concept whose pairing is on this list (either way round), unless the brand owns both faces"
+             + (f" (this brief's brand fonts: {', '.join(sorted(brand_fonts))})." if brand_fonts else " (this brief lists no brand fonts)."),
+             "Pick each pairing for this product's character, not from habit.", "", f"## Used pairings ({len(pairs)})", ""]
+    lines += [f"- {r['display']} + {r['text']} ({r['source']})" for r in pairs.values()]
+    if common:
+        lines += ["", "## Faces earlier runs reached for most", "",
+                  "Allowed in a fresh pairing, but they are habits rather than choices: prefer a face that suits this product.", ""]
+        lines += [f"- {name}: {count} pairings" for name, count in common]
+    return "\n".join(lines) + "\n"
 
 
 def html_problems(path: Path) -> list[str]:
@@ -1015,6 +1123,92 @@ def craft_metrics(site: Path) -> dict:
         return h2p.browser_run(BROWSER, [code])[0]
     finally:
         srv.shutdown()
+
+
+# axe on a concept page as people meet it: "reduced" asks for reduced motion; "settled" allows motion and
+# waits until the load animations have ended. Looping animations never end, so they are stopped and the page
+# is measured at rest. Never mid-animation: a half-faded line is not a contrast failure (#5).
+AXE_CODE = r"""async (page) => {
+  const A = __ARGS__;
+  const out = [];
+  for (const job of A.jobs) {
+    let info = {name: job.name, ok: true};
+    try {
+      await page.setViewportSize({width: job.width, height: job.height});
+      await page.emulateMedia({reducedMotion: job.state === 'reduced' ? 'reduce' : 'no-preference', colorScheme: 'light'});
+      await page.goto(job.url, {waitUntil: 'networkidle', timeout: 20000});
+      info.settle = await page.evaluate(async (cap) => {
+        const within = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms))]);
+        await within(document.fonts.ready, 8000);
+        const live = () => document.getAnimations().filter((a) => a.playState === 'running' || a.playState === 'pending');
+        const ends = (a) => { try { return Number.isFinite(a.effect.getComputedTiming().endTime); } catch (e) { return false; } };
+        const t = Date.now();
+        let left = live().filter(ends);
+        while (left.length && Date.now() - t < cap) {
+          await within(Promise.all(left.map((a) => a.finished.catch(() => null))), 500);
+          left = live().filter(ends);
+        }
+        const loops = live().filter((a) => !ends(a));
+        loops.forEach((a) => a.cancel());
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        return {ms: Date.now() - t, unfinished: left.length, loops_stopped: loops.length};
+      }, A.cap);
+      await page.evaluate(A.axe);
+      info.violations = await page.evaluate(async (tags) => {
+        const r = await axe.run(document, {runOnly: {type: 'tag', values: tags}, resultTypes: ['violations']});
+        return r.violations.map((v) => ({id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length,
+          wcag: v.tags.filter((t) => /^wcag\d/.test(t)),
+          targets: v.nodes.slice(0, 4).map((n) => ({target: n.target.join(' '), summary: (n.failureSummary || '').slice(0, 300)}))}));
+      }, A.tags);
+    } catch (e) {
+      info = {name: job.name, ok: false, error: String(e).slice(0, 300)};
+    }
+    out.push(info);
+  }
+  return out;
+}"""
+AXE_STATES = (("reduced", "reduced motion"), ("settled", "after its animations"))
+
+
+def concept_axe(root: Path, ids: list[str]) -> dict[str, dict]:
+    """axe-core on root/<id>/index.html at 1440 and 390, in both motion states: {"A-1440-reduced": result}."""
+    jobs = [{"name": f"{cid}-{width}-{state}", "path": f"{cid}/index.html", "width": width, "height": height, "state": state}
+            for cid in ids for width, height in ((1440, 900), (390, 844)) for state, _ in AXE_STATES]
+    host = SERVE_HOST or urllib.parse.urlparse(BROWSER).hostname or "playwright-mcp"
+    base, srv = h2p.serve(root, root, host)
+    try:
+        for job in jobs:
+            job["url"] = base + "/" + job["path"]
+        code = AXE_CODE.replace("__ARGS__", json.dumps({"jobs": jobs, "axe": AXE_SRC.read_text(), "tags": AXE_TAGS,
+                                                        "cap": AXE_SETTLE_MS}))
+        return {r["name"]: r for r in h2p.browser_run(BROWSER, [code])[0]}
+    finally:
+        srv.shutdown()
+
+
+def axe_problems(results: dict[str, dict], ids: list[str]) -> list[str]:
+    """One problem per concept and axe rule, with where it failed and an example element."""
+    problems = []
+    labels = dict(AXE_STATES)
+    for cid in ids:
+        rules: dict[str, dict] = {}
+        for width in (1440, 390):
+            for state, label in AXE_STATES:
+                r = results.get(f"{cid}-{width}-{state}")
+                if not r or not r.get("ok"):
+                    problems.append(f"concept {cid}: the accessibility check could not run at {width} with {label}: "
+                                    f"{(r or {}).get('error', 'no result')}")
+                    continue
+                for v in r.get("violations") or []:
+                    seen = rules.setdefault(v["id"], {**v, "where": []})
+                    seen["where"].append(f"{width} {labels[state]}")
+        for rule, v in rules.items():
+            example = (v.get("targets") or [{}])[0]
+            detail = " ".join(str(example.get("summary", "")).split())
+            problems.append(f"concept {cid}: axe {rule} ({v.get('impact')}, {', '.join(v.get('wcag') or []) or 'WCAG'}): "
+                            f"{v.get('help')}; {v.get('nodes')} element(s) at {', '.join(v['where'])}; "
+                            f"e.g. {example.get('target', '?')}: {detail[:220]}")
+    return problems
 
 
 def write_review_inputs(review: Path, site: Path, brief: dict, number: int, chosen: dict, notes: str,
@@ -1824,6 +2018,8 @@ class Job:
             if deck is not None and not spec.get("fixture") and page.is_file():  # fixture pages predate any deck
                 problems += page_copy_problems(page.read_text(errors="replace"), deck, c.get("headline"),
                                                bool(brief.get("fictional")), f"concept {c['id']} page")
+        if not spec.get("fixture"):  # the fixture pages are the seed's own pairings
+            problems += pairing_problems(concepts, recorded_pairings(pairing_log(self.root), self.root.name), brand_fonts)
         font_issues: list[str] = []
         faces_by_concept: dict[str, list[dict]] = {}
         for c in concepts:
@@ -1864,6 +2060,9 @@ class Job:
                     fam = str((c.get("fonts") or {}).get(role, {}).get("family", "")).lower()
                     if fam and fam not in loaded:
                         problems.append(f"concept {c['id']} at {width}: {role} font {fam} never loaded (link fonts/fonts.css and use the family name)")
+        ids = [c["id"] for c in concepts]
+        axe = concept_axe(cdir, ids)
+        problems += axe_problems(axe, ids)
         thumbs = thumbnail_diffs(shots, [f"{cid.lower()}-1440" for cid in CONCEPT_IDS]) if all(renders.get(f"{cid}-1440", {}).get("ok") for cid in CONCEPT_IDS) else {}
         pairs = []
         by_id = {c["id"]: c for c in concepts}
@@ -1901,17 +2100,55 @@ class Job:
         check = {"phase": phase, "attempt": attempt, "checked_at": now(), "verdict": verdict, "problems": problems,
                  "font_issues": font_issues, "distinctness_bar": DISTINCT, "pairs": pairs, "renders": renders,
                  "fonts": {cid: [f"{f['family']} {f['weight']} {f['style']}" for f in faces] for cid, faces in faces_by_concept.items()},
+                 "pairings": {c["id"]: " + ".join(concept_pairing(c) or ("?", "?")) for c in concepts},
+                 "axe": {name: {"ok": r.get("ok"), "settle": r.get("settle"), "error": r.get("error"),
+                                "violations": [{k: v.get(k) for k in ("id", "impact", "nodes", "targets")} for v in r.get("violations") or []]}
+                         for name, r in sorted(axe.items())},
                  "contact_sheet": sheet, "recommended": recommended}
+        if verdict == "ok" and phase == "final" and not spec.get("fixture"):  # offered to the gate: later runs pick others
+            try:
+                check["pairings_recorded"] = record_pairings(pairing_log(self.root), self.root.name, "offered", concepts)
+            except OSError as exc:
+                check["pairings_recorded"] = f"not recorded: {exc.__class__.__name__}: {exc}"
         save(cdir / "check.json", check)
         save(cdir / f"check-{phase}-{attempt}.json", check)
+        if phase == "draft":
+            self.keep_drafts()
         output = {"status": "completed", "phase": phase, "attempt": attempt, "verdict": verdict, "problems": len(problems),
                   "contact_sheet": sheet, "check_path": "homepage/concepts/check.json",
+                  "axe_violations": sum(len(r.get("violations") or []) for r in axe.values()),
                   "recommended": recommended["concept"] if recommended else None}
+        if phase == "draft":
+            output["drafts"] = "homepage/concept-drafts"
+        if "pairings_recorded" in check:
+            output["pairings_recorded"] = check["pairings_recorded"]
         if verdict == "ok" and not self.bench:  # benchmark runs have no direction gate to ask
             output["questions"] = [{"id": "direction", "question": "Choose one concept (A, B or C) and add notes; this is the owner's taste decision "
                                     "(your pick, the ones you pass over and your notes go into your private taste file)",
                                     "options": [f"{c['id']}: {c['name']}" for c in concepts]}]
         return self.receipt(key, fp, output)
+
+    def keep_drafts(self) -> None:
+        """Keep the drafts as checked (pages, fonts, renders, check) before refine overwrites them (queue #34)."""
+        cdir, keep = self.concepts_dir, self.packet / "concept-drafts"
+        if keep.exists():
+            shutil.rmtree(keep)
+        keep.mkdir(parents=True)
+        for name in (*CONCEPT_IDS, "shots"):
+            if (cdir / name).is_dir():
+                shutil.copytree(cdir / name, keep / name)
+        for name in ("concepts.json", "check.json", "sheet.html"):
+            if (cdir / name).is_file():
+                shutil.copyfile(cdir / name, keep / name)
+
+    def pairings(self) -> dict:
+        """homepage/PAIRINGS.md before the art director drafts: the type pairings already used (queue #34)."""
+        brief = load(self.packet / "brief.json")
+        brand_fonts = {f.lower() for f in brief.get("brand", {}).get("fonts", [])}
+        recorded = recorded_pairings(pairing_log(self.root), self.root.name)
+        (self.packet / "PAIRINGS.md").write_text(pairings_brief(recorded, brand_fonts))
+        return {"status": "completed", "path": "homepage/PAIRINGS.md",
+                "used_pairings": len({pairing_key(r["display"], r["text"]) for r in recorded})}
 
     def concepts_next(self) -> dict:
         """Loop control after the final concept check: report its verdict, change nothing.
@@ -1997,6 +2234,10 @@ class Job:
         save(self.packet / "direction.json", {**decision, "concept_name": chosen["name"], "saved_at": now(),
                                               "owner_approved": owner, "provisional": self.pilot or self.bench,
                                               "benchmark": self.bench})
+        try:  # the picked pairing joins the record (a fixture run's too); the offered ones joined at the final check
+            record_pairings(pairing_log(self.root), self.root.name, "chosen", [chosen])
+        except OSError:
+            pass
         self.record_taste("direction", {
             "gate": "direction", "choice": f"{chosen['id']}: {chosen['name']}", "choice_summary": describe_concept(chosen),
             "rejected": [{"option": f"{c['id']}: {c['name']}", "summary": describe_concept(c)}
@@ -2511,7 +2752,7 @@ def _esc(value: str) -> str:
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-STAGES = ("brief", "taste", "copy_fixture", "copy_check", "copy_next", "references", "concepts_fixture", "concepts_check",
+STAGES = ("brief", "taste", "copy_fixture", "copy_check", "copy_next", "references", "pairings", "concepts_fixture", "concepts_check",
           "concepts_next", "direction", "build_fixture", "plan_round", "revise_fixture", "measure", "runtime", "review_fixture",
           "content_fixture", "combine", "next_round", "convert", "verify", "handoff", "final")
 FIXTURE_ONLY = {"copy_fixture", "concepts_fixture", "build_fixture", "revise_fixture", "review_fixture", "content_fixture"}
@@ -2543,7 +2784,7 @@ def main() -> None:
         "brief": lambda: job.brief(raw), "references": lambda: job.references(raw), "taste": lambda: job.taste(raw),
         "copy_fixture": lambda: job.copy_fixture(args.phase), "copy_check": lambda: job.copy_check(args.phase),
         "copy_next": job.copy_next, "runtime": job.runtime, "content_fixture": job.content_fixture,
-        "concepts_fixture": job.concepts_fixture, "concepts_check": lambda: job.concepts_check(args.phase),
+        "pairings": job.pairings, "concepts_fixture": job.concepts_fixture, "concepts_check": lambda: job.concepts_check(args.phase),
         "concepts_next": job.concepts_next,
         "direction": lambda: job.direction(raw), "build_fixture": job.build_fixture, "plan_round": job.plan_round,
         "revise_fixture": job.revise_fixture, "measure": job.measure, "review_fixture": job.review_fixture,

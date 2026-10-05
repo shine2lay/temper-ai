@@ -124,6 +124,26 @@ def test_prepare_copies_one_page_with_its_fonts_and_writes_the_critics_inputs(tm
         bench.prepare(tmp_path, SITE, "page-05")
 
 
+def test_prepare_copies_a_saved_run_page_with_its_own_fonts(tmp_path, no_browser):
+    """Concept pages saved from a run (queue #34) bring their own fonts/ folder: the whole page folder is copied."""
+    site = tmp_path / "saved" / "concepts-x"
+    page = site / "p01"
+    (page / "fonts" / "fraunces").mkdir(parents=True)
+    page_html = (SITE / "page-04/index.html").read_text()
+    (page / "index.html").write_text(page_html)
+    (page / "fonts" / "fonts.css").write_text('@font-face { font-family: "Fraunces"; src: url("fraunces/F.ttf"); }\n')
+    (page / "fonts" / "fraunces" / "F.ttf").write_bytes(b"ttf")
+    product = MANIFEST["products"][MANIFEST["page_product"]["page-04"]]
+    (site.parent / "concepts-x.json").write_text(json.dumps({"pages": ["p01"], "page_product": {"p01": "one"},
+                                                             "products": {"one": product}, "font_dirs": [], "fonts_css": ""}))
+    ws = tmp_path / "ws"
+    out = bench.prepare(ws, site, "p01")
+    copied = ws / "homepage/site"
+    assert (copied / "index.html").read_text() == page_html
+    assert (copied / "fonts/fraunces/F.ttf").read_bytes() == b"ttf" and "Fraunces" in (copied / "fonts/fonts.css").read_text()
+    assert no_browser[0]["chosen"] == product["concept"] and out["page"] == "p01"
+
+
 @pytest.mark.parametrize("page, error", [("page-10", "is not a page"), ("../page-01", "short lowercase"),
                                          ("Page-01", "short lowercase")])
 def test_prepare_refuses_pages_outside_the_site(tmp_path, no_browser, page, error):

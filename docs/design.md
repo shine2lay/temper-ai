@@ -388,6 +388,31 @@ share at most half their traits, thumbnails differ by at least 6%, and the
 display faces and pairings differ. A failed check sends the concepts back to the
 art director with the problems; it never reaches the owner.
 
+Fresh type pairings and accessibility (queue #34):
+
+- **Pairing record.** `configs/design/knowledge/type-pairings.json` holds the
+  display + text pairings the test fixtures and earlier runs used (font names and
+  generic sources only). Runs cannot write configs, so each run appends to a
+  shared log beside the run workspaces (`<workspaces>/.design/type-pairings.jsonl`,
+  or `DESIGN_PAIRING_LOG`): the three pairings offered at a passed final concept
+  check, and the pairing picked at the direction step (fixture runs too). Before
+  drafting, the model-free `pairings` stage writes `homepage/PAIRINGS.md` (record +
+  log, minus the run's own workspace, plus the faces reached for most), which the
+  art director reads. The concept check rejects a concept whose pairing is
+  recorded, either way round, unless the brief's brand owns both faces; fixture
+  concepts are exempt (they are the record's own).
+- **axe on every concept.** axe-core (WCAG 2.2 A/AA tags) runs on each concept
+  at 1440 and 390, twice: with reduced motion, and with motion allowed after the
+  load animations finish (looping animations are stopped first). Never
+  mid-animation, which reported 2-5 false contrast failures per page in #5. Any
+  violation is a concept problem with its rule, where it failed and an example
+  element; results are in `check.json` (`axe`). The planted page
+  `testpages/html-fixtures/planted-contrast.html` (one low-contrast note, plus a
+  fading headline and a looping badge that must not be reported) proves it.
+- **Drafts kept.** The draft check copies the concepts as checked (pages, fonts,
+  renders, `concepts.json`, `check.json`) to `homepage/concept-drafts/` before the
+  refine pass rewrites them, so draft and refined concepts can be compared.
+
 ### Converter (`html_to_penpot.py` + `html_dom_extract.js`)
 
 The browser renders the page at 390, 768 and 1440 with motion frozen; the

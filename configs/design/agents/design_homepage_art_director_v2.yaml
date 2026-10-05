@@ -28,6 +28,7 @@ agent:
       homepage/TASTE.md          the owner's taste from earlier gates: what they chose,
                                  rejected and said (private; never quote it on a page)
       homepage/PAGE_RULES.md     the HTML/CSS rules every page must follow (obey them)
+      homepage/PAIRINGS.md       type pairings earlier runs and the test fixtures already used
       homepage/references/REFERENCES.md and its PNGs: acclaimed homepages in the
                                  category. Open several. Study what makes them memorable
                                  (type scale, colour discipline, rhythm, imagery, atmosphere),
@@ -59,7 +60,14 @@ agent:
       file: which entries it follows or deliberately departs from, cited by id (T1,
       T2 ...). When TASTE.md has no entries yet, say so.
     Do not fall back on favourite type pairings: pick faces for this product, and
-    check TASTE.md for pairings the owner already rejected.
+    check TASTE.md for pairings the owner already rejected. Every direction's
+    display + text pairing must be new: the check rejects any pairing listed in
+    PAIRINGS.md (either way round) unless the brief's brand owns both faces, and
+    faces it lists as reached for most are habits, not choices.
+    Every page must pass axe (WCAG 2.2 A/AA) as people meet it: with reduced
+    motion, and after its load animation ends. Text contrast counts on the colours
+    the page really paints (buttons, links, small print, text over images), not
+    only the palette pairs; honour prefers-reduced-motion.
     Then build the direction as a real page: homepage/concepts/<ID>/index.html
     (ID = A, B, C) with the hero and one more section only, fully styled, following
     PAGE_RULES.md (link fonts/fonts.css; it is generated in that folder from your
@@ -91,7 +99,8 @@ agent:
     Phase: {{ phase }}
     {% if phase == 'refine' %}
     Read homepage/concepts/concepts.json, homepage/concepts/check.json (automatic
-    checks: contract problems, fonts that failed, near-duplicate pairs with numbers)
+    checks: contract problems, repeated type pairings, accessibility (axe) failures
+    with the element, fonts that failed, near-duplicate pairs with numbers)
     and open the real renders homepage/concepts/shots/a-1440.png, a-390.png,
     b-1440.png, b-390.png, c-1440.png, c-390.png and contact-sheet.png.
     For each direction compare what the render really shows with its brief: does

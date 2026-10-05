@@ -8,6 +8,8 @@ results folder, not unit tests.
 """
 import importlib.util
 import json
+import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -1116,3 +1118,188 @@ def test_a_content_finding_raised_again_joins_the_fix_list_past_the_cap(tmp_path
 def test_content_findings_are_the_same_problem_by_their_words_not_a_shared_label(a, b, same):
     a, b = {"source": "content", **a}, {"source": "content", **b}
     assert v2.same_problem(a, b) is same
+
+
+# --------------------------------------------------------------------------- queue #34: fresh type pairings, concept axe
+
+
+@pytest.fixture(autouse=True)
+def pairing_log_file(tmp_path, monkeypatch):
+    """Every test logs pairings to its own file, never to the shared log beside real run workspaces."""
+    log = tmp_path / "pairing-log" / "type-pairings.jsonl"
+    monkeypatch.setenv("DESIGN_PAIRING_LOG", str(log))
+    return log
+
+
+SEED = json.loads((ROOT / "configs/design/knowledge/type-pairings.json").read_text())
+FRESH = [("Gloock", "Hanken Grotesk"), ("Young Serif", "Public Sans"), ("Rubik Mono One", "Karla")]
+
+
+def test_pairing_record_holds_the_fixture_pairings_with_generic_sources(tmp_path):
+    keys = {v2.pairing_key(p["display"], p["text"]) for p in SEED["pairings"]}
+    assert len(keys) == len(SEED["pairings"])  # no pairing twice
+    job = fixture_job(tmp_path)
+    job.concepts_fixture()
+    for c in v2.load(job.concepts_dir / "concepts.json")["concepts"]:
+        assert v2.pairing_key(*v2.concept_pairing(c)) in keys, c["id"]
+    for p in SEED["pairings"]:  # temper-ai is public: sources name fixtures or say "a fictional brief", never a product
+        assert re.fullmatch(r"(converter fixtures? [a-z ]+|craft-v1 benchmark pages|converter fixture \w+; craft-v1 benchmark pages|"
+                            r"homepage (benchmark )?run on a fictional brief, 2026-\d\d-\d\d)", p["source"]), p
+    assert all(fresh not in keys for fresh in (v2.pairing_key(*f) for f in FRESH))
+
+
+def test_a_recorded_pairing_is_rejected_either_way_round_and_a_brand_owned_one_is_kept(pairing_log_file):
+    recorded = v2.recorded_pairings(pairing_log_file, "mine")
+    fresh = concept("A", "Gloock", "#B8482A", ["a"], text="Hanken Grotesk")
+    repeat = concept("B", "Fraunces", "#5B4BDB", ["b"], text="Instrument Sans")  # a converter fixture's pairing
+    swapped = concept("C", "Atkinson Hyperlegible", "#0E1626", ["c"], text="Bricolage Grotesque")
+    problems = v2.pairing_problems([fresh, repeat, swapped], recorded, set())
+    assert len(problems) == 2
+    assert problems[0].startswith("concept B: the type pairing Fraunces + Instrument Sans was already used (converter fixture atlas)")
+    assert problems[1].startswith("concept C: the type pairing Atkinson Hyperlegible + Bricolage Grotesque was already used")
+    assert "homepage/PAIRINGS.md" in problems[0]
+    assert v2.pairing_problems([fresh, repeat], recorded, {"fraunces", "instrument sans"}) == []  # the brand owns both
+    assert len(v2.pairing_problems([repeat], recorded, {"fraunces"})) == 1  # owning one face is not enough
+
+
+def test_runs_log_their_pairings_and_a_run_never_blocks_its_own(pairing_log_file):
+    fresh = concept("A", *FRESH[0][:1], "#B8482A", ["a"], text=FRESH[0][1])
+    assert v2.record_pairings(pairing_log_file, "run-1", "offered", [fresh, {"id": "B"}]) == 1  # no fonts, no row
+    row = json.loads(pairing_log_file.read_text().splitlines()[0])
+    assert (row["display"], row["text"], row["kind"], row["concept"], row["workspace"]) == (*FRESH[0], "offered", "A", "run-1")
+    assert v2.pairing_problems([fresh], v2.recorded_pairings(pairing_log_file, "run-1"), set()) == []
+    other = v2.pairing_problems([fresh], v2.recorded_pairings(pairing_log_file, "run-2"), set())
+    assert len(other) == 1 and "(offered in run run-1)" in other[0]
+    with pairing_log_file.open("a") as fh:
+        fh.write("not json\n")
+    assert len(v2.recorded_pairings(pairing_log_file, "run-2")) == len(SEED["pairings"]) + 1  # a broken line is skipped
+
+
+def test_pairings_stage_lists_the_used_pairings_for_the_art_director(tmp_path, pairing_log_file):
+    job = pilot_job(tmp_path)
+    v2.record_pairings(pairing_log_file, "elsewhere", "chosen", [concept("A", FRESH[0][0], "#B8482A", ["a"], text=FRESH[0][1])])
+    out = job.pairings()
+    text = (job.packet / "PAIRINGS.md").read_text()
+    assert "- Fraunces + Instrument Sans (converter fixture atlas)" in text
+    assert "- Gloock + Hanken Grotesk (chosen in run elsewhere)" in text
+    assert "## Faces earlier runs reached for most" in text and "- Instrument Sans: " in text
+    assert out["used_pairings"] == len(SEED["pairings"]) + 1 and out["path"] == "homepage/PAIRINGS.md"
+    assert "pairings" in v2.STAGES
+    ad = (ROOT / "configs/design/agents/design_homepage_art_director_v2.yaml").read_text()
+    assert "homepage/PAIRINGS.md" in ad and "prefers-reduced-motion" in ad and "axe" in ad
+    for name in ("design_homepage_v2", "design_homepage_v2_pilot", "design_homepage_v2_bench", "design_homepage_v2_fixture"):
+        nodes = {n["name"]: n for n in yaml.safe_load((ROOT / f"configs/design/workflows/{name}.yaml").read_text())["workflow"]["nodes"]}
+        assert nodes["pairings"]["input_map"]["stage"] == "pairings" and "pairings" in nodes["concepts"]["depends_on"], name
+
+
+def test_direction_adds_the_picked_pairing_to_the_record(tmp_path, pairing_log_file):
+    job = fixture_job(tmp_path)
+    ready_for_direction(job)
+    job.direction('{"concept": "B", "approval": "fixture-test", "notes": "warmer"}')
+    rows = [json.loads(line) for line in pairing_log_file.read_text().splitlines()]
+    assert [(r["display"], r["text"], r["kind"], r["concept"]) for r in rows] == [("Bricolage Grotesque", "Figtree", "chosen", "B")]
+
+
+AXE_OK = {"ok": True, "settle": {"ms": 900, "unfinished": 0, "loops_stopped": 0}, "violations": []}
+LOW_CONTRAST = {"id": "color-contrast", "impact": "serious", "nodes": 1, "wcag": ["wcag2aa", "wcag143"],
+                "help": "Elements must meet minimum color contrast ratio thresholds",
+                "targets": [{"target": ".planted-note", "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6"}]}
+
+
+def clean_axe(ids="ABC"):
+    return {f"{cid}-{w}-{s}": dict(AXE_OK) for cid in ids for w in (1440, 390) for s in ("reduced", "settled")}
+
+
+def test_axe_failures_become_concept_problems_with_where_and_an_example():
+    results = clean_axe()
+    assert v2.axe_problems(results, ["A", "B", "C"]) == []
+    results["B-1440-reduced"] = {**AXE_OK, "violations": [LOW_CONTRAST]}
+    results["B-390-settled"] = {**AXE_OK, "violations": [LOW_CONTRAST]}
+    results["C-390-reduced"] = {"ok": False, "error": "Timeout 20000ms exceeded"}
+    problems = v2.axe_problems(results, ["A", "B", "C"])
+    assert problems == [
+        "concept B: axe color-contrast (serious, wcag2aa, wcag143): Elements must meet minimum color contrast ratio thresholds; "
+        "1 element(s) at 1440 reduced motion, 390 after its animations; e.g. .planted-note: Fix any of the following: "
+        "Element has insufficient color contrast of 2.6",
+        "concept C: the accessibility check could not run at 390 with reduced motion: Timeout 20000ms exceeded"]
+    # measured as people meet the page: reduced motion, or after the load animations end (never mid-animation)
+    assert "reducedMotion: job.state === 'reduced'" in v2.AXE_CODE and "getAnimations" in v2.AXE_CODE
+    assert v2.AXE_SRC.is_file() and "wcag22aa" in v2.AXE_TAGS
+
+
+def test_planted_contrast_concept_is_a_valid_page_with_one_real_failure_and_two_motion_decoys():
+    page = SITE / "planted-contrast.html"
+    text = page.read_text()
+    assert v2.html_problems(page) == []
+    assert v2.v1.contrast("#A39A91", "#FBF6EE") < 3 and ".planted-note { font-size: 15px; color: #A39A91;" in text
+    assert "animation: rise 1.6s" in text and "infinite" in text  # a fade-in and a loop the measure must wait out
+
+
+@pytest.fixture
+def concept_browser(monkeypatch):
+    """Renders and axe without a browser; axe answers from a dict the test edits."""
+    state = {"axe": clean_axe(), "families": set(), "axe_calls": []}
+
+    def fake_render(root, out, jobs):
+        out.mkdir(parents=True, exist_ok=True)
+        for j in jobs:
+            (out / f"{j['name']}.png").write_bytes(b"png")
+        return [{"name": j["name"], "ok": True, "scrollWidth": j["width"], "loadedFamilies": sorted(state["families"])} for j in jobs]
+
+    def fake_axe(root, ids):
+        state["axe_calls"].append((root, list(ids)))
+        return {k: dict(v) for k, v in state["axe"].items()}
+
+    monkeypatch.setattr(v2, "browser_jobs", fake_render)
+    monkeypatch.setattr(v2, "concept_axe", fake_axe)
+    monkeypatch.setattr(v2, "thumbnail_diffs", lambda out, names: {})
+    monkeypatch.setattr(v2, "font_files", lambda family, weights, italic, dest, issues: [
+        {"family": family, "weight": w, "style": "normal"} for w in weights])
+    monkeypatch.setattr(v2, "copy_fonts", lambda faces, src, dest: None)
+    return state
+
+
+def test_concept_check_blocks_an_axe_failure_and_keeps_the_drafts_as_checked(tmp_path, concept_browser):
+    job = fixture_job(tmp_path)
+    job.concepts_fixture()
+    concept_browser["families"] = {"Fraunces", "Instrument Sans", "Bricolage Grotesque", "Atkinson Hyperlegible", "DM Serif Display", "Figtree"}
+    concept_browser["axe"]["B-390-settled"]["violations"] = [LOW_CONTRAST]
+    out = job.concepts_check("draft")
+    check = v2.load(job.concepts_dir / "check.json")
+    assert out["verdict"] == "retry" and out["axe_violations"] == 1 and out["drafts"] == "homepage/concept-drafts"
+    assert [p for p in check["problems"] if "axe" in p] == check["problems"]  # the axe failure is the only problem
+    assert check["problems"][0].startswith("concept B: axe color-contrast")
+    assert concept_browser["axe_calls"] == [(job.concepts_dir, ["A", "B", "C"])]
+    assert check["axe"]["B-390-settled"]["violations"][0]["id"] == "color-contrast"
+    assert check["pairings"]["A"] == "Fraunces + Instrument Sans"
+    drafts = job.packet / "concept-drafts"  # refine rewrites the concepts: the drafts stay as they were checked
+    assert (drafts / "B" / "index.html").read_bytes() == (job.concepts_dir / "B" / "index.html").read_bytes()
+    assert (drafts / "shots" / "b-1440.png").is_file() and v2.load(drafts / "check.json")["verdict"] == "retry"
+    assert v2.load(drafts / "concepts.json")["concepts"][1]["id"] == "B"
+    concept_browser["axe"] = clean_axe()
+    (job.concepts_dir / "B" / "index.html").write_text((job.concepts_dir / "B" / "index.html").read_text() + "\n")
+    assert job.concepts_check("final")["verdict"] == "ok"
+    assert (drafts / "B" / "index.html").read_text() != (job.concepts_dir / "B" / "index.html").read_text()  # final keeps no copy
+
+
+def test_a_real_runs_concepts_that_repeat_recorded_pairings_must_pick_fresh_ones(tmp_path, concept_browser, pairing_log_file):
+    job = pilot_job(tmp_path)
+    fixture = fixture_job(tmp_path / "fx")
+    fixture.concepts_fixture()
+    shutil.copytree(fixture.concepts_dir, job.concepts_dir, dirs_exist_ok=True)
+    spec = v2.load(job.concepts_dir / "concepts.json")
+    spec.pop("fixture")  # the fixture pages offered as a real run's concepts: every pairing is already recorded
+    v2.save(job.concepts_dir / "concepts.json", spec)
+    concept_browser["families"] = {"Fraunces", "Instrument Sans", "Bricolage Grotesque", "Atkinson Hyperlegible", "DM Serif Display",
+                                   "Figtree", *(face for pair in FRESH for face in pair)}
+    out = job.concepts_check("final")
+    repeats = [p for p in v2.load(job.concepts_dir / "check.json")["problems"] if "was already used" in p]
+    assert out["verdict"] == "retry" and len(repeats) == 3 and not pairing_log_file.exists()  # nothing recorded on a retry
+    for c, (display, text) in zip(spec["concepts"], FRESH, strict=True):
+        c["fonts"]["display"]["family"], c["fonts"]["text"]["family"] = display, text
+    v2.save(job.concepts_dir / "concepts.json", spec)
+    out = job.concepts_check("final")
+    assert out["verdict"] == "ok", v2.load(job.concepts_dir / "check.json")["problems"]
+    rows = [json.loads(line) for line in pairing_log_file.read_text().splitlines()]  # offered: later runs pick others
+    assert [(r["display"], r["text"], r["kind"]) for r in rows] == [(*f, "offered") for f in FRESH]
+    assert {r["workspace"] for r in rows} == {job.root.name} and out["pairings_recorded"] == 3

@@ -1,0 +1,24 @@
+{
+  "about": "Type pairings (display + text) that the homepage workflow's test fixtures and earlier runs already used (Design queue #34). The concept check of design_homepage_v2 and its twins rejects a concept that repeats one, either way round, unless the brief's brand owns both faces. Runs read this file and append their own pairings to the shared log <workspaces>/.design/type-pairings.jsonl (configs are read-only at run time). Generic font names only: no products, briefs or designs.",
+  "version": 1,
+  "updated": "2026-10-05",
+  "pairings": [
+    {"display": "Fraunces", "text": "Instrument Sans", "source": "converter fixture atlas"},
+    {"display": "Bricolage Grotesque", "text": "Atkinson Hyperlegible", "source": "converter fixtures pulse and rich"},
+    {"display": "DM Serif Display", "text": "Figtree", "source": "converter fixture harbor; craft-v1 benchmark pages"},
+    {"display": "Bricolage Grotesque", "text": "Instrument Sans", "source": "craft-v1 benchmark pages"},
+    {"display": "Big Shoulders Display", "text": "JetBrains Mono", "source": "homepage run on a fictional brief, 2026-10-03"},
+    {"display": "Sofia Sans Extra Condensed", "text": "Schibsted Grotesk", "source": "homepage run on a fictional brief, 2026-10-04"},
+    {"display": "Bodoni Moda", "text": "Instrument Sans", "source": "homepage run on a fictional brief, 2026-10-04"},
+    {"display": "Martian Mono", "text": "Atkinson Hyperlegible", "source": "homepage run on a fictional brief, 2026-10-04"},
+    {"display": "Anton", "text": "Instrument Sans", "source": "homepage benchmark run on a fictional brief, 2026-10-04"},
+    {"display": "Syne", "text": "IBM Plex Mono", "source": "homepage benchmark run on a fictional brief, 2026-10-04"},
+    {"display": "Bodoni Moda", "text": "Libre Franklin", "source": "homepage benchmark run on a fictional brief, 2026-10-04"},
+    {"display": "Bodoni Moda", "text": "IBM Plex Mono", "source": "homepage benchmark run on a fictional brief, 2026-10-04"},
+    {"display": "Unbounded", "text": "Atkinson Hyperlegible", "source": "homepage benchmark run on a fictional brief, 2026-10-04"},
+    {"display": "Sofia Sans Extra Condensed", "text": "Archivo", "source": "homepage benchmark run on a fictional brief, 2026-10-04"},
+    {"display": "Bodoni Moda", "text": "Newsreader", "source": "homepage benchmark run on a fictional brief, 2026-10-04"},
+    {"display": "Unbounded", "text": "Instrument Sans", "source": "homepage benchmark run on a fictional brief, 2026-10-04"},
+    {"display": "Shrikhand", "text": "Atkinson Hyperlegible", "source": "homepage benchmark run on a fictional brief, 2026-10-04"}
+  ]
+}

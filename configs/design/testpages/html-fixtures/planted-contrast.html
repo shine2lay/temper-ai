@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Field Notes — planted concept</title>
+<!-- Planted-problem concept for the concept check's accessibility step (Design queue #34). Hand-written,
+     model-free, fictional. It has exactly one real failure: the hero note .planted-note, #A39A91 on #FBF6EE
+     (about 2.6:1, below WCAG 1.4.3's 4.5:1). Two decoys must NOT be reported: the headline fades in from
+     12% opacity (1.6 s, also under reduced motion) and the "Open today" badge pulses forever. A measure taken
+     mid-animation sees them faded and reports false contrast failures; the check measures after the fade ends
+     and with the loop stopped. -->
+<style>
+@font-face { font-family: "Fraunces"; font-weight: 800; font-style: normal; src: url("fonts/fraunces/Fraunces-800.ttf") format("truetype"); }
+@font-face { font-family: "Instrument Sans"; font-weight: 400; font-style: normal; src: url("fonts/instrumentsans/InstrumentSans-400.ttf") format("truetype"); }
+@font-face { font-family: "Instrument Sans"; font-weight: 600; font-style: normal; src: url("fonts/instrumentsans/InstrumentSans-600.ttf") format("truetype"); }
+:root { --paper: #FBF6EE; --ink: #1F1A17; --muted: #5F534B; --rust: #B8482A; --sand: #F1DFC7; --moss: #3E5B4A; --white: #FFFFFF; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: "Instrument Sans", sans-serif; font-size: 17px; line-height: 1.55; }
+a { color: inherit; text-decoration: none; }
+.wrap { width: min(1200px, 100% - 48px); margin: 0 auto; }
+.site-header { padding: 22px 0; }
+.header-inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.wordmark { font-family: "Fraunces", serif; font-weight: 800; font-size: 24px; }
+.btn { display: inline-block; padding: 13px 22px; border-radius: 999px; background: var(--rust); color: var(--white); font-weight: 600; font-size: 15px; line-height: 1.3; }
+.hero { padding: 56px 0 88px; }
+.badge-live { display: inline-block; margin: 0 0 18px; padding: 6px 12px; border-radius: 999px; background: var(--moss); color: var(--white);
+              font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; animation: pulse 1.8s ease-in-out infinite; }
+h1 { font-family: "Fraunces", serif; font-weight: 800; font-size: 76px; line-height: 1.02; letter-spacing: -0.02em; margin: 0 0 24px; max-width: 12em;
+     animation: rise 1.6s ease-out both; }
+.lede { font-size: 20px; color: var(--muted); max-width: 33em; margin: 0 0 20px; }
+.planted-note { font-size: 15px; color: #A39A91; margin: 0 0 32px; }
+.routes { padding: 72px 0; background: var(--sand); }
+h2 { font-family: "Fraunces", serif; font-weight: 800; font-size: 44px; line-height: 1.1; margin: 0 0 32px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.card { background: var(--white); border-radius: 18px; padding: 28px; }
+.card h3 { font-family: "Fraunces", serif; font-weight: 800; font-size: 24px; margin: 0 0 8px; }
+.card p { margin: 0; color: var(--muted); font-size: 16px; }
+@keyframes rise { from { opacity: 0.12; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  .hero { padding: 32px 0 56px; }
+  h1 { font-size: 42px; }
+  .lede { font-size: 18px; }
+  h2 { font-size: 32px; }
+  .cards { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="wordmark" href="#">Atlas Field Notes</a>
+    <a class="btn" href="#routes">Get the notes</a>
+  </div>
+</header>
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <p class="badge-live">Open today</p>
+      <h1>Maps drawn by people who walked them.</h1>
+      <p class="lede">Hand-checked routes, honest timings and the café at the end. Every walk is tested on foot in all four seasons.</p>
+      <p class="planted-note">Routes are checked each season; timings assume an easy pace with short stops.</p>
+      <a class="btn" href="#routes">Browse routes</a>
+    </div>
+  </section>
+  <section class="routes" id="routes">
+    <div class="wrap">
+      <h2>This season's walks</h2>
+      <div class="cards">
+        <article class="card"><h3>Ridge loop</h3><p>Eleven kilometres along the escarpment, back by the river.</p></article>
+        <article class="card"><h3>Mill trail</h3><p>Seven flat kilometres past three old mills and a bakery.</p></article>
+        <article class="card"><h3>Coast path</h3><p>Fourteen kilometres of cliff top, best at low tide.</p></article>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

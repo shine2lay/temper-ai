@@ -56,13 +56,17 @@ def prepare(workspace: Path, site: Path, page: str) -> dict:
     review = workspace / "review"
     if target.exists() or review.exists():
         raise ValueError("this workspace already holds a benchmark page; use a fresh workspace per run")
-    target.mkdir(parents=True)
-    shutil.copyfile(site / page / "index.html", target / "index.html")
-    fonts = target / "fonts"
-    fonts.mkdir()
-    shutil.copyfile(site / data["fonts_css"], fonts / "fonts.css")
-    for name in data["font_dirs"]:
-        shutil.copytree(site.parent / "html-fixtures" / "fonts" / name, fonts / name)
+    if (site / page / "fonts").is_dir():  # a page saved from a run carries its own fonts (concept pages, queue #34)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(site / page, target)
+    else:
+        target.mkdir(parents=True)
+        shutil.copyfile(site / page / "index.html", target / "index.html")
+        fonts = target / "fonts"
+        fonts.mkdir()
+        shutil.copyfile(site / data["fonts_css"], fonts / "fonts.css")
+        for name in data["font_dirs"]:
+            shutil.copytree(site.parent / "html-fixtures" / "fonts" / name, fonts / name)
     problems = v2.html_problems(target / "index.html")
     if problems:
         raise ValueError("test page breaks the page contract: " + "; ".join(problems))

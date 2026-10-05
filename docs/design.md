@@ -145,12 +145,47 @@ step below its key (equal on 13 of 22 plants; v1: 17-18). Results and the
 hand check of every unmatched finding: `~/design-lab/results/review-precision/`
 (host only).
 
+## Severity candidate (queue #33, on trial)
+
+v2 gives similar WCAG failures a 2 whether they sit just under the threshold
+or far below it, and whether or not they block the main navigation; the
+homepage revisions act only on confirmed severity 3 or more, so a problem
+rated one step low slips through. `design_review_next` (a test workflow) runs
+the live capture and facts check with `design_critic_next` and
+`design_merge_next`: the live prompts word for word plus severity rules
+that set the step between minor (2) and major (3):
+
+- **how far below the threshold**: text contrast from 3:1 to just under 4.5:1
+  is 2, under 3:1 on text people read to act is 3; a control or its state
+  under 2:1 is 3 when the task needs it; a page up to a fifth wider than a
+  phone is 2, one and a half screens or more is 3; a failing target is 2; a
+  label only missing in code is 2, no visible label in the main form is 3;
+  missing text for a logo is 2, for an icon that carries needed information 3.
+- **main navigation or main task**: no visible focus on the main navigation
+  or the primary action is 3 (one secondary link: 2); a wrong, hidden or
+  contradicting price, or a label that understates a commitment, is 3; a home
+  page's first screen that doesn't say what the product does, or where
+  something is louder than the headline, is 3; competing primary buttons are
+  at least 2.
+- **how many pages**: on most pages or in a shared part, one level up (at
+  most 3).
+- a passing small target's usability finding: 2 when used again and again in
+  the main task at 16 px or less, else 1.
+
+The merge sets each level by these rules (critics' ratings are input, not
+votes) and may go one level above the critics only for a measured finding a
+rule sets from the facts. It replaces the live reviewer only if two runs on
+each test site keep recall, traps, 0 invented findings and 0 overclaims and
+raise severity agreement (results: `~/design-lab/results/review-severity/`,
+host only).
+
 ## Files
 
 | Path | What |
 |---|---|
 | `configs/design/workflows/design_review.yaml` | the review |
 | `configs/design/workflows/design_review_grade.yaml` | the grader |
+| `configs/design/workflows/design_review_next.yaml`, `agents/design_{critic,merge}_next.yaml` | severity candidate on trial (queue #33; test only) |
 | `configs/design/agents/design_{capture,critic,verify,merge,grade,score}.yaml` | its steps |
 | `configs/design/bin/design_capture.py` | capture: serves a site, drives playwright-mcp, writes `review/shots`, `review/facts`, `capture.json` |
 | `configs/design/bin/design_measure.js` | the in-page measurements |

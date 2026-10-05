@@ -323,7 +323,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/positioning_grade_assets/rubric.md` | contract |
 | `agents/positioning_grade_assets/FORMAT.md` | contract |
 
-### design (40)
+### design (43)
 
 | Config | Kind |
 |---|---|
@@ -367,6 +367,9 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_merge.yaml` | agent |
 | `design/agents/design_grade.yaml` | agent |
 | `design/agents/design_score.yaml` | agent (script) |
+| `design/workflows/design_review_next.yaml` | workflow (severity candidate reviewer; test only) |
+| `design/agents/design_critic_next.yaml` | agent (severity candidate critic) |
+| `design/agents/design_merge_next.yaml` | agent (severity candidate merge) |
 
 ### architecture (23)
 

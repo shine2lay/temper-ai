@@ -69,8 +69,17 @@ def test_review_agents_import(name):
     assert parsed["name"] == name and parsed["config_type"] == "agent"
 
 
+# The candidate on trial (queue #33: anchored severity), graded on the sealed test sites before
+# anything replaces the live reviewer. Promotion renames it to the live names and empties this.
+CANDIDATE_ON_TRIAL = {
+    "design_review_next.yaml": "design_review",
+    "design_critic_next.yaml": "design_critic",
+    "design_merge_next.yaml": "design_merge",
+}
+
+
 def test_review_steps_run_the_promoted_scripts():
-    """No candidate (_next) copy is left behind: the live steps run the graded scripts."""
+    """No stray candidate (_next) copy: the live steps run the graded scripts."""
     capture = yaml.safe_load((DESIGN / "agents/design_capture.yaml").read_text())[
         "agent"
     ]
@@ -85,8 +94,13 @@ def test_review_steps_run_the_promoted_scripts():
         and re.search(
             r"design_(review|capture|critic|verify|merge|measure)\w*_next", p.name
         )
+        and p.name not in CANDIDATE_ON_TRIAL
     ]
     assert leftovers == []
+    live = yaml.safe_load((DESIGN / "workflows/design_review.yaml").read_text())[
+        "workflow"
+    ]
+    assert not any(n["agent"].endswith("_next") for n in live["nodes"])
 
 
 def test_merge_works_without_a_verify_step():
@@ -111,7 +125,10 @@ def test_merge_works_without_a_verify_step():
 
 def test_review_prompts_name_no_benchmark_site():
     """Answer keys stay host-only; prompts carry no test-site names or their page content."""
-    for name in ("design_critic", "design_merge"):
+    candidates = [
+        Path(f).stem for f in CANDIDATE_ON_TRIAL if f.startswith(("design_critic", "design_merge"))
+    ]
+    for name in ("design_critic", "design_merge", *candidates):
         text = (DESIGN / "agents" / f"{name}.yaml").read_text().lower()
         for site in sorted(p.stem for p in (DESIGN / "testpages").glob("*.json")):
             assert site.split("-")[0] not in text, (name, site)
@@ -126,6 +143,115 @@ def test_review_prompts_name_no_benchmark_site():
             "When torn between two levels",
         ):
             assert anchor in prompt
+
+
+# --------------------------------------------------------------------------- severity candidate (#33)
+
+on_trial = pytest.mark.skipif(
+    not CANDIDATE_ON_TRIAL, reason="no reviewer candidate on trial"
+)
+
+# Rules that anchor the step between minor and major (queue #33): how far a measured failure is
+# below its WCAG threshold, main navigation or main task, how many pages; passing small targets.
+SEVERITY_RULES = (
+    "SEVERITY RULES.",
+    "A. How far below the threshold",
+    "Under 3:1, which fails even the large-text minimum, is 3 on text people read",
+    "Under 2:1 the part is close to invisible",
+    "about a fifth wider than the screen is 2",
+    "about one and a half screens or more",
+    "a target the facts list as failing is 2",
+    "B. The main navigation and the page's main task",
+    "on the main navigation or the page's primary action it is 3",
+    "misleads people about what they pay: 3",
+    "C. How many pages",
+    "one level up, at most to 3",
+    "D. A target that meets 2.5.8 (a listed pass) is never a WCAG failure",
+    "16 px or smaller; otherwise 1",
+    "Worked examples (other products",
+    "When torn between two levels after these rules, choose the lower.",
+)
+
+
+def _prompt(name):
+    agent = yaml.safe_load((DESIGN / "agents" / f"{name}.yaml").read_text())["agent"]
+    return agent["system_prompt"]
+
+
+def _flat(text):
+    return " ".join(text.split())
+
+
+def _rules_block(prompt):
+    start = prompt.index("\nSEVERITY RULES.")
+    end = prompt.index("rules above say when it is.")
+    return prompt[start:end]
+
+
+def _outside_severity(prompt):
+    start = prompt.index("\nSEVERITY")
+    ends = (prompt.find("\nEACH FINDING"), prompt.find("\nOUTPUT:"))
+    return prompt[:start] + prompt[min(i for i in ends if i > start) :]
+
+
+@on_trial
+def test_candidate_workflow_swaps_only_the_critics_and_the_merge():
+    live = yaml.safe_load((DESIGN / "workflows/design_review.yaml").read_text())[
+        "workflow"
+    ]
+    cand = yaml.safe_load((DESIGN / "workflows/design_review_next.yaml").read_text())[
+        "workflow"
+    ]
+    assert WorkflowConfig.from_dict(cand).name == "design_review_next"
+    swap = {"design_critic": "design_critic_next", "design_merge": "design_merge_next"}
+    assert [(n["name"], n["agent"], n.get("depends_on")) for n in cand["nodes"]] == [
+        (n["name"], swap.get(n["agent"], n["agent"]), n.get("depends_on"))
+        for n in live["nodes"]
+    ]
+    assert cand["inputs"].keys() == live["inputs"].keys()
+    assert cand["outputs"] == live["outputs"]
+    for name in ("design_critic_next", "design_merge_next"):
+        assert parse_yaml(DESIGN / "agents" / f"{name}.yaml")["name"] == name
+
+
+@on_trial
+@pytest.mark.parametrize("name", ["design_critic_next", "design_merge_next"])
+def test_candidate_prompts_carry_the_severity_rules(name):
+    prompt = _flat(_prompt(name))
+    for anchor in SEVERITY_RULES:
+        assert anchor in prompt, anchor
+    assert "severity 1 or 2" not in prompt  # a passing small target is rated by rule D
+
+
+@on_trial
+def test_critic_and_merge_candidates_share_one_rule_text():
+    assert _rules_block(_prompt("design_critic_next")) == _rules_block(
+        _prompt("design_merge_next")
+    )
+
+
+@on_trial
+@pytest.mark.parametrize("name", ["design_critic", "design_merge"])
+def test_candidate_changes_only_the_severity_text(name):
+    """The trial isolates severity: outside it, the candidate prompt is the live one."""
+    live = _outside_severity(_prompt(name))
+    assert live.count("severity 1 or 2") == 1
+    assert _outside_severity(_prompt(f"{name}_next")) == live.replace(
+        "severity 1 or 2", "severity by rule D below"
+    )
+
+
+@on_trial
+def test_candidate_merge_sets_levels_by_the_rules_not_by_votes():
+    merge = _flat(_prompt("design_merge_next"))
+    assert "The critics' ratings and reasons are input, not votes" in merge
+    assert "When the critics differ and the rules don't settle it, take the lower." in merge
+    assert (
+        "for a measured finding, when a rule in A or B sets a higher level from what"
+        " facts.md shows" in merge
+    )
+    assert "at most one level above the highest critic rating" in merge
+    assert "take the lower unless the higher level's definition clearly fits" not in merge
 
 
 # --------------------------------------------------------------------------- target geometry (node)

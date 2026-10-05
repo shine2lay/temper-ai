@@ -1,0 +1,81 @@
+workflow:
+  name: design_review_next
+  # DESIGN REVIEW, candidate (design role, queue #33 "calibrate review severity", 2026-10-05).
+  # A test workflow next to design_review, graded on the sealed planted-problem sites before
+  # anything replaces the live reviewer (docs/departments.md method):
+  #
+  #   capture (script) -> [ critic_a | critic_b ] (critic_next) -> verify (script) -> merge_next
+  #
+  # Capture and verify are the live steps, unchanged. What differs, aimed at the weakness the
+  # v2 grading showed (it rated one step low on 9 of 22 plants of one site; similar WCAG
+  # failures all got a 2): design_critic_next and design_merge_next carry severity rules that
+  # anchor the step between minor and major by how far a measured failure is below its WCAG
+  # threshold, whether it sits on the main navigation or the page's main task, and how many
+  # pages it hits; the merge may rate a measured finding one level above the critics when such
+  # a rule sets that level from the facts. Everything else in their prompts is the live text.
+  # Answer keys and results stay on the host, outside every run container.
+  # provider: claude = Claude Code CLI (Read shows PNGs to the model); no temper tools: blocks.
+  version: 2
+  description: |
+    Candidate of design_review (test workflow): the same expert design review of a site's pages
+    (live capture and facts check), with critics and a merge that rate severity by anchored
+    rules: distance below the WCAG threshold, main navigation or main task, and reach.
+  inputs:
+    brief:
+      type: string
+      required: true    # what the product is, who uses it, what the pages are for
+    pages:
+      type: string
+      required: true    # comma-separated paths relative to the site, e.g. "index.html,pricing.html"
+    site:
+      type: string
+      default: ""       # a folder inside the run container to serve
+    base_url:
+      type: string
+      default: ""       # or a deployed site (the browser must reach it)
+    viewports:
+      type: string
+      default: "desktop,mobile"
+  outputs:
+    report_path: merge.structured.report_path
+    findings_path: merge.structured.findings_path
+    confirmed: merge.structured.confirmed
+    single: merge.structured.single
+    rejected: merge.structured.rejected
+    dropped_by_facts: merge.structured.dropped_by_facts
+    severity_counts: merge.structured.severity_counts
+    contradicted_claims: verify.structured.contradicted
+    partly_contradicted_claims: verify.structured.partly_contradicted
+    screenshots: capture.structured.screenshots
+    measured_items: capture.structured.measured_items
+
+  nodes:
+    - name: capture
+      type: agent
+      agent: design_capture
+      input_map:
+        brief: input.brief
+        pages: input.pages
+        site: input.site
+        base_url: input.base_url
+        viewports: input.viewports
+
+    - name: critic_a
+      type: agent
+      agent: design_critic_next
+      depends_on: [capture]
+
+    - name: critic_b
+      type: agent
+      agent: design_critic_next
+      depends_on: [capture]
+
+    - name: verify
+      type: agent
+      agent: design_verify
+      depends_on: [critic_a, critic_b]
+
+    - name: merge
+      type: agent
+      agent: design_merge_next
+      depends_on: [verify]

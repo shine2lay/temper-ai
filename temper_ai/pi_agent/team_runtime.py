@@ -389,15 +389,22 @@ class Team:
 
     def end(self, reason: str) -> dict:
         """End the team (owner cancel or run end): every message still held or pending is
-        recorded undelivered, waits are cancelled, members end (R2 B12). Idempotent."""
+        recorded undelivered, waits are cancelled, members end (R2 B12). Idempotent.
+
+        Each cancelled wait's still-waiting owner events are closed, found by the wait's
+        name (``ask_owner`` may have asked it more than once); nothing is found by the row's
+        ``event_id``, which no owner event carries."""
         ended = self.ledger.end_team(self.run_id, self.host_path, reason, self.attempt_id)
-        status = getattr(self.recorder, "event_status", None)
-        update = getattr(self.recorder, "update_event", None)
-        if status and update:
+        gate_events = getattr(self.recorder, "gate_events", None)
+        decide = getattr(self.recorder, "decide", None)
+        if gate_events and decide:
+            from temper_ai.stage.gate import REJECTED, WAITING
+
             for w in ended["cancelled_waits"]:
-                if status(w["event_id"]) == "waiting":
-                    update(w["event_id"], status="rejected",
-                           data={"gate_status": "rejected", "pi_cancelled": True})
+                for ev in gate_events(w["gate_name"]) or []:
+                    if ev.get("status") == WAITING:
+                        decide(ev["id"], expect=(WAITING,), status=REJECTED,
+                               data={"gate_status": REJECTED, "pi_cancelled": True})
         return ended
 
     def state(self) -> dict:

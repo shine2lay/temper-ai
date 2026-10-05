@@ -419,22 +419,6 @@ class LeaderTeam(Team):
         return (framing(member.name, self.leader, sorted(self.members), self.tools_for(member))
                 + "\n\n" + render_batch(batch, team=True))
 
-    def end(self, reason: str) -> dict:
-        """#37's end, and every still-waiting owner event of each cancelled wait closed, found
-        by the wait's name (``ask_owner`` may have asked it more than once)."""
-        ended = super().end(reason)
-        gate_events = getattr(self.recorder, "gate_events", None)
-        decide = getattr(self.recorder, "decide", None)
-        if gate_events and decide:
-            from temper_ai.stage.gate import REJECTED, WAITING
-
-            for w in ended["cancelled_waits"]:
-                for ev in gate_events(w["gate_name"]) or []:
-                    if ev.get("status") == WAITING:
-                        decide(ev["id"], expect=(WAITING,), status=REJECTED,
-                               data={"gate_status": REJECTED, "pi_cancelled": True})
-        return ended
-
     # --- reading the team ----------------------------------------------------------------
 
     def _where(self, table: sa.Table) -> tuple:

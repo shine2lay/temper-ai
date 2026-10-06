@@ -265,7 +265,13 @@ step's turns over, the older attempt *stands down* (`ReplacedByLaterAttempt`, SW
 - it writes down only its own events, as `cancelled` marked `replaced_by_later_attempt`. The
   run's row and status, the newer attempt's events and waits, and the run's notices (the
   webhook, the end of the live stream) stay the newer attempt's. The run's cancel signal
-  is never set for it.
+  is never set for it;
+- its own workflow event (and a stage's) says what the attempt spent, `cost_usd` and
+  `total_tokens`, summed as a parked or ended one's are: the finished steps and the ones a
+  loop threw away;
+- writing those events is best-effort: when the database fails the write, a warning is
+  logged and the attempt stands down all the same. It never turns into a failure that
+  would end the newer attempt's run.
 
 A stop at a held wait is unchanged: the conversation ends first, then the step.
 

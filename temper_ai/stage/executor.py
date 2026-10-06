@@ -237,7 +237,8 @@ def execute_graph(
         # event is written down. Nothing of the run's is touched -- no settling, no stop, no
         # holds, and the asked answers in memory stay for the newer attempt (SW-84).
         stood_down = True
-        _note_replaced(replaced, context, graph_event_id, start)
+        _note_replaced(replaced, context, graph_event_id, start,
+                       spent=(*node_outputs.values(), *retired))
         raise
 
     except Exception as exc:
@@ -251,18 +252,31 @@ def execute_graph(
 
 
 def _note_replaced(replaced: ReplacedByLaterAttempt, context: ExecutionContext, event_id: str,
-                   start: float) -> None:
+                   start: float, *, spent: tuple[NodeResult, ...] | None = None) -> None:
     """Write one of this attempt's own events down as stood down for a later attempt.
 
     ``cancelled`` (every reader knows it), marked ``replaced_by_later_attempt`` so nobody
     takes it for the run being stopped: the webhook sends nothing for it, and the run's
     own status comes from its newest attempt.
+
+    A graph's event also says what the attempt spent (``spent``: its finished steps and the
+    ones a loop threw away), summed as a parked or ended graph's is, so per-attempt cost
+    stays whole. A step's has nothing to add: the step never finished.
+
+    Best-effort: a write that fails is logged and the caller still raises the stand-down.
+    Raised from here, the write's error would take the stand-down's place and the attempt
+    would end the run as failed: the later attempt's run (SW-84).
     """
-    context.event_recorder.update_event(
-        event_id, status=Status.CANCELLED.value,
-        data={"error": str(replaced), REPLACED_MARK: True,
-              "duration_seconds": time.monotonic() - start},
-    )
+    data = {"error": str(replaced), REPLACED_MARK: True,
+            "duration_seconds": time.monotonic() - start}
+    if spent is not None:
+        data["cost_usd"] = sum(r.cost_usd for r in spent)
+        data["total_tokens"] = sum(r.total_tokens for r in spent)
+    try:
+        context.event_recorder.update_event(event_id, status=Status.CANCELLED.value, data=data)
+    except Exception as exc:  # noqa: BLE001 - at worst the event is not marked; it stands down
+        logger.warning("Event %s: could not write it down as stood down for a later attempt: %s",
+                       event_id, exc)
 
 
 def _note_parked(

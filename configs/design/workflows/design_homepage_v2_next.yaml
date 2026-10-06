@@ -1,0 +1,323 @@
+# Candidate (Design queue #38) beside design_homepage_v2: the same homepage workflow with the
+# research step first (docs/design-files.md). The product's design files decide what is
+# researched: none -> users, category and direction; partial -> only the missing parts, the
+# approved ones fixed; defined -> no research, the files are followed. The live name changes
+# only after this candidate wins on the #38 bars. The chat running the run answers the research,
+# direction and final gates as Design (decided_by design); owner only for his own words, kept
+# verbatim. No agent answers a gate. The host packs the product's files into the workspace
+# first (design_files.py pack).
+workflow:
+  name: design_homepage_v2_next
+  version: 1
+  description: |
+    Research first, then the homepage: inventory of the product's design files (defined,
+    partial or none) -> when research is needed, a researcher writes the product, its users
+    and contexts (every claim quoted from the source pack or the web, or marked an
+    assumption; a script re-opens every source) and picks 6-10 category sites -> the
+    category's first screens are captured and measured on five audience axes -> a director
+    matches the product to the context playbook and writes 2-3 direction candidates
+    (playbook families only, evidence ids, five audience targets) -> research.json,
+    RESEARCH.md and a one-page board (checked: text 16 px+, contrast 4.5:1) -> RESEARCH
+    gate (users + direction; on by default when research ran) -> the decision, approved
+    parts and targets for the design stages (research/FOR_DESIGN.md) -> design_homepage_v2's
+    stages, with the copywriter and art director bound by the decision and the concept
+    check measuring each concept's five audience axes and the fixed parts -> DIRECTION
+    gate -> build, review rounds, Penpot, handoff -> FINAL gate -> on approval the
+    product's design files (DESIGN.md + DTCG tokens.json, approved_by from the final
+    gate) are written for the host to apply. Stage receipts make cancel/resume safe; no
+    paid stage repeats. No publication.
+  inputs:
+    brief_json: {type: string, required: true}
+    references_json: {type: string, required: true}
+    research_json: {type: string, required: true}
+    direction_json: {type: string, default: ""}
+    taste_md: {type: string, default: ""}
+  outputs:
+    design_status: research.structured.status
+    research_path: research_assemble.structured.research_path
+    research_board: research_assemble.structured.board
+    research_decided_by: research_decision.structured.decided_by
+    research_direction: research_decision.structured.direction
+    copy_diff: copy_check.structured.diff_path
+    contact_sheet: check.structured.contact_sheet
+    handoff_path: handoff.structured.handoff_path
+    manifest_path: handoff.structured.manifest_path
+    penpot_url: handoff.structured.penpot_url
+    final_verdict: final.structured.verdict
+    direction_approved: final.structured.direction_approved
+    final_approved: final.structured.final_approved
+    design_files: save_files.structured.saved
+    design_files_approved_by: save_files.structured.approved_by
+  nodes:
+    - name: brief
+      type: agent
+      agent: design_homepage_stage_v2_next
+      input_map: {stage: brief, mode: real, data: input.brief_json}
+    - name: references
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [brief]
+      input_map: {stage: references, mode: real, data: input.references_json}
+    - name: taste
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [brief]
+      input_map: {stage: taste, mode: real, data: input.taste_md}
+    # ---- research step (design_research.py; shared with every design workflow)
+    - name: research
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [taste]
+      input_map: {stage: inventory, mode: real, data: input.research_json}
+    - name: research_users
+      type: agent
+      agent: design_research_users_v1
+      depends_on: [research]
+      condition: {source: research.structured.research_agent, operator: equals, value: "yes"}
+      input_map: {phase: draft}
+    - name: research_check_draft
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_users]
+      input_map: {stage: check, mode: real, phase: draft}
+    - name: research_users_revise
+      type: agent
+      agent: design_research_users_v1
+      depends_on: [research_check_draft]
+      condition: {source: research_check_draft.structured.verdict, operator: equals, value: retry}
+      input_map: {phase: revise}
+    - name: research_check
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_users_revise]
+      input_map: {stage: check, mode: real, phase: final}
+    - name: research_check_next
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_check]
+      loop_to: research_users_revise
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: research_check_next.structured.verdict, operator: equals, value: retry}
+      input_map: {stage: next, mode: real, phase: check}
+    - name: research_capture
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_check_next]
+      condition: {source: research.structured.research_category, operator: equals, value: "yes"}
+      input_map: {stage: capture, mode: real}
+    - name: research_direction
+      type: agent
+      agent: design_research_direction_v1
+      depends_on: [research_capture]
+      condition: {source: research.structured.research_direction, operator: equals, value: "yes"}
+      input_map: {phase: draft}
+    - name: research_assemble_draft
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_direction]
+      input_map: {stage: assemble, mode: real, phase: draft}
+    - name: research_direction_revise
+      type: agent
+      agent: design_research_direction_v1
+      depends_on: [research_assemble_draft]
+      condition: {source: research_assemble_draft.structured.verdict, operator: equals, value: retry}
+      input_map: {phase: revise}
+    - name: research_assemble
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_direction_revise]
+      input_map: {stage: assemble, mode: real, phase: final}
+    - name: research_assemble_next
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_assemble]
+      loop_to: research_direction_revise
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: research_assemble_next.structured.verdict, operator: equals, value: retry}
+      input_map: {stage: next, mode: real, phase: assemble}
+    - name: research_gate
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_assemble_next]
+      gate: true
+      condition: {source: research.structured.gate, operator: equals, value: "on"}
+      input_map: {stage: gate, mode: real}
+    - name: research_decision
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_gate]
+      input_map: {stage: decision, mode: real}
+    # ---- design_homepage_v2's stages, bound by research/FOR_DESIGN.md
+    - name: copy
+      type: agent
+      agent: design_homepage_copywriter_v2_next
+      depends_on: [research_decision]
+      input_map: {phase: draft}
+    - name: copy_check_draft
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [copy]
+      input_map: {stage: copy_check, mode: real, phase: draft}
+    - name: copy_review
+      type: agent
+      agent: design_homepage_content_critic_v2
+      depends_on: [copy_check_draft]
+      input_map: {target: deck}
+    - name: copy_revise
+      type: agent
+      agent: design_homepage_copywriter_v2_next
+      depends_on: [copy_review]
+      input_map: {phase: revise}
+    - name: copy_check
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [copy_revise]
+      input_map: {stage: copy_check, mode: real, phase: final}
+    - name: copy_next
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [copy_check]
+      loop_to: copy_revise
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: copy_next.structured.verdict, operator: equals, value: retry}
+      input_map: {stage: copy_next, mode: real}
+    - name: pairings
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [copy_next]
+      input_map: {stage: pairings, mode: real}
+    - name: concepts
+      type: agent
+      agent: design_homepage_art_director_v2_next
+      depends_on: [references, copy_next, pairings]
+      input_map: {phase: draft}
+    - name: check_draft
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [concepts]
+      input_map: {stage: concepts_check, mode: real, phase: draft}
+    - name: refine
+      type: agent
+      agent: design_homepage_art_director_v2_next
+      depends_on: [check_draft]
+      condition: {source: check_draft.structured.verdict, operator: equals, value: retry}
+      input_map: {phase: refine}
+    - name: check
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [refine]
+      input_map: {stage: concepts_check, mode: real, phase: final}
+    - name: concepts_next
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [check]
+      loop_to: refine
+      max_loops: 3
+      on_max_loops: fail
+      loop_condition: {source: concepts_next.structured.verdict, operator: equals, value: retry}
+      input_map: {stage: concepts_next, mode: real}
+    - name: direction
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [concepts_next]
+      gate: true
+      input_map: {stage: direction, mode: real, data: input.direction_json}
+    - name: build
+      type: agent
+      agent: design_homepage_designer_v2
+      depends_on: [direction]
+    - name: plan_round
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [build]
+      input_map: {stage: plan_round, mode: real}
+    - name: revise
+      type: agent
+      agent: design_homepage_reviser_v2
+      depends_on: [plan_round]
+      condition: {source: plan_round.structured.action, operator: equals, value: revise}
+    - name: measure
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [revise]
+      input_map: {stage: measure, mode: real}
+    - name: critic_a
+      type: agent
+      agent: design_critic
+      depends_on: [measure]
+    - name: critic_b
+      type: agent
+      agent: design_critic
+      depends_on: [measure]
+    - name: craft
+      type: agent
+      agent: design_homepage_craft_critic_v2
+      depends_on: [measure]
+    - name: runtime
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [measure]
+      input_map: {stage: runtime, mode: real}
+    - name: content
+      type: agent
+      agent: design_homepage_content_critic_v2
+      depends_on: [runtime]
+      input_map: {target: page}
+    - name: merge
+      type: agent
+      agent: design_merge
+      depends_on: [critic_a, critic_b]
+    - name: combine
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [merge, craft, runtime, content]
+      input_map: {stage: combine, mode: real}
+    - name: next_round
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [combine]
+      loop_to: plan_round
+      max_loops: 3
+      on_max_loops: fail
+      loop_condition: {source: next_round.structured.verdict, operator: equals, value: revise}
+      input_map: {stage: next_round, mode: real}
+    - name: convert
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [next_round]
+      input_map: {stage: convert, mode: real}
+    - name: verify
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [convert]
+      input_map: {stage: verify, mode: real}
+    - name: handoff
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [verify]
+      input_map: {stage: handoff, mode: real}
+    - name: final
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [handoff]
+      gate: true
+      input_map: {stage: final, mode: real}
+    - name: after_final
+      type: agent
+      agent: design_homepage_stage_v2_next
+      depends_on: [final]
+      loop_to: plan_round
+      max_loops: 3
+      on_max_loops: fail
+      loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
+      input_map: {stage: next_round, mode: real}
+    # ---- the product's design files, written after the final approval (the host applies them)
+    - name: save_files
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [after_final]
+      condition: {source: final.structured.verdict, operator: equals, value: approved}
+      input_map: {stage: save, mode: real}

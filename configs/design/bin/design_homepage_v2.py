@@ -1682,7 +1682,9 @@ def recommendation(spec: dict) -> dict | None:
 
 
 class Job:
-    def __init__(self, workspace: str, fixture: bool, pilot: bool = False, bench: bool = False):
+    def __init__(self, workspace: str, fixture: bool, pilot: bool = False, bench: bool = False, variant: str = ""):
+        if variant not in VARIANTS:
+            raise ValueError(f"variant is one of {', '.join(v or '(none)' for v in VARIANTS)}")
         if fixture + pilot + bench > 1:
             raise ValueError("a run is the fixture or the pilot or the benchmark, not more than one")
         self.root = Path(workspace).resolve()
@@ -1694,7 +1696,9 @@ class Job:
         self.packet = self.root / "homepage"
         self.packet.mkdir(parents=True, exist_ok=True)
         self.state_path = self.packet / "job.json"
-        workflow = "design_homepage_v2" + ("_fixture" if fixture else "_pilot" if pilot else "_bench" if bench else "")
+        # A candidate beside the live workflow (queue #38: research first) keeps its own workspaces.
+        workflow = "design_homepage_v2" + (f"_{variant}" if variant else "") \
+            + ("_fixture" if fixture else "_pilot" if pilot else "_bench" if bench else "")
         self.state = upgrade_state(load(self.state_path)) if self.state_path.exists() else {
             "version": VERSION, "workflow": workflow,
             "created_at": now(), "stages": {}, "round": 0, "revisions": 0, "change_rounds": 0,
@@ -2075,6 +2079,7 @@ class Job:
             return self.finish_check(key, fp, check, spec["concepts"], bool(spec.get("fixture")))
         brief = load(self.packet / "brief.json")
         brand_fonts = {f.lower() for f in brief.get("brand", {}).get("fonts", [])}
+        brand_fonts |= {f.lower() for f in (self.research_fixed() or {}).get("fonts") or []}  # approved type is the brand's
         concepts = spec.get("concepts") if isinstance(spec, dict) else None
         problems: list[str] = []
         if not isinstance(concepts, list) or sorted(str(c.get("id")) for c in concepts if isinstance(c, dict)) != list(CONCEPT_IDS) or len(concepts) != 3:
@@ -2139,6 +2144,13 @@ class Job:
         ids = [c["id"] for c in concepts]
         axe = concept_axe(cdir, ids)
         problems += axe_problems(axe, ids)
+        fixed = self.research_fixed()
+        audience = None
+        if fixed:  # the research step ran first (design_research.py): its approved parts and five targets bind
+            audience = self.concept_axes(concepts, fixed, renders)
+            audience["fixed_problems"] = fixed_part_problems(concepts, fixed)
+            if not spec.get("fixture"):  # fixture pages predate any research: advisory there
+                problems += audience["fixed_problems"] + audience["problems"]
         thumbs = thumbnail_diffs(shots, [f"{cid.lower()}-1440" for cid in CONCEPT_IDS]) if all(renders.get(f"{cid}-1440", {}).get("ok") for cid in CONCEPT_IDS) else {}
         pairs = []
         by_id = {c["id"]: c for c in concepts}
@@ -2154,9 +2166,12 @@ class Job:
                         "signature_jaccard": jaccard(ca.get("layout_signature") or [], cb.get("layout_signature") or []),
                         "thumbnail_diff": thumbs.get(f"{a.lower()}-1440|{b.lower()}-1440")}
                 why = []
-                if pair["same_display_font"] or pair["same_type_pairing"]:
+                fixed_type = bool(fixed and fixed.get("fonts"))
+                fixed_colour = bool(fixed and fixed.get("palette"))
+                if (pair["same_display_font"] or pair["same_type_pairing"]) and not fixed_type:
                     why.append("same display face or type pairing")
-                if pair["dominant_delta_e"] is not None and pair["dominant_delta_e"] < DISTINCT["min_dominant_delta_e"]:
+                if pair["dominant_delta_e"] is not None and pair["dominant_delta_e"] < DISTINCT["min_dominant_delta_e"] \
+                        and not fixed_colour:
                     why.append(f"dominant colours too close (OKLab ΔE {pair['dominant_delta_e']})")
                 if pair["signature_jaccard"] > DISTINCT["max_signature_jaccard"]:
                     why.append(f"layout signatures overlap ({pair['signature_jaccard']})")
@@ -2180,8 +2195,48 @@ class Job:
                  "axe": {name: {"ok": r.get("ok"), "settle": r.get("settle"), "error": r.get("error"),
                                 "violations": [{k: v.get(k) for k in ("id", "impact", "nodes", "targets")} for v in r.get("violations") or []]}
                          for name, r in sorted(axe.items())},
-                 "contact_sheet": sheet, "recommended": recommended}
+                 "contact_sheet": sheet, "recommended": recommended, "research": fixed, "audience": audience}
         return self.finish_check(key, fp, check, concepts, bool(spec.get("fixture")))
+
+    def research_fixed(self) -> dict | None:
+        """research/fixed.json when the research step (design_research.py) ran before this workflow's stages."""
+        path = self.root / "research" / "fixed.json"
+        return load(path) if path.is_file() else None
+
+    def concept_axes(self, concepts: list[dict], fixed: dict, renders: dict) -> dict:
+        """Each concept's five audience axes measured at 1440 against the research's targets (at least 4 of 5)."""
+        import design_axes as axes
+        import design_research
+        wanted = fixed.get("axes") or {}
+        jobs = [{"name": f"axes-{c['id'].lower()}", "path": f"{c['id']}/index.html", "external": False}
+                for c in concepts if renders.get(f"{c['id']}-1440", {}).get("ok")]
+        out_dir = self.concepts_dir / "axes"
+        if out_dir.exists():
+            shutil.rmtree(out_dir)
+        out_dir.mkdir(parents=True)
+        for c in concepts:
+            shutil.copytree(self.concepts_dir / c["id"], out_dir / c["id"])
+        results = {r["name"]: r for r in design_research.measure_pages(out_dir, jobs)} if jobs else {}
+        per, problems = {}, []
+        for c in concepts:
+            r = results.get(f"axes-{c['id'].lower()}")
+            if not r or not r.get("ok"):
+                per[c["id"]] = {"ok": False, "error": (r or {}).get("error", "not rendered")}
+                if wanted:
+                    problems.append(f"concept {c['id']}: its audience axes could not be measured ({(r or {}).get('error', 'not rendered')})")
+                continue
+            lv = axes.levels(r["facts"])
+            agree = axes.agreement(lv, wanted) if wanted else None
+            use = axes.token_use(r["facts"], fixed.get("colours") or [], fixed.get("fonts") or []) \
+                if fixed.get("colours") or fixed.get("fonts") else None
+            per[c["id"]] = {"ok": True, "levels": {k: v["level"] for k, v in lv.items()},
+                            "why": {k: v["why"] for k, v in lv.items()}, "agreement": agree, "token_use": use,
+                            "facts": axes.summary(r["facts"])}
+            if agree and agree["matched"] < agree["total"] - 1:
+                problems.append(f"concept {c['id']} hits {agree['matched']} of {agree['total']} audience targets from "
+                                f"research/FOR_DESIGN.md (needs {agree['total'] - 1}): " + "; ".join(agree["misses"]))
+        save(self.concepts_dir / "axes.json", {"wanted": wanted, "concepts": per, "measured_at": now()})
+        return {"wanted": wanted, "concepts": per, "problems": problems}
 
     def passed_draft_check(self, pages: str, spec: dict) -> tuple[str, dict] | None:
         """The last draft check (file name, contents) when it passed on exactly these pages and spec, else None.
@@ -2862,6 +2917,38 @@ STAGES = ("brief", "taste", "copy_fixture", "copy_check", "copy_next", "referenc
           "concepts_next", "direction", "build_fixture", "plan_round", "revise_fixture", "measure", "runtime", "review_fixture",
           "content_fixture", "combine", "next_round", "convert", "verify", "handoff", "final")
 FIXTURE_ONLY = {"copy_fixture", "concepts_fixture", "build_fixture", "revise_fixture", "review_fixture", "content_fixture"}
+VARIANTS = ("", "next")  # "next": queue #38's candidate with the research step first
+
+
+def fixed_part_problems(concepts: list[dict], fixed: dict) -> list[str]:
+    """Approved design-file parts (research/fixed.json) are constraints: each concept uses them as given.
+
+    palette: every role the approved palette names carries exactly that hex; fonts: the display and
+    text faces come from the approved type. Parts not approved stay free.
+    """
+    problems = []
+    palette = {k: str(v).upper() for k, v in (fixed.get("palette") or {}).items()}
+    fonts = [str(f).lower() for f in fixed.get("fonts") or []]
+    for c in concepts:
+        cid = c.get("id", "?")
+        have = {k: str(v).upper() for k, v in (c.get("palette") or {}).items()}
+        allowed = set(palette.values())
+        for role, hexv in palette.items():
+            if role in have and have[role] != hexv:
+                problems.append(f"concept {cid}: palette.{role} is {have[role]} but the approved design files fix it at {hexv}")
+        if palette:
+            for role, hexv in have.items():
+                if hexv not in allowed:
+                    problems.append(f"concept {cid}: palette.{role} {hexv} is not in the approved palette "
+                                    f"({', '.join(sorted(allowed))}); the colour part is approved, use its values")
+        if fonts:
+            for slot in ("display", "text"):
+                face = (c.get("fonts") or {}).get(slot)
+                face = str(face.get("family", "") if isinstance(face, dict) else face or "").lower()
+                if face and face not in fonts:
+                    problems.append(f"concept {cid}: fonts.{slot} '{face}' is not in the approved type part "
+                                    f"({', '.join(fonts)})")
+    return problems
 
 
 def main() -> None:
@@ -2874,6 +2961,7 @@ def main() -> None:
     parser.add_argument("--bench", action="store_true",
                         help="benchmark run: fictional brief, the art director's recommended concept, no gates")
     parser.add_argument("--phase", default="draft")
+    parser.add_argument("--variant", default="", choices=VARIANTS)
     parser.add_argument("--browser", default=None)
     parser.add_argument("--serve-host", default=None)
     args = parser.parse_args()
@@ -2882,7 +2970,7 @@ def main() -> None:
     if args.stage in FIXTURE_ONLY and not args.fixture:
         raise SystemExit(f"{args.stage} is a fixture-only stage")
     try:
-        job = Job(args.workspace, args.fixture, args.pilot, args.bench)
+        job = Job(args.workspace, args.fixture, args.pilot, args.bench, args.variant)
     except ValueError as exc:
         raise SystemExit(f"{args.stage}: {exc}") from None
     raw = os.environ.get("HOMEPAGE_DATA", "")

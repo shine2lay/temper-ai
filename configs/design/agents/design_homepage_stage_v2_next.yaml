@@ -1,0 +1,44 @@
+# @description Candidate (queue #38): design_homepage_stage_v2 for design_homepage_v2_next and its
+# fixture twin. Same script with --variant next (own workspaces, research/fixed.json binds the
+# concept check). Replaces nothing until the candidate wins.
+# Design-owned script steps of design_homepage_v2: brief, reference capture,
+# concept checks (contract, fonts, renders, distinctness, contact sheet), the
+# direction gate, review rounds (measure + craft metrics, combine, loop control), the
+# HTML->Penpot conversion, its verification, the handoff packet and the final gate
+# (answers record decided_by: design, owner for his own words, or fixture-test).
+# No model; standard library + mcp. Uses the existing authorized design-agent login in
+# temper's .env and the shared playwright-mcp browser. Never puts credentials in a task,
+# output, checkpoint or artifact. Stage receipts in homepage/job.json make resume safe.
+agent:
+  name: design_homepage_stage_v2_next
+  version: 1
+  type: script
+  timeout_seconds: 1800
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+
+    stage = os.environ.get("{{ stage | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    mode = os.environ.get("{{ mode | default('real', true) | env }}", "real")
+    phase = os.environ.get("{{ phase | default('draft', true) | env }}", "draft")
+    raw = os.environ.get("{{ data | default('', true) | env }}", "")
+    {% if gate is defined %}
+    raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
+    {% endif %}
+    if not stage or not workspace:
+        raise SystemExit("homepage stage/workspace required")
+    if mode not in ("real", "fixture", "pilot", "bench"):
+        raise SystemExit("mode is real, fixture, pilot or bench")
+    os.environ["HOMEPAGE_DATA"] = raw
+    cmd = [sys.executable, "/app/configs/design/bin/design_homepage_v2.py", stage, "--workspace", workspace,
+           "--phase", phase]
+    if mode in ("fixture", "pilot", "bench"):
+        cmd.append("--" + mode)
+    cmd += ["--variant", "next"]
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

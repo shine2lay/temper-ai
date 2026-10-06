@@ -1,0 +1,14 @@
+{
+  "product": "Lanternfish",
+  "secondary_name": "night-shift log",
+  "fictional": true,
+  "audience": "Fictional fixture: lighthouse keepers who log night shifts at a desk terminal.",
+  "positioning": "Fictional fixture: a steady night-shift log for lighthouse keepers.",
+  "qualities": ["steady", "quiet", "exact"],
+  "avoid": ["game badges", "cartoon fish"],
+  "sources": [
+    {"id": "readme", "location": "configs/design/fixtures/research/lanternfish/source/README.md",
+     "fact": "Lanternfish is a night-shift log for lighthouse keepers.", "status": "documented"}
+  ],
+  "interpretations": ["A small light that keeps watch in the dark."]
+}

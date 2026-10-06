@@ -1,0 +1,40 @@
+# @description Design-owned script steps of the research step (queue #38; docs/design-files.md):
+# inventory (defined, partial or none from the product's design files), checks of the
+# researcher's and the director's files (every claim sourced or an assumption, playbook ids
+# and families), the category capture (playwright-mcp), research.json + RESEARCH.md + the
+# research board, the research gate (decided_by design, owner for his own words, fixture-test
+# in fixture runs), the decision for the design stages, the logo brief and saving the design
+# files after a final approval. No model; standard library + mcp. Receipts in
+# research/state.json make resume safe: a finished stage is never repeated.
+agent:
+  name: design_research_stage_v1
+  version: 1
+  type: script
+  timeout_seconds: 1800
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+
+    stage = os.environ.get("{{ stage | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    mode = os.environ.get("{{ mode | default('real', true) | env }}", "real")
+    phase = os.environ.get("{{ phase | default('draft', true) | env }}", "draft")
+    raw = os.environ.get("{{ data | default('', true) | env }}", "")
+    {% if gate is defined %}
+    raw = os.environ.get("{{ gate.response | default('', true) | env }}", "") or raw
+    {% endif %}
+    if not stage or not workspace:
+        raise SystemExit("research stage/workspace required")
+    if mode not in ("real", "fixture"):
+        raise SystemExit("mode is real or fixture")
+    os.environ["RESEARCH_DATA"] = raw
+    cmd = [sys.executable, "/app/configs/design/bin/design_research.py", stage, "--workspace", workspace,
+           "--phase", phase]
+    if mode == "fixture":
+        cmd.append("--fixture")
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

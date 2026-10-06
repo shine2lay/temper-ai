@@ -112,7 +112,9 @@ class Job:
         uuid.UUID(run_id)
         # replay: a real brief's saved symbols re-checked (size + cold read) with no gates,
         # budget answers, refinement or packet; it can never approve anything.
-        if mode not in ("real", "fixture", "replay"):
+        # trial: a fictional brief run with the real (paid) agents, for testing a candidate
+        # workflow; its gates are fictional (decided_by fixture-test), like a fixture's.
+        if mode not in ("real", "fixture", "replay", "trial"):
             raise ValueError("explicit mode required")
         # RunRequest.workspace_path must name an existing mounted host folder.
         # Empty context otherwise creates per-script temporary artifacts that
@@ -124,6 +126,7 @@ class Job:
         self.root.mkdir(parents=True, exist_ok=True)
         self.state_path = self.root / "state.json"
         self.run_id, self.mode = run_id, mode
+        self.fictional = mode in ("fixture", "trial")
         self.state = load(self.state_path) if self.state_path.exists() else {"run_id": run_id, "mode": mode, "receipts": {}, "files": {}, "round": 0}
         if (self.state["run_id"], self.state["mode"]) != (run_id, mode):
             raise ValueError("workspace belongs to another run/mode")
@@ -153,7 +156,7 @@ class Job:
         return None
 
     def brief(self, raw):
-        b = c.brief_contract(json.loads(raw), "real" if self.mode == "replay" else self.mode)
+        b = c.brief_contract(json.loads(raw), {"replay": "real", "trial": "fixture"}.get(self.mode, self.mode))
         fingerprint = c.digest({"brief": b, "mode": self.mode, "schema": c.VERSION})
         cached = self.cached("brief", fingerprint)
         if cached:
@@ -214,7 +217,7 @@ class Job:
         return [*copies, self.root / "comparison.md"]
 
     def only(self, *modes):
-        if self.mode not in modes:
+        if ("real" if self.mode == "trial" else self.mode) not in modes:
             raise ValueError("stage not allowed in this mode")
 
     def size_report(self, name, concepts):
@@ -302,7 +305,7 @@ class Job:
                 "resemblance": [r for r in names["resemblance"] if r["label"] == row["label"]],
                 "close": [r["mark"] for r in names["resemblance"] if r["label"] == row["label"] and r["close"]]}
         path = self.root / (label + ".saved.json")
-        save(path, {"phase": phase, "method": COLD_METHOD, "fictional_test": self.mode == "fixture",
+        save(path, {"phase": phase, "method": COLD_METHOD, "fictional_test": self.fictional,
                     "same_name_marks": marks, "symbols": symbols,
                     "limits": "Readings of one model at one time: first impressions to compare with the idea, not "
                               "user research, recognition rates or a trademark search."})
@@ -473,6 +476,7 @@ class Job:
         sizes = {r["id"]: r for r in load(self.root / "sketches.size.json")["symbols"]}
         v = fixture_palette(b, cold) if self.mode == "fixture" else load(self.root / "palette.json")
         v = c.shortlist_contract(v, b, concepts, cold)
+        c.fixed_palette_check(v, b)
         fingerprint = c.digest({"exploration": c.digest(concepts), "palette": v, "cold": cold, "size": c.digest(sizes)})
         if result := self.cached("shortlist", fingerprint):
             return result
@@ -532,18 +536,18 @@ class Job:
         rows = load(self.root / "palette.saved.json")["shortlist"]
         decision = c.approval_contract(json.loads(raw), kind="direction", run_id=self.run_id,
             brief_hash=self.state["brief_hash"], artifact_hash=self.state["direction_artifact_hash"],
-            choices={r["id"] for r in rows} | {c.EXPLORE_AGAIN}, gate_only=gate_only, fictional=self.mode == "fixture")
+            choices={r["id"] for r in rows} | {c.EXPLORE_AGAIN}, gate_only=gate_only, fictional=self.fictional)
         fingerprint = c.digest(decision)
         if result := self.cached("direction", fingerprint):
             return result
         record = self.root / "gate-direction.json"
-        save(record, {**decision, "recorded_at": h.now(), "fictional_test": self.mode == "fixture"})
+        save(record, {**decision, "recorded_at": h.now(), "fictional_test": self.fictional})
         not_final = {"approved": False, "decided_by": None}
         if decision["decision"] == c.EXPLORE_AGAIN:
             # None of the three: this run ends; the next run carries the rejection.
             self.state["explore_again"] = decision
             save(self.root / "explore-again.json", {"run_id": self.run_id, "brief_hash": self.state["brief_hash"],
-                "answer": decision["note"], "decided_by": decision["decided_by"], "fictional_test": self.mode == "fixture",
+                "answer": decision["note"], "decided_by": decision["decided_by"], "fictional_test": self.fictional,
                 "rejected": [{"id": v["id"], "name": v["name"], "idea": v["idea"]}
                              for v in self.concepts() if v["id"] in {r["id"] for r in rows}],
                 "evidence": ["exports/sketches-00.png", "exports/directions-00.png"], "recorded_at": h.now()})
@@ -761,9 +765,9 @@ namesakes merit professional clearance before public use. No uniqueness claim.
         self.only("real", "fixture")
         decision = c.approval_contract(json.loads(raw), kind="final", run_id=self.run_id,
             brief_hash=self.state["brief_hash"], artifact_hash=self.state["final_artifact_hash"], choices={"approve", "revise"},
-            gate_only=gate_only, fictional=self.mode == "fixture")
+            gate_only=gate_only, fictional=self.fictional)
         path = self.root / f'gate-final-r{self.state["round"]:02}.json'
-        save(path, {**decision, "recorded_at": h.now(), "fictional_test": self.mode == "fixture"})
+        save(path, {**decision, "recorded_at": h.now(), "fictional_test": self.fictional})
         by = decision["decided_by"]
         if decision["decision"] == "revise":
             if self.state["round"] >= 2:
@@ -790,7 +794,7 @@ def main():
                                           "prepare", "refine", "handoff", "final", "replay"))
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--mode", choices=("real", "fixture", "replay"), required=True)
+    parser.add_argument("--mode", choices=("real", "fixture", "replay", "trial"), required=True)
     parser.add_argument("--budget-stage", choices=("initial", "refine"), default="initial")
     parser.add_argument("--native-gate", action="store_true")
     args = parser.parse_args()

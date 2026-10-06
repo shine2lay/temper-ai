@@ -228,8 +228,20 @@ def prior_round_contract(row, research_files, mode="real"):
 
 def brief_contract(b, mode="real"):
     keys(b, ("product", "secondary_name", "fictional", "audience", "positioning", "qualities", "avoid", "sources", "interpretations"),
-         ("research", "prior_rounds"))
+         ("research", "prior_rounds", "context", "meaning", "fixed_palette"))
     text(b["product"], 24)
+    # From the research step (design_research.py logo_brief): the playbook context id, the
+    # product's meaning and an approved palette the logo must keep ({role: hex}).
+    if "context" in b and not (isinstance(b["context"], str) and re.fullmatch(r"[a-z0-9][a-z0-9-]{1,59}", b["context"])):
+        raise ValueError("context is a playbook context id")
+    if "meaning" in b:
+        text(b["meaning"], 600)
+    if "fixed_palette" in b:
+        fp = b["fixed_palette"]
+        if (not isinstance(fp, dict) or not 1 <= len(fp) <= 24
+                or not all(isinstance(k, str) and re.fullmatch(r"[a-z0-9_.-]{1,40}", k) and isinstance(v, str)
+                           and re.fullmatch(r"#[0-9A-Fa-f]{6}", v) for k, v in fp.items())):
+            raise ValueError("fixed palette is {role: #RRGGBB}")
     text(b["secondary_name"], 28)
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9 .&'-]{1,23}", b["product"]):
         raise ValueError("v1 supports bounded Latin/LTR brand names")
@@ -521,6 +533,23 @@ def shortlist_contract(v, b, concepts, cold=None):
     if len({family[r["id"]] for r in v["shortlist"]}) < 2:
         raise ValueError("shortlist needs at least two concept families")
     v["recommendation_reason"] = prose(v["recommendation_reason"], 900)
+    return v
+
+
+def fixed_palette_check(v, b):
+    """An approved palette is a fixed constraint: a role that shares its name with an approved
+    colour keeps that colour; with no shared role names every colour must be an approved one."""
+    fixed = {k: x.upper() for k, x in b.get("fixed_palette", {}).items()}
+    if not fixed:
+        return v
+    allowed = set(fixed.values())
+    for row in v["shortlist"]:
+        shared = set(row["palette"]) & set(fixed)
+        if shared:
+            if any(row["palette"][k] != fixed[k] for k in shared):
+                raise ValueError("shortlist changes an approved palette colour")
+        elif not set(row["palette"].values()) <= allowed:
+            raise ValueError("shortlist uses colours outside the approved palette")
     return v
 
 

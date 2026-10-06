@@ -1,0 +1,15 @@
+# Fixture registry for the research step's $0 runs (design_homepage_v2_next_fixture). Fictional
+# products only; every approval in a fixture says fixture-test, never design or owner. The host copies
+# this file into a scratch folder before a run (design_files.py apply writes the registry), with the
+# scratch folder as the lab root: products live under <lab>/products/<id>.
+version: 1
+fixture: true
+repos: {}
+products:
+  lanternfish:
+    name: Lanternfish
+    location:
+      kind: lab
+      path: products/lanternfish
+    parts: {}
+    note: Fictional night-shift log for lighthouse keepers; source pack in configs/design/fixtures/research/lanternfish/source.

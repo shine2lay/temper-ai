@@ -1,0 +1,54 @@
+{
+  "contexts": [
+    {"id": "marketing-landing-general", "role": "page", "why": "The job is the product's homepage."},
+    {"id": "saas-b2b-settings", "role": "product", "why": "An all-day work tool used by experienced keepers."}
+  ],
+  "candidates": [
+    {"id": "D1", "name": "Night Watch", "context": "marketing-landing-general", "family": "minimalism with clear hierarchy",
+     "why": "Experienced keepers scan quickly; a calm, typical page with the log shown first reads fast (E001, E002).",
+     "axes": {"density": "high", "type_scale": "compact", "colour_energy": "low", "motion": "low", "copy_tone": "expert"},
+     "principles": ["Show the log itself", "Quiet colour, one accent"],
+     "do": ["a real log screen in the first view", "plain, exact words"],
+     "dont": ["confetti or game badges", "stock photos of lighthouses"],
+     "follow": ["product screen above the fold"], "differentiate": ["a night view that keeps the room dark"],
+     "evidence": ["E001", "E002"], "palette": "deep navy with one amber accent", "type": "compact grotesk, 16 px body"},
+    {"id": "D2", "name": "Logbook", "context": "marketing-landing-general", "family": "editorial",
+     "why": "The weekly summary is read by harbour authorities; an editorial page carries the record's weight (E005).",
+     "axes": {"density": "medium", "type_scale": "medium", "colour_energy": "low", "motion": "low", "copy_tone": "neutral"},
+     "principles": ["The record is the hero", "Measured rhythm"],
+     "do": ["serif headlines over a quiet grid", "a sample weekly summary"],
+     "dont": ["dense feature grids", "bright gradients"],
+     "follow": ["clear pricing for authorities"], "differentiate": ["the log page as the main picture"],
+     "evidence": ["E005", "E014"], "palette": "paper white with ink and a harbour green", "type": "serif display, sans text"},
+    {"id": "D3", "name": "Signal", "context": "marketing-landing-general", "family": "flat 2.0",
+     "why": "Clear signifiers keep scanning fast (E055); a flat page with strong buttons suits a buying audience.",
+     "axes": {"density": "medium", "type_scale": "medium", "colour_energy": "medium", "motion": "low", "copy_tone": "neutral"},
+     "principles": ["Strong signifiers", "One action per section"],
+     "do": ["visible buttons with depth cues", "short sections"],
+     "dont": ["flat text links as buttons", "autoplay video"],
+     "follow": ["a features list"], "differentiate": ["a lamp-room night mode preview"],
+     "evidence": ["E055", "E001"], "palette": "white with a signal orange", "type": "rounded sans, 17 px body"}
+  ],
+  "recommended": {"id": "D1", "reason": "Keepers are experts on long night shifts; the calm, dense log-first page fits them best."},
+  "taste": {"ids": [], "note": "Fixture run: the fixture taste file is a stand-in, kept apart from the evidence."},
+  "assumptions": ["Authorities decide on the weekly summary, not the log screen."],
+  "category": {
+    "expect": [
+      {"text": "A product screen or picture in the first view", "sites": ["atlas", "harbor"]},
+      {"text": "One main call to action near the top", "sites": ["atlas", "pulse"]},
+      {"text": "A short list of features below the fold", "sites": ["harbor", "rich"]}
+    ],
+    "stand_out": [
+      {"text": "Show a night view of the log", "why": "Keepers work in a dim room; no fixture site shows a dark view."},
+      {"text": "Lead with the record, not with claims", "why": "The fixture sites lead with slogans."}
+    ],
+    "marks": [
+      {"site": "atlas", "family": "wordmark", "description": "The name set in a plain sans."},
+      {"site": "harbor", "family": "wordmark", "description": "The name in a serif."},
+      {"site": "pulse", "family": "geometric", "description": "A fixture circle beside the name."},
+      {"site": "rich", "family": "pictorial", "description": "A fixture picture mark."},
+      {"site": "contrast", "family": "none", "description": "No mark on the fixture page."},
+      {"site": "atlas-again", "family": "wordmark", "description": "The same plain sans name."}
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "product": {
+    "name": "Lanternfish",
+    "what": "A night-shift log for lighthouse keepers.",
+    "for_whom": "Experienced lighthouse keepers on night shifts, and the harbour authorities who buy it.",
+    "value": "Keepers log about forty entries a shift quickly at their desk terminal; authorities read a weekly summary.",
+    "meaning": "A small, steady light kept in the dark: the log keeps watch with the keeper.",
+    "claims": ["c1", "c6"]
+  },
+  "groups": [
+    {"name": "Keepers", "role": "primary",
+     "summary": "Experienced keepers who log all night at a desk terminal in a dim lamp room.",
+     "claims": ["c1", "c2", "c3", "c4", "c5", "c7", "c8"]},
+    {"name": "Harbour authorities", "role": "buyer",
+     "summary": "Buy the log for every light they run and read the weekly summary.",
+     "claims": ["c6"]}
+  ],
+  "claims": [
+    {"id": "c1", "topic": "product", "text": "Lanternfish is a night-shift log for keepers.", "status": "sourced",
+     "source": {"file": "source/docs/README.md", "quote": "Lanternfish is a night-shift log for lighthouse keepers."}},
+    {"id": "c2", "topic": "frequency", "text": "About forty entries a shift, at a desktop terminal.", "status": "sourced",
+     "source": {"file": "source/docs/README.md", "quote": "Keepers write about forty entries per shift on a desktop terminal."}},
+    {"id": "c3", "topic": "expertise", "text": "Most keepers have more than ten years on the job.", "status": "sourced",
+     "source": {"file": "source/docs/README.md", "quote": "Most keepers have worked the lamps for more than ten years."}},
+    {"id": "c4", "topic": "setting", "text": "The lamp room is dim at night.", "status": "sourced",
+     "source": {"file": "source/docs/README.md", "quote": "The lamp room is kept dim at night"}},
+    {"id": "c5", "topic": "devices", "text": "Keepers used to log on paper tablets.", "status": "superseded",
+     "superseded_by": "c7", "note": "The 2026 survey says paper logs were retired in 2025.",
+     "source": {"file": "source/docs/README.md", "quote": "Keepers mostly log on paper tablets in the lamp room."}},
+    {"id": "c6", "topic": "buying", "text": "Harbour authorities buy it and read a weekly summary.", "status": "sourced",
+     "source": {"file": "source/docs/README.md", "quote": "Harbour authorities buy the log for every light they run"}},
+    {"id": "c7", "topic": "devices", "text": "Every keeper logs at the desk terminal.", "status": "sourced",
+     "source": {"file": "source/docs/README.md", "quote": "every keeper logs at the desk terminal"}},
+    {"id": "c8", "topic": "users", "text": "Keepers want a playful, game-like log.", "status": "rejected",
+     "note": "A brainstorm line with no evidence behind it.",
+     "source": {"file": "source/docs/README.md", "quote": "Keepers want a playful, game-like log."}}
+  ],
+  "assumptions": ["Keepers read the log in a dim room, so a dark, low-glare view may matter at night."]
+}

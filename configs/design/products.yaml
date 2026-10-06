@@ -1,0 +1,36 @@
+# Design files registry (docs/design-files.md, Design queue #38). Every design workflow checks a
+# product's entry before it designs: approved parts are followed as fixed constraints, missing parts are
+# researched first. Locations and statuses only, never design content, research notes or anyone's words:
+# this repository is public. design_files.py pack copies a product's files into a run; runs never read
+# other repositories directly. Changed by design_files.py apply/approve (or by hand), checked by
+# tests/test_design_files.py.
+version: 1
+repos:
+  temper-ai: ~/temper-ai
+  rollcall: ~/rollcall
+products:
+  temper:
+    name: Temper
+    location:
+      kind: lab
+      path: products/temper
+    parts:
+      logo:
+        status: approved
+        approved_by: owner
+        date: '2026-10-03'
+      colour:
+        status: approved
+        approved_by: owner
+        date: '2026-10-03'
+    note: Kept in Design's private lab until the identity is published; the owner approved the artwork, not publication.
+  rollcall:
+    name: RollCall
+    location:
+      kind: repo
+      repo: rollcall
+      path: design
+    current_state:
+    - frontend/src/styles/tokens.css
+    parts: {}
+    note: The RollCall chat lands RollCall's design files in its repo (queue #13); its current CSS is audited, not followed.

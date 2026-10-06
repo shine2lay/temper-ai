@@ -1,0 +1,11 @@
+{
+  "category": "shift logs (fixture pages)",
+  "sites": [
+    {"id": "atlas", "name": "Atlas (fixture)", "url": "https://fixture.invalid/atlas.html", "kind": "leader", "why": "Fixture page standing in for a category leader."},
+    {"id": "harbor", "name": "Harbor (fixture)", "url": "https://fixture.invalid/harbor.html", "kind": "leader", "why": "Fixture page standing in for a category leader."},
+    {"id": "pulse", "name": "Pulse (fixture)", "url": "https://fixture.invalid/pulse.html", "kind": "competitor", "why": "Fixture page standing in for a close competitor."},
+    {"id": "rich", "name": "Rich (fixture)", "url": "https://fixture.invalid/rich.html", "kind": "competitor", "why": "Fixture page standing in for a close competitor."},
+    {"id": "contrast", "name": "Contrast (fixture)", "url": "https://fixture.invalid/planted-contrast.html", "kind": "adjacent", "why": "Fixture page standing in for an adjacent product."},
+    {"id": "atlas-again", "name": "Atlas again (fixture)", "url": "https://fixture.invalid/atlas.html?again", "kind": "adjacent", "why": "A sixth site: the fixture set has five pages."}
+  ]
+}

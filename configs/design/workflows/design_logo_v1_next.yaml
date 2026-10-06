@@ -1,0 +1,271 @@
+# Candidate (Design queue #38) beside design_logo_v1: the same logo workflow with the research
+# step first (docs/design-files.md). The product's design files decide what is researched:
+# none -> users, category and direction; partial -> only the missing parts, an approved
+# palette kept fixed; defined -> no research. The research feeds the logo brief: the playbook
+# context, the product's meaning and the category's marks (pinned screenshots plus a marks
+# table in comparison.md). The live name changes only after this candidate wins on the #38
+# bars. mode: real for real products; trial runs a fictional brief with the real agents
+# (gates decided_by fixture-test). The host packs the product's files into the workspace first
+# (design_files.py pack).
+workflow:
+  name: design_logo_v1_next
+  version: 1
+  description: |
+    Research first, then design_logo_v1: inventory of the product's design files -> when
+    research is needed, the researcher's sourced users and product meaning (script-checked),
+    the category's first screens and marks, 2-3 playbook directions, the research board ->
+    RESEARCH gate (on by default when research ran) -> the decision -> the logo brief gains
+    the context id, the meaning, the category marks as pinned research and any approved
+    palette -> design_logo_v1's stages (explore, cold read, palette bound by the approved
+    palette, critic) -> DIRECTION gate -> refinement -> packet -> FINAL gate. Gates are named
+    for what they decide; each answer records decided_by. No publication.
+  inputs:
+    brief_json: {type: string, required: true}
+    budget_json: {type: string, required: true}
+    research_json: {type: string, required: true}
+    mode: {type: string, default: real}
+  safety:
+    policies:
+      - {type: budget, max_cost_usd: 30}
+  nodes:
+    # ---- research step (design_research.py; shared with every design workflow)
+    - name: research
+      type: agent
+      agent: design_research_stage_v1
+      input_map: {stage: inventory, mode: real, data: input.research_json}
+    - name: research_users
+      type: agent
+      agent: design_research_users_v1
+      depends_on: [research]
+      condition: {source: research.structured.research_agent, operator: equals, value: "yes"}
+      input_map: {phase: draft}
+    - name: research_check_draft
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_users]
+      input_map: {stage: check, mode: real, phase: draft}
+    - name: research_users_revise
+      type: agent
+      agent: design_research_users_v1
+      depends_on: [research_check_draft]
+      condition: {source: research_check_draft.structured.verdict, operator: equals, value: retry}
+      input_map: {phase: revise}
+    - name: research_check
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_users_revise]
+      input_map: {stage: check, mode: real, phase: final}
+    - name: research_check_next
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_check]
+      loop_to: research_users_revise
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: research_check_next.structured.verdict, operator: equals, value: retry}
+      input_map: {stage: next, mode: real, phase: check}
+    - name: research_capture
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_check_next]
+      condition: {source: research.structured.research_category, operator: equals, value: "yes"}
+      input_map: {stage: capture, mode: real}
+    - name: research_direction
+      type: agent
+      agent: design_research_direction_v1
+      depends_on: [research_capture]
+      condition: {source: research.structured.research_direction, operator: equals, value: "yes"}
+      input_map: {phase: draft}
+    - name: research_assemble_draft
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_direction]
+      input_map: {stage: assemble, mode: real, phase: draft}
+    - name: research_direction_revise
+      type: agent
+      agent: design_research_direction_v1
+      depends_on: [research_assemble_draft]
+      condition: {source: research_assemble_draft.structured.verdict, operator: equals, value: retry}
+      input_map: {phase: revise}
+    - name: research_assemble
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_direction_revise]
+      input_map: {stage: assemble, mode: real, phase: final}
+    - name: research_assemble_next
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_assemble]
+      loop_to: research_direction_revise
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: research_assemble_next.structured.verdict, operator: equals, value: retry}
+      input_map: {stage: next, mode: real, phase: assemble}
+    - name: research_gate
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_assemble_next]
+      gate: true
+      condition: {source: research.structured.gate, operator: equals, value: "on"}
+      input_map: {stage: gate, mode: real}
+    - name: research_decision
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_gate]
+      input_map: {stage: decision, mode: real}
+    - name: research_logo_brief
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_decision]
+      input_map: {stage: logo_brief, mode: real, data: input.brief_json}
+    # ---- design_logo_v1's stages, from the research-fed brief
+    - name: brief
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [research_logo_brief]
+      input_map: {stage: brief, mode: input.mode, brief_json: research_logo_brief.structured.brief}
+    - name: initial_budget
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [brief]
+      gate: true
+      input_map: {stage: budget, mode: input.mode, budget_stage: initial, budget_json: input.budget_json}
+    - name: explore
+      type: agent
+      agent: design_logo_explore_v1
+      depends_on: [initial_budget]
+      input_map: {phase: draft}
+    - name: save_exploration
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [explore]
+      input_map: {stage: explore, mode: input.mode}
+    - name: revise
+      type: agent
+      agent: design_logo_explore_v1
+      depends_on: [save_exploration]
+      input_map: {phase: revise}
+    - name: save_revision
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [revise]
+      input_map: {stage: revise, mode: input.mode}
+    - name: cold_read
+      type: agent
+      agent: design_logo_coldread_v1
+      depends_on: [save_revision]
+    - name: name_check
+      type: agent
+      agent: design_logo_names_v1
+      depends_on: [save_revision]
+    - name: save_cold_read
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [cold_read, name_check]
+      input_map: {stage: coldread, mode: input.mode}
+    - name: palette
+      type: agent
+      agent: design_logo_palette_v1_next
+      depends_on: [save_cold_read]
+    - name: save_palette
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [palette]
+      input_map: {stage: palette, mode: input.mode}
+    - name: direction_critic
+      type: agent
+      agent: design_logo_critic_v1
+      depends_on: [save_palette]
+      input_map: {phase: directions}
+    - name: save_direction_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [direction_critic]
+      input_map: {stage: critic, mode: input.mode}
+    - name: direction
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_direction_critic]
+      gate: true
+      input_map: {stage: direction, mode: input.mode}
+    - name: refine_budget
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [direction]
+      condition: &selected {source: direction.structured.outcome, operator: equals, value: selected}
+      gate: true
+      input_map: {stage: budget, mode: input.mode, budget_stage: refine}
+    - name: prepare_refine
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [refine_budget]
+      condition: *selected
+      input_map: {stage: prepare, mode: input.mode}
+    - name: refine
+      type: agent
+      agent: design_logo_refine_v1
+      depends_on: [prepare_refine]
+      condition: *selected
+    - name: save_refine
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [refine]
+      condition: *selected
+      input_map: {stage: refine, mode: input.mode}
+    - name: selected_cold_read
+      type: agent
+      agent: design_logo_coldread_v1
+      depends_on: [save_refine]
+      condition: *selected
+    - name: selected_name_check
+      type: agent
+      agent: design_logo_names_v1
+      depends_on: [save_refine]
+      condition: *selected
+    - name: save_selected_cold_read
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [selected_cold_read, selected_name_check]
+      condition: *selected
+      input_map: {stage: coldread, mode: input.mode}
+    - name: selected_critic
+      type: agent
+      agent: design_logo_critic_v1
+      depends_on: [save_refine, save_selected_cold_read]
+      condition: *selected
+      input_map: {phase: selected, round_label: save_refine.structured.round_label}
+    - name: save_selected_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [selected_critic]
+      condition: *selected
+      input_map: {stage: critic, mode: input.mode}
+    - name: handoff
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_selected_critic]
+      condition: *selected
+      input_map: {stage: handoff, mode: input.mode}
+    - name: final
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [handoff]
+      condition: *selected
+      gate: true
+      loop_to: refine_budget
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
+      input_map: {stage: final, mode: input.mode}
+  outputs:
+    design_status: research.structured.status
+    research_path: research_assemble.structured.research_path
+    research_board: research_assemble.structured.board
+    research_decided_by: research_decision.structured.decided_by
+    research_direction: research_decision.structured.direction
+    brief_context: research_logo_brief.structured.context
+    brief_marks: research_logo_brief.structured.marks
+    packet: handoff.structured.manifest
+    direction_outcome: direction.structured.outcome
+    direction_approved: direction.structured.direction_approved
+    final_approved: final.structured.final_approved

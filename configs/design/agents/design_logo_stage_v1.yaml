@@ -33,7 +33,7 @@ agent:
         raise SystemExit(22)
     if not workspace.strip() or not Path(workspace).is_absolute() or not Path(workspace).is_dir():
         raise SystemExit(23)
-    if mode not in ("real", "fixture", "replay"):
+    if mode not in ("real", "fixture", "replay", "trial"):
         raise SystemExit(24)
     if stage not in ("brief", "budget", "explore", "revise", "coldread", "palette", "critic", "direction", "prepare", "refine",
                      "handoff", "final", "replay"):

@@ -1,0 +1,150 @@
+# Design-owned $0 proof of design_logo_v1_next's plumbing (queue #38): the research step's script
+# stages and gate with model-free stand-ins for the researcher and the director
+# (configs/design/fixtures/research/<product>/), the research-fed logo brief, then
+# design_logo_fixture_v1's stages. Fictional products only; every gate answer is decided_by
+# fixture-test. No model calls, no aesthetic evidence.
+workflow:
+  name: design_logo_v1_next_fixture
+  version: 1
+  description: Model-free research step + research-fed logo brief + design_logo_fixture_v1's stages; fictional, gates fixture-test.
+  inputs:
+    brief_json: {type: string, required: true}
+    research_json: {type: string, required: true}
+  outputs:
+    design_status: research.structured.status
+    research_board: research_assemble.structured.board
+    research_decided_by: research_decision.structured.decided_by
+    brief_context: research_logo_brief.structured.context
+    brief_marks: research_logo_brief.structured.marks
+    packet: handoff.structured.manifest
+    direction_outcome: direction.structured.outcome
+    direction_approved: direction.structured.direction_approved
+    final_approved: final.structured.final_approved
+  nodes:
+    - name: research
+      type: agent
+      agent: design_research_stage_v1
+      input_map: {stage: inventory, mode: fixture, data: input.research_json}
+    - name: research_users
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research]
+      condition: {source: research.structured.research_agent, operator: equals, value: "yes"}
+      input_map: {stage: fixture, mode: fixture, phase: users}
+    - name: research_check
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_users]
+      input_map: {stage: check, mode: fixture, phase: final}
+    - name: research_capture
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_check]
+      condition: {source: research.structured.research_category, operator: equals, value: "yes"}
+      input_map: {stage: capture, mode: fixture}
+    - name: research_direction
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_capture]
+      condition: {source: research.structured.research_direction, operator: equals, value: "yes"}
+      input_map: {stage: fixture, mode: fixture, phase: direction}
+    - name: research_assemble
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_direction]
+      input_map: {stage: assemble, mode: fixture, phase: final}
+    - name: research_gate
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_assemble]
+      gate: true
+      condition: {source: research.structured.gate, operator: equals, value: "on"}
+      input_map: {stage: gate, mode: fixture}
+    - name: research_decision
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_gate]
+      input_map: {stage: decision, mode: fixture}
+    - name: research_logo_brief
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [research_decision]
+      input_map: {stage: logo_brief, mode: fixture, data: input.brief_json}
+    # ---- design_logo_fixture_v1's stages
+    - name: brief
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [research_logo_brief]
+      input_map: {stage: brief, mode: fixture, brief_json: research_logo_brief.structured.brief}
+    - name: save_exploration
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [brief]
+      input_map: {stage: explore, mode: fixture}
+    - name: save_revision
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_exploration]
+      input_map: {stage: revise, mode: fixture}
+    - name: save_cold_read
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_revision]
+      input_map: {stage: coldread, mode: fixture}
+    - name: save_palette
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_cold_read]
+      input_map: {stage: palette, mode: fixture}
+    - name: save_direction_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_palette]
+      input_map: {stage: critic, mode: fixture}
+    - name: direction
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_direction_critic]
+      gate: true
+      input_map: {stage: direction, mode: fixture}
+    - name: prepare_refine
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [direction]
+      condition: &selected {source: direction.structured.outcome, operator: equals, value: selected}
+      input_map: {stage: prepare, mode: fixture}
+    - name: save_refine
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [prepare_refine]
+      condition: *selected
+      input_map: {stage: refine, mode: fixture}
+    - name: save_selected_cold_read
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_refine]
+      condition: *selected
+      input_map: {stage: coldread, mode: fixture}
+    - name: save_selected_critic
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_selected_cold_read]
+      condition: *selected
+      input_map: {stage: critic, mode: fixture}
+    - name: handoff
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [save_selected_critic]
+      condition: *selected
+      input_map: {stage: handoff, mode: fixture}
+    - name: final
+      type: agent
+      agent: design_logo_stage_v1
+      depends_on: [handoff]
+      condition: *selected
+      gate: true
+      loop_to: prepare_refine
+      max_loops: 2
+      on_max_loops: fail
+      loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
+      input_map: {stage: final, mode: fixture}

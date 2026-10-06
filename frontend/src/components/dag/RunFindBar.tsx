@@ -11,7 +11,9 @@
 import { Search } from 'lucide-react';
 
 import type { RunFind } from '@/hooks/useRunFind';
+import { HIT_AREA, HIT_AREA_RING } from '@/lib/hitArea';
 import type { StatusFilter } from '@/lib/runSearch';
+import { cn } from '@/lib/utils';
 
 const STATUS_CHOICES: { key: StatusFilter; label: string; title: string }[] = [
   { key: 'all', label: 'All', title: 'Show the whole run' },
@@ -125,8 +127,12 @@ export function RunFindBar({ find }: { find: RunFind }) {
         {find.trouble === 'failed' ? '⚑ Trouble' : '⚑ Now'}
       </button>
 
-      <div className="flex items-center rounded border border-temper-border overflow-hidden">
-        {STATUS_CHOICES.map((choice) => (
+      {/* Each choice is a 24 px target (WCAG 2.2, 2.5.8; "All" was 23 by 18
+          and touched "Running"). The buttons are see-through and the
+          segments you see are the spans inside, which also draw the group's
+          border: a border round the group would sit outside the targets. */}
+      <div className="flex items-center">
+        {STATUS_CHOICES.map((choice, i) => (
           <button
             key={choice.key}
             type="button"
@@ -134,13 +140,21 @@ export function RunFindBar({ find }: { find: RunFind }) {
             title={choice.title}
             aria-pressed={find.status === choice.key}
             data-testid={`run-find-status-${choice.key}`}
-            className={`px-1.5 py-1 text-[10px] leading-none border-l first:border-l-0 border-temper-border transition-colors ${
-              find.status === choice.key
-                ? 'bg-temper-accent/20 text-temper-text'
-                : 'bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-panel'
-            }`}
+            className={cn(HIT_AREA, 'flex min-h-6 items-center')}
           >
-            {choice.label}
+            <span
+              className={cn(
+                'min-w-6 px-1.5 py-1 text-center text-[10px] leading-none border-y border-l border-temper-border bg-clip-padding transition-colors',
+                i === 0 && 'rounded-l',
+                i === STATUS_CHOICES.length - 1 && 'border-r rounded-r',
+                find.status === choice.key
+                  ? 'bg-temper-accent/20 text-temper-text'
+                  : 'bg-temper-surface text-temper-text-muted group-hover/hit:text-temper-text group-hover/hit:bg-temper-panel',
+                HIT_AREA_RING,
+              )}
+            >
+              {choice.label}
+            </span>
           </button>
         ))}
       </div>

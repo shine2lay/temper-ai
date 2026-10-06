@@ -244,7 +244,9 @@ function ToolStep({ step }: { step: StoryTool }) {
           <Check className="size-3 shrink-0 text-emerald-500" />
         )}
         <span className="truncate">{label}</span>
-        <span className="ml-auto shrink-0 font-mono text-[9px] tabular-nums opacity-60">
+        {/* The row's own colour, not faded: at 60 % opacity this time read
+            2.6:1 (light) and 3.3:1 (dark); WCAG 2.2 AA wants 4.5:1. */}
+        <span className="ml-auto shrink-0 font-mono text-[9px] tabular-nums">
           {step.durationSeconds != null ? formatDuration(step.durationSeconds) : step.status === 'running' ? '…' : ''}
         </span>
       </button>

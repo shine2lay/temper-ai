@@ -66,6 +66,85 @@ test.describe('Workflow list', () => {
     expect(box!.width).toBeGreaterThanOrEqual(24);
   });
 
+  test("a row's compare checkbox is a 24 px target that never opens the run", async ({
+    page,
+    request,
+  }) => {
+    // WCAG 2.2 2.5.8. It was 16 px, inside the row. The box you see is still
+    // 16 px; the checkbox you use is the 24 px one around it.
+    await startSmokeRun(request);
+    await page.goto('/app/');
+
+    const box = page.getByRole('checkbox', { name: 'Select smoke_test for comparison' }).first();
+    await expect(box).toBeVisible();
+    const b = (await box.boundingBox())!;
+    expect(b.height).toBeGreaterThanOrEqual(24);
+    expect(b.width).toBeGreaterThanOrEqual(24);
+
+    // A click near its corner, outside the 16 px box, ticks it and stays here.
+    const before = await box.isChecked();
+    await page.mouse.click(b.x + 2, b.y + 2);
+    await expect(box).toBeChecked({ checked: !before });
+    await expect(page).not.toHaveURL(/\/workflow\//);
+  });
+
+  test("keys on a row's checkbox and Studio link reach them, not the row", async ({
+    page,
+    request,
+  }) => {
+    // WCAG 2.2 2.1.1. The row opens its run on Enter or Space, and it used to
+    // catch those keys from its controls too.
+    await startSmokeRun(request);
+    await page.goto('/app/');
+
+    const box = page.getByRole('checkbox', { name: 'Select smoke_test for comparison' }).first();
+    await expect(box).toBeVisible();
+    const before = await box.isChecked();
+    await box.focus();
+    await page.keyboard.press('Space');
+    await expect(box).toBeChecked({ checked: !before });
+    await expect(page).not.toHaveURL(/\/workflow\//);
+
+    await page.locator('a[href$="/studio/smoke_test"]').first().focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/studio\/smoke_test/);
+  });
+
+  test("a running row's Cancel is a 24 px target that never opens the run", async ({
+    page,
+    request,
+  }) => {
+    // WCAG 2.2 2.5.8. It was 21 px tall, inside the row. `ci_slow` sleeps, so
+    // the run is still going while the list is open; the click cancels it.
+    const res = await request.post('/api/runs', {
+      data: { workflow: 'ci_slow', inputs: { seconds: '40' } },
+    });
+    expect(res.ok(), 'could not start ci_slow').toBe(true);
+    const { execution_id: id } = await res.json();
+    try {
+      await page.goto('/app/');
+      // This run's own row (it shows the id's first 8 characters): another
+      // spec may have a ci_slow run going at the same time.
+      const row = page.locator('[role="link"]', { hasText: id.replace('wf-', '').slice(0, 8) });
+      const cancel = row.getByRole('button', { name: 'Cancel workflow ci_slow' });
+      await expect(cancel).toBeVisible({ timeout: 20_000 });
+      const b = (await cancel.boundingBox())!;
+      expect(b.height).toBeGreaterThanOrEqual(24);
+      expect(b.width).toBeGreaterThanOrEqual(24);
+
+      // A click on its top edge, above the button you see, cancels and stays here.
+      await page.mouse.click(b.x + b.width / 2, b.y + 1);
+      await expect
+        .poll(async () => (await (await request.get(`/api/workflows/${id}`)).json()).status, {
+          timeout: 20_000,
+        })
+        .toBe('cancelled');
+      await expect(page).not.toHaveURL(/\/workflow\//);
+    } finally {
+      await request.post(`/api/runs/${id}/cancel`, { data: {} }).catch(() => undefined);
+    }
+  });
+
   test('buttons can be reached by their visible label', async ({ page }) => {
     // aria-label used to replace the visible text, which breaks voice control.
     await page.goto('/app/');
@@ -99,6 +178,19 @@ test.describe('Execution view', () => {
     for (const tab of ['Timeline', 'Event Log', 'Checkpoints', 'DAG']) {
       await page.getByText(tab, { exact: false }).first().click();
       await expect(page.getByText(tab, { exact: false }).first()).toBeVisible();
+    }
+  });
+
+  test("the find bar's status choices are 24 px targets", async ({ page, request }) => {
+    // WCAG 2.2 2.5.8: "All" was 23 by 18 px and touched "Running".
+    const id = await startSmokeRun(request);
+    await page.goto(`/app/workflow/${id}`);
+    await expect(page.getByTestId('run-find-bar')).toBeVisible({ timeout: 20_000 });
+
+    for (const key of ['all', 'running', 'failed', 'waiting']) {
+      const b = (await page.getByTestId(`run-find-status-${key}`).boundingBox())!;
+      expect(b.height, key).toBeGreaterThanOrEqual(24);
+      expect(b.width, key).toBeGreaterThanOrEqual(24);
     }
   });
 

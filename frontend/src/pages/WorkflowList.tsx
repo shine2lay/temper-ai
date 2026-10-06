@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback, useId } from 'react';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -23,6 +23,7 @@ import {
 } from '@/components/studio/InputFormGenerator';
 import { SEARCH_DEBOUNCE_MS } from '@/lib/constants';
 import { authFetch } from '@/lib/authFetch';
+import { HIT_AREA, HIT_AREA_RING } from '@/lib/hitArea';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,6 +170,54 @@ async function cancelRun(id: string): Promise<void> {
 // WorkflowRow
 // ---------------------------------------------------------------------------
 
+/**
+ * A row's compare checkbox: a 24 px target with the same 16 px look
+ * (WCAG 2.2, 2.5.8; see lib/hitArea.ts for why the row forces this).
+ *
+ * A native checkbox is drawn as big as its box. So the checkbox you use is a
+ * see-through 24 px one on top, and the 16 px box under it is a copy that the
+ * pointer passes through. The wrapper is the copy's label: hovering or
+ * pressing the real checkbox hovers the label, and a label hands that on to
+ * its control, so the copy still shows the browser's own hover and press.
+ */
+function RowCheckbox({
+  checked,
+  onToggle,
+  label,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+}) {
+  const copyId = useId();
+  return (
+    // -m-1: in the row's layout the 24 px target takes the 16 px box's place.
+    // A click anywhere on it stays here and never opens the run.
+    <label
+      htmlFor={copyId}
+      onClick={(e) => e.stopPropagation()}
+      className="relative -m-1 inline-flex size-6 shrink-0 items-center justify-center"
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        aria-label={label}
+        className="peer absolute inset-0 m-0 size-6 opacity-0"
+      />
+      <input
+        id={copyId}
+        type="checkbox"
+        checked={checked}
+        readOnly
+        tabIndex={-1}
+        aria-hidden
+        className="pointer-events-none shrink-0 accent-temper-accent w-4 h-4 border-2 border-temper-control rounded peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-temper-accent peer-focus-visible:rounded-[2px]"
+      />
+    </label>
+  );
+}
+
 function WorkflowRow({
   wf,
   selected,
@@ -200,6 +249,10 @@ function WorkflowRow({
     <div
       onClick={() => onNavigate(`/workflow/${wf.id}`)}
       onKeyDown={(e) => {
+        // Only when the row itself has focus: Space on the row's checkbox and
+        // Enter on its Cancel or Studio link opened the run instead (WCAG 2.2,
+        // 2.1.1).
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onNavigate(`/workflow/${wf.id}`);
@@ -223,14 +276,10 @@ function WorkflowRow({
         wf.quiet && 'border-yellow-500/40',
       )}
     >
-      {/* Checkbox */}
-      <input
-        type="checkbox"
+      <RowCheckbox
         checked={selected.has(wf.id)}
-        onChange={() => onToggleSelect(wf.id)}
-        onClick={(e) => e.stopPropagation()}
-        className="shrink-0 accent-temper-accent w-4 h-4 border-2 border-temper-control rounded"
-        aria-label={`Select ${wf.workflow_name} for comparison`}
+        onToggle={() => onToggleSelect(wf.id)}
+        label={`Select ${wf.workflow_name} for comparison`}
       />
 
       {/* Name + run number */}
@@ -285,6 +334,8 @@ function WorkflowRow({
             quiet {quiet}
           </span>
         )}
+        {/* A 24 px target (WCAG 2.2, 2.5.8; it was 21 px): the button is
+            see-through and the look is the span inside. */}
         {wf.status === 'running' && (
           <button
             onClick={(e) => {
@@ -292,15 +343,20 @@ function WorkflowRow({
               cancelMutation.mutate(wf.id);
             }}
             disabled={cancelMutation.isPending}
-            className={cn(
-              'text-[10px] px-2 py-0.5 rounded border transition-colors',
-              'bg-temper-surface text-temper-text-muted border-temper-border',
-              'hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-            )}
+            className={cn(HIT_AREA, 'inline-flex min-h-6 items-center disabled:cursor-not-allowed')}
             aria-label={`Cancel workflow ${wf.workflow_name}`}
           >
-            {cancelMutation.isPending ? 'Cancelling…' : 'Cancel'}
+            <span
+              className={cn(
+                'text-[10px] px-2 py-0.5 rounded border transition-colors',
+                'bg-temper-surface text-temper-text-muted border-temper-border',
+                'group-hover/hit:bg-red-500/10 group-hover/hit:text-red-400 group-hover/hit:border-red-500/30',
+                'group-disabled/hit:opacity-50',
+                HIT_AREA_RING,
+              )}
+            >
+              {cancelMutation.isPending ? 'Cancelling…' : 'Cancel'}
+            </span>
           </button>
         )}
         {cancelMutation.isError && (

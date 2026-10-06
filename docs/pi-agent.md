@@ -44,7 +44,8 @@ agent:
 - Tools: one `tools:` list with Temper's names, as for other agents, mapped to Pi's
   built-ins: Read→read, Edit→edit, Write→write, Bash→bash, Grep→grep, Glob→find+ls
   (default `[Read]`). A tool Pi has no equivalent for (WebFetch, NotionSearch, GitHub,
-  Linear, ...) refuses the config by name; it is never dropped silently.
+  Linear, ...) refuses the config by name; it is never dropped silently. Grep and Glob need
+  the box's pinned `rg` and `fd` (see [The worker box](#the-worker-box)).
 - Add-ons: `add_ons:` defaults to every allowed add-on: `pi-tldr` and `pi-image-trim`, the
   ones that passed the worker box test. pi-identity always comes through `role`; a route's
   login extension stays route config. Refused by name, with the reason: pi-worktree,
@@ -188,6 +189,63 @@ review rounds, the pause after `pause_after_rounds` keep-goings, done recorded b
   pinned add-ons), the role is bound (`/identity`) and the probe reports exactly that
   role, the launched tools and the private notebook snapshot.
 - The worker's process group and container are always removed when the turn ends.
+
+### Pi's grep and find: pinned `rg` and `fd`
+
+Pi's `grep` runs ripgrep (`rg`) and its `find` runs `fd`. The box image has neither, and Pi
+can't download them in the box (`--network none`, `PI_OFFLINE=1`), so the runtime folder
+carries them (queue #47):
+
+- Pins (`temper_ai/pi_agent/search_tools.py`): ripgrep 15.2.0 and fd 10.5.0, the official
+  static musl builds for aarch64 only, each with its release URL, the archive's sha256, the
+  binary's path in the archive and the binary's own sha256.
+- `scripts/pi_search_tools.py --from <runtime> --to <new runtime>` (on the host, stdlib
+  only) downloads both archives, checks the archive digest, takes out only the named binary
+  and checks its digest. It copies `<runtime>` unchanged (links kept) and adds `rg` and `fd`
+  (mode 0555) at its top level, so they are `/pi-runtime/rg` and `/pi-runtime/fd`, first on
+  the box `PATH`. It writes `search-tools.json` (versions, URLs, digests, the source's tree
+  digest), makes the tree read only and moves it into place. Pi finds them by itself: it
+  tries `/w/agent/bin`, then `rg --version` / `fd --version` on `PATH`; its code is
+  unchanged. The script refuses a `--to` that exists, a `--to` folder that doesn't, a
+  machine that isn't aarch64, and any digest that differs; nothing is written then.
+  `<runtime>` is never changed: its tree digest is compared before and after. Nothing
+  downloads at run time, and the box's network rules are unchanged.
+- The script prints the box config's `search_tools` block; it goes next to `runtime_dir`
+  and `pi_version`:
+
+  ```json
+  "runtime_dir": "/home/shinelay/.local/share/temper/pi-runtime/pi-0.87.1-rg15.2.0-fd10.5.0",
+  "pi_version": "0.87.1",
+  "search_tools": {
+    "fd": {"version": "10.5.0", "sha256": "90dab774d92889926d75a85b47c4b2dc4c9adfa792cd3a6ccfcb98b0eabc9b94"},
+    "rg": {"version": "15.2.0", "sha256": "c14cdb389f34e504d69e386cfc67d5c5d9a730a990de03ca6910b2a15e30386a"}
+  }
+  ```
+
+  The config refuses, when it loads and again on the host before every box start (before
+  the read-only mount), a name Temper doesn't pin, and a binary that is missing, a link, not
+  executable or not exactly the pinned digest (`search_tool_changed` at a start). No in-box
+  read-back per turn.
+- A Pi step or team member whose tools include grep or find (Temper's Grep or Glob) is
+  refused when the box config doesn't pin `rg` / `fd`: a Pi step fails before any worker or
+  model call, a team stage's pre-run check names the member, and a box start raises
+  `search_tool_missing` before any docker call. Each refusal names the script.
+- Proof: `tests/test_pi_agent/test_box_search_tools.py`. Its sealed tests always run. The
+  real-box test starts a box with the box's own create args, mounts and environment, runs
+  Pi's own grep and find on a small fixture, reads `rg --version` and `fd --version` back
+  from inside and checks `NetworkMode` none. It is skipped unless
+  `TEMPER_PI_BOX_TEST_RUNTIME` names a runtime the script made
+  (`TEMPER_PI_BOX_TEST_IMAGE` overrides the image, default
+  `sha256:8cee32bd74cfacf0b0abfb8c919add49c74cf48dfcb967ac0ed73669cac121c0`):
+
+  ```bash
+  TEMPER_PI_BOX_TEST_RUNTIME=/home/shinelay/.local/share/temper/pi-runtime/pi-0.87.1-rg15.2.0-fd10.5.0 \
+    uv run pytest tests/test_pi_agent/test_box_search_tools.py::test_pi_grep_and_find_work_offline_in_the_box -v -rs -s
+  ```
+
+- Rollback: point the box config back at the old runtime and drop `search_tools`. Members
+  with Grep or Glob are then refused again, as above. An existing runtime folder is never
+  changed in place; a new pin means a new folder.
 
 ## Rules
 

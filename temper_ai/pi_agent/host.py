@@ -72,6 +72,7 @@ from temper_ai.pi_agent.member import (
     usage_limit,
 )
 from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait, wait_row
+from temper_ai.pi_agent.search_tools import search_tool_problems
 from temper_ai.shared.types import AgentResult, ExecutionContext, Status
 from temper_ai.stage.exceptions import CancellationError, RunParked
 from temper_ai.stage.gate import REJECTED, WAITING
@@ -172,6 +173,9 @@ class PiHost(AgentABC):
         if unpinned:
             return self._fail("no pinned copy of add-on(s) " + ", ".join(unpinned)
                               + " in the worker box config", started)
+        missing = search_tool_problems(launched_tools(cfg), box)
+        if missing:
+            return self._fail("; ".join(missing), started)
         self.box = box
         self.ledger = Ledger(get_database().engine)
         self.ledger.ensure()

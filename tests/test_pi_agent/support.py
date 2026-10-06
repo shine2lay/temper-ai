@@ -43,13 +43,30 @@ USAGE_LIMIT_ERROR = ("429 rate_limit_error: You have reached your usage limit; i
 # --- the box config and its folders --------------------------------------------------
 
 
+def make_search_tools(runtime: Path) -> dict:
+    """Stand-in rg and fd at the runtime's top level; returns the box config's ``search_tools``
+    block for them (the pinned versions, the stand-ins' own digests)."""
+    from temper_ai.pi_agent.search_tools import PINS
+
+    block = {}
+    for name, pin in PINS.items():
+        binary = runtime / name
+        binary.write_text(f"#!/bin/sh\necho stand-in {name}\n")
+        binary.chmod(0o755)
+        block[name] = {"version": pin.version,
+                       "sha256": hashlib.sha256(binary.read_bytes()).hexdigest()}
+    return block
+
+
 def make_box_config(root: Path, **over: Any) -> Path:
-    """A complete box config over stand-in folders; returns the JSON file's path."""
+    """A complete box config over stand-in folders, stand-in rg and fd pinned (Pi's grep and
+    find need them); returns the JSON file's path."""
     runtime = root / "runtime"
     (runtime / "pi" / "dist" / "bundle").mkdir(parents=True, exist_ok=True)
     (runtime / "node").write_text("stand-in")
     (runtime / "pi" / "dist" / "bundle" / "cli.js").write_text("// stand-in")
     (runtime / "pi" / "package.json").write_text(json.dumps({"version": PI_VERSION}))
+    search_tools = make_search_tools(runtime)
     ext = root / "identity-ext"
     ext.mkdir(parents=True, exist_ok=True)
     (ext / "index.ts").write_text("export default function () {}\n")
@@ -67,7 +84,7 @@ def make_box_config(root: Path, **over: Any) -> Path:
         "host_node": "/nonexistent/node", "host_pi": "/nonexistent/pi",
         "socket_root": str(root / "sock"),
         "routes": {"openai-codex": {"provider": "openai-codex", "host": "chatgpt.com"}},
-        "turn_timeout_s": 5.0, "model_calls_per_turn": 4,
+        "turn_timeout_s": 5.0, "model_calls_per_turn": 4, "search_tools": search_tools,
     }
     raw.update(over)
     path = root / "box.json"

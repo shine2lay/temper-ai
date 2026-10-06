@@ -10,8 +10,9 @@ not start. It checks:
 * each member: its agent config loads and is a valid ``type: pi`` config (Temper tool names,
   allowed add-ons, model settings); its role exists in the role list under that exact id (a
   close name may be suggested, never picked); the role's ``identity.json`` and about page are
-  readable; ``identity.json`` names a home chat; its add-ons have pinned copies and its provider
-  has a worker route in the worker box config;
+  readable; ``identity.json`` names a home chat; its add-ons have pinned copies, its provider
+  has a worker route, and the search binary its Pi grep or find runs (rg, fd) is pinned in the
+  worker box config;
 * the team: its sections (leader is a member, edges name members, every member reachable from
   the leader, ``pause_after_rounds`` set) and its goal; ``communication: edges`` is refused for
   now (R2 rule B7: the first team runtime is ``all`` only);
@@ -32,8 +33,16 @@ from typing import TYPE_CHECKING
 
 from temper_ai.pi_agent import AGENT_TYPE
 from temper_ai.pi_agent.box import CONFIG_ENV, ROLE_RE, BoxConfig, BoxError
-from temper_ai.pi_agent.member import ADD_ONS, add_on_names, settings
+from temper_ai.pi_agent.member import (
+    ADD_ONS,
+    add_on_names,
+    add_on_problems,
+    launched_tools,
+    settings,
+    tool_problems,
+)
 from temper_ai.pi_agent.route.model import RESERVED_IDS
+from temper_ai.pi_agent.search_tools import search_tool_problems
 from temper_ai.pi_agent.team import EDGES_NOT_BUILT, member_name, stage_problems
 
 if TYPE_CHECKING:  # the stage package imports this module's registration; no import cycle
@@ -174,6 +183,10 @@ def check_team(agent_configs: list[dict], strategy_config: object, *,
                 if unpinned:
                     problems.append(f"{where}: no pinned copy of add-on(s) "
                                     f"{', '.join(unpinned)} in the worker box config")
+            if not tool_problems(cfg.get("tools")) and not add_on_problems(cfg.get("add_ons")):
+                # (a bad tools or add-ons list is already reported with the member's config)
+                problems += [f"{where}: {text}"
+                             for text in search_tool_problems(launched_tools(cfg), box)]
     goal = goal_problem(input_map, inputs or {})
     if goal:
         problems.append(goal)

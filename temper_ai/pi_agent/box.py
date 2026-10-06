@@ -15,7 +15,11 @@ What the box allows (and what L1 proved live on the same runtime):
   nothing;
 * the host's own Pi settings, logins and memory are never mounted. The worker gets a
   generated agent folder, a private copy of its role (copied once per participant) and its
-  participant folder (``/w``), which keeps the Pi session file between turns.
+  participant folder (``/w``), which keeps the Pi session file between turns;
+* Pi's ``grep`` and ``find`` run the static ``rg`` and ``fd`` pinned at the runtime folder's top
+  level (``/pi-runtime``, first on the box ``PATH``; :mod:`temper_ai.pi_agent.search_tools`).
+  The host checks their digests before every start, and refuses a worker given ``grep`` or
+  ``find`` when the box config doesn't pin them, before any docker call.
 
 Nothing here logs request bodies, prompts, tokens or captured process output.
 """
@@ -41,6 +45,8 @@ from pathlib import Path
 from typing import Any
 
 from temper_ai.pi_agent.rpc import Rpc
+from temper_ai.pi_agent.search_tools import PINS as SEARCH_PINS
+from temper_ai.pi_agent.search_tools import search_tool_problems
 
 ASSETS = Path(__file__).parent / "assets"
 PROBE_DIR = ASSETS / "temper-box"
@@ -52,6 +58,7 @@ BUDGET_SLACK = 2
 FAULTS = ("deny_handoff", "kill_after_prompt")
 ROLE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FORBIDDEN = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
 ESTABLISHED = b"HTTP/1.1 200 Connection Established\r\n\r\n"
 #: Pi settings for every worker: no telemetry, no packages, Pi's own retries and compaction off
@@ -94,6 +101,16 @@ class AddOnPin:
 
 
 @dataclass(frozen=True)
+class SearchToolPin:
+    """A static search binary at the runtime folder's top level (``rg`` for Pi's grep, ``fd`` for
+    its find): its version and the digest the file must have
+    (:mod:`temper_ai.pi_agent.search_tools`)."""
+
+    version: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class BoxConfig:
     """Where the worker's runtime, role definitions and state live. Read from the JSON file
     named by ``TEMPER_PI_BOX_CONFIG`` when a Pi step runs; never read with the step off."""
@@ -123,6 +140,10 @@ class BoxConfig:
     fault: str | None = None
     #: The add-ons a member may load, each from a pinned copy (name -> :class:`AddOnPin`).
     add_ons: dict[str, AddOnPin] = field(default_factory=dict)
+    #: The search binaries pinned in ``runtime_dir`` (name -> :class:`SearchToolPin`), as
+    #: ``scripts/pi_search_tools.py`` prints them. Without ``rg`` a worker can't have Pi's grep,
+    #: without ``fd`` its find.
+    search_tools: dict[str, SearchToolPin] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: str | None = None) -> BoxConfig:
@@ -135,7 +156,9 @@ class BoxConfig:
             routes = {name: Route(**value) for name, value in raw.pop("routes").items()}
             add_ons = {name: AddOnPin(**value)
                        for name, value in (raw.pop("add_ons", None) or {}).items()}
-            cfg = cls(routes=routes, add_ons=add_ons, **raw)
+            search_tools = {name: SearchToolPin(**value)
+                            for name, value in (raw.pop("search_tools", None) or {}).items()}
+            cfg = cls(routes=routes, add_ons=add_ons, search_tools=search_tools, **raw)
         except (OSError, ValueError, TypeError, KeyError) as exc:
             raise BoxError("box_config_invalid",
                            f"the Pi worker box config could not be read: {type(exc).__name__}"
@@ -167,8 +190,34 @@ class BoxConfig:
         if not self.routes:
             problems.append("no routes")
         problems += self._add_on_problems()
+        problems += self.search_tool_pin_problems()
         if problems:
             raise BoxError("box_config_invalid", "Pi worker box config: " + "; ".join(problems))
+
+    def search_tool_pin_problems(self) -> list[str]:
+        """Each pinned search binary: a name Temper pins (``rg``, ``fd``), a version and a digest,
+        and at ``runtime_dir/<name>`` a plain executable file (not a link) with exactly that
+        digest. Read on the host when the config loads and again before every start."""
+        problems = []
+        runtime = Path(self.runtime_dir)
+        for name, pin in sorted(self.search_tools.items()):
+            if name not in SEARCH_PINS:
+                problems.append(f"search tool {name[:40]!r} is not one Temper pins "
+                                f"({', '.join(sorted(SEARCH_PINS))})")
+                continue
+            if not isinstance(pin.version, str) or not pin.version.strip() \
+                    or not isinstance(pin.sha256, str) or not SHA256_RE.match(pin.sha256):
+                problems.append(f"search tool {name}: needs a version and a sha256 digest")
+                continue
+            binary = runtime / name
+            if binary.is_symlink() or not binary.is_file():
+                problems.append(f"search tool {name}: runtime_dir has no {name} file (a link "
+                                "doesn't count)")
+            elif not os.access(binary, os.X_OK):
+                problems.append(f"search tool {name}: {name} in runtime_dir is not executable")
+            elif file_sha256(binary) != pin.sha256:
+                problems.append(f"search tool {name}: pinned binary changed (digest differs)")
+        return problems
 
     def _add_on_problems(self) -> list[str]:
         """Each pinned add-on copy: present, outside the owner's live Pi folder, unchanged."""
@@ -759,9 +808,21 @@ class WorkerBox:
             self.team_refused += 0 if reply.get("ok") else 1
         conn.sendall((json.dumps(reply) + "\n").encode("utf-8"))
 
+    def _check_search_tools(self) -> None:
+        """Refuse a start, before any docker call: a Pi tool whose search binary the box config
+        doesn't pin (grep needs rg, find needs fd), or a pinned binary that is no longer exactly
+        the pinned one. Read on the host at every start, before the runtime's read-only mount."""
+        missing = search_tool_problems(self.spec.tools, self.cfg)
+        if missing:
+            raise BoxError("search_tool_missing", "; ".join(missing))
+        changed = self.cfg.search_tool_pin_problems()
+        if changed:
+            raise BoxError("search_tool_changed", "Pi worker box config: " + "; ".join(changed))
+
     def start(self, event_sink: Callable[[dict], None],
               command: list[str] | None = None) -> Rpc:
         """Create, check and start the container; its attached stdio is the RPC channel."""
+        self._check_search_tools()
         for sub in ("sessions", "workspace", "home", "tmp", "cache", "state", "observer",
                     "memory/identities"):
             (self.pdir / sub).mkdir(parents=True, exist_ok=True)

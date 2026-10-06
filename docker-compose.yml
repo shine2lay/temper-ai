@@ -346,7 +346,10 @@ services:
       - ./temper_ai:/app/temper_ai:ro
       - ./configs:/app/configs:ro
       # The checkout's git folder, read-only: each Pi run records the temper
-      # commit it ran on, at start and at every resume (SW-16).
+      # commit it ran on, at start and at every resume (SW-16). pi-worker's
+      # alone (SW-38), never a member box or a run box; no git command runs
+      # on it (the commit is read from the files), and without it the Pi lane
+      # refuses its runs (commit_unreadable).
       - ./.git:/app/.git:ro
       # Member boxes start through it. Only the Pi lane holds a Docker
       # socket beside the subprocess spawner (H1).

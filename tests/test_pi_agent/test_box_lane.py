@@ -30,6 +30,7 @@ from temper_ai.pi_agent.box import (
     inside_roots,
     tree_sha256,
 )
+from temper_ai.runner import pi_lane
 from tests.test_pi_agent import support as sup
 
 
@@ -142,6 +143,17 @@ def test_the_box_files_are_bound_from_a_sealed_copy_in_the_state_root(tmp_path, 
     assert {p.relative_to(assets) for p in assets.rglob("*")} >= {
         p.relative_to(ASSETS) for p in ASSETS.rglob("*") if "__pycache__" not in p.parts}
     assert box.mounts() == box.mounts(), "the copy is made once and reused"
+
+
+def test_no_member_box_gets_temper_s_git_folder(tmp_path, short_root):
+    """It is pi-worker's alone, for the commit each Pi run records (SW-16, SW-38)."""
+    box = _box(tmp_path, short_root)
+    box.sock_dir = short_root / "s"
+    git = (pi_lane.CODE_ROOT / ".git").resolve()
+    for src, dst, _w in box.mounts():
+        source = Path(src).resolve()
+        assert not (source == git or source.is_relative_to(git) or git.is_relative_to(source)), src
+        assert ".git" not in Path(dst).parts, dst
 
 
 # --- Sockets ---------------------------------------------------------------------------------

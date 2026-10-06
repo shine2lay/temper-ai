@@ -42,7 +42,7 @@ def lane(pw_run, monkeypatch, tmp_path):
     monkeypatch.setattr("temper_ai.cli.run_workflow._start_mcp_manager", lambda config_dir: None)
     monkeypatch.setattr("temper_ai.cli.run_workflow._stop_mcp_manager", lambda: None)
     monkeypatch.setattr("temper_ai.cli.run_workflow._install_signal_handlers", lambda *a: None)
-    monkeypatch.setattr(pi_lane, "temper_commit", lambda root=None: "5" * 40)
+    monkeypatch.setattr(pi_lane, "read_commit", lambda root=None: ("5" * 40, ""))
     stopped: list[str] = []
 
     def stop_box(name):

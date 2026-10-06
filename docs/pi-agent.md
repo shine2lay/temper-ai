@@ -21,6 +21,12 @@ of: `TEMPER_PI_AGENT=1` on the server and on `pi-worker`, the box config on `pi-
 profile started, and the host helper ([pi-host-helper.md](pi-host-helper.md)); each run's
 preflight names whatever is missing.
 
+**The sealed boundary doesn't cover the Pi lane, by design** (BS1,
+`TEMPER_BOX_RUNTIME_BOUNDARY=sealed`, [boxes.md](boxes.md)): `pi-worker` starts its run
+processes as plain processes, not in run boxes. There the Pi-only rule (SW-41), `pi-worker`'s
+explicit settings and mounts, and the refusal of child processes beside a Docker socket
+anywhere else (SW-75) do that job.
+
 **Switching off never fails a waiting run** (M4 ADR-M4-05, SW-32). Only Pi workflows park
 ([gates.md](gates.md) "Pi workflows"), so a parked run is a Pi run, and with the switch off its Pi steps
 don't exist. It waits instead of failing with "Unknown strategy 'team'": the run page's

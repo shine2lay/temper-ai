@@ -394,6 +394,7 @@ def test_the_pi_lane_s_start_up_picks_up_only_pi_runs_and_queues_them_marked(srv
     from temper_ai.runner import pi_lane
     from temper_ai.shared.clock import utcnow
 
+    ls.empty_the_ledger()  # the sweep below would look at another test's unsettled turns
     _reaped("cut-pi", "lane_pi", True)
     _reaped("cut-plain", "lane_plain", False)
     seen: list[tuple] = []

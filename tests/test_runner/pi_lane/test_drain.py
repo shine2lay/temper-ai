@@ -210,12 +210,11 @@ def _turn(run_id: str, n: int, state: str, box: str | None) -> None:
 def clean_turns():
     """The tier keeps pi_ rows between tests: none of another test's turns here."""
     from tests.test_pi_agent import support as sup
-    from tests.test_runner.pi_lane.test_lane_status import _empty_turns_and_waits
 
     sup.ledger()
-    _empty_turns_and_waits()
+    ls.empty_the_ledger()
     yield
-    _empty_turns_and_waits()
+    ls.empty_the_ledger()
 
 
 def test_the_start_up_sweeps_leftover_member_boxes_by_exact_name(clean_turns):

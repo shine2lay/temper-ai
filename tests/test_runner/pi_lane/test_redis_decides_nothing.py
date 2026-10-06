@@ -37,7 +37,6 @@ from temper_ai.runner.lanes import PI_LANE
 from temper_ai.streaming.redis_streams import Chunk
 from tests.test_pi_agent import support as sup
 from tests.test_runner.pi_lane import support as ls
-from tests.test_runner.pi_lane.test_lane_status import _empty_turns_and_waits
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -94,7 +93,7 @@ def rows():
     from temper_ai.stage.step_waits import STEP_WAIT, wait_name
 
     sup.ledger()
-    _empty_turns_and_waits()
+    ls.empty_the_ledger()
     ls.make_row(QUEUED)
     for run_id, wait_id, kind in ((PARKED, OWNER_WAIT, "owner"),
                                   (LIMITED, RECOVERY_WAIT, "recovery")):
@@ -114,7 +113,7 @@ def rows():
         _open_wait(run_id, wait_id, kind, name, gate)
     _turn(LIMITED, "uncertain")
     yield
-    _empty_turns_and_waits()
+    ls.empty_the_ledger()
 
 
 def _open_wait(run_id: str, wait_id: str, kind: str, name: str, gate: str) -> None:

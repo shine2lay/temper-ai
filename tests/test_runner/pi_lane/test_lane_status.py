@@ -40,25 +40,11 @@ def db(tmp_path, request):
         reset_database()
         request.node.stash[TEST_DATABASE_URL] = url
         init_database(url)
-    _empty_turns_and_waits()
+    ls.empty_the_ledger()
     yield url
-    _empty_turns_and_waits()
+    ls.empty_the_ledger()
     if url.startswith("sqlite"):
         reset_database()
-
-
-def _empty_turns_and_waits() -> None:
-    """The tier's schema keeps the pi_ tables between tests (its truncate covers temper's
-    own tables only): no turn or wait of another test here."""
-    from temper_ai.database import get_database
-    from temper_ai.pi_agent.ledger import turns, waits
-
-    engine = get_database().engine
-    found = sa.inspect(engine)
-    with engine.begin() as conn:
-        for table in (turns, waits):
-            if found.has_table(table.name):
-                conn.execute(table.delete())
 
 
 @pytest.fixture

@@ -8,8 +8,11 @@ nothing of it runs.
 Reasons, in order:
 
   pi_switched_off    the Pi step is not switched on in this worker
+  commit_unreadable  the temper commit this worker runs can't be read from the checkout's
+                     .git, which every Pi run records (SW-16)
   box_config         the box config can't be read or fails its own checks: the runtime, Pi
                      version, identity files and the add-on and search-tool pins
+                     (:func:`pins_and_identity`, until #53)
   roots              no roots, a root that isn't a folder here, or a state or socket root that
                      isn't writable
   uid                this worker isn't 1000:1000, so its members wouldn't be (SW-43)
@@ -23,8 +26,9 @@ Reasons, in order:
   pi_schema          the pi_ tables can't be brought to this build's version (ADR-M4-07)
   disk               less than 2 GiB free under the state root (ADR-M4-11)
 
-Not here: the identity settings' read-back (D3), which comes with the pins check's own
-function, and the project source's folder checks (ADR-M4-12), which the team's start runs.
+Not here: the project source's folder checks (ADR-M4-12), which the team's start runs. The
+pins check and the identity settings' read-back (D3) come with #53, which replaces
+:func:`pins_and_identity`.
 """
 
 from __future__ import annotations
@@ -60,14 +64,14 @@ def preflight(*, docker: Callable[..., Any] | None = None,
     if not pi_agent.enabled():
         return [("pi_switched_off",
                  f"the Pi step is switched off in the Pi lane's worker ({pi_agent.SWITCH_ENV})")]
-    from temper_ai.pi_agent.box import BoxConfig, BoxError, _docker_cli
+    from temper_ai.pi_agent.box import _docker_cli
 
-    try:
-        cfg = BoxConfig.load()
-    except BoxError as exc:
-        return [("box_config", str(exc))]
+    failed: list[Reason] = _commit()
+    cfg, problems = pins_and_identity()
+    failed += problems
+    if cfg is None:
+        return failed
     run = docker or _docker_cli
-    failed: list[Reason] = []
     failed += _roots(cfg)
     failed += _uid()
     failed += _socket_path(cfg)
@@ -82,6 +86,36 @@ def preflight(*, docker: Callable[..., Any] | None = None,
     failed += _pi_schema(ensure_ledger or _ensure_ledger)
     failed += _disk(cfg)
     return failed
+
+
+def pins_and_identity() -> tuple[Any, list[Reason]]:
+    """The box config, with the pins check and the identity check: the one function #53
+    replaces (Architecture rm-c9c941d4, item 6).
+
+    INTERIM: until #53's pins function lands, the box config's own checks stand in for both
+    (box.py ``BoxConfig.check``, run by ``BoxConfig.load``): the runtime and the Pi version,
+    the identity files and folder, and the add-on and search-tool digests, under one reason,
+    ``box_config``. #53 swaps this function for its pins function and D3's identity read-back,
+    with reasons of their own, and names the swap in its done note. Returns ``(config,
+    reasons)``; the config is None when it can't be read at all."""
+    from temper_ai.pi_agent.box import BoxConfig, BoxError
+
+    try:
+        return BoxConfig.load(), []
+    except BoxError as exc:
+        return None, [("box_config", str(exc))]
+
+
+def _commit() -> list[Reason]:
+    """Every Pi run records the temper commit it runs on (SW-16): in the Pi lane a commit
+    that can't be read refuses the run (a dropped ``.git`` mount would otherwise go unseen)."""
+    from temper_ai.runner.pi_lane import read_commit
+
+    commit, why = read_commit()
+    if commit:
+        return []
+    return [("commit_unreadable", f"the temper commit this worker runs can't be read ({why}); "
+                                  "every Pi run records it (SW-16)")]
 
 
 def overlap(a: str, b: str) -> bool:

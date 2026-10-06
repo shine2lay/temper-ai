@@ -67,6 +67,9 @@ COMMITS_KEPT = 20
 NOT_A_PI_RUN = "the Pi lane runs only Pi runs"
 #: A commit the code's checkout doesn't say.
 UNKNOWN_COMMIT = "unknown"
+#: The checkout this code runs from. In pi-worker that is /app, with temper's ``.git`` mounted
+#: read-only at /app/.git (SW-16, SW-38): pi-worker only, never a member box or a run box.
+CODE_ROOT = Path(__file__).resolve().parents[2]
 #: Why the active runs are active (lane-status).
 TURN_RUNNING = "turn_running"
 CLAIMED = "claimed"
@@ -199,7 +202,12 @@ def check_run(execution_id: str, run_row: dict, *, start: str | None,
     if failed:
         return Refusal("pi_preflight", "The Pi lane's checks before the run failed: "
                        + "; ".join(f"{reason}: {text}" for reason, text in failed))
-    record_commit(execution_id, start)
+    commit, why = read_commit()
+    if commit is None:
+        # The preflight read it a moment ago: refuse rather than record "unknown" (SW-16).
+        return Refusal("pi_preflight", "The Pi lane's checks before the run failed: "
+                                       f"commit_unreadable: {why}")
+    record_commit(execution_id, start, commit)
     return None
 
 
@@ -267,53 +275,70 @@ def eager_import() -> tuple[int, list[str]]:
 # --- SW-16: the commit each attempt runs on --------------------------------------------------
 
 def temper_commit(root: Path | None = None) -> str:
-    """The temper commit this code is from, read from the checkout's ``.git`` without running
-    git (the pi-worker mounts it read-only beside the code). ``unknown`` without one."""
-    base = root or Path(__file__).resolve().parents[2]
+    """The temper commit this code is from (:func:`read_commit`); ``unknown`` when it can't be
+    read. Outside the Pi lane (in-process, dev, CI) that is all; in the Pi lane an unreadable
+    commit is a preflight refusal, ``commit_unreadable`` (runner/pi_preflight.py)."""
+    sha, _why = read_commit(root)
+    return sha or UNKNOWN_COMMIT
+
+
+def read_commit(root: Path | None = None) -> tuple[str | None, str]:
+    """``(sha, "")`` for the temper commit this code is from, or ``(None, why)``.
+
+    Read from the checkout's ``.git`` files (HEAD, the branch it names, or packed-refs) as
+    ``git rev-parse HEAD`` answers, without running git: nothing on that mount runs, no hook,
+    no fsmonitor, and no ownership check to trip."""
+    base = root or CODE_ROOT
+    dot_git = base / ".git"
     try:
-        dot_git = base / ".git"
         if dot_git.is_file():  # a worktree: "gitdir: <path>"
             text = dot_git.read_text().strip()
             if not text.startswith("gitdir:"):
-                return UNKNOWN_COMMIT
+                return None, f"{dot_git} is neither a git folder nor a worktree's pointer"
             gitdir = (base / text.split(":", 1)[1].strip()).resolve()
         elif dot_git.is_dir():
             gitdir = dot_git
         else:
-            return UNKNOWN_COMMIT
+            return None, f"there is no {dot_git}"
         common = gitdir
         if (gitdir / "commondir").is_file():
             common = (gitdir / (gitdir / "commondir").read_text().strip()).resolve()
         head = (gitdir / "HEAD").read_text().strip()
         if not head.startswith("ref:"):
-            return head if _SHA.fullmatch(head) else UNKNOWN_COMMIT
+            if _SHA.fullmatch(head):
+                return head, ""
+            return None, f"{gitdir / 'HEAD'} names no commit"
         ref = head.split(":", 1)[1].strip()
+        if not ref.startswith("refs/"):
+            return None, f"{gitdir / 'HEAD'} names {ref!r}, not a branch"
         for folder in (gitdir, common):
             loose = folder / ref
             if loose.is_file():
                 sha = loose.read_text().strip()
                 if _SHA.fullmatch(sha):
-                    return sha
+                    return sha, ""
         packed = common / "packed-refs"
         if packed.is_file():
             for line in packed.read_text().splitlines():
                 parts = line.split()
                 if len(parts) == 2 and parts[1] == ref and _SHA.fullmatch(parts[0]):
-                    return parts[0]
-    except OSError:
-        pass
-    return UNKNOWN_COMMIT
+                    return parts[0], ""
+        return None, f"HEAD names {ref}, which {common} doesn't hold"
+    except OSError as exc:
+        return None, (f"{exc.filename or dot_git} can't be read "
+                      f"({exc.strerror or type(exc).__name__})")
 
 
-def record_commit(execution_id: str, start: str | None) -> str:
-    """Write the commit this attempt runs on into the run's row (``spawner_metadata``
-    ``pi_lane.commits``: one entry per attempt, start and every resume) and the log."""
+def record_commit(execution_id: str, start: str | None, commit: str | None = None) -> str:
+    """Write the commit this attempt runs on (``commit``, else read now) into the run's row
+    (``spawner_metadata`` ``pi_lane.commits``: one entry per attempt, start and every resume)
+    and the log."""
     from sqlmodel import select
 
     from temper_ai.database import get_session
     from temper_ai.runner.models import WorkflowRun
 
-    commit = temper_commit()
+    commit = commit or temper_commit()
     entry = {"at": utcnow().isoformat(), "start": start or "new", "commit": commit}
     try:
         with get_session() as session:

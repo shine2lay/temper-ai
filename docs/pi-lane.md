@@ -66,7 +66,8 @@ reason; nothing of it runs:
 | reason | fails when |
 | --- | --- |
 | `pi_switched_off` | the Pi step isn't switched on in the Pi lane's worker |
-| `box_config` | the box config can't be read or fails its own checks: runtime, Pi version, identity files, add-on and search-tool pins |
+| `commit_unreadable` | the temper commit the worker runs can't be read from the checkout's `.git` (a dropped mount, say), which every Pi run records (SW-16) |
+| `box_config` | the box config can't be read or fails its own checks: runtime, Pi version, identity files, add-on and search-tool pins (until #53, see below) |
 | `roots` | no roots, a root that isn't a folder here, a state or socket root that isn't writable |
 | `uid` | the worker isn't 1000:1000, so its members wouldn't be (SW-43) |
 | `socket_path` | a turn's socket path would reach 100 bytes (SW-44) |
@@ -78,15 +79,24 @@ reason; nothing of it runs:
 | `pi_schema` | the `pi_` tables can't be brought to this build's version |
 | `disk` | less than 2 GiB free under the state root |
 
-The identity settings' read-back (D3) comes with the pins check's own function (queue #53);
-the project folder's real checks run at the team's start ([pi-team-api.md](pi-team-api.md)).
+Until queue #53 lands its pins function, the box config's own checks stand in for the pins
+check and the identity settings' read-back (D3). They sit behind one function,
+`pins_and_identity()`, which #53 replaces with its own. The project folder's real checks run at
+the team's start ([pi-team-api.md](pi-team-api.md)).
+
+Inside `pi-worker`, `workspace_overlap` compares the paths as the container sees them. Docker
+resolves a linked source on the host when it mounts it, so a link on the host can hide an
+overlap from it: the host's own read-back at switch-on (SW-77) stays the real check.
 
 The same run process also imports every temper module before the run (H2, SW-76), at the
 start and at every resume (each is a new process): a deploy that changes the code on disk
 never mixes into a running Pi run. And it records the temper commit it runs on (SW-16), in the
 row's `spawner_metadata` as `pi_lane.commits` (`{at, start, commit}`, one per attempt) and in
-the log. The commit is read from the checkout's `.git`, which `pi-worker` mounts read-only;
-without one it records `unknown`.
+the log. The commit is read from the checkout's `.git`, which `pi-worker` alone mounts,
+read-only (never a member box or a run box; SW-38). No git command runs on that mount: the
+commit is read from `HEAD` and the ref files the way `git rev-parse HEAD` resolves them, so no
+hook, no fsmonitor and no ownership check runs. In the Pi lane a commit that can't be read
+refuses the run (`commit_unreadable`); outside it (in-process, dev, CI) it records `unknown`.
 
 ## The pi-worker service
 
@@ -104,8 +114,8 @@ host helper ([pi-host-helper.md](pi-host-helper.md)). Its environment, in full:
 `TEMPER_PI_BOX_CONFIG`, and, read by the preflight only, `TEMPER_DOCKER_TEMPLATE_CONTAINER`
 and `WORKSPACE_DIR` (a name and a path; the workspaces are not mounted).
 
-Its mounts: the code (`temper_ai/`, `configs/`) and the checkout's `.git`, read-only; the
-Docker socket. The machine's own folders are mounted **at the same paths as on the host**,
+Its mounts: the code (`temper_ai/`, `configs/`) and the checkout's `.git` (for the commit;
+`pi-worker` alone gets it), read-only; the Docker socket. The machine's own folders are mounted **at the same paths as on the host**,
 because the member boxes it starts mount them by those paths (ADR-M4-03): the state root, the
 socket root (which holds the host helper's socket), the pins (`~/.local/share/temper/`), and,
 read-only, the role folders, the project roots and `local/pi/` (the box config). Those paths are
@@ -136,6 +146,9 @@ Its member boxes (`pi_agent/box.py`, SW-43, SW-44): `--user` the worker's own ui
 config's `roots` (`bind_source_outside_roots` otherwise); every socket path under 100 bytes
 (`socket_path_too_long`); the step's assets sealed-copied into the state root before they are
 mounted; `no_owner_pi_mount` checked against `host_home` as well as the worker's own home.
+Nothing sweeps the socket root: a box removes only its own `b*` folder when it closes, never
+the helper's `host.sock`. A later sweep of stale per-box folders (after a crash) must keep to
+the `b*` folders and come with a test that `host.sock` survives it.
 
 **Only the Pi lane may run child processes beside a Docker socket** (H1, SW-75): any worker
 with `TEMPER_SPAWNER=subprocess` that can reach Docker refuses to start, except one with

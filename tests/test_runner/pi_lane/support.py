@@ -15,6 +15,24 @@ from temper_ai.stage.models import NodeConfig
 from temper_ai.stage.stage_node import StageNode
 from tests.test_pi_agent import support as sup
 
+
+def empty_the_ledger() -> None:
+    """No turn or wait of another test: the Postgres tier keeps the pi_ tables between tests
+    (its truncate covers temper's own tables only), and the Pi lane's start-up sweeps the box of
+    every unsettled turn it finds there."""
+    import sqlalchemy as sa
+
+    from temper_ai.database import get_database
+    from temper_ai.pi_agent.ledger import turns, waits
+
+    engine = get_database().engine
+    found = sa.inspect(engine)
+    with engine.begin() as conn:
+        for table in (turns, waits):
+            if found.has_table(table.name):
+                conn.execute(table.delete())
+
+
 #: A member of a stand-in team stage: a Pi agent config, as the loader resolves one.
 MEMBER = {"type": "pi", "role": sup.ROLE, "provider": "openai-codex", "model": "gpt-6.1-sol"}
 

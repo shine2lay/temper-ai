@@ -50,6 +50,29 @@ def pi_worker() -> dict:
     return service
 
 
+def _binds(service: dict) -> list[tuple[str, str]]:
+    """``(source, target)`` of each of a service's volumes, short or long syntax."""
+    found = []
+    for volume in service.get("volumes") or []:
+        if isinstance(volume, dict):
+            found.append((str(volume.get("source") or ""), str(volume.get("target") or "")))
+        else:
+            source, _, rest = str(volume).partition(":")
+            found.append((source, rest.partition(":")[0]))
+    return found
+
+
+def test_only_pi_worker_mounts_temper_s_git_folder_and_only_to_read_it():
+    """Each Pi run's commit is read from it (SW-16). SW-38 lists it for pi-worker alone, never
+    a member box or a run box (Architecture rm-c9c941d4 1(c)); nothing runs git on it."""
+    found = {(path.name, name): [(src, dst) for src, dst in _binds(service)
+                                 if src.rstrip("/").endswith(".git") or dst.startswith("/app/.git")]
+             for path in (COMPOSE, HOST_DOCKER) for name, service in services(path).items()}
+    assert {where: binds for where, binds in found.items() if binds} == {
+        ("docker-compose.yml", "pi-worker"): [("./.git", "/app/.git")]}
+    assert "./.git:/app/.git:ro" in pi_worker()["volumes"]
+
+
 def test_pi_worker_is_off_unless_its_profile_is_asked_for():
     every = services()
     assert every["pi-worker"]["profiles"] == ["pi"]

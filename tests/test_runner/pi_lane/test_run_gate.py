@@ -10,6 +10,7 @@ run page, and runs nothing.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -52,7 +53,7 @@ def gate(monkeypatch):
         return list(failed)
 
     monkeypatch.setattr(pi_preflight, "preflight", preflight)
-    monkeypatch.setattr(pi_lane, "temper_commit", lambda root=None: SHA)
+    monkeypatch.setattr(pi_lane, "read_commit", lambda root=None: (SHA, ""))
     loader = Loader()
 
     def check(eid: str, *, start: str | None = None):
@@ -124,7 +125,7 @@ def test_each_attempt_adds_its_commit_and_the_row_keeps_the_last_twenty(gate, mo
     ls.as_the_pi_lane(monkeypatch)
     ls.make_row("pi")
     gate.check("pi")
-    monkeypatch.setattr(pi_lane, "temper_commit", lambda root=None: OTHER_SHA)
+    monkeypatch.setattr(pi_lane, "read_commit", lambda root=None: (OTHER_SHA, ""))
     for _ in range(pi_lane.COMMITS_KEPT):
         gate.check("pi", start="resume")
     kept = commits("pi")
@@ -279,6 +280,55 @@ def test_the_commit_from_a_worktree(tmp_path):
 
 @pytest.mark.parametrize("head", ["ref: refs/heads/nowhere", "not a sha", "ref: "])
 def test_a_commit_that_can_t_be_read_is_unknown(tmp_path, head):
+    """Outside the Pi lane (in-process, dev, CI) that is all; the Pi lane refuses instead."""
     _git(tmp_path, head)
     assert pi_lane.temper_commit(tmp_path) == pi_lane.UNKNOWN_COMMIT
     assert pi_lane.temper_commit(tmp_path / "no-checkout") == pi_lane.UNKNOWN_COMMIT
+
+
+@pytest.mark.parametrize(("head", "why"), [
+    ("ref: refs/heads/nowhere", "HEAD names refs/heads/nowhere, which "),
+    ("not a sha", "HEAD names no commit"),
+    ("ref: ", "not a branch"),
+])
+def test_a_commit_that_can_t_be_read_says_why(tmp_path, head, why):
+    _git(tmp_path, head)
+    commit, said = pi_lane.read_commit(tmp_path)
+    assert commit is None and why in said
+    assert pi_lane.read_commit(tmp_path / "no-checkout") == (
+        None, f"there is no {tmp_path / 'no-checkout' / '.git'}")
+
+
+def test_a_git_folder_that_can_t_be_read_says_so(tmp_path):
+    git = _git(tmp_path, "ref: refs/heads/master", refs={"refs/heads/master": SHA})
+    (git / "HEAD").unlink()
+    (git / "HEAD").mkdir()  # read as a file, it fails the way an unreadable one does
+    commit, why = pi_lane.read_commit(tmp_path)
+    assert commit is None and "can't be read" in why
+
+
+def test_the_commit_is_read_without_starting_any_process(tmp_path, monkeypatch):
+    """Architecture rm-c9c941d4 1(b): nothing runs on temper's .git mount, so no git hook or
+    fsmonitor and no ownership check; the files are read the way rev-parse HEAD reads them."""
+    _git(tmp_path, "ref: refs/heads/master", packed={"refs/heads/master": SHA})
+
+    def no_process(*args, **kwargs):
+        raise AssertionError(f"a process was started: {args}")
+
+    monkeypatch.setattr(subprocess, "Popen", no_process)
+    monkeypatch.setattr(os, "posix_spawn", no_process)
+    monkeypatch.setattr(os, "fork", no_process)
+    assert pi_lane.read_commit(tmp_path) == (SHA, "")
+
+
+def test_a_commit_unreadable_after_the_preflight_refuses_and_records_nothing(gate,
+                                                                              monkeypatch):
+    """In the Pi lane every run records its commit (SW-16): never "unknown"."""
+    ls.as_the_pi_lane(monkeypatch)
+    ls.make_row("pi")
+    monkeypatch.setattr(pi_lane, "read_commit",
+                        lambda root=None: (None, "there is no /app/.git"))
+    assert gate.check("pi") == pi_lane.Refusal(
+        "pi_preflight", "The Pi lane's checks before the run failed: commit_unreadable: "
+                        "there is no /app/.git")
+    assert commits("pi") == []

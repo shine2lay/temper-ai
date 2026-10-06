@@ -7,6 +7,7 @@ socket, no model.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import shutil
@@ -19,6 +20,7 @@ import pytest
 
 from temper_ai.pi_agent import host_helper
 from temper_ai.pi_agent.ledger import LedgerError
+from temper_ai.runner import pi_lane
 from temper_ai.runner import pi_preflight as pf
 from tests.test_pi_agent import support as sup
 
@@ -66,6 +68,10 @@ def lane(tmp_path, monkeypatch):
     monkeypatch.setenv(pf.WORKSPACE_ENV, str(tmp_path / "workspaces"))
     monkeypatch.setattr(os, "getuid", lambda: 1000)
     monkeypatch.setattr(os, "getgid", lambda: 1000)
+    code = tmp_path / "code"  # the checkout pi-worker runs, with temper's .git planted
+    (code / ".git").mkdir(parents=True)
+    (code / ".git" / "HEAD").write_text("4ce5f9ffa985603a40c5955f84cc86afc5e5a442\n")
+    monkeypatch.setattr(pi_lane, "CODE_ROOT", code)
     helper = SimpleNamespace(answer='ok {"bridge": {"state": "ready"}}', asked=[])
 
     def ask(socket_path, line, timeout):
@@ -88,7 +94,7 @@ def lane(tmp_path, monkeypatch):
         raw.update(changes)
         path.write_text(json.dumps(raw))
 
-    yield SimpleNamespace(tmp=tmp_path, short=short, box=box_root, project=project,
+    yield SimpleNamespace(tmp=tmp_path, short=short, box=box_root, project=project, code=code,
                           docker=docker, helper=helper, ledger=ledger, rewrite=rewrite,
                           run=lambda: pf.preflight(docker=docker, ensure_ledger=ensure))
     shutil.rmtree(short, ignore_errors=True)
@@ -116,6 +122,33 @@ def test_switched_off_it_says_so_and_checks_nothing_else(lane, monkeypatch):
 def test_a_box_config_that_can_t_be_read_says_so(lane, monkeypatch, config):
     monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", config)
     assert reasons(lane.run()) == ["box_config"]
+
+
+def test_a_commit_that_can_t_be_read_is_a_named_reason(lane):
+    """Every Pi run records its commit (SW-16): a dropped .git mount, say, refuses the run
+    rather than recording "unknown" (Architecture rm-c9c941d4 1(a))."""
+    shutil.rmtree(lane.code / ".git")
+    (failed,) = lane.run()
+    assert failed == ("commit_unreadable",
+                      f"the temper commit this worker runs can't be read (there is no "
+                      f"{lane.code / '.git'}); every Pi run records it (SW-16)")
+
+
+def test_the_commit_is_named_beside_a_box_config_that_can_t_be_read(lane, monkeypatch):
+    shutil.rmtree(lane.code / ".git")
+    monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", "")
+    assert reasons(lane.run()) == ["commit_unreadable", "box_config"]
+
+
+def test_the_pins_and_identity_checks_sit_behind_the_one_function_53_replaces(lane,
+                                                                              monkeypatch):
+    """Architecture rm-c9c941d4 item 6: until #53, the box config's own checks stand in."""
+    cfg, problems = pf.pins_and_identity()
+    assert cfg is not None and problems == []
+    monkeypatch.setattr(pf, "pins_and_identity",
+                        lambda: (cfg, [("pins", "add-on x differs from its pin")]))
+    assert lane.run() == [("pins", "add-on x differs from its pin")]
+    assert "BoxConfig" not in inspect.getsource(pf.preflight)
 
 
 def test_a_box_config_that_fails_its_own_checks_says_which(lane):

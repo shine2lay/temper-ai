@@ -2358,7 +2358,7 @@ class Job:
         spec = load(self.concepts_dir / "concepts.json")
         chosen = next((c for c in spec["concepts"] if c["id"] == direction.get("concept")), {})
         metrics = write_review_inputs(review, self.site, brief, number, chosen, direction.get("notes", ""),
-                                      self.packet / "references" / "REFERENCES.md")
+                                      self.packet / "references" / "REFERENCES.md", page_checks=True)
         rdir = self.packet / "rounds" / f"r{number:02d}"
         save(rdir / "craft-metrics.json", metrics)
         # The concept's signature against the first screen; the reviser gets the numbers, the next round measures again.

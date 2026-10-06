@@ -10,7 +10,9 @@
 # run and grade the set. About $0.6-0.7 a run.
 workflow:
   name: design_craft_bench
-  version: 1
+  # v2 2026-10-05 (queue #39): the page checks in facts.md and the craft critic v2 (severity
+  # anchors, empty column, pictures judged by section purpose).
+  version: 2
   description: |
     Benchmark of the homepage craft critic on one test page: the page is captured and measured
     exactly as in a design_homepage_v2 review round (screenshots, usability facts, craft facts,

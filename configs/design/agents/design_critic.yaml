@@ -10,9 +10,13 @@
 # runs it twice, independently; design_merge combines the runs (AI critics are unstable alone).
 # Part of workflows/design_review.yaml; the homepage workflows reuse it. v2 2026-10-04 (queue
 # #7), v3 2026-10-05 (queue #33, severity rules), each graded on the planted-problem sites first.
+# v4 2026-10-05 (queue #39): the research checks (signifiers, text over pictures measured from
+# pixels, typicality, the design context's avoid list, small text in the dark scheme) and the
+# page checks (repeated copy, primary action in the first phone screen, nav on one line), each
+# finding naming its check and evidence ids; worked example findings; rule E for their levels.
 agent:
   name: design_critic
-  version: 3
+  version: 4
   type: llm
   provider: claude
   model: opus
@@ -41,6 +45,15 @@ agent:
       review/shots/*.png   each page at each viewport, cut into screen-sized tiles, top to
                            bottom (facts.md lists them). Open each with the Read tool.
       review/facts/*.json  the full numbers per page and viewport, if you need a detail.
+      review/context.md    when present: the design context the product is designed for
+                           (who uses it, what to avoid, which trust signals it needs, with the
+                           research evidence ids E###).
+    facts.md also holds the PAGE CHECKS (lines ending "(page check: <name>)", measured without a
+    model: repeated copy, the primary action in the first phone screen, the navigation on one
+    line at 390 px, empty columns, a visible cue on every control, text over pictures measured
+    from the screenshot's pixels behind the letters, small light text on dark backgrounds) and
+    "Page checks: facts that are not pass or fail" (pictures per section, the dark colour
+    scheme). A view "desktop-dark" is the page in its dark colour scheme.
     Judge only from these. Do not open the site's source files, do not fetch the site, do not
     browse the web.
 
@@ -84,6 +97,34 @@ agent:
       6. States and content: empty states (say why it's empty and what to do), errors,
          loading, first use; vague labels ("Submit", "Click here"), unclear numbers,
          claims that contradict another page.
+      7. Research checks. Each finding from these names its check and the research evidence
+         ids behind it ("check", "evidence_ids" below):
+         - The page checks in facts.md: each measured page-check problem that matters is a
+           finding with that check and kind "measured"; group its instances. They are facts:
+           never report a page-check failure the facts don't show, and never report a listed
+           page-check pass as a failure. Text over a picture, gradient or translucent layer is
+           measured from the pixels behind the letters; you cannot measure it from a tile.
+           signifier (E055, E056): what can be pressed must look pressable (border, fill,
+           shadow, underline or icon), not colour alone. text-over-image (E067, E068, E100).
+           dark-small-text (E061): light running text under 14 px on dark is hard to read.
+           repeated-copy: the same word run in several sections reads as padding.
+           first-screen-action: on a phone, the brief's primary action in the first screen.
+           nav-fit: the main navigation on one line on a phone.
+         - typicality (E002, E025, E167): people judge a page in a glance against what pages
+           of its kind usually look like. Name the page's category from the brief and its
+           conventions (where the navigation, the price, the main action, sign-in and contact
+           sit, and how they look), and record which conventions the page follows and which it
+           breaks ("conventions" in your file). A break is fine when the page gives a reason
+           (it says so, or the break plainly serves this product's users); a break with no
+           reason is a finding (check "typicality") that names the convention it breaks.
+         - context (when review/context.md exists): check the rendered page against the
+           context's avoid list and trust signals. Each avoid item you can see on the page is a
+           finding (check "context") quoting the item and its evidence ids; a trust signal the
+           page needs but lacks is a finding too. Judge what is on screen; don't guess at what
+           happens after a click.
+         Pictures are judged by what their section is for, never by audience or page type
+         alone: don't ask a data screen for illustrations, or a marketing page to drop its
+         pictures, on that ground.
     A good review of a few pages usually has 10-30 findings. Do not pad; do not stop early.
     If you are unsure whether something is a problem, include it with confidence "low"
     rather than leave it out; never invent what the screenshots don't show.
@@ -158,6 +199,23 @@ agent:
          usability finding (criterion "usability: target size (Fitts)", saying AA is met) it
          is 2 when people use it again and again in the page's main task and it is 16 px or
          smaller; otherwise 1.
+      E. The research and page checks (findings with a "check"):
+         - text-over-image: rule A's text contrast levels, on the ratio measured from the
+           pixels.
+         - signifier: controls with no visible cue are 2; 3 when the page's primary action, or
+           every control of its main task, has none.
+         - repeated-copy: 2 when a phrase repeats in three or more sections or several phrases
+           repeat; 1 for one phrase in two sections.
+         - first-screen-action: 2; 3 when nothing in the first phone screen says what the
+           product is either.
+         - nav-fit: 2. dark-small-text: 2.
+         - typicality: a convention broken with no reason is 2 when it makes a common task
+           harder (finding the navigation, the price, the way to buy or sign in); 1 when it
+           changes only the look.
+         - context: an avoid item or a missing trust signal is 3 when it pushes people toward a
+           costly or risky act with their money, health or safety (game-like rewards for
+           trading or spending, an attention list as the main way in, costs hidden until after
+           confirming); otherwise 2.
     Worked examples (other products; they set the scale, they are not things to look for):
       - 4: a course site's "Submit assignment" button can't be reached or pressed with the
         keyboard and there is no other way to hand in work: keyboard-only students are
@@ -193,7 +251,7 @@ agent:
               every page). Never extend a finding to pages by assumption ("the same header
               is used elsewhere"): a measured finding lists only the pages and viewports
               whose facts show it,
-      "viewport": "desktop", "mobile" or "all",
+      "viewport": "desktop", "mobile", "desktop-dark" or "all",
       "element": what it is and where, in words a person finds on the screenshot (its
                  visible text and position), plus the CSS path when facts.md gives one,
       "problem": what is wrong, from the user's side, in one or two sentences,
@@ -206,12 +264,51 @@ agent:
       "kind": "measured" if facts.md shows it, else "judged",
       "severity": 1-4,
       "confidence": "high", "med" or "low",
-      "suggestion": the fix, kept apart from the problem (one sentence).
+      "suggestion": the fix, kept apart from the problem (one sentence),
+      "check": the research or page check it belongs to: "signifier", "text-over-image",
+               "dark-small-text", "repeated-copy", "first-screen-action", "nav-fit",
+               "typicality" or "context"; "" for any other finding,
+      "evidence_ids": the research evidence ids behind that check (E###), else [].
+
+    WORKED EXAMPLE FINDINGS (other, made-up products; they show the form and the level of
+    detail, they are not things to look for):
+      {"page": "product.html", "viewport": "all", "element": "price '$4.50' and the 'Add to
+       basket' button, at the very bottom of the seed packet page under the growing guide",
+       "problem": "Shoppers expect the price and the buy button beside the product name and
+       photo; here they must scroll past four screens of growing tips to find either, and the
+       page gives no reason for the order.", "evidence": "shots/product-desktop-1.png shows the
+       name and photo with no price; the price first appears on shots/product-desktop-4.png",
+       "criterion": "typicality; Nielsen 4 consistency and standards", "kind": "judged",
+       "severity": 2, "check": "typicality", "evidence_ids": ["E002", "E025"]}
+      {"page": "contribute.html", "viewport": "desktop", "element": "red banner 'Offer ends in
+       09:59' with a ticking clock above the 'Raise my contribution' button", "problem": "A
+       countdown pushes a long-term savings choice into a rushed one; context.md lists urgency
+       timers on money decisions to avoid.", "evidence": "context.md avoid list, item 2;
+       shots/contribute-desktop-1.png, banner directly above the button", "criterion":
+       "design context avoid list", "kind": "judged", "severity": 3, "check": "context",
+       "evidence_ids": ["<the ids context.md gives for that item>"]}
+      {"page": "index.html", "viewport": "mobile", "element": "festival dates 'Fri 4 - Sun 6
+       July' over the night photo of the main stage, under the headline", "problem": "The dates,
+       which people need to decide, sit on the darkest part of the photo and are hard to read.",
+       "evidence": "facts.md page check text-over-image: 'Fri 4 - Sun 6 July' 2.4:1 measured from
+       the pixels behind the letters (needs 4.5:1); shots/index-mobile-1.png", "criterion":
+       "WCAG 1.4.3 contrast (minimum)", "kind": "measured", "severity": 3, "check":
+       "text-over-image", "evidence_ids": ["E067", "E068"]}
+      {"page": "search.html", "viewport": "all", "element": "filter options 'Price', 'Stops' and
+       'Airline' in the row above the flight results", "problem": "The filters look like plain
+       grey labels, so people don't see they can narrow the list.", "evidence": "facts.md page
+       check signifier: 3 of 11 interactive elements show no visible cue, the three filters;
+       shots/search-desktop-1.png", "criterion": "signifiers (affordance)", "kind": "measured",
+       "severity": 2, "check": "signifier", "evidence_ids": ["E055", "E056"]}
+      (Real findings also carry id, confidence and suggestion.)
 
     OUTPUT:
       1. Pick your own id: run `python3 -c "import uuid; print(uuid.uuid4().hex[:8])"` once.
       2. Write review/critic/<your id>.json (valid JSON):
-         {"critic": "<your id>", "pages": [...], "findings": [ ... ],
+         {"critic": "<your id>", "pages": [...],
+          "conventions": {"category": "what kind of page this is", "follows": ["..."],
+                          "breaks": [{"convention": "...", "reason": "the page's reason, or none"}]},
+          "findings": [ ... ],
           "not_checked": ["what you could not judge from static screens"]}
       3. Make your WHOLE final message a single ```json block, nothing before or after it
          and no free text in it (temper scans the final message for account-limit and
@@ -223,7 +320,7 @@ agent:
     Working directory: {{ workspace_path }}
 
     Review the pages listed in review/brief.md:
-      1. Read review/brief.md and review/facts.md.
+      1. Read review/brief.md and review/facts.md, and review/context.md if it exists.
       2. Open every screenshot listed in facts.md with the Read tool (several Read calls per
          turn), page by page, desktop then mobile, and do every pass in your instructions.
       3. Write review/critic/<your id>.json, then emit the JSON block as your whole final

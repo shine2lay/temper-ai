@@ -1,6 +1,10 @@
 workflow:
   name: design_review
-  # DESIGN REVIEW (design role; v1 2026-10-02, v2 2026-10-04, v3 2026-10-05). An expert review of a
+  # v4 2026-10-05 (queue #39): capture adds the model-free page checks; the critic and merge add
+  # the research checks (signifiers, text over pictures, typicality, the design context's avoid
+  # list, small text in the dark scheme, repeated copy, the primary action in the first phone
+  # screen, the nav on one line) and worked example critiques.
+  # DESIGN REVIEW (design role; v1 2026-10-02, v2 2026-10-04, v3 and v4 2026-10-05). An expert review of a
   # product's pages: measured facts first, then two independent AI critics, a no-model check of
   # their claims against the facts, then a merge that keeps what holds up. The critic and grader
   # every later design workflow reuses (owner's pick).

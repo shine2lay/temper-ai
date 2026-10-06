@@ -178,13 +178,15 @@ def test_context_file_lists_the_avoid_items_and_never_rules_pictures_by_audience
     assert "not in the playbook" in unknown and "not_checked" in unknown
 
 
-# --------------------------------------------------------------------------- the candidate critics
+# --------------------------------------------------------------------------- the critics that read them
+# (graded as _next candidates beside live, then promoted to the live names: design_review v4 and
+# craft critic v2, queue #39)
 
 # Product and site names of every test page set and fixture: a prompt naming one would hint.
 # (Unpublished benchmark briefs are checked on the host, not named here: this repo is public.)
 TEST_NAMES = {"quarry", "loamwise", "ledgerline", "tidewell", "morrow", "fernway", "claybird", "signalbox",
               "craft-v1", "critic-v2"}
-CANDIDATES = ["design_critic_next", "design_merge_next", "design_homepage_craft_critic_v2_next"]
+CRITICS = ["design_critic", "design_merge", "design_homepage_craft_critic_v2"]
 
 
 def _prompt(name):
@@ -195,8 +197,8 @@ def _flat(text):
     return " ".join(text.split())
 
 
-@pytest.mark.parametrize("name", CANDIDATES)
-def test_candidate_prompts_name_no_test_site(name):
+@pytest.mark.parametrize("name", CRITICS)
+def test_critic_prompts_name_no_test_site(name):
     text = (DESIGN / "agents" / f"{name}.yaml").read_text().lower()
     names = set(TEST_NAMES)
     for manifest in (DESIGN / "testpages").glob("*.json"):
@@ -206,7 +208,7 @@ def test_candidate_prompts_name_no_test_site(name):
 
 
 def test_critic_carries_every_research_and_page_check_with_its_evidence():
-    critic = _flat(_prompt("design_critic_next"))
+    critic = _flat(_prompt("design_critic"))
     for check in ("signifier", "text-over-image", "dark-small-text", "repeated-copy", "first-screen-action",
                   "nav-fit", "typicality", "context"):
         assert f'"{check}"' in critic, check
@@ -217,11 +219,11 @@ def test_critic_carries_every_research_and_page_check_with_its_evidence():
     assert critic.count('"check": "') >= 4  # four worked examples, each with element, place and evidence
 
 
-def test_critic_and_merge_candidates_keep_one_rule_text_with_rule_e():
+def test_critic_and_merge_keep_one_rule_text_with_rule_e():
     def block(p):
         return p[p.index("\nSEVERITY RULES."):p.index("rules above say when it is.")]
 
-    critic, merge = _prompt("design_critic_next"), _prompt("design_merge_next")
+    critic, merge = _prompt("design_critic"), _prompt("design_merge")
     assert block(critic) == block(merge)
     rules = _flat(block(critic))
     assert "E. The research and page checks" in rules
@@ -232,14 +234,14 @@ def test_critic_and_merge_candidates_keep_one_rule_text_with_rule_e():
 
 
 def test_merge_keeps_checked_research_findings_and_rejects_pictures_by_audience():
-    merge = _flat(_prompt("design_merge_next"))
+    merge = _flat(_prompt("design_merge"))
     assert '"check": "", "evidence_ids": []' in merge
     assert "is a problem, not taste: judge it on its evidence" in merge
     assert "A finding that asks for or against pictures only because of the audience or page type is rejected" in merge
 
 
-def test_craft_candidate_anchors_severity_and_judges_pictures_by_section_purpose():
-    craft = _flat(_prompt("design_homepage_craft_critic_v2_next"))
+def test_craft_critic_anchors_severity_and_judges_pictures_by_section_purpose():
+    craft = _flat(_prompt("design_homepage_craft_critic_v2"))
     assert "spacing share on a 4 px grid below 0.6" in craft and "From 0.6 to below 0.9: 2" in craft
     assert "an empty column measured by facts.md (empty-column): 2 (space)" in craft
     assert "VISUAL PURPOSE" in craft and '"visual_purpose"' in craft
@@ -247,31 +249,38 @@ def test_craft_candidate_anchors_severity_and_judges_pictures_by_section_purpose
     for purpose in ("explain how it works", "show the product or the result", "prove a claim",
                     "guide to the key action", "set the mood", "make data visible"):
         assert purpose in craft, purpose
-    # Revision 2: styled type is words, so a typographic page can't pass as an illustrated one.
+    # Styled type is words, so a typographic page can't pass as an illustrated one.
     assert "What counts as showing: a picture" in craft
     assert "a section whose only visual is styled type is words only" in craft
     assert "look up or compare exact values" in craft
     assert craft.count('"check": "visual-purpose"') >= 2
 
 
-def test_candidate_workflows_run_the_candidates_beside_the_live_ones():
-    review = yaml.safe_load((DESIGN / "workflows/design_review_next.yaml").read_text())["workflow"]
-    assert WorkflowConfig.from_dict(review).name == "design_review_next"
+def test_live_workflows_run_the_page_checks_and_leave_no_candidate_copy():
+    review = yaml.safe_load((DESIGN / "workflows/design_review.yaml").read_text())["workflow"]
+    assert WorkflowConfig.from_dict(review).name == "design_review"
     agents = {n["name"]: n["agent"] for n in review["nodes"]}
-    assert agents["capture"] == "design_capture_next" and agents["merge"] == "design_merge_next"
-    assert agents["critic_a"] == agents["critic_b"] == "design_critic_next"
-    capture = yaml.safe_load((DESIGN / "agents/design_capture_next.yaml").read_text())["agent"]
+    assert agents["capture"] == "design_capture" and agents["merge"] == "design_merge"
+    assert agents["critic_a"] == agents["critic_b"] == "design_critic"
+    capture = yaml.safe_load((DESIGN / "agents/design_capture.yaml").read_text())["agent"]
     assert '"--page-checks"' in capture["script_template"]
-    bench = yaml.safe_load((DESIGN / "workflows/design_craft_bench_next.yaml").read_text())["workflow"]
-    assert WorkflowConfig.from_dict(bench).name == "design_craft_bench_next"
+    bench = yaml.safe_load((DESIGN / "workflows/design_craft_bench.yaml").read_text())["workflow"]
+    assert WorkflowConfig.from_dict(bench).name == "design_craft_bench"
     nodes = {n["name"]: n["agent"] for n in bench["nodes"]}
-    assert nodes == {"prepare": "design_craft_bench_stage_next", "craft": "design_homepage_craft_critic_v2_next",
-                     "collect": "design_craft_bench_stage_next"}
-    stage = (DESIGN / "agents/design_craft_bench_stage_next.yaml").read_text()
+    assert nodes == {"prepare": "design_craft_bench_stage", "craft": "design_homepage_craft_critic_v2",
+                     "collect": "design_craft_bench_stage"}
+    stage = (DESIGN / "agents/design_craft_bench_stage.yaml").read_text()
     assert '"--page-checks"' in stage
-    for live in ("design_review", "design_craft_bench"):
-        raw_live = yaml.safe_load((DESIGN / f"workflows/{live}.yaml").read_text())["workflow"]
-        assert not any(n["agent"].endswith("_next") for n in raw_live["nodes"]), live
+    leftovers = sorted(p.name for p in DESIGN.rglob("*_next.yaml")
+                       if re.match(r"design_(review|capture|critic|merge|homepage_craft_critic|craft_bench)", p.name))
+    assert leftovers == []
+
+
+def test_live_homepage_rounds_give_the_critics_the_page_checks():
+    """A design_homepage_v2 review round captures with the page checks and its primary action."""
+    source = (DESIGN / "bin/design_homepage_v2.py").read_text()
+    call = source[source.index("metrics = write_review_inputs("):]
+    assert "page_checks=True" in call[:call.index(")\n")]
 
 
 # --------------------------------------------------------------------------- the critic-v2 bench pages

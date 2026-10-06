@@ -6,10 +6,16 @@
 # inactive controls exempt from contrast; v2 2026-10-04). The browser is temper's playwright-mcp
 # service; a local site folder is served from this run's container, a deployed site is given by
 # base_url. Part of workflows/design_review.yaml.
+# v3 2026-10-05 (queue #39): --page-checks adds the model-free page checks (design_page_checks.py, frozen
+# thresholds): repeated copy, the primary action in the first phone screen and the nav on one line
+# at 390 px, empty columns, a visible cue on every control, text over pictures measured from the
+# screenshot's pixels, small light text on dark, pictures per section, and a desktop pass in the
+# page's dark colour scheme when it offers one. The brief's "Primary action:" and "Design context:"
+# lines feed the checks; a design context writes review/context.md from the context playbook.
 # POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
 agent:
   name: design_capture
-  version: 2
+  version: 3
   type: script
   timeout_seconds: 600
   script_template: |
@@ -40,7 +46,7 @@ agent:
             "## Viewports", "", viewports, "",
         ]))
     cmd = [sys.executable, "/app/configs/design/bin/design_capture.py", "--out", "review",
-           "--pages", pages, "--viewports", viewports]
+           "--pages", pages, "--viewports", viewports, "--page-checks"]
     cmd += ["--base-url", base_url] if base_url else ["--site", site]
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=540)
     if res.returncode != 0:
@@ -51,5 +57,6 @@ agent:
     measured = sum(v["axe_violations"] + sum(int(x) for x in v["measured"].values())
                    for p in summary["pages"] for v in p["views"])
     print(json.dumps({"status": "completed", "facts_path": "review/facts.md", "brief_path": "review/brief.md",
+                      "context_path": "review/context.md" if os.path.exists("review/context.md") else "",
                       "pages": len(summary["pages"]), "screenshots": tiles, "measured_items": measured}))
     PYEOF

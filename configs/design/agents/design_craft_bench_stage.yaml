@@ -4,9 +4,10 @@
 # direction); collect checks and summarises the critic's review/craft/craft.json. No model; the
 # shared playwright-mcp browser. The answer key never enters the box: grading happens on the host.
 # POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
+# v2 2026-10-05 (queue #39): prepare adds the model-free page checks to facts.md (--page-checks).
 agent:
   name: design_craft_bench_stage
-  version: 1
+  version: 2
   type: script
   timeout_seconds: 900
   script_template: |
@@ -25,6 +26,6 @@ agent:
         raise SystemExit("craft bench stage is prepare or collect, with a workspace")
     cmd = [sys.executable, "/app/configs/design/bin/design_craft_bench.py", stage, "--workspace", workspace]
     if stage == "prepare":
-        cmd += ["--site", site, "--page", page]
+        cmd += ["--site", site, "--page", page, "--page-checks"]
     subprocess.run(cmd, env=os.environ, check=True)
     PYEOF

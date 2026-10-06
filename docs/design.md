@@ -77,7 +77,13 @@ curl -s -X POST http://127.0.0.1:8420/api/runs -H 'Content-Type: application/jso
 - `workspace_path` is needed (without it the steps get an empty workspace),
   and the folder must be writable by the run's container user.
 
-A run of four or five pages takes about 4 minutes and $1.70-2.00 (v3).
+A run of four or five pages takes about 4-5 minutes and $2.00-2.20 (v4).
+
+If the brief has a line `Primary action: <button or link text>`, the page
+checks also look for that action in the first phone screen, and a line
+`Design context: <id>` (an id from
+`configs/design/knowledge/context-playbook.json`) gives the critics that
+context's conventions and avoid list. Both lines are optional.
 
 ## Grading it
 
@@ -194,6 +200,67 @@ holds; a corrected key needs a new fernway version. morrow-v2's sole red
 and the hand check of every unmatched finding:
 `~/design-lab/results/review-severity/` (host only).
 
+## v4 (queue #39, 2026-10-05): page checks and research checks
+
+The critics missed problems that a script can measure and that people react
+to (repeated copy, a hidden main action, controls that don't look clickable,
+small text in the dark theme), and nothing judged whether each picture, or
+each missing picture, fits the job of its section. v4 adds:
+
+- **Page checks without a model** (`configs/design/bin/design_page_checks.js`
+  in the page, `design_page_checks.py` on the host, thresholds frozen in
+  `design_page_checks_thresholds.json` before any candidate run). Capture
+  runs them with `--page-checks` and writes the results into `facts.md`:
+  the same word runs repeated across sections; the primary action inside
+  the first 390x844 screen; the main navigation on one line at 390; an empty
+  column wider than 30% of the content width; every control outside the
+  header and footer bars with a visible cue (border, fill, shadow, underline
+  or icon); text over an image, gradient or translucent layer, with contrast
+  measured from the screenshot pixels behind its letters; body text under
+  14 px in the dark theme (a `prefers-color-scheme: dark` pass is captured
+  when the page has one); and the share of each section and of the first
+  screen covered by pictures (img, svg, canvas, picture and CSS background
+  images; icons under 48 px left out), with the sections that have none.
+- **Research checks in the critic** (each finding names its `check` and the
+  ids of the research evidence behind it, E###): signifiers, text over
+  pictures, typicality (which conventions of the category the page follows
+  and breaks; a break needs a reason), the design context's avoid list (for
+  money products: no reward animation, badges or confetti near a trade, no
+  hot list as the main way in, every cost visible before confirming), and
+  small text in the dark theme. Worked example critiques come from made-up
+  products; no test site is named.
+- **Craft critic v2** (`design_homepage_craft_critic_v2`): severity anchored
+  to the measured craft facts (for example spacing: under 60% of values on
+  a 4 px grid is 3), the empty-column fact, and pictures judged by purpose.
+  For each section the critic takes its purpose from the art director's
+  imagery plan, or states it, and flags a section whose purpose needs
+  showing that has words only, or a picture with no job or one that works
+  against its section (pulls from the key action, misleads, crowds data).
+  Styled type, rules, numbered steps and plain tables count as words; there
+  is no rule by audience or page type.
+
+`design_homepage_v2` review rounds and `design_craft_bench` capture with the
+page checks. A new sealed bench, `quarry-v1` (two fictional products: an
+illustrated marketing page and a dense data screen, each with a clean
+control, plus one planted page per check), joins the benchmarks; its key
+stays on the host.
+
+It was built as candidates next to the live agents and promoted after these
+graded runs: on `quarry-v1`, all 12 plants found in both runs with every
+severity in the key's range (v3 + craft v1: 9 of 12, missing repeated copy,
+signifiers and dark small text, with the spacing plant rated 2), no invented
+findings and no measured-check finding on the clean controls; the review
+benchmark held (morrow-v2 14/14 twice, fernway-v1 22/22 twice, no invented
+findings or overclaims, severity equal to the key on 13 and 13 of 14 and 19
+and 21 of 22, against v3's 13, 13, 21, 20); craft-v1 found all 7 plants at
+severity 3 or more in both runs (v1: 6, spacing at 2), with no factually
+wrong alarm and 61 of 63 cells agreeing between runs (v1: 59). On the three
+scoreboard homepages the page checks found every problem the judge had
+named, and the purpose check ranked the illustrated one first in both runs.
+Cost per review run is 1.06-1.2x v3 ($2.01-2.19 on the review
+benchmark); a craft-bench page about $0.52. Results:
+`~/design-lab/results/critic-research/` (host only).
+
 ## Files
 
 | Path | What |
@@ -203,6 +270,7 @@ and the hand check of every unmatched finding:
 | `configs/design/agents/design_{capture,critic,verify,merge,grade,score}.yaml` | its steps |
 | `configs/design/bin/design_capture.py` | capture: serves a site, drives playwright-mcp, writes `review/shots`, `review/facts`, `capture.json` |
 | `configs/design/bin/design_measure.js` | the in-page measurements |
+| `configs/design/bin/design_page_checks.{js,py}`, `design_page_checks_thresholds.json` | the page checks (v4) and their frozen thresholds |
 | `configs/design/bin/design_review_verify.py` | verify: the facts check of critic claims |
 | `configs/design/bin/vendor/axe-4.13.0.min.js` | axe-core (MPL-2.0) |
 | `configs/design/bin/design_trial.py` | review + grade on a test site (host) |
@@ -704,15 +772,17 @@ art director must say for each concept how it uses the taste file (`taste_use`,
 citing entries T1, T2 ... once there are any); the contact sheet shows it.
 
 **Craft-critic benchmark (queue #10).** `design_craft_bench` runs the live craft
-critic (`design_homepage_craft_critic_v2`, unchanged) on one page of
-`configs/design/testpages/craft-v1/` (two clean homepages for two fictional
-products and variants that each carry one measurable craft problem). Its
+critic (`design_homepage_craft_critic_v2`; its v2 prompt since queue #39) on
+one page of `configs/design/testpages/craft-v1/` (two clean homepages for two
+fictional products and variants that each carry one measurable craft
+problem), or of `quarry-v1`. Its
 prepare step copies the page and its fonts into `homepage/site` and writes what
 a live review round shows the critic through the same code as the measure stage
-(`write_review_inputs`: screenshots and facts, brief, craft facts, direction);
+(`write_review_inputs`: screenshots and facts with the page checks, brief,
+craft facts, direction);
 there are no category references for test pages, so `review/references.md`
 says so. Its collect step checks and summarises `review/craft/craft.json`. One
-run per page, about $0.6-0.7 each:
+run per page, about $0.5-0.6 each:
 
 ```json
 {"workflow":"design_craft_bench","workspace_path":"/app/workspaces/<fresh>",

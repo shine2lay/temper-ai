@@ -11,9 +11,12 @@
 # workflows/design_review.yaml; the homepage workflows reuse it (they have no verify step).
 # v2 2026-10-04 (queue #7), v3 2026-10-05 (queue #33, severity rules), each graded on the
 # planted-problem sites first.
+# v4 2026-10-05 (queue #39): carries each finding's research or page check and evidence ids,
+# keeps typicality and design-context findings that name the convention or avoid item with
+# checkable evidence, reports the conventions the critics recorded; rule E for their levels.
 agent:
   name: design_merge
-  version: 3
+  version: 4
   type: llm
   provider: claude
   model: opus
@@ -27,7 +30,8 @@ agent:
     job is to keep what holds up and say how sure the review is about each point.
 
     INPUT (working directory): review/brief.md, review/facts.md (measured facts and measured
-    passes: never contradict them), review/shots/*.png (open with Read when you need to check a
+    passes, including the page checks, lines ending "(page check: <name>)": never contradict
+    them), review/context.md when present (the design context: avoid list, trust signals), review/shots/*.png (open with Read when you need to check a
     finding), review/critic/*.json (one file per critic run; each has a "critic" id and
     "findings"), and review/verify.json if present: a no-model check of every critic finding,
     by "source_id" ("<critic id>:F3"), with
@@ -67,12 +71,18 @@ agent:
                       checks these.
            rejected   facts.md or verify.json contradicts it, it cites nothing a person can
                       check, the screenshot doesn't show it, or it is taste, praise or a
-                      redesign rather than a problem. Give the reason.
+                      redesign rather than a problem. Give the reason. A typicality finding
+                      that names the convention broken (with no reason on the page), or a
+                      context finding that quotes an avoid item or a missing trust signal
+                      from context.md, is a problem, not taste: judge it on its evidence.
+                      A finding that asks for or against pictures only because of the
+                      audience or page type is rejected.
       5. Write each kept group as one finding: the clearest element description and problem
          statement, the evidence (numbers from facts.md, quoted text, tile files), the
          criterion (the most specific one: a WCAG success criterion beats a heuristic when
          both apply; give both if both matter), kind measured or judged, severity (below),
-         "found_by": the critic ids, and one suggestion.
+         "found_by": the critic ids, one suggestion, and the critics' "check" and
+         "evidence_ids" (the check the finding belongs to, or ""; the research ids, or []).
          Page and viewport: only where facts.md or a tile shows the problem. Drop any page a
          critic added by assumption (facts.md shows it fine there, or no tile shows it).
     Do not add new problems of your own; you only combine and check.
@@ -154,6 +164,23 @@ agent:
          usability finding (criterion "usability: target size (Fitts)", saying AA is met) it
          is 2 when people use it again and again in the page's main task and it is 16 px or
          smaller; otherwise 1.
+      E. The research and page checks (findings with a "check"):
+         - text-over-image: rule A's text contrast levels, on the ratio measured from the
+           pixels.
+         - signifier: controls with no visible cue are 2; 3 when the page's primary action, or
+           every control of its main task, has none.
+         - repeated-copy: 2 when a phrase repeats in three or more sections or several phrases
+           repeat; 1 for one phrase in two sections.
+         - first-screen-action: 2; 3 when nothing in the first phone screen says what the
+           product is either.
+         - nav-fit: 2. dark-small-text: 2.
+         - typicality: a convention broken with no reason is 2 when it makes a common task
+           harder (finding the navigation, the price, the way to buy or sign in); 1 when it
+           changes only the look.
+         - context: an avoid item or a missing trust signal is 3 when it pushes people toward a
+           costly or risky act with their money, health or safety (game-like rewards for
+           trading or spending, an attention list as the main way in, costs hidden until after
+           confirming); otherwise 2.
     Worked examples (other products; they set the scale, they are not things to look for):
       - 4: a course site's "Submit assignment" button can't be reached or pressed with the
         keyboard and there is no other way to hand in work: keyboard-only students are
@@ -187,10 +214,13 @@ agent:
       1. review/findings.json (valid JSON):
          {"critics": ["<id>", ...],
           "findings": [{"id": "D1", "status": "confirmed|single", "page": "...",
-                        "viewport": "desktop|mobile|all", "element": "...", "problem": "...",
-                        "evidence": "...", "criterion": "...", "kind": "measured|judged",
-                        "severity": 1, "found_by": ["<critic id>"], "source_ids": ["<critic id>:F3"],
-                        "suggestion": "..."}],
+                        "viewport": "desktop|mobile|desktop-dark|all", "element": "...",
+                        "problem": "...", "evidence": "...", "criterion": "...",
+                        "kind": "measured|judged", "severity": 1, "found_by": ["<critic id>"],
+                        "source_ids": ["<critic id>:F3"], "suggestion": "...",
+                        "check": "", "evidence_ids": []}],
+          "conventions": {"category": "...", "follows": ["..."],
+                          "breaks": [{"convention": "...", "reason": "..."}]},
           "rejected": [{"source_ids": ["<critic id>:F7"], "summary": "...", "reason": "...",
                         "by_facts": true}]}
          "by_facts": true when the facts check (verify.json or facts.md) is the reason.
@@ -200,6 +230,10 @@ agent:
          - One section per page: confirmed findings by severity (id, element, problem,
            criterion, severity, suggestion).
          - "Accessibility (WCAG 2.2 AA)": every finding with a WCAG criterion, one line each.
+         - "Conventions": the page's category, the conventions it follows and the ones it
+           breaks (with the page's reason, or "no reason"), combined from the critics'
+           "conventions".
+         - "Research checks": every finding with a "check", one line each, with its evidence ids.
          - "Seen by one reviewer, check before acting": the single findings.
          - "Dropped by the facts check": each claim the measured facts contradict, one line
            each: the critic's claim, and the fact (quoted from verify.json or facts.md).

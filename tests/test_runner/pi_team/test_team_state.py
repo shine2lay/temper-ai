@@ -33,11 +33,13 @@ def _goal(team, run_id, to="lead", body="Write the README."):
 # --- layout ------------------------------------------------------------------------------
 
 def test_tables_extend_l2_layout(led):
-    """L2's four tables, extended in place, plus the review record and (#38) the leader
-    loop's review-tool calls: no parallel tables."""
+    """L2's four tables, extended in place, plus the review record, (#38) the leader
+    loop's review-tool calls and (#48) the Team page's outcome, trial and request records:
+    no parallel tables."""
     names = [t.name for t in ledger_module.TABLES]
     assert names == ["pi_participants", "pi_messages", "pi_turns", "pi_waits", "pi_reviews",
-                     "pi_team_acts"]
+                     "pi_team_acts", "pi_team_outcomes", "pi_team_trials",
+                     "pi_team_requests"]
     inspector = sa.inspect(led.engine)
     assert set(names) <= set(inspector.get_table_names())
     msg_cols = {c["name"] for c in inspector.get_columns("pi_messages")}

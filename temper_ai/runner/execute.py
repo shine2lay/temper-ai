@@ -301,4 +301,6 @@ def execute_workflow(
         status=result.status,
         cost_usd=result.cost_usd,
         total_tokens=result.total_tokens,
+        # a run that ended cancelled by itself says why (M3 E18: an owner's stop answer)
+        error=result.error if result.status == "cancelled" else None,
     )

@@ -128,6 +128,9 @@ class BoxConfig:
     socket_root: str = ""
     #: Home of the account whose host Pi login the handoff asks (default: this process's).
     host_home: str = ""
+    #: The host helper's socket (M4 ADR-M4-02/12). Set: a done trial's branch is made by the
+    #: helper's ``branch`` verb; empty: by this process (host-process instances, tests).
+    host_helper_socket: str = ""
     #: ``live`` or ``rehearsal`` (egress goes to a local TLS stand-in, tokens are synthetic).
     mode: str = "live"
     rehearsal: dict | None = None

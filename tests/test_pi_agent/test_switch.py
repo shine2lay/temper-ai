@@ -118,7 +118,7 @@ def test_b14_switch_off_creates_nothing(probes):
     assert got["pi_tables"] == []
     assert got["pi_modules"] == []
     assert got["team_stage"].startswith("TopologyError: Unknown strategy: 'team'")
-    assert got["routes"] == probes["on"]["routes"]
+    assert not [r for r in got["routes"] if "/api/team" in r]
 
 
 def test_switched_off_no_team_messaging_module_is_imported(probes):
@@ -151,8 +151,27 @@ def test_switched_on_registers_only_the_type_and_the_team_strategy(probes):
     assert on["team_stage"] == "built"
 
 
-def test_the_switch_adds_no_route(probes):
-    assert probes["on"]["routes"] == probes["unset"]["routes"] == probes["off"]["routes"]
+#: The Team page's API (M3): the only routes the switch adds, all under /api/team.
+TEAM_ROUTES = [
+    "['POST'] /api/team/check",
+    "['GET'] /api/team/roles",
+    "['GET'] /api/team/runs/{execution_id}",
+    "['GET'] /api/team/runs/{execution_id}/messages/{message_id}",
+    "['GET'] /api/team/status",
+    "['GET'] /api/team/trials",
+    "['POST'] /api/team/runs/{execution_id}/messages",
+    "['POST'] /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+    "['POST'] /api/team/trials",
+]
+
+
+def test_the_switch_adds_only_the_team_page_routes(probes):
+    """Switched off (unset or off) Temper has exactly the routes it had before #48; switched
+    on it adds the Team page's nine, all under /api/team, and changes no other route."""
+    assert probes["unset"]["routes"] == probes["off"]["routes"]
+    added = sorted(set(probes["on"]["routes"]) - set(probes["off"]["routes"]))
+    assert added == sorted(TEAM_ROUTES)
+    assert set(probes["off"]["routes"]) <= set(probes["on"]["routes"])
 
 
 def test_only_exact_on_words_switch_it_on(monkeypatch):

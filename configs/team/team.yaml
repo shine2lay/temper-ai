@@ -1,0 +1,14 @@
+# The Team page's settings (docs/pi-team-api.md). Not a config: the configs
+# importer skips this folder. This install's own values go in
+# configs/team/local/team.yaml (git-ignored), in the same shape; a key there
+# replaces the one here.
+#
+# project_roots: the folders a team trial may work on, as absolute host paths
+#   ("~" is /app inside the containers). "/a/b" is that folder itself;
+#   "/a/*" is any folder directly inside /a. None by default: a trial then has
+#   no project folder. The owner lists them at switch-on.
+# owner_callers: the API key names that count as the owner, shown as "You"
+#   on the Team page; any other named caller is shown by its name.
+
+project_roots: []
+owner_callers: [owner-dashboard]

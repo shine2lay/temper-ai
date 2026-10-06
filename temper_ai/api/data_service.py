@@ -269,15 +269,7 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         _clear_children_index()
         return None
 
-    def _completeness(ev: dict) -> tuple:
-        d = ev.get("data") or {}
-        s = ev.get("status", "")
-        return (
-            1 if s == "completed" else 0,
-            1 if (d.get("cost_usd") or 0) > 0 else 0,
-            ev.get("timestamp", ""),
-        )
-    workflow_event = max(workflow_candidates, key=_completeness)
+    workflow_event = max(workflow_candidates, key=_start_completeness)
 
     # Check for fork metadata — if present, merge source execution's nodes
     fork_meta = next(
@@ -640,27 +632,7 @@ def list_workflow_executions(
         event_type=EventType("workflow.started"), limit=1000, newest_first=True
     )
 
-    # Dedup by execution_id: a resumed run records a NEW workflow.started
-    # event with the same execution_id. Keep the event with the most complete
-    # data — prefer completed, then the one with a non-zero cost, then the
-    # newest by timestamp. This prevents the listing from double-counting
-    # resumed runs and keeps totals consistent with the detail endpoint.
-    def _completeness(ev: dict) -> tuple:
-        d = ev.get("data") or {}
-        s = ev.get("status", "")
-        return (
-            1 if s == "completed" else 0,
-            1 if (d.get("cost_usd") or 0) > 0 else 0,
-            ev.get("timestamp", ""),
-        )
-    by_exec: dict[str, dict] = {}
-    for ev in all_events:
-        eid = ev.get("execution_id", ev["id"])
-        if not eid:
-            continue
-        prev = by_exec.get(eid)
-        if prev is None or _completeness(ev) > _completeness(prev):
-            by_exec[eid] = ev
+    by_exec = _one_start_per_run(all_events)
 
     # A run parked on a gate is NOT running -- it is waiting for a person,
     # and the listing is where that person looks. Without this the two are
@@ -672,17 +644,7 @@ def list_workflow_executions(
     runs = []
     for execution_id, event in by_exec.items():
         data = event.get("data", {})
-        # Status comes from the event's own status field (updated in-place
-        # by the executor). Whitelist recognized terminal states;
-        # "interrupted" signals an orphaned run left by a server restart.
-        run_status = event.get("status", "running")
-        if run_status not in ("completed", "failed", "running", "cancelled", "interrupted"):
-            run_status = "running"
-        # Only an otherwise-running run can be waiting: a finished run with a
-        # stale gate event is finished, and saying otherwise would park it in
-        # the list forever.
-        if run_status == "running" and execution_id in awaiting:
-            run_status = "waiting"
+        run_status = _list_status(execution_id, event, awaiting)
 
         if status and run_status != status:
             continue
@@ -720,6 +682,75 @@ def list_workflow_executions(
     _mark_the_quiet_ones(runs, awaiting)
 
     return {"runs": runs, "total": total}
+
+
+def _start_completeness(ev: dict) -> tuple:
+    """Which of a run's workflow.started events speaks for it: a resumed run records a NEW
+    one with the same execution_id. Prefer completed, then the one with a non-zero cost,
+    then the newest by timestamp, so the listing doesn't double-count resumed runs and its
+    totals agree with the detail endpoint."""
+    d = ev.get("data") or {}
+    s = ev.get("status", "")
+    return (
+        1 if s == "completed" else 0,
+        1 if (d.get("cost_usd") or 0) > 0 else 0,
+        ev.get("timestamp", ""),
+    )
+
+
+def _one_start_per_run(events: list[dict]) -> dict[str, dict]:
+    """The workflow.started event that speaks for each run, by execution id."""
+    by_exec: dict[str, dict] = {}
+    for ev in events:
+        eid = ev.get("execution_id", ev["id"])
+        if not eid:
+            continue
+        prev = by_exec.get(eid)
+        if prev is None or _start_completeness(ev) > _start_completeness(prev):
+            by_exec[eid] = ev
+    return by_exec
+
+
+def _list_status(execution_id: str, event: dict, awaiting: set[str]) -> str:
+    """One run's status as the run list shows it."""
+    # Status comes from the event's own status field (updated in-place
+    # by the executor). Whitelist recognized terminal states;
+    # "interrupted" signals an orphaned run left by a server restart.
+    run_status = event.get("status", "running")
+    if run_status not in ("completed", "failed", "running", "cancelled", "interrupted"):
+        run_status = "running"
+    # Only an otherwise-running run can be waiting: a finished run with a
+    # stale gate event is finished, and saying otherwise would park it in
+    # the list forever.
+    if run_status == "running" and execution_id in awaiting:
+        run_status = "waiting"
+    return str(run_status)
+
+
+def run_detail_status(execution_id: str) -> str | None:
+    """The run's status exactly as ``GET /api/workflows/{id}`` gives it, without building the
+    whole run (None when there is no such run)."""
+    events = get_events(execution_id=execution_id, type_prefixes=("workflow.",), limit=None)
+    if not events:
+        return None
+    return _resolve_status(max(events, key=_start_completeness))
+
+
+def run_list_statuses(execution_ids: Sequence[str]) -> dict[str, str]:
+    """Each of these runs' status exactly as the run list shows it (the Team page's trials
+    list puts it beside the team's own decision, M3 E19). A run with no start event yet is
+    left out."""
+    if not execution_ids:
+        return {}
+    awaiting = _execution_ids_awaiting_a_human()
+    out: dict[str, str] = {}
+    for eid in execution_ids:
+        starts = get_events(execution_id=eid, event_type=EventType("workflow.started"),
+                            limit=None)
+        event = _one_start_per_run(starts).get(eid)
+        if event is not None:
+            out[eid] = _list_status(eid, event, awaiting)
+    return out
 
 
 def _mark_the_quiet_ones(runs: list[dict], awaiting: set[str]) -> None:

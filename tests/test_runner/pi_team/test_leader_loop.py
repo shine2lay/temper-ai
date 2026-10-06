@@ -228,6 +228,15 @@ def test_b10_the_pause_is_a_wait_row_asked_under_its_own_id_and_never_moves_by_i
     asked_after_their_rows(owner)
     assert ask["row"]["kind"] == "pause" and ask["header"] == "pause-after-round-2"
     assert ask["options"] == ("continue", "guide", "stop")
+    # M3 E22: the wait keeps its question and the chat's reply syntax apart; the chat is
+    # asked the two joined, byte for byte the text it was asked before they were split
+    assert ask["question"] == (
+        "The team kept going 2 round(s) in a row (pause_after_rounds 2) and is paused after "
+        "round 2. Reply 'continue', 'guide: <what to tell lead>', or 'stop'.")
+    subject = ask["row"]["subject"]
+    assert subject["question"] == ("The team kept going 2 round(s) in a row "
+                                   "(pause_after_rounds 2) and is paused after round 2.")
+    assert subject["reply_hint"] == "Reply 'continue', 'guide: <what to tell lead>', or 'stop'."
     turns_before = len(ts.rows(led, run_id)["turns"])
     # a later go with no answer: the same wait is asked again; nothing ran, nothing expired
     again = ls.make_leader(led, box, run_id=run_id, attempt="attempt-2",
@@ -279,7 +288,7 @@ def test_b10_stop_at_the_pause_ends_the_team_stopped_never_done(led, box, run_id
     rounds(led, run_id, ["keep_going", "keep_going", "done"])
     team = ls.open_leader(led, box, run_id=run_id, source=ls.project(tmp_path / "proj"))
     out = team.drive(ls.Context())
-    assert out.status == "stopped" and out.text == "stopped by the owner at the pause after round 2"
+    assert out.status == "stopped" and out.text == "stopped at the pause after round 2"
     assert team.done_review() is None
     # an answer that is none of the three is never taken as continue: asked again, new id
     first, second = ls.table(led, waits, run_id)
@@ -303,6 +312,11 @@ def test_a_stalled_team_asks_the_owner_and_a_nudge_reaches_the_leader(
     (ask,) = owner.asked
     asked_after_their_rows(owner)
     assert ask["row"]["kind"] == "stalled" and ask["options"] == ("nudge", "stop")
+    # M3 E22: byte for byte the text the chat was asked before the hint was split off
+    assert ask["question"] == (
+        "The team is stalled: nothing is running, nothing is waiting to be delivered and lead "
+        "has not said done. Reply 'nudge' (optionally with a message for lead) or 'stop'.")
+    assert "Reply" not in ask["row"]["subject"]["question"]
     assert sum("ask for a review" in p for p in ts.PROMPTS["lead"]) == 1
 
 
@@ -311,8 +325,40 @@ def test_stop_when_stalled_ends_the_team_stopped(led, box, run_id, tmp_path, mon
     ts.SCRIPTS["lead"] = [[{"say": "nothing to do"}]]
     team = ls.open_leader(led, box, run_id=run_id, source=ls.project(tmp_path / "proj"))
     out = team.drive(ls.Context())
-    assert (out.status, out.text) == ("stopped", "stopped by the owner when the team had "
-                                                 "nothing left to do")
+    assert (out.status, out.text) == ("stopped", "stopped when the team had nothing left to do")
+
+
+@pytest.mark.parametrize("kind", ["pause", "stalled"])
+def test_e18_a_stop_keeps_the_words_given_with_it_and_the_text_stays_neutral(
+        led, box, run_id, tmp_path, monkeypatch, kind):
+    """M3 E18/E16: the words typed with a stop are kept on the wait's decision (they become
+    the outcome's owner_words, at most 2000 characters); the reason never names who stopped."""
+    from temper_ai.pi_agent.team_runtime import stop_ends_cancelled
+
+    words = "we have what we need " + "x" * 2100
+    ls.Owner(led, f"stop: {words}").install(monkeypatch)
+    if kind == "pause":
+        rounds(led, run_id, ["keep_going", "keep_going", "done"])
+        expected = "stopped at the pause after round 2"
+    else:
+        ts.SCRIPTS["lead"] = [[{"say": "nothing to do"}]]
+        expected = "stopped when the team had nothing left to do"
+    team = ls.open_leader(led, box, run_id=run_id, source=ls.project(tmp_path / "proj"))
+    out = team.drive(ls.Context())
+    assert (out.status, out.text) == ("stopped", expected)
+    stop = team.stop_wait()
+    assert stop["kind"] == kind and stop_ends_cancelled(stop)
+    kept = stop["decision"]["words"]
+    assert kept == words.strip()[:2000] and len(kept) == 2000
+    assert "owner" not in out.text and "by " not in out.text
+
+
+def test_e18_a_stop_with_no_words_keeps_none(led, box, run_id, tmp_path, monkeypatch):
+    ls.Owner(led, "stop").install(monkeypatch)
+    ts.SCRIPTS["lead"] = [[{"say": "nothing to do"}]]
+    team = ls.open_leader(led, box, run_id=run_id, source=ls.project(tmp_path / "proj"))
+    team.drive(ls.Context())
+    assert team.stop_wait()["decision"]["words"] is None
 
 
 # --- recovery waits (R2 B11) ----------------------------------------------------------------
@@ -329,6 +375,13 @@ def test_b11_a_cut_off_turn_pauses_the_team_and_retry_resends_the_same_messages(
     (ask,) = owner.asked
     asked_after_their_rows(owner)
     assert ask["row"]["kind"] == "recovery"
+    # M3 E22: the question and the reply syntax apart, joined for the chat as before
+    subject = ask["row"]["subject"]
+    assert subject["reply_hint"] == ("Reply 'accept' to keep what it did without running it "
+                                     "again, or 'retry' to send its messages again.")
+    assert "Reply" not in subject["question"]
+    assert subject["question"].startswith("builder's turn 1 did not finish (")
+    assert ask["question"] == f"{subject['question']} {subject['reply_hint']}"
     cut, retried = ts.PROMPTS["builder"]
     assert ts.ids_in(cut) == ts.ids_in(retried) and ts.ids_in(cut)
     assert len(ts.PROMPTS["lead"]) == 2  # the leader's finished turns never ran again
@@ -343,8 +396,13 @@ def test_b11_stop_at_a_recovery_wait_ends_the_team_red_never_done(led, box, run_
     team = ls.open_leader(led, box, run_id=run_id, source=ls.project(tmp_path / "proj"))
     out = team.drive(ls.Context())
     assert out.status == "stopped"
-    assert out.text == "builder turn 1 did not finish and the owner stopped the team"
+    assert out.text == "builder turn 1 did not finish and the team was stopped"
     assert team.done_review() is None
+    # M3 E18: a stop at a recovery wait follows a cut-off turn: it still fails the node
+    from temper_ai.pi_agent.team_runtime import stop_ends_cancelled
+
+    assert team.stop_wait()["kind"] == "recovery"
+    assert not stop_ends_cancelled(team.stop_wait())
     ts.check_invariants(led, run_id)
 
 

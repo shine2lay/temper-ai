@@ -63,11 +63,52 @@ from temper_ai.pi_agent.route.router import (
     reachable,
     roster_entry,
 )
+from temper_ai.shared.text_limits import STOP_REASON_MAX_CHARS
 
 logger = logging.getLogger(__name__)
 
 AGENT_TYPE = "pi"
 SETTINGS_CHANGED = "team settings changed"
+#: The longest words kept with a stop answer (M3 E13 ``stop_reason_max_chars``): the API
+#: refuses longer ones; a chat answer is cut to this.
+STOP_WORDS_MAX = STOP_REASON_MAX_CHARS
+
+
+def stop_words(words: str | None) -> str | None:
+    """The words given with a stop answer as kept (the outcome's ``owner_words``, M3 E18):
+    trimmed, at most :data:`STOP_WORDS_MAX` characters, None when there are none."""
+    text = str(words or "").strip()[:STOP_WORDS_MAX].strip()
+    return text or None
+
+
+def stop_ends_cancelled(wait: dict | None) -> bool:
+    """Whether a stop answer ends the run cancelled rather than failed (M3 E18): a stop at
+    the pause or when the team had nothing left to do is the owner's decision, and nothing
+    failed there. A stop at a recovery wait follows a failed or cut-off turn: it fails."""
+    return wait is not None and wait.get("kind") in ("pause", "stalled")
+
+
+def recovery_stop_text(member: Any, turn_no: Any, options: Any) -> str:
+    """The neutral text for a stop at a recovery wait (M3 E16): a turn that failed (answered
+    retry or stop only) or one that was cut off (``accept`` among its options)."""
+    did = "failed" if "accept" not in (options or []) else "did not finish"
+    return f"{member} turn {turn_no} {did} and the team was stopped"
+
+
+def stop_text(wait: dict) -> str | None:
+    """The neutral text (M3 E16) for a decided wait whose answer stopped the team, or None
+    when its answer did not stop it. It never names who answered: that is the outcome's
+    ``by``."""
+    decision, subject = wait.get("decision") or {}, wait.get("subject") or {}
+    kind = wait.get("kind")
+    if kind == "pause" and decision.get("answer") == "stop":
+        return f"stopped at the pause after round {subject.get('round')}"
+    if kind == "stalled" and decision.get("answer") == "stop":
+        return "stopped when the team had nothing left to do"
+    if kind == "recovery" and decision.get("recovery") == "stop":
+        return recovery_stop_text(subject.get("member"), subject.get("turn_no"),
+                                  subject.get("options"))
+    return None
 
 
 @dataclass(frozen=True)
@@ -368,33 +409,37 @@ class Team:
 
     # --- the owner's answers and the end ---------------------------------------------
 
-    def decide(self, wait: dict, answer: str) -> str | None:
+    def decide(self, wait: dict, answer: str, *, words: str | None = "",
+               who: dict | None = None) -> str | None:
         """Apply the owner's answer to a recovery wait once: ``retry`` gives the turn's own
         messages again (same ids) and drops what it sent; ``accept`` keeps a cut-off turn and
         releases what it sent; ``stop`` ends the member's turn failed. A failed turn is
         answered retry or stop only (N1). Anything else (empty, another word, accept at a
         failed turn) decides nothing: the wait closes ``invalid`` and the owner is asked again
         at a new wait for the same turn (M3 F1). ``answer`` is what the owner said
-        (:func:`~temper_ai.pi_agent.host.owner_reply`). Returns an error text when the team
-        must stop."""
+        (:func:`~temper_ai.pi_agent.host.owner_reply`). The decision keeps ``who`` answered
+        (``by``, ``source``; M3 E21) and, for a stop, the ``words`` given with it (the
+        outcome's ``owner_words``). Returns an error text when the team must stop."""
         if wait["kind"] != "recovery":
             raise ValueError("only recovery waits are answered here")
         subject = wait["subject"] or {}
         options = subject.get("options") or ["accept", "retry"]
         word = recovery_word(answer, options)
         sha = hashlib.sha256(answer.encode()).hexdigest()
+        who = dict(who or {})
         if word is None:
-            self.ledger.decide_wait(wait["wait_id"], {"recovery": INVALID, "text_sha256": sha},
+            self.ledger.decide_wait(wait["wait_id"],
+                                    {"recovery": INVALID, "text_sha256": sha, **who},
                                     self.attempt_id, reask=recovery_asked_again(subject))
             return None
-        decision = {"recovery": word, "text_sha256": sha}
+        decision = {"recovery": word, "text_sha256": sha, **who}
+        if word == "stop":
+            decision["words"] = stop_words(words)
         if not self.ledger.decide_wait(wait["wait_id"], decision, self.attempt_id,
                                        recovery=(word, subject["turn_id"])):
             return None
         if word == "stop":
-            did = "failed" if "accept" not in options else "did not finish"
-            return (f"{subject.get('member')} turn {subject.get('turn_no')} {did} and the "
-                    "owner stopped the team")
+            return recovery_stop_text(subject.get("member"), subject.get("turn_no"), options)
         return None
 
     def end(self, reason: str) -> dict:

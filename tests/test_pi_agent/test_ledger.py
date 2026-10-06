@@ -33,7 +33,9 @@ def _claim(led, attempt="a1"):
 
 def test_tables_are_pi_prefixed():
     assert sorted(t.name for t in TABLES) == ["pi_messages", "pi_participants", "pi_reviews",
-                                              "pi_team_acts", "pi_turns", "pi_waits"]
+                                              "pi_team_acts", "pi_team_outcomes",
+                                              "pi_team_requests", "pi_team_trials",
+                                              "pi_turns", "pi_waits"]
 
 
 def test_a_participant_is_attached_once_with_one_session(led):

@@ -34,6 +34,15 @@ class AgentNode(Node):
     def agent_configs(self) -> list[dict]:
         return [self.agent_config]
 
+    @property
+    def cancelled_ends_stage(self) -> bool:
+        """Whether this step's agent type may end cancelled by itself (``AgentABC.cancelled_ends_stage``,
+        a Pi step): then a cancelled ending ends its stage cancelled too."""
+        from temper_ai.agent import AGENT_TYPES
+
+        agent_cls = AGENT_TYPES.get(self.agent_config.get("type") or "llm")
+        return bool(getattr(agent_cls, "cancelled_ends_stage", False))
+
     MAX_RETRIES = 2  # Retry up to 2 times on empty output
 
     def run(self, input_data: dict, context: ExecutionContext) -> NodeResult:

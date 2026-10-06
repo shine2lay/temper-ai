@@ -80,7 +80,7 @@ UNDELIVERED_REASONS = ("turn_failed", "turn_superseded", "turn_cancelled", "run_
                        "run_completed", "team_done", "team_stopped", "late",
                        "recipient_retired", "recipient_unknown")
 #: Why a team ends: the run was cancelled or finished, or (the leader loop, #38) Temper
-#: recorded the team done, or the owner stopped it (never done, R2 B10).
+#: recorded the team done, or an owner's answer stopped it (never done, R2 B10).
 END_REASONS = ("run_cancelled", "run_completed", "team_done", "team_stopped")
 #: Wait kinds: ``owner`` (next message or finish), ``recovery`` (a turn that was cut off or
 #: failed), ``stalled`` (several members with nothing to do), ``pause`` (the leader loop's
@@ -267,7 +267,68 @@ acts = sa.Table(
     sa.UniqueConstraint("run_id", "participant_id", "client_msg_id", name="uq_pi_team_act_key"),
 )
 
-TABLES = (participants, messages, turns, waits, reviews, acts)
+#: What a team ended with, one row per team node (M3 E2/E3/E16, A2): the only source of the
+#: outcome the Team page shows (``structured_output`` gets a copy, never read back).
+#: ``decision`` is null while the team runs; ``decided_by`` is the API guard's caller name as
+#: recorded (the page's ``by`` is derived from it when read).
+outcomes = sa.Table(
+    "pi_team_outcomes", metadata,
+    sa.Column("run_id", sa.String(64), primary_key=True),
+    sa.Column("host_path", sa.Text, primary_key=True),
+    sa.Column("trial_id", sa.String(32)),
+    # done | stopped | cancelled | failed | didnt_start
+    sa.Column("decision", sa.String(16)),
+    sa.Column("reason", sa.Text),
+    sa.Column("owner_words", sa.Text),
+    sa.Column("problems", sa.JSON),
+    sa.Column("decided_by", sa.Text),
+    sa.Column("by_source", sa.String(16)),
+    sa.Column("record", sa.JSON),
+    sa.Column("started_at", sa.String(40)),
+    sa.Column("at", sa.String(40)),
+)
+
+#: A trial started from the Team page (M3 E7): its frozen configs, its request id (one start
+#: per id) and its run.
+trials = sa.Table(
+    "pi_team_trials", metadata,
+    sa.Column("trial_id", sa.String(32), primary_key=True),
+    sa.Column("request_id", sa.Text, nullable=False, unique=True),
+    sa.Column("body_sha256", sa.String(64), nullable=False),
+    sa.Column("workflow", sa.Text, nullable=False),
+    sa.Column("member_configs", sa.JSON, nullable=False),
+    sa.Column("goal", sa.Text, nullable=False),
+    sa.Column("project", sa.Text),
+    # the trial as started: members (name, role, tools), leader, pause_after_rounds, ...
+    sa.Column("trial", sa.JSON, nullable=False),
+    sa.Column("execution_id", sa.String(64)),
+    sa.Column("created_at", sa.String(40), nullable=False),
+    sa.Column("created_by", sa.Text),
+    sa.Column("created_source", sa.String(16)),
+    # set once the run's start returned (running | queued); a row without it never started
+    sa.Column("started_at", sa.String(40)),
+    sa.Column("start_status", sa.String(16)),
+)
+
+#: The Team page's answers and messages by request id: the same id and body give the first
+#: result again; the same id with another body is refused (M3 conventions).
+requests = sa.Table(
+    "pi_team_requests", metadata,
+    sa.Column("request_id", sa.String(255), primary_key=True),
+    sa.Column("run_id", sa.String(64), nullable=False, index=True),
+    sa.Column("kind", sa.String(16), nullable=False),  # answer | message
+    sa.Column("body_sha256", sa.String(64), nullable=False),
+    sa.Column("result", sa.JSON, nullable=False),
+    sa.Column("created_at", sa.String(40), nullable=False),
+)
+
+TABLES = (participants, messages, turns, waits, reviews, acts, outcomes, trials, requests)
+
+#: How a team ends, as the Team page reads it (M3 E2): ``didnt_start`` when no member turn
+#: of the team ever began.
+OUTCOME_DECISIONS = ("done", "stopped", "cancelled", "failed", "didnt_start")
+#: A cancelled run's team (M3 E16): neutral, who cancelled is the outcome's ``by``.
+RUN_CANCELLED_TEXT = "the run was cancelled"
 
 
 class LedgerError(Exception):
@@ -1004,20 +1065,22 @@ class Ledger:
     def _recovery_wait(self, conn: Any, p: dict, t: dict, why: str, options: list[str],
                        attempt_id: str) -> dict:
         name = p["member"]
+        # The question without reply syntax, and the chat's reply syntax apart (M3 E22):
+        # chat surfaces show the two joined, the same text as before they were split.
         if options == ["retry", "stop"]:
-            question = (f"{name}'s turn {t['turn_no']} failed: {(t['error'] or '')[:300]}. "
-                        "Reply 'retry' to send its messages again, or 'stop' to end the step.")
+            question = f"{name}'s turn {t['turn_no']} failed: {(t['error'] or '')[:300]}."
+            hint = "Reply 'retry' to send its messages again, or 'stop' to end the step."
         else:
             did = ("nothing was sent to the model" if t["effect_state"] == "none" else
                    "the model may have acted (its prompt was sent)")
-            question = (f"{name}'s turn {t['turn_no']} did not finish ({why}); {did}. Reply "
-                        "'accept' to keep what it did without running it again, or 'retry' to "
-                        "send its messages again.")
+            question = f"{name}'s turn {t['turn_no']} did not finish ({why}); {did}."
+            hint = ("Reply 'accept' to keep what it did without running it again, or 'retry' "
+                    "to send its messages again.")
         return self._open_wait(conn, p["run_id"], p["host_path"], "recovery", {
             "participant_id": p["participant_id"], "member": name, "role": p["role"],
             "turn_id": t["turn_id"], "turn_no": t["turn_no"],
             "effect_state": t["effect_state"], "input_seqs": t["input_seqs"], "why": why,
-            "question": question, "options": options,
+            "question": question, "reply_hint": hint, "options": options,
         }, attempt_id)
 
     # --- waits ----------------------------------------------------------------------
@@ -1235,6 +1298,84 @@ class Ledger:
             return [dict(r) for r in conn.execute(sa.select(reviews).where(
                 reviews.c.run_id == run_id, reviews.c.host_path == host_path,
             ).order_by(reviews.c.round)).mappings().all()]
+
+    # --- the team's outcome (M3 E2/E3/E16, A2) --------------------------------------------
+
+    def any_turn_began(self, run_id: str, host_path: str) -> bool:
+        """Whether any member turn of this team ever began (in any attempt): a team none of
+        whose turns began didn't start (M3 E3, A3)."""
+        with _LOCK, self._tx() as conn:
+            return conn.execute(sa.select(turns.c.turn_id).where(
+                turns.c.run_id == run_id, turns.c.host_path == host_path,
+            ).limit(1)).first() is not None
+
+    def start_outcome(self, run_id: str, host_path: str, *,
+                      trial_id: str | None = None) -> None:
+        """The team node starts (or goes again): its outcome has no decision until this
+        attempt ends -- an earlier attempt's ending is replaced by this one's."""
+        cleared = {"decision": None, "reason": None, "owner_words": None, "problems": None,
+                   "decided_by": None, "by_source": None, "record": None, "at": None}
+        with _LOCK, self._tx() as conn:
+            done = conn.execute(sa.update(outcomes).where(
+                outcomes.c.run_id == run_id, outcomes.c.host_path == host_path,
+            ).values(**cleared)).rowcount
+            if not done:
+                conn.execute(outcomes.insert().values(
+                    run_id=run_id, host_path=host_path, trial_id=trial_id,
+                    started_at=_now(), **cleared))
+
+    def write_outcome(self, run_id: str, host_path: str, *, decision: str, reason: str,
+                      owner_words: str | None = None, problems: Sequence[str] = (),
+                      decided_by: str | None = None, by_source: str | None = None,
+                      record: dict | None = None, trial_id: str | None = None) -> dict:
+        """How the team ended, the only record the Team page reads (A2). Returns the row."""
+        if decision not in OUTCOME_DECISIONS:
+            raise ValueError(f"unknown outcome decision {decision!r}")
+        values = {"decision": decision, "reason": reason, "owner_words": owner_words,
+                  "problems": list(problems), "decided_by": decided_by,
+                  "by_source": by_source, "record": record, "at": _now()}
+        with _LOCK, self._tx() as conn:
+            done = conn.execute(sa.update(outcomes).where(
+                outcomes.c.run_id == run_id, outcomes.c.host_path == host_path,
+            ).values(**values)).rowcount
+            if not done:
+                conn.execute(outcomes.insert().values(
+                    run_id=run_id, host_path=host_path, trial_id=trial_id,
+                    started_at=values["at"], **values))
+            return dict(conn.execute(sa.select(outcomes).where(
+                outcomes.c.run_id == run_id, outcomes.c.host_path == host_path,
+            )).mappings().one())
+
+    def outcomes_of(self, run_id: str) -> list[dict]:
+        """Every team node's outcome row of a run (decision None while a team runs)."""
+        with _LOCK, self._tx() as conn:
+            return [dict(r) for r in conn.execute(sa.select(outcomes).where(
+                outcomes.c.run_id == run_id).order_by(outcomes.c.started_at,
+                                                      outcomes.c.host_path)).mappings()]
+
+    def settle_cancelled_outcomes(self, run_id: str, *, decided_by: str | None = None,
+                                  by_source: str | None = None,
+                                  owner_words: str | None = None) -> int:
+        """A cancelled run's teams that were still going end cancelled (a parked run's cancel
+        and the sweep end them without their node running again)."""
+        with _LOCK, self._tx() as conn:
+            return conn.execute(sa.update(outcomes).where(
+                outcomes.c.run_id == run_id, outcomes.c.decision.is_(None),
+            ).values(decision="cancelled", reason=RUN_CANCELLED_TEXT, owner_words=owner_words,
+                     problems=[], decided_by=decided_by, by_source=by_source,
+                     at=_now())).rowcount
+
+    def fill_cancel(self, run_id: str, *, decided_by: str | None, by_source: str | None,
+                    owner_words: str | None) -> int:
+        """Who cancelled the run and the words they gave, onto its teams' cancelled outcomes
+        that don't have them yet (the cancel's own record is written after the run stops, so
+        a team may end before it exists)."""
+        with _LOCK, self._tx() as conn:
+            return conn.execute(sa.update(outcomes).where(
+                outcomes.c.run_id == run_id, outcomes.c.decision == "cancelled",
+                outcomes.c.decided_by.is_(None),
+            ).values(decided_by=decided_by, by_source=by_source,
+                     owner_words=owner_words)).rowcount
 
     # --- reading everything back (evidence) ------------------------------------------
 

@@ -812,6 +812,12 @@ def _build_final_result(
     held_back: list[NodeResult] = []
     if is_workflow:
         failed_nodes = _failed_node_names(node_outputs)
+        # A step that ended cancelled by itself, with the run's own cancel signal unset (a
+        # cancel that is set never gets here: the run ends "Workflow cancelled by user"): an
+        # owner's stop answer to a Pi team, or a Pi conversation another attempt cancelled.
+        # Nothing failed, so the run ends cancelled with that step's own reason, never
+        # "completed" (M3 E18). Only Pi nodes end cancelled this way today.
+        held_back = [r for r in node_outputs.values() if r.status == Status.CANCELLED]
     else:
         # Stages stay tolerant, except where a node's result is its stage's
         # (``Node.fails_stage``): such a stage completes only when that node completed. It
@@ -823,6 +829,13 @@ def _build_final_result(
                         or node_outputs[name].status == Status.FAILED]
         held_back = [node_outputs[name] for name in own if name in node_outputs
                      and node_outputs[name].status in (Status.CANCELLED, Status.SKIPPED)]
+        # A step that may end cancelled by itself (a Pi step whose conversation another
+        # attempt ended, ``cancelled_ends_stage``) ends its stage cancelled with its reason,
+        # so the run ends cancelled too (M3 E18); its failure stays tolerant as before.
+        held_back += [node_outputs[n.name] for n in nodes
+                      if getattr(n, "cancelled_ends_stage", False) and n.name not in own
+                      and n.name in node_outputs
+                      and node_outputs[n.name].status == Status.CANCELLED]
     if is_workflow and not failed_nodes and stopped and stopped.get("path"):
         # The run stopped at a failure, but the failed attempt is no longer among the
         # results: its loop sent it round again, which retired it, and then nothing more
@@ -835,7 +848,7 @@ def _build_final_result(
         # whatever reads a run's outcome -- the EPD driver, the dashboard -- sees what it saw.
         final_status = Status.FAILED
     error: str | None = None
-    if held_back and not failed_nodes:
+    if held_back and final_status != Status.FAILED:
         # The run was cancelled, or stopped before the node started: the stage says so, with
         # the node's own reason (a skip's reason ends "... failed", so whatever depends on the
         # stage is skipped for that failure too, never run as after a condition's skip).

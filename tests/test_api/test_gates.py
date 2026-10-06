@@ -240,6 +240,40 @@ class TestDecisionsRecord:
         (row,) = client.get(f"/api/runs/{RUN}/decisions").json()["decisions"]
         assert row["status"] == "rejected" and row["response"]["text"] == "Not this quarter."
 
+    def test_a_cancel_reason_over_2000_characters_is_refused_before_anything_is_cancelled(
+            self, client, state):
+        """M3 E13: the cancel reason is at most 2000 characters for every run."""
+        event_id = _record_waiting()
+        _park(state, event_id)
+        state.running[RUN] = cancel = threading.Event()
+
+        r = client.post(f"/api/runs/{RUN}/cancel", json={"reason": "x" * 2001})
+
+        assert (r.status_code, r.json()) == (400, {
+            "problem": "the reason is too long (2001 characters; at most 2000)"})
+        assert not cancel.is_set()
+        assert get_event(event_id)["status"] == "waiting"
+
+    def test_slacks_cancel_reads_the_too_long_reason_as_its_refusal(self, client, state):
+        """Slack's ops call the route's function directly: they get the same words."""
+        from temper_ai.integrations.slack.ops import OpsError, TemperOps
+
+        state.running[RUN] = cancel = threading.Event()
+        with pytest.raises(OpsError) as refused:
+            TemperOps().cancel(RUN, "z" * 2500)
+        assert str(refused.value) == "the reason is too long (2500 characters; at most 2000)"
+        assert not cancel.is_set()
+
+    def test_a_cancel_reason_of_exactly_2000_characters_still_cancels(self, client, state):
+        event_id = _record_waiting()
+        _park(state, event_id)
+        state.running[RUN] = cancel = threading.Event()
+
+        r = client.post(f"/api/runs/{RUN}/cancel", json={"reason": "y" * 2000})
+
+        assert r.status_code == 200 and cancel.is_set()
+        assert get_event(event_id)["data"]["gate_response"]["response"] == "y" * 2000
+
     def test_a_cancel_with_no_body_still_rejects_the_waiting_gate(self, client, state):
         event_id = _record_waiting()
         _park(state, event_id)

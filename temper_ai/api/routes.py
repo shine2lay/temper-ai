@@ -14,7 +14,8 @@ import uuid
 from contextlib import contextmanager
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket
+from fastapi.responses import JSONResponse
 from pydantic import AliasChoices, BaseModel, Field
 
 from temper_ai.api.app_state import AppState
@@ -51,6 +52,7 @@ from temper_ai.runner.resume import (
 from temper_ai.runner.resume import (
     find_latest_workflow_event as _find_latest_workflow_event,
 )
+from temper_ai.shared.text_limits import STOP_REASON_MAX_CHARS, too_long
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.exceptions import RunParked
 from temper_ai.stage.executor import execute_graph
@@ -183,8 +185,10 @@ def _note_event_run(workflow: str, execution_id: str) -> None:
         logger.exception("Could not note run %s on the event that started it", execution_id)
 
 
-def _start_run(body: RunRequest) -> RunResponse:
-    execution_id = str(uuid.uuid4())
+def _start_run(body: RunRequest, *, execution_id: str | None = None) -> RunResponse:
+    """Start ``body``'s run. ``execution_id`` is the run's id when the caller recorded it
+    before the start (the Team page's trial start); a new one otherwise."""
+    execution_id = execution_id or str(uuid.uuid4())
 
     notify_block = None
     if body.notify is not None:
@@ -599,6 +603,21 @@ def _run_placeholder(execution_id: str, status: str, row: dict | None = None) ->
     }
 
 
+class ProblemRefusal(HTTPException):
+    """A 400 whose body is ``{"problem": <text>}`` (M3 conventions), not FastAPI's
+    ``{"detail": ...}``. Its ``detail`` is the same text, so a direct caller of the route's
+    function (Slack's ops) reads it the way it reads any refusal."""
+
+    def __init__(self, text: str):
+        super().__init__(status_code=400, detail=text)
+
+
+async def problem_response(_request: Request, exc: Exception) -> JSONResponse:
+    """The server's handler for :class:`ProblemRefusal`."""
+    assert isinstance(exc, ProblemRefusal)
+    return JSONResponse(status_code=exc.status_code, content={"problem": exc.detail})
+
+
 class CancelRequest(BaseModel):
     """Optional with a cancel: why. It matters most when the run is parked at
     a gate, where cancelling *is* the human's answer (a rejection), and a
@@ -609,18 +628,38 @@ class CancelRequest(BaseModel):
 
 @router.post("/api/runs/{execution_id}/cancel")
 def cancel_run(execution_id: str, body: CancelRequest | None = None):
-    """Cancel a running workflow execution (who asked is kept with the run)."""
+    """Cancel a running workflow execution (who asked is kept with the run). The reason is at
+    most ``STOP_REASON_MAX_CHARS`` characters: a longer one is refused (400 ``{problem}``)
+    before anything is cancelled (M3 E13)."""
     caller = require_caller_may("cancel", run_id=execution_id)
+    reason = (body.reason if body else "").strip()
+    if len(reason) > STOP_REASON_MAX_CHARS:
+        raise ProblemRefusal(too_long("the reason", len(reason), STOP_REASON_MAX_CHARS))
     reply = _cancel_run(execution_id, body, caller)
-    record_action(execution_id, "cancel", caller, reason=(body.reason if body else "").strip() or None)
+    record_action(execution_id, "cancel", caller, reason=reason or None)
+    _note_team_cancel(execution_id, caller, reason)
     return reply
 
 
+def _note_team_cancel(execution_id: str, caller: Caller, reason: str) -> None:
+    """With the Pi switch on: who cancelled, and the words they gave, onto the run's teams
+    that ended cancelled (their outcome, M3 E2/E15). Never fails the cancel."""
+    from temper_ai import pi_agent
+
+    if not pi_agent.enabled():
+        return
+    from temper_ai.pi_agent.team_outcome import note_cancel
+
+    note_cancel(execution_id, caller, reason or None)
+
+
 def _gate_who(caller: Caller) -> dict[str, str]:
-    """Who answered a wait, as kept on the wait's own record."""
+    """Who answered a wait, as kept on the wait's own record (and where it came from, for
+    display only)."""
     w = who(caller)
     return {"gate_caller": w["caller"], "gate_caller_from": w["caller_from"],
-            "gate_caller_request_id": w["caller_request_id"]}
+            "gate_caller_request_id": w["caller_request_id"],
+            "gate_caller_source": w["caller_source"]}
 
 
 def _cancel_run(execution_id: str, body: CancelRequest | None, caller: Caller):
@@ -1191,7 +1230,13 @@ def approve_gate(execution_id: str, node_name: str, body: GateApproval | None = 
     caller's name) and the caller's name, address and request id (api/caller.py).
     """
     caller = require_caller_may("approve", run_id=execution_id)
-    body = body or GateApproval()
+    return approve_wait(execution_id, node_name, body or GateApproval(), caller)
+
+
+def approve_wait(execution_id: str, node_name: str, body: GateApproval, caller: Any) -> dict[str, Any]:
+    """The approval itself, for a caller the guard has let through: what
+    ``POST /api/runs/{id}/approve/{node}`` does after its guard, and what the Team page's
+    answers (``/api/team``) decide through, as a typed response (M3)."""
     request_id = (body.request_id or "").strip() or None
     if request_id:
         first = _first_answer_to(execution_id, request_id)

@@ -20,6 +20,11 @@ class AgentABC(ABC):
     #: max_tokens. An agent type that calls no LLM but reads a key of the same name (JevAgent's
     #: `model`) sets this False and keeps its own.
     uses_llm_settings: bool = True
+    #: Whether this agent may end ``cancelled`` by itself, with the run's cancel signal unset
+    #: (a Pi step whose conversation another attempt of the run ended). Its stage then ends
+    #: cancelled with the step's own reason, and so does the run (M3 E18), never the tolerant
+    #: "completed" a stage keeps over its other steps.
+    cancelled_ends_stage: bool = False
 
     def __init__(self, config: dict):
         self.config = config

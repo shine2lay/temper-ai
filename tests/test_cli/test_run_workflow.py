@@ -240,6 +240,22 @@ def test_cancellation_reflected_in_row(queued_run):
     assert row["status"] == "cancelled"
 
 
+def test_e18_a_run_that_ended_cancelled_by_itself_keeps_its_own_reason_on_its_row(queued_run):
+    """M3 E18: an owner's stop at a team's pause ends the run cancelled with the stop's own
+    text, the run's cancel signal never set: the row says cancelled and why."""
+    args = _make_args(queued_run)
+    fake_result = ExecuteResult(exit_code=1, status="cancelled",
+                                error="stopped at the pause after round 1")
+    with (
+        patch("temper_ai.runner.bootstrap.bootstrap_runner_context_from_env"),
+        patch("temper_ai.runner.execute.execute_workflow", return_value=fake_result),
+    ):
+        assert cmd_run_workflow(args) == 1
+    row = _read_row(queued_run)
+    assert row["status"] == "cancelled"
+    assert row["error"] == {"message": "stopped at the pause after round 1"}
+
+
 def test_unexpected_exception_marks_failed(queued_run):
     """If execute_workflow itself raises (a bug — it's supposed to catch),
     the worker still updates the row to failed and exits 1."""

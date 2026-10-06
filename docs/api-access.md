@@ -54,6 +54,11 @@ HTTP route alone would let the MCP side door straight past.
 | write a config | `POST`/`PUT`/`DELETE /api/studio/configs/{type}/{name}` | | |
 | replay an inbox event | `POST /api/events/{id}/replay` | | |
 | run the triggers now | `POST /api/triggers/tick` | | |
+| Team page: start a trial, answer, message | `POST /api/team/trials`, `.../waits/{id}/answer`, `.../messages` (only with `TEMPER_PI_AGENT=1`; [pi-team-api.md](pi-team-api.md)) | | |
+
+A cancel's `reason` may be at most 2000 characters, for every run: a longer one is refused
+with `400 {problem: "the reason is too long (<n> characters; at most 2000)"}` and nothing
+is cancelled. A team's cancel reason becomes its outcome's `owner_words`.
 | mint a GitHub repo token | `POST /api/github/token` | | a run's own process, with its GitHub-token key (GitHub app tools) |
 
 Not behind the guard, each with its own check:

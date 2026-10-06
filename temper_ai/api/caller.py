@@ -92,6 +92,9 @@ class Caller:
     via: str = ""
     from_browser: bool = False
     may: frozenset[str] | None = None
+    #: The request's Origin header names this server: a page the server served sent it. For
+    #: display only (where an action came from, :func:`display_source`); never vouches.
+    same_origin: bool = False
 
     @property
     def is_box(self) -> bool:
@@ -240,14 +243,38 @@ def require_caller_may(action: str, *, run_id: str | None = None) -> Caller:
     return caller
 
 
+#: Where an action came from, for display only (M3 E15): never used to decide who acted.
+DISPLAY_SOURCES = ("team_page", "run_page", "chat", "api", "unknown")
+
+
+def display_source(caller: Caller | None) -> str:
+    """Where an action came from, for display only (M3 E15): ``team_page`` (a Team page
+    route, ``/api/team/...``), ``run_page`` (another HTTP route, sent by a page this server
+    served), ``chat`` (a temper MCP tool, Slack or Telegram), ``api`` (any other HTTP request)
+    or ``unknown``. Who acted is the caller's name; this never decides it."""
+    if caller is None:
+        return "unknown"
+    via = caller.via or ""
+    _method, _, path = via.partition(" ")
+    if path.startswith("/"):
+        if path == "/api/team" or path.startswith("/api/team/"):
+            return "team_page"
+        return "run_page" if caller.same_origin else "api"
+    if via.startswith("mcp ") or via in ("slack", "telegram"):
+        return "chat"
+    return "unknown"
+
+
 def who(caller: Caller | None) -> dict[str, str]:
-    """The fields stored on a decision or a run action: who, from where, which request."""
+    """The fields stored on a decision or a run action: who, from where, which request, and
+    where it came from for display (``caller_source``, :func:`display_source`)."""
     if caller is None:
         caller = Caller(name=None)
     return {
         "caller": caller.label,
         "caller_from": caller.source,
         "caller_request_id": caller.request_id,
+        "caller_source": display_source(caller),
     }
 
 

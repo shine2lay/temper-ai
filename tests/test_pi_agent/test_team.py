@@ -57,7 +57,7 @@ TOOLS = "Read, Edit, Write, Bash, Grep, Glob"
 def members() -> list[dict]:
     return [{"name": "design", "type": "pi", "role": "architecture"},
             {"name": "frontend", "type": "pi", "role": "frontend", "tools": ["Read", "Edit", "Glob"]},
-            {"name": "qa", "type": "pi", "role": "qa", "tools": ["Read", "Bash"]}]
+            {"name": "qa", "type": "pi", "role": "qa", "tools": ["Read", "Grep"]}]
 
 
 def make_roles(root: Path) -> Path:

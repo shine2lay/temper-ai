@@ -84,12 +84,15 @@ def test_f1_a_picked_option_reads_as_the_pick_never_as_the_rendered_text():
     picked = normalise_response({"answers": [{"id": "q1", "question": "lead turn 1?",
                                               "selected": ["retry"]}]})
     assert picked["text"].startswith("Q: ")
-    assert owner_reply(picked) == "retry"
+    assert owner_reply(picked) == ("retry", "")
     written = normalise_response({"answers": [{"id": "q1", "question": "q",
                                                "selected": ["accept"], "custom": "looks done"}]})
-    assert owner_reply(written) == "accept looks done"
-    assert owner_reply(normalise_response({"response": "retry"})) == "retry"
-    assert owner_reply(None) == ""
+    # M3 E17: the pick is the choice, the written text the words
+    assert owner_reply(written) == ("accept", "looks done")
+    assert owner_reply(normalise_response({"response": "retry"})) == ("retry", "")
+    assert owner_reply(normalise_response({"response": "guide: be brief"})) == ("guide",
+                                                                                "be brief")
+    assert owner_reply(None) == ("", "")
 
 
 # --- B1: a retried turn gets the same messages, same ids, in the same conversation -----
@@ -375,7 +378,7 @@ def test_n1_f1_accept_at_a_failed_turn_is_asked_again_never_a_stop(led, box, run
     assert led.member_row(run_id, ts.HOST, "lead")["state"] == "uncertain", "nothing decided"
 
     stopped = again.decide(asked, "stop")
-    assert stopped == "lead turn 1 failed and the owner stopped the team"
+    assert stopped == "lead turn 1 failed and the team was stopped"
     lead = led.member_row(run_id, ts.HOST, "lead")
     assert lead["state"] == "failed"
     assert again.step().kind == "failed"

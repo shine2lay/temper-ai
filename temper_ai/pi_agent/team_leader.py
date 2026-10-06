@@ -21,8 +21,8 @@ reviewer's last view, the leader's summary, the number of rounds and the cost --
 outputs. After done, stop or cancel the team takes no new work.
 
 A review-tool call is recorded with the calling turn (``pi_team_acts``) and counts only once
-that turn has finished -- completed, or accepted by the owner. Temper carries it out before the
-team's next turn, on every path (the loop, a resume after a park, a restart); a call of a turn
+that turn has finished -- completed, or accepted at a recovery wait. Temper carries it out
+before the team's next turn, on every path (the loop, a resume after a park, a restart); a call of a turn
 that failed, was retried or was cancelled never counts.
 
 Every owner wait the team opens -- the pause after ``pause_after_rounds`` keep-goings in a row
@@ -53,7 +53,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from temper_ai.pi_agent.host import owner_reply
+from temper_ai.pi_agent.host import ask_text, owner_reply
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
     _LOCK,
@@ -72,7 +72,16 @@ from temper_ai.pi_agent.ledger import (
 from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait
 from temper_ai.pi_agent.route import model as route_model
 from temper_ai.pi_agent.route.router import IDENTITY_CLAIMS, Refusal, content_digest
-from temper_ai.pi_agent.team_runtime import Team, TeamChannel, TeamMember, member_tools
+from temper_ai.pi_agent.team_folders import GIT
+from temper_ai.pi_agent.team_runtime import (
+    Team,
+    TeamChannel,
+    TeamMember,
+    member_tools,
+    stop_ends_cancelled,
+    stop_text,
+    stop_words,
+)
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.exceptions import CancellationError
 
@@ -149,13 +158,19 @@ def usage_of(outcome: Any) -> dict:
 
 
 def owner_words(answer: Any) -> tuple[str, str]:
-    """(first word, the rest) of the owner's answer: the typed response, else the first
-    answered question's pick and custom text."""
-    text = owner_reply(getattr(answer, "response", None))
-    m = re.match(r"\s*([A-Za-z_-]+)\s*[:,.;\-]*\s*(.*)\Z", text, re.S)
-    if not m:
-        return "", text
-    return m.group(1).lower().replace("-", "_"), m.group(2).strip()
+    """(choice, words) of the owner's answer (M3 E17): a picked option is the choice and the
+    typed text the words; with no pick, the typed text's first word is the choice and the rest
+    the words (:func:`~temper_ai.pi_agent.host.owner_reply`)."""
+    return owner_reply(getattr(answer, "response", None))
+
+
+def answer_who(answer: Any) -> dict:
+    """Who answered a wait, as the API guard recorded the caller on the answer (#45): the
+    credential name (``by``; None when there was none) and where the answer came from
+    (``source``, for display only; M3 E15, E21), with the answer's request id. Never the
+    self-declared ``by`` of the approve body."""
+    return {"by": getattr(answer, "caller", None), "source": getattr(answer, "caller_source", None),
+            "request_id": getattr(answer, "request_id", None)}
 
 
 def _one_line(text: str, limit: int = MAX_NOTE) -> str:
@@ -177,9 +192,7 @@ class TeamFailure(Exception):
     """The team can't go on (a copy failed, another attempt holds the team): red."""
 
 
-_GIT = ("git", "-c", "safe.directory=*", "-c", "core.hooksPath=/dev/null", "-c",
-        "core.fsmonitor=false", "-c", "core.autocrlf=false", "-c", "user.name=Temper", "-c",
-        "user.email=temper@localhost", "-c", "commit.gpgsign=false", "-c", "gc.auto=0")
+_GIT = GIT  # the hardened git command line, shared with the folder checks and the branch
 
 
 class ProjectCopies:
@@ -377,7 +390,76 @@ class LeaderChannel(TeamChannel):
         return super().handle(payload)
 
 
-class LeaderTeam(Team):
+class TeamRows:
+    """Reads of one team's rows in the ledger, shared by the leader loop and the Team page's
+    read of a run (team_view.py), which has no box or recorder: ``ledger``, ``run_id``,
+    ``host_path`` and ``leader`` are all it needs."""
+
+    ledger: Ledger
+    run_id: str
+    host_path: str
+    leader: str
+
+    def _where(self, table: sa.Table) -> tuple:
+        return (table.c.run_id == self.run_id, table.c.host_path == self.host_path)
+
+    def _rows(self, table: sa.Table, *where: Any, order: Any = None) -> list[dict]:
+        with _LOCK, self.ledger.engine.connect() as conn:
+            q = sa.select(table).where(*self._where(table), *where)
+            if order is not None:
+                q = q.order_by(order)
+            return [dict(r) for r in conn.execute(q).mappings().all()]
+
+    def _member_rows(self) -> dict[str, dict]:
+        return {r["member"]: r for r in self.ledger.participants_of(self.run_id, self.host_path)}
+
+    def _reviews(self) -> list[dict]:
+        return self._rows(reviews, order=reviews.c.round)
+
+    def usage(self) -> dict:
+        """The team's model usage so far, from its turns' receipts."""
+        total = {"cost_usd": 0.0, "total_tokens": 0, "llm_calls": 0, "turns": 0}
+        for t in self._rows(turns):
+            u = (t.get("worker") or {}).get("usage") or {}
+            total["cost_usd"] += float(u.get("cost_usd") or 0.0)
+            total["total_tokens"] += int(u.get("total_tokens") or 0)
+            total["llm_calls"] += int(u.get("llm_calls") or len(t.get("model_call_ids") or []))
+            total["turns"] += 1
+        total["cost_usd"] = round(total["cost_usd"], 6)
+        return total
+
+    def stopped(self) -> str | None:
+        """Why the team was stopped, from its decided waits (None when not stopped). The text
+        is neutral engine text (M3 E16): it never names who stopped it -- that is the
+        outcome's ``by``."""
+        stop = self.stop_wait()
+        return stop_text(stop) if stop else None
+
+    def stop_wait(self) -> dict | None:
+        """The decided wait whose answer stopped the team (the first, by when it was decided),
+        or None."""
+        for w in self._rows(waits, waits.c.state == "decided", order=waits.c.decided_at):
+            if stop_text(w) is not None:
+                return dict(w)
+        return None
+
+    def done_review(self) -> dict | None:
+        return next((r for r in self._reviews() if r["decision"] == "done"), None)
+
+    def keep_goings(self, pauses: list[dict] | None = None) -> list[dict]:
+        """The reviews that kept going since the last pause answered continue or guide: the
+        count the pause is opened by (R2 B10)."""
+        if pauses is None:
+            pauses = self._rows(waits, waits.c.kind == "pause", order=waits.c.opened_at)
+        answered = max(((w["subject"] or {}).get("round") or 0 for w in pauses
+                        if w["state"] == "decided"
+                        and (w["decision"] or {}).get("answer") in ("continue", "guide")),
+                       default=0)
+        return [r for r in self._reviews() if r["decision"] in KEEP_GOINGS
+                and r["round"] > answered]
+
+
+class LeaderTeam(TeamRows, Team):
     """#37's team, driven by the leader loop. Everything is read from and written to the
     ledger, so a later attempt (a resume after a park, a restart) carries on from the tables."""
 
@@ -414,42 +496,14 @@ class LeaderTeam(Team):
 
     # --- reading the team ----------------------------------------------------------------
 
-    def _where(self, table: sa.Table) -> tuple:
-        return (table.c.run_id == self.run_id, table.c.host_path == self.host_path)
-
-    def _rows(self, table: sa.Table, *where: Any, order: Any = None) -> list[dict]:
-        with _LOCK, self.ledger.engine.connect() as conn:
-            q = sa.select(table).where(*self._where(table), *where)
-            if order is not None:
-                q = q.order_by(order)
-            return [dict(r) for r in conn.execute(q).mappings().all()]
-
-    def _member_rows(self) -> dict[str, dict]:
-        return {r["member"]: r for r in self.ledger.participants_of(self.run_id, self.host_path)}
-
     @staticmethod
     def _pdir(row: dict) -> Path:
         return Path(row["session_dir"]).parent
-
-    def _reviews(self) -> list[dict]:
-        return self._rows(reviews, order=reviews.c.round)
 
     def _end_reason(self) -> str | None:
         rows = list(self._member_rows().values())
         ended = [r for r in rows if r["state"] == "ended"]
         return (ended[0]["ended_reason"] or "run_cancelled") if ended else None
-
-    def usage(self) -> dict:
-        """The team's model usage so far, from its turns' receipts."""
-        total = {"cost_usd": 0.0, "total_tokens": 0, "llm_calls": 0, "turns": 0}
-        for t in self._rows(turns):
-            u = (t.get("worker") or {}).get("usage") or {}
-            total["cost_usd"] += float(u.get("cost_usd") or 0.0)
-            total["total_tokens"] += int(u.get("total_tokens") or 0)
-            total["llm_calls"] += int(u.get("llm_calls") or len(t.get("model_call_ids") or []))
-            total["turns"] += 1
-        total["cost_usd"] = round(total["cost_usd"], 6)
-        return total
 
     # --- the review tools (recorded with the calling turn) ---------------------------------
 
@@ -841,16 +895,10 @@ class LeaderTeam(Team):
     def _open_pause_if_due(self) -> dict | None:
         """The pause after ``pause_after_rounds`` keep-goings in a row: one owner wait in the
         same run (R2 B10). Continue and guide restart the count; it never expires."""
-        all_waits = self._rows(waits, order=waits.c.opened_at)
-        pauses = [w for w in all_waits if w["kind"] == "pause"]
+        pauses = self._rows(waits, waits.c.kind == "pause", order=waits.c.opened_at)
         if any(w["state"] == "open" for w in pauses):
             return None
-        answered = max(((w["subject"] or {}).get("round") or 0 for w in pauses
-                        if w["state"] == "decided"
-                        and (w["decision"] or {}).get("answer") in ("continue", "guide")),
-                       default=0)
-        kept = [r for r in self._reviews() if r["decision"] in KEEP_GOINGS
-                and r["round"] > answered]
+        kept = self.keep_goings(pauses)
         if len(kept) < self.pause_after:
             return None
         round_no = max(r["round"] for r in kept)
@@ -859,8 +907,8 @@ class LeaderTeam(Team):
             "label": label, "header": label, "round": round_no, "keep_goings": len(kept),
             "question": (f"The team kept going {len(kept)} round(s) in a row "
                          f"(pause_after_rounds {self.pause_after}) and is paused after round "
-                         f"{round_no}. Reply 'continue', 'guide: <what to tell {self.leader}>', "
-                         "or 'stop'."),
+                         f"{round_no}."),
+            "reply_hint": f"Reply 'continue', 'guide: <what to tell {self.leader}>', or 'stop'.",
             "options": list(PAUSE_OPTIONS),
         }
         return self._open_wait("pause", subject, only_if_none_of_kind=True)
@@ -869,8 +917,9 @@ class LeaderTeam(Team):
         subject = {
             "header": "team-stalled",
             "question": (f"The team is stalled: nothing is running, nothing is waiting to be "
-                         f"delivered and {self.leader} has not said done. Reply 'nudge' "
-                         f"(optionally with a message for {self.leader}) or 'stop'."),
+                         f"delivered and {self.leader} has not said done."),
+            "reply_hint": (f"Reply 'nudge' (optionally with a message for {self.leader}) "
+                           "or 'stop'."),
             "options": list(STALLED_OPTIONS),
         }
         return self._open_wait("stalled", subject, only_if_none_of_kind=False)
@@ -892,7 +941,7 @@ class LeaderTeam(Team):
         workflow an unanswered wait parks the run (``RunParked`` goes up untouched). None when
         another attempt decided the wait meanwhile."""
         subject = wait["subject"] or {}
-        question = subject.get("question") or "The team is waiting for you."
+        question = ask_text(subject, "The team is waiting for you.")
         header = subject.get("header") or (
             f"{subject.get('member')} turn {subject.get('turn_no')}"
             if wait["kind"] == "recovery" else wait["kind"])
@@ -908,68 +957,57 @@ class LeaderTeam(Team):
     def apply(self, wait: dict, answer: Any) -> None:
         """Apply the owner's answer once (the wait row's compare-and-set): continue / guide /
         stop at the pause, nudge / stop when stalled, accept / retry / stop at a recovery wait,
-        any answer to an owner question (delivered to the member who asked)."""
+        any answer to an owner question (delivered to the member who asked).
+
+        Every decision keeps who answered (``by``, ``source``: the API guard's record of the
+        caller, M3 E21); a stop keeps the words given with it as ``words`` (E18), which become
+        the outcome's ``owner_words``."""
         kind, wid = wait["kind"], wait["wait_id"]
         subject = wait["subject"] or {}
         text = str(getattr(answer, "text", "") or "")
         sha = hashlib.sha256(text.encode()).hexdigest()
-        if kind == "recovery":
-            # The typed answer or the picked option, never the rendered "Q: ... A: ..." text
-            # (M3 F1): a pick of "retry" is a retry.
-            self.decide(wait, owner_reply(getattr(answer, "response", None)))
-            return
+        who = answer_who(answer)
+        # The picked option or the typed answer's first word, never the rendered
+        # "Q: ... A: ..." text (M3 F1): a pick of "retry" is a retry. The words come apart
+        # from the choice (E17).
         word, rest = owner_words(answer)
+        if kind == "recovery":
+            self.decide(wait, f"{word} {rest}".strip(), words=rest, who=who)
+            return
         if kind == "pause":
             r = subject.get("round")
+            base = {"round": r, "text_sha256": sha, **who}
             if word == "continue":
-                self.ledger.decide_wait(wid, {"answer": "continue", "round": r,
-                                              "text_sha256": sha}, self.attempt_id)
+                self.ledger.decide_wait(wid, {"answer": "continue", **base}, self.attempt_id)
             elif word == "guide" and rest:
                 self.ledger.decide_wait(
-                    wid, {"answer": "guide", "round": r, "text_sha256": sha}, self.attempt_id,
+                    wid, {"answer": "guide", **base}, self.attempt_id,
                     deliveries=[(self.leader, f"Guidance from the owner at the pause after "
                                               f"round {r}: {rest}")])
             elif word == "stop":
-                self.ledger.decide_wait(wid, {"answer": "stop", "round": r, "text_sha256": sha},
-                                        self.attempt_id)
+                self.ledger.decide_wait(wid, {"answer": "stop", **base,
+                                              "words": stop_words(rest)}, self.attempt_id)
             else:  # never taken as a continue or as done: the owner is asked again
-                self.ledger.decide_wait(wid, {"answer": "invalid", "round": r,
-                                              "text_sha256": sha}, self.attempt_id)
+                self.ledger.decide_wait(wid, {"answer": "invalid", **base}, self.attempt_id)
             return
         if kind == "stalled":
+            base = {"text_sha256": sha, **who}
             if word == "nudge":
                 self.ledger.decide_wait(
-                    wid, {"answer": "nudge", "text_sha256": sha}, self.attempt_id,
+                    wid, {"answer": "nudge", **base}, self.attempt_id,
                     deliveries=[(self.leader, "A nudge from the owner: the team has nothing to "
                                               "do and you have not said done."
                                               + (f" {rest}" if rest else ""))])
             elif word == "stop":
-                self.ledger.decide_wait(wid, {"answer": "stop", "text_sha256": sha},
-                                        self.attempt_id)
+                self.ledger.decide_wait(wid, {"answer": "stop", **base,
+                                              "words": stop_words(rest)}, self.attempt_id)
             else:
-                self.ledger.decide_wait(wid, {"answer": "invalid", "text_sha256": sha},
-                                        self.attempt_id)
+                self.ledger.decide_wait(wid, {"answer": "invalid", **base}, self.attempt_id)
             return
         member = subject.get("member")
-        self.ledger.decide_wait(wid, {"answer": "given", "text_sha256": sha}, self.attempt_id,
+        self.ledger.decide_wait(wid, {"answer": "given", "text_sha256": sha, **who},
+                                self.attempt_id,
                                 deliveries=[(member, text)] if member and text else [])
-
-    def stopped(self) -> str | None:
-        """Why the owner stopped the team, from its decided waits (None when not stopped)."""
-        for w in self._rows(waits, waits.c.state == "decided", order=waits.c.decided_at):
-            d, s = w["decision"] or {}, w["subject"] or {}
-            if w["kind"] == "pause" and d.get("answer") == "stop":
-                return f"stopped by the owner at the pause after round {s.get('round')}"
-            if w["kind"] == "stalled" and d.get("answer") == "stop":
-                return "stopped by the owner when the team had nothing left to do"
-            if w["kind"] == "recovery" and d.get("recovery") == "stop":
-                did = "failed" if "accept" not in (s.get("options") or []) else "did not finish"
-                return (f"{s.get('member')} turn {s.get('turn_no')} {did} and the owner "
-                        "stopped the team")
-        return None
-
-    def done_review(self) -> dict | None:
-        return next((r for r in self._reviews() if r["decision"] == "done"), None)
 
     # --- the loop ---------------------------------------------------------------------------
 
@@ -989,7 +1027,7 @@ class LeaderTeam(Team):
             if reason == "team_done":
                 return Outcome("done", record=self.done_record())
             if reason == "team_stopped":
-                return Outcome("stopped", self.stopped() or "stopped by the owner")
+                return Outcome("stopped", self.stopped() or "the team was stopped")
             if reason == "run_cancelled":
                 return Outcome("cancelled", "the run was cancelled")
             if reason is not None:
@@ -1031,14 +1069,22 @@ class LeaderTeam(Team):
         """Temper's record of done: the node's outputs for later nodes (R2 B9)."""
         rev = self.done_review() or {}
         last_views: dict[str, dict] = {}
+        views_on_done: dict[str, dict] = {}
+        earlier: dict[str, dict] = {}
         rounds = {r["review_id"]: r["round"] for r in self._reviews()}
         for v in self._rows(acts, acts.c.op == GIVE_VIEW, acts.c.state == "carried_out",
                             order=acts.c.seq):
             args = v["args"] or {}
-            last_views[v["member"]] = {"verdict": args.get("verdict"), "note": args.get("note"),
-                                       "review_id": v["review_id"],
-                                       "round": rounds.get(v["review_id"])}
+            view = {"verdict": args.get("verdict"), "note": args.get("note"),
+                    "review_id": v["review_id"], "round": rounds.get(v["review_id"])}
+            last_views[v["member"]] = view
+            if rev and v["review_id"] == rev.get("review_id"):
+                views_on_done[v["member"]] = view
+            else:
+                earlier[v["member"]] = view
         return {
+            "objections": self._objections(rev, views_on_done, earlier),
+            "branch": None,
             "decision": "done",
             "review_id": rev.get("review_id"),
             "round": rev.get("round"),
@@ -1050,6 +1096,33 @@ class LeaderTeam(Team):
             "project": self.project.record() if self.project.record_path.exists() else {},
             "leader": self.leader,
         }
+
+    def _objections(self, rev: dict, on_done: dict[str, dict],
+                    last: dict[str, dict]) -> list[dict]:
+        """Who didn't agree with the version that was done (M3 E1): each member asked to review
+        it, or who gave a view on it, whose view on it isn't ``satisfied`` (``changes``), or who
+        gave none (``none``, with their last earlier view as context). The rule of
+        M1/harness/m1_proof.py."""
+        rid = rev.get("review_id")
+        if not rid:
+            return []
+        asked = {m["to_member"] for m in self._rows(
+            messages, messages.c.kind == "review_request", messages.c.review_id == rid)}
+        out = []
+        for member in sorted(asked | set(on_done)):
+            if member == self.leader:
+                continue
+            view = on_done.get(member)
+            if view is not None:
+                if view["verdict"] == "satisfied":
+                    continue
+                out.append({"member": member, "verdict": "changes", "note": view["note"],
+                            "view_round": view["round"]})
+                continue
+            earlier = last.get(member) or {}
+            out.append({"member": member, "verdict": "none", "note": earlier.get("note"),
+                        "view_round": earlier.get("round")})
+        return out
 
     # --- the run view -------------------------------------------------------------------------
 
@@ -1084,10 +1157,35 @@ def _at(value: Any) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else (str(value) if value else None)
 
 
-def run_view(team: LeaderTeam) -> list[dict]:
+#: The wait kinds as the Team page names them: a member's question is ``owner`` in the ledger.
+WAIT_KIND_SHOWN = {"owner": "question", "pause": "pause", "stalled": "stalled",
+                   "recovery": "recovery"}
+
+
+def run_view(team: TeamRows) -> list[dict]:
     """The team's story in the run view's collaboration-event shape (``event_type``,
-    ``from_agent``, ``to_agent``, ``timestamp``, ``data``), oldest first."""
-    story: list[tuple[str, int, dict]] = []
+    ``from_agent``, ``to_agent``, ``timestamp``, ``data``, plus the typed fields of M3 E14),
+    oldest first: the newest :data:`VIEW_LIMIT` entries, after one saying how many earlier
+    ones are not shown."""
+    out = story(team)
+    if len(out) > VIEW_LIMIT:
+        hidden = len(out) - VIEW_LIMIT
+        out = [{"event_type": f"{hidden} earlier entries not shown", "data": {}},
+               *out[-VIEW_LIMIT:]]
+    return out
+
+
+def story(team: TeamRows, *, full: bool = False, answers: tuple | list = (),
+          turn_rows: tuple | list = ()) -> list[dict]:
+    """Every entry of the team's story, oldest first. Each carries the typed fields the Team
+    page reads (M3 E14) -- ``entry`` (message, review_round, view, decision, owner_wait,
+    owner_answer, member_turn), ``message_kind``, ``round``, ``decision``, ``wait_kind`` -- so
+    nothing has to parse ``event_type``, which stays the run page's text.
+
+    The run page's story has messages, review rounds, decisions, owner waits and the stop.
+    The Team page's (``full``, team_view.py) adds each view, each owner answer (``answers``:
+    entries built by the caller, with who answered) and each member turn (``turn_rows``)."""
+    entries: list[tuple[str, float, dict]] = []
     for m in team._rows(messages, order=messages.c.seq):
         body = str(m["body"] or "")
         data: dict[str, Any] = {"message_id": m["message_id"], "state": m["state"],
@@ -1097,29 +1195,41 @@ def run_view(team: LeaderTeam) -> list[dict]:
         if m["undelivered_reason"]:
             data["undelivered"] = m["undelivered_reason"]
         data["preview"] = body[:VIEW_PREVIEW] + ("..." if len(body) > VIEW_PREVIEW else "")
-        story.append((_at(m["created_at"]) or "", 0, {
+        entries.append((_at(m["created_at"]) or "", 0, {
             "event_type": f"message: {m['kind']}", "from_agent": m["sender"],
-            "to_agent": m["to_member"], "timestamp": _at(m["created_at"]), "data": data}))
+            "to_agent": m["to_member"], "timestamp": _at(m["created_at"]), "data": data,
+            "entry": "message", "message_kind": m["kind"]}))
+    rounds = {r["review_id"]: r["round"] for r in team._reviews()}
     views: dict[str, dict[str, dict]] = {}
     for a in team._rows(acts, acts.c.op == GIVE_VIEW, acts.c.state == "carried_out",
                         order=acts.c.seq):
         args = a["args"] or {}
-        views.setdefault(a["review_id"], {})[a["member"]] = {
-            "verdict": args.get("verdict"), "note": str(args.get("note") or "")[:VIEW_PREVIEW]}
+        view = {"verdict": args.get("verdict"), "note": str(args.get("note") or "")[:VIEW_PREVIEW]}
+        views.setdefault(a["review_id"], {})[a["member"]] = view
+        if full:
+            entries.append((_at(a["carried_at"]) or "", 1.5, {
+                "event_type": f"view: {view['verdict']}", "from_agent": a["member"],
+                "to_agent": team.leader, "timestamp": _at(a["carried_at"]),
+                "data": {"review_id": a["review_id"], **view},
+                "entry": "view", "round": rounds.get(a["review_id"])}))
     for r in team._reviews():
-        story.append((_at(r["opened_at"]) or "", 1, {
+        entries.append((_at(r["opened_at"]) or "", 1, {
             "event_type": f"review round {r['round']}", "from_agent": team.leader,
             "timestamp": _at(r["opened_at"]),
             "data": {"review_id": r["review_id"], "state": r["state"],
                      "commit": r["commit_sha"], "files": r["files"] or {},
-                     "views": views.get(r["review_id"], {}), "decision": r["decision"]}}))
+                     "views": views.get(r["review_id"], {}), "decision": r["decision"]},
+            "entry": "review_round", "round": r["round"]}))
         if r["decision"]:
-            story.append((_at(r["decided_at"]) or "", 2, {
+            entries.append((_at(r["decided_at"]) or "", 2, {
                 "event_type": f"decision: {r['decision']}", "from_agent": team.leader,
                 "timestamp": _at(r["decided_at"]),
                 "data": {"review_id": r["review_id"], "round": r["round"],
                          "commit": r["commit_sha"],
-                         "summary": str(r["summary"] or "")[:VIEW_PREVIEW]}}))
+                         "summary": str(r["summary"] or "")[:VIEW_PREVIEW]},
+                "entry": "decision", "round": r["round"],
+                # A refused done counts as keep going (its why is on the review).
+                "decision": "done" if r["decision"] == "done" else "keep_going"}))
     for w in team._rows(waits, order=waits.c.opened_at):
         s, d = w["subject"] or {}, w["decision"] or {}
         data = {"wait_id": w["wait_id"], "state": w["state"],
@@ -1127,59 +1237,99 @@ def run_view(team: LeaderTeam) -> list[dict]:
         answer = d.get("answer") or d.get("recovery")
         if answer:
             data["answer"] = answer
-        story.append((_at(w["opened_at"]) or "", 3, {
+        typed: dict[str, Any] = {"entry": "owner_wait",
+                                 "wait_kind": WAIT_KIND_SHOWN.get(w["kind"], w["kind"])}
+        if isinstance(s.get("round"), int):
+            typed["round"] = s["round"]
+        entries.append((_at(w["opened_at"]) or "", 3, {
             "event_type": f"owner wait: {w['kind']}", "from_agent": "temper",
-            "to_agent": "owner", "timestamp": _at(w["opened_at"]), "data": data}))
+            "to_agent": "owner", "timestamp": _at(w["opened_at"]), "data": data, **typed}))
+    for a in answers:
+        entries.append((a.get("timestamp") or "", 3.5, a))
+    for t in turn_rows:
+        entries.append((t.get("timestamp") or "", -1, t))
     stopped = team.stopped()
     if stopped:
-        story.append(("~", 4, {"event_type": "decision: stopped", "from_agent": "owner",
-                               "data": {"reason": stopped}}))
-    story.sort(key=lambda e: (e[0], e[1]))
-    out = [e for _when, _order, e in story]
-    if len(out) > VIEW_LIMIT:
-        hidden = len(out) - VIEW_LIMIT
-        out = [{"event_type": f"{hidden} earlier entries not shown", "data": {}},
-               *out[-VIEW_LIMIT:]]
-    return out
+        entries.append(("~", 4, {"event_type": "decision: stopped", "from_agent": "owner",
+                                 "data": {"reason": stopped},
+                                 "entry": "decision", "decision": "stopped"}))
+    entries.sort(key=lambda e: (e[0], e[1]))
+    return [e for _when, _order, e in entries]
 
 
 # --- the node -------------------------------------------------------------------------------
 
 
 def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> NodeResult:
-    """A team stage's node: check again, open the team, drive it (TeamNode.run)."""
+    """A team stage's node: check again, open the team, drive it (TeamNode.run).
+
+    Every way out writes the team's outcome (``pi_team_outcomes``, M3 E2/E3/E16, A2), the
+    only record the Team page reads; ``structured_output`` carries a copy for the workflow's
+    outputs. A stop at the pause or when the team had nothing left to do ends the node
+    cancelled, not failed (E18): it was the owner's decision and nothing failed."""
     from temper_ai.database import get_database
     from temper_ai.pi_agent import end_cancelled_teams
     from temper_ai.pi_agent.team import member_name
     from temper_ai.pi_agent.team_check import check_team, load_box
+    from temper_ai.pi_agent.team_config import load_team_config, trial_id_of
+    from temper_ai.pi_agent.team_folders import folder_check, roots_of
+    from temper_ai.pi_agent.team_outcome import cancel_record
 
     started = time.monotonic()
-
-    def failed(text: str, **extra: Any) -> NodeResult:
-        return NodeResult(status=Status.FAILED, output=text, error=text,
-                          duration_seconds=time.monotonic() - started,
-                          metadata={"team": {"settings": node.settings.as_dict(), **extra}})
-
+    settings = node.settings.as_dict()
     host_path = context.step_path or (f"{context.node_path}.{node.name}" if context.node_path
                                       else node.name)
+    trial_id = trial_id_of(context.workflow_name)
+    ledger = Ledger(get_database().engine)
+    ledger.ensure()
+
+    def outcome(decision: str, reason: str, **fields: Any) -> None:
+        """The team's typed outcome; a record that could not be written is logged, never
+        fails the run (the run's own status still tells how it ended)."""
+        try:
+            ledger.write_outcome(context.run_id, host_path, decision=decision, reason=reason,
+                                 trial_id=trial_id, **fields)
+        except Exception:  # noqa: BLE001 - the Team page's copy only
+            logger.warning("team %s %s: its outcome could not be written", context.run_id,
+                           host_path, exc_info=True)
+
+    def began() -> bool:
+        return ledger.any_turn_began(context.run_id, host_path)
+
+    def failed(text: str, *, problems: list[str] | None = None, **extra: Any) -> NodeResult:
+        decision = "failed" if began() else "didnt_start"
+        outcome(decision, text, problems=problems or [])
+        if problems:
+            extra["problems"] = problems
+        return NodeResult(status=Status.FAILED, output=text, error=text,
+                          structured_output={"decision": decision, "reason": text},
+                          duration_seconds=time.monotonic() - started,
+                          metadata={"team": {"settings": settings, **extra}})
+
     goal = (input_data or {}).get("goal")
     if goal is not None and not isinstance(goal, str):
         goal = json.dumps(goal, sort_keys=True, default=str)
     # The run-start check never sees a resume or a fork (they run the workflow config as it is
     # now) nor a goal mapped from an earlier node: check again here, with the goal this node
-    # was handed, before any member is set up (M2 binding).
+    # was handed, before any member is set up (M2 binding). The project folder is checked
+    # here for real, where the team's copies are made (M4 item 0): the server only sees it
+    # when it is mounted there.
     box, box_problem = load_box()
-    problems = check_team(node.members, node.settings.as_dict(), inputs={"goal": goal},
+    problems = check_team(node.members, settings, inputs={"goal": goal},
                           box=box, box_problem=box_problem)
+    roots = roots_of(load_team_config().project_roots)
+    if context.workspace_path:
+        folder_problems, _notes = folder_check(str(context.workspace_path), roots,
+                                               authoritative=True, fresh=not began())
+        problems += folder_problems
     if problems:
-        return failed("the team can't start: " + "; ".join(problems), problems=problems)
+        # A3: before any turn of this team began it can't start; after, it can't go on.
+        head = "the team can't go on: " if began() else "the team can't start: "
+        return failed(head + "; ".join(problems), problems=problems)
     if context.event_recorder is None or box is None:
         return failed("the team needs the run's event recorder and the worker box config")
-    ledger = Ledger(get_database().engine)
-    ledger.ensure()
     end_cancelled_teams(ledger)  # G-a: a cancelled run's team the process died before ending
     members = [TeamMember(member_name(cfg), cfg) for cfg in node.members]
-    settings = node.settings.as_dict()
     attempt_id = context.graph_event_id or f"attempt-{uuid.uuid4().hex}"
     team = LeaderTeam(
         ledger, box, run_id=context.run_id, host_path=host_path, members=members,
@@ -1202,24 +1352,67 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
     try:
         team.resume()
     except TakeoverRefused as exc:
-        return failed(str(exc))
-    outcome = team.drive(context)
+        # another attempt holds the team: its ending is that attempt's to write
+        return NodeResult(status=Status.FAILED, output=str(exc), error=str(exc),
+                          duration_seconds=time.monotonic() - started,
+                          metadata={"team": {"settings": settings}})
+    ledger.start_outcome(context.run_id, host_path, trial_id=trial_id)
+    try:
+        ended = team.drive(context)
+    except CancellationError:
+        _write_cancelled(outcome, context.run_id, cancel_record)
+        raise
     usage = team.usage()
-    meta = {"team": {"settings": settings, "host_path": host_path, "outcome": outcome.status,
+    meta = {"team": {"settings": settings, "host_path": host_path, "outcome": ended.status,
                      "usage": usage}}
-    if outcome.status == "done":
-        record = outcome.record
+    spent: dict[str, Any] = {
+        "cost_usd": float(usage["cost_usd"]), "total_tokens": int(usage["total_tokens"]),
+        "duration_seconds": time.monotonic() - started, "metadata": meta}
+    if ended.status == "done":
+        record = dict(ended.record)
+        if trial_id and context.workspace_path and (record.get("version") or {}).get("commit"):
+            record["branch"] = _trial_branch(team, record, trial_id, str(context.workspace_path),
+                                             roots, box)
+        outcome("done", str(record.get("summary") or "done"), record=record)
         return NodeResult(status=Status.COMPLETED, output=str(record.get("summary") or ""),
-                          structured_output=record, cost_usd=float(usage["cost_usd"]),
-                          total_tokens=int(usage["total_tokens"]),
-                          duration_seconds=time.monotonic() - started, metadata=meta)
-    if outcome.status == "cancelled":
-        return NodeResult(status=Status.CANCELLED, output=outcome.text, error=outcome.text,
-                          cost_usd=float(usage["cost_usd"]),
-                          total_tokens=int(usage["total_tokens"]),
-                          duration_seconds=time.monotonic() - started, metadata=meta)
-    # stopped by the owner, or failed: red at member, team and stage level (R2 B13), never done
-    return NodeResult(status=Status.FAILED, output=outcome.text, error=outcome.text,
-                      structured_output={"decision": outcome.status, "reason": outcome.text},
-                      cost_usd=float(usage["cost_usd"]), total_tokens=int(usage["total_tokens"]),
-                      duration_seconds=time.monotonic() - started, metadata=meta)
+                          structured_output=record, **spent)
+    if ended.status == "cancelled":
+        _write_cancelled(outcome, context.run_id, cancel_record)
+        return NodeResult(status=Status.CANCELLED, output=ended.text, error=ended.text,
+                          structured_output={"decision": "cancelled", "reason": ended.text},
+                          **spent)
+    if ended.status == "stopped":
+        stop = team.stop_wait() or {}
+        decided = stop.get("decision") or {}
+        outcome("stopped", ended.text, owner_words=decided.get("words"),
+                decided_by=decided.get("by"), by_source=decided.get("source"))
+        status = Status.CANCELLED if stop_ends_cancelled(stop) else Status.FAILED
+        return NodeResult(status=status, output=ended.text, error=ended.text,
+                          structured_output={"decision": "stopped", "reason": ended.text},
+                          **spent)
+    # failed: red at member, team and stage level (R2 B13), never done
+    if not ended.text.startswith("another attempt of this run"):
+        outcome("failed" if began() else "didnt_start", ended.text)
+    return NodeResult(status=Status.FAILED, output=ended.text, error=ended.text,
+                      structured_output={"decision": ended.status, "reason": ended.text},
+                      **spent)
+
+
+def _write_cancelled(outcome: Any, run_id: str, cancel_record: Any) -> None:
+    """The team ended because its run was cancelled: who cancelled it and their words, from
+    the cancel's own record (the cancel route fills them in later when it isn't there yet)."""
+    rec = cancel_record(run_id) or {}
+    outcome("cancelled", "the run was cancelled", owner_words=rec.get("words"),
+            decided_by=rec.get("caller"), by_source=rec.get("source"))
+
+
+def _trial_branch(team: LeaderTeam, record: dict, trial_id: str, source: str, roots: Any,
+                  box: Any) -> dict:
+    """The trial's approved version as local branch ``team/<trial_id>`` in its source repo
+    (M3 E10): through the host helper when one is configured, else in this process. Never
+    fails the done team: a branch that wasn't made says why."""
+    from temper_ai.pi_agent.team_branch import make_branch
+
+    return make_branch(source=source, leader_git_dir=str(team.project.git_dir(team.leader)),
+                       commit=str(record["version"]["commit"]), trial_id=trial_id, roots=roots,
+                       helper_socket=getattr(box, "host_helper_socket", "") or "")

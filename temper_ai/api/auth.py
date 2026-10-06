@@ -136,6 +136,20 @@ def _header(headers: Iterable[tuple[bytes, bytes]], name: bytes) -> str | None:
     return None
 
 
+def _same_origin(headers: Iterable[tuple[bytes, bytes]]) -> bool:
+    """Whether the request's Origin header names the host it was sent to (a page this
+    server served sent it). A display hint only: any client can send any Origin."""
+    from urllib.parse import urlsplit
+
+    origin, host = _header(headers, b"origin"), _header(headers, b"host")
+    if not origin or not host:
+        return False
+    try:
+        return urlsplit(origin).netloc.lower() == host.lower()
+    except ValueError:
+        return False
+
+
 def _presented_token(scope: dict) -> str | None:
     """Pull the caller's token from wherever it can reasonably be.
 
@@ -275,6 +289,8 @@ class CallerMiddleware:
             # A hint for record mode only (the dashboard without its key); never vouches.
             from_browser=name is None and _header(headers, b"sec-fetch-mode") is not None,
             may=may,
+            # For display only (where an action came from, M3 E15); never vouches.
+            same_origin=_same_origin(headers),
         )
         scope[SCOPE_CALLER_KEY] = caller
         with bound(caller):

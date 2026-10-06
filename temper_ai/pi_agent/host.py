@@ -107,6 +107,9 @@ class PiHost(AgentABC):
     """
 
     uses_llm_settings = False
+    #: A step whose conversation another attempt ended stops cancelled (``_settled_meanwhile``):
+    #: its stage and run end cancelled with that reason, not "completed" (M3 E18).
+    cancelled_ends_stage = True
 
     #: Test seam: ``fn(cfg, request, ledger) -> TurnReport``; default runs the worker box.
     turn_runner: Any = None
@@ -365,7 +368,7 @@ class PiHost(AgentABC):
         try:
             answer = ask_owner_for_wait(
                 self.ctx, self.ledger, wait["wait_id"],
-                question=str(subject.get("question") or "The Pi step is waiting for you."),
+                question=ask_text(subject, "The Pi step is waiting for you."),
                 header=str(wait["kind"]),
                 options=[str(o) for o in subject.get("options") or []])
         except WaitDecided as settled:
@@ -384,7 +387,7 @@ class PiHost(AgentABC):
         reask = None
         states: list[tuple[str, str]] = []
         if wait["kind"] == "recovery":
-            word = recovery_word(owner_reply(answer.response),
+            word = recovery_word(owner_reply(answer.response)[0],
                                  subject.get("options") or ["accept", "retry"])
             if word is None:
                 # No choice named: nothing is decided by default; the owner is asked again.
@@ -411,15 +414,14 @@ class PiHost(AgentABC):
                                        row.get("decision"))
 
     def _settled(self, wait: dict, decision: Any) -> tuple[Status, str, str] | None:
-        """What a decided wait means for the step: a stop at a recovery wait fails it (the
-        owner stopped it); anything else was done by the decision itself (the ledger's same
-        transaction), so the step goes on."""
+        """What a decided wait means for the step: a stop at a recovery wait fails it, with
+        neutral text that never names who answered (M3 E16); anything else was done by the
+        decision itself (the ledger's same transaction), so the step goes on."""
         if not (isinstance(decision, dict) and decision.get("recovery") == "stop"):
             return None
         subject = wait["subject"] or {}
         did = "failed" if "accept" not in (subject.get("options") or []) else "did not finish"
-        text = (f"{subject.get('role')} turn {subject.get('turn_no')} {did} and the owner "
-                "stopped the step")
+        text = f"{subject.get('role')} turn {subject.get('turn_no')} {did} and the step was stopped"
         return Status.FAILED, text, text
 
     def _settled_meanwhile(self, wait: dict, state: str,
@@ -585,9 +587,20 @@ def recovery_word(text: str, options: list[str]) -> str | None:
     return None
 
 
+def ask_text(subject: dict, default: str = "") -> str:
+    """The text a chat surface (Slack, Telegram, the run page) shows for a wait: its question,
+    then its reply hint when it has one (M3 E22). A wait keeps the two apart -- the Team page
+    shows the question with the choices instead -- and this joins them back into the same
+    text as before they were split. A wait opened before the split has the hint inside its
+    question and no ``reply_hint``: it reads as it always did."""
+    question = str(subject.get("question") or default)
+    hint = str(subject.get("reply_hint") or "")
+    return f"{question} {hint}" if hint else question
+
+
 def recovery_asked_again(subject: dict) -> dict:
     """A recovery wait's subject when the owner's answer named none of its choices: the same
-    turn and choices, asked again with the reason first."""
+    turn and choices, asked again with the reason first (and the same reply hint)."""
     choices = [str(o) for o in subject.get("options") or []]
     if "stop" not in choices:
         choices.append("stop")
@@ -598,26 +611,42 @@ def recovery_asked_again(subject: dict) -> dict:
                          f"decided. {first}").strip()}
 
 
-def owner_reply(response: Any) -> str:
-    """What the owner said at a wait, to read a choice from: the typed response, else the first
-    answered question's pick(s) then its written text -- how the run page sends a picked option
-    (``answers[{selected}]``). Never the rendered ``Q: ... A: ...`` text, whose first word is
-    ``Q:`` (M3 F1)."""
+_CHOICE = re.compile(r"\s*([A-Za-z_-]+)\s*[:,.;\-]*\s*(.*)\Z", re.S)
+
+
+def split_choice(text: str) -> tuple[str, str]:
+    """(first word, the rest) of a typed answer: "guide: be brief" is ("guide", "be brief").
+    The word is lower case with ``-`` read as ``_``; no leading word gives ("", the text)."""
+    m = _CHOICE.match(text or "")
+    if not m:
+        return "", str(text or "").strip()
+    return m.group(1).lower().replace("-", "_"), m.group(2).strip()
+
+
+def owner_reply(response: Any) -> tuple[str, str]:
+    """What the owner said at a wait, as (choice, words) (M3 E17). A picked option -- how the
+    run page sends one (``answers[{selected}]``) -- is the choice, and the typed response plus
+    any written text are the words (guide text, nudge words, a reply). With no pick, the typed
+    response's first word is the choice and the rest are the words (else the first answered
+    question's written text, read the same way). Never the rendered ``Q: ... A: ...`` text,
+    whose first word is ``Q:`` (M3 F1)."""
     if isinstance(response, str):
-        return response.strip()
+        return split_choice(response)
     if not isinstance(response, dict):
-        return ""
-    text = str(response.get("response") or "").strip()
-    if text:
-        return text
+        return "", ""
+    typed = str(response.get("response") or "").strip()
     for answer in response.get("answers") or []:
         if not isinstance(answer, dict):
             continue
-        picked = " ".join(str(s).strip() for s in answer.get("selected") or [] if str(s).strip())
-        text = f"{picked} {str(answer.get('custom') or '').strip()}".strip()
-        if text:
-            return text
-    return ""
+        picked = next((str(s).strip() for s in answer.get("selected") or []
+                       if str(s).strip()), "")
+        custom = str(answer.get("custom") or "").strip()
+        if picked:
+            return (picked.lower().replace("-", "_"),
+                    " ".join(part for part in (typed, custom) if part))
+        if not typed and custom:
+            return split_choice(custom)
+    return split_choice(typed)
 
 
 def _reply_text(response: Any) -> str:

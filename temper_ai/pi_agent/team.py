@@ -233,37 +233,51 @@ def member_name(cfg: dict) -> str:
     return str(cfg.get("name") or "unnamed")
 
 
-def stage_problems(agent_configs: list[dict], strategy_config: object) -> list[Problem]:
-    """Every problem a team stage shows on its own: its members' configs and its sections.
-    (The run-start check adds roles, safety policies and the goal.)"""
-    problems: list[Problem] = []
+#: A problem with the member it belongs to: (where, what, member). ``member`` is the member's
+#: name when the problem is one member's, else None (M3 E20: the Team page marks that row).
+MemberProblem = tuple[str, str, str | None]
+
+
+def stage_findings(agent_configs: list[dict], strategy_config: object) -> list[MemberProblem]:
+    """Every problem a team stage shows on its own: its members' configs and its sections,
+    each with its member -- taken from where the problem is found, never read back out of
+    its text. (The run-start check adds roles, safety policies and the goal.)"""
+    problems: list[MemberProblem] = []
     if not agent_configs:
-        problems.append(("agents", "a team needs at least one member"))
+        problems.append(("agents", "a team needs at least one member", None))
     names = [member_name(c) for c in agent_configs]
     for name in sorted({n for n in names if names.count(n) > 1}):
         problems.append(("agents", f"the member name '{name}' is used more than once; give "
-                                    "each member its own name:"))
+                                    "each member its own name:", name))
     for cfg in agent_configs:
-        where = f"member '{member_name(cfg)}'"
+        name = member_name(cfg)
+        where = f"member '{name}'"
         kind = cfg.get("type", "llm")
         if kind != AGENT_TYPE:
             problems.append((where, f"is a '{kind}' agent; team members are type: pi agents "
-                                    "pointing at a pi role"))
+                                    "pointing at a pi role", name))
             continue
-        problems += [(where, text) for text in config_problems(cfg)]
-    problems += parse_settings(strategy_config)[1]
+        problems += [(where, text, name) for text in config_problems(cfg)]
+    problems += [(where, what, None) for where, what in parse_settings(strategy_config)[1]]
     # Each section type's own check, run when the section itself parsed.
     raw = strategy_config if isinstance(strategy_config, dict) else {}
     mode, _ = _section("mode", raw.get("mode"), MODE_TYPES) if "mode" in raw else (None, [])
     leader = None
     if isinstance(mode, LeaderMode):
         leader = mode.leader
-        problems += MODE_TYPES["leader"].check(mode, names)
+        problems += [(w, t, None) for w, t in MODE_TYPES["leader"].check(mode, names)]
     comm_raw = raw.get("communication", {"type": "all"})
     comm, _ = _section("communication", comm_raw, COMMUNICATION_TYPES)
     if isinstance(comm, (AllCommunication, EdgesCommunication)):
-        problems += COMMUNICATION_TYPES[comm.type].check(comm, names, leader)
+        problems += [(w, t, None)
+                     for w, t in COMMUNICATION_TYPES[comm.type].check(comm, names, leader)]
     return problems
+
+
+def stage_problems(agent_configs: list[dict], strategy_config: object) -> list[Problem]:
+    """Every problem a team stage shows on its own, as (where, what)."""
+    return [(where, what) for where, what, _member in stage_findings(agent_configs,
+                                                                     strategy_config)]
 
 
 def validate_team(agent_configs: list[dict], strategy_config: dict) -> list[str]:

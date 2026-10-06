@@ -59,7 +59,22 @@ def end_teams_on_cancel(run_id: str) -> int:
     engine = get_database().engine
     if not sa.inspect(engine).has_table("pi_participants"):
         return 0
-    return len(Ledger(engine).end_teams_for_run(run_id, "run_cancelled", "cancel"))
+    ledger = Ledger(engine)
+    ended = len(ledger.end_teams_for_run(run_id, "run_cancelled", "cancel"))
+    _settle_outcomes(ledger, run_id)
+    return ended
+
+
+def _settle_outcomes(ledger: Any, run_id: str) -> None:
+    """A cancelled run's teams that were still going get their cancelled outcome (M3 E2),
+    where the outcome table exists."""
+    import sqlalchemy as sa
+
+    if not sa.inspect(ledger.engine).has_table("pi_team_outcomes"):
+        return
+    from temper_ai.pi_agent.team_outcome import settle_cancelled
+
+    settle_cancelled(ledger, run_id)
 
 
 def end_cancelled_teams(ledger: Any = None) -> int:
@@ -96,4 +111,5 @@ def end_cancelled_teams(ledger: Any = None) -> int:
         if latest is None or latest.get("status") != "cancelled":
             continue
         ended += len(ledger.end_teams_for_run(run_id, "run_cancelled", "sweep"))
+        _settle_outcomes(ledger, run_id)
     return ended

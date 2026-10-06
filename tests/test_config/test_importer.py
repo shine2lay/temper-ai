@@ -99,6 +99,72 @@ class TestImportConfigTree:
         assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
+class TestTeamPageFiles:
+    """M3 A1 and E7: the Team page's settings folder is not configs, and a team trial's
+    configs are written by the Team page only."""
+
+    def test_the_team_settings_folder_under_the_root_is_not_imported(self, store, tmp_path,
+                                                                    caplog):
+        import logging
+
+        _write(tmp_path / "team" / "team.yaml", "project_roots: []\n")
+        _write(tmp_path / "team" / "local" / "team.yaml", "project_roots: [/srv/x]\n")
+        # Even a file there that looks like a config is settings, not a config.
+        _write(tmp_path / "team" / "agent.yaml", "agent:\n  name: team_settings_a\n  type: llm\n")
+        _write(tmp_path / "agents" / "kept.yaml", "agent:\n  name: kept_a1\n  type: llm\n")
+
+        with caplog.at_level(logging.INFO, logger="temper_ai.config.importer"):
+            assert import_config_tree(tmp_path, store) == 1
+        assert store.get("kept_a1", "agent")
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("Not imported:" in r.getMessage() and "/team/" in r.getMessage()
+                   for r in caplog.records)
+
+    def test_a_team_folder_deeper_down_is_still_imported(self, store, tmp_path):
+        """Skipped by where it sits under the root, never by a path part: NON_CONFIG_DIRS'
+        rule would skip any folder named team anywhere."""
+        _write(tmp_path / "agents" / "team" / "deep.yaml",
+               "agent:\n  name: deep_team_a\n  type: llm\n")
+        _write(tmp_path / "workflows" / "team" / "w.yaml",
+               "workflow:\n  name: deep_team_w\n  nodes: []\n")
+
+        assert import_config_tree(tmp_path, store) == 2
+        assert store.get("deep_team_a", "agent")
+        assert store.get("deep_team_w", "workflow")
+
+    def test_config_files_lists_the_same_files_the_importer_reads(self, tmp_path):
+        from temper_ai.config.importer import config_files
+
+        for rel in ("team/team.yaml", "tools/t.yaml", "agents/team/a.yaml", "agents/b.yaml"):
+            _write(tmp_path / rel, "agent:\n  name: x\n  type: llm\n")
+        assert [p.relative_to(tmp_path).as_posix() for p in config_files(tmp_path)] == [
+            "agents/b.yaml", "agents/team/a.yaml"]
+
+    def test_a_file_with_a_team_trials_name_is_skipped_and_logged(self, store, tmp_path,
+                                                                  caplog):
+        import logging
+
+        trial = tmp_path / "agents" / "trial.yaml"
+        _write(trial, "agent:\n  name: team-trial-0123456789ab-design\n  type: pi\n")
+        _write(tmp_path / "agents" / "kept.yaml", "agent:\n  name: kept_e7\n  type: llm\n")
+
+        with caplog.at_level(logging.WARNING, logger="temper_ai.config.importer"):
+            assert import_config_tree(tmp_path, store) == 1
+        [record] = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert record.getMessage() == (
+            f"Skipped config {trial}: 'team-trial-0123456789ab-design' is a team trial's name "
+            "(team-trial-...), which only the Team page writes")
+
+    def test_a_stored_trial_config_is_never_replaced_by_a_file(self, store, tmp_path):
+        store.put("team-trial-0123456789ab", "workflow",
+                  {"workflow": {"name": "team-trial-0123456789ab", "nodes": ["frozen"]}})
+        _write(tmp_path / "workflows" / "t.yaml",
+               "workflow:\n  name: team-trial-0123456789ab\n  nodes: []\n")
+
+        import_config_tree(tmp_path, store)
+        assert store.get("team-trial-0123456789ab", "workflow")["workflow"]["nodes"] == ["frozen"]
+
+
 class TestImportYaml:
     def test_import_agent_yaml(self, store, tmp_path):
         yaml_file = tmp_path / "test_agent.yaml"

@@ -64,15 +64,16 @@ class Crash(BaseException):
 
 
 @pytest.fixture
-def tr(pw_run, team_on):
+def tr(pw_run, team_on, monkeypatch, tmp_path):
     """A real in-process Temper with the team switched on, a git project as the run's
-    workspace, and every member a scripted Pi."""
+    workspace (an allowed project folder, M3 E5), and every member a scripted Pi."""
     from temper_ai.database import get_database
 
     ts.reset()
     Team.turn_runner = ts.fake_runner
     Team.stop_box = ts.Stopper()
     ls.project(pw_run.ws, {"app.py": "print('hello')\n"})
+    ls.allow_projects(monkeypatch, tmp_path / "team-settings", str(pw_run.ws))
     pw_run.led = Ledger(get_database().engine)
     pw_run.led.ensure()
     pw_run.before = ss.threads_now()
@@ -334,10 +335,10 @@ def test_the_run_view_shows_messages_reviews_the_pause_its_answer_and_the_decisi
                      "review round 2", "decision: done"], order
 
 
-def test_b10_p2_two_pauses_in_one_go_each_ask_the_owner_and_stop_ends_it_red(tr):
+def test_b10_p2_two_pauses_in_one_go_each_ask_the_owner_and_stop_ends_it_cancelled(tr):
     """PARK P2: the go the owner's continue starts reaches a second pause, which asks the owner
-    again under its own wait id (the first answer is not reused). Stop then ends the run red:
-    stopped, never done, and the stage row failed too."""
+    again under its own wait id (the first answer is not reused). Stop then ends the run
+    cancelled (M3 E18: an owner's stop is a decision, not a failure): stopped, never done."""
     install(tr, tt.team_stage(strategy_config=PAUSE_1), outputs=OUTPUTS)
     script(tr.led, ["keep_going", "keep_going", "done"])
     eid = start(tr, {"goal": GOAL})
@@ -354,9 +355,10 @@ def test_b10_p2_two_pauses_in_one_go_each_ask_the_owner_and_stop_ends_it_red(tr)
 
     assert answer(tr, eid, second, gate2, "stop")["carries_on"] is True
     attempts = pw.wait_ended(eid, 3)
-    assert [a["status"] for a in attempts] == ["parked", "parked", "failed"]
-    assert stage_row(eid)[-1] == "failed" and team_row(eid)[-1] == "failed"
-    assert "stopped by the owner at the pause after round 2" in stage_error(eid, "build")
+    assert [a["status"] for a in attempts] == ["parked", "parked", "cancelled"]
+    assert stage_row(eid)[-1] == "cancelled" and team_row(eid)[-1] == "cancelled"
+    assert "stopped at the pause after round 2" in stage_error(eid, "build")
+    assert "Workflow cancelled by user" not in str(attempts[-1])
     # the stop is recorded the way done is, as stopped (the node's outputs say so)
     assert attempts[-1]["data"]["workflow_output"]["decision"] == "stopped"
     snap = ts.rows(tr.led, eid, HOST)
@@ -683,16 +685,18 @@ BAD_CONFIGS = {
 }
 
 
-def _refused_red(eid: str, which: str, problem: str, team_rows_before: int) -> None:
+def _refused_red(eid: str, which: str, problem: str, team_rows_before: int,
+                 sentence: str = "the team can't start: ") -> None:
     """The attempt's stage row failed, naming the problem; the team node failed with it, or
-    (a stage timeout) never ran at all."""
+    (a stage timeout) never ran at all. ``sentence`` is A3's: "can't start" before any turn of
+    this team began, "can't go on" once one had."""
     assert stage_row(eid)[-1] == "failed"
     error = stage_error(eid, "build")
     assert problem in error, error
     if which == "stage_timeout":
         assert len(team_row(eid)) == team_rows_before  # the stage refused before its node ran
     else:
-        assert team_row(eid)[-1] == "failed" and "the team can't start: " in error, error
+        assert team_row(eid)[-1] == "failed" and sentence in error, error
 
 
 def _bad(tr, which: str, *, depends_on=("brief",)) -> str:
@@ -706,7 +710,7 @@ def _bad(tr, which: str, *, depends_on=("brief",)) -> str:
 def test_a_resume_with_a_bad_team_config_fails_red_before_any_member_is_set_up(tr, which):
     """A resume runs the workflow config as it is now, and never gets the run-start check: the
     team node checks again when it starts and fails red, listing the problem, before any member
-    turn or box."""
+    turn or box. Turns of this team ran before the pause, so it reads "can't go on" (A3)."""
     install(tr, BRIEF_NODE, tt.team_stage(strategy_config=PAUSE_1, depends_on=["brief"]))
     script(tr.led, ["keep_going", "done"])
     eid = start(tr, {"goal": GOAL})
@@ -718,7 +722,8 @@ def test_a_resume_with_a_bad_team_config_fails_red_before_any_member_is_set_up(t
     assert answer(tr, eid, row, gate, "continue")["carries_on"] is True
     attempts = pw.wait_ended(eid, 2)
     assert [a["status"] for a in attempts] == ["parked", "failed"]
-    _refused_red(eid, which, problem, team_rows)
+    _refused_red(eid, which, problem, team_rows, "the team can't go on: ")
+    assert "the team can't start" not in stage_error(eid, "build")
     assert (prompts(), len(FakeBox.STARTS)) == before
 
 

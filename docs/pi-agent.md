@@ -115,14 +115,18 @@ config loads; a valid `type: pi` config; its role exists under that exact id, wi
 name suggested but never picked; `identity.json` and `about.md` readable; `identity.json`
 names a home chat; a worker route for its provider; pinned copies of its add-ons), the team
 (leader is a member, edges name members, every member reachable from the leader, edges not
-used yet, `pause_after_rounds` set, a goal, no two members with the same role, no member
-named like one of Temper's own ids -- `owner`, `system`, `all`, ... from
-`pi_agent/route/model.py` `RESERVED_IDS`) and the workflow (each `safety: policies:` entry
+used yet, `pause_after_rounds` set, a goal, no two members with the same role, every
+member's name matching `^[a-z][a-z0-9_-]{0,39}$`, no member named like one of Temper's own
+ids -- `owner`, `system`, `all`, ... from `pi_agent/route/model.py` `RESERVED_IDS`, and no
+member given Bash while `TEMPER_API_GUARD` isn't `enforce`: "member '<m>': Bash is off
+until owner-only writes are enforced (#45)") and the workflow (each `safety: policies:` entry
 is refused by name, since a team can't enforce one yet). The role list is the box config's
 `identities_dir`, only read; unset means "role list not configured". A resume or a fork
 never runs this check (they run the workflow config as it is now), so the team node runs it
 again when it starts, with the goal it was handed, and fails red before any member is set
-up. The run-start problems, the graph's own and the Pi loop rule come in one error.
+up. The run-start problems, the graph's own and the Pi loop rule come in one error. The
+same findings, each with its form field and member, are what the Team page's check gives
+([pi-team-api.md](pi-team-api.md)).
 
 A team's members are `type: pi` agents, so a workflow with a team stage is a Pi workflow
 (`stage/pi_workflows.py`, docs/gates.md "Pi workflows") even when it has no other Pi step:
@@ -132,7 +136,9 @@ its gates park and its loops must say `on_max_loops: fail`.
 node, `<stage>.team`, which runs the leader loop on the team's messages and inboxes:
 review rounds, the pause after `pause_after_rounds` keep-goings, done recorded by Temper
 ([pi-team-runtime.md](pi-team-runtime.md); messaging and inboxes:
-[pi-team-messages.md](pi-team-messages.md)). A failed team fails its stage too.
+[pi-team-messages.md](pi-team-messages.md)). A failed team fails its stage too; a stop at
+the pause or when stalled ends it, its stage and its run cancelled. The Team page starts
+and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
 
 ## How it runs (ADR-A6-1)
 
@@ -160,8 +166,12 @@ review rounds, the pause after `pause_after_rounds` keep-goings, done recorded b
   answers `accept` or `retry`. A turn that failed visibly (box not sealed, settings not
   effective, role/tools/notebook not as launched, provider error) fails the step red; a
   Resume then asks the owner `retry` or `stop` (there is nothing to accept from a failed
-  turn). The owner may always answer `stop`. A picked option on the run page counts the
-  same as typing it; any other answer (empty, another word, `accept` at a failed turn)
+  turn). The owner may always answer `stop`, which ends the step red: "<role> turn <n>
+  failed and the step was stopped" (or "did not finish"), never naming who stopped it. A
+  picked option on the run page counts the same as typing it, and text typed beside a pick
+  is its words; with no pick, the typed text's first word is the choice and the rest its
+  words. The question and its reply syntax are kept apart (`question`, `reply_hint`) and
+  shown together, as before. Any other answer (empty, another word, `accept` at a failed turn)
   decides nothing, and the owner is asked again at a new wait for the same turn. A retry
   gives the turn the same messages again, with the same ids, marked as given again; they
   are never posted as new. After a decision, a session whose active

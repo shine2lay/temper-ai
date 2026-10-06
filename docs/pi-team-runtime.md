@@ -14,9 +14,14 @@ box needs the switch too.
 
 The team node runs `check_team` again when it starts, with the goal it was handed, because
 a resume or a fork never runs the run-start check and a goal mapped from an earlier node is
-only seen here. Any problem fails the node red ("the team can't start: ...") before any
-member is set up. The goal comes from the run's filled inputs, so a declared `default:`
-counts (docs/reference/workflow-inputs.md).
+only seen here. A run with a workspace also gets the project folder's real check here
+([pi-team-api.md](pi-team-api.md), "Project folders"): this is where the team runs, so
+this is the check that counts, and a folder it can't see is "project: <path> isn't
+reachable inside Temper". Any problem fails the node red before any copy or model call:
+"the team can't start: <problems>" when no turn of this team has begun yet (outcome
+`didnt_start`), "the team can't go on: <problems>" when a resume finds it broken after
+turns ran (outcome `failed`). The goal comes from the run's filled inputs, so a declared
+`default:` counts (docs/reference/workflow-inputs.md).
 
 Then the team opens (`Team.open`, which refuses reserved member names again as a backstop),
 each member gets its own git copy of the project, and the leader is sent the goal. A team
@@ -44,7 +49,7 @@ message rules), which the first slice accepts.
 5. The leader calls `decide`: `done` (with a summary) or `keep_going`.
 
 A review-tool call is recorded with the calling turn (`pi_team_acts`) and counts only once
-that turn has finished (completed, or accepted by the owner at a recovery wait). Temper
+that turn has finished (completed, or accepted at a recovery wait). Temper
 carries it out before the team's next turn, on every path: the loop, a resume after a park,
 a restart. A call from a turn that failed, was retried or was cancelled never counts.
 
@@ -62,8 +67,32 @@ began. Otherwise it is refused with a plain reason and counts as a keep-going.
 The done record is the node's `structured_output` for later nodes: `decision`,
 `review_id`, `round`, `version` (`commit` plus file hashes), each reviewer's last view
 (`views`), the leader's `summary`, the number of `rounds`, the `cost`, the project copy's
-record and the `leader`. After done, Temper takes no new work: pending messages are marked
-undelivered and late sends are refused.
+record and the `leader`, plus `objections` (each reviewer whose view of the approved
+version wasn't `satisfied`: `changes`, or `none` with its last earlier view) and, for a
+Team page trial with a project, the approved `branch` ([pi-team-api.md](pi-team-api.md)).
+After done, Temper takes no new work: pending messages are marked undelivered and late
+sends are refused.
+
+## The typed outcome (`pi_team_outcomes`)
+
+Every way the node ends writes one row per team: `decision` (`done`, `stopped`,
+`cancelled`, `failed`, `didnt_start`), `reason`, `owner_words`, `problems` (a list, never
+split out of joined text), `by` (the caller's name), its display source, the done record
+and when. It is the only source of the outcome; the node's `structured_output` gets a copy
+for workflow outputs. `didnt_start` means no member turn of that team ever began. A cancel
+that ends a parked run never runs the node again, so the cancel itself settles the row
+(`end_teams_on_cancel` and the start-up sweep), with the cancel's caller and reason.
+
+The reasons are neutral engine text that never names who stopped the team; who did it is
+`by`, shown beside it:
+
+- "the run was cancelled"
+- "stopped at the pause after round <N>"
+- "stopped when the team had nothing left to do"
+- "<member> turn <n> failed and the team was stopped", or for a cut-off turn "<member>
+  turn <n> did not finish and the team was stopped"
+- "the team was stopped" when no decided stop is found
+- "the team can't start: <problems>" / "the team can't go on: <problems>"
 
 ## Owner waits
 
@@ -78,13 +107,20 @@ finished turn is run again. Team code never catches `RunParked`.
 - **The pause** (R2 B10): after `pause_after_rounds` keep-goings in a row (required, no
   default), the same run pauses and stays unfinished. It is labelled
   `pause-after-round-N`. The owner answers `continue`, `guide: <text for the leader>` or
-  `stop`; continue and guide restart the count. Anything else is not taken as an answer and
-  the owner is asked again. It never expires, resumes or cancels by itself, and it is never a
+  `stop`, which may carry words (up to 2000 characters, kept as the outcome's
+  `owner_words`); continue and guide restart the count. Anything else is not taken as an
+  answer and the owner is asked again. A picked option counts as the choice and the typed
+  text as its words. It never expires, resumes or cancels by itself, and it is never a
   generated gate node with a loop back: there is no overall round limit, and a team stage
   takes no `timeout_seconds` and no failure hold.
 - **Stalled**: nothing is running, nothing waits to be delivered, no review is open and the
   leader hasn't said done. The owner answers `nudge` (optionally with words for the leader)
-  or `stop`.
+  or `stop` (optionally with words, as at the pause).
+
+A wait keeps its question and the chat's reply syntax apart (`question`, `reply_hint`);
+Slack, Telegram and the run page show the two together, the same text as before. Any open
+wait of any kind holds every member's turn, and Temper asks the open waits one at a time,
+oldest first.
 - **Recovery** (R2 B11): a turn that was cut off, or whose result is uncertain (including
   the 900 s hang guard), opens a recovery wait that pauses the whole team. A cut-off turn is
   answered `accept`, `retry` or `stop`; a failed turn `retry` or `stop`. Retry re-sends the
@@ -99,12 +135,22 @@ finished turn is run again. Team code never catches `RunParked`.
 | How it ended | Team node | Stage | Run |
 | --- | --- | --- | --- |
 | done | completed, with the done record | completed | goes on |
-| owner stop (pause, stalled, recovery) | failed: "stopped by the owner ..." (`decision: stopped`) | failed | failed |
+| stop at the pause or when stalled | cancelled: "stopped at the pause after round <N>" / "stopped when the team had nothing left to do" (outcome `stopped`) | cancelled | cancelled |
+| stop at a recovery wait | failed: "<member> turn <n> failed and the team was stopped" (outcome `stopped`) | failed | failed |
 | a member's turn failed, the team ended early | failed, with the reason | failed | failed |
 | cancelled | cancelled; queued and held messages undelivered (B12) | cancelled | cancelled |
 
 A failed team node fails its stage too, never completed (B13); the tolerant stage rule
 stays for every other stage (`fails_stage` on the node, `stage/executor.py`).
+
+An owner's stop at the pause or when stalled is a decision, not a failure, so the run ends
+cancelled with the stop's own reason, not "Workflow cancelled by user": the node never sets
+the run's cancel signal. The workflow's ending (`stage/executor.py`
+`_build_final_result`) counts a stage that ended cancelled, with no failed node beside it,
+as a cancelled run with that node's reason. The same rule ends a Pi step or team cancelled
+by another attempt as cancelled, where it used to read completed. A cancelled run is never
+picked up again, and a resume of it starts nothing. A stop at a recovery wait follows a
+failed or cut-off turn and stays failed.
 
 A cancelled run's team is ended again later if the process died between ending the run row
 and ending its team (`runner/parked.py` `_end_pi_teams`, `end_cancelled_pi_teams`): when a
@@ -146,5 +192,5 @@ TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/t
 
 `edges` (refused at run start and again at the team node, B7), obligations, unanimous mode,
 `fresh_each_round`, `continue_from`, parallel member turns, a notebook-write tool or
-sending lessons home (M3), the Team page (M3), and switching it on anywhere but a private
-test copy.
+sending lessons home (M3), the Team page itself (Frontend's; its API is built:
+[pi-team-api.md](pi-team-api.md)), and switching it on anywhere but a private test copy.

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from temper_ai.api.caller import require_caller_may
 from temper_ai.config import ConfigStore
 from temper_ai.config.helpers import ConfigNotFoundError
+from temper_ai.config.importer import TRIAL_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,18 @@ def _check_agent(config: dict) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
+def _refuse_trial_name(name: str, config: dict | None = None) -> None:
+    """A team trial's configs are written by the Team page and stay as they were, so the
+    trial's run can be resumed or forked as it ran (M3 E7): Studio never writes or deletes a
+    ``team-trial-`` name, in the path or inside the config."""
+    inner = next((v.get("name") for v in (config or {}).values() if isinstance(v, dict)), None)
+    for candidate in (name, inner):
+        if isinstance(candidate, str) and candidate.startswith(TRIAL_PREFIX):
+            raise HTTPException(status_code=409, detail=(
+                f"'{candidate}' is a team trial's config: only the Team page writes it, and it "
+                "stays as it was so the trial's run can be resumed or forked"))
+
+
 def _refuse_unrunnable_agent(config_type: str, config: dict) -> None:
     if config_type != "agent":
         return
@@ -119,6 +132,7 @@ def _refuse_unrunnable_agent(config_type: str, config: dict) -> None:
 def create_config(config_type: str, name: str, body: ConfigBody):
     """Create a new config."""
     require_caller_may("config_write")
+    _refuse_trial_name(name, body.config)
     _refuse_unrunnable_agent(config_type, body.config)
     try:
         config_id = _store().put(
@@ -136,6 +150,7 @@ def create_config(config_type: str, name: str, body: ConfigBody):
 def update_config(config_type: str, name: str, body: ConfigBody):
     """Update an existing config."""
     require_caller_may("config_write")
+    _refuse_trial_name(name, body.config)
     _refuse_unrunnable_agent(config_type, body.config)
     try:
         config_id = _store().put(
@@ -153,6 +168,7 @@ def update_config(config_type: str, name: str, body: ConfigBody):
 def delete_config(config_type: str, name: str):
     """Delete a config."""
     require_caller_may("config_write")
+    _refuse_trial_name(name)
     try:
         deleted = _store().delete(name, config_type)
         if not deleted:

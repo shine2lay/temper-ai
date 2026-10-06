@@ -92,6 +92,22 @@ def import_yaml(file_path: str | Path, store: ConfigStore | None = None) -> dict
 
 # Subdirectories holding YAMLs that are not workflow/stage/agent configs.
 NON_CONFIG_DIRS = ("boxes", "github", "mcp_servers", "notify", "notion", "slack", "telegram", "tools", "triggers")
+# The Team page's settings folder, skipped only directly under the configs root (M3 A1).
+TEAM_SETTINGS_DIR = "team"
+# A team trial's workflow and agent names (pi_agent/team_config.py TRIAL_PREFIX; kept here
+# so loading configs never imports the Pi agent package).
+TRIAL_PREFIX = "team-trial-"
+
+
+def config_files(root: str | Path) -> list[Path]:
+    """Every config YAML under ``root``, in order: not the settings folders (any part of the
+    path), nor the Team page's settings, which are skipped by where they sit under the root
+    -- its first folder is ``team`` -- so a ``team`` folder deeper down is still read (M3
+    A1)."""
+    root_path = Path(root)
+    return [p for p in sorted(root_path.rglob("*.yaml"))
+            if not any(part in NON_CONFIG_DIRS for part in p.parts)
+            and p.relative_to(root_path).parts[0] != TEAM_SETTINGS_DIR]
 
 
 def import_config_tree(root: str | Path, store: ConfigStore | None = None) -> int:
@@ -111,13 +127,23 @@ def import_config_tree(root: str | Path, store: ConfigStore | None = None) -> in
     store = store or ConfigStore()
     parsed: list[dict[str, Any]] = []
 
-    for yaml_file in sorted(Path(root).rglob("*.yaml")):
-        if any(part in NON_CONFIG_DIRS for part in yaml_file.parts):
-            continue
+    root_path = Path(root)
+    for yaml_file in config_files(root_path):
         try:
-            parsed.append(parse_yaml(yaml_file))
+            config = parse_yaml(yaml_file)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Skipped config %s: %s", yaml_file, exc)
+            continue
+        if str(config["name"]).startswith(TRIAL_PREFIX):
+            # A team trial's configs are written by the Team page and frozen there: a file
+            # never replaces them (M3 E7).
+            logger.warning("Skipped config %s: '%s' is a team trial's name (%s...), which only "
+                           "the Team page writes", yaml_file, config["name"], TRIAL_PREFIX)
+            continue
+        parsed.append(config)
+    if (root_path / TEAM_SETTINGS_DIR).is_dir():
+        logger.info("Not imported: %s/%s/ holds the Team page's settings, not configs",
+                    root_path, TEAM_SETTINGS_DIR)
 
     if parsed:
         store.put_many(parsed)

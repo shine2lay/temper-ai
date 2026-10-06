@@ -131,8 +131,8 @@ def test_a_stop_at_a_failed_turns_recovery_wait_is_asked_and_stops_the_step(pw_r
     assert _prompts() == 1, "nothing ran again"
     snap = sup.ledger().snapshot(eid)
     assert snap["waits"][0]["decision"]["recovery"] == "stop"
-    said = [e for e in sup.events(eid) if "and the owner stopped the step" in str(e["data"])]
-    assert said, "the step says the owner stopped it"
+    said = [e for e in sup.events(eid) if "failed and the step was stopped" in str(e["data"])]
+    assert said, "the step says it was stopped, in neutral words (M3 E16)"
 
 
 def test_f1_a_recovery_answer_naming_no_choice_is_asked_again_and_a_picked_retry_counts(pw_run):

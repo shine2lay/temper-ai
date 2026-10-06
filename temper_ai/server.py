@@ -27,10 +27,11 @@ from temper_ai.api.events import router as events_router
 from temper_ai.api.github_tokens import router as github_tokens_router
 from temper_ai.api.hooks import router as hooks_router
 from temper_ai.api.pools import router as pools_router
-from temper_ai.api.routes import init_app_state
+from temper_ai.api.routes import ProblemRefusal, init_app_state, problem_response
 from temper_ai.api.routes import router as api_router
 from temper_ai.api.slack_test import router as slack_test_router
 from temper_ai.api.studio import router as studio_router
+from temper_ai.api.team_routes import include_team_routes
 from temper_ai.api.triggers import router as triggers_router
 from temper_ai.config import ConfigStore
 from temper_ai.database import init_database, reset_database
@@ -518,6 +519,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # -- Include routers --
+# A refusal whose body is {"problem": <text>} (the cancel reason's limit, M3 E13).
+app.add_exception_handler(ProblemRefusal, problem_response)
 app.include_router(api_router)
 app.include_router(studio_router)
 app.include_router(docs_router)
@@ -527,6 +530,8 @@ app.include_router(events_router)
 app.include_router(slack_test_router)
 app.include_router(triggers_router)
 app.include_router(pools_router)
+# The Team page's API, only with the Pi switch on at start (M3): off, /api/team is a 404.
+include_team_routes(app)
 
 # -- MCP --
 # Agents drive temper through the same functions the REST API uses.

@@ -75,6 +75,10 @@ class OwnerAnswer:
 
     ``response`` is the answer as the approval route stored it (``{response, answers,
     text}``, stage/gate.py ``normalise_response``), or None for a plain approval.
+    ``decided_by`` is the name the answer gave (``by``, self-declared); ``caller`` and
+    ``caller_source`` are who sent it as the server knows them (the API guard's named
+    credential, :mod:`temper_ai.api.caller`), None when it wasn't recorded.
+    ``request_id`` is the answer's own request id, else the request's (#45).
     """
 
     wait_id: str
@@ -83,6 +87,9 @@ class OwnerAnswer:
     response: dict[str, Any] | None
     decided_by: str | None = None
     decided_at: str | None = None
+    caller: str | None = None
+    caller_source: str | None = None
+    request_id: str | None = None
 
     @property
     def text(self) -> str:
@@ -365,7 +372,14 @@ def _answer_from(ev: dict[str, Any], wait_id: str) -> OwnerAnswer:
     response = data.get("gate_response") if isinstance(data.get("gate_response"), dict) else None
     return OwnerAnswer(wait_id=wait_id, event_id=str(ev["id"]),
                        round=int(data.get("gate_round") or 1), response=response,
-                       decided_by=data.get("gate_decided_by"), decided_at=data.get("gate_decided_at"))
+                       decided_by=data.get("gate_decided_by"), decided_at=data.get("gate_decided_at"),
+                       caller=data.get("gate_caller"), caller_source=data.get("gate_caller_source"),
+                       request_id=_request_id(data))
+
+
+def _request_id(data: dict) -> str | None:
+    """The answer's request id: the one its sender gave, else the request's own (#45)."""
+    return data.get("gate_request_id") or data.get("gate_caller_request_id") or None
 
 
 def _hold(
@@ -404,4 +418,6 @@ def _hold(
         response = data["gate_response"]
     _note_asked(context, path)
     return OwnerAnswer(wait_id=wait_id, event_id=event_id, round=round_, response=response,
-                       decided_by=data.get("gate_decided_by"), decided_at=data.get("gate_decided_at"))
+                       decided_by=data.get("gate_decided_by"), decided_at=data.get("gate_decided_at"),
+                       caller=data.get("gate_caller"), caller_source=data.get("gate_caller_source"),
+                       request_id=_request_id(data))

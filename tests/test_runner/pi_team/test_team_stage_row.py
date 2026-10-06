@@ -73,6 +73,89 @@ def test_a_skipped_team_stage_passes_the_failure_on_downstream():
     assert _skipped_for_failure(out)
 
 
+def _workflow(results: dict[str, NodeResult]):
+    ctx = SimpleNamespace(event_recorder=_Recorder(), run_only=None)
+    nodes = [_node(name, False) for name in results]
+    out = _build_final_result(nodes, results, {}, time.monotonic(), "wf-ev", ctx,
+                              is_workflow=True)
+    return out, ctx.event_recorder.updates[-1]
+
+
+STOP = "stopped at the pause after round 2"
+
+
+def test_e18_a_stage_that_ended_cancelled_by_itself_ends_the_run_cancelled_with_its_reason():
+    """M3 E18: an owner's stop at a team's pause (or a Pi conversation another attempt
+    cancelled) ends its stage cancelled while the run's own cancel signal is unset. Nothing
+    failed, so the run ends cancelled with the stage's own reason -- not "completed", and
+    never "Workflow cancelled by user"."""
+    out, event = _workflow({"brief": NodeResult(status=Status.COMPLETED),
+                            "build": NodeResult(status=Status.CANCELLED, error=STOP)})
+    assert out.status == Status.CANCELLED and event["status"] == "cancelled"
+    assert out.error == STOP and event["data"]["error"] == STOP
+    assert "failed_nodes" not in event["data"]
+
+
+def test_e18_a_failed_stage_beside_a_cancelled_one_still_fails_the_run():
+    out, event = _workflow({"a": NodeResult(status=Status.CANCELLED, error=STOP),
+                            "b": NodeResult(status=Status.FAILED, error="b broke")})
+    assert out.status == Status.FAILED and event["status"] == "failed"
+    assert event["data"]["failed_nodes"] == ["b"]
+
+
+def test_e18_ordinary_endings_are_unchanged():
+    out, event = _workflow({"a": NodeResult(status=Status.COMPLETED),
+                            "b": NodeResult(status=Status.COMPLETED)})
+    assert (out.status, event["status"], out.error) == (Status.COMPLETED, "completed", None)
+    out, event = _workflow({"a": NodeResult(status=Status.COMPLETED),
+                            "b": NodeResult(status=Status.FAILED, error="b broke")})
+    assert (out.status, event["status"]) == (Status.FAILED, "failed")
+    assert out.error == "1 node(s) failed: b"
+
+
+MEANWHILE = ("the Pi conversation ended while the step waited for the owner (its run was "
+             "cancelled)")
+
+
+def _pi_step_stage(pi: NodeResult):
+    ctx = SimpleNamespace(event_recorder=_Recorder(), run_only=None)
+    nodes = [SimpleNamespace(name="other", fails_stage=False, depends_on=[]),
+             SimpleNamespace(name="pi", fails_stage=False, cancelled_ends_stage=True,
+                             depends_on=[])]
+    out = _build_final_result(nodes, {"other": NodeResult(status=Status.COMPLETED), "pi": pi},
+                              {}, time.monotonic(), "stage-ev", ctx)
+    return out, ctx.event_recorder.updates[-1]
+
+
+def test_e18_a_pi_step_another_attempt_cancelled_ends_its_stage_and_run_cancelled():
+    """M3 E18: a single Pi step whose conversation another attempt ended stops cancelled with
+    the run's cancel signal unset. Its stage ends cancelled with that reason (not the tolerant
+    "completed"), and so does the run, never "completed"."""
+    out, event = _pi_step_stage(NodeResult(status=Status.CANCELLED, error=MEANWHILE))
+    assert (out.status, event["status"], out.error) == (Status.CANCELLED, "cancelled", MEANWHILE)
+    run, run_event = _workflow({"first": NodeResult(status=Status.COMPLETED), "pi_stage": out})
+    assert (run.status, run_event["status"], run.error) == (
+        Status.CANCELLED, "cancelled", MEANWHILE)
+
+
+def test_a_failed_pi_step_keeps_its_stage_tolerant_as_before():
+    out, event = _pi_step_stage(NodeResult(status=Status.FAILED, error="pi broke"))
+    assert (out.status, event["status"]) == (Status.COMPLETED, "completed")
+
+
+def test_only_a_pi_agent_step_may_end_its_stage_cancelled(monkeypatch):
+    from temper_ai import agent as agent_pkg
+    from temper_ai.pi_agent.host import PiHost
+    from temper_ai.stage.agent_node import AgentNode
+    from temper_ai.stage.models import NodeConfig
+
+    monkeypatch.setitem(agent_pkg.AGENT_TYPES, "pi", PiHost)
+    node = NodeConfig(name="s", type="agent", agent="s")
+    assert AgentNode(node, {"name": "s", "type": "pi"}).cancelled_ends_stage is True
+    assert AgentNode(node, {"name": "s", "type": "llm"}).cancelled_ends_stage is False
+    assert AgentNode(node, {"name": "s"}).cancelled_ends_stage is False
+
+
 @pytest.mark.parametrize("lane", [Status.FAILED, Status.CANCELLED, Status.SKIPPED])
 def test_other_stages_keep_the_tolerant_rule(lane):
     out, event = _stage({"team": NodeResult(status=Status.COMPLETED),

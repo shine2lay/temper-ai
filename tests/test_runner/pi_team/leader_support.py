@@ -43,6 +43,26 @@ def git(cwd: Path, *args: str) -> str:
     return out.stdout.strip()
 
 
+def allow_projects(monkeypatch, settings_root: Path, *entries: str) -> Path:
+    """The team settings this test's Temper reads (M3 E5): ``project_roots`` = ``entries``, as
+    the owner's git-ignored local file would list them at switch-on. Only the default configs
+    root is replaced; an explicit ``config_dir`` still reads its own files. Returns the file."""
+    import yaml
+
+    from temper_ai.pi_agent import team_config
+
+    local = settings_root / team_config.TEAM_DIR / "local" / "team.yaml"
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_text(yaml.safe_dump({"project_roots": list(entries)}), encoding="utf-8")
+    real = team_config.settings_paths
+
+    def settings_paths(config_dir: str | Path | None = None) -> tuple[Path, Path]:
+        return real(config_dir if config_dir else settings_root)
+
+    monkeypatch.setattr(team_config, "settings_paths", settings_paths)
+    return local
+
+
 def project(root: Path, files: dict[str, str] | None = None) -> Path:
     """A tiny git project with one commit (the run's workspace)."""
     root.mkdir(parents=True, exist_ok=True)

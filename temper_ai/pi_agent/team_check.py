@@ -43,7 +43,8 @@ from temper_ai.pi_agent.member import (
 )
 from temper_ai.pi_agent.route.model import RESERVED_IDS
 from temper_ai.pi_agent.search_tools import search_tool_problems
-from temper_ai.pi_agent.team import EDGES_NOT_BUILT, member_name, stage_problems
+from temper_ai.pi_agent.team import EDGES_NOT_BUILT, member_name, stage_findings
+from temper_ai.pi_agent.team_config import NAME_RE
 
 if TYPE_CHECKING:  # the stage package imports this module's registration; no import cycle
     from temper_ai.stage.topology import RunStart
@@ -53,6 +54,43 @@ ABOUT_PAGE = "about.md"
 #: Workflow safety policy types a team can enforce. None yet: a team's members act inside their
 #: own worker boxes, where Temper's tool-call policies don't reach.
 TEAM_ENFORCED_POLICIES: frozenset[str] = frozenset()
+#: Why a member can't have Bash yet (M3 E11, SW-61): a Bash member can reach the API from its
+#: box, so it waits until only the owner's key can approve, cancel or resume (#45 enforce).
+BASH_OFF = "Bash is off until owner-only writes are enforced (#45)"
+#: A member's name rule in words (M3 E6, ``team_config.NAME_PATTERN``).
+NAME_RULE = ("a name starts with a lowercase letter and has only lowercase letters, digits, "
+             "'-' and '_' (40 at most)")
+#: The Team page's form field each team section's problems belong to (M3 E20). A member's
+#: problems belong to ``members``; a section with no form field gets none.
+SECTION_FIELDS = {"agents": "members", "mode": "leader", "communication": "communication",
+                  "pause_after_rounds": "pause_after_rounds", "goal": "goal",
+                  "project": "project_path"}
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One problem (or note) and where the Team page shows it (M3 E20). ``text`` is the
+    engine's sentence word for word, ``"<where>: <what>"``, the same words chat and the run
+    page show; ``field`` is the form field it belongs to (None when no field fits) and
+    ``member`` the member row's team name when it is one member's. Both come from where the
+    problem is found, never from its text."""
+
+    text: str
+    field: str | None = None
+    member: str | None = None
+
+    def as_dict(self) -> dict:
+        out: dict = {"field": self.field, "text": self.text}
+        if self.member is not None:
+            out["member"] = self.member
+        return out
+
+
+def finding(where: str, what: str, member: str | None = None) -> Finding:
+    """A ``"<where>: <what>"`` problem with its field: ``members`` for a member's, else the
+    section's own field."""
+    field = "members" if member is not None else SECTION_FIELDS.get(where)
+    return Finding(f"{where}: {what}", field, member)
 
 
 @dataclass(frozen=True)
@@ -93,6 +131,26 @@ class RoleList:
             if not isinstance(home, str) or not home.strip():
                 problems.append(f"role '{role}': identity.json has no home chat")
         return problems
+
+    def card(self, role: str) -> dict:
+        """What the Team page shows of a role: its id, title, about page and whether it has a
+        home chat, with its problems. Nothing else of the role's folder (no chat ids, no
+        paths) leaves the server."""
+        folder = self.root / role
+        try:
+            identity = json.loads((folder / "identity.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            identity = None
+        identity = identity if isinstance(identity, dict) else {}
+        try:
+            about = (folder / ABOUT_PAGE).read_text(encoding="utf-8")
+        except OSError:
+            about = None
+        home = identity.get("homeChat")
+        title = identity.get("title")
+        return {"id": role, "title": title if isinstance(title, str) and title.strip() else role,
+                "about": about, "has_home_chat": isinstance(home, str) and bool(home.strip()),
+                "problems": self.problems(role)}
 
 
 def load_box() -> tuple[BoxConfig | None, str | None]:
@@ -143,7 +201,20 @@ def check_team(agent_configs: list[dict], strategy_config: object, *,
                input_map: dict | None = None, inputs: dict | None = None,
                safety: dict | None = None, unloaded: dict[str, str] | None = None,
                box: BoxConfig | None = None, box_problem: str | None = None) -> list[str]:
-    """Every problem with a team stage, as ``"<where>: <what>"`` texts, in a stable order.
+    """Every problem with a team stage, as ``"<where>: <what>"`` texts, in a stable order
+    (:func:`team_findings`' texts)."""
+    return [f.text for f in team_findings(
+        agent_configs, strategy_config, input_map=input_map, inputs=inputs, safety=safety,
+        unloaded=unloaded, box=box, box_problem=box_problem)]
+
+
+def team_findings(agent_configs: list[dict], strategy_config: object, *,
+                  input_map: dict | None = None, inputs: dict | None = None,
+                  safety: dict | None = None, unloaded: dict[str, str] | None = None,
+                  box: BoxConfig | None = None,
+                  box_problem: str | None = None) -> list[Finding]:
+    """Every problem with a team stage, each with its form field and member, in a stable
+    order.
 
     ``agent_configs`` are the members' resolved agent configs; ``unloaded`` maps a member whose
     config could not be loaded to the loader's error. ``box`` is the worker box config (loaded
@@ -152,71 +223,100 @@ def check_team(agent_configs: list[dict], strategy_config: object, *,
     """
     if box is None and box_problem is None:
         box, box_problem = load_box()
-    problems = [f"member '{name}': its agent config can't be loaded: {error}"
+    problems = [finding(f"member '{name}'", f"its agent config can't be loaded: {error}", name)
                 for name, error in (unloaded or {}).items()]
-    problems += [f"{where}: {what}" for where, what in stage_problems(agent_configs,
-                                                                     strategy_config)]
-    problems += member_problems(agent_configs)
+    problems += [finding(where, what, member)
+                 for where, what, member in stage_findings(agent_configs, strategy_config)]
+    problems += member_findings(agent_configs)
     if _uses_edges(strategy_config):
         # R2 rule B7: edges stay in the format and are checked above, but the first team
         # runtime is ``all`` only, so a run can't use them yet.
-        problems.append(f"communication: {EDGES_NOT_BUILT}")
+        problems.append(finding("communication", EDGES_NOT_BUILT))
     if box is None:
-        problems.append(f"roles: {box_problem}")
+        problems.append(finding("roles", str(box_problem)))
     else:
         roles = RoleList(Path(box.identities_dir))
         for cfg in agent_configs:
             role = cfg.get("role")
             if cfg.get("type") != AGENT_TYPE or not isinstance(role, str):
                 continue  # already reported with the member's config
-            where = f"member '{member_name(cfg)}'"
-            problems += [f"{where}: {text}" for text in roles.problems(role)]
+            name = member_name(cfg)
+            where = f"member '{name}'"
+            problems += [finding(where, text, name) for text in roles.problems(role)]
             provider = settings(cfg)["provider"]
             if provider not in box.routes:
-                problems.append(f"{where}: no worker route for provider '{provider}' in the "
-                                "worker box config")
+                problems.append(finding(where, f"no worker route for provider '{provider}' in "
+                                               "the worker box config", name))
             listed = cfg.get("add_ons")
             if listed is None or (isinstance(listed, list)
                                   and all(isinstance(a, str) for a in listed)):
                 unpinned = [a for a in add_on_names(cfg)
                             if a in ADD_ONS and a not in box.add_ons]
                 if unpinned:
-                    problems.append(f"{where}: no pinned copy of add-on(s) "
-                                    f"{', '.join(unpinned)} in the worker box config")
+                    problems.append(finding(where, f"no pinned copy of add-on(s) "
+                                                   f"{', '.join(unpinned)} in the worker box "
+                                                   "config", name))
             if not tool_problems(cfg.get("tools")) and not add_on_problems(cfg.get("add_ons")):
                 # (a bad tools or add-ons list is already reported with the member's config)
-                problems += [f"{where}: {text}"
+                problems += [finding(where, text, name)
                              for text in search_tool_problems(launched_tools(cfg), box)]
     goal = goal_problem(input_map, inputs or {})
     if goal:
-        problems.append(goal)
-    problems += safety_problems(safety)
+        problems.append(Finding(goal, "goal"))
+    problems += [Finding(text) for text in safety_problems(safety)]
     return problems
 
 
+def bash_allowed() -> bool:
+    """Whether a member may have Bash: only once the API guard enforces owner-only writes
+    (M3 E11; ``TEMPER_API_GUARD``, #45)."""
+    from temper_ai.api.caller import guard_mode
+
+    return guard_mode() == "enforce"
+
+
 def member_problems(agent_configs: list[dict]) -> list[str]:
-    """Members the first team runtime can't tell apart or reach: two members with the same
-    role (M2 binding B8, until the owner decides about the same role twice), and a member
-    named like one of Temper's own ids (T4T5 N3: a member called ``owner`` could not be
-    reached under the ``all`` policy). The team's own open refuses those names too."""
-    out: list[str] = []
+    """Members the first team runtime can't tell apart, reach or allow, as texts
+    (:func:`member_findings`)."""
+    return [f.text for f in member_findings(agent_configs)]
+
+
+def member_findings(agent_configs: list[dict]) -> list[Finding]:
+    """Members the first team runtime can't tell apart, reach or allow: a name outside the
+    name rule (M3 E6: a name reaches a git folder and message routing), a member named like
+    one of Temper's own ids (T4T5 N3: a member called ``owner`` could not be reached under the
+    ``all`` policy; the team's own open refuses those names too), two members with the same
+    role (M2 binding B8, until the owner decides about the same role twice), and Bash before
+    the API guard enforces owner-only writes (M3 E11)."""
+    out: list[Finding] = []
     first_with: dict[str, str] = {}
     seen: set[str] = set()
+    bash = None
     for cfg in agent_configs:
         name = member_name(cfg)
         if name in seen:
             continue  # the same member listed twice: reported once, as a repeated name
         seen.add(name)
+        where = f"member '{name}'"
+        # A reserved id in any case says so first: "OWNER" is refused for being Temper's own id,
+        # which is the more useful sentence than the character rule it also breaks.
         if name.strip().lower() in RESERVED_IDS:
-            out.append(f"member '{name}': the name is reserved for Temper's own use; pick "
-                       "another")
+            out.append(finding(where, "the name is reserved for Temper's own use; pick "
+                                      "another", name))
+        elif not NAME_RE.match(name):
+            out.append(finding(where, NAME_RULE, name))
+        tools = cfg.get("tools")
+        if isinstance(tools, list) and "Bash" in tools:
+            bash = bash_allowed() if bash is None else bash
+            if not bash:
+                out.append(finding(where, BASH_OFF, name))
         role = cfg.get("role")
         if not isinstance(role, str) or not role.strip():
             continue  # already reported with the member's config
         key = role.strip().casefold()
         if key in first_with:
-            out.append(f"member '{name}': same role '{role}' as member '{first_with[key]}'; "
-                       "a team has one member per role")
+            out.append(finding(where, f"same role '{role}' as member '{first_with[key]}'; a "
+                                      "team has one member per role", name))
         else:
             first_with[key] = name
     return out

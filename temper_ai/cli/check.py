@@ -283,16 +283,21 @@ class _FileConfigs:
     """
 
     def __init__(self, root: Path):
-        from temper_ai.config.importer import NON_CONFIG_DIRS, parse_yaml
+        from temper_ai.config.importer import TRIAL_PREFIX, config_files, parse_yaml
 
         self.configs: dict[tuple[str, str], dict[str, Any]] = {}
         self.paths: dict[tuple[str, str], Path] = {}
-        for path in sorted(root.rglob("*.yaml")):
-            if any(part in NON_CONFIG_DIRS for part in path.parts):
-                continue
+        #: Files using a team trial's name, which the server skips (M3 E7).
+        self.trial_named: list[str] = []
+        for path in config_files(root):
             try:
                 parsed = parse_yaml(path)
             except Exception:  # noqa: BLE001 - the server skips it too
+                continue
+            if str(parsed["name"]).startswith(TRIAL_PREFIX):
+                self.trial_named.append(f"{path}: '{parsed['name']}' is a team trial's name "
+                                        f"({TRIAL_PREFIX}...), which only the Team page "
+                                        "writes; the server skips this file")
                 continue
             key = (str(parsed["config_type"]), str(parsed["name"]))
             self.configs[key] = parsed["config"]
@@ -370,6 +375,19 @@ def check_api_guard(config_dir: str | Path = "configs") -> tuple[list[str], list
     return sorted(holders), problems
 
 
+def check_team_settings(config_dir: str | Path = "configs") -> tuple[list[str], list[str]]:
+    """(settings files read, problems) for the Team page: configs/team/team.yaml and its
+    local file (project_roots, owner_callers), and config files that use a team trial's
+    name (M3 E5, E7)."""
+    from temper_ai.pi_agent.team_config import load_team_config
+
+    root = Path(config_dir)
+    if not root.is_dir():
+        return [], []
+    settings = load_team_config(root)
+    return list(settings.files), [*settings.problems, *_FileConfigs(root).trial_named]
+
+
 def check(config_dir: str | Path = "configs") -> int:
     """Print the report. 0 when every setting lands, 1 when one does not."""
     seen, problems = check_effort(config_dir)
@@ -444,7 +462,19 @@ def check(config_dir: str | Path = "configs") -> int:
         print("\nSee docs/api-access.md.")
     else:
         print("\u2713 starts_runs, the named keys file and TEMPER_API_GUARD read cleanly")
-    return 1 if (problems or access_problems or loop_problems or box_problems or guard_problems) else 0
+
+    team_files, team_problems = check_team_settings(config_dir)
+    print()
+    print(f"Team page settings read: {', '.join(team_files) or 'none'}")
+    if team_problems:
+        print(f"\n\u26a0 {len(team_problems)} problem(s) for the Team page:")
+        for line in team_problems:
+            print(f"  {line}")
+        print("\nSee docs/pi-team-api.md.")
+    else:
+        print("\u2713 the Team page's settings read cleanly and no config file uses a trial's name")
+    return 1 if (problems or access_problems or loop_problems or box_problems or guard_problems
+                 or team_problems) else 0
 
 
 def add_parser(subparsers) -> None:

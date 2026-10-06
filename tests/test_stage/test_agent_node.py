@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from temper_ai.shared.types import (
     AgentResult,
     ExecutionContext,
@@ -9,6 +11,7 @@ from temper_ai.shared.types import (
     TokenUsage,
 )
 from temper_ai.stage.agent_node import AgentNode
+from temper_ai.stage.exceptions import CancellationError, ReplacedByLaterAttempt
 from temper_ai.stage.models import NodeConfig
 
 
@@ -140,3 +143,39 @@ def test_no_retry_when_first_attempt_succeeds(create_agent):
 
     assert agent.run.call_count == 1
     assert result.output == "done"
+
+
+@patch("temper_ai.stage.agent_node.create_agent")
+def test_an_attempt_replaced_by_a_later_one_goes_up_at_once(create_agent):
+    """SW-84: a later attempt of the run took the step over. A retry would be this stale
+    attempt starting the step again under the newer one, so it goes up on the first call:
+    no second call, no backoff sleep."""
+    agent = MagicMock()
+    agent.name = "n1"
+    agent.run.side_effect = [ReplacedByLaterAttempt("taken over"), _result(output="a retry")]
+    create_agent.return_value = agent
+
+    with patch("temper_ai.stage.agent_node.time.sleep") as sleep, \
+            pytest.raises(ReplacedByLaterAttempt, match="taken over"):
+        _make_node().run({}, _make_context())
+
+    assert agent.run.call_count == 1
+    sleep.assert_not_called()
+
+
+@patch("temper_ai.stage.agent_node.create_agent")
+def test_a_plain_stop_keeps_its_retry(create_agent):
+    """Only the replaced attempt skips the retry: a plain CancellationError is retried after
+    the usual backoff and then ends the step FAILED, as before SW-84."""
+    agent = MagicMock()
+    agent.name = "n1"
+    agent.run.side_effect = [CancellationError("stopped"), CancellationError("stopped again")]
+    create_agent.return_value = agent
+
+    with patch("temper_ai.stage.agent_node.time.sleep") as sleep:
+        result = _make_node().run({}, _make_context())
+
+    assert agent.run.call_count == AgentNode.MAX_RETRIES
+    sleep.assert_called_once_with(2)
+    assert result.status == Status.FAILED
+    assert "stopped again" in (result.error or "")

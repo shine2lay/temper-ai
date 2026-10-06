@@ -19,8 +19,10 @@ from temper_ai.shared.clock import utcnow
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.conditions import evaluate_condition, source_value
 from temper_ai.stage.exceptions import (
+    REPLACED_MARK,
     CancellationError,
     CyclicDependencyError,
+    ReplacedByLaterAttempt,
     RunParked,
     WorkflowError,
 )
@@ -197,6 +199,7 @@ def execute_graph(
     # Attempts discarded by a loop rewind. They are gone from node_outputs but
     # they were paid for, so the run's totals have to keep them.
     retired: list[NodeResult] = []
+    stood_down = False
 
     try:
         _run_batches(
@@ -229,14 +232,37 @@ def execute_graph(
             is_workflow=is_workflow,
         )
 
+    except ReplacedByLaterAttempt as replaced:
+        # A later attempt of this run took over, so this one stands down: only its own graph
+        # event is written down. Nothing of the run's is touched -- no settling, no stop, no
+        # holds, and the asked answers in memory stay for the newer attempt (SW-84).
+        stood_down = True
+        _note_replaced(replaced, context, graph_event_id, start)
+        raise
+
     except Exception as exc:
         return _end_graph(exc, nodes, node_outputs, retired, input_data, context, graph_event_id,
                           start, is_workflow=is_workflow)
 
     finally:
-        if is_workflow:
+        if is_workflow and not stood_down:
             # This go of the run is over: what its steps asked stays in the run's record only.
             forget_run(context.run_id)
+
+
+def _note_replaced(replaced: ReplacedByLaterAttempt, context: ExecutionContext, event_id: str,
+                   start: float) -> None:
+    """Write one of this attempt's own events down as stood down for a later attempt.
+
+    ``cancelled`` (every reader knows it), marked ``replaced_by_later_attempt`` so nobody
+    takes it for the run being stopped: the webhook sends nothing for it, and the run's
+    own status comes from its newest attempt.
+    """
+    context.event_recorder.update_event(
+        event_id, status=Status.CANCELLED.value,
+        data={"error": str(replaced), REPLACED_MARK: True,
+              "duration_seconds": time.monotonic() - start},
+    )
 
 
 def _note_parked(
@@ -1221,6 +1247,12 @@ def _run_node_with_events(
         )
         raise
 
+    except ReplacedByLaterAttempt as replaced:
+        # A later attempt of this run took the step over: not a failure of the step. It
+        # stands down with its attempt, written down as that attempt's only (SW-84).
+        _note_replaced(replaced, context, node_event_id, start)
+        raise
+
     except Exception as exc:
         duration = time.monotonic() - start
         context.event_recorder.update_event(
@@ -1292,10 +1324,16 @@ def _execute_parallel_batch(
             for node in batch
         }
         parked: RunParked | None = None
+        replaced: ReplacedByLaterAttempt | None = None
         for future in as_completed(future_to_node):
             node = future_to_node[future]
             try:
                 result = future.result()
+            except ReplacedByLaterAttempt as exc:
+                # A later attempt of this run took a step here over: once the rest of the
+                # batch is done this attempt stands down, before any park (SW-84).
+                replaced = replaced or exc
+                continue
             except RunParked as exc:
                 # A gate here let the worker go. The others in the batch finish first, and go
                 # up with it so they are kept; a second gate that parked goes up with it too
@@ -1310,6 +1348,8 @@ def _execute_parallel_batch(
                 result = NodeResult(status=Status.FAILED, error=str(exc))
             results.append((node, result))
 
+    if replaced is not None:
+        raise replaced
     if parked is not None:
         parked.finished = results
         raise parked
@@ -2322,7 +2362,9 @@ def _wait_for_approval(
             return
         if status == REPLACED:
             # Another attempt of this run took this wait over: this one is not the run any more.
-            raise CancellationError(f"The approval at '{path}' was taken over by a later attempt of this run")
+            # It stands down (never retried, never ending anything of the newer attempt's).
+            raise ReplacedByLaterAttempt(
+                f"The approval at '{path}' was taken over by a later attempt of this run")
 
 
 def _step_path(context: ExecutionContext, node: Node) -> str:

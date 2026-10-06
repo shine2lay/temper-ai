@@ -85,7 +85,7 @@ from temper_ai.pi_agent.team_runtime import (
     stop_words,
 )
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
-from temper_ai.stage.exceptions import CancellationError
+from temper_ai.stage.exceptions import CancellationError, ReplacedByLaterAttempt
 
 logger = logging.getLogger(__name__)
 
@@ -968,6 +968,10 @@ class LeaderTeam(TeamRows, Team):
                                       header=str(header), options=subject.get("options") or ())
         except WaitDecided:
             return None  # decided (or cancelled with the team's end) meanwhile: re-read
+        except ReplacedByLaterAttempt:
+            # A later attempt of the run took the wait over: the team is that attempt's
+            # now, so nothing here ends or writes anything (SW-84).
+            raise
         except CancellationError:
             self.end("run_cancelled")  # the run was stopped while the owner was asked (B12)
             raise
@@ -1292,7 +1296,11 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
     from temper_ai.pi_agent.team_config import load_team_config, trial_id_of
     from temper_ai.pi_agent.team_folders import folder_check, roots_of
     from temper_ai.pi_agent.team_outcome import cancel_record
+    from temper_ai.runner.attempts import later_attempts, stand_down_if_replaced
 
+    # A later attempt of the run has started: the team is its now (SW-84).
+    stand_down_if_replaced(context.run_id, context.graph_event_id,
+                           where="before its team step starts")
     started = time.monotonic()
     settings = node.settings.as_dict()
     host_path = context.step_path or (f"{context.node_path}.{node.name}" if context.node_path
@@ -1373,8 +1381,13 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
         return failed(f"the team's project copies could not be made: {exc}")
     team.post(team.leader, str(goal), sender="temper", sender_kind="temper", kind="goal",
               dedupe_key=f"{context.run_id}:{host_path}:brief")
+    # Never a turn of an attempt that started after this one: that one is alive, and this
+    # one stands down instead of taking its turns over.
+    stand_down_if_replaced(context.run_id, context.graph_event_id,
+                           where="before it takes its team's turns over")
     try:
-        team.resume()
+        team.resume(newer_attempts=lambda: later_attempts(context.run_id,
+                                                          context.graph_event_id))
     except TakeoverRefused as exc:
         # another attempt holds the team: its ending is that attempt's to write
         return NodeResult(status=Status.FAILED, output=str(exc), error=str(exc),
@@ -1383,6 +1396,8 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
     ledger.start_outcome(context.run_id, host_path, trial_id=trial_id)
     try:
         ended = team.drive(context)
+    except ReplacedByLaterAttempt:
+        raise  # the team's outcome is the newer attempt's to write (SW-84)
     except CancellationError:
         _write_cancelled(outcome, context.run_id, cancel_record)
         raise

@@ -162,8 +162,10 @@ def ask_owner(
     ``context`` is the one the step was run with: the wait is filed under the step's own path,
     which the executor puts on it (``step_path``) for every kind of node. Raises RunParked when
     a Pi workflow lets its worker go here (let it go up: the run carries on once the owner
-    answers), CancellationError when the run is stopped while the step holds its worker,
-    ValueError for a wait id that cannot name a wait or a context that names no step.
+    answers), CancellationError when the run is stopped while the step holds its worker --
+    its ReplacedByLaterAttempt when a later attempt of the run took the held wait over (this
+    attempt stands down: let it go up too) -- and ValueError for a wait id that cannot name a
+    wait or a context that names no step.
     """
     if not isinstance(wait_id, str) or not WAIT_ID.fullmatch(wait_id):
         raise ValueError(f"wait id {wait_id!r}: letters, digits, '.', '-', '_' only "

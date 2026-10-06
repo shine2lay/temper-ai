@@ -58,7 +58,8 @@ def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: 
     Raises :class:`WaitNotWritten` when there is no row (a wait is written before it is
     asked, never after) and :class:`WaitDecided` when the row is no longer open; otherwise
     exactly what ``ask_owner`` raises: ``RunParked`` in a Pi workflow while the owner has not
-    answered (let it go up), ``CancellationError`` for a stopped run. The caller records the
+    answered (let it go up), ``CancellationError`` for a stopped run (its
+    ``ReplacedByLaterAttempt`` when a later attempt took the wait over). The caller records the
     decision on the row (``Ledger.decide_wait``, compare-and-set) once it has applied it.
     """
     row = wait_row(ledger, wait_id)

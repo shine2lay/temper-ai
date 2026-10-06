@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -305,14 +306,17 @@ class Team:
                 return f"member {row['member']}'s role snapshot was refused: {exc}"
         return None
 
-    def resume(self) -> list[dict]:
+    def resume(self, newer_attempts: Callable[[], Collection[str]] | None = None) -> list[dict]:
         """At the start of every attempt: a turn cut off by a stopped attempt is taken over
         only once its old box is confirmed gone (R2 C1; raises ``TakeoverRefused`` when that
         cannot be confirmed: fail red, take nothing over), and a turn that failed is put to the
-        owner (retry or stop, N1). Returns the team's open waits."""
+        owner (retry or stop, N1). Returns the team's open waits. ``newer_attempts`` names
+        the attempts that started after this one: their turns are never taken over
+        (``Ledger.take_over``, SW-84)."""
         taken = self.ledger.take_over(self.run_id, self.host_path, self.attempt_id,
                                       type(self).stop_box or stop_leftover_box,
-                                      why="the service stopped during the turn")
+                                      why="the service stopped during the turn",
+                                      newer_attempts=newer_attempts)
         for turn, _wait in taken:
             self._close_turn_event(turn, "the turn was cut off: the service stopped during it")
         self.ledger.open_recovery_for_failed(self.run_id, self.host_path, self.attempt_id)

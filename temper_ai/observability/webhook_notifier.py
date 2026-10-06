@@ -105,6 +105,11 @@ class WebhookNotifier:
         )
         if not (is_update or event_type in TERMINAL_EVENTS):
             return
+        from temper_ai.stage.exceptions import REPLACED_MARK
+        if data.get(REPLACED_MARK):
+            # This attempt stood down for a later one of the same run (SW-84): the run goes
+            # on, so there is no outcome to tell anyone.
+            return
 
         if execution_id in self._fired:
             return

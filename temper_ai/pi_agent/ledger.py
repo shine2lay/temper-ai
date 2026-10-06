@@ -42,7 +42,7 @@ import os
 import socket
 import threading
 import uuid
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -1112,14 +1112,27 @@ class Ledger:
 
     def take_over(self, run_id: str, host_path: str, attempt_id: str,
                   stop_box: Callable[[str], dict],
-                  why: str = "the service stopped during the turn") -> list[tuple[dict, dict]]:
+                  why: str = "the service stopped during the turn",
+                  newer_attempts: Callable[[], Collection[str]] | None = None,
+                  ) -> list[tuple[dict, dict]]:
         """Every turn of the team still ``running`` (its owner is gone) becomes ``uncertain``
         with a recovery wait (B11) -- only once its worker box is confirmed stopped (C1, A3
         rule 4). First the turn's epoch moves on (every late write of the old owner now fails
         its fence), then the box is confirmed gone, then the effect state is read. A box that
-        cannot be confirmed gone raises :class:`TakeoverRefused` and nothing is taken over."""
+        cannot be confirmed gone raises :class:`TakeoverRefused` and nothing is taken over.
+
+        ``newer_attempts`` gives the attempt ids of the run's attempts that started after the
+        caller's (runner/attempts.py ``later_attempts``). A turn one of them holds is that
+        attempt's live work, never the caller's to take over: it is left exactly as it is
+        (SW-84). It is asked after the running turns are read, so every turn read belongs to
+        an attempt it already knows. Older attempts' turns, and the caller's own, are taken
+        over as before."""
         out = []
-        for old in self.interrupted_turns(run_id, host_path):
+        running = self.interrupted_turns(run_id, host_path)
+        newer = frozenset(newer_attempts()) if (newer_attempts and running) else frozenset()
+        for old in running:
+            if old.get("attempt_id") in newer:
+                continue
             with _LOCK, self._team_tx(run_id, host_path) as conn:
                 if conn.execute(turns.update().where(
                         turns.c.turn_id == old["turn_id"], turns.c.state == "running",

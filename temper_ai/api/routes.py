@@ -61,7 +61,7 @@ from temper_ai.runner.resume import (
 )
 from temper_ai.shared.text_limits import STOP_REASON_MAX_CHARS, too_long
 from temper_ai.shared.types import ExecutionContext
-from temper_ai.stage.exceptions import RunParked
+from temper_ai.stage.exceptions import ReplacedByLaterAttempt, RunParked
 from temper_ai.stage.executor import execute_graph
 from temper_ai.stage.failure import FailurePolicy
 from temper_ai.stage.gate import (
@@ -1705,6 +1705,7 @@ def _run_workflow(nodes, inputs, context, workflow_name, execution_id, workflow_
 
 
 def _run_workflow_now(nodes, inputs, context, workflow_name, execution_id, workflow_outputs=None):
+    stood_down = False
     try:
         logger.info("Starting workflow '%s' (execution: %s)", workflow_name, execution_id)
         result = execute_graph(
@@ -1719,15 +1720,13 @@ def _run_workflow_now(nodes, inputs, context, workflow_name, execution_id, workf
         )
     except RunParked as parked:
         logger.info("Workflow '%s' waits on you at '%s'; its thread lets go", workflow_name, parked.path)
+    except ReplacedByLaterAttempt as replaced:
+        stood_down = True
+        logger.info("Workflow '%s': this attempt stands down: %s", workflow_name, replaced)
     except Exception as exc:
         logger.error("Workflow '%s' failed: %s", workflow_name, exc, exc_info=True)
     finally:
-        _let_go(execution_id, context)
-        ws_manager.cleanup(execution_id)
-        # Clean up per-run tool executor thread pool
-        if hasattr(context, 'tool_executor') and context.tool_executor:
-            context.tool_executor.shutdown(wait=False)
-        _see_to_parked(execution_id, context)
+        _end_thread(execution_id, context, stood_down=stood_down)
 
 
 def _run_workflow_with_checkpoints(
@@ -1753,6 +1752,7 @@ def _run_workflow_with_checkpoints_now(
     event so the view can identify the new attempt as a resume of a prior
     workflow event (instead of inferring from event count).
     """
+    stood_down = False
     try:
         logger.info(
             "Resuming workflow '%s' (execution: %s) — %d nodes pre-loaded",
@@ -1778,24 +1778,38 @@ def _run_workflow_with_checkpoints_now(
         )
     except RunParked as parked:
         logger.info("Workflow '%s' waits on you at '%s'; its thread lets go", workflow_name, parked.path)
+    except ReplacedByLaterAttempt as replaced:
+        stood_down = True
+        logger.info("Workflow '%s': this attempt stands down: %s", workflow_name, replaced)
     except Exception as exc:
         logger.error("Workflow '%s' resume failed: %s", workflow_name, exc, exc_info=True)
     finally:
-        _let_go(execution_id, context)
+        _end_thread(execution_id, context, stood_down=stood_down)
+
+
+def _end_thread(execution_id: str, context: Any, *, stood_down: bool) -> None:
+    """A run's thread ends: free its place and its per-run tool pool, then see to a parked
+    Pi run. One that stood down for a later attempt (SW-84) leaves the run's live buffers
+    and its parked wait to that attempt."""
+    _let_go(execution_id, context, stood_down=stood_down)
+    if not stood_down:
         ws_manager.cleanup(execution_id)
-        if hasattr(context, 'tool_executor') and context.tool_executor:
-            context.tool_executor.shutdown(wait=False)
+    # Clean up per-run tool executor thread pool
+    if hasattr(context, 'tool_executor') and context.tool_executor:
+        context.tool_executor.shutdown(wait=False)
+    if not stood_down:
         _see_to_parked(execution_id, context)
 
 
-def _let_go(execution_id: str, context: Any) -> None:
+def _let_go(execution_id: str, context: Any, *, stood_down: bool = False) -> None:
     """The run's thread is ending: it no longer counts as running in this server.
 
     A Pi run may have been carried on already by the time its old thread ends (the answer
     came while it was letting go), so it frees only its own place, never the new attempt's.
+    Nor does an attempt that stood down for a later one (``stood_down``, SW-84), of any run.
     """
     running = _state().running
-    if not getattr(context, "park_at_gates", False):
+    if not (stood_down or getattr(context, "park_at_gates", False)):
         running.pop(execution_id, None)
         return
     if running.get(execution_id) is getattr(context, "cancel_event", None):

@@ -29,9 +29,10 @@ from temper_ai.runner._helpers import (
     build_dispatch_limits,
     preconnect_mcp_servers,
 )
+from temper_ai.runner.attempts import REPLACED_STATUS
 from temper_ai.runner.parked import PARKED_STATUS
 from temper_ai.shared.types import ExecutionContext
-from temper_ai.stage.exceptions import RunParked
+from temper_ai.stage.exceptions import ReplacedByLaterAttempt, RunParked
 from temper_ai.stage.executor import execute_graph, execute_graph_with_state
 from temper_ai.stage.failure import FailurePolicy
 from temper_ai.stage.pi_workflows import is_pi_workflow
@@ -54,7 +55,9 @@ class ExecuteResult:
     """
 
     exit_code: int  # 0 = success, 1 = workflow failure, 2 = setup failure
-    status: str  # "completed" | "failed" | "cancelled" | "waiting" (a Pi run that let its worker go at a gate)
+    # "completed" | "failed" | "cancelled" | "waiting" (a Pi run that let its worker go at a
+    # gate) | "replaced" (this attempt stood down for a later one: the run is that one's)
+    status: str
     cost_usd: float = 0.0
     total_tokens: int = 0
     error: str | None = None
@@ -277,6 +280,11 @@ def execute_workflow(
         # answer carries it on in a new box (runner/parked.py).
         logger.info("Workflow '%s' waits on you at '%s'; its worker lets go", workflow_name, parked.path)
         return ExecuteResult(exit_code=0, status=PARKED_STATUS)
+    except ReplacedByLaterAttempt as replaced:
+        # A later attempt of the run took over (SW-84): the run is that one's, so nothing
+        # about it is reported from here -- not failed, not stopped.
+        logger.info("Workflow '%s': this attempt stands down: %s", workflow_name, replaced)
+        return ExecuteResult(exit_code=0, status=REPLACED_STATUS, error=str(replaced))
     except Exception as exc:
         logger.exception("Workflow '%s' failed during execute_graph: %s", workflow_name, exc)
         return ExecuteResult(

@@ -229,6 +229,27 @@ and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
   the box's name is recorded on the turn before the box is created, and the box is killed
   and removed if it is still there. If that can't be confirmed the step fails red.
 
+### A replaced attempt stands down
+
+One run normally has one live attempt: a run that is queued or running is not started again,
+its box has one name, and a resume is claimed. A rollback run mode, or a box whose stop
+failed, can still leave an older attempt alive, holding its worker at a wait. When a later
+attempt of the run takes that wait over (the wait is closed as `replaced`,
+[gates.md](gates.md) "Restarts"), or has started by the time the older one would take its
+step's turns over, the older attempt *stands down* (`ReplacedByLaterAttempt`, SW-84):
+
+- its step is not tried again, and it takes no turn over: a turn held by an attempt that
+  started after it is that attempt's live work, left exactly as it is (same epoch, its box
+  running, no recovery wait; `Ledger.take_over(newer_attempts=...)`);
+- a Pi step or a team leaves the conversation to the newer attempt: nothing is ended, no
+  outcome is written, no message is dropped;
+- it writes down only its own events, as `cancelled` marked `replaced_by_later_attempt`. The
+  run's row and status, the newer attempt's events and waits, and the run's notices (the
+  webhook, the end of the live stream) stay the newer attempt's. The run's cancel signal
+  is never set for it.
+
+A stop at a held wait is unchanged: the conversation ends first, then the step.
+
 ## The worker box
 
 - One container per turn, created from a pinned image and Pi runtime

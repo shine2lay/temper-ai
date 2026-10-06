@@ -26,7 +26,10 @@ state in its own ledger (:mod:`temper_ai.pi_agent.ledger`):
   refused, the login was not handed over) fails the step -- red, never green. A Resume of
   the run then asks the owner whether to retry that turn or stop;
 * the step raises only ``RunParked`` (its run let the worker go at an owner wait; AgentNode
-  passes it up) and ``CancellationError`` (the run was stopped while the step held its
+  passes it up), ``ReplacedByLaterAttempt`` (a later attempt of the run took its wait over,
+  or started before this one took the step's turns over: this attempt stands down and
+  leaves the conversation and the ledger to the newer one; AgentNode passes it up too, never
+  retrying it) and ``CancellationError`` (the run was stopped while the step held its
   worker at a wait, which ends the conversation first; AgentNode's retry then stops at
   once). Otherwise it never raises and never returns empty output, so AgentNode never
   re-runs it blind.
@@ -86,7 +89,11 @@ from temper_ai.pi_agent.member_tree import (
 from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait, wait_row
 from temper_ai.pi_agent.search_tools import search_tool_problems
 from temper_ai.shared.types import AgentResult, ExecutionContext, Status
-from temper_ai.stage.exceptions import CancellationError, RunParked
+from temper_ai.stage.exceptions import (
+    CancellationError,
+    ReplacedByLaterAttempt,
+    RunParked,
+)
 from temper_ai.stage.gate import REJECTED, WAITING
 
 logger = logging.getLogger(__name__)
@@ -146,7 +153,8 @@ class PiHost(AgentABC):
             result = self._run(input_data, context, started)
         except (RunParked, CancellationError):
             # The run let its worker go at an owner wait, or was stopped while the step held
-            # its worker at one (the conversation has ended): neither is the step failing.
+            # its worker at one (the conversation has ended), or a later attempt took over
+            # (ReplacedByLaterAttempt): none of them is the step failing.
             raise
         except Exception as exc:  # noqa: BLE001 - a raising agent is re-run blind by AgentNode
             logger.exception("Pi step %s failed", self.name)
@@ -161,11 +169,15 @@ class PiHost(AgentABC):
 
     def _run(self, input_data: dict, context: ExecutionContext, started: float) -> AgentResult:
         from temper_ai.database import get_database
+        from temper_ai.runner.attempts import later_attempts, stand_down_if_replaced
 
         self.ctx = context
         self.run_id = context.run_id
         self.host_path = context.node_path or self.name
         self.attempt_id = context.graph_event_id or f"attempt-{uuid.uuid4().hex}"
+        # A later attempt of the run has started: the conversation is its now (SW-84).
+        stand_down_if_replaced(self.run_id, context.graph_event_id,
+                               where="before its Pi step starts")
         self.turns_run = 0
         self.model_calls = 0
         self.last_output = ""
@@ -224,11 +236,16 @@ class PiHost(AgentABC):
                               "started; refusing to reopen it with a different one", started)
 
         # An attempt that died mid-turn: the turn is never re-run blind; the owner decides --
-        # and only once its worker box is confirmed stopped (R2 C1).
+        # and only once its worker box is confirmed stopped (R2 C1). Never a turn of an
+        # attempt that started after this one: that one is alive, and this one stands down.
+        stand_down_if_replaced(self.run_id, context.graph_event_id,
+                               where="before it takes its Pi step's turns over")
         try:
-            taken = self.ledger.take_over(self.run_id, self.host_path, self.attempt_id,
-                                          type(self).stop_box or stop_leftover_box,
-                                          why="the service stopped during the turn")
+            taken = self.ledger.take_over(
+                self.run_id, self.host_path, self.attempt_id,
+                type(self).stop_box or stop_leftover_box,
+                why="the service stopped during the turn",
+                newer_attempts=lambda: later_attempts(self.run_id, context.graph_event_id))
         except TakeoverRefused as exc:
             return self._fail(str(exc), started)
         for turn, _wait in taken:
@@ -379,7 +396,8 @@ class PiHost(AgentABC):
         the answer carries it on (this step runs again and gets the answer at the same id).
         ``CancellationError`` -- the run was stopped while the step held its worker here, as a
         wait does when the run cannot save where it is -- goes up too, once the conversation
-        has ended.
+        has ended. ``ReplacedByLaterAttempt`` -- a later attempt of the run took this wait
+        over -- goes up with nothing ended or written: the conversation is that attempt's.
         """
         subject = wait["subject"] or {}
         try:
@@ -390,6 +408,10 @@ class PiHost(AgentABC):
                 options=[str(o) for o in subject.get("options") or []])
         except WaitDecided as settled:
             return self._settled_meanwhile(wait, settled.state, settled.decision)
+        except ReplacedByLaterAttempt:
+            # A later attempt of the run took the wait over: the conversation is that
+            # attempt's now, so nothing here ends or writes anything (SW-84).
+            raise
         except CancellationError:
             # Not when a later attempt of the run took the wait over: the conversation is
             # that attempt's now.

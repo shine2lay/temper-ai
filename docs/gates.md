@@ -97,7 +97,10 @@ first:
   replaced and changes nothing.
 
 A run therefore never has two open waits for the same step and round. A
-worker still polling a wait that a later attempt replaced stops.
+worker still polling a wait that a later attempt replaced stops: its attempt
+stands down without trying the step again and without touching the run, which
+is the newer attempt's ([pi-agent.md](pi-agent.md) "A replaced attempt stands
+down").
 
 ## Loops that run out of rounds
 

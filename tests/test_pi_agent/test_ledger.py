@@ -124,6 +124,50 @@ def test_a_running_turn_found_at_start_becomes_uncertain_with_a_recovery_wait(le
     assert led.participant(p["participant_id"])["state"] == "uncertain"
 
 
+def test_a_take_over_skips_a_newer_attempts_turn_and_still_fences_an_older_ones(led):
+    """SW-84: attempt a2 takes over while a3, which started after it, is mid-turn. a3's turn
+    is its live work: same epoch, still running, its box never stopped, no recovery wait,
+    and its own fenced writes still land. In another of the run's teams a1, older than a2,
+    was cut off mid-turn: that turn is fenced and put to the owner as before."""
+    side = "side"
+    newer_p, _ = _attach(led, attempt="a3")
+    led.post(RUN, HOST, ROLE, "for the newer attempt")
+    live, _ = _claim(led, "a3")
+    assert led.record_box(live["turn_id"], live["epoch"], "pi-box-a3")
+    older_p, _ = led.attach_participant(RUN, side, ROLE, session_root="/state/run-1/side",
+                                        pin={"model": "m"}, attempt_id="a1")
+    led.post(RUN, side, ROLE, "for the older attempt")
+    cut_off, _ = led.claim_turn(RUN, side, attempt_id="a1")
+    assert led.record_box(cut_off["turn_id"], cut_off["epoch"], "pi-box-a1")
+    stopped: list[str] = []
+
+    def stop_box(name):
+        stopped.append(name)
+        return NO_BOX
+
+    def newer_than_a2():
+        return {"a3"}
+
+    assert led.take_over(RUN, HOST, "a2", stop_box, newer_attempts=newer_than_a2) == []
+    [still] = led.interrupted_turns(RUN, HOST)
+    assert (still["turn_id"], still["state"], still["epoch"]) == (
+        live["turn_id"], "running", live["epoch"]), "the newer attempt's turn is untouched"
+    assert stopped == [], "the newer attempt's box is never stopped"
+    assert led.open_waits(RUN, HOST) == [], "no recovery wait for a live turn"
+    assert led.participant(newer_p["participant_id"])["state"] != "uncertain"
+    assert led.mark_effect(live["turn_id"], "intent", epoch=live["epoch"]), (
+        "the newer attempt's fence still holds its own writes")
+
+    [(cut, wait)] = led.take_over(RUN, side, "a2", stop_box, newer_attempts=newer_than_a2)
+    assert (cut["turn_id"], cut["state"], cut["epoch"]) == (
+        cut_off["turn_id"], "uncertain", cut_off["epoch"] + 1)
+    assert stopped == ["pi-box-a1"]
+    assert wait["kind"] == "recovery"
+    assert led.participant(older_p["participant_id"])["state"] == "uncertain"
+    assert not led.mark_effect(cut_off["turn_id"], "intent", epoch=cut_off["epoch"]), (
+        "the older attempt's late write fails its fence")
+
+
 def test_cancel_closes_every_open_wait(led):
     _attach(led)
     led.open_wait(RUN, HOST, "owner", {}, "a1")

@@ -223,7 +223,9 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     _start_mcp_manager(getattr(args, "config_dir", None))
 
     # --- Execute --------------------------------------------------------------
+    from temper_ai.runner.attempts import REPLACED_STATUS
     from temper_ai.runner.execute import execute_workflow
+    stood_down = False
     try:
         result = execute_workflow(
             execution_id=execution_id,
@@ -239,6 +241,7 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             rerun=rerun,
             run_only=run_only,
         )
+        stood_down = result.status == REPLACED_STATUS
     except Exception as exc:
         # execute_workflow already catches its own exceptions and returns
         # ExecuteResult; getting here means a bug in execute_workflow itself.
@@ -251,14 +254,27 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         )
         return 1
     finally:
-        # Composite cleanup fans out to both sinks: Redis sends terminal
-        # sentinel + closes; JSONL writes footer + closes the file.
-        notifier.cleanup(execution_id)
+        if stood_down:
+            # A later attempt of the run streams to its viewers now: this box closes its
+            # own log file only, and sends them no end-of-run sentinel (SW-84).
+            jsonl_notifier.cleanup(execution_id)
+        else:
+            # Composite cleanup fans out to both sinks: Redis sends terminal
+            # sentinel + closes; JSONL writes footer + closes the file.
+            notifier.cleanup(execution_id)
         # Redis publisher needs explicit close (TCP socket); JSONL is
         # closed by its own cleanup. Only call close() on the one that has it.
         redis_notifier.close()
         # And the MCP sessions the run opened, so no server holds them after it.
         _stop_mcp_manager()
+
+    # --- A later attempt took the run over: this box stands down ---------------
+    if stood_down:
+        # The run's row is the newer attempt's (its status, its end, its error): writing
+        # this box's end into it would end that attempt's run (SW-84).
+        logger.info("Run %s: this box stands down for a later attempt: %s",
+                    execution_id, result.error)
+        return result.exit_code
 
     # --- A Pi run waiting on the owner: this box lets go ----------------------
     from temper_ai.runner.parked import PARKED_STATUS, cancel_parked

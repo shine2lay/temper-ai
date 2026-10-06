@@ -35,6 +35,25 @@ class CancellationError(StageError):
     """Workflow was cancelled by the user."""
 
 
+#: The data key an event of a stood-down attempt carries (``cancelled`` with this set): the
+#: attempt stood down for a later one; the run itself was not stopped.
+REPLACED_MARK = "replaced_by_later_attempt"
+
+
+class ReplacedByLaterAttempt(CancellationError):  # noqa: N818 - a state, like RunParked
+    """A later attempt of the same run took this attempt's work over: this one stands down.
+
+    Raised where an attempt finds it is no longer the run's newest: its wait was retired
+    (``replaced``) by the newer attempt, or a check before it takes over a turn finds a newer
+    ``workflow.started``. It is a stop, so every ``CancellationError`` handler still treats
+    it as one, but it touches only its own attempt: AgentNode passes it up at once (no
+    retry), a Pi step leaves the conversation and the ledger to the newer attempt, and the
+    run's top writes only this attempt's own events down, never the run's row or a notice
+    (docs/pi-agent.md, "A replaced attempt stands down"). The run's cancel signal is never
+    set for it: that would stop the newer attempt too.
+    """
+
+
 class RunParked(Exception):  # noqa: N818 - a state the run is put in, not an error
     """A Pi workflow's wait saved where the run is and let its worker go.
 

@@ -20,10 +20,13 @@ def find_latest_workflow_event(execution_id: str) -> dict | None:
     """
     from temper_ai.observability.event_types import EventType
     from temper_ai.observability.recorder import get_events
+    # Newest first: oldest-first with a limit stopped at the 100th attempt, and a run that
+    # parks at every owner wait can start more than that (runner/attempts.py asks this too).
     candidates = get_events(
         execution_id=execution_id,
         event_type=EventType.WORKFLOW_STARTED,
-        limit=100,
+        limit=1,
+        newest_first=True,
     )
     if not candidates:
         return None

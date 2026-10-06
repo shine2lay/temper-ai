@@ -108,6 +108,40 @@ def make_add_ons(root: Path, names: tuple[str, ...] = ADD_ON_NAMES) -> dict:
     return pins
 
 
+IMAGE_TAG = "temper-pi-box:test"
+
+
+def pin_everything(path: Path, pins_root: Path | None = None) -> dict:
+    """Pin every part the pin check reads (temper_ai/pi_agent/pins.py) in the box config at
+    ``path``: stand-in copies of the two default add-ons and a stand-in image tar under
+    ``pins_root``, the image's tag, and the runtime's, the identity's and each route's digests.
+    The runtime's ``node`` becomes a stand-in that prints the Pi version when asked offline,
+    as the check asks it. Returns the new config."""
+    from temper_ai.pi_agent import pins
+
+    raw = json.loads(path.read_text())
+    root = pins_root or path.parent
+    root.mkdir(parents=True, exist_ok=True)
+    node = Path(raw["runtime_dir"]) / "node"
+    node.write_text('#!/bin/sh\n[ "$2 $3 $PI_OFFLINE" = "--offline --version 1" ] && '
+                    f'echo {PI_VERSION}\n')
+    node.chmod(0o755)
+    tar = root / "image.tar"
+    tar.write_bytes(b"stand-in image tar\n")
+    raw["add_ons"] = make_add_ons(root)
+    raw.update(image_tag=IMAGE_TAG, image_tar=str(tar), image_tar_sha256=pins.file_sha256(tar),
+               runtime_sha256=pins.full_tree_sha256(raw["runtime_dir"]),
+               identity_extension_sha256=pins.tree_sha256(raw["identity_extension"]),
+               identity_config_sha256=pins.tree_sha256(raw["identity_config"]))
+    for route in raw["routes"].values():
+        if route.get("extension"):
+            route["extension_sha256"] = pins.tree_sha256(route["extension"])
+        if route.get("catalog"):
+            route["catalog_sha256"] = pins.file_sha256(route["catalog"])
+    path.write_text(json.dumps(raw))
+    return raw
+
+
 def box_config(root: Path, **over: Any) -> BoxConfig:
     return BoxConfig.load(str(make_box_config(root, **over)))
 

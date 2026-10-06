@@ -2,7 +2,8 @@
 
 Each failed check is a named reason with plain words, every one at once; a lane that is set up
 passes them all. Docker, the host helper and the pi_ tables are stand-ins: no Docker, no
-socket, no model.
+socket, no model. The pin check is the real one (temper_ai/pi_agent/pins.py), over stand-in
+pins.
 """
 
 from __future__ import annotations
@@ -18,13 +19,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from temper_ai.pi_agent import host_helper
+from temper_ai.pi_agent import host_helper, pins
 from temper_ai.pi_agent.ledger import LedgerError
 from temper_ai.runner import pi_lane
 from temper_ai.runner import pi_preflight as pf
 from tests.test_pi_agent import support as sup
 
 TEMPLATE = "temper-ai-server-1"
+NO_SUCH_IMAGE = SimpleNamespace(returncode=1, stdout="", stderr="Error: No such image: x\n")
 
 
 class FakeDocker:
@@ -62,6 +64,7 @@ def lane(tmp_path, monkeypatch):
             "host_helper_socket": str(short / "helper" / "host.sock"),
             "project_roots": [str(project)]}
     path = sup.make_box_config(box_root, **over)
+    sup.pin_everything(path, short / "pins")
     monkeypatch.setenv("TEMPER_PI_AGENT", "1")
     monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", str(path))
     monkeypatch.setenv(pf.TEMPLATE_ENV, TEMPLATE)
@@ -72,7 +75,8 @@ def lane(tmp_path, monkeypatch):
     (code / ".git").mkdir(parents=True)
     (code / ".git" / "HEAD").write_text("4ce5f9ffa985603a40c5955f84cc86afc5e5a442\n")
     monkeypatch.setattr(pi_lane, "CODE_ROOT", code)
-    helper = SimpleNamespace(answer='ok {"bridge": {"state": "ready"}}', asked=[])
+    helper = SimpleNamespace(answer='ok {"pi": "1.0.1", "bridge": {"state": "ready"}}',
+                             asked=[])
 
     def ask(socket_path, line, timeout):
         helper.asked.append((socket_path, line))
@@ -96,7 +100,9 @@ def lane(tmp_path, monkeypatch):
 
     yield SimpleNamespace(tmp=tmp_path, short=short, box=box_root, project=project, code=code,
                           docker=docker, helper=helper, ledger=ledger, rewrite=rewrite,
-                          run=lambda: pf.preflight(docker=docker, ensure_ledger=ensure))
+                          path=path,
+                          run=lambda **kw: pf.preflight(docker=docker, ensure_ledger=ensure,
+                                                        **kw))
     shutil.rmtree(short, ignore_errors=True)
 
 
@@ -108,8 +114,9 @@ def test_a_lane_that_is_set_up_passes_every_check(lane):
     assert lane.run() == []
     assert lane.helper.asked == [(str(lane.short / "helper" / "host.sock"), "status")]
     assert lane.ledger.ensured == 1
-    assert [a[0] for a in lane.docker.asked] == ["version", "image", "inspect"]
-    assert lane.docker.asked[-1][-1] == TEMPLATE
+    assert [a[:2] for a in lane.docker.asked] == [("version", "--format"), ("image", "inspect"),
+                                                  ("image", "inspect"), ("inspect", "--type")]
+    assert [a[-1] for a in lane.docker.asked[1:]] == [sup.IMAGE, sup.IMAGE_TAG, TEMPLATE]
 
 
 def test_switched_off_it_says_so_and_checks_nothing_else(lane, monkeypatch):
@@ -140,15 +147,89 @@ def test_the_commit_is_named_beside_a_box_config_that_can_t_be_read(lane, monkey
     assert reasons(lane.run()) == ["commit_unreadable", "box_config"]
 
 
-def test_the_pins_and_identity_checks_sit_behind_the_one_function_53_replaces(lane,
-                                                                              monkeypatch):
-    """Architecture rm-c9c941d4 item 6: until #53, the box config's own checks stand in."""
-    cfg, problems = pf.pins_and_identity()
-    assert cfg is not None and problems == []
-    monkeypatch.setattr(pf, "pins_and_identity",
-                        lambda: (cfg, [("pins", "add-on x differs from its pin")]))
-    assert lane.run() == [("pins", "add-on x differs from its pin")]
+def test_the_pin_check_is_the_one_the_host_script_runs(lane, monkeypatch):
+    """#53 swapped #51's stand-in (the box config's own checks) for the pin check and the
+    identity read-back (Architecture rm-c9c941d4 item 6): the same function
+    scripts/pi_pins_check.py runs on the host."""
+    asked = []
+    check = pins.check_pins
+
+    def check_pins(path, **kw):
+        asked.append(path)
+        return check(path, **kw)
+
+    monkeypatch.setattr(pins, "check_pins", check_pins)
+    assert lane.run() == []
+    assert asked == [str(lane.path)]
+    assert not hasattr(pf, "pins_and_identity")
     assert "BoxConfig" not in inspect.getsource(pf.preflight)
+
+
+def test_a_pin_that_differs_is_a_reason(lane):
+    tar = lane.short / "pins" / "image.tar"
+    tar.write_bytes(tar.read_bytes() + b"!")
+    (lane.box / "runtime" / "pi" / "README.md").write_text("one more file\n")
+    assert lane.run() == [("pins", "these pins differ from the box config's, or it doesn't "
+                                   "record them: image_tar, runtime")]
+
+
+def test_a_pi_that_prints_another_version_is_a_reason(lane):
+    """The box config's own check reads pi/package.json; the pin check runs the Pi."""
+    node = lane.box / "runtime" / "node"
+    node.write_text("#!/bin/sh\necho 0.87.2\n")
+    lane.rewrite(runtime_sha256=pins.full_tree_sha256(lane.box / "runtime"))
+    assert lane.run() == [("pins", "these pins differ from the box config's, or it doesn't "
+                                   "record them: pi_version")]
+
+
+@pytest.mark.parametrize("add_ons,named", [
+    (["pi-tldr"], "add_ons, add_on:pi-image-trim"),
+    (["pi-image-trim", "pi-tldr", "billion-context-pi"], "add_ons, add_on:billion-context-pi"),
+])
+def test_a_default_add_on_without_a_pin_or_a_refused_one_pinned_is_a_reason(lane, add_ons,
+                                                                            named):
+    """SW-29: the pinned add-ons are exactly pi-image-trim and pi-tldr."""
+    lane.rewrite(add_ons=sup.make_add_ons(lane.short / "pins", tuple(add_ons)))
+    assert lane.run() == [("pins", "these pins differ from the box config's, or it doesn't "
+                                   f"record them: {named}")]
+
+
+def test_an_identity_without_a_pinned_digest_is_a_reason(lane):
+    """D3, SW-26: the identity is read back against a pinned digest, so it must have one."""
+    lane.rewrite(identity_extension_sha256="", identity_config_sha256="")
+    assert lane.run() == [("identity", "the box config pins no digest for these, or they "
+                                       "don't read back with it (D3): identity_extension, "
+                                       "identity_settings")]
+
+
+def test_a_changed_identity_is_refused_by_the_box_config_s_own_read_back(lane):
+    (lane.box / "identity-config" / "pi-identity-role.md").write_text("a new role section\n")
+    assert lane.run() == [("box_config", "Pi worker box config: identity_settings changed "
+                                         "(digest differs from its pin)")]
+
+
+def test_a_pin_check_that_can_t_run_is_a_reason(lane):
+    lane.docker.image = SimpleNamespace(returncode=1, stdout="", stderr="permission denied")
+    assert lane.run() == [("pins", "the pin check couldn't run: Docker didn't answer (is the "
+                                   "daemon up, and its socket reachable?)")]
+
+
+def test_the_run_record_gets_every_pin_s_digest_and_the_host_pi(lane):
+    """SW-16: what the preflight read goes on the run's record (pi_lane.check_run)."""
+    record: dict = {}
+    assert lane.run(record=record) == []
+    raw = json.loads(lane.path.read_text())
+    assert record["host_pi"] == "1.0.1"
+    assert record["pins"] == {
+        "image": sup.IMAGE, "image_tag": sup.IMAGE, "image_tar": raw["image_tar_sha256"],
+        "runtime": raw["runtime_sha256"], "pi_version": sup.PI_VERSION,
+        "search_tool:fd": raw["search_tools"]["fd"]["sha256"],
+        "search_tool:rg": raw["search_tools"]["rg"]["sha256"],
+        "add_ons": list(sup.ADD_ON_NAMES),
+        "add_on:pi-image-trim": raw["add_ons"]["pi-image-trim"]["sha256"],
+        "add_on:pi-tldr": raw["add_ons"]["pi-tldr"]["sha256"],
+        "identity_extension": raw["identity_extension_sha256"],
+        "identity_settings": raw["identity_config_sha256"]}
 
 
 def test_a_box_config_that_fails_its_own_checks_says_which(lane):
@@ -196,9 +277,22 @@ def test_docker_not_answering_is_one_reason_and_skips_its_other_checks(lane):
 
 
 def test_an_image_that_isn_t_on_this_host_is_a_reason(lane):
-    lane.docker.image = SimpleNamespace(returncode=1, stdout="")
-    assert lane.run() == [("image", f"the pinned worker image {sup.IMAGE[:19]} is not on this "
-                                    f"Docker host")]
+    lane.docker.image = NO_SUCH_IMAGE
+    assert lane.run() == [("image", "the pinned worker image isn't on this Docker host, or its "
+                                    "tag doesn't name it (image, image_tag)")]
+
+
+def test_a_tag_that_names_another_image_is_a_reason(lane):
+    lane.rewrite(image_tag="temper-pi-box:other")
+
+    def docker(*args, timeout=0):
+        if args[-1] == "temper-pi-box:other":
+            return SimpleNamespace(returncode=0, stdout="sha256:" + "1" * 64 + "\n")
+        return FakeDocker.__call__(lane.docker, *args, timeout=timeout)
+
+    assert pf.preflight(docker=docker, ensure_ledger=lambda: None) == [
+        ("image", "the pinned worker image isn't on this Docker host, or its tag doesn't name "
+                  "it (image_tag)")]
 
 
 @pytest.mark.parametrize("folder,named", [
@@ -286,12 +380,15 @@ def test_too_little_disk_under_the_state_root_is_a_reason(lane, monkeypatch):
 
 def test_every_failed_check_is_named_at_once_in_order(lane, monkeypatch):
     monkeypatch.setattr(os, "getgid", lambda: 0)
-    lane.docker.image = SimpleNamespace(returncode=1, stdout="")
+    lane.docker.image = NO_SUCH_IMAGE
+    lane.rewrite(identity_config_sha256="")
+    tar = lane.short / "pins" / "image.tar"
+    tar.write_bytes(b"another tar\n")
     lane.helper.answer = "denied uid"
     monkeypatch.setenv(pf.WORKSPACE_ENV, str(lane.tmp))
     lane.ledger.error = LedgerError("locked")
-    assert reasons(lane.run()) == ["uid", "image", "host_helper", "workspace_overlap",
-                                   "pi_schema"]
+    assert reasons(lane.run()) == ["uid", "image", "pins", "identity", "host_helper",
+                                   "workspace_overlap", "pi_schema"]
 
 
 def test_the_overlap_rule_reads_paths_both_ways():

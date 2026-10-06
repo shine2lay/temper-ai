@@ -67,22 +67,23 @@ reason; nothing of it runs:
 | --- | --- |
 | `pi_switched_off` | the Pi step isn't switched on in the Pi lane's worker |
 | `commit_unreadable` | the temper commit the worker runs can't be read from the checkout's `.git` (a dropped mount, say), which every Pi run records (SW-16) |
-| `box_config` | the box config can't be read or fails its own checks: runtime, Pi version, identity files, add-on and search-tool pins (until #53, see below) |
+| `box_config` | the box config can't be read or fails its own checks: runtime, Pi version, identity files, and the add-on, search-tool, identity and login digests it pins, read back now |
 | `roots` | no roots, a root that isn't a folder here, a state or socket root that isn't writable |
 | `uid` | the worker isn't 1000:1000, so its members wouldn't be (SW-43) |
 | `socket_path` | a turn's socket path would reach 100 bytes (SW-44) |
 | `docker` | Docker doesn't answer |
-| `image` | the pinned worker image isn't on this Docker host |
-| `host_helper` | live mode without the helper's socket, a helper that doesn't answer ok, or a login bridge that isn't ready |
+| `image` | the pinned worker image isn't on this Docker host, or its tag doesn't name it |
+| `pins` | any other pin differs from the box config or isn't recorded there (the image's tar, the runtime, the Pi version its own Pi prints, the search binaries, the add-ons, a route's login extension or catalog), or the pin check couldn't run ([The pins](#the-pins)) |
+| `identity` | the box config pins no digest for the identity extension or the shared identity settings, or one doesn't read back with it (M2-roles D3, SW-26) |
 | `template_mounts` | the run-box template (the server's container) mounts a Pi or project folder (the folder itself, inside it or above it), or can't be read |
+| `host_helper` | live mode without the helper's socket, a helper that doesn't answer ok, or a login bridge that isn't ready |
 | `workspace_overlap` | a Pi folder (state, sockets, pins, role folders, the helper's socket folder, project roots) inside `WORKSPACE_DIR`, which every run box may mount (H3, SW-77) |
 | `pi_schema` | the `pi_` tables can't be brought to this build's version |
 | `disk` | less than 2 GiB free under the state root |
 
-Until queue #53 lands its pins function, the box config's own checks stand in for the pins
-check and the identity settings' read-back (D3). They sit behind one function,
-`pins_and_identity()`, which #53 replaces with its own. The project folder's real checks run at
-the team's start ([pi-team-api.md](pi-team-api.md)).
+`image`, `pins` and `identity` are the pin check's reasons: the same check the host command
+runs ([The pins](#the-pins)). The project folder's real checks run at the team's start
+([pi-team-api.md](pi-team-api.md)).
 
 Inside `pi-worker`, `workspace_overlap` compares the paths as the container sees them. Docker
 resolves a linked source on the host when it mounts it, so a link on the host can hide an
@@ -91,12 +92,99 @@ overlap from it: the host's own read-back at switch-on (SW-77) stays the real ch
 The same run process also imports every temper module before the run (H2, SW-76), at the
 start and at every resume (each is a new process): a deploy that changes the code on disk
 never mixes into a running Pi run. And it records the temper commit it runs on (SW-16), in the
-row's `spawner_metadata` as `pi_lane.commits` (`{at, start, commit}`, one per attempt) and in
-the log. The commit is read from the checkout's `.git`, which `pi-worker` alone mounts,
+row's `spawner_metadata` as `pi_lane.commits` (`{at, start, commit, pins, host_pi}`, one per
+attempt) and in the log. With it go the pins as the preflight's pin check read them (`pins`:
+by pin name, the digest; the add-on names for `add_ons`, the version for `pi_version`) and
+the host's Pi version from the host helper's status (`host_pi`). Each member turn records,
+too, what its start read back (`pins_read_back`, [The pins](#the-pins)). The commit is read from the checkout's `.git`, which `pi-worker` alone mounts,
 read-only (never a member box or a run box; SW-38). No git command runs on that mount: the
 commit is read from `HEAD` and the ref files the way `git rev-parse HEAD` resolves them, so no
 hook, no fsmonitor and no ownership check runs. In the Pi lane a commit that can't be read
 refuses the run (`commit_unreadable`); outside it (in-process, dev, CI) it records `unknown`.
+
+## The pins
+
+Every part a Pi member box runs on is pinned by digest in the private box config
+(`local/pi/pi-box.json`, git-ignored; `TEMPER_PI_BOX_CONFIG`), M4 ADR-M4-04, SW-24, SW-26,
+SW-29, SW-50. The pinned copies sit in folders of their own on the host, under
+`~/.local/share/temper/`, read-only, one folder per version. A pin folder is never edited in
+place: a change is a new folder and a new digest in the box config, and the old folder stays
+until a run on the new one has passed.
+
+| pin | box config keys | what |
+| --- | --- | --- |
+| `image` | `image` | the worker image's id, on this Docker host |
+| `image_tag` | `image_tag` | a tag naming that same id (`temper-pi-box:<short id>`), so a prune of dangling images never removes it |
+| `image_tar` | `image_tar`, `image_tar_sha256` | the image saved with `docker save` (`pi-image/`), to load it back |
+| `runtime` | `runtime_dir`, `runtime_sha256` | the Pi runtime folder (`pi-runtime/`) |
+| `pi_version` | `pi_version` | the version the runtime's own Pi prints, run offline |
+| `search_tool:rg`, `search_tool:fd` | `search_tools` | the static binaries Pi's grep and find run ([pi-agent.md](pi-agent.md)) |
+| `add_ons`, `add_on:<name>` | `add_ons` | the add-on copies (`pi-addons/<name>-<digest>`): exactly `pi-image-trim` and `pi-tldr` |
+| `identity_extension` | `identity_extension`, `identity_extension_sha256` | the identity extension, as the box test passed it (`pi-identity/<digest>/extension`) |
+| `identity_settings` | `identity_config`, `identity_config_sha256` | the shared identity settings, `pi-identity.json` and `pi-identity-role.md` (`pi-identity/<digest>/settings`; M2-roles D3) |
+| `route:<name>`, `route:<name>:catalog` | `routes.<name>`: `extension_sha256`, `catalog_sha256` | a route's login extension (`pi-auth/`) and its model catalog |
+
+The runtime's digest covers every entry under it, node_modules and links included: path, kind,
+mode, a file's content, a link's target (`full_tree_sha256`, as `scripts/pi_search_tools.py`
+digests the runtime it builds). An add-on's, the identity's and a login extension's cover each
+regular file's path and content, node_modules and links left out (`tree_sha256`).
+
+**One add-on list** (SW-29): the default add-ons (`pi_agent/member.py` `ADD_ONS`), the pinned
+ones (`pi_agent/pins.py` `DEFAULT_ADD_ONS`) and the box test's are the same two,
+`pi-image-trim` and `pi-tldr`. A pin for any other add-on (`billion-context-pi` included,
+refused by name in `REFUSED_ADD_ONS`) or a default add-on without a pin is a mismatch.
+
+Who checks what:
+
+- the box config's own checks, when it loads (so at every preflight): the add-on copies, the
+  search binaries, the identity extension and settings and each route's login, against their
+  digests;
+- every member start, before any docker call: the search binaries, the member's add-on copies,
+  the identity extension and settings and its route's login, read back (`search_tool_changed`,
+  `add_on_changed`, `pin_changed`); the turn records what it read back (`pins_read_back`);
+- the pin check (`pi_agent/pins.py` `check_pins`): all of it, plus the image, its tag and its
+  tar, the runtime and the Pi version; run by the preflight before every Pi run, and by the
+  host command below.
+
+### The host command
+
+```bash
+cd ~/temper-ai && python3 scripts/pi_pins_check.py --json [--config <box config>]
+```
+
+Run it as the host user, from the temper checkout: the default box config is that checkout's
+`local/pi/pi-box.json`. It is stdlib only and loads `temper_ai/pi_agent/pins.py` from its file,
+never the temper package. It reads the box config, the pinned files (sha256), `docker image
+inspect` (with no Docker config folder, so no registry login is read) and the runtime's
+`pi --offline --version`, run in an empty environment. No network, no model, never `.env`, a
+credential or a token file; it writes nothing. It stays under 60 s, by its own clock and by an
+alarm behind it; a few seconds is usual (hashing the image tar and the runtime is most of it).
+
+With `--json` it prints one object:
+
+```json
+{"result": "pass",
+ "pins": [{"name": "image", "want": "sha256:<id>", "have": "sha256:<id>", "ok": true},
+          {"name": "add_ons", "want": ["pi-image-trim", "pi-tldr"],
+           "have": ["pi-image-trim", "pi-tldr"], "ok": true},
+          {"name": "add_on:pi-tldr", "want": "<sha256>", "have": "<sha256>", "ok": true}]}
+```
+
+| `result` | exit | when |
+| --- | --- | --- |
+| `pass` | 0 | every pin matches |
+| `mismatch` | 1 | a pin differs, is missing, isn't recorded in the box config, or pins what it mustn't |
+| `error` | 2 | the check couldn't run: the box config can't be read, Docker doesn't answer, the 60 s are spent, bad arguments |
+| `not_set_up` | 3 | there is no private box config yet |
+
+`want` is the box config's digest (null when it records none, or for a pin that mustn't be
+there), `have` what is on the host (null when it is missing); `error`, in plain words, comes
+only with one. Pin names and digests only, never a path. Without `--json`: one line, then each
+pin that doesn't match.
+
+For temper-ci's live check (Systems' queue #5): it runs this after each deploy and shows the
+result as information only (ADR-M4-04). A mismatch never reverts a deploy or blocks a landing:
+the preflight already refuses every Pi run while one fails.
 
 ## The pi-worker service
 
@@ -239,6 +327,8 @@ well, follow [pi-agent.md](pi-agent.md).
 at a time, the Pi-only rule, the preflight's reasons, drain and start-up, lane-status, H1
 (`tests/test_spawner/test_subprocess_beside_docker.py`), H2, H4's forged Redis messages
 (`test_redis_decides_nothing.py`), and the secret key never read, on SQLite and the Postgres
-tier. A stop and a crash mid-turn, end to end: `tests/test_runner/pi_parking/test_pi_lane_restarts.py`.
+tier. The pins: `tests/test_pi_agent/test_pins.py` (the check, the host command, the one
+add-on list) and `tests/test_pi_agent/test_box_pins.py` (the read-back at load and at every
+start). A stop and a crash mid-turn, end to end: `tests/test_runner/pi_parking/test_pi_lane_restarts.py`.
 The Pi step's own tests run as the Pi lane (`tests/test_pi_agent/support.py`
 `into_the_pi_lane`).

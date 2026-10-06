@@ -52,7 +52,8 @@ class AddOn:
 
 #: Allowed add-ons and the tools each one brings: the ones that passed the worker box test
 #: (M2, 2026-10-04: the turn finished, no network beyond the model route, files only in the
-#: run folder, no unexpected commands).
+#: run folder, no unexpected commands). The same two as the pins' DEFAULT_ADD_ONS, which the
+#: pin check requires pinned and nothing else (pins.py, SW-29; tests/test_pi_agent/test_pins.py).
 ADD_ONS: dict[str, AddOn] = {
     "pi-image-trim": AddOn(),
     "pi-tldr": AddOn(tools=("tldr",)),

@@ -188,6 +188,8 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         box.allow(0)
         rpc = box.start(sink)
         report.checks["sealed"] = box.inspected
+        # The identity and login digests the start read back (M2-roles D3, SW-26).
+        report.checks["pins_read_back"] = getattr(box, "pins_read_back", None)
         # 4. what Pi reports
         state = _ok(rpc.command("get_state", COMMAND_TIMEOUT), "get_state")
         model = state.get("model") or {}
@@ -328,7 +330,8 @@ def _record_end(recorder: Any, mapper: PiEventMapper, outcome: Any, duration: fl
 
 def _public_checks(checks: dict) -> dict:
     return {k: v for k, v in checks.items()
-            if k in ("pin", "extension_commands", "role", "rewound", "add_ons")}
+            if k in ("pin", "extension_commands", "role", "rewound", "add_ons",
+                     "pins_read_back")}
 
 
 def _rewind(rpc: Any, pdir: Path, session: dict) -> dict:

@@ -10,25 +10,37 @@ Reasons, in order:
   pi_switched_off    the Pi step is not switched on in this worker
   commit_unreadable  the temper commit this worker runs can't be read from the checkout's
                      .git, which every Pi run records (SW-16)
-  box_config         the box config can't be read or fails its own checks: the runtime, Pi
-                     version, identity files and the add-on and search-tool pins
-                     (:func:`pins_and_identity`, until #53)
+  box_config         the box config can't be read or fails its own checks (box.py
+                     ``BoxConfig.check``): the runtime and Pi version, the identity files, and
+                     the add-on, search-tool, identity and login digests it pins, read back
+                     now (a changed add-on or identity is refused here)
   roots              no roots, a root that isn't a folder here, or a state or socket root that
                      isn't writable
   uid                this worker isn't 1000:1000, so its members wouldn't be (SW-43)
   socket_path        a turn's socket path would reach 100 bytes (SW-44)
   docker             Docker doesn't answer
-  image              the pinned worker image isn't on this Docker host
+  image              the pinned worker image isn't on this Docker host, or its tag doesn't
+                     name it (the pin check's ``image`` and ``image_tag``)
+  pins               any other pin that differs from the box config or isn't recorded there:
+                     the image's tar, the runtime, the Pi version its own Pi prints, the
+                     search binaries, the add-ons (exactly pi-image-trim and pi-tldr, SW-29),
+                     the login extension; or the pin check couldn't run
+                     (:mod:`temper_ai.pi_agent.pins`, the check ``scripts/pi_pins_check.py``
+                     runs on the host)
+  identity           the box config pins no digest for the identity extension or the shared
+                     identity settings, so they can't be read back, or one changed since
+                     (M2-roles D3, SW-26)
+  template_mounts    the run-box template mounts a Pi or project folder, or can't be read
   host_helper        live mode without a helper socket, a helper that doesn't answer ok, or a
                      login bridge that isn't ready
-  template_mounts    the run-box template mounts a Pi or project folder, or can't be read
   workspace_overlap  a Pi folder inside WORKSPACE_DIR, which every run box may mount (H3)
   pi_schema          the pi_ tables can't be brought to this build's version (ADR-M4-07)
   disk               less than 2 GiB free under the state root (ADR-M4-11)
 
-Not here: the project source's folder checks (ADR-M4-12), which the team's start runs. The
-pins check and the identity settings' read-back (D3) come with #53, which replaces
-:func:`pins_and_identity`.
+What it read for the run's record (SW-16), when asked (``record``): every pin's digest as
+checked, and the host's Pi version from the host helper's status.
+
+Not here: the project source's folder checks (ADR-M4-12), which the team's start runs.
 """
 
 from __future__ import annotations
@@ -57,17 +69,22 @@ Reason = tuple[str, str]
 
 
 def preflight(*, docker: Callable[..., Any] | None = None,
-              ensure_ledger: Callable[[], None] | None = None) -> list[Reason]:
-    """Every failed check as ``(reason, plain words)``; empty when the run may start."""
+              ensure_ledger: Callable[[], None] | None = None,
+              record: dict[str, Any] | None = None) -> list[Reason]:
+    """Every failed check as ``(reason, plain words)``; empty when the run may start. Given
+    ``record``, puts in it what the run records (SW-16): ``pins`` (each pin's digest as
+    checked) and ``host_pi`` (the host's Pi version)."""
     from temper_ai import pi_agent
 
     if not pi_agent.enabled():
         return [("pi_switched_off",
                  f"the Pi step is switched off in the Pi lane's worker ({pi_agent.SWITCH_ENV})")]
-    from temper_ai.pi_agent.box import _docker_cli
+    from temper_ai.pi_agent.box import CONFIG_ENV, _docker_cli
 
+    record = {} if record is None else record
     failed: list[Reason] = _commit()
-    cfg, problems = pins_and_identity()
+    path = os.environ.get(CONFIG_ENV, "")
+    cfg, problems = _box_config(path)
     failed += problems
     if cfg is None:
         return failed
@@ -79,31 +96,52 @@ def preflight(*, docker: Callable[..., Any] | None = None,
     if unreachable:
         failed.append(("docker", unreachable))
     else:
-        failed += _image(cfg, run)
+        failed += _pins(path, run, record)
         failed += _template_mounts(cfg, run)
-    failed += _host_helper(cfg)
+    failed += _host_helper(cfg, record)
     failed += _workspace_overlap(cfg)
     failed += _pi_schema(ensure_ledger or _ensure_ledger)
     failed += _disk(cfg)
     return failed
 
 
-def pins_and_identity() -> tuple[Any, list[Reason]]:
-    """The box config, with the pins check and the identity check: the one function #53
-    replaces (Architecture rm-c9c941d4, item 6).
-
-    INTERIM: until #53's pins function lands, the box config's own checks stand in for both
-    (box.py ``BoxConfig.check``, run by ``BoxConfig.load``): the runtime and the Pi version,
-    the identity files and folder, and the add-on and search-tool digests, under one reason,
-    ``box_config``. #53 swaps this function for its pins function and D3's identity read-back,
-    with reasons of their own, and names the swap in its done note. Returns ``(config,
-    reasons)``; the config is None when it can't be read at all."""
+def _box_config(path: str) -> tuple[Any, list[Reason]]:
+    """The box config and its own checks (box.py ``BoxConfig.check``); None when it fails."""
     from temper_ai.pi_agent.box import BoxConfig, BoxError
 
     try:
-        return BoxConfig.load(), []
+        return BoxConfig.load(path), []
     except BoxError as exc:
         return None, [("box_config", str(exc))]
+
+
+def _pins(path: str, run: Callable[..., Any], record: dict[str, Any]) -> list[Reason]:
+    """The pin check, the same one ``scripts/pi_pins_check.py`` runs on the host
+    (:func:`temper_ai.pi_agent.pins.check_pins`), its failures under three reasons: the
+    image, the identity (D3) and every other pin."""
+    from temper_ai.pi_agent import pins
+
+    result = pins.check_pins(path, docker=run)
+    record["pins"] = pins.digests(result)
+    if result["result"] == pins.PASS:
+        return []
+    if result["result"] != pins.MISMATCH:
+        return [("pins", f"the pin check couldn't run: {result.get('error') or 'no reason'}")]
+    failed = pins.failed(result)
+    image = [name for name in failed if name in pins.IMAGE_PINS]
+    identity = [name for name in failed if name in pins.IDENTITY_PINS]
+    other = [name for name in failed if name not in image and name not in identity]
+    reasons: list[Reason] = []
+    if image:
+        reasons.append(("image", "the pinned worker image isn't on this Docker host, or its "
+                                 f"tag doesn't name it ({', '.join(image)})"))
+    if other:
+        reasons.append(("pins", "these pins differ from the box config's, or it doesn't "
+                                f"record them: {', '.join(other)}"))
+    if identity:
+        reasons.append(("identity", "the box config pins no digest for these, or they don't "
+                                    "read back with it (D3): " + ", ".join(identity)))
+    return reasons
 
 
 def _commit() -> list[Reason]:
@@ -164,16 +202,6 @@ def _docker_unreachable(run: Callable[..., Any]) -> str | None:
     return None
 
 
-def _image(cfg: Any, run: Callable[..., Any]) -> list[Reason]:
-    try:
-        got = run("image", "inspect", "--format", "{{.Id}}", cfg.image, timeout=DOCKER_TIMEOUT_S)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return [("image", f"the worker image could not be looked up ({type(exc).__name__})")]
-    if got.returncode != 0 or (got.stdout or "").strip() != cfg.image:
-        return [("image", f"the pinned worker image {cfg.image[:19]} is not on this Docker host")]
-    return []
-
-
 def _template_mounts(cfg: Any, run: Callable[..., Any]) -> list[Reason]:
     name = os.environ.get(TEMPLATE_ENV, "").strip()
     if not name:
@@ -198,7 +226,9 @@ def _template_mounts(cfg: Any, run: Callable[..., Any]) -> list[Reason]:
     return []
 
 
-def _host_helper(cfg: Any) -> list[Reason]:
+def _host_helper(cfg: Any, record: dict[str, Any]) -> list[Reason]:
+    """The host helper answers ok and its login bridge is ready; the host's Pi version it
+    reports goes in ``record`` (``host_pi``, SW-16)."""
     if not cfg.host_helper_socket:
         if cfg.mode == "live":
             return [("host_helper", "live mode needs the host helper (host_helper_socket)")]
@@ -216,8 +246,9 @@ def _host_helper(cfg: Any) -> list[Reason]:
         status = json.loads(rest)
     except ValueError:
         return [("host_helper", "the host helper's status could not be read")]
-    state = str(((status if isinstance(status, dict) else {}).get("bridge") or {}).get("state")
-                or "unknown")
+    status = status if isinstance(status, dict) else {}
+    record["host_pi"] = str(status.get("pi") or "unknown")[:40]
+    state = str((status.get("bridge") or {}).get("state") or "unknown")
     if state not in BRIDGE_OK:
         return [("host_helper", f"the host helper's login bridge is {state[:40]}, not ready")]
     return []

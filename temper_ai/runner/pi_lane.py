@@ -12,7 +12,8 @@ module holds:
   process's lane, both ways; then, in the Pi lane, every temper module is imported up front
   (H2: a deploy that changes the code on disk never mixes into a run), the Pi-only rule is
   checked again on the workflow as it loads now, the preflight runs (runner/pi_preflight.py)
-  and the temper commit the attempt runs on is recorded (SW-16);
+  and the temper commit the attempt runs on is recorded with the pins the preflight checked
+  and the host's Pi version (SW-16);
 * **when it stops** (:func:`drain`): it claims nothing more, raises a drain mark its runs see at
   their next turn boundary (:func:`leave_if_draining`), and waits for them to leave;
 * **for temper-deploy** (:func:`lane_status`): which Pi runs are active, parked or queued, read
@@ -177,7 +178,8 @@ def check_run(execution_id: str, run_row: dict, *, start: str | None,
     Outside the Pi lane an unmarked run passes untouched and a Pi run is refused (SW-42).
     In the Pi lane a run that isn't a Pi run is refused; a Pi run gets every temper module
     imported now (H2), the Pi-only rule on the workflow as it loads now (SW-41, at claim),
-    the preflight (ADR-M4-05), and its commit recorded (SW-16)."""
+    the preflight (ADR-M4-05), and its commit recorded with the pins the preflight checked
+    and the host's Pi version (SW-16)."""
     try:
         here = this_lane()
     except LaneSettingError as exc:
@@ -198,7 +200,8 @@ def check_run(execution_id: str, run_row: dict, *, start: str | None,
                                "and gates: " + "; ".join(problems))
     from temper_ai.runner.pi_preflight import preflight
 
-    failed = preflight()
+    seen: dict[str, Any] = {}
+    failed = preflight(record=seen)
     if failed:
         return Refusal("pi_preflight", "The Pi lane's checks before the run failed: "
                        + "; ".join(f"{reason}: {text}" for reason, text in failed))
@@ -207,7 +210,8 @@ def check_run(execution_id: str, run_row: dict, *, start: str | None,
         # The preflight read it a moment ago: refuse rather than record "unknown" (SW-16).
         return Refusal("pi_preflight", "The Pi lane's checks before the run failed: "
                                        f"commit_unreadable: {why}")
-    record_commit(execution_id, start, commit)
+    record_commit(execution_id, start, commit, pins=seen.get("pins"),
+                  host_pi=seen.get("host_pi"))
     return None
 
 
@@ -329,17 +333,24 @@ def read_commit(root: Path | None = None) -> tuple[str | None, str]:
                       f"({exc.strerror or type(exc).__name__})")
 
 
-def record_commit(execution_id: str, start: str | None, commit: str | None = None) -> str:
+def record_commit(execution_id: str, start: str | None, commit: str | None = None, *,
+                  pins: dict[str, Any] | None = None, host_pi: str | None = None) -> str:
     """Write the commit this attempt runs on (``commit``, else read now) into the run's row
     (``spawner_metadata`` ``pi_lane.commits``: one entry per attempt, start and every resume)
-    and the log."""
+    and the log; with it, given them, the pins the preflight checked (``pins``: each pin's
+    digest by name, :mod:`temper_ai.pi_agent.pins`) and the host's Pi version (SW-16)."""
     from sqlmodel import select
 
     from temper_ai.database import get_session
     from temper_ai.runner.models import WorkflowRun
 
     commit = commit or temper_commit()
-    entry = {"at": utcnow().isoformat(), "start": start or "new", "commit": commit}
+    entry: dict[str, Any] = {"at": utcnow().isoformat(), "start": start or "new",
+                             "commit": commit}
+    if pins is not None:
+        entry["pins"] = pins
+    if host_pi is not None:
+        entry["host_pi"] = host_pi
     try:
         with get_session() as session:
             row = session.exec(

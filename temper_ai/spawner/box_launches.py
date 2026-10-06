@@ -644,6 +644,9 @@ _WORKER = "worker: runs in the trusted worker or server, never in a run's box"
 _PI = "legacy: the Pi lane (M4), which only legacy boxes run"
 _PI_PREFLIGHT = ("worker: the Pi lane's preflight (runner/pi_preflight.py), in its run process "
                  "on the pi-worker, before any turn; never in a run's box")
+_PI_PINS = ("worker: the Pi pin check (pi_agent/pins.py), run by the Pi lane's preflight on the "
+            "pi-worker before any turn and by the host command scripts/pi_pins_check.py; never "
+            "in a run's box")
 _BOX_TOOL = "box: a tool on SEALED_TOOLS, run as the box's user in its own mounts"
 _BOX_CLI = ("box: the provider's command-line client, baked into the image; reached only "
             "through a provider on SEALED_PROVIDERS (its login is a residual until BS6)")
@@ -660,6 +663,9 @@ ENGINE_LAUNCHES: dict[str, str] = {
     "temper_ai/pi_agent/box.py::_docker_cli": _PI,
     "temper_ai/pi_agent/box.py::_no_such_container": _PI,
     "temper_ai/pi_agent/box.py::stop_leftover_box": _PI,
+    "temper_ai/pi_agent/pins.py::docker_cli": _PI_PINS,
+    "temper_ai/pi_agent/pins.py::image_id": _PI_PINS,
+    "temper_ai/pi_agent/pins.py::runtime_pi_version": _PI_PINS,
     "temper_ai/pi_agent/rpc.py::Rpc.__init__": _PI,
     "temper_ai/pi_agent/rpc.py::Rpc.close": _PI,
     "temper_ai/pi_agent/team_folders.py::run_git": (
@@ -667,7 +673,6 @@ ENGINE_LAUNCHES: dict[str, str] = {
         "run, or in the trusted server (the Team page's check and a trial's start)"),
     "temper_ai/pi_agent/team_leader.py::ProjectCopies._g": _PI,
     "temper_ai/runner/pi_preflight.py::_docker_unreachable": _PI_PREFLIGHT,
-    "temper_ai/runner/pi_preflight.py::_image": _PI_PREFLIGHT,
     "temper_ai/runner/pi_preflight.py::_template_mounts": _PI_PREFLIGHT,
     "temper_ai/spawner/box_bootstrap.py::protect_process": (
         "box: the runner's and the delivery writer's own prctl and rlimit calls (libc "

@@ -21,7 +21,10 @@ What the box allows (and what L1 proved live on the same runtime):
 * Pi's ``grep`` and ``find`` run the static ``rg`` and ``fd`` pinned at the runtime folder's top
   level (``/pi-runtime``, first on the box ``PATH``; :mod:`temper_ai.pi_agent.search_tools`).
   The host checks their digests before every start, and refuses a worker given ``grep`` or
-  ``find`` when the box config doesn't pin them, before any docker call.
+  ``find`` when the box config doesn't pin them, before any docker call;
+* the identity extension, the shared identity settings and the route's login extension are
+  read back before every start, and a start is refused when one no longer has the digest the
+  box config pins (M2-roles D3, SW-26; the pins: :mod:`temper_ai.pi_agent.pins`).
 
 Nothing here logs request bodies, prompts, tokens or captured process output.
 """
@@ -29,7 +32,6 @@ Nothing here logs request bodies, prompts, tokens or captured process output.
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import os
 import re
@@ -43,6 +45,7 @@ import uuid
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +56,7 @@ from temper_ai.pi_agent.member_tree import (
     member_entry,
     read_member_text,
 )
+from temper_ai.pi_agent.pins import TAG_RE, file_sha256, tree_sha256
 from temper_ai.pi_agent.rpc import Rpc
 from temper_ai.pi_agent.search_tools import PINS as SEARCH_PINS
 from temper_ai.pi_agent.search_tools import search_tool_problems
@@ -111,6 +115,10 @@ class Route:
     #: A sealed login extension folder (anthropic route), mounted read-only at /ext/auth.
     extension: str | None = None
     extension_entry: str | None = None
+    #: The digests the login extension (:func:`tree_sha256`) and the catalog file must have
+    #: (the pins, :mod:`temper_ai.pi_agent.pins`); empty: not pinned (tests, proofs).
+    extension_sha256: str = ""
+    catalog_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -180,6 +188,19 @@ class BoxConfig:
     #: The project folders a team works on, read-only and inside ``roots``; the preflight
     #: refuses any of them in the run-box template's mounts.
     project_roots: list[str] = field(default_factory=list)
+    #: The pins only the pin check reads (M4 ADR-M4-04, SW-50; :mod:`temper_ai.pi_agent.pins`,
+    #: run by the Pi lane's preflight and by ``scripts/pi_pins_check.py``): the image's tag,
+    #: the image saved as a tar and its digest, and the runtime folder's whole-tree digest.
+    image_tag: str = ""
+    image_tar: str = ""
+    image_tar_sha256: str = ""
+    runtime_sha256: str = ""
+    #: The digests the identity extension and the shared identity settings must have
+    #: (:func:`tree_sha256`; M2-roles D3, SW-26), checked here at load and read back at every
+    #: start. Empty: not pinned (tests, host-process proofs); the pin check calls that a
+    #: mismatch.
+    identity_extension_sha256: str = ""
+    identity_config_sha256: str = ""
 
     @classmethod
     def load(cls, path: str | None = None) -> BoxConfig:
@@ -234,6 +255,7 @@ class BoxConfig:
             problems.append("host_node and host_pi are needed without host_helper_socket")
         problems += self._add_on_problems()
         problems += self.search_tool_pin_problems()
+        problems += self.digest_pin_problems()
         problems += self.root_problems()
         if problems:
             raise BoxError("box_config_invalid", "Pi worker box config: " + "; ".join(problems))
@@ -296,6 +318,49 @@ class BoxConfig:
                 problems.append(f"search tool {name}: pinned binary changed (digest differs)")
         return problems
 
+    def digest_pins(self) -> dict[str, tuple[str, Callable[[], str | None]]]:
+        """The digest pins read back at load and at every start, by name: ``(pinned digest,
+        how to read it now)``. A pinned add-on and the search binaries have checks of their
+        own; the runtime and the image are the pin check's (:mod:`temper_ai.pi_agent.pins`)."""
+        pins: dict[str, tuple[str, Callable[[], str | None]]] = {
+            "identity_extension": (self.identity_extension_sha256,
+                                   partial(tree_sha256, Path(self.identity_extension))),
+            "identity_settings": (self.identity_config_sha256,
+                                  partial(tree_sha256, Path(self.identity_config))),
+        }
+        for name, route in sorted(self.routes.items()):
+            if route.extension:
+                pins[f"route:{name}"] = (route.extension_sha256,
+                                         partial(tree_sha256, Path(route.extension)))
+            if route.catalog:
+                pins[f"route:{name}:catalog"] = (route.catalog_sha256,
+                                                 partial(file_sha256, Path(route.catalog)))
+        return pins
+
+    def digest_pin_problems(self) -> list[str]:
+        """The optional pins' form (each a sha256 digest, the tag a ``name:tag``), and each
+        pinned folder or file still with its digest (:meth:`digest_pins`)."""
+        problems = []
+        for what in ("image_tar_sha256", "runtime_sha256", "identity_extension_sha256",
+                     "identity_config_sha256"):
+            value = getattr(self, what)
+            if value and not (isinstance(value, str) and SHA256_RE.match(value)):
+                problems.append(f"{what} must be a sha256 digest")
+        for name, route in sorted(self.routes.items()):
+            for what in ("extension_sha256", "catalog_sha256"):
+                value = getattr(route, what)
+                if value and not (isinstance(value, str) and SHA256_RE.match(value)):
+                    problems.append(f"route {name}: {what} must be a sha256 digest")
+        if self.image_tag and not (isinstance(self.image_tag, str)
+                                   and TAG_RE.match(self.image_tag)):
+            problems.append("image_tag must be a name:tag")
+        if self.image_tar and not os.path.isabs(str(self.image_tar)):
+            problems.append("image_tar must be an absolute path")
+        if problems:
+            return problems
+        return [f"{name} changed (digest differs from its pin)"
+                for name, (want, read) in self.digest_pins().items() if want and read() != want]
+
     def _add_on_problems(self) -> list[str]:
         """Each pinned add-on copy: present, outside the owner's live Pi folder, unchanged."""
         problems = []
@@ -345,26 +410,6 @@ def _owner_writable(root: Path) -> None:
     for path in [root, *root.rglob("*")]:
         if not path.is_symlink():
             path.chmod(path.stat().st_mode & 0o7777 | (0o700 if path.is_dir() else 0o600))
-
-
-def tree_sha256(root: Path) -> str:
-    """One digest over a folder's regular files (relative path + content), node_modules and
-    symlinks excluded -- the digest pinned for an extension."""
-    h = hashlib.sha256()
-    root = Path(root)
-    files = sorted(p for p in root.rglob("*")
-                   if p.is_file() and not p.is_symlink() and "node_modules" not in p.parts)
-    for p in files:
-        h.update(p.relative_to(root).as_posix().encode() + b"\0")
-        h.update(hashlib.sha256(p.read_bytes()).digest())
-    return h.hexdigest()
-
-
-def file_sha256(path: Path) -> str | None:
-    try:
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-    except OSError:
-        return None
 
 
 def jwt_account_ids(token: str) -> list[str]:
@@ -767,6 +812,9 @@ class WorkerBox:
         #: How the container was really started, read back from Docker: the ``--extension``
         #: entries of Pi's command line and the environment (the turn checks the add-ons).
         self.launched: dict | None = None
+        #: The identity and login digests read back at the start (:meth:`_read_back_pins`),
+        #: which the turn records (M2-roles D3, SW-26).
+        self.pins_read_back: dict[str, str | None] | None = None
 
     # --- setup ---
 
@@ -979,10 +1027,30 @@ class WorkerBox:
         if changed:
             raise BoxError("search_tool_changed", "Pi worker box config: " + "; ".join(changed))
 
+    def _read_back_pins(self) -> dict[str, str | None]:
+        """Read back the identity extension, the shared identity settings (M2-roles D3, SW-26)
+        and the route's login extension now, at the start: refuse it, before any docker call,
+        when one no longer has the digest the box config pins. Returns the digests read, by
+        name, for the turn's record. A box config that pins none of them (tests, host-process
+        proofs) refuses nothing."""
+        read: dict[str, str | None] = {}
+        changed = []
+        for name, (want, read_now) in self.cfg.digest_pins().items():
+            if name.startswith("route:") and name.split(":")[1] != self.spec.provider:
+                continue
+            read[name] = read_now()
+            if want and read[name] != want:
+                changed.append(name)
+        if changed:
+            raise BoxError("pin_changed", "Pi worker box: " + ", ".join(changed)
+                           + " no longer read back with the pinned digest")
+        return read
+
     def start(self, event_sink: Callable[[dict], None],
               command: list[str] | None = None) -> Rpc:
         """Create, check and start the container; its attached stdio is the RPC channel."""
         self._check_search_tools()
+        self.pins_read_back = self._read_back_pins()
         # The participant's folder is the member's to write (mounted at /w): Temper makes,
         # empties and removes things in it only through real folders, never a link (SW-51).
         for sub in MEMBER_FOLDERS:

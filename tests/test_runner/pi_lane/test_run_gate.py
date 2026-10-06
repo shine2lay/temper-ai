@@ -43,13 +43,17 @@ class Loader:
 
 @pytest.fixture
 def gate(monkeypatch):
-    """check_run with its slow or outside parts recorded: the eager import and the preflight."""
+    """check_run with its slow or outside parts recorded: the eager import and the preflight,
+    which hands the run record what it read (``read``: the pins and the host's Pi version)."""
     calls: list[str] = []
     failed: list = []
+    read: dict = {}
     monkeypatch.setattr(pi_lane, "eager_import", lambda: calls.append("eager_import"))
 
-    def preflight():
+    def preflight(*, record=None):
         calls.append("preflight")
+        if record is not None:
+            record.update(read)
         return list(failed)
 
     monkeypatch.setattr(pi_preflight, "preflight", preflight)
@@ -63,7 +67,7 @@ def gate(monkeypatch):
                    "spawner_metadata": found.spawner_metadata}
         return pi_lane.check_run(eid, run_row, start=start, graph_loader=loader)
 
-    return SimpleNamespace(check=check, calls=calls, failed=failed, loader=loader)
+    return SimpleNamespace(check=check, calls=calls, failed=failed, read=read, loader=loader)
 
 
 def commits(eid: str) -> list[dict]:
@@ -119,6 +123,26 @@ def test_in_the_pi_lane_a_pi_run_passes_in_order_and_records_its_commit(gate, mo
     (entry,) = commits("pi")
     assert (entry["start"], entry["commit"]) == (start or "new", SHA)
     assert ls.lane("pi") == PI_LANE
+
+
+def test_each_attempt_records_the_pins_the_preflight_checked_and_the_host_pi(gate, monkeypatch):
+    """SW-16: beside the commit, every attempt records each pin's digest as the preflight's
+    pin check read it (image id, runtime, Pi version, add-ons, identity, ...) and the host's
+    Pi version from the host helper."""
+    ls.as_the_pi_lane(monkeypatch)
+    ls.make_row("pi")
+    pins = {"image": sup.IMAGE, "runtime": "a" * 64, "pi_version": sup.PI_VERSION,
+            "add_ons": list(sup.ADD_ON_NAMES), "add_on:pi-image-trim": "b" * 64,
+            "add_on:pi-tldr": "c" * 64, "identity_extension": "d" * 64,
+            "identity_settings": "e" * 64}
+    gate.read.update(pins=pins, host_pi="1.0.1")
+    assert gate.check("pi") is None
+    gate.read["host_pi"] = "1.0.2"
+    assert gate.check("pi", start="resume") is None
+    first, again = commits("pi")
+    assert (first["start"], first["commit"], first["pins"], first["host_pi"]) == (
+        "new", SHA, pins, "1.0.1")
+    assert (again["start"], again["pins"], again["host_pi"]) == ("resume", pins, "1.0.2")
 
 
 def test_each_attempt_adds_its_commit_and_the_row_keeps_the_last_twenty(gate, monkeypatch):

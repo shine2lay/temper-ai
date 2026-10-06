@@ -87,7 +87,10 @@ agent:
   `~/.pi/agent`: `"add_ons": {"pi-tldr": {"dir": "...", "entry": "index.ts", "sha256":
   "<tree digest>"}}`. The copy is checked against its digest when the config loads and when
   each box starts, mounted read only at `/ext/addons/<name>`, and its digest goes into the
-  turn's pin. Its commands count as allowed only from that folder. An add-on that fails in
+  turn's pin. The production box config pins exactly the two allowed ones: a pin for any
+  other add-on, or an allowed one without a pin, is a mismatch in the pin check (SW-29;
+  [pi-lane.md](pi-lane.md#the-pins)). Its commands count as allowed only from that folder.
+  An add-on that fails in
   the box (needs the network, writes outside the run folder, runs unexpected commands) is left
   out and reported, not patched around.
 - A usage or rate limit from the provider ends the turn in a recovery wait whose reason names
@@ -348,6 +351,11 @@ no environment value is ever in a wait.
   (`runtime_dir`, `pi_version` checked against the installed package): `--network none`,
   read-only root, all capabilities dropped, no new privileges, own user, no logs, only
   the participant's folder writable. `docker inspect` is checked before the start.
+- Before any docker call, each start reads back the identity extension, the shared identity
+  settings and the route's login extension and catalog, and refuses the start
+  (`pin_changed`) when one no longer has the digest the box config pins (M2-roles D3,
+  SW-26). The turn records what it read (`pins_read_back` in its checks). The whole pin
+  list and its check: [pi-lane.md](pi-lane.md#the-pins).
 - Way out: an in-container relay on 127.0.0.1:3128 to a host Unix socket; the host lets
   through only `CONNECT <route host>:443`.
 - Login: Pi's `apiKey` command asks the host over a second socket; within the turn's

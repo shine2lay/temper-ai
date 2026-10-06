@@ -612,7 +612,8 @@ def test_sw27_every_member_gets_temper_s_guidance_never_a_chat_s(tmp_path, short
 
 def test_sw27_the_guidance_is_inside_the_pinned_temper_box_folder():
     """The conversation's pin covers the temper-box folder's digest, so a change to the text is
-    a settings change a reopened conversation refuses, never a silent swap."""
+    a settings change a reopened conversation asks the owner about (SW-85), never a silent
+    swap."""
     from temper_ai.pi_agent.box import PROBE_DIR
 
     assert MEMBER_GUIDANCE.parent == PROBE_DIR and MEMBER_GUIDANCE.is_file()

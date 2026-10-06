@@ -37,6 +37,7 @@ overflow (SW-12).
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import socket
@@ -90,8 +91,13 @@ UNDELIVERED_REASONS = ("turn_failed", "turn_superseded", "turn_cancelled", "run_
 END_REASONS = ("run_cancelled", "run_completed", "team_done", "team_stopped")
 #: Wait kinds: ``owner`` (next message or finish), ``recovery`` (a turn that was cut off or
 #: failed), ``stalled`` (several members with nothing to do), ``pause`` (the leader loop's
-#: pause after N keep-goings in a row, #38).
-WAIT_KINDS = ("owner", "recovery", "stalled", "pause")
+#: pause after N keep-goings in a row, #38), ``settings`` (a conversation is reopened under
+#: settings other than the ones it was started with: go on with the new ones, or stop;
+#: SW-85, temper_ai/pi_agent/settings_wait.py). An open ``settings`` wait is asked before
+#: every other open wait (:meth:`Ledger.open_waits`).
+WAIT_KINDS = ("owner", "recovery", "stalled", "pause", "settings")
+#: The wait kind asked first.
+SETTINGS_KIND = "settings"
 MAX_REFUSALS = 200
 
 participants = sa.Table(
@@ -483,6 +489,14 @@ def _too_new(stored: int) -> str:
     return (f"this database's Pi tables are at layout version {stored}, but this Temper knows "
             f"only up to version {SCHEMA_VERSION}: a newer Temper made them; Temper changed "
             "nothing. Run the newer Temper, or use another database for Pi")
+
+
+def pin_digest(pin: Any) -> str:
+    """A participant's settings pin as one digest: the sha256 of its canonical JSON (keys
+    sorted, no spaces). The same pin gives the same digest in every process, whatever order
+    its keys were stored in."""
+    return hashlib.sha256(json.dumps(pin, sort_keys=True, separators=(",", ":"),
+                                     default=str).encode()).hexdigest()
 
 
 def _short(value: Any, limit: int = 128) -> str | None:
@@ -1241,18 +1255,44 @@ class Ledger:
         with _LOCK, self._team_tx(run_id, host_path) as conn:
             return self._open_wait(conn, run_id, host_path, kind, subject, attempt_id)
 
-    def open_waits(self, run_id: str, host_path: str) -> list[dict]:
+    def open_wait_unless_open(self, run_id: str, host_path: str, kind: str, subject: dict,
+                              attempt_id: str) -> dict | None:
+        """Open a wait of ``kind`` only when none of that kind is open (checked in the same
+        transaction): two attempts never open two of them. None when one is open already."""
+        with _LOCK, self._team_tx(run_id, host_path) as conn:
+            if conn.execute(sa.select(sa.func.count()).select_from(waits).where(
+                    waits.c.run_id == run_id, waits.c.host_path == host_path,
+                    waits.c.kind == kind, waits.c.state == "open")).scalar_one():
+                return None
+            return self._open_wait(conn, run_id, host_path, kind, subject, attempt_id)
+
+    def decided_waits(self, run_id: str, host_path: str, kind: str) -> list[dict]:
+        """The decided waits of one kind, in the order they were decided."""
         with _LOCK, self._tx() as conn:
             rows = conn.execute(sa.select(waits).where(
                 waits.c.run_id == run_id, waits.c.host_path == host_path,
-                waits.c.state == "open").order_by(waits.c.opened_at)).mappings().all()
+                waits.c.kind == kind, waits.c.state == "decided").order_by(
+                waits.c.decided_at)).mappings().all()
+            return [dict(r) for r in rows]
+
+    def open_waits(self, run_id: str, host_path: str) -> list[dict]:
+        """The open waits in the order they are asked: a ``settings`` wait first (no turn runs
+        and no other answer is applied on settings the owner hasn't confirmed, SW-85), then
+        the rest oldest first."""
+        with _LOCK, self._tx() as conn:
+            rows = conn.execute(sa.select(waits).where(
+                waits.c.run_id == run_id, waits.c.host_path == host_path,
+                waits.c.state == "open").order_by(
+                sa.case((waits.c.kind == SETTINGS_KIND, 0), else_=1),
+                waits.c.opened_at)).mappings().all()
             return [dict(r) for r in rows]
 
     def decide_wait(self, wait_id: str, decision: dict, attempt_id: str,
                     deliveries: Sequence[tuple[str, str]] = (),
                     recovery: tuple[str, str] | None = None,
                     participant_states: Sequence[tuple[str, str]] = (),
-                    reask: dict | None = None) -> bool:
+                    reask: dict | None = None,
+                    repin: Sequence[tuple[str, str, dict]] = ()) -> bool:
         """Compare-and-set open -> decided, with everything the decision does, exactly once.
 
         ``deliveries``: (to_member, body) from the owner. ``recovery``: (word, turn_id) with
@@ -1260,17 +1300,36 @@ class Ledger:
         sent is never delivered; its messages go back to the member with the same ids, B1) or
         ``stop`` (failed). ``participant_states``: (participant_id, new state). ``reask``: the
         subject of a new open wait of the same kind, opened in the same transaction -- the
-        owner is asked again (an answer that named none of the wait's choices)."""
+        owner is asked again (an answer that named none of the wait's choices).
+
+        ``repin``: (participant_id, old pin digest, new pin) each -- a ``settings`` wait's go
+        on (SW-85). Every participant's stored pin is compared with its old digest in the
+        same transaction: all match, and each gets its new pin; any differs (the pins moved
+        since the wait was opened), and none is touched. The decision records which as
+        ``applied`` (true or false)."""
         team = self._team_of(waits, waits.c.wait_id, wait_id)
         if team is None:
             return False
         with _LOCK, self._team_tx(*team) as conn:
             w = conn.execute(sa.select(waits).where(waits.c.wait_id == wait_id)).mappings().first()
+            applied = None
+            if repin:
+                stored = {r["participant_id"]: r["pin"] for r in conn.execute(
+                    sa.select(participants.c.participant_id, participants.c.pin).where(
+                        participants.c.participant_id.in_([p for p, _o, _n in repin])))
+                    .mappings().all()}
+                applied = all(pid in stored and pin_digest(stored[pid]) == old
+                              for pid, old, _new in repin)
+                decision = {**decision, "applied": applied}
             if w is None or conn.execute(waits.update().where(
                     waits.c.wait_id == wait_id, waits.c.state == "open").values(
                     state="decided", decision=decision, decided_attempt=attempt_id,
                     decided_at=_now())).rowcount != 1:
                 return False
+            if applied:
+                for pid, _old, new in repin:
+                    conn.execute(participants.update().where(
+                        participants.c.participant_id == pid).values(pin=dict(new)))
             if recovery is not None:
                 self._recover(conn, *recovery)
             for pid, state in participant_states:

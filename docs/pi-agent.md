@@ -134,8 +134,11 @@ refused with a plain sentence, by the name a config would use for it (M4 SW-04; 
 
 A member's own agent config asking for one of these (`conversation`, `continue_from`,
 `private_children`, `children`, `concurrent_turns`) is refused the same way, prefixed
-`member '<name>':`. A change to the team's settings while its run is going is refused when
-the team reopens ("team settings changed since the team started", R2 C3).
+`member '<name>':`. A change to the team's members while its run is going (one added,
+removed or renamed, or a member given another role) is refused when the team reopens ("team
+settings changed since the team started (members)", R2 C3). Any other change to the team's
+settings or a member's is asked about instead, at one settings wait for the whole team
+([Settings changed while a conversation waits](#settings-changed-while-a-conversation-waits)).
 
 **Pre-run check** (`temper_ai/pi_agent/team_check.py`, `check_team`): when a run starts,
 before any node, with no model call and no container, the loader checks every team stage
@@ -250,6 +253,73 @@ step's turns over, the older attempt *stands down* (`ReplacedByLaterAttempt`, SW
 
 A stop at a held wait is unchanged: the conversation ends first, then the step.
 
+### Settings changed while a conversation waits
+
+A conversation is pinned to the settings it started with (`pin_for` in
+`temper_ai/pi_agent/host.py`): Pi's version, the image, provider, model and thinking, the
+tools, the extension and add-on code, the worker route, the workflow, the agent config's
+digest, the working folder and, for a team member, the team's settings. Every owner answer
+reopens the conversation in a new attempt, which checks the pin against what the configs
+and the box say now. Every land deploys, and conversations move at the owner's pace, so a
+change while one waits is bound to happen. Temper used to refuse to reopen it, which failed
+the step red with no way on. Now it asks (SW-85, M3 E24; `temper_ai/pi_agent/settings_wait.py`):
+
+- **Asked first.** The reopen opens a wait of its own kind, `settings`, before anything else:
+  before any other open wait is settled and before any turn. The answer that reopened the
+  conversation is *held*: it is not applied until the settings are decided. Nothing has
+  failed and no session file is touched.
+- **What the owner sees.** The question names what changed, old -> new for the short
+  values (Pi's version, the image, provider, model, thinking) and the first 12 characters
+  of a digest for the rest, then the whole pin's fingerprint, old -> new. The answers are
+  `go on` and `stop` (a pick on the run page or typed). The same changes are typed fields
+  on the wait (below), so a page builds its own table and never reads the question.
+- **`go on`** re-pins the conversation to the new settings, in the same transaction as the
+  decision, and only if the stored pin is still the one the wait named (compare-and-set on
+  its digest). Then the step carries on as it would have: the held answer is applied once,
+  and the next turn runs with the new settings. If the settings changed again while the
+  wait was open, the `go on` re-pins nothing (`applied: false`) and a new settings wait
+  names the newer settings.
+- **`stop`** ends the conversation where it is, so a later Resume doesn't reopen it, and
+  ends the step and the run **cancelled**, not failed: nothing failed, it is the owner's
+  choice (M3 E18), like the stop at a team's pause. The step's reason is neutral, "the Pi
+  step was stopped: its settings changed since its conversation started (<keys>)", and never
+  names who answered. The stop is returned, never raised, so it is never retried, and the
+  run's cancel signal is never set for it. No turn runs and the held answer is never
+  applied. Not yet stopped by it: until a follow-up lands (SW-86), steps after a Pi step
+  that ended cancelled this way (or a team stopped at its pause or when stalled) can still
+  start; the run still ends cancelled with the step's reason.
+- **Anything else** (another word, an empty answer) decides nothing: the owner is asked
+  again at a new settings wait. There is no default, either way.
+- **A team** asks the same at one settings wait for the whole team, listing each changed
+  member's settings and a changed team digest; `go on` re-pins every member it named, in
+  one transaction, and `stop` ends the team `stopped` ("stopped when the team's settings
+  changed since its conversations started (<member>: <keys>; ...)") and the run cancelled
+  ([pi-team-runtime.md](pi-team-runtime.md)). A changed set of members is still refused, as
+  above: a conversation can't be carried into a different team.
+
+Why ask, rather than the alternatives Architecture listed (C7 C1): holding every land while
+a conversation waits would stall all work behind the slowest owner answer and would change
+temper-ci and temper-deploy; only showing the change would leave the conversation stuck.
+The settings wait shows the change at the next answer; nothing warns before it.
+
+What a settings wait holds, in its `pi_waits` row (no schema change: the kind is a string,
+the subject and decision are JSON):
+
+| Field | Holds |
+|---|---|
+| `subject.settings_changes` | one entry per changed setting: `scope` (`team` or `member`), `member` (the member's name; `null` for the team; a single step's is its role), `key`, `value_kind` (`text` or `sha256`), `old`, `new` |
+| `subject.pins` | one entry per changed member: `member`, `participant_id`, `pin_old`, `pin_new` (the full sha256 of the pin's canonical JSON, keys sorted, no spaces) |
+| `subject.pin_old`, `subject.pin_new` | a single step's two pin digests (the same as its `pins` entry) |
+| `subject.question`, `reply_hint`, `options`, `header` | the question, "Reply 'go on' or 'stop'.", `["go on", "stop"]`, `settings` |
+| `decision` | `answer` (`go on`, `stop` or `invalid`), `changed` ([{scope, member, key}]), the digests (`pin_old`/`pin_new`, or `pins`), `applied` (`go on` only; with `why` when false), who answered (`by`, `source`, `request_id`) and the typed text's sha256; a team's stop also keeps the owner's `words` |
+
+The keys (`key`) and their kinds: `pi_version`, `image`, `provider`, `model`, `thinking`
+are `text`. Every other key is a full 64-hex sha256: `extensions.<name>` (`identity`,
+`temper-box`, `auth`) and `add_ons.<name>` are the folders' own digests,
+`agent_config_sha256` and `team` are the pin's own digests, and `tools`, `route_host`,
+`workflow` and `cwd` are the sha256 of the value's canonical JSON. No file's contents and
+no environment value is ever in a wait.
+
 ## The worker box
 
 - One container per turn, created from a pinned image and Pi runtime
@@ -306,7 +376,8 @@ A stop at a held wait is unchanged: the conversation ends first, then the step.
   notebook, memory_write, daily log, queue or ask-the-owner tools and asks for lessons,
   findings and questions for the owner in the reply. A chat's own guidance, which tells the
   role to keep notes with those tools, never reaches a box. The text sits in the pinned
-  temper-box folder, so a change to it is a settings change a reopened conversation refuses.
+  temper-box folder, so a change to it is a settings change a reopened conversation asks
+  the owner about ([above](#settings-changed-while-a-conversation-waits)).
 - The worker's process group and container are always removed when the turn ends.
 
 ### Pi's grep and find: pinned `rg` and `fd`

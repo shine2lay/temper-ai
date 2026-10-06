@@ -47,7 +47,6 @@ from temper_ai.pi_agent.host import (
     INVALID,
     _jsonable,
     _slug,
-    changed_keys,
     owner_decided_before,
     pin_for,
     prepare_participant,
@@ -76,6 +75,12 @@ from temper_ai.pi_agent.route.router import (
     reachable,
     roster_entry,
 )
+from temper_ai.pi_agent.settings_wait import (
+    SETTINGS,
+    STOP,
+    team_stop_text,
+    team_subject,
+)
 from temper_ai.shared.text_limits import STOP_REASON_MAX_CHARS
 
 logger = logging.getLogger(__name__)
@@ -96,9 +101,10 @@ def stop_words(words: str | None) -> str | None:
 
 def stop_ends_cancelled(wait: dict | None) -> bool:
     """Whether a stop answer ends the run cancelled rather than failed (M3 E18): a stop at
-    the pause or when the team had nothing left to do is the owner's decision, and nothing
-    failed there. A stop at a recovery wait follows a failed or cut-off turn: it fails."""
-    return wait is not None and wait.get("kind") in ("pause", "stalled")
+    the pause, when the team had nothing left to do, or when its settings changed while it
+    waited (SW-85) is the owner's decision, and nothing failed there. A stop at a recovery
+    wait follows a failed or cut-off turn: it fails."""
+    return wait is not None and wait.get("kind") in ("pause", "stalled", SETTINGS)
 
 
 def recovery_stop_text(member: Any, turn_no: Any, options: Any) -> str:
@@ -118,6 +124,8 @@ def stop_text(wait: dict) -> str | None:
         return f"stopped at the pause after round {subject.get('round')}"
     if kind == "stalled" and decision.get("answer") == "stop":
         return "stopped when the team had nothing left to do"
+    if kind == SETTINGS and decision.get("answer") == STOP:
+        return team_stop_text(subject)
     if kind == "recovery" and decision.get("recovery") == "stop":
         return recovery_stop_text(subject.get("member"), subject.get("turn_no"),
                                   subject.get("options"))
@@ -215,6 +223,8 @@ class Team:
         self.cancel_event = cancel_event
         self.digest = team_digest(members, self.team_settings)
         self.root = Path(box.state_root) / run_id / _slug(host_path)
+        #: Each member's settings pin in this attempt (set by :meth:`open`).
+        self.pins: dict[str, dict] = {}
 
     # --- opening ----------------------------------------------------------------------
 
@@ -265,9 +275,12 @@ class Team:
         """Attach every member -- one row and one session each -- or find them again, and
         snapshot each member's role folder until its digest is on record (SW-25).
         Returns a refusal text, always before any turn, when the team cannot open: bad
-        members, a database Pi doesn't know (SW-13) or a resume under changed settings (R2 C3),
-        all without writing anything; or a role snapshot refused, after the rows are attached
-        but with nothing on record, so the next open copies afresh."""
+        members, a database Pi doesn't know (SW-13) or a resume with other members (added,
+        removed, or a member with another role: a conversation can't be carried into a
+        different team, R2 C3), all without writing anything; or a role snapshot refused,
+        after the rows are attached but with nothing on record, so the next open copies
+        afresh. Any other changed setting is not refused here: the owner is asked first, at
+        a settings wait (:meth:`open_settings_wait`, SW-85)."""
         problems = self.problems()
         if problems:
             return "; ".join(problems)
@@ -283,14 +296,12 @@ class Team:
             if set(existing) != set(pins):
                 return (f"{SETTINGS_CHANGED} since the team started (members); refusing to "
                         "reopen its conversations")
-            for name, row in existing.items():
-                if row["pin"] != pins[name]:
-                    changed = changed_keys(pins[name], row["pin"])
-                    if "team" in changed:
-                        return (f"{SETTINGS_CHANGED} since the team started; refusing to "
-                                "reopen its conversations")
-                    return (f"member {name}'s settings changed since its conversation started ("
-                            + ", ".join(changed) + "); refusing to reopen it")
+            moved = sorted(name for name, row in existing.items()
+                           if row["role"] != self.members[name].config["role"])
+            if moved:
+                return (f"{SETTINGS_CHANGED} since the team started (the role of "
+                        + ", ".join(moved) + "); refusing to reopen its conversations")
+        self.pins = pins
         rows = self.ledger.attach_team(
             self.run_id, self.host_path,
             [(name, m.config["role"], pins[name]) for name, m in self.members.items()],
@@ -305,6 +316,31 @@ class Team:
             except SnapshotRefused as exc:
                 return f"member {row['member']}'s role snapshot was refused: {exc}"
         return None
+
+    # --- the settings wait (SW-85) ---------------------------------------------------
+
+    def settings_changed(self) -> list[tuple[str, str, dict, dict]]:
+        """Every member still in the conversation whose stored pin differs from its settings
+        now (a deploy while the team waited): (member, participant id, stored pin, pin now)."""
+        out = []
+        for row in self.ledger.participants_of(self.run_id, self.host_path):
+            now = self.pins.get(row["member"])
+            if (now is not None and row["state"] not in ("ended", "retired")
+                    and (row["pin"] or {}) != now):
+                out.append((row["member"], row["participant_id"], row["pin"] or {}, now))
+        return out
+
+    def open_settings_wait(self) -> bool:
+        """A member's settings or the team's differ from the stored pins: the team's one
+        settings wait, naming every changed member's settings (opened unless one is open
+        already). True when a settings wait is open. It is asked before anything else: no turn runs, and no other answer is
+        applied, on settings the owner hasn't confirmed."""
+        changed = self.settings_changed()
+        if changed:
+            self.ledger.open_wait_unless_open(self.run_id, self.host_path, SETTINGS,
+                                              team_subject(changed), self.attempt_id)
+        return any(w["kind"] == SETTINGS
+                   for w in self.ledger.open_waits(self.run_id, self.host_path))
 
     def resume(self, newer_attempts: Callable[[], Collection[str]] | None = None) -> list[dict]:
         """At the start of every attempt: a turn cut off by a stopped attempt is taken over

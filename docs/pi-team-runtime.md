@@ -33,6 +33,13 @@ the goal. A refused snapshot fails the node before any turn: "the team can't ope
 afresh. A database whose `pi_` tables Pi doesn't know fails it before anything: "Pi
 refused this database: <why>" (M4 SW-13). A team node may be a workflow's first node.
 
+When a team reopens (every owner answer starts a new attempt), it checks every member's pin
+against what the configs and the box say now. A changed set of members (one added, removed
+or renamed, or a member given another role) is refused: "team settings changed since the
+team started (members); refusing to reopen its conversations" (or "(the role of <m>)"),
+because a conversation can't be carried into a different team. Any other change, to the
+team's settings or to a member's, is asked about at a settings wait (below).
+
 **Project copies** (`ProjectCopies`): each member works on a clone of the run's workspace,
 committed content only, in its own folder. The copies' git data is kept outside every
 member's folder, so nothing a member writes can change how Temper's git runs. Untracked and
@@ -98,6 +105,8 @@ The reasons are neutral engine text that never names who stopped the team; who d
 - "the run was cancelled"
 - "stopped at the pause after round <N>"
 - "stopped when the team had nothing left to do"
+- "stopped when the team's settings changed since its conversations started (<member>:
+  <keys>; ...)", with `whole team: team` for the team's own settings
 - "<member> turn <n> failed and the team was stopped", or for a cut-off turn "<member>
   turn <n> did not finish and the team was stopped"
 - "the team was stopped" when no decided stop is found
@@ -126,10 +135,24 @@ finished turn is run again. Team code never catches `RunParked`.
   leader hasn't said done. The owner answers `nudge` (optionally with words for the leader)
   or `stop` (optionally with words, as at the pause).
 
+- **Settings changed** (SW-85, M3 E24): a deploy changed a member's settings or the team's
+  while the team waited ([pi-agent.md](pi-agent.md) "Settings changed while a conversation
+  waits"). When the team reopens, Temper opens one `settings` wait for the whole team
+  before anything else: before any decided act is carried out, before the other open
+  waits and before any turn. Its typed fields list each changed member's settings (scope
+  `member`) and a changed team digest (scope `team`, member null), with each named
+  member's old and new pin digests. The answer that reopened the team is held. `go on`
+  re-pins every member the wait named, in one transaction, and only if each stored pin is
+  still the one the wait named; then the held answer is applied as it would have been.
+  If the settings changed again meanwhile, nothing is re-pinned (`applied: false`) and a
+  new settings wait names the newer settings. `stop` (optionally with words, kept as
+  `owner_words`) ends the team `stopped` and the run cancelled, as at the pause; the held
+  answer is never applied. Anything else decides nothing and the owner is asked again.
+
 A wait keeps its question and the chat's reply syntax apart (`question`, `reply_hint`);
 Slack, Telegram and the run page show the two together, the same text as before. Any open
-wait of any kind holds every member's turn, and Temper asks the open waits one at a time,
-oldest first.
+wait of any kind holds every member's turn, and Temper asks the open waits one at a time:
+a settings wait first, then the rest oldest first.
 - **Recovery** (R2 B11): a turn that was cut off, or whose result is uncertain (including
   the 900 s hang guard), opens a recovery wait that pauses the whole team. A cut-off turn is
   answered `accept`, `retry` or `stop`; a failed turn `retry` or `stop`. Retry re-sends the
@@ -144,7 +167,7 @@ oldest first.
 | How it ended | Team node | Stage | Run |
 | --- | --- | --- | --- |
 | done | completed, with the done record | completed | goes on |
-| stop at the pause or when stalled | cancelled: "stopped at the pause after round <N>" / "stopped when the team had nothing left to do" (outcome `stopped`) | cancelled | cancelled |
+| stop at the pause, when stalled or at a settings wait | cancelled: "stopped at the pause after round <N>" / "stopped when the team had nothing left to do" / "stopped when the team's settings changed since its conversations started (...)" (outcome `stopped`) | cancelled | cancelled |
 | stop at a recovery wait | failed: "<member> turn <n> failed and the team was stopped" (outcome `stopped`) | failed | failed |
 | a member's turn failed, the team ended early | failed, with the reason | failed | failed |
 | cancelled | cancelled; queued and held messages undelivered (B12) | cancelled | cancelled |
@@ -152,7 +175,8 @@ oldest first.
 A failed team node fails its stage too, never completed (B13); the tolerant stage rule
 stays for every other stage (`fails_stage` on the node, `stage/executor.py`).
 
-An owner's stop at the pause or when stalled is a decision, not a failure, so the run ends
+An owner's stop at the pause, when stalled or at a settings wait is a decision, not a
+failure, so the run ends
 cancelled with the stop's own reason, not "Workflow cancelled by user": the node never sets
 the run's cancel signal. The workflow's ending (`stage/executor.py`
 `_build_final_result`) counts a stage that ended cancelled, with no failed node beside it,
@@ -195,8 +219,9 @@ rules) through an autouse teardown. Tests are named by the R2 rule they prove
 (`test_b9_...` to `test_b16_...`), or by the M4 switch-on item (`test_sw..._`):
 `pi_team/test_schema_version.py` (SW-12, SW-13), `pi_team/test_role_snapshots.py` (SW-25),
 `tests/test_pi_agent/test_member_tree.py` (SW-25, SW-51, SW-27), the `test_sw51_` project
-copy tests (SW-51) and the `test_sw09_`/`test_sw32_` workflow tests (SW-09, SW-32). Run
-them on SQLite and on the Postgres tier:
+copy tests (SW-51), the `test_sw09_`/`test_sw32_` workflow tests (SW-09, SW-32) and
+`pi_parking/test_settings_wait.py` (SW-85: settings changed while a Pi step or a team
+waited, tests 1-7). Run them on SQLite and on the Postgres tier:
 
 ```bash
 uv run pytest tests/test_runner/pi_team tests/test_runner/pi_parking tests/test_pi_agent

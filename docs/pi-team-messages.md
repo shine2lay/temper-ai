@@ -68,9 +68,10 @@ node.
 One Pi session per member per run, reused for every turn (B8): A → B → A keeps A's
 conversation. A member's box exists only during its turn; an idle member has no box and its
 next turn's box reopens the same session file. Each member's pin carries a digest of the team
-settings (members and roles, communication, leader, `pause_after_rounds`), so reopening a
-team whose roster or settings changed is refused with "team settings changed" before any
-turn (C3).
+settings (members and roles, communication, leader, `pause_after_rounds`). Reopening a team
+whose roster changed is refused with "team settings changed" before any turn (C3); any other
+change to the team's settings or a member's is asked about first, at a settings wait, before
+any turn (SW-85, [pi-team-runtime.md](pi-team-runtime.md) "Owner waits").
 
 ## Ending
 

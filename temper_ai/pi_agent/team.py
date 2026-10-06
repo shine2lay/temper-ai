@@ -26,8 +26,10 @@ are refused by name. The later slice's features (R2: each needs its own proof be
 known by the names a config would use for them and refused with a plain sentence (M4 SW-04):
 ``mode: {type: unanimous}``, ``conversation: {type: fresh_each_round}``,
 ``conversation: {continue_from: ...}`` (two team stages continuing), ``private_children`` and
-``concurrent_turns``, besides ``edges`` above. A change to the team's settings while its run is
-going is refused when the team reopens (``team settings changed``, R2 C3). The strategy's
+``concurrent_turns``, besides ``edges`` above. A change to the team's members while its run is
+going is refused when the team reopens (``team settings changed``, R2 C3); any other change to
+the team's settings or a member's is asked about at a settings wait (SW-85,
+:mod:`temper_ai.pi_agent.settings_wait`). The strategy's
 check (:func:`validate_team`) reports every problem at once; the run-start check
 (:mod:`temper_ai.pi_agent.team_check`) adds the members' roles, the workflow's safety policies
 and the goal.

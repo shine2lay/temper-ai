@@ -110,19 +110,40 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
 `GET /api/team/runs/{execution_id}` follows contract section 5:
 
 - `run_status` (the run list's own status), `state` (`didnt_start`, `starting`, `running`,
-  `paused`, `quiet`, `member_waiting`, `interrupted`, `done`, `stopped`, `failed`), the
+  `paused`, `quiet`, `member_waiting`, `settings_changed`, `interrupted`, `done`, `stopped`,
+  `failed`), the
   trial's input, `round`, and each member with its activity, turns, cost, model and the
   model and thinking its turns really used (`effective`, from the turn receipt; `unknown`
   on older rows).
-- `open_waits`: every open question, in the order Temper asks them (oldest first). The
-  first has `asked: true` and its `event_id`; the others wait behind it with `event_id:
-  null`. Any open wait holds every member's turn. A member's question shows as `kind:
-  question`. Each wait has its `question` without reply syntax, the chat's `reply_hint`
-  apart ("Reply 'continue', 'guide: <what to tell design>', or 'stop'."), and its
-  `answers` with `needs_text` (`required`, `optional`, `none`).
+- `open_waits`: every open question, in the order Temper asks them (a settings wait
+  first, then oldest first). The first has `asked: true` and its `event_id`; the others
+  wait behind it with `event_id: null`. Any open wait holds every member's turn. A member's
+  question shows as `kind: question`. Each wait has its `question` without reply syntax,
+  the chat's `reply_hint` apart ("Reply 'continue', 'guide: <what to tell design>', or
+  'stop'."), its `answers` with `needs_text` (`required`, `optional`, `none`), and
+  `asked_again` (how many times a recovery or settings question was asked again after an
+  answer that named no choice).
+- A settings wait (`kind: settings`; the run's `state` is `settings_changed` while it is
+  the one asked; SW-85, M3 E24, [pi-agent.md](pi-agent.md) "Settings changed while a
+  conversation waits") also carries its typed fields, so the page builds its Setting |
+  Was | Now table from them and never reads the question:
+  - `settings_changes`: one entry per changed setting, `{scope, member, key, value_kind,
+    old, new}`. `scope` is `team` (then `member` is null) or `member` (the member's
+    name). `value_kind` is `text` for `pi_version`, `image`, `provider`, `model` and
+    `thinking`, and `sha256` (a full 64-hex digest) for every other key:
+    `extensions.<name>`, `add_ons.<name>`, `agent_config_sha256`, `team`, `tools`,
+    `route_host`, `workflow`, `cwd`. Never a file's contents or an environment value.
+  - `pins`: one entry per member it re-pins, `{member, pin_old, pin_new}`: the full sha256
+    of the member's pin before and after, the exact values `go on` checks and pins.
+
+  Every other wait has `settings_changes: null` and `pins: null`.
 - `reviews`, a typed `timeline` (`entry`: message, review_round, view, decision,
   owner_wait, owner_answer, member_turn; plus `message_kind`, `round`, `decision`,
-  `wait_kind`; an owner_answer carries `answered_by` and `answered_source`), the
+  `wait_kind`; an owner_answer carries `answered_by` and `answered_source`; the settings
+  answer is an owner_answer with `wait_kind: settings` and its `answer`, `go on` or
+  `stop`, with `applied: false` in its data when a go on re-pinned nothing because the
+  settings changed again; the answer it held, the one that reopened the team, shows once,
+  after the go on, as its own owner_answer, and never after a stop), the
   `owner_actions` (start, answer, message, stop with `by` and `source`), and the
   `outcome`.
 - The outcome is read only from `pi_team_outcomes`: `decision` (`done`, `stopped`,
@@ -144,7 +165,10 @@ zone. `owner_actions` are sorted by that moment, oldest first.
 `POST .../waits/{wait_id}/answer` with `{request_id, answer, text}`. The answer must be one
 of the wait's own: the pause `continue`, `guide` (words required), `stop` (words optional);
 stalled `nudge` (optional words), `stop`; a cut-off turn `accept`, `retry`, `stop`; a failed
-turn `retry`, `stop`; a member's question `reply` (words required). It is checked before
+turn `retry`, `stop`; a member's question `reply` (words required); a settings wait `go on`
+("The team carries on with the new settings, then your last answer is applied.", no words)
+and `stop` (words optional). While a settings wait is open, the answer it holds can't be
+given again: that wait is a later one, not asked yet (409). It is checked before
 anything is recorded, then decided through the approve route's own code
 (`routes.approve_wait`, which `POST /api/runs/{id}/approve/{node}` also calls) as a
 typed response.
@@ -159,10 +183,12 @@ typed response.
 | already answered | `409 {reason: "already_answered", answered_by, answered_at, answered_source, ...}` |
 | no such open wait | `404 {detail: "That question is no longer open"}` |
 
-A stop at the pause or at a stalled wait, with or without words, ends the run
-**cancelled** (an owner's decision, not a failure), with the outcome `stopped`, the neutral
-reason ("stopped at the pause after round <N>", "stopped when the team had nothing left to
-do"), the words as `owner_words` and `by` whoever answered. A stop at a recovery wait
+A stop at the pause, at a stalled wait or at a settings wait, with or without words, ends
+the run **cancelled** (an owner's decision, not a failure), with the outcome `stopped`, the
+neutral reason ("stopped at the pause after round <N>", "stopped when the team had nothing
+left to do", "stopped when the team's settings changed since its conversations started
+(<member>: <keys>; ...)"), the words as `owner_words` and `by` whoever answered. After a
+settings stop, the answer it held is never applied. A stop at a recovery wait
 follows a failed or cut-off turn and stays failed.
 
 ## Messages

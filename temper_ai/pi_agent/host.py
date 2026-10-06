@@ -25,6 +25,12 @@ state in its own ledger (:mod:`temper_ai.pi_agent.ledger`):
 * a turn that failed visibly (the worker could not be started or checked, the provider
   refused, the login was not handed over) fails the step -- red, never green. A Resume of
   the run then asks the owner whether to retry that turn or stop;
+* a conversation reopened under settings other than the ones it was started with (a deploy
+  while it waited for the owner) asks the owner first, at a ``settings`` wait: ``go on``
+  re-pins it to the new settings and the step carries on (the answer that reopened it is
+  applied after that, once); ``stop`` ends the conversation and the step, cancelled -- never
+  failed, and never a turn on settings the owner hasn't confirmed (SW-85,
+  :mod:`temper_ai.pi_agent.settings_wait`);
 * the step raises only ``RunParked`` (its run let the worker go at an owner wait; AgentNode
   passes it up), ``ReplacedByLaterAttempt`` (a later attempt of the run took its wait over,
   or started before this one took the step's turns over: this attempt stands down and
@@ -88,6 +94,18 @@ from temper_ai.pi_agent.member_tree import (
 )
 from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait, wait_row
 from temper_ai.pi_agent.search_tools import search_tool_problems
+from temper_ai.pi_agent.settings_wait import (
+    GO_ON,
+    SETTINGS,
+    SETTINGS_OPTIONS,
+    STOP,
+    changed_names,
+    same_change,
+    settings_asked_again,
+    settings_word,
+    step_stop_text,
+    step_subject,
+)
 from temper_ai.shared.types import AgentResult, ExecutionContext, Status
 from temper_ai.stage.exceptions import (
     CancellationError,
@@ -211,29 +229,23 @@ class PiHost(AgentABC):
             return self._fail(f"Pi refused this database: {exc}", started)
         pin = self._pin(box)
         root = Path(box.state_root) / self.run_id / _slug(self.host_path)
-        part, created = self.ledger.attach_participant(
+        part, _created = self.ledger.attach_participant(
             self.run_id, self.host_path, cfg["role"], role=cfg["role"], session_root=str(root),
             pin=pin, attempt_id=self.attempt_id)
         pdir = Path(part["session_dir"]).parent
-        if not created and part["pin"] != pin:
-            changed = changed_keys(pin, part["pin"])
-            return self._fail("the Pi step's settings changed since its conversation started ("
-                              + ", ".join(changed) + "); refusing to reopen it", started)
+        self.participant_id = part["participant_id"]
+        self.pin = pin
+        # A conversation the owner stopped at a settings wait stays stopped: a Resume (or an
+        # attempt that ended before the stop was carried out) ends it again, never reopens it.
+        stopped = self._settings_stopped()
+        if stopped is not None:
+            self._end_conversation("team_stopped")
+            return self._result(Status.CANCELLED, stopped, started, error=stopped)
         try:
             self._prepare_participant(pdir, input_data, part)
         except SnapshotRefused as exc:
             return self._fail(f"the Pi step's role snapshot was refused: {exc}", started)
-        self.participant_id = part["participant_id"]
         self.pdir = pdir
-        message = cfg.get("message") or "{{ task }}"
-        try:
-            self.ledger.post(self.run_id, self.host_path, cfg["role"],
-                             _jinja(message, input_data) or "(no message)", sender="owner",
-                             sender_kind="owner", kind="task",
-                             dedupe_key=f"{self.run_id}:{self.host_path}:seed:0")
-        except LedgerConflict:
-            return self._fail("the Pi step's first message changed since its conversation "
-                              "started; refusing to reopen it with a different one", started)
 
         # An attempt that died mid-turn: the turn is never re-run blind; the owner decides --
         # and only once its worker box is confirmed stopped (R2 C1). Never a turn of an
@@ -253,6 +265,39 @@ class PiHost(AgentABC):
         # A Resume after a failed turn: the owner decides (retry / stop), never a re-run.
         self.ledger.open_recovery_for_failed(self.run_id, self.host_path, self.attempt_id)
 
+        # The conversation's settings changed since it started (a deploy while it waited):
+        # the owner is asked first, before its first message is checked, any other wait is
+        # settled or any turn runs; it goes on only with settings the owner confirmed (SW-85).
+        while True:
+            cancel = context.cancel_event
+            if cancel is not None and cancel.is_set():
+                self._end_conversation()
+                return self._result(Status.CANCELLED, "Pi step cancelled", started,
+                                    error="cancelled")
+            self._check_settings()
+            settings_wait = next((w for w in self.ledger.open_waits(self.run_id, self.host_path)
+                                  if w["kind"] == SETTINGS), None)
+            if settings_wait is None:
+                break
+            ends = self._settle_settings(settings_wait)
+            if ends is not None:
+                status, text, error = ends
+                return self._result(status, text, started, error=error)
+
+        message = cfg.get("message") or "{{ task }}"
+        try:
+            self.ledger.post(self.run_id, self.host_path, cfg["role"],
+                             _jinja(message, input_data) or "(no message)", sender="owner",
+                             sender_kind="owner", kind="task",
+                             dedupe_key=f"{self.run_id}:{self.host_path}:seed:0")
+        except LedgerConflict:
+            # The owner went on with a changed agent config (its message among it): the
+            # conversation keeps the first message it started with.
+            if not self._went_on_with("agent_config_sha256"):
+                return self._fail("the Pi step's first message changed since its conversation "
+                                  "started; refusing to reopen it with a different one",
+                                  started)
+
         while True:
             cancel = context.cancel_event
             if cancel is not None and cancel.is_set():
@@ -260,12 +305,14 @@ class PiHost(AgentABC):
                 self._end_conversation()
                 return self._result(Status.CANCELLED, "Pi step cancelled", started,
                                     error="cancelled")
-            # The open waits are asked one at a time, oldest first. In a Pi workflow an
-            # unanswered one lets the worker go right here (RunParked goes up); its answer
-            # carries the run on, and this step runs again and finds it at the same wait id.
+            # The open waits are asked one at a time, oldest first (a settings wait is asked
+            # before any other). In a Pi workflow an unanswered one lets the worker go right
+            # here (RunParked goes up); its answer carries the run on, and this step runs
+            # again and finds it at the same wait id.
             waiting = self.ledger.open_waits(self.run_id, self.host_path)
             if waiting:
-                ends = self._settle(waiting[0])
+                ends = (self._settle_settings(waiting[0]) if waiting[0]["kind"] == SETTINGS
+                        else self._settle(waiting[0]))
                 if ends is not None:
                     status, text, error = ends
                     return self._result(status, text, started, error=error)
@@ -452,10 +499,108 @@ class PiHost(AgentABC):
         return self._settled_meanwhile(wait, str(row.get("state") or "cancelled"),
                                        row.get("decision"))
 
+    # --- the settings wait (SW-85) ----------------------------------------------------
+
+    def _check_settings(self) -> None:
+        """The conversation's settings differ from its pin (a deploy while it waited): open a
+        settings wait naming the change, unless one is open already. Not for a conversation
+        that has ended or finished: nothing more runs in it."""
+        p = self.ledger.participant(self.participant_id) or {}
+        stored = p.get("pin") or {}
+        if p.get("state") in ("ended", "retired") or stored == self.pin:
+            return
+        self.ledger.open_wait_unless_open(
+            self.run_id, self.host_path, SETTINGS,
+            step_subject(role=self.config["role"], participant_id=self.participant_id,
+                         old=stored, new=self.pin), self.attempt_id)
+
+    def _went_on_with(self, key: str) -> bool:
+        """Whether the owner went on, at a settings wait of this conversation, with a change
+        of ``key`` that was applied (re-pinned)."""
+        for w in self.ledger.decided_waits(self.run_id, self.host_path, SETTINGS):
+            d = w.get("decision") or {}
+            if (d.get("answer") == GO_ON and d.get("applied") is not False
+                    and any(c.get("key") == key for c in d.get("changed") or [])):
+                return True
+        return False
+
+    def _settings_stopped(self) -> str | None:
+        """The neutral text of a stop the owner gave at a settings wait, or None."""
+        for w in self.ledger.decided_waits(self.run_id, self.host_path, SETTINGS):
+            if (w.get("decision") or {}).get("answer") == STOP:
+                return step_stop_text(w.get("subject") or {})
+        return None
+
+    def _settle_settings(self, wait: dict) -> tuple[Status, str, str] | None:
+        """Ask the owner at a settings wait and apply the answer, once (SW-85).
+
+        ``go on``: the stored pin becomes the new settings -- only the exact ones the wait
+        named, compare-and-set on the old pin in the decision's transaction. When they
+        changed again meanwhile, nothing is re-pinned (``applied`` false) and the loop opens
+        a new settings wait naming the newer ones. ``stop``: the conversation ends and the
+        step ends cancelled (:meth:`_settled`), returned, never raised (AgentNode retries a
+        raise). Anything else decides nothing: the owner is asked again. Exceptions go up as
+        at any wait (:meth:`_settle`)."""
+        subject = wait["subject"] or {}
+        try:
+            answer = ask_owner_for_wait(
+                self.ctx, self.ledger, wait["wait_id"],
+                question=ask_text(subject, "The Pi step's settings changed."),
+                header=SETTINGS, options=list(SETTINGS_OPTIONS))
+        except WaitDecided as settled:
+            return self._settled_meanwhile(wait, settled.state, settled.decision)
+        except ReplacedByLaterAttempt:
+            raise
+        except CancellationError:
+            cancel = self.ctx.cancel_event
+            if cancel is not None and cancel.is_set():
+                self._end_conversation()
+            raise
+        word = settings_word(*owner_reply(answer.response))
+        text = _reply_text(answer.response)
+        decision: dict[str, Any] = {
+            "answer": word or INVALID,
+            "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "by": answer.caller, "source": answer.caller_source,
+            "request_id": answer.request_id,
+            "changed": changed_names(subject.get("settings_changes") or []),
+            "pin_old": subject.get("pin_old"), "pin_new": subject.get("pin_new")}
+        reask = None
+        repin: list[tuple[str, str, dict]] = []
+        if word is None:
+            # Neither choice named: nothing is decided by default; the owner is asked again.
+            reask = settings_asked_again(subject)
+        elif word == GO_ON:
+            p = self.ledger.participant(self.participant_id) or {}
+            stored = p.get("pin") or {}
+            now = [] if stored == self.pin else step_subject(
+                role=self.config["role"], participant_id=self.participant_id,
+                old=stored, new=self.pin)["pins"]
+            if now and same_change(subject, now):
+                repin = [(self.participant_id, str(subject.get("pin_old")), self.pin)]
+            else:
+                decision["applied"] = False
+                decision["why"] = ("the settings changed again before this answer was applied"
+                                   if now else "the settings are no longer changed")
+        if self.ledger.decide_wait(wait["wait_id"], decision, self.attempt_id, reask=reask,
+                                   repin=repin):
+            return self._settled(wait, decision)
+        row = wait_row(self.ledger, wait["wait_id"]) or {}
+        return self._settled_meanwhile(wait, str(row.get("state") or "cancelled"),
+                                       row.get("decision"))
+
     def _settled(self, wait: dict, decision: Any) -> tuple[Status, str, str] | None:
         """What a decided wait means for the step: a stop at a recovery wait fails it, with
-        neutral text that never names who answered (M3 E16); anything else was done by the
-        decision itself (the ledger's same transaction), so the step goes on."""
+        neutral text that never names who answered (M3 E16); a stop at a settings wait ends
+        the conversation and the step, cancelled (nothing failed: the owner chose to stop);
+        anything else was done by the decision itself (the ledger's same transaction), so
+        the step goes on."""
+        if wait.get("kind") == SETTINGS:
+            if not (isinstance(decision, dict) and decision.get("answer") == STOP):
+                return None
+            self._end_conversation("team_stopped")
+            text = step_stop_text(wait.get("subject") or {})
+            return Status.CANCELLED, text, text
         if not (isinstance(decision, dict) and decision.get("recovery") == "stop"):
             return None
         subject = wait["subject"] or {}
@@ -475,13 +620,13 @@ class PiHost(AgentABC):
                 "cancelled)")
         return Status.CANCELLED, text, "cancelled"
 
-    def _end_conversation(self) -> None:
-        """The run was stopped: the conversation ends (unsettled turns cancelled, everything
+    def _end_conversation(self, reason: str = "run_cancelled") -> None:
+        """The run was stopped (``run_cancelled``), or the owner stopped the step at a settings
+        wait (``team_stopped``): the conversation ends (unsettled turns cancelled, everything
         queued recorded undelivered, R2 B12; open waits cancelled), and every event of each
         cancelled wait still waiting is closed -- found by the wait's name: ``ask_owner`` may
         have asked it more than once."""
-        ended = self.ledger.end_team(self.run_id, self.host_path, "run_cancelled",
-                                     self.attempt_id)
+        ended = self.ledger.end_team(self.run_id, self.host_path, reason, self.attempt_id)
         rec = self.ctx.event_recorder
         for w in ended["cancelled_waits"]:
             for ev in rec.gate_events(w["gate_name"]) or []:
@@ -616,10 +761,6 @@ def prepare_participant(box: BoxConfig, pdir: Path, cfg: dict, values: dict, *,
                               "too; the snapshot on record is not this copy. Start the step "
                               "again once nothing is writing to the role folder")
     return digest
-
-
-def changed_keys(pin: dict, stored: dict) -> list[str]:
-    return sorted(k for k in set(pin) | set(stored) if pin.get(k) != stored.get(k))
 
 
 def owner_decided_before(ledger: Ledger, turn: dict) -> bool:

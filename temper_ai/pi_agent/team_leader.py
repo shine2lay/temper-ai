@@ -53,7 +53,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from temper_ai.pi_agent.host import ask_text, owner_reply
+from temper_ai.pi_agent.host import INVALID, ask_text, owner_reply
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
     _LOCK,
@@ -74,6 +74,16 @@ from temper_ai.pi_agent.member_tree import member_entry
 from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait
 from temper_ai.pi_agent.route import model as route_model
 from temper_ai.pi_agent.route.router import IDENTITY_CLAIMS, Refusal, content_digest
+from temper_ai.pi_agent.settings_wait import (
+    GO_ON,
+    SETTINGS,
+    STOP,
+    changed_names,
+    same_change,
+    settings_asked_again,
+    settings_word,
+    team_subject,
+)
 from temper_ai.pi_agent.team_folders import GIT
 from temper_ai.pi_agent.team_runtime import (
     Team,
@@ -996,6 +1006,10 @@ class LeaderTeam(TeamRows, Team):
         if kind == "recovery":
             self.decide(wait, f"{word} {rest}".strip(), words=rest, who=who)
             return
+        if kind == SETTINGS:
+            self._apply_settings(wait, settings_word(word, rest), rest,
+                                 {"text_sha256": sha, **who})
+            return
         if kind == "pause":
             r = subject.get("round")
             base = {"round": r, "text_sha256": sha, **who}
@@ -1031,6 +1045,39 @@ class LeaderTeam(TeamRows, Team):
                                 self.attempt_id,
                                 deliveries=[(member, text)] if member and text else [])
 
+    def _apply_settings(self, wait: dict, choice: str | None, rest: str, base: dict) -> None:
+        """The owner's answer at the team's settings wait (SW-85). ``go on``: every member it
+        named is re-pinned to its new settings in one transaction -- only when the settings
+        now are exactly the ones it named (compare-and-set on each stored pin); when they
+        changed again meanwhile, nothing is re-pinned (``applied`` false) and the loop opens
+        a new settings wait naming the newer ones. ``stop``: the team stops (its end comes
+        from :meth:`TeamRows.stopped`), keeping the words given with it. Anything else is
+        never a go on or a stop: the owner is asked again."""
+        wid, subject = wait["wait_id"], wait["subject"] or {}
+        base = {**base, "changed": changed_names(subject.get("settings_changes") or []),
+                "pins": [{k: e.get(k) for k in ("member", "pin_old", "pin_new")}
+                         for e in subject.get("pins") or []]}
+        if choice is None:
+            self.ledger.decide_wait(wid, {"answer": INVALID, **base}, self.attempt_id,
+                                    reask=settings_asked_again(subject))
+            return
+        if choice == STOP:
+            self.ledger.decide_wait(wid, {"answer": STOP, **base, "words": stop_words(rest)},
+                                    self.attempt_id)
+            return
+        changed = self.settings_changed()
+        now = team_subject(changed)["pins"] if changed else []
+        if now and same_change(subject, now):
+            repin = [(e["participant_id"], str(e["pin_old"]), self.pins[e["member"]])
+                     for e in subject.get("pins") or []]
+            self.ledger.decide_wait(wid, {"answer": GO_ON, **base}, self.attempt_id,
+                                    repin=repin)
+            return
+        self.ledger.decide_wait(
+            wid, {"answer": GO_ON, **base, "applied": False,
+                  "why": ("the settings changed again before this answer was applied" if now
+                          else "the settings are no longer changed")}, self.attempt_id)
+
     # --- the loop ---------------------------------------------------------------------------
 
     def drive(self, context: Any) -> Outcome:
@@ -1056,6 +1103,16 @@ class LeaderTeam(TeamRows, Team):
                 return Outcome("failed", f"the team ended ({reason}) before it was done")
             if self.cancel_event is not None and self.cancel_event.is_set():
                 self.end("run_cancelled")
+                continue
+            # A member's settings or the team's changed since its conversations started (a
+            # deploy while the team waited): the owner is asked first, before anything else is
+            # done (SW-85). Not when the team is stopping or done: nothing more runs in it.
+            if (not self.stopped() and not self.done_review()
+                    and self.open_settings_wait()):
+                wait = self.ledger.open_waits(self.run_id, self.host_path)[0]
+                answer = self.ask(context, wait)
+                if answer is not None:
+                    self.apply(wait, answer)
                 continue
             try:
                 self.carry_out()
@@ -1181,7 +1238,7 @@ def _at(value: Any) -> str | None:
 
 #: The wait kinds as the Team page names them: a member's question is ``owner`` in the ledger.
 WAIT_KIND_SHOWN = {"owner": "question", "pause": "pause", "stalled": "stalled",
-                   "recovery": "recovery"}
+                   "recovery": "recovery", SETTINGS: SETTINGS}
 
 
 def run_view(team: TeamRows) -> list[dict]:

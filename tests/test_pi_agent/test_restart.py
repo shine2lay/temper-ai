@@ -92,7 +92,11 @@ def test_an_owner_answer_given_while_the_run_is_down_is_used_on_pick_up(pi, monk
     assert parked.carry_on_at_startup() == [], "carried on once"
 
 
-def test_changed_settings_refuse_to_reopen_the_session(pi):
+def test_changed_settings_are_asked_about_first_never_refused_red(pi):
+    """SW-85: a session reopened under settings other than its pin (here a cut-off turn's,
+    picked up at start-up) asks the owner at a settings wait before anything else -- before
+    the cut-off turn's recovery wait and before any turn; ``go on`` carries it on with the
+    new settings."""
     eid = _crash(pi)
     from temper_ai.database import get_database
     from temper_ai.pi_agent.ledger import participants
@@ -103,12 +107,24 @@ def test_changed_settings_refuse_to_reopen_the_session(pi):
         conn.execute(participants.update().where(
             participants.c.participant_id == row.participant_id).values(pin=pin))
     sup.restart_service()
-    assert sup.wait_ended(eid, 2)[-1]["status"] == "failed"
-    assert FakeBox.STARTS == []
-    assert len(sup.turn_agents(eid)) == 1
-    said = [e["type"] for e in sup.events(eid) if "settings changed" in str(e["data"])]
-    assert said, "the refusal says why"
-    assert sup.node_status(eid, "talk")[-1] == "failed"
+    settings = sup.open_wait(eid, "settings")
+    changes = settings["subject"]["settings_changes"]
+    assert [(c["key"], c["value_kind"], c["old"], c["new"]) for c in changes] == [
+        ("model", "text", "another-model", "gpt-6.1-sol")]
+    assert FakeBox.STARTS == [] and len(sup.turn_agents(eid)) == 1
+    assert "failed" not in sup.node_status(eid, "talk")
+    waits = {w["kind"]: w["state"] for w in sup.ledger().snapshot(eid)["waits"]}
+    assert waits == {"recovery": "open", "settings": "open"}, "the cut-off turn waits too"
+
+    assert sup.approve(pi.client, eid, settings["gate_name"], "go on").status_code == 200
+    rec = sup.open_wait(eid, "recovery")
+    assert FakeBox.STARTS == [], "nothing ran before the owner decided the cut-off turn"
+    assert sup.ledger().snapshot(eid)["participants"][0]["pin"]["model"] == "gpt-6.1-sol"
+    sup.approve(pi.client, eid, rec["gate_name"], "retry")
+    owner = sup.open_wait(eid, "owner")
+    assert [s["model"] for s in FakeBox.STARTS] == ["gpt-6.1-sol"]
+    sup.approve(pi.client, eid, owner["gate_name"], "done")
+    assert sup.wait_ended(eid, 2)[-1]["status"] == "completed"
 
 
 def test_resume_after_a_failed_turn_asks_the_owner_first(pi):

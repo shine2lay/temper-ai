@@ -248,7 +248,8 @@ class FakeBox:
         self.launched: dict | None = None
         self.log: dict[str, Any] = {"session_id": spec.session_id, "prompts": 0,
                                     "commands": [], "allowance_at_prompt": None,
-                                    "tools": list(spec.tools), "add_ons": list(spec.add_ons)}
+                                    "tools": list(spec.tools), "add_ons": list(spec.add_ons),
+                                    "model": spec.model, "thinking": spec.thinking}
         FakeBox.STARTS.append(self.log)
 
     # --- the WorkerBox surface ---

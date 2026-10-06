@@ -4,6 +4,8 @@ is open (B6), the router knowing ``all`` only (B7) and the end of a team (B12)."
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import sqlalchemy as sa
 from sqlalchemy.exc import ProgrammingError
 
@@ -149,31 +151,59 @@ def test_quiet_team_state(led, box, run_id):
 
 # --- C3: the team's settings are part of every member's pin ----------------------------
 
-def test_c3_changed_team_refused(led, box, run_id):
+def test_c3_a_changed_member_set_is_refused_and_changed_settings_are_listed_for_the_owner(
+        led, box, run_id):
+    """C3 with SW-85: a team reopened with other members (added, removed, renamed, or a
+    member with another role) is still refused -- a conversation can't be carried into a
+    different team -- before any write. Any other change, of the team's settings or a
+    member's own, opens: it is listed for the team's one settings wait instead."""
+    from temper_ai.pi_agent.settings_wait import team_subject
+
     team = open_team(led, box, run_id=run_id)
     _goal(team, run_id)
     before = led.snapshot(run_id)
 
     roster = make_team(led, box, run_id=run_id, attempt="attempt-2",
                        names=("lead", "builder"))
-    assert roster.open({}).startswith("team settings changed")
+    assert roster.open({}) == ("team settings changed since the team started (members); "
+                               "refusing to reopen its conversations")
     renamed = make_team(led, box, run_id=run_id, attempt="attempt-2",
                         names=("lead", "builder", "reviewer"))
-    assert renamed.open({}).startswith("team settings changed")
+    assert renamed.open({}).startswith("team settings changed since the team started (members)")
+    (Path(box.identities_dir) / "another-role").mkdir()
+    moved = make_team(led, box, run_id=run_id, attempt="attempt-2",
+                      members=[member("lead"), member("builder", role="another-role"),
+                               member("checker")])
+    assert moved.open({}) == ("team settings changed since the team started (the role of "
+                              "builder); refusing to reopen its conversations")
+    assert led.snapshot(run_id) == before  # refused before any write or turn
+
+    def listed(other) -> list[tuple]:
+        assert other.open({}) is None
+        return [(c["scope"], c["member"], c["key"])
+                for c in team_subject(other.settings_changed())["settings_changes"]]
+
+    # the team's own settings: one entry for the whole team, each member re-pinned
     paused = make_team(led, box, run_id=run_id, attempt="attempt-2",
                        settings={**ts.SETTINGS, "pause_after_rounds": 5})
-    assert paused.open({}).startswith("team settings changed")
+    assert listed(paused) == [("team", None, "team")]
+    assert sorted(m for m, *_ in paused.settings_changed()) == ["builder", "checker", "lead"]
     leader = make_team(led, box, run_id=run_id, attempt="attempt-2",
                        settings={**ts.SETTINGS, "mode": {"type": "leader", "leader": "builder"}})
-    assert leader.open({}).startswith("team settings changed")
-    # A member's own settings changing is refused too, naming what changed.
+    assert listed(leader) == [("team", None, "team")]
+    # a member's own settings: that member's keys
     model = make_team(led, box, run_id=run_id, attempt="attempt-2",
                       members=[member("lead", thinking="high"), member("builder"),
                                member("checker")])
-    refusal = model.open({})
-    assert refusal.startswith("member lead's settings changed") and "thinking" in refusal
-    assert led.snapshot(run_id) == before  # refused before any write or turn
-    assert make_team(led, box, run_id=run_id, attempt="attempt-2").open({}) is None
+    assert listed(model) == [("member", "lead", "agent_config_sha256"),
+                             ("member", "lead", "thinking")]
+    assert led.snapshot(run_id) == before  # opening writes nothing; only the wait would
+    same = make_team(led, box, run_id=run_id, attempt="attempt-2")
+    assert same.open({}) is None and same.settings_changed() == []
+    assert same.open_settings_wait() is False
+    # the wait is opened once, however often it is looked for
+    assert model.open_settings_wait() is True and model.open_settings_wait() is True
+    assert [w["kind"] for w in led.snapshot(run_id)["waits"]] == ["settings"]
 
 
 # --- C6: the claim records the highest seq it could see ---------------------------------

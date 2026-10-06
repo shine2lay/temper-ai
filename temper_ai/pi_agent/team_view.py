@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from temper_ai.pi_agent.ledger import Ledger, acts, turns, waits
+from temper_ai.pi_agent.settings_wait import GO_ON, SETTINGS, SETTINGS_STATE, STOP
 from temper_ai.pi_agent.team_leader import (
     DECIDE,
     GIVE_VIEW,
@@ -30,7 +31,7 @@ from temper_ai.shared.clock import as_utc
 
 #: The page's state while a wait of that kind is the one Temper asks (contract section 5).
 WAIT_STATE = {"pause": "paused", "stalled": "quiet", "recovery": "member_waiting",
-              "question": "member_waiting"}
+              "question": "member_waiting", SETTINGS: SETTINGS_STATE}
 #: Where an owner action came from, for display only (M3 E15).
 SOURCES = ("team_page", "run_page", "chat", "api", "unknown")
 #: The run's own statuses that mean the team can't change any more.
@@ -79,7 +80,7 @@ def _answer(word: str, needs_text: str, means: str) -> dict:
 def answers_for(kind: str, subject: dict, leader: str) -> list[dict]:
     """The answers an open wait takes, in the order the page offers them, each with whether it
     needs words (``required``, ``optional`` or ``none``) and what it does, worded by Temper.
-    ``kind`` is the page's (pause, stalled, recovery, question)."""
+    ``kind`` is the page's (pause, stalled, recovery, question, settings)."""
     member = subject.get("member") or "the member"
     stop_cancels = _answer("stop", "optional", "The team stops here and the run ends cancelled. "
                                                "Any words you give are kept with it.")
@@ -107,6 +108,12 @@ def answers_for(kind: str, subject: dict, leader: str) -> list[dict]:
         return out
     if kind == "question":
         return [_answer("reply", "required", f"{member} gets your reply at its next turn.")]
+    if kind == SETTINGS:
+        return [_answer(GO_ON, "none", "The team carries on with the new settings, then your "
+                                       "last answer is applied."),
+                _answer(STOP, "optional", "The team stops here and the run ends cancelled; "
+                                          "your last answer is not applied. Any words you give "
+                                          "are kept with it.")]
     return []
 
 
@@ -140,6 +147,10 @@ def owner_answers(reader: TeamReader, owners: Iterable[str]) -> list[dict]:
             "answered_by": by, "answered_source": source, "request_id": d.get("request_id")}
         if isinstance(s.get("round"), int):
             entry["round"] = s["round"]
+        if w["kind"] == SETTINGS and d.get("applied") is False:
+            # A go on that came too late: the settings changed again before it was applied,
+            # so nothing was re-pinned and a new settings wait names the newer ones.
+            entry["data"]["applied"] = False
         out.append(entry)
     return out
 
@@ -173,7 +184,11 @@ def open_waits_view(reader: TeamReader, asked: dict[str, str]) -> list[dict]:
     """The open waits in the order Temper asks them (oldest first; the loop asks the first).
     ``asked`` maps a wait's step name to the waiting owner event asking it: only the first can
     have one (M3 E12). Each keeps its question and, apart, the reply syntax chat shows after it
-    (``reply_hint``, M3 E22)."""
+    (``reply_hint``, M3 E22). A settings wait (SW-85, M3 E24) is asked before any other and
+    carries its typed fields: ``settings_changes`` (one entry per changed setting: ``scope``
+    team or member, ``member``, ``key``, ``value_kind`` text or sha256, ``old``, ``new``) and
+    ``pins`` (each named member's ``pin_old`` and ``pin_new`` digests); both are None for
+    other kinds."""
     out = []
     for i, w in enumerate(reader.ledger.open_waits(reader.run_id, reader.host_path)):
         s = w["subject"] or {}
@@ -188,7 +203,12 @@ def open_waits_view(reader: TeamReader, asked: dict[str, str]) -> list[dict]:
             "answers": answers_for(kind, s, reader.leader),
             "round": s.get("round"), "member": s.get("member"), "turn_no": s.get("turn_no"),
             "why": s.get("why"),
-            "asked_again": int(s.get("asked_again") or 0) if kind == "recovery" else None,
+            "asked_again": (int(s.get("asked_again") or 0) if kind in ("recovery", SETTINGS)
+                            else None),
+            "settings_changes": (list(s.get("settings_changes") or []) if kind == SETTINGS
+                                 else None),
+            "pins": ([{k: p.get(k) for k in ("member", "pin_old", "pin_new")}
+                      for p in s.get("pins") or []] if kind == SETTINGS else None),
             "opened_at": _at(w["opened_at"])})
     return out
 

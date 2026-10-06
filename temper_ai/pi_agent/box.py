@@ -9,10 +9,12 @@ What the box allows (and what L1 proved live on the same runtime):
   host's egress proxy over a bind-mounted Unix socket; the proxy allows ``CONNECT`` to the
   route's provider host on port 443 and answers 403 to everything else;
 * it holds no credential: Pi's ``apiKey`` command asks the host over a second Unix socket;
-  the host hands over the token from the host Pi installation (the single owner of the
-  login and its refresh: ``pi auth print-bearer-token --provider P --min-expiry 30m``),
-  only while the turn's allowance lasts, after adding it to the turn's redactor, and stores
-  nothing;
+  the host hands over the token only while the turn's allowance lasts, after adding it to
+  the turn's redactor, and stores nothing. With ``host_helper_socket`` set the token comes
+  from the host helper's ``token`` verb for the run's pinned account slot (ADR-M4-15,
+  :mod:`temper_ai.pi_agent.host_helper`); otherwise from the host Pi installation
+  (``pi auth print-bearer-token --provider P --min-expiry 30m``). Either way the login and
+  its refresh stay with the host's Pi;
 * the host's own Pi settings, logins and memory are never mounted. The worker gets a
   generated agent folder, a private copy of its role (copied once per participant) and its
   participant folder (``/w``), which keeps the Pi session file between turns;
@@ -44,6 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from temper_ai.pi_agent import host_helper
 from temper_ai.pi_agent.rpc import Rpc
 from temper_ai.pi_agent.search_tools import PINS as SEARCH_PINS
 from temper_ai.pi_agent.search_tools import search_tool_problems
@@ -58,6 +61,8 @@ BUDGET_SLACK = 2
 FAULTS = ("deny_handoff", "kill_after_prompt")
 ROLE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+#: A Unix socket path's limit, kept as the host helper keeps it (ADR-M4-02).
+HELPER_SOCKET_LIMIT = 100
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FORBIDDEN = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
 ESTABLISHED = b"HTTP/1.1 200 Connection Established\r\n\r\n"
@@ -122,14 +127,17 @@ class BoxConfig:
     identity_config: str
     identities_dir: str
     state_root: str
-    host_node: str
-    host_pi: str
     routes: dict[str, Route]
+    #: The host's node and Pi CLI, for the hand-off without a host helper (host-process
+    #: instances, tests); not needed when ``host_helper_socket`` is set.
+    host_node: str = ""
+    host_pi: str = ""
     socket_root: str = ""
     #: Home of the account whose host Pi login the handoff asks (default: this process's).
     host_home: str = ""
-    #: The host helper's socket (M4 ADR-M4-02/12). Set: a done trial's branch is made by the
-    #: helper's ``branch`` verb; empty: by this process (host-process instances, tests).
+    #: The host helper's socket (M4 ADR-M4-02/12/15). Set: a worker's login token comes from
+    #: the helper's ``token`` verb for the run's pinned slot (``BoxSpec.slot``), and a done
+    #: trial's branch is made by its ``branch`` verb. Empty: both by this process.
     host_helper_socket: str = ""
     #: ``live`` or ``rehearsal`` (egress goes to a local TLS stand-in, tokens are synthetic).
     mode: str = "live"
@@ -192,6 +200,13 @@ class BoxConfig:
             problems.append("identities_dir missing")
         if not self.routes:
             problems.append("no routes")
+        if self.host_helper_socket:
+            if not os.path.isabs(self.host_helper_socket) \
+                    or len(self.host_helper_socket.encode()) >= HELPER_SOCKET_LIMIT:
+                problems.append("host_helper_socket must be an absolute path under "
+                                f"{HELPER_SOCKET_LIMIT} bytes")
+        elif self.mode == "live" and not (self.host_node and self.host_pi):
+            problems.append("host_node and host_pi are needed without host_helper_socket")
         problems += self._add_on_problems()
         problems += self.search_tool_pin_problems()
         if problems:
@@ -530,6 +545,10 @@ class BoxSpec:
     #: ``reachable``, the names it may message), or None for a single Pi step. With it the
     #: box gets a third socket, ``team.sock``, and the send tool (``TEAM_TOOL``) in ``tools``.
     team: Any = None
+    #: The run's pinned account slot label (ADR-M4-14/15, e.g. a pi-multi-pass alias of the
+    #: route's provider), recorded exactly on the turn. The host helper is asked for this slot
+    #: only; inside the box the provider stays the route's. Empty: the route's provider.
+    slot: str = ""
 
 
 #: The Pi tool name of Temper's team messaging (registered by the temper-box extension only
@@ -626,6 +645,9 @@ class WorkerBox:
         self.redactor = redactor
         self.owner_token = owner_token or self._host_pi_token
         self.connector = connector or self._connect_upstream
+        #: The account slot this box's hand-offs are for, and the last plain refusal.
+        self.slot = spec.slot or self.route.provider
+        self.handoff_refused: str | None = None
         self.name = f"temper-pi-{uuid.uuid4().hex[:20]}"
         self.pdir = Path(spec.participant_dir)
         self.allowance = 0
@@ -893,6 +915,8 @@ class WorkerBox:
     def _host_pi_token(self, provider: str) -> str:
         if self.cfg.mode == "rehearsal":
             return str(((self.cfg.rehearsal or {}).get("tokens") or {}).get(provider) or "")
+        if self.cfg.host_helper_socket:
+            return self._helper_token()
         home = self.cfg.host_home or str(Path.home())
         env = {"HOME": home, "LANG": "C.UTF-8",
                "PATH": f"{Path(self.cfg.host_node).parent}:/usr/bin:/bin",
@@ -906,6 +930,20 @@ class WorkerBox:
         except (OSError, subprocess.TimeoutExpired):
             return ""
         return got.stdout.decode("utf-8", "replace").strip() if got.returncode == 0 else ""
+
+    def _helper_token(self) -> str:
+        """The run's pinned slot's token from the host helper, or "" with the plain refusal
+        (naming the slot) kept for the turn's receipt. Never another slot, never a fallback."""
+        if not self.spec.slot:
+            why = ("no account slot is pinned for this run; the host helper serves only a "
+                   "pinned slot and was not asked")
+            token = ""
+        else:
+            token, why = host_helper.token(self.cfg.host_helper_socket, self.spec.slot)
+        if not token:
+            with self.lock:
+                self.handoff_refused = why
+        return token
 
     def _handoff(self, conn: socket.socket) -> None:
         provider = read_line(conn)
@@ -1018,13 +1056,16 @@ class WorkerBox:
             shutil.rmtree(self.sock_dir, ignore_errors=True)
         with self.lock:
             receipt.update({
-                "handoffs": self.handoffs, "handoffs_denied": self.denied,
+                "handoff_slot": self.slot, "handoffs": self.handoffs,
+                "handoffs_denied": self.denied,
                 "tunnels": len(self.tunnels),
                 "tunnels_allowed": sum(1 for t in self.tunnels if t["allowed"]),
                 "tunnels_refused": sum(1 for t in self.tunnels if not t["allowed"]),
                 "tunnels_cut_at_close": cut, "bytes_up": self.bytes["up"],
                 "bytes_down": self.bytes["down"],
             })
+            if self.handoff_refused:
+                receipt["handoff_refused"] = self.handoff_refused
             if self.spec.team is not None:
                 receipt.update({"team_sends": self.team_sends,
                                 "team_refused": self.team_refused})

@@ -280,6 +280,10 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
     if extra:
         outcome.errors = [*outcome.errors, *[e for e in extra if e not in outcome.errors]]
         outcome.status = "failed"
+    refused = report.worker.get("handoff_refused")
+    if refused and outcome.status != "completed":
+        # The host's plain refusal of the login hand-off (it names the account slot) leads.
+        outcome.errors = [refused, *[e for e in outcome.errors if e != refused]]
     outcome_data_extra = {"pi_effective": report.effective,
                           "pi_turn_checks": _public_checks(report.checks)}
     report.outcome = outcome

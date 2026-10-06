@@ -186,7 +186,8 @@ When a trial with a project ends done, Temper makes a local branch `team/<trial_
 approved commit in the source repository: create-only, never forced, pushed or checked out,
 and the working tree and index are left alone. With a host helper socket in the box config
 (`host_helper_socket`), the helper's `branch <repo> <leader git dir> <commit> <trial_id>`
-verb makes it; otherwise Temper makes it itself with its hardened git. The done record's
+verb makes it (`docs/pi-host-helper.md`); otherwise Temper makes it itself with its
+hardened git. The done record's
 `branch` is `{name, made, why}`: a branch already at that commit counts as made; one
 elsewhere gives `made: false, why: "exists"`; a refusal or any other failure gives the why,
 and done stays done.

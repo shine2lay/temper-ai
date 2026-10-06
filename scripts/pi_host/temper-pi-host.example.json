@@ -1,0 +1,29 @@
+{
+  "_about": "temper-pi-host's config. Copy it outside the repo, replace every <...> placeholder and keep the copy private. Keys starting with _ are comments. docs/pi-host-helper.md explains every key.",
+  "socket": "/home/<user>/.local/state/temper/pi/sock/<name>.sock",
+  "uid": 1000,
+  "pi_state_root": "/home/<user>/.local/state/temper/pi/runs",
+  "home": "/home/<user>",
+  "pi_agent_dir": "/home/<user>/.pi/agent",
+  "path": ["/home/<user>/.local/bin", "/home/<user>/.nvm/versions/node/<node-version>/bin", "/usr/bin", "/bin"],
+  "pi_cli": ["pi"],
+  "base_provider": "<base_provider>",
+  "_allowed_slots": "multi-pass alias slots <base_provider>-<n> (n >= 2) this helper serves; the base slot (account 1) is never served",
+  "allowed_slots": ["<base_provider>-2", "<base_provider>-3"],
+  "bridge": {
+    "node": "/home/<user>/.nvm/versions/node/<node-version>/bin/node",
+    "script": "/home/<user>/<pinned-folder>/temper_pi_host_bridge.mjs",
+    "_sdk_root": "the folder whose node_modules holds the Pi SDK the running chats use",
+    "sdk_root": "/home/<user>/<chat-app-checkout>",
+    "sdk_package": "@earendil-works/pi-coding-agent",
+    "sdk_version": "<sdk-version>",
+    "ai_version": "<ai-version>",
+    "start_timeout_s": 20,
+    "stop_grace_s": 120
+  },
+  "project_roots": ["/home/<user>/projects/*"],
+  "branch_enabled": false,
+  "branch_max_bytes": 104857600,
+  "tokens_per_hour": 120,
+  "token_timeout_s": 30
+}

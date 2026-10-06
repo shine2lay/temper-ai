@@ -190,9 +190,18 @@ and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
 - Way out: an in-container relay on 127.0.0.1:3128 to a host Unix socket; the host lets
   through only `CONNECT <route host>:443`.
 - Login: Pi's `apiKey` command asks the host over a second socket; within the turn's
-  allowance the host runs `pi auth print-bearer-token --provider <p> --min-expiry 30m` on
-  the host Pi and passes the token through. Nothing is stored; the redactor learns the
-  token before Pi has it.
+  allowance the host gets a token and passes it through. Nothing is stored; the redactor
+  learns the token before Pi has it.
+  - With `host_helper_socket` set (the Pi worker), the token comes from the host helper
+    (`docs/pi-host-helper.md`): `token <slot>` for the run's pinned account slot
+    (`BoxSpec.slot`) and nothing else. Its refusal names the slot, is recorded on the turn's
+    receipt (`handoff_slot`, `handoff_refused`) and leads the turn's errors. The box
+    config then needs no `host_node` or `host_pi`.
+  - Without it (host-process instances, tests) the host runs
+    `pi auth print-bearer-token --provider <p> --min-expiry 30m` on the host Pi, as
+    before; a live box config then needs both `host_node` and `host_pi`.
+  - A done trial's branch goes through the helper's `branch` verb when the socket is set
+    (E10, `temper_ai/pi_agent/team_branch.py`).
 - Before the prompt: the session folder holds only the participant's session, the pinned
   settings still match, Pi reports the pinned model/thinking/session, only the allowed
   extensions loaded (identity, the box probe, the route's login extension, the member's

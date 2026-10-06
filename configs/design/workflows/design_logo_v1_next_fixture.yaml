@@ -20,6 +20,8 @@ workflow:
     direction_outcome: direction.structured.outcome
     direction_approved: direction.structured.direction_approved
     final_approved: final.structured.final_approved
+    design_files: save_files.structured.saved
+    design_files_approved_by: save_files.structured.approved_by
   nodes:
     - name: research
       type: agent
@@ -148,3 +150,10 @@ workflow:
       on_max_loops: fail
       loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
       input_map: {stage: final, mode: fixture}
+    # ---- the product's design files, written after the final approval (the host applies them)
+    - name: save_files
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [final]
+      condition: {source: final.structured.verdict, operator: equals, value: approved}
+      input_map: {stage: save, mode: fixture}

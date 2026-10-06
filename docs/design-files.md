@@ -230,11 +230,22 @@ own words in `notes` and where he said them in `source`.
 ## Saving
 
 After the workflow's final gate approves, `save_files` writes `design-files-out/` in the run:
-DESIGN.md and tokens.json with every part the run decided marked approved by the final gate's
-`decided_by` on that day (users and direction from the research decision; colour, type, spacing,
-radius, elevation and motion measured from the final page; approved inputs copied byte-identical), and
-`registry-update.json`. The host then runs `design_files.py apply`. The next design for the product
-takes the defined branch.
+DESIGN.md and tokens.json with every part the run made marked approved by the final gate's
+`decided_by` on that day, and `registry-update.json`. What a run makes:
+
+- every run with research: users and direction, from the research decision;
+- a homepage: colour, type, spacing, radius, elevation and motion, measured from the final page;
+- a logo: the logo (the approved exports, checked against their hashes, and BRAND.md under `logo/`;
+  the Logo section names the files, the mark, the wordmark font, clear space and smallest sizes) and,
+  when the colour part is not approved yet, the palette chosen with it. When it is approved, the
+  logo's colours must all come from it, or the save stops.
+
+Every part approved before the run stays exactly as it was (tokens byte-identical, its DESIGN.md
+section and approval line unchanged), including parts this job does not use: a logo run keeps an
+approved type scale. A run replaces an approved part only when it was forced. A logo run on a product
+whose logo is approved and not forced stops at its logo brief, before any paid logo stage. The host
+then runs `design_files.py apply`, which refuses files that drop or change an approved part. The next
+design for the product takes the defined branch for the parts now approved.
 
 ## Workflows
 

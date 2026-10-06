@@ -17,8 +17,9 @@ workflow:
     RESEARCH gate (on by default when research ran) -> the decision -> the logo brief gains
     the context id, the meaning, the category marks as pinned research and any approved
     palette -> design_logo_v1's stages (explore, cold read, palette bound by the approved
-    palette, critic) -> DIRECTION gate -> refinement -> packet -> FINAL gate. Gates are named
-    for what they decide; each answer records decided_by. No publication.
+    palette, critic) -> DIRECTION gate -> refinement -> packet -> FINAL gate -> on approval,
+    the product's design files (logo, palette, users, direction) for the host to apply. Gates
+    are named for what they decide; each answer records decided_by. No publication.
   inputs:
     brief_json: {type: string, required: true}
     budget_json: {type: string, required: true}
@@ -257,6 +258,13 @@ workflow:
       on_max_loops: fail
       loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
       input_map: {stage: final, mode: input.mode}
+    # ---- the product's design files, written after the final approval (the host applies them)
+    - name: save_files
+      type: agent
+      agent: design_research_stage_v1
+      depends_on: [final]
+      condition: {source: final.structured.verdict, operator: equals, value: approved}
+      input_map: {stage: save, mode: input.mode}
   outputs:
     design_status: research.structured.status
     research_path: research_assemble.structured.research_path
@@ -269,3 +277,5 @@ workflow:
     direction_outcome: direction.structured.outcome
     direction_approved: direction.structured.direction_approved
     final_approved: final.structured.final_approved
+    design_files: save_files.structured.saved
+    design_files_approved_by: save_files.structured.approved_by

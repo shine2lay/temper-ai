@@ -261,6 +261,140 @@ def test_homepage_candidate_saves_design_files_after_final():
     assert n["copy"]["depends_on"] == ["research_decision"]
 
 
+@pytest.mark.parametrize("name", ["design_logo_v1_next", "design_logo_v1_next_fixture"])
+def test_logo_candidates_save_design_files_after_final(name):
+    wf, n = nodes(name)
+    save = n["save_files"]
+    assert save["agent"] == "design_research_stage_v1" and save["depends_on"] == ["final"]
+    assert save["condition"] == {"source": "final.structured.verdict", "operator": "equals", "value": "approved"}
+    assert save["input_map"]["stage"] == "save"
+    assert wf["outputs"]["design_files_approved_by"] == "save_files.structured.approved_by"
+
+
+# ---------------------------------------------------------------- saving a logo run's design files
+
+LOGO_PALETTE = {"ink": "#1F1A17", "paper": "#FFFFFF", "accent": "#B8482A", "accent_on": "#FBF6EE",
+                "muted": "#3E5B4A", "surface": "#FBF6EE"}
+APPROVED = {"status": "approved", "approved_by": "fixture-test", "date": "2026-10-01"}
+
+
+def logo_packet(ws: Path, palette: dict = LOGO_PALETTE) -> None:
+    """What design_logo_v1's stages leave after the final gate approved (only the files the save reads)."""
+    packet = ws / "logo"
+    (packet / "exports").mkdir(parents=True, exist_ok=True)
+    exports = []
+    for board in ("primary", "symbol"):
+        for kind, body in (("svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>"), ("png", PNG)):
+            path = packet / "exports" / f"selected-r01-{board}.{kind}"
+            path.write_bytes(body + board.encode())
+            exports.append({"path": f"logo/exports/{path.name}", "board": board, "kind": kind,
+                            "sha256": df.sha256(path)})
+    (packet / "BRAND.md").write_text("# Lanternfish mark\n\nUse on light surfaces.\n")
+    (packet / "tokens.json").write_text(json.dumps({
+        "product": "Lanternfish", "sRGB": palette, "font": {"family": "Source Sans Pro", "weight": "600",
+                                                            "licence": "SIL OFL 1.1"},
+        "clear_space_unit": "0.25 of the symbol box", "minimum_symbol_px": 24, "proposed_minimum_lockup_px": 160}))
+    (packet / "selected.json").write_text(json.dumps({"concept": {
+        "id": "c2", "name": "Steady lamp", "family": "symbol + wordmark", "idea": "A lamp that keeps its light."}}))
+    final = {"gate": "final", "decided_by": "fixture-test", "decision": "approve",
+             "reason": "Model-free fictional gate contract test; not a Design or owner decision."}
+    (packet / "state.json").write_text(json.dumps({"final_approval": final}))
+    (packet / "manifest.json").write_text(json.dumps({
+        "final_approved": {"approved": True, "decided_by": "fixture-test"}, "exports": exports}))
+
+
+def test_logo_save_writes_logo_palette_users_and_direction_then_the_next_run_follows_them(
+        tmp_path, fake_browser, monkeypatch):
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "logo", monkeypatch)
+    j.decision()
+    with pytest.raises(ValueError, match="no final approval"):
+        j.save_files()
+    logo_packet(ws)
+    out = j.save_files()
+    assert out["approved_by"] == "fixture-test" and out["parts"] == ["colour", "direction", "logo", "users"]
+    files = df.read_files(ws / "design-files-out")
+    assert files["problems"] == []
+    assert {p: (st or {}).get("approved_by") for p, st in files["parts"].items() if st} == {
+        "users": "fixture-test", "direction": "fixture-test", "colour": "fixture-test", "logo": "fixture-test"}
+    assert {h.upper() for h in df.token_hexes(files["tokens"], ("colour",))} == set(LOGO_PALETTE.values())
+    assert sorted(files["design"]["logo_files"]) == ["logo/BRAND.md", "logo/primary.png", "logo/primary.svg",
+                                                      "logo/symbol.png", "logo/symbol.svg"]
+    design_md = (ws / "design-files-out/DESIGN.md").read_text()
+    assert "Mark: Steady lamp" in design_md and "needs its own approval" in design_md
+    assert j.save_files()["reused"]  # resumed after the save: nothing is written twice
+    # Filed by the host, the next logo run for the product finds every part it needs approved
+    df.apply(ws, tmp_path / "products.yaml", lab_root=tmp_path / "lab")
+    ws2 = tmp_path / "ws2"
+    df.pack(tmp_path / "products.yaml", "lanternfish", FIX / "lanternfish/source", ws2, lab_root=tmp_path / "lab")
+    j2 = dr.Job(str(ws2), fixture=True)
+    inv = j2.inventory(json.dumps({"job": "logo"}))
+    assert inv["status"] == "defined" and inv["research_any"] == "no" and inv["gate"] == "off"
+    j2.decision()
+    with pytest.raises(ValueError, match="approved and fixed"):  # before any paid logo stage
+        j2.logo_brief((FIX / "lanternfish/logo-brief.json").read_text())
+
+
+def test_logo_save_refuses_exports_changed_after_the_final_gate(tmp_path, fake_browser, monkeypatch):
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "logo", monkeypatch)
+    j.decision()
+    logo_packet(ws)
+    (ws / "logo/exports/selected-r01-primary.svg").write_text("<svg/>")
+    with pytest.raises(ValueError, match="changed after the final gate"):
+        j.save_files()
+
+
+def approved_colour_and_type(ws: Path, palette: dict) -> None:
+    """Design files in the run with colour and type approved (fixture-test), as the inventory would find them."""
+    folder = ws / "design-files"
+    folder.mkdir(parents=True, exist_ok=True)
+    tokens = {"$description": "Lanternfish", "$extensions": {df.EXT: {"product": "lanternfish", "format": df.FORMAT}},
+              "colour": df.token_group("colour", {"$type": "color", **{k.replace("_", "-"): df.color_token(v)
+                                                                       for k, v in palette.items()}}, APPROVED),
+              "type": df.token_group("type", {"text-family": {"$type": "fontFamily", "$value": "Instrument Sans"},
+                                              "text-weight-400": {"$type": "fontWeight", "$value": 400}}, APPROVED)}
+    (folder / "tokens.json").write_text(json.dumps(tokens, indent=2))
+    status = {"colour": APPROVED, "type": APPROVED}
+    approvals = [{"part": p, "approved_by": "fixture-test", "date": "2026-10-01", "reasons": "trial fixture"}
+                 for p in ("colour", "type")]
+    (folder / "DESIGN.md").write_text(df.render_design_md({
+        "name": "Lanternfish", "product": "lanternfish", "updated": "2026-10-01", "status": status,
+        "approvals": approvals}))
+    assert df.read_files(folder)["problems"] == []
+    inv_path = ws / "research/inventory.json"
+    inv = json.loads(inv_path.read_text())
+    inv["approved"]["colour"] = {"approved_by": "fixture-test", "date": "2026-10-01"}  # type: the logo job's not
+    inv_path.write_text(json.dumps(inv))
+
+
+def test_logo_save_keeps_the_approved_palette_and_parts_the_job_does_not_use(tmp_path, fake_browser, monkeypatch):
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "logo", monkeypatch)
+    j.decision()
+    approved_colour_and_type(ws, LOGO_PALETTE)
+    old = json.loads((ws / "design-files/tokens.json").read_text())
+    logo_packet(ws, {**LOGO_PALETTE, "surface": "#FFFFFF"})  # a subset of the approved colours
+    out = j.save_files()
+    assert out["parts"] == ["direction", "logo", "users"] and out["kept"] == ["colour", "type"]
+    saved = json.loads((ws / "design-files-out/tokens.json").read_text())
+    assert saved["colour"] == old["colour"] and saved["type"] == old["type"]
+    design_md = (ws / "design-files-out/DESIGN.md").read_text()
+    assert "- colour: fixture-test on 2026-10-01: trial fixture" in design_md
+    assert "- type: fixture-test on 2026-10-01: trial fixture" in design_md
+    assert df.read_files(ws / "design-files-out")["problems"] == []
+
+
+def test_logo_save_refuses_a_logo_colour_outside_the_approved_palette(tmp_path, fake_browser, monkeypatch):
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "logo", monkeypatch)
+    j.decision()
+    approved_colour_and_type(ws, LOGO_PALETTE)
+    logo_packet(ws, {**LOGO_PALETTE, "accent": "#AA0000"})
+    with pytest.raises(ValueError, match="outside the approved palette: #AA0000"):
+        j.save_files()
+
+
 def test_live_workflows_unchanged_names():
     for name in ("design_homepage_v2", "design_logo_v1"):
         _, n = nodes(name)

@@ -691,6 +691,8 @@ class Job:
         inv = self.inv
         if inv["job"] != "logo":
             raise ValueError("logo_brief is for logo jobs")
+        if "logo" in inv["approved"]:  # stop before the paid logo stages, not at the save
+            raise ValueError('the product\'s logo is approved and fixed; to replace it, run with "force": ["logo"]')
         decision = load(self.dir / "decision.json")
         fixed = load(self.dir / "fixed.json")
         fp = digest({"brief": brief, "decision": decision, "fixed": fixed,
@@ -774,7 +776,20 @@ class Job:
     # -- save design files after a final approval
 
     def save_files(self) -> dict:
-        inv = self.inv
+        """After the workflow's final gate approves: the product's design files in design-files-out/ and
+        registry-update.json (docs/design-files.md, Saving); the host's design_files.py apply files them."""
+        if self.inv["job"] == "logo":
+            return self.save_logo_files()
+        return self.save_homepage_files()
+
+    def final_decider(self, by: str) -> str:
+        allowed = (rc.FIXTURE_DECIDER,) if self.inv["fixture_registry"] else rc.REAL_DECIDERS
+        if by not in allowed:
+            raise ValueError(f"the final gate was decided by {by}; this registry accepts {' or '.join(allowed)}")
+        return by
+
+    def save_homepage_files(self) -> dict:
+        """Colour and type from the chosen concept, the other token parts from the built page's CSS."""
         packet = self.root / "homepage"
         final_path = packet / "final.json"
         if not final_path.exists():
@@ -782,10 +797,7 @@ class Job:
         final = load(final_path)
         if final.get("verdict") != "approve":
             raise ValueError("the final gate did not approve")
-        by = final["decided_by"]
-        allowed = (rc.FIXTURE_DECIDER,) if inv["fixture_registry"] else rc.REAL_DECIDERS
-        if by not in allowed:
-            raise ValueError(f"the final gate was decided by {by}; this registry accepts {' or '.join(allowed)}")
+        by = self.final_decider(final["decided_by"])
         direction = load(packet / "direction.json")
         spec = load(packet / "concepts" / "concepts.json")
         concept = next(c for c in spec["concepts"] if c["id"] == direction["concept"])
@@ -794,6 +806,93 @@ class Job:
         cached = self.cached("save", fp)
         if cached:
             return cached
+        said = {"words": final.get("notes", ""), "source": final.get("source", "")} if by == "owner" \
+            else {"reasons": final.get("reasons", "")}
+        return self.receipt("save", fp, self.write_design_files(
+            by, said, tokens_from_run(concept, packet / "site"), f"Built as concept {concept['id']}: {concept['name']}."))
+
+    def save_logo_files(self) -> dict:
+        """The approved logo (its exports and BRAND.md), the palette chosen with it, and the research's users and
+        direction. An approved palette stays as it was, and the logo may use only its colours."""
+        inv = self.inv
+        packet = self.root / "logo"
+        manifest = load(packet / "manifest.json") if (packet / "manifest.json").is_file() else {}
+        state = load(packet / "state.json") if (packet / "state.json").is_file() else {}
+        final = state.get("final_approval") or {}
+        if not final or not (manifest.get("final_approved") or {}).get("approved"):
+            raise ValueError("no final approval yet (logo/manifest.json)")
+        if final.get("decision") != "approve":
+            raise ValueError("the final gate did not approve")
+        by = self.final_decider(final["decided_by"])
+        if "logo" in inv["approved"]:
+            raise ValueError('the product\'s logo is approved and fixed; to replace it, run with "force": ["logo"]')
+        exports = [e for e in manifest.get("exports", []) if e.get("kind") in ("svg", "png")]
+        if not exports:
+            raise ValueError("the approved logo lists no exports (logo/manifest.json)")
+        logo_tokens = load(packet / "tokens.json")
+        concept = (load(packet / "selected.json").get("concept") or {}) if (packet / "selected.json").is_file() else {}
+        fp = digest({"final": final, "artifact": manifest.get("artifact_hash"), "exports": exports, "tokens": logo_tokens,
+                     "research": file_digest(self.dir / "research.json")})
+        cached = self.cached("save", fp)
+        if cached:
+            return cached
+        files: dict[str, Path] = {}
+        for e in exports:
+            src = (self.root / str(e.get("path", ""))).resolve()
+            if not src.is_relative_to(packet.resolve()) or not src.is_file():
+                raise ValueError(f"logo export {e.get('path')} is missing")
+            if e.get("sha256") and file_digest(src) != e["sha256"]:
+                raise ValueError(f"logo export {e['path']} changed after the final gate")
+            base = re.sub(r"[^a-z0-9]+", "-", str(e.get("board") or src.stem).lower()).strip("-")[:60] or "logo"
+            name, n = f"logo/{base}.{e['kind']}", 2
+            while name in files:
+                name, n = f"logo/{base}-{n}.{e['kind']}", n + 1
+            files[name] = src
+        if (packet / "BRAND.md").is_file():
+            files["logo/BRAND.md"] = packet / "BRAND.md"
+        palette = {role: str(v).upper() for role, v in (logo_tokens.get("sRGB") or {}).items() if df.HEX.match(str(v))}
+        new_tokens: dict[str, dict] = {}
+        if "colour" in inv["approved"]:
+            approved = {h.upper() for h in df.token_hexes((df.read_files(self.root / "design-files") or {}).get("tokens"),
+                                                          ("colour",))}
+            outside = sorted(set(palette.values()) - approved)
+            if outside:
+                raise ValueError("the logo uses colours outside the approved palette: " + ", ".join(outside))
+        elif palette:
+            new_tokens["colour"] = {"$type": "color", **{role.replace("_", "-"): df.color_token(
+                hexv, f"{role.replace('_', ' ')} (chosen with the logo)") for role, hexv in palette.items()}}
+        lines = ["Files: " + ", ".join(files)]
+        if concept.get("name"):
+            lines.append(f"Mark: {concept['name']} ({concept.get('family', 'mark')}). "
+                         + " ".join(str(concept.get("idea", "")).split())[:300])
+        font = logo_tokens.get("font") or {}
+        if font.get("family"):
+            lines.append(f"Wordmark font: {font['family']} {font.get('weight', '')}".rstrip()
+                         + (f" ({font['licence']})." if font.get("licence") else "."))
+        if logo_tokens.get("clear_space_unit"):
+            lines.append(f"Clear space: {logo_tokens['clear_space_unit']}.")
+        sizes = [f"symbol {logo_tokens['minimum_symbol_px']} px" if logo_tokens.get("minimum_symbol_px") else "",
+                 f"lockup {logo_tokens['proposed_minimum_lockup_px']} px" if logo_tokens.get("proposed_minimum_lockup_px") else ""]
+        if any(sizes):
+            lines.append("Smallest sizes: " + ", ".join(s for s in sizes if s) + ".")
+        if "logo/BRAND.md" in files:
+            lines.append("Variants, use and limits: logo/BRAND.md.")
+        lines.append("Publishing the logo or putting it in a live product needs its own approval.")
+        said = {"words": final.get("reason", ""), "source": final.get("source", "")} if by == "owner" \
+            else {"reasons": final.get("reason", "")}
+        built = f"Built as logo concept {concept.get('id', '?')}: {concept.get('name', 'the approved logo')}."
+        return self.receipt("save", fp, self.write_design_files(by, said, new_tokens, built,
+                                                                logo={"files": files, "lines": lines}))
+
+    def write_design_files(self, by: str, said: dict, new_tokens: dict[str, dict], built: str,
+                           logo: dict | None = None) -> dict:
+        """design-files-out/: parts the product had approved are copied unchanged; every part this run made is
+        approved by the final gate's decided_by on today's date. The files pass their own check first.
+
+        said: the final gate's reasons, or the owner's words with their source. built: what the direction was
+        built as. logo: {files: {name in the folder: source path}, lines: the Logo section} when this run made
+        the product's logo (it replaces an earlier one; apply keeps that under .history/)."""
+        inv = self.inv
         date = dt.datetime.now(dt.UTC).astimezone().date().isoformat()
         files = df.read_files(self.root / "design-files")
         research = load(self.dir / "research.json") if (self.dir / "research.json").exists() else None
@@ -804,21 +903,35 @@ class Job:
         out.mkdir(parents=True)
         approval = {"approved_by": by, "date": date}
         if by == "owner":
-            approval.update({"words": final.get("notes", ""), "source": final.get("source", "")})
+            approval.update({"words": said.get("words", ""), "source": said.get("source", "")})
         else:
-            approval["reasons"] = (f"final gate of the {inv['job']} run: {' '.join(str(final.get('reasons', '')).split())}")[:400]
+            approval["reasons"] = (f"final gate of the {inv['job']} run: {' '.join(str(said.get('reasons', '')).split())}")[:400]
         old_tokens = (files or {}).get("tokens") or {}
-        new_tokens = tokens_from_run(concept, packet / "site")
+        # The run remakes only what it researched or designed: users and direction from the research, token
+        # parts from new_tokens, the logo. Every other part approved before the run stays exactly as it was,
+        # including parts this job does not use (a logo run keeps an approved type scale).
+        # An approved part is replaced only when Design or the owner forced it to be researched again.
+        prior = {p: st for p, st in ((files or {}).get("parts") or {}).items() if st and st.get("status") == "approved"}
+        open_parts = {p for p in df.PARTS if p not in prior or p in (inv.get("forced") or [])}
+        remade = {p for p in df.TOKEN_PARTS if p in new_tokens} & open_parts
+        if research and isinstance(research["users"], dict) and research["users"].get("groups"):
+            remade |= {"users"} & open_parts
+        if research:
+            remade |= {"direction"} & open_parts
+        if logo:
+            remade |= {"logo"} & open_parts
+        kept = {p: {"status": "approved", "approved_by": st["approved_by"], "date": st["date"]}
+                for p, st in prior.items() if p not in remade}
         tokens: dict[str, Any] = {"$description": f"{inv['name']} design tokens (DTCG 2025.10), saved by the research "
                                                   f"step after the final gate of a {inv['job']} run.",
                                   "$extensions": {df.EXT: {"product": inv["product"], "format": df.FORMAT}}}
         status: dict[str, dict] = {}
         parts_update: dict[str, dict] = {}
         for part in df.TOKEN_PARTS:
-            if part in inv["approved"]:
+            if part in kept:
                 tokens[part] = old_tokens[part]  # approved parts are copied unchanged
-                status[part] = {"status": "approved", **inv["approved"][part]}
-            elif part in new_tokens:
+                status[part] = kept[part]
+            elif part in remade:
                 st = {"status": "approved", **{k: approval[k] for k in ("approved_by", "date")}}
                 tokens[part] = df.token_group(part, new_tokens[part], st)
                 status[part] = st
@@ -827,19 +940,29 @@ class Job:
         raw: dict[str, str] = {}
         sections = (files or {}).get("design", {}).get("sections", {}) if files else {}
         for part, title in df.TITLES.items():
-            if part in inv["approved"] and title in sections:
+            if part in kept and title in sections:
                 raw[title] = sections[title].strip("\n")
-                status[part] = {"status": "approved", **inv["approved"][part]}
+                status[part] = kept[part]
         users_lines, direction_lines = [], []
-        if "users" not in inv["approved"] and research and isinstance(research["users"], dict) and research["users"].get("groups"):
+        if "users" in remade:
             users_lines = users_section(research["users"], decision)
             st = {"status": "approved", "approved_by": by, "date": date}
             status["users"], parts_update["users"] = st, st
-        if "direction" not in inv["approved"] and research:
+        if "direction" in remade:
             chosen = next(d for d in research["directions"] if d["id"] == decision["direction"])
-            direction_lines = direction_section(chosen, research, concept)
+            direction_lines = direction_section(chosen, research, built)
             st = {"status": "approved", "approved_by": by, "date": date}
             status["direction"], parts_update["direction"] = st, st
+        logo_lines: list[str] = []
+        if logo:
+            for name, src in logo["files"].items():
+                (out / name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, out / name)
+            logo_lines = list(logo["lines"])
+            st = {"status": "approved", "approved_by": by, "date": date}
+            status["logo"], parts_update["logo"] = st, st
+        elif "logo" in kept and (self.root / "design-files" / "logo").is_dir():
+            shutil.copytree(self.root / "design-files" / "logo", out / "logo")
         for part in ("logo", "library"):
             status.setdefault(part, None)
         approvals = []
@@ -848,26 +971,23 @@ class Job:
             st = status.get(part)
             if not st or st.get("status") != "approved":
                 continue
-            if part in inv["approved"]:
-                a = old_approvals[part]
-                approvals.append({"part": part, **a})
+            if part in kept:
+                approvals.append({"part": part, **old_approvals[part]})
             else:
                 approvals.append({"part": part, **approval})
         model = {"name": inv["name"], "product": inv["product"], "updated": date,
                  "intro": (f"Saved by the research step after the final gate of a {inv['job']} run "
                            f"(decided_by {by}). Approved parts were copied unchanged."),
                  "status": status, "users_lines": users_lines, "direction_lines": direction_lines,
-                 "approvals": approvals, "raw": raw}
-        if "logo" in inv["approved"] and (self.root / "design-files" / "logo").is_dir():
-            shutil.copytree(self.root / "design-files" / "logo", out / "logo")
+                 "logo_lines": logo_lines, "approvals": approvals, "raw": raw}
         write(out / "DESIGN.md", df.render_design_md(model))
         found = df.read_files(out)
         if found is None or found["problems"]:
             raise ValueError("the saved design files fail their check: " + "; ".join((found or {"problems": ["none"]})["problems"][:6]))
         save(out / "registry-update.json", {"product": inv["product"], "parts": parts_update, "from_run": self.root.name,
                                             "decided_by": by, "saved_at": now()})
-        return self.receipt("save", fp, {"status": "completed", "saved": "design-files-out", "approved_by": by,
-                                         "parts": sorted(parts_update), "kept": sorted(inv["approved"])})
+        return {"status": "completed", "saved": "design-files-out", "approved_by": by, "parts": sorted(parts_update),
+                "kept": sorted(kept)}
 
 
 # ---------------------------------------------------------------- browser measures
@@ -1155,11 +1275,11 @@ def users_section(users: dict, decision: dict) -> list[str]:
     return lines
 
 
-def direction_section(chosen: dict, research: dict, concept: dict) -> list[str]:
+def direction_section(chosen: dict, research: dict, built: str) -> list[str]:
     ctxs = ", ".join(c["id"] for c in research["contexts"])
     return [f"Name: {chosen['name']} ({chosen['id']}); family: {chosen['family']}; playbook contexts: {ctxs}.",
             "Axes: " + ", ".join(f"{k} {chosen['axes'][k]}" for k in axes.LEVELS),
-            f"Why: {chosen['why']}", f"Built as concept {concept['id']}: {concept['name']}.",
+            f"Why: {chosen['why']}", built,
             "Principles:"] + [f"- {p}" for p in chosen["principles"]] + \
            ["Do:"] + [f"- {p}" for p in chosen["do"]] + ["Don't:"] + [f"- {p}" for p in chosen["dont"]] + \
            ["Evidence: " + ", ".join(chosen["evidence"])]

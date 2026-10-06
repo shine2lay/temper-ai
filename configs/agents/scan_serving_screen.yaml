@@ -98,8 +98,8 @@ agent:
     Also read each buyer's HOST SUITE's own current feature/release/integration
     pages. Does it already do the proposed job, and can a third party access what
     it needs? Record scope and buyer, not just a competitor name. A bundled feature
-    is competition, not proof of an open gap. Change O only with evidence matching
-    the old O definitions below; distinguish known density from platform R.
+    is competition, not proof of an open gap. Change O only as O MOVES in FACTOR
+    CALLS below says; labs and major cross-industry platforms count in R.
 
     Evidence: fetch original documents. Use python3 state/desk/cite.py page URL
     keyword and quote URL "exact words"; the helper keeps page text/HTTP status
@@ -140,6 +140,168 @@ agent:
       P/W/O/T/F are integers 1..3; B integer 1..4. Keep T/F/B justifications and
       chosen definition explicit. No sector ban or numeric automatic kill.
       Tie-break: stronger decisive evidence, then lower B, then original rank.
+      Which part F, T and R rate, for which buyer, and which facts move P, W
+      and O: FACTOR CALLS below.
+
+    FACTOR CALLS: WHICH PART F, T AND R RATE, FOR WHICH BUYER, AND WHICH FACTS
+    MOVE P, W AND O (the same rules in the screen and the audit; they fix what
+    each factor looks at, never its scale):
+      ONE BUYER. When the candidate's baseline name gives more than one buyer
+      type, its first customer is the FIRST one named. F's inputs, T and B
+      rate that buyer, and serving.buyer names it. A gap for another named
+      buyer type goes in build.uncertainty or serving.unknowns, never into a
+      level.
+
+      F rates the HARDEST PART OF THE SOFTWARE'S JOB THAT THE STATED VALUE
+      DEPENDS ON. The stated value is the benefit the candidate claims (its
+      baseline name and pain, and tech.job). List the parts the software does;
+      the hardest part is the one the benefit cannot do without that is least
+      proven. Never rate an easier part because it is the one you can
+      document. Parts people do are not in F (they are T); an input a person
+      in the job supplies counts as available. Answer two questions about
+      that part only:
+        Technique shown: yes when a saved source shows a published method or
+        a shipped product doing this same step on this kind of input; else no.
+        Inputs available: yes when what the part reads exists for the first
+        customer (ONE BUYER) in the typical case: the buyer makes or receives
+        it in the normal course of the job, a person in the job supplies it,
+        or a saved source shows it published; no when a source shows it
+        missing; unknown otherwise. An input missing only in some cases is
+        build.uncertainty, not unknown. Technical availability only: whether
+        we may use it is B.
+      Level: technique no, or inputs no or unknown -> F=3. Both yes -> F=2
+      while the part's accuracy test is unrun; F=1 only for a routine
+      deterministic route with positive support and no decision-critical test
+      left. How silent or costly an error would be is not a separate F test:
+      say it in build.uncertainty and the test bar. If unsure which part is
+      hardest, answer for each part the value depends on; F is the highest.
+      Write factor_reasons.F as "Hardest part: <part>. Technique shown:
+      yes|no - <source>. Inputs available: yes|no|unknown - <input, who
+      supplies it>." and then anything else.
+      Worked example (fictional): an expense-audit tool for small firms reads
+      receipt photos and checks each line against the firm's policy table.
+      The table lookup is routine; the benefit depends on reading amount, date
+      and merchant off phone photos, so that is the hardest part. A saved
+      vendor page shows receipt reading in production (technique yes) and
+      staff upload the photos (inputs yes): F=2 until the reading test is run.
+      With no source showing receipt reading, F=3. Rating the table lookup
+      instead (F=1) would be wrong.
+
+      T rates the TYPICAL CASE OF THE STATED JOB: the core task the software
+      does, and what people still do in a typical case.
+        approval (never lowers T): checking, editing, accepting, rejecting or
+        signing the software's output; acting on a case the software flagged,
+        routed out or could not finish; disputes and appeals of its output.
+        substantive (T=2): work the software does not do in a typical case,
+        where a person must make part of the deliverable, or find and choose
+        one of its inputs, with their own judgment.
+      Work outside the stated job (sending, filing, collecting payment) and
+      clerical handoffs do not count. Whether the software does its own part
+      accurately is F, not T. Exceptions lower T only when a saved source
+      shows they are the typical case. Write factor_reasons.T as "Core task:
+      <task>. People: approval|substantive|none - <what they do>." and then
+      anything else. approval or none -> T=3 (T=1 if the software's valuable
+      contribution is unproven); substantive -> T=2 (or 1).
+      Worked example (fictional): a renewal-quote tool for small insurance
+      brokers drafts each renewal quote from the policy on file. The broker
+      reviews and signs it: approval, T=3. Risks the tool flags as unusual go
+      to the broker to price by hand: still approval, they are exceptions.
+      If the broker instead had to call every client for new exposure
+      figures before any quote could be drafted, that is substantive: T=2.
+      Chasing the client to sign is outside the job.
+
+      R rates FRONTIER LABS AND MAJOR CROSS-INDUSTRY PLATFORMS moving on this
+      job, as timing.md's frontier_lab_risk defines them: labs such as OpenAI,
+      Anthropic and Google, and platforms sold across many industries such as
+      Microsoft, Salesforce, Intuit, Shopify and Amazon. Start from the lens
+      level for the candidate's area (low=1, medium=1.5, high=2). Raise it
+      only on a verified saved source that such a lab or platform ships (high)
+      or has announced (medium) a product for this job and this kind of buyer;
+      never go below the lens level (state a disagreement in the reason). A
+      product counts only when it is aimed at this buyer's industry, the
+      lens's 'vertical offering specific to' test: a general small-business
+      product whose page lists this industry among other examples does not
+      raise R (name it under In R: as not counted).
+      Software sold to one industry, including the buyer's own host suite
+      (practice-management, field-service, EHR or claims system) and its AI
+      features, is competition on the O side: it never moves R, and it moves
+      O only as O MOVES says.
+      Every candidate gets this same test: classify each company by what it
+      sells, not by whether it is the buyer's host. One company appears in
+      both only through two different facts (a platform's existing product
+      share in O, its new AI agent for this job in R); never use one fact
+      twice. Write factor_reasons.R as "Lens: low|medium|high. In R: <labs or
+      platforms and their move, or none>. In O: <one-industry software doing
+      this job, or none>." and then anything else.
+      Worked example (fictional): an AI intake assistant for independent vet
+      clinics. The clinics' vet practice-management suite adds its own AI
+      intake: competitive density, counted in O; R stays at the lens level.
+      A cross-industry office or CRM suite shipping an intake agent aimed at
+      small clinics, or a frontier lab shipping a vet-intake product, would
+      raise R.
+
+      P COUNTS (the original P definition, applied the same way to every
+      row). Money the buyer already pays to get this job done (staff time, a
+      per-call answering service, a temp or contractor, a per-unit manual
+      cost) is a quantified pain stat, money of manual work, as the
+      baseline's per-manual-invoice cost is; it is pain, not only a price
+      lead. A first-person figure from a buyer of this type in a forum or job
+      post is primary_ok (P=2): a fictional dental office manager writing "we
+      pay a temp $900 a month to chase claims" counts. Its sample (one firm),
+      date and firm size are scope to state, never a reason to drop it.
+
+      W COUNTS. A price that counts under the W rule keeps its source's level
+      whatever its date; the date is scope to state, not a level. A fictional
+      2009 trade-magazine rate of "$3 per claim" for this job is a third-party
+      price, W=2, said to be from 2009. Funding or traction is never a price.
+
+      O MOVES. O starts from the baseline's O: the lens density for this
+      wedge, and the lens-named unserved segment if the baseline used one.
+      Only two facts move it, each shown by ONE verified saved passage on its
+      own (never by joining partial passages):
+        Host suite does the step -> density is high: a host suite that the
+        lens files or the baseline name for this buyer (the system its job
+        runs in) ships this job's step to this buyer type, and the passage
+        names the step in the candidate's own terms. Words that would fit
+        almost any check do not name it: for a fictional dental-claims
+        checker, "checks CDT codes against each payer's rules" names the
+        step; "catches claim errors before you submit" does not.
+        Segment served -> the segment stops counting: a supplier's passage
+        sells this job to the segment's own buyers, naming them as narrowly
+        as the candidate or the lens does, or names a customer among them.
+        For a fictional segment of rural vet clinics, "for rural clinics" or
+        a named rural clinic as customer serves it; "for veterinary
+        practices" names the whole buyer type, the busier area the segment
+        sits in, and does not.
+      Then O=2 while a lens-named segment is not shown served; otherwise O
+      follows density (high 1, medium 2, low with low timing pressure 3).
+      Other suppliers found by search are competition: name them in the
+      competition prose and the next test; they never change the lens
+      density. Write factor_reasons.O as "Baseline: O=<n> (<lens density;
+      segment or none>). Host suite: <suite and the step its passage names,
+      or none>. Segment: <passage serving it, not shown, or no segment>."
+      and then anything else.
+
+    FLIP POINTS (where the order is fragile). From the final scores, for each
+    pair of neighbouring ranks (1-2, 2-3, ... to the last) name the ONE
+    factor call that would swap them: a one-step change of one factor of
+    either candidate (next level up or down on its own scale) that reorders
+    the pair (swaps) or makes their scores equal (ties). python3
+    state/scan/check_serving.py --flips lists every such step for the
+    current serving.json. From that list pick the call whose evidence is
+    most open (the factor the reasons call weakest, or a call these rules
+    leave closest to the line) and say why in one sentence. A pair tied now
+    is marked tied with the tie-break that ordered it. When no single step
+    reorders or ties the pair, call is null and result "none". Write them
+    in serving.json as
+      "flip_points":[{"ranks":[1,2],"upper":"C1","lower":"C2","upper_score":3.0,
+        "lower_score":2.0,"tied":false,"tie_break":"",
+        "call":{"id":"C2","factor":"T","from":2,"to":3},"score_after":3.0,
+        "result":"ties","why":"..."}]
+    (numbers are a SHAPE EXAMPLE only) and in shortlist.md under a heading
+    "## Flip points", one line per pair naming the call as id, factor,
+    from->to, e.g. "- 1-2, C1 over C2: C2 T 2->3 ties them (why ...)".
+    Recompute flip points whenever a score or rank changes.
 
     FINAL EVIDENCE-TO-RATING AUDIT (enforce the rules above, do not change them):
     Before finalising either output, write state/scan/decision-audit.md. For each
@@ -162,7 +324,8 @@ agent:
     - Judge T against the stated bounded software job, not competition (O),
       correctness uncertainty (F), or serving permission (B). Human approval
       alone never lowers T. If T=2, name substantive work WITHIN that job still
-      done by people beyond checking/sign-off, consistently across all candidates.
+      done by people beyond checking/sign-off, consistently across all candidates,
+      as FACTOR CALLS defines it. F and R likewise follow FACTOR CALLS.
     - Audit the ENTIRE source passage, not only the quoted substring. Preserve
       negations, 'coming soon', proposed versus enacted, date, jurisdiction and
       affected payer/customer groups. Reconcile contradictions between claims,
@@ -188,7 +351,8 @@ agent:
 
     Write state/scan/shortlist.md: caveat (moat = workflow+data, not the model),
     the new definitions, old-versus-new RANK comparison (not absolute score delta),
-    one self-check line per candidate, and the sorted P/W/O/T/F/B/R/score table.
+    one self-check line per candidate, the sorted P/W/O/T/F/B/R/score table and
+    the "## Flip points" section.
     For every candidate retain the original seven evidence fields:
     pain_and_source, wtp_and_price, competition_and_incumbent_weakness, build_fit,
     frontier_lab_risk, timing_and_moat, validation_test. timing_risk combines the
@@ -214,6 +378,7 @@ agent:
          "claims":[{"claim":"...","url":"https://...","quote":"exact words",
            "source_kind":"primary|vendor|secondary","saved_page":"state/desk/pages/...",
            "scope_and_date":"..."}]}],
+       "flip_points":["... one per neighbouring pair, see FLIP POINTS ..."],
        "regressions":[{"id":"enterprise","T":3,"F":1,"B":3,
          "excluded_for_sector":false,"reason":"explain supplied facts"}],
        "recommendation":"research priority, unknowns, prerequisites; not clearance"}

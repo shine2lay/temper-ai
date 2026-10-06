@@ -6,7 +6,8 @@ scan_serving agent and then the unchanged scan_check, each script step parses un
 steps keep Claude Code's own tools, every template variable is fed by the workflow and the outputs name
 fields the reviewer prints. Its helpers: check_serving.py names a scan's 1-8 saved candidates in the
 heading styles scans have written and passes only a screen that keeps all of them with sound arithmetic,
-floors and quotes; prepare copies a saved scan into a fresh workspace and takes retained replay pages
+floors and quotes, names the part each F, T and R call rated (queue #30) and names, for each pair of
+neighbouring ranks, the one-step factor call that would swap them; prepare copies a saved scan into a fresh workspace and takes retained replay pages
 only when they match exactly; cite.py is desk_setup's own. No model and no network: every input here is
 synthetic.
 """
@@ -207,7 +208,36 @@ def candidate(n):
                          "saved_page": "state/desk/pages/source.txt", "scope_and_date": "Fictional"}]}
     for group, keys in checker.FIELDS.items():
         found[group] = {key: "Synthetic nonempty explanation" for key in keys}
+    found["factor_reasons"].update(
+        F="Hardest part: synthetic reading step. Technique shown: yes - fixture. Inputs available: yes - fixture.",
+        T="Core task: synthetic task. People: substantive - they gather a synthetic input.",
+        R="Lens: low. In R: none. In O: synthetic vertical suite.",
+        O="Baseline: O=2 (medium; no segment). Host suite: none. Segment: no segment.")
     return found
+
+
+def flip_points(candidates):
+    """The first one-step call the checker lists for each neighbouring pair, as a screen would name it."""
+    points = []
+    for row in checker.flip_table(candidates):
+        call = row["calls"][0] if row["calls"] else None
+        points.append({**{key: row[key] for key in ("ranks", "upper", "lower", "upper_score", "lower_score",
+                                                    "tied")},
+                       "tie_break": "original rank" if row["tied"] else "",
+                       "call": call and {key: call[key] for key in ("id", "factor", "from", "to")},
+                       "score_after": call and call["score_after"], "result": call["result"] if call else "none",
+                       "why": "Synthetic reason"})
+    return points
+
+
+def flip_section(points):
+    lines = ["## Flip points"]
+    for point in points:
+        call = point["call"]
+        named = (f"{call['id']} {call['factor']} {checker.level(call['from'])} \u2192 {checker.level(call['to'])}"
+                 if call else "none")
+        lines.append(f"- {point['ranks'][0]}-{point['ranks'][1]}: {named} {point['result']}")
+    return "\n".join(lines) + "\n"
 
 
 class Screen:
@@ -227,13 +257,18 @@ class Screen:
             (self.root / name).write_text(text)
             manifest[name] = hashlib.sha256(text.encode()).hexdigest()
         (self.root / "baseline-manifest.json").write_text(json.dumps(manifest))
-        self.result = {"formula": checker.FORMULA, "candidates": [candidate(n) for n in range(1, count + 1)],
+        self.shortlist = texts["shortlist.md"]
+        candidates = [candidate(n) for n in range(1, count + 1)]
+        self.result = {"formula": checker.FORMULA, "candidates": candidates,
+                       "flip_points": flip_points(candidates),
                        "regressions": [{"id": cid, **values, "excluded_for_sector": False,
                                         "reason": "Synthetic nonempty reason"} for cid, values in checker.GUARDS.items()],
                        "recommendation": "Synthetic fixture, not a real recommendation"}
 
-    def issues(self):
+    def issues(self, section=None):
         (self.root / "serving.json").write_text(json.dumps(self.result))
+        listed = section if section is not None else flip_section(self.result.get("flip_points") or [])
+        (self.root / "shortlist.md").write_text(self.shortlist + "\n" + listed)
         return checker.check(self.root)
 
 
@@ -275,6 +310,44 @@ BREAKS = [
     ("ranks out of order", lambda r: r["candidates"][0].update(rank=2), "candidate array must follow new ranks 1..n"),
     ("scores out of order", lambda r: r["candidates"][1].update(P=3, score=4.0), "not ranked by new index"),
     ("a changed formula", lambda r: r.update(formula="P*W*O*T"), "formula changed"),
+    ("an F reason that names no part", lambda r: r["candidates"][0]["factor_reasons"].update(F="Bounded."),
+     "C1: F reason must name 'Hardest part:', 'Technique shown:' and 'Inputs available:'"),
+    ("an open part scored as bounded",
+     lambda r: r["candidates"][0]["factor_reasons"].update(
+         F="Hardest part: reading notes. Technique shown: yes - x. Inputs available: unknown - nobody says."),
+     "C1: F must be 3 exactly when the technique is not shown or inputs are not available"),
+    ("a T reason that names no task", lambda r: r["candidates"][0]["factor_reasons"].update(T="Partial."),
+     "C1: T reason must name 'Core task:' and 'People: approval|substantive|none'"),
+    ("approval scored as partial",
+     lambda r: r["candidates"][0]["factor_reasons"].update(T="Core task: drafting. People: approval - signs it."),
+     "C1: T does not follow from the people's work it names"),
+    ("an R reason that sorts no company", lambda r: r["candidates"][0]["factor_reasons"].update(R="Low."),
+     "C1: R reason must name 'Lens:', 'In R:' and 'In O:'"),
+    ("R below the lens",
+     lambda r: r["candidates"][0]["factor_reasons"].update(R="Lens: high. In R: a lab. In O: none."),
+     "C1: R below the lens level"),
+    ("an O reason without its two moves", lambda r: r["candidates"][0]["factor_reasons"].update(O="Crowded."),
+     "C1: O reason must name 'Baseline: O=<n>', 'Host suite:' and 'Segment:'"),
+    ("an unserved segment scored as crowded",
+     lambda r: r["candidates"][0].update(O=1) or r["candidates"][0]["factor_reasons"].update(
+         O="Baseline: O=2 (high; one-state segment). Host suite: none. Segment: not shown - only 'all TPAs'.")
+     or r["candidates"][0].update(score=checker.score_of(r["candidates"][0])),
+     "C1: O must be 2 while a lens-named segment is not shown served"),
+    ("an O moved with nothing named",
+     lambda r: r["candidates"][0].update(O=1) or r["candidates"][0].update(score=checker.score_of(r["candidates"][0])),
+     "C1: O moved from the baseline without a host-suite or segment fact"),
+    ("no flip points", lambda r: r.pop("flip_points"), "missing flip_points"),
+    ("a pair without its flip point", lambda r: r["flip_points"].pop(), "flip_points must name one call per neighbouring pair"),
+    ("a tied pair without its tie-break", lambda r: r["flip_points"][0].update(tie_break=""),
+     "flip 1-2: a tied pair needs its tie-break"),
+    ("a call that moves nothing", lambda r: r["flip_points"][0].update(call={"id": "C1", "factor": "P", "from": 2, "to": 3}),
+     "flip 1-2: the call is not one step that reorders or ties the pair"),
+    ("a two-step call", lambda r: r["flip_points"][0].update(call={"id": "C1", "factor": "T", "from": 2, "to": 0}),
+     "flip 1-2: the call is not one step that reorders or ties the pair"),
+    ("no call where one exists", lambda r: r["flip_points"][0].update(call=None, result="none"),
+     "flip 1-2: a one-step call reorders or ties this pair; name one"),
+    ("a wrong score after the call", lambda r: r["flip_points"][0].update(score_after=9.0),
+     "flip 1-2: wrong score_after or result"),
 ]
 
 
@@ -282,6 +355,73 @@ BREAKS = [
 def test_a_screen_short_of_the_guards_fails_and_says_why(screen, mutate, problem):
     mutate(screen.result)
     assert problem in screen.issues()
+
+
+def test_flip_points_must_also_be_listed_in_the_shortlist(screen):
+    assert "shortlist.md: missing '## Flip points' section" in screen.issues(section="")
+    named = screen.result["flip_points"][0]["call"]
+    named = f"{named['id']} {named['factor']} {checker.level(named['from'])}->{checker.level(named['to'])}"
+    assert f"flip 1-2: shortlist.md flip points do not name {named}" in screen.issues(section="## Flip points\n- none\n")
+
+
+def ranked(*rows):
+    """Candidates from (P, W, O, T, F, B, R) rows, scored and ranked in the given order."""
+    out = []
+    for n, row in enumerate(rows, 1):
+        values = dict(zip("PWOTFBR", row, strict=True))
+        out.append({"id": f"C{n}", "rank": n, **values, "score": checker.score_of(values)})
+    return out
+
+
+def test_the_flip_list_finds_the_one_step_calls_by_hand():
+    """Run 11's C1 3.0 over a C5-like 2.0 (T=2), worked out by hand: every step that brings C1 down to 2.0 or
+    below, or C5 up to 3.0 or above. C1 B 3->4 (2.25) and C5 R 2->1.5 (2.6667) fall short."""
+    top, second = ranked((2, 3, 1, 3, 2, 3, 1), (3, 2, 2, 2, 2, 3, 2))
+    assert (top["score"], second["score"]) == (3.0, 2.0)
+    calls = {(c["id"], c["factor"], c["from"], c["to"]): (c["score_after"], c["result"])
+             for c in checker.flips(top, second)}
+    assert calls == {
+        ("C1", "P", 2, 1): (1.5, "swaps"), ("C1", "W", 3, 2): (2.0, "ties"), ("C1", "T", 3, 2): (2.0, "ties"),
+        ("C1", "F", 2, 3): (2.0, "ties"), ("C1", "R", 1, 1.5): (2.0, "ties"),
+        ("C2", "W", 2, 3): (3.0, "ties"), ("C2", "O", 2, 3): (3.0, "ties"), ("C2", "T", 2, 3): (3.0, "ties"),
+        ("C2", "F", 2, 1): (4.0, "swaps"), ("C2", "B", 3, 2): (3.0, "ties"),
+    }
+
+
+def test_no_call_is_named_when_no_single_step_reaches_the_lower_score():
+    far = ranked((3, 3, 3, 3, 1, 1, 1), (1, 1, 1, 1, 3, 4, 2))
+    assert checker.flips(*far) == []
+    workspace_points = flip_points(far)
+    assert workspace_points[0]["call"] is None and workspace_points[0]["result"] == "none"
+
+
+def test_the_flips_option_prints_the_list_for_the_current_screen(screen):
+    screen.issues()
+    workspace = screen.root.parent.parent
+    done = subprocess.run(["python3", str(ASSETS / "check_serving.py"), "--flips"], cwd=workspace,
+                          capture_output=True, text=True, timeout=30, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+    assert done.returncode == 0, done.stdout + done.stderr
+    rows = json.loads(done.stdout)
+    assert [row["ranks"] for row in rows] == [[1, 2], [2, 3], [3, 4], [4, 5]]
+    assert rows == checker.flip_table(screen.result["candidates"])
+
+
+def factor_calls(name):
+    prompt = by_name(name)["system_prompt"]
+    found = re.search(r"^ *FACTOR CALLS: .*?Recompute flip points whenever a score or rank changes\.$", prompt, re.S | re.M)
+    assert found, f"{name} no longer holds the FACTOR CALLS and FLIP POINTS rules"
+    return found.group(0)
+
+
+def test_the_screen_and_the_audit_apply_the_same_factor_calls():
+    """Queue #30: trial 10 and run 11 split on which part F, T and R rated; both steps must read one rule."""
+    assert factor_calls("scan_serving_screen") == factor_calls("scan_serving_audit")
+    rules = factor_calls("scan_serving_screen")
+    for needed in ("HARDEST PART OF THE SOFTWARE'S JOB", "TYPICAL CASE OF THE STATED JOB",
+                   "FRONTIER LABS AND MAJOR CROSS-INDUSTRY PLATFORMS", "Worked example", "--flips",
+                   "ONE BUYER", "P COUNTS", "W COUNTS", "O MOVES"):
+        assert needed in rules
+    assert rules.count("Worked example") == 3
 
 
 def test_the_fictional_guards_need_their_levels_a_reason_and_no_sector_ban(screen):

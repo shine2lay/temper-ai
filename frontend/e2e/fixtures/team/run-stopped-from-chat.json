@@ -397,13 +397,13 @@
             "wait_id": "341b21adc77844e88b87974fd95e2310",
             "answer": "stop",
             "answered_by": "owner",
-            "answered_source": "team_page",
+            "answered_source": "chat",
             "request_id": "x-stop"
           },
           "entry": "owner_answer",
           "wait_kind": "pause",
           "answered_by": "owner",
-          "answered_source": "team_page",
+          "answered_source": "chat",
           "request_id": "x-stop",
           "round": 1
         },

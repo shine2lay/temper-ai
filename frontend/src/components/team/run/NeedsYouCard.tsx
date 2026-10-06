@@ -108,6 +108,7 @@ export function NeedsYouCard({
   const wordsId = `${ids}-words`;
   const wordsCountId = `${ids}-words-count`;
   const wordsErrorId = `${ids}-words-error`;
+  const wordsHintId = `${ids}-words-hint`;
 
   const [picked, setPicked] = useState<string | null>(null);
   const [texts, setTexts] = useState<Record<string, string>>({});
@@ -129,6 +130,7 @@ export function NeedsYouCard({
   const option = wait.answers.find((a) => a.answer === picked) ?? null;
   const text = picked ? (texts[picked] ?? '') : '';
   const hasWordsBox = option !== null && option.needs_text !== 'none';
+  const stopPicked = option?.answer === 'stop';
   const sending = sender.sending;
   const askedAgain = wait.asked_again ?? 0;
   const why = (wait.why ?? '').trim();
@@ -150,7 +152,7 @@ export function NeedsYouCard({
     void sender.send(wait.wait_id, option.answer, check.text);
   }
 
-  const sendLabel = sending ? 'Sending…' : option?.answer === 'stop' ? 'Stop the team…' : 'Send answer';
+  const sendLabel = sending ? 'Sending…' : stopPicked ? 'Stop the team…' : 'Send answer';
   const answersError = problem?.field === 'answers' ? problem.words : null;
   const wordsError = problem?.field === 'words' ? problem.words : null;
   const areas =
@@ -165,17 +167,17 @@ export function NeedsYouCard({
       aria-labelledby={titleId}
       className="flex flex-col gap-3 rounded-lg border border-[var(--team-wait-card-border)] bg-[var(--team-wait-card-bg)] p-4"
     >
-      <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--badge-waiting-text)]">
-        <Hand className="h-3.5 w-3.5" aria-hidden="true" />
-        Needs you
-      </span>
-
       <div className={cn('grid grid-cols-1 gap-x-6 gap-y-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]', areas)}>
         <div className="flex min-w-0 flex-col gap-2 [grid-area:q]">
           {/* The title sits atop the question's column, beside the answers (Design's R3). */}
           <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <KindIcon className="h-4 w-4 shrink-0 text-[var(--badge-waiting-text)]" aria-hidden="true" />
+            {/* The header row starts with the "Needs you" chip, then the kind's title (spec 5.2). */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-[var(--badge-waiting-text)]">
+                <Hand className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Needs you
+              </span>
+              <KindIcon className="h-5 w-5 shrink-0 text-[var(--badge-waiting-text)]" aria-hidden="true" />
               <h2 id={titleId} className="m-0 min-w-0 text-sm font-semibold text-temper-text">
                 {title}
               </h2>
@@ -328,13 +330,18 @@ export function NeedsYouCard({
                 }}
                 aria-required={option.needs_text === 'required' ? 'true' : undefined}
                 aria-invalid={wordsError ? 'true' : undefined}
-                aria-describedby={cn(wordsCountId, wordsError && wordsErrorId)}
+                aria-describedby={cn(wordsCountId, stopPicked && wordsHintId, wordsError && wordsErrorId)}
                 rows={4}
                 className={cn(
                   'min-h-[88px] w-full resize-y rounded-md border bg-temper-panel px-3 py-2 text-sm text-temper-text',
                   wordsError ? 'border-[var(--badge-failed-border)]' : 'border-temper-control',
                 )}
               />
+              {stopPicked && (
+                <p id={wordsHintId} className="m-0 text-xs text-temper-text-muted">
+                  Shown quoted with the outcome, labelled as yours, beside Temper&apos;s reason.
+                </p>
+              )}
               {wordsError && (
                 <p
                   id={wordsErrorId}
@@ -356,16 +363,17 @@ export function NeedsYouCard({
             />
           )}
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-3">
+            {stopPicked && <p className="m-0 flex-1 text-xs text-temper-text-muted">You confirm in the next step.</p>}
             {/* With stop picked, Send turns into the boards' red "Stop the team" button (O1c). */}
             <button
               type="button"
-              className={option?.answer === 'stop' ? teamBtn.dangerMd : teamBtn.primaryMd}
+              className={stopPicked ? teamBtn.dangerMd : teamBtn.primaryMd}
               onClick={send}
               disabled={sending}
             >
               {!sending &&
-                (option?.answer === 'stop' ? (
+                (stopPicked ? (
                   <Square className="h-4 w-4" aria-hidden="true" />
                 ) : (
                   <Send className="h-4 w-4" aria-hidden="true" />

@@ -248,9 +248,16 @@ def derive_part_b() -> None:
             out = copy.deepcopy(read(src))
             body = out["body"]
             body["outcome"]["by"] = by
+            stops = set()
             for action in body["owner_actions"]:
                 if action["kind"] == kind:
                     action["by"], action["source"] = by, source
+                    stops.add(action["request_id"])
+            # The timeline's answer to the same question names the same caller and place.
+            for entry in body["timeline"]["entries"]:
+                if entry.get("entry") == "owner_answer" and entry.get("request_id") in stops:
+                    for record in (entry, entry["data"]):
+                        record["answered_by"], record["answered_source"] = by, source
             write(f"{src}-{slug}", {**out, "derived_from": src})
 
     # a done run's branch: not made (the name was taken), and no project at all.

@@ -384,6 +384,8 @@ describe('needs-you card', () => {
     showRun(runPaused);
     const c = await card(pauseTitle);
     expect(c.getByText('Needs you')).toBeInTheDocument();
+    // The header row starts with the "Needs you" chip, then the kind's title (spec 5.2).
+    expect(c.getByText('Needs you').parentElement).toContainElement(c.getByRole('heading', { level: 2, name: pauseTitle }));
     const wait = asRun(runPaused).open_waits[0];
     expect(c.getByText(wait.question!)).toBeInTheDocument();
     for (const a of wait.answers) expect(c.getByText(a.means)).toBeInTheDocument();
@@ -596,8 +598,14 @@ describe('needs-you card', () => {
     const { sent } = serve({ answer: [answer200Stop] });
     showRun(runPaused);
     const c = await card(pauseTitle);
+    const shownWith = "Shown quoted with the outcome, labelled as yours, beside Temper's reason.";
+    expect(c.queryByText('You confirm in the next step.')).toBeNull();
     pick('stop');
     expect(c.getByRole('button', { name: 'Stop the team…' })).toBeEnabled();
+    // Design's words for a stop picked in the card (boards O1c, O1f).
+    expect(c.getByLabelText('Your words with the stop')).toHaveAccessibleDescription(new RegExp(shownWith.replace('.', '\\.')));
+    expect(c.getByText(shownWith)).toBeInTheDocument();
+    expect(c.getByText('You confirm in the next step.')).toBeInTheDocument();
     fireEvent.change(c.getByLabelText('Your words with the stop'), {
       target: { value: 'We have what we need for now.' },
     });

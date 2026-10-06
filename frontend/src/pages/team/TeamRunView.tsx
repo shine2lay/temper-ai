@@ -76,11 +76,15 @@ function useFocusWhenStopGoes(canStop: boolean) {
   }, [canStop]);
 }
 
-/** A plain frame for the moments there is no run to show yet. */
-function Frame({ children }: { children: ReactNode }) {
+/**
+ * A plain frame for the moments there is no run to show yet. `quietTitle`
+ * keeps the page's heading for screen readers only, where the note says
+ * it all (board R0).
+ */
+function Frame({ children, quietTitle = false }: { children: ReactNode; quietTitle?: boolean }) {
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto bg-temper-bg px-6 py-4">
-      <h1 className="m-0 text-xl font-semibold text-temper-text">Team run</h1>
+      <h1 className={quietTitle ? 'sr-only' : 'm-0 text-xl font-semibold text-temper-text'}>Team run</h1>
       {children}
     </div>
   );
@@ -107,8 +111,9 @@ export default function TeamRunView() {
   if (!run) {
     if (read.notTeam !== null) {
       return (
-        <Frame>
-          <TeamNote tone="bad" title="This run isn't a team trial">
+        <Frame quietTitle>
+          {/* Nothing failed: the run is simply not a team trial (Design's R0). */}
+          <TeamNote tone="info" title="This run isn't a team trial">
             <EngineQuote className="mt-1" label="Temper's answer">
               {read.notTeam}
             </EngineQuote>

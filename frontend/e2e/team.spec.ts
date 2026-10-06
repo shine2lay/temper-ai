@@ -42,13 +42,26 @@ function asRun(name: string, executionId: string): Fixture {
 const RUN_READ = /^\/api\/team\/runs\/[^/]+$/;
 
 /**
+ * The message reads Temper really answered, by message id. A message
+ * nobody captured gets Temper's own 404, never another message's body.
+ */
+const MESSAGES = new Map(
+  ['message-read', 'message-read-owner'].map((name) => [(fixture(name).body as { message_id: string }).message_id, name]),
+);
+
+function messageRead(pathname: string): Fixture {
+  return fixture(MESSAGES.get(pathname.split('/').pop() ?? '') ?? 'message-read-404');
+}
+
+/**
  * Serve /api/team/* from fixtures. `run` is a list: each read of the run
  * takes the next answer and the last one repeats. It can also be a
  * function, read at each request (to answer by what the page has sent).
+ * A message is answered by its id, unless `message` is given.
  */
 async function serveTeam(
   page: Page,
-  { status = fixture('status-on'), run = [fixture('run-running')], message = fixture('message-read') }: {
+  { status = fixture('status-on'), run = [fixture('run-running')], message }: {
     status?: Fixture;
     run?: Fixture[] | (() => Fixture);
     message?: Fixture;
@@ -61,7 +74,7 @@ async function serveTeam(
     seen.push(pathname);
     let answer: Fixture;
     if (pathname === '/api/team/status') answer = status;
-    else if (/^\/api\/team\/runs\/[^/]+\/messages\/[^/]+$/.test(pathname)) answer = message;
+    else if (/^\/api\/team\/runs\/[^/]+\/messages\/[^/]+$/.test(pathname)) answer = message ?? messageRead(pathname);
     else if (RUN_READ.test(pathname)) answer = typeof run === 'function' ? run() : run[Math.min(reads++, run.length - 1)];
     else answer = { route: '', status: 404, body: { detail: 'Not Found' } };
     await route.fulfill({ status: answer.status, contentType: 'application/json', body: JSON.stringify(answer.body) });
@@ -274,6 +287,17 @@ const ENDED: { fixture: string; title: string; shows: (RegExp | string)[] }[] = 
   { fixture: 'run-didnt-start', title: "Didn't start", shows: [/^the team can't start: /, 'Nothing was spent.'] },
 ];
 
+/**
+ * The ways a team was stopped at a question (R12v), and how the timeline's
+ * "stopped the team" row and the outcome card both name who did it.
+ */
+const STOPS: { fixture: string; who: string; kind: string; from: string }[] = [
+  { fixture: 'run-stopped', who: 'You', kind: 'owner', from: 'from the dashboard' },
+  { fixture: 'run-stopped-by-ci', who: 'temper-ci', kind: 'named', from: 'through the API' },
+  { fixture: 'run-stopped-by-unknown', who: 'unknown caller', kind: 'unknown', from: 'from an unknown place' },
+  { fixture: 'run-stopped-from-chat', who: 'You', kind: 'owner', from: 'from a chat' },
+];
+
 /** Each refusal of an answer, the run read after it, and what the page shows. */
 const REFUSALS: { fixture: string; after: string; kind: string; shows: RegExp | string }[] = [
   {
@@ -335,7 +359,8 @@ for (const theme of ['dark', 'light'] as const) {
           const { sent } = await openRun(page, name);
           await expect(card(page).getByRole('heading', { level: 2, name: title })).toBeVisible();
           await expect(card(page).getByText(shows).first()).toBeVisible();
-          await expect(card(page).getByText('Needs you')).toBeVisible();
+          // The header row starts with the "Needs you" chip, then the kind's title (spec 5.2).
+          await expect(card(page).locator('div:has(> h2)').getByText('Needs you')).toBeVisible();
           // Temper's answers, in its order, with nothing picked when the card opens.
           const radios = answers(page).getByRole('radio');
           await expect(radios).toHaveCount(offered.length);
@@ -363,6 +388,10 @@ for (const theme of ['dark', 'light'] as const) {
           await expect(outcome.getByRole('heading', { level: 2, name: title })).toBeVisible();
           for (const line of shows) await expect(outcome.getByText(line).first()).toBeVisible();
           await expect(outcome.getByText(/^Ended /)).toBeVisible();
+          // Only a stop at a failed or unfinished turn explains the run list's word (E18).
+          if (!shows.some((line) => typeof line === 'string' && line.startsWith('Why the run list says'))) {
+            await expect(outcome.getByText(/Why the run list says/)).toHaveCount(0);
+          }
           await expect(outcome.getByRole('link', { name: 'Open the run page' })).toBeVisible();
           // The place kept for M5, and nothing to answer or stop.
           await expect(page.getByText('M5, designed later')).toBeVisible();
@@ -373,6 +402,70 @@ for (const theme of ['dark', 'light'] as const) {
           await shoot(page, `${tag}-${name}`);
         });
       }
+
+      for (const { fixture: name, who, kind, from } of STOPS) {
+        test(`ended: the stopped row and the outcome card name the same stop (${name.replace(/^run-/, '')})`, async ({ page }) => {
+          await openRun(page, name);
+          const stoppedBy = page.locator('[data-card="outcome"] [data-stopped-by]');
+          const rows = page.getByRole('region', { name: /Timeline/ }).getByRole('listitem');
+          const row = rows.filter({ hasText: 'stopped the team' });
+          await expect(row).toHaveCount(1);
+          // Who and from where: the stopping action's, on both; "You" only when the owner stopped it.
+          await expect(row).toContainText(`${who} ${from} stopped the team`);
+          await expect(stoppedBy).toContainText(from);
+          await expect(row.locator('[data-who]')).toHaveAttribute('data-who', kind);
+          await expect(stoppedBy.locator('[data-who]')).toHaveAttribute('data-who', kind);
+          await expect(row.getByText('You', { exact: true })).toHaveCount(who === 'You' ? 1 : 0);
+          await expect(stoppedBy.getByText('You', { exact: true })).toHaveCount(who === 'You' ? 1 : 0);
+          // When: the same time on both, and every entry has one.
+          const cardTime = stoppedBy.locator('time');
+          await expect(row.locator('time')).toHaveAttribute('datetime', (await cardTime.getAttribute('datetime'))!);
+          await expect(row.locator('time')).toHaveText((await cardTime.textContent())!);
+          expect(await rows.locator('time').count()).toBe(await rows.count());
+          await expectAxeClean(page);
+          await shoot(page, `${tag}-stopped-row-${name.replace(/^run-/, '')}`);
+        });
+      }
+
+      test('run view: a long goal wraps to two lines at most, and the goal card keeps all of it', async ({ page }) => {
+        const running = fixture('run-running');
+        const body = running.body as { trial: { goal: string } };
+        // The heading is the goal's first line: make that line long.
+        const [first, ...rest] = body.trial.goal.split('\n');
+        const heading = `${first} ${'Keep it friendly and plain, and say where the new note button is for someone who opens the app for the first time. '.repeat(5).trim()}`;
+        const goal = [heading, ...rest].join('\n');
+        await serveTeam(page, { run: [{ ...running, body: { ...body, trial: { ...body.trial, goal } } }] });
+        await page.goto(`/app/team/runs/${RUN_ID}`);
+        const h1 = page.getByRole('heading', { level: 1 });
+        await expect(h1).toHaveText(heading);
+        await expect(h1).toHaveAttribute('title', goal);
+        const box = await h1.evaluate((el) => {
+          const style = getComputedStyle(el);
+          return {
+            clamp: style.webkitLineClamp,
+            line: parseFloat(style.lineHeight),
+            height: el.getBoundingClientRect().height,
+            clipped: el.scrollHeight > el.clientHeight,
+          };
+        });
+        // Two whole lines, the rest held back with an ellipsis: wrapped, never cut to one line.
+        expect(box.clamp).toBe('2');
+        expect(box.height).toBeGreaterThan(box.line * 1.5);
+        expect(box.height).toBeLessThanOrEqual(box.line * 2 + 1);
+        expect(box.clipped).toBe(true);
+        await shoot(page, `${tag}-long-goal`);
+        // The whole goal stays on the page: the goal card shows all of it on request.
+        const goalCard = page.getByRole('region', { name: 'Goal' });
+        await goalCard.getByRole('button', { name: 'Show all' }).click();
+        await expect(goalCard.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+        for (const part of goal.split('\n').map((line) => line.trim()).filter(Boolean)) {
+          await expect(goalCard).toContainText(part);
+        }
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(overflow).toBeLessThanOrEqual(0);
+        await expectAxeClean(page);
+        await expectTargets(page);
+      });
 
       test('needs you: Send with nothing picked says so, and sends nothing', async ({ page }) => {
         const { sent } = await openRun(page, 'run-paused');
@@ -565,6 +658,10 @@ for (const theme of ['dark', 'light'] as const) {
       test('stop at a question: the confirm, Keep the team, then Stop the team', async ({ page }) => {
         const { sent } = await openRun(page, 'run-paused', { after: 'run-stopped', answer: [fixture('answer-200-stop')] });
         await pick(page, 'stop', 'We have what we need for now.');
+        // Design's words for a stop picked in the card (O1c).
+        await expect(card(page).getByText("Shown quoted with the outcome, labelled as yours, beside Temper's reason.")).toBeVisible();
+        await expect(card(page).getByText('You confirm in the next step.')).toBeVisible();
+        await shoot(page, `${tag}-stop-picked`);
         const stopTeam = card(page).getByRole('button', { name: 'Stop the team\u2026' });
         await stopTeam.click();
         const dialog = page.getByRole('alertdialog', { name: 'Stop the team at this question?' });
@@ -747,12 +844,23 @@ for (const theme of ['dark', 'light'] as const) {
         await expect(timeline.getByRole('listitem')).toHaveCount(400);
       });
 
-      test('run view: one message opened', async ({ page }) => {
-        await serveTeam(page);
+      test('run view: one message opened, the one its row stands for', async ({ page }) => {
+        const read = fixture('message-read').body as { message_id: string; body: string };
+        const done = fixture('run-done');
+        const seen = await serveTeam(page, { run: [done] });
         await page.goto(`/app/team/runs/${RUN_ID}`);
-        await page.getByRole('button', { name: /^Open/ }).first().click();
-        await expect(page.getByText(/The heading wraps to three lines on a phone/)).toBeVisible();
-        await expect(page.getByRole('button', { name: /^Close/ }).first()).toHaveAttribute('aria-expanded', 'true');
+        // maker's view to lead in round 1, the message Temper's captured read answered: an older entry.
+        const timeline = page.getByRole('region', { name: /Timeline/ });
+        await timeline.getByRole('button', { name: 'Show all' }).click();
+        const row = timeline
+          .getByRole('listitem')
+          .filter({ hasText: /maker\s*to\s*lead/ })
+          .filter({ hasText: read.body.slice(0, 40) });
+        await row.getByRole('button', { name: /^Open/ }).click();
+        await expect(row.getByText(/The heading wraps to three lines on a phone/)).toBeVisible();
+        await expect(row.getByRole('button', { name: /^Close/ })).toHaveAttribute('aria-expanded', 'true');
+        const runId = (done.body as { execution_id: string }).execution_id;
+        expect(seen).toContain(`/api/team/runs/${runId}/messages/${read.message_id}`);
         await expectAxeClean(page);
         await expectTargets(page);
         await shoot(page, `${tag}-message-open`);
@@ -775,6 +883,11 @@ for (const theme of ['dark', 'light'] as const) {
         await page.goto(`/app/team/runs/${RUN_ID}`);
         await expect(page.getByText("This run isn't a team trial")).toBeVisible();
         await expect(page.getByText('not a team trial, or no such run')).toBeVisible();
+        // Information, not a failure; the heading is for screen readers only (Design's R0).
+        await expect(page.locator('[data-note="info"]')).toContainText("This run isn't a team trial");
+        await expect(page.locator('[data-note="bad"]')).toHaveCount(0);
+        await expect(page.getByRole('heading', { level: 1, name: 'Team run' })).toHaveClass(/sr-only/);
+        await expect(page.getByRole('link', { name: 'Open the run page' })).toBeVisible();
         await expectAxeClean(page);
         await shoot(page, `${tag}-not-team`);
       });

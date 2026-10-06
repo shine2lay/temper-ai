@@ -21,6 +21,8 @@ import {
 import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { cn } from '@/lib/utils';
 import { fetchTeamMessage, teamKeys, TeamApiError } from '@/lib/teamApi';
+import { teamStopper } from '@/lib/teamOutcome';
+import { entryTime, waitEntryTitle } from '@/lib/teamTimeline';
 import {
   countChars,
   decisionWords,
@@ -183,23 +185,6 @@ function reviewRound(run: TeamRun, reviewId: string | undefined): number | null 
   return run.reviews.find((r) => r.review_id === reviewId)?.round ?? null;
 }
 
-function waitHeadline(entry: TeamOwnerWaitEntry): string {
-  const { data } = entry;
-  if (data.header) return data.header;
-  switch (entry.wait_kind) {
-    case 'pause':
-      return data.round != null ? `pause after round ${data.round}` : 'pause';
-    case 'stalled':
-      return 'the team went quiet';
-    case 'recovery':
-      return data.member ? `${data.member} turn ${data.turn_no ?? '?'} didn't finish` : "a turn didn't finish";
-    case 'question':
-      return data.member ? `${data.member} asks` : 'a question';
-    default:
-      return entry.wait_kind.replace(/_/g, ' ');
-  }
-}
-
 const TURN_WORDS: Record<string, string> = {
   running: 'started',
   completed: 'finished',
@@ -291,11 +276,20 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
         };
       }
       if (e.decision === 'stopped') {
+        // Who and from where come from the stopping action, as on the outcome
+        // card: Temper's own entry always names the owner, whoever stopped it.
         const reason = (e.data as { reason?: string | null }).reason;
+        const stopper = teamStopper(run);
         return {
           head: (
             <>
-              <Agent name={e.from_agent} /> <Muted>stopped the team</Muted>
+              <TeamWho by={stopper.by} />{' '}
+              {stopper.source && (
+                <>
+                  <Muted>{teamSource(stopper.source).inline}</Muted>{' '}
+                </>
+              )}
+              <Muted>stopped the team</Muted>
             </>
           ),
           body: <Preview text={reason} engine />,
@@ -316,7 +310,7 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
       return {
         head: (
           <>
-            <Muted>Temper asked you:</Muted> <b className="font-semibold text-temper-text">{waitHeadline(e)}</b>
+            <Muted>Temper asked you:</Muted> <b className="font-semibold text-temper-text">{waitEntryTitle(e, run)}</b>
           </>
         ),
       };
@@ -359,6 +353,7 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
 function TimelineRow({ entry, run }: { entry: AnyEntry; run: TeamRun }) {
   const [open, setOpen] = useState(false);
   const row = describe(entry, run);
+  const at = entryTime(entry, run);
   const Icon = ICONS[entry.entry] ?? CircleDot;
   const OpenIcon = open ? ChevronUp : ChevronDown;
   return (
@@ -366,13 +361,14 @@ function TimelineRow({ entry, run }: { entry: AnyEntry; run: TeamRun }) {
       data-entry={entry.entry}
       className="grid grid-cols-[64px_20px_minmax(0,1fr)_auto] items-start gap-2 border-t border-temper-border py-2 first:border-t-0"
     >
-      <time
-        dateTime={isoOf(entry.timestamp)}
-        title={teamTimeFull(entry.timestamp) || undefined}
-        className="pt-0.5 text-xs text-temper-text-muted"
-      >
-        {teamTime(entry.timestamp)}
-      </time>
+      {at ? (
+        <time dateTime={isoOf(at)} title={teamTimeFull(at) || undefined} className="pt-0.5 text-xs text-temper-text-muted">
+          {teamTime(at)}
+        </time>
+      ) : (
+        // Temper sent no time for this entry: none is made up.
+        <span />
+      )}
       <span className="pt-0.5 text-temper-text-muted">
         <Icon className="h-4 w-4" aria-hidden="true" />
       </span>

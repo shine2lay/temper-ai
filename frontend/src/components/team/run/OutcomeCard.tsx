@@ -11,7 +11,7 @@ import {
   problemText,
   projectName,
   runListExplanation,
-  stopAction,
+  teamStopper,
 } from '@/lib/teamOutcome';
 import type { TeamDone, TeamRun } from '@/types/team';
 import { TeamNote } from '../TeamNote';
@@ -220,14 +220,14 @@ function DoneSide({ run, done }: { run: TeamRun; done: TeamDone }) {
   );
 }
 
-/** "Stopped by You from the dashboard · 10:37 AM". */
+/**
+ * "Stopped by You from the dashboard · 10:37 AM". The timeline's "stopped
+ * the team" row reads the same stopper (teamStopper), so the two agree.
+ */
 function StoppedBy({ run }: { run: TeamRun }) {
-  const outcome = run.outcome;
-  if (!outcome) return null;
-  const action = stopAction(run);
-  const by = action?.by ?? outcome.by;
-  const at = action?.at ?? outcome.at;
-  const from = action?.source ? teamSource(action.source).inline : null;
+  if (!run.outcome) return null;
+  const { by, source, at } = teamStopper(run);
+  const from = source ? teamSource(source).inline : null;
   return (
     <p data-stopped-by="" className="m-0 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-temper-text">
       {/* The spaces keep the words apart for screen readers; the flex gap draws them. */}
@@ -276,7 +276,7 @@ export function OutcomeCard({ run }: { run: TeamRun }) {
         {(state === 'failed' || state === 'didnt_start') && <Problems problems={outcome.problems} />}
         {state === 'stopped' && <StoppedBy run={run} />}
         {outcome.owner_words && (
-          <OwnerWords by={stopAction(run)?.by ?? outcome.by} words={outcome.owner_words} labelClassName={QUOTE_LABEL} />
+          <OwnerWords by={teamStopper(run).by} words={outcome.owner_words} labelClassName={QUOTE_LABEL} />
         )}
         {state === 'failed' && (
           <p className="m-0 text-sm text-temper-text">Resume it from the run page to retry or stop the turn.</p>

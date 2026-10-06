@@ -17,6 +17,8 @@ import { TeamRunViewLink } from '@/components/team/TeamRunViewLink';
 import { TeamStateBadge } from '@/components/team/TeamStateBadge';
 import { TeamWho } from '@/components/team/TeamWho';
 import { TEAM_RUN_POLL_MS } from '@/hooks/useTeamRun';
+import { teamStopper } from '@/lib/teamOutcome';
+import { entryTime, waitEntryTitle } from '@/lib/teamTimeline';
 import {
   TEAM_STATES,
   charCount,
@@ -29,7 +31,7 @@ import {
 } from '@/lib/teamText';
 import TeamPage from '@/pages/team/TeamPage';
 import TeamRunView from '@/pages/team/TeamRunView';
-import type { TeamOwnerAction, TeamRun } from '@/types/team';
+import type { TeamEntry, TeamOwnerAction, TeamOwnerWaitEntry, TeamRun } from '@/types/team';
 
 import messageRead from '../../e2e/fixtures/team/message-read.json';
 import run404 from '../../e2e/fixtures/team/run-404.json';
@@ -40,6 +42,9 @@ import runQuestion from '../../e2e/fixtures/team/run-member-waiting-question.jso
 import runRunning from '../../e2e/fixtures/team/run-running.json';
 import runStarting from '../../e2e/fixtures/team/run-starting.json';
 import runStopped from '../../e2e/fixtures/team/run-stopped.json';
+import runStoppedByCi from '../../e2e/fixtures/team/run-stopped-by-ci.json';
+import runStoppedByUnknown from '../../e2e/fixtures/team/run-stopped-by-unknown.json';
+import runStoppedFromChat from '../../e2e/fixtures/team/run-stopped-from-chat.json';
 import runStress from '../../e2e/fixtures/team/run-stress.json';
 import statusOff from '../../e2e/fixtures/team/status-off.json';
 import statusOn from '../../e2e/fixtures/team/status-on.json';
@@ -228,12 +233,21 @@ describe('words', () => {
     expect(ownerActionWhat(action('answer', { answer: 'continue', wait_kind: 'stalled' }))).toBe(
       'continue when the team went quiet',
     );
+    // Without the wait in the timeline, Design's words for the kind (SPEC 5.7).
+    expect(ownerActionWhat(action('answer', { answer: 'retry', wait_kind: 'recovery' }))).toBe("retry at a member's turn");
+    expect(ownerActionWhat(action('answer', { answer: 'reply', wait_kind: 'question' }))).toBe(
+      "reply to a member's question",
+    );
   });
 
   it('titles each kind of wait', () => {
     expect(waitTitle({ kind: 'pause', round: 3, member: null, turn_no: null })).toBe('Paused after round 3');
     expect(waitTitle({ kind: 'question', round: null, member: 'maker', turn_no: null })).toBe('maker asks you');
-    expect(waitTitle({ kind: 'recovery', round: null, member: 'qa', turn_no: 2 })).toBe("qa's turn 2 was cut off");
+    // A closed wait carries no why: the title says only what is true of both endings.
+    expect(waitTitle({ kind: 'recovery', round: null, member: 'qa', turn_no: 2 })).toBe("qa's turn 2 didn't finish");
+    expect(waitTitle({ kind: 'recovery', round: null, member: 'qa', turn_no: 2, why: 'Pi stopped before it settled' })).toBe(
+      "qa's turn 2 was cut off",
+    );
     expect(waitTitle({ kind: 'recovery', round: null, member: 'qa', turn_no: 2, why: 'failed' })).toBe(
       "qa's turn 2 failed",
     );
@@ -389,11 +403,15 @@ describe('run view', () => {
     expect(within(rows[5]).getByText('Ended')).toBeInTheDocument();
   });
 
-  it("says when a run isn't a team trial, in Temper's words", async () => {
+  it("says when a run isn't a team trial, in Temper's words, as information and not a failure", async () => {
     serve({ run: [run404] });
     showRun();
-    expect(await screen.findByText("This run isn't a team trial")).toBeInTheDocument();
+    const title = await screen.findByText("This run isn't a team trial");
     expect(screen.getByText('not a team trial, or no such run')).toBeInTheDocument();
+    expect(title.closest('[data-note]')).toHaveAttribute('data-note', 'info');
+    // The heading stays for screen readers only; the note says it all (Design's R0).
+    expect(screen.getByRole('heading', { level: 1, name: 'Team run' })).toHaveClass('sr-only');
+    expect(screen.getByRole('link', { name: 'Open the run page' })).toHaveAttribute('href', `/workflow/${ID}`);
   });
 
   it('opens one message and shows its body as text, never as HTML', async () => {
@@ -408,6 +426,112 @@ describe('run view', () => {
     fireEvent.click(open[0]);
     expect(await screen.findByText('wraps')).toBeInTheDocument();
     expect(container.querySelector('img')).toBeNull();
+  });
+});
+
+// --- the timeline ------------------------------------------------------------------------
+
+const STOPPED = runStopped.body as unknown as TeamRun;
+
+/** The ways a team was stopped at a question, and how the page names who did it and from where. */
+const STOPS: { name: string; run: TeamRun; who: string; from: string }[] = [
+  { name: 'from the dashboard', run: STOPPED, who: 'You', from: 'from the dashboard' },
+  { name: 'by the CI key', run: runStoppedByCi.body as unknown as TeamRun, who: 'temper-ci', from: 'through the API' },
+  {
+    name: 'by an unknown caller',
+    run: runStoppedByUnknown.body as unknown as TeamRun,
+    who: 'unknown caller',
+    from: 'from an unknown place',
+  },
+  { name: 'from a chat', run: runStoppedFromChat.body as unknown as TeamRun, who: 'You', from: 'from a chat' },
+];
+
+function timelineRows(): HTMLElement[] {
+  return within(screen.getByRole('region', { name: /Timeline/ })).getAllByRole('listitem');
+}
+
+function entryOf(run: TeamRun, kind: string): TeamEntry {
+  const entry = run.timeline.entries.find((e) => e.entry === kind);
+  if (!entry) throw new Error(`no ${kind} entry in this fixture`);
+  return entry as TeamEntry;
+}
+
+describe('timeline', () => {
+  it('names a wait by the title its card uses, never its id or header', async () => {
+    const paused = runPaused.body as unknown as TeamRun;
+    const open = paused.open_waits[0];
+    const openEntry = entryOf(paused, 'owner_wait') as TeamOwnerWaitEntry;
+    expect(openEntry.data.wait_id).toBe(open.wait_id);
+    expect(waitEntryTitle(openEntry, paused)).toBe(waitTitle(open));
+    // A closed wait: from its own kind and round, as the card titled it.
+    const closed = entryOf(STOPPED, 'owner_wait') as TeamOwnerWaitEntry;
+    expect(waitEntryTitle(closed, STOPPED)).toBe('Paused after round 1');
+    // A closed recovery wait has no why left: only what is true of a failed and a cut-off turn.
+    const recovery = {
+      ...closed,
+      wait_kind: 'recovery',
+      data: { ...closed.data, round: null, member: 'lead', turn_no: 1 },
+    } as unknown as TeamOwnerWaitEntry;
+    expect(waitEntryTitle(recovery, STOPPED)).toBe("lead's turn 1 didn't finish");
+
+    serve({ run: [runPaused] });
+    showRun();
+    await runShown();
+    const timeline = within(screen.getByRole('region', { name: /Timeline/ }));
+    expect(timeline.getByText(waitTitle(open))).toBeInTheDocument();
+    expect(timeline.queryByText(new RegExp(open.wait_id))).toBeNull();
+    expect(timeline.queryByText(/pause-after-round-1/)).toBeNull();
+  });
+
+  it.each(STOPS)('says who stopped the team $name, from where and when, as the outcome card does', async ({ run, who, from }) => {
+    const stopper = teamStopper(run);
+    expect(stopper.action?.kind).toBe('answer');
+    serve({ run: [{ status: 200, body: run }] });
+    showRun();
+    const outcome = await screen.findByRole('region', { name: 'Stopped' });
+    const stoppedBy = outcome.querySelector<HTMLElement>('[data-stopped-by]')!;
+    const row = timelineRows().find((li) => li.textContent?.includes('stopped the team'))!;
+    expect(row).toHaveTextContent(`${who} ${from} stopped the team`);
+    expect(stoppedBy).toHaveTextContent(from);
+    // The same caller, drawn the same way; "You" only when the owner stopped it.
+    const kind = (el: HTMLElement) => el.querySelector('[data-who]')?.getAttribute('data-who');
+    expect(kind(row)).toBe(kind(stoppedBy));
+    expect(within(row).queryByText('You') !== null).toBe(stopper.by === 'owner');
+    expect(within(stoppedBy).queryByText('You') !== null).toBe(stopper.by === 'owner');
+    // The same time: the stopping action's, never Temper's timeless entry.
+    const rowTime = row.querySelector('time')!;
+    const cardTime = stoppedBy.querySelector('time')!;
+    expect(rowTime.getAttribute('datetime')).toBe(cardTime.getAttribute('datetime'));
+    expect(rowTime).toHaveTextContent(cardTime.textContent!);
+    expect(new Date(rowTime.getAttribute('datetime')!).getTime()).toBe(new Date(stopper.action!.at!).getTime());
+  });
+
+  it('gives every entry a time, the stopping one too', async () => {
+    serve({ run: [runStopped] });
+    showRun();
+    await screen.findByRole('region', { name: 'Stopped' });
+    const rows = timelineRows();
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) expect(row.querySelector('time')).not.toBeNull();
+  });
+
+  it("takes an entry's time from the owner action that records it when Temper sent none, and makes none up", () => {
+    const answer = entryOf(STOPPED, 'owner_answer');
+    const action = STOPPED.owner_actions.find((a) => a.kind === 'answer')!;
+    expect(entryTime({ ...answer, timestamp: null } as TeamEntry, STOPPED)).toBe(action.at);
+    const stopped = STOPPED.timeline.entries.find((e) => e.entry === 'decision' && 'decision' in e && e.decision === 'stopped')!;
+    expect(stopped.timestamp ?? null).toBeNull();
+    expect(entryTime(stopped, STOPPED)).toBe(action.at);
+    const turn = entryOf(STOPPED, 'member_turn');
+    expect(entryTime({ ...turn, timestamp: null } as TeamEntry, STOPPED)).toBeNull();
+  });
+
+  it("falls back to the outcome's own caller and time when no owner action stopped the team", () => {
+    const cancelled = { ...STOPPED, outcome: { ...STOPPED.outcome!, decision: 'cancelled' } } as TeamRun;
+    expect(teamStopper(cancelled).action).toBeNull();
+    expect(teamStopper(cancelled).by).toBe(STOPPED.outcome!.by);
+    expect(teamStopper(cancelled).at).toBe(STOPPED.outcome!.at);
+    expect(teamStopper(STOPPED).source).toBe('team_page');
   });
 });
 

@@ -31,15 +31,44 @@ export function outcomeTitle(state: string): string {
 /**
  * The owner action that stopped the team: Stop run for a cancelled run,
  * the answer "stop" for a team stopped at a question. The latest one wins.
+ * Before the outcome is written, only an answer "stop" can have stopped
+ * the team (Stop run leaves no stopped entry to explain).
  */
 export function stopAction(run: Pick<TeamRun, 'owner_actions' | 'outcome'>): TeamOwnerAction | null {
-  const decision = run.outcome?.decision;
+  const decision = run.outcome?.decision ?? 'stopped';
   for (let i = run.owner_actions.length - 1; i >= 0; i--) {
     const action = run.owner_actions[i];
     if (decision === 'cancelled' && action.kind === 'stop') return action;
     if (decision === 'stopped' && action.kind === 'answer' && action.detail?.answer === 'stop') return action;
   }
   return null;
+}
+
+/** Who stopped the team, from where, and when. */
+export interface TeamStopper {
+  /** The owner action that stopped it, when Temper recorded one. */
+  action: TeamOwnerAction | null;
+  by: string | null;
+  source: string | null;
+  at: string | null;
+}
+
+/**
+ * Who stopped the team, from where and when: the stopping owner action
+ * (its by, source and time), else the outcome's own by and time. The
+ * outcome card's "Stopped by" line and the timeline's "stopped the team"
+ * row both read this, so the two always agree. The engine's own stopped
+ * entry is never read for it: that entry always names the owner and has
+ * no time.
+ */
+export function teamStopper(run: Pick<TeamRun, 'owner_actions' | 'outcome'>): TeamStopper {
+  const action = stopAction(run);
+  return {
+    action,
+    by: action?.by ?? run.outcome?.by ?? null,
+    source: action?.source ?? null,
+    at: action?.at ?? run.outcome?.at ?? null,
+  };
 }
 
 /**

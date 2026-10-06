@@ -136,9 +136,9 @@ export function ownerActionWhat(action: TeamOwnerAction, run?: Pick<TeamRun, 'ti
         case 'recovery':
           return wait?.member
             ? `${answer} at ${wait.member} turn ${wait.turn_no ?? '?'}`
-            : `${answer} after a cut-off turn`;
+            : `${answer} at a member's turn`;
         case 'question':
-          return wait?.member ? `reply to ${wait.member}'s question` : 'reply to a question';
+          return wait?.member ? `reply to ${wait.member}'s question` : "reply to a member's question";
         default:
           return answer;
       }
@@ -175,7 +175,9 @@ export function decisionWords(decision: string): string {
  * The kind's title for a wait ("Paused after round 3", "backend's turn 4
  * failed", "qa asks you (turn 5)"). A recovery wait says how the turn
  * ended, from Temper's `why`: "failed" for a turn that failed, a usage
- * limit, or any other cut-off.
+ * limit, or any other cut-off. Without a why (a closed wait, as the
+ * timeline has it) it says only that the turn didn't finish. The card and
+ * the timeline both name a wait by this.
  */
 export function waitTitle(wait: Pick<TeamWait, 'kind' | 'round' | 'member' | 'turn_no'> & { why?: string | null }): string {
   switch (wait.kind) {
@@ -187,6 +189,8 @@ export function waitTitle(wait: Pick<TeamWait, 'kind' | 'round' | 'member' | 'tu
       const who = wait.member ?? 'A member';
       const turn = wait.turn_no != null ? ` turn ${wait.turn_no}` : ' turn';
       const why = (wait.why ?? '').trim();
+      // No why (a closed wait in the timeline): true for a failed turn and a cut-off one.
+      if (why === '') return `${who}'s${turn} didn't finish`;
       if (why === 'failed') return `${who}'s${turn} failed`;
       if (why.startsWith('usage limit')) return `${who}'s${turn} was cut off by a usage limit`;
       return `${who}'s${turn} was cut off`;

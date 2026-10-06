@@ -148,10 +148,11 @@ export function RunHeader({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-3">
+        {/* A long goal wraps to two lines, then ends in an ellipsis; the goal card below shows it all. */}
         <h1
           id={RUN_TITLE_ID}
           tabIndex={-1}
-          className="m-0 min-w-0 flex-1 truncate text-xl font-semibold text-temper-text"
+          className="m-0 line-clamp-2 min-w-0 flex-1 break-words text-xl font-semibold text-temper-text"
           title={trial.goal}
         >
           {title}

@@ -11,6 +11,7 @@
   real, in the foreground (no --detach), labelled temper.test=box-sealed, with no network.
   A ``before_run`` hook can change the host tree (a race) or the command (a tamper) between
   the spawner's check and docker's use.
+- run_id: a real box's run id, and so its name (temper-run-<id>), this test process's own.
 
 No production service, account or model is touched (G12): containers run with
 --network none, and the box's program is a probe in the synthetic code tree.
@@ -36,7 +37,31 @@ TEST_LABEL = "temper.test=box-sealed"
 #: This test process's boxes: a clean-up removes only these, never another test process's
 #: boxes running at the same time (pytest -n).
 OWN_LABEL = f"temper.test.pid={os.getpid()}"
+#: This test process's mark in every name it gives the Docker daemon: its pid and a few random
+#: hex characters (a pid is handed out again once its process has ended).
+PROCESS_TOKEN = f"{os.getpid()}-{os.urandom(2).hex()}"
 WORKFLOW = "sealed_probe"
+
+
+def run_id(name: str) -> str:
+    """A real box's run id, readable and this test process's own: ``race-code`` ->
+    ``race-code-<pid>-<hex>``, so its box is temper-run-race-code-<pid>-<hex>.
+
+    Docker allows one container per name on a daemon. With a fixed id, the same test running
+    in another process at the same moment (another checkout's commit hook, a pytest -n
+    worker) asks for the same name and fails: "Conflict. The container name ... is already in
+    use"; and a clean-up by name would remove the other process's box.
+    """
+    return f"{name}-{PROCESS_TOKEN}"
+
+
+def box_name(cmd: list[str]) -> str:
+    """The name a ``docker run`` gives its box, which must be this process's own (run_id)."""
+    name = cmd[cmd.index("--name") + 1]
+    if not name.endswith(f"-{PROCESS_TOKEN}"):
+        raise AssertionError(f"{name}: take a real box's run id from run_id(), or the same test "
+                             "in another process at the same moment takes the same name")
+    return name
 
 
 # -- the run's row ----------------------------------------------------------------------------
@@ -387,7 +412,7 @@ class BoxDocker:
             cmd = self.before_run(cmd) or cmd
         cmd = [c for c in cmd if c != "--detach"]
         cmd[2:2] = ["--label", TEST_LABEL, "--label", OWN_LABEL]
-        self.names.append(cmd[cmd.index("--name") + 1])
+        self.names.append(box_name(cmd))
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         finally:

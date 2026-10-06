@@ -1,6 +1,7 @@
 """The sealed box in real, disposable containers (BS1 model-free gate: G01, G10, G12).
 
-Every container here is labelled temper.test=box-sealed, runs with --network none, and
+Every container here is labelled temper.test=box-sealed, is named after its test and this
+test process (box_fixtures.run_id), runs with --network none, and
 holds only a synthetic install tree (tests/test_spawner/box_fixtures.py) whose "secrets"
 are synthetic text. No database, model, account or production service is touched. The box
 runs a probe in place of the runner; it only runs if the box's own start check passed.
@@ -32,6 +33,7 @@ from tests.test_spawner.box_fixtures import (
     docker_ok,
     hostile_code,
     image_id,
+    run_id,
     swap_dir,
 )
 
@@ -118,12 +120,13 @@ def _refused(install: Install, eid: str, workspace, before_run, *expect: str) ->
 
 
 def test_two_sealed_runs_see_only_their_own_folder(install):
-    store, _ = _start(install, "run-a-1", install.run_a)
-    _start(install, "run-b-1", install.run_b, store=store)
+    run_a, run_b = run_id("run-a-1"), run_id("run-b-1")
+    store, _ = _start(install, run_a, install.run_a)
+    _start(install, run_b, install.run_b, store=store)
 
     a, b = _probe(install.run_a), _probe(install.run_b)
     assert a["own_write"] and b["own_write"]
-    assert a["own_marks"] == ["mark-run-a-1"] and b["own_marks"] == ["mark-run-b-1"]
+    assert a["own_marks"] == [f"mark-{run_a}"] and b["own_marks"] == [f"mark-{run_b}"]
     assert not a["present"][str(install.run_b)] and not b["present"][str(install.run_a)]
     for probe in (a, b):
         shown = sorted(p for p, there in probe["present"].items()
@@ -140,7 +143,7 @@ def test_two_sealed_runs_see_only_their_own_folder(install):
         assert not probe["env_has_mark"]
         assert "SYNTH_SERVICE_TOKEN" not in probe["env_names"]
         assert "PYTHONPATH" not in probe["env_names"]
-    for eid in ("run-a-1", "run-b-1"):
+    for eid in (run_a, run_b):
         doc = store.record(eid)["doc"]
         assert doc["boundary"] == "sealed" and doc["hardening"] == "partial"
         assert [g["class"] for g in doc["network_graph"]] == ["runner+tools (mixed, in-process)"]
@@ -153,8 +156,9 @@ def test_two_sealed_runs_see_only_their_own_folder(install):
 
 
 def test_the_profile_records_no_key_views_and_pins_every_grant(install):
-    store, docker = _start(install, "run-a-2", install.run_a)
-    doc = store.record("run-a-2")["doc"]
+    eid = run_id("run-a-2")
+    store, docker = _start(install, eid, install.run_a)
+    doc = store.record(eid)["doc"]
     targets = {g["target"]: g for g in doc["grants"]}
     assert set(targets) == {
         "/app/temper_ai", "/app/configs", "/app/local/__init__.py",
@@ -186,13 +190,13 @@ def _race(change):
 
 
 def test_a_swapped_workspace_is_refused(install):
-    _refused(install, "race-ws", install.run_a,
+    _refused(install, run_id("race-ws"), install.run_a,
              _race(lambda: swap_dir(install.run_a, lambda p: p.mkdir(mode=0o777))),
              "swapped")
 
 
 def test_a_workspace_swapped_for_a_link_to_another_run_is_refused(install):
-    _refused(install, "race-link", install.run_a,
+    _refused(install, run_id("race-link"), install.run_a,
              _race(lambda: swap_dir(install.run_a, lambda p: p.symlink_to(install.run_b))),
              "swapped")
     assert not list(install.run_b.iterdir())
@@ -201,11 +205,11 @@ def test_a_workspace_swapped_for_a_link_to_another_run_is_refused(install):
 def test_a_swapped_workspaces_parent_is_refused(install):
     def change():
         swap_dir(install.workspaces, lambda p: (p / "run-a").mkdir(parents=True, mode=0o777))
-    _refused(install, "race-parent", install.run_a, _race(change), "swapped")
+    _refused(install, run_id("race-parent"), install.run_a, _race(change), "swapped")
 
 
 def test_a_swapped_code_root_never_runs(install):
-    _refused(install, "race-code", install.run_a,
+    _refused(install, run_id("race-code"), install.run_a,
              _race(lambda: swap_dir(install.code, hostile_code)), "/app/temper_ai", "swapped")
 
 
@@ -215,7 +219,8 @@ def test_a_swapped_claude_binary_is_refused(install):
         newest.rename(install.versions / "2.1.10.moved")
         newest.write_text("#!/bin/sh\necho evil\n")
         newest.chmod(0o755)
-    _refused(install, "race-claude", install.run_a, _race(change), "/app/.local/bin/claude")
+    _refused(install, run_id("race-claude"), install.run_a, _race(change),
+             "/app/.local/bin/claude")
 
 
 # -- a box that isn't what its profile says ---------------------------------------------------
@@ -235,7 +240,7 @@ def _without_mount(target: str):
 
 
 def test_a_missing_grant_is_refused_before_tools(install):
-    _refused(install, "tamper-missing", install.run_a, _without_mount(str(install.run_a)),
+    _refused(install, run_id("tamper-missing"), install.run_a, _without_mount(str(install.run_a)),
              "granted but not mounted")
 
 
@@ -244,17 +249,18 @@ def test_an_extra_mount_of_the_main_repo_is_refused(install):
         at = cmd.index("--entrypoint")
         return [*cmd[:at], "--mount", f"type=bind,source={install.repo},target=/app/repo,readonly",
                 *cmd[at:]]
-    _refused(install, "tamper-repo", install.run_a, hook, "/app/repo")
+    _refused(install, run_id("tamper-repo"), install.run_a, hook, "/app/repo")
 
 
 def test_writable_runner_code_is_refused(install):
     def hook(cmd):
         return [c.replace(",readonly", "") if "target=/app/temper_ai" in c else c for c in cmd]
-    _refused(install, "tamper-code-rw", install.run_a, hook, "/app/temper_ai is mounted writable")
+    _refused(install, run_id("tamper-code-rw"), install.run_a, hook,
+             "/app/temper_ai is mounted writable")
 
 
 def test_a_writable_root_filesystem_is_refused(install):
-    _refused(install, "tamper-root-rw", install.run_a,
+    _refused(install, run_id("tamper-root-rw"), install.run_a,
              lambda cmd: [c for c in cmd if c != "--read-only"], "root filesystem is writable")
 
 
@@ -262,14 +268,14 @@ def test_a_box_that_can_gain_privileges_is_refused(install):
     def hook(cmd):
         at = cmd.index("no-new-privileges")
         return cmd[:at - 1] + cmd[at + 1:]
-    _refused(install, "tamper-nnp", install.run_a, hook, "gain privileges")
+    _refused(install, run_id("tamper-nnp"), install.run_a, hook, "gain privileges")
 
 
 def test_a_root_box_is_refused(install):
     def hook(cmd):
         at = cmd.index("--user")
         return [*cmd[:at + 1], "0:0", *cmd[at + 2:]]
-    _refused(install, "tamper-root", install.run_a, hook, "runs as root")
+    _refused(install, run_id("tamper-root"), install.run_a, hook, "runs as root")
 
 
 def test_a_changed_profile_is_refused(install):
@@ -281,4 +287,4 @@ def test_a_changed_profile_is_refused(install):
                 doc["grants"] = [g for g in doc["grants"] if g["kind"] != "workspace"]
                 out[i] = f"{box_profile.PROFILE_ENV}={box_profile.canonical(doc)}"
         return out
-    _refused(install, "tamper-profile", install.run_a, hook, "digest")
+    _refused(install, run_id("tamper-profile"), install.run_a, hook, "digest")

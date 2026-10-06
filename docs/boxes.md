@@ -299,6 +299,11 @@ needs BS1's sealed profile: on a legacy install every run is refused.
   `tests/test_spawner/test_box_bootstrap_docker.py` (the G02 gate: real oneshot
   boxes with the real entry code, probed from outside the runner; a positive
   control without the protection; refusals, cancels and a restart).
+- Both real-container files take every run id from `box_fixtures.run_id()` (the
+  test's name, the pid and a few random hex characters), so each box name is its
+  test process's own, and clean up only boxes with their own `temper.test.pid`
+  label: two test runs at once (two checkouts' commit hooks, `pytest -n` workers)
+  neither take the same name nor remove each other's boxes.
 - In a live box, list names only, never values:
   `env | cut -d= -f1 | sort` and
   `for f in /proc/[0-9]*/environ; do tr '\0' '\n' < "$f" 2>/dev/null | cut -d= -f1; done | sort -u`.

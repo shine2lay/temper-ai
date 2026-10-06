@@ -4,7 +4,8 @@ Each box is started by the real DockerSpawner under TEMPER_BOX_RUNTIME_BOUNDARY=
 TEMPER_BOX_SECRET_BOOTSTRAP=oneshot, from a synthetic install tree whose final entry is the
 real temper_ai/cli/main.py and the real spawner/box_bootstrap.py; only what comes after the
 delivery (cli/run_workflow.py) is a probe. The worker's writer is the real one, run by
-`docker exec`. Every container is labelled temper.test=box-sealed and runs with --network
+`docker exec`. Every container is labelled temper.test=box-sealed, is named after its test
+and this test process (box_fixtures.run_id), and runs with --network
 none; every "secret" is synthetic text; no database, model, account or service is touched.
 
 What is looked at is the box itself: docker inspect, docker-init's environment (PID 1),
@@ -45,9 +46,11 @@ from tests.test_spawner.box_fixtures import (
     Install,
     MemoryStore,
     box_image,
+    box_name,
     box_user,
     docker_ok,
     image_id,
+    run_id,
 )
 
 pytestmark = [pytest.mark.timeout(900)]
@@ -206,10 +209,6 @@ def _code_tree(install: Install, main: str | None = None) -> None:
 # -- docker ---------------------------------------------------------------------------------------
 
 
-#: Run ids (and so box names) differ between test processes that run at the same time.
-RUN = os.urandom(3).hex()
-
-
 @dataclass
 class OneshotDocker:
     """DockerSpawner's ``run``: a fake template inspect, real detached boxes and real execs.
@@ -231,7 +230,7 @@ class OneshotDocker:
         if cmd[1] == "run" and "--name" in cmd:
             cmd = [c for c in cmd if c != "--rm"]
             cmd[2:2] = ["--label", TEST_LABEL, "--label", OWN_LABEL]
-            self.names.append(cmd[cmd.index("--name") + 1])
+            self.names.append(box_name(cmd))
         if cmd[1] == "exec" and self.on_exec is not None:
             cmd, kwargs = self.on_exec(cmd, kwargs)
         kwargs.setdefault("timeout", 120)
@@ -431,7 +430,7 @@ def _failed(install: Install, eid: str, expect: str, **kwargs) -> tuple[str, Mem
 
 
 def test_g02_a_oneshot_box_starts_clean_and_its_runner_refuses_reads(install):
-    eid = f"g02-main-{RUN}"
+    eid = run_id("g02-main")
     store, docker, spawner = _start(install, eid)
     try:
         handle = spawner.spawn(eid)
@@ -490,7 +489,7 @@ def test_g02_a_oneshot_box_starts_clean_and_its_runner_refuses_reads(install):
 def test_g02_positive_control_an_unprotected_runner_keeps_what_it_read(install):
     """The same box and exchange without the runner's protection: the value it read,
     closed and removed is still in its memory, readable by any process of the user."""
-    eid = f"g02-control-{RUN}"
+    eid = run_id("g02-control")
     store, docker, spawner = _start(install, eid, main=CONTROL_MAIN)
     try:
         spawner.spawn(eid)
@@ -546,7 +545,7 @@ def _tamper(change: Callable[[dict], None] | None = None, *, extra: bytes = b"",
         "malformed length"])
 def test_g02_a_wrong_stale_oversized_or_malformed_envelope_stops_the_box(install, on_exec,
                                                                            expect):
-    _, _, stderr = _failed(install, f"g02-bad-{RUN}", expect, on_exec=on_exec)
+    _, _, stderr = _failed(install, run_id("g02-bad"), expect, on_exec=on_exec)
     if "not this box's" in expect or "oversized" in expect:  # the writer's refusals
         assert "box refused" not in stderr  # the runner was still waiting when stopped
     else:
@@ -554,12 +553,13 @@ def test_g02_a_wrong_stale_oversized_or_malformed_envelope_stops_the_box(install
 
 
 def test_g02_cancelled_before_ready_the_box_is_stopped_and_nothing_written(install):
-    _failed(install, f"g02-never-ready-{RUN}", "timeout: timeout: the runner was not waiting within 8s",
+    _failed(install, run_id("g02-never-ready"),
+            "timeout: timeout: the runner was not waiting within 8s",
             main=NEVER_READY_MAIN, limits=FAST)
 
 
 def test_g02_no_acknowledgement_takes_the_delivery_back(install):
-    _failed(install, f"g02-no-ack-{RUN}", "timeout: timeout: no acknowledgement within 4s",
+    _failed(install, run_id("g02-no-ack"), "timeout: timeout: no acknowledgement within 4s",
             main=STALLED_MAIN, limits=FAST)
 
 
@@ -570,6 +570,6 @@ def test_g02_cancelled_after_ready_the_delivery_is_revoked(install):
         threading.Timer(2.0, lambda: _docker("kill", name)).start()
         return cmd, kwargs
 
-    _failed(install, f"g02-cancel-{RUN}", "error: the writer gave no status", main=STALLED_MAIN,
+    _failed(install, run_id("g02-cancel"), "error: the writer gave no status", main=STALLED_MAIN,
             on_exec=kill_soon, limits={**FAST, "ack": 30})
 

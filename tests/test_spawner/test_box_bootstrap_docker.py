@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -215,13 +216,15 @@ class OneshotDocker:
 
     ``on_exec`` may change the writer's command and stdin (a tampered delivery) or act
     while it runs (a cancelled box); the box is kept after it exits so its exit code and
-    log can be read, and removed by cleanup().
+    log can be read, and removed by cleanup(). Every `docker kill` the spawner runs is
+    kept (kills), so a box's ending can be told apart: its runner's, or the spawner's kill.
     """
 
     install: Install
     on_exec: Callable[[list[str], dict], tuple[list[str], dict]] | None = None
     names: list[str] = field(default_factory=list)
     execs: list[subprocess.CompletedProcess] = field(default_factory=list)
+    kills: list[subprocess.CompletedProcess] = field(default_factory=list)
 
     def __call__(self, cmd, **kwargs) -> subprocess.CompletedProcess:
         cmd = list(cmd)
@@ -237,7 +240,15 @@ class OneshotDocker:
         result = subprocess.run(cmd, **kwargs)
         if cmd[1] == "exec":
             self.execs.append(result)
+        elif cmd[1] == "kill":
+            self.kills.append(result)
         return result
+
+    def killed(self, name: str) -> bool:
+        """Whether the spawner's own `docker kill <name>` (SIGKILL, docker's default) reached
+        this box: docker took it (exit 0). A kill docker turned down ("is not running") came
+        after the box had ended; a stop with another signal can't end it with KILLED_EXIT."""
+        return any(k.args[1:] == ["kill", name] and k.returncode == 0 for k in self.kills)
 
     def cleanup(self) -> None:
         for name in self.names:
@@ -258,6 +269,34 @@ def _exit_code(name: str, wait: float = 60) -> int:
     while _running(name) and time.monotonic() < deadline:
         time.sleep(0.2)
     return int(_docker("inspect", "-f", "{{.State.ExitCode}}", name).stdout.strip())
+
+
+#: What docker records for a box ended by `docker kill` (SIGKILL): 128 + 9.
+KILLED_EXIT = 128 + signal.SIGKILL
+
+
+def _refused_ending(code: int, *, killed: bool, said: bool) -> None:
+    """A box whose runner refused its delivery ends one of two ways, and no other.
+
+    - REFUSED_EXIT (4): the runner said why ("box refused: ...", ``said``) and ended itself.
+    - KILLED_EXIT (137): the spawner's own `docker kill` of this box ended it (``killed``).
+      The spawner kills at once on every failed delivery (BS2: "the box was stopped and
+      the delivery revoked") and doesn't wait for the runner, so its kill can land after
+      the runner said why but before it exited (CI run 37540347760), or before it said why.
+
+    Any other code, a 137 the spawner's kill doesn't explain, or a box that ended itself
+    without saying why fails, naming the code. (The runner's own exit 4 is shown without
+    a race by the restart in test_g02_a_oneshot_box_starts_clean_and_its_runner_refuses_reads.)
+    """
+    if code == box_bootstrap.REFUSED_EXIT and said:
+        return
+    if code == KILLED_EXIT and killed:
+        return
+    raise AssertionError(
+        f"the refusing box ended with exit code {code}: expected {box_bootstrap.REFUSED_EXIT} "
+        f"(its runner said why and ended itself) or {KILLED_EXIT} (the spawner's kill of it); "
+        f"the spawner's kill {'reached it' if killed else 'is not recorded'}, the runner "
+        f"{'said' if said else 'did not say'} why")
 
 
 #: Run inside the box as its user, from outside the runner (docker exec), as an agent tool
@@ -402,8 +441,14 @@ def _start(install: Install, eid: str, *, main: str | None = None, on_exec=None,
     return store, docker, spawner
 
 
-def _failed(install: Install, eid: str, expect: str, **kwargs) -> tuple[str, MemoryStore, str]:
-    """The delivery fails: a safe message, the box stopped, the delivery revoked."""
+def _failed(install: Install, eid: str, expect: str, *, runner_refuses: bool = False,
+            **kwargs) -> tuple[str, MemoryStore, str]:
+    """The delivery fails: a safe message, the box stopped, the delivery revoked.
+
+    A box whose runner refused (it says "box refused: ..."; with ``runner_refuses`` it
+    must have refused, even if the spawner's kill came before it could say so) ended by
+    its runner or by the spawner's kill, and no other way (_refused_ending).
+    """
     store, docker, spawner = _start(install, eid, **kwargs)
     try:
         with pytest.raises(SpawnerError) as caught:
@@ -419,8 +464,9 @@ def _failed(install: Install, eid: str, expect: str, **kwargs) -> tuple[str, Mem
         assert SYNTHETIC_MARK not in json.dumps(record)
         logs = _docker("logs", name)
         assert SYNTHETIC_MARK not in logs.stdout + logs.stderr
-        if "box refused: " in logs.stderr:  # the runner refused and ended itself
-            assert _exit_code(name) == box_bootstrap.REFUSED_EXIT
+        said = "box refused: " in logs.stderr
+        if said or runner_refuses:  # the runner refused: it ended itself, or the kill did
+            _refused_ending(_exit_code(name), killed=docker.killed(name), said=said)
         return message, store, logs.stderr
     finally:
         docker.cleanup()
@@ -545,10 +591,12 @@ def _tamper(change: Callable[[dict], None] | None = None, *, extra: bytes = b"",
         "malformed length"])
 def test_g02_a_wrong_stale_oversized_or_malformed_envelope_stops_the_box(install, on_exec,
                                                                            expect):
-    _, _, stderr = _failed(install, run_id("g02-bad"), expect, on_exec=on_exec)
-    if "not this box's" in expect or "oversized" in expect:  # the writer's refusals
+    by_writer = "not this box's" in expect or "oversized" in expect  # the writer's refusals
+    _, _, stderr = _failed(install, run_id("g02-bad"), expect, on_exec=on_exec,
+                           runner_refuses=not by_writer)
+    if by_writer:
         assert "box refused" not in stderr  # the runner was still waiting when stopped
-    else:
+    elif "box refused: " in stderr:  # (none when the spawner's kill came first: _failed)
         assert "box refused: " + expect.split(": ", 1)[1] in stderr
 
 

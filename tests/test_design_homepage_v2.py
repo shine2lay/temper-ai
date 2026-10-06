@@ -890,7 +890,12 @@ def test_copy_contract_catches_what_the_morrow_run_got_wrong():
 
 @pytest.mark.parametrize("text, bad", [("2 x 45 min = 90 min", False), ("2 x 45 min = 80 min", True),
                                        ("6 x $12 = $72", False), ("$45 + $10 = $55", False),
-                                       ("4 \u00d7 $30 = $100", True), ("rooms for 4-6 = small", False)])
+                                       ("4 \u00d7 $30 = $100", True), ("rooms for 4-6 = small", False),
+                                       # any number of terms, read from the first (queue #38: the check
+                                       # used to read '1 + 1 + 1 = 4' out of the line below)
+                                       ("screen: 1 + 1 + 1 + 1 = 4 places", False), ("1 + 1 + 1 = 4", True),
+                                       ("3 boxes + 2 boxes = 5 boxes", False), ("10 + 2 x 5 = 20", False),
+                                       ("2 x 3 x 4 = 25", True), ("10 - 3 = 7", False), ("10 - 3 = 6", True)])
 def test_worked_example_sums_are_checked(text, bad):
     assert bool(v2.arithmetic_problems(text)) is bad
 

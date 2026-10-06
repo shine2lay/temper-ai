@@ -250,6 +250,31 @@ def test_axes_must_use_known_levels() -> None:
     assert any("axes sets" in p for p in rc.check_direction(d, PLAYBOOK, job="homepage", fixed=[]))
 
 
+def test_directions_keep_the_levels_their_contexts_agree_on() -> None:
+    # Trial cf17bd67 (a beginners' app): every chosen context's playbook line said low density, the recommended
+    # direction set medium, and all three concepts came out medium or high against the key's low.
+    assert rc.stated_levels("Low to medium; plain language.") == {"low", "medium"}
+    assert rc.stated_levels("High but grouped: many numbers per view") == {"high"}
+    assert rc.stated_levels("Almost none on data: no animated trends") == {"low"}
+    assert rc.stated_levels("One glanceable summary per screen") is None
+    assert rc.stated_levels("Lower is better") is None
+    learners = [{"id": "marketing-landing-general", "role": "page", "why": "The job is the product's homepage."},
+                {"id": "rollcall-learner-onboarding", "role": "audience", "why": "First-time users learning the basics."}]
+    d = direction(contexts=learners)
+    probs = rc.check_direction(d, PLAYBOOK, job="homepage", fixed=[])
+    assert any(p.startswith("D1: axes.density is high") and "allow only low" in p for p in probs)
+    assert any(p.startswith("D2: axes.density is medium") for p in probs)
+    for c in d["candidates"]:
+        c["axes"]["density"] = "low"
+    assert rc.check_direction(d, PLAYBOOK, job="homepage", fixed=[]) == []
+    # Contexts that disagree (low above the fold, medium settings pages) leave the level to the director.
+    assert "density" not in rc.agreed_levels(PLAYBOOK, ["marketing-landing-general", "saas-b2b-settings"])
+    assert rc.agreed_levels(PLAYBOOK, ["temper-marketing", "saas-b2b-settings"])["density"][0] == ["medium"]
+    d = direction()
+    d["candidates"][1]["axes"]["motion"] = "medium"
+    assert any(p.startswith("D2: axes.motion is medium") for p in rc.check_direction(d, PLAYBOOK, job="homepage", fixed=[]))
+
+
 def research_doc(ws: Path) -> dict:
     d = direction()
     return {"version": rc.VERSION, "product": "Lanternfish", "job": "homepage", "inventory": {"status": "none"},

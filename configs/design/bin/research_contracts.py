@@ -62,6 +62,41 @@ def allowed_families(context: dict) -> list[str]:
     return list(context["styles"].get("preferred", [])) + list(context["styles"].get("acceptable", []))
 
 
+# How a playbook context's density or motion line starts, read as that axis's levels ("Low", "Low to medium",
+# "High but grouped", "Almost none"). Colour and type lines describe ideas, not levels, and lines that start
+# otherwise ("One glanceable summary per screen") state none.
+LEVEL_WORDS = {"low": "low", "little": "low", "minimal": "low", "none": "low", "calm": "low", "sparse": "low",
+               "medium": "medium", "moderate": "medium", "high": "high", "dense": "high", "rich": "high"}
+LEVEL_AXES = ("density", "motion")
+_LEVEL = "(" + "|".join(LEVEL_WORDS) + ")"
+_STATED = re.compile(r"(?:almost\s+)?" + _LEVEL + r"(?:\s+to\s+" + _LEVEL + r")?\b")
+
+
+def stated_levels(text: Any) -> frozenset[str] | None:
+    m = _STATED.match(str(text or "").strip().lower())
+    if not m:
+        return None
+    order = AXES["density"]
+    ends = sorted(order.index(LEVEL_WORDS[w]) for w in (m.group(1), m.group(2) or m.group(1)))
+    return frozenset(order[ends[0]:ends[1] + 1])
+
+
+def agreed_levels(playbook: dict, context_ids: list[str]) -> dict[str, tuple[list[str], list[str]]]:
+    """axis -> (the levels every chosen context that states one allows, those contexts), when they overlap.
+    Directions keep to them: the playbook's evidence says people in these contexts do better with them."""
+    by_id = contexts_by_id(playbook)
+    out: dict[str, tuple[list[str], list[str]]] = {}
+    for axis in LEVEL_AXES:
+        stated = {cid: stated_levels(by_id[cid].get(axis)) for cid in context_ids if cid in by_id}
+        stated = {cid: lv for cid, lv in stated.items() if lv}
+        if not stated:
+            continue
+        common = frozenset.intersection(*stated.values())
+        if common:
+            out[axis] = ([lv for lv in AXES[axis] if lv in common], sorted(stated))
+    return out
+
+
 # ---------------------------------------------------------------- quotes
 
 _MARKUP = re.compile(r"[*_`>#|]+")
@@ -413,6 +448,12 @@ def check_direction(direction: Any, playbook: dict, *, job: str, fixed: list[str
     if len(set(ids)) != len(ids):
         problems.append("candidate ids are distinct")
     good = [d for d in cands if isinstance(d, dict) and isinstance(d.get("axes"), dict)]
+    for axis, (levels, said) in agreed_levels(playbook, list(chosen)).items():
+        for d in good:
+            if d["axes"].get(axis) in AXES[axis] and d["axes"][axis] not in levels:
+                problems.append(f"{d.get('id')}: axes.{axis} is {d['axes'][axis]}, but the playbook lines of its "
+                                f"contexts ({', '.join(said)}) allow only {' or '.join(levels)}: set {axis} to "
+                                f"{' or '.join(levels)}")
     for i, a in enumerate(good):
         for b in good[i + 1:]:
             same_family = a.get("family") == b.get("family")

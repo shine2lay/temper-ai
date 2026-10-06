@@ -569,22 +569,50 @@ def deck_text(deck: dict) -> str:
     return "\n".join(parts)
 
 
-def arithmetic_problems(text: str) -> list[str]:
-    """Check written sums like '6 x $12 = $72' or '2 \u00d7 45 min = 90 min' (only what is spelled out)."""
-    problems = []
-    num = r"[$\u20ac\u00a3]?\s?(\d+(?:\.\d+)?)"
-    for m in re.finditer(num + r"(?:\s*[a-z%]+)?\s*([x\u00d7*+\u2212-])\s*" + num + r"(?:\s*[a-z%]+)?(?:\s*([x\u00d7*+\u2212-])\s*" + num
-                         + r"(?:\s*[a-z%]+)?)?\s*=\s*" + num, text, re.I):
-        a, op1, b, op2, c, result = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5), m.group(6)
-        if op1 == "-" and not re.search(r"\s-\s", m.group(0)):
-            continue  # a hyphen inside a range or a word, not a minus
+# A written sum: numbers (with an optional currency sign before and a unit after) joined by x, \u00d7, *, +,
+# \u2212 or -, then = and the result. A unit is read as one only when an operator or = follows it, so the x in
+# '6 x $12' is the operator and the x in '3 boxes + 2 boxes' belongs to the unit.
+_SUM_UNIT = r"(?:\s*[a-z%]+(?=\s*[x\u00d7*+\u2212=-]))?"
+_SUM_TERM = re.compile(r"\s*[$\u20ac\u00a3]?\s?(\d+(?:\.\d+)?)" + _SUM_UNIT, re.I)
+_SUM_OP = re.compile(r"(\s*)([x\u00d7*+\u2212-])(\s*)", re.I)
+_SUM = re.compile(r"(?<![\d.])((?:[$\u20ac\u00a3]?\s?\d+(?:\.\d+)?" + _SUM_UNIT + r")(?:\s*[x\u00d7*+\u2212-]\s*"
+                  r"[$\u20ac\u00a3]?\s?\d+(?:\.\d+)?" + _SUM_UNIT + r")+)\s*=\s*[$\u20ac\u00a3]?\s?(\d+(?:\.\d+)?)", re.I)
 
-        def apply(x: float, op: str, y: float) -> float:
-            return x * y if op in "x\u00d7*" else x + y if op == "+" else x - y
-        value = apply(float(a), op1, float(b))
-        if op2 and c:
-            value = apply(value, op2, float(c))
-        if abs(value - float(result)) > 0.011:
+
+def arithmetic_problems(text: str) -> list[str]:
+    """Check written sums like '6 x $12 = $72', '2 \u00d7 45 min = 90 min' or '1 + 1 + 1 + 1 = 4 places' (only
+    what is spelled out). Any number of terms; multiplication before addition and subtraction."""
+    problems = []
+    for m in _SUM.finditer(text):
+        left, nums, ops, pos = m.group(1), [], [], 0
+        while True:
+            t = _SUM_TERM.match(left, pos)
+            if not t:
+                break
+            nums.append(float(t.group(1)))
+            pos = t.end()
+            o = _SUM_OP.match(left, pos)
+            if not o or pos >= len(left):
+                break
+            if o.group(2) == "-" and not (o.group(1) and o.group(3)):
+                ops = []  # a hyphen inside a range or a word ('rooms for 4-6'), not a minus
+                break
+            ops.append(o.group(2).lower())
+            pos = o.end()
+        if not ops or len(nums) != len(ops) + 1:
+            continue
+        products = [nums[0]]
+        signs: list[str] = []
+        for op, n in zip(ops, nums[1:], strict=True):
+            if op in "x\u00d7*":
+                products[-1] *= n
+            else:
+                signs.append(op)
+                products.append(n)
+        value = products[0]
+        for sign, n in zip(signs, products[1:], strict=True):
+            value = value + n if sign == "+" else value - n
+        if abs(value - float(m.group(2))) > 0.011:
             problems.append(f"'{m.group(0).strip()}' does not add up (it makes {round(value, 2):g})")
     return problems
 

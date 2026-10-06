@@ -76,6 +76,36 @@ own that its script steps get as `TEMPER_RUN_TOKEN` (never agent tools), which
 may only start and fork runs, and which dies with the run. The shared
 `TEMPER_API_TOKEN` a box's process may carry counts for nothing there.
 
+## The login file
+
+A legacy box's Claude CLI finds the subscription login at
+`/app/.claude/.credentials.json`. The worker's `TEMPER_BOX_LOGIN_FILE` names that file
+on the host, and the spawner binds it there read-only at every box start
+(`bind_login_file_from_setting()` in `temper_ai/spawner/docker_spawner.py`). The
+worker never opens the file; docker binds it.
+
+- It takes the place of a bind the template (the server's container) still has at
+  that target, so docker never gets the target twice. Unset, a box gets the
+  template's bind as before, or no login file when the template has none.
+- Each box's profile says where its login file came from (`runtime.login_file`:
+  `from` is `TEMPER_BOX_LOGIN_FILE`, `template` or `none`, with the source path,
+  never the contents), and the worker logs one line per box: `login file from
+  TEMPER_BOX_LOGIN_FILE: <path> -> <target> (read-only)`, `login file from the
+  template's bind: ...` or `no login file (...)`.
+- The worker reads the setting once, when it starts: a change needs a worker
+  restart. A value that isn't a plain absolute path (relative, `..`, a trailing
+  `/`, a comma, a quote or a line break) keeps the worker from starting (`Watcher
+  won't start: TEMPER_BOX_LOGIN_FILE=...`), so no box starts until it is fixed or
+  unset. A path with no file behind it stops each box at docker.
+- The host's Claude CLI replaces the file by rename at each login refresh, and a
+  bind keeps the file it found when its container started. A box started after a
+  refresh gets the new file; a box that is running keeps the old one until it ends.
+  That is why the server and worker no longer bind it themselves: neither process
+  reads it (in `external` mode every model call is made in a box), and their bind
+  went stale at the first refresh after they started.
+- Sealed boxes get no login file, with the setting or without
+  ([Sealed boxes](#sealed-boxes-bs1)).
+
 ## Emergency rollback
 
 `TEMPER_BOX_ENV=inherit` in the worker's environment brings back the old box: a copy
@@ -302,6 +332,11 @@ needs BS1's sealed profile: on a legacy install every run is refused.
   It skips without docker; `TEMPER_TEST_BOX_REQUIRED=1` makes that a failure, and
   `TEMPER_TEST_BOX_IMAGE` picks the image (else the newest `temper-ci-server`, else
   a tiny one it builds).
+- The login file: `tests/test_spawner/test_docker_spawner.py` (the setting's bind,
+  no second bind beside the template's, unset with and without the template's,
+  sealed boxes, refused values) and `tests/test_spawner/test_box_login_file_docker.py`
+  (real boxes before and after the host file is replaced by rename, with synthetic
+  text, never a real login).
 - `tests/test_spawner/test_box_bootstrap.py` (both ends of the delivery on the
   host: wrong, stale, oversized and malformed envelopes, mode, link, timeout,
   prctl and cleanup failures, early tool starts, error children, exec reset) and

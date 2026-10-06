@@ -28,8 +28,8 @@ What a run container is, precisely:
   network   the template's first network (postgres/redis by compose name)
   command   `uv run python -m temper_ai.cli.main run-workflow`, or
             TEMPER_DOCKER_RUN_COMMAND
-  mounts    the template's bind mounts (source, configs, credentials,
-            claude binaries) as they are; the docker socket never; the
+  mounts    the template's bind mounts (source, configs, claude binaries)
+            as they are; the docker socket never; the
             broad workspaces tree (the template's one host-equivalent mount,
             `WORKSPACE_DIR:WORKSPACE_DIR`) replaced by the run's own
             workspace, read-write, at the same host path — plus the git
@@ -38,8 +38,15 @@ What a run container is, precisely:
             TEMPER_DOCKER_WORKSPACES=all keeps the whole tree instead (runs
             here share folders under it, as they did inside the server);
             a run's workspace inside an inherited mount is not mounted again
+  login     the Claude login file, read-only at /app/.claude/.credentials.json,
+            from the host path in TEMPER_BOX_LOGIN_FILE (set on the worker,
+            read once when the spawner is made); it takes the place of a
+            template bind at that target, so docker gets the target once.
+            Unset: the template's own bind, if it has one, as before; none
+            when it has none. The box's profile names where it came from,
+            by path only (runtime.login_file), and so does the worker's log
   ~/.claude its own small tmpfs, writable by the run's user, when the
-            credentials file is mounted inside it: the Claude CLI saves its
+            login file is mounted inside it: the Claude CLI saves its
             sessions there, and a node's next turn resumes from them
   /tmp      its own: the scratch dir dies with the container
   identity  --name and --hostname temper-run-<execution_id>, labels
@@ -50,7 +57,7 @@ What a run container is, precisely:
             would show as "unhealthy" in `docker ps`
 
 What it does not change: the run still executes as the template's user
-with the template's credentials mounted (claude_code needs them), and the
+with the login file mounted (claude_code needs it), and the
 node's Bash is still gated by the allowlist and the platform baseline
 inside. Those are guardrails inside the sandbox now, which is what they
 were always documented as.
@@ -117,6 +124,16 @@ RUN_COMMAND = ["uv", "run", "python", "-m", "temper_ai.cli.main", "run-workflow"
 # How long a run waits for a template container that can't be read (it is
 # being recreated, say) when there is no earlier look to fall back on.
 TEMPLATE_GRACE_SECONDS = 120.0
+#: A host path, set on the worker (the spawner's side): the Claude login file every legacy
+#: box gets, read-only, at LOGIN_FILE_TARGET (docs/boxes.md, "The login file"). Read once,
+#: when the spawner is made. Sealed boxes never get it.
+LOGIN_FILE_ENV = "TEMPER_BOX_LOGIN_FILE"
+#: Where a legacy box finds it: the Claude CLI's login file under the image's HOME (/app).
+LOGIN_FILE_TARGET = f"{box_seal.CLAUDE_STATE}/.credentials.json"
+#: What a box's profile calls the bind made from the setting.
+LOGIN_FILE_KIND = f"login file ({LOGIN_FILE_ENV})"
+#: A template bind of the Claude CLI's login file, in whichever home it sits.
+_LOGIN_FILE_SUFFIX = "/.claude/.credentials.json"
 
 #: What a sealed box runs: the template image's own interpreter, isolated (-I: no
 #: PYTHON* variables, no user site, no current folder on the import path).
@@ -441,8 +458,74 @@ def _all_workspaces() -> bool:
     return os.environ.get("TEMPER_DOCKER_WORKSPACES", "own").strip().lower() == "all"
 
 
+def login_file_setting(value: str | None) -> str | None:
+    """TEMPER_BOX_LOGIN_FILE's host path, checked; None when it is unset or empty.
+
+    Only the path is used, never the file: docker binds it at each box start, and a missing
+    file stops that start with docker's own error. A path that isn't absolute and plain (it
+    goes into a --mount argument) is refused with SpawnerError, so the worker doesn't start
+    boxes without a login file it was told to give them.
+    """
+    path = (value or "").strip()
+    if not path:
+        return None
+    if (not path.startswith("/") or os.path.normpath(path) != path
+            or any(char in path for char in ',"\n\r')):
+        raise SpawnerError(
+            f"{LOGIN_FILE_ENV}={path!r} is not an absolute, plain host path (no commas, quotes, "
+            "line breaks, '..' or trailing '/'); no box starts until it is fixed or unset",
+        )
+    return path
+
+
+def bind_login_file_from_setting(mounts: list[Mount], login_file: str | None) -> list[Mount]:
+    """``mounts`` with the login file bound read-only from ``login_file`` (TEMPER_BOX_LOGIN_FILE).
+
+    Unset (None): ``mounts`` as they are, so a template's own bind still reaches the box, as
+    before the setting. Set: its bind at LOGIN_FILE_TARGET takes the place of the first bind
+    there and every other bind there is dropped (docker refuses a target twice), or it is added
+    at the end when there is none. Binds at other targets are left as they are.
+    """
+    if login_file is None:
+        return list(mounts)
+    login = Mount(login_file, LOGIN_FILE_TARGET, read_only=True)
+    out: list[Mount] = []
+    for mount in mounts:
+        if mount.target != LOGIN_FILE_TARGET:
+            out.append(mount)
+        elif login not in out:
+            out.append(login)
+    if login not in out:
+        out.append(login)
+    return out
+
+
+def login_file_origin(mounts: list[Mount], login_file: str | None) -> dict:
+    """Where a legacy box's login file comes from, by path only (never its contents).
+
+    ``mounts``: the box's binds; ``login_file``: TEMPER_BOX_LOGIN_FILE (None: unset).
+    """
+    if login_file is not None:
+        return {"from": LOGIN_FILE_ENV, "source": login_file, "target": LOGIN_FILE_TARGET,
+                "read_only": True}
+    for mount in mounts:
+        if mount.target.endswith(_LOGIN_FILE_SUFFIX):
+            return {"from": "template", "source": mount.source, "target": mount.target,
+                    "read_only": mount.read_only}
+    return {"from": "none", "source": None, "target": None, "read_only": None,
+            "note": f"{LOGIN_FILE_ENV} is unset and the template binds no login file"}
+
+
+def _said(origin: dict) -> str:
+    if origin["from"] == "none":
+        return f"no login file ({origin['note']})"
+    where = LOGIN_FILE_ENV if origin["from"] == LOGIN_FILE_ENV else "the template's bind"
+    mode = "read-only" if origin["read_only"] else "read-write"
+    return f"login file from {where}: {origin['source']} -> {origin['target']} ({mode})"
+
+
 def _claude_homes(mounts: list[Mount]) -> list[str]:
-    """`~/.claude` directories that a file mount (the credentials) sits in.
+    """`~/.claude` directories that a file mount (the login file) sits in.
 
     Docker makes the missing directory for such a mount root-owned, and the
     Claude CLI then cannot save its sessions there, so a node's next turn
@@ -476,8 +559,12 @@ class DockerSpawner(Spawner):
         worker_view: box_seal.WorkerView | None = None,
         engine_launches: Mapping[str, str] | None = None,
         delivery_limits: Mapping[str, int] | None = None,
+        login_file: str | None = None,
     ) -> None:
         self._docker = docker_bin
+        # The legacy boxes' login file (None: TEMPER_BOX_LOGIN_FILE, read once, here).
+        self._login_file = login_file_setting(
+            login_file if login_file is not None else os.environ.get(LOGIN_FILE_ENV))
         self._template_container = (
             template_container
             or os.environ.get("TEMPER_DOCKER_TEMPLATE_CONTAINER")
@@ -525,6 +612,8 @@ class DockerSpawner(Spawner):
         if settings[box_profile.BOUNDARY_ENV] == box_profile.SEALED:
             return self._spawn_sealed(execution_id, workspace_path, template, env, settings)
 
+        logger.info("Run container %s: %s", name, _said(
+            login_file_origin(self.inherited_mounts(template), self._login_file)))
         record = self._legacy_record(execution_id, workspace_path, template, env, settings)
         extra = box_profile.env_for(record["doc"]) if record else None
         cmd = self.run_command(execution_id, workspace_path, template, env, extra_env=extra)
@@ -578,8 +667,10 @@ class DockerSpawner(Spawner):
         try:
             homes, mounts = self.legacy_mounts(workspace_path, template)
             workspaces = template.env_value("WORKSPACE_DIR")
+            login = (Mount(self._login_file, LOGIN_FILE_TARGET, read_only=True)
+                     if self._login_file is not None else None)
             inherited = [{"source": m.source, "target": m.target, "read_only": m.read_only,
-                          "kind": "inherited",
+                          "kind": LOGIN_FILE_KIND if m == login else "inherited",
                           "class": box_seal.mount_class(m.source, m.target, workspaces)}
                          for m in mounts]
             doc = box_profile.compile_profile(
@@ -593,7 +684,8 @@ class DockerSpawner(Spawner):
                 grants=inherited, tmpfs=[f"{home}:mode=1777" for home in homes],
                 runtime={"command": _run_command(), "user": template.user or None,
                          "path": (template.env_value("PATH") or "").split(os.pathsep),
-                         "home": template.env_value("HOME"), "env_mode": env.mode},
+                         "home": template.env_value("HOME"), "env_mode": env.mode,
+                         "login_file": login_file_origin(mounts, self._login_file)},
                 limits=self._limits_doc(),
                 graph=box_profile.network_graph(container_name(execution_id),
                                                 template.networks[:1], template.extra_hosts),
@@ -1068,10 +1160,15 @@ class DockerSpawner(Spawner):
             raise SpawnerError(f"The box's allow-list is broken, so no run can start: {exc}") from exc
         return BoxEnvSplit.of(template.env, mode, allowed)
 
-    def legacy_mounts(self, workspace_path: str, template: Template) -> tuple[list[str], list[Mount]]:
-        """A legacy box's ~/.claude tmpfs homes and bind mounts, in the order docker gets them."""
+    def inherited_mounts(self, template: Template) -> list[Mount]:
+        """The template's binds a legacy box keeps, the login file bound from the setting."""
         all_workspaces = _all_workspaces()
         inherited = [m for m in template.mounts if _passes_through(m, all_workspaces)]
+        return bind_login_file_from_setting(inherited, self._login_file)
+
+    def legacy_mounts(self, workspace_path: str, template: Template) -> tuple[list[str], list[Mount]]:
+        """A legacy box's ~/.claude tmpfs homes and bind mounts, in the order docker gets them."""
+        inherited = self.inherited_mounts(template)
         mounts = list(inherited)
         if workspace_path:
             mounts += workspace_mounts(workspace_path, covered=inherited)

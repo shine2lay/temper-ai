@@ -36,6 +36,7 @@ LISTED = BoxEnv(names=frozenset({"TEMPER_DATABASE_URL", "OPENAI_API_KEY", "PATH"
 @pytest.fixture(autouse=True)
 def _box_env_list_mode(monkeypatch):
     monkeypatch.delenv("TEMPER_BOX_ENV", raising=False)
+    monkeypatch.delenv("TEMPER_BOX_LOGIN_FILE", raising=False)
 
 
 def _inspect_json(**overrides) -> str:
@@ -1245,3 +1246,136 @@ def test_env_stays_the_default_and_its_profile_says_so(install, monkeypatch):
     assert "writer" not in doc["runtime"] and "delivery" not in store.record("env-1")
     assert docker.commands("exec") == [] and docker.commands("image") == []
     assert not any(box_bootstrap.BOOT_DIR in part for part in docker.commands("run")[-1])
+
+
+# -- the login file: TEMPER_BOX_LOGIN_FILE (queue #73) ------------------------------------------
+# Model-free: the setting names a host path that doesn't exist here, which nothing reads (docker
+# binds it at the box's start). The rename between two real box starts is in
+# test_box_login_file_docker.py.
+
+HOST_LOGIN = "/host/elsewhere/.claude/.credentials.json"
+LOGIN_BIND = (f"type=bind,source={HOST_LOGIN},target=/app/.claude/.credentials.json,readonly")
+
+
+def _without_template_login(install: Install) -> Install:
+    """The install with no login bind in its template (production's server after #73)."""
+    binds = [m for m in Install.mounts(install) if m["Destination"] != ds.LOGIN_FILE_TARGET]
+    install.mounts = lambda: binds  # type: ignore[method-assign]
+    return install
+
+
+def _login_targets(cmd: list[str]) -> list[str]:
+    return [m for m in _mounts(cmd) if ".credentials.json" in m]
+
+
+def _tmpfs(cmd: list[str]) -> list[str]:
+    return [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "--tmpfs"]
+
+
+def _legacy_spawn(install: Install, execution_id: str, **kwargs) -> tuple[list[str], dict]:
+    store = MemoryStore()
+    store.add(execution_id, workspace=str(install.run_a))
+    docker = FakeDocker()
+    _box_spawner(install, store, docker, **kwargs).spawn(execution_id)
+    return docker.commands("run")[-1], store.record(execution_id)
+
+
+def test_the_login_target_is_where_production_boxes_have_it():
+    assert ds.LOGIN_FILE_ENV == "TEMPER_BOX_LOGIN_FILE"
+    assert ds.LOGIN_FILE_TARGET == "/app/.claude/.credentials.json"
+
+
+def test_the_setting_binds_the_login_file_read_only_when_the_template_has_none(install, monkeypatch):
+    monkeypatch.delenv(box_profile.BOUNDARY_ENV, raising=False)
+    monkeypatch.setenv("TEMPER_BOX_LOGIN_FILE", HOST_LOGIN)
+    cmd, record = _legacy_spawn(_without_template_login(install), "login-1")
+    assert _login_targets(cmd) == [LOGIN_BIND]
+    assert _tmpfs(cmd) == ["/app/.claude:mode=1777"], "the CLI's home stays writable around it"
+    runtime = record["doc"]["runtime"]
+    assert runtime["login_file"] == {"from": "TEMPER_BOX_LOGIN_FILE", "source": HOST_LOGIN,
+                                     "target": "/app/.claude/.credentials.json",
+                                     "read_only": True}
+    grant = next(g for g in record["doc"]["grants"] if g["target"] == ds.LOGIN_FILE_TARGET)
+    assert grant["kind"] == "login file (TEMPER_BOX_LOGIN_FILE)" and grant["class"] == "login"
+
+
+def test_the_setting_takes_the_template_binds_place_with_no_duplicate(install, monkeypatch):
+    """Production between the land and the override edit: both are there, docker gets one."""
+    monkeypatch.delenv(box_profile.BOUNDARY_ENV, raising=False)
+    store = MemoryStore()
+    store.add("login-2", workspace=str(install.run_a))
+    docker = FakeDocker()
+    spawner = _box_spawner(install, store, docker, login_file=HOST_LOGIN)
+    spawner.spawn("login-2")
+    cmd = docker.commands("run")[-1]
+    assert _login_targets(cmd) == [LOGIN_BIND]
+    before = _masters_run_command(spawner, "login-2", str(install.run_a), spawner.template())
+    template_bind = f"type=bind,source={install.creds},target=/app/.claude/.credentials.json,readonly"
+    assert template_bind in before
+    assert _without_profile(cmd) == [LOGIN_BIND if part == template_bind else part
+                                     for part in before], "only the login file's source changes"
+
+
+def test_unset_keeps_the_templates_bind_and_the_record_names_it(install, monkeypatch, caplog):
+    monkeypatch.delenv(box_profile.BOUNDARY_ENV, raising=False)
+    with caplog.at_level("INFO", logger="temper_ai.spawner.docker_spawner"):
+        cmd, record = _legacy_spawn(install, "login-3")
+    assert _login_targets(cmd) == [
+        f"type=bind,source={install.creds},target=/app/.claude/.credentials.json,readonly"]
+    assert record["doc"]["runtime"]["login_file"] == {
+        "from": "template", "source": str(install.creds),
+        "target": "/app/.claude/.credentials.json", "read_only": True}
+    assert f"login file from the template's bind: {install.creds} -> " in caplog.text
+    assert SYNTHETIC_MARK not in json.dumps(record) and SYNTHETIC_MARK not in caplog.text
+
+
+def test_unset_with_no_template_bind_means_no_login_file_and_says_so(install, monkeypatch, caplog):
+    monkeypatch.delenv(box_profile.BOUNDARY_ENV, raising=False)
+    with caplog.at_level("INFO", logger="temper_ai.spawner.docker_spawner"):
+        cmd, record = _legacy_spawn(_without_template_login(install), "login-4")
+    assert _login_targets(cmd) == [] and _tmpfs(cmd) == []
+    login = record["doc"]["runtime"]["login_file"]
+    assert login["from"] == "none" and login["source"] is None
+    assert login["note"] == "TEMPER_BOX_LOGIN_FILE is unset and the template binds no login file"
+    assert ("no login file (TEMPER_BOX_LOGIN_FILE is unset and the template binds no login "
+            "file)") in caplog.text
+
+
+def test_sealed_boxes_get_no_login_file_with_the_setting_or_without(install, monkeypatch):
+    _sealed(monkeypatch)
+    commands, records = [], []
+    for login_file in ("", HOST_LOGIN):
+        store = MemoryStore()
+        store.add("sealed-login", workflow="sealed_probe", workspace=str(install.run_a))
+        docker = FakeDocker()
+        _box_spawner(install, store, docker, login_file=login_file).spawn("sealed-login")
+        commands.append(_without_profile(docker.commands("run")[-1]))
+        records.append(store.record("sealed-login")["doc"])
+    for cmd, doc in zip(commands, records, strict=True):
+        assert _login_targets(cmd) == [] and not any(HOST_LOGIN in part for part in cmd)
+        assert not any(".credentials" in json.dumps(grant) for grant in doc["grants"])
+        assert "login_file" not in doc["runtime"] and HOST_LOGIN not in json.dumps(doc)
+    assert commands[0] == commands[1], "the setting changes nothing in a sealed box"
+
+
+def test_the_setting_is_read_once_when_the_spawner_is_made(monkeypatch):
+    monkeypatch.setenv("TEMPER_BOX_LOGIN_FILE", f"  {HOST_LOGIN}\n")
+    spawner = DockerSpawner(template_container="t", run=FakeDocker())
+    monkeypatch.setenv("TEMPER_BOX_LOGIN_FILE", "/somewhere/else")
+    template = Template.from_inspect(json.loads(_inspect_json())[0])
+    kept = [m for m in template.mounts if ds._passes_through(m, False)]
+    assert any(m.target.endswith("/.claude/.credentials.json") for m in kept)
+    # The worker-shaped template's login bind is at another home's target: it stays.
+    assert spawner.inherited_mounts(template) == [
+        *kept, Mount(HOST_LOGIN, "/app/.claude/.credentials.json", read_only=True)]
+    monkeypatch.setenv("TEMPER_BOX_LOGIN_FILE", " ")
+    assert DockerSpawner(template_container="t", run=FakeDocker())._login_file is None
+
+
+@pytest.mark.parametrize("value", [
+    "relative/.credentials.json", "/a/../.credentials.json", "/a,b/.credentials.json",
+    '/a"b/.credentials.json', "/a/.claude/", "/a/b\n/c",
+])
+def test_a_setting_that_isnt_a_plain_absolute_path_is_refused(value):
+    with pytest.raises(SpawnerError, match="TEMPER_BOX_LOGIN_FILE"):
+        DockerSpawner(template_container="t", run=FakeDocker(), login_file=value)

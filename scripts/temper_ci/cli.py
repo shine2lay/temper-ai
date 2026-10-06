@@ -79,7 +79,11 @@ def cmd_status(_args) -> int:
                    else "FAILED its live check")
         print(f"  last deploy: {dep.get('sha', '')[:12]} {verdict} ({dep.get('asked_at', '')})")
         for p in (dep.get("live") or {}).get("parts", []):
-            print(f"      {'ok  ' if p['ok'] else 'FAIL'} {p['name']}")
+            # An information-only part (the Pi pins) never counts: its mark says so, and its
+            # first line says what it found.
+            said = str(p.get("detail") or "").splitlines()[:1] if p.get("info") else []
+            found = f" \u2014 {said[0]}" if said else ""
+            print(f"      {report.mark(p):<4} {p['name']}{found}")
         if dep.get("rollback"):
             r = dep["rollback"]
             print(f"      went back to {str(r.get('good'))[:12]}"

@@ -25,6 +25,7 @@ wt land                 (in a temper-ai worktree)
        └─ temper-ci notices master moved
             ├─ waits until no run is going, restarts the server and worker
             ├─ looks at the live thing: check, hooks, one $0 run in a box, the page
+            │    (and the Pi pins: shown in the report, never counted)
             ├─ fine     → this commit becomes "the last good one"
             └─ not fine → a revert commit back to the last good one, through the same
                           gate (it passes at once: its files already passed), temper
@@ -63,7 +64,7 @@ box at all — if something ever tries to call a model, it fails rather than spe
 | the gate's code | `scripts/temper_ci/` in this repo (`stack.py`, `smoke.py`, `gate.py`, `deploy.py`, `report.py`) |
 | the command | `temper-ci` → `scripts/temper-ci` |
 | its state | `~/.local/state/temper-ci/` (`gate.json`, `deploy.json`, `reports/`, `work/`, `mirror/`) |
-| the reports | `~/.local/state/temper-ci/reports/<commit>/` — `report.html`, `report.json`, screenshots |
+| the reports | `~/.local/state/temper-ci/reports/<commit>/` — `index.html`, `report.json`, `live.json` (the deploy's live check), screenshots |
 | the watcher | `systemd --user` unit `temper-ci.service` |
 | the compose files | `docker-compose.yml` + `docker-compose.ci.yml` (the box's overrides) |
 | GitHub's side | `.github/workflows/ci.yml` |
@@ -176,7 +177,14 @@ under way when it asked carried it); not on it, nothing went live. A restart sti
 waiting after an hour is left to the next loop, which asks again.
 
 Then it looks at the live temper: `temper-deploy check`, `temper-deploy hooks`, one $0
-run in a box, and the page. If any of those fail:
+run in a box, and the page. It also runs the Pi pin check (`scripts/pi_pins_check.py
+--json`, model-free and read-only; [pi-lane.md](pi-lane.md), "The pins") and shows what it
+says, but never counts it: the pins match (`ok`), a mismatch naming the pins or a check that
+couldn't run (`FAIL (doesn't block)`), or not set up (`info`). A pin that's off already stops
+every Pi run at the Pi lane's own preflight, and a revert would put no pin right. All of it
+goes on the commit's report under "After it went live" and in `temper-ci status`.
+
+If any of the four fail:
 
 * it makes a revert commit back to the last good commit and takes it through the gate
   (which passes it at once, since those files already passed);

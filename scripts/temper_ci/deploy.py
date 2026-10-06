@@ -4,7 +4,7 @@ The ordinary path is short. master moved, so ask ``temper-deploy restart``
 for a restart; it already waits until no run is going, and several lands
 that arrive together join one restart. When it has restarted, look at the
 live temper for real: its own check, its hooks, one free run in a box, and
-the dashboard.
+the dashboard. The Pi pins are looked at too, and shown, but never counted.
 
 The unhappy path is the point of all this. If the live check fails, master
 does not move backwards — a revert commit goes on top, through the same
@@ -42,6 +42,13 @@ LIVE_CHECK_RUNS = "smoke_test"      # $0, script agents only
 # outside every folder mounted into temper's containers. No file, no key: fine until the
 # server's write guard is set to enforce.
 CI_KEY_FILE = Path.home() / ".config/temper/api-keys/temper-ci.key"
+# The Pi pins (M4 ADR-M4-04, SW-50; docs/pi-lane.md, "The pins"): temper's own host command,
+# model-free and read-only, run from the live checkout after every deploy.
+PIN_CHECK = MAIN_REPO / "scripts" / "pi_pins_check.py"
+PIN_CHECK_TIMEOUT = 120             # it stops itself at 60 s; this is the backstop
+PIN_CHECK_PART = "the Pi pins"
+# What its exit codes mean, when the JSON it prints says the same thing.
+PIN_RESULTS = {0: "pass", 1: "mismatch", 3: "not_set_up"}
 
 
 def ci_key_headers(key_file: Path = CI_KEY_FILE) -> dict[str, str]:
@@ -94,7 +101,12 @@ def _temper_deploy(*args: str, timeout: int = 300) -> subprocess.CompletedProces
 
 
 def live_check(shots: Path) -> dict:
-    """Four questions of the temper that is actually serving people."""
+    """Four questions of the temper that is actually serving people, and the Pi pins.
+
+    The four count: any one failing fails the live check, and that reverts the deploy. The
+    pins are information only (see pin_check): shown in the report and ``temper-ci status``,
+    never in ``ok``.
+    """
     out: dict = {"at": stamp(), "parts": [], "ok": True, "shots": []}
 
     def part(name: str, ok: bool, detail: str) -> None:
@@ -148,7 +160,88 @@ def live_check(shots: Path) -> dict:
     part("the dashboard", r.returncode == 0 and took,
          "it showed the workflow list" if r.returncode == 0
          else ((r.stdout or "").strip().splitlines()[-1:] or [(r.stderr or "").strip()])[0][:300])
+
+    # Not through part(): whatever it says, it never touches out["ok"].
+    out["parts"].append(pin_check())
     return out
+
+
+def pin_check() -> dict:
+    """The Pi pin check, as a part of the live check that is shown and never counted.
+
+    It says one of four things: the pins match; a mismatch, naming the pins; not set up (no
+    private box config yet, so the Pi lane isn't configured on this host); or it couldn't run
+    (no answer within PIN_CHECK_TIMEOUT, or a crash), with the reason.
+
+    Never counted, whatever it says. A failed part of the live check reverts the deploy, and
+    taking good code back out puts no pin right; the Pi lane's own preflight already refuses
+    every Pi run while a pin is off (ADR-M4-04). Only what the command prints is shown: pin
+    names and digests, never a path or a secret.
+    """
+    try:
+        result, detail = _pin_check()
+    except Exception as exc:  # noqa: BLE001 - this part must never break the live check
+        result, detail = "couldnt_run", f"couldn't run: {type(exc).__name__}: {exc}"
+    return {"name": PIN_CHECK_PART, "ok": result == "pass", "info": True,
+            "result": result, "detail": detail[:600]}
+
+
+def _pin_check() -> tuple[str, str]:
+    if not PIN_CHECK.is_file():
+        return "couldnt_run", f"couldn't run: this checkout has no scripts/{PIN_CHECK.name}"
+    try:
+        r = sh("python3", str(PIN_CHECK), "--json", cwd=PIN_CHECK.parent.parent,
+               timeout=PIN_CHECK_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return "couldnt_run", f"couldn't run: no answer within {PIN_CHECK_TIMEOUT} s"
+    said = _json_object(r.stdout)
+    result = str(said.get("result") or "")
+    # A crash exits 1 as well, so a mismatch is only one when the JSON says so too.
+    if PIN_RESULTS.get(r.returncode) != result:
+        why = (str(said.get("error") or "") or _last_line(r.stderr)
+               or (f"it said {result}" if result else _last_line(r.stdout))
+               or "it printed nothing")
+        return "couldnt_run", f"couldn't run (exit {r.returncode}): {why}"
+    pins = [p for p in said.get("pins") or [] if isinstance(p, dict)]
+    if result == "pass":
+        return "pass", f"pass: all {len(pins)} pins match"
+    if result == "not_set_up":
+        return "not_set_up", ("not set up: there is no private box config yet, so the Pi lane "
+                              "isn't configured on this host")
+    bad = [p for p in pins if not p.get("ok")]
+    lines = [f"mismatch: {len(bad)} of {len(pins)} pins: "
+             + ", ".join(str(p.get("name")) for p in bad)]
+    lines += [f"{p.get('name')}: want {_brief(p.get('want'))}, have {_brief(p.get('have'))}"
+              for p in bad]
+    return "mismatch", "\n".join(lines)
+
+
+def _json_object(text: str | None) -> dict:
+    """The JSON object a command printed (the whole of it, or its last line), else {}."""
+    text = (text or "").strip()
+    for candidate in (text, *text.splitlines()[-1:]):
+        try:
+            got = json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(got, dict):
+            return got
+    return {}
+
+
+def _last_line(text: str | None) -> str:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    return lines[-1][:300] if lines else ""
+
+
+def _brief(value: object) -> str:
+    """A pin's want or have, short enough that several fit in a part's 600 characters."""
+    if value is None:
+        return "nothing"
+    if isinstance(value, list):
+        return "[" + ", ".join(str(v) for v in value) + "]"
+    text = str(value)
+    return text if len(text) <= 24 else text[:19] + "…"
 
 
 # -- restarting --------------------------------------------------------------
@@ -376,7 +469,22 @@ def can_be_gone_back_to(sha: str) -> bool:
 
 
 def deploy(sha: str) -> dict:
-    """master is at ``sha``: get it live, and make sure it is well."""
+    """master is at ``sha``: get it live, and make sure it is well.
+
+    Once temper has been looked at, the commit's report gets what the live check found,
+    whichever way it went.
+    """
+    out = _deploy(sha)
+    if "live" in out:
+        try:
+            report.write_live(sha, out)
+        except Exception as exc:  # noqa: BLE001 - the deploy is decided and saved already
+            log(f"{sha[:12]}: could not put the live check on its report: "
+                f"{type(exc).__name__}: {exc}")
+    return out
+
+
+def _deploy(sha: str) -> dict:
     data = state()
     good = data.get("last_good") or ""
     if good and not can_be_gone_back_to(good):
@@ -426,7 +534,8 @@ def deploy(sha: str) -> dict:
         log(f"{sha[:12]}: live and well")
         return out
 
-    bad_parts = "; ".join(p["name"] for p in live["parts"] if not p["ok"])
+    # Only the parts that count: an information-only one (the Pi pins) never failed anything.
+    bad_parts = "; ".join(p["name"] for p in live["parts"] if not p["ok"] and not p.get("info"))
     log(f"{sha[:12]}: the live check failed ({bad_parts})")
     # Handled, whichever way it goes from here: the owner hears about this failure
     # once, and the watcher leaves this commit alone until master moves on (or a

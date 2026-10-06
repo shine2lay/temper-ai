@@ -9,9 +9,12 @@ rollback either saves the day or makes it worse.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import html
 import json
 import subprocess
 import sys
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
@@ -645,3 +648,288 @@ def test_temper_ci_deploy_by_hand_tries_a_handled_commit_again(dep, monkeypatch,
     data = deploy.state()
     assert data["deployed"] == sha and data["last_good"] == sha
     assert "handled" not in data
+
+
+# -- the Pi pins: shown after every deploy, never counted ----------------------
+#
+# temper's pin check (scripts/pi_pins_check.py --json) is stood in for: no box config,
+# image or tar is read. The live temper around it passes all four parts that count, so
+# whatever the pins say is the only thing that changes -- and the live check passes anyway.
+
+
+def _pin(name: str, ok: bool = True, want: object = None, have: object = None) -> dict:
+    want = want or "sha256:" + hashlib.sha256(name.encode()).hexdigest()
+    if ok:
+        have = want
+    return {"name": name, "want": want, "ok": ok,
+            "have": have or "sha256:" + hashlib.sha256(b"not " + name.encode()).hexdigest()}
+
+
+def _pins_said(result: str, pins: list[dict], code: int, error: str = "") -> subprocess.CompletedProcess:
+    """What the pin check prints with --json, and its exit code."""
+    said = {"result": result, "pins": pins, **({"error": error} if error else {})}
+    return subprocess.CompletedProcess(["python3"], code, json.dumps(said) + "\n", "")
+
+
+class _Answer:
+    """The live API's answer to one request."""
+
+    def __init__(self, body: dict) -> None:
+        self._body = json.dumps(body).encode()
+
+    def __enter__(self) -> _Answer:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._body
+
+
+def _live_temper(deploy, tmp_path, monkeypatch, pins: object) -> list[tuple]:
+    """Stand in for a live temper whose four counted parts all pass.
+
+    ``pins`` is what the pin check does: a CompletedProcess to return, or an exception to
+    raise. Returns the pin check's calls, each as (argv, cwd, timeout).
+    """
+    script = tmp_path / "checkout" / "scripts" / "pi_pins_check.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("# stands in for temper's pin check; never run\n", encoding="utf-8")
+    monkeypatch.setattr(deploy, "PIN_CHECK", script)
+    monkeypatch.setattr(deploy, "_temper_deploy", lambda *a, **k: subprocess.CompletedProcess(a, 0, "well\n", ""))
+    monkeypatch.setattr(deploy, "ci_key_headers", lambda *a, **k: {})
+
+    def urlopen(req, timeout=None):
+        if isinstance(req, urllib.request.Request) and req.get_method() == "POST":
+            return _Answer({"execution_id": "run-0001"})
+        return _Answer({"status": "completed"})
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    calls: list[tuple] = []
+
+    def sh(*args, cwd=None, timeout=120, **_kwargs):
+        if args[:2] == ("docker", "port"):
+            return subprocess.CompletedProcess(args, 0, "127.0.0.1:8420\n", "")
+        if str(args[1]).endswith("shot.py"):
+            Path(args[3]).write_bytes(b"a page")
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[1] == str(script):
+            calls.append((args, cwd, timeout))
+            if isinstance(pins, BaseException):
+                raise pins
+            return pins
+        return pytest.fail(f"an unexpected command: {args}")
+
+    monkeypatch.setattr(deploy, "sh", sh)
+    return calls
+
+
+def _pins_part(out: dict) -> dict:
+    [part] = [p for p in out["parts"] if p["name"] == "the Pi pins"]
+    return part
+
+
+def test_pins_that_match_are_shown_as_ok(dep, monkeypatch):
+    """temper's own command, run the way docs/pi-lane.md gives it, after the four parts that
+    count, with a backstop of its own on top of the check's 60 s."""
+    deploy, tmp_path = dep
+    pins = [_pin(name) for name in ("image", "image tar", "runtime", "add-on pi-tldr")]
+    calls = _live_temper(deploy, tmp_path, monkeypatch, _pins_said("pass", pins, 0))
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert out["ok"] is True
+    assert out["parts"][-1] == {"name": "the Pi pins", "ok": True, "info": True, "result": "pass",
+                                "detail": "pass: all 4 pins match"}
+    assert all(not p.get("info") for p in out["parts"][:-1]), "only the pins are information only"
+    [(argv, cwd, timeout)] = calls
+    assert argv == ("python3", str(deploy.PIN_CHECK), "--json")
+    assert cwd == deploy.PIN_CHECK.parent.parent
+    assert timeout == deploy.PIN_CHECK_TIMEOUT == 120
+
+
+def test_a_pin_mismatch_names_the_pins_and_the_live_check_still_passes(dep, monkeypatch):
+    """A pin that's off is shown, and nothing else happens: the live check still passes, so
+    nothing is reverted. The Pi lane's own preflight refuses Pi runs meanwhile."""
+    deploy, tmp_path = dep
+    runtime, login = _pin("runtime", ok=False), _pin("login extension", ok=False)
+    pins = [_pin("image"), runtime, login,
+            _pin("add-ons", ok=False, want=["pi-image-trim", "pi-tldr"], have=["pi-tldr"])]
+    _live_temper(deploy, tmp_path, monkeypatch, _pins_said("mismatch", pins, 1))
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert out["ok"] is True, "a pin that's off never fails the live check"
+    part = _pins_part(out)
+    assert (part["ok"], part["info"], part["result"]) == (False, True, "mismatch")
+    assert part["detail"].splitlines() == [
+        "mismatch: 3 of 4 pins: runtime, login extension, add-ons",
+        f"runtime: want {runtime['want'][:19]}\u2026, have {runtime['have'][:19]}\u2026",
+        f"login extension: want {login['want'][:19]}\u2026, have {login['have'][:19]}\u2026",
+        "add-ons: want [pi-image-trim, pi-tldr], have [pi-tldr]",
+    ]
+
+    # However many pins are off, the part stays within its 600 characters.
+    many = [_pin(f"add-on a-rather-long-add-on-name-{i:02d}", ok=False) for i in range(40)]
+    said = _pins_said("mismatch", many, 1)
+    monkeypatch.setattr(deploy, "sh", lambda *a, **k: said)
+    long = deploy.pin_check()
+    assert long["result"] == "mismatch" and len(long["detail"]) <= 600
+    assert long["detail"].startswith("mismatch: 40 of 40 pins: add-on a-rather-long-add-on-name-00, ")
+
+
+def test_with_no_box_config_the_pins_are_a_plain_info_line(dep, monkeypatch):
+    """No private box config yet: the Pi lane was never set up on this host. Nothing is
+    wrong, and the line says so plainly."""
+    deploy, tmp_path = dep
+    from temper_ci import report  # noqa: PLC0415
+
+    _live_temper(deploy, tmp_path, monkeypatch,
+                 _pins_said("not_set_up", [], 3, error="there is no private box config yet"))
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert out["ok"] is True
+    part = _pins_part(out)
+    assert (part["ok"], part["info"], part["result"]) == (False, True, "not_set_up")
+    assert part["detail"].startswith("not set up: there is no private box config yet")
+    assert report.mark(part) == "info"
+
+
+def test_a_pin_check_that_hangs_is_given_up_on_and_shown(dep, monkeypatch):
+    deploy, tmp_path = dep
+    from temper_ci import report  # noqa: PLC0415
+
+    _live_temper(deploy, tmp_path, monkeypatch, subprocess.TimeoutExpired(["python3"], 120))
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert out["ok"] is True
+    part = _pins_part(out)
+    assert (part["ok"], part["info"], part["result"]) == (False, True, "couldnt_run")
+    assert part["detail"] == "couldn't run: no answer within 120 s"
+    assert report.mark(part) == "FAIL (doesn't block)"
+
+
+@pytest.mark.parametrize(("how", "pins", "reason"), [
+    ("it crashed",
+     subprocess.CompletedProcess(["python3"], 1, "", "Traceback (most recent call last):\n  ...\n"
+                                 "RuntimeError: the docker socket went away\n"),
+     "couldn't run (exit 1): RuntimeError: the docker socket went away"),
+    ("it said error", _pins_said("error", [], 2, error="Docker did not answer"),
+     "couldn't run (exit 2): Docker did not answer"),
+    ("its exit and its JSON disagree", _pins_said("pass", [_pin("image")], 1),
+     "couldn't run (exit 1): it said pass"),
+    ("it printed nothing", subprocess.CompletedProcess(["python3"], 1, "", ""),
+     "couldn't run (exit 1): it printed nothing"),
+    ("python3 isn't there", FileNotFoundError(2, "No such file or directory"),
+     "couldn't run: FileNotFoundError: [Errno 2] No such file or directory"),
+    ("the checkout has no pin check", None,
+     "couldn't run: this checkout has no scripts/pi_pins_check.py"),
+])
+def test_a_pin_check_that_crashes_is_shown_with_its_reason(dep, monkeypatch, how, pins, reason):
+    """A crash also exits 1, so a mismatch is only believed when the JSON says so too.
+    Whatever went wrong, the live check passes and the part says why."""
+    deploy, tmp_path = dep
+    from temper_ci import report  # noqa: PLC0415
+
+    calls = _live_temper(deploy, tmp_path, monkeypatch, pins)
+    if pins is None:
+        deploy.PIN_CHECK.unlink()
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert out["ok"] is True, how
+    part = _pins_part(out)
+    assert (part["ok"], part["info"], part["result"], part["detail"]) == (
+        False, True, "couldnt_run", reason)
+    assert report.mark(part) == "FAIL (doesn't block)"
+    assert len(calls) == (0 if pins is None else 1)
+
+
+@pytest.mark.parametrize(("part", "mark"), [
+    ({"ok": True}, "ok"),
+    ({"ok": False}, "FAIL"),
+    ({"ok": True, "info": True, "result": "pass"}, "ok"),
+    ({"ok": False, "info": True, "result": "mismatch"}, "FAIL (doesn't block)"),
+    ({"ok": False, "info": True, "result": "couldnt_run"}, "FAIL (doesn't block)"),
+    ({"ok": False, "info": True, "result": "not_set_up"}, "info"),
+])
+def test_each_part_reads_as_what_it_is(dep, part, mark):
+    """Only a part that counts reads as a plain FAIL."""
+    from temper_ci import report  # noqa: PLC0415
+
+    assert report.mark(part) == mark
+
+
+def _counted_parts(failing: str = "") -> list[dict]:
+    return [{"name": name, "ok": name != failing, "detail": "it said no" if name == failing else ""}
+            for name in ("temper-deploy check", "temper-deploy hooks",
+                         "a free run on the live temper", "the dashboard")]
+
+
+PINS_OFF = {"name": "the Pi pins", "ok": False, "info": True, "result": "mismatch",
+            "detail": "mismatch: 1 of 13 pins: runtime\nruntime: want 1.0.1, have 1.0.2"}
+
+
+def test_a_deploy_with_a_pin_off_stays_live_and_its_report_says_so(dep, monkeypatch, capsys):
+    """The deploy goes through and becomes the one to go back to; the commit's report and
+    `temper-ci status` show the pins, marked as not blocking."""
+    deploy, tmp_path = dep
+    from temper_ci import cli, report  # noqa: PLC0415
+
+    sha = "6" * 40
+    now = dt.datetime.now(dt.UTC)
+    monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: _restarted(
+        deploy, tmp_path, now + dt.timedelta(seconds=5), head=sha[:8]))
+    monkeypatch.setattr(deploy, "live_check", lambda shots: {
+        "at": "2026-10-06T20:00:00Z", "api": "http://127.0.0.1:8420", "ok": True,
+        "parts": [*_counted_parts(), PINS_OFF], "shots": []})
+    monkeypatch.setattr(deploy, "revert_to", lambda *a: pytest.fail("it reverted over a pin"))
+    monkeypatch.setattr(deploy, "dm", lambda text: pytest.fail(f"it told the owner about a pin: {text}"))
+
+    out = deploy.deploy(sha)
+
+    assert out["ok"] is True
+    assert deploy.state()["last_good"] == sha and deploy.state()["deployed"] == sha
+    page = html.unescape((report.folder(sha) / "index.html").read_text(encoding="utf-8"))
+    assert "After it went live" in page and "Live and well" in page
+    assert "FAIL (doesn't block)" in page and "runtime: want 1.0.1, have 1.0.2" in page
+    assert report.INFO_ONLY in page
+
+    # A machine check written over the page later keeps the live check on it.
+    report.write(sha, {"ok": True, "sha": sha, "checks": []})
+    page = html.unescape((report.folder(sha) / "index.html").read_text(encoding="utf-8"))
+    assert "After it went live" in page and "FAIL (doesn't block)" in page
+
+    monkeypatch.setattr(deploy, "master_sha", lambda: sha)
+    assert cli.main(["status"]) == 0
+    shown = capsys.readouterr().out
+    assert f"last deploy: {sha[:12]} live and well" in shown
+    assert "FAIL (doesn't block) the Pi pins \u2014 mismatch: 1 of 13 pins: runtime\n" in shown
+    assert "ok   the dashboard\n" in shown
+
+
+def test_a_failed_deploy_is_put_down_to_what_counts_never_to_the_pins(dep, monkeypatch):
+    """When a part that counts fails, the revert and the owner's message name that part,
+    not the pins that were off at the same time."""
+    deploy, tmp_path = dep
+    deploy.save({"last_good": "4" * 40, "deployed": "4" * 40})
+    monkeypatch.setattr(deploy.gate, "result_for", lambda sha: {"ok": True})
+    now = dt.datetime.now(dt.UTC)
+    monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: _restarted(
+        deploy, tmp_path, now + dt.timedelta(seconds=5), head=sha[:8]))
+    monkeypatch.setattr(deploy, "live_check", lambda shots: {
+        "ok": False, "parts": [*_counted_parts(failing="the dashboard"), PINS_OFF]})
+    reverted: dict = {}
+    monkeypatch.setattr(deploy, "revert_to", lambda good, bad, reason: (
+        reverted.update(reason=reason), {"ok": True, "revert": "9" * 40})[1])
+    said: list[str] = []
+    monkeypatch.setattr(deploy, "dm", said.append)
+    monkeypatch.setattr(deploy, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, "5555555 Add a thing\n", ""))
+
+    deploy.deploy("5" * 40)
+
+    assert reverted["reason"] == "the live check failed: the dashboard"
+    assert len(said) == 1 and "what failed: the dashboard\n" in said[0] and "Pi pins" not in said[0]

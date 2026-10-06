@@ -6,6 +6,11 @@
 # Prints names, never values, and fails (exit 1) when it finds a name that must
 # not be there (docs/boxes.md). Used by the machine check's smoke set and as the
 # live probe after a change to the box list.
+#
+# It also checks the box's profile (docs/boxes.md, "The box profile"): the box was
+# started with one, it matches its digest, it says what it leaves open (BS2-BS6 and a
+# network recorded as mixed), and, in a sealed box, the paths a sealed box never has
+# are not there and the runner's own files can't be written. Facts and path names only.
 agent:
   name: ci_box_env
   type: script
@@ -46,7 +51,71 @@ agent:
 
     leaks = sorted({n for n in tool if n in NOT_FOR_TOOLS or n.endswith(SECRET_ENDINGS)}
                    | (box & SERVER_ONLY))
+
+    # The box profile, as the box was started with it (the first process that has it).
+    import hashlib
+    PROFILE_VARS = ("TEMPER_BOX_PROFILE", "TEMPER_BOX_PROFILE_DIGEST",
+                    "TEMPER_BOX_PROFILE_GENERATION")
+    started = ({k: os.environ.get(k, "") for k in PROFILE_VARS}
+               if PROFILE_VARS[0] in os.environ else {})
+    for path in [] if started else sorted(Path("/proc").glob("[0-9]*/environ"), key=lambda p: int(p.parent.name)):
+        try:
+            items = path.read_bytes().split(b"\0")
+        except OSError:
+            continue
+        found = dict(i.decode("utf-8", "replace").split("=", 1) for i in items if b"=" in i)
+        if PROFILE_VARS[0] in found:
+            started = {k: found.get(k, "") for k in PROFILE_VARS}
+            break
+    problems, profile = [], {}
+    if not started:
+        problems.append("the box was started without a profile")
+    else:
+        try:
+            doc = json.loads(started[PROFILE_VARS[0]])
+        except ValueError:
+            doc = None
+        if not isinstance(doc, dict):
+            problems.append("the box's profile is not a document")
+            doc = {}
+        text = json.dumps(doc, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        digest = "sha256:" + hashlib.sha256(text.encode("ascii")).hexdigest()
+        steps = sorted({r.get("step") for r in doc.get("residuals") or []} - {None})
+        profile = {"boundary": doc.get("boundary"), "generation": doc.get("generation"),
+                   "hardening": doc.get("hardening"), "digest": digest[:19],
+                   "residuals": steps, "network": (doc.get("closure") or {}).get("network")}
+        if digest != started[PROFILE_VARS[1]]:
+            problems.append("the profile does not match its digest")
+        if str(doc.get("generation")) != started[PROFILE_VARS[2]]:
+            problems.append("the profile's generation is not the one the box was given")
+        if doc.get("schema_version") != 2 or doc.get("hardening") != "partial":
+            problems.append("the profile is not schema 2 with partial hardening")
+        missing = {"BS2", "BS3", "BS4", "BS5", "BS6", "network"} - set(steps)
+        if missing:
+            problems.append("the profile doesn't list what it leaves open: " + ", ".join(sorted(missing)))
+        if profile["network"] != "negative":
+            problems.append("the profile claims a closed network")
+        runtime = doc.get("runtime") or {}
+        # The paths a sealed box must not have come from its profile, not from this text.
+        absent = runtime.get("absent") or []
+        visible = [p for p in absent if os.path.lexists(p)]
+        profile["absent_paths_visible"] = visible
+        if doc.get("boundary") == "sealed":
+            if not absent:
+                problems.append("a sealed profile names no paths its box must not have")
+            if visible:
+                problems.append("a sealed box has " + ", ".join(visible))
+            writable = [p for p in runtime.get("immutable") or []
+                        if os.path.exists(p) and os.access(p, os.W_OK)]
+            writable += [p for p in runtime.get("path") or []
+                         if os.path.isdir(p) and os.access(p, os.W_OK)]
+            if writable:
+                problems.append("a sealed box can write " + ", ".join(sorted(set(writable))))
+        elif doc.get("boundary") != "legacy":
+            problems.append(f"the profile's boundary is {doc.get('boundary')!r}")
+
     print(json.dumps({"tool_env": tool, "box_env": sorted(box),
-                      "unreadable_proc": unreadable, "leaks": leaks}))
-    sys.exit(1 if leaks else 0)
+                      "unreadable_proc": unreadable, "leaks": leaks,
+                      "profile": profile, "profile_problems": problems}))
+    sys.exit(1 if leaks or problems else 0)
     PY

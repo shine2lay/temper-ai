@@ -67,7 +67,13 @@ class SubprocessSpawner(Spawner):
         """Fork a worker. Caller is responsible for inserting the queued
         WorkflowRun row before calling — we don't validate it here because
         the worker itself errors-out cleanly if the row is missing.
+
+        Refused under TEMPER_BOX_RUNTIME_BOUNDARY=sealed: a child process shares the
+        worker's files and keys, so it is no box (BoxProfileError, a SpawnerError).
         """
+        from temper_ai.spawner.box_profile import refuse_unboxed_under_sealed
+
+        refuse_unboxed_under_sealed("the subprocess spawner (TEMPER_SPAWNER=subprocess)")
         cmd = [
             self._python,
             "-m", "temper_ai.cli.main",

@@ -74,7 +74,13 @@ def bootstrap_runner_context_from_env(
     # workflow name the server can. Cheap (file reads + dataclass parsing).
     config_store = ConfigStore()
     graph_loader = GraphLoader(config_store)
-    _load_configs_into_store(config_store, config_dir)
+    from temper_ai.spawner import box_guard
+    if box_guard.active() is not None:
+        # A sealed box reads its configs from its checked files only (box_guard.py),
+        # and writes none of them into the database.
+        logger.info("Sealed box: configs come from the run's classified launch only")
+    else:
+        _load_configs_into_store(config_store, config_dir)
 
     return RunnerContext(
         config_store=config_store,

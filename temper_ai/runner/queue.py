@@ -42,7 +42,9 @@ def queue_run(
     from temper_ai.runner.models import WorkflowRun
 
     metadata: dict = {"start": start} if start else {}
-    metadata.update({k: v for k, v in (extra or {}).items() if v})
+    # Only the worker writes a run's box profile record (spawner/box_profile.py): whatever
+    # asks for a run can't hand one in.
+    metadata.update({k: v for k, v in (extra or {}).items() if v and k != "box_profile"})
     with get_session() as session:
         row = session.exec(
             select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
@@ -65,7 +67,10 @@ def queue_run(
         row.status = "queued"
         row.spawner_kind = None
         row.spawner_handle = None
-        row.spawner_metadata = metadata
+        # The run's box profile record stays: its generation and history (was it ever
+        # sealed?) decide what the next box may be (spawner/box_profile.py).
+        kept = (row.spawner_metadata or {}).get("box_profile")
+        row.spawner_metadata = metadata if kept is None else {**metadata, "box_profile": kept}
         row.cancel_requested = False
         row.started_at = None
         row.completed_at = None

@@ -101,6 +101,38 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     """
     execution_id: str = args.execution_id
 
+    # --- The box's own check, before anything is loaded -------------------------
+    # A box started with a profile (box_profile.py) checks it matches its digest and, when
+    # sealed, that the box is exactly what it grants (a sealed box ran the same check
+    # before this program, from code the worker passed it). A box that fails it loads
+    # nothing and leaves; the reaper ends the run when the box is gone. A legacy box is
+    # never stopped by its profile: it goes on as a box without one.
+    from temper_ai.spawner import box_view
+    box_doc: dict | None = None
+    try:
+        box_doc = box_view.check_box()
+    except box_view.BoxStartRefused as exc:
+        if not _legacy_profile_in_env():
+            print(f"box refused: {exc}", file=sys.stderr)
+            return BOX_REFUSED_EXIT
+        logger.warning("Box for %s: its legacy profile can't be used (%s); it runs without "
+                       "one", execution_id, exc)
+    unboxed = _unboxed_under_sealed(box_doc)
+    if unboxed is not None:
+        print(f"box refused: {unboxed}", file=sys.stderr)
+        return BOX_REFUSED_EXIT
+
+    # --- A sealed box loads only the launch the worker classified ------------------
+    # Every closure file is checked against the profile before anything is loaded; from
+    # here on configs come only from those files, and anything outside the launch is
+    # refused where it would be used (box_guard.py). A legacy box has no guard.
+    from temper_ai.spawner import box_guard
+    try:
+        box_guard.activate(box_doc)
+    except box_guard.LaunchRefused as exc:
+        print(f"box refused: {exc}", file=sys.stderr)
+        return BOX_REFUSED_EXIT
+
     # --- Bootstrap (DB + LLM + memory + configs) ------------------------------
     from temper_ai.runner.bootstrap import bootstrap_runner_context_from_env
     try:
@@ -120,6 +152,11 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+
+    # --- Is this box the run's current one, and the one its row describes? -----
+    refused = _box_refused(execution_id, box_doc, run_row.get("spawner_metadata"))
+    if refused is not None:
+        return refused
 
     # --- Resume or fork? --------------------------------------------------------
     # The server queues resumes and forks too (spawner_metadata["start"]), so
@@ -341,7 +378,62 @@ def _update_run_row(execution_id: str, **fields: Any) -> None:
         session.add(row)
 
 
-def _safe_mark_failed(execution_id: str, message: str) -> None:
+#: The exit code of a box that refused to start (stale, or not the box its profile says).
+BOX_REFUSED_EXIT = 3
+
+
+def _unboxed_under_sealed(doc: dict | None) -> str | None:
+    """Why this process may not run a workflow on a sealed install (None: it may).
+
+    The subprocess spawner's child, or `temper run-workflow` typed by hand, inherits
+    TEMPER_BOX_RUNTIME_BOUNDARY=sealed but has no sealed box around it.
+    """
+    from temper_ai.spawner import box_profile
+
+    try:
+        boundary = box_profile.boundary_setting()
+    except box_profile.BoxProfileError as exc:
+        return str(exc)
+    if boundary == box_profile.SEALED and (doc is None or doc.get("boundary") != box_profile.SEALED):
+        return (f"{box_profile.BOUNDARY_ENV}=sealed, but this process is not in a sealed box; "
+                "runs start only through the docker spawner")
+    return None
+
+
+def _legacy_profile_in_env() -> bool:
+    """Whether the profile this box was given (readable or not) is a legacy one."""
+    import json
+
+    from temper_ai.spawner import box_view
+    try:
+        doc = json.loads(os.environ.get(box_view.PROFILE_ENV) or "null")
+    except ValueError:
+        return False
+    return isinstance(doc, dict) and doc.get("boundary") == "legacy"
+
+
+def _box_refused(execution_id: str, doc: dict | None, metadata: Any) -> int | None:
+    """None when the box may run; else its exit code, after failing the run when it should.
+
+    A box whose profile generation is older than the row's is stale (a newer box took the
+    run over): it leaves without touching the row. Any other mismatch with the row (a
+    sealed run's box without its profile, say) fails the run before any tool.
+    """
+    from temper_ai.spawner import box_profile, box_view
+
+    try:
+        box_profile.check_row(doc, metadata)
+    except box_profile.BoxIsStale as exc:
+        logger.warning("Box for %s is stale and leaves the run alone: %s", execution_id, exc)
+        return BOX_REFUSED_EXIT
+    except box_view.BoxStartRefused as exc:
+        logger.error("Box for %s refused: %s", execution_id, exc)
+        _safe_mark_failed(execution_id, f"box refused: {exc}", kind="box")
+        return BOX_REFUSED_EXIT
+    return None
+
+
+def _safe_mark_failed(execution_id: str, message: str, kind: str = "bootstrap") -> None:
     """Best-effort terminal write when bootstrap fails. Swallows DB errors
     because if the DB itself is down there's nothing we can do — the
     server's reaper will sweep us up via process-exit detection.
@@ -351,7 +443,7 @@ def _safe_mark_failed(execution_id: str, message: str) -> None:
             execution_id,
             status="failed",
             completed_at=datetime.now(UTC),
-            error={"message": message, "kind": "bootstrap"},
+            error={"message": message, "kind": kind},
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(

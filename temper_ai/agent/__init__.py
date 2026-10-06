@@ -27,6 +27,8 @@ def create_agent(config: dict) -> AgentABC:
     Agent type determined by config["type"] (default: "llm").
     """
     agent_type = config.get("type", "llm")
+    from temper_ai.spawner import box_guard
+    box_guard.check("agent_types", agent_type)  # a sealed box: only its launch's types
     if agent_type not in AGENT_TYPES:
         raise ValueError(
             f"Unknown agent type: '{agent_type}'. "

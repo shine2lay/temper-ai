@@ -1,0 +1,18 @@
+# Read-only data a workflow's sealed box may have (TEMPER_BOX_RUNTIME_BOUNDARY=sealed,
+# docs/boxes.md "Sealed boxes"). A legacy box ignores this file: it gets the
+# template container's mounts as they are.
+#
+# A sealed box gets the runner's code and configs, its own workspace and nothing
+# else, unless a workflow declares a folder here: a mount target the template
+# container (temper-ai-server) has, granted read-only and pinned like the rest.
+# Never data: the docker socket, the workspaces tree or anything in it, code,
+# executables, local/, the main repo copy, logins, key folders. Such an entry, or
+# one the template doesn't mount, refuses the sealed launch.
+#
+# This install's own entries go in configs/boxes/local/data.yaml (git-ignored),
+# in the same shape:
+#
+#   data:
+#     my_workflow: [/app/shared-reference]
+
+data: {}

@@ -145,9 +145,14 @@ def execute_workflow(
         workspace_root=workspace_path,
         policy_engine=policy_engine,
     )
-    run_tool_executor.register_tools(
-        {name: cls() for name, cls in TOOL_CLASSES.items()},
-    )
+    # A sealed box registers only the tools its classified launch has (box_guard.py); an
+    # agent naming any other stops with ToolsNotRegisteredError before any tool runs.
+    from temper_ai.spawner import box_guard
+    kept, left_out = box_guard.classified_tools(TOOL_CLASSES)
+    if left_out:
+        logger.info("Sealed box: %d tool(s) outside the run's classified launch are not "
+                    "registered", len(left_out))
+    run_tool_executor.register_tools({name: TOOL_CLASSES[name]() for name in kept})
 
     # MCP tools — pre-connect any servers the workflow's agents reference.
     from temper_ai.tools.mcp_client import mcp_manager
@@ -155,6 +160,11 @@ def execute_workflow(
 
     agent_configs = [cfg for node in nodes for cfg in node.agent_configs()]
     mcp_tools = create_mcp_tools_from_agents(mcp_manager, agent_configs)
+    mcp_kept, mcp_left_out = box_guard.classified_tools(mcp_tools)
+    if mcp_left_out:
+        logger.error("Sealed box: MCP tools outside the run's classified launch are not "
+                     "registered: %s", ", ".join(sorted(mcp_left_out)))
+        mcp_tools = {name: mcp_tools[name] for name in mcp_kept}
     if mcp_tools:
         run_tool_executor.register_tools(dict(mcp_tools))
         try:

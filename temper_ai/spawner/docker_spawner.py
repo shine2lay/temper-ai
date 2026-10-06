@@ -58,6 +58,16 @@ were always documented as.
 The worker discovers all of that with `docker inspect` on the template
 (by default $HOSTNAME — docker sets a container's hostname to its id).
 
+That is the legacy box, still the default. TEMPER_BOX_RUNTIME_BOUNDARY=sealed
+(box secrets BS1, docs/boxes.md) builds another kind instead: none of the
+template's mounts are inherited, only a positive list of grants is mounted,
+each pinned from the worker's check to docker's use (box_seal.py); the image
+is taken by its id, the root filesystem is read-only, every capability is
+dropped and the runner starts with a fixed interpreter, PATH and HOME. Each
+box, of either kind, gets a box profile compiled here before `docker run`
+(box_profile.py): it is stored on the run's row and handed to the box, which
+checks it before anything runs.
+
 Handles: the container name is derived from the execution_id, so
 is_alive() and kill() work from the row alone — across worker restarts,
 and regardless of what the run writes into spawner_handle.
@@ -65,6 +75,7 @@ and regardless of what the run writes into spawner_handle.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -72,13 +83,15 @@ import shlex
 import socket
 import subprocess  # noqa: S404 — intentional: this is the spawner
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from temper_ai.integrations.github import secret as github_secret
 from temper_ai.shared import box_env as box_env_list
+from temper_ai.spawner import box_launches, box_profile, box_seal, box_view
 from temper_ai.spawner.base import Spawner, SpawnerBusy, SpawnerError
+from temper_ai.spawner.box_profile import BoxProfileError
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
 
 logger = logging.getLogger(__name__)
@@ -89,6 +102,41 @@ RUN_COMMAND = ["uv", "run", "python", "-m", "temper_ai.cli.main", "run-workflow"
 # How long a run waits for a template container that can't be read (it is
 # being recreated, say) when there is no earlier look to fall back on.
 TEMPLATE_GRACE_SECONDS = 120.0
+
+#: What a sealed box runs: the template image's own interpreter, isolated (-I: no
+#: PYTHON* variables, no user site, no current folder on the import path).
+SEALED_ARGS = ["-I", "-m", "temper_ai.cli.main", "run-workflow"]
+#: What a sealed box runs first: the box check, as source the worker holds (read when this
+#: module loads), so the check of the mounts doesn't come from a mount it checks.
+BOOT_PROGRAM = box_view.boot_program()
+BOOT_DIGEST = "sha256:" + hashlib.sha256(BOOT_PROGRAM.encode("utf-8")).hexdigest()
+#: Variables a sealed box never takes from the template: the spawner fixes PATH and HOME,
+#: and none of these may steer what the runner loads.
+SEALED_DROP = frozenset({
+    "PATH", "HOME", "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE",
+    "PYTHONINSPECT", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "BASH_ENV", "ENV",
+    "TEMPER_LOG_DIR", "CLAUDE_CONFIG_DIR", "DISABLE_AUTOUPDATER",
+})
+#: What the spawner sets in a sealed box itself: logs and the Claude CLI's state go to
+#: the box's own tmpfs, and the CLI never updates itself.
+SEALED_SET = {"TEMPER_LOG_DIR": "/tmp/temper-logs",
+              "CLAUDE_CONFIG_DIR": box_seal.CLAUDE_STATE, "DISABLE_AUTOUPDATER": "1"}
+#: The provider agents that name none use (shared/types.py resolve_provider). A sealed box
+#: is given the one its launch was classified with; unset, those launches are refused.
+DEFAULT_PROVIDER_ENV = "TEMPER_DEFAULT_PROVIDER"
+
+#: Launch sites found per scanned tree: (worker path, prefix, entries, tree digest) -> sites.
+_SITES: dict[tuple[str, str, tuple[str, ...], str], frozenset[str]] = {}
+
+
+def _launch_sites(path: str, prefix: str, entries: tuple[str, ...],
+                  digest: str | None) -> frozenset[str]:
+    if not digest:
+        return frozenset(box_launches.launch_sites(path, prefix=prefix, only=entries))
+    key = (path, prefix, entries, digest)
+    if key not in _SITES:
+        _SITES[key] = frozenset(box_launches.launch_sites(path, prefix=prefix, only=entries))
+    return _SITES[key]
 
 # `docker inspect` on a name that does not exist exits 1 with this on stderr.
 # Lower case, matched against lower-cased stderr: docker 29's CLI writes "error: no such object: X"
@@ -162,6 +210,16 @@ class Template:
     mounts: list[Mount]
     networks: list[str]
     extra_hosts: list[str]
+    image_id: str = ""     # the image's content id (sha256:...): what a sealed box runs
+    user: str = ""
+    working_dir: str = ""
+
+    def env_value(self, name: str) -> str | None:
+        for var in self.env:
+            key, _, value = var.partition("=")
+            if key == name:
+                return value
+        return None
 
     @classmethod
     def from_inspect(cls, info: dict) -> Template:
@@ -183,6 +241,9 @@ class Template:
             mounts=mounts,
             networks=networks,
             extra_hosts=list(host_config.get("ExtraHosts") or []),
+            image_id=info.get("Image") or "",
+            user=config.get("User") or "",
+            working_dir=config.get("WorkingDir") or "",
         )
 
 
@@ -282,6 +343,14 @@ def _run_command() -> list[str]:
     return shlex.split(override) if override else list(RUN_COMMAND)
 
 
+def _workspace_forms(workspace_path: str, workspace_dir: str | None) -> list[str]:
+    """The ways a run's row may spell this workspace: its host path and the /app/workspaces alias."""
+    forms = [workspace_path]
+    if workspace_dir and workspace_path.startswith(workspace_dir.rstrip("/") + "/"):
+        forms.append(box_seal.WORKSPACES_ALIAS + workspace_path[len(workspace_dir.rstrip("/")):])
+    return forms
+
+
 def _all_workspaces() -> bool:
     return os.environ.get("TEMPER_DOCKER_WORKSPACES", "own").strip().lower() == "all"
 
@@ -317,6 +386,9 @@ class DockerSpawner(Spawner):
         run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
         clock: Callable[[], float] = time.monotonic,
         box_env: Callable[[], box_env_list.BoxEnv] = box_env_list.load_box_env,
+        profile_store: box_profile.ProfileStore | None = None,
+        worker_view: box_seal.WorkerView | None = None,
+        engine_launches: Mapping[str, str] | None = None,
     ) -> None:
         self._docker = docker_bin
         self._template_container = (
@@ -329,6 +401,11 @@ class DockerSpawner(Spawner):
         self._run = run
         self._clock = clock
         self._box_env = box_env
+        self._store = profile_store if profile_store is not None else box_profile.DbProfileStore()
+        self._worker_view_given = worker_view
+        # The engine's classified launch sites (None: the table shipped with this code,
+        # box_launches.ENGINE_LAUNCHES). Trusted code only, never anything a run controls.
+        self._engine_table = engine_launches
         self._template: Template | None = None
         self._template_missing_since: float | None = None
 
@@ -338,6 +415,7 @@ class DockerSpawner(Spawner):
         workspace_path = self._workspace_lookup(execution_id)
         if workspace_path is None:
             raise SpawnerError(f"No WorkflowRun row for execution_id={execution_id}")
+        settings = box_profile.install_settings()
         template = self.template()
         name = container_name(execution_id)
         env = self.env_split(template)
@@ -352,9 +430,18 @@ class DockerSpawner(Spawner):
                 "Run container %s: left out %d variable(s) not on the box list: %s",
                 name, len(env.dropped), ", ".join(env.dropped),
             )
-        cmd = self.run_command(execution_id, workspace_path, template, env)
+        if settings[box_profile.BOUNDARY_ENV] == box_profile.SEALED:
+            return self._spawn_sealed(execution_id, workspace_path, template, env, settings)
 
+        record = self._legacy_record(execution_id, workspace_path, template, env, settings)
+        extra = box_profile.env_for(record["doc"]) if record else None
+        cmd = self.run_command(execution_id, workspace_path, template, env, extra_env=extra)
         result = self._docker_run(cmd)
+        return self._handle(execution_id, result, self._image_override or template.image, record)
+
+    def _handle(self, execution_id: str, result: subprocess.CompletedProcess, image: str,
+                record: dict | None) -> ProcessHandle:
+        name = container_name(execution_id)
         if result.returncode != 0:
             raise SpawnerError(
                 f"docker run failed for {execution_id} (exit {result.returncode}): "
@@ -365,15 +452,287 @@ class DockerSpawner(Spawner):
             "Spawned run container %s (%s) for execution_id=%s",
             name, container_id[:12], execution_id,
         )
-        return ProcessHandle(
-            kind=SpawnerKind.docker,
-            handle=name,
-            metadata={
-                "execution_id": execution_id,
-                "container_id": container_id,
-                "image": template.image if self._image_override is None else self._image_override,
-            },
+        metadata = {"execution_id": execution_id, "container_id": container_id, "image": image}
+        if record is not None:
+            # The row has it already (stored before docker run); the handle carries it too,
+            # because some callers replace spawner_metadata with the handle's (api/routes.py).
+            metadata[box_profile.METADATA_KEY] = record
+        return ProcessHandle(kind=SpawnerKind.docker, handle=name, metadata=metadata)
+
+    # -- Box profiles ---------------------------------------------------------
+
+    def _legacy_record(self, execution_id: str, workspace_path: str, template: Template,
+                       env: BoxEnvSplit, settings: dict[str, str]) -> dict | None:
+        """A legacy box's profile, stored on the row; None (the box starts as before) on trouble.
+
+        The profile machinery never stops a legacy box, with one exception: a run that
+        ever had a sealed box is never given a legacy one (BoxProfileError).
+        """
+        facts = None
+        try:
+            facts = self._store.load(execution_id)
+            previous = box_profile.stored_profile(facts.metadata if facts else None)
+        except Exception as exc:  # noqa: BLE001 - a legacy box starts without a profile then
+            raw = (facts.metadata if facts else {}).get(box_profile.METADATA_KEY)
+            if box_profile.looks_sealed(raw):
+                raise BoxProfileError(
+                    f"run {execution_id} had a sealed box and its stored profile can't be read "
+                    f"({exc}); no legacy box is started for it",
+                ) from exc
+            logger.warning("Run container %s: no box profile (%s); it starts without one",
+                           container_name(execution_id), exc)
+            return None
+        generation = box_profile.next_generation(previous, box_profile.LEGACY)
+        try:
+            homes, mounts = self.legacy_mounts(workspace_path, template)
+            workspaces = template.env_value("WORKSPACE_DIR")
+            inherited = [{"source": m.source, "target": m.target, "read_only": m.read_only,
+                          "kind": "inherited",
+                          "class": box_seal.mount_class(m.source, m.target, workspaces)}
+                         for m in mounts]
+            doc = box_profile.compile_profile(
+                execution_id=execution_id, generation=generation, settings=settings,
+                boundary=box_profile.LEGACY,
+                image={"ref": self._image_override or template.image,
+                       "id": template.image_id or "unknown"},
+                source={},
+                launch={"workflow": facts.workflow_name if facts else None,
+                        "boundary": box_profile.LEGACY, "classified": False},
+                grants=inherited, tmpfs=[f"{home}:mode=1777" for home in homes],
+                runtime={"command": _run_command(), "user": template.user or None,
+                         "path": (template.env_value("PATH") or "").split(os.pathsep),
+                         "home": template.env_value("HOME"), "env_mode": env.mode},
+                limits=self._limits_doc(),
+                graph=box_profile.network_graph(container_name(execution_id),
+                                                template.networks[:1], template.extra_hosts),
+                legacy_mounts=inherited,
+            )
+            record = box_profile.record_for(doc, previous)
+            self._store.save(execution_id, record,
+                             previous.generation if previous else None)
+        except Exception as exc:  # noqa: BLE001 - as before: the box starts without one
+            logger.warning("Run container %s: no box profile (%s); it starts without one",
+                           container_name(execution_id), exc)
+            return None
+        logger.info("Run container %s: %s", container_name(execution_id),
+                    box_profile.summary(record["doc"]))
+        return record
+
+    def _spawn_sealed(self, execution_id: str, workspace_path: str, template: Template,
+                      env: BoxEnvSplit, settings: dict[str, str]) -> ProcessHandle:
+        """A sealed box (BS1): checked, planned, pinned, profiled and stored, then started."""
+        name = container_name(execution_id)
+        facts = self._store.load(execution_id)
+        if facts is None:
+            raise SpawnerError(f"No WorkflowRun row for execution_id={execution_id}")
+        previous = box_profile.stored_profile(facts.metadata)
+        generation = box_profile.next_generation(previous, box_profile.SEALED)
+        interpreter = self._sealed_preflight(template, env)
+        path_value = template.env_value("PATH")
+        home = template.env_value("HOME")
+        if not path_value or not home:
+            raise BoxProfileError("the template has no PATH or HOME for a sealed box to fix")
+        workspaces = template.env_value("WORKSPACE_DIR")
+        configs = next((m.source for m in template.mounts
+                        if m.target == box_seal.CONFIG_TARGET), None)
+        if configs is None:
+            raise BoxProfileError("the template container mounts no /app/configs to seal")
+        view = self._worker_view()
+        configs_here = view.path(configs)
+        with box_seal.plan_sealed(
+            mounts=[(m.source, m.target) for m in template.mounts],
+            workspace_dir=workspaces, workspace_path=workspace_path,
+            data_targets=box_seal.declared_data(facts.workflow_name, configs_here), view=view,
+        ) as plan:
+            default_provider = template.env_value(DEFAULT_PROVIDER_ENV) or None
+            launch = box_launches.classify(
+                box_launches.ConfigIndex.of(box_launches.FsTree(configs_here)),
+                facts.workflow_name, default_provider=default_provider,
+                absent_roots=[(p, f"names {p}, which a sealed box doesn't have")
+                              for p in plan.absent],
+            )
+            if launch.boundary != box_launches.SEALED:
+                raise BoxProfileError(
+                    f"workflow {facts.workflow_name!r} can't run in a sealed box (classified "
+                    f"{launch.boundary}): " + "; ".join(launch.reasons),
+                )
+            engine = self._engine_check(plan, view)
+            if workspace_path:
+                others = self._store.neighbours(execution_id,
+                                                _workspace_forms(workspace_path, workspaces))
+                if others:
+                    raise BoxProfileError(
+                        f"the run's workspace {workspace_path} holds, sits inside or shares "
+                        f"other runs' workspaces: {', '.join(others[:5])}",
+                    )
+            box_env = self._sealed_env(name, env, path_value, home)
+            if launch.default_provider:
+                # The provider the launch was classified with, whatever the box list says.
+                box_env = [v for v in box_env if v.split("=", 1)[0] != DEFAULT_PROVIDER_ENV]
+                box_env.append(f"{DEFAULT_PROVIDER_ENV}={launch.default_provider}")
+            source = {part: dict(facts_) for part, facts_ in plan.sources.items()}
+            for part in ("code", "configs"):
+                if source.get(part, {}).get("from") == "image":
+                    source[part]["digest"] = template.image_id
+            workdir = template.working_dir or "/"
+            doc = box_profile.compile_profile(
+                execution_id=execution_id, generation=generation, settings=settings,
+                boundary=box_profile.SEALED,
+                image={"ref": template.image, "id": template.image_id},
+                source=source,
+                launch={**launch.as_dict(), "engine": engine},
+                grants=[grant.to_profile() for grant in plan.grants],
+                tmpfs=list(plan.tmpfs),
+                runtime={
+                    "interpreter": interpreter, "argv": list(SEALED_ARGS),
+                    "boot": BOOT_DIGEST,
+                    "path": path_value.split(os.pathsep), "home": home,
+                    "user": template.user, "workdir": workdir,
+                    "immutable": sorted({box_seal.CODE_TARGET, box_seal.CONFIG_TARGET,
+                                         box_seal.LOCAL_TARGET, box_seal.CLAUDE_BIN,
+                                         interpreter, os.path.dirname(os.path.dirname(interpreter)),
+                                         workdir, home}),
+                    "absent": list(plan.absent),
+                    "env_names": sorted(v.split("=", 1)[0] for v in box_env),
+                },
+                limits=self._limits_doc(),
+                graph=box_profile.network_graph(name, template.networks[:1], template.extra_hosts),
+            )
+            record = box_profile.record_for(doc, previous)
+            self._store.save(execution_id, record, previous.generation if previous else None)
+            box_env += [f"{k}={v}" for k, v in box_profile.env_for(doc).items()]
+            cmd = self.sealed_command(execution_id, template, box_env, plan, interpreter)
+            logger.info("Run container %s: %s", name, box_profile.summary(doc))
+            result = self._docker_run(cmd)
+        return self._handle(execution_id, result, template.image_id, record)
+
+    def _engine_check(self, plan: box_seal.SealPlan, view: box_seal.WorkerView) -> dict:
+        """Refuse code that starts programs from places the gate hasn't classified (G11).
+
+        The worker scans the code and local folders the box would mount (the scan is kept
+        per tree digest, so an unchanged tree is scanned once).
+        """
+        code = plan.sources.get("code") or {}
+        if code.get("from") != "bind":
+            raise BoxProfileError(
+                "the box's code would come from its image, where the worker can't look for "
+                "the places it starts programs; a sealed box runs bind-mounted code",
+            )
+        sites = set(_launch_sites(view.path(code["path"]), "temper_ai/", (),
+                                  code.get("digest")))
+        local = plan.sources.get("local")
+        if local:
+            sites |= _launch_sites(view.path(local["path"]), "local/",
+                                   tuple(local.get("entries") or ()), local.get("digest"))
+        missing = box_launches.unclassified_sites(sites, self._engine_table)
+        if missing:
+            raise BoxProfileError(
+                "the code this box would mount starts programs from places the gate hasn't "
+                f"classified ({len(missing)}): " + ", ".join(missing[:8])
+                + (" and more" if len(missing) > 8 else ""),
+            )
+        return {"sites": len(sites), "code": code.get("digest"),
+                "local": (local or {}).get("digest"), "rules": box_launches.GENERATOR}
+
+    def _sealed_preflight(self, template: Template, env: BoxEnvSplit) -> str:
+        """Refuse what a sealed box can't be; the interpreter it starts with."""
+        if env.mode == box_env_list.MODE_INHERIT:
+            raise BoxProfileError(
+                f"{box_env_list.MODE_ENV}=inherit copies every variable into the box; a sealed "
+                "install can't run that way",
+            )
+        if _all_workspaces():
+            raise BoxProfileError(
+                "TEMPER_DOCKER_WORKSPACES=all gives every run the whole workspaces tree; a "
+                "sealed install gives each run its own folder only: unset it",
+            )
+        if self._image_override:
+            raise BoxProfileError(
+                "a sealed box runs the template's own image, taken by its id; unset "
+                "TEMPER_DOCKER_IMAGE",
+            )
+        if not template.image_id.startswith("sha256:"):
+            raise BoxProfileError("the template's image has no content id to pin")
+        user = template.user.split(":", 1)[0]
+        if user in ("", "root", "0"):
+            raise BoxProfileError(
+                f"the template container runs as {template.user or 'root'}; a sealed box runs "
+                "as an unprivileged user",
+            )
+        parts = _run_command()
+        if len(parts) != 4 or parts[1:] != ["-m", "temper_ai.cli.main", "run-workflow"]:
+            raise BoxProfileError(
+                "a sealed box starts the image's own interpreter directly: "
+                "TEMPER_DOCKER_RUN_COMMAND must be '<python> -m temper_ai.cli.main run-workflow', "
+                f"not {shlex.join(parts)!r} (uv run would sync packages as the box starts)",
+            )
+        interpreter = parts[0]
+        if not interpreter.startswith("/"):
+            interpreter = os.path.normpath(os.path.join(template.working_dir or "/", interpreter))
+        return interpreter
+
+    def _sealed_env(self, name: str, env: BoxEnvSplit, path_value: str, home: str) -> list[str]:
+        kept = [v for v in env.kept if v.split("=", 1)[0] not in SEALED_DROP]
+        return [*kept, f"PATH={path_value}", f"HOME={home}",
+                *(f"{k}={v}" for k, v in SEALED_SET.items()),
+                f"{box_env_list.RUN_CONTAINER_ENV}={name}"]
+
+    def sealed_command(self, execution_id: str, template: Template, box_env: list[str],
+                       plan: box_seal.SealPlan, interpreter: str) -> list[str]:
+        name = container_name(execution_id)
+        cmd = [
+            self._docker, "run", "--detach", "--rm", "--init",
+            "--name", name, "--hostname", name,
+            "--label", "temper.role=run",
+            "--label", f"temper.execution_id={execution_id}",
+            "--label", "temper.box=sealed",
+            "--security-opt", "no-new-privileges", "--cap-drop", "ALL", "--read-only",
+            "--no-healthcheck", "--user", template.user,
+            "--workdir", template.working_dir or "/",
+        ]
+        for network in template.networks[:1]:
+            cmd += ["--network", network]
+        for host in template.extra_hosts:
+            cmd += ["--add-host", host]
+        for var in box_env:
+            cmd += ["--env", var]
+        for tmpfs in plan.tmpfs:
+            cmd += ["--tmpfs", tmpfs]
+        for grant in plan.grants:
+            cmd += ["--mount", grant.to_arg()]
+        cmd += self._resource_limits()
+        runner = [interpreter, *SEALED_ARGS, "--execution-id", execution_id]
+        cmd += ["--entrypoint", interpreter, template.image_id,
+                "-I", "-c", BOOT_PROGRAM, "--exec", *runner]
+        return cmd
+
+    def _worker_view(self) -> box_seal.WorkerView:
+        """Where the template's host paths are in this process (its own container's binds)."""
+        if self._worker_view_given is not None:
+            return self._worker_view_given
+        me = os.environ.get("TEMPER_DOCKER_SELF_CONTAINER") or socket.gethostname()
+        result = self._docker_run([self._docker, "inspect", me])
+        if result.returncode != 0:
+            if os.path.exists("/.dockerenv"):
+                raise BoxProfileError(
+                    f"the worker runs in a container it can't inspect ({me}), so it can't pin "
+                    "a sealed box's mounts; set TEMPER_DOCKER_SELF_CONTAINER",
+                )
+            return box_seal.WorkerView(None)
+        try:
+            info = json.loads(result.stdout)[0]
+        except (ValueError, IndexError, TypeError) as exc:
+            raise BoxProfileError(f"Unexpected `docker inspect` output for {me}: {exc}") from exc
+        return box_seal.WorkerView(
+            (m["Source"], m["Destination"]) for m in info.get("Mounts") or []
+            if m.get("Type") == "bind"
         )
+
+    @staticmethod
+    def _limits_doc() -> dict[str, str | None]:
+        return {"memory": os.environ.get("TEMPER_DOCKER_MEMORY") or None,
+                "cpus": os.environ.get("TEMPER_DOCKER_CPUS") or None,
+                "pids": os.environ.get("TEMPER_DOCKER_PIDS_LIMIT") or None}
 
     def is_alive(self, handle: ProcessHandle) -> bool:
         result = self._docker_run(
@@ -477,10 +836,20 @@ class DockerSpawner(Spawner):
             raise SpawnerError(f"The box's allow-list is broken, so no run can start: {exc}") from exc
         return BoxEnvSplit.of(template.env, mode, allowed)
 
+    def legacy_mounts(self, workspace_path: str, template: Template) -> tuple[list[str], list[Mount]]:
+        """A legacy box's ~/.claude tmpfs homes and bind mounts, in the order docker gets them."""
+        all_workspaces = _all_workspaces()
+        inherited = [m for m in template.mounts if _passes_through(m, all_workspaces)]
+        mounts = list(inherited)
+        if workspace_path:
+            mounts += workspace_mounts(workspace_path, covered=inherited)
+        return _claude_homes(inherited), mounts
+
     def run_command(
         self, execution_id: str, workspace_path: str, template: Template,
-        env: BoxEnvSplit | None = None,
+        env: BoxEnvSplit | None = None, extra_env: dict[str, str] | None = None,
     ) -> list[str]:
+        """A legacy box's `docker run` (``extra_env``: its profile's variables)."""
         name = container_name(execution_id)
         cmd = [
             self._docker, "run", "--detach", "--rm", "--init",
@@ -498,17 +867,15 @@ class DockerSpawner(Spawner):
         for var in env.kept:
             cmd += ["--env", var]
         cmd += ["--env", f"{box_env_list.RUN_CONTAINER_ENV}={name}"]
-        all_workspaces = _all_workspaces()
-        inherited = [m for m in template.mounts if _passes_through(m, all_workspaces)]
-        for home in _claude_homes(inherited):
+        for key, value in (extra_env or {}).items():
+            cmd += ["--env", f"{key}={value}"]
+        homes, mounts = self.legacy_mounts(workspace_path, template)
+        for home in homes:
             # Writable by whichever user the image runs as (the template may be
             # another container than this one); the box is that user's alone.
             cmd += ["--tmpfs", f"{home}:mode=1777"]
-        for mount in inherited:
+        for mount in mounts:
             cmd += ["--mount", mount.to_arg()]
-        if workspace_path:
-            for mount in workspace_mounts(workspace_path, covered=inherited):
-                cmd += ["--mount", mount.to_arg()]
         cmd += self._resource_limits()
         cmd.append(self._image_override or template.image)
         cmd += [*_run_command(), "--execution-id", execution_id]

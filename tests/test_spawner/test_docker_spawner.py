@@ -579,3 +579,400 @@ def test_container_name_is_derived_from_the_execution_id():
 def test_template_from_inspect_tolerates_missing_sections():
     t = Template.from_inspect({"Config": {"Image": "img"}})
     assert t == Template(image="img", env=[], mounts=[], networks=[], extra_hosts=[])
+
+
+# -- Box profiles (BS1 model-free gate: G01 refusals, G10, G11, G12) --------------------------
+#
+# A production-shaped install on disk (tests/test_spawner/box_fixtures.py, synthetic secrets
+# only) and a fake docker: nothing here starts a container or touches a service (G12). The
+# real containers are in test_box_sealed_docker.py.
+
+import os  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from temper_ai.spawner import box_launches, box_profile  # noqa: E402
+from temper_ai.spawner import docker_spawner as ds  # noqa: E402
+from temper_ai.spawner.box_profile import BoxProfileError  # noqa: E402
+from temper_ai.spawner.box_seal import WorkerView  # noqa: E402
+from tests.test_spawner.box_fixtures import (  # noqa: E402
+    SYNTHETIC_MARK,
+    Install,
+    MemoryStore,
+)
+
+REPO = Path(__file__).resolve().parents[2]
+REAL_CONFIGS = REPO / "configs"
+SEALED_RUN = "/app/.venv/bin/python -m temper_ai.cli.main run-workflow"
+BOX_LIST = BoxEnv(names=frozenset({"PATH", "HOME", "WORKSPACE_DIR", "TEMPER_DATABASE_URL"}),
+                  agent_tools=frozenset({"PATH", "HOME", "WORKSPACE_DIR"}))
+PROFILE_VARS = (box_profile.PROFILE_ENV, box_profile.DIGEST_ENV, box_profile.GENERATION_ENV)
+#: The configs e8538ff4 changed after the source Security's design acceptance names. No
+#: review pin decides anything (Security rm-963c1429): they are classified like any other.
+E8538FF4 = (
+    "configs/agents/brief_check.yaml", "configs/agents/brief_setup.yaml",
+    "configs/agents/desk_final.yaml", "configs/agents/desk_setup.yaml",
+    "configs/agents/signal_grade_assets/check_signal.py", "configs/agents/signal_grade_setup.yaml",
+    "configs/workflows/desk_check.yaml", "configs/workflows/opportunity_brief.yaml",
+    "configs/workflows/signal_harvest.yaml",
+)
+CURRENT = box_launches.classify_all(box_launches.ConfigIndex.of(box_launches.FsTree(REAL_CONFIGS)))
+
+
+def _masters_run_command(spawner: DockerSpawner, execution_id: str, workspace_path: str,
+                         template: Template) -> list[str]:
+    """master 65f908a3's DockerSpawner.run_command, kept verbatim: the launch before BS1."""
+    name = container_name(execution_id)
+    cmd = [
+        "docker", "run", "--detach", "--rm", "--init",
+        "--name", name, "--hostname", name,
+        "--label", "temper.role=run",
+        "--label", f"temper.execution_id={execution_id}",
+        "--security-opt", "no-new-privileges",
+        "--no-healthcheck",
+    ]
+    for network in template.networks[:1]:
+        cmd += ["--network", network]
+    for host in template.extra_hosts:
+        cmd += ["--add-host", host]
+    env = spawner.env_split(template)
+    for var in env.kept:
+        cmd += ["--env", var]
+    cmd += ["--env", f"TEMPER_RUN_CONTAINER={name}"]
+    all_workspaces = ds._all_workspaces()
+    inherited = [m for m in template.mounts if ds._passes_through(m, all_workspaces)]
+    for home in ds._claude_homes(inherited):
+        cmd += ["--tmpfs", f"{home}:mode=1777"]
+    for mount in inherited:
+        cmd += ["--mount", mount.to_arg()]
+    if workspace_path:
+        for mount in workspace_mounts(workspace_path, covered=inherited):
+            cmd += ["--mount", mount.to_arg()]
+    cmd += spawner._resource_limits()
+    cmd.append(template.image)
+    cmd += [*ds._run_command(), "--execution-id", execution_id]
+    return cmd
+
+
+def _without_profile(cmd: list[str]) -> list[str]:
+    out: list[str] = []
+    for part in cmd:
+        if part.split("=", 1)[0] in PROFILE_VARS:
+            out.pop()  # its --env
+            continue
+        out.append(part)
+    return out
+
+
+@pytest.fixture
+def install(tmp_path) -> Install:
+    return Install(tmp_path / "host", user=f"{os.getuid() or 1000}:{os.getgid() or 1000}").build()
+
+
+@pytest.fixture
+def real_configs(install) -> Install:
+    """The synthetic install, but with this checkout's own configs at /app/configs."""
+    install.configs = REAL_CONFIGS
+    return install
+
+
+def _box_spawner(install: Install, store: MemoryStore, docker: FakeDocker, **kwargs) -> DockerSpawner:
+    docker.answers.setdefault("inspect", []).extend([(0, install.inspect(), "")] * 4)
+    docker.answers.setdefault("run", []).append((0, "cid-1\n", ""))
+    kwargs.setdefault("engine_launches", install.engine_table())
+    return DockerSpawner(
+        template_container="worker-self",
+        workspace_lookup=lambda eid: store.rows[eid]["workspace"],
+        run=docker, box_env=lambda: BOX_LIST, profile_store=store,
+        worker_view=WorkerView(None), **kwargs,
+    )
+
+
+def _sealed(monkeypatch) -> None:
+    monkeypatch.setenv(box_profile.BOUNDARY_ENV, "sealed")
+    monkeypatch.setenv("TEMPER_DOCKER_RUN_COMMAND", SEALED_RUN)
+
+
+@pytest.mark.parametrize("launch", CURRENT, ids=[launch.workflow for launch in CURRENT])
+def test_g11_replay_of_every_current_launch(launch, real_configs, monkeypatch):
+    """Legacy: master's command plus the profile, byte for byte. Sealed: its class decides."""
+    for name in (box_profile.BOUNDARY_ENV, "TEMPER_DOCKER_RUN_COMMAND", "TEMPER_DOCKER_WORKSPACES"):
+        monkeypatch.delenv(name, raising=False)
+    store = MemoryStore()
+    store.add("legacy-1", workflow=launch.workflow, workspace=str(real_configs.run_a))
+    docker = FakeDocker()
+    spawner = _box_spawner(real_configs, store, docker)
+    handle = spawner.spawn("legacy-1")
+    run = docker.commands("run")[-1]
+    assert _without_profile(run) == _masters_run_command(
+        spawner, "legacy-1", str(real_configs.run_a), spawner.template())
+    record = handle.metadata["box_profile"]
+    assert record == store.record("legacy-1")
+    doc = record["doc"]
+    assert doc["boundary"] == "legacy" and doc["hardening"] == "partial"
+    assert {r["step"] for r in doc["residuals"]} >= {"BS1", "BS2", "BS3", "BS4", "BS5", "BS6",
+                                                      "network"}
+    bs1 = next(r for r in doc["residuals"] if r["step"] == "BS1")
+    assert "keys" in json.dumps(bs1) and "main repo copy" in json.dumps(bs1)
+    assert doc["closure"]["network"] == "negative"
+    assert SYNTHETIC_MARK not in json.dumps(record)
+
+    _sealed(monkeypatch)
+    store.add("sealed-1", workflow=launch.workflow, workspace=str(real_configs.run_b))
+    docker = FakeDocker()
+    spawner = _box_spawner(real_configs, store, docker)
+    if launch.boundary == box_launches.SEALED:
+        spawner.spawn("sealed-1")
+        doc = store.record("sealed-1")["doc"]
+        assert doc["boundary"] == "sealed" and doc["launch"]["digest"] == launch.digest
+        assert doc["launch"]["files"] == dict(launch.files)
+        assert doc["launch"]["label"] == box_launches.LABEL and "review" not in doc
+        assert doc["label"].startswith("sealed (BS1-partial): gate-classified")
+    else:
+        with pytest.raises(BoxProfileError) as caught:
+            spawner.spawn("sealed-1")
+        assert launch.workflow in str(caught.value) and launch.reasons
+        assert all(reason in str(caught.value) for reason in launch.reasons)
+        assert docker.commands("run") == [], "refused before any box started"
+        assert "box_profile" not in store.rows["sealed-1"]["metadata"]
+
+
+def test_g11_e8538ff4s_changed_launches_are_classified_by_the_rules_like_any_other():
+    """No review pin: each launch's class comes from the landed rules and its files now."""
+    touched = [launch for launch in CURRENT if set(launch.files) & set(E8538FF4)]
+    assert {launch.workflow for launch in touched} >= {"desk_check", "opportunity_brief",
+                                                       "signal_harvest"}
+    index = box_launches.ConfigIndex.of(box_launches.FsTree(REAL_CONFIGS))
+    for launch in touched:
+        assert box_launches.classify(index, launch.workflow) == launch  # same rules, same class
+        record = launch.as_dict()
+        assert record["label"] == box_launches.LABEL and "review" not in record
+        assert record["classified_by"] == box_launches.GENERATOR
+        assert (launch.boundary == box_launches.SEALED) == (not launch.reasons)
+
+
+def test_g11_every_current_launch_is_classified_with_reasons():
+    """Every workflow at this master has a class; only a launch with no reason runs sealed."""
+    assert len(CURRENT) == len(box_launches.ConfigIndex.of(
+        box_launches.FsTree(REAL_CONFIGS)).by_kind["workflow"])
+    for launch in CURRENT:
+        assert launch.boundary in (box_launches.SEALED, box_launches.LEGACY, box_launches.REFUSED)
+        if launch.boundary == box_launches.SEALED:
+            assert not launch.reasons and launch.digest and launch.files and launch.allowed
+        else:
+            assert launch.reasons, launch.workflow
+
+
+def test_a_legacy_box_starts_as_before_when_its_profile_cant_be_kept(install, monkeypatch):
+    monkeypatch.delenv(box_profile.BOUNDARY_ENV, raising=False)
+
+    class Broken(MemoryStore):
+        def save(self, *args, **kwargs):
+            raise BoxProfileError("the database is away")
+
+    store = Broken()
+    store.add("legacy-2", workspace=str(install.run_a))
+    docker = FakeDocker()
+    spawner = _box_spawner(install, store, docker)
+    handle = spawner.spawn("legacy-2")
+    assert docker.commands("run")[-1] == _masters_run_command(
+        spawner, "legacy-2", str(install.run_a), spawner.template())
+    assert "box_profile" not in handle.metadata
+
+
+def test_a_run_that_had_a_sealed_box_never_gets_a_legacy_one(install, monkeypatch):
+    _sealed(monkeypatch)
+    store = MemoryStore()
+    store.add("once-sealed", workflow="sealed_probe", workspace=str(install.run_a))
+    _box_spawner(install, store, FakeDocker()).spawn("once-sealed")
+    assert store.record("once-sealed")["generation"] == 1
+
+    monkeypatch.setenv(box_profile.BOUNDARY_ENV, "legacy")  # a rollback: never for this run
+    docker = FakeDocker()
+    with pytest.raises(BoxProfileError, match="sealed"):
+        _box_spawner(install, store, docker).spawn("once-sealed")
+    assert docker.commands("run") == []
+
+    _sealed(monkeypatch)  # a resume or replacement box: the next generation, sealed again
+    _box_spawner(install, store, FakeDocker()).spawn("once-sealed")
+    record = store.record("once-sealed")
+    assert record["generation"] == 2 and record["doc"]["generation"] == 2
+    assert [h["generation"] for h in record["history"]] == [1]
+
+
+def _refused_before_docker(install: Install, workspace: str, *expect: str,
+                           store: MemoryStore | None = None, **kwargs) -> None:
+    store = store or MemoryStore()
+    store.add("unsafe-1", workflow="sealed_probe", workspace=workspace)
+    docker = FakeDocker()
+    spawner = _box_spawner(install, store, docker, **kwargs)
+    with pytest.raises(BoxProfileError) as caught:
+        spawner.spawn("unsafe-1")
+    for text in expect:
+        assert text in str(caught.value), str(caught.value)
+    assert docker.commands("run") == []
+    assert "box_profile" not in store.rows["unsafe-1"]["metadata"]
+
+
+@pytest.mark.parametrize(("variable", "value", "expect"), [
+    ("TEMPER_BOX_ENV", "inherit", "inherit"),
+    ("TEMPER_DOCKER_WORKSPACES", "all", "TEMPER_DOCKER_WORKSPACES"),
+    ("TEMPER_DOCKER_IMAGE", "someone/else:latest", "TEMPER_DOCKER_IMAGE"),
+    ("TEMPER_DOCKER_RUN_COMMAND", "uv run temper run-workflow", "uv run"),
+    ("TEMPER_BOX_CAPABILITIES", "broker", "TEMPER_BOX_CAPABILITIES"),
+    (box_profile.BOUNDARY_ENV, "sealed-ish", box_profile.BOUNDARY_ENV),
+])
+def test_an_unsafe_combination_is_refused_before_any_box(install, monkeypatch, variable, value,
+                                                         expect):
+    _sealed(monkeypatch)
+    monkeypatch.setenv(variable, value)
+    _refused_before_docker(install, str(install.run_a), expect)
+
+
+def test_a_root_template_is_refused(install, monkeypatch):
+    _sealed(monkeypatch)
+    install.user = "root"
+    _refused_before_docker(install, str(install.run_a), "unprivileged")
+
+
+@pytest.mark.parametrize("where", ["alias", "whole tree", "outside", "link"])
+def test_a_workspace_that_is_not_one_runs_own_folder_is_refused(install, monkeypatch, where):
+    _sealed(monkeypatch)
+    path = {
+        "alias": "/app/workspaces/run-a",
+        "whole tree": str(install.workspaces),
+        "outside": str(install.repo),
+        "link": str(install.workspaces / "run-c"),
+    }[where]
+    if where == "link":
+        (install.workspaces / "run-c").symlink_to(install.run_b)
+    _refused_before_docker(install, path)
+
+
+def test_a_workspace_holding_another_runs_folder_is_refused(install, monkeypatch):
+    _sealed(monkeypatch)
+    store = MemoryStore()
+    nested = install.run_a / "inner"
+    nested.mkdir()
+    store.add("other-run", workspace=str(nested), status="running")
+    _refused_before_docker(install, str(install.run_a), "other-run", store=store)
+
+
+def test_a_git_worktree_of_an_outside_repository_is_refused(install, monkeypatch):
+    _sealed(monkeypatch)
+    (install.run_a / ".git").write_text(f"gitdir: {install.repo}/.git/worktrees/run-a\n")
+    _refused_before_docker(install, str(install.run_a), "outside")
+
+
+@pytest.mark.parametrize("target", ["/app/standee-ssh", "/app/repo", "/app/workspaces",
+                                    "/var/run/docker.sock", "/app/nowhere"])
+def test_declared_data_that_is_not_data_is_refused(install, monkeypatch, target):
+    _sealed(monkeypatch)
+    (install.configs / "boxes" / "data.yaml").write_text(f"data:\n  sealed_probe: [{target}]\n")
+    _refused_before_docker(install, str(install.run_a))
+
+
+def test_every_box_classifies_its_launch_again_and_never_downgrades(install, monkeypatch):
+    """Start, resume, replacement, takeover: each box's class comes from the files then."""
+    _sealed(monkeypatch)
+    store = MemoryStore()
+    store.add("again-1", workflow="sealed_probe", workspace=str(install.run_a))
+    _box_spawner(install, store, FakeDocker()).spawn("again-1")
+    first = store.record("again-1")["doc"]["launch"]
+    agent = install.configs / "agents" / "sealed_probe.yaml"
+    agent.write_text(agent.read_text().replace("echo probe", "echo changed"))
+    _box_spawner(install, store, FakeDocker()).spawn("again-1")  # still sealed: a new digest
+    second = store.record("again-1")["doc"]["launch"]
+    assert store.record("again-1")["generation"] == 2 and second["digest"] != first["digest"]
+    path = "configs/agents/sealed_probe.yaml"
+    assert second["files"][path] != first["files"][path]
+    agent.write_text(agent.read_text().replace("echo changed", "cat /app/repo/.env"))
+    docker = FakeDocker()  # now it needs a legacy box: refused, never given one
+    with pytest.raises(BoxProfileError, match="classified legacy") as caught:
+        _box_spawner(install, store, docker).spawn("again-1")
+    assert "main repo copy" in str(caught.value)
+    assert docker.commands("run") == [] and store.record("again-1")["generation"] == 2
+
+
+def test_a_launch_chosen_at_run_time_is_refused(install, monkeypatch):
+    _sealed(monkeypatch)
+    (install.configs / "agents" / "sealed_probe.yaml").write_text(
+        "agent:\n  name: sealed_probe\n  type: llm\n  provider: claude\n  tools: [Delegate]\n")
+    _refused_before_docker(install, str(install.run_a), "classified refused", "Delegate",
+                           "only known while the run goes")
+
+
+@pytest.mark.parametrize(("where", "site"), [
+    ("code", "temper_ai/sneaky.py::run"),
+    ("local", "local/providers/sneaky.py::run"),
+])
+def test_code_that_starts_programs_from_an_unclassified_place_never_runs_sealed(
+        install, monkeypatch, where, site):
+    """Security rm-963c1429 condition 1: engine launch paths the gate hasn't classified."""
+    _sealed(monkeypatch)
+    table = install.engine_table()
+    folder = install.code if where == "code" else install.local / "providers"
+    (folder / "sneaky.py").write_text("import os\n\n\ndef run():\n    os.system('id')\n")
+    (install.local / "standee-ssh" / "not_mounted.py").write_text("import os\nos.system('id')\n")
+    _refused_before_docker(install, str(install.run_a), "hasn't classified", site,
+                           engine_launches=table)
+    store = MemoryStore()
+    store.add("engine-1", workflow="sealed_probe", workspace=str(install.run_a))
+    _box_spawner(install, store, FakeDocker(), engine_launches={**table, site: "box: test"}
+                 ).spawn("engine-1")  # classified: it runs; the unmounted file never counted
+    engine = store.record("engine-1")["doc"]["launch"]["engine"]
+    assert engine["sites"] == len(table) + 1 and engine["rules"] == box_launches.GENERATOR
+
+
+def test_code_baked_into_the_image_is_refused(install, monkeypatch):
+    """The worker can't look for launch sites in an image's code: a sealed box runs bound code."""
+    _sealed(monkeypatch)
+    original = install.mounts
+    monkeypatch.setattr(install, "mounts", lambda: [m for m in original()
+                                                    if m["Destination"] != "/app/temper_ai"])
+    _refused_before_docker(install, str(install.run_a), "can't look for the places")
+
+
+@pytest.mark.parametrize(("default", "expect"), [
+    (None, "chosen at run time"),
+    ("openai", "isn't classified"),
+    ("claude", None),
+])
+def test_agents_without_a_provider_run_sealed_only_on_a_pinned_default(install, monkeypatch,
+                                                                      default, expect):
+    _sealed(monkeypatch)
+    (install.configs / "agents" / "sealed_probe.yaml").write_text(
+        "agent:\n  name: sealed_probe\n  type: llm\n  system_prompt: hi\n")
+    if default:
+        install.extra_env.append(f"TEMPER_DEFAULT_PROVIDER={default}")
+    if expect:
+        _refused_before_docker(install, str(install.run_a), expect)
+        return
+    store = MemoryStore()
+    store.add("default-1", workflow="sealed_probe", workspace=str(install.run_a))
+    docker = FakeDocker()
+    _box_spawner(install, store, docker).spawn("default-1")
+    assert "TEMPER_DEFAULT_PROVIDER=claude" in docker.commands("run")[-1]
+    launch = store.record("default-1")["doc"]["launch"]
+    assert launch["allowed"]["providers"] == ["claude"] and launch["default_provider"] == "claude"
+
+
+def test_the_subprocess_spawner_is_refused_under_sealed(monkeypatch):
+    from temper_ai.spawner.subprocess_spawner import SubprocessSpawner
+
+    monkeypatch.setenv(box_profile.BOUNDARY_ENV, "sealed")
+    with pytest.raises(BoxProfileError, match="subprocess spawner"):
+        SubprocessSpawner().spawn("any-run")
+
+
+@pytest.mark.parametrize("boundary", ["sealed", "legacy", None])
+def test_unboxed_starts_are_refused_only_under_sealed(monkeypatch, boundary):
+    """The server's own process and the subprocess spawner call this before they run anything."""
+    if boundary is None:
+        monkeypatch.delenv(box_profile.BOUNDARY_ENV, raising=False)
+    else:
+        monkeypatch.setenv(box_profile.BOUNDARY_ENV, boundary)
+    if boundary == "sealed":
+        with pytest.raises(BoxProfileError, match="the server's own process has no box"):
+            box_profile.refuse_unboxed_under_sealed("the server's own process")
+    else:
+        box_profile.refuse_unboxed_under_sealed("the server's own process")

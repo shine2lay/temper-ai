@@ -36,6 +36,12 @@ class ConfigStore:
             The config dict with env vars resolved.
         """
         self._validate_type(config_type)
+        from temper_ai.spawner import box_guard
+
+        guard = box_guard.active()
+        if guard is not None:
+            # A sealed box's configs come from its checked files, never the database.
+            return guard.config(name, config_type)
 
         with get_session() as session:
             row = session.exec(

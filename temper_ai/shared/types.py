@@ -142,6 +142,8 @@ class ExecutionContext:
         """
         if provider is None:
             provider = self.resolve_provider()
+        from temper_ai.spawner import box_guard
+        box_guard.check("providers", provider)  # a sealed box: only its launch's providers
         if provider not in self.llm_providers:
             raise KeyError(
                 f"LLM provider '{provider}' not configured. "

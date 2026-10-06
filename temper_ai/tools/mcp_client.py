@@ -213,6 +213,11 @@ class MCPClientManager:
         self, server_name: str, caller: str = ""
     ) -> MCPServerConnection:
         """Connect this caller's session if it has none. Returns the connection."""
+        from temper_ai.spawner import box_guard
+
+        # A sealed box connects only to its classified launch's servers: never starts
+        # a program or opens a session for any other (box_guard.LaunchRefused).
+        box_guard.check("mcp_servers", server_name)
         key = (server_name, caller)
         if key in self._connections:
             return self._connections[key]

@@ -236,6 +236,7 @@ def _start_run(body: RunRequest, *, execution_id: str | None = None) -> RunRespo
         return _start_run_subprocess(execution_id, body, config)
     if mode == "external":
         return _start_run_external(execution_id, body, config)
+    _refuse_unboxed("the server's own process (TEMPER_EXECUTION_MODE=inprocess)")
 
     # Build execution context
 
@@ -314,6 +315,19 @@ def _start_run_external(
     """
     _queue_run(execution_id, config.name, body.workspace_path, body.inputs)
     return RunResponse(execution_id=execution_id, status="queued")
+
+
+def _refuse_unboxed(how: str) -> None:
+    """Under TEMPER_BOX_RUNTIME_BOUNDARY=sealed, a run with no docker box is refused (503)."""
+    from temper_ai.spawner.box_profile import (
+        BoxProfileError,
+        refuse_unboxed_under_sealed,
+    )
+
+    try:
+        refuse_unboxed_under_sealed(how)
+    except BoxProfileError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def _execution_mode() -> str:
@@ -424,7 +438,10 @@ def _start_run_subprocess(
         if row is not None:
             row.spawner_kind = handle.kind.value
             row.spawner_handle = handle.handle
-            row.spawner_metadata = handle.metadata
+            # Keep the run's box profile record if the handle doesn't carry one.
+            kept = (row.spawner_metadata or {}).get("box_profile")
+            row.spawner_metadata = (handle.metadata if kept is None
+                                    else {"box_profile": kept, **handle.metadata})
             session.add(row)
 
     return RunResponse(execution_id=execution_id, status="running")
@@ -951,6 +968,8 @@ def _start_resume(
     # before defaults were filled in has none of them (stage/input_defaults.py).
     original_inputs = fill_input_defaults(getattr(config, "inputs", None), result.get("input_data"))
 
+    if _execution_mode() != "external":
+        _refuse_unboxed("a resume in the server's own process")
     if _execution_mode() == "external":
         # Its box restores the checkpoints and replays the dispatches
         # (temper run-workflow), the same steps as below.
@@ -1082,6 +1101,8 @@ def _fork_run(body: ForkRequest):
     # A fork of a run that is holding its clean-ups takes them over: it is using that setup
     # now, and the source's deadline must not tear it down underneath it. The fork holds
     # them again itself, with its own deadline, if it too stops at a failure.
+    if _execution_mode() != "external":
+        _refuse_unboxed("a fork in the server's own process")
     holds.take_over(body.source_execution_id, by=new_execution_id)
 
     if _execution_mode() == "external":

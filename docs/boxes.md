@@ -101,6 +101,113 @@ What temper cannot close by itself yet, handed to Architecture:
   role per box limited to its own run; a model-call proxy so boxes hold no
   provider keys.
 
+## The box profile
+
+Every box gets a profile (schema version 2): what the box is, settled by the
+worker before `docker run`, from its own settings, the template container and the
+workflow's configs. Nothing a run controls goes into it: not agent YAML, not
+workspace files, not run output, not what a caller hands `queue_run`.
+
+- Six settings, one per step of the box-secrets work. Each defaults to how boxes
+  worked before, and a value for a step that isn't built refuses every run (a
+  setting that claims more than the code does would be worse than none):
+
+  | step | setting | values |
+  |---|---|---|
+  | BS1 | `TEMPER_BOX_RUNTIME_BOUNDARY` | `legacy` (default), `sealed` |
+  | BS2 | `TEMPER_BOX_SECRET_BOOTSTRAP` | `env` (not built further yet) |
+  | BS3 | `TEMPER_BOX_CAPABILITIES` | `legacy` |
+  | BS4 | `TEMPER_BOX_STATE_ACCESS` | `legacy` |
+  | BS5 | `TEMPER_BOX_TOOL_ISOLATION` | `in_process` |
+  | BS6 | `TEMPER_BOX_MODEL_ACCESS` | `direct` |
+
+- The profile's digest and generation go on the run's row
+  (`spawner_metadata.box_profile`, with a short history) and into the box
+  (`TEMPER_BOX_PROFILE`, `TEMPER_BOX_PROFILE_DIGEST`,
+  `TEMPER_BOX_PROFILE_GENERATION`). The first thing `temper run-workflow` does is
+  check them: the profile must match its digest, and the row must hold this box's
+  generation. Each new box for the same run (a resume, a replacement, a takeover)
+  gets the next generation; an older box that finds a newer one on the row leaves
+  without touching it. A record changed outside the worker is refused.
+- Every profile says `hardening: partial` and lists what it leaves open: BS2-BS6
+  and the network, which is recorded (who can reach what) but not enforced, so its
+  closure is `negative`. A legacy profile also lists BS1 itself, with the kinds of
+  mounts the box still gets.
+- A legacy box is never stopped by its profile: if the profile can't be compiled
+  or stored, the box starts as before, without one.
+
+## Sealed boxes (BS1)
+
+`TEMPER_BOX_RUNTIME_BOUNDARY=sealed` (worker and server) gives each run a box
+that holds its own workspace and nothing it doesn't need. It is off by default.
+
+What changes for a sealed box:
+
+- **A positive mount list.** None of the template container's mounts are copied.
+  The box gets the runner's code and configs, the private provider code (only
+  `register_providers.py`, `providers/` and `agents/` of `local/`), one Claude CLI
+  executable, the run's own workspace (read-write) and any data folder its
+  workflow declares in `configs/boxes/data.yaml` (read-only). Absent: the main
+  repo copy (`/app/repo`), the whole workspaces tree and its `/app/workspaces`
+  alias, `.env`, key and login folders, the docker socket, other runs' folders.
+- **Pinned sources.** The worker opens each source one path part at a time
+  without following links and keeps it open until `docker run` returns; its
+  device and inode go in the profile. A path swapped between the check and
+  docker's use gives a box whose mount isn't the pinned one, and that box refuses
+  to start. A workspace that is a link, sits outside `WORKSPACE_DIR`, holds or
+  sits inside another run's workspace, or is a git worktree of a repository
+  outside it is refused before any box starts.
+- **Runtime files can't change.** The root filesystem is read-only, every grant
+  but the workspace is read-only, the box drops all capabilities and runs as the
+  template's unprivileged user, `PATH`, `HOME` and the Python variables are set by
+  the worker, and the box starts the image's own interpreter (`python -I`, no
+  `uv run`). The image is taken by its content id. Writable: the workspace,
+  `/tmp`, and a `noexec` `/app/.claude` for the Claude CLI's state.
+- **The box checks itself first.** Before the runner loads anything, a check the
+  worker passes in as source (not code from a mount it checks) compares
+  `/proc/self/mountinfo` with the profile: every grant is the pinned object with
+  the right mode, nothing else is mounted, the absent paths are not there, and
+  the runtime roots and their parents can't be written. Any difference: the box
+  exits with code 3 and the run fails before any tool.
+- **Launches are classified, fail-closed.** At every spawn (start, resume,
+  replacement, takeover) the worker classifies the workflow's launch again from
+  the config files themselves (`temper_ai/spawner/box_launches.py`): every agent
+  (dispatched ones too), step, stage, tool, provider (fallbacks and the install's
+  default too), provider setting, strategy, MCP server and file they name. A
+  launch runs sealed only when every part is on the lists of what a sealed box
+  enforces and is known before the run starts. One that names keys, shared roots,
+  the main repo, the docker socket, a Pi step or an MCP server started in the box
+  needs a legacy box; anything chosen at run time, unknown or unlisted is
+  refused. The rules are engine code: nothing in a workflow, agent, workspace or
+  run output can say what class it is. Agents that name no provider are sealed
+  only when `TEMPER_DEFAULT_PROVIDER` pins one the lists have. The class is
+  "gate-classified": no Security review of a launch stands behind it.
+- **The engine's own launch paths are classified too.** The worker scans the
+  code and local folders the box would mount for every place that starts a
+  program, and starts no sealed box while one is missing from
+  `box_launches.ENGINE_LAUNCHES` (`python -m temper_ai.spawner.box_launches
+  sites` lists them; a test fails when the code and the list differ).
+- **The box backs the classification.** Before loading anything, the runner
+  checks every file of its launch against the profile; it then reads its configs
+  only from those files (never the database) and refuses any agent type, tool,
+  provider or MCP server outside the launch where it would be used, before any
+  tool of it runs (`temper_ai/spawner/box_guard.py`).
+- **What a sealed install refuses.** The subprocess spawner, runs in the server's
+  own process (`TEMPER_EXECUTION_MODE=inprocess`), `TEMPER_BOX_ENV=inherit`,
+  `TEMPER_DOCKER_WORKSPACES=all`, `TEMPER_DOCKER_IMAGE`, a run command other than
+  `<python> -m temper_ai.cli.main run-workflow`, and a template running as root.
+  Explicit no-socket development is not a protected fallback.
+- **No going back for a run.** A run that ever had a sealed box never gets a
+  legacy one. Rolling back means setting `legacy` again and starting fresh runs.
+
+What sealed does not change (later steps), so a sealed profile is BS1-partial
+and names these as still open: the runner's environment and memory hold its
+secrets, the run's GitHub key among them (BS2); integrations use the box's own
+keys (BS3); the runner and its tools reach the database with the shared login,
+and Redis (BS4, and SQL until BS5); tools share the runner's process, mount and
+network namespace, and the network is open (BS5); model calls hold credentials
+in the box (BS6).
+
 ## Checking it
 
 - `temper check` loads both files.
@@ -109,8 +216,24 @@ What temper cannot close by itself yet, handed to Architecture:
   the box or a secret in a tool's environment. The machine check runs it on every
   commit ([ci-gate.md](ci-gate.md)); after a change to a list, run it live:
   `POST /api/runs {"workflow": "ci_box_env"}`.
-- `tests/test_spawner/test_docker_spawner.py` (TestBoxEnvAllowList),
+  It also checks the box's profile: present, matching its digest and generation,
+  listing what it leaves open, and in a sealed box the absent paths and
+  unwritable runtime roots. It prints facts and path names, never values.
+- `tests/test_spawner/test_docker_spawner.py` (TestBoxEnvAllowList; the box
+  profile tests: every current launch replayed against the command before BS1,
+  and the sealed refusals), `tests/test_spawner/test_box_profile.py`,
   `tests/test_shared/test_box_env.py` and `tests/test_shared/test_agent_env.py`.
+- `tests/test_spawner/test_box_launches.py` (the classification rules, fail-closed,
+  and the engine's launch list against the code; `TEMPER_TEST_LOCAL_CODE=<folder>`
+  checks the private local code's list too) and
+  `tests/test_spawner/test_box_guard.py` (what a sealed box's runner refuses).
+- `tests/test_spawner/test_box_sealed_docker.py` starts real sealed boxes in
+  labeled throwaway containers with synthetic secrets: two runs, their own
+  writes, declared data, every path a sealed box must not have, writes to the
+  runtime, and swaps of the sources between the worker's check and docker's use.
+  It skips without docker; `TEMPER_TEST_BOX_REQUIRED=1` makes that a failure, and
+  `TEMPER_TEST_BOX_IMAGE` picks the image (else the newest `temper-ci-server`, else
+  a tiny one it builds).
 - In a live box, list names only, never values:
   `env | cut -d= -f1 | sort` and
   `for f in /proc/[0-9]*/environ; do tr '\0' '\n' < "$f" 2>/dev/null | cut -d= -f1; done | sort -u`.

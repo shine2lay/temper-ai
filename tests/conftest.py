@@ -101,6 +101,17 @@ def _no_shared_rate_limits():
 
 
 @pytest.fixture(autouse=True)
+def _no_sealed_box_guard():
+    """A test that ran a sealed box's runner leaves no launch guard behind for the next one
+    (temper_ai/spawner/box_guard.py holds it for the process, as a box runs one launch)."""
+    from temper_ai.spawner import box_guard
+
+    box_guard.reset()
+    yield
+    box_guard.reset()
+
+
+@pytest.fixture(autouse=True)
 def _no_trigger_scheduler(monkeypatch):
     """A test server must not fire the repo's schedules in the background,
     nor connect to Slack."""

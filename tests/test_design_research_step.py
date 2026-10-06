@@ -127,6 +127,50 @@ def test_a_changed_rule_rejudges_the_same_files(tmp_path, fake_browser, monkeypa
     assert not again.get("reused") and again["attempt"] == first["attempt"] + 1
 
 
+GATE_D1 = {"decided_by": "fixture-test", "direction": "D1", "users": "confirm",
+           "reasons": "fixture run: the recommended direction"}
+
+
+def test_a_fork_with_new_research_works_the_decision_out_again(tmp_path, fake_browser, monkeypatch):
+    """A fork that assembles the research again (same gate answer) gets a fresh decision, not a refusal."""
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "homepage", monkeypatch)
+    assert j.decision()["direction"] == "D1"
+    research = json.loads((ws / "research/research.json").read_text())
+    research["directions"][0]["axes"]["density"] = "medium"  # as a re-assembly under new rules would
+    (ws / "research/research.json").write_text(json.dumps(research))
+    again = dr.Job(str(ws), fixture=True)
+    assert again.gate(json.dumps(GATE_D1)).get("reused")  # the same answer is not recorded twice
+    out = again.decision()
+    assert not out.get("reused") and out["direction"] == "D1" and out["decided_by"] == "fixture-test"
+    assert json.loads((ws / "research/fixed.json").read_text())["axes"]["density"] == "medium"
+    state = json.loads((ws / "research/state.json").read_text())
+    assert [s["stage"] for s in state["superseded"]] == ["decision"]
+    assert again.decision().get("reused")
+
+
+def test_a_new_research_gate_answer_is_recorded_and_the_earlier_one_kept(tmp_path, fake_browser, monkeypatch):
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "homepage", monkeypatch)
+    j.decision()
+    again = dr.Job(str(ws), fixture=True)
+    out = again.gate(json.dumps({**GATE_D1, "direction": "D2", "reasons": "fixture run: a fork answered again"}))
+    assert out["direction"] == "D2" and again.decision()["direction"] == "D2"
+    assert json.loads((ws / "research/gate.json").read_text())["direction"] == "D2"
+    earlier = json.loads((ws / "research/gate-superseded-1.json").read_text())
+    assert earlier["direction"] == "D1" and earlier["decided_by"] == "fixture-test" and earlier["reasons"]
+    state = json.loads((ws / "research/state.json").read_text())
+    assert [s["stage"] for s in state["superseded"]] == ["gate", "decision"]
+    assert state["superseded"][0]["record"] == "research/gate-superseded-1.json"
+
+
+def test_a_reused_workspace_still_refuses_a_changed_inventory(tmp_path, fake_browser, monkeypatch):
+    ws = packed(tmp_path)
+    research_through_decision(ws, "homepage", monkeypatch)
+    with pytest.raises(ValueError, match="use a fresh workspace"):
+        dr.Job(str(ws), fixture=True).inventory(json.dumps({"job": "logo"}))
+
+
 def test_logo_brief_carries_context_meaning_and_category_marks(tmp_path, fake_browser, monkeypatch):
     ws = packed(tmp_path)
     j = research_through_decision(ws, "logo", monkeypatch)

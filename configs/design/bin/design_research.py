@@ -55,6 +55,11 @@ FIXTURE_HOST = "fixture.invalid"
 JOBS = ("homepage", "logo", "app_screen", "marketing")
 MIN_CAPTURED = 4
 WEB_TIMEOUT = 45
+# Stages that only record what earlier files say (no model, nothing slow). A fork or a rerun that
+# changes their inputs runs them again before anything that reads them, so they work it out again;
+# the earlier receipt is kept under "superseded" (and an earlier gate answer as its own file).
+# Every other stage refuses changed inputs: there they mean a reused workspace.
+REDERIVED = ("gate", "decision", "logo_brief")
 BLOCKED = re.compile(r"(access denied|verify you are human|are you a robot|captcha|enable javascript|just a moment|"
                      r"request blocked|forbidden)", re.I)
 BOARD_INK, BOARD_MUTED, BOARD_PAPER, BOARD_PANEL, BOARD_LINE = "#1B1B1F", "#45464F", "#FFFFFF", "#F3F3F6", "#C9CAD3"
@@ -125,10 +130,21 @@ class Job:
 
     def cached(self, stage: str, fingerprint: str) -> dict | None:
         receipt = self.state["stages"].get(stage)
-        if receipt:
-            if receipt["fingerprint"] != fingerprint:
-                raise ValueError(f"saved {stage} inputs changed; use a fresh workspace rather than silently repeating work")
+        if not receipt:
+            return None
+        if receipt["fingerprint"] == fingerprint:
             return {**receipt["output"], "reused": True}
+        if stage not in REDERIVED:
+            raise ValueError(f"saved {stage} inputs changed; use a fresh workspace rather than silently repeating work")
+        kept = {"stage": stage, "superseded_at": now(), **receipt}
+        superseded = self.state.setdefault("superseded", [])
+        if stage == "gate" and (self.dir / "gate.json").exists():  # an earlier answer stays on record
+            old = self.dir / f"gate-superseded-{sum(s['stage'] == 'gate' for s in superseded) + 1}.json"
+            shutil.copyfile(self.dir / "gate.json", old)
+            kept["record"] = f"research/{old.name}"
+        superseded.append(kept)
+        del self.state["stages"][stage]
+        self.commit()
         return None
 
     # -- shared facts

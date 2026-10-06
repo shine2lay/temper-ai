@@ -1,0 +1,92 @@
+{
+ "site": "quarry-v1",
+ "kind": "critic-benchmark",
+ "about": "Fourteen one-page designs for two fictional products, a compost-pickup homepage and a covered-call income screen, for benchmarking the design critics (design_review and the homepage craft critic). Which pages carry which problems is kept off the box.",
+ "pages": [
+  "page-01",
+  "page-02",
+  "page-03",
+  "page-04",
+  "page-05",
+  "page-06",
+  "page-07",
+  "page-08",
+  "page-09",
+  "page-10",
+  "page-11",
+  "page-12",
+  "page-13",
+  "page-14"
+ ],
+ "page_product": {
+  "page-01": "loamwise",
+  "page-02": "ledgerline",
+  "page-03": "loamwise",
+  "page-04": "loamwise",
+  "page-05": "ledgerline",
+  "page-06": "loamwise",
+  "page-07": "loamwise",
+  "page-08": "loamwise",
+  "page-09": "ledgerline",
+  "page-10": "loamwise",
+  "page-11": "loamwise",
+  "page-12": "loamwise",
+  "page-13": "loamwise",
+  "page-14": "loamwise"
+ },
+ "fonts_css": "fonts/fonts.css",
+ "font_dirs": [
+  "figtree",
+  "fraunces",
+  "instrumentsans"
+ ],
+ "products": {
+  "loamwise": {
+   "review": {
+    "brief": "Loamwise is a fictional weekly kitchen-compost pickup in a mid-size city. This is its homepage, one page, reviewed on desktop and phone.\nWho it is for: people in flats and houses without a garden compost heap who throw away food scraps and would rather have them composted.\nHomepage job: show how a weekly pickup works, what it costs and what happens to the scraps, so a household books a first pickup.\nPrimary action: Book a pickup\nDesign context: marketing-landing-general\nFictional study: no real pickups, bookings or payments. The page is a static design; links lead nowhere outside this page.",
+    "viewports": "desktop,mobile"
+   },
+   "brief": {
+    "product": "Loamwise",
+    "kind": "homepage",
+    "fictional": true,
+    "disclosure": "Fictional kitchen-compost pickup made for a design study: no real pickups, bookings or payments.",
+    "audience": "People in flats and houses without a garden compost heap who throw away food scraps and would rather have them composted.",
+    "purpose": "Show how a weekly pickup works, what it costs and what happens to the scraps, so a household books a first pickup.",
+    "cta": "Book a pickup"
+   },
+   "concept": {
+    "id": "A",
+    "name": "Kitchen to garden",
+    "brief": "Warm, practical and a little playful: a soft serif for headings over cream, deep green for every action, flat illustrations drawn for this service and calm, generous space. It should feel like a well-run neighbourhood service.",
+    "signature_move": "A large serif headline beside an illustration of the kitchen caddy; deep green marks every action.",
+    "motion": "None: a still page.",
+    "imagery": "Flat inline SVG illustrations in greens and cream, drawn for this service; no photos."
+   }
+  },
+  "ledgerline": {
+   "review": {
+    "brief": "Ledgerline is a fictional covered-call income app. This is its Income screen, reviewed on desktop: the app is used on a large screen.\nWho it is for: people who own stocks, sell covered calls on them and check income, open calls and roll decisions a few times a week.\nScreen job: show this month's premium income and every open call with its risk, and let the user prepare a roll with every cost visible before confirming it.\nDesign context: rollcall-trader-workspace\nFictional study: the figures, prices and data source are invented; no accounts, orders or payments are real. The screen is a static snapshot; what happens after pressing a button is outside this review.",
+    "viewports": "desktop"
+   },
+   "brief": {
+    "product": "Ledgerline",
+    "kind": "app-screen",
+    "fictional": true,
+    "disclosure": "Fictional covered-call income app made for a design study: the figures, prices and data source are invented; no accounts, orders or payments are real.",
+    "audience": "People who own stocks, sell covered calls on them and check income, open calls and roll decisions a few times a week, on a large screen.",
+    "purpose": "Show this month's premium income and every open call with its risk, and let the user prepare a roll with every cost visible before confirming it.",
+    "cta": "Review roll order"
+   },
+   "concept": {
+    "id": "A",
+    "name": "Plain ledger",
+    "brief": "Calm and exact: a plain sans with tabular figures, one deep blue for actions, quiet grey rules and charts that carry the data. It should feel like a careful accountant's ledger.",
+    "signature_move": "The income chart and the roll order side by side, every cost spelled out before confirming.",
+    "motion": "None: a still screen.",
+    "imagery": "No decorative pictures; the charts are the pictures."
+   }
+  }
+ },
+ "key": "~/design-lab/answers/quarry-v1.yaml"
+}

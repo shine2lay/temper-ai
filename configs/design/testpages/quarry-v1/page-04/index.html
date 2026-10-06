@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loamwise: weekly kitchen compost pickup</title>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<style>
+:root {
+  --paper: #F7F1E6;
+  --paper-2: #EFE5D3;
+  --card: #FFFBF4;
+  --ink: #2E2419;
+  --ink-soft: #5A4A3A;
+  --line: #D9CBB4;
+  --leaf: #2F6B3A;
+  --leaf-hover: #24552D;
+  --on-leaf: #FFFFFF;
+  --link: #2F6B3A;
+  --band: #2F6B3A;
+  --on-band: #FFFFFF;
+  --band-btn: #FFFBF4;
+  --on-band-btn: #24552D;
+  --a-caddy: #3F7F4A;
+  --a-caddy-dark: #2C5D35;
+  --a-lid: #6FA35C;
+  --a-peel: #E39B3B;
+  --a-tomato: #D4553A;
+  --a-shell: #F4EBDD;
+  --a-soil: #6B4A2F;
+  --a-soil-2: #8A6542;
+  --a-wood: #C9A77C;
+  --a-wall: #E8DCC6;
+  --a-sky: #DCE8D6;
+  --a-line: #2E2419;
+  --hero-bg: linear-gradient(180deg, #F2E8D6 0%, #F7F1E6 70%);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1D1914;
+    --paper-2: #26211A;
+    --card: #2B251D;
+    --ink: #F1E8DA;
+    --ink-soft: #D2C4AE;
+    --line: #4A4034;
+    --leaf: #8FCB86;
+    --leaf-hover: #A5D89D;
+    --on-leaf: #13230F;
+    --link: #A5D89D;
+    --band: #22301F;
+    --on-band: #F1E8DA;
+    --band-btn: #8FCB86;
+    --on-band-btn: #13230F;
+    --a-wall: #3A3228;
+    --a-sky: #2E3A2B;
+    --a-shell: #E6DCCB;
+    --a-line: #14100C;
+    --a-wood: #7A6046;
+    --a-soil-2: #5A4330;
+    --hero-bg: linear-gradient(180deg, #2A241C 0%, #1D1914 70%);
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { color-scheme: light dark; }
+body { background: var(--paper); color: var(--ink); font-family: "Figtree", system-ui, sans-serif; font-size: 18px; line-height: 1.55; }
+a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+.wrap { max-width: 1184px; margin: 0 auto; padding: 0 29px; }
+h1, h2, h3 { font-family: "Fraunces", Georgia, serif; font-weight: 600; line-height: 1.1; color: var(--ink); }
+h1 { font-size: 56px; margin-bottom: 23px; }
+h2 { font-size: 40px; margin-bottom: 13px; }
+h3 { font-size: 22px; line-height: 1.25; }
+.eyebrow { font-size: 15px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 9px; }
+.intro { max-width: 640px; color: var(--ink-soft); margin-bottom: 37px; }
+.btn { display: inline-block; background: var(--leaf); color: var(--on-leaf); font-weight: 600; font-size: 18px; text-decoration: none; padding: 15px 26px; border-radius: 8px; }
+.btn:hover { background: var(--leaf-hover); }
+.btn-line { display: inline-block; border: 2px solid var(--leaf); color: var(--leaf); font-weight: 600; font-size: 18px; text-decoration: none; padding: 12px 24px; border-radius: 8px; }
+
+.site-header { padding: 17px 0; border-bottom: 1px solid var(--line); background: var(--paper); }
+.site-header .wrap { display: flex; align-items: center; justify-content: space-between; }
+.logo { display: flex; align-items: center; gap: 9px; color: var(--ink); text-decoration: none; font-family: "Fraunces", Georgia, serif; font-size: 22px; font-weight: 600; }
+.logo svg { width: 32px; height: 32px; }
+.site-nav { display: flex; flex-wrap: wrap; gap: 25px; }
+.site-nav a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; }
+.site-nav a:hover { text-decoration: underline; }
+
+.hero { background: var(--hero-bg); padding: 67px 0 101px; }
+.hero .wrap { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 59px; align-items: center; }
+.lede { font-size: 22px; color: var(--ink-soft); margin-bottom: 31px; max-width: 34em; }
+.actions { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.note { margin-top: 13px; font-size: 15px; color: var(--ink-soft); }
+.hero-art svg { width: 100%; height: auto; display: block; border-radius: 24px; }
+
+.how { padding: 87px 0; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 35px; list-style: none; }
+.step-art { margin-bottom: 17px; }
+.step-art svg { width: 100%; height: auto; display: block; border-radius: 12px; }
+.step-num { font-weight: 800; font-size: 15px; color: var(--leaf); margin-bottom: 5px; }
+.step h3 { margin-bottom: 7px; }
+.step p { color: var(--ink-soft); }
+
+.makes { padding: 109px 0; background: var(--paper-2); }
+.makes .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 59px; align-items: center; }
+.makes p { color: var(--ink-soft); margin-bottom: 13px; }
+.makes p:last-child { margin-bottom: 0; }
+.makes svg { width: 100%; height: auto; display: block; }
+
+.prices { padding: 77px 0; }
+.plans { display: grid; grid-template-columns: 1fr 1fr; gap: 21px; }
+.plan { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 27px; display: flex; flex-direction: column; align-items: flex-start; }
+.plan .btn-line { margin-top: auto; }
+.plan h3 { margin-bottom: 6px; }
+.plan .price { font-family: "Fraunces", Georgia, serif; font-size: 40px; font-weight: 600; margin-bottom: 10px; }
+.plan .price span { font-family: "Figtree", system-ui, sans-serif; font-size: 18px; font-weight: 400; color: var(--ink-soft); }
+.plan p { color: var(--ink-soft); margin-bottom: 19px; }
+.after-cards { margin-top: 27px; color: var(--ink-soft); }
+
+.faq { padding: 99px 0; border-top: 1px solid var(--line); }
+.qa { display: grid; grid-template-columns: 1fr 1fr; gap: 29px 45px; }
+.qa dt { font-weight: 600; font-size: 18px; margin-bottom: 5px; }
+.qa dd { color: var(--ink-soft); }
+
+.band { background: var(--band); color: var(--on-band); padding: 83px 0; text-align: center; }
+.band h2 { color: var(--on-band); margin-bottom: 15px; }
+.band p { max-width: 560px; margin: 0 auto 25px; }
+.band .btn { background: var(--band-btn); color: var(--on-band-btn); }
+
+.site-footer { padding: 43px 0; font-size: 15px; color: var(--ink-soft); }
+.site-footer .wrap { display: flex; justify-content: space-between; gap: 21px; flex-wrap: wrap; }
+.site-footer nav { display: flex; gap: 21px; }
+.site-footer a { color: var(--ink-soft); }
+
+@media (max-width: 720px) {
+  body { font-size: 17px; }
+  .wrap { padding: 0 19px; }
+  h1 { font-size: 38px; }
+  h2 { font-size: 30px; }
+  .plan .price { font-size: 30px; }
+  .site-header { padding: 13px 0; }
+  .site-header .wrap { flex-direction: column; align-items: flex-start; }
+  .site-nav { gap: 17px; margin-top: 9px; }
+  .hero { padding: 29px 0 51px; }
+  .hero .wrap, .makes .wrap { grid-template-columns: 1fr; gap: 27px; }
+  .lede { font-size: 18px; }
+  .btn { padding: 15px 22px; }
+  .how, .makes, .prices, .faq { padding: 57px 0; }
+  .steps, .plans, .qa { grid-template-columns: 1fr; }
+  .band { padding: 57px 0; }
+}
+</style>
+</head>
+<body>
+<header class="site-header" data-section="Header">
+  <div class="wrap">
+    <a class="logo" href="#top" aria-label="Loamwise home"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--leaf)"/><path d="M10 21c0-7 5-11 13-11-1 8-5 12-11 12" fill="var(--paper)"/><path d="M11 22l7-7" stroke="var(--leaf)" stroke-width="2" stroke-linecap="round"/></svg><span>Loamwise</span></a>
+    <nav class="site-nav" aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="#prices">Prices</a>
+        <a href="#faq">Questions</a>
+    </nav>
+  </div>
+</header>
+<main id="top">
+<section class="hero" data-section="Hero">
+  <div class="wrap">
+    <div class="hero-text">
+      <p class="eyebrow">Kitchen compost pickup</p>
+      <h1>Your food scraps, collected every week and turned into compost.</h1>
+      <p class="lede">Keep a sealed caddy under the sink for peels, coffee grounds and leftovers. Each Tuesday we swap the full one for a washed one and take your scraps to a city compost yard.</p>
+      <div class="actions">
+        <a class="btn" href="#book">Book a pickup</a>
+        <a href="#how">See how it works</a>
+      </div>
+      <p class="note">From $6 a week. Skip or stop any week.</p>
+    </div>
+    <div class="hero-art">
+        <svg viewBox="0 0 440 380" role="img" aria-label="A green kitchen caddy with a sealed lid, full of peels, coffee grounds and an eggshell, on a counter">
+          <rect x="0" y="0" width="440" height="380" rx="24" fill="var(--a-sky)"/>
+          <rect x="0" y="292" width="440" height="88" fill="var(--a-wood)"/>
+          <rect x="0" y="288" width="440" height="10" fill="var(--a-soil-2)"/>
+          <path d="M120 110 q-6 -40 30 -52 q20 30 -10 58z" fill="var(--a-peel)"/>
+          <path d="M170 104 q10 -48 52 -50 q-4 40 -44 56z" fill="var(--a-lid)"/>
+          <ellipse cx="270" cy="102" rx="26" ry="18" fill="var(--a-shell)" stroke="var(--a-line)" stroke-width="3"/>
+          <path d="M232 112 q30 -30 66 -14" stroke="var(--a-tomato)" stroke-width="14" fill="none" stroke-linecap="round"/>
+          <path d="M96 120 h248 l-18 172 h-212z" fill="var(--a-caddy)" stroke="var(--a-line)" stroke-width="4" stroke-linejoin="round"/>
+          <rect x="84" y="112" width="272" height="26" rx="8" fill="var(--a-caddy-dark)" stroke="var(--a-line)" stroke-width="4"/>
+          <path d="M150 112 q70 -64 140 0" stroke="var(--a-line)" stroke-width="6" fill="none"/>
+          <circle cx="220" cy="206" r="34" fill="var(--a-lid)" stroke="var(--a-line)" stroke-width="4"/>
+          <path d="M206 214 c0 -16 10 -26 28 -26 c-2 18 -12 28 -26 28" fill="var(--a-caddy-dark)"/>
+          <rect x="318" y="150" width="58" height="34" rx="6" fill="var(--a-shell)" stroke="var(--a-line)" stroke-width="3" transform="rotate(12 347 167)"/>
+          <text x="347" y="173" text-anchor="middle" font-family="Figtree, sans-serif" font-weight="800" font-size="15" fill="var(--a-line)" transform="rotate(12 347 167)">TUE</text>
+          <path d="M292 132 l40 22" stroke="var(--a-line)" stroke-width="3"/>
+        </svg>
+    </div>
+  </div>
+</section>
+<section class="how" id="how" data-section="How it works">
+  <div class="wrap">
+    <h2>How a pickup works</h2>
+    <p class="intro">One caddy, one morning a week. You never carry scraps further than your front step.</p>
+    <ol class="steps">
+      <li class="step">
+        <div class="step-art"><svg viewBox="0 0 300 180" role="img" aria-label="The caddy inside the cupboard under the sink, next to a roll of liners">
+            <rect width="300" height="180" fill="var(--a-wall)"/>
+            <rect x="40" y="20" width="220" height="36" rx="6" fill="var(--a-wood)" stroke="var(--a-line)" stroke-width="3"/>
+            <path d="M120 38 h60" stroke="var(--a-line)" stroke-width="3"/>
+            <rect x="40" y="56" width="220" height="112" fill="var(--a-soil-2)" stroke="var(--a-line)" stroke-width="3"/>
+            <path d="M150 56 v112" stroke="var(--a-line)" stroke-width="3"/>
+            <path d="M74 98 h64 l-6 60 h-52z" fill="var(--a-caddy)" stroke="var(--a-line)" stroke-width="3"/>
+            <rect x="70" y="92" width="72" height="12" rx="4" fill="var(--a-caddy-dark)" stroke="var(--a-line)" stroke-width="3"/>
+            <rect x="176" y="118" width="52" height="40" rx="8" fill="var(--a-shell)" stroke="var(--a-line)" stroke-width="3"/>
+            <circle cx="202" cy="138" r="8" fill="var(--a-wall)" stroke="var(--a-line)" stroke-width="3"/>
+          </svg></div>
+        <p class="step-num">Step 1</p>
+        <h3>Fill the caddy</h3>
+        <p>The 7-litre caddy lives under your sink with a roll of compostable liners. Peels, grounds and plate scrapings go in as you cook.</p>
+      </li>
+      <li class="step">
+        <div class="step-art"><svg viewBox="0 0 300 180" role="img" aria-label="The full bin on the front step before the round, with a clock showing seven">
+            <rect width="300" height="180" fill="var(--a-sky)"/>
+            <rect x="150" y="16" width="110" height="140" fill="var(--a-wood)" stroke="var(--a-line)" stroke-width="3"/>
+            <circle cx="244" cy="90" r="5" fill="var(--a-line)"/>
+            <rect x="120" y="156" width="170" height="24" fill="var(--a-soil-2)" stroke="var(--a-line)" stroke-width="3"/>
+            <path d="M70 92 h70 l-6 64 h-58z" fill="var(--a-caddy)" stroke="var(--a-line)" stroke-width="3"/>
+            <rect x="64" y="84" width="82" height="14" rx="4" fill="var(--a-caddy-dark)" stroke="var(--a-line)" stroke-width="3"/>
+            <circle cx="56" cy="44" r="26" fill="var(--a-shell)" stroke="var(--a-line)" stroke-width="3"/>
+            <path d="M56 44 v-16 M56 44 h-10" stroke="var(--a-line)" stroke-width="3" stroke-linecap="round"/>
+          </svg></div>
+        <p class="step-num">Step 2</p>
+        <h3>Put the bin out on Tuesday</h3>
+        <p>Tip the caddy into the lockable outdoor bin and leave it on your step or by your building door before 7 a.m.</p>
+      </li>
+      <li class="step">
+        <div class="step-art"><svg viewBox="0 0 300 180" role="img" aria-label="A small electric van; the driver leaves a washed bin and takes the full one">
+            <rect width="300" height="180" fill="var(--a-wall)"/>
+            <rect x="0" y="150" width="300" height="30" fill="var(--a-soil-2)"/>
+            <path d="M20 70 h120 v80 h-120z" fill="var(--a-shell)" stroke="var(--a-line)" stroke-width="3"/>
+            <path d="M140 92 h34 l22 26 v32 h-56z" fill="var(--a-lid)" stroke="var(--a-line)" stroke-width="3"/>
+            <circle cx="56" cy="152" r="14" fill="var(--a-line)"/><circle cx="168" cy="152" r="14" fill="var(--a-line)"/>
+            <path d="M40 98 c10 -14 26 -14 36 0" stroke="var(--a-caddy)" stroke-width="6" fill="none" stroke-linecap="round"/>
+            <path d="M214 104 h40 l-4 44 h-32z" fill="var(--a-caddy)" stroke="var(--a-line)" stroke-width="3"/>
+            <rect x="210" y="98" width="48" height="10" rx="3" fill="var(--a-caddy-dark)" stroke="var(--a-line)" stroke-width="3"/>
+          </svg></div>
+        <p class="step-num">Step 3</p>
+        <h3>We swap it</h3>
+        <p>Our driver leaves a freshly washed bin and takes the full one to the yard. You get a text when it's done.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+<section class="makes" id="makes" data-section="What it makes">
+  <div class="wrap">
+    <div>
+      <h2>What your scraps become</h2>
+      <p>A household fills about 3.5 kg of scraps a week. Over a year that comes to about 180 kg, which the Mill Lane yard turns into about 60 kg of finished compost.</p>
+      <p>Each April you can collect a 10-litre bag for your pots and window boxes. Whatever you leave goes to the community gardens next to the yard.</p>
+    </div>
+    <figure>
+        <svg viewBox="0 0 480 320" role="img" aria-label="Chart: about 180 kg of scraps in a year become about 60 kg of compost">
+          <rect width="480" height="320" rx="16" fill="var(--card)"/>
+          <path d="M60 268 h360" stroke="var(--a-line)" stroke-width="3"/>
+          <rect x="96" y="58" width="104" height="210" rx="6" fill="var(--a-peel)" stroke="var(--a-line)" stroke-width="3"/>
+          <rect x="280" y="198" width="104" height="70" rx="6" fill="var(--a-soil)" stroke="var(--a-line)" stroke-width="3"/>
+          <path d="M210 112 C246 116 252 226 270 232" stroke="var(--a-line)" stroke-width="3" fill="none"/>
+          <path d="M259 223 l12 9 l-13 6" stroke="var(--a-line)" stroke-width="3" fill="none" stroke-linejoin="round"/>
+          <text x="148" y="44" text-anchor="middle" font-family="Figtree, sans-serif" font-weight="800" font-size="22" fill="var(--ink)">180 kg</text>
+          <text x="332" y="184" text-anchor="middle" font-family="Figtree, sans-serif" font-weight="800" font-size="22" fill="var(--ink)">60 kg</text>
+          <text x="148" y="296" text-anchor="middle" font-family="Figtree, sans-serif" font-size="18" fill="var(--ink)">scraps in a year</text>
+          <text x="332" y="296" text-anchor="middle" font-family="Figtree, sans-serif" font-size="18" fill="var(--ink)">compost back</text>
+        </svg>
+    </figure>
+  </div>
+</section>
+<section class="prices" id="prices" data-section="Prices">
+  <div class="wrap">
+    <h2>What it costs</h2>
+    <p class="intro">Two plans with the same caddy, liners and Tuesday round. Pay by the month; there is no sign-up fee.</p>
+    <div class="plans">
+      <div class="plan">
+        <h3>Weekly</h3>
+        <p class="price">$6 <span>a week</span></p>
+        <p>A pickup every Tuesday. Suits most homes of two or more.</p>
+        <a class="btn-line" href="#book">Choose weekly</a>
+      </div>
+      <div class="plan">
+        <h3>Every other week</h3>
+        <p class="price">$4 <span>a round</span></p>
+        <p>A pickup on alternate Tuesdays. Suits one person or a small kitchen.</p>
+        <a class="btn-line" href="#book">Choose every other week</a>
+      </div>
+    </div>
+    <p class="after-cards">Change plans, pause for a holiday or cancel from your account page.</p>
+  </div>
+</section>
+<section class="faq" id="faq" data-section="Questions">
+  <div class="wrap">
+    <h2>Questions</h2>
+    <p class="intro">What people ask before their first round.</p>
+    <dl class="qa">
+      <div><dt>Does the caddy smell?</dt><dd>The lid seals and has a charcoal filter. When the caddy is full, tip it into the larger bin we leave outside; most homes do that twice a week.</dd></div>
+      <div><dt>What can go in?</dt><dd>Fruit and vegetable peels, coffee grounds, tea bags, eggshells, bread and cooked leftovers. Not bones, plastic or cat litter.</dd></div>
+      <div><dt>I live in a flat. Does that work?</dt><dd>Yes. Leave the bin by your building's main door or with the concierge, and tell us where when you book.</dd></div>
+      <div><dt>What if I miss a Tuesday?</dt><dd>Keep the bin until the following week and we take both loads then. Going away? Pause before Monday at 6 p.m.</dd></div>
+      <div><dt>Who runs Loamwise?</dt><dd>Ana Ruiz and Theo Park, who also run the Mill Lane compost yard. Write to them at <a href="mailto:hello@loamwise.example">hello@loamwise.example</a>.</dd></div>
+      <div><dt>Can I stop at any time?</dt><dd>Yes. Cancel whenever you like; we collect the bin on your last round.</dd></div>
+    </dl>
+  </div>
+</section>
+<section class="band" id="book" data-section="Start">
+  <div class="wrap">
+    <h2>Start with one Tuesday</h2>
+    <p>Book online in two minutes. The caddy and a roll of liners arrive the week before your first round.</p>
+    <a class="btn" href="#top">Book a pickup</a>
+  </div>
+</section>
+</main>
+<footer class="site-footer" data-section="Footer">
+  <div class="wrap">
+    <p>Loamwise is a fictional compost pickup made for a design study: no real pickups, bookings or payments.</p>
+    <nav aria-label="Footer">
+      <a href="#how">How it works</a>
+      <a href="#prices">Prices</a>
+      <a href="mailto:hello@loamwise.example">hello@loamwise.example</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

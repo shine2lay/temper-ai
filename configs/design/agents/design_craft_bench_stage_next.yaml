@@ -1,0 +1,31 @@
+# @description Design-owned script steps of design_craft_bench (queue #10): prepare copies one
+# craft test page into the run's workspace and writes what the homepage craft critic reads, through
+# the same code as design_homepage_v2's measure stage (screenshots, facts, craft facts, brief,
+# direction); collect checks and summarises the critic's review/craft/craft.json. No model; the
+# shared playwright-mcp browser. The answer key never enters the box: grading happens on the host.
+# POSIX sh. No dollar-brace env syntax anywhere in this file (config-loader substitution).
+# v2 candidate (queue #39): prepare adds the model-free page checks to facts.md (--page-checks).
+agent:
+  name: design_craft_bench_stage_next
+  version: 2
+  type: script
+  timeout_seconds: 900
+  script_template: |
+    #!/bin/sh
+    set -e
+    "$TEMPER_PYTHON" - <<'PYEOF'
+    import os
+    import subprocess
+    import sys
+
+    stage = os.environ.get("{{ stage | env }}", "")
+    workspace = os.environ.get("{{ workspace_path | env }}", "")
+    site = os.environ.get("{{ site | default('', true) | env }}", "")
+    page = os.environ.get("{{ page | default('', true) | env }}", "")
+    if stage not in ("prepare", "collect") or not workspace:
+        raise SystemExit("craft bench stage is prepare or collect, with a workspace")
+    cmd = [sys.executable, "/app/configs/design/bin/design_craft_bench.py", stage, "--workspace", workspace]
+    if stage == "prepare":
+        cmd += ["--site", site, "--page", page, "--page-checks"]
+    subprocess.run(cmd, env=os.environ, check=True)
+    PYEOF

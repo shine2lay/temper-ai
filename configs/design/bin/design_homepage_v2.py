@@ -1212,15 +1212,19 @@ def axe_problems(results: dict[str, dict], ids: list[str]) -> list[str]:
 
 
 def write_review_inputs(review: Path, site: Path, brief: dict, number: int, chosen: dict, notes: str,
-                        references: Path | None) -> dict:
+                        references: Path | None, page_checks: bool = False) -> dict:
     """Capture the page and write what the critics read in review/; return the craft metrics.
 
     Screenshots and usability facts (design_capture.py), brief.md, craft-metrics.json, craft-facts.md,
     concept.md and references.md. Shared by the measure stage and the craft benchmark
     (design_craft_bench.py), so the benchmark tests the critic on exactly what a live round shows it.
+    page_checks (queue #39) adds the model-free page checks to facts.md (design_page_checks.py): empty
+    columns, pictures by section, the primary action in the first phone screen and the rest.
     """
     cmd = [sys.executable, str(HERE / "design_capture.py"), "--out", str(review), "--site", str(site),
            "--pages", "index.html", "--viewports", "desktop,mobile", "--browser", BROWSER]
+    if page_checks:
+        cmd += ["--page-checks", "--primary-action", brief.get("cta", "")]
     done = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     if done.returncode != 0:
         raise ValueError("capture failed: " + (done.stderr or done.stdout)[-600:])

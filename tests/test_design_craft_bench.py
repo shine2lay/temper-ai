@@ -94,9 +94,9 @@ def test_nothing_on_the_box_hints_at_the_planted_problems():
 def no_browser(monkeypatch):
     calls = []
 
-    def fake_inputs(review, site, brief, number, chosen, notes, references):
+    def fake_inputs(review, site, brief, number, chosen, notes, references, page_checks=False):
         calls.append({"review": review, "site": site, "brief": brief, "number": number, "chosen": chosen,
-                      "notes": notes, "references": references})
+                      "notes": notes, "references": references, "page_checks": page_checks})
         for sub in ("critic", "craft", "content"):
             (review / sub).mkdir(parents=True, exist_ok=True)
         return {"1440": {"scale_ratio": 4.2}, "390": {"scale_ratio": 3.1}}

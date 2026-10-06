@@ -1,0 +1,47 @@
+{
+ "version": 1,
+ "status": "frozen",
+ "frozen": "2026-10-05T17:15:00-07:00",
+ "calibrated_on": "the planted test pages in configs/design/testpages/quarry-v1, their two clean controls and three earlier homepage drafts, before any model run; changed only by a new calibration, never after seeing critic results",
+ "repeated_copy": {
+  "min_words": 5,
+  "min_sections": 3,
+  "long_words": 8,
+  "long_sections": 2,
+  "min_content_words": 3
+ },
+ "first_screen_action": {
+  "viewport": "mobile",
+  "screen_height": 844
+ },
+ "nav_fit": {
+  "viewport": "mobile",
+  "max_lines": 1
+ },
+ "empty_column": {
+  "viewport": "desktop",
+  "min_share": 0.3,
+  "min_height": 300,
+  "band": 16,
+  "center_tolerance": 0.1,
+  "min_content_bands": 0.5
+ },
+ "signifier": {
+  "min_channel_diff": 10,
+  "max_icon": 48
+ },
+ "text_over_image": {
+  "cell": 8,
+  "normal": 4.5,
+  "large": 3.0
+ },
+ "dark_small_text": {
+  "max_px": 14,
+  "min_words": 6,
+  "max_background_luminance": 0.2
+ },
+ "visuals": {
+  "icon_max": 48,
+  "grid": 8
+ }
+}

@@ -21,6 +21,14 @@ from a real origin (the browser refuses file:). A deployed site is given by --ba
 Writes DIR/shots/*.png, DIR/facts/*.json, DIR/facts.md (the measured problems and passes and
 the page's type, headings, fields and tab order, merged over viewports: what a reviewer reads
 first) and DIR/capture.json; prints a JSON summary.
+
+--page-checks (queue #39) adds the model-free page checks of design_page_checks.py to each view:
+repeated copy, the primary action in the first phone screen (--primary-action, else the "Primary
+action:" line of DIR/brief.md), the navigation on one phone line, empty columns, interactive
+elements without a visible cue, text over images measured from the pixels behind it, small light
+text on dark backgrounds and pictures per section; and, when the page offers a dark colour scheme,
+a desktop pass in it (view desktop-dark). --context ID writes DIR/context.md from the design
+context playbook. Without --page-checks the capture is unchanged.
 """
 
 import argparse
@@ -41,6 +49,9 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import design_page_checks as pc  # noqa: E402 - sits next to this script
+
 AXE = HERE / "vendor" / "axe-4.13.0.min.js"
 MEASURE = HERE / "design_measure.js"
 VIEWPORTS = {"desktop": (1280, 800), "mobile": (390, 844)}
@@ -119,12 +130,23 @@ async def capture_one(
     out: pathlib.Path,
     axe_src: str,
     measure_src: str,
+    checks: dict | None = None,
+    scheme: str | None = None,
 ) -> dict:
+    """One page at one viewport. checks (page checks on): {"thresholds", "primary"}; scheme "dark"
+    captures the page in its dark colour scheme as view <vp>-dark (no Tab walk: same as light)."""
     w, h = VIEWPORTS[vp]
+    view = f"{vp}-{scheme}" if scheme else vp
+    media = (
+        f"await page.emulateMedia({{colorScheme: {json.dumps(scheme or 'light')}}}); "
+        if checks is not None
+        else ""
+    )
     await run(
         s,
         f"async (page) => {{ await page.setViewportSize({{width: {w}, height: {h}}}); "
-        f"await page.goto({json.dumps(url)}, {{waitUntil: 'networkidle'}}); "
+        + media
+        + f"await page.goto({json.dumps(url)}, {{waitUntil: 'networkidle'}}); "
         "await page.evaluate(() => document.fonts.ready.then(() => true)); return true; }",
     )
     height = await run(
@@ -140,7 +162,7 @@ async def capture_one(
             f"async (page) => (await page.screenshot({{fullPage: true, type: 'png', "
             f"clip: {{x: 0, y: {y}, width: {w}, height: {th}}}}})).toString('base64')",
         )
-        tile = out / "shots" / f"{name}-{vp}-{len(tiles) + 1}.png"
+        tile = out / "shots" / f"{name}-{view}-{len(tiles) + 1}.png"
         tile.write_bytes(base64.b64decode(b64))
         tiles.append({"file": str(tile.relative_to(out)), "y": y, "height": th})
         y += h
@@ -158,25 +180,29 @@ async def capture_one(
     facts = await run(
         s, "async (page) => await page.evaluate(" + json.dumps(measure_src) + ")"
     )
-    stops = await run(
-        s,
-        "async (page) => { await page.evaluate(() => { window.scrollTo(0, 0); "
-        "if (document.activeElement) document.activeElement.blur(); }); const out = []; "
-        f"for (let i = 0; i < {MAX_TABS}; i++) {{ await page.keyboard.press('Tab'); "
-        f"const f = await page.evaluate({FOCUS_FN}); if (!f) break; "
-        "if (out.length && f.sel === out[0].sel) break; out.push(f); } return out; }",
-    )
+    stops = []
+    if not scheme:
+        stops = await run(
+            s,
+            "async (page) => { await page.evaluate(() => { window.scrollTo(0, 0); "
+            "if (document.activeElement) document.activeElement.blur(); }); const out = []; "
+            f"for (let i = 0; i < {MAX_TABS}; i++) {{ await page.keyboard.press('Tab'); "
+            f"const f = await page.evaluate({FOCUS_FN}); if (!f) break; "
+            "if (out.length && f.sel === out[0].sel) break; out.push(f); } return out; }",
+        )
     facts = facts if isinstance(facts, dict) else {"error": str(facts)[:500]}
     facts["axe"] = axe or []
     facts["tab_stops"] = stops or []
     facts["no_focus_ring"] = [t for t in (stops or []) if not t.get("ring")]
     facts["tiles"] = tiles
-    (out / "facts" / f"{name}-{vp}.json").write_text(json.dumps(facts, indent=1))
+    if checks is not None:
+        facts["page_checks"] = await page_checks(s, vp, view, checks)
+    (out / "facts" / f"{name}-{view}.json").write_text(json.dumps(facts, indent=1))
     return {
-        "viewport": vp,
+        "viewport": view,
         "size": [w, h],
         "tiles": [t["file"] for t in tiles],
-        "facts": f"facts/{name}-{vp}.json",
+        "facts": f"facts/{name}-{view}.json",
         "axe_violations": len(facts["axe"]),
         "measured": {
             k: len(facts.get(k) or [])
@@ -189,8 +215,30 @@ async def capture_one(
                 "no_focus_ring",
             )
         }
-        | {"overflows": bool((facts.get("page_width") or {}).get("overflows"))},
+        | {"overflows": bool((facts.get("page_width") or {}).get("overflows"))}
+        | (
+            {"page_checks": len(pc.judge(view, facts["page_checks"], checks["thresholds"],
+                                         facts["page_checks"].get("pixels"))[0])}
+            if checks is not None
+            else {}
+        ),
     }
+
+
+async def page_checks(s: ClientSession, vp: str, view: str, checks: dict) -> dict:
+    """design_page_checks.js in the page, then contrast from pixels for text over pictures."""
+    t = checks["thresholds"]
+    desktop = vp == "desktop" and view == vp
+    src = pc.source(t, checks.get("primary", "") if vp == "mobile" else "", copy=desktop, columns=desktop,
+                    visuals=view == vp)
+    raw = await run(s, "async (page) => await page.evaluate(" + json.dumps(src) + ")")
+    raw = raw if isinstance(raw, dict) else {"error": str(raw)[:500]}
+    if raw.get("overlays"):
+        try:
+            raw["pixels"] = await run(s, pc.pixel_code(raw["overlays"], t))
+        except Exception as exc:  # noqa: BLE001 - recorded; the rest of the page checks stand
+            raw["pixels_error"] = f"{exc.__class__.__name__}: {str(exc)[:300]}"
+    return raw
 
 
 def _items(f: dict) -> list[tuple[str, str]]:
@@ -352,16 +400,31 @@ def write_summary(out: pathlib.Path, index: dict) -> None:
             lines.append(f"Screenshots {vp} (top to bottom, one screen each): {tiles}")
         lines.append("")
         merged: dict[tuple[str, str], list[str]] = {}
+        passed: dict[tuple[str, str], list[str]] = {}
         for vp, f in views.items():
             for item in _items(f):
                 merged.setdefault(item, []).append(vp)
+        checked = {vp: f["page_checks"] for vp, f in views.items() if isinstance(f.get("page_checks"), dict)}
+        if checked:
+            t = pc.thresholds()
+            for vp, raw in checked.items():
+                probs, oks = pc.judge(vp, raw, t, raw.get("pixels"))
+                for item in probs:
+                    merged.setdefault(item, []).append(vp)
+                for item in oks:
+                    passed.setdefault(item, []).append(vp)
+            if "desktop" in checked:
+                probs, oks = pc.copy_problems(checked["desktop"], t)
+                for item in probs:
+                    merged.setdefault(item, []).append("desktop")
+                for item in oks:
+                    passed.setdefault(item, []).append("desktop")
         lines.append("### Measured problems")
         if merged:
             for (_kind, text), vps in merged.items():
                 lines.append(f"- [{'+'.join(vps)}] {text}")
         else:
             lines.append("- none measured")
-        passed: dict[tuple[str, str], list[str]] = {}
         for vp, f in views.items():
             for item in _passes(f):
                 passed.setdefault(item, []).append(vp)
@@ -420,6 +483,10 @@ def write_summary(out: pathlib.Path, index: dict) -> None:
                     f"### Text and structure ({vp}): "
                     + ("where it differs" if diff else "same as above"),
                 ] + diff
+        if checked:
+            offered = bool((checked.get("desktop") or {}).get("dark"))
+            lines += ["", "### Page checks: facts that are not pass or fail"]
+            lines += pc.info_lines(checked, "desktop-dark" in checked, offered)
         lines.append("")
     (out / "facts.md").write_text("\n".join(lines))
 
@@ -443,6 +510,18 @@ async def main(args) -> dict:
         "axe_tags": AXE_TAGS,
         "pages": [],
     }
+    checks = None
+    brief = out / "brief.md"
+    brief_text = brief.read_text(encoding="utf-8") if brief.exists() else ""
+    if getattr(args, "page_checks", False):
+        primary = getattr(args, "primary_action", "") or pc.primary_action(brief_text)
+        checks = {"thresholds": pc.thresholds(), "primary": primary}
+        index["page_checks"] = {"primary_action": primary, "thresholds": pc.THRESHOLDS.name}
+    # The design context: --context, else (page checks on) the brief's "Design context:" line.
+    context = getattr(args, "context", "") or (pc.design_context(brief_text) if checks is not None else "")
+    if context:
+        (out / "context.md").write_text(pc.context_md(context), encoding="utf-8")
+        index["context"] = context
     try:
         async with streamablehttp_client(args.browser) as (r, w, _):
             async with ClientSession(r, w) as s:
@@ -453,9 +532,17 @@ async def main(args) -> dict:
                     for vp in vps:
                         entry["views"].append(
                             await capture_one(
-                                s, url, slug(p), vp, out, axe_src, measure_src
+                                s, url, slug(p), vp, out, axe_src, measure_src, checks
                             )
                         )
+                    if checks is not None and "desktop" in vps:
+                        desk = json.loads((out / f"facts/{slug(p)}-desktop.json").read_text())
+                        if (desk.get("page_checks") or {}).get("dark"):
+                            entry["views"].append(
+                                await capture_one(
+                                    s, url, slug(p), "desktop", out, axe_src, measure_src, checks, "dark"
+                                )
+                            )
                     index["pages"].append(entry)
                 await s.call_tool("browser_close", {})
     finally:
@@ -476,6 +563,9 @@ if __name__ == "__main__":
     ap.add_argument("--base-url", help="a deployed site instead of --site")
     ap.add_argument("--viewports", default="desktop,mobile")
     ap.add_argument("--browser", default="http://playwright-mcp:8931/mcp")
+    ap.add_argument("--page-checks", action="store_true", help="add the model-free page checks (queue #39)")
+    ap.add_argument("--primary-action", default="", help="the page's primary action label (else brief.md)")
+    ap.add_argument("--context", default="", help="a design context id from the playbook: writes context.md")
     a = ap.parse_args()
     if not (a.site or a.base_url):
         ap.error("give --site or --base-url")

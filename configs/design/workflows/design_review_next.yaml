@@ -1,0 +1,106 @@
+workflow:
+  name: design_review_next
+  # CANDIDATE (queue #39): design_review v4 on trial next to live v3. Capture adds the model-free
+  # page checks; the critic and merge add the research checks (signifiers, text over pictures,
+  # typicality, the design context's avoid list, small text in the dark scheme, repeated copy,
+  # the primary action in the first phone screen, the nav on one line) and worked example
+  # critiques. Renamed to design_review only if it wins its benchmarks.
+  # DESIGN REVIEW (design role; v1 2026-10-02, v2 2026-10-04, v3 2026-10-05). An expert review of a
+  # product's pages: measured facts first, then two independent AI critics, a no-model check of
+  # their claims against the facts, then a merge that keeps what holds up. The critic and grader
+  # every later design workflow reuses (owner's pick).
+  #
+  #   capture (script) -> [ critic_a | critic_b ] -> verify (script) -> merge
+  #
+  # capture: screenshots per viewport, axe-core 4.13.0, design_measure.js and a Tab walk through
+  #   temper's playwright-mcp browser (no model). Target size follows WCAG 2.5.8 in full (a
+  #   control's labels count as its target; undersized targets pass by the spacing exception),
+  #   inactive controls are exempt from contrast, and facts.md lists measured passes next to the
+  #   problems. The critics judge hierarchy, wording, flow, consistency, states and the WCAG 2.2
+  #   AA points no tool measures, from the screenshots and the facts; they never contradict a
+  #   measured number and rate severity on anchored Nielsen 0-4 definitions plus severity rules
+  #   (how far a measured failure is below its WCAG threshold, main navigation or the page's main
+  #   task, how many pages it hits). verify: each critic
+  #   claim on target size or on an inactive control's contrast against the facts, and whether
+  #   the finding cites checkable evidence. merge: drops what the facts contradict (saying why);
+  #   confirmed = measured or found by both critics; single = one critic with checkable evidence,
+  #   kept for a person to check; rejected = contradicted, uncheckable or taste. The merge sets
+  #   severity by the same rules (the critics' ratings are input, not votes).
+  # Graded on planted-problem test pages by design_review_grade (answer keys kept off the box's
+  # container mounts). v2, queue #7: 3 runs (2 on a 14-plant site with 10 traps, 1 on a 22-plant
+  # site): every plant found, no invented findings or overclaims, all traps held; severity equal
+  # to the key on 11 of 14 (v1: 6 of 14); about $1.8-2.0 and 4-5 minutes a run. v3, queue #33
+  # (severity rules in the critic and merge, everything else unchanged): 4 runs (2 on each site):
+  # every plant found, no invented findings or overclaims, all traps held, no plant two steps
+  # off; severity equal to the key on 13 of 14 in both runs and on 21 and 20 of 22 (v2: 11 of
+  # 14 and 13 of 22); about $1.7-2.0 and 4 minutes a run.
+  # docs/design.md has how to run and grade it.
+  #
+  # provider: claude = Claude Code CLI (Read shows PNGs to the model); no temper tools: blocks.
+  version: 3
+  description: |
+    Expert design review of a site's pages: screenshots and measured accessibility facts
+    (axe-core, contrast, target sizes by WCAG 2.5.8 in full, field names, focus, reflow) per
+    viewport, two independent critics (Nielsen's 10 heuristics, visual hierarchy, consistency
+    across pages, states, WCAG 2.2 AA, anchored severity), a no-model check of their claims
+    against the facts, and a merge that writes a report with confirmed findings, findings seen
+    by one critic, claims the facts ruled out, and what was not checked.
+  inputs:
+    brief:
+      type: string
+      required: true    # what the product is, who uses it, what the pages are for
+    pages:
+      type: string
+      required: true    # comma-separated paths relative to the site, e.g. "index.html,pricing.html"
+    site:
+      type: string
+      default: ""       # a folder inside the run container to serve, e.g. /app/configs/design/testpages/fernway-v1
+    base_url:
+      type: string
+      default: ""       # or a deployed site (the browser must reach it)
+    viewports:
+      type: string
+      default: "desktop,mobile"
+  outputs:
+    report_path: merge.structured.report_path
+    findings_path: merge.structured.findings_path
+    confirmed: merge.structured.confirmed
+    single: merge.structured.single
+    rejected: merge.structured.rejected
+    dropped_by_facts: merge.structured.dropped_by_facts
+    severity_counts: merge.structured.severity_counts
+    contradicted_claims: verify.structured.contradicted
+    partly_contradicted_claims: verify.structured.partly_contradicted
+    screenshots: capture.structured.screenshots
+    measured_items: capture.structured.measured_items
+
+  nodes:
+    - name: capture
+      type: agent
+      agent: design_capture_next
+      input_map:
+        brief: input.brief
+        pages: input.pages
+        site: input.site
+        base_url: input.base_url
+        viewports: input.viewports
+
+    - name: critic_a
+      type: agent
+      agent: design_critic_next
+      depends_on: [capture]
+
+    - name: critic_b
+      type: agent
+      agent: design_critic_next
+      depends_on: [capture]
+
+    - name: verify
+      type: agent
+      agent: design_verify
+      depends_on: [critic_a, critic_b]
+
+    - name: merge
+      type: agent
+      agent: design_merge_next
+      depends_on: [verify]

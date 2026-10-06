@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tidewell Tool Library (page-check fixture: one problem per check)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1d1d1b; background: #fbfaf7; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
+  header { padding: 16px 0; border-bottom: 1px solid #ddd; }
+  header .wrap { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+  .logo { font-weight: 700; color: #1d1d1b; text-decoration: none; }
+  nav ul { display: flex; flex-wrap: wrap; gap: 8px 20px; list-style: none; margin: 0; padding: 0; }
+  nav a { color: #1d1d1b; text-decoration: none; }
+  section { padding: 64px 0; }
+  .hero { background: linear-gradient(120deg, #c9d6d3 0%, #a9bcb8 100%); }
+  .hero .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .hero h1 { font-size: 48px; line-height: 1.1; margin: 0 0 16px; color: #1d1d1b; }
+  .hero .lede { color: #ffffff; margin: 0 0 24px; }
+  .btn { display: inline-block; padding: 12px 24px; background: #2f5d50; color: #fff; border-radius: 6px; text-decoration: none; }
+  .art { width: 100%; height: 360px; display: block; }
+  .faq .wrap { display: grid; grid-template-columns: 2fr 3fr; gap: 48px; }
+  .faq dl { margin: 0; }
+  .faq dt { font-weight: 700; margin-top: 16px; }
+  .faq dd { margin: 4px 0 0; }
+  .tools ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  .tools li { display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; padding: 8px 0; }
+  .plain { background: none; border: 0; padding: 0; font: inherit; color: #2f5d50; cursor: pointer; }
+  .tools a { color: #2f5d50; text-decoration: none; }
+  footer { padding: 32px 0; border-top: 1px solid #ddd; font-size: 15px; }
+  @media (max-width: 700px) {
+    .wrap { padding: 0 20px; }
+    header .wrap { flex-direction: column; align-items: flex-start; }
+    .hero .wrap, .faq .wrap { grid-template-columns: 1fr; }
+    .hero .art-cell { order: -1; }
+    .art { height: 600px; }
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #121412; color: #e8e8e4; }
+    .logo, nav a { color: #e8e8e4; }
+    .tools p, .faq dd, .how p { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<header data-section="Header">
+  <div class="wrap">
+    <a class="logo" href="#top">Tidewell Tool Library</a>
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="#how">How borrowing works</a></li>
+        <li><a href="#tools">Tools on the shelves</a></li>
+        <li><a href="#faq">Questions and answers</a></li>
+        <li><a href="#hours">Opening hours</a></li>
+        <li><a href="#join">Become a member</a></li>
+        <li><a href="#contact">Contact the volunteers</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main>
+  <section class="hero" data-section="Hero" id="top">
+    <div class="wrap">
+      <div>
+        <h1>Borrow the tool, skip the shop</h1>
+        <p class="lede">Drills, ladders and garden shears for the whole street, lent for a week at a time.</p>
+        <a class="btn" href="#join">Borrow a tool</a>
+      </div>
+      <div class="art-cell">
+        <svg class="art" viewBox="0 0 400 360" role="img" aria-label="A pegboard of hand tools">
+          <title>A pegboard of hand tools</title>
+          <rect width="400" height="360" fill="#e7dcc4"/>
+          <rect x="60" y="60" width="40" height="200" rx="8" fill="#2f5d50"/>
+          <rect x="160" y="80" width="80" height="30" rx="6" fill="#b5532f"/>
+          <circle cx="310" cy="160" r="50" fill="#d9a441"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+  <section class="how" data-section="How it works" id="how">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <p>Members pick up drills, ladders and garden shears for the whole street at the Saturday counter, and bring them back the next Saturday. Every tool is checked and cleaned by a volunteer before it goes back on the shelf.</p>
+      <svg width="320" height="200" viewBox="0 0 320 200" role="img" aria-label="Counter, shelf and returns box">
+        <title>Counter, shelf and returns box</title>
+        <rect width="320" height="200" fill="#e7dcc4"/>
+        <rect x="20" y="120" width="120" height="60" fill="#2f5d50"/>
+        <rect x="180" y="40" width="110" height="140" fill="#b5532f"/>
+      </svg>
+    </div>
+  </section>
+  <section class="tools" data-section="Tools on the shelves" id="tools">
+    <div class="wrap">
+      <h2>Tools on the shelves</h2>
+      <p>Four hundred tools, from a hedge trimmer to a tile cutter. Reserve one and it waits at the counter for you on Saturday morning.</p>
+      <ul>
+        <li><span>Cordless drill</span><button class="plain" type="button">Reserve</button></li>
+        <li><span>Extension ladder</span><button class="plain" type="button">Reserve</button></li>
+        <li><span>Garden shears</span><button class="plain" type="button">Reserve</button></li>
+      </ul>
+      <p><a href="#all">See every tool</a></p>
+    </div>
+  </section>
+  <section class="faq" data-section="Questions" id="faq">
+    <div class="wrap">
+      <div>
+        <h2>Questions</h2>
+      </div>
+      <dl>
+        <dt>What does a membership cost?</dt>
+        <dd>Twelve pounds a year, or nothing if you volunteer at the counter twice a year. The money pays for blades, batteries and the shed's rent.</dd>
+        <dt>What if I break something?</dt>
+        <dd>Tell us when you bring it back. Tools wear out; we only ask for a contribution when something was clearly misused, and we talk about it first.</dd>
+        <dt>Can I borrow more than one tool?</dt>
+        <dd>Up to three at a time. Large items such as the cement mixer and the scaffold tower are booked separately, because they need a car to collect.</dd>
+        <dt>Do you deliver?</dt>
+        <dd>No, but neighbours often pick up for each other. Write the other member's name on the reservation and the counter will hand the tool over.</dd>
+        <dt>Who runs the library?</dt>
+        <dd>Thirty volunteers from the neighbourhood, a small committee elected each spring, and a lot of borrowed shelving.</dd>
+      </dl>
+    </div>
+  </section>
+  <section class="join" data-section="Join" id="join">
+    <div class="wrap">
+      <h2>Join the library</h2>
+      <p>Drills, ladders and garden shears for the whole street, for less than one new drill costs.</p>
+      <a class="btn" href="#form">Borrow a tool</a>
+    </div>
+  </section>
+</main>
+<footer data-section="Footer">
+  <div class="wrap">Tidewell Tool Library, a fictional fixture page. <a href="#contact">Contact</a></div>
+</footer>
+</body>
+</html>

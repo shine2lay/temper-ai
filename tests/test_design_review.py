@@ -73,7 +73,13 @@ def test_review_agents_import(name):
 # A reviewer candidate on trial ("<file>_next.yaml": "<live name>"), graded on the sealed test
 # sites before anything replaces the live reviewer. Promotion renames it to the live names and
 # empties this (queue #33's severity candidate became design_review v3 on 2026-10-05).
-CANDIDATE_ON_TRIAL: dict[str, str] = {}
+CANDIDATE_ON_TRIAL: dict[str, str] = {
+    # queue #39: research and page checks (design_review v4 candidate)
+    "design_review_next.yaml": "design_review",
+    "design_capture_next.yaml": "design_capture",
+    "design_critic_next.yaml": "design_critic",
+    "design_merge_next.yaml": "design_merge",
+}
 
 
 def test_review_steps_run_the_promoted_scripts():

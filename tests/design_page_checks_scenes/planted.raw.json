@@ -1,0 +1,1181 @@
+{
+ "desktop": {
+  "columns": [
+   {
+    "beside": "Questions",
+    "height": 496,
+    "section": "Questions",
+    "share": 0.31,
+    "side": "middle",
+    "top": 1636,
+    "width": 332,
+    "x": 231
+   }
+  ],
+  "copy": [
+   {
+    "blocks": [
+     "Borrow the tool, skip the shop",
+     "Drills, ladders and garden shears for the whole street, lent for a week at a time."
+    ],
+    "name": "Hero"
+   },
+   {
+    "blocks": [
+     "How it works",
+     "Members pick up drills, ladders and garden shears for the whole street at the Saturday counter, and bring them back the next Saturday. Every tool is checked and cleaned by a volunteer before it goes back on the shelf."
+    ],
+    "name": "How it works"
+   },
+   {
+    "blocks": [
+     "Tools on the shelves",
+     "Four hundred tools, from a hedge trimmer to a tile cutter. Reserve one and it waits at the counter for you on Saturday morning.",
+     "Cordless drill",
+     "Extension ladder",
+     "Garden shears"
+    ],
+    "name": "Tools on the shelves"
+   },
+   {
+    "blocks": [
+     "Questions",
+     "What does a membership cost?",
+     "Twelve pounds a year, or nothing if you volunteer at the counter twice a year. The money pays for blades, batteries and the shed's rent.",
+     "What if I break something?",
+     "Tell us when you bring it back. Tools wear out; we only ask for a contribution when something was clearly misused, and we talk about it first.",
+     "Can I borrow more than one tool?",
+     "Up to three at a time. Large items such as the cement mixer and the scaffold tower are booked separately, because they need a car to collect.",
+     "Do you deliver?",
+     "No, but neighbours often pick up for each other. Write the other member's name on the reservation and the counter will hand the tool over.",
+     "Who runs the library?",
+     "Thirty volunteers from the neighbourhood, a small committee elected each spring, and a lot of borrowed shelving."
+    ],
+    "name": "Questions"
+   },
+   {
+    "blocks": [
+     "Join the library",
+     "Drills, ladders and garden shears for the whole street, for less than one new drill costs."
+    ],
+    "name": "Join"
+   }
+  ],
+  "cues": {
+   "by_cue": {
+    "fill": 2
+   },
+   "checked": 6,
+   "nav_links": 8,
+   "without": [
+    {
+     "box": [
+      1105,
+      1279,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(1) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      1105,
+      1335,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(2) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      1105,
+      1391,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(3) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      112,
+      1447,
+      111,
+      22
+     ],
+     "section": "Tools on the shelves",
+     "sel": "#tools > div.wrap > p:nth-of-type(2) > a",
+     "tag": "a",
+     "text": "See every tool"
+    }
+   ],
+   "without_count": 4
+  },
+  "dark": true,
+  "frame": [
+   112,
+   1168
+  ],
+  "nav": {
+   "found": true,
+   "header_height": 95,
+   "lines": 2,
+   "links": [
+    {
+     "box": [
+      271,
+      18,
+      165,
+      22
+     ],
+     "text": "How borrowing works"
+    },
+    {
+     "box": [
+      456,
+      18,
+      163,
+      22
+     ],
+     "text": "Tools on the shelves"
+    },
+    {
+     "box": [
+      639,
+      18,
+      185,
+      22
+     ],
+     "text": "Questions and answers"
+    },
+    {
+     "box": [
+      844,
+      18,
+      114,
+      22
+     ],
+     "text": "Opening hours"
+    },
+    {
+     "box": [
+      977,
+      18,
+      148,
+      22
+     ],
+     "text": "Become a member"
+    },
+    {
+     "box": [
+      271,
+      53,
+      178,
+      22
+     ],
+     "text": "Contact the volunteers"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "How borrowing works",
+     "Tools on the shelves",
+     "Questions and answers",
+     "Opening hours",
+     "Become a member"
+    ],
+    [
+     "Contact the volunteers"
+    ]
+   ],
+   "sel": "header > div.wrap > nav",
+   "wrapped": []
+  },
+  "overlays": [
+   {
+    "color": [
+     29,
+     29,
+     27,
+     1
+    ],
+    "declared": 16.18,
+    "id": 0,
+    "kind": "gradient",
+    "large": true,
+    "lines": [
+     [
+      112,
+      225,
+      434,
+      29
+     ],
+     [
+      112,
+      278,
+      185,
+      29
+     ]
+    ],
+    "needs": 3,
+    "section": "Hero",
+    "sel": "#top > div.wrap > div:nth-of-type(1) > h1",
+    "size": 48,
+    "text": "Borrow the tool, skip the shop",
+    "weight": 700
+   },
+   {
+    "color": [
+     255,
+     255,
+     255,
+     1
+    ],
+    "declared": 1.04,
+    "id": 1,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      112,
+      342,
+      502,
+      11
+     ],
+     [
+      112,
+      369,
+      122,
+      11
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "#top > div.wrap > div:nth-of-type(1) > p.lede",
+    "size": 18,
+    "text": "Drills, ladders and garden shears for the whole street, lent",
+    "weight": 400
+   }
+  ],
+  "page_height": 2583,
+  "pixels": {
+   "0": {
+    "bg": "rgb(188,203,200)",
+    "ratio": 10.09
+   },
+   "1": {
+    "bg": "rgb(195,209,206)",
+    "ratio": 1.57
+   }
+  },
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     95
+    ],
+    "chrome": true,
+    "name": "Header"
+   },
+   {
+    "box": [
+     0,
+     95,
+     1280,
+     488
+    ],
+    "chrome": false,
+    "name": "Hero"
+   },
+   {
+    "box": [
+     0,
+     583,
+     1280,
+     493
+    ],
+    "chrome": false,
+    "name": "How it works"
+   },
+   {
+    "box": [
+     0,
+     1076,
+     1280,
+     477
+    ],
+    "chrome": false,
+    "name": "Tools on the shelves"
+   },
+   {
+    "box": [
+     0,
+     1554,
+     1280,
+     633
+    ],
+    "chrome": false,
+    "name": "Questions"
+   },
+   {
+    "box": [
+     0,
+     2187,
+     1280,
+     309
+    ],
+    "chrome": false,
+    "name": "Join"
+   },
+   {
+    "box": [
+     0,
+     2496,
+     1280,
+     88
+    ],
+    "chrome": true,
+    "name": "Footer"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   1280,
+   800
+  ],
+  "visuals": {
+   "first_screen_share": 0.18,
+   "none": [
+    "Tools on the shelves",
+    "Questions",
+    "Join"
+   ],
+   "sections": [
+    {
+     "chrome": true,
+     "count": 0,
+     "items": [],
+     "name": "Header",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 1,
+     "items": [
+      {
+       "decorative": false,
+       "kind": "svg",
+       "name": "A pegboard of hand tools",
+       "size": [
+        504,
+        360
+       ],
+       "top": 159
+      }
+     ],
+     "name": "Hero",
+     "share": 0.3
+    },
+    {
+     "chrome": false,
+     "count": 1,
+     "items": [
+      {
+       "decorative": false,
+       "kind": "svg",
+       "name": "Counter, shelf and returns box",
+       "size": [
+        320,
+        200
+       ],
+       "top": 804
+      }
+     ],
+     "name": "How it works",
+     "share": 0.11
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Tools on the shelves",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Questions",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Join",
+     "share": 0
+    },
+    {
+     "chrome": true,
+     "count": 0,
+     "items": [],
+     "name": "Footer",
+     "share": 0
+    }
+   ]
+  }
+ },
+ "desktop-dark": {
+  "cues": {
+   "by_cue": {
+    "fill": 2
+   },
+   "checked": 6,
+   "nav_links": 8,
+   "without": [
+    {
+     "box": [
+      1105,
+      1240,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(1) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      1105,
+      1296,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(2) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      1105,
+      1352,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(3) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      112,
+      1401,
+      74,
+      16
+     ],
+     "section": "Tools on the shelves",
+     "sel": "#tools > div.wrap > p:nth-of-type(2) > a",
+     "tag": "a",
+     "text": "See every tool"
+    }
+   ],
+   "without_count": 4
+  },
+  "dark": true,
+  "nav": {
+   "found": true,
+   "header_height": 95,
+   "lines": 2,
+   "links": [
+    {
+     "box": [
+      271,
+      18,
+      165,
+      22
+     ],
+     "text": "How borrowing works"
+    },
+    {
+     "box": [
+      456,
+      18,
+      163,
+      22
+     ],
+     "text": "Tools on the shelves"
+    },
+    {
+     "box": [
+      639,
+      18,
+      185,
+      22
+     ],
+     "text": "Questions and answers"
+    },
+    {
+     "box": [
+      844,
+      18,
+      114,
+      22
+     ],
+     "text": "Opening hours"
+    },
+    {
+     "box": [
+      977,
+      18,
+      148,
+      22
+     ],
+     "text": "Become a member"
+    },
+    {
+     "box": [
+      271,
+      53,
+      178,
+      22
+     ],
+     "text": "Contact the volunteers"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "How borrowing works",
+     "Tools on the shelves",
+     "Questions and answers",
+     "Opening hours",
+     "Become a member"
+    ],
+    [
+     "Contact the volunteers"
+    ]
+   ],
+   "sel": "header > div.wrap > nav",
+   "wrapped": []
+  },
+  "overlays": [
+   {
+    "color": [
+     29,
+     29,
+     27,
+     1
+    ],
+    "declared": 1.1,
+    "id": 0,
+    "kind": "gradient",
+    "large": true,
+    "lines": [
+     [
+      112,
+      225,
+      434,
+      29
+     ],
+     [
+      112,
+      278,
+      185,
+      29
+     ]
+    ],
+    "needs": 3,
+    "section": "Hero",
+    "sel": "#top > div.wrap > div:nth-of-type(1) > h1",
+    "size": 48,
+    "text": "Borrow the tool, skip the shop",
+    "weight": 700
+   },
+   {
+    "color": [
+     255,
+     255,
+     255,
+     1
+    ],
+    "declared": 18.51,
+    "id": 1,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      112,
+      342,
+      502,
+      11
+     ],
+     [
+      112,
+      369,
+      122,
+      11
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "#top > div.wrap > div:nth-of-type(1) > p.lede",
+    "size": 18,
+    "text": "Drills, ladders and garden shears for the whole street, lent",
+    "weight": 400
+   }
+  ],
+  "page_height": 2415,
+  "pixels": {
+   "0": {
+    "bg": "rgb(188,203,200)",
+    "ratio": 10.09
+   },
+   "1": {
+    "bg": "rgb(195,209,206)",
+    "ratio": 1.57
+   }
+  },
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     1280,
+     95
+    ],
+    "chrome": true,
+    "name": "Header"
+   },
+   {
+    "box": [
+     0,
+     95,
+     1280,
+     488
+    ],
+    "chrome": false,
+    "name": "Hero"
+   },
+   {
+    "box": [
+     0,
+     583,
+     1280,
+     469
+    ],
+    "chrome": false,
+    "name": "How it works"
+   },
+   {
+    "box": [
+     0,
+     1052,
+     1280,
+     441
+    ],
+    "chrome": false,
+    "name": "Tools on the shelves"
+   },
+   {
+    "box": [
+     0,
+     1494,
+     1280,
+     525
+    ],
+    "chrome": false,
+    "name": "Questions"
+   },
+   {
+    "box": [
+     0,
+     2019,
+     1280,
+     309
+    ],
+    "chrome": false,
+    "name": "Join"
+   },
+   {
+    "box": [
+     0,
+     2328,
+     1280,
+     88
+    ],
+    "chrome": true,
+    "name": "Footer"
+   }
+  ],
+  "small_dark": [
+   {
+    "background": "rgb(18,20,18)",
+    "color": "rgb(232,232,228)",
+    "section": "How it works",
+    "sel": "#how > div.wrap > p",
+    "size": 12,
+    "text": "Members pick up drills, ladders and garden shears for the wh",
+    "words": 39
+   },
+   {
+    "background": "rgb(18,20,18)",
+    "color": "rgb(232,232,228)",
+    "section": "Tools on the shelves",
+    "sel": "#tools > div.wrap > p:nth-of-type(1)",
+    "size": 12,
+    "text": "Four hundred tools, from a hedge trimmer to a tile cutter. R",
+    "words": 24
+   },
+   {
+    "background": "rgb(18,20,18)",
+    "color": "rgb(232,232,228)",
+    "section": "Questions",
+    "sel": "#faq > div.wrap > dl > dd:nth-of-type(1)",
+    "size": 12,
+    "text": "Twelve pounds a year, or nothing if you volunteer at the cou",
+    "words": 25
+   },
+   {
+    "background": "rgb(18,20,18)",
+    "color": "rgb(232,232,228)",
+    "section": "Questions",
+    "sel": "#faq > div.wrap > dl > dd:nth-of-type(2)",
+    "size": 12,
+    "text": "Tell us when you bring it back. Tools wear out; we only ask ",
+    "words": 27
+   },
+   {
+    "background": "rgb(18,20,18)",
+    "color": "rgb(232,232,228)",
+    "section": "Questions",
+    "sel": "#faq > div.wrap > dl > dd:nth-of-type(3)",
+    "size": 12,
+    "text": "Up to three at a time. Large items such as the cement mixer ",
+    "words": 27
+   },
+   {
+    "background": "rgb(18,20,18)",
+    "color": "rgb(232,232,228)",
+    "section": "Questions",
+    "sel": "#faq > div.wrap > dl > dd:nth-of-type(4)",
+    "size": 12,
+    "text": "No, but neighbours often pick up for each other. Write the o",
+    "words": 25
+   },
+   {
+    "background": "rgb(18,20,18)",
+    "color": "rgb(232,232,228)",
+    "section": "Questions",
+    "sel": "#faq > div.wrap > dl > dd:nth-of-type(5)",
+    "size": 12,
+    "text": "Thirty volunteers from the neighbourhood, a small committee ",
+    "words": 17
+   }
+  ],
+  "viewport": [
+   1280,
+   800
+  ]
+ },
+ "mobile": {
+  "action": {
+   "first": {
+    "bottom": 1144,
+    "section": "Hero",
+    "sel": "#top > div.wrap > div:nth-of-type(1) > a.btn",
+    "text": "Borrow a tool",
+    "top": 1093,
+    "whole": true
+   },
+   "found": 2,
+   "label": "Borrow a tool",
+   "screen_height": 844
+  },
+  "cues": {
+   "by_cue": {
+    "fill": 2
+   },
+   "checked": 6,
+   "nav_links": 8,
+   "without": [
+    {
+     "box": [
+      307,
+      2065,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(1) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      307,
+      2121,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(2) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      307,
+      2177,
+      63,
+      27
+     ],
+     "section": "Tools on the shelves",
+     "sel": "div.wrap > ul > li:nth-of-type(3) > button.plain",
+     "tag": "button",
+     "text": "Reserve"
+    },
+    {
+     "box": [
+      20,
+      2233,
+      111,
+      22
+     ],
+     "section": "Tools on the shelves",
+     "sel": "#tools > div.wrap > p:nth-of-type(2) > a",
+     "tag": "a",
+     "text": "See every tool"
+    }
+   ],
+   "without_count": 4
+  },
+  "dark": true,
+  "nav": {
+   "found": true,
+   "header_height": 181,
+   "lines": 3,
+   "links": [
+    {
+     "box": [
+      20,
+      69,
+      165,
+      22
+     ],
+     "text": "How borrowing works"
+    },
+    {
+     "box": [
+      205,
+      69,
+      163,
+      22
+     ],
+     "text": "Tools on the shelves"
+    },
+    {
+     "box": [
+      20,
+      104,
+      185,
+      22
+     ],
+     "text": "Questions and answers"
+    },
+    {
+     "box": [
+      225,
+      104,
+      114,
+      22
+     ],
+     "text": "Opening hours"
+    },
+    {
+     "box": [
+      20,
+      139,
+      148,
+      22
+     ],
+     "text": "Become a member"
+    },
+    {
+     "box": [
+      188,
+      139,
+      178,
+      22
+     ],
+     "text": "Contact the volunteers"
+    }
+   ],
+   "overflow": [],
+   "rows": [
+    [
+     "How borrowing works",
+     "Tools on the shelves"
+    ],
+    [
+     "Questions and answers",
+     "Opening hours"
+    ],
+    [
+     "Become a member",
+     "Contact the volunteers"
+    ]
+   ],
+   "sel": "header > div.wrap > nav",
+   "wrapped": []
+  },
+  "overlays": [
+   {
+    "color": [
+     29,
+     29,
+     27,
+     1
+    ],
+    "declared": 16.18,
+    "id": 0,
+    "kind": "gradient",
+    "large": true,
+    "lines": [
+     [
+      20,
+      904,
+      333,
+      29
+     ],
+     [
+      20,
+      957,
+      285,
+      29
+     ]
+    ],
+    "needs": 3,
+    "section": "Hero",
+    "sel": "#top > div.wrap > div:nth-of-type(1) > h1",
+    "size": 48,
+    "text": "Borrow the tool, skip the shop",
+    "weight": 700
+   },
+   {
+    "color": [
+     255,
+     255,
+     255,
+     1
+    ],
+    "declared": 1.04,
+    "id": 1,
+    "kind": "gradient",
+    "large": false,
+    "lines": [
+     [
+      20,
+      1022,
+      319,
+      11
+     ],
+     [
+      20,
+      1049,
+      306,
+      11
+     ]
+    ],
+    "needs": 4.5,
+    "section": "Hero",
+    "sel": "#top > div.wrap > div:nth-of-type(1) > p.lede",
+    "size": 18,
+    "text": "Drills, ladders and garden shears for the whole street, lent",
+    "weight": 400
+   }
+  ],
+  "page_height": 3800,
+  "pixels": {
+   "0": {
+    "bg": "rgb(175,193,189)",
+    "ratio": 9.02
+   },
+   "1": {
+    "bg": "rgb(184,200,197)",
+    "ratio": 1.73
+   }
+  },
+  "sections": [
+   {
+    "box": [
+     0,
+     0,
+     390,
+     181
+    ],
+    "chrome": true,
+    "name": "Header"
+   },
+   {
+    "box": [
+     0,
+     181,
+     390,
+     1027
+    ],
+    "chrome": false,
+    "name": "Hero"
+   },
+   {
+    "box": [
+     0,
+     1208,
+     390,
+     601
+    ],
+    "chrome": false,
+    "name": "How it works"
+   },
+   {
+    "box": [
+     0,
+     1809,
+     390,
+     531
+    ],
+    "chrome": false,
+    "name": "Tools on the shelves"
+   },
+   {
+    "box": [
+     0,
+     2340,
+     390,
+     1009
+    ],
+    "chrome": false,
+    "name": "Questions"
+   },
+   {
+    "box": [
+     0,
+     3350,
+     390,
+     363
+    ],
+    "chrome": false,
+    "name": "Join"
+   },
+   {
+    "box": [
+     0,
+     3713,
+     390,
+     88
+    ],
+    "chrome": true,
+    "name": "Footer"
+   }
+  ],
+  "small_dark": [],
+  "viewport": [
+   390,
+   844
+  ],
+  "visuals": {
+   "first_screen_share": 0.66,
+   "none": [
+    "Tools on the shelves",
+    "Questions",
+    "Join"
+   ],
+   "sections": [
+    {
+     "chrome": true,
+     "count": 0,
+     "items": [],
+     "name": "Header",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 1,
+     "items": [
+      {
+       "decorative": false,
+       "kind": "svg",
+       "name": "A pegboard of hand tools",
+       "size": [
+        350,
+        600
+       ],
+       "top": 245
+      }
+     ],
+     "name": "Hero",
+     "share": 0.55
+    },
+    {
+     "chrome": false,
+     "count": 1,
+     "items": [
+      {
+       "decorative": false,
+       "kind": "svg",
+       "name": "Counter, shelf and returns box",
+       "size": [
+        320,
+        200
+       ],
+       "top": 1537
+      }
+     ],
+     "name": "How it works",
+     "share": 0.29
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Tools on the shelves",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Questions",
+     "share": 0
+    },
+    {
+     "chrome": false,
+     "count": 0,
+     "items": [],
+     "name": "Join",
+     "share": 0
+    },
+    {
+     "chrome": true,
+     "count": 0,
+     "items": [],
+     "name": "Footer",
+     "share": 0
+    }
+   ]
+  }
+ }
+}

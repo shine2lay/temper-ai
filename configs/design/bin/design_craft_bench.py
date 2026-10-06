@@ -45,7 +45,7 @@ def manifest_for(site: Path) -> dict:
     return data
 
 
-def prepare(workspace: Path, site: Path, page: str) -> dict:
+def prepare(workspace: Path, site: Path, page: str, page_checks: bool = False) -> dict:
     if not PAGE.match(page):
         raise ValueError("page names are short lowercase names, e.g. page-03")
     data = manifest_for(site)
@@ -71,7 +71,8 @@ def prepare(workspace: Path, site: Path, page: str) -> dict:
     if problems:
         raise ValueError("test page breaks the page contract: " + "; ".join(problems))
     review.mkdir()
-    metrics = v2.write_review_inputs(review, target, product["brief"], 1, product["concept"], "", None)
+    metrics = v2.write_review_inputs(review, target, product["brief"], 1, product["concept"], "", None,
+                                     page_checks=page_checks)
     (review / "references.md").write_text(NO_REFERENCES)
     record = {"site": site.name, "page": page, "product": product["brief"]["product"], "prepared_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
               "scale_ratio": {w: m.get("scale_ratio") for w, m in metrics.items()}}
@@ -111,6 +112,8 @@ def main() -> None:
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--site", default="")
     parser.add_argument("--page", default="")
+    parser.add_argument("--page-checks", action="store_true",
+                        help="add the model-free page checks to facts.md, as live rounds do (queue #39)")
     args = parser.parse_args()
     workspace = Path(args.workspace).resolve()
     started = time.monotonic()
@@ -118,7 +121,7 @@ def main() -> None:
         if args.stage == "prepare":
             if not args.site or not args.page:
                 raise ValueError("prepare needs --site and --page")
-            result = prepare(workspace, Path(args.site).resolve(), args.page)
+            result = prepare(workspace, Path(args.site).resolve(), args.page, page_checks=args.page_checks)
         else:
             result = collect(workspace)
     except (ValueError, OSError, KeyError) as exc:

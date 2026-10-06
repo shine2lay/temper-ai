@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Income · Ledgerline</title>
+<link rel="stylesheet" href="/fonts/fonts.css">
+<style>
+:root {
+  --bg: #F5F6F3;
+  --panel: #FFFFFF;
+  --ink: #1B2420;
+  --ink-soft: #4C5953;
+  --line: #D5DBD6;
+  --accent: #1F5F8B;
+  --accent-hover: #174C70;
+  --on-accent: #FFFFFF;
+  --bar: #3D7FAF;
+  --bar-now: #1F5F8B;
+  --gain: #1E6B45;
+  --loss: #A33A2A;
+  --grid: #E3E7E3;
+  --warn-bg: #FFF4D6;
+  --warn-ink: #6A4B00;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--ink); font-family: "Instrument Sans", system-ui, sans-serif; font-size: 16px; line-height: 1.5; }
+a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+h1 { font-size: 28px; line-height: 1.2; font-weight: 600; }
+h2 { font-size: 22px; line-height: 1.3; font-weight: 600; margin-bottom: 4px; }
+.sub { color: var(--ink-soft); font-size: 14px; }
+.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+.app-bar { background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 0; }
+.app-bar .wrap { display: flex; align-items: center; gap: 40px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 22px; color: var(--ink); text-decoration: none; }
+.brand svg { width: 28px; height: 28px; }
+.app-nav { display: flex; gap: 24px; }
+.app-nav a { color: var(--ink-soft); text-decoration: none; font-weight: 600; padding: 8px 0; border-bottom: 2px solid transparent; }
+.app-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.account { margin-left: auto; font-size: 14px; color: var(--ink-soft); }
+
+.page-head { padding: 32px 0 24px; }
+.page-head .sub { margin-top: 4px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+.block { padding-bottom: 32px; }
+.income { display: grid; grid-template-columns: 5fr 7fr; gap: 24px; }
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.kpi .label { font-size: 14px; color: var(--ink-soft); }
+.kpi .value { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.kpi .detail { font-size: 14px; color: var(--ink-soft); margin-top: 4px; }
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; gap: 16px; }
+.panel svg { width: 100%; height: auto; display: block; }
+
+.table-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; gap: 16px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 12px 12px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+thead th { font-size: 14px; color: var(--ink-soft); font-weight: 600; }
+tbody th { font-weight: 400; }
+.sym { font-weight: 600; margin-right: 8px; }
+.co { color: var(--ink-soft); }
+.row-actions { text-align: right; }
+.row-actions button { font: inherit; font-size: 14px; font-weight: 600; color: var(--accent); background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; padding: 4px 12px; margin-left: 8px; cursor: pointer; }
+.near { background: var(--warn-bg); }
+.chip { display: inline-block; font-size: 13px; font-weight: 600; color: var(--warn-ink); background: var(--warn-bg); border: 1px solid #E2C46B; border-radius: 4px; padding: 0 8px; margin-left: 8px; }
+
+.roll { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.ticket h2 { margin-bottom: 4px; }
+.ticket .sub { margin-bottom: 16px; }
+.costs { display: grid; grid-template-columns: 1fr auto; row-gap: 8px; column-gap: 24px; margin-bottom: 20px; }
+.costs dt { color: var(--ink-soft); }
+.costs dd { font-variant-numeric: tabular-nums; text-align: right; }
+.costs .total { font-weight: 600; color: var(--ink); border-top: 1px solid var(--line); padding-top: 8px; }
+.ticket-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.btn { font: inherit; font-weight: 600; background: var(--accent); color: var(--on-accent); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 20px; cursor: pointer; }
+.btn:hover { background: var(--accent-hover); }
+.btn-quiet { font: inherit; font-weight: 600; background: var(--panel); color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 20px; cursor: pointer; }
+.fine { font-size: 14px; color: var(--ink-soft); margin-top: 16px; }
+
+.app-footer { padding: 24px 0 40px; font-size: 14px; color: var(--ink-soft); }
+.app-footer .wrap { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.app-footer nav { display: flex; gap: 20px; }
+.app-footer a { color: var(--ink-soft); }
+
+@media (max-width: 900px) {
+  .wrap { padding: 0 16px; }
+  .app-bar .wrap { flex-wrap: wrap; gap: 8px 24px; }
+  .account { margin-left: 0; width: 100%; }
+  .income, .roll { grid-template-columns: 1fr; }
+  h1 { font-size: 24px; }
+}
+</style>
+</head>
+<body>
+<header class="app-bar" data-section="Header">
+  <div class="wrap">
+    <a class="brand" href="#income"><svg viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="6" fill="var(--accent)"/><path d="M7 19 l5 -5 l4 3 l6 -8" stroke="#FFFFFF" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Ledgerline</span></a>
+    <nav class="app-nav" aria-label="Main">
+      <a href="#income" aria-current="page">Income</a>
+      <a href="#calls">Positions</a>
+      <a href="#roll">Orders</a>
+      <a href="#settings">Settings</a>
+    </nav>
+    <p class="account">Demo account (fictional)</p>
+  </div>
+</header>
+<main>
+<section class="block" id="income" data-section="Income">
+  <div class="wrap">
+    <div class="page-head">
+      <h1>Income</h1>
+      <p class="sub">May 2026 · figures as of 10:42 ET, May 21 · prices 15 min delayed, source: Northwind Market Data (fictional)</p>
+    </div>
+    <div class="income">
+      <div class="kpis">
+        <div class="kpi"><p class="label">Premium collected in May</p><p class="value">$1,284.50</p><p class="detail">6 calls sold or rolled</p></div>
+        <div class="kpi"><p class="label">Open covered calls</p><p class="value">6</p><p class="detail">on 1,000 shares</p></div>
+        <div class="kpi"><p class="label">Calls expiring in 9 days</p><p class="value">3</p><p class="detail">AAPL, MSFT, PG on Jun 21</p></div>
+        <div class="kpi"><p class="label">Shares called away this year</p><p class="value">100</p><p class="detail">KO, in March</p></div>
+      </div>
+      <div class="panel">
+        <div class="chart-head"><h2>Premium collected by month</h2><p class="sub">2026, before fees</p></div>
+        <svg viewBox="0 0 560 270" role="img" aria-label="Bar chart of premium collected by month: January $1,020, February $1,180, March $940, April $1,310, May so far $1,284.50">
+          <path d="M64 224 H540" stroke="var(--grid)" stroke-width="1"/>
+          <text x="54" y="229" text-anchor="end" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$0</text>
+          <path d="M64 157 H540" stroke="var(--grid)" stroke-width="1"/>
+          <text x="54" y="162" text-anchor="end" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$500</text>
+          <path d="M64 91 H540" stroke="var(--grid)" stroke-width="1"/>
+          <text x="54" y="96" text-anchor="end" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$1,000</text>
+          <path d="M64 24 H540" stroke="var(--grid)" stroke-width="1"/>
+          <text x="54" y="29" text-anchor="end" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$1,500</text>
+          <rect x="88" y="88" width="56" height="136" rx="3" fill="var(--bar)"/>
+          <text x="116" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)" font-family="Instrument Sans, sans-serif">$1,020</text>
+          <text x="116" y="246" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">Jan</text>
+          <rect x="180" y="67" width="56" height="157" rx="3" fill="var(--bar)"/>
+          <text x="208" y="59" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)" font-family="Instrument Sans, sans-serif">$1,180</text>
+          <text x="208" y="246" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">Feb</text>
+          <rect x="272" y="99" width="56" height="125" rx="3" fill="var(--bar)"/>
+          <text x="300" y="91" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)" font-family="Instrument Sans, sans-serif">$940</text>
+          <text x="300" y="246" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">Mar</text>
+          <rect x="364" y="49" width="56" height="175" rx="3" fill="var(--bar)"/>
+          <text x="392" y="41" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)" font-family="Instrument Sans, sans-serif">$1,310</text>
+          <text x="392" y="246" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">Apr</text>
+          <rect x="456" y="53" width="56" height="171" rx="3" fill="var(--bar-now)"/>
+          <text x="484" y="45" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)" font-family="Instrument Sans, sans-serif">$1,284</text>
+          <text x="484" y="246" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">May (so far)</text>
+          </svg>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="block" id="calls" data-section="Open covered calls">
+  <div class="wrap">
+    <div class="panel">
+      <div class="table-head">
+        <div><h2>Open covered calls</h2><p class="sub">Delta and prices as of 10:42 ET. A call with delta above 0.50 is likely to be exercised.</p></div>
+        <a href="#roll">See all orders</a>
+      </div>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Stock</th><th scope="col" class="num">Shares</th><th scope="col">Call sold</th>
+          <th scope="col" class="num">Premium received</th><th scope="col" class="num">Cost to close</th>
+          <th scope="col" class="num">Delta</th><th scope="col" class="num">Days left</th><th scope="col"><span class="co">Actions</span></th></tr></thead>
+        <tbody>
+        <tr class="near">
+          <th scope="row"><span class="sym">AAPL</span><span class="co">Apple</span></th>
+          <td class="num">200</td><td>Jun 21 190 call<span class="chip">likely exercised</span></td><td class="num">$3.20</td><td class="num">$2.10</td>
+          <td class="num">0.62</td><td class="num">9</td>
+          <td class="row-actions"><button type="button">Roll</button><button type="button">Close</button></td>
+        </tr>
+        <tr>
+          <th scope="row"><span class="sym">MSFT</span><span class="co">Microsoft</span></th>
+          <td class="num">100</td><td>Jun 21 450 call</td><td class="num">$6.85</td><td class="num">$3.40</td>
+          <td class="num">0.38</td><td class="num">9</td>
+          <td class="row-actions"><button type="button">Roll</button><button type="button">Close</button></td>
+        </tr>
+        <tr>
+          <th scope="row"><span class="sym">KO</span><span class="co">Coca-Cola</span></th>
+          <td class="num">300</td><td>Jul 19 65 call</td><td class="num">$0.92</td><td class="num">$0.55</td>
+          <td class="num">0.27</td><td class="num">37</td>
+          <td class="row-actions"><button type="button">Roll</button><button type="button">Close</button></td>
+        </tr>
+        <tr>
+          <th scope="row"><span class="sym">JNJ</span><span class="co">Johnson &amp; Johnson</span></th>
+          <td class="num">100</td><td>Jun 28 160 call</td><td class="num">$1.75</td><td class="num">$0.80</td>
+          <td class="num">0.24</td><td class="num">16</td>
+          <td class="row-actions"><button type="button">Roll</button><button type="button">Close</button></td>
+        </tr>
+        <tr>
+          <th scope="row"><span class="sym">XOM</span><span class="co">Exxon Mobil</span></th>
+          <td class="num">200</td><td>Jul 19 125 call</td><td class="num">$2.40</td><td class="num">$1.95</td>
+          <td class="num">0.41</td><td class="num">37</td>
+          <td class="row-actions"><button type="button">Roll</button><button type="button">Close</button></td>
+        </tr>
+        <tr>
+          <th scope="row"><span class="sym">PG</span><span class="co">Procter &amp; Gamble</span></th>
+          <td class="num">100</td><td>Jun 21 170 call</td><td class="num">$1.10</td><td class="num">$0.35</td>
+          <td class="num">0.15</td><td class="num">9</td>
+          <td class="row-actions"><button type="button">Roll</button><button type="button">Close</button></td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="block" id="roll" data-section="Roll order">
+  <div class="wrap">
+    <div class="roll">
+      <div class="panel ticket">
+        <h2>Roll 2 AAPL calls</h2>
+        <p class="sub">From Jun 21 190 to Jul 19 195. Prices as of 10:42 ET; the final price is set when the order fills.</p>
+        <dl class="costs">
+          <dt>Buy back 2 Jun 21 190 calls at $2.10</dt><dd>−$420.00</dd>
+          <dt>Sell 2 Jul 19 195 calls at $3.45</dt><dd>+$690.00</dd>
+          <dt>Net credit before fees</dt><dd>+$270.00</dd>
+          <dt>Fees: 4 contracts × $0.65</dt><dd>−$2.60</dd>
+          <dt class="total">Net credit after fees</dt><dd class="total">+$267.40</dd>
+        </dl>
+        <div class="ticket-actions">
+          <button type="button" class="btn">Review roll order</button>
+          <button type="button" class="btn-quiet">Cancel</button>
+        </div>
+        <p class="fine">Nothing is sent until you confirm on the next screen.</p>
+      </div>
+      <div class="panel">
+        <div class="chart-head"><h2>Profit at expiry after the roll</h2><p class="sub">200 shares, Jul 19</p></div>
+        <svg viewBox="0 0 480 260" role="img" aria-label="Profit at expiry on July 19 after the roll: a loss below $179.95, rising to the most it can make, $3,010, at $195 or above">
+          <path d="M56 131 H460" stroke="var(--ink-soft)" stroke-width="1.5"/>
+          <text x="48" y="136" text-anchor="end" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$0</text>
+          <path d="M56 220 L298 42 L460 42" stroke="var(--accent)" stroke-width="3" fill="none"/>
+          <path d="M177 28 V220" stroke="var(--grid)" stroke-width="1.5" stroke-dasharray="4 4"/>
+          <text x="183" y="42" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">break-even $179.95</text>
+          <path d="M255 28 V220" stroke="var(--ink)" stroke-width="1.5"/>
+          <text x="261" y="212" font-size="13" fill="var(--ink)" font-family="Instrument Sans, sans-serif">now $189.60</text>
+          <text x="460" y="32" text-anchor="end" font-size="13" font-weight="600" fill="var(--gain)" font-family="Instrument Sans, sans-serif">most it can make +$3,010</text>
+          <text x="96" y="244" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$170</text>
+          <text x="177" y="244" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$180</text>
+          <text x="258" y="244" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$190</text>
+          <text x="339" y="244" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$200</text>
+          <text x="420" y="244" text-anchor="middle" font-size="13" fill="var(--ink-soft)" font-family="Instrument Sans, sans-serif">$210</text>
+          </svg>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="app-footer" data-section="Footer">
+  <div class="wrap">
+    <p>Ledgerline is a fictional app made for a design study. All figures are invented; no orders are placed.</p>
+    <nav aria-label="Footer">
+      <a href="#settings">Settings</a>
+      <a href="#income">Help</a>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>

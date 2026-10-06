@@ -988,3 +988,260 @@ def test_unboxed_starts_are_refused_only_under_sealed(monkeypatch, boundary):
             box_profile.refuse_unboxed_under_sealed("the server's own process")
     else:
         box_profile.refuse_unboxed_under_sealed("the server's own process")
+
+
+# --- Box secrets BS2: the one-shot delivery (TEMPER_BOX_SECRET_BOOTSTRAP=oneshot) -------------
+# The worker's side with a fake docker: what the box's command carries, what is delivered,
+# and how a failed delivery ends. The runner's side is test_box_bootstrap.py; real boxes
+# are test_box_bootstrap_docker.py.
+
+from temper_ai.spawner import box_bootstrap  # noqa: E402
+
+PROXY_WITH_PASSWORD = f"http://user:{SYNTHETIC_MARK}@proxy.synthetic:3128"
+#: A box list with a secret-named value, a URL with a password named like a tool setting,
+#: and plain tool settings.
+ONESHOT_LIST = BoxEnv(
+    names=frozenset({"PATH", "HOME", "WORKSPACE_DIR", "TEMPER_DATABASE_URL",
+                     "SYNTH_SERVICE_TOKEN", "HTTPS_PROXY", "TEMPER_API"}),
+    agent_tools=frozenset({"PATH", "HOME", "WORKSPACE_DIR", "HTTPS_PROXY", "TEMPER_API"}))
+BAKED = ["PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8",
+         "GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305", "PYTHON_VERSION=3.12.15"]
+CONSUMED = '{"state": "consumed", "names": 3, "generation": 1}\n'
+
+
+@dataclass
+class DeliveringDocker(FakeDocker):
+    """The fake docker, also keeping what the writer was handed on stdin."""
+
+    handed: list = field(default_factory=list)
+    copies: list[bytes] = field(default_factory=list)
+
+    def __call__(self, cmd, **kwargs) -> subprocess.CompletedProcess:
+        if "input" in kwargs:
+            self.handed.append(kwargs["input"])
+            self.copies.append(bytes(kwargs["input"]))
+        return super().__call__(cmd, **kwargs)
+
+
+def _oneshot(monkeypatch) -> None:
+    _sealed(monkeypatch)
+    monkeypatch.setenv(box_profile.BOOTSTRAP_ENV, box_bootstrap.ONESHOT)
+
+
+def _oneshot_spawner(install: Install, store: MemoryStore, docker: FakeDocker, *,
+                     baked: list[str] | None = None, writer: str | None = CONSUMED,
+                     **kwargs) -> DockerSpawner:
+    install.extra_env += [f"HTTPS_PROXY={PROXY_WITH_PASSWORD}", "TEMPER_API=http://server:8420"]
+    docker.answers.setdefault("inspect", []).extend([(0, install.inspect(), "")] * 4)
+    docker.answers.setdefault("run", []).append((0, "cid-1\n", ""))
+    docker.answers.setdefault("image", []).append((0, json.dumps(BAKED if baked is None
+                                                                 else baked), ""))
+    if writer is not None:
+        docker.answers.setdefault("exec", []).append((0, writer, ""))
+    kwargs.setdefault("engine_launches", install.engine_table())
+    return DockerSpawner(
+        template_container="worker-self",
+        workspace_lookup=lambda eid: store.rows[eid]["workspace"],
+        run=docker, box_env=lambda: ONESHOT_LIST, profile_store=store,
+        worker_view=WorkerView(None), **kwargs,
+    )
+
+
+def _flag(cmd: list[str], flag: str) -> list[str]:
+    return [cmd[i + 1] for i, part in enumerate(cmd) if part == flag]
+
+
+def test_oneshot_needs_bs1s_sealed_profile(install, monkeypatch):
+    monkeypatch.delenv(box_profile.BOUNDARY_ENV, raising=False)
+    monkeypatch.setenv(box_profile.BOOTSTRAP_ENV, box_bootstrap.ONESHOT)
+    store = MemoryStore()
+    store.add("oneshot-legacy", workflow="sealed_probe", workspace=str(install.run_a))
+    docker = DeliveringDocker()
+    with pytest.raises(BoxProfileError, match="needs BS1's sealed profile"):
+        _oneshot_spawner(install, store, docker).spawn("oneshot-legacy")
+    assert docker.commands("run") == [] and docker.commands("exec") == []
+
+
+def test_a_oneshot_box_starts_with_no_secret_and_takes_them_once(install, monkeypatch):
+    _oneshot(monkeypatch)
+    store = MemoryStore()
+    store.add("oneshot-1", workflow="sealed_probe", workspace=str(install.run_a))
+    docker = DeliveringDocker()
+    handle = _oneshot_spawner(install, store, docker).spawn("oneshot-1")
+
+    (run,) = docker.commands("run")
+    assert not any(SYNTHETIC_MARK in part for part in run)
+    names = {var.split("=", 1)[0] for var in _flag(run, "--env")}
+    assert {"TEMPER_DATABASE_URL", "SYNTH_SERVICE_TOKEN", "HTTPS_PROXY"}.isdisjoint(names)
+    assert {"PATH", "HOME", "TEMPER_API", *PROFILE_VARS} <= names
+    assert "--init" in run and "--no-healthcheck" in run and "--read-only" in run
+    uid, gid = install.user.split(":")
+    assert (f"{box_bootstrap.BOOT_DIR}:rw,noexec,nosuid,nodev," in _flag(run, "--tmpfs")[-1]
+            and _flag(run, "--tmpfs")[-1].endswith(f",mode=0700,uid={uid},gid={gid}"))
+
+    (exec_,) = docker.commands("exec")
+    assert exec_[:6] == ["docker", "exec", "-i", "--user", install.user, "temper-run-oneshot-1"]
+    assert exec_[7:11] == ["-I", "-S", "-c", ds.WRITER_PROGRAM]
+    assert not any(SYNTHETIC_MARK in part for part in exec_)
+    (sent,) = docker.copies
+    header = box_bootstrap.header_of(sent)
+    assert header["execution_id"] == "oneshot-1" and header["generation"] == 1
+    assert header["names"] == ["HTTPS_PROXY", "SYNTH_SERVICE_TOKEN", "TEMPER_DATABASE_URL"]
+    assert SYNTHETIC_MARK.encode() in sent[box_bootstrap.HEADER_BYTES:]
+    assert set(docker.handed[0]) == {0}, "the worker's copy is zeroed once sent"
+
+    record = handle.metadata["box_profile"]
+    assert record == store.record("oneshot-1")
+    assert SYNTHETIC_MARK not in json.dumps(record)
+    doc = record["doc"]
+    assert doc["bootstrap"]["mode"] == box_bootstrap.ONESHOT
+    assert doc["bootstrap"]["names"] == header["names"]
+    assert doc["label"] == box_profile.SEALED_ONESHOT_LABEL
+    assert doc["runtime"]["writer"] == ds.WRITER_DIGEST
+    assert box_bootstrap.tmpfs_spec(doc["bootstrap"]) in doc["tmpfs"]
+    still = {r["step"]: r["still"] for r in doc["residuals"]}
+    assert still["BS2"] == "partial" and "cli credential" in still
+    assert (record["delivery"]["state"], record["delivery"]["names"]) == ("consumed", 3)
+    assert docker.commands("kill") == []
+
+
+@pytest.mark.parametrize(("answer", "state"), [
+    ((0, '{"state": "refused", "reason": "wrong envelope: it is for another run"}', ""),
+     "refused: wrong envelope: it is for another run"),
+    ((0, '{"state": "timeout", "reason": "timeout: no acknowledgement within 30s"}', ""),
+     "timeout: timeout: no acknowledgement within 30s"),
+    ((1, "", "Error response from daemon: container is not running"),
+     "error: the writer gave no status (exit 1; docker said: Error response from daemon"),
+    (subprocess.TimeoutExpired(["docker"], 120), "timeout: the writer did not finish in time"),
+], ids=["refused", "no ack", "box gone", "exec hangs"])
+def test_a_failed_delivery_stops_the_box_and_is_revoked(install, monkeypatch, answer, state):
+    _oneshot(monkeypatch)
+    store = MemoryStore()
+    store.add("oneshot-2", workflow="sealed_probe", workspace=str(install.run_a))
+    docker = DeliveringDocker()
+    if isinstance(answer, Exception):
+        spawner = _oneshot_spawner(install, store, docker, writer=None)
+        original = docker.__call__
+
+        def hanging(cmd, **kwargs):
+            if cmd[1] == "exec":
+                docker.handed.append(kwargs["input"])
+                raise answer
+            return original(cmd, **kwargs)
+
+        spawner._run = hanging
+    else:
+        spawner = _oneshot_spawner(install, store, docker, writer=None)
+        docker.answers["exec"] = [answer]
+    with pytest.raises(SpawnerError) as caught:
+        spawner.spawn("oneshot-2")
+    message = str(caught.value)
+    assert f"one-shot secret delivery failed ({state}" in message, message
+    assert "the box was stopped and the delivery revoked" in message
+    assert SYNTHETIC_MARK not in message
+    assert docker.commands("kill") == [["docker", "kill", "temper-run-oneshot-2"]]
+    delivery = store.record("oneshot-2")["delivery"]
+    assert delivery["state"] == "revoked" and delivery["why"].startswith(state.split(":")[0])
+    assert SYNTHETIC_MARK not in json.dumps(store.record("oneshot-2"))
+    assert all(set(handed) == {0} for handed in docker.handed)
+
+
+@pytest.mark.parametrize(("baked", "expect"), [
+    ([*BAKED, "SOME_SERVICE_TOKEN=synthetic"], "bakes variables named or valued like secrets"),
+    ([*BAKED, f"SOME_URL=postgresql://u:{SYNTHETIC_MARK}@db/x"], "SOME_URL"),
+    (["GPG_KEY=not-a-fingerprint"], "GPG_KEY"),
+    ("not a list", "can't be inspected for the variables it bakes in"),
+], ids=["token", "password url", "odd gpg key", "uninspectable"])
+def test_an_image_that_bakes_secrets_is_refused_for_oneshot(install, monkeypatch, baked, expect):
+    _oneshot(monkeypatch)
+    store = MemoryStore()
+    store.add("unsafe-1", workflow="sealed_probe", workspace=str(install.run_a))
+    docker = DeliveringDocker()
+    spawner = _oneshot_spawner(install, store, docker, baked=baked if isinstance(baked, list)
+                               else None)
+    if not isinstance(baked, list):
+        docker.answers["image"] = [(1, "", "no such image")]
+    with pytest.raises(BoxProfileError) as caught:
+        spawner.spawn("unsafe-1")
+    assert expect in str(caught.value) and SYNTHETIC_MARK not in str(caught.value)
+    assert docker.commands("run") == []
+
+
+@pytest.mark.parametrize(("probe", "expect"), [
+    ((0, "999 998\n", ""), None),
+    ((0, "0 0\n", ""), "a oneshot box's user is root"),
+    ((125, "", "unable to find user temperai"), "the uid of 'temperai' in the image can't be read"),
+], ids=["named user", "root", "unknown"])
+def test_a_named_users_ids_are_read_from_the_image(install, monkeypatch, probe, expect):
+    _oneshot(monkeypatch)
+    install.user = "temperai"
+    store = MemoryStore()
+    store.add("named-1", workflow="sealed_probe", workspace=str(install.run_a))
+    docker = DeliveringDocker(answers={"run": [probe]})
+    spawner = _oneshot_spawner(install, store, docker)
+    if expect:
+        with pytest.raises(BoxProfileError, match=expect):
+            spawner.spawn("named-1")
+        assert len(docker.commands("run")) == 1, "only the probe ran"
+        return
+    spawner.spawn("named-1")
+    probe_cmd, run = docker.commands("run")
+    assert "--rm" in probe_cmd and "--network" in probe_cmd and "temper.role=probe" in probe_cmd
+    assert _flag(run, "--tmpfs")[-1].endswith(",uid=999,gid=998")
+
+
+def test_a_penpot_login_workflow_is_refused_plainly_under_oneshot(install, monkeypatch):
+    # (named without "password": pytest's tmp_path takes the test's name, and a path that
+    # looks like a key folder is never granted as data)
+    (install.configs / "agents" / "sealed_probe.yaml").write_text(
+        "agent:\n  name: sealed_probe\n  type: script\n  script_template: |\n"
+        "    #!/bin/bash\n    curl -u \"$PENPOT_AGENT_EMAIL:$PENPOT_AGENT_PASSWORD\" x\n")
+    _sealed(monkeypatch)  # sealed with the start environment: runs as in BS1
+    store = MemoryStore()
+    store.add("penpot-1", workflow="sealed_probe", workspace=str(install.run_a))
+    _box_spawner(install, store, FakeDocker()).spawn("penpot-1")
+
+    _oneshot(monkeypatch)
+    store.add("penpot-2", workflow="sealed_probe", workspace=str(install.run_b))
+    docker = DeliveringDocker()
+    with pytest.raises(BoxProfileError) as caught:
+        _oneshot_spawner(install, store, docker).spawn("penpot-2")
+    assert "the Penpot password" in str(caught.value)
+    assert "explicit legacy profile" in str(caught.value)
+    assert docker.commands("run") == [] and docker.commands("exec") == []
+
+
+def test_split_delivery_keeps_only_declared_plain_settings_in_docker():
+    plain, delivered = ds.split_delivery(
+        ["PATH=/bin", "HOME=/app", "TEMPER_API=http://server:8420",
+         f"HTTPS_PROXY={PROXY_WITH_PASSWORD}", "TEMPER_LOG_LEVEL=INFO",
+         f"OPENAI_API_KEY={SYNTHETIC_MARK}", "GITHUB_TOKEN=tghk_synthetic",
+         "SAFE_LOOKING=tghk_synthetic", f"{box_profile.PROFILE_ENV}={{}}"],
+        agent_tools={"PATH", "HOME", "TEMPER_API", "HTTPS_PROXY", "SAFE_LOOKING",
+                     "OPENAI_API_KEY"})
+    assert plain == ["PATH=/bin", "HOME=/app", "TEMPER_API=http://server:8420",
+                     f"{box_profile.PROFILE_ENV}={{}}"]
+    assert sorted(delivered) == ["GITHUB_TOKEN", "HTTPS_PROXY", "OPENAI_API_KEY",
+                                 "SAFE_LOOKING", "TEMPER_LOG_LEVEL"]
+
+
+def test_a_secret_value_in_a_command_is_found():
+    delivered = {"SYNTH_SERVICE_TOKEN": SYNTHETIC_MARK, "TEMPER_LOG_LEVEL": "INFO",
+                 "SHORT_TOKEN": "abc"}
+    cmd = ["docker", "run", "--label", f"x={SYNTHETIC_MARK}", "--env", "LEVEL=INFO", "abc"]
+    assert ds.secrets_in_command(cmd, delivered) == ["SYNTH_SERVICE_TOKEN"]
+
+
+def test_env_stays_the_default_and_its_profile_says_so(install, monkeypatch):
+    _sealed(monkeypatch)
+    monkeypatch.delenv(box_profile.BOOTSTRAP_ENV, raising=False)
+    store = MemoryStore()
+    store.add("env-1", workflow="sealed_probe", workspace=str(install.run_a))
+    docker = FakeDocker()
+    _box_spawner(install, store, docker).spawn("env-1")
+    doc = store.record("env-1")["doc"]
+    assert doc["settings"][box_profile.BOOTSTRAP_ENV] == box_bootstrap.ENV
+    assert doc["bootstrap"] == box_bootstrap.ENV_SECTION
+    assert "writer" not in doc["runtime"] and "delivery" not in store.record("env-1")
+    assert docker.commands("exec") == [] and docker.commands("image") == []
+    assert not any(box_bootstrap.BOOT_DIR in part for part in docker.commands("run")[-1])

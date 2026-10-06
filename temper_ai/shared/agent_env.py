@@ -95,6 +95,9 @@ def env_for_agent_tool(
     added after the scrub. ``extra``: variables the agent's config passes
     explicitly, added last and as given. ``environ`` defaults to os.environ.
     """
+    # A oneshot box's runner starts no tool before its delivery is taken (BS2).
+    from temper_ai.spawner.box_bootstrap import require_tools_allowed
+    require_tools_allowed("an agent tool's process")
     source = os.environ if environ is None else environ
     if box_env.box_env_mode(dict(source)) == box_env.MODE_INHERIT:
         env = _deny_list_env(source)

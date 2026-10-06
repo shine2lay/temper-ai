@@ -16,8 +16,33 @@ import sys
 
 logger = logging.getLogger(__name__)
 
+#: Set only in a run's box (spawner/box_view.py PROFILE_ENV); spelled out here so a CLI
+#: started anywhere else doesn't import the spawner just to find it unset.
+_BOX_PROFILE_ENV = "TEMPER_BOX_PROFILE"
+
+
+def take_box_delivery_first() -> None:
+    """In a oneshot box, block until the runner has taken its one-shot delivery, or exit.
+
+    Elsewhere (no box profile, or a box whose secrets are its environment) this returns
+    at once. A refused delivery ends the process (exit 4) before a tool or a secret is
+    used; the reason is fixed words, never a value (spawner/box_bootstrap.py).
+    """
+    if not os.environ.get(_BOX_PROFILE_ENV):
+        return
+    from temper_ai.spawner import box_bootstrap
+
+    try:
+        box_bootstrap.receive()
+    except box_bootstrap.DeliveryRefused as exc:
+        print(f"box refused: {exc}", file=sys.stderr)
+        sys.exit(box_bootstrap.REFUSED_EXIT)
+
 
 def main() -> None:
+    # First, before anything else runs: a oneshot box's runner takes its secrets now,
+    # after making itself unreadable to the box's other processes (BS2).
+    take_box_delivery_first()
     parser = argparse.ArgumentParser(
         prog="temper",
         description="Temper AI — composable multi-agent workflows",

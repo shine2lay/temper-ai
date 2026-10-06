@@ -162,6 +162,14 @@ LEGACY_MARKERS = (
     ("worktree add", "git worktrees, whose backing repo is outside the run's own workspace"),
     ("docker.sock", "the docker socket"),
 )
+#: Text that needs a box whose secrets are its environment: a oneshot box (BS2) has them
+#: only in its runner. A spawn under TEMPER_BOX_SECRET_BOOTSTRAP=oneshot adds these.
+ONESHOT_MARKERS = (
+    ("PENPOT_AGENT_PASSWORD",
+     "the Penpot password: until BS3 gives it a channel of its own, a script reaches it only "
+     "from a legacy box's start environment, which a oneshot box doesn't have; run it on an "
+     "explicit legacy profile"),
+)
 _CONFIG_REF = re.compile(r"(?:/app/)?(?<![\w.-])configs/([A-Za-z0-9_][A-Za-z0-9_./-]*)")
 
 
@@ -565,16 +573,18 @@ class _Walk:
 
 
 def classify(index: ConfigIndex, workflow: str, *, default_provider: str | None = None,
-             absent_roots: Iterable[tuple[str, str]] = ()) -> Launch:
+             absent_roots: Iterable[tuple[str, str]] = (),
+             extra_markers: Iterable[tuple[str, str]] = ()) -> Launch:
     """One workflow's launch class, with every reason found (not just the first).
 
     ``default_provider`` is the provider a sealed box pins for agents that name none
     (the install's TEMPER_DEFAULT_PROVIDER); without it their provider would only be
-    chosen at run time.
+    chosen at run time. ``extra_markers``: more (text, what) pairs that make a launch
+    legacy (ONESHOT_MARKERS for a oneshot install).
     """
     walk = _Walk(index)
     walk.add("workflow", workflow, "the run")
-    walk.scan_texts([*LEGACY_MARKERS, *absent_roots])
+    walk.scan_texts([*LEGACY_MARKERS, *absent_roots, *extra_markers])
     for path in sorted(walk.files):
         if path in index.broken:
             walk.refused.append(f"{path} is {index.broken[path]}")
@@ -608,9 +618,11 @@ def classify(index: ConfigIndex, workflow: str, *, default_provider: str | None 
 
 
 def classify_all(index: ConfigIndex, *, default_provider: str | None = None,
-                 absent_roots: Iterable[tuple[str, str]] = ()) -> list[Launch]:
-    roots = list(absent_roots)
-    return [classify(index, name, default_provider=default_provider, absent_roots=roots)
+                 absent_roots: Iterable[tuple[str, str]] = (),
+                 extra_markers: Iterable[tuple[str, str]] = ()) -> list[Launch]:
+    roots, markers = list(absent_roots), list(extra_markers)
+    return [classify(index, name, default_provider=default_provider, absent_roots=roots,
+                     extra_markers=markers)
             for name in sorted(index.by_kind.get("workflow", {}))]
 
 
@@ -652,12 +664,17 @@ ENGINE_LAUNCHES: dict[str, str] = {
         "legacy: the Pi team's folder checks, in the Pi lane (M4), which only legacy boxes "
         "run, or in the trusted server (the Team page's check and a trial's start)"),
     "temper_ai/pi_agent/team_leader.py::ProjectCopies._g": _PI,
+    "temper_ai/spawner/box_bootstrap.py::protect_process": (
+        "box: the runner's and the delivery writer's own prctl and rlimit calls (libc "
+        "through ctypes); starts no program"),
     "temper_ai/spawner/box_view.py::main": (
         "box: the sealed box's view check, which becomes the runner (the image's own "
         "interpreter) once the view is right"),
     "temper_ai/spawner/docker_spawner.py::DockerSpawner.__init__": _WORKER,
+    "temper_ai/spawner/docker_spawner.py::DockerSpawner._deliver": _WORKER,
     "temper_ai/spawner/docker_spawner.py::DockerSpawner._docker_run": _WORKER,
     "temper_ai/spawner/docker_spawner.py::DockerSpawner._handle": _WORKER,
+    "temper_ai/spawner/docker_spawner.py::_delivery_status": _WORKER,
     "temper_ai/spawner/subprocess_spawner.py::SubprocessSpawner.__init__": _WORKER,
     "temper_ai/spawner/subprocess_spawner.py::SubprocessSpawner._collect": _WORKER,
     "temper_ai/spawner/subprocess_spawner.py::SubprocessSpawner.reap": _WORKER,
@@ -807,6 +824,8 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--configs", default="configs")
     report.add_argument("--default-provider", default=None)
     report.add_argument("--json", action="store_true")
+    report.add_argument("--oneshot", action="store_true",
+                        help="classify as a oneshot install would (BS2)")
     sites = sub.add_parser("sites", help="the engine's launch sites and their classes")
     sites.add_argument("--root", default="temper_ai")
     sites.add_argument("--prefix", default="temper_ai/")
@@ -817,7 +836,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{site}\t{ENGINE_LAUNCHES.get(site, 'UNCLASSIFIED')}")
         return 1 if unclassified_sites(found) else 0
     launches = classify_all(ConfigIndex.of(FsTree(args.configs)),
-                            default_provider=args.default_provider)
+                            default_provider=args.default_provider,
+                            extra_markers=ONESHOT_MARKERS if args.oneshot else ())
     if args.json:
         print(json.dumps([launch.as_dict() for launch in launches], indent=1))
     else:

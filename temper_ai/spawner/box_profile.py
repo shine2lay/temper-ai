@@ -5,7 +5,7 @@ reach in six steps, each behind a setting of its own. Every setting defaults to 
 boxes worked before:
 
   BS1  TEMPER_BOX_RUNTIME_BOUNDARY   legacy | sealed    built
-  BS2  TEMPER_BOX_SECRET_BOOTSTRAP   env                not built yet
+  BS2  TEMPER_BOX_SECRET_BOOTSTRAP   env | oneshot      built (oneshot needs sealed)
   BS3  TEMPER_BOX_CAPABILITIES       legacy             not built yet
   BS4  TEMPER_BOX_STATE_ACCESS       legacy             not built yet
   BS5  TEMPER_BOX_TOOL_ISOLATION     in_process         not built yet
@@ -26,7 +26,9 @@ finds a newer generation on the row stops without touching it. A run that ever h
 a sealed box never gets a legacy one: rolling back means a fresh run.
 
 BS1 alone is partial hardening. Every profile says so, and lists what is still as
-before: BS2-BS6, and a network graph recorded as mixed, not closed.
+before: BS2-BS6, and a network graph recorded as mixed, not closed. With BS2's
+oneshot the profile also carries the delivery's bounds and deadlines (box_bootstrap.py)
+and lists the token a CLI child still holds.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from temper_ai.shared.clock import utcnow
+from temper_ai.spawner import box_bootstrap
 from temper_ai.spawner.base import SpawnerError
 from temper_ai.spawner.box_view import (
     DIGEST_ENV,
@@ -57,6 +60,7 @@ __all__ = ["BoxStartRefused", "canonical", "digest_of", "profile_from_env"]
 
 METADATA_KEY = "box_profile"
 BOUNDARY_ENV = "TEMPER_BOX_RUNTIME_BOUNDARY"
+BOOTSTRAP_ENV = box_bootstrap.MODE_ENV
 LEGACY = "legacy"
 
 #: How a sealed profile names itself: its class comes from the gate's rules, and no
@@ -64,12 +68,16 @@ LEGACY = "legacy"
 SEALED_LABEL = ("sealed (BS1-partial): gate-classified, not reviewed by Security; still open: "
                 "the runner's environment and memory secrets, the run's GitHub key among them "
                 "(BS2), database and Redis reach (BS4, BS5), the network (BS5)")
+#: A sealed profile whose runner takes its secrets by one-shot delivery (BS2).
+SEALED_ONESHOT_LABEL = ("sealed (BS1+BS2-partial): gate-classified, not reviewed by Security; "
+                        "still open: the model token a CLI child holds (BS6), database and "
+                        "Redis reach (BS4, BS5), the network (BS5)")
 LEGACY_LABEL = "legacy: the box gets the template's mounts as they are"
 
 #: (setting, step, default, values built so far)
 SETTINGS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     (BOUNDARY_ENV, "BS1", LEGACY, (LEGACY, SEALED)),
-    ("TEMPER_BOX_SECRET_BOOTSTRAP", "BS2", "env", ("env",)),
+    (BOOTSTRAP_ENV, "BS2", box_bootstrap.ENV, (box_bootstrap.ENV, box_bootstrap.ONESHOT)),
     ("TEMPER_BOX_CAPABILITIES", "BS3", "legacy", ("legacy",)),
     ("TEMPER_BOX_STATE_ACCESS", "BS4", "legacy", ("legacy",)),
     ("TEMPER_BOX_TOOL_ISOLATION", "BS5", "in_process", ("in_process",)),
@@ -115,6 +123,12 @@ def install_settings(environ: Mapping[str, str] | None = None) -> dict[str, str]
                 "no run can start until it is unset or set to one of those",
             )
         settings[name] = value
+    if settings[BOOTSTRAP_ENV] == box_bootstrap.ONESHOT and settings[BOUNDARY_ENV] != SEALED:
+        raise BoxProfileError(
+            f"{BOOTSTRAP_ENV}=oneshot needs BS1's sealed profile ({BOUNDARY_ENV}=sealed): a "
+            f"legacy box can't take a one-shot delivery, so no run can start until both are "
+            f"set or {BOOTSTRAP_ENV} is unset",
+        )
     return settings
 
 
@@ -214,9 +228,27 @@ def closure(graph: list[dict]) -> dict:
                    "before BS4 they share the database login"}
 
 
-def residuals(boundary: str, legacy_mounts: list[dict] | None = None) -> list[dict]:
+#: What stays open with BS2's oneshot delivery on.
+ONESHOT_RESIDUALS = (
+    {"step": "BS2", "still": "partial",
+     "what": "the runner takes its secrets once, after making itself non-dumpable: other "
+             "processes can't read its environ, memory or descriptors. Non-dumpable is not "
+             "erasure, signal protection or protection from code injected into the runner, "
+             "and a value the runner hands to a child is that child's"},
+    {"step": "cli credential", "still": "exposed",
+     "what": "the model token a provider hands to its CLI child (the Claude CLI's) sits in "
+             "that child's environment, readable through /proc by the box's other processes "
+             "(same user) until BS6"},
+)
+
+
+def residuals(boundary: str, legacy_mounts: list[dict] | None = None,
+              bootstrap: str = box_bootstrap.ENV) -> list[dict]:
     """What this profile does not protect: BS2-BS6, the network, and BS1 itself when legacy."""
-    items = [{"step": step, "still": "legacy", "what": what} for step, what in LATER_STEPS]
+    items = [{"step": step, "still": "legacy", "what": what} for step, what in LATER_STEPS
+             if not (step == "BS2" and bootstrap == box_bootstrap.ONESHOT)]
+    if bootstrap == box_bootstrap.ONESHOT:
+        items[0:0] = [dict(item) for item in ONESHOT_RESIDUALS]
     items.append({"step": "network", "still": "mixed",
                   "what": "the network graph is recorded, not enforced: closure is negative"})
     items.append({"step": "history", "still": "legacy",
@@ -260,8 +292,24 @@ def compile_profile(
     graph: list[dict],
     legacy_mounts: list[dict] | None = None,
     compiled_by: str = "worker",
+    bootstrap: Mapping[str, Any] | None = None,
 ) -> dict:
-    """One immutable profile document. Refuses a sealed one with any fact missing or unknown."""
+    """One immutable profile document. Refuses a sealed one with any fact missing or unknown.
+
+    ``bootstrap``: the oneshot delivery's section (box_bootstrap.section), only for a
+    sealed box; None is the environment, as before BS2.
+    """
+    boot = dict(bootstrap) if bootstrap is not None else dict(box_bootstrap.ENV_SECTION)
+    oneshot = boot.get("mode") == box_bootstrap.ONESHOT
+    if oneshot:
+        if boundary != SEALED:
+            raise BoxProfileError("a one-shot delivery needs a sealed box (BS1); refused")
+        problems = box_bootstrap.section_problems(boot)
+        if problems:
+            raise BoxProfileError("the box's one-shot delivery section is incomplete: "
+                                  + "; ".join(problems))
+    label = (SEALED_ONESHOT_LABEL if oneshot else SEALED_LABEL) if boundary == SEALED \
+        else LEGACY_LABEL
     doc: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "execution_id": execution_id,
@@ -271,7 +319,7 @@ def compile_profile(
         "settings": dict(settings),
         "boundary": boundary,
         "hardening": "partial",
-        "label": SEALED_LABEL if boundary == SEALED else LEGACY_LABEL,
+        "label": label,
         "classification": {"by": launch.get("classified_by", "none"),
                            "label": launch.get("label", "not classified (a legacy box)")},
         "image": dict(image),
@@ -279,7 +327,8 @@ def compile_profile(
         "versions": {"schema": SCHEMA_VERSION, "protocol": "box-profile/2",
                      "runtime": image.get("id"), "config": launch.get("digest"),
                      "grant": "bs1-manifest/1" if boundary == SEALED else "legacy-inherit",
-                     "operation": "legacy (BS3 not built)"},
+                     "operation": "legacy (BS3 not built)",
+                     "bootstrap": box_bootstrap.PROTOCOL if oneshot else "environment"},
         "launch": dict(launch),
         "grants": list(grants),
         "tmpfs": list(tmpfs),
@@ -290,7 +339,8 @@ def compile_profile(
         "limits": dict(limits),
         "network_graph": graph,
         "closure": closure(graph),
-        "residuals": residuals(boundary, legacy_mounts),
+        "bootstrap": boot,
+        "residuals": residuals(boundary, legacy_mounts, boot["mode"]),
     }
     if boundary == SEALED:
         missing = [k for k in _SEALED_FACTS if _unknown(doc.get(k))]
@@ -544,7 +594,10 @@ def summary(doc: Mapping[str, Any]) -> str:
     """One line for logs: boundary, generation, digest, launch class."""
     launch = doc.get("launch") or {}
     boundary = doc.get("boundary")
-    shown = (f"{boundary} (BS1-partial; gate-classified, not reviewed by Security)"
+    steps = ("BS1+BS2-partial, oneshot"
+             if (doc.get("bootstrap") or {}).get("mode") == box_bootstrap.ONESHOT
+             else "BS1-partial")
+    shown = (f"{boundary} ({steps}; gate-classified, not reviewed by Security)"
              if boundary == SEALED else f"{boundary} ({doc.get('hardening')} hardening)")
     return (f"box profile g{doc.get('generation')} {shown} {digest_of(doc)[:19]}; launch "
             f"{launch.get('workflow')!r}: {launch.get('boundary')}")

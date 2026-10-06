@@ -68,6 +68,13 @@ box, of either kind, gets a box profile compiled here before `docker run`
 (box_profile.py): it is stored on the run's row and handed to the box, which
 checks it before anything runs.
 
+TEMPER_BOX_SECRET_BOOTSTRAP=oneshot (box secrets BS2, sealed boxes only) keeps
+secrets out of the box's environment altogether: docker gets only the names the box
+list declares safe for tools and the spawner's own settings, and the rest reaches the
+runner once, through box_bootstrap.py, after it has made itself non-dumpable. The
+spawn returns only when the runner has acknowledged its delivery; otherwise the box
+is stopped and the delivery recorded as revoked.
+
 Handles: the container name is derived from the execution_id, so
 is_alive() and kill() work from the row alone — across worker restarts,
 and regardless of what the run writes into spawner_handle.
@@ -79,6 +86,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shlex
 import socket
 import subprocess  # noqa: S404 — intentional: this is the spawner
@@ -89,7 +97,14 @@ from pathlib import Path
 
 from temper_ai.integrations.github import secret as github_secret
 from temper_ai.shared import box_env as box_env_list
-from temper_ai.spawner import box_launches, box_profile, box_seal, box_view
+from temper_ai.shared.clock import utcnow
+from temper_ai.spawner import (
+    box_bootstrap,
+    box_launches,
+    box_profile,
+    box_seal,
+    box_view,
+)
 from temper_ai.spawner.base import Spawner, SpawnerBusy, SpawnerError
 from temper_ai.spawner.box_profile import BoxProfileError
 from temper_ai.worker_proto import ProcessHandle, SpawnerKind
@@ -124,6 +139,56 @@ SEALED_SET = {"TEMPER_LOG_DIR": "/tmp/temper-logs",
 #: The provider agents that name none use (shared/types.py resolve_provider). A sealed box
 #: is given the one its launch was classified with; unset, those launches are refused.
 DEFAULT_PROVIDER_ENV = "TEMPER_DEFAULT_PROVIDER"
+#: What the worker runs in a oneshot box to deliver its secrets: box_bootstrap.py's own
+#: source, held by the worker (like BOOT_PROGRAM), never a file from a mount.
+WRITER_PROGRAM = box_bootstrap.writer_program()
+WRITER_DIGEST = "sha256:" + hashlib.sha256(WRITER_PROGRAM.encode("utf-8")).hexdigest()
+#: Names a oneshot box's docker environment may carry besides the tools' list: the
+#: spawner's own fixed settings and the profile it checks itself with.
+_FIXED_PLAIN = frozenset({"PATH", "HOME", box_env_list.RUN_CONTAINER_ENV, DEFAULT_PROVIDER_ENV,
+                          *SEALED_SET, box_view.PROFILE_ENV, box_view.DIGEST_ENV,
+                          box_view.GENERATION_ENV})
+#: A URL with a password in it, or a run's GitHub key: secret whatever the name says.
+_SECRET_VALUE = re.compile(r"://[^/\s@:]*:[^/\s@]+@")
+#: A variable the python base images bake in, named like a key but public: the release
+#: manager's signing-key fingerprint. Allowed only when the value is a fingerprint.
+_PUBLIC_BAKED = {"GPG_KEY": re.compile(r"^[0-9A-Fa-f]{16,64}$")}
+
+
+def value_looks_secret(value: str) -> bool:
+    return bool(_SECRET_VALUE.search(value)) or value.startswith(box_env_list.RUN_GITHUB_KEY_PREFIX)
+
+
+def split_delivery(box_env: Iterable[str],
+                   agent_tools: Iterable[str]) -> tuple[list[str], dict[str, str]]:
+    """A oneshot box's variables: what docker may carry, and what is delivered instead.
+
+    Docker carries a name only when the box list declares it safe for tools or the
+    spawner set it itself, and neither its name nor its value looks secret. Everything
+    else (the database URL, the secret key, model, GitHub, Notion and other tokens, the
+    runner's own settings) is delivered; tools still see the declared names, from the
+    runner's environment mapping (shared/agent_env.py).
+    """
+    tools = frozenset(agent_tools)
+    plain: list[str] = []
+    delivered: dict[str, str] = {}
+    for var in box_env:
+        name, _, value = var.partition("=")
+        if ((name in _FIXED_PLAIN or name in tools) and not box_env_list.looks_secret(name)
+                and not value_looks_secret(value)):
+            plain.append(var)
+        else:
+            delivered[name] = value
+    return plain, delivered
+
+
+def secrets_in_command(cmd: Iterable[str], delivered: Mapping[str, str]) -> list[str]:
+    """Names of delivered secrets whose value shows up in a docker command (and so inspect)."""
+    parts = list(cmd)
+    return sorted(name for name, value in delivered.items()
+                  if len(value) >= 8
+                  and (box_env_list.looks_secret(name) or value_looks_secret(value))
+                  and any(value in part for part in parts))
 
 #: Launch sites found per scanned tree: (worker path, prefix, entries, tree digest) -> sites.
 _SITES: dict[tuple[str, str, tuple[str, ...], str], frozenset[str]] = {}
@@ -146,6 +211,24 @@ def _launch_sites(path: str, prefix: str, entries: tuple[str, ...],
 _NO_SUCH = ("no such container", "no such object")
 
 
+def _delivery_status(result: subprocess.CompletedProcess) -> dict:
+    """The writer's status line (its last JSON line), or what docker said instead (safe text)."""
+    out = result.stdout.decode("utf-8", "replace") if isinstance(result.stdout, bytes) \
+        else str(result.stdout or "")
+    for line in reversed(out.strip().splitlines()):
+        try:
+            status = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(status, dict) and status.get("state"):
+            return {"state": str(status["state"]), "reason": str(status.get("reason") or "")}
+    err = result.stderr.decode("utf-8", "replace") if isinstance(result.stderr, bytes) \
+        else str(result.stderr or "")
+    said = err.strip().splitlines()[-1][:200] if err.strip() else "nothing"
+    return {"state": "error",
+            "reason": f"the writer gave no status (exit {result.returncode}; docker said: {said})"}
+
+
 def _says_gone(stderr: str) -> bool:
     """Whether docker's error says the container does not exist (any docker version's wording)."""
     said = stderr.lower()
@@ -159,6 +242,7 @@ class BoxEnvSplit:
     mode: str
     kept: tuple[str, ...]      # NAME=value entries, as docker run takes them
     dropped: tuple[str, ...]   # names only, sorted
+    agent_tools: frozenset[str] = frozenset()  # names the list declares safe for tools
 
     @classmethod
     def of(cls, template_env: Iterable[str], mode: str,
@@ -182,7 +266,8 @@ class BoxEnvSplit:
             # The box's tools read the switch too (shared/agent_env.py).
             kept = [v for v in kept if v.split("=", 1)[0] != box_env_list.MODE_ENV]
             kept.append(f"{box_env_list.MODE_ENV}={box_env_list.MODE_INHERIT}")
-        return cls(mode=mode, kept=tuple(kept), dropped=tuple(sorted(dropped)))
+        return cls(mode=mode, kept=tuple(kept), dropped=tuple(sorted(dropped)),
+                   agent_tools=frozenset(allowed.agent_tools) if allowed is not None else frozenset())
 
 
 def container_name(execution_id: str) -> str:
@@ -390,6 +475,7 @@ class DockerSpawner(Spawner):
         profile_store: box_profile.ProfileStore | None = None,
         worker_view: box_seal.WorkerView | None = None,
         engine_launches: Mapping[str, str] | None = None,
+        delivery_limits: Mapping[str, int] | None = None,
     ) -> None:
         self._docker = docker_bin
         self._template_container = (
@@ -407,6 +493,11 @@ class DockerSpawner(Spawner):
         # The engine's classified launch sites (None: the table shipped with this code,
         # box_launches.ENGINE_LAUNCHES). Trusted code only, never anything a run controls.
         self._engine_table = engine_launches
+        # A oneshot delivery's bounds and deadlines (None: box_bootstrap.LIMITS). Trusted
+        # code only: they go into the profile the box obeys.
+        self._delivery_limits = dict(delivery_limits) if delivery_limits else None
+        self._box_ids_seen: dict[tuple[str, str], tuple[int, int]] = {}
+        self._image_env_seen: dict[str, list[str]] = {}
         self._template: Template | None = None
         self._template_missing_since: float | None = None
 
@@ -523,12 +614,15 @@ class DockerSpawner(Spawner):
                       env: BoxEnvSplit, settings: dict[str, str]) -> ProcessHandle:
         """A sealed box (BS1): checked, planned, pinned, profiled and stored, then started."""
         name = container_name(execution_id)
+        oneshot = settings[box_profile.BOOTSTRAP_ENV] == box_bootstrap.ONESHOT
         facts = self._store.load(execution_id)
         if facts is None:
             raise SpawnerError(f"No WorkflowRun row for execution_id={execution_id}")
         previous = box_profile.stored_profile(facts.metadata)
         generation = box_profile.next_generation(previous, box_profile.SEALED)
         interpreter = self._sealed_preflight(template, env)
+        if oneshot:
+            self._baked_check(template)
         path_value = template.env_value("PATH")
         home = template.env_value("HOME")
         if not path_value or not home:
@@ -551,6 +645,7 @@ class DockerSpawner(Spawner):
                 facts.workflow_name, default_provider=default_provider,
                 absent_roots=[(p, f"names {p}, which a sealed box doesn't have")
                               for p in plan.absent],
+                extra_markers=box_launches.ONESHOT_MARKERS if oneshot else (),
             )
             if launch.boundary != box_launches.SEALED:
                 raise BoxProfileError(
@@ -571,6 +666,14 @@ class DockerSpawner(Spawner):
                 # The provider the launch was classified with, whatever the box list says.
                 box_env = [v for v in box_env if v.split("=", 1)[0] != DEFAULT_PROVIDER_ENV]
                 box_env.append(f"{DEFAULT_PROVIDER_ENV}={launch.default_provider}")
+            delivered: dict[str, str] = {}
+            bootstrap = None
+            if oneshot:
+                box_env, delivered = split_delivery(box_env, env.agent_tools)
+                uid, gid = self._box_ids(template, interpreter)
+                bootstrap = box_bootstrap.section(names=delivered, uid=uid, gid=gid,
+                                                  limits=self._delivery_limits)
+                plan.tmpfs.append(box_bootstrap.tmpfs_spec(bootstrap))
             source = {part: dict(facts_) for part, facts_ in plan.sources.items()}
             for part in ("code", "configs"):
                 if source.get(part, {}).get("from") == "image":
@@ -595,17 +698,145 @@ class DockerSpawner(Spawner):
                                          workdir, home}),
                     "absent": list(plan.absent),
                     "env_names": sorted(v.split("=", 1)[0] for v in box_env),
+                    **({"writer": WRITER_DIGEST} if oneshot else {}),
                 },
                 limits=self._limits_doc(),
                 graph=box_profile.network_graph(name, template.networks[:1], template.extra_hosts),
+                bootstrap=bootstrap,
             )
             record = box_profile.record_for(doc, previous)
-            self._store.save(execution_id, record, previous.generation if previous else None)
             box_env += [f"{k}={v}" for k, v in box_profile.env_for(doc).items()]
             cmd = self.sealed_command(execution_id, template, box_env, plan, interpreter)
+            leaked = secrets_in_command(cmd, delivered)
+            if leaked:
+                raise BoxProfileError(
+                    "the box's command would carry secret values (docker inspect shows a "
+                    f"command): {', '.join(leaked)}; refused",
+                )
+            self._store.save(execution_id, record, previous.generation if previous else None)
             logger.info("Run container %s: %s", name, box_profile.summary(doc))
             result = self._docker_run(cmd)
+        if oneshot and result.returncode == 0:
+            record = self._deliver(execution_id, doc, record, delivered, template.user,
+                                   interpreter)
         return self._handle(execution_id, result, template.image_id, record)
+
+    # -- BS2: one-shot delivery -------------------------------------------------
+
+    def _deliver(self, execution_id: str, doc: dict, record: dict, values: Mapping[str, str],
+                 user: str, interpreter: str) -> dict:
+        """Hand the started box its secrets once; the record with the delivery's state.
+
+        The envelope goes to the writer's stdin (docker exec -i) and nowhere else; it is
+        zeroed here once sent. Anything but the runner's acknowledgement of this very
+        envelope stops the box, records the delivery as revoked and fails the spawn.
+        """
+        name = container_name(execution_id)
+        boot = doc["bootstrap"]
+        deadlines = boot["deadlines"]
+        cmd = [self._docker, "exec", "-i", "--user", user, name,
+               interpreter, "-I", "-S", "-c", WRITER_PROGRAM, "--deliver",
+               "--dir", boot["dir"], "--leaf", boot["leaf"], "--max", str(boot["max_bytes"]),
+               "--ready", str(deadlines["ready"]), "--ack", str(deadlines["ack"]),
+               "--execution", execution_id, "--generation", str(doc["generation"])]
+        data = bytearray()
+        try:
+            data = box_bootstrap.envelope(doc, record["digest"], values)
+            result = self._run(cmd, input=data, capture_output=True, check=False,
+                               timeout=deadlines["ready"] + deadlines["ack"] + 30)
+            status = _delivery_status(result)
+        except box_bootstrap.DeliveryRefused as exc:
+            status = {"state": "refused", "reason": str(exc)}
+        except subprocess.TimeoutExpired:
+            status = {"state": "timeout", "reason": "the writer did not finish in time"}
+        except OSError as exc:
+            status = {"state": "error",
+                      "reason": f"docker exec could not run ({type(exc).__name__})"}
+        finally:
+            box_bootstrap.zero(data)
+        state = {"generation": doc["generation"], "at": utcnow().isoformat(),
+                 "names": len(values)}
+        if status.get("state") == "consumed":
+            updated = self._record_delivery(execution_id, record, {**state, "state": "consumed"})
+            logger.info("Run container %s took its one-shot delivery (%d names, generation %s)",
+                        name, len(values), doc["generation"])
+            return updated
+        reason = str(status.get("reason") or "no status")[:300]
+        self._docker_run([self._docker, "kill", name])
+        self._record_delivery(execution_id, record, {**state, "state": "revoked",
+                                                     "why": f"{status.get('state')}: {reason}"})
+        raise SpawnerError(
+            f"the box's one-shot secret delivery failed ({status.get('state')}: {reason}); "
+            "the box was stopped and the delivery revoked",
+        )
+
+    def _record_delivery(self, execution_id: str, record: dict, state: dict) -> dict:
+        """The run's row keeps how its box's delivery went (names counted, never values)."""
+        updated = {**record, "delivery": state}
+        try:
+            self._store.save(execution_id, updated, record["generation"])
+        except Exception as exc:  # noqa: BLE001 - the box's fate doesn't hang on this note
+            logger.warning("Run container %s: its delivery state could not be stored (%s)",
+                           container_name(execution_id), exc)
+        return updated
+
+    def _baked_check(self, template: Template) -> None:
+        """Refuse an image that bakes secret-named variables into every box it starts."""
+        image = template.image_id
+        if image not in self._image_env_seen:
+            result = self._docker_run([self._docker, "image", "inspect", "--format",
+                                       "{{json .Config.Env}}", image])
+            try:
+                baked = json.loads(result.stdout or "null") if result.returncode == 0 else None
+            except ValueError:
+                baked = None
+            if not isinstance(baked, list):
+                raise BoxProfileError(
+                    f"the image {image} can't be inspected for the variables it bakes in, so no "
+                    "oneshot box is started from it",
+                )
+            self._image_env_seen[image] = [str(v) for v in baked]
+        bad = []
+        for var in self._image_env_seen[image]:
+            name, _, value = var.partition("=")
+            public = _PUBLIC_BAKED.get(name)
+            if public is not None and public.match(value):
+                continue
+            if box_env_list.looks_secret(name) or value_looks_secret(value):
+                bad.append(name)
+        if bad:
+            raise BoxProfileError(
+                "the image bakes variables named or valued like secrets into every box ("
+                + ", ".join(sorted(bad)) + "); a oneshot box starts only from an image whose "
+                "own environment is fixed, non-secret configuration",
+            )
+
+    def _box_ids(self, template: Template, interpreter: str) -> tuple[int, int]:
+        """The numeric uid and gid the box's user has in its image (the delivery tmpfs's owner)."""
+        key = (template.image_id, template.user)
+        if key not in self._box_ids_seen:
+            numeric = re.fullmatch(r"(\d+):(\d+)", template.user)
+            if numeric:
+                ids = (int(numeric.group(1)), int(numeric.group(2)))
+            else:
+                result = self._docker_run([
+                    self._docker, "run", "--rm", "--network", "none", "--read-only",
+                    "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                    "--label", "temper.role=probe", "--user", template.user,
+                    "--entrypoint", interpreter, template.image_id,
+                    "-I", "-S", "-c", "import os; print(os.getuid(), os.getgid())",
+                ])
+                found = re.fullmatch(r"\s*(\d+) (\d+)\s*", result.stdout or "")
+                if result.returncode != 0 or not found:
+                    raise BoxProfileError(
+                        f"the uid of {template.user!r} in the image can't be read "
+                        f"({(result.stderr or '').strip()[:200]}); no oneshot box is started",
+                    )
+                ids = (int(found.group(1)), int(found.group(2)))
+            if 0 in ids:
+                raise BoxProfileError("a oneshot box's user is root; refused")
+            self._box_ids_seen[key] = ids
+        return self._box_ids_seen[key]
 
     def _engine_check(self, plan: box_seal.SealPlan, view: box_seal.WorkerView) -> dict:
         """Refuse code that starts programs from places the gate hasn't classified (G11).

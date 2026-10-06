@@ -22,8 +22,8 @@ from temper_ai.spawner.base import SpawnerError
 from temper_ai.spawner.box_seal import WorkerView
 from temper_ai.spawner.docker_spawner import DockerSpawner
 from tests.test_spawner.box_fixtures import (
+    OWN_LABEL,
     SYNTHETIC_MARK,
-    TEST_LABEL,
     BoxDocker,
     Install,
     MemoryStore,
@@ -72,7 +72,7 @@ def sealed_install(monkeypatch):
     monkeypatch.setenv(box_profile.BOUNDARY_ENV, box_profile.SEALED)
     monkeypatch.setenv("TEMPER_DOCKER_RUN_COMMAND", RUN_COMMAND)
     yield
-    left = subprocess.run(["docker", "ps", "-aq", "--filter", f"label={TEST_LABEL}"],
+    left = subprocess.run(["docker", "ps", "-aq", "--filter", f"label={OWN_LABEL}"],
                           capture_output=True, text=True, timeout=60)
     for cid in left.stdout.split():
         subprocess.run(["docker", "rm", "-f", cid], capture_output=True, timeout=60)

@@ -32,6 +32,7 @@ from temper_ai.config.helpers import (
     check_schema_version,
     substitute_env_vars,
 )
+from temper_ai.spawner import box_bootstrap
 from temper_ai.spawner.box_launches import blob_id
 
 #: Where a sealed box has its configs (box_seal.CONFIG_TARGET).
@@ -142,7 +143,13 @@ def reset() -> None:
 
 
 def check(kind: str, name: str | None) -> None:
-    """Refuse ``name`` (an agent type, tool, provider or MCP server) outside the launch."""
+    """Refuse ``name`` (an agent type, tool, provider or MCP server) outside the launch.
+
+    In a oneshot box nothing is used before the runner's delivery is taken (BS2).
+    """
+    if not box_bootstrap.tools_allowed():
+        raise LaunchRefused(f"{kind} {name!r} can't be used before the box's one-shot "
+                            "delivery is taken and acknowledged")
     if _ACTIVE is not None:
         _ACTIVE.check(kind, name)
 

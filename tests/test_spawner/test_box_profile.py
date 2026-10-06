@@ -127,6 +127,58 @@ def test_a_sealed_profile_is_partial_too():
     assert "BS1" not in [r["step"] for r in doc["residuals"]]
 
 
+# -- BS2: the one-shot delivery's section ------------------------------------------------------
+
+
+def _oneshot_doc(boundary: str = SEALED, **overrides) -> dict:
+    from temper_ai.spawner import box_bootstrap
+
+    settings = box_profile.install_settings({BOUNDARY_ENV: SEALED,
+                                             "TEMPER_BOX_SECRET_BOOTSTRAP": "oneshot"})
+    section = box_bootstrap.section(names=["TEMPER_DATABASE_URL", "SYNTH_SERVICE_TOKEN"],
+                                    uid=999, gid=999)
+    return _doc(boundary, **{"settings": settings, "bootstrap": section, **overrides})
+
+
+def test_oneshot_is_built_but_only_on_bs1s_sealed_profile():
+    assert box_profile.install_settings({BOUNDARY_ENV: SEALED, "TEMPER_BOX_SECRET_BOOTSTRAP":
+                                         "oneshot"})["TEMPER_BOX_SECRET_BOOTSTRAP"] == "oneshot"
+    for boundary in (None, "legacy"):
+        env = {"TEMPER_BOX_SECRET_BOOTSTRAP": "oneshot", **({BOUNDARY_ENV: boundary}
+                                                           if boundary else {})}
+        with pytest.raises(BoxProfileError, match="oneshot needs BS1's sealed profile"):
+            box_profile.install_settings(env)
+
+
+def test_a_oneshot_profile_carries_its_bounds_and_names_the_cli_tokens_exposure():
+    doc = _oneshot_doc()
+    boot = doc["bootstrap"]
+    assert boot["mode"] == "oneshot" and boot["consumption"] == "once"
+    assert boot["names"] == ["SYNTH_SERVICE_TOKEN", "TEMPER_DATABASE_URL"]
+    assert set(boot["deadlines"]) == {"ready", "delivery", "ack"} and boot["max_bytes"] > 0
+    assert doc["versions"]["bootstrap"] == "box-delivery/1"
+    assert doc["label"] == box_profile.SEALED_ONESHOT_LABEL
+    still = {r["step"]: r for r in doc["residuals"]}
+    assert still["BS2"]["still"] == "partial"
+    assert still["cli credential"]["still"] == "exposed"
+    assert "BS2-partial, oneshot" in box_profile.summary(doc)
+
+
+def test_an_env_profile_says_how_its_box_gets_its_secrets():
+    doc = _doc(SEALED)
+    assert doc["bootstrap"]["mode"] == "env" and doc["versions"]["bootstrap"] == "environment"
+    assert next(r for r in doc["residuals"] if r["step"] == "BS2")["still"] != "partial"
+
+
+@pytest.mark.parametrize(("change", "expect"), [
+    ({"boundary": LEGACY}, "a one-shot delivery needs a sealed box"),
+    ({"bootstrap": {"mode": "oneshot"}}, "one-shot delivery section is incomplete"),
+])
+def test_a_oneshot_profile_without_its_box_or_its_bounds_is_refused(change, expect):
+    with pytest.raises(BoxProfileError, match=expect):
+        _oneshot_doc(**change)
+
+
 def test_a_sealed_profile_names_itself_gate_classified_and_its_residuals_by_name():
     """Security rm-963c1429 condition 5: never 'Security-reviewed', never a bare 'sealed'."""
     doc = _doc(SEALED)

@@ -50,6 +50,11 @@ def bootstrap_runner_context_from_env(
         - Loads workflow YAML configs from config_dir into a fresh
           ConfigStore so graph_loader.load_workflow() can resolve them.
     """
+    # A oneshot box's runner has taken its delivery before this (cli/main.py); one that
+    # hasn't is refused here, before it reads a setting or starts anything (BS2).
+    from temper_ai.spawner import box_bootstrap
+    box_bootstrap.require_received()
+
     # Database — reuse server's resolution. init_database is idempotent so
     # the spawner can call this even when the server already opened the DB.
     from temper_ai.database import init_database

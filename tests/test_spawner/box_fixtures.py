@@ -33,6 +33,9 @@ from temper_ai.spawner.box_profile import METADATA_KEY, BoxProfileError, RunFact
 
 SYNTHETIC_MARK = "SYNTHETIC-NOT-A-REAL-SECRET"
 TEST_LABEL = "temper.test=box-sealed"
+#: This test process's boxes: a clean-up removes only these, never another test process's
+#: boxes running at the same time (pytest -n).
+OWN_LABEL = f"temper.test.pid={os.getpid()}"
 WORKFLOW = "sealed_probe"
 
 
@@ -383,7 +386,7 @@ class BoxDocker:
         if self.before_run is not None:
             cmd = self.before_run(cmd) or cmd
         cmd = [c for c in cmd if c != "--detach"]
-        cmd[2:2] = ["--label", TEST_LABEL]
+        cmd[2:2] = ["--label", TEST_LABEL, "--label", OWN_LABEL]
         self.names.append(cmd[cmd.index("--name") + 1])
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)

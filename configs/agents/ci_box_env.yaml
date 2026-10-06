@@ -11,6 +11,11 @@
 # started with one, it matches its digest, it says what it leaves open (BS2-BS6 and a
 # network recorded as mixed), and, in a sealed box, the paths a sealed box never has
 # are not there and the runner's own files can't be written. Facts and path names only.
+#
+# In a oneshot box (BS2, TEMPER_BOX_SECRET_BOOTSTRAP=oneshot) it also checks that no
+# process it can read started with a secret-like name or a delivered one, that the
+# runner's environ and memory refuse it, that the delivery folder holds only the
+# runner's acknowledgement, and that the profile records the CLI token's exposure.
 agent:
   name: ci_box_env
   type: script
@@ -115,6 +120,43 @@ agent:
                 problems.append("a sealed box can write " + ", ".join(sorted(set(writable))))
         elif doc.get("boundary") != "legacy":
             problems.append(f"the profile's boundary is {doc.get('boundary')!r}")
+        boot = doc.get("bootstrap") or {}
+        profile["bootstrap"] = boot.get("mode", "env (no section)")
+        if boot.get("mode") == "oneshot":
+            # GPG_KEY: the python base image's public release-key fingerprint (the spawner
+            # lets it through only when its value is a fingerprint).
+            named = sorted(n for n in box if n != "GPG_KEY"
+                           and (n in NOT_FOR_TOOLS or n.endswith(SECRET_ENDINGS)))
+            delivered = sorted(box & set(boot.get("names") or []))
+            if named or delivered:
+                problems.append("a oneshot box's processes started with secret or delivered "
+                                "names: " + ", ".join(sorted(set(named + delivered))))
+            folder = Path(boot.get("dir") or "/run/temper-boot")
+            try:
+                left = sorted(p.name for p in folder.iterdir())
+                ack = json.loads((folder / "ack").read_text())
+            except (OSError, ValueError):
+                left, ack = ["(unreadable)"], {}
+            profile["delivery_folder"] = left
+            if left != ["ack"] or ack.get("state") != "consumed":
+                problems.append("the delivery folder holds more than a consumed acknowledgement")
+            runner = ack.get("pid")
+            refused = []
+            for part in ("environ", "mem"):
+                try:
+                    with open(f"/proc/{runner}/{part}", "rb") as fh:
+                        fh.read(1)
+                except PermissionError:
+                    refused.append(part)
+                except OSError:
+                    pass
+            profile["runner_refuses"] = refused
+            if refused != ["environ", "mem"]:
+                problems.append("the runner's environ or memory can be read")
+            steps_now = {r.get("step"): r.get("still") for r in doc.get("residuals") or []}
+            if steps_now.get("BS2") != "partial" or "cli credential" not in steps_now:
+                problems.append("a oneshot profile doesn't record BS2 as partial and the CLI "
+                                "token's exposure")
 
     print(json.dumps({"tool_env": tool, "box_env": sorted(box),
                       "unreadable_proc": unreadable, "leaks": leaks,

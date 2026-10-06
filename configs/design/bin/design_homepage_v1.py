@@ -28,6 +28,8 @@ from zoneinfo import ZoneInfo
 
 import penpot_homepage_source as p
 
+# The delivery folder only a oneshot run box has (temper's box secrets BS2, docs/boxes.md).
+PROTECTED_BOX_MARKER = "/run/temper-boot"
 VERSION = 1
 DIRECTIONS = ("product-led", "task-led", "explanation-led")
 WIDTHS = (390, 768, 1440)
@@ -168,8 +170,16 @@ class Penpot:
         value = os.getenv("PENPOT_AGENT_PASSWORD", "")
         if value:
             return value
+        if os.path.isdir(PROTECTED_BOX_MARKER):
+            # A oneshot box (box secrets BS2): its start environment holds no secret, and
+            # nothing else carries this one into a script until BS3. No other source.
+            raise ValueError(
+                "Penpot login refused: this run's box takes its secrets by one-shot delivery "
+                "(BS2), and the Penpot password has no channel into a script until BS3; run "
+                "this workflow on an explicit legacy box profile"
+            )
         # Script Bash removes *_PASSWORD. The owner explicitly granted this
-        # service login to run containers; read ONLY that key from this same
+        # service login to legacy run containers; read ONLY that key from this same
         # container's bootstrap environment, never a host/another run or output.
         box = os.getenv("TEMPER_RUN_CONTAINER", "")
         prefix = "temper-run-"

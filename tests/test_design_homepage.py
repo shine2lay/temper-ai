@@ -233,6 +233,20 @@ def test_bootstrap_identity_mismatch_fails_closed(monkeypatch, changed):
     assert h.Penpot.password() == ""
 
 
+def test_a_oneshot_box_refuses_plainly_and_never_reads_proc(monkeypatch, tmp_path):
+    """Box secrets BS2: a oneshot box's start environment holds no password, and until BS3
+    nothing else may carry it into a script: a plain refusal, no /proc read, no fallback."""
+    box = "temper-run-89bcec85-9acc-4094-b4ab-5bc5eb7fac17"
+    monkeypatch.delenv("PENPOT_AGENT_PASSWORD", raising=False)
+    monkeypatch.setenv("TEMPER_RUN_CONTAINER", box)
+    monkeypatch.setattr(h, "PROTECTED_BOX_MARKER", str(tmp_path))
+    def forbidden(path):
+        pytest.fail("a oneshot box's script must not read /proc")
+    monkeypatch.setattr(h.Path, "read_bytes", forbidden)
+    with pytest.raises(ValueError, match="one-shot delivery .* explicit legacy box profile"):
+        h.Penpot.password()
+
+
 def test_drafts_identity_is_discovered_not_guessed(monkeypatch):
     monkeypatch.setenv("PENPOT_URL", "https://spark.tailbb5055.ts.net:8790")
     monkeypatch.setenv("PENPOT_AGENT_EMAIL", "design-agent@spark.local")

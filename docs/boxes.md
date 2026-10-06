@@ -100,10 +100,10 @@ What temper cannot close by itself yet, handed to Architecture:
   `/proc/1/environ` and the main process's `/proc/<pid>/environ` and find those
   values there. Scrubbing the tool environment stops a casual `env`, not a
   determined agent.
-- Options under consideration: secrets passed in a file that deletes itself, with
-  the main process made non-dumpable; a separate user for agent tools; a database
-  role per box limited to its own run; a model-call proxy so boxes hold no
-  provider keys.
+- Built, switched off: a one-shot delivery into a non-dumpable runner
+  (`TEMPER_BOX_SECRET_BOOTSTRAP=oneshot`, below), which closes the `/proc` read.
+  Still under consideration: a separate user for agent tools; a database role per
+  box limited to its own run; a model-call proxy so boxes hold no provider keys.
 
 ## The box profile
 
@@ -119,7 +119,7 @@ workspace files, not run output, not what a caller hands `queue_run`.
   | step | setting | values |
   |---|---|---|
   | BS1 | `TEMPER_BOX_RUNTIME_BOUNDARY` | `legacy` (default), `sealed` |
-  | BS2 | `TEMPER_BOX_SECRET_BOOTSTRAP` | `env` (not built further yet) |
+  | BS2 | `TEMPER_BOX_SECRET_BOOTSTRAP` | `env` (default), `oneshot` (needs `sealed`) |
   | BS3 | `TEMPER_BOX_CAPABILITIES` | `legacy` |
   | BS4 | `TEMPER_BOX_STATE_ACCESS` | `legacy` |
   | BS5 | `TEMPER_BOX_TOOL_ISOLATION` | `in_process` |
@@ -212,6 +212,56 @@ and Redis (BS4, and SQL until BS5); tools share the runner's process, mount and
 network namespace, and the network is open (BS5); model calls hold credentials
 in the box (BS6).
 
+## One-shot secret delivery (BS2)
+
+`TEMPER_BOX_SECRET_BOOTSTRAP=oneshot` (worker and server) keeps a box's secrets
+out of everything another process in the box can read. It is off by default and
+needs BS1's sealed profile: on a legacy install every run is refused.
+
+- **The box starts with no secret.** The worker splits the box's environment: only
+  fixed settings and names agent tools may see go to `docker run` (and so to
+  docker-init's and the runner's start environment, `docker inspect`, argv,
+  labels and the healthcheck, which is off); everything named or valued like a
+  secret (a URL with a password, a run key) is delivered instead. The worker
+  refuses an image that bakes in a secret-named or secret-valued variable, and a
+  command that would carry a delivered value.
+- **The runner protects itself before it reads.** The final interpreter
+  (`temper run-workflow`, after the box's self-check) first sets
+  `PR_SET_DUMPABLE 0` and turns core dumps off; then other processes of the same
+  user can't read its `/proc/<pid>/environ`, memory or descriptors, or attach to
+  it. No wrapper loads secrets and then execs: an exec resets the protection, so a
+  replacement process has to take its own delivery, and a box takes one.
+- **One bounded delivery.** The box has a private tmpfs, `/run/temper-boot`
+  (0700, the box user's, `noexec,nosuid,nodev`, listed in the profile). The runner
+  checks it, says it is waiting, and the worker's writer (`docker exec -i` as the
+  box user, its program passed as source, the envelope on its stdin, never on
+  disk outside the box) writes one 0600 file there. The runner checks the file's
+  kind, owner, mode and links, reads a fixed-size header, checks run, profile
+  digest, generation, expiry, names and schema, then reads the rest once, closes
+  it, removes it, and only then acknowledges and allows tools. Every descriptor is
+  close-on-exec. Sizes and the ready, delivery and acknowledgement deadlines are
+  profile fields (`bootstrap`).
+- **Failures stop the box.** A refused envelope, a timeout, a cancel before or
+  after the runner is ready, or a missing acknowledgement: the worker stops the
+  box, records the delivery as revoked on the run's row with a safe reason (never
+  a value) and fails the spawn. The runner exits with code 4 (`box refused: ...`).
+- **Nothing starts first.** Until the delivery is acknowledged, the box guard
+  refuses every tool, `env_for_agent_tool` refuses every tool process, and the
+  runner's bootstrap refuses to load.
+- **Where the values live.** In the runner's Python mapping only (`os.environ`),
+  so existing readers work unchanged; they are not in its C environment, so a
+  child started without an explicit environment doesn't get them, and a tool's
+  child still gets the scrubbed one (`env_for_agent_tool`).
+- **Not closed by it, recorded in the profile:** a token handed on purpose to a
+  CLI child (the Claude CLI's) is in that child's environment (`cli credential`,
+  until BS6), and the runner still holds the values in memory (BS3-BS6).
+- **Penpot.** A oneshot box has no channel for the Penpot password, so workflows
+  that use it are refused with a plain reason (`box_launches.ONESHOT_MARKERS`) and
+  run only on an explicit legacy profile until BS3; the design script reads no
+  `/proc` there and has no other fallback.
+- **Rolling back** is setting `env` again and starting fresh runs, never an
+  automatic fallback.
+
 ## Checking it
 
 - `temper check` loads both files.
@@ -223,7 +273,11 @@ in the box (BS6).
   `POST /api/runs {"workflow": "ci_box_env"}`.
   It also checks the box's profile: present, matching its digest and generation,
   listing what it leaves open, and in a sealed box the absent paths and
-  unwritable runtime roots. It prints facts and path names, never values.
+  unwritable runtime roots. In a oneshot box it also checks that no readable
+  process started with a secret or delivered name, that the runner's environ and
+  memory refuse it, that only the acknowledgement is left of the delivery, and
+  that the profile records the CLI token's exposure. It prints facts and path
+  names, never values.
 - `tests/test_spawner/test_docker_spawner.py` (TestBoxEnvAllowList; the box
   profile tests: every current launch replayed against the command before BS1,
   and the sealed refusals), `tests/test_spawner/test_box_profile.py`,
@@ -239,6 +293,12 @@ in the box (BS6).
   It skips without docker; `TEMPER_TEST_BOX_REQUIRED=1` makes that a failure, and
   `TEMPER_TEST_BOX_IMAGE` picks the image (else the newest `temper-ci-server`, else
   a tiny one it builds).
+- `tests/test_spawner/test_box_bootstrap.py` (both ends of the delivery on the
+  host: wrong, stale, oversized and malformed envelopes, mode, link, timeout,
+  prctl and cleanup failures, early tool starts, error children, exec reset) and
+  `tests/test_spawner/test_box_bootstrap_docker.py` (the G02 gate: real oneshot
+  boxes with the real entry code, probed from outside the runner; a positive
+  control without the protection; refusals, cancels and a restart).
 - In a live box, list names only, never values:
   `env | cut -d= -f1 | sort` and
   `for f in /proc/[0-9]*/environ; do tr '\0' '\n' < "$f" 2>/dev/null | cut -d= -f1; done | sort -u`.

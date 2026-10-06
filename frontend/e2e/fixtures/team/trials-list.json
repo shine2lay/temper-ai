@@ -1,0 +1,125 @@
+{
+  "route": "GET /api/team/trials",
+  "status": 200,
+  "body": {
+    "total": 4,
+    "trials": [
+      {
+        "trial_id": "f1db7f9f5e3a",
+        "execution_id": "5e25a530-5e03-4bdb-bef2-4e0ab55ec3e0",
+        "workflow": "team-trial-f1db7f9f5e3a",
+        "goal_first_line": "Name the three buttons on the share dialog.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "paused",
+        "run_status": "waiting",
+        "decision": null,
+        "round": 1,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T08:30:37.258986+00:00",
+        "started_by": "temper-ci",
+        "ended_at": null
+      },
+      {
+        "trial_id": "19e9ee6f56ae",
+        "execution_id": "96f858af-9dab-4465-b2d4-05f21c495c9d",
+        "workflow": "team-trial-19e9ee6f56ae",
+        "goal_first_line": "Tidy the settings page's wording.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "stopped",
+        "run_status": "cancelled",
+        "decision": "stopped",
+        "round": 1,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T08:30:35.600860+00:00",
+        "started_by": "unknown caller",
+        "ended_at": "2026-10-06T08:30:36.938632+00:00"
+      },
+      {
+        "trial_id": "7d415d3129dd",
+        "execution_id": "bb5ebc9f-17be-47bf-895d-aedf55d60136",
+        "workflow": "team-trial-7d415d3129dd",
+        "goal_first_line": "Make the empty notes list say what to do first.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "failed",
+        "run_status": "failed",
+        "decision": "failed",
+        "round": 0,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T08:30:35.154942+00:00",
+        "started_by": "unknown caller",
+        "ended_at": "2026-10-06T08:30:35.321388+00:00"
+      },
+      {
+        "trial_id": "eddfc45293ee",
+        "execution_id": "c6c0c6b1-9625-4930-b9e5-7070e41d8b25",
+        "workflow": "team-trial-eddfc45293ee",
+        "goal_first_line": "Write a short welcome note for the notes app's first screen.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "done",
+        "run_status": "completed",
+        "decision": "done",
+        "round": 1,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T08:30:33.533568+00:00",
+        "started_by": "unknown caller",
+        "ended_at": "2026-10-06T08:30:34.875186+00:00"
+      }
+    ]
+  }
+}

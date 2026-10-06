@@ -1,0 +1,7 @@
+{
+  "route": "POST /api/team/trials",
+  "status": 400,
+  "body": {
+    "problem": "the request needs a request_id (any unique text, the same on a retry)"
+  }
+}

@@ -124,6 +124,25 @@
   --badge-pending-bg: rgba(150, 147, 138, 0.2);
   --badge-pending-text: #b5b2a9;
   --badge-pending-border: rgba(150, 147, 138, 0.3);
+  /* Team page states (Design's Team page spec, section 9): a team waiting
+     on a person, a stop by a person and a run cut off by a restart each
+     get their own badge. Text measured on the badge over the panel. */
+  --badge-waiting-bg: rgba(255, 202, 40, 0.15);
+  --badge-waiting-text: #ffd54f;
+  --badge-waiting-border: rgba(255, 202, 40, 0.45);
+  --badge-cancelled-bg: rgba(255, 167, 38, 0.15);
+  --badge-cancelled-text: #ffb74d;
+  --badge-cancelled-border: rgba(255, 167, 38, 0.45);
+  --badge-interrupted-bg: rgba(144, 164, 190, 0.15);
+  --badge-interrupted-text: #d5dde8;
+  --badge-interrupted-border: rgba(144, 164, 190, 0.45);
+  /* Team page: an action by an unknown caller must stand out. */
+  --team-unknown-bg: rgba(239, 83, 80, 0.14);
+  --team-unknown-text: #ff9e98;
+  --team-unknown-border: #f87171;
+  /* Team page: the card of a team waiting on a person. */
+  --team-wait-card-bg: rgba(255, 202, 40, 0.07);
+  --team-wait-card-border: rgba(255, 202, 40, 0.5);
 
   --temper-minimap-node: #4a4842;
   --temper-minimap-mask: rgba(26, 26, 23, 0.7);
@@ -190,6 +209,20 @@
     --badge-pending-bg: #e9e5da;
     --badge-pending-text: #44403c;
     --badge-pending-border: #c9c3b4;
+    --badge-waiting-bg: #fef3c7;
+    --badge-waiting-text: #7c3f06;
+    --badge-waiting-border: #d9a520;
+    --badge-cancelled-bg: #fde9d9;
+    --badge-cancelled-text: #8a2f0c;
+    --badge-cancelled-border: #e8a06a;
+    --badge-interrupted-bg: #e2e8f0;
+    --badge-interrupted-text: #1e293b;
+    --badge-interrupted-border: #94a3b8;
+    --team-unknown-bg: #fdecec;
+    --team-unknown-text: #991b1b;
+    --team-unknown-border: #b91c1c;
+    --team-wait-card-bg: #fffbeb;
+    --team-wait-card-border: #d9a520;
 
     --temper-minimap-node: #c9c3b4;
     --temper-minimap-mask: rgba(247, 245, 239, 0.7);
@@ -248,6 +281,20 @@
   --badge-pending-bg: #e9e5da;
   --badge-pending-text: #44403c;
   --badge-pending-border: #c9c3b4;
+  --badge-waiting-bg: #fef3c7;
+  --badge-waiting-text: #7c3f06;
+  --badge-waiting-border: #d9a520;
+  --badge-cancelled-bg: #fde9d9;
+  --badge-cancelled-text: #8a2f0c;
+  --badge-cancelled-border: #e8a06a;
+  --badge-interrupted-bg: #e2e8f0;
+  --badge-interrupted-text: #1e293b;
+  --badge-interrupted-border: #94a3b8;
+  --team-unknown-bg: #fdecec;
+  --team-unknown-text: #991b1b;
+  --team-unknown-border: #b91c1c;
+  --team-wait-card-bg: #fffbeb;
+  --team-wait-card-border: #d9a520;
 
   --temper-minimap-node: #c9c3b4;
   --temper-minimap-mask: rgba(247, 245, 239, 0.7);

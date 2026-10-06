@@ -1,0 +1,199 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "172b1536-4671-4e2c-b611-a9c260e76674",
+    "trial_id": "904d87682451",
+    "workflow": "team-trial-904d87682451",
+    "run_status": "waiting",
+    "state": "quiet",
+    "cost_usd": 0.0,
+    "trial": {
+      "goal": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is shared until you choose to share it.",
+      "leader": "lead",
+      "members": [
+        {
+          "name": "lead",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 3,
+      "communication": "all",
+      "project": {
+        "source": "/srv/example/projects/notes-app",
+        "start_commit": null
+      },
+      "started_at": "2026-10-06T08:30:52.946480+00:00",
+      "started_by": "unknown caller",
+      "request_id": "q-1"
+    },
+    "round": {
+      "current": 0,
+      "keep_goings": 0,
+      "pause_after_rounds": 3
+    },
+    "members": [
+      {
+        "name": "lead",
+        "role": "planner",
+        "leader": true,
+        "activity": "idle",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 1,
+          "state": "completed",
+          "started_at": "2026-10-06T08:30:53.157325+00:00",
+          "ended_at": "2026-10-06T08:30:53.286308+00:00",
+          "error": null
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      }
+    ],
+    "open_waits": [
+      {
+        "wait_id": "0d1795331e74420686ac1972d14ea82d",
+        "event_id": "ddd11474-d98d-4b85-8879-e76f34793318",
+        "node_name": "trial.team~ask-0d1795331e74420686ac1972d14ea82d",
+        "asked": true,
+        "kind": "stalled",
+        "header": "team-stalled",
+        "question": "The team is stalled: nothing is running, nothing is waiting to be delivered and lead has not said done.",
+        "reply_hint": "Reply 'nudge' (optionally with a message for lead) or 'stop'.",
+        "answers": [
+          {
+            "answer": "nudge",
+            "needs_text": "optional",
+            "means": "lead gets a nudge to finish or say done, with your words if you give any."
+          },
+          {
+            "answer": "stop",
+            "needs_text": "optional",
+            "means": "The team stops here and the run ends cancelled. Any words you give are kept with it."
+          }
+        ],
+        "round": null,
+        "member": null,
+        "turn_no": null,
+        "why": null,
+        "asked_again": null,
+        "opened_at": "2026-10-06T08:30:53.335197+00:00"
+      }
+    ],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T08:30:53.088988+00:00",
+          "data": {
+            "message_id": "a8bc8752f4cc4da4a9f9b46e609297c2",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: completed",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T08:30:53.157325+00:00",
+          "data": {
+            "turn_id": "350114e908af4997bbecf3969f338da7",
+            "turn_no": 1,
+            "state": "completed",
+            "ended_at": "2026-10-06T08:30:53.286308+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "owner wait: stalled",
+          "from_agent": "temper",
+          "to_agent": "owner",
+          "timestamp": "2026-10-06T08:30:53.335197+00:00",
+          "data": {
+            "wait_id": "0d1795331e74420686ac1972d14ea82d",
+            "state": "open",
+            "header": "team-stalled"
+          },
+          "entry": "owner_wait",
+          "wait_kind": "stalled"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-06T08:30:53.009672",
+        "kind": "start",
+        "by": "unknown caller",
+        "source": "team_page",
+        "request_id": "q-1",
+        "detail": {
+          "workflow": "team-trial-904d87682451",
+          "trial_id": "904d87682451"
+        }
+      }
+    ],
+    "outcome": null
+  }
+}

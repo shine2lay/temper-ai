@@ -1,0 +1,7 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/messages",
+  "status": 400,
+  "body": {
+    "problem": "'zed' is not a member of this team (members: lead, maker, checker)"
+  }
+}

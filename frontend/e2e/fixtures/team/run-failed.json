@@ -1,0 +1,166 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "6ebd658d-5979-4d37-94c1-0f8b93cc4c78",
+    "trial_id": "4e03ef289887",
+    "workflow": "team-trial-4e03ef289887",
+    "run_status": "failed",
+    "state": "failed",
+    "cost_usd": 0.0,
+    "trial": {
+      "goal": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is shared until you choose to share it.",
+      "leader": "lead",
+      "members": [
+        {
+          "name": "lead",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 3,
+      "communication": "all",
+      "project": {
+        "source": "/srv/example/projects/notes-app",
+        "start_commit": null
+      },
+      "started_at": "2026-10-06T08:30:43.954416+00:00",
+      "started_by": "unknown caller",
+      "request_id": "f-1"
+    },
+    "round": {
+      "current": 0,
+      "keep_goings": 0,
+      "pause_after_rounds": 3
+    },
+    "members": [
+      {
+        "name": "lead",
+        "role": "planner",
+        "leader": true,
+        "activity": "failed",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 1,
+          "state": "failed",
+          "started_at": "2026-10-06T08:30:44.263865+00:00",
+          "ended_at": "2026-10-06T08:30:44.423390+00:00",
+          "error": "lead (planner) turn 1 failed: the last model call failed: 400 invalid_request_error: the request was refused"
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      }
+    ],
+    "open_waits": [],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T08:30:44.176622+00:00",
+          "data": {
+            "message_id": "3a2d6fc60aa649608d79121aa411afaa",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: failed",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T08:30:44.263865+00:00",
+          "data": {
+            "turn_id": "c88752a9988d4f2eb1bc81eb51462898",
+            "turn_no": 1,
+            "state": "failed",
+            "ended_at": "2026-10-06T08:30:44.423390+00:00",
+            "error": "lead (planner) turn 1 failed: the last model call failed: 400 invalid_request_error: the request was refused"
+          },
+          "entry": "member_turn"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-06T08:30:44.025348",
+        "kind": "start",
+        "by": "unknown caller",
+        "source": "team_page",
+        "request_id": "f-1",
+        "detail": {
+          "workflow": "team-trial-4e03ef289887",
+          "trial_id": "4e03ef289887"
+        }
+      }
+    ],
+    "outcome": {
+      "decision": "failed",
+      "reason": "lead (planner) turn 1 failed: the last model call failed: 400 invalid_request_error: the request was refused",
+      "owner_words": null,
+      "problems": [],
+      "by": null,
+      "at": "2026-10-06T08:30:44.463491+00:00",
+      "done": null
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/messages",
+  "status": 201,
+  "body": {
+    "message_id": "409b2117f01e4e7189583a4a3da7fc38",
+    "to": "maker",
+    "state": "pending",
+    "delivers": "next_turn",
+    "repeated": false,
+    "by": "unknown caller",
+    "at": "2026-10-06T08:30:49.130329+00:00"
+  }
+}

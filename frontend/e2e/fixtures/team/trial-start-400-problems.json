@@ -1,0 +1,13 @@
+{
+  "route": "POST /api/team/trials",
+  "status": 400,
+  "body": {
+    "problems": [
+      {
+        "field": "leader",
+        "text": "mode: leader 'nobody' is not a member (members: lead, maker, checker)"
+      }
+    ],
+    "notes": []
+  }
+}

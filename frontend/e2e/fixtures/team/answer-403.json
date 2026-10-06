@@ -1,0 +1,8 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 403,
+  "body": {
+    "detail": "A run's own key may only start and fork runs, not approve."
+  },
+  "derived_from": "answer-401"
+}

@@ -12,7 +12,7 @@
  */
 import { expect, test } from '@playwright/test';
 
-import { startSmokeRun } from './helpers';
+import { isTeamSwitchOff, startSmokeRun } from './helpers';
 
 test.describe('Workflow list', () => {
   test('lists runs, and the counter reflects the server total', async ({ page, request }) => {
@@ -256,7 +256,7 @@ test('no page makes a failing request', async ({ page, request }) => {
   const id = await startSmokeRun(request);
   const failures: string[] = [];
   page.on('response', (r) => {
-    if (r.status() >= 400) failures.push(`${r.status()} ${r.url()}`);
+    if (r.status() >= 400 && !isTeamSwitchOff(r.url(), r.status())) failures.push(`${r.status()} ${r.url()}`);
   });
 
   for (const path of ['/app/', `/app/workflow/${id}`, '/app/library', '/app/docs', '/app/settings', '/app/studio']) {

@@ -1,0 +1,9 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/messages",
+  "status": 409,
+  "body": {
+    "reason": "team_not_started",
+    "message": "the team has not started yet; nothing was sent"
+  },
+  "derived_from": "message-409-team-ended"
+}

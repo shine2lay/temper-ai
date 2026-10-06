@@ -1,0 +1,8 @@
+{
+  "route": "GET /api/team/trials",
+  "status": 200,
+  "body": {
+    "total": 0,
+    "trials": []
+  }
+}

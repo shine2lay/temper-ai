@@ -1,0 +1,14 @@
+{
+  "route": "POST /api/team/check",
+  "status": 200,
+  "body": {
+    "ok": false,
+    "problems": [
+      {
+        "field": "project_path",
+        "text": "project: give the folder's full path (it starts with /)"
+      }
+    ],
+    "notes": []
+  }
+}

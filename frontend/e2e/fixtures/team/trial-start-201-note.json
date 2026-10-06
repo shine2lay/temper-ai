@@ -1,0 +1,17 @@
+{
+  "route": "POST /api/team/trials",
+  "status": 201,
+  "body": {
+    "trial_id": "610212b71c8c",
+    "execution_id": "10b1f9e9-af4a-4855-babe-7c024c2ff643",
+    "status": "running",
+    "workflow": "team-trial-610212b71c8c",
+    "repeated": false,
+    "notes": [
+      {
+        "field": "project_path",
+        "text": "folder checks run when the Pi lane starts the team"
+      }
+    ]
+  }
+}

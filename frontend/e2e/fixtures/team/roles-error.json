@@ -1,0 +1,9 @@
+{
+  "route": "GET /api/team/roles",
+  "status": 200,
+  "body": {
+    "configured": false,
+    "problem": "the Pi worker box config could not be read: FileNotFoundError",
+    "roles": []
+  }
+}

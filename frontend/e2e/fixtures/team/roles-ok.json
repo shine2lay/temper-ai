@@ -1,0 +1,40 @@
+{
+  "route": "GET /api/team/roles",
+  "status": 200,
+  "body": {
+    "configured": true,
+    "problem": null,
+    "roles": [
+      {
+        "id": "builder",
+        "title": "Builder",
+        "about": "# Builder\n\nMakes the change the plan asks for, with a test next to it.\n",
+        "has_home_chat": true,
+        "problems": []
+      },
+      {
+        "id": "planner",
+        "title": "Planner",
+        "about": "# Planner\n\nTurns a goal into a short plan and keeps each version small.\n\n- Writes the first draft\n- Asks the others to review each version\n- Decides when the work is done\n",
+        "has_home_chat": true,
+        "problems": []
+      },
+      {
+        "id": "reviewer",
+        "title": "Reviewer",
+        "about": "# Reviewer\n\nReads each version as a new user would and says what is unclear.\n",
+        "has_home_chat": true,
+        "problems": []
+      },
+      {
+        "id": "scribe",
+        "title": "Scribe",
+        "about": null,
+        "has_home_chat": true,
+        "problems": [
+          "role 'scribe': its about page (about.md) is missing or unreadable"
+        ]
+      }
+    ]
+  }
+}

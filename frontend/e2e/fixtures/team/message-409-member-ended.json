@@ -1,0 +1,9 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/messages",
+  "status": 409,
+  "body": {
+    "reason": "member_ended",
+    "message": "'checker' has left the team; nothing was sent"
+  },
+  "derived_from": "message-409-team-ended"
+}

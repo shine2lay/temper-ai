@@ -1,0 +1,8 @@
+{
+  "route": "POST /api/runs/{execution_id}/cancel",
+  "status": 200,
+  "body": {
+    "status": "cancelled",
+    "execution_id": "557bd32e-b5d6-470e-a7e5-8bf89958cba5"
+  }
+}

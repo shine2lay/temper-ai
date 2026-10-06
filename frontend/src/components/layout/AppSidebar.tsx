@@ -10,8 +10,10 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Users,
 } from 'lucide-react';
 import { TemperSymbol } from '@/components/shared/TemperBrand';
+import { useTeamStatus } from '@/hooks/useTeamStatus';
 import { getActiveTheme, toggleTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
@@ -25,12 +27,17 @@ const NAV_ITEMS = [
   { label: 'Settings', icon: Settings, to: '/settings', match: (p: string) => p.startsWith('/settings') },
 ] as const;
 
+/** Shown after Workflows only while the server's Team switch is on. */
+const TEAM_ITEM = { label: 'Team', icon: Users, to: '/team', match: (p: string) => p === '/team' || p.startsWith('/team/') };
+
 export function AppSidebar() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(STORAGE_KEY) === 'true'; } catch { return false; }
   });
   const [theme, setTheme] = useState<'light' | 'dark'>(getActiveTheme);
+  const team = useTeamStatus();
+  const navItems = team.on ? [NAV_ITEMS[0], TEAM_ITEM, ...NAV_ITEMS.slice(1)] : NAV_ITEMS;
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, String(collapsed)); } catch {}
@@ -66,7 +73,7 @@ export function AppSidebar() {
 
       {/* Nav links */}
       <nav className="flex flex-col gap-1 px-2 py-3 flex-1" aria-label="Main navigation">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = item.match(location.pathname);
           return (
             <Link

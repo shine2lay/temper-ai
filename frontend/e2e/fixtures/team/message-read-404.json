@@ -1,0 +1,7 @@
+{
+  "route": "GET /api/team/runs/{execution_id}/messages/{message_id}",
+  "status": 404,
+  "body": {
+    "detail": "no such message in this run"
+  }
+}

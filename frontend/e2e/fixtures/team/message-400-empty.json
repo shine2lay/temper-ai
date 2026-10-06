@@ -1,0 +1,7 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/messages",
+  "status": 400,
+  "body": {
+    "problem": "the message is empty"
+  }
+}

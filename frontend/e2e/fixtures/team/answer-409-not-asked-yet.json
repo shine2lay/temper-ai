@@ -1,0 +1,8 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 409,
+  "body": {
+    "reason": "not_asked_yet",
+    "message": "Temper hasn't asked this question yet; answer the one before it first"
+  }
+}

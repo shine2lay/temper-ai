@@ -1,0 +1,16 @@
+{
+  "route": "GET /api/team/runs/{execution_id}/messages/{message_id}",
+  "status": 200,
+  "body": {
+    "message_id": "8d50a27e357645b582f2822d07fca4bc",
+    "from": "maker",
+    "to": "lead",
+    "kind": "view",
+    "state": "consumed",
+    "undelivered_reason": null,
+    "review_id": "1082d36f489844ad863f7cbbf460d982",
+    "body": "View on review 1082d36f489844ad863f7cbbf460d982 (round 1, version 063ff655a395): changes. Note: The heading wraps to three lines on a phone. Try four words or fewer.",
+    "created_at": "2026-10-06T08:30:29.658323+00:00",
+    "delivered_at": "2026-10-06T08:30:29.684597+00:00"
+  }
+}

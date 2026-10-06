@@ -8,7 +8,7 @@
  * log, the agent's status); screenshots are only evidence, written to TEMPER_PROOF_DIR when set.
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { waitForFinish } from './helpers';
+import { isTeamSwitchOffConsole, waitForFinish } from './helpers';
 
 const OUT = process.env.TEMPER_PROOF_DIR;
 
@@ -18,7 +18,7 @@ function watchForTrouble(page: Page): string[] {
     trouble.push(`pageerror: ${err.message}\n${err.stack ?? ''}`);
   });
   page.on('console', (msg) => {
-    if (msg.type() === 'error') trouble.push(`console: ${msg.text()}`);
+    if (msg.type() === 'error' && !isTeamSwitchOffConsole(msg)) trouble.push(`console: ${msg.text()}`);
   });
   return trouble;
 }

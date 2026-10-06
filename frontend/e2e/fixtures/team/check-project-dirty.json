@@ -1,0 +1,14 @@
+{
+  "route": "POST /api/team/check",
+  "status": 200,
+  "body": {
+    "ok": false,
+    "problems": [
+      {
+        "field": "project_path",
+        "text": "project: the workspace has uncommitted changes to tracked files; commit or stash them first: the team copies committed content only"
+      }
+    ],
+    "notes": []
+  }
+}

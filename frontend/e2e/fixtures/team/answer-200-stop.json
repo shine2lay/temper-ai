@@ -1,0 +1,16 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 200,
+  "body": {
+    "status": "approved",
+    "wait_id": "e06c770c1bab45fda56dc8767fa63392",
+    "event_id": "7c216e39-8b88-416c-b94e-07e65f647348",
+    "answer": "stop",
+    "text": "We have what we need for now.",
+    "repeated": false,
+    "carries_on": true,
+    "needs_resume": false,
+    "by": "owner",
+    "at": "2026-10-06T08:30:42+00:00"
+  }
+}

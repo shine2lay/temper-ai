@@ -1,0 +1,8 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/messages",
+  "status": 409,
+  "body": {
+    "reason": "team_ended",
+    "message": "the team has ended; nothing was sent"
+  }
+}

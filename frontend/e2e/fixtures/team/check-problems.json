@@ -1,0 +1,41 @@
+{
+  "route": "POST /api/team/check",
+  "status": 200,
+  "body": {
+    "ok": false,
+    "problems": [
+      {
+        "field": "members",
+        "text": "members: member 4 needs a role"
+      },
+      {
+        "field": "goal",
+        "text": "goal: the goal is too long (20001 characters; at most 20000)"
+      },
+      {
+        "field": "leader",
+        "text": "mode: leader 'nobody' is not a member (members: Lead, checker, temper)"
+      },
+      {
+        "field": "members",
+        "text": "member 'Lead': a name starts with a lowercase letter and has only lowercase letters, digits, '-' and '_' (40 at most)",
+        "member": "Lead"
+      },
+      {
+        "field": "members",
+        "text": "member 'checker': Bash is off until owner-only writes are enforced (#45)",
+        "member": "checker"
+      },
+      {
+        "field": "members",
+        "text": "member 'temper': the name is reserved for Temper's own use; pick another",
+        "member": "temper"
+      },
+      {
+        "field": "project_path",
+        "text": "project: /srv/example/elsewhere/notes-app is outside the allowed project folders (/srv/example/projects/notes-app)"
+      }
+    ],
+    "notes": []
+  }
+}

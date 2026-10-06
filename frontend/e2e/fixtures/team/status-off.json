@@ -1,0 +1,7 @@
+{
+  "route": "GET /api/team/status",
+  "status": 404,
+  "body": {
+    "detail": "Not Found"
+  }
+}

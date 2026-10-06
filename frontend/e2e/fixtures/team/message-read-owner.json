@@ -1,0 +1,16 @@
+{
+  "route": "GET /api/team/runs/{execution_id}/messages/{message_id}",
+  "status": 200,
+  "body": {
+    "message_id": "12f65cbc40274788a15c103e18a61cd8",
+    "from": "owner",
+    "to": "maker",
+    "kind": "owner_reply",
+    "state": "pending",
+    "undelivered_reason": null,
+    "review_id": null,
+    "body": "Please keep the note under 60 words if you can; the screen is small.",
+    "created_at": "2026-10-06T08:30:55.934981+00:00",
+    "delivered_at": null
+  }
+}

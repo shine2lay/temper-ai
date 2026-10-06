@@ -1,0 +1,7 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 400,
+  "body": {
+    "problem": "'guide' needs the words to pass to lead"
+  }
+}

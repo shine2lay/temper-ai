@@ -1,0 +1,14 @@
+{
+  "route": "POST /api/team/check",
+  "status": 200,
+  "body": {
+    "ok": false,
+    "problems": [
+      {
+        "field": "project_path",
+        "text": "project: the workspace is not a git repository: the team works on copies of its committed content"
+      }
+    ],
+    "notes": []
+  }
+}

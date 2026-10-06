@@ -1,0 +1,14 @@
+{
+  "route": "POST /api/team/check",
+  "status": 200,
+  "body": {
+    "ok": true,
+    "problems": [],
+    "notes": [
+      {
+        "field": "project_path",
+        "text": "folder checks run when the Pi lane starts the team"
+      }
+    ]
+  }
+}

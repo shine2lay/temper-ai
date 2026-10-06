@@ -1,0 +1,8 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 400,
+  "body": {
+    "problem": "'reply' needs the words to pass to maker"
+  },
+  "derived_from": "answer-400-guide-needs-words"
+}

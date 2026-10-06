@@ -1,0 +1,7 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 400,
+  "body": {
+    "problem": "the reason for stopping is too long (2001 characters; at most 2000)"
+  }
+}

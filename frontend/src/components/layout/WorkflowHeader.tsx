@@ -11,6 +11,7 @@ import { authFetch } from '@/lib/authFetch';
 import { liveAgents } from '@/lib/liveAgents';
 import { isGoing } from '@/lib/runStatus';
 import { useGates } from '@/hooks/useGates';
+import { TeamRunViewLink } from '@/components/team/TeamRunViewLink';
 
 export function WorkflowHeader() {
   const navigate = useNavigate();
@@ -369,6 +370,12 @@ export function WorkflowHeader() {
           </div>
         )}
 
+        {workflow && (
+          <TeamRunViewLink
+            executionId={workflow.id}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-accent/10 border border-temper-border transition-colors shrink-0"
+          />
+        )}
         {workflow && (
           <Link
             to={`/studio/${workflow.workflow_name}`}

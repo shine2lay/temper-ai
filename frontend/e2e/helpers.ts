@@ -1,4 +1,20 @@
-import type { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext, ConsoleMessage } from '@playwright/test';
+
+/**
+ * The Team switch's designed "off" answer. With the switch off (the
+ * default), every page load asks GET /api/team/status once and gets 404:
+ * that is how the dashboard learns to hide the Team page. Tests that fail on
+ * any 404 or console error let this one answer through, and only it.
+ */
+export function isTeamSwitchOff(url: string, status: number): boolean {
+  return status === 404 && new URL(url).pathname === '/api/team/status';
+}
+
+/** Chromium's console line for that same 404 (the message carries the resource's URL). */
+export function isTeamSwitchOffConsole(msg: ConsoleMessage): boolean {
+  const url = msg.location().url;
+  return msg.type() === 'error' && Boolean(url) && msg.text().includes('404') && isTeamSwitchOff(url, 404);
+}
 
 /** Poll a run until `done` says it is far enough along, then return its state. */
 async function waitForRun(

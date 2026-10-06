@@ -1,0 +1,14 @@
+{
+  "route": "POST /api/team/check",
+  "status": 200,
+  "body": {
+    "ok": false,
+    "problems": [
+      {
+        "field": "project_path",
+        "text": "project: /srv/example/scratch/roots/linked leads outside the allowed project folders through a link"
+      }
+    ],
+    "notes": []
+  }
+}

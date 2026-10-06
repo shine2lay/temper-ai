@@ -13,6 +13,7 @@
  * names rather than the minified ones.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { isTeamSwitchOffConsole } from './helpers';
 
 /** Everything the browser complained about while the page was open. */
 function watchForTrouble(page: Page): string[] {
@@ -21,7 +22,7 @@ function watchForTrouble(page: Page): string[] {
     trouble.push(`pageerror: ${err.message}\n${err.stack ?? ''}`);
   });
   page.on('console', (msg) => {
-    if (msg.type() !== 'error') return;
+    if (msg.type() !== 'error' || isTeamSwitchOffConsole(msg)) return;
     const text = msg.text();
     // React logs a second copy of every crash it catches; keep it, it carries
     // the component stack the pageerror does not have.

@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import indexHtml from '../../index.html?raw';
 import faviconSvg from '../../public/favicon.svg?raw';
@@ -17,10 +18,14 @@ import { AppSidebar } from '@/components/layout/AppSidebar';
 import { TokenGate } from '@/components/layout/TokenGate';
 
 function renderSidebar() {
+  // The sidebar asks whether the Team switch is on (it is off here: nothing answers).
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={['/']}>
-      <AppSidebar />
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/']}>
+        <AppSidebar />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

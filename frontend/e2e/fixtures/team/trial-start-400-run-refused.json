@@ -1,0 +1,13 @@
+{
+  "route": "POST /api/team/trials",
+  "status": 400,
+  "body": {
+    "problems": [
+      {
+        "field": null,
+        "text": "the run start said no"
+      }
+    ],
+    "notes": []
+  }
+}

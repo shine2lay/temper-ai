@@ -1,0 +1,7 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 404,
+  "body": {
+    "detail": "not a team trial, or no such run"
+  }
+}

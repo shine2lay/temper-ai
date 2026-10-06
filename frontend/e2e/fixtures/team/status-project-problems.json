@@ -1,0 +1,74 @@
+{
+  "route": "GET /api/team/status",
+  "status": 200,
+  "body": {
+    "api_version": "1",
+    "roles_configured": true,
+    "roles_problem": null,
+    "defaults": {
+      "provider": "anthropic",
+      "model": "claude-opus-5-5",
+      "thinking": "max",
+      "source": "temper"
+    },
+    "tools": {
+      "available": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write",
+        "Bash"
+      ],
+      "default": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Edit",
+        "Write"
+      ],
+      "source": "temper",
+      "bash_allowed": false,
+      "bash_why": "Bash is off until owner-only writes are enforced (#45)"
+    },
+    "communication": {
+      "available": [
+        "all"
+      ],
+      "later": [
+        "edges"
+      ]
+    },
+    "limits": {
+      "goal_max_chars": 20000,
+      "message_max_chars": 20000,
+      "guide_max_chars": 20000,
+      "reply_max_chars": 20000,
+      "nudge_max_chars": 4000,
+      "stop_reason_max_chars": 2000,
+      "name_pattern": "^[a-z][a-z0-9_-]{0,39}$",
+      "reserved_names": [
+        "*",
+        "admin",
+        "all",
+        "any",
+        "broadcast",
+        "everyone",
+        "owner",
+        "policy",
+        "router",
+        "runtime",
+        "scheduler",
+        "system",
+        "temper"
+      ]
+    },
+    "project_roots": [
+      "/srv/example/projects/notes-app"
+    ],
+    "project_problems": [
+      "/srv/example/scratch/bad-settings/team/local/team.yaml: unknown key 'colour' (known: project_roots, owner_callers)"
+    ],
+    "guard_mode": "off"
+  }
+}

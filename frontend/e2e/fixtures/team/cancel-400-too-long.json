@@ -1,0 +1,7 @@
+{
+  "route": "POST /api/runs/{execution_id}/cancel",
+  "status": 400,
+  "body": {
+    "problem": "the reason is too long (2001 characters; at most 2000)"
+  }
+}

@@ -1,3 +1,4 @@
+import { lazy } from 'react';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { ExecutionView } from '@/pages/ExecutionView';
 import { WorkflowList } from '@/pages/WorkflowList';
@@ -9,18 +10,14 @@ import { CompareView } from '@/pages/CompareView';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { NotFound } from '@/components/shared/NotFound';
+import { TeamGate } from '@/components/team/TeamGate';
 import { Toaster } from '@/components/ui/sonner';
 
-function NotFound() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full bg-temper-bg text-temper-text gap-4">
-      <h1 className="text-2xl font-semibold">Page not found</h1>
-      <a href="/app/" className="text-temper-accent hover:underline text-sm">
-        Back to workflows
-      </a>
-    </div>
-  );
-}
+// The Team pages load on demand, and only while the Team switch is on.
+const TeamPage = lazy(() => import('@/pages/team/TeamPage'));
+const TeamNewTrial = lazy(() => import('@/pages/team/TeamNewTrial'));
+const TeamRunView = lazy(() => import('@/pages/team/TeamRunView'));
 
 const router = createBrowserRouter(
   [
@@ -36,6 +33,10 @@ const router = createBrowserRouter(
         { path: '/docs', element: <DocsPage /> },
         { path: '/compare', element: <CompareView /> },
         { path: '/settings', element: <SettingsPage /> },
+        { path: '/team', element: <TeamGate><TeamPage tab="trials" /></TeamGate> },
+        { path: '/team/roles', element: <TeamGate><TeamPage tab="roles" /></TeamGate> },
+        { path: '/team/new', element: <TeamGate><TeamNewTrial /></TeamGate> },
+        { path: '/team/runs/:executionId', element: <TeamGate><TeamRunView /></TeamGate> },
         { path: '*', element: <NotFound /> },
       ],
     },

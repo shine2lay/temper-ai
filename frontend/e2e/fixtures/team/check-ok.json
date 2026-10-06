@@ -1,0 +1,9 @@
+{
+  "route": "POST /api/team/check",
+  "status": 200,
+  "body": {
+    "ok": true,
+    "problems": [],
+    "notes": []
+  }
+}

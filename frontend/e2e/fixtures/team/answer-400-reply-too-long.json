@@ -1,0 +1,8 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 400,
+  "body": {
+    "problem": "the reply is too long (20001 characters; at most 20000)"
+  },
+  "derived_from": "answer-400-guide-needs-words"
+}

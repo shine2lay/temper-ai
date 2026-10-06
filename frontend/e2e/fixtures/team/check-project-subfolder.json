@@ -1,0 +1,14 @@
+{
+  "route": "POST /api/team/check",
+  "status": 200,
+  "body": {
+    "ok": false,
+    "problems": [
+      {
+        "field": "project_path",
+        "text": "project: /srv/example/scratch/roots/repo/docs is outside the allowed project folders (/srv/example/projects/notes-app, /srv/example/scratch/roots/*, /srv/example/unseen/*)"
+      }
+    ],
+    "notes": []
+  }
+}

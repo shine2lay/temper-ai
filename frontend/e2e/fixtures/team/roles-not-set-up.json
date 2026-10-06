@@ -1,0 +1,9 @@
+{
+  "route": "GET /api/team/roles",
+  "status": 200,
+  "body": {
+    "configured": false,
+    "problem": "role list not configured (set TEMPER_PI_BOX_CONFIG to the worker box config)",
+    "roles": []
+  }
+}

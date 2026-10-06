@@ -27,7 +27,7 @@ role tests and lands a change.
 | Role | Department | Looks after |
 |---|---|---|
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
-| `marketing` | Product marketing | `blog_writer` and its agents, and `positioning_grade`; next, positioning and launch notes for what the loop ships. |
+| `marketing` | Product marketing | `blog_writer` and its agents, `positioning` (a product's positioning and messaging hierarchy from an evidence folder) with its evidence script, and `positioning_grade`; next, launch notes for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, used by `design_homepage_v2` and `design_logo_v1`); a helper for the host's free local image models (`design/bin/design_image.py`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`, and the land-check draft of big temper branches (`arch_land_check`) with its grader. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
@@ -144,6 +144,23 @@ The grade is in `state/positioning_grade/quality.md` and `quality.json`:
 pass, revise or unknown per criterion P1-P8 and overall. A grade costs about
 $0.40 and a minute. Grade each document in a fresh workspace. The fictional
 benchmark and its scorer are in `tests/test_positioning_grade/benchmark/`.
+
+To write a positioning document, gather its evidence on the host with
+`python3 configs/marketing/bin/gather_evidence.py SOURCES.json --out DIR`
+(SOURCES.json lists files, sections, pages and git logs to copy; each copy
+starts with its origin and date, and the script refuses names that look like
+secrets or databases). Keep each source's note to plain facts about the source,
+never framing: the agents quote header lines like source text. Read the folder
+by hand before using it. Copy it into a fresh run workspace (UID 999 ACL as
+above), then run
+`temper run positioning --workspace DIR -i product=NAME -i evidence_dir=evidence --detach`.
+The workflow writes `positioning.md` and `positioning.json` in the format
+above, from the evidence folder only (no web): competitive alternatives,
+attributes and value, segment and category, then the document; a no-model
+check runs `positioning_grade`'s checker and a reviser fixes what it finds, at
+most twice. Notes per stage are in `state/positioning/`. Grade the result with
+`positioning_grade` in another fresh workspace. A run costs about $2-4 and
+5-7 minutes.
 
 To grade the build's checks on planted bugs, make a corpus first: a git bundle
 with one branch per case, each on a past merged commit (a planted case changes
@@ -354,7 +371,7 @@ candidate with the supported Studio API; names absent from the deployed config t
 worker import without overwriting live definitions. Stage assets in a dedicated shared
 workspace. Past direct-CLI execution history stays local-only; do not inject old events.
 
-### marketing (11)
+### marketing (21)
 
 | Config | Kind |
 |---|---|
@@ -369,6 +386,16 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `agents/positioning_grade_assets/check_positioning.py` | script |
 | `agents/positioning_grade_assets/rubric.md` | contract |
 | `agents/positioning_grade_assets/FORMAT.md` | contract |
+| `workflows/positioning.yaml` | workflow |
+| `agents/positioning_setup.yaml` | agent (script) |
+| `agents/positioning_alternatives.yaml` | agent |
+| `agents/positioning_value.yaml` | agent |
+| `agents/positioning_segment.yaml` | agent |
+| `agents/positioning_hierarchy.yaml` | agent |
+| `agents/positioning_check.yaml` | agent (script) |
+| `agents/positioning_reviser.yaml` | agent |
+| `agents/positioning_assets/positioning_tools.py` | script |
+| `marketing/bin/gather_evidence.py` | script |
 
 ### design (40)
 

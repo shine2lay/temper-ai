@@ -1,0 +1,141 @@
+workflow:
+  name: positioning
+  # POSITIONING (Product marketing; built 2026-10-05, marketing queue #2). Drafts a product's
+  # positioning from a staged evidence folder: April Dunford's five components (Obviously
+  # Awesome) and the messaging hierarchy, in positioning_grade's document format
+  # (configs/agents/positioning_grade_assets/FORMAT.md, positioning/1), so the landed
+  # positioning_grade grades it unchanged and launch notes and articles can read it.
+  #
+  #   setup (script) -> alternatives -> value -> segment -> hierarchy
+  #     -> check (script) -> revise -> check -> revise -> check (script)
+  #
+  # Each model step reads the evidence folder only (no web) and cites a verbatim quote for every
+  # claim, or tags it (assumption). alternatives: best-fit users and what they would do without
+  # the product. value: unique attributes true today and the value each enables, with the
+  # strongest proof. segment: one best-fit segment and the market category. hierarchy: the
+  # document (value proposition, 3-4 benefit pillars, 3-5 proof points each, what it doesn't
+  # do, open questions) and positioning.json derived from section 6. check runs
+  # positioning_grade's own checker; revise fixes only what it found, at most two rounds.
+  #
+  # Input: a product name and an evidence folder inside the run workspace (gather one with
+  # configs/marketing/bin/gather_evidence.py). Output: positioning.md and positioning.json in
+  # the run workspace, with stage notes and checks in state/positioning/. Grade it with
+  # positioning_grade in a fresh workspace. How to run: docs/departments.md.
+  version: 1
+  description: |
+    Draft a product's positioning from an evidence folder in the run workspace: the competitive
+    alternatives, unique attributes, value with proof, one best-fit segment, the market category,
+    and the messaging hierarchy (value proposition, pillars, proof points), every claim cited
+    verbatim to the evidence or tagged (assumption). Writes positioning.md and positioning.json
+    in positioning_grade's format, checks them with positioning_grade's checker and fixes what
+    it finds (at most two rounds). Reads only the evidence folder: no web.
+  inputs:
+    product:
+      type: string
+      required: true
+      description: "The product's name, as the document's title will say it."
+    evidence_dir:
+      type: string
+      required: false
+      default: "evidence"
+      description: "The evidence folder, a path in the run workspace: plain text or markdown files, each saying where it came from."
+    document:
+      type: string
+      required: false
+      default: "positioning.md"
+      description: "Where to write the document, a path in the run workspace; positioning.json goes next to it."
+    assets_dir:
+      type: string
+      required: false
+      default: "/app/configs/agents/positioning_assets"
+      description: "Folder with positioning_tools.py: the deployed copy by default; a candidate run stages its own copy into the workspace."
+    grade_assets_dir:
+      type: string
+      required: false
+      default: "/app/configs/agents/positioning_grade_assets"
+      description: "positioning_grade's folder with FORMAT.md, rubric.md and check_positioning.py: the same files the grade uses."
+  outputs:
+    positioning_path: check_final.structured.positioning_path
+    json_path: check_final.structured.json_path
+    check_status: check_final.structured.status
+    findings: check_final.structured.findings
+    citation_failures: check_final.structured.citation_failures
+    check_path: check_final.structured.check_path
+    setup_status: setup.structured.status
+    problems: setup.structured.problems
+
+  nodes:
+    # Checks the inputs and stages the format, the rubric and the checker, with no model.
+    - name: setup
+      type: agent
+      agent: positioning_setup
+      input_map:
+        product: input.product
+        evidence_dir: input.evidence_dir
+        document: input.document
+        assets_dir: input.assets_dir
+        grade_assets_dir: input.grade_assets_dir
+
+    - name: alternatives
+      type: agent
+      agent: positioning_alternatives
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+
+    - name: value
+      type: agent
+      agent: positioning_value
+      depends_on: [alternatives]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+
+    - name: segment
+      type: agent
+      agent: positioning_segment
+      depends_on: [value]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+
+    - name: hierarchy
+      type: agent
+      agent: positioning_hierarchy
+      depends_on: [segment]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+
+    # positioning_grade's checker, loaded from the deployed assets, with no model.
+    - name: check_1
+      type: agent
+      agent: positioning_check
+      depends_on: [hierarchy]
+      input_map:
+        assets_dir: input.assets_dir
+        grade_assets_dir: input.grade_assets_dir
+
+    - name: revise_1
+      type: agent
+      agent: positioning_reviser
+      depends_on: [check_1]
+      condition: {source: check_1.structured.status, operator: equals, value: findings}
+
+    - name: check_2
+      type: agent
+      agent: positioning_check
+      depends_on: [revise_1]
+      condition: {source: check_1.structured.status, operator: equals, value: findings}
+      input_map:
+        assets_dir: input.assets_dir
+        grade_assets_dir: input.grade_assets_dir
+
+    - name: revise_2
+      type: agent
+      agent: positioning_reviser
+      depends_on: [check_2]
+      condition: {source: check_2.structured.status, operator: equals, value: findings}
+
+    # The result on every path: what is left after the revisions, with no model.
+    - name: check_final
+      type: agent
+      agent: positioning_check
+      depends_on: [revise_2]
+      run_after_failure: true
+      input_map:
+        assets_dir: input.assets_dir
+        grade_assets_dir: input.grade_assets_dir

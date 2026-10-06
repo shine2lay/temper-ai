@@ -1,0 +1,125 @@
+# @description POSITIONING step 1 (Product marketing): check the inputs and stage the run with no
+# model. The evidence folder must be inside the run workspace and hold readable text files; the
+# workspace must not hold a positioning yet. Writes state/positioning/setup.json (product, the
+# document path, the evidence folder and the document's Evidence line) and evidence_index.md (every
+# evidence file with its size and line count), and copies FORMAT.md, rubric.md and the checker
+# from positioning_grade's assets (the same files the grade uses) with positioning_tools.py into
+# state/positioning/tools/. A problem stops here at $0 (status not_ready). Part of
+# workflows/positioning.yaml.
+agent:
+  name: positioning_setup
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import json
+    import os
+    import shutil
+    import sys
+    from pathlib import Path
+
+    GRADE_FILES = ('FORMAT.md', 'rubric.md', 'check_positioning.py')
+    TEXT = {'.md', '.txt', '.markdown', '.csv', '.json', '.yaml', '.yml', ''}
+
+
+    def value(name):
+        return (os.environ.get(name) or '').strip()
+
+
+    def stop(*problems):
+        print(json.dumps({"status": "not_ready", "product": "", "document": "", "evidence": "",
+                          "files": 0, "problems": list(problems)}))
+        sys.exit(0)
+
+
+    here = Path.cwd().resolve()
+
+
+    def inside(text, what):
+        """A path the run gave, relative to the run workspace; stop when it leaves it."""
+        path = Path(text)
+        if path.is_absolute():
+            try:
+                path = path.resolve().relative_to(here)
+            except ValueError:
+                stop(f'{what} {text} is outside the run workspace')
+        if '..' in path.parts:
+            stop(f'{what} {text} leaves the run workspace')
+        return path
+
+
+    # `or ''`: the server passes an input the run did not give as None.
+    product = value('{{ (product or '') | env }}')
+    evidence_text = value('{{ (evidence_dir or '') | env }}') or 'evidence'
+    document_text = value('{{ (document or '') | env }}') or 'positioning.md'
+    assets = Path(value('{{ (assets_dir or '') | env }}') or '/app/configs/agents/positioning_assets')
+    grade_assets = Path(value('{{ (grade_assets_dir or '') | env }}') or '/app/configs/agents/positioning_grade_assets')
+    tools = True  # the writers' copy of the checker (a one-shot baseline trial staged none)
+
+    if not product:
+        stop('no product name: give the product input')
+    if '\n' in product or len(product) > 80:
+        stop('the product name must be one short line')
+    evidence = inside(evidence_text, 'evidence_dir')
+    document = inside(document_text, 'document')
+    if document.suffix != '.md':
+        stop(f'document {document_text} must be a .md file')
+    if not evidence.is_dir():
+        stop(f'no evidence folder at {evidence_text}')
+    out = Path('state/positioning')
+    if out.exists() and any(out.iterdir()):
+        stop('state/positioning already holds a run: write a positioning in a fresh workspace')
+    for path in (document, document.with_name('positioning.json')):
+        if path.exists():
+            stop(f'{path} already exists: write a positioning in a fresh workspace')
+    missing = [f'{grade_assets}/{n}' for n in GRADE_FILES if not (grade_assets / n).is_file()]
+    if not (assets / 'positioning_tools.py').is_file():
+        missing.append(f'{assets}/positioning_tools.py')
+    if missing:
+        stop(*[f'missing {m}' for m in missing])
+
+    files, unreadable = [], []
+    for path in sorted(p for p in evidence.rglob('*') if p.is_file()):
+        rel = path.relative_to(evidence).as_posix()
+        if path.suffix.lower() not in TEXT:
+            unreadable.append(rel)
+            continue
+        try:
+            text = path.read_text()
+        except (UnicodeDecodeError, OSError):
+            unreadable.append(rel)
+            continue
+        title = next((line.strip('# ').strip() for line in text.splitlines() if line.startswith('#')), '')
+        files.append({"file": rel, "bytes": len(text.encode()), "lines": text.count('\n') + 1, "title": title[:100]})
+    if not files:
+        stop(f'the evidence folder {evidence_text} holds no readable text files')
+
+    out.mkdir(parents=True, exist_ok=True)
+    if tools:
+        (out / 'tools').mkdir()
+        for name in GRADE_FILES:
+            shutil.copyfile(grade_assets / name, out / 'tools' / name)
+        shutil.copyfile(assets / 'positioning_tools.py', out / 'tools' / 'positioning_tools.py')
+    for name in ('FORMAT.md', 'rubric.md'):
+        shutil.copyfile(grade_assets / name, out / name)
+    evidence_line = os.path.relpath(evidence, document.parent or Path('.'))
+    setup = {"product": product, "document": document.as_posix(),
+             "json": document.with_name('positioning.json').as_posix(), "evidence": evidence.as_posix(),
+             "evidence_line": f"Evidence: {evidence_line}", "files": files, "unreadable": unreadable,
+             "tools": tools}
+    (out / 'setup.json').write_text(json.dumps(setup, indent=1, ensure_ascii=False) + '\n')
+    rows = [f"# Evidence for {product}", "",
+            f"Folder: {evidence.as_posix()} (cite files by their path inside it). {len(files)} files, "
+            f"{sum(f['bytes'] for f in files)} bytes.", "",
+            "| file | lines | bytes | first heading |", "|---|---|---|---|"]
+    rows += [f"| {f['file']} | {f['lines']} | {f['bytes']} | {f['title'].replace('|', '/')} |" for f in files]
+    if unreadable:
+        rows += ["", "Not text, left out: " + ", ".join(unreadable)]
+    (out / 'evidence_index.md').write_text('\n'.join(rows) + '\n')
+    print(json.dumps({"status": "ready", "product": product, "document": setup["document"],
+                      "evidence": setup["evidence"], "files": len(files), "problems": []}))
+    PY

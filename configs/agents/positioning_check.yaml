@@ -1,0 +1,57 @@
+# @description POSITIONING check step (Product marketing): derive positioning.json from section 6
+# of the document and check both with positioning_grade's own checker, with no model, so the run
+# sees every format and citation defect the grade would count. Loads the checker from the
+# deployed assets, never from the copy the writers can reach. Numbers its rounds itself (1, 2, ...)
+# and writes state/positioning/check_<round>.json and check_<round>.md (each finding with its
+# line); status clean, findings, or not_checked when
+# setup did not finish or the document is missing. Never fails the run: the workflow's outputs
+# say what is left. Part of workflows/positioning.yaml.
+agent:
+  name: positioning_check
+  version: 1
+  type: script
+  timeout_seconds: 180
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import json
+    import os
+    import re
+    import subprocess
+    import sys
+    from pathlib import Path
+
+
+    def value(name):
+        return (os.environ.get(name) or '').strip()
+
+
+    def stop(round_name, problem):
+        print(json.dumps({"status": "not_checked", "round": round_name, "findings": 0,
+                          "citation_failures": 0, "kinds": {}, "check_path": "", "positioning_path": "",
+                          "json_path": "", "problems": [problem]}))
+        sys.exit(0)
+
+
+    done_rounds = [int(m.group(1)) for p in Path('state/positioning').glob('check_*.json')
+                   if (m := re.fullmatch(r'check_(\d+)\.json', p.name))]
+    round_name = str(max(done_rounds, default=0) + 1)
+    assets = Path(value('{{ (assets_dir or '') | env }}') or '/app/configs/agents/positioning_assets')
+    grade_assets = Path(value('{{ (grade_assets_dir or '') | env }}') or '/app/configs/agents/positioning_grade_assets')
+    setup_path = Path('state/positioning/setup.json')
+    if not setup_path.is_file():
+        stop(round_name, 'setup did not finish: no state/positioning/setup.json')
+    setup = json.loads(setup_path.read_text())
+    if not Path(setup['document']).is_file():
+        stop(round_name, f"no document at {setup['document']}")
+    done = subprocess.run(
+        [sys.executable, str(assets / 'positioning_tools.py'), '--checker', str(grade_assets / 'check_positioning.py'),
+         'check', '--doc', setup['document'], '--evidence', setup['evidence'], '--round', round_name],
+        capture_output=True, text=True, timeout=150)
+    lines = [line for line in done.stdout.splitlines() if line.startswith('{')]
+    if done.returncode != 0 or not lines:
+        stop(round_name, f'the checker failed (exit {done.returncode}): {(done.stdout + done.stderr)[-600:]}')
+    print(lines[-1])
+    PY

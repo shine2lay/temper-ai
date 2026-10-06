@@ -90,6 +90,29 @@ def _strs(v: Any, lo: int, hi: int, each: int = 300) -> bool:
     return isinstance(v, list) and lo <= len(v) <= hi and all(_str(x, 1, each) for x in v)
 
 
+# Every problem about a capped text names its length and the range. A bare "role and why" for a why that
+# was there but 2 characters over its cap sent the director round the revise loop until the run failed
+# (#38 trial 6a10a704); a bare "says why in note" did the same to the researcher (cf17bd67).
+
+def _len(v: Any, lo: int, hi: int, name: str) -> str:
+    """' (why is 402 characters; keep it 10-400)' when a text is there but outside its range, else ''."""
+    if isinstance(v, str) and v.strip() and not lo <= len(v.strip()) <= hi:
+        return f" ({name} is {len(v.strip())} characters; keep it {lo}-{hi})"
+    return ""
+
+
+def _lens(v: Any, lo: int, hi: int, each: int, name: str) -> str:
+    """The same for a list of short lines: too many or too few lines, or the first line that is too long."""
+    if not isinstance(v, list):
+        return ""
+    if not lo <= len(v) <= hi:
+        return f" ({name} has {len(v)} lines; keep {lo}-{hi})"
+    for i, x in enumerate(v):
+        if isinstance(x, str) and len(x.strip()) > each:
+            return f" ({name} line {i + 1} is {len(x.strip())} characters; keep each line at most {each})"
+    return ""
+
+
 def _safe_rel(path: Any) -> bool:
     return isinstance(path, str) and bool(path) and not path.startswith("/") and ".." not in Path(path).parts
 
@@ -132,15 +155,17 @@ def check_users(users: Any, workspace: Path | str, *, web: dict[str, str | None]
         groups = []
     for g in groups:
         if not isinstance(g, dict) or not _str(g.get("name"), 2, 60):
-            problems.append("a group has a name (2-60 characters)")
+            problems.append("a group has a name (2-60 characters)"
+                            + (_len(g.get("name"), 2, 60, "name") if isinstance(g, dict) else ""))
             continue
         group_names.add(g["name"])
         if g.get("role") not in ROLES:
             problems.append(f"group {g['name']}: role is {', '.join(ROLES)}")
         if not _str(g.get("summary"), 10, 400):
-            problems.append(f"group {g['name']}: summary is 10-400 characters")
+            problems.append(f"group {g['name']}: summary is 10-400 characters" + _len(g.get("summary"), 10, 400, "summary"))
         if not isinstance(g.get("aliases", []), list) or not all(_str(a, 2, 60) for a in g.get("aliases", [])):
-            problems.append(f"group {g['name']}: aliases are short names")
+            problems.append(f"group {g['name']}: aliases are short names (2-60 characters each)"
+                            + _lens(g.get("aliases"), 0, 99, 60, "aliases"))
         refs = g.get("claims")
         if not isinstance(refs, list) or not refs or any(r not in ids for r in refs):
             problems.append(f"group {g['name']}: claims lists ids of its claims")
@@ -155,14 +180,15 @@ def check_users(users: Any, workspace: Path | str, *, web: dict[str, str | None]
         else:
             for key in ("name", "what", "for_whom", "value", "meaning"):
                 if not _str(product.get(key), 2, 500):
-                    problems.append(f"product.{key} is 2-500 characters")
+                    problems.append(f"product.{key} is 2-500 characters" + _len(product.get(key), 2, 500, key))
             refs = product.get("claims")
             if not isinstance(refs, list) or not refs or any(r not in ids for r in refs):
                 problems.append("product.claims lists the ids of the claims it rests on")
             elif all(ids[r].get("status") != "sourced" for r in refs):
                 problems.append("product rests on at least one sourced claim")
     if not _strs(users.get("assumptions", []), 0, 12):
-        problems.append("assumptions lists at most 12 things to confirm")
+        problems.append("assumptions lists at most 12 things to confirm (each at most 300 characters)"
+                        + _lens(users.get("assumptions"), 0, 12, 300, "assumptions"))
     sourced = [c for c in ids.values() if c.get("status") == "sourced"]
     if len(sourced) < 3:
         problems.append("at least 3 claims are sourced")
@@ -179,7 +205,7 @@ def _check_claim(c: dict, ids: dict, groups: set[str], ws: Path, web: dict | Non
     if "group" in c and c["group"] not in groups:
         problems.append("group names one of the groups")
     if not _str(c.get("text"), 5, 400):
-        problems.append("text is 5-400 characters")
+        problems.append("text is 5-400 characters" + _len(c.get("text"), 5, 400, "text"))
     status = c.get("status")
     if status not in CLAIM_STATUS:
         return problems + [f"status is {', '.join(CLAIM_STATUS)}"]
@@ -208,7 +234,8 @@ def _check_claim(c: dict, ids: dict, groups: set[str], ws: Path, web: dict | Non
 
 def _check_source(src: Any, ws: Path, web: dict | None) -> list[str]:
     if not isinstance(src, dict) or not _str(src.get("quote"), MIN_QUOTE, 400) or (("file" in src) == ("url" in src)):
-        return ["source is {file, quote} or {url, quote}: the exact words (at least 12 characters)"]
+        return ["source is {file, quote} or {url, quote}: the exact words (12-400 characters)"
+                + (_len(src.get("quote"), MIN_QUOTE, 400, "quote") if isinstance(src, dict) else "")]
     if set(src) - {"file", "url", "quote", "date"}:
         return [f"unknown source keys {sorted(set(src) - {'file', 'url', 'quote', 'date'})}"]
     if "file" in src:
@@ -303,7 +330,8 @@ def check_category_pick(pick: Any) -> list[str]:
             problems.append(f"{s['id']}: url is a distinct https address")
         seen_url.add(url)
         if not _str(s.get("name"), 2, 80) or s.get("kind") not in SITE_KINDS or not _str(s.get("why"), 5, 300):
-            problems.append(f"{s['id']}: name, kind ({', '.join(SITE_KINDS)}) and why")
+            problems.append(f"{s['id']}: name (2-80 characters), kind ({', '.join(SITE_KINDS)}) and why (5-300)"
+                            + _len(s.get("name"), 2, 80, "name") + _len(s.get("why"), 5, 300, "why"))
     if sum(1 for s in sites if isinstance(s, dict) and s.get("kind") in ("leader", "competitor")) < 4:
         problems.append("at least 4 sites are category leaders or close competitors")
     return problems
@@ -320,7 +348,8 @@ def check_category_read(read: Any, captured: list[str], *, marks_needed: bool) -
         expect = []
     for e in expect:
         if not isinstance(e, dict) or not _str(e.get("text"), 5, 300):
-            problems.append("an expect item has text")
+            problems.append("an expect item has text (5-300 characters)"
+                            + (_len(e.get("text"), 5, 300, "text") if isinstance(e, dict) else ""))
             continue
         sites = e.get("sites")
         if not isinstance(sites, list) or len(sites) < 2 or any(s not in captured for s in sites):
@@ -328,7 +357,9 @@ def check_category_read(read: Any, captured: list[str], *, marks_needed: bool) -
     stand = read.get("stand_out")
     if not isinstance(stand, list) or not 2 <= len(stand) <= 8 or not all(
             isinstance(s, dict) and _str(s.get("text"), 5, 300) and _str(s.get("why"), 5, 300) for s in stand):
-        problems.append("stand_out lists 2-8 {text, why}: where the product can differ")
+        hint = "".join(_len(s.get(k), 5, 300, f"item {i + 1} {k}") for i, s in enumerate(stand)
+                       for k in ("text", "why") if isinstance(s, dict)) if isinstance(stand, list) else ""
+        problems.append("stand_out lists 2-8 {text, why} (each 5-300 characters): where the product can differ" + hint)
     marks = read.get("marks", [])
     if not isinstance(marks, list):
         problems.append("marks is a list")
@@ -337,7 +368,8 @@ def check_category_read(read: Any, captured: list[str], *, marks_needed: bool) -
     for m in marks:
         if not isinstance(m, dict) or m.get("site") not in captured or m.get("family") not in MARK_FAMILIES \
                 or not _str(m.get("description"), 3, 300):
-            problems.append(f"a mark is {{site (captured), family ({', '.join(MARK_FAMILIES)}), description}}")
+            problems.append(f"a mark is {{site (captured), family ({', '.join(MARK_FAMILIES)}), description (3-300 characters)}}"
+                            + (_len(m.get("description"), 3, 300, "description") if isinstance(m, dict) else ""))
             continue
         seen.add(m["site"])
     if marks_needed and set(captured) - seen:
@@ -363,7 +395,8 @@ def check_direction(direction: Any, playbook: dict, *, job: str, fixed: list[str
             problems.append(f"context {c.get('id') if isinstance(c, dict) else c!r} is not in the playbook")
             continue
         if c.get("role") not in CONTEXT_ROLES or not _str(c.get("why"), 10, 400):
-            problems.append(f"context {c['id']}: role ({', '.join(CONTEXT_ROLES)}) and why")
+            problems.append(f"context {c['id']}: role ({', '.join(CONTEXT_ROLES)}) and why (10-400 characters)"
+                            + _len(c.get("why"), 10, 400, "why"))
         chosen[c["id"]] = c.get("role")
     if job in ("homepage", "app_screen", "marketing") and list(chosen.values()).count("page") != 1:
         problems.append("exactly one context has role page (the kind of page being designed)")
@@ -388,13 +421,16 @@ def check_direction(direction: Any, playbook: dict, *, job: str, fixed: list[str
                 problems.append(f"{a.get('id')} and {b.get('id')} are the same direction (same family, <2 axes apart)")
     rec = direction.get("recommended")
     if not isinstance(rec, dict) or rec.get("id") not in ids or not _str(rec.get("reason"), 10, 600):
-        problems.append("recommended is {id: a candidate, reason}")
+        problems.append("recommended is {id: a candidate, reason (10-600 characters)}"
+                        + (_len(rec.get("reason"), 10, 600, "reason") if isinstance(rec, dict) else ""))
     taste = direction.get("taste", {})
     if not isinstance(taste, dict) or not all(isinstance(t, str) and TASTE_ID.match(t) for t in taste.get("ids", [])) \
             or not _str(taste.get("note", "none"), 1, 600):
-        problems.append("taste is {ids: [T..], note}: the owner's taste as a bias, kept apart from the evidence")
+        problems.append("taste is {ids: [T..], note (at most 600 characters)}: the owner's taste as a bias, kept apart "
+                        "from the evidence" + (_len(taste.get("note"), 1, 600, "note") if isinstance(taste, dict) else ""))
     if not _strs(direction.get("assumptions", []), 0, 12):
-        problems.append("assumptions lists at most 12 things to confirm")
+        problems.append("assumptions lists at most 12 things to confirm (each at most 300 characters)"
+                        + _lens(direction.get("assumptions"), 0, 12, 300, "assumptions"))
     return problems
 
 
@@ -405,7 +441,8 @@ def _check_candidate(d: dict, chosen: dict, by_id: dict, known: set[str], fixed:
     if set(d) - allowed_keys:
         problems.append(f"unknown keys {sorted(set(d) - allowed_keys)}")
     if not _str(d.get("name"), 2, 60) or not _str(d.get("why"), 10, 600):
-        problems.append("name and why (for these users)")
+        problems.append("name (2-60 characters) and why (for these users, 10-600 characters)"
+                        + _len(d.get("name"), 2, 60, "name") + _len(d.get("why"), 10, 600, "why"))
     ctx = d.get("context")
     if ctx not in chosen:
         problems.append("context is one of the chosen contexts")
@@ -416,7 +453,7 @@ def _check_candidate(d: dict, chosen: dict, by_id: dict, known: set[str], fixed:
         problems.append("axes sets " + "; ".join(f"{k} ({'|'.join(v)})" for k, v in AXES.items()))
     for key, lo, hi in (("principles", 2, 6), ("do", 2, 8), ("dont", 2, 8), ("follow", 1, 8), ("differentiate", 1, 6)):
         if not _strs(d.get(key), lo, hi):
-            problems.append(f"{key} lists {lo}-{hi} short lines")
+            problems.append(f"{key} lists {lo}-{hi} short lines (each at most 300 characters)" + _lens(d.get(key), lo, hi, 300, key))
     ev = d.get("evidence")
     if not isinstance(ev, list) or len(ev) < 2 or not all(isinstance(e, str) and EVIDENCE_ID.match(e) for e in ev):
         problems.append("evidence lists at least 2 playbook evidence ids (E###)")
@@ -427,11 +464,11 @@ def _check_candidate(d: dict, chosen: dict, by_id: dict, known: set[str], fixed:
     if "colour" in fixed and d.get("palette") != "fixed":
         problems.append('palette is "fixed": the colour part is approved and stays as it is')
     if "colour" not in fixed and not _str(d.get("palette"), 5, 300):
-        problems.append("palette describes the colour idea (5-300 characters)")
+        problems.append("palette describes the colour idea (5-300 characters)" + _len(d.get("palette"), 5, 300, "palette"))
     if "type" in fixed and d.get("type") != "fixed":
         problems.append('type is "fixed": the type part is approved and stays as it is')
     if "type" not in fixed and not _str(d.get("type"), 5, 300):
-        problems.append("type describes the type idea (5-300 characters)")
+        problems.append("type describes the type idea (5-300 characters)" + _len(d.get("type"), 5, 300, "type"))
     return problems
 
 

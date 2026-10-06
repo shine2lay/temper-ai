@@ -208,6 +208,36 @@ def test_fixed_parts_stay_fixed() -> None:
     assert rc.check_direction(d, PLAYBOOK, job="homepage", fixed=["colour"]) == []
 
 
+def test_too_long_texts_are_named_with_their_length() -> None:
+    # Trial 6a10a704: a context's why 2 characters over its cap read only "role and why", and the
+    # director's revise loop ran out without trimming it.
+    d = direction()
+    d["contexts"][1]["why"] = "w" * 402
+    probs = rc.check_direction(d, PLAYBOOK, job="homepage", fixed=[])
+    assert any("why is 402 characters; keep it 10-400" in p for p in probs)
+    d = direction()
+    d["candidates"][0].update(name="n" * 61, why="y" * 650, do=["plain words", "d" * 301])
+    probs = rc.check_direction(d, PLAYBOOK, job="homepage", fixed=[])
+    assert any("name is 61 characters; keep it 2-60" in p and "why is 650 characters; keep it 10-600" in p for p in probs)
+    assert any("do line 2 is 301 characters; keep each line at most 300" in p for p in probs)
+    d = direction(recommended={"id": "D1", "reason": "r" * 601})
+    assert any("reason is 601 characters" in p for p in rc.check_direction(d, PLAYBOOK, job="homepage", fixed=[]))
+    # A missing text still reads as missing, with no length.
+    d = direction()
+    d["contexts"][1].pop("why")
+    probs = rc.check_direction(d, PLAYBOOK, job="homepage", fixed=[])
+    assert any(p.endswith("and why (10-400 characters)") for p in probs)
+
+
+def test_too_long_users_texts_are_named(ws: Path) -> None:
+    u = good_users()
+    u["groups"][0]["summary"] = "s" * 401
+    u["claims"][0]["text"] = "t" * 401
+    probs = rc.check_users(u, ws)
+    assert any("summary is 401 characters; keep it 10-400" in p for p in probs)
+    assert any("text is 401 characters; keep it 5-400" in p for p in probs)
+
+
 def test_twin_directions_refused() -> None:
     d = direction()
     d["candidates"][1] = candidate("D2", "flat 2.0")

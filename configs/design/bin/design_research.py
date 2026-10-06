@@ -250,6 +250,8 @@ class Job:
                       "- superseded: an older statement a newer source contradicts; superseded_by names the newer sourced",
                       "  claim and note says why. Check dates: newer, better evidence wins.",
                       f"A note is one or two plain sentences, at most {rc.NOTE_MAX} characters.",
+                      "Lengths: a claim's text 5-400 characters, its quote 12-400; a group's summary 10-400; each product",
+                      "field 2-500; each assumption at most 300.",
                       "Use web research (search, open pages) for the product's category and its users where the pack is",
                       "thin; quote pages exactly. Each group lists the ids of its claims. assumptions lists up to 12 things",
                       "to confirm with real users."]
@@ -272,6 +274,8 @@ class Job:
                       "expert|neutral|friendly}, principles (2-6), do (2-8), dont (2-8), follow (1-8 category conventions "
                       "to keep), differentiate (1-6 ways to stand out), evidence (2+ playbook ids), palette, type}. "
                       "Candidates differ in direction, not in wording.",
+                      "   Lengths: a context's why 10-400 characters; a candidate's name 2-60 and why 10-600; palette and "
+                      "type 5-300; every list line at most 300; recommended.reason 10-600; taste.note at most 600.",
                       "3. recommended {id, reason}; taste {ids (T ids used), note}: taste is a bias kept apart from evidence;",
                       "   assumptions (things to confirm).",
                       "4. category: {expect: 3-12 {text, sites (2+ captured ids)}, stand_out: 2-8 {text, why}, marks: "

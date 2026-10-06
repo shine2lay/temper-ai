@@ -72,6 +72,8 @@ def research_through_decision(ws: Path, job: str, monkeypatch) -> "dr.Job":
     j = dr.Job(str(ws), fixture=True)
     inv = j.inventory(json.dumps({"job": job}))
     assert inv["status"] == "none" and inv["gate"] == "on" and inv["research_agent"] == "yes"
+    task = (ws / "research/TASK.md").read_text()  # the caps are stated before the first check, not only after
+    assert "a claim's text 5-400 characters" in task and "a context's why 10-400 characters" in task
     j.fixture_stage("users")
     assert j.check("final")["verdict"] == "ok"
     assert j.capture()["captured"] == 6

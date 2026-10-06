@@ -1,0 +1,63 @@
+workflow:
+  name: arch_land_check
+  version: 1
+  description: |
+    System architecture's land check of a big temper branch, as a draft for Architecture to read
+    (Architecture queue #23, 2026-10-04). Until then Architecture checked such branches by hand
+    (L2, M2, PARK, T4T5); the draft never replaces that check, it prepares it.
+
+    A case folder is prepared on the host by configs/architecture/bin/land_check_intake.py, because
+    the worker cannot see the proof folders or the branch worktrees: code/ (a clone at the checked
+    head, with master as it was at the check), proof/ (digest-checked copies of the inputs that
+    existed at the check), request.md (gate, head, master, switch, evidence, claimed bindings),
+    rubric.md (the method) and scratch/. No answers are ever copied in.
+
+    facts runs the eight mechanical checks without a model; review drafts the judgement on top of
+    them; challenge tries to refute every must-fix and adds at most one missed risk; assemble
+    writes draft.json (the shape of Architecture's architecture-check.json) and draft.md into the
+    case folder. land = every mechanical check passes AND no must-fix stands after the challenge.
+    Graded by arch_land_check_grade against Architecture's own past checks.
+  inputs:
+    case_dir: {type: string, required: true}   # workspaces/land-check/<case>, from land_check_intake.py
+    label: {type: string, required: true}
+  outputs:
+    land: assemble.structured.land
+    failed_checks: assemble.structured.failed_checks
+    must_fix: assemble.structured.must_fix
+    draft_path: assemble.structured.draft_path
+    summary: assemble.structured.summary
+
+  nodes:
+    - name: facts
+      type: agent
+      agent: arch_land_facts
+      input_map:
+        case_dir: input.case_dir
+
+    - name: review
+      type: agent
+      agent: arch_land_review
+      depends_on: [facts]
+      input_map:
+        case_dir: input.case_dir
+        label: input.label
+        workspace_path: input.case_dir
+        facts_summary: facts.structured.summary
+
+    - name: challenge
+      type: agent
+      agent: arch_land_challenge
+      depends_on: [review]
+      input_map:
+        case_dir: input.case_dir
+        label: input.label
+        workspace_path: input.case_dir
+        facts_summary: facts.structured.summary
+
+    - name: assemble
+      type: agent
+      agent: arch_land_assemble
+      depends_on: [challenge]
+      input_map:
+        case_dir: input.case_dir
+        label: input.label

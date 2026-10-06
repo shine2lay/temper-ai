@@ -1,0 +1,220 @@
+# System architecture, land check (arch_land_check), step 4 of 4: the draft. No model.
+#
+# 1 (2026-10-04, Architecture queue #23): joins the mechanical facts (scratch/facts.json), the
+# review (scratch/review.json) and the challenge (scratch/challenge.json) into draft.json, in the
+# schema_version 1 shape of Architecture's own architecture-check.json (the fields of T4T5 and
+# PARK), and draft.md to read. The verdict is computed here, never taken from a model:
+# land = every mechanical check passes AND no must-fix stands after the challenge. A refuted
+# finding moves to refuted_by_challenge; a downgraded one keeps its new severity, and nits go to
+# nits_not_blocking. A missing review lands false. The draft never replaces Architecture's check.
+#
+# Never put an apostrophe in the python below: it is one single-quoted shell word.
+agent:
+  name: arch_land_assemble
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/bash
+    CASE="{{ case_dir }}" LABEL="{{ label }}" RUN_ID="{{ run_id }}" python3 -c '
+    import datetime, json, os, pathlib
+
+    case = pathlib.Path(os.environ["CASE"]).resolve()
+    scratch = case / "scratch"
+    run_id = os.environ.get("RUN_ID") or "unknown"
+    notes = []
+
+
+    def load(name):
+        p = scratch / name
+        if not p.is_file():
+            notes.append(name + " is missing")
+            return None
+        try:
+            data = json.loads(p.read_text())
+        except ValueError as exc:
+            notes.append(name + " does not parse: " + str(exc)[:200])
+            return None
+        return data if isinstance(data, dict) else None
+
+
+    facts = load("facts.json") or {}
+    review = load("review.json")
+    challenge = load("challenge.json")
+    text = (case / "request.md").read_text()
+    req = json.loads(text.split("```json", 1)[1].split("```", 1)[0])
+
+
+    def sev(value):
+        v = str(value or "").strip().lower().replace("_", "-").replace(" ", "-")
+        if v.startswith("must") or v in ("blocking", "blocker", "block"):
+            return "must-fix"
+        if v.startswith("nit"):
+            return "nit"
+        return "follow-up"
+
+
+    def lst(obj, key):
+        v = (obj or {}).get(key)
+        return v if isinstance(v, list) else []
+
+
+    findings, nits, refuted, unchallenged = [], [], [], []
+    verdicts = {}
+    for v in lst(challenge, "verdicts"):
+        if isinstance(v, dict) and v.get("id"):
+            verdicts[str(v["id"])] = v
+    counts = {"stands": 0, "downgraded": 0, "refuted": 0, "added": 0}
+    for f in lst(review, "findings"):
+        if not isinstance(f, dict):
+            continue
+        f = dict(f)
+        f["severity"] = sev(f.get("severity"))
+        v = verdicts.get(str(f.get("id")))
+        if v is None:
+            if challenge is not None:
+                unchallenged.append(str(f.get("id")))
+        else:
+            result = str(v.get("result", "")).strip().lower()
+            f["challenge"] = {"result": result, "reason": v.get("reason", ""), "evidence": v.get("evidence", "")}
+            if result.startswith("refut"):
+                counts["refuted"] += 1
+                refuted.append(f)
+                continue
+            if v.get("severity"):
+                new = sev(v.get("severity"))
+                if new != f["severity"]:
+                    counts["downgraded"] += 1
+                    f["severity_before_challenge"] = f["severity"]
+                    f["severity"] = new
+                else:
+                    counts["stands"] += 1
+            else:
+                counts["stands"] += 1
+        (nits if f["severity"] == "nit" else findings).append(f)
+    for f in lst(challenge, "added"):
+        if isinstance(f, dict):
+            f = dict(f)
+            f["severity"] = sev(f.get("severity"))
+            f["added_by"] = "arch_land_challenge"
+            counts["added"] += 1
+            (nits if f["severity"] == "nit" else findings).append(f)
+    if unchallenged:
+        notes.append("the challenge gave no verdict on " + ", ".join(unchallenged))
+
+    checks = facts.get("checks") or {}
+    failed = list(facts.get("failed_checks") or [])
+    if not checks:
+        failed = failed or ["facts_missing"]
+    must = [f for f in findings if f["severity"] == "must-fix"]
+    land = bool(checks) and not failed and not must and review is not None
+
+    reasons = []
+    for n in failed:
+        reasons.append("the mechanical check " + n + " failed: " + str((checks.get(n) or {}).get("detail", "no facts"))[:400])
+    for f in must:
+        reasons.append("must-fix " + str(f.get("id")) + " at " + str(f.get("place")) + ": " + str(f.get("risk"))[:300])
+    if review is None:
+        reasons.append("the review step left no readable review.json")
+    head = (facts.get("branch") or {}).get("head") or req.get("head")
+    if land:
+        lead = ("Land: yes (draft). All eight mechanical checks pass on " + str(head)[:12]
+                + " and no must-fix stands after the challenge.")
+    else:
+        lead = "Land: no (draft). " + " ".join(r.rstrip(".") + "." for r in reasons)
+    body = str((challenge or {}).get("decision") or (review or {}).get("decision") or "").strip()
+    decision = lead + ((" " + body) if body else "")
+
+    b = facts.get("branch") or {}
+    branch = {"name": b.get("name") or req.get("branch"), "head": b.get("head"), "tree": b.get("tree"),
+              "base": b.get("base"), "master_at_check": b.get("master_at_check"),
+              "commit_count": b.get("commit_count"), "files": b.get("file_count"),
+              "combined_patch_id": b.get("combined_patch_id"), "clean": b.get("clean"),
+              "master_overlap": b.get("master_overlap"),
+              "master_commits_after_base": b.get("master_commits_after_base"),
+              "commits": b.get("commits"), "changed_files": b.get("files"), "diffstat": b.get("diffstat")}
+    digests = checks.get("input_digests") or {}
+    draft = {
+        "schema_version": 1,
+        "check": "Land check draft of " + str(req.get("gate") or req.get("case")) + ", branch "
+                 + str(branch["name"]) + " at " + str(head)[:12],
+        "by": "arch_land_check draft, run " + run_id + ", for Architecture to read",
+        "written": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "case": req.get("case"), "label": os.environ.get("LABEL", ""), "check_time": req.get("check_time"),
+        "land": land,
+        "decision": decision,
+        "branch": branch,
+        "mechanical": {"passed": bool(checks) and not failed, "failed_checks": failed,
+                       "checks": {n: {"passed": c.get("passed"), "detail": c.get("detail")} for n, c in checks.items()},
+                       "warnings": facts.get("warnings") or []},
+        "inputs": {"recorded": req.get("inputs", []), "dropped": req.get("dropped_inputs", []),
+                   "digest_check": digests.get("detail"), "notes": digests.get("notes", [])},
+        "core_files_outside_slice": lst(review, "core_files_outside_slice"),
+        "findings": findings,
+        "verified": lst(review, "verified"),
+        "nits_not_blocking": nits,
+        "landing_conditions": lst(review, "landing_conditions"),
+        "bindings_for_later_tasks": lst(review, "bindings_for_later_tasks"),
+        "follow_ups": lst(review, "follow_ups"),
+        "residual_risks": lst(review, "residual_risks"),
+        "not_covered": lst(review, "not_covered"),
+        "refuted_by_challenge": refuted,
+        "challenge": {"counts": counts, "plan_review": lst(challenge, "plan_review"),
+                      "proposed_land": (challenge or {}).get("land_proposed"),
+                      "review_proposed_land": (review or {}).get("land_proposed")},
+        "assembly_notes": notes,
+    }
+    (case / "draft.json").write_text(json.dumps(draft, indent=1, ensure_ascii=False) + "\n")
+
+
+    def item(x):
+        if isinstance(x, str):
+            return x
+        if isinstance(x, dict):
+            return "; ".join(str(k) + ": " + str(v) for k, v in x.items() if v not in (None, "", [], {}))
+        return str(x)
+
+
+    md = ["# " + draft["check"], "", "*" + draft["by"] + ". Written " + draft["written"] + ".*", "",
+          "**Land: " + ("yes" if land else "no") + "**", "", decision, "", "## Mechanical checks", ""]
+    for n, c in draft["mechanical"]["checks"].items():
+        md.append("- " + ("pass" if c.get("passed") else "FAIL") + " " + n + ": " + str(c.get("detail")))
+    for w in draft["mechanical"]["warnings"]:
+        md.append("- warning: " + w)
+    md += ["", "## Findings", ""]
+    for f in findings or []:
+        md.append("- **" + str(f.get("id")) + " (" + f["severity"] + ")** " + str(f.get("place")) + ". " + str(f.get("risk")))
+        for k in ("why_here", "fix", "owner", "evidence"):
+            if f.get(k):
+                md.append("  - " + k.replace("_", " ") + ": " + str(f[k]))
+        if f.get("challenge"):
+            md.append("  - challenge: " + str(f["challenge"].get("result")) + ". " + str(f["challenge"].get("reason")))
+    if not findings:
+        md.append("- none")
+    for title, key in (("Nits (not blocking)", "nits_not_blocking"), ("Verified", "verified"),
+                       ("Landing conditions", "landing_conditions"),
+                       ("Bindings for later tasks", "bindings_for_later_tasks"), ("Follow-ups", "follow_ups"),
+                       ("Residual risks", "residual_risks"), ("Not covered", "not_covered"),
+                       ("Refuted by the challenge", "refuted_by_challenge"),
+                       ("Existing files changed outside the slice", "core_files_outside_slice")):
+        md += ["", "## " + title, ""]
+        md += ["- " + item(x) for x in draft[key]] or ["- none"]
+    if notes:
+        md += ["", "## Assembly notes", ""] + ["- " + n for n in notes]
+    (case / "draft.md").write_text("\n".join(md) + "\n")
+    # The run works as another user than the host: open what it wrote, so the host can clean up.
+    me = os.getuid()
+    for root, dirs, files in os.walk(case):
+        if pathlib.Path(root) == case:
+            dirs[:] = [d for d in dirs if d != "code"]
+        for n in dirs + files:
+            p = os.path.join(root, n)
+            try:
+                if os.lstat(p).st_uid == me and not os.path.islink(p):
+                    os.chmod(p, 0o777 if os.path.isdir(p) else 0o666)
+            except OSError:
+                pass
+    print(json.dumps({"draft_path": str(case / "draft.json"), "draft_md": str(case / "draft.md"), "land": land,
+                      "failed_checks": failed, "must_fix": [f.get("id") for f in must],
+                      "findings": len(findings), "nits": len(nits), "refuted": counts["refuted"],
+                      "summary": decision[:600]}))'

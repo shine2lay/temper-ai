@@ -1,0 +1,59 @@
+workflow:
+  name: arch_land_check_grade
+  version: 1
+  description: |
+    Grades an arch_land_check draft against the System architecture role's own past land check of
+    the same branch (Architecture queue #23, 2026-10-04). expected.json is written by
+    configs/architecture/bin/land_check_intake.py into workspaces/land-check-grade/<case>/, apart
+    from the case folder the land-check run reads.
+
+    compare (no model): mechanical fields exact, land verdict, the failed check named (seeded
+    cases), and the pairing laid out. judge (model): pairs the draft's items with Architecture's by
+    meaning (place and risk) for recall over the items that asked for a fix or follow-up, and
+    labels each unmatched draft must-fix "real issue Architecture missed" or "not a real problem"
+    after reading the code. score (no model): grade.json.
+
+    Self-check before trusting it: a recorded check graded against itself gives recall 1.0 and 0
+    false must-fix; a degraded copy (every other ask dropped, one invented must-fix) gives about
+    half and 1.
+  inputs:
+    draft_path: {type: string, required: true}      # <case_dir>/draft.json
+    expected_path: {type: string, required: true}   # workspaces/land-check-grade/<case>/expected.json
+    code_dir: {type: string, required: true}        # <case_dir>/code, for the judge to read
+    out_dir: {type: string, required: true}         # where compare, pairing, judge and grade go
+    label: {type: string, required: true}
+  outputs:
+    mech_exact: score.structured.mech_exact
+    verdict_ok: score.structured.verdict_ok
+    named_check_ok: score.structured.named_check_ok
+    recall: score.structured.recall
+    false_must_fix: score.structured.false_must_fix
+    grade_path: score.structured.grade_path
+
+  nodes:
+    - name: compare
+      type: agent
+      agent: arch_land_grade_compare
+      input_map:
+        draft_path: input.draft_path
+        expected_path: input.expected_path
+        code_dir: input.code_dir
+        out_dir: input.out_dir
+
+    - name: judge
+      type: agent
+      agent: arch_land_grade_judge
+      depends_on: [compare]
+      input_map:
+        out_dir: input.out_dir
+        code_dir: input.code_dir
+        label: input.label
+        workspace_path: input.out_dir
+
+    - name: score
+      type: agent
+      agent: arch_land_grade_score
+      depends_on: [judge]
+      input_map:
+        out_dir: input.out_dir
+        label: input.label

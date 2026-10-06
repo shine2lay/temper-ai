@@ -29,7 +29,7 @@ role tests and lands a change.
 | `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents, and `positioning_grade`; next, positioning and launch notes for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, candidates `design_homepage_v2_next` and `design_logo_v1_next`); a helper for the host's free local image models (`design/bin/design_image.py`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md)). |
-| `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
+| `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`, and the land-check draft of big temper branches (`arch_land_check`) with its grader. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
 | `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`), the flaky-test report (`qa_flaky_report`). |
@@ -123,6 +123,7 @@ the dashboard.
 | `epd_structure_grade` | A codebase built from nothing: structure, architecture, keeping to its patterns | architecture |
 | `epd_pattern_audit` | One change: how well it kept to the patterns already there | architecture |
 | `epd_review_replay` | The candidate reviewer alone, on a past change | architecture |
+| `arch_land_check_grade` | An `arch_land_check` draft, against Architecture's own land check of the same branch: mechanical facts, verdict, finding recall, false must-fixes | architecture |
 | `epd_build_grade` | One finished build of a bet, graded blind | backend |
 | `epd_build_replay`, `epd_build_new` | The candidate coder and reviewer, on a past bet or a new project | backend |
 | `epd_scorecard` | Every stage of one shipped bet, by three judges who don't see each other | data |
@@ -414,10 +415,21 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `design/agents/design_grade.yaml` | agent |
 | `design/agents/design_score.yaml` | agent (script) |
 
-### architecture (23)
+### architecture (34)
 
 | Config | Kind |
 |---|---|
+| `architecture/workflows/arch_land_check.yaml` | workflow |
+| `architecture/workflows/arch_land_check_grade.yaml` | workflow |
+| `architecture/agents/arch_land_facts.yaml` | agent (script) |
+| `architecture/agents/arch_land_review.yaml` | agent |
+| `architecture/agents/arch_land_challenge.yaml` | agent |
+| `architecture/agents/arch_land_assemble.yaml` | agent (script) |
+| `architecture/agents/arch_land_grade_compare.yaml` | agent (script) |
+| `architecture/agents/arch_land_grade_judge.yaml` | agent |
+| `architecture/agents/arch_land_grade_score.yaml` | agent (script) |
+| `architecture/bin/land_check_intake.py` | script |
+| `architecture/bin/land_check_rubric.md` | land-check method |
 | `epd/workflows/epd_pattern_audit.yaml` | workflow |
 | `epd/workflows/epd_plan.yaml` | workflow |
 | `epd/workflows/epd_plan_grade.yaml` | workflow |

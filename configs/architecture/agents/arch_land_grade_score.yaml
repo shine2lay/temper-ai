@@ -1,0 +1,75 @@
+# System architecture, arch_land_check_grade, step 3 of 3: the score. No model.
+#
+# 1 (2026-10-04, Architecture queue #23): turns compare.json and the judge's judge.json into
+# grade.json: mechanical exact, verdict agreement, the failed check named (seeded cases), recall
+# over Architecture's asks, and the number of draft must-fixes the judge found "not a real
+# problem". Keys the judge made up are ignored, and an ask is counted once however many draft
+# items match it.
+#
+# Never put an apostrophe in the python below: it is one single-quoted shell word.
+agent:
+  name: arch_land_grade_score
+  version: 1
+  type: script
+  timeout_seconds: 120
+  script_template: |
+    #!/bin/bash
+    OUT="{{ out_dir }}" LABEL="{{ label }}" RUN_ID="{{ run_id }}" python3 -c '
+    import json, os, pathlib
+
+    out = pathlib.Path(os.environ["OUT"])
+    compare = json.loads((out / "compare.json").read_text())
+    pairing = json.loads((out / "pairing.json").read_text())
+    jpath = out / "judge.json"
+    notes = []
+    try:
+        judge = json.loads(jpath.read_text())
+    except (OSError, ValueError) as exc:
+        judge = {}
+        notes.append("judge.json unreadable: " + str(exc)[:200])
+    ask_keys = [a["key"] for a in pairing["expected_asks"]]
+    draft_keys = set(i["key"] for i in pairing["draft_items"])
+    matched = set()
+    for m in judge.get("matches") or []:
+        k = m.get("expected")
+        good = [d for d in (m.get("draft") or []) if d in draft_keys]
+        if k in ask_keys and good:
+            matched.add(k)
+        elif k not in ask_keys:
+            notes.append("judge matched an unknown ask key " + str(k))
+        elif not good:
+            notes.append("judge matched " + str(k) + " to no known draft key")
+    labels = {}
+    for lab in judge.get("must_fix_labels") or []:
+        d = lab.get("draft")
+        if d in pairing["draft_must_fix"]:
+            labels[d] = str(lab.get("label", "")).strip().lower()
+    unlabelled = [d for d in pairing["draft_must_fix"] if d not in labels]
+    if unlabelled:
+        notes.append("judge left must-fix unlabelled: " + ", ".join(unlabelled))
+    not_real = sorted(d for d, lab in labels.items() if lab.startswith("not a real"))
+    missed_real = sorted(d for d, lab in labels.items() if lab.startswith("real issue"))
+    asks = len(ask_keys)
+    grade = {"case": compare["case"], "kind": compare["kind"], "label": os.environ.get("LABEL"),
+             "run_id": os.environ.get("RUN_ID"), "mech_exact": compare["mech_exact"],
+             "verdict_ok": compare["verdict_ok"], "draft_land": compare["draft_land"],
+             "named_check_ok": compare["named_check_ok"], "asks": asks, "matched": len(matched),
+             "recall": (round(len(matched) / asks, 4) if asks else None),
+             "matched_keys": sorted(matched), "unmatched_keys": [k for k in ask_keys if k not in matched],
+             "draft_must_fix": len(pairing["draft_must_fix"]), "false_must_fix": len(not_real),
+             "false_must_fix_keys": not_real, "real_issues_missed_by_architecture": missed_real,
+             "unlabelled_must_fix": unlabelled, "notes": notes}
+    (out / "grade.json").write_text(json.dumps(grade, indent=1, ensure_ascii=False) + "\n")
+    me = os.getuid()  # the run works as another user than the host: open what it wrote
+    for root, dirs, files in os.walk(out):
+        for n in dirs + files:
+            p = os.path.join(root, n)
+            try:
+                if os.lstat(p).st_uid == me and not os.path.islink(p):
+                    os.chmod(p, 0o777 if os.path.isdir(p) else 0o666)
+            except OSError:
+                pass
+    print(json.dumps({"grade_path": str(out / "grade.json"), "mech_exact": grade["mech_exact"],
+                      "verdict_ok": grade["verdict_ok"], "named_check_ok": grade["named_check_ok"],
+                      "recall": grade["recall"], "matched": grade["matched"], "asks": asks,
+                      "false_must_fix": grade["false_must_fix"], "notes": notes}))'

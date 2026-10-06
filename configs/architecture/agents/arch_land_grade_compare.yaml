@@ -1,0 +1,102 @@
+# System architecture, arch_land_check_grade, step 1 of 3: the compare. No model.
+#
+# 1 (2026-10-04, Architecture queue #23): compares an arch_land_check draft.json with the case's
+# expected.json (written by configs/architecture/bin/land_check_intake.py from Architecture's own
+# architecture-check.json, or from the seed): the mechanical fields exactly (a sha may be given
+# short), the land verdict, and for a seeded case whether the draft names the check that failed.
+# Then it lays out the pairing for the judge: Architecture's items that asked for a fix or
+# follow-up, Architecture's other items, and every draft item with a key, must-fixes marked.
+#
+# Never put an apostrophe in the python below: it is one single-quoted shell word.
+agent:
+  name: arch_land_grade_compare
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/bash
+    DRAFT="{{ draft_path }}" EXPECTED="{{ expected_path }}" OUT="{{ out_dir }}" CODE="{{ code_dir }}" python3 -c '
+    import json, os, pathlib
+
+    out = pathlib.Path(os.environ["OUT"])
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        out.chmod(0o777)  # the run works as another user than the host, which cleans up later
+    except OSError:
+        pass
+    exp = json.loads(pathlib.Path(os.environ["EXPECTED"]).read_text())
+    dpath = pathlib.Path(os.environ["DRAFT"])
+    draft = json.loads(dpath.read_text()) if dpath.is_file() else None
+
+
+    def same(want, got):
+        if isinstance(want, str) and isinstance(got, str):
+            w, g = want.strip().lower(), got.strip().lower()
+            return bool(w) and bool(g) and (w.startswith(g) or g.startswith(w)) and min(len(w), len(g)) >= 7
+        if isinstance(want, list) and isinstance(got, list):
+            return sorted(map(str, want)) == sorted(map(str, got))
+        if isinstance(want, bool) or isinstance(got, bool):
+            return want is got
+        return want == got
+
+
+    mech = {}
+    branch = (draft or {}).get("branch") or {}
+    for k, want in (exp.get("mechanical") or {}).items():
+        got = branch.get(k)
+        mech[k] = {"expected": want, "draft": got, "match": same(want, got)}
+    mech_exact = all(v["match"] for v in mech.values()) if mech else None
+    failed = list(((draft or {}).get("mechanical") or {}).get("failed_checks") or [])
+    land = (draft or {}).get("land")
+    verdict_ok = draft is not None and land is exp.get("land")
+    named = None
+    if exp.get("failed_check"):
+        named = exp["failed_check"] in failed
+
+
+    def text(x):
+        if isinstance(x, str):
+            return x
+        if isinstance(x, dict):
+            keep = [k for k in x if k not in ("challenge", "severity_before_challenge", "added_by")]
+            return "; ".join(str(k) + ": " + str(x[k]) for k in keep if x[k] not in (None, "", [], {}))
+        return str(x)
+
+
+    items = []
+    if draft is not None:
+        for f in draft.get("findings") or []:
+            items.append({"key": "finding:" + str(f.get("id")), "section": "findings",
+                          "severity": f.get("severity"), "text": text(f)})
+        for i, f in enumerate(draft.get("nits_not_blocking") or []):
+            fid = f.get("id") if isinstance(f, dict) else None
+            items.append({"key": "nit:" + str(fid or i), "section": "nits_not_blocking", "severity": "nit", "text": text(f)})
+        for sec in ("bindings_for_later_tasks", "follow_ups", "residual_risks", "landing_conditions", "not_covered"):
+            for i, x in enumerate(draft.get(sec) or []):
+                items.append({"key": sec + ":" + str(i), "section": sec, "text": text(x)})
+    asks = [{"key": it["key"], "kind": it.get("kind"), "text": it.get("text")} for it in exp.get("items") or [] if it.get("ask")]
+    others = [{"key": it["key"], "kind": it.get("kind"), "text": it.get("text")} for it in exp.get("items") or [] if not it.get("ask")]
+    must = [it["key"] for it in items if it.get("severity") == "must-fix"]
+    seed = None
+    if exp.get("kind") == "seeded":
+        seed = {"seed": exp.get("seed"), "failed_check": exp.get("failed_check"), "from": exp.get("from"),
+                "what": exp.get("seed_description") or exp.get("seed")}
+    pairing = {"case": exp.get("case"), "kind": exp.get("kind"), "code_dir": os.environ.get("CODE"),
+               "seed": seed, "expected_asks": asks, "expected_other": others,
+               "draft_items": items, "draft_must_fix": must, "draft_land": land,
+               "draft_failed_checks": failed}
+    (out / "pairing.json").write_text(json.dumps(pairing, indent=1, ensure_ascii=False) + "\n")
+    compare = {"case": exp.get("case"), "kind": exp.get("kind"), "draft_path": str(dpath), "draft_found": draft is not None,
+               "mechanical": mech, "mech_exact": mech_exact, "expected_land": exp.get("land"), "draft_land": land,
+               "verdict_ok": verdict_ok, "expected_failed_check": exp.get("failed_check"),
+               "draft_failed_checks": failed, "named_check_ok": named, "asks": len(asks),
+               "draft_items": len(items), "draft_must_fix": must}
+    (out / "compare.json").write_text(json.dumps(compare, indent=1, ensure_ascii=False) + "\n")
+    print(json.dumps({"compare_path": str(out / "compare.json"), "pairing_path": str(out / "pairing.json"),
+                      "mech_exact": mech_exact, "verdict_ok": verdict_ok, "named_check_ok": named,
+                      "asks": len(asks), "draft_items": len(items), "draft_must_fix": len(must),
+                      "summary": "mechanical " + ("n/a" if mech_exact is None else ("exact" if mech_exact else "MISMATCH"))
+                                 + ", verdict " + ("agrees" if verdict_ok else "DISAGREES")
+                                 + (", names " + str(exp.get("failed_check")) if named else (", does NOT name " + str(exp.get("failed_check")) if named is False else ""))
+                                 + "; " + str(len(asks)) + " asks to pair with " + str(len(items)) + " draft items, "
+                                 + str(len(must)) + " draft must-fix"}))'

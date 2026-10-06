@@ -1,0 +1,565 @@
+# System architecture, land check (arch_land_check), step 1 of 4: the mechanical facts. No model.
+#
+# 1 (2026-10-04, Architecture queue #23): Architecture's land checks of big temper branches (L2, M2,
+# PARK, T4T5) were done by hand, and the same eight mechanical checks came first every time. This step
+# runs them on a case folder prepared on the host by configs/architecture/bin/land_check_intake.py
+# (code/ = a clone at the checked head with `master` at the check, proof/ = digest-verified copies of
+# the inputs, request.md with a JSON block): commit_identity, clean_worktree, master_overlap,
+# input_digests, evidence_binding, binding_tests, switch_off, department_rows. It writes
+# scratch/facts.json and scratch/diff.patch; the review, the challenge and the assembly read them.
+# A failed check is final: the draft lands false and names it.
+#
+# Never put an apostrophe in the python below: it is one single-quoted shell word
+# (tests/test_architecture/test_land_check_scripts.py parses it with sh -n).
+agent:
+  name: arch_land_facts
+  version: 1
+  type: script
+  timeout_seconds: 900
+  script_template: |
+    #!/bin/bash
+    # Runs execute as another user than the one who owns code/: let git read it (command scope).
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="*"
+    CASE="{{ case_dir }}" python3 -c '
+    import ast, hashlib, json, os, pathlib, re, subprocess, sys
+
+    case = pathlib.Path(os.environ["CASE"]).resolve()
+    code = case / "code"
+    scratch = case / "scratch"
+    scratch.mkdir(exist_ok=True)
+    text = (case / "request.md").read_text()
+    req = json.loads(text.split("```json", 1)[1].split("```", 1)[0])
+    checks, warnings = {}, []
+
+
+    def put(name, passed, detail, **extra):
+        checks[name] = dict(passed=bool(passed), detail=detail, **extra)
+
+
+    def sh(cmd, inp=None, env=None, cwd=None, timeout=300):
+        p = subprocess.run(cmd, input=inp, capture_output=True, env=env, cwd=cwd, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+
+
+    def git_ok(*args):
+        rc, out, err = sh(["git", "-C", str(code)] + list(args))
+        return rc == 0, out.decode(errors="replace").strip()
+
+
+    def git(*args):
+        ok, out = git_ok(*args)
+        if not ok:
+            raise RuntimeError("git " + " ".join(args) + " failed")
+        return out
+
+
+    def pid(diff_bytes):
+        rc, out, err = sh(["git", "patch-id", "--stable"], inp=diff_bytes)
+        words = out.decode().split()
+        return words[0] if words else ""
+
+
+    def pid_range(a, b):
+        return pid(sh(["git", "-C", str(code), "diff", a, b])[1])
+
+
+    def pid_commit(c):
+        return pid(sh(["git", "-C", str(code), "show", c])[1])
+
+
+    def sha256(path):
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+
+    def resolve(c):
+        ok, full = git_ok("rev-parse", "--verify", "--quiet", str(c) + "^{commit}")
+        return full if ok else ""
+
+
+    def tree_of(c):
+        ok, t = git_ok("rev-parse", "--verify", "--quiet", str(c) + "^{tree}")
+        return t if ok else ""
+
+
+    def is_test_path(p):
+        name = p.rsplit("/", 1)[-1]
+        return p.startswith("tests/") or "/tests/" in p or name.startswith("test_") or name == "conftest.py"
+
+
+    # ---- 1. commit_identity ------------------------------------------------------------------
+    head = resolve(req["head"])
+    master = resolve("refs/heads/master")
+    problems = []
+    if not head:
+        problems.append("the head " + req["head"] + " is not a commit in code/")
+    if not master:
+        problems.append("code/ has no master ref")
+    elif not master.startswith(req["master_at_check"].lower()):
+        problems.append("the master ref is " + master + ", not master at the check " + req["master_at_check"])
+    checked_out = git_ok("rev-parse", "HEAD")[1]
+    if head and checked_out != head:
+        problems.append("code/ has " + checked_out + " checked out, not the head")
+    branch = {"name": req.get("branch"), "head": head or req["head"], "master_at_check": master}
+    names = ["clean_worktree", "master_overlap", "input_digests", "evidence_binding", "binding_tests",
+             "switch_off", "department_rows"]
+    if not head or not master:
+        put("commit_identity", False, "; ".join(problems))
+        for n in names:
+            put(n, False, "not run: the head or master could not be read")
+    else:
+        base = git("merge-base", head, master)
+        commits = git("rev-list", "--reverse", base + ".." + head).split()
+        files = git("diff", "--name-only", base, head).splitlines()
+        added = git("diff", "--name-only", "--diff-filter=A", base, head).splitlines()
+        combined = pid_range(base, head)
+        branch.update({
+            "tree": tree_of(head), "base": base, "commit_count": len(commits),
+            "commits": [{"sha": c, "subject": git("log", "-1", "--format=%s", c), "patch_id": pid_commit(c)}
+                        for c in commits],
+            "files": files, "file_count": len(files), "added_files": added, "combined_patch_id": combined,
+            "diffstat": git("diff", "--shortstat", base, head)})
+        if not commits:
+            problems.append("the head has no commits after the base")
+        put("commit_identity", not problems,
+            "; ".join(problems) or "head " + head[:12] + " (tree " + branch["tree"][:12] + "), base " + base[:12]
+            + ", " + str(len(commits)) + " commits, " + str(len(files)) + " files, combined patch-id " + combined)
+        (scratch / "diff.patch").write_bytes(sh(["git", "-C", str(code), "diff", base, head])[1])
+
+        # ---- 2. clean_worktree ----------------------------------------------------------------
+        status = git("status", "--porcelain", "--untracked-files=all")
+        branch["clean"] = not status
+        put("clean_worktree", not status, "git status --porcelain is empty" if not status
+            else "uncommitted changes in code/: " + "; ".join(status.splitlines()[:10]))
+
+        # ---- 3. master_overlap ----------------------------------------------------------------
+        moved = git("rev-list", "--count", base + ".." + master)
+        touched = set(x for x in git("log", "--format=", "--name-only", base + ".." + master).splitlines() if x)
+        overlap = sorted(touched & set(files))
+        branch["master_overlap"] = overlap
+        branch["master_commits_after_base"] = int(moved)
+        put("master_overlap", not overlap,
+            ("master has " + moved + " commits after the base; " if moved != "0" else "master has not moved since the base; ")
+            + ("they touch the branch files " + ", ".join(overlap) + ": rebase and check again" if overlap
+               else "none of them touch the branch files"))
+
+        # ---- 4. input_digests -----------------------------------------------------------------
+        bad, notes = [], []
+        for item in req.get("inputs", []):
+            p = case / item["path"]
+            want = (item.get("digest") or "").lower()
+            if not p.exists():
+                bad.append(item["path"] + " is missing")
+                continue
+            if p.is_dir():
+                man = p / "MANIFEST.sha256"
+                if not man.is_file():
+                    bad.append(item["path"] + " has no MANIFEST.sha256")
+                    continue
+                got = sha256(man)
+                if want and not got.startswith(want):
+                    bad.append(item["path"] + ": manifest sha256 " + got[:16] + " is not the recorded " + want[:16])
+                for line in man.read_text().splitlines():
+                    if not line.strip():
+                        continue
+                    exp, name = line.split(None, 1)
+                    f = p / name.strip().lstrip("*")
+                    if f.is_file() and sha256(f) != exp:
+                        bad.append(item["path"] + "/" + name.strip() + " does not match its manifest line")
+                    elif not f.is_file():
+                        notes.append(item["path"] + "/" + name.strip() + " was not copied")
+            elif want:
+                got = sha256(p)
+                if not got.startswith(want):
+                    bad.append(item["path"] + ": sha256 " + got[:16] + " is not the recorded " + want[:16])
+            else:
+                notes.append(item["path"] + ": no digest recorded")
+        for d in req.get("dropped_inputs", []):
+            notes.append("not copied: " + d["path"] + " (" + d["reason"] + ")")
+        put("input_digests", not bad, "; ".join(bad) or "every recorded digest matches ("
+            + str(sum(1 for i in req.get("inputs", []) if i.get("digest"))) + " inputs)", notes=notes)
+
+        # ---- 5. evidence_binding --------------------------------------------------------------
+        branch_set = set(commits)
+        mb_cache = {}
+
+        def per_commit_pids(lo, tip):
+            return [pid_commit(c) for c in git("rev-list", "--reverse", "--no-merges", lo + ".." + tip).split()]
+
+        head_pids = per_commit_pids(base, head)
+
+        def bind(c):
+            full = resolve(c)
+            if not full:
+                return False, c + " is not a commit in code/"
+            if full == head:
+                return True, "the head"
+            if full in branch_set:
+                later = git("diff", "--name-only", full, head).splitlines()
+                if all(is_test_path(x) for x in later):
+                    return True, "an earlier branch commit " + full[:8] + "; the later commits change tests only"
+                return False, ("an earlier branch commit " + full[:8] + "; the later commits change non-test files: "
+                               + ", ".join([x for x in later if not is_test_path(x)][:6]))
+            if full not in mb_cache:
+                tips = git("rev-list", "--first-parent", "--no-merges", "--max-count=" + str(len(head_pids)), full).split()
+                mb_cache[full] = [pid_commit(c) for c in reversed(tips)]
+            if head_pids and mb_cache[full] == head_pids:
+                below = git_ok("rev-parse", "--verify", "--quiet", full + "~" + str(len(head_pids)))[1]
+                return True, ("a rebased copy of the head (its last " + str(len(head_pids)) + " commits carry the same patch-ids), built on "
+                              + (below[:8] or "an unknown commit") + " instead of " + base[:8])
+            return False, full[:8] + " is not the head, not a rebased copy with the same patches, not a branch commit"
+
+        def hexof(v):
+            m = re.match(r"^([0-9a-f]{7,40})\b", v.strip()) if isinstance(v, str) else None
+            return m.group(1) if m else ""
+
+        def passed_of(o):
+            for k in ("passed", "ok", "all_green", "all_checks_passed"):
+                if isinstance(o.get(k), bool):
+                    return o[k]
+            if isinstance(o.get("pytest_exit"), int):
+                return o["pytest_exit"] == 0
+            if isinstance(o.get("exit_code"), int):
+                return o["exit_code"] == 0
+            parts = o.get("parts")
+            if isinstance(parts, dict) and parts:
+                return all(isinstance(x, dict) and not x.get("failures") for x in parts.values())
+            return None
+
+        def record(rel, where, o, fallback):
+            r = {"file": rel, "where": where}
+            for holder in (o.get("tested_tree"), o.get("code"), o.get("branch"), o):
+                if not isinstance(holder, dict):
+                    continue
+                for k in ("commit", "head", "checked_head", "made_commit"):
+                    if hexof(holder.get(k)):
+                        r["commit"] = hexof(holder.get(k))
+                        break
+                if "commit" in r:
+                    if hexof(holder.get("tree")):
+                        r["tree"] = hexof(holder.get("tree"))
+                    for k in ("clean", "worktree_clean"):
+                        if isinstance(holder.get(k), bool):
+                            r["clean"] = holder[k]
+                    break
+            if "commit" not in r and fallback:
+                r["commit"], r["commit_from"] = fallback, "the file path"
+            if "clean" not in r and isinstance(o.get("worktree_clean"), bool):
+                r["clean"] = o["worktree_clean"]
+            r["passed"] = passed_of(o)
+            img = o.get("worker_image")
+            r["image"] = img.get("image") if isinstance(img, dict) else img
+            r["pi_version"] = o.get("pi_version")
+            return r
+
+        recs, per_test = [], {}
+
+        # Each outcome keeps the key path and suite it was found at, so binding_tests can tell
+        # the red runs of a red-green proof from the runs of the head.
+        def collect_tests(rel, node, path=()):
+            if isinstance(node, dict):
+                t, o = node.get("test") or node.get("nodeid"), node.get("outcome")
+                if isinstance(t, str) and "::" in t and isinstance(o, str):
+                    per_test.setdefault(t, []).append([rel, o, path, ""])
+                for k, v in node.items():
+                    if isinstance(k, str) and "::" in k:
+                        if isinstance(v, str):
+                            per_test.setdefault(k, []).append([rel, v, path, ""])
+                        elif isinstance(v, dict):
+                            for suite, o2 in v.items():
+                                if isinstance(o2, str):
+                                    per_test.setdefault(k, []).append([rel, o2, path, str(suite)])
+                    collect_tests(rel, v, path + (str(k),))
+            elif isinstance(node, list):
+                for v in node:
+                    collect_tests(rel, v, path)
+
+        for rel in req.get("evidence", []):
+            p = case / rel
+            fallback = (re.findall(r"(?<![0-9a-f])([0-9a-f]{7,40})(?![0-9a-f])", rel) or [""])[0]
+            files_here = sorted(x for x in p.rglob("*") if x.is_file()) if p.is_dir() else [p]
+            for f in files_here:
+                frel = str(f.relative_to(case))
+                if f.suffix == ".json":
+                    try:
+                        data = json.loads(f.read_text())
+                    except ValueError:
+                        warnings.append(frel + " is not valid JSON")
+                        continue
+                    if not isinstance(data, dict):
+                        continue
+                    collect_tests(frel, data)
+                    recs.append(record(frel, "", data, fallback))
+                    batches = data.get("batches")
+                    if isinstance(batches, dict):
+                        for bname, b in batches.items():
+                            if not isinstance(b, dict):
+                                continue
+                            subs = [(bname, b)] if any(k in b for k in ("head", "commit", "made_commit")) else [
+                                (bname + "/" + n2, b2) for n2, b2 in b.items() if isinstance(b2, dict)]
+                            for wname, sub in subs:
+                                recs.append(record(frel, "batches/" + wname, sub, ""))
+                elif f.suffix in (".log", ".txt") and f.stat().st_size < 20000000:
+                    body = f.read_text(errors="replace")
+                    failed = re.search(r"\b[1-9][0-9]* (failed|errors?)\b|checks failed|FAILED", body)
+                    passed = re.search(r"\b[0-9]+ passed\b|checks passed", body)
+                    recs.append({"file": frel, "where": "", "commit": fallback, "commit_from": "the file path",
+                                 "passed": False if failed else (True if passed else None)})
+        bad, notes = [], []
+        if not recs:
+            bad.append("no evidence file names a run of this branch")
+        for r in recs:
+            label = r["file"] + (" " + r["where"] if r["where"] else "")
+            if r.get("commit"):
+                ok, how = bind(r["commit"])
+                r["bound"], r["how"] = ok, how
+                if not ok:
+                    bad.append(label + ": ran on " + how)
+                elif r.get("tree"):
+                    full = resolve(r["commit"])
+                    if r["tree"] != tree_of(full)[:len(r["tree"])]:
+                        match = [c for c in commits if tree_of(c).startswith(r["tree"])]
+                        later = git("diff", "--name-only", match[0], head).splitlines() if match else []
+                        if match and all(is_test_path(x) for x in later):
+                            r["how"] += "; its tree is that of " + match[0][:8] + " (later commits change tests only)"
+                        else:
+                            bad.append(label + ": names tree " + r["tree"] + ", not the tree of " + r["commit"])
+            else:
+                r["bound"] = None
+                notes.append(label + " names no commit")
+            if r.get("clean") is False:
+                bad.append(label + ": the tested tree was not clean")
+            if r.get("passed") is False:
+                bad.append(label + ": did not pass")
+            elif r.get("passed") is None:
+                notes.append(label + " has no pass field")
+        images = sorted(set(r["image"] for r in recs if r.get("image")))
+        pis = sorted(set(str(r["pi_version"]) for r in recs if r.get("pi_version")))
+        if len(images) > 1 or len(pis) > 1:
+            warnings.append("evidence ran on different worker images or Pi versions: " + ", ".join(images + pis))
+        put("evidence_binding", not bad, "; ".join(bad) or str(len(recs)) + " evidence records, each on the head or a bound copy, passed",
+            notes=notes, images=images, pi_versions=pis)
+
+        # ---- 6. binding_tests -----------------------------------------------------------------
+        # A red-green proof runs the named tests on the code without the change and expects them
+        # to fail. It sits under a key such as fail_before_pass_after or fail-before; inside it, a
+        # suite that names the base side (master, base, before) is the red run. Failures of a red
+        # run are expected: they go in a note, not against the head. Every other outcome counts.
+        BEFORE = re.compile(r"fail.?before|before.?(the.?)?fix", re.I)
+        BASE_SIDE = re.compile(r"master|base|before", re.I)
+
+        def red_run(path, suite):
+            if suite and BEFORE.search(suite):
+                return True
+            if not any(BEFORE.search(s) for s in path):
+                return False
+            if suite:
+                return bool(BASE_SIDE.search(suite))
+            return not re.search(r"after", path[-1], re.I)
+
+        bad, results = [], []
+        any_pass = any(r.get("bound") and r.get("passed") for r in recs)
+        ok_outcomes = ("passed", "pass", "ok")
+        for b in req.get("bindings", []):
+            res = {"id": b["id"], "tests": []}
+            for t in b.get("tests", []):
+                parts = t.split("::")
+                fn = re.sub(r"\[.*\]$", "", parts[-1])
+                want_path = parts[0] if len(parts) > 1 and parts[0].endswith(".py") else ""
+                ok, out = git_ok("grep", "-n", "-E", "def " + re.escape(fn) + "[(]", head, "--", want_path or "*.py")
+                where = out.splitlines()[0].split(":", 2)[1] if ok and out else ""
+                outcomes, counted, red_failed = [], [], []
+                for nodeid, seen in per_test.items():
+                    if re.sub(r"\[.*\]$", "", nodeid.rsplit("::", 1)[-1]) == fn:
+                        for rel, o, path, suite in seen:
+                            outcomes.append(o)
+                            if not red_run(path, suite):
+                                counted.append(o)
+                            elif o not in ok_outcomes and o != "skipped":
+                                red_failed.append(rel + " " + (suite or path[-1]))
+                entry = {"test": t, "defined_in": where, "in_diff": where in files, "outcomes": sorted(set(outcomes))}
+                if not where:
+                    entry["problem"] = "no def " + fn + " at the head" + (" in " + want_path if want_path else "")
+                elif any(o not in ok_outcomes for o in counted if o != "skipped"):
+                    entry["problem"] = "the evidence lists it as " + ", ".join(sorted(set(outcomes)))
+                elif not counted:
+                    dotted = where[:-3].replace("/", ".") if where.endswith(".py") else where
+                    same_file = [n for n in per_test if (n.startswith(where + "::") or n.startswith(dotted + "::"))
+                                 and re.sub(r"\[.*\]$", "", n.rsplit("::", 1)[-1]) != fn]
+                    if same_file:
+                        entry["problem"] = "the evidence lists " + str(len(same_file)) + " tests of " + where + " but not this one"
+                    elif not any_pass:
+                        entry["problem"] = "no per-test list holds it and no passing run of the head covers it"
+                    else:
+                        entry["note"] = "no per-test list holds it; a passing run of the head covers it"
+                if red_failed:
+                    entry["note"] = ((entry["note"] + "; ") if entry.get("note") else "") + (
+                        "it fails in the red runs of a red-green proof (" + ", ".join(sorted(set(red_failed)))
+                        + "), as that proof expects; only the other runs count for the head")
+                if entry.get("problem"):
+                    bad.append(b["id"] + ": " + t + ": " + entry["problem"])
+                res["tests"].append(entry)
+            results.append(res)
+        put("binding_tests", not bad, "; ".join(bad) or (str(sum(len(r["tests"]) for r in results))
+            + " named tests of " + str(len(results)) + " claimed bindings exist at the head; none failed in the evidence"),
+            bindings=results)
+
+        # ---- 7. switch_off --------------------------------------------------------------------
+        sw = req["switch"]
+        env_name, on_values = sw["env"], set(v.lower() for v in sw.get("on_values", ["1", "true", "on", "yes"]))
+        mod_name, fn_name = sw["probe"].split(":")
+
+        def show(path):
+            return git_ok("show", head + ":" + path)[1]
+
+        def modname(path):
+            m = path[:-3].replace("/", ".")
+            return m[:-9] if m.endswith(".__init__") else m
+
+        ok, out = git_ok("grep", "-l", "-F", env_name, head, "--", "*.py")
+        env_files = [x.split(":", 1)[1] for x in out.splitlines() if ok and x]
+        exporters = set()
+        for path in env_files:
+            try:
+                tree = ast.parse(show(path))
+            except SyntaxError:
+                continue
+            for node in tree.body:
+                if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Constant) and node.value.value == env_name:
+                    for tgt in (node.targets if isinstance(node, ast.Assign) else [node.target]):
+                        if isinstance(tgt, ast.Name):
+                            exporters.add((modname(path), tgt.id))
+        scan = set(p for p in env_files if not is_test_path(p))
+        for _, nm in exporters:
+            ok, out = git_ok("grep", "-l", "-w", nm, head, "--", "*.py")
+            scan |= set(x.split(":", 1)[1] for x in out.splitlines() if ok and x and not is_test_path(x.split(":", 1)[1]))
+        reads, bad = [], []
+
+        def literal(node):
+            return node.value if isinstance(node, ast.Constant) else ...
+
+        for path in sorted(scan):
+            try:
+                tree = ast.parse(show(path))
+            except SyntaxError:
+                warnings.append("switch_off: cannot parse " + path)
+                continue
+            pkg = modname(path) if path.endswith("__init__.py") else modname(path).rsplit(".", 1)[0]
+            local, imported = set(), set()
+            for node in tree.body:
+                if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Constant) and node.value.value == env_name:
+                    for tgt in (node.targets if isinstance(node, ast.Assign) else [node.target]):
+                        if isinstance(tgt, ast.Name):
+                            local.add(tgt.id)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    src = node.module or ""
+                    if node.level:
+                        parts = pkg.split(".")
+                        src = ".".join(parts[:len(parts) - node.level + 1] + ([src] if src else []))
+                    for a in node.names:
+                        if (src, a.name) in exporters:
+                            imported.add(a.asname or a.name)
+            names_here = local | imported
+
+            def is_env(node):
+                if isinstance(node, ast.Constant):
+                    return node.value == env_name
+                return isinstance(node, ast.Name) and node.id in names_here
+
+            def is_environ(node):
+                return (isinstance(node, ast.Attribute) and node.attr == "environ") or (isinstance(node, ast.Name) and node.id == "environ")
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, (ast.Attribute, ast.Name)) and node.args and is_env(node.args[0]):
+                    fname = node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id
+                    on_environ = isinstance(node.func, ast.Attribute) and is_environ(node.func.value)
+                    if not (fname == "getenv" or (on_environ and fname in ("get", "setdefault", "pop"))):
+                        continue
+                    default = node.args[1] if len(node.args) > 1 else None
+                    for kw in node.keywords:
+                        if kw.arg in ("default", "value"):
+                            default = kw.value
+                    val = None if default is None else literal(default)
+                    entry = {"file": path, "line": node.lineno, "call": fname,
+                             "default": None if val is ... else val}
+                    if val is ...:
+                        warnings.append("switch_off: " + path + ":" + str(node.lineno) + " reads the switch with a computed default")
+                    elif isinstance(val, str) and val.strip().lower() in on_values:
+                        bad.append(path + ":" + str(node.lineno) + " " + fname + " gives the switch the default " + repr(val))
+                    elif val is True or val == 1:
+                        bad.append(path + ":" + str(node.lineno) + " " + fname + " gives the switch an on default")
+                    reads.append(entry)
+                if isinstance(node, ast.Assign):
+                    for tgt in node.targets:
+                        if isinstance(tgt, ast.Subscript) and is_environ(tgt.value) and is_env(tgt.slice):
+                            val = literal(node.value)
+                            if isinstance(val, str) and val.strip().lower() in on_values:
+                                bad.append(path + ":" + str(node.lineno) + " turns the switch on in code")
+                            else:
+                                warnings.append("switch_off: " + path + ":" + str(node.lineno) + " sets the switch in code")
+        cfg_on = []
+        current = ""
+        pat = re.compile(re.escape(env_name) + r"[\x22\x27]?\s*[:=]\s*[\x22\x27]?(1|true|on|yes)\b", re.I)
+        config_like = (".yaml", ".yml", ".json", ".toml", ".ini", ".cfg", ".conf", ".env", ".sh")
+
+        def is_config(p):
+            name = p.rsplit("/", 1)[-1]
+            return not is_test_path(p) and (p.endswith(config_like) or name.startswith(("Dockerfile", ".env", "docker-compose")))
+
+        for line in (scratch / "diff.patch").read_text(errors="replace").splitlines():
+            if line.startswith("diff --git "):
+                current = line.split(" b/", 1)[-1]
+            elif line.startswith("+") and not line.startswith("+++") and is_config(current) and pat.search(line):
+                cfg_on.append(current + ": " + line[1:].strip()[:160])
+        bad += ["a changed config turns it on: " + x for x in cfg_on]
+        py = os.environ.get("LAND_CHECK_PY") or next(
+            (x for x in ("/app/.venv/bin/python",) if os.path.exists(x)), sys.executable)
+        probe = ("import importlib, json, sys; sys.path.insert(0, sys.argv[1]); m = importlib.import_module(sys.argv[2]); "
+                 "print(json.dumps({\"value\": bool(getattr(m, sys.argv[3])()), \"file\": getattr(m, \"__file__\", \"\")}))")
+        penv = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(scratch), "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"}
+        try:
+            rc, out, err = sh([py, "-c", probe, str(code), mod_name, fn_name], env=penv, cwd=str(scratch), timeout=180)
+            got = json.loads(out.decode().strip().splitlines()[-1]) if rc == 0 and out.strip() else None
+        except Exception as exc:
+            rc, got, err = 1, None, str(exc).encode()
+        if got is None:
+            warnings.append("switch_off: the import probe failed (" + err.decode(errors="replace").strip().splitlines()[-1][:200]
+                            + ") so only the code reads were checked" if err.strip() else "switch_off: the import probe printed nothing")
+            probe_says = None
+        else:
+            probe_says = got["value"]
+            if not str(got.get("file", "")).startswith(str(code)):
+                warnings.append("switch_off: the probe imported " + str(got.get("file")) + ", not code/")
+            if probe_says:
+                bad.append("a fresh process without " + env_name + " sees " + sw["probe"] + "() on")
+        if not reads and not cfg_on:
+            warnings.append("switch_off: no read of " + env_name + " found outside tests")
+        put("switch_off", not bad, "; ".join(bad) or (env_name + " defaults off: " + str(len(reads)) + " reads checked"
+            + ("" if probe_says is None else ", and a fresh process sees " + sw["probe"] + "() = False")),
+            reads=reads, probe=probe_says)
+
+        # ---- 8. department_rows ---------------------------------------------------------------
+        cfgs = [p for p in added if p.startswith("configs/") and not p.startswith("configs/local/")
+                and p.endswith((".yaml", ".yml")) and ("/agents/" in p or "/workflows/" in p)]
+        if cfgs:
+            rows = show("docs/departments.md")
+            missing = [p for p in cfgs if not re.search(r"(?<![A-Za-z0-9_])" + re.escape(pathlib.PurePath(p).stem) + r"(?![A-Za-z0-9_])", rows)]
+            put("department_rows", not missing, "no row in docs/departments.md for: " + ", ".join(missing) if missing
+                else "every added agent or workflow config has its row (" + str(len(cfgs)) + ")")
+        else:
+            put("department_rows", True, "not needed: the branch adds no agent or workflow config")
+
+    failed = [n for n in ["commit_identity"] + names if not checks[n]["passed"]]
+    facts = {"schema_version": 1, "case": req.get("case"), "gate": req.get("gate"), "check_time": req.get("check_time"),
+             "branch": branch, "checks": checks, "failed_checks": failed, "all_passed": not failed,
+             "warnings": warnings, "evidence": recs if head and master else [],
+             "diff": "scratch/diff.patch"}
+    (scratch / "facts.json").write_text(json.dumps(facts, indent=1, ensure_ascii=False) + "\n")
+    print(json.dumps({"facts_path": str(scratch / "facts.json"), "diff_path": str(scratch / "diff.patch"),
+                      "failed_checks": failed, "all_passed": not failed, "warnings": len(warnings),
+                      "summary": ("all eight mechanical checks pass" if not failed else "failed: " + ", ".join(failed))
+                      + "; " + str(branch.get("commit_count")) + " commits, " + str(branch.get("file_count")) + " files"}))'

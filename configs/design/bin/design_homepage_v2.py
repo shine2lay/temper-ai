@@ -19,7 +19,7 @@ Stages (one CLI, ``design_homepage_v2.py <stage> --workspace W``):
   concepts_check  validate the art director's three concepts, fetch their
                   licensed fonts, render each at 1440 and 390, check they are
                   distinct and use the deck's words, and build the contact sheet
-  direction       OWNER DIRECTION gate decision -> prepare site/, taste entry
+  direction       DIRECTION gate decision -> prepare site/, taste entry
   build_fixture   (fixture) the chosen concept becomes the page
   plan_round      round bookkeeping: build, or revise with a fix list
   revise_fixture  (fixture) a tiny scripted revision
@@ -35,20 +35,24 @@ Stages (one CLI, ``design_homepage_v2.py <stage> --workspace W``):
   convert         HTML -> editable Penpot (fonts, colours, typographies, components)
   verify          fresh reopen + fidelity bar; fails visibly
   handoff         packet with manifest
-  final           OWNER FINAL gate decision (approve or request changes), taste entry
+  final           FINAL gate decision (approve or request changes), taste entry
 
 Every completed stage leaves a receipt in homepage/job.json, keyed by its
 inputs. Re-entry with the same inputs reuses the receipt (no repeated paid or
 Penpot work); changed inputs for a completed stage fail instead of silently
-repeating. Gate decisions are saved JSON only; the fixture workflow labels its
-decisions "fixture-test" and can never record owner approval. The pilot
-workflow (``--pilot``, fictional briefs only) runs the real models and checks,
-but its direction is the worker's "provisional-fictional" pick: never owner
+repeating. Gate decisions are saved JSON only. Gates are named for what they
+decide (direction, final); every answer records decided_by (design; owner only
+for the owner's own words, kept verbatim; fixture-test in the fixture
+workflow), the choice and its reasons. The pilot workflow (``--pilot``,
+fictional briefs only) runs the real models and checks, but its direction is
+the worker's provisional pick (decided_by design, provisional): never an
 approval, never a taste entry. The benchmark workflow (``--bench``, fictional
-briefs only; queue #10) runs the same models and checks with no owner gates:
-it builds the art director's recommended concept (concepts.json "recommended")
-and records the final as "benchmark_skipped", labelled not owner-approved; the
-owner judges its pages blind on Design's scoreboard. Never a taste entry.
+briefs only; queue #10) runs the same models and checks with no gates: it
+builds the art director's recommended concept (concepts.json "recommended")
+and records the final as "benchmark_skipped", not approved; its pages are
+judged blind on Design's scoreboard. Never a taste entry. Records written
+before 2026-10-05 (approval owner-*, owner_* keys) still load: see
+upgrade_state and gate_decided_by.
 """
 from __future__ import annotations
 
@@ -100,7 +104,7 @@ AXE_SETTLE_MS = 8000  # longest wait for a concept's load animations to end
 FONT_HOSTS = {"fonts.googleapis.com", "fonts.gstatic.com", "raw.githubusercontent.com"}
 LICENCE_URLS = (("ofl", "OFL.txt"), ("apache", "LICENSE.txt"), ("ufl", "UFL.txt"))
 MAX_AUTO_REVISIONS = 2
-MAX_OWNER_CHANGES = 2
+MAX_CHANGE_ROUNDS = 2  # final-gate request_changes rounds per run
 # Distinctness bars, fixed before any run: a pair of concepts must differ on all.
 EXTERNAL_TIMEOUT = 90  # seconds per outside page (load + scroll + screenshot)
 DISTINCT = {"min_dominant_delta_e": 0.10, "max_signature_jaccard": 0.5, "min_thumbnail_diff": 0.06}
@@ -440,6 +444,67 @@ def html_problems(path: Path) -> list[str]:
 
 def safe_gate(raw: str) -> dict:
     return v1.safe_gate(raw)
+
+
+# Gate convention (Design DIRECTIVES 2026-10-04): the chat running a workflow answers as Design;
+# "owner" only for the owner's own words (kept verbatim, they outrank); "fixture-test" in fixture runs.
+REAL_DECIDERS = ("design", "owner")
+FIXTURE_DECIDER = "fixture-test"
+# Before 2026-10-05 gate records named the answerer in "approval"; read, never rewritten.
+LEGACY_APPROVAL = {"owner-direction": "owner", "owner-final": "owner", "fixture-test": FIXTURE_DECIDER,
+                   "provisional-fictional": "design", "benchmark-recommended": "design"}
+
+
+def gate_answer(raw: str, gate: str, deciders: tuple[str, ...]) -> dict:
+    """A direction or final gate answer: decided_by (one of deciders), the choice and its reasons."""
+    value = safe_gate(raw)
+    if "approval" in value:
+        raise ValueError("approval is retired: answer with decided_by (design, owner or fixture-test) and reasons")
+    if value.get("decided_by") not in deciders:
+        raise ValueError(f"this workflow's {gate} gate needs decided_by {' or '.join(deciders)}")
+    reasons = value.get("reasons")
+    if not isinstance(reasons, str) or not reasons.strip():
+        raise ValueError(f"the {gate} gate answer needs reasons: why this choice")
+    if value["decided_by"] == "owner":
+        # Only the owner's own words make an owner answer: verbatim in notes, with where he said them.
+        if not value.get("notes") or not isinstance(value.get("source"), str) or not value["source"].strip():
+            raise ValueError("an owner answer needs his own words in notes and source: where he said them")
+    elif "source" in value:
+        raise ValueError("source names where the owner said his words; only decided_by owner has one")
+    return value
+
+
+def gate_decided_by(record: dict) -> str | None:
+    """Who answered a saved gate record, new (decided_by) or legacy (approval)."""
+    return record.get("decided_by") or LEGACY_APPROVAL.get(record.get("approval"))
+
+
+def taste_words(entry: dict):
+    """A taste entry's words, new (words) or legacy (owner_words)."""
+    return entry.get("words", entry.get("owner_words", ""))
+
+
+def upgrade_state(state: dict) -> dict:
+    """Read a job.json written before 2026-10-05 (owner_changes, owner_*_approved) under the new names.
+
+    Old keys stay as they are (past records are never rewritten); the new ones are added beside them."""
+    if "change_rounds" not in state:
+        state["change_rounds"] = state.get("owner_changes", 0)
+    if "direction_approved" not in state:
+        d = state.get("direction") or {}
+        state["direction_approved"] = {"approved": bool(state.get("owner_direction_approved")),
+                                       "decided_by": gate_decided_by(d) if d else None}
+    if "final_approved" not in state:
+        old = bool(state.get("owner_final_approved"))
+        state["final_approved"] = {"approved": old, "decided_by": "owner" if old else None}
+    return state
+
+
+# Round verdicts that start a final-gate change round ("owner_changes" in job.json files before 2026-10-05).
+CHANGE_VERDICTS = ("gate_changes", "owner_changes")
+# Fix-list source of the final gate's change notes ("owner" in rounds saved before 2026-10-05).
+GATE_FIX_SOURCE = "final_gate"
+GATE_FIX_SOURCES = (GATE_FIX_SOURCE, "owner")
 
 
 # ---------------------------------------------------------------- words (copy deck)
@@ -1253,7 +1318,7 @@ def write_review_inputs(review: Path, site: Path, brief: dict, number: int, chos
     (review / "concept.md").write_text(
         f"# Chosen direction {chosen.get('id', '?')} — {chosen.get('name', '?')}\n\n{chosen.get('brief', '')}\n\n"
         f"Signature move: {chosen.get('signature_move', '')}\nMotion: {chosen.get('motion', '')}\nImagery: {chosen.get('imagery', '')}\n"
-        f"Owner notes: {notes}\n")
+        f"Direction notes: {notes}\n")
     if references is not None and references.exists():
         shutil.copyfile(references, review / "references.md")
     return metrics
@@ -1510,7 +1575,7 @@ def same_problem(a: dict, b: dict, sig_words: set[str] = frozenset()) -> bool:
         if na and nb and na != nb:  # step 1 and step 3 are different elements
             return False
         return _jaccard(ea, eb) >= CONTENT_MATCH
-    if a.get("source") == "owner":
+    if a.get("source") in GATE_FIX_SOURCES:  # the final gate's own change notes never merge
         return False
     if (a.get("check") or a.get("criterion")) != (b.get("check") or b.get("criterion")):
         return False
@@ -1622,19 +1687,20 @@ class Job:
             raise ValueError("a run is the fixture or the pilot or the benchmark, not more than one")
         self.root = Path(workspace).resolve()
         self.fixture = fixture
-        self.pilot = pilot  # fictional trials: the worker's provisional direction, never owner approval
-        # Benchmark runs (queue #10): fixed fictional briefs, the art director's recommended concept, no owner
-        # gates; the result is labelled not owner-approved and is judged blind by the owner on the scoreboard.
+        self.pilot = pilot  # fictional trials: the worker's provisional direction, never an approval
+        # Benchmark runs (queue #10): fixed fictional briefs, the art director's recommended concept, no
+        # gates; the result is labelled not approved and is judged blind on the scoreboard.
         self.bench = bench
         self.packet = self.root / "homepage"
         self.packet.mkdir(parents=True, exist_ok=True)
         self.state_path = self.packet / "job.json"
         workflow = "design_homepage_v2" + ("_fixture" if fixture else "_pilot" if pilot else "_bench" if bench else "")
-        self.state = load(self.state_path) if self.state_path.exists() else {
+        self.state = upgrade_state(load(self.state_path)) if self.state_path.exists() else {
             "version": VERSION, "workflow": workflow,
-            "created_at": now(), "stages": {}, "round": 0, "revisions": 0, "owner_changes": 0,
-            "decision_seq": 0, "planned_seq": -1, "owner_direction_approved": False,
-            "owner_final_approved": False}
+            "created_at": now(), "stages": {}, "round": 0, "revisions": 0, "change_rounds": 0,
+            "decision_seq": 0, "planned_seq": -1,
+            "direction_approved": {"approved": False, "decided_by": None},
+            "final_approved": {"approved": False, "decided_by": None}}
         if self.state.get("workflow") != workflow:
             raise ValueError(f"workspace belongs to another workflow ({self.state.get('workflow')}, not {workflow}); "
                              "use a fresh workspace")
@@ -1687,9 +1753,9 @@ class Job:
         return list(load(path).get("entries", [])) if path.exists() else []
 
     def record_taste(self, key: str, entry: dict) -> None:
-        """Save one owner gate answer for the host's taste file (homepage_v2_control.py taste-sync).
+        """Save one gate answer, with who decided, for the host's taste files (homepage_v2_control.py taste-sync).
 
-        Pilot and benchmark runs record nothing: their direction is not the owner's pick.
+        Pilot and benchmark runs record nothing: their direction is a provisional pick, not a gate answer.
         """
         if self.pilot or self.bench:
             return
@@ -1794,7 +1860,7 @@ class Job:
         return self.receipt("references", fp, {"status": "completed", "captured": len(good), "failed": len(refs) - len(good),
                                                "references_path": "homepage/references/REFERENCES.md"})
 
-    # -- the owner's taste and the words
+    # -- the taste file and the words
 
     def taste(self, raw: str) -> dict:
         text, truncated = trim_taste((raw or "").replace("\r\n", "\n"))
@@ -1803,11 +1869,12 @@ class Job:
         cached = self.cached("taste", fp)
         if cached:
             return cached
-        body = text.strip() or "No entries yet: the owner has not answered a design gate since the taste file started."
+        body = text.strip() or "No entries yet: no design gate has been answered since the taste file started."
         (self.packet / "TASTE.md").write_text(
             "# The owner's taste (private; passed into this run)\n\n"
-            "What the owner chose, rejected and said at earlier design gates. Treat it as evidence of their taste:\n"
-            "follow what they liked, avoid what they rejected, and say how (concepts cite entry ids such as T3 in\n"
+            "What earlier design gates chose, rejected and said; each entry says who decided (design, or owner for his\n"
+            "own words, which outrank). Treat it as evidence of the owner's taste:\n"
+            "follow what was liked, avoid what was rejected, and say how (concepts cite entry ids such as T3 in\n"
             "taste_use). The brief and its facts still win. Never quote these notes on the page.\n"
             + ("\n(Older entries left out: the file is longer than this run takes.)\n" if truncated else "")
             + "\n---\n\n" + body + "\n")
@@ -2154,8 +2221,9 @@ class Job:
         if "pairings_recorded" in check:
             output["pairings_recorded"] = check["pairings_recorded"]
         if verdict == "ok" and not self.bench:  # benchmark runs have no direction gate to ask
-            output["questions"] = [{"id": "direction", "question": "Choose one concept (A, B or C) and add notes; this is the owner's taste decision "
-                                    "(your pick, the ones you pass over and your notes go into your private taste file)",
+            output["questions"] = [{"id": "direction", "question": "Choose one concept (A, B or C) with decided_by (design; owner only for "
+                                    "his own words), reasons and optional notes. The pick, the ones passed over and the notes are "
+                                    "saved as a taste entry with who decided",
                                     "options": [f"{c['id']}: {c['name']}" for c in concepts]}]
         return self.receipt(key, fp, output)
 
@@ -2221,7 +2289,7 @@ class Job:
             return f"homepage/concepts/sheet.html (png failed: {exc.__class__.__name__})"
         return "homepage/concepts/shots/contact-sheet.png"
 
-    # -- owner direction
+    # -- direction gate
 
     def direction(self, raw: str) -> dict:
         if self.bench:
@@ -2231,22 +2299,21 @@ class Job:
             picked = recommendation(load(spec_path)) if spec_path.exists() else None
             if picked is None:
                 raise ValueError("concepts.json has no valid recommended concept for the benchmark run")
-            decision = {"concept": picked["concept"], "approval": "benchmark-recommended",
-                        "notes": "Art director's recommendation (benchmark run, not owner direction): " + picked["reason"]}
+            reason = "Art director's recommendation (benchmark run): " + picked["reason"]
+            decision = {"concept": picked["concept"], "decided_by": "design", "benchmark": True,
+                        "reasons": reason, "notes": reason}
         else:
-            decision = safe_gate(raw)
+            decision = gate_answer(raw, "direction", (FIXTURE_DECIDER,) if self.fixture else ("design",) if self.pilot
+                                   else REAL_DECIDERS)
         check = load(self.concepts_dir / "check.json") if (self.concepts_dir / "check.json").exists() else {}
         if check.get("verdict") != "ok":
             raise ValueError("concepts have not passed the final check; no direction can be recorded")
         if decision.get("concept") not in CONCEPT_IDS:
             raise ValueError("direction needs concept A, B or C")
-        want = ("fixture-test" if self.fixture else "provisional-fictional" if self.pilot
-                else "benchmark-recommended" if self.bench else "owner-direction")
-        if decision.get("approval") != want:
-            raise ValueError(f"this workflow's direction gate needs approval {want!r}")
-        if self.pilot and words(str(decision.get("notes", ""))) < 8:
-            raise ValueError("a provisional pick needs notes: why this concept (8 words or more)")
-        owner = not self.fixture and not self.pilot and not self.bench
+        if self.pilot and words(str(decision.get("reasons", ""))) < 8:
+            raise ValueError("a provisional pick needs reasons: why this concept (8 words or more)")
+        by = decision["decided_by"]
+        flag = {"approved": not self.pilot and not self.bench, "decided_by": by}
         fp = digest(decision)
         cached = self.cached("direction", fp)
         if cached:
@@ -2263,7 +2330,7 @@ class Job:
         if (self.packet / "assets").exists():
             shutil.copytree(self.packet / "assets", site / "images")
         save(self.packet / "direction.json", {**decision, "concept_name": chosen["name"], "saved_at": now(),
-                                              "owner_approved": owner, "provisional": self.pilot or self.bench,
+                                              "direction_approved": flag, "provisional": self.pilot or self.bench,
                                               "benchmark": self.bench})
         try:  # the picked pairing joins the record (a fixture run's too); the offered ones joined at the final check
             record_pairings(pairing_log(self.root), self.root.name, "chosen", [chosen])
@@ -2273,12 +2340,12 @@ class Job:
             "gate": "direction", "choice": f"{chosen['id']}: {chosen['name']}", "choice_summary": describe_concept(chosen),
             "rejected": [{"option": f"{c['id']}: {c['name']}", "summary": describe_concept(c)}
                          for c in spec["concepts"] if c["id"] != chosen["id"]],
-            "owner_words": decision.get("notes", "")})
+            "decided_by": by, "reasons": decision["reasons"], "words": decision.get("notes", "")})
         self.state["direction"] = {**decision, "concept_name": chosen["name"]}
-        self.state["owner_direction_approved"] = owner
+        self.state["direction_approved"] = flag
         return self.receipt("direction", fp, {"status": "completed", "concept": chosen["id"], "concept_name": chosen["name"],
-                                              "owner_direction_approved": owner, "provisional": self.pilot or self.bench,
-                                              "benchmark": self.bench})
+                                              "decided_by": by, "direction_approved": flag,
+                                              "provisional": self.pilot or self.bench, "benchmark": self.bench})
 
     def build_fixture(self) -> dict:
         cid = self.state["direction"]["concept"]
@@ -2300,7 +2367,7 @@ class Job:
         if self.state["round"] == 0:
             plan = {"status": "completed", "round": 1, "action": "build"}
         else:
-            if self.state.get("verdict") not in ("revise", "owner_changes"):
+            if self.state.get("verdict") not in ("revise", *CHANGE_VERDICTS):
                 raise ValueError("no revision was requested; refusing to start another round")
             number = self.state["round"] + 1
             fixes = self.state.get("fix_list", [])
@@ -2311,7 +2378,7 @@ class Job:
             if self.state["verdict"] == "revise":
                 self.state["revisions"] += 1
             else:
-                self.state["owner_changes"] += 1
+                self.state["change_rounds"] += 1
             plan = {"status": "completed", "round": number, "action": "revise", "fixes": len(fixes),
                     "fix_list": "review/fix-list.json"}
         self.state["round"] = plan["round"]
@@ -2631,7 +2698,7 @@ class Job:
         self.commit()
         return {"status": "completed", "round": number, "passed": True, "fidelity": fidelity}
 
-    # -- handoff and owner final
+    # -- handoff and the final gate
 
     def handoff(self) -> dict:
         number = self.state["round"]
@@ -2660,24 +2727,24 @@ class Job:
             shutil.copytree(self.packet / "rounds", dest / "rounds")
         if (self.packet / "references" / "REFERENCES.md").exists():
             shutil.copyfile(self.packet / "references" / "REFERENCES.md", dest / "REFERENCES.md")
-        if self.copy_dir.exists():  # the words; the owner's taste notes stay out of the packet
+        if self.copy_dir.exists():  # the words; the taste notes stay out of the packet
             shutil.copytree(self.copy_dir, dest / "copy")
         brief = load(self.packet / "brief.json")
         last = self.state.get("last_round", {})
         fonts = conv.get("fonts", [])
         lines = [f"# Homepage handoff — {brief['product']} (round {number})", "",
                  f"Direction: {self.state['direction']['concept']} — {self.state['direction']['concept_name']}"
-                 + (" (fixture-test, not owner approval)" if self.fixture
-                    else " (provisional fictional pick by the worker, not owner direction)" if self.pilot
-                    else " (the art director's recommended concept; benchmark run, not owner direction)" if self.bench
-                    else " (owner direction)"),
+                 + (" (fixture-test answer, not an approval by anyone)" if self.fixture
+                    else " (provisional fictional pick by the worker, not a direction approval)" if self.pilot
+                    else " (the art director's recommended concept; benchmark run, no direction gate)" if self.bench
+                    else f" (direction gate, decided by {gate_decided_by(self.state['direction'])})"),
                  f"Editable master: Penpot file {conv['file']['name']} — {conv['file']['url']}",
                  f"Boards: {', '.join(b['name'] for b in conv['boards'])}; components {len(conv['components'])}, instances {len(conv['instances'])},"
                  f" shared colours {len(conv['colors'])}, typographies {len(conv['typographies'])}.",
                  "", "## Fidelity (Penpot export vs browser render, % of pixels differing)"]
         for w, f in conv["fidelity"].items():
             lines.append(f"- {w}: overall {f.get('overall_pct')}%, non-text {f.get('nontext_pct')}%, text {f.get('text_pct')}%, worst tile {f.get('tile_max_pct')}% — {'pass' if f.get('passed') else 'FAIL'}")
-        lines += ["", "## Review", f"Rounds: {number}; automatic revisions {self.state['revisions']}, owner change rounds {self.state['owner_changes']}.",
+        lines += ["", "## Review", f"Rounds: {number}; automatic revisions {self.state['revisions']}, final-gate change rounds {self.state['change_rounds']}.",
                   f"Last round: {last.get('blocking', 0)} blocking, {last.get('minor', 0)} minor; unresolved blocking: {len(last.get('unresolved_blocking', []))}."]
         for item in last.get("unresolved_blocking", []):
             rep = item.get("repeat") or {}
@@ -2706,11 +2773,12 @@ class Job:
         lines += [f"- {k}: {v}" for k, v in sorted(conv["issue_counts"].items())] or ["- none"]
         lines += ["", "## Not checked here", "- Real screen-reader, voice and switch use (the runtime checks cover Tab order, focus, names, reflow,",
                   "  400% zoom, text spacing, reduced motion and hover), motion as designed (renders use reduced motion),",
-                  "  real content beyond the brief's facts, publication. AI review is advisory; the owner decides taste.",
-                  "", "Owner taste approval: " + ("not applicable (fixture)." if self.fixture else
-                                                "none: not owner-approved (benchmark run; the final gate is skipped and the "
-                                                "owner judges benchmark pages blind on the scoreboard)." if self.bench else
-                                                "pending the final gate.")]
+                  "  real content beyond the brief's facts, publication. AI review is advisory; the final gate decides,",
+                  "  and the owner's own words outrank every other answer.",
+                  "", "Final approval: " + ("not applicable (fixture; its gates are answered fixture-test)." if self.fixture else
+                                         "none: not approved (benchmark run; the final gate is skipped and benchmark "
+                                         "pages are judged blind on the scoreboard)." if self.bench else
+                                         "pending the final gate.")]
         (dest / "HANDOFF.md").write_text("\n".join(lines) + "\n")
         manifest = {"round": number, "created_at": now(), "files": {}}
         for f in sorted(dest.rglob("*")):
@@ -2721,7 +2789,8 @@ class Job:
         output = {"status": "completed", "round": number, "handoff_path": f"{rel}/HANDOFF.md", "manifest_path": f"{rel}/manifest.json",
                   "penpot_url": conv["file"]["url"], "files": len(manifest["files"])}
         if not self.bench:  # benchmark runs have no final gate to ask
-            output["questions"] = [{"id": "final", "question": "Approve this homepage, or request changes with notes",
+            output["questions"] = [{"id": "final", "question": "Approve this homepage, or request changes with notes; give "
+                                    "decided_by (design; owner only for his own words) and reasons",
                                     "options": ["approve", "request changes"]}]
         return self.receipt(f"handoff-{number}", fp, output)
 
@@ -2729,25 +2798,27 @@ class Job:
         number = self.state["round"]
         if self.bench:
             if raw.strip():
-                raise ValueError("the benchmark workflow has no final gate; the owner judges benchmark pages blind on the scoreboard")
+                raise ValueError("the benchmark workflow has no final gate; benchmark pages are judged blind on the scoreboard")
             if f"handoff-{number}" not in self.state["stages"]:
                 raise ValueError(f"round {number} has no verified handoff to decide on")
-            label = "not owner-approved: benchmark run, the final gate is skipped"
-            save(self.packet / "final-benchmark.json", {"round": number, "verdict": "benchmark_skipped", "owner_approved": False,
+            label = "not approved: benchmark run, the final gate is skipped"
+            flag = {"approved": False, "decided_by": None}
+            save(self.packet / "final-benchmark.json", {"round": number, "verdict": "benchmark_skipped", "final_approved": flag,
                                                        "label": label, "recorded_at": now()})
-            self.state["owner_final_approved"] = False
+            self.state["final_approved"] = flag
             self.commit()
-            return {"status": "completed", "round": number, "verdict": "benchmark_skipped", "final_owner_approved": False,
-                    "label": label}
-        decision = safe_gate(raw)
+            return {"status": "completed", "round": number, "verdict": "benchmark_skipped",
+                    "direction_approved": self.state["direction_approved"], "final_approved": flag, "label": label}
+        decision = gate_answer(raw, "final", (FIXTURE_DECIDER,) if self.fixture else REAL_DECIDERS)
         if f"handoff-{number}" not in self.state["stages"]:
             raise ValueError(f"round {number} has no verified handoff to decide on")
+        by = decision["decided_by"]
         if decision.get("verdict") == "request_changes":
             notes = decision.get("notes")
             if not isinstance(notes, list) or not notes or not all(isinstance(n, str) and n.strip() for n in notes):
                 raise ValueError("request_changes needs notes: a list of concrete changes")
-            if self.state["owner_changes"] >= MAX_OWNER_CHANGES:
-                raise ValueError("two owner change rounds used; start a new run for further work")
+            if self.state["change_rounds"] >= MAX_CHANGE_ROUNDS:
+                raise ValueError("two final-gate change rounds used; start a new run for further work")
             key = f"final-{number}"
             fp = digest(decision)
             cached = self.cached(key, fp)
@@ -2756,22 +2827,26 @@ class Job:
             save(self.packet / f"final-r{number:02d}.json", {**decision, "recorded_at": now()})
             self.record_taste(f"final-r{number:02d}", {"gate": "final", "round": number, "about": self.final_about(),
                                                         "choice": "request changes", "rejected": [{"option": "approve as it is"}],
-                                                        "owner_words": notes})
-            self.state["verdict"] = "owner_changes"
-            self.state["fix_list"] = [{"source": "owner", "id": f"O{i}", "severity": 4, "problem": n} for i, n in enumerate(notes, 1)]
+                                                        "decided_by": by, "reasons": decision["reasons"], "words": notes})
+            self.state["verdict"] = "gate_changes"
+            self.state["fix_list"] = [{"source": GATE_FIX_SOURCE, "id": f"G{i}", "severity": 4, "problem": n, "decided_by": by}
+                                      for i, n in enumerate(notes, 1)]
             self.state["decision_seq"] += 1
-            return self.receipt(key, fp, {"status": "completed", "round": number, "verdict": "request_changes",
-                                          "final_owner_approved": False})
-        want = "fixture-test" if self.fixture else "owner-final"
-        if decision.get("approval") != want:
-            raise ValueError(f"final gate needs approval {want!r} or verdict request_changes")
-        save(self.packet / "owner-final.json", {**decision, "round": number, "recorded_at": now(), "owner_approved": not self.fixture})
+            return self.receipt(key, fp, {"status": "completed", "round": number, "verdict": "request_changes", "decided_by": by,
+                                          "direction_approved": self.state["direction_approved"],
+                                          "final_approved": {"approved": False, "decided_by": by}})
+        if decision.get("verdict") != "approve":
+            raise ValueError("the final gate needs verdict approve or request_changes")
+        flag = {"approved": True, "decided_by": by}
+        save(self.packet / "final.json", {**decision, "round": number, "recorded_at": now(), "final_approved": flag})
         self.record_taste(f"final-r{number:02d}", {"gate": "final", "round": number, "about": self.final_about(),
                                                     "choice": "approve", "rejected": [{"option": "request changes"}],
-                                                    "owner_words": decision.get("notes") or decision.get("comment") or ""})
-        self.state["owner_final_approved"] = not self.fixture
+                                                    "decided_by": by, "reasons": decision["reasons"],
+                                                    "words": decision.get("notes") or decision.get("comment") or ""})
+        self.state["final_approved"] = flag
         self.commit()
-        return {"status": "completed", "round": number, "verdict": "approved", "final_owner_approved": not self.fixture}
+        return {"status": "completed", "round": number, "verdict": "approved", "decided_by": by,
+                "direction_approved": self.state["direction_approved"], "final_approved": flag}
 
 
     def final_about(self) -> str:
@@ -2795,9 +2870,9 @@ def main() -> None:
     parser.add_argument("stage", choices=STAGES)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--fixture", action="store_true")
-    parser.add_argument("--pilot", action="store_true", help="fictional trial: provisional direction, never owner approval")
+    parser.add_argument("--pilot", action="store_true", help="fictional trial: provisional direction, never an approval")
     parser.add_argument("--bench", action="store_true",
-                        help="benchmark run: fictional brief, the art director's recommended concept, no owner gates")
+                        help="benchmark run: fictional brief, the art director's recommended concept, no gates")
     parser.add_argument("--phase", default="draft")
     parser.add_argument("--browser", default=None)
     parser.add_argument("--serve-host", default=None)

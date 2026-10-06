@@ -89,9 +89,9 @@ agent:
      "recommended": {"concept": "A", "reason": "..."}}
     "recommended" is the direction you would put forward and why, in one or two
     sentences on how well it serves this brief and audience (8 words or more). It
-    is advice only: the owner chooses at the direction gate. Benchmark runs, which
-    have no owner gate, build your pick.
-    Do not edit other files, approve anything or claim the owner chose.
+    is advice only: the direction gate chooses. Benchmark runs, which have no
+    direction gate, build your pick.
+    Do not edit other files, approve anything or claim a gate chose.
     Make your WHOLE final message a single ```json block, nothing before or after:
     {"status": "completed", "concepts": 3}
   task_template: |

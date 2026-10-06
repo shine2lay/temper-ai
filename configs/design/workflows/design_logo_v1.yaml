@@ -7,11 +7,12 @@ workflow:
     the explorer sees its render and redraws -> model-free size check (honest
     minimum px from the saved vectors) and caption-free cold read (first readings
     at 32/128 px, same-name check) -> three distinct symbols and role
-    palettes -> NEW bounded logo critic -> REAL OWNER DIRECTION (a shortlisted
+    palettes -> NEW bounded logo critic -> DIRECTION gate (a shortlisted
     direction, or explore-again: this run ends and the next run carries the
     rejection as research) -> budget ->
-    <=2 selected refinements/reviews -> native editable/portable packet -> REAL
-    OWNER FINAL. AI taste is advisory. No publication, production rebrand or
+    <=2 selected refinements/reviews -> native editable/portable packet -> FINAL
+    gate. Gates are named for what they decide; each answer records decided_by
+    (design, or owner for his own words), the choice and the reasons. AI taste is advisory. No publication, production rebrand or
     fictional bypass. Same-run saved receipts preserve completed paid work.
   inputs:
     brief_json: {type: string, required: true}
@@ -84,7 +85,7 @@ workflow:
       agent: design_logo_stage_v1
       depends_on: [direction_critic]
       input_map: {stage: critic, mode: real}
-    - name: owner_direction
+    - name: direction
       type: agent
       agent: design_logo_stage_v1
       depends_on: [save_direction_critic]
@@ -95,8 +96,8 @@ workflow:
     - name: refine_budget
       type: agent
       agent: design_logo_stage_v1
-      depends_on: [owner_direction]
-      condition: &selected {source: owner_direction.structured.outcome, operator: equals, value: selected}
+      depends_on: [direction]
+      condition: &selected {source: direction.structured.outcome, operator: equals, value: selected}
       gate: true
       input_map: {stage: budget, mode: real, budget_stage: refine}
     - name: prepare_refine
@@ -150,7 +151,7 @@ workflow:
       depends_on: [save_selected_critic]
       condition: *selected
       input_map: {stage: handoff, mode: real}
-    - name: owner_final
+    - name: final
       type: agent
       agent: design_logo_stage_v1
       depends_on: [handoff]
@@ -159,10 +160,10 @@ workflow:
       loop_to: refine_budget
       max_loops: 2
       on_max_loops: fail
-      loop_condition: {source: owner_final.structured.verdict, operator: equals, value: request_changes}
+      loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
       input_map: {stage: final, mode: real}
   outputs:
     packet: handoff.structured.manifest
-    direction_outcome: owner_direction.structured.outcome
-    direction_owner_approved: owner_direction.structured.direction_owner_approved
-    final_owner_approved: owner_final.structured.final_owner_approved
+    direction_outcome: direction.structured.outcome
+    direction_approved: direction.structured.direction_approved
+    final_approved: final.structured.final_approved

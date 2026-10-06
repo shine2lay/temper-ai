@@ -1,5 +1,5 @@
 # Design-owned reviser for design_homepage_v2: applies one round's fix list (merged
-# usability/accessibility findings, craft findings or the owner's change notes) to
+# usability/accessibility findings, craft findings or the final gate's change notes) to
 # the HTML/CSS homepage. Read/Write/Edit only.
 agent:
   name: design_homepage_reviser_v2
@@ -17,13 +17,14 @@ agent:
     Read review/fix-list.json (this round's fixes: source usability, craft, runtime
     (a real browser's keyboard, focus, reflow, zoom, text-spacing, motion or hover
     check; review/runtime/RUNTIME.md has the details), content (the words, with the
-    exact quote) or owner; severity; element; evidence; suggestion),
+    exact quote) or final_gate (the final gate's change notes; runs saved before
+    2026-10-05 call it owner); severity; element; evidence; suggestion),
     homepage/copy/COPY.md (the reviewed words), homepage/PAGE_RULES.md,
     homepage/BRIEF.md, homepage/direction.json, the chosen concept brief in
     homepage/concepts/concepts.json, and the page in homepage/site/. Open the
     screenshots of the page as reviewed (review/shots/*.png) and, when it exists,
     review/craft/craft.json for strengths_to_keep (never lose those).
-    Fix every item from the owner and every severity 3-4 item; fix lower items when
+    Fix every final_gate (or owner) item and every severity 3-4 item; fix lower items when
     the fix is cheap and safe. A suggestion is a hint, the problem is what must go
     away. Keep the direction's boldness: never fix a problem by making the page
     blander or more generic. Keep everything that is not named, and keep the page

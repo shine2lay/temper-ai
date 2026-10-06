@@ -2,7 +2,7 @@
 # and loops with model-free stand-ins for the art director, designer, critics and reviser.
 # It renders, measures and converts to a real Penpot file (design-agent Drafts), so it
 # proves gates, cancel/resume with the same run id, review loops and the converter.
-# Gate answers say approval "fixture-test": never owner approval.
+# Gate answers say decided_by "fixture-test": never a Design or owner decision.
 workflow:
   name: design_homepage_v2_fixture
   version: 1

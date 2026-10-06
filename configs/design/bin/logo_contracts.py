@@ -27,7 +27,7 @@ ACCENT_TONE = "accent"
 CAPS = {"explore": 2.25, "revise": .75, "coldread": .5, "names": .4, "palette": 1.0, "critic": .85, "refine": 1.0}
 # Every shown set of symbols gets a caption-free cold read and a same-name check.
 COLD_RESERVE = round(CAPS["coldread"] + CAPS["names"], 2)  # .9
-# Stage reserves before each budget gate: everything up to the next owner gate.
+# Stage reserves before each budget gate: everything up to the next direction/final gate.
 INITIAL_RESERVE = round(CAPS["explore"] + CAPS["revise"] + COLD_RESERVE + CAPS["palette"] + CAPS["critic"], 2)  # 5.75
 REFINE_RESERVE = round(CAPS["refine"] + COLD_RESERVE + CAPS["critic"], 2)  # 2.75
 FULL_ESTIMATE = round(INITIAL_RESERVE + 2 * REFINE_RESERVE + .35, 2)  # 11.6 incl. .35 headroom; not CLI caps
@@ -73,9 +73,9 @@ status/error semantic. Shortlist THREE DIFFERENT ideas/forms, not recolours,
 from at least two different families.
 Refine: {product:<exact>,concept:<same concept schema and selected id>,
  palette:<same6role schema>, changes:[up to8 evidence-specific strings],
- declined:[up to8 reasoned strings]}. Respect real saved selection and owner note;
-no silent change to direction, product or owner approval. Max TWO planned rounds;
-the host allows one extra round only when the owner asks for it.
+ declined:[up to8 reasoned strings]}. Respect the saved selection and the gate note;
+no silent change to direction, product or approval. Max TWO planned rounds;
+the host allows one extra round only when the final gate asks for it.
 Cold read: {readings:[one per shown symbol label: {label:<S1..>, glance_32:[exactly3
  distinct readings, up to80 each, most likely first], close_128:[exactly3, same rule]}]}.
 A reading names what the image looks like (an object, letter, sign or shape), never
@@ -97,7 +97,7 @@ Critic: {product:<exact>,observations:[up to14],recommendation:<id>,
 Observation: {scope:'concept'|'contract',id:<concept id or contract cell A..E>,
  kind:'measured'|'visual'|'taste'|'similarity',element:<up to120>,
  location:<up to120>,evidence:<up to500>,suggestion:<up to400>}.
-No aesthetic scores. Recommendations are advice, not owner decisions. Contract
+No aesthetic scores. Recommendations are advice, not gate decisions. Contract
 board observations must be separate. Do not call logos WCAG text failures.
 """
 
@@ -166,12 +166,50 @@ def research_contract(r):
     return r
 
 
+# Who answers a gate (gate convention, Design DIRECTIVES 2026-10-04): the chat running the
+# workflow answers as Design; "owner" only for the owner's own words (kept verbatim, they
+# outrank); "fixture-test" for fictional fixture runs. Gates are named for what they decide.
+REAL_DECIDERS = ("design", "owner")
+FIXTURE_DECIDER = "fixture-test"
+# Records written before 2026-10-05 named the answerer "owner" whoever answered. They are read
+# through these fallbacks and never rewritten.
+LEGACY_APPROVAL = {"owner-direction": "owner", "owner-final": "owner", "fixture-test": FIXTURE_DECIDER}
+
+
+def decided_by(record):
+    """Who answered a saved gate record, new or legacy (approval: owner-<gate>)."""
+    if record.get("decided_by"):
+        return record["decided_by"]
+    return LEGACY_APPROVAL.get(record.get("approval"))
+
+
+def gate_note(record):
+    """The answer's own guidance note, new (note) or legacy (owner_note) record."""
+    note = record.get("note")
+    return note if note is not None else record.get("owner_note")
+
+
+def prior_answer(row):
+    """(answer, source, decided_by) of a prior-round row, new or legacy (owner_answer/owner_source)."""
+    if "answer" in row:
+        return row["answer"], row["source"], row["decided_by"]
+    return row["owner_answer"], row["owner_source"], "owner"
+
+
 def prior_round_contract(row, research_files):
-    """An earlier round the owner rejected; carried so the next round avoids it."""
-    keys(row, ("run_id", "owner_answer", "owner_source", "rejected", "evidence"))
+    """An earlier round the direction gate rejected; carried so the next round avoids it.
+
+    Legacy rows (owner_answer, owner_source) from briefs written before 2026-10-05 still load."""
+    if "owner_answer" in row:
+        keys(row, ("run_id", "owner_answer", "owner_source", "rejected", "evidence"))
+    else:
+        keys(row, ("run_id", "answer", "source", "decided_by", "rejected", "evidence"))
+        if row["decided_by"] not in REAL_DECIDERS:
+            raise ValueError("a prior round's answer is decided_by design or owner")
+    answer, source, _ = prior_answer(row)
     uuid.UUID(str(row["run_id"]))
-    text(row["owner_answer"], 600)
-    text(row["owner_source"], 200)
+    text(answer, 600)
+    text(source, 200)
     if not isinstance(row["rejected"], list) or not 1 <= len(row["rejected"]) <= 6:
         raise ValueError("rejected round lists its directions")
     for item in row["rejected"]:
@@ -535,45 +573,56 @@ def budget_contract(v, cost_cap):
 
 
 PLANNED_ROUNDS = 2
-EXTRA_ROUND = PLANNED_ROUNDS + 1  # one more, only on the owner's own request; never a fourth
+EXTRA_ROUND = PLANNED_ROUNDS + 1  # one more, only when the final gate asks for it; never a fourth
 
 
 def extra_round_contract(record, reservation, *, run_id, brief_hash, artifact_hash):
-    """A round past the planned two needs both: the real owner's 'revise' with their own note,
-    recorded by the native final gate of the last planned round, and a fresh refine budget gate
-    answer naming that same note. Neither alone starts paid work."""
-    if record.get("approval") != "owner-final" or record.get("fictional_test") is not False:
-        raise ValueError("extra round needs the real owner's final-gate answer")
+    """A round past the planned two needs both: a real final-gate 'revise' with its own note
+    (decided_by design or owner), recorded by the native final gate of the last planned round,
+    and a fresh refine budget gate answer naming that same note. Neither alone starts paid work.
+    Legacy final records (approval owner-final, owner_note) still count."""
+    if decided_by(record) not in REAL_DECIDERS or record.get("fictional_test") is not False:
+        raise ValueError("extra round needs a real final-gate answer")
     if (record.get("run_id"), record.get("brief_hash"), record.get("artifact_hash")) != (run_id, brief_hash, artifact_hash):
         raise ValueError("extra-round request is for a different run/brief/artifact")
-    note = record.get("owner_note")
+    note = gate_note(record)
     if record.get("decision") != "revise" or not isinstance(note, str) or not note.strip():
-        raise ValueError("extra round needs the owner's revise with their own note")
+        raise ValueError("extra round needs the final gate's revise with its own note")
     text(note, 1200)
-    if reservation.get("extra_round_owner_note") != note:
-        raise ValueError("refine budget gate must name the owner's extra-round note")
+    if reservation.get("extra_round_note", reservation.get("extra_round_owner_note")) != note:
+        raise ValueError("refine budget gate must name the final gate's extra-round note")
     return note
 
 
 def approval_contract(v, *, kind, run_id, brief_hash, artifact_hash, choices, gate_only, fictional=False):
+    """A direction or final gate answer: who decided (decided_by), the choice and the reasons."""
     if not gate_only:
         raise ValueError("ordinary input cannot bypass native human gate")
-    keys(v, ("approval", "run_id", "brief_hash", "artifact_hash", "decision", "reason"), ("owner_note",))
+    if "approval" in v or "owner_note" in v:
+        raise ValueError("approval/owner_note are retired: answer with decided_by (design, owner or fixture-test), reason and note")
+    keys(v, ("decided_by", "run_id", "brief_hash", "artifact_hash", "decision", "reason"), ("note", "source"))
     if fictional:
-        if v["approval"] != "fixture-test":
-            raise ValueError("fictional fixture must not claim real owner approval")
-    elif v["approval"] != "owner-" + kind:
-        raise ValueError("real artwork requires actual owner gate answer")
+        if v["decided_by"] != FIXTURE_DECIDER:
+            raise ValueError("fictional fixture answers are decided_by fixture-test")
+    elif v["decided_by"] not in REAL_DECIDERS:
+        raise ValueError(f"real artwork needs a {kind} gate answer decided_by design or owner")
+    if v["decided_by"] == "owner":
+        # Only the owner's own words make an owner answer: quoted in reason, with where he said them.
+        if not isinstance(v.get("source"), str) or not v["source"].strip():
+            raise ValueError("an owner answer needs source: where he said his words")
+        text(v["source"], 300)
+    elif "source" in v:
+        raise ValueError("source names where the owner said his words; only decided_by owner has one")
     if (v["run_id"], v["brief_hash"], v["artifact_hash"]) != (run_id, brief_hash, artifact_hash):
         raise ValueError("approval is for a different run/brief/artifact")
     if v["decision"] not in choices:
-        raise ValueError("unknown owner decision")
+        raise ValueError(f"unknown {kind} decision")
     text(v["reason"], 1200)
-    if "owner_note" in v:
-        text(v["owner_note"], 1200)
-    if v["decision"] == EXPLORE_AGAIN and "owner_note" not in v:
-        raise ValueError("explore-again needs the owner's own note")
-    return v
+    if "note" in v:
+        text(v["note"], 1200)
+    if v["decision"] == EXPLORE_AGAIN and "note" not in v:
+        raise ValueError("explore-again needs its own note")
+    return {"gate": kind, **v}
 
 
 def safe_svg(data):

@@ -29,7 +29,7 @@ agent:
     WHAT YOU GET (working directory; judge only from these, do not open the site's
     source, fetch or browse):
       review/brief.md          product, audience, page job, primary action.
-      review/concept.md        the owner-chosen art direction the page must deliver.
+      review/concept.md        the chosen art direction the page must deliver.
       review/craft-facts.md    MEASURED numbers per width (computed styles): body and
                                display size and their ratio, text sizes, weights,
                                families and fonts that failed to load, text and
@@ -70,7 +70,7 @@ agent:
                   direction calls for it; nothing flat by accident.
       motion      the orchestrated reveal described in concept.md exists (craft-facts
                   counts animated elements); nothing gratuitous.
-      direction   the page delivers concept.md's brief and owner notes, all the way
+      direction   the page delivers concept.md's brief and direction notes, all the way
                   down, not just in the hero.
       template    "Could this be a template?": would a visitor mistake it for a stock
                   theme with the logo swapped? Name the generic parts.

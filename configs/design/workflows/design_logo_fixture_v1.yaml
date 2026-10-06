@@ -1,4 +1,5 @@
-# Explicitly fictional, model-free contract entry. Still pauses at native gates.
+# Explicitly fictional, model-free contract entry. Still pauses at native gates
+# (direction, final); answers are decided_by fixture-test.
 workflow:
   name: design_logo_fixture_v1
   version: 1
@@ -37,7 +38,7 @@ workflow:
       agent: design_logo_stage_v1
       depends_on: [save_palette]
       input_map: {stage: critic, mode: fixture}
-    - name: owner_direction
+    - name: direction
       type: agent
       agent: design_logo_stage_v1
       depends_on: [save_direction_critic]
@@ -46,8 +47,8 @@ workflow:
     - name: prepare_refine
       type: agent
       agent: design_logo_stage_v1
-      depends_on: [owner_direction]
-      condition: &selected {source: owner_direction.structured.outcome, operator: equals, value: selected}
+      depends_on: [direction]
+      condition: &selected {source: direction.structured.outcome, operator: equals, value: selected}
       input_map: {stage: prepare, mode: fixture}
     - name: save_refine
       type: agent
@@ -73,7 +74,7 @@ workflow:
       depends_on: [save_selected_critic]
       condition: *selected
       input_map: {stage: handoff, mode: fixture}
-    - name: owner_final
+    - name: final
       type: agent
       agent: design_logo_stage_v1
       depends_on: [handoff]
@@ -82,9 +83,10 @@ workflow:
       loop_to: prepare_refine
       max_loops: 2
       on_max_loops: fail
-      loop_condition: {source: owner_final.structured.verdict, operator: equals, value: request_changes}
+      loop_condition: {source: final.structured.verdict, operator: equals, value: request_changes}
       input_map: {stage: final, mode: fixture}
   outputs:
     packet: handoff.structured.manifest
-    direction_outcome: owner_direction.structured.outcome
-    final_owner_approved: owner_final.structured.final_owner_approved
+    direction_outcome: direction.structured.outcome
+    direction_approved: direction.structured.direction_approved
+    final_approved: final.structured.final_approved

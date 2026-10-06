@@ -203,8 +203,9 @@ class Job:
                  "References only: never copy, trace or reuse these marks.", "",
                  "Research images (open each with Read):", *("- " + i for i in images), ""]
         for row in b.get("prior_rounds", []):
-            lines += ["## Earlier round the owner rejected (run " + row["run_id"] + ")", "",
-                      "Owner's answer: " + row["owner_answer"], "",
+            answer, _, by = c.prior_answer(row)
+            lines += ["## Earlier round the direction gate rejected (run " + row["run_id"] + ", decided by " + by + ")", "",
+                      "Answer: " + answer, "",
                       "Rejected directions (do not repeat their ideas or look):",
                       *("- " + r["name"] + ": " + r["idea"] for r in row["rejected"]),
                       "Boards of that round: " + ", ".join("logo/research/" + e for e in row["evidence"]), ""]
@@ -346,17 +347,18 @@ class Job:
             return {"status": "completed", "model_calls": 0, "fictional_test": True}
         reservation = c.budget_contract(json.loads(raw), c.INITIAL_RESERVE if stage == "initial" else c.REFINE_RESERVE)
         if stage != "initial" and self.state["round"] >= c.EXTRA_ROUND:
-            raise ValueError("refinement rounds exhausted, the owner's extra round included")
+            raise ValueError("refinement rounds exhausted, the extra round included")
         if stage != "initial" and self.state["round"] >= c.PLANNED_ROUNDS:
-            # Past the planned rounds only on the owner's own request: the last final gate
-            # recorded their revise with a note, and this fresh reservation names that note.
-            path = self.root / f'owner-final-r{self.state["round"]:02}.json'
+            # Past the planned rounds only when the last final gate asked for it: it recorded
+            # revise with a note, and this fresh reservation names that note.
+            path = self.final_record(self.state["round"])
             if not path.is_file():
-                raise ValueError("two refinement rounds exhausted; no owner request for an extra round")
-            note = c.extra_round_contract(load(path), reservation, run_id=self.run_id,
+                raise ValueError("two refinement rounds exhausted; the final gate asked for no extra round")
+            record = load(path)
+            note = c.extra_round_contract(record, reservation, run_id=self.run_id,
                 brief_hash=self.state["brief_hash"], artifact_hash=self.state["final_artifact_hash"])
-            self.state["extra_round"] = {"round": c.EXTRA_ROUND, "owner_note": note, "owner_final": path.name,
-                                         "recorded_at": h.now()}
+            self.state["extra_round"] = {"round": c.EXTRA_ROUND, "note": note, "decided_by": c.decided_by(record),
+                                         "final_record": path.name, "recorded_at": h.now()}
             self.commit()
         label = "budget-initial" if stage == "initial" else f'budget-r{self.state["round"] + 1:02}'
         path = self.root / (label + ".json")
@@ -532,69 +534,89 @@ class Job:
             brief_hash=self.state["brief_hash"], artifact_hash=self.state["direction_artifact_hash"],
             choices={r["id"] for r in rows} | {c.EXPLORE_AGAIN}, gate_only=gate_only, fictional=self.mode == "fixture")
         fingerprint = c.digest(decision)
-        if result := self.cached("owner-direction", fingerprint):
+        if result := self.cached("direction", fingerprint):
             return result
-        save(self.root / "owner-direction.json", {**decision, "recorded_at": h.now(), "fictional_test": self.mode == "fixture"})
+        record = self.root / "gate-direction.json"
+        save(record, {**decision, "recorded_at": h.now(), "fictional_test": self.mode == "fixture"})
+        not_final = {"approved": False, "decided_by": None}
         if decision["decision"] == c.EXPLORE_AGAIN:
             # None of the three: this run ends; the next run carries the rejection.
             self.state["explore_again"] = decision
             save(self.root / "explore-again.json", {"run_id": self.run_id, "brief_hash": self.state["brief_hash"],
-                "owner_answer": decision["owner_note"], "fictional_test": self.mode == "fixture",
+                "answer": decision["note"], "decided_by": decision["decided_by"], "fictional_test": self.mode == "fixture",
                 "rejected": [{"id": v["id"], "name": v["name"], "idea": v["idea"]}
                              for v in self.concepts() if v["id"] in {r["id"] for r in rows}],
                 "evidence": ["exports/sketches-00.png", "exports/directions-00.png"], "recorded_at": h.now()})
-            return self.receipt("owner-direction", fingerprint, {"status": "completed", "selected": c.EXPLORE_AGAIN,
-                "outcome": "explore_again", "direction_owner_approved": False, "final_owner_approved": False},
-                [self.root / "owner-direction.json", self.root / "explore-again.json"])
+            return self.receipt("direction", fingerprint, {"status": "completed", "selected": c.EXPLORE_AGAIN,
+                "outcome": "explore_again", "decided_by": decision["decided_by"],
+                "direction_approved": {"approved": False, "decided_by": decision["decided_by"]}, "final_approved": not_final},
+                [record, self.root / "explore-again.json"])
         self.state["direction"] = decision
         concept = next(v for v in self.concepts() if v["id"] == decision["decision"])
         palette = next(v["palette"] for v in rows if v["id"] == decision["decision"])
         save(self.root / "selected.json", {"concept": concept, "palette": palette})
-        return self.receipt("owner-direction", fingerprint, {"status": "completed", "selected": decision["decision"],
-            "outcome": "selected", "direction_owner_approved": self.mode == "real", "final_owner_approved": False},
-            [self.root / "owner-direction.json"])
+        return self.receipt("direction", fingerprint, {"status": "completed", "selected": decision["decision"],
+            "outcome": "selected", "decided_by": decision["decided_by"],
+            "direction_approved": {"approved": True, "decided_by": decision["decided_by"]}, "final_approved": not_final},
+            [record])
+
+    def final_record(self, round_number):
+        """The final gate's saved answer for a round: gate-final-rNN.json, or a legacy owner-final-rNN.json."""
+        path = self.root / f"gate-final-r{round_number:02}.json"
+        legacy = self.root / f"owner-final-r{round_number:02}.json"
+        return legacy if not path.is_file() and legacy.is_file() else path
+
+    def direction_flag(self):
+        """direction_approved with who decided, from a new or legacy saved direction."""
+        d = self.state.get("direction") or {}
+        return {"approved": bool(d), "decided_by": c.decided_by(d) if d else None}
 
     def round_cap(self):
         extra = self.state.get("extra_round") or {}
         return c.EXTRA_ROUND if extra.get("round") == c.EXTRA_ROUND else c.PLANNED_ROUNDS
 
     def fixture_extra_round(self):
-        """Fixture twin of the owner's extra round (real mode records it at the refine budget gate).
+        """Fixture twin of the extra round (real mode records it at the refine budget gate).
 
         Only a fictional round-2 final answer of this run, revise with a note, about the current
         artwork, opens round 3; the fixture workflow has no budget gate to carry it.
         """
-        path = self.root / f"owner-final-r{c.PLANNED_ROUNDS:02}.json"
+        path = self.final_record(c.PLANNED_ROUNDS)
         if self.mode != "fixture" or self.state["round"] != c.PLANNED_ROUNDS or self.state.get("extra_round") or not path.is_file():
             return
         record = load(path)
-        if (record.get("fictional_test") is not True or record.get("approval") != "fixture-test"
-                or record.get("decision") != "revise" or not str(record.get("owner_note") or "").strip()
+        if (record.get("fictional_test") is not True or c.decided_by(record) != c.FIXTURE_DECIDER
+                or record.get("decision") != "revise" or not str(c.gate_note(record) or "").strip()
                 or record.get("run_id") != self.run_id or record.get("brief_hash") != self.state["brief_hash"]
                 or record.get("artifact_hash") != self.state.get("final_artifact_hash")):
             return
-        self.state["extra_round"] = {"round": c.EXTRA_ROUND, "owner_note": record["owner_note"], "owner_final": path.name,
-                                     "recorded_at": h.now(), "fictional_test": True}
+        self.state["extra_round"] = {"round": c.EXTRA_ROUND, "note": c.gate_note(record), "decided_by": c.FIXTURE_DECIDER,
+                                     "final_record": path.name, "recorded_at": h.now(), "fictional_test": True}
         self.commit()
 
     def prepare_refine(self):
         self.only("real", "fixture")
         if not self.state.get("direction"):
-            raise ValueError("no selected owner direction")
+            raise ValueError("no selected direction")
         self.fixture_extra_round()
         if self.state["round"] >= self.round_cap():
-            raise ValueError("two refinement rounds exhausted" + (" with the owner's extra round" if self.round_cap() > c.PLANNED_ROUNDS else ""))
+            raise ValueError("two refinement rounds exhausted" + (" with the extra round" if self.round_cap() > c.PLANNED_ROUNDS else ""))
         next_round = self.state["round"] + 1
         if next_round == c.EXTRA_ROUND:
-            feedback = self.state["extra_round"]["owner_note"]
+            feedback = c.gate_note(self.state["extra_round"])
         else:
-            feedback = self.state.get("final_feedback", {}).get("owner_note", self.state["direction"].get("owner_note", self.state["direction"]["reason"]))
+            # The final gate's note, else the direction gate's note, else its reasons (legacy owner_note read too).
+            feedback = c.gate_note(self.state.get("final_feedback", {}))
+            if feedback is None:
+                feedback = c.gate_note(self.state["direction"])
+            if feedback is None:
+                feedback = self.state["direction"]["reason"]
         # The current schema (e.g. optional accent-toned parts) goes to its own file, so the
         # brief stage's pinned schema.txt receipt stays intact for resume checks.
         (self.root / "schema-refine.txt").write_text(c.SCHEMA)
         context = {"product": load(self.root / "brief.json")["product"], "round": next_round,
                    "schema": "logo/schema-refine.txt", "schema_digest": c.digest(c.SCHEMA),
-                   "selected": load(self.root / "selected.json"), "owner_note": feedback,
+                   "selected": load(self.root / "selected.json"), "note": feedback,
                    "critic": f'logo/critic-r{self.state["round"]:02}.json', "output": "logo/refined.json",
                    "pngs": [r["path"] for r in self.state["files"]["directions" if next_round == 1 else f'selected-r{self.state["round"]:02}']["exports"] if r["kind"] == "png"]}
         # Measured size and caption-free first readings of the artwork being refined.
@@ -670,9 +692,9 @@ Selected concept: {selected["concept"]["name"]} ({selected["concept"]["id"]}).
 Trade-off: {selected["concept"]["tradeoff"]}
 
 ## Status and sources
-Actual owner direction is saved; final approval remains a separate gate.
+The direction gate's answer is saved with who decided it; final approval remains a separate gate.
 This packet approves no publication, production rebrand or app/CSS/logo change.
-Facts and interpretations: brief.json; direction reasoning: owner-direction.json.
+Facts and interpretations: brief.json; direction choice, decided_by and reasons: gate-direction.json.
 Native editable source: {self.state["files"][label]["url"]}
 Vector layers/shared colours/live typography IDs: {label}.source.json.
 Original declarative curves/primitives: {label}.json. No stock primary mark.
@@ -723,7 +745,7 @@ namesakes merit professional clearance before public use. No uniqueness claim.
         self.state["final_artifact_hash"] = c.digest({a.name: sha(a) for a in artifacts})
         self.commit()
         manifest = {"run_id": self.run_id, "mode": self.mode, "round": round_number,
-             "direction_owner_approved": self.mode == "real", "final_owner_approved": False,
+             "direction_approved": self.direction_flag(), "final_approved": {"approved": False, "decided_by": None},
              "workflow_verified": False, "source_verified": False, "exports_verified": False,
              "native_save_and_fresh_reopen_checked": True, "safe_svg_checked": True,
              "artifact_hash": self.state["final_artifact_hash"], "brief_hash": self.state["brief_hash"],
@@ -740,23 +762,26 @@ namesakes merit professional clearance before public use. No uniqueness claim.
         decision = c.approval_contract(json.loads(raw), kind="final", run_id=self.run_id,
             brief_hash=self.state["brief_hash"], artifact_hash=self.state["final_artifact_hash"], choices={"approve", "revise"},
             gate_only=gate_only, fictional=self.mode == "fixture")
-        path = self.root / f'owner-final-r{self.state["round"]:02}.json'
+        path = self.root / f'gate-final-r{self.state["round"]:02}.json'
         save(path, {**decision, "recorded_at": h.now(), "fictional_test": self.mode == "fixture"})
+        by = decision["decided_by"]
         if decision["decision"] == "revise":
             if self.state["round"] >= 2:
-                raise ValueError("final owner revision is still pending: two paid refinements exhausted")
-            if not decision.get("owner_note"):
-                raise ValueError("revision requires actual owner guidance")
+                raise ValueError("final-gate revision is still pending: two paid refinements exhausted")
+            if not decision.get("note"):
+                raise ValueError("revision requires the final gate's own note")
             self.state["final_feedback"] = decision
             self.commit()
-            return {"status": "completed", "verdict": "request_changes", "final_owner_approved": False}
+            return {"status": "completed", "verdict": "request_changes", "decided_by": by,
+                    "direction_approved": self.direction_flag(), "final_approved": {"approved": False, "decided_by": by}}
         self.state["final_approval"] = decision
         self.commit()
         manifest = load(self.root / "manifest.json")
-        manifest["final_owner_approved"] = self.mode == "real"
-        manifest["owner_final_receipt"] = path.name
+        manifest["final_approved"] = {"approved": True, "decided_by": by}
+        manifest["final_receipt"] = path.name
         save(self.root / "manifest.json", manifest)
-        return {"status": "completed", "verdict": "approved", "final_owner_approved": self.mode == "real", "ready_for_publication": False}
+        return {"status": "completed", "verdict": "approved", "decided_by": by, "direction_approved": self.direction_flag(),
+                "final_approved": {"approved": True, "decided_by": by}, "ready_for_publication": False}
 
 
 def main():

@@ -1,5 +1,5 @@
 # Design-owned page designer for design_homepage_v2: builds the full homepage in
-# HTML/CSS from the owner's chosen direction (the art director's concept page is
+# HTML/CSS from the direction gate's chosen concept (the art director's concept page is
 # the start, not a frame to fill). The page is converted to editable Penpot later,
 # so it follows homepage/PAGE_RULES.md. Read/Write/Edit only.
 agent:
@@ -22,7 +22,7 @@ agent:
       homepage/copy/COPY.md        the page's reviewed words: headline options, subhead, proof
                                    points, CTA labels, FAQ, terms, worked examples, notices
       homepage/PAGE_RULES.md       rules the page must follow (obey them exactly)
-      homepage/direction.json      the owner's chosen concept id and notes (notes win)
+      homepage/direction.json      the chosen concept id, decided_by, reasons and notes (notes win)
       homepage/concepts/concepts.json and homepage/concepts/<id>/index.html (the chosen
                                    direction's brief and its hero + section)
       homepage/concepts/shots/<id lower>-1440.png and -390.png (its render)

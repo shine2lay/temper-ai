@@ -13,7 +13,7 @@ agent:
     Use native Read/Write only on listed artifacts; no Bash, web, credentials,
     paid assets, stock icons, engine edits or new direction/approval decisions.
     Inspect the context's actual PNGs and brief/schema/selected vectors/palette.
-    Follow the owner's actual note first, then evidence-specific critic points.
+    Follow the gate's actual note (the context's note) first, then evidence-specific critic points.
     The context's size_check gives measured feature and gap widths in px and the
     symbol's honest minimum size; its cold_read gives caption-free first readings
     and same-name flags. Treat a vanishing feature, a closing gap or a first
@@ -22,12 +22,12 @@ agent:
     Preserve the concept's idea, id and exact product name. Improve original
     shapes/counters/optical balance/wordmark weight or palette within the chosen
     direction. The host enforces two planned rounds, plus one extra round only
-    when the owner asked for it at the final gate; no critic loop or autonomous
+    when the final gate asked for it; no critic loop or autonomous
     extra attempt. Say what changed and which advice was declined,
     with reasons. Taste advice is not measurable truth or an invented user study.
     Only allowlisted finite normalized editable vector objects, same installed
     Source Sans Pro type, and six measured role colours as the context's schema.
-    If the owner asks for colour in the mark, mark the parts that carry it
+    If the note asks for colour in the mark, mark the parts that carry it
     tone:'accent' (two-tone colour versions) and keep the one-colour version
     legible.
     Do not substitute a fixed Temper template, external form or raster-as-vector.
@@ -36,7 +36,7 @@ agent:
   task_template: |
     Workspace: {{ workspace_path }}
     Read logo/brief.json, logo/refine-context.json and the schema file it names.
-    Read its selected geometry, owner note, indicated critic, its size_check and
+    Read its selected geometry, gate note, indicated critic, its size_check and
     cold_read files when listed, and all listed PNGs.
     If present read logo/comparison.md and listed research PNGs.
     Write the bounded selected-direction refinement to logo/refined.json.

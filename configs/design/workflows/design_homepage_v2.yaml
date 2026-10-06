@@ -1,5 +1,6 @@
-# Design-owned homepage workflow, v2 (design in code, then editable Penpot). The owner,
-# not an agent, answers the direction and final gates. v1 stays as it is.
+# Design-owned homepage workflow, v2 (design in code, then editable Penpot). The chat running
+# the run answers the direction and final gates as Design (decided_by design); decided_by owner
+# only for the owner's own words, kept verbatim. No agent answers a gate. v1 stays as it is.
 workflow:
   name: design_homepage_v2
   version: 1
@@ -11,15 +12,17 @@ workflow:
     distinct concepts (hero + one section at 1440 and 390) -> automatic check (contract,
     licensed fonts, renders, distinctness, axe) -> only when that check fails, the art
     director refines from the renders ->
-    OWNER DIRECTION -> designer builds the full page -> measure (capture, axe, craft
+    DIRECTION gate -> designer builds the full page -> measure (capture, axe, craft
     metrics) -> two unchanged usability critics + merge, a craft critic, runtime checks
     in a real browser (Tab order and focus, names, 320 px reflow, 400% zoom, text
     spacing, reduced motion, hover) and a content critic on the page's text -> combine
     (at most 2 automatic revisions) -> convert to Penpot (named boards per width, text
     layers, shared colours/typographies, components) -> verify fidelity and editability ->
-    handoff -> OWNER FINAL (approve, or request changes: back to a revision round, at most
-    twice). Each owner gate's choice, rejected options and notes are saved for the
-    host's private taste file, which the launcher passes back in as taste_md. Stage
+    handoff -> FINAL gate (approve, or request changes: back to a revision round, at most
+    twice). Every gate answer records decided_by (design, or owner for his own words), the
+    choice and the reasons; result flags direction_approved and final_approved carry
+    decided_by. Each answer's choice, rejected options and notes are saved for the host's
+    private taste file, which the launcher passes back in as taste_md. Stage
     receipts make cancel/resume safe; no paid stage repeats. No publication.
     Gate answers and inputs are documented in docs/design.md.
   inputs:

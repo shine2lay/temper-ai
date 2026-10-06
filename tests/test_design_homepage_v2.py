@@ -494,7 +494,7 @@ def test_pilot_workflow_is_v2_with_only_the_mode_changed():
         assert theirs == mine
 
 
-def test_bench_workflow_is_v2_with_mode_bench_and_no_owner_gates():
+def test_bench_workflow_is_v2_with_mode_bench_and_no_gates():
     real_raw, real = workflow("design_homepage_v2")
     bench_raw, bench = workflow("design_homepage_v2_bench")
     assert list(bench) == list(real)
@@ -525,7 +525,7 @@ def recommend(job, rec):
     v2.save(job.concepts_dir / "concepts.json", {**spec, "recommended": rec})
 
 
-def test_bench_builds_the_recommended_concept_never_owner_approval_or_taste(tmp_path):
+def test_bench_builds_the_recommended_concept_never_an_approval_or_taste(tmp_path):
     with pytest.raises(ValueError, match="benchmark workflow refuses real deliverables"):
         v2.Job(str(tmp_path / "real"), fixture=False, bench=True).brief(
             json.dumps({**v2.FIXTURE_BRIEF, "fixture": False, "fictional": False}))
@@ -544,37 +544,40 @@ def test_bench_builds_the_recommended_concept_never_owner_approval_or_taste(tmp_
         job.direction("")
     why = "The strongest hierarchy of the three at both widths, and the most specific imagery."
     recommend(job, {"concept": "C", "reason": why})
-    with pytest.raises(ValueError, match="no direction gate"):  # an owner answer is never taken here
-        job.direction(json.dumps({"concept": "A", "approval": "owner-direction"}))
+    with pytest.raises(ValueError, match="no direction gate"):  # no gate answer is taken here
+        job.direction(json.dumps({"concept": "A", "decided_by": "owner", "reasons": "x"}))
     out = job.direction("")
-    assert out["concept"] == "C" and out["owner_direction_approved"] is False and out["benchmark"] is True
+    assert out["concept"] == "C" and out["benchmark"] is True and out["decided_by"] == "design"
+    assert out["direction_approved"] == {"approved": False, "decided_by": "design"}
     saved = v2.load(job.packet / "direction.json")
-    assert saved["approval"] == "benchmark-recommended" and saved["owner_approved"] is False and saved["benchmark"]
-    assert why in saved["notes"] and "not owner direction" in saved["notes"]
-    assert not (job.packet / "taste" / "entries.json").exists()  # the art director's pick is not the owner's taste
+    assert saved["decided_by"] == "design" and saved["benchmark"] and saved["direction_approved"]["approved"] is False
+    assert why in saved["reasons"] and "benchmark run" in saved["notes"]
+    assert not [k for k in saved if k.startswith("owner")] and "approval" not in saved
+    assert not (job.packet / "taste" / "entries.json").exists()  # the art director's pick is not a gate answer
     real = v2.Job(str(tmp_path / "r"), fixture=False)
     real.brief(json.dumps({**v2.FIXTURE_BRIEF, "fixture": False}))
     ready_for_direction(real)
     recommend(real, {"concept": "C", "reason": why})
-    with pytest.raises(ValueError, match="owner-direction"):  # the real gate never takes the recommendation
-        real.direction(json.dumps({"concept": "C", "approval": "benchmark-recommended"}))
+    with pytest.raises(ValueError, match="needs decided_by design or owner"):  # the real gate needs an answer
+        real.direction("{}")
 
 
-def test_bench_final_is_skipped_and_labelled_not_owner_approved(tmp_path):
+def test_bench_final_is_skipped_and_labelled_not_approved(tmp_path):
     job = bench_job(tmp_path)
     job.state["round"] = 1
     with pytest.raises(ValueError, match="no verified handoff"):
         job.final("")
     job.state["stages"]["handoff-1"] = {"fingerprint": "x", "completed_at": "t", "output": {}}
     with pytest.raises(ValueError, match="no final gate"):
-        job.final('{"approval": "owner-final"}')
+        job.final('{"decided_by": "design", "verdict": "approve", "reasons": "x"}')
     out = job.final("")
-    assert out["verdict"] == "benchmark_skipped" and out["final_owner_approved"] is False
-    assert "not owner-approved" in out["label"]
+    assert out["verdict"] == "benchmark_skipped" and out["final_approved"] == {"approved": False, "decided_by": None}
+    assert "not approved" in out["label"]
     saved = v2.load(job.packet / "final-benchmark.json")
-    assert saved["owner_approved"] is False and saved["verdict"] == "benchmark_skipped"
-    assert not (job.packet / "owner-final.json").exists() and not (job.packet / "taste" / "entries.json").exists()
-    assert v2.load(job.packet / "job.json")["owner_final_approved"] is False
+    assert saved["final_approved"]["approved"] is False and saved["verdict"] == "benchmark_skipped"
+    assert not (job.packet / "final.json").exists() and not (job.packet / "taste" / "entries.json").exists()
+    state = v2.load(job.packet / "job.json")
+    assert state["final_approved"]["approved"] is False and not [k for k in state if k.startswith("owner")]
 
 
 def test_write_review_inputs_writes_what_the_critics_read(tmp_path, monkeypatch):
@@ -607,7 +610,7 @@ def test_write_review_inputs_writes_what_the_critics_read(tmp_path, monkeypatch)
     assert "Fictional study: Fictional study." in (review / "brief.md").read_text()
     facts = (review / "craft-facts.md").read_text()
     assert "scale ratio 4.22x (aim >= 3x)" in facts and "share on a 4 px grid 1.0" in facts
-    assert "Studio noticeboard" in (review / "concept.md").read_text() and "Owner notes: warmer" in (review / "concept.md").read_text()
+    assert "Studio noticeboard" in (review / "concept.md").read_text() and "Direction notes: warmer" in (review / "concept.md").read_text()
     assert (review / "references.md").read_text() == "# References\n"
     assert all((review / sub).is_dir() for sub in ("critic", "craft", "content"))
     (tmp_path / "r2").mkdir()
@@ -621,7 +624,7 @@ def pilot_job(tmp_path):
     return job
 
 
-def test_pilot_takes_a_provisional_pick_never_owner_approval_or_taste(tmp_path):
+def test_pilot_takes_a_provisional_design_pick_never_an_approval_or_taste(tmp_path):
     real_brief = json.dumps({**v2.FIXTURE_BRIEF, "fixture": False, "fictional": False})
     with pytest.raises(ValueError, match="refuses real deliverables"):
         v2.Job(str(tmp_path / "real"), fixture=False, pilot=True).brief(real_brief)
@@ -632,20 +635,23 @@ def test_pilot_takes_a_provisional_pick_never_owner_approval_or_taste(tmp_path):
         v2.Job(str(tmp_path / "p"), fixture=False)
     ready_for_direction(job)
     why = "Clearest hierarchy and the most legible type at 390, so the build tests the deck best."
-    with pytest.raises(ValueError, match="provisional-fictional"):
-        job.direction(json.dumps({"concept": "B", "approval": "owner-direction", "notes": why}))
-    with pytest.raises(ValueError, match="needs notes"):
-        job.direction('{"concept": "B", "approval": "provisional-fictional", "notes": "looks good"}')
-    out = job.direction(json.dumps({"concept": "B", "approval": "provisional-fictional", "notes": why}))
-    assert out["owner_direction_approved"] is False and out["provisional"] is True
+    with pytest.raises(ValueError, match="approval is retired"):  # the old answer shape is refused
+        job.direction(json.dumps({"concept": "B", "approval": "provisional-fictional", "notes": why}))
+    with pytest.raises(ValueError, match="needs decided_by design"):  # never the owner's, never a fixture's
+        job.direction(json.dumps({"concept": "B", "decided_by": "owner", "reasons": why, "notes": why, "source": "m1"}))
+    with pytest.raises(ValueError, match="needs reasons"):
+        job.direction('{"concept": "B", "decided_by": "design", "reasons": "looks good"}')
+    out = job.direction(json.dumps({"concept": "B", "decided_by": "design", "reasons": why}))
+    assert out["direction_approved"] == {"approved": False, "decided_by": "design"} and out["provisional"] is True
     saved = v2.load(job.packet / "direction.json")
-    assert saved["owner_approved"] is False and saved["provisional"] is True
-    assert not (job.packet / "taste" / "entries.json").exists()  # the worker's pick is not the owner's taste
+    assert saved["direction_approved"]["approved"] is False and saved["provisional"] is True
+    assert saved["decided_by"] == "design" and saved["reasons"] == why
+    assert not (job.packet / "taste" / "entries.json").exists()  # the worker's pick is not a gate answer
     real = v2.Job(str(tmp_path / "r"), fixture=False)
     real.brief(json.dumps({**v2.FIXTURE_BRIEF, "fixture": False}))
     ready_for_direction(real)
-    with pytest.raises(ValueError, match="owner-direction"):  # the real gate never takes a provisional pick
-        real.direction(json.dumps({"concept": "B", "approval": "provisional-fictional", "notes": why}))
+    with pytest.raises(ValueError, match="needs decided_by design or owner"):  # a fixture answer never fits a real run
+        real.direction(json.dumps({"concept": "B", "decided_by": "fixture-test", "reasons": why}))
 
 
 def test_completed_stage_with_changed_inputs_is_refused_not_repeated(tmp_path):
@@ -662,10 +668,16 @@ def ready_for_direction(job, verdict="ok"):
     v2.save(job.concepts_dir / "check.json", {"phase": "final", "verdict": verdict, "problems": []})
 
 
+FIX = '"decided_by": "fixture-test", "reasons": "fixture pass-through"'
+
+
 @pytest.mark.parametrize("raw, error", [
-    ("not json", "saved JSON"), ('{"concept": "D", "approval": "fixture-test"}', "concept A, B or C"),
-    ('{"concept": "A", "approval": "owner-direction"}', "fixture-test")])
-def test_fixture_direction_gate_never_records_owner_approval(tmp_path, raw, error):
+    ("not json", "saved JSON"), ('{"concept": "D", ' + FIX + '}', "concept A, B or C"),
+    ('{"concept": "A", "decided_by": "owner", "reasons": "x", "notes": "x", "source": "m1"}', "fixture-test"),
+    ('{"concept": "A", "decided_by": "design", "reasons": "x"}', "fixture-test"),
+    ('{"concept": "A", "approval": "fixture-test"}', "approval is retired"),
+    ('{"concept": "A", "decided_by": "fixture-test"}', "needs reasons")])
+def test_fixture_direction_gate_takes_only_fixture_test_answers(tmp_path, raw, error):
     job = fixture_job(tmp_path)
     ready_for_direction(job)
     with pytest.raises(ValueError, match=error):
@@ -676,20 +688,40 @@ def test_direction_needs_a_passed_check_and_prepares_the_site(tmp_path):
     job = fixture_job(tmp_path)
     ready_for_direction(job, verdict="retry")
     with pytest.raises(ValueError, match="not passed"):
-        job.direction('{"concept": "B", "approval": "fixture-test"}')
+        job.direction('{"concept": "B", ' + FIX + '}')
     ready_for_direction(job)
-    out = job.direction('{"concept": "B", "approval": "fixture-test", "notes": "warmer"}')
-    assert out["owner_direction_approved"] is False and job.site.is_dir()
-    assert job.direction('{"concept": "B", "approval": "fixture-test", "notes": "warmer"}')["reused"]
+    out = job.direction('{"concept": "B", ' + FIX + ', "notes": "warmer"}')
+    assert out["direction_approved"] == {"approved": True, "decided_by": "fixture-test"} and job.site.is_dir()
+    assert out["decided_by"] == "fixture-test" and not [k for k in out if "owner" in k]
+    saved = v2.load(job.packet / "direction.json")
+    assert saved["decided_by"] == "fixture-test" and saved["reasons"] == "fixture pass-through"
+    assert job.state["direction_approved"]["decided_by"] == "fixture-test"
+    assert job.direction('{"concept": "B", ' + FIX + ', "notes": "warmer"}')["reused"]
     with pytest.raises(ValueError, match="inputs changed"):
-        job.direction('{"concept": "C", "approval": "fixture-test"}')
+        job.direction('{"concept": "C", ' + FIX + '}')
 
 
-def test_real_direction_needs_owner_label(tmp_path):
+def test_real_direction_is_answered_by_design_or_by_the_owner_with_his_words(tmp_path):
     job = v2.Job(str(tmp_path), fixture=False)
+    job.brief(json.dumps({**v2.FIXTURE_BRIEF, "fixture": False}))
     ready_for_direction(job)
-    with pytest.raises(ValueError, match="owner-direction"):
-        job.direction('{"concept": "A", "approval": "fixture-test"}')
+    with pytest.raises(ValueError, match="needs decided_by design or owner"):
+        job.direction('{"concept": "A", ' + FIX + '}')
+    with pytest.raises(ValueError, match="his own words in notes and source"):  # never an owner answer without his words
+        job.direction('{"concept": "A", "decided_by": "owner", "reasons": "he likes it"}')
+    with pytest.raises(ValueError, match="only decided_by owner"):
+        job.direction('{"concept": "A", "decided_by": "design", "reasons": "x", "source": "m1"}')
+    out = job.direction('{"concept": "A", "decided_by": "design", "reasons": "Fits TASTE.md T3: warm serif, calm space."}')
+    assert out["direction_approved"] == {"approved": True, "decided_by": "design"}
+    entry = v2.load(job.packet / "taste" / "entries.json")["entries"][-1]
+    assert entry["decided_by"] == "design" and entry["reasons"].startswith("Fits TASTE.md")
+    other = v2.Job(str(tmp_path / "o"), fixture=False)
+    other.brief(json.dumps({**v2.FIXTURE_BRIEF, "fixture": False}))
+    ready_for_direction(other)
+    words = {"concept": "B", "decided_by": "owner", "reasons": "the owner picked B", "notes": "B, but warmer",
+             "source": "home chat m100"}
+    assert other.direction(json.dumps(words))["direction_approved"] == {"approved": True, "decided_by": "owner"}
+    assert v2.load(other.packet / "direction.json")["source"] == "home chat m100"
 
 
 def test_concepts_next_reports_only_the_final_check(tmp_path):
@@ -756,21 +788,54 @@ def test_final_gate_request_changes_needs_notes_and_is_bounded(tmp_path):
     (job.site / "index.html").write_text("<title>x</title>")
     job.state["round"] = 1
     with pytest.raises(ValueError, match="no verified handoff"):
-        job.final('{"approval": "fixture-test"}')
+        job.final('{"verdict": "approve", ' + FIX + '}')
     job.state["stages"]["handoff-1"] = {"fingerprint": "x", "completed_at": "t", "output": {}}
     with pytest.raises(ValueError, match="notes"):
-        job.final('{"verdict": "request_changes", "notes": []}')
+        job.final('{"verdict": "request_changes", "notes": [], ' + FIX + '}')
     with pytest.raises(ValueError, match="fixture-test"):
-        job.final('{"approval": "owner-final"}')
-    out = job.final('{"verdict": "request_changes", "notes": ["bigger headline"]}')
+        job.final('{"verdict": "approve", "decided_by": "design", "reasons": "x"}')
+    with pytest.raises(ValueError, match="approval is retired"):
+        job.final('{"approval": "fixture-test"}')
+    with pytest.raises(ValueError, match="verdict approve or request_changes"):
+        job.final('{' + FIX + '}')
+    out = job.final('{"verdict": "request_changes", "notes": ["bigger headline"], ' + FIX + '}')
     assert out["verdict"] == "request_changes" and job.state["fix_list"][0]["problem"] == "bigger headline"
-    assert job.plan_round()["action"] == "revise" and job.state["owner_changes"] == 1
-    job.state["owner_changes"] = v2.MAX_OWNER_CHANGES
+    assert out["final_approved"] == {"approved": False, "decided_by": "fixture-test"}
+    assert job.state["fix_list"][0]["source"] == "final_gate" and job.state["fix_list"][0]["decided_by"] == "fixture-test"
+    assert job.plan_round()["action"] == "revise" and job.state["change_rounds"] == 1
+    job.state["change_rounds"] = v2.MAX_CHANGE_ROUNDS
     job.state["stages"]["handoff-2"] = job.state["stages"]["handoff-1"]
-    with pytest.raises(ValueError, match="two owner change rounds"):
-        job.final('{"verdict": "request_changes", "notes": ["again"]}')
-    done = job.final('{"approval": "fixture-test"}')
-    assert done["verdict"] == "approved" and done["final_owner_approved"] is False
+    with pytest.raises(ValueError, match="two final-gate change rounds"):
+        job.final('{"verdict": "request_changes", "notes": ["again"], ' + FIX + '}')
+    done = job.final('{"verdict": "approve", ' + FIX + '}')
+    assert done["verdict"] == "approved" and done["decided_by"] == "fixture-test"
+    assert done["final_approved"] == {"approved": True, "decided_by": "fixture-test"}
+    saved = v2.load(job.packet / "final.json")
+    assert saved["final_approved"]["decided_by"] == "fixture-test" and saved["reasons"] == "fixture pass-through"
+    assert not [k for k in v2.load(job.packet / "job.json") if k.startswith("owner")]
+
+
+def test_job_saved_before_the_rename_still_loads(tmp_path):
+    """A job.json from before 2026-10-05 (owner_changes, owner_*_approved, approval labels) reads unchanged."""
+    job = fixture_job(tmp_path)
+    state = v2.load(job.packet / "job.json")
+    for k in ("change_rounds", "direction_approved", "final_approved"):
+        state.pop(k)
+    state.update({"owner_changes": 1, "owner_direction_approved": False, "owner_final_approved": False,
+                  "direction": {"concept": "B", "approval": "fixture-test", "notes": "warmer", "concept_name": "x"}})
+    v2.save(job.packet / "job.json", state)
+    before = (job.packet / "job.json").read_bytes()
+    again = v2.Job(str(tmp_path), fixture=True)
+    assert again.state["change_rounds"] == 1 and again.state["owner_changes"] == 1
+    assert again.state["direction_approved"] == {"approved": False, "decided_by": "fixture-test"}
+    assert again.state["final_approved"] == {"approved": False, "decided_by": None}
+    assert (job.packet / "job.json").read_bytes() == before  # loading never rewrites the past record
+    assert v2.gate_decided_by({"approval": "owner-final"}) == "owner"
+    assert v2.gate_decided_by({"approval": "provisional-fictional"}) == "design"
+    assert v2.taste_words({"owner_words": "warmer"}) == "warmer"
+    assert v2.GATE_FIX_SOURCES == ("final_gate", "owner")
+    old = dict(again.state, verdict="owner_changes", decision_seq=again.state["decision_seq"] + 1)
+    assert old["verdict"] in v2.CHANGE_VERDICTS
 
 
 def test_fixture_only_stages_refuse_real_runs(monkeypatch, tmp_path):
@@ -882,22 +947,24 @@ def test_taste_file_is_passed_in_and_every_gate_answer_is_saved(tmp_path):
     with pytest.raises(ValueError, match="inputs changed"):
         job.taste("")
     ready_for_direction(job)
-    answer = '{"concept": "B", "approval": "fixture-test", "notes": "warmer, less grey"}'
+    answer = '{"concept": "B", ' + FIX + ', "notes": "warmer, less grey"}'
     job.direction(answer)
     job.direction(answer)  # a resumed gate reuses its receipt: no second entry
     entries = v2.load(job.packet / "taste/entries.json")["entries"]
     assert len(entries) == 1
     e = entries[0]
     assert e["key"] == "direction" and e["gate"] == "direction" and e["choice"] == "B: Direction B"
-    assert e["fixture"] is True and e["owner_words"] == "warmer, less grey"
+    assert e["fixture"] is True and e["words"] == "warmer, less grey" and "owner_words" not in e
+    assert e["decided_by"] == "fixture-test" and e["reasons"] == "fixture pass-through"
     assert [r["option"] for r in e["rejected"]] == ["A: Direction A", "C: Direction C"]
     assert "Bricolage Grotesque" in e["choice_summary"] and "Fraunces" in e["rejected"][0]["summary"]
     job.state["round"] = 1
     job.state["stages"]["handoff-1"] = {"fingerprint": "x", "completed_at": "t", "output": {}}
-    job.final('{"verdict": "request_changes", "notes": ["bigger headline"]}')
+    job.final('{"verdict": "request_changes", "notes": ["bigger headline"], ' + FIX + '}')
     final = v2.load(job.packet / "taste/entries.json")["entries"][-1]
     assert final["key"] == "final-r01" and final["choice"] == "request changes"
-    assert final["owner_words"] == ["bigger headline"] and "direction B" in final["about"]
+    assert final["words"] == ["bigger headline"] and "direction B" in final["about"]
+    assert final["decided_by"] == "fixture-test"
     assert final["rejected"] == [{"option": "approve as it is"}]
 
 
@@ -1195,7 +1262,7 @@ def test_pairings_stage_lists_the_used_pairings_for_the_art_director(tmp_path, p
 def test_direction_adds_the_picked_pairing_to_the_record(tmp_path, pairing_log_file):
     job = fixture_job(tmp_path)
     ready_for_direction(job)
-    job.direction('{"concept": "B", "approval": "fixture-test", "notes": "warmer"}')
+    job.direction('{"concept": "B", ' + FIX + ', "notes": "warmer"}')
     rows = [json.loads(line) for line in pairing_log_file.read_text().splitlines()]
     assert [(r["display"], r["text"], r["kind"], r["concept"]) for r in rows] == [("Bricolage Grotesque", "Figtree", "chosen", "B")]
 

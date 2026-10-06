@@ -1,17 +1,18 @@
 # Fictional-only companion of design_homepage_v2 (like design_homepage_pilot_v1 for v1).
 # Same nodes, agents and checks; every script stage runs with mode: pilot, which refuses
-# real deliverables and takes the worker's "provisional-fictional" direction pick (with
-# a reason) instead of owner approval. Pilot runs never write taste entries. The final
-# gate still needs the owner. tests/test_design_homepage_v2.py keeps it in step with v2.
+# real deliverables and takes the worker's provisional direction pick (decided_by design,
+# with reasons; direction_approved stays false). Pilot runs never write taste entries. The
+# final gate is answered like v2's (decided_by design, or owner for his own words).
+# tests/test_design_homepage_v2.py keeps it in step with v2.
 workflow:
   name: design_homepage_v2_pilot
   version: 1
   description: |
     Fictional-only trial of design_homepage_v2 (paid models, same stages and checks):
     copy deck + content critic, three concepts, the worker's provisional direction
-    (approval "provisional-fictional", never owner approval, never a taste entry),
+    (decided_by design, provisional: never an approval, never a taste entry),
     full build, review rounds with runtime checks and the content critic on the page,
-    Penpot conversion, handoff, and the owner final gate. Real products refuse this
+    Penpot conversion, handoff, and the final gate. Real products refuse this
     workflow at the brief stage; they go through design_homepage_v2.
   inputs:
     brief_json: {type: string, required: true}

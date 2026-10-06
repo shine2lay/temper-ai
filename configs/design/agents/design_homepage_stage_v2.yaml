@@ -1,7 +1,8 @@
 # @description Design-owned script steps of design_homepage_v2: brief, reference capture,
-# concept checks (contract, fonts, renders, distinctness, contact sheet), the owner
+# concept checks (contract, fonts, renders, distinctness, contact sheet), the
 # direction gate, review rounds (measure + craft metrics, combine, loop control), the
-# HTML->Penpot conversion, its verification, the handoff packet and the owner final gate.
+# HTML->Penpot conversion, its verification, the handoff packet and the final gate
+# (answers record decided_by: design, owner for his own words, or fixture-test).
 # No model; standard library + mcp. Uses the existing authorized design-agent login in
 # temper's .env and the shared playwright-mcp browser. Never puts credentials in a task,
 # output, checkpoint or artifact. Stage receipts in homepage/job.json make resume safe.

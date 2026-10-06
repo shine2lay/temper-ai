@@ -8,12 +8,12 @@ sourced brief + pinned research -> BUDGET -> six original monochrome vectors
  -> native rough PNG + size check -> explorer sees that render and redraws
  -> sketch PNG + size check + caption-free cold read and same-name check
  -> three different shortlists + role palettes -> native equal-scale boards
- -> new logo critic -> REAL OWNER DIRECTION (a direction, or explore-again: the
+ -> new logo critic -> DIRECTION GATE (a direction, or explore-again: the
     run ends and the next run's brief carries the rejected round) -> FRESH BUDGET
  -> selected refinement -> native source/exports + size check -> cold read and
     same-name check -> new logo critic -> handoff
- -> REAL OWNER FINAL (or one bounded rewind for the second refinement; past that,
-    one extra round only on the owner's own request, see below)
+ -> FINAL GATE (or one bounded rewind for the second refinement; past that,
+    one extra round only when the final gate asks for it, see below)
 ```
 
 Generation comes from a vision-capable Claude-provider LLM's own bounded vector
@@ -21,7 +21,8 @@ objects, not a fixed Temper icon catalogue or a meeting-room template. Native
 Penpot boards are deterministic presentation layouts, not generated logo forms.
 `design_logo_fixture_v1` is separately named, model-free and explicitly fictional;
 its deterministic test shapes never pass as original generated Temper artwork.
-It still pauses at native direction/final gates and never claims owner approval.
+It still pauses at the native `direction` and `final` gates; its answers are
+recorded `decided_by: fixture-test`, never as anyone's approval.
 
 ## Inputs and bounds
 
@@ -78,8 +79,8 @@ back. Facts, claims, inference and creative name interpretations stay separate.
   location and its round-2 refinement save to a 49-character layer name). Ids,
   enums, brief and owner words, geometry and longer text stay strict.
 - Two planned refinement rounds. Engine max_loops=2 permits only one rewind (its
-  threshold counts the stopping attempt). A third round runs only on the owner's own
-  request (next section); script bounds forbid a fourth in every case. Failed final
+  threshold counts the stopping attempt). A third round runs only when the final
+  gate asks for it (next section); script bounds forbid a fourth in every case. Failed final
   revision is not successful completion.
 
 ## Changes after the first real Temper round (2026-10-03)
@@ -88,8 +89,8 @@ The owner rejected all three round-1 directions (run 6b9790e9): "None: fix the
 workflow and explore again". Weak spots it showed, and the fix for each:
 
 - No way to say "none": the direction gate accepts `decision: explore-again`
-  with the owner's own `owner_note`. The run records `explore-again.json` (the
-  rejected shortlist, the owner's answer) and every later node is skipped by
+  with its own `note`. The run records `explore-again.json` (the rejected
+  shortlist, the answer, who decided) and every later node is skipped by
   condition, so nothing is refined or spent. The next run's brief carries it in
   `prior_rounds` (at most two), with that round's boards as pinned research.
 - The run never saw the research screen: an optional brief `research` block
@@ -129,18 +130,20 @@ refinement reads the current schema from `logo/schema-refine.txt` (named in
 `schema.txt` intact for resume checks. The fixture's chosen direction has an
 accent part, so the $0 run proves native save, reopen and export of two-tone vectors.
 
-## Owner-requested extra round (2026-10-03)
+## Extra round on the final gate's request (2026-10-03)
 
 At the round-2 final gate of real run ad5c270f the owner asked for one more change
 ("lets make the bottom part a bit shorter right now, the bottom part look a bit
 phallic") after being offered an extra round. A round-2 `revise` still records the
-owner's answer in `logo/owner-final-r02.json` and fails the run, because the loop is
-spent. The host then resumes that same run with `refine_budget` ticked to run again
+answer in `logo/gate-final-r02.json` (`owner-final-r02.json` in runs before
+2026-10-05) and fails the run, because the loop is spent. The host then resumes
+that same run with `refine_budget` ticked to run again
 (Temper's resume `rerun`), so round 3 is one straight pass, not a further loop:
 fresh budget gate, prepare, refine, save, critic, handoff, final gate. The script
-starts round 3 only when both hold: the native final gate recorded the real owner's
-`revise` with their own note, and the fresh refine budget answer names that same
-note (`extra_round_owner_note`). Neither alone starts paid work, and nothing allows
+starts round 3 only when both hold: the native final gate recorded a real
+`revise` (decided_by design or owner) with its own note, and the fresh refine
+budget answer names that same note (`extra_round_note`; `extra_round_owner_note`
+is still read). Neither alone starts paid work, and nothing allows
 a fourth round. Round 3's refinement reads that note and the previous round's
 boards (each round now gets the boards of the round before it, not always round 1's).
 
@@ -221,20 +224,47 @@ wrapper passes `--native-gate` only when Temper supplies the actual gate context
 never from an input field or model output. This trusts the host workflow/gate
 configuration; it is not an engine-wide cryptographic authentication change.
 
+The gates are named for what they decide (queue #40, 2026-10-05; Design's gate
+convention of 2026-10-04): nodes `direction` and `final`. Every answer records
+who decided (`decided_by`), the choice and the reasons.
+
 Direction answer:
 
 ```json
-{"approval":"owner-direction","run_id":"<full UUID>","brief_hash":"<brief hash>",
+{"decided_by":"design","run_id":"<full UUID>","brief_hash":"<brief hash>",
  "artifact_hash":"<saved three-board artifact hash>","decision":"<shortlisted id>",
- "reason":"Actual owner choice","owner_note":"Optional actual refinement guidance"}
+ "reason":"Why this direction","note":"Optional refinement guidance"}
 ```
 
-Final answer uses `approval: owner-final`, current selected artifact hash and
-`decision: approve|revise`. Revise requires actual owner_note. Real answers must
-come from the owner after visible previews. A parent may answer budget gates
-within existing authorization but never invent direction/final responses.
-The separate fictional fixture accepts only `approval: fixture-test` and records
-real approval false. It refuses both a real brief and any name containing Temper.
+Final answer: the same fields with the current selected artifact hash and
+`decision: approve|revise`; revise needs its own `note`.
+
+- `decided_by: design`: the chat running the workflow answers as Design, after
+  looking at the boards; a queued task's chat asks its home chat first.
+- `decided_by: owner`: only for the owner's own words, quoted verbatim in
+  `reason` (and `note`), with `source` naming where he said them. His words
+  outrank Design's. Only an owner answer may carry `source`.
+- `decided_by: fixture-test`: the fictional fixture's only answer. Real runs
+  refuse it and the fixture refuses the others.
+- The retired `approval` and `owner_note` fields are refused in new answers.
+
+A parent may answer budget gates within existing authorization but never answer
+a gate in the owner's name without his words. The fixture refuses both a real
+brief and any name containing Temper.
+
+The gate records are `logo/gate-direction.json` and `logo/gate-final-rNN.json`;
+the stage results and `manifest.json` carry `direction_approved` and
+`final_approved`, each `{"approved": bool, "decided_by": ...}`, and the manifest
+names the final record in `final_receipt`. A rejected round in a later brief's
+`prior_rounds` is `{run_id, answer, source, decided_by, rejected, evidence}`.
+
+Records from before 2026-10-05 still load and are never rewritten: answers with
+`approval: owner-direction|owner-final|fixture-test` and `owner_note`,
+`owner-direction.json` and `owner-final-rNN.json`, `prior_rounds` rows with
+`owner_answer`/`owner_source`, and runs whose gate nodes are `owner_direction` /
+`owner_final` (the host tools `logo_control.py`, `logo_real.py` and
+`logo_real_wait.py` accept both node names). An old `approval: owner-*` reads as
+`decided_by: owner`, because that is what it claimed then.
 
 Receipts bind run UUID, mode, brief/schema and exact stage inputs/artifact hashes.
 Identical resume returns completed work, not another paid exploration. Changed
@@ -304,8 +334,8 @@ part of BRAND.md + host packet.
 
 Workflow manifest deliberately leaves workflow_verified/source_verified/
 exports_verified false: only independently collected host evidence can set them
-in the task result. direction_owner_approved/final_owner_approved are separately
-recorded from the real native gates. Publication remains false. No diagnosed
+in the task result. direction_approved/final_approved (with decided_by) are
+separately recorded from the real native gates. Publication remains false. No diagnosed
 blocker, pending approval, isolated save, test-only shape or unrun workflow counts
 as an approved completed identity packet.
 

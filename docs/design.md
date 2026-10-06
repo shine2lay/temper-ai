@@ -278,6 +278,12 @@ benchmark); a craft-bench page about $0.52. Results:
 
 ## Editable Penpot homepage workflow (v1)
 
+**Superseded by v2 (below) and left unchanged.** v1 keeps the gate names and
+answer labels it had before 2026-10-05 (`owner-direction`, `owner-final`,
+`owner_final_gate_recorded`); the gate convention of queue #40 (gates named for
+what they decide, every answer recording `decided_by`) applies to v2 and the
+logo workflow, not here. Don't start new v1 runs.
+
 `design_homepage_v1` is the **real-work** entry, with mandatory owner direction
 and final gates. `design_homepage_pilot_v1` is fictional-only and may choose a
 **provisional** direction without owner taste approval. Both are Design-owned,
@@ -443,13 +449,13 @@ drafts three named concepts (a
 ~400-word brief each, licensed display + text fonts, dominant colour + accent,
 imagery, one signature layout move, one motion idea; hero + one section at 1440
 and 390) -> automatic check -> only when that check fails, the art director
-refines from its renders -> check (up to 3 more refine loops) -> **owner
-direction gate** -> designer builds the
+refines from its renders -> check (up to 3 more refine loops) -> **direction
+gate** -> designer builds the
 full page -> measure (capture, axe, craft metrics) -> the unchanged
 `design_critic` x2 + `design_merge`, plus the craft critic, runtime checks in a
 real browser and the content critic on the page's words -> combine (at
-most 2 automatic revisions) -> convert to Penpot -> verify -> handoff -> **owner
-final gate** (approve, or request changes: one more revision round, at most twice).
+most 2 automatic revisions) -> convert to Penpot -> verify -> handoff -> **final
+gate** (approve, or request changes: one more revision round, at most twice).
 
 Agents (all `provider: claude`, `model: opus`, so they can read PNGs):
 `design_homepage_copywriter_v2` (phase draft|revise),
@@ -457,7 +463,7 @@ Agents (all `provider: claude`, `model: opus`, so they can read PNGs):
 `design_homepage_art_director_v2` (phase draft|refine),
 `design_homepage_designer_v2`, `design_homepage_craft_critic_v2` (writes to
 `review/craft/`, never `review/critic/`, so taste never mixes with usability
-findings; advisory, the owner decides taste) and `design_homepage_reviser_v2`.
+findings; advisory, taste is decided at the gates) and `design_homepage_reviser_v2`.
 Everything else is the script stage `design_homepage_stage_v2`
 (`configs/design/bin/design_homepage_v2.py`).
 
@@ -470,30 +476,53 @@ Everything else is the script stage `design_homepage_stage_v2`
 - `references_json`: 8-12 `{name, url (https), why}`.
 - `taste_md` (optional, default empty): the owner's taste file, passed by the host
   launcher; agents see only what is passed.
-- Direction gate: `{"concept": "A"|"B"|"C", "approval": "owner-direction", "notes": "..."}`.
-- Final gate: `{"approval": "owner-final"}` or
-  `{"verdict": "request_changes", "notes": ["..."]}`.
+- Direction gate: `{"concept": "A"|"B"|"C", "decided_by": "design", "reasons": "why this concept", "notes": "..."}`.
+- Final gate: `{"decided_by": "design", "reasons": "..."}` to approve, or
+  `{"verdict": "request_changes", "decided_by": "design", "reasons": "...", "notes": ["..."]}`.
 
-The fixture workflow accepts only `"approval": "fixture-test"` and records no
-owner approval; the real workflow refuses fixture briefs and fixture answers.
+**Gates are named for what they decide** (queue #40, 2026-10-05; Design's gate
+convention of 2026-10-04): the nodes are `direction` and `final`, and every
+answer records who decided (`decided_by`) and why (`reasons`). The chat running
+the workflow answers as Design (`decided_by: design`); a queued task's chat asks
+its home chat first. `decided_by: owner` is only for the owner's own words: they
+go verbatim in `notes`, with `source` naming where he said them, and they
+outrank Design's. Only an owner answer may carry `source`. The old `approval`
+field is refused. `homepage/direction.json`, `homepage/final.json` and each
+change round's `final-rNN.json` keep the answer as given, and `job.json`
+and the stage results carry `direction_approved` and `final_approved`, each
+`{"approved": bool, "decided_by": ...}`; a change round's fix-list items are
+`G1`, `G2` ... with source `final_gate`. No key, node or flag claims an owner
+approval the owner didn't give.
+
+Records written before 2026-10-05 (`owner_direction_approved`,
+`owner_final_approved`, `owner_changes`, `owner-final.json`, taste entries with
+`owner_words`, fix items with source `owner`) are read under the new names and
+never rewritten; an old `approval: owner-*` answer reads as `decided_by: owner`,
+because that is what it claimed then.
+
+The fixture workflow accepts only `"decided_by": "fixture-test"`; the real
+workflow refuses fixture briefs and fixture answers.
 
 `design_homepage_v2_pilot` is the fictional-only twin (same nodes, agents and
 checks; every script stage runs with `mode: pilot`, and a test keeps the two in
 step). Its brief stage refuses real products, and its direction gate takes only
-`{"concept": ..., "approval": "provisional-fictional", "notes": "why, 8+ words"}`:
-the worker's provisional pick, recorded as never owner-approved and never added
-to the owner's taste file. The final gate still needs `owner-final`. Use it for
+`{"concept": ..., "decided_by": "design", "reasons": "why, 8+ words"}`:
+the worker's provisional pick, recorded with `provisional: true` and
+`direction_approved.approved: false`, and never added to the taste files. Its
+final gate takes `decided_by` design or owner like the real one. Use it for
 paid trials of the workflow on made-up products.
 
 `design_homepage_v2_bench` is the benchmark twin (queue #10; same nodes, agents,
 checks and loops, `mode: bench`, fictional briefs only, a test keeps it in step).
-It has no owner gates: the direction step builds the art director's recommended
+It has no gates: the direction step builds the art director's recommended
 concept (`concepts.json` top-level `"recommended": {"concept", "reason"}`, a
 reason of 8+ words, required in bench runs at both concept checks; the art
 director writes it in every mode as advice, and the real direction gate never
-takes it), recorded as `benchmark-recommended`, never owner-approved and never a
-taste entry. The final step records `homepage/final-benchmark.json`
-(`benchmark_skipped`, labelled not owner-approved). The Penpot file is named
+takes it), recorded as `decided_by: design` with `benchmark: true` and
+`direction_approved.approved: false`, never a taste entry. The final step
+records `homepage/final-benchmark.json` (`benchmark_skipped`,
+`final_approved: {"approved": false, "decided_by": null}`, labelled not
+approved). The Penpot file is named
 `... (benchmark)`. Benchmark pages are judged blind by the owner on Design's
 scoreboard (`~/design-lab/scoreboard.md`), with an AI pairwise judge recorded
 beside as advice only.
@@ -763,11 +792,13 @@ revisions honest:
   passed. Each round's page is kept in `homepage/rounds/rNN/site/`.
 
 **Owner taste file.** The direction and final gate stages save each answer (the
-choice, the options passed over and the owner's own words) in the workspace
-(`homepage/taste/entries.json`). The host launcher
+choice, the options passed over, who decided, the reasons and the answer's own
+words) in the workspace (`homepage/taste/entries.json`). The host launcher
 (`~/design-lab/tools/homepage_v2_control.py`) appends each new answer once to
 `~/design-lab/taste/owner.md` (private, host only; fixture answers go to a
-separate `fixture.md`) and passes the file into the next run as `taste_md`. The
+separate `fixture.md`), each entry headed with who decided (only an owner answer
+is quoted as the owner's words), and passes the file into the next run as
+`taste_md`. The
 art director must say for each concept how it uses the taste file (`taste_use`,
 citing entries T1, T2 ... once there are any); the contact sheet shows it.
 

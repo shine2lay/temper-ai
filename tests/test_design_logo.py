@@ -215,10 +215,23 @@ def research_folder(tmp_path):
     return folder, files
 
 
-def prior_round():
-    return {"run_id": "33333333-3333-4333-8333-333333333333", "owner_answer": "None: explore again",
-            "owner_source": "fictional fixture", "rejected": [{"id": "old", "name": "Old", "idea": "An earlier idea."}],
-            "evidence": ["peer-a.png"]}
+def prior_round(legacy=False):
+    if legacy:  # a row written before 2026-10-05 (owner_answer, owner_source): still loads
+        return {"run_id": "33333333-3333-4333-8333-333333333333", "owner_answer": "None: explore again",
+                "owner_source": "fictional fixture", "rejected": [{"id": "old", "name": "Old", "idea": "An earlier idea."}],
+                "evidence": ["peer-a.png"]}
+    return {"run_id": "33333333-3333-4333-8333-333333333333", "answer": "None: explore again",
+            "source": "fictional fixture", "decided_by": "design",
+            "rejected": [{"id": "old", "name": "Old", "idea": "An earlier idea."}], "evidence": ["peer-a.png"]}
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_prior_round_rows_new_and_legacy_load_with_who_decided(legacy):
+    row = prior_round(legacy)
+    c.prior_round_contract(row, ["peer-a.png"])
+    assert c.prior_answer(row) == ("None: explore again", "fictional fixture", "owner" if legacy else "design")
+    with pytest.raises(ValueError, match="decided_by design or owner"):
+        c.prior_round_contract({**prior_round(), "decided_by": "fixture-test"}, ["peer-a.png"])
 
 
 def test_research_screen_and_rejected_round_reach_the_run_pinned(tmp_path):
@@ -230,7 +243,8 @@ def test_research_screen_and_rejected_round_reach_the_run_pinned(tmp_path):
     copies = j.research(b)
     assert sorted(p.name for p in copies) == ["comparison.md", "comparison.md", "peer-a.png"]
     notes = (j.root / "comparison.md").read_text()
-    for expected in ("logo/research/peer-a.png", "None: explore again", "Old: An earlier idea.", "dated notes"):
+    for expected in ("logo/research/peer-a.png", "None: explore again", "Old: An earlier idea.", "dated notes",
+                     "decided by design"):
         assert expected in notes
     assert j.research(brief()) == []
     (folder / "peer-a.png").write_bytes(job.PNG + b"changed after pinning")
@@ -260,24 +274,30 @@ def test_research_and_prior_rounds_are_bounded_and_pinned(change):
         c.brief_contract({**brief(), **change}, "fixture")
 
 
-def test_explore_again_records_rejection_ends_run_and_needs_owner_note(tmp_path):
+def test_explore_again_records_rejection_ends_run_and_needs_its_own_note(tmp_path):
     b = brief()
     j = job.Job(str(tmp_path), RUN, "fixture")
     job.save(j.root / "sketches.saved.json", c.exploration_contract(job.fixture_exploration(b), b))
     job.save(j.root / "palette.saved.json", job.fixture_palette(b))
     j.state.update(brief_hash="b", direction_artifact_hash="a")
     again = {**answer(fictional=True), "run_id": RUN, "decision": c.EXPLORE_AGAIN}
-    with pytest.raises(ValueError, match="owner's own note"):
+    with pytest.raises(ValueError, match="its own note"):
         j.direction(json.dumps(again), True)
     with pytest.raises(ValueError, match="ordinary input"):
-        j.direction(json.dumps({**again, "owner_note": "None of these."}), False)
-    out = j.direction(json.dumps({**again, "owner_note": "None of these."}), True)
-    assert out["outcome"] == "explore_again" and out["direction_owner_approved"] is False
+        j.direction(json.dumps({**again, "note": "None of these."}), False)
+    with pytest.raises(ValueError, match="retired"):
+        j.direction(json.dumps({**again, "owner_note": "None of these."}), True)
+    out = j.direction(json.dumps({**again, "note": "None of these."}), True)
+    assert out["outcome"] == "explore_again" and out["decided_by"] == "fixture-test"
+    assert out["direction_approved"] == {"approved": False, "decided_by": "fixture-test"}
+    assert not [k for k in out if "owner" in k]
     record = job.load(j.root / "explore-again.json")
     assert [r["id"] for r in record["rejected"]] == ["fixture-0", "fixture-1", "fixture-2"]
-    assert record["owner_answer"] == "None of these." and record["fictional_test"] is True
+    assert record["answer"] == "None of these." and record["fictional_test"] is True
+    assert record["decided_by"] == "fixture-test"
+    assert job.load(j.root / "gate-direction.json")["decided_by"] == "fixture-test"
     assert "direction" not in j.state
-    with pytest.raises(ValueError, match="no selected owner direction"):
+    with pytest.raises(ValueError, match="no selected direction"):
         j.prepare_refine()
 
 
@@ -354,25 +374,45 @@ def test_self_contained_vectors_live_text_and_embedded_woff():
 
 
 def answer(kind="direction", fictional=False):
-    return {"approval": "fixture-test" if fictional else "owner-" + kind, "run_id": "r", "brief_hash": "b",
-            "artifact_hash": "a", "decision": "fixture-2" if kind == "direction" else "approve", "reason": "Actual/test gate answer."}
+    return {"decided_by": "fixture-test" if fictional else "design", "run_id": "r", "brief_hash": "b",
+            "artifact_hash": "a", "decision": "fixture-2" if kind == "direction" else "approve",
+            "reason": "Design's reasons / test gate answer."}
 
 
-@pytest.mark.parametrize("key,value", [("run_id", "other"), ("brief_hash", "new"), ("artifact_hash", "old"), ("approval", "fixture-test"), ("decision", "unknown")])
-def test_owner_gate_identity_fingerprint_and_approval_fence(key, value):
+@pytest.mark.parametrize("key,value", [("run_id", "other"), ("brief_hash", "new"), ("artifact_hash", "old"),
+                                       ("decided_by", "fixture-test"), ("decided_by", "agent"), ("decision", "unknown"),
+                                       ("approval", "owner-direction"), ("owner_note", "x"), ("source", "m1")])
+def test_gate_identity_fingerprint_and_decided_by_fence(key, value):
     kwargs = {"kind": "direction", "run_id": "r", "brief_hash": "b", "artifact_hash": "a", "choices": {"fixture-2"}, "gate_only": True}
-    assert c.approval_contract(answer(), **kwargs)
+    assert c.approval_contract(answer(), **kwargs) == {"gate": "direction", **answer()}
     with pytest.raises(ValueError):
         c.approval_contract({**answer(), key: value}, **kwargs)
     with pytest.raises(ValueError, match="ordinary input"):
         c.approval_contract(answer(), **{**kwargs, "gate_only": False})
 
 
-def test_fixture_cannot_claim_owner_approval():
-    kwargs = {"kind": "final", "run_id": "r", "brief_hash": "b", "artifact_hash": "a", "choices": {"approve"}, "gate_only": True, "fictional": True}
-    with pytest.raises(ValueError, match="must not claim"):
-        c.approval_contract(answer("final"), **kwargs)
-    assert c.approval_contract(answer("final", True), **kwargs)
+def test_owner_answer_needs_his_words_source_and_fixture_answers_stay_fixture_test():
+    kwargs = {"kind": "final", "run_id": "r", "brief_hash": "b", "artifact_hash": "a", "choices": {"approve"}, "gate_only": True}
+    owner = {**answer("final"), "decided_by": "owner", "reason": "Owner's words (home chat m1): yes, this one."}
+    with pytest.raises(ValueError, match="needs source"):  # never an owner answer without where he said it
+        c.approval_contract(owner, **kwargs)
+    assert c.approval_contract({**owner, "source": "home chat m1"}, **kwargs)["decided_by"] == "owner"
+    fictional = {**kwargs, "fictional": True}
+    for by in ("design", "owner"):
+        with pytest.raises(ValueError, match="decided_by fixture-test"):
+            c.approval_contract({**answer("final"), "decided_by": by, "source": "m1"}, **fictional)
+    with pytest.raises(ValueError, match="decided_by design or owner"):  # a fixture answer never fits real artwork
+        c.approval_contract(answer("final", True), **kwargs)
+    assert c.approval_contract(answer("final", True), **fictional)["decided_by"] == "fixture-test"
+
+
+def test_records_saved_before_the_rename_still_read():
+    """Gate records from before 2026-10-05 (approval owner-*, owner_note) are read, never rewritten."""
+    assert c.decided_by({"approval": "owner-final"}) == "owner"
+    assert c.decided_by({"approval": "fixture-test"}) == "fixture-test"
+    assert c.decided_by({"decided_by": "design"}) == "design"
+    assert c.gate_note({"owner_note": "shorter base"}) == "shorter base"
+    assert c.gate_note({"note": "new", "owner_note": "old"}) == "new"
 
 
 def test_palette_roles_companion_contrast_logo_exemption(canvas):
@@ -509,40 +549,51 @@ def test_two_refinement_rounds_and_no_unguided_final_revision(tmp_path):
         j.prepare_refine()
 
 
-def extra_round_job(tmp_path, **change):
-    """A real-mode job after round 2, with the owner's round-2 final answer as the gate wrote it."""
+def extra_round_job(tmp_path, legacy=False, **change):
+    """A real-mode job after round 2, with the round-2 final-gate answer as the gate wrote it.
+
+    legacy: as written before 2026-10-05 (owner-final-r02.json, approval owner-final, owner_note)."""
     j = job.Job(str(tmp_path), RUN, "real")
+    note = "owner_note" if legacy else "note"
     j.state.update({"round": 2, "brief_hash": "b", "final_artifact_hash": "a2",
-                    "direction": {**answer(), "run_id": RUN, "owner_note": "Round-1 note."},
-                    "final_feedback": {**answer("final"), "decision": "revise", "owner_note": "Round-1 final note."},
+                    "direction": {**answer(), "run_id": RUN, note: "Round-1 note."},
+                    "final_feedback": {**answer("final"), "decision": "revise", note: "Round-1 final note."},
                     "files": {f"selected-r{n:02}": {"exports": [{"kind": "png", "path": f"exports/selected-r{n:02}-00.png"},
                                                              {"kind": "svg", "path": f"exports/selected-r{n:02}-00.svg"}]}
                               for n in (1, 2)}})
     job.save(j.root / "brief.json", brief())
     job.save(j.root / "selected.json", {"concept": {}, "palette": {}})
-    record = {"approval": "owner-final", "run_id": RUN, "brief_hash": "b", "artifact_hash": "a2", "decision": "revise",
-              "reason": "Owner answer (test).", "owner_note": "Make the base shorter.", "recorded_at": "t",
-              "fictional_test": False, **change}
-    job.save(j.root / "owner-final-r02.json", {k: v for k, v in record.items() if v is not None})
+    if legacy:
+        record = {"approval": "owner-final", "run_id": RUN, "brief_hash": "b", "artifact_hash": "a2", "decision": "revise",
+                  "reason": "Owner answer (test).", "owner_note": "Make the base shorter.", "recorded_at": "t",
+                  "fictional_test": False, **change}
+        path = j.root / "owner-final-r02.json"
+    else:
+        record = {"gate": "final", "decided_by": "design", "run_id": RUN, "brief_hash": "b", "artifact_hash": "a2",
+                  "decision": "revise", "reason": "Design: the base reads heavy at 16 px.",
+                  "note": "Make the base shorter.", "recorded_at": "t", "fictional_test": False, **change}
+        path = j.root / "gate-final-r02.json"
+    job.save(path, {k: v for k, v in record.items() if v is not None})
     j.commit()
     return j
 
 
-def extra_budget(note="Make the base shorter."):
-    return json.dumps({**reservation(), "extra_round_owner_note": note})
+def extra_budget(note="Make the base shorter.", key="extra_round_note"):
+    return json.dumps({**reservation(), key: note})
 
 
 @pytest.mark.parametrize("change,payload", [
     ({}, json.dumps(reservation())),                        # budget answer does not name the request
     ({}, extra_budget("Something else.")),                  # names a different note
-    ({"decision": "approve"}, extra_budget()),              # owner approved, nothing to revise
-    ({"owner_note": None}, extra_budget(None)),             # revise without the owner's own words
-    ({"approval": "fixture-test"}, extra_budget()),         # fictional answer
+    ({"decision": "approve"}, extra_budget()),              # approved, nothing to revise
+    ({"note": None}, extra_budget(None)),                   # revise without its own note
+    ({"decided_by": "fixture-test"}, extra_budget()),       # fictional answer
+    ({"decided_by": None}, extra_budget()),                 # nobody named as deciding
     ({"fictional_test": True}, extra_budget()),
     ({"artifact_hash": "a1"}, extra_budget()),              # answer about other artwork
     ({"run_id": "22222222-2222-4222-8222-222222222222"}, extra_budget()),
 ])
-def test_extra_round_needs_owner_revise_note_and_named_budget(tmp_path, change, payload):
+def test_extra_round_needs_a_final_gate_revise_note_and_named_budget(tmp_path, change, payload):
     j = extra_round_job(tmp_path, **change)
     with pytest.raises(ValueError):
         j.budget(payload, "refine")
@@ -551,34 +602,49 @@ def test_extra_round_needs_owner_revise_note_and_named_budget(tmp_path, change, 
         j.prepare_refine()
 
 
-def test_owner_requested_extra_round_runs_once_on_their_note_and_last_boards(tmp_path):
+def test_requested_extra_round_runs_once_on_its_note_and_last_boards(tmp_path):
     j = extra_round_job(tmp_path)
-    (j.root / "owner-final-r02.json").unlink()
-    with pytest.raises(ValueError, match="no owner request"):
+    (j.root / "gate-final-r02.json").unlink()
+    with pytest.raises(ValueError, match="asked for no extra round"):
         j.budget(extra_budget(), "refine")
     j = extra_round_job(tmp_path)
     assert j.budget(extra_budget(), "refine")["round"] == 3
-    assert job.Job(str(tmp_path), RUN, "real").state["extra_round"]["owner_note"] == "Make the base shorter."
+    extra = job.Job(str(tmp_path), RUN, "real").state["extra_round"]
+    assert extra["note"] == "Make the base shorter." and extra["decided_by"] == "design"
     j.prepare_refine()
     context = json.loads((j.root / "refine-context.json").read_text())
-    assert context["round"] == 3 and context["owner_note"] == "Make the base shorter."
+    assert context["round"] == 3 and context["note"] == "Make the base shorter."
     assert context["pngs"] == ["exports/selected-r02-00.png"] and context["critic"] == "logo/critic-r02.json"
-    # Never a fourth round, whatever the owner record says.
+    # Never a fourth round, whatever the final-gate record says.
     j.state["round"] = 3
     j.commit()
     with pytest.raises(ValueError, match="exhausted"):
         j.prepare_refine()
-    job.save(j.root / "owner-final-r03.json", json.loads((j.root / "owner-final-r02.json").read_text()))
+    job.save(j.root / "gate-final-r03.json", json.loads((j.root / "gate-final-r02.json").read_text()))
     with pytest.raises(ValueError, match="exhausted"):
         j.budget(extra_budget(), "refine")
 
 
-def test_round_two_refinement_still_reads_round_one_boards_and_note(tmp_path):
-    j = extra_round_job(tmp_path)
+def test_extra_round_from_a_record_saved_before_the_rename(tmp_path):
+    """An owner-final-r02.json (approval owner-final, owner_note) and an extra_round_owner_note budget still work."""
+    j = extra_round_job(tmp_path, legacy=True)
+    before = (j.root / "owner-final-r02.json").read_bytes()
+    assert j.budget(extra_budget(key="extra_round_owner_note"), "refine")["round"] == 3
+    extra = job.Job(str(tmp_path), RUN, "real").state["extra_round"]
+    assert extra["note"] == "Make the base shorter." and extra["decided_by"] == "owner"
+    assert extra["final_record"] == "owner-final-r02.json"
+    assert (j.root / "owner-final-r02.json").read_bytes() == before  # never rewritten
+    j.prepare_refine()
+    assert json.loads((j.root / "refine-context.json").read_text())["note"] == "Make the base shorter."
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_round_two_refinement_still_reads_round_one_boards_and_note(tmp_path, legacy):
+    j = extra_round_job(tmp_path, legacy=legacy)
     j.state["round"] = 1
     j.prepare_refine()
     context = json.loads((j.root / "refine-context.json").read_text())
-    assert context["round"] == 2 and context["owner_note"] == "Round-1 final note."
+    assert context["round"] == 2 and context["note"] == "Round-1 final note."
     assert context["pngs"] == ["exports/selected-r01-00.png"]
 
 
@@ -587,19 +653,21 @@ def test_actual_workflow_schema_native_gates_loop_and_new_agents(name):
     raw = yaml.safe_load((BIN.parent / "workflows" / (name + ".yaml")).read_text())["workflow"]
     assert WorkflowConfig.from_dict(raw).name == name
     nodes = {v["name"]: v for v in raw["nodes"]}
-    assert nodes["owner_direction"]["gate"] and nodes["owner_final"]["gate"]
-    assert nodes["owner_final"]["max_loops"] == 2 and nodes["owner_final"]["on_max_loops"] == "fail"
+    assert nodes["direction"]["gate"] and nodes["final"]["gate"]
+    assert not [n for n in nodes if "owner" in n]  # gates are named for what they decide
+    assert not [k for k in raw.get("outputs") or {} if "owner" in k]
+    assert nodes["final"]["max_loops"] == 2 and nodes["final"]["on_max_loops"] == "fail"
     assert not set(raw["inputs"]) & {"direction_json", "final_json", "mode", "approval"}
     assert all(n["agent"].startswith("design_logo_") for n in nodes.values())
     order = [v["name"] for v in raw["nodes"]]
-    after = order[order.index("owner_direction") + 1:]
-    assert after and all(nodes[n]["condition"] == {"source": "owner_direction.structured.outcome",
+    after = order[order.index("direction") + 1:]
+    assert after and all(nodes[n]["condition"] == {"source": "direction.structured.outcome",
                                                    "operator": "equals", "value": "selected"} for n in after)
-    assert all("condition" not in nodes[n] for n in order[:order.index("owner_direction") + 1])
+    assert all("condition" not in nodes[n] for n in order[:order.index("direction") + 1])
     assert nodes["save_revision"]["input_map"]["stage"] == "revise"
     if name == "design_logo_v1":
         assert nodes["initial_budget"]["gate"] and nodes["refine_budget"]["gate"]
-        assert nodes["owner_final"]["loop_to"] == "refine_budget"
+        assert nodes["final"]["loop_to"] == "refine_budget"
         assert raw["safety"]["policies"][0]["max_cost_usd"] == c.FULL_ESTIMATE == 11.6
         assert nodes["explore"]["input_map"] == {"phase": "draft"} and nodes["revise"]["input_map"] == {"phase": "revise"}
         # Caption-free cold read and same-name check before the shortlist, and again before each selected critic.
@@ -929,7 +997,7 @@ def test_refined_size_claim_reaches_boards_tokens_and_brand_sheet(tmp_path, monk
     assert "Symbol minimum: 24px." in brand and "The concept declared 16px; the measurement sets the minimum." in brand
 
 
-def fixture_round_two(path, **change):
+def fixture_round_two(path, legacy=False, **change):
     """A fixture job after round 2, with the fictional round-2 final answer as final() saved it."""
     j = job.Job(str(path), RUN, "fixture")
     j.state.update({"round": 2, "brief_hash": "b", "final_artifact_hash": "a2",
@@ -937,26 +1005,35 @@ def fixture_round_two(path, **change):
                     "files": {"selected-r02": {"exports": [{"kind": "png", "path": "logo/exports/selected-r02-00.png"}]}}})
     job.save(j.root / "brief.json", brief())
     job.save(j.root / "selected.json", {"concept": {}, "palette": {}})
-    record = {"approval": "fixture-test", "run_id": RUN, "brief_hash": "b", "artifact_hash": "a2", "decision": "revise",
-              "reason": "Fixture answer.", "owner_note": "Fixture: shorter base.", "fictional_test": True, **change}
-    job.save(j.root / "owner-final-r02.json", record)
+    if legacy:
+        record = {"approval": "fixture-test", "run_id": RUN, "brief_hash": "b", "artifact_hash": "a2", "decision": "revise",
+                  "reason": "Fixture answer.", "owner_note": "Fixture: shorter base.", "fictional_test": True, **change}
+        job.save(j.root / "owner-final-r02.json", record)
+    else:
+        record = {"gate": "final", "decided_by": "fixture-test", "run_id": RUN, "brief_hash": "b", "artifact_hash": "a2",
+                  "decision": "revise", "reason": "Fixture answer.", "note": "Fixture: shorter base.",
+                  "fictional_test": True, **change}
+        job.save(j.root / "gate-final-r02.json", record)
     j.commit()
     return j
 
 
-@pytest.mark.parametrize("change", [{"owner_note": ""}, {"artifact_hash": "a1"}, {"fictional_test": False},
-                                    {"decision": "approve"}, {"run_id": "other"}, {"approval": "owner-final"}])
+@pytest.mark.parametrize("change", [{"note": ""}, {"artifact_hash": "a1"}, {"fictional_test": False},
+                                    {"decision": "approve"}, {"run_id": "other"}, {"decided_by": "design"},
+                                    {"decided_by": "owner"}])
 def test_fixture_extra_round_needs_its_own_fictional_revise_note(tmp_path, change):
     with pytest.raises(ValueError, match="two refinement"):
         fixture_round_two(tmp_path, **change).prepare_refine()
 
 
-def test_fixture_extra_round_runs_once_like_the_real_one(tmp_path):
-    j = fixture_round_two(tmp_path)
+@pytest.mark.parametrize("legacy", [False, True])
+def test_fixture_extra_round_runs_once_like_the_real_one(tmp_path, legacy):
+    j = fixture_round_two(tmp_path, legacy=legacy)
     j.prepare_refine()
     context = job.load(j.root / "refine-context.json")
-    assert context["round"] == 3 and context["owner_note"] == "Fixture: shorter base."
+    assert context["round"] == 3 and context["note"] == "Fixture: shorter base."
     assert context["pngs"] == ["logo/exports/selected-r02-00.png"] and j.state["extra_round"]["fictional_test"] is True
+    assert j.state["extra_round"]["decided_by"] == "fixture-test"
     j.state["round"] = 3
     j.commit()
     with pytest.raises(ValueError, match="exhausted"):

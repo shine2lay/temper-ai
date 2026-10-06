@@ -1,9 +1,10 @@
 # Benchmark twin of design_homepage_v2 (queue #10, Design's scoreboard). Same nodes, agents,
-# checks and loops; every script stage runs with mode: bench, and the two owner gates are
-# plain steps: direction builds the art director's recommended concept (concepts.json
-# "recommended"), final records "benchmark_skipped" and labels the page not owner-approved.
+# checks and loops; every script stage runs with mode: bench, and the direction and final
+# gates are plain steps: direction builds the art director's recommended concept
+# (concepts.json "recommended"; direction_approved false, decided_by design), final records
+# "benchmark_skipped" and labels the page not approved (final_approved false).
 # Fictional briefs only (the brief stage refuses real deliverables); never a taste entry
-# (it reads the owner's taste file like a real run). The owner judges benchmark pages blind
+# (it reads the owner's taste file like a real run). Benchmark pages are judged blind
 # on ~/design-lab/scoreboard.md; AI judging is advisory. tests/test_design_homepage_v2.py
 # keeps it in step with v2.
 workflow:
@@ -12,10 +13,10 @@ workflow:
   description: |
     Benchmark run of design_homepage_v2 on a fixed fictional brief (paid models, same
     stages and checks): copy deck + content critic, references, three concepts and the
-    art director's recommendation, then the recommended concept is built (no owner
-    direction gate), review rounds with runtime checks and the content critic, Penpot
+    art director's recommendation, then the recommended concept is built (no direction
+    gate), review rounds with runtime checks and the content critic, Penpot
     conversion and verification, handoff, and a skipped final gate (verdict
-    benchmark_skipped, not owner-approved). Used to compare workflow versions blind;
+    benchmark_skipped, not approved). Used to compare workflow versions blind;
     real products refuse this workflow at the brief stage.
   inputs:
     brief_json: {type: string, required: true}

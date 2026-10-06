@@ -305,15 +305,19 @@ def test_signal_handlers_set_cancel_event():
 # restores the checkpoints before the run begins.
 
 def _queue(execution_id: str, start: str | None) -> None:
-    with get_session() as session:
-        session.add(WorkflowRun(
-            execution_id=execution_id,
-            workflow_name="test_workflow",
-            workspace_path="/tmp/test_workspace",
-            inputs={"key": "value"},
-            status="queued",
-            spawner_metadata={"start": start} if start else {},
-        ))
+    from temper_ai.runner.queue import queue_run
+
+    if start == "resume":
+        # The server captures this prior outcome before enqueue clears anything.
+        # Never construct a reservation from an already-cleared queued row.
+        with get_session() as session:
+            session.add(WorkflowRun(
+                execution_id=execution_id, workflow_name="test_workflow",
+                workspace_path="/tmp/test_workspace", inputs={"key": "value"},
+                status="failed", result={"cost_usd": 3.25, "total_tokens": 67},
+                error={"message": "original failure"},
+            ))
+    queue_run(execution_id, "test_workflow", "/tmp/test_workspace", {"key": "value"}, start=start)
 
 
 def _save(execution_id: str, node: str) -> int:
@@ -327,13 +331,17 @@ def _save(execution_id: str, node: str) -> int:
 
 def _run(execution_id: str) -> tuple[int, dict]:
     """Run the CLI with the engine faked; (exit code, what the engine was given)."""
+    from tests.test_runner.resume_support import install_launch_token
+
     with (
+        pytest.MonkeyPatch.context() as launch_env,
         patch("temper_ai.runner.bootstrap.bootstrap_runner_context_from_env"),
         patch(
             "temper_ai.runner.execute.execute_workflow",
             return_value=ExecuteResult(exit_code=0, status="completed"),
         ) as engine,
     ):
+        install_launch_token(execution_id, launch_env)
         rc = cmd_run_workflow(_make_args(execution_id))
     return rc, (engine.call_args.kwargs if engine.called else {})
 
@@ -389,19 +397,22 @@ def test_a_queued_fork_starts_from_the_source_up_to_the_fork_point(isolated_db):
     assert given["replay_dispatch_history"] is False
 
 
-def test_a_resume_that_cannot_restore_fails_its_run_without_starting_it(isolated_db):
+def test_an_unreadable_resume_refuses_the_attempt_and_keeps_the_prior_outcome(isolated_db):
     _queue("exec-broken", "resume")
     with patch(
-        "temper_ai.checkpoint.service.CheckpointService.reconstruct",
+        "temper_ai.checkpoint.service.CheckpointService.resume_snapshot",
         side_effect=RuntimeError("checkpoints unreadable"),
     ):
         rc, given = _run("exec-broken")
 
-    assert rc == 2
+    assert rc == 7  # named RESUME_ATTEMPT_REFUSED_EXIT, not a failed workflow
     assert given == {}
     row = _read_row("exec-broken")
-    assert row["status"] == "failed"
-    assert "resume failed: checkpoints unreadable" in row["error"]["message"]
+    assert row["status"] == "failed"  # the ORIGINAL outcome, never a new failure
+    assert row["error"] == {"message": "original failure"}
+    assert row["result"] == {"cost_usd": 3.25, "total_tokens": 67}
+    assert row["started_at"] is None and row["completed_at"] is None
+    assert row["attempts"] == 0
 
 
 # --- MCP servers in a run of its own (2026-09-27, the first runs in boxes) ------------------

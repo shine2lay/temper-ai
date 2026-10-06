@@ -133,24 +133,84 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         print(f"box refused: {exc}", file=sys.stderr)
         return BOX_REFUSED_EXIT
 
-    # --- Bootstrap (DB + LLM + memory + configs) ------------------------------
-    from temper_ai.runner.bootstrap import bootstrap_runner_context_from_env
+    # --- DB only, then resume admission: no providers/configs/MCP yet ----------
+    from copy import deepcopy
+
+    from temper_ai.runner.bootstrap import (
+        bootstrap_database_only_from_env,
+        bootstrap_runner_context_from_env,
+    )
+    from temper_ai.runner.resume_authority import (
+        RESERVATION_ENV,
+        RESUME_ATTEMPT_REFUSED_EXIT,
+        ResumeAttemptRefused,
+        ResumeAuthorityUnreadable,
+        admit_resume,
+        mark_admitted_resume_running,
+        record_saved_stop,
+        refuse_admitted_resume,
+        refuse_resume,
+    )
+    token = os.environ.get(RESERVATION_ENV)
+    refusal: ResumeAttemptRefused
+    try:
+        bootstrap_database_only_from_env()
+        run_row = _load_run_row(execution_id)
+    except Exception:
+        # The unreadable row cannot tell us this was a fresh run rather than a
+        # resume. Do not speculate with _safe_mark_failed (even without an env
+        # token); the DB-only refusal leaves whatever outcome was there alone.
+        refusal = ResumeAuthorityUnreadable(execution_id=execution_id, token=token,
+                                            code="resume_entry_unreadable")
+        refuse_resume(execution_id, refusal)
+        logger.warning("Run %s: attempt entry refused (%s)", execution_id, refusal.code)
+        return RESUME_ATTEMPT_REFUSED_EXIT
+    if run_row is None:
+        if token is not None:
+            refusal = ResumeAttemptRefused("resume_owner_changed", execution_id=execution_id, token=token)
+            refuse_resume(execution_id, refusal)
+            return RESUME_ATTEMPT_REFUSED_EXIT
+        print(f"Error: no WorkflowRun row for execution_id={execution_id}", file=sys.stderr)
+        return 2
+
+    meta = run_row.get("spawner_metadata") or {}
+    start = meta.get("start")
+    admission = None
+    if start == "resume":
+        try:
+            admission = admit_resume(execution_id, expected_token=token)
+        except ResumeAttemptRefused as refusal:
+            refuse_resume(execution_id, refusal)
+            logger.warning("Run %s: resume attempt refused (%s)", execution_id, refusal.code)
+            return RESUME_ATTEMPT_REFUSED_EXIT
+        if admission.authority.stopped:
+            # This is the old cancellation, not a fresh execution. No revised config,
+            # terminal writer, viewer sentinel, hold take-over or cleanup is needed.
+            record_saved_stop(execution_id, admission.authority)
+            return 1
+        handle = os.environ.get("TEMPER_RUN_CONTAINER") or str(os.getpid())
+        try:
+            mark_admitted_resume_running(admission, handle=handle)
+        except ResumeAttemptRefused as refusal:
+            refuse_admitted_resume(execution_id, refusal, admission)
+            return RESUME_ATTEMPT_REFUSED_EXIT
+        from temper_ai.runner import holds
+        holds.take_over(execution_id, by=execution_id)
+
+    # --- Full runtime bootstrap is behind the committed admission --------------
     try:
         runner_ctx = bootstrap_runner_context_from_env(
             config_dir=getattr(args, "config_dir", None),
         )
+    except ResumeAttemptRefused as refusal:
+        if admission is not None:
+            refuse_admitted_resume(execution_id, refusal, admission)
+        else:
+            refuse_resume(execution_id, refusal)
+        return RESUME_ATTEMPT_REFUSED_EXIT
     except Exception as exc:
         logger.exception("Worker bootstrap failed for %s: %s", execution_id, exc)
         _safe_mark_failed(execution_id, f"bootstrap failed: {exc}")
-        return 2
-
-    # --- Read the queued run row ---------------------------------------------
-    run_row = _load_run_row(execution_id)
-    if run_row is None:
-        print(
-            f"Error: no WorkflowRun row for execution_id={execution_id}",
-            file=sys.stderr,
-        )
         return 2
 
     # --- Is this box the run's current one, and the one its row describes? -----
@@ -158,19 +218,27 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     if refused is not None:
         return refused
 
-    # --- Resume or fork? --------------------------------------------------------
-    # The server queues resumes and forks too (spawner_metadata["start"]), so
-    # they run in a box like any other run. Both restore from checkpoints; a
-    # resume also links to the attempt it continues and replays its dispatches.
-    # Worked out before this attempt writes its own workflow.started event.
-    meta = run_row.get("spawner_metadata") or {}
-    start = meta.get("start")
-    # Ticked on the preview: steps that finished and are to run again anyway. And, for the
-    # pass that runs a failed run's held clean-ups, the only paths it may run.
+    # Use the trusted admitted snapshot, not a second read/fallback after running.
     rerun = [str(p) for p in (meta.get("rerun") or [])]
     run_only = [str(p) for p in (meta.get("only") or [])] or None
+    initial_outputs: dict[str, Any] | None
+    resume_metadata: dict[str, Any] | None
     try:
-        initial_outputs, resume_metadata = _restored_state(execution_id, start)
+        if admission is not None:
+            initial_outputs = deepcopy(admission.authority.outputs)
+            resume_metadata = {
+                "resume_of": admission.authority.attempt or None,
+                "restored_node_names": sorted(initial_outputs),
+                "replayed_dispatches": [],
+            }
+        else:
+            initial_outputs, resume_metadata = _restored_state(execution_id, start)
+    except ResumeAttemptRefused as refusal:
+        if admission is not None:
+            refuse_admitted_resume(execution_id, refusal, admission)
+        else:
+            refuse_resume(execution_id, refusal)
+        return RESUME_ATTEMPT_REFUSED_EXIT
     except Exception as exc:
         logger.exception("Could not restore %s for its %s: %s", execution_id, start, exc)
         _safe_mark_failed(execution_id, f"{start} failed: {exc}")
@@ -194,13 +262,15 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     # The handle the reaper polls: our PID under the subprocess spawner, our
     # container's name when the docker spawner put us in one (a PID would
     # mean nothing outside the container).
-    _update_run_row(
-        execution_id,
-        status="running",
-        started_at=datetime.now(UTC),
-        spawner_handle=os.environ.get("TEMPER_RUN_CONTAINER") or str(os.getpid()),
-        attempts=run_row["attempts"] + 1,
-    )
+    handle = os.environ.get("TEMPER_RUN_CONTAINER") or str(os.getpid())
+    if admission is None:
+        _update_run_row(
+            execution_id,
+            status="running",
+            started_at=datetime.now(UTC),
+            spawner_handle=handle,
+            attempts=run_row["attempts"] + 1,
+        )
 
     # --- Cancel signal handling ----------------------------------------------
     cancel_event = threading.Event()
@@ -240,6 +310,7 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     from temper_ai.runner.attempts import REPLACED_STATUS
     from temper_ai.runner.execute import execute_workflow
     stood_down = False
+    attempt_refused = False
     try:
         result = execute_workflow(
             execution_id=execution_id,
@@ -254,8 +325,17 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             replay_dispatch_history=start == "resume",
             rerun=rerun,
             run_only=run_only,
+            _resume_admission=admission,
         )
         stood_down = result.status == REPLACED_STATUS
+    except ResumeAttemptRefused as refusal:
+        attempt_refused = True
+        if admission is not None:
+            refuse_admitted_resume(execution_id, refusal, admission)
+        else:
+            refuse_resume(execution_id, refusal)
+        logger.warning("Run %s: resume attempt refused (%s)", execution_id, refusal.code)
+        return RESUME_ATTEMPT_REFUSED_EXIT
     except pi_lane.LaneDrained as drained:
         # The Pi lane is stopping and this run left at a turn boundary: interrupted, not
         # failed. The Pi lane's next start picks it up from its ledger (runner/pi_lane.py).
@@ -283,9 +363,9 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         )
         return 1
     finally:
-        if stood_down:
-            # A later attempt of the run streams to its viewers now: this box closes its
-            # own log file only, and sends them no end-of-run sentinel (SW-84).
+        if stood_down or attempt_refused:
+            # No run outcome belongs to a refused attempt, or to one replaced by a
+            # later attempt. Close this box's log only; send no viewer sentinel.
             jsonl_notifier.cleanup(execution_id)
         else:
             # Composite cleanup fans out to both sinks: Redis sends terminal

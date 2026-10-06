@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
@@ -75,6 +76,8 @@ class CheckpointService:
             total_tokens=result.total_tokens,
             duration_seconds=result.duration_seconds,
             error=result.error,
+            metadata_=({"self_cancelled": result.metadata["self_cancelled"]}
+                       if "self_cancelled" in result.metadata else None),
         )
 
     def save_agent_completed(
@@ -256,6 +259,19 @@ class CheckpointService:
         history = self._load_full_history(up_to_sequence)
         return self._replay(history)
 
+    def self_cancelled_result(self, node_path: str) -> NodeResult | None:
+        """The already-ended source/container, without executing its producer again.
+
+        Only SW-86's opt-in cancelled checkpoints count. Keep the original result/cost even
+        after a reset or a failed reconciliation; a revised config must not reopen work.
+        """
+        for cp in self._load_full_history():
+            if (cp.event_type == "node_completed" and cp.node_name == node_path
+                    and cp.status == Status.CANCELLED.value
+                    and isinstance((cp.metadata_ or {}).get("self_cancelled"), dict)):
+                return _checkpoint_to_node_result(cp)
+        return None
+
     def resume_state(self, up_to_sequence: int | None = None) -> dict[str, Any]:
         """What a resume goes on with besides the finished results (stage/restore.py).
 
@@ -276,7 +292,21 @@ class CheckpointService:
         """
         return self._replay_resume(self._load_full_history(up_to_sequence))
 
-    def _load_full_history(self, up_to_sequence: int | None = None) -> list[Checkpoint]:
+    def resume_snapshot(self) -> tuple[str, dict[str, Any], dict[str, NodeResult]]:
+        """Read the admission authority and results from the same checkpoint history.
+
+        The version names the append-only rows, including fork parents. A successful
+        empty read has its own version; an unavailable/missing parent is not empty
+        authority. Claims, answers, waits and cancellation are deliberately not cached.
+        """
+        history = self._load_full_history(strict_parent=True)
+        version = hashlib.sha256("\n".join(cp.id for cp in history).encode()).hexdigest()
+        state = self._replay_resume(history)
+        state["_dispatch_history"] = self._replay_dispatch_history(history)
+        return version, state, self._replay(history)
+
+    def _load_full_history(self, up_to_sequence: int | None = None, *,
+                           strict_parent: bool = False) -> list[Checkpoint]:
         """Load checkpoint history, following parent chain for forks."""
         # First, load this execution's checkpoints
         own_checkpoints = self._load_checkpoints(self.execution_id, up_to_sequence)
@@ -287,12 +317,12 @@ class CheckpointService:
         # Check if the first checkpoint has a parent (fork)
         first = own_checkpoints[0]
         if first.parent_id:
-            parent_history = self._load_parent_chain(first.parent_id)
+            parent_history = self._load_parent_chain(first.parent_id, strict=strict_parent)
             return parent_history + own_checkpoints
 
         return own_checkpoints
 
-    def _load_parent_chain(self, parent_id: str) -> list[Checkpoint]:
+    def _load_parent_chain(self, parent_id: str, *, strict: bool = False) -> list[Checkpoint]:
         """Recursively load parent checkpoint history."""
         with get_session() as session:
             parent = session.get(Checkpoint, parent_id)
@@ -300,6 +330,8 @@ class CheckpointService:
                 session.expunge(parent)
 
         if parent is None:
+            if strict:
+                raise LookupError("Resume checkpoint parent is unavailable")
             logger.warning("Parent checkpoint '%s' not found", parent_id)
             return []
 
@@ -310,7 +342,7 @@ class CheckpointService:
 
         # If the first parent checkpoint also has a parent, recurse
         if parent_checkpoints and parent_checkpoints[0].parent_id:
-            grandparent_history = self._load_parent_chain(parent_checkpoints[0].parent_id)
+            grandparent_history = self._load_parent_chain(parent_checkpoints[0].parent_id, strict=strict)
             return grandparent_history + parent_checkpoints
 
         return parent_checkpoints
@@ -401,6 +433,8 @@ class CheckpointService:
         skipped: set[str] = set()
         dispatches: list[dict[str, Any]] = []
         undone: dict[str, list[str]] = {}
+        self_cancelled: dict[str, Any] | None = None
+        self_cancelled_results: dict[str, NodeResult] = {}
         for cp in history:
             if cp.event_type == "dispatch_applied" and cp.node_name:
                 meta = cp.metadata_ or {}
@@ -423,6 +457,14 @@ class CheckpointService:
                 undone[cp.node_name] = list((cp.metadata_ or {}).get("undoes", []))
                 continue
             if cp.event_type == "node_completed" and cp.node_name:
+                # SW-86's first self-stop survives resets/rewinds and later attempts. It
+                # is not a failed step to retry, nor a condition skip to ask afresh.
+                stopped = (cp.metadata_ or {}).get("self_cancelled")
+                if isinstance(stopped, dict) and stopped.get("path"):
+                    if self_cancelled is None:
+                        self_cancelled = dict(stopped)
+                    if cp.status == Status.CANCELLED.value:
+                        self_cancelled_results.setdefault(cp.node_name, _checkpoint_to_node_result(cp))
                 last_failed[cp.node_name] = cp.status == Status.FAILED.value or (
                     # a skip because of a failure says so: "... failed" (stage/executor.py)
                     cp.status == Status.SKIPPED.value and "failed" in (cp.error or "")
@@ -472,6 +514,8 @@ class CheckpointService:
             "skipped": sorted(skipped),
             "dispatches": dispatches,
             "undone": undone,
+            **({"self_cancelled": self_cancelled,
+                "self_cancelled_results": self_cancelled_results} if self_cancelled else {}),
         }
 
     def reconstruct_dispatch_history(
@@ -494,7 +538,11 @@ class CheckpointService:
              dispatched_count) so on-resume dispatches enforce the same caps
              they would have in the original run
         """
-        history = self._load_full_history(up_to_sequence)
+        return self._replay_dispatch_history(self._load_full_history(up_to_sequence))
+
+    @staticmethod
+    def _replay_dispatch_history(history: list[Checkpoint]) -> list[dict[str, Any]]:
+        """Dispatch bookkeeping from the same history/version as resume admission."""
         out: list[dict[str, Any]] = []
         for cp in history:
             if cp.event_type != "dispatch_applied":
@@ -596,4 +644,6 @@ def _checkpoint_to_node_result(cp: Checkpoint) -> NodeResult:
         total_tokens=cp.total_tokens,
         duration_seconds=cp.duration_seconds,
         error=cp.error,
+        metadata=({"self_cancelled": cp.metadata_["self_cancelled"]}
+                  if isinstance((cp.metadata_ or {}).get("self_cancelled"), dict) else {}),
     )

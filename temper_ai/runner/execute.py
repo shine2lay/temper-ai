@@ -17,7 +17,9 @@ main() in phase 3) is responsible for those.
 from __future__ import annotations
 
 import logging
+import os
 import threading
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -31,6 +33,17 @@ from temper_ai.runner._helpers import (
 )
 from temper_ai.runner.attempts import REPLACED_STATUS
 from temper_ai.runner.parked import PARKED_STATUS
+from temper_ai.runner.resume_authority import (
+    RESERVATION_ENV,
+    ResumeAdmission,
+    ResumeAttemptRefused,
+    admit_resume,
+    record_saved_stop,
+    refuse_admitted_resume,
+    refuse_resume,
+    require_admitted_resume,
+    stopped_metrics,
+)
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.exceptions import ReplacedByLaterAttempt, RunParked
 from temper_ai.stage.executor import execute_graph, execute_graph_with_state
@@ -77,6 +90,7 @@ def execute_workflow(
     replay_dispatch_history: bool = False,
     rerun: list[str] | None = None,
     run_only: list[str] | None = None,
+    _resume_admission: ResumeAdmission | None = None,
 ) -> ExecuteResult:
     """Run one workflow end-to-end.
 
@@ -112,6 +126,29 @@ def execute_workflow(
         runner stays decoupled from the route handler's bookkeeping.
     """
     is_resume = initial_outputs is not None
+    admission: ResumeAdmission | None = None
+    if _resume_admission is not None and not is_resume:
+        refused = ResumeAttemptRefused("resume_admission_wrong_mode", execution_id=execution_id)
+        refuse_resume(execution_id, refused)
+        raise refused
+    if is_resume:
+        try:
+            admission = _resume_admission or admit_resume(
+                execution_id, expected_token=os.environ.get(RESERVATION_ENV))
+            require_admitted_resume(execution_id, admission)
+            if admission.authority.stopped:
+                record_saved_stop(execution_id, admission.authority)
+                cost, tokens, reason = stopped_metrics(admission.authority)
+                return ExecuteResult(exit_code=1, status="cancelled", cost_usd=cost,
+                                     total_tokens=tokens, error=reason)
+        except ResumeAttemptRefused as refused:
+            refuse_resume(execution_id, refused)
+            raise
+    if admission is not None:
+        # Valid resumes still take over held setup, but never before admission or
+        # for a known saved stop. No reservation/refusal path releases that setup.
+        from temper_ai.runner import holds
+        holds.take_over(execution_id, by=execution_id)
     op_label = "Resuming" if is_resume else "Starting"
     resume_suffix = (
         f" — {len(initial_outputs)} nodes pre-loaded" if initial_outputs else ""
@@ -203,6 +240,7 @@ def execute_workflow(
         workspace_path=workspace_path,
         cancel_event=cancel_event,
         checkpoint_service=checkpoint_svc,
+        resume_authority=deepcopy(admission.authority.state) if admission is not None else None,
         gate_registry=getattr(runner_ctx, "gate_registry", None) or {},
         graph_loader=runner_ctx.graph_loader,
         dispatch_limits=build_dispatch_limits(config),
@@ -223,6 +261,8 @@ def execute_workflow(
         stopped = (resume_metadata or {}).get("stopped_at")
         context.restore, resume_plan = build_restore(
             nodes, checkpoint_svc, initial_outputs or {}, rerun=rerun or (), stopped_at=stopped,
+            resume_outputs=admission.authority.outputs if admission is not None else None,
+            resume_state=admission.authority.state if admission is not None else None,
         )
         if resume_metadata is not None:
             resume_metadata = {**resume_metadata, "plan": resume_plan.as_dict()["counts"]}
@@ -234,6 +274,7 @@ def execute_workflow(
             graph_loader=runner_ctx.graph_loader,
             nodes=nodes,
             context=context,
+            admitted_history=admission.authority.state.get("_dispatch_history") if admission is not None else None,
         )
         if resume_metadata is not None:
             resume_metadata = {**resume_metadata, "replayed_dispatches": replayed}
@@ -275,6 +316,13 @@ def execute_workflow(
                 is_workflow=True,
                 workflow_outputs=config.outputs,
             )
+    except ResumeAttemptRefused as refused:
+        # Not a workflow result. Only this attempt's finally-owned resources close.
+        if admission is not None:
+            refuse_admitted_resume(execution_id, refused, admission)
+        else:
+            refuse_resume(execution_id, refused)
+        raise
     except RunParked as parked:
         # Not over: it waits on the owner with its place saved, and this worker can go. The
         # answer carries it on in a new box (runner/parked.py).

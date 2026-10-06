@@ -20,6 +20,16 @@ from temper_ai.runner.lanes import (
     lane_of,
     mark_lane,
 )
+from temper_ai.runner.resume_authority import (
+    RESERVED_KEYS,
+    ResumeAttemptRefused,
+    ResumeAuthority,
+    ResumeAuthorityUnreadable,
+    one_resume_at_a_time,
+    read_resume_authority,
+    refuse_resume,
+    reserve_resume,
+)
 
 #: What only the worker writes into a run's metadata, and a re-queue keeps: the box profile
 #: record (spawner/box_profile.py) and the Pi lane's record of the commits each attempt ran
@@ -45,7 +55,44 @@ def queue_run(
     extra: dict | None = None,
     *,
     lane: Any = KEEP_LANE,
-) -> None:
+) -> ResumeAuthority | None:
+    """Queue a run; Resume first reads authority and reserves its original projection.
+
+    Known stopped history returns state-only, without clearing/enqueueing the run.
+    Unknown admission refuses this attempt, never writes a failed run outcome.
+    """
+    if any(k in (*RESERVED_KEYS, "start") for k in (extra or {})):
+        raise ValueError("Resume reservation metadata is server-owned")
+    try:
+        if start == "resume":
+            authority = read_resume_authority(execution_id)
+            if authority.stopped:
+                return authority
+        return _queue_run(execution_id, workflow_name, workspace_path, inputs, start, extra, lane=lane)
+    except AlreadyQueued:
+        raise
+    except ResumeAttemptRefused as caught_refusal:
+        refuse_resume(execution_id, caught_refusal)
+        raise
+    except Exception:
+        # This scope is DB enqueue only, not revised configuration or execution.
+        if start != "resume":
+            raise
+        refused = ResumeAuthorityUnreadable(execution_id=execution_id, code="resume_enqueue_unavailable")
+        refuse_resume(execution_id, refused)
+        raise refused from None
+
+
+def _queue_run(
+    execution_id: str,
+    workflow_name: str,
+    workspace_path: str | None,
+    inputs: dict | None,
+    start: str | None = None,
+    extra: dict | None = None,
+    *,
+    lane: Any = KEEP_LANE,
+) -> ResumeAuthority | None:
     """Queue a run for the worker, which starts it in its own box.
 
     ``start`` is how the box begins: a fresh run (None), or ``resume`` /
@@ -74,22 +121,33 @@ def queue_run(
     # Nor its lane: only ``lane`` sets the mark.
     metadata.update({k: v for k, v in (extra or {}).items()
                      if v and k not in (*_WORKER_KEPT, LANE_KEY)})
-    with get_session() as session:
+    with one_resume_at_a_time(), get_session() as session:
         row = session.exec(
-            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
+            select(WorkflowRun).where(WorkflowRun.execution_id == execution_id).with_for_update(),
         ).first()
         if row is None:
-            session.add(WorkflowRun(
+            row = WorkflowRun(
                 execution_id=execution_id,
                 workflow_name=workflow_name,
                 workspace_path=workspace_path or "",
                 inputs=inputs or {},
                 status="queued",
                 spawner_metadata=mark_lane(metadata, None if lane is KEEP_LANE else lane),
-            ))
-            return
+            )
+            if start == "resume":
+                reserved_metadata, authority = reserve_resume(
+                    session, row, row.spawner_metadata, created_for_resume=True)
+                if authority.stopped:
+                    return authority
+                row.spawner_metadata = reserved_metadata
+            session.add(row)
+            return None
         if row.status in ("queued", "running"):
             raise AlreadyQueued(execution_id, row.status)
+        if start == "resume":
+            metadata, authority = reserve_resume(session, row, metadata)
+            if authority.stopped:
+                return authority
         row.workflow_name = workflow_name
         row.workspace_path = workspace_path or ""
         row.inputs = inputs or {}
@@ -111,3 +169,4 @@ def queue_run(
         row.result = None
         row.error = None
         session.add(row)
+    return None

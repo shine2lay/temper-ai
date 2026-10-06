@@ -39,6 +39,7 @@ import logging
 import signal
 import threading
 import time
+from typing import Any
 
 from sqlmodel import col, select
 
@@ -66,6 +67,8 @@ DEFAULT_POLL_INTERVAL = 2.0
 
 # The queued Pi runs already logged as waiting for the Pi lane (said once each).
 _TOLD_WAITING: set[str] = set()
+# Our launched resume handles whose DB acknowledgement was lost. No new spawn on retry.
+_PENDING_RESUME_STAMPS: dict[str, tuple[ProcessHandle, str]] = {}
 
 
 def cmd_watch_queue(args: argparse.Namespace) -> int:
@@ -81,10 +84,6 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
     except LaneSettingError as exc:
         logger.error("Watcher won't start: %s", exc)
         return 2
-    init_database(db_url)
-    logger.info("Watcher DB connected: %s",
-                db_url.split("@")[-1] if "@" in db_url else db_url)
-
     try:
         spawner = get_spawner()
     except SpawnerError as exc:  # H1: the subprocess spawner beside a Docker socket
@@ -99,12 +98,8 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
             return 2
         pi_lane.eager_import()
         pi_lane.arm_drain_mark()
-        logger.info("Pi lane start-up: %s", pi_lane.start_up())
-    requeued = _requeue_stuck_claims(spawner, lane)
-    if requeued:
-        logger.warning("Put %d run(s) a restart caught mid-claim back in the queue", requeued)
     reaper = Reaper(spawner, interval_seconds=args.reaper_interval, lane=lane)
-    reaper.start()
+    ready = False
     logger.info(
         "Watcher started (lane=%s, poll=%.1fs, reaper=%.1fs)",
         lane or "main", args.poll_interval, args.reaper_interval,
@@ -123,7 +118,14 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
 
     try:
         while not stop.is_set():
+            if not ready:
+                ready = _try_watcher_startup(db_url, spawner, lane)
+                if not ready:
+                    stop.wait(args.poll_interval)
+                    continue
+                reaper.start()
             try:
+                _flush_resume_stamps()
                 claimed = _scan_and_dispatch(spawner, lane)
                 if claimed:
                     logger.info("Dispatched %d new run(s)", claimed)
@@ -131,7 +133,7 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
                 logger.exception("Watcher tick failed (continuing): %s", exc)
             stop.wait(args.poll_interval)
     finally:
-        if lane == PI_LANE:
+        if lane == PI_LANE and ready:
             # Claims nothing more; its runs leave at their next turn boundary. The reaper
             # keeps going meanwhile, so a run that parks is let go as usual.
             pi_lane.drain(spawner)
@@ -139,6 +141,41 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
         logger.info("Watcher stopped")
 
     return 0
+
+
+def _try_watcher_startup(db_url: str, spawner, lane: str | None) -> bool:
+    """Retry only DB/startup bookkeeping, never a refused workflow or its producer."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from temper_ai.runner.resume_authority import ResumeAttemptRefused
+
+    try:
+        init_database(db_url)
+        if lane == PI_LANE:
+            from temper_ai.runner import pi_lane
+            state = pi_lane.start_up()
+            if state.get("authority_unavailable"):
+                return False
+            logger.info("Pi lane start-up: %s", state)
+        requeued = _requeue_stuck_claims(spawner, lane)
+        if requeued:
+            logger.warning("Put %d ordinary claims back in the queue", requeued)
+        return True
+    except (OSError, SQLAlchemyError, ResumeAttemptRefused) as exc:
+        # Stay alive during a read outage, not an unrelated startup programming error.
+        # No permission, false outcome or SQL/credential dump.
+        logger.warning("Watcher authority unavailable (%s); no new work", type(exc).__name__)
+        return False
+
+
+def _flush_resume_stamps() -> None:
+    """Persist only handles we already launched, fenced to their original reservation."""
+    for execution_id, (handle, token) in list(_PENDING_RESUME_STAMPS.items()):
+        try:
+            _stamp_handle(execution_id, handle, resume_token=token)
+        except Exception:  # noqa: BLE001
+            continue
+        _PENDING_RESUME_STAMPS.pop(execution_id, None)
 
 
 def _scan_and_dispatch(spawner, lane: str | None = None) -> int:
@@ -149,6 +186,13 @@ def _scan_and_dispatch(spawner, lane: str | None = None) -> int:
     UPDATE matches the WHERE clause, the other gets zero rows changed.
     Only ``lane``'s rows (runner/lanes.py).
     """
+    from temper_ai.runner.resume_authority import (
+        ResumeAttemptRefused,
+        automatic_resume_refused,
+        bind_resume_launch,
+        refuse_resume,
+    )
+
     queued = _load_queued(lane)
     if not queued:
         return 0
@@ -161,7 +205,21 @@ def _scan_and_dispatch(spawner, lane: str | None = None) -> int:
             if _mark_cancelled_unclaimed(execution_id):
                 logger.info("Cancelled %s before it started", execution_id)
             continue
-        if not _claim_row(execution_id, spawner.kind.value, lane):
+        resume_token = row_dict.get("resume_token")
+        if row_dict.get("start") == "resume" or resume_token is not None:
+            try:
+                if automatic_resume_refused(execution_id):
+                    continue
+                if resume_token is None:
+                    raise ResumeAttemptRefused("resume_reservation_missing", execution_id=execution_id)
+            except ResumeAttemptRefused as refused:
+                if refused.token is None:
+                    refused.token = resume_token
+                refuse_resume(execution_id, refused)
+                continue
+        claimed = (_claim_row(execution_id, spawner.kind.value, lane, resume_token=resume_token)
+                   if resume_token is not None else _claim_row(execution_id, spawner.kind.value, lane))
+        if not claimed:
             # Another watcher beat us to it; in the Pi lane, another Pi run holds the lane.
             if lane == PI_LANE and execution_id not in _TOLD_WAITING:
                 _TOLD_WAITING.add(execution_id)
@@ -170,20 +228,46 @@ def _scan_and_dispatch(spawner, lane: str | None = None) -> int:
             continue
         _TOLD_WAITING.discard(execution_id)
         try:
-            handle = spawner.spawn(execution_id)
+            with bind_resume_launch(execution_id, resume_token):
+                handle = spawner.spawn(execution_id)
+        except ResumeAttemptRefused as refused:
+            if refused.token is None:
+                refused.token = resume_token
+            refuse_resume(execution_id, refused)
+            logger.warning("Run %s: spawn attempt refused (%s)", execution_id, refused.code)
+            continue
         except SpawnerBusy as exc:
             # Not now, but soon: back in the queue for the next scan.
             logger.warning("Can't start %s yet (%s); trying again shortly", execution_id, exc)
-            _unclaim(execution_id)
+            if resume_token is not None:
+                _unclaim(execution_id, resume_token=resume_token)
+            else:
+                _unclaim(execution_id)
             continue
         except SpawnerError as exc:
+            if resume_token is not None:
+                refuse_resume(execution_id, ResumeAttemptRefused(
+                    "resume_spawn_unavailable", execution_id=execution_id, token=resume_token))
+                logger.warning("Run %s: its unadmitted spawn was refused", execution_id)
+                continue
             logger.error(
                 "Spawn failed for %s (%s) — marking failed", execution_id, exc,
             )
             _mark_spawn_failed(execution_id, str(exc))
             continue
+        except Exception:
+            if resume_token is not None:
+                refuse_resume(execution_id, ResumeAttemptRefused(
+                    "resume_spawn_unconfirmed", execution_id=execution_id, token=resume_token))
+                logger.warning("Run %s: spawn awaits token-fenced recovery", execution_id)
+                continue
+            raise
 
-        _stamp_handle(execution_id, handle)
+        if resume_token is not None:
+            _PENDING_RESUME_STAMPS[execution_id] = (handle, resume_token)
+            _flush_resume_stamps()
+        else:
+            _stamp_handle(execution_id, handle)
         dispatched += 1
         logger.info(
             "Dispatched %s → spawner_handle=%s", execution_id, handle.handle,
@@ -195,6 +279,8 @@ def _load_queued(lane: str | None = None) -> list[dict]:
     """Snapshot queued rows as plain dicts, release the session before
     spawn calls (which can take 10-100ms each). Only ``lane``'s rows; the Pi
     lane's in the order they came, since it runs one at a time."""
+    from temper_ai.runner.resume_authority import RESERVATION_KEY
+
     with get_session() as session:
         query = select(WorkflowRun).where(
             WorkflowRun.status == "queued",
@@ -204,10 +290,18 @@ def _load_queued(lane: str | None = None) -> list[dict]:
         if lane == PI_LANE:
             query = query.order_by(col(WorkflowRun.created_at))
         rows = session.exec(query).all()
-        return [
-            {"execution_id": r.execution_id, "cancel_requested": bool(r.cancel_requested)}
-            for r in rows
-        ]
+        queued = []
+        for row in rows:
+            item: dict[str, Any] = {"execution_id": row.execution_id,
+                                    "cancel_requested": bool(row.cancel_requested)}
+            metadata = row.spawner_metadata or {}
+            if metadata.get("start") == "resume":
+                item["start"] = "resume"
+                capsule = metadata.get(RESERVATION_KEY)
+                if isinstance(capsule, dict):
+                    item["resume_token"] = capsule.get("token")
+            queued.append(item)
+        return queued
 
 
 def _mark_cancelled_unclaimed(execution_id: str) -> bool:
@@ -229,10 +323,13 @@ def _mark_cancelled_unclaimed(execution_id: str) -> bool:
         return session.exec(stmt).rowcount > 0  # type: ignore[arg-type]
 
 
-def _unclaim(execution_id: str) -> bool:
-    """Hand a claimed row that got no box back to the queue."""
+def _unclaim(execution_id: str, *, resume_token: str | None = None) -> bool:
+    """Hand a claimed row that got no box back to the queue, not a later reservation."""
     from sqlalchemy import update
 
+    from temper_ai.runner.resume_authority import RESERVATION_KEY
+    own = ([col(WorkflowRun.spawner_metadata)[RESERVATION_KEY]["token"].as_string() == resume_token]
+           if resume_token is not None else [])
     with get_session() as session:
         stmt = (
             update(WorkflowRun)
@@ -240,6 +337,7 @@ def _unclaim(execution_id: str) -> bool:
                 WorkflowRun.execution_id == execution_id,  # type: ignore[arg-type]
                 WorkflowRun.status == "queued",  # type: ignore[arg-type]
                 WorkflowRun.spawner_handle == CLAIMING,  # type: ignore[arg-type]
+                *own,
             )
             .values(spawner_kind=None, spawner_handle=None)
         )
@@ -261,10 +359,51 @@ def _requeue_stuck_claims(spawner, lane: str | None = None) -> int:
                 lane_clause(col(WorkflowRun.spawner_metadata), lane),
             ),
         ).all()
-        stuck = [r.execution_id for r in rows]
+        stuck = [(r.execution_id, r.spawner_metadata, bool(r.cancel_requested)) for r in rows]
 
+    from temper_ai.runner.resume_authority import (
+        ResumeAttemptRefused,
+        recover_resume_reservation,
+        refuse_resume,
+        reservation,
+        reservation_never_admitted,
+    )
     requeued = 0
-    for execution_id in stuck:
+    for execution_id, metadata, cancelled in stuck:
+        capsule = reservation(metadata)
+        if capsule is None and not cancelled and (metadata or {}).get("start") == "resume":
+            refuse_resume(execution_id, ResumeAttemptRefused(
+                "resume_reservation_missing", execution_id=execution_id), expected_handle=CLAIMING)
+            continue
+        if capsule is not None and not cancelled:
+            try:
+                unstarted = reservation_never_admitted(metadata, execution_id=execution_id)
+            except ResumeAttemptRefused as refused:
+                refuse_resume(execution_id, refused, expected_handle=CLAIMING)
+                continue
+            if unstarted:
+                if capsule.get("phase") in ("recovered", "invalid"):
+                    continue
+                gone = False
+                if spawner.kind == SpawnerKind.docker:
+                    handle = ProcessHandle(kind=spawner.kind, handle=CLAIMING,
+                                           metadata={"execution_id": execution_id})
+                    try:
+                        if spawner.is_alive(handle):
+                            continue
+                        is_gone = getattr(spawner, "is_gone", None)
+                        if callable(is_gone) and not is_gone(handle):
+                            continue
+                        gone = True
+                    except SpawnerError:
+                        continue
+                token = capsule.get("token")
+                if isinstance(token, str) and token:
+                    # With an unknown subprocess handle, only an ungranted
+                    # reservation may roll back. An issued permission needs proof.
+                    recover_resume_reservation(execution_id, expected_token=token,
+                                               expected_handle=CLAIMING, box_proved_gone=gone)
+                continue  # Never requeue a refused/unadmitted attempt automatically.
         if spawner.kind == SpawnerKind.docker:
             handle = ProcessHandle(
                 kind=spawner.kind, handle=CLAIMING, metadata={"execution_id": execution_id},
@@ -281,7 +420,7 @@ def _requeue_stuck_claims(spawner, lane: str | None = None) -> int:
 
 
 def _claim_row(execution_id: str, spawner_kind: str = "subprocess",
-               lane: str | None = None) -> bool:
+               lane: str | None = None, *, resume_token: str | None = None) -> bool:
     """Try to atomically claim a queued row. Returns True if we got it.
 
     Uses a single UPDATE...WHERE statement so the claim is atomic at the
@@ -305,6 +444,10 @@ def _claim_row(execution_id: str, spawner_kind: str = "subprocess",
         WorkflowRun.spawner_kind.is_(None),  # type: ignore[union-attr]
         lane_clause(col(WorkflowRun.spawner_metadata), lane),
     ]
+    if resume_token is not None:
+        from temper_ai.runner.resume_authority import RESERVATION_KEY
+        conditions += [WorkflowRun.status == "queued",  # type: ignore[arg-type]
+                       col(WorkflowRun.spawner_metadata)[RESERVATION_KEY]["token"].as_string() == resume_token]
     if lane == PI_LANE:
         # Still queued: the server ends an unclaimed Pi run itself on a cancel (api/routes.py
         # _cancel_unclaimed_pi_run), maybe between this watcher's scan and this claim.
@@ -326,7 +469,34 @@ def _claim_row(execution_id: str, spawner_kind: str = "subprocess",
         return result.rowcount > 0
 
 
-def _stamp_handle(execution_id: str, handle) -> None:
+def _stamp_handle(execution_id: str, handle, *, resume_token: str | None = None) -> None:
+    if resume_token is not None:
+        # The box may already have refused/restored, or a later owner may have
+        # queued another attempt. Merge atomically; never replace append-only audit.
+        import json
+
+        from sqlalchemy import JSON, cast, func, literal, update
+        from sqlalchemy.dialects.postgresql import JSONB
+
+        from temper_ai.runner.lanes import LANE_RECORD_KEY
+        from temper_ai.runner.resume_authority import RESERVATION_KEY, RESERVED_KEYS
+        extra = {k: v for k, v in handle.metadata.items()
+                 if k not in (*RESERVED_KEYS, "box_profile", LANE_RECORD_KEY)}
+        meta = col(WorkflowRun.spawner_metadata)
+        with get_session() as session:
+            merged: Any
+            if session.get_bind().dialect.name == "postgresql":
+                merged = cast(meta, JSONB).op("||")(cast(literal(extra, type_=JSON), JSONB))
+            else:
+                merged = func.json_patch(meta, json.dumps(extra))
+            session.exec(update(WorkflowRun).where(  # type: ignore[call-overload]
+                col(WorkflowRun.execution_id) == execution_id,
+                col(WorkflowRun.status).in_(("queued", "running")),
+                meta["start"].as_string() == "resume",
+                meta[RESERVATION_KEY]["token"].as_string() == resume_token,
+            ).values(spawner_handle=handle.handle, spawner_metadata=merged)
+              .execution_options(synchronize_session=False))
+        return
     with get_session() as session:
         row = session.exec(
             select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),

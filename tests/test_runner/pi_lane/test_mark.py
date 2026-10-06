@@ -260,8 +260,10 @@ def test_resume_sets_the_lane_again_from_the_workflow(srv, monkeypatch, workflow
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "queued"
     _lands(eid, pi)
+    reservation = ls.row(eid).spawner_metadata["resume_reservation"]
     assert ls.row(eid).spawner_metadata == (
-        {"start": "resume", LANE_KEY: PI_LANE} if pi else {"start": "resume"})
+        {"start": "resume", LANE_KEY: PI_LANE, "resume_reservation": reservation} if pi else
+        {"start": "resume", "resume_reservation": reservation})
 
 
 def test_a_pi_run_from_before_the_lane_gets_its_mark_when_it_is_resumed(srv, monkeypatch):
@@ -434,9 +436,14 @@ def test_only_the_two_writers_create_run_rows_and_every_metadata_write_keeps_the
         "temper_ai/api/routes.py",  # the direct spawn: mark_lane on insert and on the stamp
         "temper_ai/api/routes.py",
         "temper_ai/cli/watch_queue.py",  # _stamp_handle: mark_lane(merged, lane_of(old))
+        "temper_ai/cli/watch_queue.py",  # owned resume SQL merge excludes LANE_RECORD_KEY
         "temper_ai/pi_agent/accounts.py",  # record_account: a copy of the row's own metadata
         "temper_ai/runner/pi_lane.py",  # record_commit: a copy of the row's own metadata
         "temper_ai/runner/queue.py",  # queue_run: mark_lane on insert and re-queue
         "temper_ai/runner/queue.py",
+        "temper_ai/runner/queue.py",  # new-row resume reservation: mark_lane already applied
+        "temper_ai/runner/resume_authority.py",  # admission copies metadata, preserving lane
+        "temper_ai/runner/resume_authority.py",  # invalid capsule copies metadata, preserving lane
+        "temper_ai/runner/resume_authority.py",  # owned restoration keeps before-clear lane
         "temper_ai/spawner/box_profile.py",  # the box profile: a copy of the row's own
     ]

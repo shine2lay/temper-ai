@@ -66,6 +66,8 @@ def _box(ext, eid: str, monkeypatch, *, finish_pi: bool = False) -> int:
     from temper_ai.runner.lanes import PI_LANE
 
     assert _row(eid)["status"] == "queued"
+    from tests.test_runner.resume_support import install_launch_token
+    install_launch_token(eid, monkeypatch, lane=PI_LANE)
     assert not _claim_row(eid, spawner_kind="docker")  # the main lane's claim
     assert _claim_row(eid, spawner_kind="docker", lane=PI_LANE)
     monkeypatch.setenv("TEMPER_RUN_CONTAINER", f"temper-run-{eid}")

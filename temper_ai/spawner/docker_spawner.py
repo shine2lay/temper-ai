@@ -92,7 +92,7 @@ import socket
 import subprocess  # noqa: S404 — intentional: this is the spawner
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from temper_ai.integrations.github import secret as github_secret
@@ -511,6 +511,15 @@ class DockerSpawner(Spawner):
         template = self.template()
         name = container_name(execution_id)
         env = self.env_split(template)
+        from temper_ai.runner.resume_authority import (
+            RESERVATION_ENV,
+            launch_resume_token,
+        )
+        token = launch_resume_token(execution_id)
+        kept = tuple(v for v in env.kept if v.split("=", 1)[0] != RESERVATION_ENV)
+        if token is not None:
+            kept += (f"{RESERVATION_ENV}={token}",)
+        env = replace(env, kept=kept)
         if env.mode == box_env_list.MODE_INHERIT:
             logger.warning(
                 "Run container %s inherits the template's whole environment "

@@ -165,6 +165,10 @@ def test_a_resume_of_a_run_started_without_the_input_is_queued_with_the_default(
     # a run started before defaults were filled in recorded only what it was sent
     earlier = {"workflow_name": WORKFLOW, "status": "interrupted", "input_data": {"plain": "p"},
                "workspace_path": str(api.ws)}
+    from tests.test_runner.resume_support import seed_legacy_interrupted_run
+
+    # Server Start's original records, without any post-deploy resume credentials.
+    seed_legacy_interrupted_run("old-1", WORKFLOW, str(api.ws), {"plain": "p"})
     monkeypatch.setattr(routes, "get_workflow_execution", lambda _eid: dict(earlier))
     resp = routes.resume_run("old-1")
     assert resp.status == "queued"

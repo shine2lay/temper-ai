@@ -62,6 +62,8 @@ def _attempt(eid: str, monkeypatch) -> int:
     from temper_ai.cli.watch_queue import _claim_row
 
     assert ls.row(eid).status == "queued"
+    from tests.test_runner.resume_support import install_launch_token
+    install_launch_token(eid, monkeypatch, lane=PI_LANE)
     assert not _claim_row(eid, "docker"), "the main watcher claimed a Pi run"
     assert _claim_row(eid, "subprocess", PI_LANE)
     monkeypatch.setenv("TEMPER_RUN_CONTAINER", f"temper-run-{eid}")

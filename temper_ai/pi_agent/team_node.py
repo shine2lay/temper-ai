@@ -35,6 +35,8 @@ class TeamNode(Node):
     #: A failed team fails its stage too: never the tolerant "completed" of other stages
     #: (R2 B13, M2-roles P2).
     fails_stage: ClassVar[bool] = True
+    #: An E18 owner stop ends the stage cancelled and admits no new starts in its run.
+    cancelled_ends_stage: ClassVar[bool] = True
     #: A team stage has no deadline: its pause and waits never expire (R2 B10, A8).
     no_stage_timeout: ClassVar[bool] = True
 

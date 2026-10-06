@@ -310,9 +310,8 @@ the step red with no way on. Now it asks (SW-85, M3 E24; `temper_ai/pi_agent/set
   step was stopped: its settings changed since its conversation started (<keys>)", and never
   names who answered. The stop is returned, never raised, so it is never retried, and the
   run's cancel signal is never set for it. No turn runs and the held answer is never
-  applied. Not yet stopped by it: until a follow-up lands (SW-86), steps after a Pi step
-  that ended cancelled this way (or a team stopped at its pause or when stalled) can still
-  start; the run still ends cancelled with the step's reason.
+  applied. Nothing new starts anywhere in the run after it (SW-86, below); the run ends
+  cancelled with the step's reason.
 - **Anything else** (another word, an empty answer) decides nothing: the owner is asked
   again at a new settings wait. There is no default, either way.
 - **A team** asks the same at one settings wait for the whole team, listing each changed
@@ -344,6 +343,78 @@ are `text`. Every other key is a full 64-hex sha256: `extensions.<name>` (`ident
 `agent_config_sha256` and `team` are the pin's own digests, and `tools`, `route_host`,
 `workflow` and `cwd` are the sha256 of the value's canonical JSON. No file's contents and
 no environment value is ever in a wait.
+
+## A stopped step starts nothing more (SW-86)
+
+A Pi step that ends cancelled **by itself** (`cancelled_ends_stage`, with the run's cancel
+signal unset) closes the run's one start door, `RunStop` through `_held_or_skipped`. This
+covers a team's stop at the pause or when stalled, a settings stop, and a conversation
+ended elsewhere while its step waited (`_settled_meanwhile`). No dependent or independent
+branch starts another step. `run_after_failure` is no exception, and an approval after the
+stop opens no wait. Its sole record is a neutral skip:
+
+> not started: the run was stopped at 'talk'
+
+The quoted name is the full node path (a team's own node is `talk.team`). The run still
+ends **cancelled**, with the stopped step's original reason; E18's run-list sentence is
+unchanged. A sibling already running is **not** interrupted: the run's cancel signal is
+not set, so the sibling finishes under the existing tool/turn/wait rules and keeps its
+result. An earlier or later sibling failure remains visible on that step but cannot turn
+this stopped run failed. The first qualifying self-stop keeps its path and reason if
+several steps stop themselves. Producer admission and the stop share one lock, after
+blocking input, approval and event-recording work (also in a timeout worker). If the
+stop wins, the provisional node event becomes the sole neutral skip; the producer never
+runs. Already-admitted siblings keep the existing rules, without holding that lock during
+their work. An approved preflight answer whose producer lost admission stays visible but
+unconsumed. A gate already parked cannot keep the run waiting, consume
+an answer, or turn the run failed. Its open wait is closed as rejected, without setting the
+run's cancel signal; a concurrent answer remains visible but unused.
+
+**Setup-release clean-ups are kept back too**, in both `on_failure: hold` and `cleanup`:
+they have the same neutral skip. Setup stays standing. This is a stop, not a retryable
+failure: no failure hold or automatic deadline-release pass is scheduled. Releasing setup
+needs an explicitly requested separate run. This strict choice avoids starting a model
+agent merely because it is marked `undoes`, and avoids a cleanup-only pass changing a
+cancelled run to failed. The Pi lane has no setup-release clean-ups today.
+
+The self-stop's path and reason are kept in its node checkpoint (`metadata.self_cancelled`)
+and propagated through enclosing stages. The saved stop is read **before** enqueue clears
+terminal fields, any running transition, setup take-over, runtime/tool registration or
+MCP setup. Public Resume, answered parked waits, startup pickup, shared
+`queue_run(start="resume")`, `execute_workflow` and `run-workflow` use the same DB-only
+admission helper (`runner/resume_authority.py`). A known stop is state-only: no new
+workflow attempt, producer, owner/settings wait or cleanup. Revised/missing configuration
+is not loaded to keep the cancellation. Saved reasons/results/costs stay intact even if
+checkpoint reconciliation or the separate observation diagnostic fails. Bare graph resume
+also restores `RunStop` before scheduling; any ended-source inspection bypasses revised
+conditions, inputs and approvals. Restart pickup leaves a cancelled run alone.
+
+**Unreadable authority refuses the attempt, not the run.** This also applies to ordinary
+workflows with no self-cancelled step: an unreadable resume is refused, keeping its previous
+outcome, reason, results and costs rather than marking the run failed. A successful empty
+read still follows normal resume behavior; a read fault never becomes empty history, fake
+cancellation, replacement or failure. The API returns HTTP 503 with a bounded diagnostic. The worker/CLI
+returns `RESUME_ATTEMPT_REFUSED_EXIT` (7), distinct from box, lane and replacement exits.
+Only `caller.action` records the refusal; no terminal row writer, failed workflow event,
+viewer/end sentinel, `_see_to_parked`, new wait, automatic retry or setup release follows it.
+Only this attempt's own resources may be closed.
+
+Valid enqueue atomically reserves a server-owned token and the prior canonical projection
+in existing JSON metadata **before clearing it**. Caller `extra` cannot supply reserved
+keys or a baseline. Claim/spawn is not admission: the worker re-reads checkpoint authority
+and ownership, commits admission, then marks running and opens runtime. It reuses that
+trusted snapshot, without freezing mutable waits, answers, cancellation, limits or claims.
+Held setup is taken over only after this check. Normal resume/loop/dispatch behavior remains.
+
+A refused worker restores the saved projection only under the same token, original attempt,
+claim, checkpoint-version and independent-cancel fences. Append-only box/commit history is
+kept. An unknown/newer owner or cancellation permits no rollback or release. Reaper/startup
+recover a never-admitted reservation, not a failed/orphaned run; an admitted-but-not-started
+reservation additionally needs its own box proved gone. A DB outage leaves durable recovery
+bookkeeping and no work; the watcher stays up. Missing/corrupt baseline authorizes neither
+work nor a manufactured outcome. Recovery never retries the refused workflow.
+The run's own cancel signal still uses its existing path; workflows without a self-stop
+keep their failure policies and outcomes unchanged.
 
 ## The worker box
 

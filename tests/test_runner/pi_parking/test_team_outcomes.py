@@ -107,8 +107,8 @@ def test_e18_a_stop_at_the_pause_with_words_ends_the_run_cancelled(tr):
     # a resume reads the ended team and starts nothing
     turns = len(ts.rows(tr.led, eid, HOST)["turns"])
     r = tr.client.post(f"/api/runs/{eid}/resume", json={})
-    if r.status_code == 200:
-        pw.wait_ended(eid, 3)
+    assert r.status_code == 200 and r.json()["status"] == "cancelled"
+    assert len(pw.attempts(eid)) == 2  # state-only: no replay of the stopped team
     assert prompts() == {"design": 2, "frontend": 1, "qa": 1}
     assert len(ts.rows(tr.led, eid, HOST)["turns"]) == turns
     assert [w["state"] for w in team_waits(tr, eid)] == ["decided"]

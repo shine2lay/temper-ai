@@ -26,6 +26,16 @@ from temper_ai.stage.loader import GraphLoader
 logger = logging.getLogger(__name__)
 
 
+def bootstrap_database_only_from_env() -> None:
+    """Connect only DB/schema for admission, before runtime/providers/tools/configs."""
+    from temper_ai.spawner import box_bootstrap
+    box_bootstrap.require_received()
+    from temper_ai.database import init_database
+    db_url = os.environ.get("TEMPER_DATABASE_URL", os.environ.get("DATABASE_URL", "sqlite:///./data/temper.db"))
+    init_database(db_url)
+    logger.info("Worker DB connected: %s", db_url.split("@")[-1] if "@" in db_url else db_url)
+
+
 def bootstrap_runner_context_from_env(
     *,
     config_dir: str | Path | None = None,
@@ -50,23 +60,9 @@ def bootstrap_runner_context_from_env(
         - Loads workflow YAML configs from config_dir into a fresh
           ConfigStore so graph_loader.load_workflow() can resolve them.
     """
-    # A oneshot box's runner has taken its delivery before this (cli/main.py); one that
-    # hasn't is refused here, before it reads a setting or starts anything (BS2).
-    from temper_ai.spawner import box_bootstrap
-    box_bootstrap.require_received()
-
-    # Database — reuse server's resolution. init_database is idempotent so
-    # the spawner can call this even when the server already opened the DB.
-    from temper_ai.database import init_database
-    db_url = os.environ.get(
-        "TEMPER_DATABASE_URL",
-        os.environ.get("DATABASE_URL", "sqlite:///./data/temper.db"),
-    )
-    init_database(db_url)
-    logger.info(
-        "Worker DB connected: %s",
-        db_url.split("@")[-1] if "@" in db_url else db_url,
-    )
+    # BS2 delivery and DB/schema only. A resume's CLI calls this before its admission,
+    # then reaches full bootstrap only with committed producer permission.
+    bootstrap_database_only_from_env()
 
     # LLM providers + memory — borrow server's initializers so the worker
     # picks up the exact same env-driven setup the server uses (no drift).

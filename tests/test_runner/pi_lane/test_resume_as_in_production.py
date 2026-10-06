@@ -87,6 +87,8 @@ def _box(srv, eid: str, monkeypatch) -> int:
 
     assert ls.row(eid).status == "queued"
     assert ls.lane(eid) == PI_LANE
+    from tests.test_runner.resume_support import install_launch_token
+    install_launch_token(eid, monkeypatch, lane=PI_LANE)
     assert not _claim_row(eid, spawner_kind="docker")  # the main lane's claim
     assert _claim_row(eid, spawner_kind="subprocess", lane=PI_LANE)
     with monkeypatch.context() as box:

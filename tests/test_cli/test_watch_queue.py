@@ -50,15 +50,29 @@ def _reset_spawner():
 
 
 def _enqueue(execution_id: str, *, workflow_name: str = "wf", inputs: dict | None = None, **fields):
-    with get_session() as session:
-        session.add(WorkflowRun(
-            execution_id=execution_id,
-            workflow_name=workflow_name,
-            workspace_path="/tmp/ws",
-            inputs=inputs or {},
-            status="queued",
-            **fields,
-        ))
+    start = fields.get("spawner_metadata", {}).get("start")
+    if start == "resume":
+        from temper_ai.runner.queue import queue_run
+
+        # An intact prior row, followed by the real enqueue transaction; never
+        # invent a reservation or historical baseline in a cleared queued row.
+        with get_session() as session:
+            session.add(WorkflowRun(
+                execution_id=execution_id, workflow_name=workflow_name,
+                workspace_path="/tmp/ws", inputs=inputs or {}, status="failed",
+                error={"message": "prior fixture ending"},
+            ))
+        queue_run(execution_id, workflow_name, "/tmp/ws", inputs or {}, start=start)
+    else:
+        with get_session() as session:
+            session.add(WorkflowRun(
+                execution_id=execution_id,
+                workflow_name=workflow_name,
+                workspace_path="/tmp/ws",
+                inputs=inputs or {},
+                status="queued",
+                **fields,
+            ))
 
 
 def _read(execution_id: str) -> dict:
@@ -239,6 +253,7 @@ def test_the_box_handle_keeps_how_the_box_is_to_start(isolated_db):
 
     assert _metadata("resumed") == {
         "start": "resume", "execution_id": "resumed", "container": "temper-run-resumed",
+        "resume_reservation": _metadata("resumed")["resume_reservation"],
     }
 
 

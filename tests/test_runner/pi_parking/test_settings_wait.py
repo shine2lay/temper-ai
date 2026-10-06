@@ -314,11 +314,12 @@ def test_3_stop_ends_the_step_and_run_cancelled_in_neutral_words_and_a_resume_ne
     assert (part["state"], part["ended_reason"]) == ("ended", "team_stopped")
     assert part["pin"] == before
 
-    # a later Resume doesn't reopen it: the step ends cancelled again, nothing runs or opens
+    # A later Resume observes the saved cancellation, without another attempt or node call.
     assert c.post(f"/api/runs/{eid}/resume", json={}).status_code == 200
-    attempts = pw.wait_ended(eid, 4)
+    attempts = pw.attempts(eid)
+    assert len(attempts) == 3
     assert attempts[-1]["status"] == "cancelled"
-    assert ended[3:] == ["returned"]
+    assert ended[3:] == []
     assert _prompts() == 1 and len(FakeBox.STARTS) == starts
     assert _waits(eid).keys() == rows.keys()
     assert _owner_messages(eid, HELD) == 0

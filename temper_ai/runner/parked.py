@@ -144,16 +144,36 @@ def claim(attempt: dict) -> bool:
     note = {**(_note(attempt) or {}), "carried_on_at": utcnow().isoformat()}
     won, _ = decide_event(str(attempt["id"]), expect=(WAITING,), status=CARRIED_ON,
                           data={"parked": note})
+    if won:
+        # The caller retains the exact claim it won; release must not undo a later
+        # claimant of the same parked event after a refusal or a slow start.
+        attempt["data"] = {**(attempt.get("data") or {}), "parked": note}
     return won
 
 
 def release(attempt: dict) -> None:
     """Put a claimed attempt back to waiting: carrying it on did not start."""
-    from temper_ai.observability.recorder import decide_event
+    from sqlalchemy import update
+    from sqlmodel import col
 
-    note = {k: v for k, v in (_note(attempt) or {}).items() if k != "carried_on_at"}
+    from temper_ai.database import get_session
+    from temper_ai.observability.models import Event
+
+    owned_at = (_note(attempt) or {}).get("carried_on_at")
+    if not owned_at:
+        return
     try:
-        decide_event(str(attempt["id"]), expect=(CARRIED_ON,), status=WAITING, data={"parked": note})
+        with get_session() as session:
+            current = session.get(Event, str(attempt["id"]))
+            if current is None:
+                return
+            current_note = (current.data or {}).get("parked") or {}
+            note = {k: v for k, v in current_note.items() if k != "carried_on_at"}
+            session.exec(update(Event).where(  # type: ignore[call-overload]
+                col(Event.id) == str(attempt["id"]), col(Event.status) == CARRIED_ON,
+                col(Event.data)["parked"]["carried_on_at"].as_string() == owned_at,
+            ).values(status=WAITING, data={**(current.data or {}), "parked": note})
+              .execution_options(synchronize_session=False))
     except Exception as exc:  # noqa: BLE001 - logged; the run still shows where it waits
         logger.warning("Run %s: could not put its parked attempt back: %s",
                        attempt.get("execution_id"), exc)
@@ -165,6 +185,17 @@ def carry_on(execution_id: str, *, start: Callable[[str], Any], by: str) -> bool
     ``start`` is Resume's own path (the API's ``resume_run``, or ``queue_resume`` in the
     worker); it claims the attempt first, so two askers never carry the run on twice.
     """
+    from temper_ai.runner.resume_authority import (
+        ResumeAttemptRefused,
+        automatic_resume_refused,
+        refuse_resume,
+    )
+    try:
+        if automatic_resume_refused(execution_id):
+            return False
+    except ResumeAttemptRefused as refused:
+        refuse_resume(execution_id, refused)
+        return False
     attempt = parked_attempt(execution_id)
     if attempt is None:
         return False
@@ -178,6 +209,11 @@ def carry_on(execution_id: str, *, start: Callable[[str], Any], by: str) -> bool
         return False
     try:
         start(execution_id)
+    except ResumeAttemptRefused as refused:
+        refuse_resume(execution_id, refused)
+        logger.warning("Run %s: resume attempt refused (%s); no automatic retry",
+                       execution_id, refused.code)
+        return False
     except Exception as exc:  # noqa: BLE001 - another asker won, or it could not start
         if isinstance(exc, AlreadyCarriedOn) or getattr(exc, "status_code", None) == 409:
             logger.info("Run %s: already carried on (%s): %s", execution_id, by, exc)
@@ -305,10 +341,23 @@ def queue_resume(execution_id: str) -> None:
     from sqlmodel import select
 
     from temper_ai.database import get_session
-    from temper_ai.runner import holds
     from temper_ai.runner.models import WorkflowRun
     from temper_ai.runner.queue import queue_run
+    from temper_ai.runner.resume_authority import (
+        ResumeAttemptRefused,
+        read_resume_authority,
+        record_saved_stop,
+        refuse_resume,
+    )
 
+    try:
+        authority = read_resume_authority(execution_id)
+    except ResumeAttemptRefused as refused:
+        refuse_resume(execution_id, refused)
+        raise
+    if authority.stopped:
+        record_saved_stop(execution_id, authority)
+        return
     attempt = parked_attempt(execution_id)
     if attempt is None or not claim(attempt):
         raise AlreadyCarriedOn(execution_id)
@@ -318,8 +367,14 @@ def queue_resume(execution_id: str) -> None:
             if row is None:
                 raise RuntimeError("the run has no box row")
             name, workspace, inputs = row.workflow_name, row.workspace_path, dict(row.inputs or {})
-        holds.take_over(execution_id, by=execution_id)
-        queue_run(execution_id, name, workspace, inputs, start="resume", extra={"rerun": []})
+        saved_stop = queue_run(execution_id, name, workspace, inputs, start="resume", extra={"rerun": []})
+        if saved_stop is not None and saved_stop.stopped:
+            record_saved_stop(execution_id, saved_stop)
+            release(attempt)
+    except ResumeAttemptRefused as refused:
+        refuse_resume(execution_id, refused)
+        release(attempt)
+        raise
     except Exception:
         release(attempt)
         raise

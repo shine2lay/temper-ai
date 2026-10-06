@@ -85,6 +85,14 @@ class SubprocessSpawner(Spawner):
         # DB URL, LLM keys, config dir -- never the GitHub app's key: a run
         # asks the server for short-lived tokens (integrations.github.secret).
         env = _github_secret.without_server_only({**os.environ, **self._extra_env})
+        from temper_ai.runner.resume_authority import (
+            RESERVATION_ENV,
+            launch_resume_token,
+        )
+        env.pop(RESERVATION_ENV, None)
+        token = launch_resume_token(execution_id)
+        if token is not None:
+            env[RESERVATION_ENV] = token
 
         try:
             proc = subprocess.Popen(  # noqa: S603 — args are list, no shell

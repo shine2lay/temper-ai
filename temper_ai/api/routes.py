@@ -12,7 +12,7 @@ import logging
 import threading
 import uuid
 from contextlib import contextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket
 from fastapi.responses import JSONResponse
@@ -69,6 +69,16 @@ from temper_ai.runner.resume import (
 )
 from temper_ai.runner.resume import (
     find_latest_workflow_event as _find_latest_workflow_event,
+)
+from temper_ai.runner.resume_authority import (
+    ResumeAttemptRefused,
+    ResumeAuthority,
+    ResumeAuthorityUnreadable,
+    admit_resume,
+    automatic_resume_refused,
+    read_resume_authority,
+    record_saved_stop,
+    refuse_resume,
 )
 from temper_ai.shared.clock import utcnow
 from temper_ai.shared.text_limits import STOP_REASON_MAX_CHARS, too_long
@@ -390,7 +400,7 @@ def _queue_run(
     extra: dict | None = None,
     *,
     lane: Any = KEEP_LANE,
-) -> None:
+) -> ResumeAuthority | None:
     """Queue a run for the worker, which starts it in its own box.
 
     ``start`` is how the box begins: a fresh run (None), or ``resume`` /
@@ -404,10 +414,19 @@ def _queue_run(
     lane from the loaded workflow, or KEEP_LANE to keep the row's own mark.
     """
     try:
-        queue_run(execution_id, workflow_name, workspace_path, inputs, start=start, extra=extra,
-                  lane=lane)
+        return queue_run(execution_id, workflow_name, workspace_path, inputs, start=start, extra=extra,
+                         lane=lane)
+    except ResumeAttemptRefused as exc:
+        _resume_attempt_refused(execution_id, exc)
     except AlreadyQueued as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _resume_attempt_refused(execution_id: str, refused: ResumeAttemptRefused) -> NoReturn:
+    """A bounded attempt diagnostic, never a workflow failure or fake cancellation."""
+    refuse_resume(execution_id, refused)
+    status = 503 if isinstance(refused, ResumeAuthorityUnreadable) else 409
+    raise HTTPException(status_code=status, detail=f"Resume attempt refused: {refused.code}") from None
 
 
 def _row_lane(execution_id: str) -> str | None:
@@ -1005,10 +1024,27 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     """
     body = body or ResumeRequest()
 
+    # Read authority before loading a revised workflow, taking a claim/hold, or queuing.
+    # A known stop remains its old cancellation even if configuration no longer loads.
+    try:
+        authority = read_resume_authority(execution_id)
+        if authority.stopped:
+            record_saved_stop(execution_id, authority)
+            return RunResponse(execution_id=execution_id, status="cancelled")
+        if answered_parked_only and automatic_resume_refused(execution_id):
+            raise ResumeAttemptRefused("resume_requires_explicit_request", execution_id=execution_id)
+    except ResumeAttemptRefused as exc:
+        _resume_attempt_refused(execution_id, exc)
+
     # What this asker sees of the run as it asks, read first: a Pi run is carried on from that
     # attempt only, so a Resume that reaches its claim after somebody else's attempt has
     # started (and maybe parked already) starts nothing (runner/resume_claim.py).
-    seen = resume_claim.look(execution_id)
+    try:
+        seen = resume_claim.look(execution_id)
+    except Exception:
+        _resume_attempt_refused(execution_id, ResumeAuthorityUnreadable(execution_id=execution_id))
+    if seen.attempt != authority.attempt:
+        raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
 
     # Find the original workflow name from events
     result = get_workflow_execution(execution_id)
@@ -1032,7 +1068,7 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
 
     # Reconstruct state from checkpoints
     checkpoint_svc = CheckpointService(execution_id)
-    restored_outputs = checkpoint_svc.reconstruct()
+    restored_outputs = authority.outputs
     pi_run = is_pi_workflow(nodes)
 
     # A Pi run often starts by asking the owner something, so it can be resumed before its
@@ -1062,14 +1098,18 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
         claimed = resume_claim.claim(execution_id, by=_caller_label(), seen=seen.attempt)
         if claimed is None:
             raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
+    started = False
     try:
-        return _start_resume(execution_id, body, result, nodes, config, checkpoint_svc, restored_outputs)
-    except BaseException:
-        if parked is not None:
-            pi_parked.release(parked)
-        if claimed is not None:
-            resume_claim.release(execution_id, claimed)
-        raise
+        response = _start_resume(execution_id, body, result, nodes, config, checkpoint_svc,
+                                 restored_outputs, expected_attempt=seen.attempt)
+        started = response.status in ("queued", "resuming")
+        return response
+    finally:
+        if not started:
+            if parked is not None:
+                pi_parked.release(parked)
+            if claimed is not None:
+                resume_claim.release(execution_id, claimed)
 
 
 def _caller_label() -> str:
@@ -1086,11 +1126,9 @@ def _start_resume(
     config: Any,
     checkpoint_svc: CheckpointService,
     restored_outputs: dict,
+    *, expected_attempt: str | None = None,
 ) -> RunResponse:
-    """Start the resumed attempt: in its own box, or on a thread here (resume_run checked it)."""
-    # This attempt takes over any clean-ups the last one was holding: they are its business
-    # now, and an old deadline must not tear down the setup it is about to use.
-    holds.take_over(execution_id, by=execution_id)
+    """Start the resumed attempt behind the DB-only enqueue/admission boundary."""
     stopped_at = _stopped_at(result)
 
     logger.info(
@@ -1121,10 +1159,22 @@ def _start_resume(
     if _execution_mode() == "external" or pi_lane:
         # Its box restores the checkpoints and replays the dispatches
         # (temper run-workflow), the same steps as below.
-        _queue_run(execution_id, config.name, workspace,
-                   original_inputs, start="resume",
-                   extra={"rerun": list(body.rerun or [])}, lane=lane)
+        saved_stop = _queue_run(execution_id, config.name, workspace,
+                                original_inputs, start="resume",
+                                extra={"rerun": list(body.rerun or [])}, lane=lane)
+        if saved_stop is not None and saved_stop.stopped:
+            record_saved_stop(execution_id, saved_stop)
+            return RunResponse(execution_id=execution_id, status="cancelled")
         return RunResponse(execution_id=execution_id, status="queued")
+
+    try:
+        admission = admit_resume(execution_id, expected_attempt=expected_attempt)
+    except ResumeAttemptRefused as exc:
+        _resume_attempt_refused(execution_id, exc)
+    if admission.authority.stopped:
+        record_saved_stop(execution_id, admission.authority)
+        return RunResponse(execution_id=execution_id, status="cancelled")
+    holds.take_over(execution_id, by=execution_id)
 
     from temper_ai.safety import PolicyEngine
     policy_engine = PolicyEngine.for_run(config.safety)
@@ -1160,12 +1210,14 @@ def _start_resume(
     )
 
     bind_delegate_tool(run_tool_executor, context)
+    context.resume_authority = admission.authority.state
 
     # What this resume will do with each step, worked out once and shared with the preview,
     # so what someone approved on the page is what runs (stage/plan.py).
     context.restore, _plan = build_restore(
         nodes, checkpoint_svc, restored_outputs,
         rerun=body.rerun or (), stopped_at=stopped_at,
+        resume_outputs=admission.authority.outputs, resume_state=admission.authority.state,
     )
 
     # Replay any dispatch_applied checkpoints — materialize dispatched nodes
@@ -1176,6 +1228,7 @@ def _start_resume(
         graph_loader=_state().graph_loader,
         nodes=nodes,
         context=context,
+        admitted_history=admission.authority.state.get("_dispatch_history"),
     )
 
     # Build resume metadata so the new workflow.started event carries a
@@ -1877,6 +1930,7 @@ def _run_workflow_with_checkpoints_now(
     workflow event (instead of inferring from event count).
     """
     stood_down = False
+    attempt_refused = False
     try:
         logger.info(
             "Resuming workflow '%s' (execution: %s) — %d nodes pre-loaded",
@@ -1900,6 +1954,10 @@ def _run_workflow_with_checkpoints_now(
             "Workflow '%s' resumed and completed: status=%s, cost=$%.4f, tokens=%d",
             workflow_name, result.status, result.cost_usd, result.total_tokens,
         )
+    except ResumeAttemptRefused as refused:
+        attempt_refused = True
+        refuse_resume(execution_id, refused)
+        logger.warning("Run %s: resume attempt refused (%s)", execution_id, refused.code)
     except RunParked as parked:
         logger.info("Workflow '%s' waits on you at '%s'; its thread lets go", workflow_name, parked.path)
     except ReplacedByLaterAttempt as replaced:
@@ -1908,24 +1966,26 @@ def _run_workflow_with_checkpoints_now(
     except Exception as exc:
         logger.error("Workflow '%s' resume failed: %s", workflow_name, exc, exc_info=True)
     finally:
-        _end_thread(execution_id, context, stood_down=stood_down)
+        _end_thread(execution_id, context, stood_down=stood_down, attempt_refused=attempt_refused)
 
 
-def _end_thread(execution_id: str, context: Any, *, stood_down: bool) -> None:
+def _end_thread(execution_id: str, context: Any, *, stood_down: bool,
+                attempt_refused: bool = False) -> None:
     """A run's thread ends: free its place and its per-run tool pool, then see to a parked
     Pi run. One that stood down for a later attempt (SW-84) leaves the run's live buffers
     and its parked wait to that attempt."""
-    _let_go(execution_id, context, stood_down=stood_down)
-    if not stood_down:
+    _let_go(execution_id, context, stood_down=stood_down, attempt_refused=attempt_refused)
+    if not (stood_down or attempt_refused):
         ws_manager.cleanup(execution_id)
     # Clean up per-run tool executor thread pool
     if hasattr(context, 'tool_executor') and context.tool_executor:
         context.tool_executor.shutdown(wait=False)
-    if not stood_down:
+    if not (stood_down or attempt_refused):
         _see_to_parked(execution_id, context)
 
 
-def _let_go(execution_id: str, context: Any, *, stood_down: bool = False) -> None:
+def _let_go(execution_id: str, context: Any, *, stood_down: bool = False,
+            attempt_refused: bool = False) -> None:
     """The run's thread is ending: it no longer counts as running in this server.
 
     A Pi run may have been carried on already by the time its old thread ends (the answer
@@ -1933,7 +1993,7 @@ def _let_go(execution_id: str, context: Any, *, stood_down: bool = False) -> Non
     Nor does an attempt that stood down for a later one (``stood_down``, SW-84), of any run.
     """
     running = _state().running
-    if not (stood_down or getattr(context, "park_at_gates", False)):
+    if not (stood_down or attempt_refused or getattr(context, "park_at_gates", False)):
         running.pop(execution_id, None)
         return
     if running.get(execution_id) is getattr(context, "cancel_event", None):

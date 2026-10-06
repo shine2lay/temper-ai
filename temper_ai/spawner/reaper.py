@@ -138,6 +138,7 @@ class Reaper:
                     "spawner_handle": r.spawner_handle,
                     "cancel_requested": r.cancel_requested,
                     "started_at": r.started_at,
+                    "spawner_metadata": r.spawner_metadata,
                 }
                 for r in rows
             ]
@@ -146,7 +147,10 @@ class Reaper:
         execution_id = row["execution_id"]
         spawner_kind_str = row["spawner_kind"]
         handle_str = row["spawner_handle"]
+        unstarted_resume = self._resume_attempt_without_workflow_start(row)
         if not handle_str:
+            if unstarted_resume:
+                return  # Cannot prove its own box gone; never invent a run outcome.
             # Spawn was attempted but never returned a handle — server
             # restart between row insert and spawner.spawn(). Mark orphaned
             # so the UI moves on.
@@ -160,6 +164,8 @@ class Reaper:
                 metadata={"execution_id": execution_id},
             )
         except (ValueError, TypeError) as exc:
+            if unstarted_resume:
+                return  # Bad/unknown handle is not permission to orphan the saved run.
             logger.warning(
                 "Reaper: bad handle for %s (%s) — orphaning",
                 execution_id, exc,
@@ -173,6 +179,11 @@ class Reaper:
             # Can't tell (the docker daemon hiccupped, say): look again next tick
             # rather than bury a run that may be fine.
             logger.warning("Reaper: can't tell whether %s is alive: %s", execution_id, exc)
+            return
+
+        if unstarted_resume:
+            if not alive:
+                self._recover_unstarted_resume(row, handle)
             return
 
         if row.get("status") == "queued":
@@ -198,6 +209,45 @@ class Reaper:
         if not alive:
             self._mark_orphaned(execution_id, reason="worker process gone")
             self._termed_at.pop(execution_id, None)
+
+    @staticmethod
+    def _resume_attempt_without_workflow_start(row: dict) -> bool:
+        # Keep the run's independent cancel flag on its existing path.
+        if row.get("cancel_requested"):
+            return False
+        from temper_ai.runner.resume_authority import (
+            ResumeAttemptRefused,
+            refuse_resume,
+            reservation_never_admitted,
+        )
+        try:
+            return reservation_never_admitted(row.get("spawner_metadata"),
+                                             execution_id=row["execution_id"])
+        except ResumeAttemptRefused as refused:
+            refuse_resume(row["execution_id"], refused, expected_handle=row.get("spawner_handle"))
+            return True  # Unreadable is no work, never the generic terminal writer.
+
+    def _recover_unstarted_resume(self, row: dict, handle: ProcessHandle) -> None:
+        from temper_ai.runner.resume_authority import (
+            recover_resume_reservation,
+            reservation,
+        )
+        is_gone = getattr(self._spawner, "is_gone", None)
+        try:
+            if callable(is_gone) and not is_gone(handle):
+                return
+        except SpawnerError:
+            return
+        capsule = reservation(row.get("spawner_metadata"))
+        if capsule is None:
+            return
+        token = capsule.get("token")
+        if (not isinstance(token, str) or not token
+                or capsule.get("phase") in ("recovered", "invalid")):
+            return  # Missing baseline/identity cannot manufacture an outcome.
+        recover_resume_reservation(row["execution_id"], expected_token=token,
+                                   expected_handle=row.get("spawner_handle"), box_proved_gone=True)
+        self._termed_at.pop(row["execution_id"], None)
 
     @staticmethod
     def _parked(execution_id: str) -> bool:

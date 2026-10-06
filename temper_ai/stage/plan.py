@@ -229,6 +229,8 @@ def resume_plan(
     *,
     rerun: Iterable[str] = (),
     stopped_at: str | None = None,
+    resume_outputs: Mapping[str, Any] | None = None,
+    resume_state: dict[str, Any] | None = None,
 ) -> ResumePlan:
     """What a resume of this run would do with each of its steps.
 
@@ -236,17 +238,19 @@ def resume_plan(
     ``rerun`` are paths someone ticked to run again even though they finished.
     """
     steps = _walk(nodes)
-    try:
-        outputs = checkpoint_svc.reconstruct()
-    except Exception:
-        logger.warning("Could not read the finished results of this run; every step runs again",
-                       exc_info=True)
-        outputs = {}
-    state: dict[str, Any] = {}
-    try:
-        state = checkpoint_svc.resume_state() or {}
-    except Exception:
-        logger.warning("Could not read what failed in this run", exc_info=True)
+    outputs: Mapping[str, Any] = resume_outputs if resume_outputs is not None else {}
+    if resume_outputs is None:
+        try:
+            outputs = checkpoint_svc.reconstruct()
+        except Exception:
+            logger.warning("Could not read the finished results of this run; every step runs again",
+                           exc_info=True)
+    state: dict[str, Any] = resume_state if resume_state is not None else {}
+    if resume_state is None:
+        try:
+            state = checkpoint_svc.resume_state() or {}
+        except Exception:
+            logger.warning("Could not read what failed in this run", exc_info=True)
     _add_dispatched(steps, state.get("dispatches") or [])
 
     by_path = {s.path: s for s in steps}
@@ -356,6 +360,8 @@ def build_restore(
     *,
     rerun: Iterable[str] = (),
     stopped_at: str | None = None,
+    resume_outputs: Mapping[str, Any] | None = None,
+    resume_state: dict[str, Any] | None = None,
 ) -> tuple[Any, ResumePlan]:
     """The Restore a resumed run starts from, and the plan it came from.
 
@@ -364,12 +370,14 @@ def build_restore(
     """
     from temper_ai.stage.restore import Restore
 
-    plan = resume_plan(nodes, checkpoint_svc, rerun=rerun, stopped_at=stopped_at)
-    state: dict[str, Any] = {}
-    try:
-        state = checkpoint_svc.resume_state() or {}
-    except Exception:
-        logger.warning("Could not read the loops of this run", exc_info=True)
+    plan = resume_plan(nodes, checkpoint_svc, rerun=rerun, stopped_at=stopped_at,
+                       resume_outputs=resume_outputs, resume_state=resume_state)
+    state: dict[str, Any] = resume_state if resume_state is not None else {}
+    if resume_state is None:
+        try:
+            state = checkpoint_svc.resume_state() or {}
+        except Exception:
+            logger.warning("Could not read the loops of this run", exc_info=True)
     restore = Restore(
         initial_outputs,
         state.get("loops"),

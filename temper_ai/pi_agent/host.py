@@ -171,6 +171,15 @@ class PiHost(AgentABC):
     # --- entry ------------------------------------------------------------------------
 
     def run(self, input_data: dict, context: ExecutionContext) -> AgentResult:
+        from temper_ai.stage.failure import RunStop
+
+        stop = getattr(context, "run_stop", None)
+        if (isinstance(stop, RunStop) and stop.kind == "cancelled" and stop.reopening
+                and (context.node_path or self.name) == stop.path):
+            # SW-86: preserve the ended-record return on Resume, but never enter the
+            # producer. Even revised settings cannot attach, mint, prepare, ask or turn.
+            reason = stop.reason or "the step was stopped"
+            return AgentResult(status=Status.CANCELLED, output=reason, error=reason)
         started = time.monotonic()
         try:
             result = self._run(input_data, context, started)

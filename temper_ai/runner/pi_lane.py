@@ -500,7 +500,8 @@ def start_up(*, docker: Callable[..., Any] | None = None,
     the previous instance had claimed but not started, end the ones it was running (an
     uncertain turn becomes a recovery wait when the run resumes: Ledger.take_over), and
     pick up the Pi runs that a stop cut off. Never raises."""
-    out: dict[str, Any] = {"boxes": [], "requeued": 0, "picked_up": [], "left": []}
+    out: dict[str, Any] = {"boxes": [], "requeued": 0, "picked_up": [], "left": [],
+                           "authority_unavailable": False}
     try:
         out["boxes"] = sweep_member_boxes(docker=docker)
     except Exception:  # noqa: BLE001
@@ -511,14 +512,20 @@ def start_up(*, docker: Callable[..., Any] | None = None,
 
         Reaper(_GoneSpawner(), lane=PI_LANE).tick()  # type: ignore[arg-type]
     except Exception:  # noqa: BLE001
-        logger.error("Pi lane: ending the previous instance's runs failed", exc_info=True)
+        out["authority_unavailable"] = True
+        logger.warning("Pi lane: saved authority unreadable; startup work deferred")
     from temper_ai.runner.pickup import WINDOW, pick_up_interrupted
 
     when = now or utcnow()
-    picks = pick_up_interrupted([], now=when, since=when - WINDOW, settle_s=0,
-                                resume=resume_in_the_lane, tell=_log_only, lane=PI_LANE)
-    out["picked_up"] = [c.execution_id for c in picks.picked]
-    out["left"] = [c.execution_id for c in picks.left]
+    if not out["authority_unavailable"]:
+        try:
+            picks = pick_up_interrupted([], now=when, since=when - WINDOW, settle_s=0,
+                                        resume=resume_in_the_lane, tell=_log_only, lane=PI_LANE)
+            out["picked_up"] = [c.execution_id for c in picks.picked]
+            out["left"] = [c.execution_id for c in picks.left]
+        except Exception:  # noqa: BLE001
+            out["authority_unavailable"] = True
+            logger.warning("Pi lane: pickup authority unreadable; no runs admitted")
     return out
 
 
@@ -560,16 +567,54 @@ def _ledger_box_names() -> list[str]:
 
 
 def _requeue_unstarted() -> int:
-    """Pi runs the previous instance claimed but never got running: back in the queue."""
+    """Previous namespace is gone: recover its resume reservations, requeue ordinary claims."""
     from sqlalchemy import update
-    from sqlmodel import col
+    from sqlmodel import col, select
 
     from temper_ai.database import get_session
     from temper_ai.runner.models import WorkflowRun
+    from temper_ai.runner.resume_authority import (
+        ResumeAttemptRefused,
+        recover_resume_reservation,
+        refuse_resume,
+        reservation,
+        reservation_never_admitted,
+    )
 
     with get_session() as session:
+        rows = session.exec(select(WorkflowRun).where(
+            col(WorkflowRun.status) == "queued", col(WorkflowRun.spawner_kind).is_not(None),
+            lane_clause(col(WorkflowRun.spawner_metadata), PI_LANE))).all()
+        snapshots = [(r.execution_id, r.spawner_metadata, r.spawner_handle, bool(r.cancel_requested))
+                     for r in rows]
+    ordinary = []
+    for execution_id, metadata, handle, cancelled in snapshots:
+        capsule = reservation(metadata)
+        if capsule is None and not cancelled and (metadata or {}).get("start") == "resume":
+            refuse_resume(execution_id, ResumeAttemptRefused(
+                "resume_reservation_missing", execution_id=execution_id), expected_handle=handle)
+            continue
+        if capsule is not None and not cancelled:
+            try:
+                unstarted = reservation_never_admitted(metadata, execution_id=execution_id)
+            except ResumeAttemptRefused as refused:
+                refused.allow_admitted_restore = True  # Previous namespace is proved gone.
+                refuse_resume(execution_id, refused, expected_handle=handle)
+                raise
+            if unstarted:
+                token = capsule.get("token")
+                if (isinstance(token, str) and token
+                        and capsule.get("phase") not in ("recovered", "invalid")):
+                    recover_resume_reservation(execution_id, expected_token=token,
+                                               expected_handle=handle, box_proved_gone=True)
+                continue
+        ordinary.append(execution_id)
+    if not ordinary:
+        return 0
+    with get_session() as session:
         stmt = (update(WorkflowRun)
-                .where(col(WorkflowRun.status) == "queued",
+                .where(col(WorkflowRun.execution_id).in_(ordinary),
+                       col(WorkflowRun.status) == "queued",
                        col(WorkflowRun.spawner_kind).is_not(None),
                        lane_clause(col(WorkflowRun.spawner_metadata), PI_LANE))
                 .values(spawner_kind=None, spawner_handle=None))
@@ -582,10 +627,27 @@ def resume_in_the_lane(execution_id: str) -> None:
     from sqlmodel import select
 
     from temper_ai.database import get_session
-    from temper_ai.runner import holds, resume_claim
+    from temper_ai.runner import resume_claim
     from temper_ai.runner.models import WorkflowRun
     from temper_ai.runner.queue import queue_run
+    from temper_ai.runner.resume_authority import (
+        ResumeAttemptRefused,
+        automatic_resume_refused,
+        read_resume_authority,
+        record_saved_stop,
+        refuse_resume,
+    )
 
+    try:
+        if automatic_resume_refused(execution_id):
+            return
+        authority = read_resume_authority(execution_id)
+        if authority.stopped:
+            record_saved_stop(execution_id, authority)
+            return
+    except ResumeAttemptRefused as refused:
+        refuse_resume(execution_id, refused)
+        raise
     token = resume_claim.claim(execution_id, by="the Pi lane's start-up")
     if token is None:
         raise CarriedOnAlready(f"{execution_id} is already being carried on")
@@ -596,7 +658,6 @@ def resume_in_the_lane(execution_id: str) -> None:
             if row is None:
                 raise LookupError(f"no row for {execution_id}")
             name, workspace, inputs = row.workflow_name, row.workspace_path, row.inputs
-        holds.take_over(execution_id, by=execution_id)
         queue_run(execution_id, name, workspace, inputs or {}, start="resume",
                   extra={"rerun": []})
     except BaseException:

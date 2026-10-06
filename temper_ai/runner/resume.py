@@ -35,7 +35,7 @@ def find_latest_workflow_event(execution_id: str) -> dict | None:
 
 
 def apply_dispatch_history_on_resume(
-    checkpoint_svc, graph_loader, nodes, context,
+    checkpoint_svc, graph_loader, nodes, context, *, admitted_history: list[dict] | None = None,
 ) -> list[str]:
     """Restore DispatchRunState from the saved dispatch_applied events.
 
@@ -58,7 +58,8 @@ def apply_dispatch_history_on_resume(
     """
     from temper_ai.stage.dispatch_limits import DispatchRunState, fingerprint_node
 
-    history = checkpoint_svc.reconstruct_dispatch_history()
+    history = (admitted_history if admitted_history is not None
+               else checkpoint_svc.reconstruct_dispatch_history())
     if not history:
         return []
 

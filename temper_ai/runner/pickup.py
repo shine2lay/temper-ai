@@ -563,6 +563,13 @@ def pick_up_interrupted(
         if not picks:
             return picks
 
+        from temper_ai.runner.resume_authority import (
+            ResumeAttemptRefused,
+            automatic_resume_refused,
+            read_resume_authority,
+            record_saved_stop,
+            refuse_resume,
+        )
         from temper_ai.runner.resume_claim import only_while_cut_off
 
         start = resume or _resume_through_the_button
@@ -570,6 +577,19 @@ def pick_up_interrupted(
             if i:
                 sleep(gap_s)
             try:
+                if automatic_resume_refused(choice.execution_id):
+                    raise ResumeAttemptRefused("resume_requires_explicit_request",
+                                               execution_id=choice.execution_id)
+                authority = read_resume_authority(choice.execution_id)
+                if authority.stopped:
+                    record_saved_stop(choice.execution_id, authority)
+                    picks.picked.remove(choice)
+                    picks.left.append(Choice(
+                        execution_id=choice.execution_id, workflow_name=choice.workflow_name,
+                        pick_up=False, event_id=choice.event_id, pickups=choice.pickups,
+                        why="it was cancelled",
+                    ))
+                    continue
                 _stamp_attempt(choice.event_id, choice.pickups + 1)
                 # What this stop cut off, and nothing newer: a run somebody carried on since
                 # it was chosen is theirs, and its Resume says so (409, left alone below).
@@ -577,6 +597,14 @@ def pick_up_interrupted(
                     start(choice.execution_id)
                 logger.warning("Picked %s (%s) back up where it stopped",
                                choice.short, choice.workflow_name)
+            except ResumeAttemptRefused as refused:
+                refuse_resume(choice.execution_id, refused)
+                picks.picked.remove(choice)
+                picks.left.append(Choice(
+                    execution_id=choice.execution_id, workflow_name=choice.workflow_name,
+                    pick_up=False, event_id=choice.event_id, pickups=choice.pickups,
+                    why=f"resume attempt refused: {refused.code}; explicit Resume is needed",
+                ))
             except Exception as exc:  # noqa: BLE001 - one bad run must not stop the rest
                 picks.picked.remove(choice)
                 if getattr(exc, "status_code", None) == 409:

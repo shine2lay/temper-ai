@@ -34,7 +34,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from threading import Lock
 from typing import Any
+
+from temper_ai.shared.types import NodeResult
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +143,17 @@ class RunStop:
     # Clean-ups that did run, and what they undid, so a resume knows which setup
     # steps have to be done again before anything that needs them.
     ran: list[HeldCleanup] = field(default_factory=list)
+    # A self-cancel is an owner's decision, not a retryable failure. It shuts the same
+    # door, but admits no reports or clean-ups and keeps its neutral outcome (SW-86).
+    kind: str = "failed"
+    # A resume may re-inspect the stopped source's durable record, as before; nothing
+    # skipped (or newly added to the workflow) may start while it does.
+    reopening: bool = False
+    # An authoritative resume snapshot: inspection faults must not lose paid-for results.
+    saved_results: dict[str, NodeResult] = field(default_factory=dict, repr=False)
+    # Gate answers handed to preflight but not yet admitted to a producer.
+    _preflight_gate_answers: dict[str, str] = field(default_factory=dict, repr=False)
+    _lock: Any = field(default_factory=Lock, repr=False, compare=False)
 
     @property
     def stopped(self) -> bool:
@@ -148,12 +162,52 @@ class RunStop:
     def note_failure(self, path: str, reason: str | None) -> None:
         """Record where the run stopped. Only the first one counts: it is the one
         that stopped the run, and whatever failed after it failed in its shadow."""
-        if self.path is not None:
-            return
-        self.path = path
-        self.reason = (reason or "").strip() or "the step failed"
-        self.at = datetime.now(UTC)
-        logger.info("The run stops at '%s': %s", path, self.reason)
+        with self._lock:
+            if self.path is not None:
+                return
+            self.path = path
+            self.reason = (reason or "").strip() or "the step failed"
+            self.at = datetime.now(UTC)
+            logger.info("The run stops at '%s': %s", path, self.reason)
+
+    def note_cancelled(self, path: str, reason: str | None) -> None:
+        """The first self-cancel wins, even if an already-running sibling failed.
+
+        Unlike a failure, this decision admits no new starts at all. Recorded before
+        the batch joins so nested graphs share it immediately; the run's cancel signal
+        is neither set nor changed.
+        """
+        with self._lock:
+            if self.kind == "cancelled" and self.stopped:
+                return
+            self.kind = "cancelled"
+            self.path = path
+            self.reason = (reason or "").strip() or "the step was stopped"
+            self.at = datetime.now(UTC)
+            logger.info("The run was stopped at '%s': %s", path, self.reason)
+
+    def admit_start(self, path: str) -> bool:
+        """Linearize producer entry against a self-stop, after every blocking preflight.
+
+        A successful admission is a started sibling under the existing rules. The lock
+        is never held during its body, so nested graphs and other stops cannot deadlock.
+        Failure stops keep their existing door/report/cleanup policy.
+        """
+        with self._lock:
+            if self.kind == "cancelled" and self.stopped:
+                return False
+            self._preflight_gate_answers.pop(path, None)
+            return True
+
+    def note_preflight_gate_answer(self, path: str, event_id: str) -> None:
+        """An approval reached preflight, not yet its producer."""
+        with self._lock:
+            self._preflight_gate_answers[path] = event_id
+
+    def unstarted_gate_answers(self) -> list[str]:
+        """Answers whose producers never won admission; a self-stop leaves them unspent."""
+        with self._lock:
+            return list(self._preflight_gate_answers.values())
 
     def hold(self, path: str, names: list[str]) -> None:
         if any(h.path == path for h in self.held):
@@ -172,5 +226,6 @@ class RunStop:
             "reason": self.reason,
             "at": self.at.isoformat() if self.at else None,
             "mode": self.policy.mode,
+            **({"kind": self.kind} if self.kind == "cancelled" else {}),
             "held": [h.as_dict() for h in self.held],
         }

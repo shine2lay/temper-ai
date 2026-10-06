@@ -11,7 +11,9 @@ import re
 import time
 import uuid
 from collections import defaultdict, deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from copy import deepcopy
 from typing import Any
 
 from temper_ai.observability.event_types import EventType
@@ -115,8 +117,10 @@ def execute_graph(
     # The rest stay with the run's Restore for the stages to claim when they start, so a stage
     # that was running when the run stopped goes on from its own last finished step
     # (stage/restore.py).
+    # An unreadable checkpoint authority is not an empty run. Read once, before any
+    # attempt event or batch, and retain its ended results alongside the stop marker.
+    state = _resume_state(context) if is_workflow and initial_outputs is not None else {}
     if is_workflow and initial_outputs is not None and not isinstance(getattr(context, "restore", None), Restore):
-        state = _resume_state(context)
         context.restore = Restore(initial_outputs, state.get("loops"), state.get("failed") or (),
                                   dispatches=state.get("dispatches"))
     if is_workflow and initial_outputs is not None:
@@ -131,6 +135,15 @@ def execute_graph(
         context.run_stop = RunStop(policy=context.failure_policy or FailurePolicy())
         # So every stage inherits the workflow's setting and can override it for itself.
         context.failure_policy = context.run_stop.policy
+    if is_workflow and initial_outputs is not None:
+        # A self-stop is durable, not unfinished work. Close the door before claiming any
+        # batches: the stopped Pi may inspect its ended record again, but a skipped branch
+        # (even one moved earlier in a revised workflow) must never restart on Resume.
+        self_stop = state.get("self_cancelled")
+        if isinstance(self_stop, dict) and self_stop.get("path"):
+            context.run_stop.note_cancelled(str(self_stop["path"]), self_stop.get("reason"))
+            context.run_stop.reopening = True
+            context.run_stop.saved_results = state.get("self_cancelled_results") or {}
     if isinstance(restore, Restore):
         # Agents a dispatcher added to this graph during the earlier attempt come back here,
         # in their own stage, before anything is claimed -- they are part of this graph's
@@ -227,6 +240,14 @@ def execute_graph(
             _note_parked(parked, nodes, node_outputs, retired, context, graph_event_id, start,
                          is_workflow=is_workflow)
             raise
+        if stop.kind == "cancelled":
+            # A sibling stopped itself while this gate was already waiting. Keep the
+            # sibling's decision: never turn the stopped run red because a gate parked.
+            return _end_graph(
+                CancellationError(stop.reason or "the step was stopped"),
+                nodes, node_outputs, retired, input_data, context, graph_event_id, start,
+                is_workflow=is_workflow,
+            )
         # A step failed beside the gate (the same parallel batch): the run stops on that
         # failure, as it would have once the gate was answered. The open wait keeps whatever
         # answer comes for a Resume, as at any stopped run.
@@ -362,15 +383,32 @@ def _end_graph(
     # list, the CLI exit code and downstream callers all treat it
     # differently (nothing went wrong; someone stopped it).
     terminal = Status.CANCELLED if isinstance(exc, CancellationError) else Status.FAILED
+    error = str(exc)
     stopped = None
     if is_workflow:
         # Stopped by hand, or thrown out by something that broke: either way nothing more
         # ran, so the clean-ups are still owed and the setup is still standing.
         stop = getattr(context, "run_stop", None)
         if isinstance(stop, RunStop):
-            stop.note_failure(context.node_path or "the run", str(exc))
+            stop.note_failure(context.node_path or "the run", error)
+            if stop.kind == "cancelled" and not (
+                    context.cancel_event is not None and context.cancel_event.is_set()):
+                # A gate/exception may leave the batches before they emit the remaining
+                # skips. The same door records each unstarted node, and no failure after
+                # the decision can replace the stopped run's neutral outcome.
+                for node in nodes:
+                    if node.name not in node_outputs:
+                        # Ending an attempt never retries failed inspection or enters an
+                        # enclosing stage: reconcile only from the known snapshot.
+                        skipped = _held_or_skipped(node, context, graph_event_id, reconcile=False)
+                        if skipped is not None:
+                            node_outputs[node.name] = skipped
+                            prefix = f"{context.node_path}." if context.node_path else ""
+                            _record_outcome(node, skipped, prefix, context, context.checkpoint_service)
+                terminal = Status.CANCELLED
+                error = stop.reason or "the step was stopped"
         stopped = _settle_run(context, nodes, node_outputs, input_data)
-    data: dict = {"error": str(exc), "duration_seconds": duration,
+    data: dict = {"error": error, "duration_seconds": duration,
                   **({"stopped": stopped} if stopped else {})}
     if is_workflow:
         # Every way a run ends leaves what it spent, as a completed run's does (queue #65).
@@ -378,7 +416,7 @@ def _end_graph(
     context.event_recorder.update_event(graph_event_id, status=terminal.value, data=data)
     return NodeResult(
         status=terminal,
-        error=str(exc),
+        error=error,
         agent_results=[r for nr in node_outputs.values() for r in nr.agent_results],
         node_results=node_outputs,
         duration_seconds=duration,
@@ -445,6 +483,28 @@ def _settle_run(
         if getattr(context, "run_only", None) is None:
             holds.finish(context.run_id)
         return None
+
+    if stop.kind == "cancelled":
+        # Close parked gates without taking an answer or setting the run cancel signal.
+        # CAS leaves a concurrently answered gate's result visible and unconsumed; Resume
+        # cannot use it because the saved self-stop is restored before any producer runs.
+        from temper_ai.observability.recorder import decide_event, gate_events
+        from temper_ai.stage.gate import REJECTED
+        for event in gate_events(context.run_id):
+            if event.get("status") == WAITING:
+                decide_event(str(event["id"]), expect=(WAITING,), status=REJECTED,
+                             data={"gate_status": REJECTED, "gate_decided_at": utcnow().isoformat()})
+        for event_id in stop.unstarted_gate_answers():
+            # A blocked start/used-answer write is still preflight. Preserve the approval,
+            # but only an admitted producer is allowed to count its answer as consumed.
+            decide_event(event_id, expect=(APPROVED,), status=APPROVED,
+                         data={"gate_used_at": None})
+        # A self-stop admits no further work, including setup release. Those steps have
+        # neutral skips, not failure holds: no deadline may start them later or turn this
+        # cancelled run failed in a cleanup-only pass. Setup stays for a separate run.
+        if getattr(context, "run_only", None) is None:
+            holds.finish(context.run_id)
+        return stop.as_dict()
 
     # Anything that never got its turn -- the run was stopped by hand, or thrown out -- is
     # still owed, and the setup it would tear down is still standing.
@@ -679,6 +739,7 @@ def _record_outcome(
         if isinstance(stop, RunStop):
             stop.hold(path, undone)
         return
+    _note_self_cancelled(node, result, context)
     if cp is not None:
         cp.save_node_completed(path, result)
     if result.status == Status.FAILED and isinstance(stop, RunStop):
@@ -690,6 +751,28 @@ def _record_outcome(
             cp.save_cleanup_ran(path, undone)
         if isinstance(stop, RunStop):
             stop.note_cleanup_ran(path, undone)
+
+
+def _note_self_cancelled(node: Node, result: NodeResult, context: ExecutionContext) -> None:
+    """A node allowed to end its stage cancelled closes the run's one start door.
+
+    Only a self-cancel (signal unset) does this. A hand cancel keeps its existing exception
+    path. Called as soon as a result returns, before waiting for any parallel sibling, and
+    again when checkpointed; RunStop keeps only the first cancelled path and reason.
+    """
+    if result.status != Status.CANCELLED:
+        return
+    if context.cancel_event is not None and context.cancel_event.is_set():
+        return
+    stop = getattr(context, "run_stop", None)
+    if not isinstance(stop, RunStop):
+        return
+    if getattr(node, "cancelled_ends_stage", False):
+        stop.note_cancelled(_step_path(context, node), result.error or result.output)
+    if stop.kind == "cancelled":
+        # Parents propagate the same marker, never a new stop path. Checkpoint replay opts
+        # into this rule only for this marker; older/hand-cancel checkpoints stay unchanged.
+        result.metadata["self_cancelled"] = {"path": stop.path, "reason": stop.reason}
 
 
 def ran_out_reason(count: int, max_loops: int, loop_to: str | None) -> str:
@@ -735,11 +818,16 @@ def _held_or_skipped(
     node: Node,
     context: ExecutionContext,
     parent_event_id: str,
+    *,
+    reconcile: bool = True,
+    node_event_id: str | None = None,
 ) -> NodeResult | None:
     """Why this node does not start at all, or None when it may.
 
-    Two reasons, both about the run as a whole rather than this node's own dependencies:
+    Reasons about the run as a whole rather than this node's own dependencies:
 
+    * a step ended cancelled by itself. Nothing new starts, not even a report or a
+      clean-up. Setup stays standing; there is no automatic failure-release pass.
     * the run has stopped at a failure. Nothing new starts, except the steps that are there
       for exactly this -- ``run_after_failure`` reports and pitches. Steps already running are
       not touched; they finish and keep their results.
@@ -761,6 +849,59 @@ def _held_or_skipped(
     stop = getattr(context, "run_stop", None)
     if not isinstance(stop, RunStop) or not stop.stopped:
         return None
+    if stop.kind == "cancelled":
+        if stop.reopening:
+            # Only a real enclosing stage may reconcile its children. Re-enter it even
+            # after a prior resume saved its aggregate: every child still hits this door.
+            from temper_ai.stage.stage_node import StageNode
+            enclosing_stage = str(stop.path).startswith(f"{path}.") and type(node) is StageNode
+            if reconcile and enclosing_stage:
+                return None
+            # Inspect only ended paths; the authoritative snapshot is the fallback, not
+            # permission to retry a producer. A diagnostic never replaces the stop/costs.
+            cp = context.checkpoint_service
+            ended = deepcopy(stop.saved_results.get(path))
+            if reconcile and cp is not None and (path == stop.path or ended is not None):
+                try:
+                    inspected = cp.self_cancelled_result(path)
+                except Exception as exc:
+                    ended = _cancelled_snapshot_after_inspection_error(path, stop, exc)
+                else:
+                    if inspected is not None:
+                        if ended is not None:
+                            inspected.cost_usd, inspected.total_tokens = ended.cost_usd, ended.total_tokens
+                        ended = inspected
+            from temper_ai.agent import AGENT_TYPES
+            from temper_ai.pi_agent.host import PiHost
+            from temper_ai.stage.agent_node import AgentNode
+            if (reconcile and path == stop.path and type(node) is AgentNode
+                    and node.agent_config.get("type") == "pi" and AGENT_TYPES.get("pi") is PiHost):
+                # The built-in Pi entry is state-only. Neither throwing inspection nor
+                # an ended-record exception may enter _run or overwrite its paid-for state.
+                try:
+                    reconciled = node.run({}, context)
+                except Exception as exc:
+                    reconciled = _cancelled_snapshot_after_inspection_error(path, stop, exc)
+                if ended is not None:
+                    reconciled.cost_usd, reconciled.total_tokens = ended.cost_usd, ended.total_tokens
+                    if ended.metadata.get("reconciliation_error"):
+                        reconciled.metadata["reconciliation_error"] = ended.metadata["reconciliation_error"]
+                reconciled.metadata["self_cancelled"] = {"path": stop.path, "reason": stop.reason}
+                _emit_restored_node(node, reconciled, context, parent_event_id)
+                return reconciled
+            if ended is not None and ended.metadata.get("self_cancelled", {}).get("path") == stop.path:
+                _emit_restored_node(node, ended, context, parent_event_id)
+                return ended
+            if path == stop.path or enclosing_stage:
+                ended = NodeResult(status=Status.CANCELLED, error=stop.reason,
+                                   metadata={"self_cancelled": {"path": stop.path,
+                                                               "reason": stop.reason}})
+                _emit_restored_node(node, ended, context, parent_event_id)
+                return ended
+        reason = f"not started: the run was stopped at '{stop.path}'"
+        logger.info("Node '%s' does not start: %s", node.name, reason)
+        _record_skipped_node(node, context, parent_event_id, reason, event_id=node_event_id)
+        return NodeResult(status=Status.SKIPPED, error=reason)
     policy = context.failure_policy or stop.policy
     if is_cleanup(node) and policy.holds:
         reason = (f"kept back so the run can be picked up where it stopped "
@@ -776,6 +917,25 @@ def _held_or_skipped(
     logger.info("Node '%s' does not start: %s", node.name, reason)
     _record_skipped_node(node, context, parent_event_id, reason)
     return NodeResult(status=Status.SKIPPED, error=reason)
+
+
+def _cancelled_snapshot_after_inspection_error(path: str, stop: RunStop, exc: Exception) -> NodeResult:
+    """Keep the original ended state/costs; record inspection failure separately."""
+    logger.warning("Could not reconcile stopped node '%s'; retaining its cancellation: %s", path, exc)
+    result = deepcopy(stop.saved_results.get(path))
+    if result is None:
+        # A crash may have saved children but not their enclosing aggregate. Retain the
+        # outermost ended records beneath it, never counting both a container and its child.
+        descendants = {p[len(path) + 1:]: deepcopy(r) for p, r in stop.saved_results.items()
+                       if p.startswith(f"{path}.")}
+        kept = {p: r for p, r in descendants.items()
+                if not any(p.startswith(f"{parent}.") for parent in descendants)}
+        result = NodeResult(status=Status.CANCELLED, error=stop.reason, node_results=kept,
+            cost_usd=sum(r.cost_usd for r in kept.values()),
+            total_tokens=sum(r.total_tokens for r in kept.values()),
+            metadata={"self_cancelled": {"path": stop.path, "reason": stop.reason}})
+    result.metadata["reconciliation_error"] = str(exc)
+    return result
 
 
 def _runs_after_a_failure(node: Node, context: ExecutionContext) -> bool:
@@ -802,19 +962,23 @@ def _wanted(path: str, only: Any) -> bool:
 
 
 def _resume_state(context: ExecutionContext) -> dict[str, Any]:
-    """The resumed run's loops and failed steps as its checkpoints left them
-    (CheckpointService.resume_state), or none when the run keeps no checkpoints or they cannot be
-    read: then its loops start over, and only what the finished results leave out runs again."""
+    """Read authoritative resume state before scheduling; absence is not a read fault.
+
+    An unavailable/malformed reader must refuse the attempt, not erase a durable stop
+    and start work in a changed topology. No checkpoint service still means no state.
+    """
+    admitted = getattr(context, "resume_authority", None)
+    if isinstance(admitted, dict):
+        # Same trusted snapshot as admission, not a later read turned into empty history.
+        # Live claims, waits, answers, cancellation and allowance rows are still read live.
+        return deepcopy(admitted)
     read = getattr(context.checkpoint_service, "resume_state", None)
     if read is None:
         return {}
-    try:
-        state = read()
-    except Exception:
-        logger.warning("Could not read the loops and failed steps for the resume of '%s'",
-                       context.run_id, exc_info=True)
-        return {}
-    return state if isinstance(state, dict) else {}
+    state = read()
+    if not isinstance(state, dict):
+        raise WorkflowError("Checkpoint resume state could not be read; no work started")
+    return state
 
 
 def _build_final_result(
@@ -916,7 +1080,18 @@ def _build_final_result(
                       if getattr(n, "cancelled_ends_stage", False) and n.name not in own
                       and n.name in node_outputs
                       and node_outputs[n.name].status == Status.CANCELLED]
-    if is_workflow and not failed_nodes and stopped and stopped.get("path"):
+    stop = getattr(context, "run_stop", None)
+    if (not is_workflow and isinstance(stop, RunStop) and stop.kind == "cancelled"
+            and stop.reopening and str(stop.path).startswith(f"{context.node_path}.")):
+        # An ended source's container reconciles as cancelled even if revised child
+        # types are tolerant. Never save it completed and lose its child skips on Resume.
+        stopped = stop.as_dict()
+    self_cancelled = bool(stopped and stopped.get("kind") == "cancelled")
+    if self_cancelled:
+        # An already-running sibling may have failed. Its own record stays red, but it
+        # cannot undo the owner's stop or replace that neutral run-list sentence (E18).
+        failed_nodes = []
+    if is_workflow and not self_cancelled and not failed_nodes and stopped and stopped.get("path"):
         # The run stopped at a failure, but the failed attempt is no longer among the
         # results: its loop sent it round again, which retired it, and then nothing more
         # started. Nothing after it ran, so the run failed there -- not "completed".
@@ -935,6 +1110,10 @@ def _build_final_result(
         cancelled = [r for r in held_back if r.status == Status.CANCELLED]
         final_status = Status.CANCELLED if cancelled else Status.SKIPPED
         error = (cancelled or held_back)[0].error or final_status.value
+        event_data["error"] = error
+    if self_cancelled:
+        final_status = Status.CANCELLED
+        error = str((stopped or {}).get("reason") or "the step was stopped")
         event_data["error"] = error
     if failed_nodes:
         error = f"{len(failed_nodes)} node(s) failed: {', '.join(failed_nodes)}"
@@ -995,6 +1174,8 @@ def _emit_restored_node(node: Node, result: NodeResult, context: ExecutionContex
             "output": (result.output or "")[:5000],
             "structured_output": result.structured_output,
             "error": result.error,
+            **({"reconciliation_error": result.metadata["reconciliation_error"]}
+               if result.metadata.get("reconciliation_error") else {}),
         },
     )
 
@@ -1038,6 +1219,18 @@ def _execute_single_node(
     stopped = _held_or_skipped(node, context, parent_event_id)
     if stopped is not None:
         return stopped
+    stop = getattr(context, "run_stop", None)
+    from temper_ai.stage.stage_node import StageNode
+    if (isinstance(stop, RunStop) and stop.kind == "cancelled" and stop.reopening
+            and str(stop.path).startswith(f"{_step_path(context, node)}.") and type(node) is StageNode):
+        # Reconcile only children, bypassing the enclosing stage's revised preflight.
+        # In particular no new input/condition/gate can run on the state-only exception.
+        event_id = context.event_recorder.record(EventType.STAGE_STARTED,
+            data={**_build_node_event_data(node), "restored_from_checkpoint": True},
+            parent_id=parent_event_id, execution_id=context.run_id, status=Status.CANCELLED.value)
+        result = _run_node_with_events(node, {}, context, event_id, reconcile=True)
+        result.metadata[NODE_EVENT_ID] = event_id
+        return result
     upstream_failure = _check_dependency_failures(node, node_outputs)
     if upstream_failure is not None and not _runs_after_a_failure(node, context):
         logger.warning("Node '%s' skipped — %s", node.name, upstream_failure.error)
@@ -1077,11 +1270,22 @@ def _execute_single_node(
         # log line is invisible to whoever is looking at the run.
         logger.warning("Node '%s' has unresolved input_map entries: %s", node.name, unresolved)
 
+    # A sibling may have stopped during input resolution. Recheck the same door before
+    # starting any node or opening an approval; failure behaviour stays unchanged.
+    stop = getattr(context, "run_stop", None)
+    if isinstance(stop, RunStop) and stop.kind == "cancelled":
+        stopped = _held_or_skipped(node, context, parent_event_id)
+        if stopped is not None:
+            return stopped
     # Gate: pause and wait for human approval before executing. Whatever
     # the human said with the approval reaches the node as ``gate``.
     if node.config.gate:
         response = _wait_for_gate(node, context, parent_event_id, node_outputs)
         resolved = {**resolved, "gate": response or dict(EMPTY_RESPONSE)}
+        if isinstance(stop, RunStop) and stop.kind == "cancelled":
+            stopped = _held_or_skipped(node, context, parent_event_id)
+            if stopped is not None:
+                return stopped
 
     node_event_id = context.event_recorder.record(
         EventType.STAGE_STARTED,
@@ -1091,7 +1295,7 @@ def _execute_single_node(
         },
         parent_id=parent_event_id,
         execution_id=context.run_id,
-        status="running",
+        status=Status.PENDING.value,
     )
 
     try:
@@ -1234,8 +1438,13 @@ def _record_skipped_node(
     parent_event_id: str,
     reason: str,
     status: str = "skipped",
+    *,
+    event_id: str | None = None,
 ) -> None:
-    """Record a stage event for a skipped node so the DAG can show it."""
+    """Record a skip, or convert a provisional preflight event without a second record."""
+    if event_id is not None:
+        context.event_recorder.update_event(event_id, status=status, data={"skip_reason": reason})
+        return
     context.event_recorder.record(
         EventType.STAGE_STARTED,
         data={**_build_node_event_data(node), "skip_reason": reason},
@@ -1264,11 +1473,17 @@ def _run_node_with_events(
     resolved: dict,
     context: ExecutionContext,
     node_event_id: str,
+    *,
+    reconcile: bool = False,
 ) -> NodeResult:
-    """Run a node and record completed/failed events around it.
+    """Run a node after synchronized admission, recording outcomes around it.
 
-    Enforces per-node timeout if configured via node.config.timeout_seconds.
+    Start recording/context creation happen BEFORE admission; a self-stop winning
+    there converts the provisional event to the sole neutral skip. Timeout workers
+    use the same entry, rather than receiving permission before being scheduled.
     """
+    # The running update is provisional too: it can block, so admission follows it.
+    context.event_recorder.update_event(node_event_id, status=Status.RUNNING.value)
     from dataclasses import replace as dc_replace
     node_context = dc_replace(
         context,
@@ -1277,15 +1492,28 @@ def _run_node_with_events(
         step_path=_step_path(context, node),
     )
 
+    entered = False
+    stop = getattr(context, "run_stop", None)
+    def enter_producer() -> NodeResult:
+        nonlocal entered
+        if not reconcile and isinstance(stop, RunStop) and not stop.admit_start(_step_path(context, node)):
+            skipped = _held_or_skipped(node, context, node_event_id,
+                                      reconcile=False, node_event_id=node_event_id)
+            assert skipped is not None  # the synchronized admission lost to a self-stop
+            return skipped
+        entered = True
+        return node.run(resolved, node_context)
+
     timeout = node.config.timeout_seconds
     start = time.monotonic()
     try:
         if timeout:
-            result = _run_with_timeout(node, resolved, node_context, timeout)
+            result = _run_with_timeout(node, enter_producer, timeout)
         else:
-            result = node.run(resolved, node_context)
+            result = enter_producer()
         duration = time.monotonic() - start
         result.duration_seconds = duration
+        _note_self_cancelled(node, result, context)
         context.event_recorder.update_event(
             node_event_id,
             status=result.status.value,
@@ -1309,6 +1537,12 @@ def _run_node_with_events(
 
     except Exception as exc:
         duration = time.monotonic() - start
+        if reconcile and isinstance(stop, RunStop):
+            result = _cancelled_snapshot_after_inspection_error(_step_path(context, node), stop, exc)
+            context.event_recorder.update_event(node_event_id, status=result.status.value,
+                data={"error": result.error, "cost_usd": result.cost_usd,
+                      "total_tokens": result.total_tokens, "reconciliation_error": str(exc)})
+            return result
         context.event_recorder.update_event(
             node_event_id,
             status="failed",
@@ -1317,7 +1551,8 @@ def _run_node_with_events(
         return NodeResult(status=Status.FAILED, error=str(exc), duration_seconds=duration)
 
     finally:
-        _release_node_tools(node, context)
+        if entered:
+            _release_node_tools(node, context)
 
 
 def _release_node_tools(node: Node, context: ExecutionContext) -> None:
@@ -1342,10 +1577,10 @@ def _release_node_tools(node: Node, context: ExecutionContext) -> None:
         logger.warning("Node '%s': releasing per-caller tool state failed: %s", node.name, exc)
 
 
-def _run_with_timeout(node: Node, resolved: dict, context: ExecutionContext, timeout: int) -> NodeResult:
-    """Run a node with a wall-clock timeout. Returns FAILED if timeout exceeded."""
+def _run_with_timeout(node: Node, enter_producer: Callable[[], NodeResult], timeout: int) -> NodeResult:
+    """Run the synchronized producer entry in its timeout worker, not in its submitter."""
     with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(node.run, resolved, context)
+        future = pool.submit(enter_producer)
         try:
             return future.result(timeout=timeout)
         except TimeoutError:
@@ -2315,9 +2550,15 @@ def _wait_for_gate(
         approved_meanwhile = _retire_wait(recorder, ev, (answer or adopt or {}).get("id") or new_id)
         if approved_meanwhile and answer is None:
             answer = approved_meanwhile
+    stop = getattr(context, "run_stop", None)
+    if isinstance(stop, RunStop) and stop.kind == "cancelled":
+        # Return to the same start door without spending an old answer or opening a wait.
+        return None
     if answer is not None:
         if adopt is not None:
             _retire_wait(recorder, adopt, str(answer.get("id")))
+        if isinstance(stop, RunStop):
+            stop.note_preflight_gate_answer(path, str(answer["id"]))
         return _use_earlier_answer(recorder, answer, path)
 
     if adopt is not None:
@@ -2384,7 +2625,13 @@ def _wait_for_gate(
             persisted = {}
         if isinstance(persisted.get("gate_response"), dict):
             response = persisted["gate_response"]
-    # Written as used: a run picked up again later must not take it for an unused answer.
+    if isinstance(stop, RunStop) and stop.kind == "cancelled":
+        # An already-waiting gate is over too; keep any concurrent answer unconsumed.
+        return None
+    # Provisional use until producer admission. If a self-stop wins during this write
+    # or later start recording, settlement keeps the approval visible and unconsumed.
+    if isinstance(stop, RunStop):
+        stop.note_preflight_gate_answer(path, waiting_event_id)
     recorder.update_event(
         waiting_event_id,
         status=APPROVED,
@@ -2405,6 +2652,9 @@ def _wait_for_approval(
     """Block until this wait is approved (in memory or in the database) or the run is stopped."""
     while not gate_event.is_set():
         _check_cancelled(context)
+        stop = getattr(context, "run_stop", None)
+        if isinstance(stop, RunStop) and stop.kind == "cancelled":
+            return
         if gate_event.wait(timeout=GATE_POLL_SECONDS):
             return
         try:

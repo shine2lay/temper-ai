@@ -129,6 +129,10 @@ def test_a_resume_is_queued_for_a_box_not_run_in_the_server(external, monkeypatc
     from temper_ai.api import routes
 
     _checkpoint("run-1", "plan")
+    from tests.test_runner.resume_support import seed_legacy_interrupted_run
+
+    # A pre-deploy run has its original row/events, but no resume reservation/token.
+    seed_legacy_interrupted_run("run-1", "wf", "/tmp/ws", {"topic": "x"})
     _earlier_attempt(monkeypatch, input_data={"topic": "x"}, workspace_path="/tmp/ws")
 
     resp = routes.resume_run("run-1")
@@ -138,7 +142,9 @@ def test_a_resume_is_queued_for_a_box_not_run_in_the_server(external, monkeypatc
     row = _row("run-1")
     assert row["status"] == "queued"
     assert row["spawner_kind"] is None  # the watcher's to claim
-    assert row["spawner_metadata"] == {"start": "resume"}
+    assert row["spawner_metadata"] == {
+        "start": "resume", "resume_reservation": row["spawner_metadata"]["resume_reservation"],
+    }
     assert row["inputs"] == {"topic": "x"}
     assert row["workspace_path"] == "/tmp/ws"
 
@@ -159,7 +165,9 @@ def test_resuming_a_run_that_ended_in_a_box_puts_its_row_back_in_the_queue(exter
     row = _row("run-2")
     assert row["status"] == "queued"
     assert (row["spawner_kind"], row["spawner_handle"]) == (None, None)
-    assert row["spawner_metadata"] == {"start": "resume"}
+    assert row["spawner_metadata"] == {
+        "start": "resume", "resume_reservation": row["spawner_metadata"]["resume_reservation"],
+    }
     assert row["cancel_requested"] is False
     assert (row["error"], row["result"], row["completed_at"]) == (None, None, None)
     assert row["attempts"] == 1  # the box counts its own attempt

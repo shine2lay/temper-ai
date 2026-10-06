@@ -242,6 +242,30 @@ def test_fixed_palette_keeps_approved_colours():
     lc.fixed_palette_check(shortlist(base), brief_with())  # no approved palette: nothing to keep
 
 
+def test_an_approved_accent_without_a_4_5_partner_takes_large_text_only():
+    # #38 partial fork 40bd86e9: the approved accent #C76A12 reaches 4.5:1 with no approved colour, so the
+    # concept check's 4.5:1 rule and the fixed palette could not both be met; the run looped until it failed.
+    hv = importlib.import_module("design_homepage_v2")
+    approved = {"#14202B", "#5A6672", "#C76A12", "#EEF1F4", "#FFFFFF"}
+    concept = {"id": "A", "palette": {"dominant": "#14202B", "accent": "#C76A12", "ink": "#14202B",
+                                      "surface": "#EEF1F4", "on_dominant": "#FFFFFF", "on_accent": "#FFFFFF"}}
+
+    def contrast_problems(c, fixed=frozenset()):
+        return [p for p in hv.concept_contract(c, set(), fixed) if "contrast" in p]
+
+    assert contrast_problems(concept, approved) == []  # large text only; axe checks the page's text on it
+    assert any("on_accent on accent contrast 3.8" in p for p in contrast_problems(concept))  # nothing approved: 4.5:1
+    muted = {**concept, "palette": {**concept["palette"], "on_accent": "#5A6672"}}
+    assert any("use the approved #14202B" in p and "large text" in p for p in contrast_problems(muted, approved))
+    # Where an approved colour does reach 4.5:1 on the background, the concept must use one that does.
+    teal = {**concept, "palette": {**concept["palette"], "accent": "#277F88", "on_accent": "#EEF1F4"}}
+    assert any("the approved #FFFFFF reaches" in p for p in contrast_problems(teal, approved | {"#277F88"}))
+    lines = dr.text_limits({"ink": "#14202B", "paper": "#FFFFFF", "accent": "#C76A12", "accent_on": "#FFFFFF"})
+    assert lines == ["- accent #C76A12: no approved colour reaches 4.5:1 on it (best #14202B, 4.33:1): "
+                     "only large text on it (24 px, or 19 px bold)"]
+    assert dr.text_limits({"ink": "#142E34", "paper": "#FFFFFF"}) == []
+
+
 def test_fit_fixed_palette_uses_approved_colours_that_pass_contrast():
     # Token names unlike the logo roles: a dark "accent" must not become the logo accent.
     fixed = {"dominant": "#B8482A", "accent": "#3E5B4A", "ink": "#1F1A17", "surface": "#FBF6EE",

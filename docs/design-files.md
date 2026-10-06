@@ -212,7 +212,10 @@ again, those three are worked out again; the earlier receipt stays under `supers
 6. **Decision** (`decision`): writes `research/decision.json`, `research/FOR_DESIGN.md` (what the
    copywriter and art director read) and `research/fixed.json` (the approved parts, their colours and
    fonts, and the five audience targets of the chosen direction; the homepage concept check measures
-   each concept against them).
+   each concept against them). Approved colours cannot be darkened for contrast, so where no other
+   approved colour reaches 4.5:1 on one of them, FOR_DESIGN.md says so (only large text on it, or none
+   below 3:1), and the concept check accepts that approved pair at 3:1; axe then checks the text each
+   page actually puts on it (4.5:1, or 3:1 for large text).
 7. **Logo brief** (`logo_brief`, logo jobs): the brief gains the playbook context of the product
    (`context`), the product's meaning (`meaning`), the captured first screens plus a marks table as
    pinned research (`research`, read by every logo agent through `logo/comparison.md`) and an approved

@@ -1266,11 +1266,43 @@ def for_design_md(inv: dict, files: dict | None, research: dict | None, chosen: 
     if fixed.get("palette"):
         out += ["## Fixed palette (approved; use these exact hex values for every palette role, and no other colours)"]
         out += [f"- {k}: {v}" for k, v in fixed["palette"].items()] + [""]
+        limits = text_limits(fixed["palette"])
+        if limits:
+            out += ["Text on these approved colours (WCAG 1.4.3: 4.5:1, or 3:1 for large text; axe checks the page):"]
+            out += limits + [""]
     if fixed.get("fonts"):
         out += ["## Fixed type (approved; use exactly these families)"] + [f"- {f}" for f in fixed["fonts"]] + [""]
     if files and "logo" in inv["fixed"]:
         out += ["## Logo (approved)", "Use the files in design-files/logo/ as they are; see design-files/DESIGN.md (Logo).", ""]
     return "\n".join(out)
+
+
+def contrast(a: str, b: str) -> float:
+    """WCAG 2.2 contrast ratio of two #RRGGBB colours, rounded to 2 places."""
+    def lum(h: str) -> float:
+        rgb = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return round((hi + 0.05) / (lo + 0.05), 2)
+
+
+def text_limits(palette: dict) -> list[str]:
+    """One line per approved colour that no other approved colour reaches 4.5:1 on: there only large
+    text (3:1) or no text, because approved colours are fixed and cannot be darkened for contrast."""
+    colours = sorted({str(v).upper() for v in palette.values()})
+    lines = []
+    for role, value in palette.items():
+        bg = str(value).upper()
+        others = [c for c in colours if c != bg]
+        if not others:
+            continue
+        best = max(others, key=lambda c: contrast(c, bg))
+        ratio = contrast(best, bg)
+        if ratio < 4.5:
+            use = ("only large text on it (24 px, or 19 px bold)" if ratio >= 3 else "no text on it")
+            lines.append(f"- {role} {bg}: no approved colour reaches 4.5:1 on it (best {best}, {ratio}:1): {use}")
+    return lines
 
 
 def users_section(users: dict, decision: dict) -> list[str]:

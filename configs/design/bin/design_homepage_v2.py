@@ -286,8 +286,14 @@ def jaccard(a: list[str], b: list[str]) -> float:
     return round(len(sa & sb) / len(sa | sb), 3) if sa | sb else 1.0
 
 
-def concept_contract(concept: Any, brand_fonts: set[str]) -> list[str]:
-    """Problems with one concept (empty = fine)."""
+def concept_contract(concept: Any, brand_fonts: set[str], approved: set[str] | frozenset[str] = frozenset()) -> list[str]:
+    """Problems with one concept (empty = fine).
+
+    approved: the approved palette's hex values (research/fixed.json), when the colour part is approved.
+    A pair of approved colours that only reaches 3:1, on a background where no approved colour reaches
+    4.5:1, passes here as large-text only: the approved palette is fixed, and axe checks the text the page
+    actually puts on it (4.5:1 for normal text, 3:1 for large). Without this the two rules could not both
+    be met and the art director looped until the run failed (#38 partial fork 40bd86e9)."""
     problems: list[str] = []
     if not isinstance(concept, dict):
         return ["concept is not an object"]
@@ -321,10 +327,24 @@ def concept_contract(concept: Any, brand_fonts: set[str]) -> list[str]:
     if not isinstance(palette, dict) or any(not HEX.match(str(palette.get(k, ""))) for k in keys):
         problems.append(f"{where}: palette needs #RRGGBB for {', '.join(keys)}")
     else:
+        fixed = {str(h).upper() for h in approved}
         for fg, bg in (("ink", "surface"), ("on_dominant", "dominant"), ("on_accent", "accent")):
             ratio = v1.contrast(palette[fg], palette[bg])
-            if ratio < 4.5:
-                problems.append(f"{where}: {fg} on {bg} contrast {ratio}:1 is below 4.5:1 (WCAG 1.4.3)")
+            if ratio >= 4.5:
+                continue
+            if fixed and palette[bg].upper() in fixed:
+                best = max(sorted(fixed - {palette[bg].upper()}) or [palette[bg].upper()],
+                           key=lambda h: v1.contrast(h, palette[bg]))
+                best_ratio = v1.contrast(best, palette[bg])
+                if best_ratio >= 4.5:
+                    problems.append(f"{where}: {fg} on {bg} contrast {ratio}:1 is below 4.5:1 (WCAG 1.4.3); "
+                                    f"the approved {best} reaches {best_ratio}:1 on {palette[bg]}")
+                elif palette[fg].upper() not in fixed or ratio < min(3.0, best_ratio):
+                    use = "put only large text on it (24 px, or 19 px bold)" if best_ratio >= 3 else "put no text on it"
+                    problems.append(f"{where}: {fg} on {bg} contrast {ratio}:1; no approved colour reaches 4.5:1 on "
+                                    f"{palette[bg]}, so use the approved {best} ({best_ratio}:1) and {use}")
+                continue
+            problems.append(f"{where}: {fg} on {bg} contrast {ratio}:1 is below 4.5:1 (WCAG 1.4.3)")
     return problems
 
 
@@ -2119,8 +2139,10 @@ class Job:
                                           "problems": len(problems), "check_path": "homepage/concepts/check.json"})
         deck = self.deck()
         taste = self.taste_list()
+        fixed_now = self.research_fixed() or {}
+        approved = set(fixed_now.get("colours") or []) | set((fixed_now.get("palette") or {}).values())
         for c in concepts:
-            problems += concept_contract(c, brand_fonts)
+            problems += concept_contract(c, brand_fonts, approved)
             page = cdir / c["id"] / "index.html"
             problems += html_problems(page)
             problems += concept_words_problems(c, deck, taste)

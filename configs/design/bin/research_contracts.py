@@ -26,6 +26,7 @@ SITE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 EVIDENCE_ID = re.compile(r"^E\d{3}$")
 TASTE_ID = re.compile(r"^T\d{1,3}$")
 CLAIM_STATUS = ("sourced", "assumption", "rejected", "superseded")
+NOTE_MAX = 600  # characters in a claim's note (why it is an assumption, rejected or superseded)
 TOPICS = ("product", "value", "meaning", "users", "jobs", "expertise", "frequency", "devices", "setting", "stakes",
           "access", "trust", "buying", "context")
 ROLES = ("primary", "secondary", "buyer")
@@ -188,8 +189,14 @@ def _check_claim(c: dict, ids: dict, groups: set[str], ws: Path, web: dict | Non
     elif src is not None:
         # An assumption or a rejected claim may say where the statement appeared; its quote must be real too.
         problems += _check_source(src, ws, web)
-    if status in ("assumption", "rejected", "superseded") and not _str(c.get("note"), 5, 300):
-        problems.append(f"a {status} claim says why in note")
+    if status in ("assumption", "rejected", "superseded"):
+        note = c.get("note")
+        if not isinstance(note, str) or len(note.strip()) < 5:
+            problems.append(f"a {status} claim says why in note")
+        elif not _str(note, 5, NOTE_MAX):
+            # Say which limit failed: "says why" alone made a researcher rewrite a note that was
+            # there but too long, twice, until the loop gave up (#38 trial cf17bd67).
+            problems.append(f"note is {len(note.strip())} characters; keep it under {NOTE_MAX}")
     if status == "superseded":
         new = ids.get(c.get("superseded_by"))
         if not new or new.get("status") != "sourced":

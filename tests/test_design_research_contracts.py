@@ -130,6 +130,16 @@ def test_rejected_and_assumption_say_why(ws: Path) -> None:
     assert any("a rejected claim says why" in p for p in rc.check_users(u, ws))
 
 
+def test_a_long_note_is_named_as_too_long(ws: Path) -> None:
+    u = good_users()
+    u["claims"][5]["note"] = "Rejected because nothing in the pack supports it. " * 8  # ~400 characters
+    assert rc.check_users(u, ws) == []
+    u["claims"][5]["note"] = "x" * (rc.NOTE_MAX + 1)
+    problems = rc.check_users(u, ws)
+    assert any(f"keep it under {rc.NOTE_MAX}" in p for p in problems)
+    assert not any("says why" in p for p in problems)
+
+
 def test_exactly_one_primary_group(ws: Path) -> None:
     u = good_users()
     u["groups"].append({"name": "Owners", "role": "primary", "summary": "Lighthouse owners who pay.", "claims": ["c1"]})

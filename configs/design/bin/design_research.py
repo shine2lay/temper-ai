@@ -249,6 +249,7 @@ class Job:
                       "- rejected: a statement in the sources you do not believe (no evidence behind it); note says why.",
                       "- superseded: an older statement a newer source contradicts; superseded_by names the newer sourced",
                       "  claim and note says why. Check dates: newer, better evidence wins.",
+                      f"A note is one or two plain sentences, at most {rc.NOTE_MAX} characters.",
                       "Use web research (search, open pages) for the product's category and its users where the pack is",
                       "thin; quote pages exactly. Each group lists the ids of its claims. assumptions lists up to 12 things",
                       "to confirm with real users."]

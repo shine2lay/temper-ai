@@ -127,6 +127,21 @@ def test_a_changed_rule_rejudges_the_same_files(tmp_path, fake_browser, monkeypa
     assert not again.get("reused") and again["attempt"] == first["attempt"] + 1
 
 
+def test_a_changed_rule_writes_the_decision_again(tmp_path, fake_browser, monkeypatch):
+    """The decision is model-free: after its rules change (#38 added text limits to FOR_DESIGN.md), a
+    rerun writes FOR_DESIGN.md again instead of replaying the one written under the old rules."""
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "homepage", monkeypatch)
+    assert not j.decision().get("reused")
+    assert j.decision().get("reused")  # same inputs, same rules: replayed
+    real = dr.file_digest
+    monkeypatch.setattr(dr, "file_digest", lambda p: "changed" if Path(p) == Path(dr.__file__) else real(p))
+    again = dr.Job(str(ws), fixture=True).decision()
+    assert not again.get("reused") and again["direction"] == "D1"
+    state = json.loads((ws / "research/state.json").read_text())
+    assert [s["stage"] for s in state["superseded"]] == ["decision"]
+
+
 GATE_D1 = {"decided_by": "fixture-test", "direction": "D1", "users": "confirm",
            "reasons": "fixture run: the recommended direction"}
 

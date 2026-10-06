@@ -175,7 +175,8 @@ before its own design stages. Every stage keeps a receipt in `research/state.jso
 never repeats a finished (paid) stage. A stage whose saved inputs changed refuses to run (a reused
 workspace), except the three that only record what earlier files say: the research gate, the decision
 and the logo brief. When a fork or a rerun assembles the research again, or the gate is answered
-again, those three are worked out again; the earlier receipt stays under `superseded` in
+again, those three are worked out again (the decision also when `design_research.py`, whose rules
+write `FOR_DESIGN.md`, has changed); the earlier receipt stays under `superseded` in
 `research/state.json`, and an earlier gate answer stays as `research/gate-superseded-<n>.json`.
 
 1. **Product, users and contexts** (`design_research_users_v1`): what the product does, for whom, its

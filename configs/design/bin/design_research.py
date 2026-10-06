@@ -679,7 +679,8 @@ class Job:
             raise ValueError("the research gate was answered before the research or users changed; answer it again")
         research = load(self.dir / "research.json") if inv["research"]["direction"] else None
         fp = digest({"gate": gate, "research": file_digest(self.dir / "research.json"),
-                     "users": file_digest(self.dir / "USERS.md"), "inv": inv["status"]})
+                     "users": file_digest(self.dir / "USERS.md"), "inv": inv["status"],
+                     "rules": file_digest(Path(__file__))})  # FOR_DESIGN.md follows the current rules
         cached = self.cached("decision", fp)
         if cached:
             return cached

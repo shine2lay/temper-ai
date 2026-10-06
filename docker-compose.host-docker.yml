@@ -12,18 +12,16 @@
 #                              execute in those containers and never see
 #                              the socket. This is the sandbox; use it.
 #
-#   TEMPER_SPAWNER=subprocess  Runs execute inside the worker container,
-#                              as the same uid, so every node's Bash can
-#                              reach the socket. Only for runs that must
-#                              drive the host daemon themselves (engineer
-#                              agents bringing a repository's own compose
-#                              stack up: qa_release_discover,
-#                              devops_engineer, task_deploy). The platform
-#                              baseline policy refuses and records a
-#                              command that names the socket, but that is
-#                              a tripwire on the command text, not a
-#                              boundary. Do not leave this on for runs that
-#                              do not need it.
+#   TEMPER_SPAWNER=subprocess  Refused: the worker won't start (H1, see
+#                              temper_ai/spawner/factory.py). Runs would
+#                              execute inside the worker container, as the
+#                              same uid, so every node's Bash could reach
+#                              the socket. Only the Pi lane's pi-worker
+#                              (TEMPER_LANE=pi, docs/pi-lane.md) runs
+#                              child processes beside a socket: it runs
+#                              nothing but Pi steps, whose members run in
+#                              boxes of their own. It holds its own socket
+#                              in the base file, not through this overlay.
 #
 # Layer it on top of the base file (and your local override, if any):
 #

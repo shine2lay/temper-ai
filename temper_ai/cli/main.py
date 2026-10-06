@@ -241,6 +241,10 @@ def main() -> None:
     from temper_ai.cli.trim import add_parser as _add_trim_parser
     _add_trim_parser(subparsers)
 
+    # -- temper pi lane-status (the Pi lane, from database rows; for temper-deploy) --
+    from temper_ai.cli.pi import add_parser as _add_pi_parser
+    _add_pi_parser(subparsers)
+
     args = parser.parse_args()
 
     # F28: --debug flag sets logging to DEBUG
@@ -291,6 +295,9 @@ def main() -> None:
     elif args.command == "trim":
         from temper_ai.cli.trim import cmd_trim
         sys.exit(cmd_trim(args))
+    elif args.command == "pi":
+        from temper_ai.cli.pi import cmd_pi
+        sys.exit(cmd_pi(args))
     elif args.command == "check":
         from temper_ai.cli.check import main as cmd_check
         sys.exit(cmd_check(args))

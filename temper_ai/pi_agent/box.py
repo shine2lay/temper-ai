@@ -77,6 +77,10 @@ ROLE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 IMAGE_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 #: A Unix socket path's limit, kept as the host helper keeps it (ADR-M4-02).
 HELPER_SOCKET_LIMIT = 100
+#: Every socket a box opens stays under the same limit (SW-44): a turn's sockets sit at
+#: ``<socket root>/b<8 random characters>/handoff.sock`` at the longest.
+SOCKET_PATH_LIMIT = HELPER_SOCKET_LIMIT
+SOCKET_TAIL_BYTES = len("/b") + 8 + len("/handoff.sock")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FORBIDDEN = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
 ESTABLISHED = b"HTTP/1.1 200 Connection Established\r\n\r\n"
@@ -169,6 +173,13 @@ class BoxConfig:
     #: ``scripts/pi_search_tools.py`` prints them. Without ``rg`` a worker can't have Pi's grep,
     #: without ``fd`` its find.
     search_tools: dict[str, SearchToolPin] = field(default_factory=dict)
+    #: Every folder the Pi lane's worker mounts at its own host path (ADR-M4-03, SW-44): a
+    #: member box binds nothing from outside them. Required in the Pi lane; empty elsewhere
+    #: (tests, host-process proofs), where no bind is checked against them.
+    roots: list[str] = field(default_factory=list)
+    #: The project folders a team works on, read-only and inside ``roots``; the preflight
+    #: refuses any of them in the run-box template's mounts.
+    project_roots: list[str] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: str | None = None) -> BoxConfig:
@@ -223,8 +234,42 @@ class BoxConfig:
             problems.append("host_node and host_pi are needed without host_helper_socket")
         problems += self._add_on_problems()
         problems += self.search_tool_pin_problems()
+        problems += self.root_problems()
         if problems:
             raise BoxError("box_config_invalid", "Pi worker box config: " + "; ".join(problems))
+
+    def pi_paths(self) -> dict[str, str]:
+        """Every host folder or file a Pi run reads or writes, by what it is: each must lie
+        inside ``roots`` when they are set."""
+        paths = {"state_root": self.state_root, "socket_root": str(self.sockets),
+                 "runtime_dir": self.runtime_dir, "identity_extension": self.identity_extension,
+                 "identity_config": self.identity_config, "identities_dir": self.identities_dir}
+        if self.host_helper_socket:
+            paths["host_helper_socket"] = os.path.dirname(self.host_helper_socket)
+        for name, pin in sorted(self.add_ons.items()):
+            paths[f"add-on {name}"] = pin.dir
+        for name, route in sorted(self.routes.items()):
+            if route.extension:
+                paths[f"route {name} extension"] = route.extension
+            if route.catalog:
+                paths[f"route {name} catalog"] = route.catalog
+        ca_pem = (self.rehearsal or {}).get("ca_pem")
+        if self.mode == "rehearsal" and ca_pem:
+            paths["rehearsal ca_pem"] = str(ca_pem)
+        for index, root in enumerate(self.project_roots):
+            paths[f"project root {index + 1}"] = root
+        return paths
+
+    def root_problems(self) -> list[str]:
+        """With ``roots`` set: each is an absolute path, and every Pi path is inside one."""
+        if not self.roots:
+            return ["project_roots need roots"] if self.project_roots else []
+        problems = [f"root {root[:80]!r} is not an absolute path" for root in self.roots
+                    if not os.path.isabs(root) or ".." in Path(root).parts]
+        if problems:
+            return problems
+        return [f"{what} is outside the roots" for what, path in self.pi_paths().items()
+                if not inside_roots(path, self.roots)]
 
     def search_tool_pin_problems(self) -> list[str]:
         """Each pinned search binary: a name Temper pins (``rg``, ``fd``), a version and a digest,
@@ -273,6 +318,14 @@ class BoxConfig:
     @property
     def sockets(self) -> Path:
         return Path(self.socket_root or f"/run/user/{os.getuid()}/temper-pi")
+
+
+def inside_roots(path: str | os.PathLike[str], roots: Sequence[str]) -> bool:
+    """True when ``path``, links resolved, is one of ``roots`` or inside one."""
+    if not path or not os.path.isabs(path):
+        return False
+    real = Path(os.path.realpath(path))
+    return any(real.is_relative_to(os.path.realpath(root)) for root in roots if root)
 
 
 CLI_REL = "pi/dist/bundle/cli.js"
@@ -760,16 +813,24 @@ class WorkerBox:
             raise BoxError("add_on_changed", f"add-on {name}: pinned copy changed (digest differs)")
         return self._sealed_copy(Path(pin.dir), f"addon-{name}", digest)
 
-    def _sealed_copy(self, src: Path, label: str, digest: str) -> Path:
+    def _assets_copy(self) -> Path:
+        """Temper's box files (``/box``, and ``/ext/temper-box`` inside them), sealed into the
+        state root first (SW-44): the Docker daemon binds host paths, and in the Pi lane's
+        worker the package folder is a path only that container has."""
+        return self._sealed_copy(ASSETS, "assets", tree_sha256(ASSETS), link_modules=False)
+
+    def _sealed_copy(self, src: Path, label: str, digest: str, *,
+                     link_modules: bool = True) -> Path:
         dst = Path(self.cfg.state_root) / "_ext" / f"{label}-{digest[:16]}"
         if dst.is_dir():
             return dst
         dst.parent.mkdir(parents=True, exist_ok=True)
         tmp = Path(tempfile.mkdtemp(prefix=f".{label}-", dir=dst.parent))
         shutil.copytree(src, tmp, dirs_exist_ok=True, symlinks=True,
-                        ignore=shutil.ignore_patterns("node_modules"))
+                        ignore=shutil.ignore_patterns("node_modules", "__pycache__"))
         _owner_writable(tmp)
-        os.symlink("/pi-runtime/pi/node_modules", tmp / "node_modules")
+        if link_modules:
+            os.symlink("/pi-runtime/pi/node_modules", tmp / "node_modules")
         try:
             os.rename(tmp, dst)
         except OSError:
@@ -779,11 +840,12 @@ class WorkerBox:
     def mounts(self) -> list[tuple[str, str, bool]]:
         """(source, target, writable)."""
         assert self.sock_dir is not None
+        assets = self._assets_copy().resolve()
         mounts = [
             (str(Path(self.cfg.runtime_dir).resolve()), "/pi-runtime", False),
-            (str(ASSETS.resolve()), "/box", False),
+            (str(assets), "/box", False),
             (str(self._identity_copy().resolve()), "/ext/identity", False),
-            (str(PROBE_DIR.resolve()), "/ext/temper-box", False),
+            (str(assets / PROBE_DIR.name), "/ext/temper-box", False),
             (str(self.pdir.resolve()), "/w", True),
             (str(self.sock_dir), "/box-sock", False),
         ]
@@ -842,7 +904,9 @@ class WorkerBox:
                  "--user", f"{os.getuid()}:{os.getgid()}", "--log-driver", "none",
                  "--dns", "127.0.0.1", "--dns-search", ".", "--workdir", WORKDIR,
                  "--entrypoint", CONTAINER_PYTHON]
-        for src, dst, writable in self.mounts():
+        mounts = self.mounts()
+        self._check_bind_sources(mounts)
+        for src, dst, writable in mounts:
             args += ["--mount", f"type=bind,source={src},target={dst}"
                      + ("" if writable else ",readonly")]
         for key, value in sorted(self.env().items()):
@@ -850,6 +914,18 @@ class WorkerBox:
         args += [self.cfg.image, "-B", "/box/entry.py", *self.pi_args()] if command is None \
             else [self.cfg.image, *command]
         return args
+
+    def _check_bind_sources(self, mounts: list[tuple[str, str, bool]]) -> None:
+        """Every bind source inside the box config's roots (SW-44), whenever roots are set. In
+        the Pi lane they always are: its preflight refuses a run before any box without them
+        (runner/pi_preflight.py)."""
+        if not self.cfg.roots:
+            return
+        outside = sorted(dst for src, dst, _w in mounts if not inside_roots(src, self.cfg.roots))
+        if outside:
+            raise BoxError("bind_source_outside_roots",
+                           "the box would bind a host folder outside the Pi roots (for "
+                           + ", ".join(outside) + "); the box was not created")
 
     def _docker(self, *args: str, timeout: float = 60) -> subprocess.CompletedProcess:
         env = {k: os.environ[k] for k in DOCKER_ENV_KEYS if k in os.environ}
@@ -862,6 +938,13 @@ class WorkerBox:
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.sock_dir = Path(tempfile.mkdtemp(prefix="b", dir=root))
         os.chmod(self.sock_dir, 0o755)
+        names = ["handoff.sock", "egress.sock"] + (["team.sock"] if self.spec.team else [])
+        if any(len(str(self.sock_dir / name).encode()) >= SOCKET_PATH_LIMIT for name in names):
+            shutil.rmtree(self.sock_dir, ignore_errors=True)
+            self.sock_dir = None
+            raise BoxError("socket_path_too_long",
+                           f"a box socket path would be {SOCKET_PATH_LIMIT} bytes or more; "
+                           "use a shorter socket_root")
         self.servers = [UnixServer(self.sock_dir / "handoff.sock", self._handoff),
                         UnixServer(self.sock_dir / "egress.sock", self._egress)]
         if self.spec.team is not None:
@@ -935,7 +1018,10 @@ class WorkerBox:
         binds = {(m.get("Source"), m.get("Destination"), bool(m.get("RW")))
                  for m in info.get("Mounts") or []}
         expected = set(self.mounts())
-        owner_pi = str(Path.home() / ".pi")
+        # The owner's Pi folder is looked for under this process's home and the configured
+        # host_home both: in the Pi lane's worker they differ (SW-44).
+        owner_pis = {str(Path(home).expanduser() / ".pi")
+                     for home in (str(Path.home()), self.cfg.host_home) if home}
         checks = {
             "network_none": hc.get("NetworkMode") == "none",
             "read_only_root": hc.get("ReadonlyRootfs") is True,
@@ -951,7 +1037,8 @@ class WorkerBox:
             "image": info.get("Image") == self.cfg.image,
             "user": (info.get("Config") or {}).get("User") == f"{os.getuid()}:{os.getgid()}",
             "mounts_exact": binds == expected,
-            "no_owner_pi_mount": not any(str(s).startswith(owner_pi) for s, _d, _w in binds),
+            "no_owner_pi_mount": not any(str(s).startswith(owner_pi) for s, _d, _w in binds
+                                         for owner_pi in owner_pis),
         }
         failed = sorted(k for k, ok in checks.items() if not ok)
         if failed:

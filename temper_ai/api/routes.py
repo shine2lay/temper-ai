@@ -52,6 +52,17 @@ from temper_ai.runner._helpers import (
     build_dispatch_limits,
     preconnect_mcp_servers,
 )
+from temper_ai.runner.lanes import (
+    KEEP_LANE,
+    PI_LANE,
+    WAITING_FOR_PI_LANE,
+    in_pi_lane,
+    lane_clause,
+    lane_for,
+    lane_of,
+    mark_lane,
+    pi_only_problems,
+)
 from temper_ai.runner.queue import AlreadyQueued, queue_run
 from temper_ai.runner.resume import (
     apply_dispatch_history_on_resume as _apply_dispatch_history_on_resume,
@@ -59,6 +70,7 @@ from temper_ai.runner.resume import (
 from temper_ai.runner.resume import (
     find_latest_workflow_event as _find_latest_workflow_event,
 )
+from temper_ai.shared.clock import utcnow
 from temper_ai.shared.text_limits import STOP_REASON_MAX_CHARS, too_long
 from temper_ai.shared.types import ExecutionContext
 from temper_ai.stage.exceptions import ReplacedByLaterAttempt, RunParked
@@ -217,6 +229,10 @@ def _start_run(body: RunRequest, *, execution_id: str | None = None) -> RunRespo
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # A Pi run is the Pi lane's (runner/lanes.py): the Pi-only rule is checked now, at submit,
+    # so a run the lane would refuse at claim never becomes a run (SW-41).
+    lane = lane_for(nodes)
+    _refuse_outside_pi_only(lane, nodes, config)
     # What the run starts with: each declared default in place of an input left out, null or
     # empty (the loader read the same values). Every mode runs with these and records them, so the
     # run's saved inputs show what was used (stage/input_defaults.py).
@@ -239,10 +255,13 @@ def _start_run(body: RunRequest, *, execution_id: str | None = None) -> RunRespo
     #             and spawns the worker. Solves the toolchain problem —
     #             worker container has pytest/npm/docker-cli baked in.
     mode = _execution_mode()
+    if _for_the_pi_lane(lane):
+        # In every mode: only the Pi lane runs a Pi run, never this server or the main worker.
+        return _start_run_external(execution_id, body, config, lane=lane)
     if mode == "subprocess":
-        return _start_run_subprocess(execution_id, body, config)
+        return _start_run_subprocess(execution_id, body, config, lane=lane)
     if mode == "external":
-        return _start_run_external(execution_id, body, config)
+        return _start_run_external(execution_id, body, config, lane=lane)
     _refuse_unboxed("the server's own process (TEMPER_EXECUTION_MODE=inprocess)")
 
     # Build execution context
@@ -308,8 +327,26 @@ def _start_run(body: RunRequest, *, execution_id: str | None = None) -> RunRespo
     return RunResponse(execution_id=execution_id, status="running")
 
 
+def _refuse_outside_pi_only(lane: str | None, nodes: list, config: Any) -> None:
+    """400 naming each step when a Pi run holds what the Pi lane doesn't run (SW-41, SW-30)."""
+    if lane != PI_LANE:
+        return
+    problems = pi_only_problems(nodes, getattr(config, "safety", None))
+    if problems:
+        raise HTTPException(
+            status_code=400,
+            detail="This workflow has Pi steps, so it runs in the Pi lane, which runs only Pi "
+                   "steps, team stages of Pi members and gates: " + "; ".join(problems))
+
+
+def _for_the_pi_lane(lane: str | None) -> bool:
+    """Whether a run must be queued for the Pi lane instead of started here: a Pi run, unless
+    this process is the Pi lane itself (a test or dev server set ``TEMPER_LANE=pi``)."""
+    return lane == PI_LANE and not in_pi_lane()
+
+
 def _start_run_external(
-    execution_id: str, body: RunRequest, config,
+    execution_id: str, body: RunRequest, config, *, lane: str | None = None,
 ) -> RunResponse:
     """Insert WorkflowRun row + return; external watcher will spawn the worker.
 
@@ -319,8 +356,9 @@ def _start_run_external(
 
     Same WorkflowRun row contract as subprocess mode; the watcher reads
     workflow_name + workspace_path + inputs and runs `temper run-workflow`.
+    A Pi run (``lane``) is queued with its mark, for the Pi lane only.
     """
-    _queue_run(execution_id, config.name, body.workspace_path, body.inputs)
+    _queue_run(execution_id, config.name, body.workspace_path, body.inputs, lane=lane)
     return RunResponse(execution_id=execution_id, status="queued")
 
 
@@ -350,6 +388,8 @@ def _queue_run(
     inputs: dict | None,
     start: str | None = None,
     extra: dict | None = None,
+    *,
+    lane: Any = KEEP_LANE,
 ) -> None:
     """Queue a run for the worker, which starts it in its own box.
 
@@ -360,12 +400,28 @@ def _queue_run(
     to run again (``rerun``), or the only paths a pass may run (``only``).
     A resumed run keeps its row: a finished one goes back to queued. One
     that is still queued or running is refused, so a run never has two
-    boxes. (runner/queue.py does it; this says a refusal as a 409.)
+    boxes. (runner/queue.py does it; this says a refusal as a 409.) ``lane``: the run's
+    lane from the loaded workflow, or KEEP_LANE to keep the row's own mark.
     """
     try:
-        queue_run(execution_id, workflow_name, workspace_path, inputs, start=start, extra=extra)
+        queue_run(execution_id, workflow_name, workspace_path, inputs, start=start, extra=extra,
+                  lane=lane)
     except AlreadyQueued as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _row_lane(execution_id: str) -> str | None:
+    """The lane the run's row is marked with (runner/lanes.py); None without a row or mark."""
+    from sqlmodel import select
+
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+
+    with get_session() as session:
+        metadata = session.exec(
+            select(WorkflowRun.spawner_metadata).where(WorkflowRun.execution_id == execution_id),
+        ).first()
+    return lane_of(metadata)
 
 
 def _run_row(execution_id: str) -> dict | None:
@@ -387,11 +443,13 @@ def _run_row(execution_id: str) -> dict | None:
             "inputs": row.inputs,
             "status": row.status,
             "error": row.error,
+            "lane": lane_of(row.spawner_metadata),
+            "claimed": row.spawner_kind is not None,
         }
 
 
 def _start_run_subprocess(
-    execution_id: str, body: RunRequest, config,
+    execution_id: str, body: RunRequest, config, *, lane: str | None = None,
 ) -> RunResponse:
     """Spawn a worker subprocess instead of running in this server process.
 
@@ -416,6 +474,8 @@ def _start_run_subprocess(
             workspace_path=body.workspace_path or "",
             inputs=body.inputs or {},
             status="queued",
+            # The other run-row writer (runner/queue.py is the first): the same lane mark.
+            spawner_metadata=mark_lane({}, lane),
         ))
 
     spawner = get_spawner()
@@ -445,10 +505,11 @@ def _start_run_subprocess(
         if row is not None:
             row.spawner_kind = handle.kind.value
             row.spawner_handle = handle.handle
-            # Keep the run's box profile record if the handle doesn't carry one.
+            # Keep the run's box profile record if the handle doesn't carry one, and its lane.
             kept = (row.spawner_metadata or {}).get("box_profile")
-            row.spawner_metadata = (handle.metadata if kept is None
-                                    else {"box_profile": kept, **handle.metadata})
+            row.spawner_metadata = mark_lane(
+                handle.metadata if kept is None else {"box_profile": kept, **handle.metadata},
+                lane_of(row.spawner_metadata))
             session.add(row)
 
     return RunResponse(execution_id=execution_id, status="running")
@@ -515,13 +576,20 @@ def get_workflow(execution_id: str):
             return _run_placeholder(execution_id, "running")
         row = _run_row(execution_id)
         if row is not None:
-            return _run_placeholder(execution_id, row["status"], row)
+            return _with_lane_wait(_run_placeholder(execution_id, row["status"], row), row)
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
-    if _execution_mode() == "external" and result.get("status") not in _ACTIVE_STATUSES:
-        # A resume waiting for its box still shows the attempt before it.
+    row = None
+    if result.get("status") not in _ACTIVE_STATUSES:
+        # A resume waiting for its box still shows the attempt before it. A Pi run is always
+        # queued for the Pi lane, whatever the server's own execution mode.
         row = _run_row(execution_id)
-        if row is not None and row["status"] in ("queued", "running"):
+        if (row is not None and row["status"] in ("queued", "running")
+                and (_execution_mode() == "external" or row["lane"] == PI_LANE)):
             result["status"] = row["status"]
+    if result.get("status") == "queued":
+        row = row or _run_row(execution_id)
+        if row is not None:
+            _with_lane_wait(result, row)
     # The clean-ups this run is holding, if it stopped at a failure: the page shows what is
     # being kept for it and how long is left before it is let go.
     hold = holds.waiting(execution_id)
@@ -601,6 +669,16 @@ def get_script_log(
 
 
 _ACTIVE_STATUSES = ("pending", "queued", "running", "waiting")
+
+
+def _with_lane_wait(result: dict, row: dict) -> dict:
+    """A queued Pi run the Pi lane hasn't claimed says so (SW-40, ADR-M4-11): it waits for the
+    Pi lane, whether that lane is down, switched off or busy with another Pi run. It is never
+    started anywhere else. Its own field: ``waiting_for`` is how long a parked run has waited
+    on you."""
+    if row.get("lane") == PI_LANE and row.get("status") == "queued" and not row.get("claimed"):
+        result["queued_reason"] = WAITING_FOR_PI_LANE
+    return result
 
 
 def _run_placeholder(execution_id: str, status: str, row: dict | None = None) -> dict:
@@ -686,6 +764,29 @@ def _gate_who(caller: Caller) -> dict[str, str]:
             "gate_caller_source": w["caller_source"]}
 
 
+def _cancel_unclaimed_pi_run(execution_id: str) -> bool:
+    """End a queued Pi run no Pi lane has claimed; False for any other row, or if the Pi
+    lane just claimed it (one guarded UPDATE, as the watcher's own unclaimed cancel)."""
+    from sqlalchemy import update
+    from sqlmodel import col
+
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+
+    with get_session() as session:
+        stmt = (
+            update(WorkflowRun)
+            .where(
+                WorkflowRun.execution_id == execution_id,  # type: ignore[arg-type]
+                WorkflowRun.status == "queued",  # type: ignore[arg-type]
+                col(WorkflowRun.spawner_kind).is_(None),
+                lane_clause(col(WorkflowRun.spawner_metadata), PI_LANE),
+            )
+            .values(status="cancelled", completed_at=utcnow())
+        )
+        return session.exec(stmt).rowcount > 0  # type: ignore[call-overload]
+
+
 def _cancel_run(execution_id: str, body: CancelRequest | None, caller: Caller):
     """Cancel a running workflow execution.
 
@@ -718,6 +819,11 @@ def _cancel_run(execution_id: str, body: CancelRequest | None, caller: Caller):
 
     # A Pi run parked at a gate with no worker: nothing is left to stop, so it ends here.
     if not _run_is_alive(execution_id) and pi_parked.cancel_parked(execution_id, reason or None):
+        return {"status": "cancelled", "execution_id": execution_id}
+
+    # A Pi run still queued for the Pi lane, unclaimed: it ends here, so a cancel works while
+    # that lane is down, switched off or busy (ADR-M4-11). A claimed one goes the usual way.
+    if _cancel_unclaimed_pi_run(execution_id):
         return {"status": "cancelled", "execution_id": execution_id}
 
     # Subprocess run? WorkflowRun row is the source of truth for spawner-managed runs.
@@ -856,13 +962,16 @@ def _queue_cleanup_pass(hold: dict) -> None:
     if not paths:
         return
     mode = _execution_mode()
-    if mode == "inprocess":
+    # A Pi run's clean-ups are the Pi lane's too: queued with the row's own mark (KEEP_LANE)
+    # and never started here.
+    pi_lane = _for_the_pi_lane(_row_lane(execution_id))
+    if mode == "inprocess" and not pi_lane:
         logger.info("%s: its held clean-ups are for its box to run; this server runs in "
                     "process, so they are left alone", execution_id)
         return
     _queue_run(execution_id, hold["workflow_name"], hold.get("workspace_path") or None,
                hold.get("inputs") or {}, start="cleanup", extra={"only": paths})
-    if mode == "subprocess":
+    if mode == "subprocess" and not pi_lane:
         # External mode has a watcher that picks the queued row up; here the server is the
         # one that starts boxes, so it starts this one itself.
         from temper_ai.spawner import SpawnerError, get_spawner
@@ -996,14 +1105,18 @@ def _start_resume(
     # before defaults were filled in has none of them (stage/input_defaults.py).
     original_inputs = fill_input_defaults(getattr(config, "inputs", None), result.get("input_data"))
 
-    if _execution_mode() != "external":
+    # The lane again, from the workflow as it is now (the mark is set on every re-queue).
+    lane = lane_for(nodes)
+    _refuse_outside_pi_only(lane, nodes, config)
+    pi_lane = _for_the_pi_lane(lane)
+    if _execution_mode() != "external" and not pi_lane:
         _refuse_unboxed("a resume in the server's own process")
-    if _execution_mode() == "external":
+    if _execution_mode() == "external" or pi_lane:
         # Its box restores the checkpoints and replays the dispatches
         # (temper run-workflow), the same steps as below.
         _queue_run(execution_id, config.name, workspace,
                    original_inputs, start="resume",
-                   extra={"rerun": list(body.rerun or [])})
+                   extra={"rerun": list(body.rerun or [])}, lane=lane)
         return RunResponse(execution_id=execution_id, status="queued")
 
     from temper_ai.safety import PolicyEngine
@@ -1129,16 +1242,20 @@ def _fork_run(body: ForkRequest):
     # A fork of a run that is holding its clean-ups takes them over: it is using that setup
     # now, and the source's deadline must not tear it down underneath it. The fork holds
     # them again itself, with its own deadline, if it too stops at a failure.
-    if _execution_mode() != "external":
+    # A fork of a Pi run is a Pi run: the Pi lane's, with its mark (runner/lanes.py).
+    lane = lane_for(nodes)
+    _refuse_outside_pi_only(lane, nodes, config)
+    pi_lane = _for_the_pi_lane(lane)
+    if _execution_mode() != "external" and not pi_lane:
         _refuse_unboxed("a fork in the server's own process")
     holds.take_over(body.source_execution_id, by=new_execution_id)
 
-    if _execution_mode() == "external":
+    if _execution_mode() == "external" or pi_lane:
         # The checkpoints are already copied under the new id; its box
         # restores them (temper run-workflow).
         _record_fork_metadata(new_execution_id, body, restored_outputs, nodes)
         _queue_run(new_execution_id, config.name, body.workspace_path,
-                   inputs, start="fork")
+                   inputs, start="fork", lane=lane)
         return RunResponse(execution_id=new_execution_id, status="queued")
 
     from temper_ai.safety import PolicyEngine

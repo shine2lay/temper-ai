@@ -79,6 +79,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from temper_ai.observability.reconcile import INTERRUPTED
+from temper_ai.runner.lanes import PI_LANE
 from temper_ai.shared.clock import as_utc, utcnow
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,8 @@ class Candidate:
     has_checkpoints: bool = False
     # How many times temper has already picked this run up by itself.
     pickups: int = 0
+    # Its lane (runner/lanes.py): "pi" for a Pi run, whose state is its ledger.
+    lane: str | None = None
 
 
 @dataclass(frozen=True)
@@ -280,7 +283,8 @@ def _leave_because(
     if c.pickups >= max_pickups:
         return (f"temper picked it up {_count(c.pickups, 'time')} already and it "
                 "stopped again; it needs a person")
-    if not c.has_checkpoints:
+    if not c.has_checkpoints and c.lane != PI_LANE:
+        # A Pi run's state is its ledger (pi_ tables), not checkpoints: it resumes from that.
         return "nothing was saved to pick up from"
     if not c.workflow_name:
         return "temper cannot tell which workflow it was"
@@ -298,6 +302,7 @@ def _hours(window: timedelta) -> str:
 
 def cut_off_by_this_stop(
     marked: Iterable[Mapping[str, object]], *, since: datetime | None = None,
+    lane: str | None = None,
 ) -> list[dict[str, object]]:
     """Every run this restart found dead: what start-up marked, and what was reaped.
 
@@ -307,16 +312,17 @@ def cut_off_by_this_stop(
     which is what ``since`` (a few minutes before the restart, see :data:`GRACE`)
     separates from the ones that died during the last uptime and were seen then.
 
-    One entry per run, in the shape :func:`candidates_from` reads.
+    One entry per run, in the shape :func:`candidates_from` reads. Only ``lane``'s runs are
+    reaped ones (runner/lanes.py): the server picks up the main lane's, the Pi lane its own.
     """
     entries = {str(m.get("execution_id") or ""): dict(m) for m in marked}
     entries.pop("", None)
-    for run in _reaped_since(since or utcnow()):
+    for run in _reaped_since(since or utcnow(), lane=lane):
         entries.setdefault(str(run["execution_id"]), run)
     return list(entries.values())
 
 
-def _reaped_since(since: datetime) -> list[dict[str, object]]:
+def _reaped_since(since: datetime, lane: str | None = None) -> list[dict[str, object]]:
     """Runs whose box was found dead after ``since``, with their open event ended.
 
     The reaper writes ``orphaned`` on the row and ``interrupted`` on the event;
@@ -324,10 +330,11 @@ def _reaped_since(since: datetime) -> list[dict[str, object]]:
     """
     out: list[dict[str, object]] = []
     try:
-        from sqlmodel import select
+        from sqlmodel import col, select
 
         from temper_ai.database import get_session
         from temper_ai.observability.models import Event
+        from temper_ai.runner.lanes import lane_clause
         from temper_ai.runner.models import WorkflowRun
 
         with get_session() as session:
@@ -336,6 +343,7 @@ def _reaped_since(since: datetime) -> list[dict[str, object]]:
                        WorkflowRun.completed_at)
                 .where(WorkflowRun.status == "orphaned")
                 .where(WorkflowRun.completed_at.is_not(None))  # type: ignore[union-attr]
+                .where(lane_clause(col(WorkflowRun.spawner_metadata), lane))
             ).all()
             fresh = {
                 str(execution_id): name
@@ -360,6 +368,7 @@ def _reaped_since(since: datetime) -> list[dict[str, object]]:
                     # A box run was running; the reaper does not end a queued one.
                     "status_before": "running",
                     "timestamp": as_utc(event.timestamp),
+                    "lane": lane,
                 })
     except Exception:
         logger.warning("Could not look for runs whose box died", exc_info=True)
@@ -401,6 +410,7 @@ def candidates_from(marked: Iterable[Mapping[str, object]]) -> list[Candidate]:
             hold_ended_by=hold.get("ended_by"),
             has_checkpoints=execution_id in checkpointed,
             pickups=pickups.get(execution_id, 0),
+            lane=str(m.get("lane") or "") or None,
         ))
     return out
 
@@ -526,12 +536,16 @@ def pick_up_interrupted(
     resume: Callable[[str], None] | None = None,
     tell: Callable[[str], bool] | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    lane: str | None = None,
 ) -> Picks:
     """Pick up what should be picked up, one at a time, and say what happened.
 
     Waits ``settle_s`` first: the runs that died in their own boxes are ended by
     the worker's reaper a few seconds after it comes back, and picking up before
     that would miss every one of them.
+
+    ``lane`` is whose reaped runs these are (runner/lanes.py): the server's start-up picks up
+    the main lane's, the Pi lane's start-up (runner/pi_lane.py) its own.
 
     Never raises: a start-up must finish even when none of this works.
     """
@@ -544,7 +558,8 @@ def pick_up_interrupted(
         settle = SETTLE_S if settle_s is None else settle_s
         if settle > 0:
             sleep(settle)
-        picks = choose(candidates_from(cut_off_by_this_stop(marked, since=started)), now=now)
+        picks = choose(candidates_from(cut_off_by_this_stop(marked, since=started, lane=lane)),
+                       now=now)
         if not picks:
             return picks
 

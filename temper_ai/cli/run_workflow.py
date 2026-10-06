@@ -176,6 +176,20 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
         _safe_mark_failed(execution_id, f"{start} failed: {exc}")
         return 2
 
+    # --- The run's lane (runner/lanes.py, runner/pi_lane.py) -------------------
+    # Outside the Pi lane a Pi run refuses; in it, only a Pi run passes, after the Pi-only
+    # rule, the preflight and the commit it runs on. Unmarked runs elsewhere: untouched.
+    from temper_ai.runner import pi_lane
+
+    lane_refusal = pi_lane.check_run(execution_id, run_row, start=start,
+                                     graph_loader=runner_ctx.graph_loader)
+    if lane_refusal is not None:
+        logger.error("Run %s refused: %s", execution_id, lane_refusal.message)
+        pi_lane.record_refusal(execution_id, run_row, lane_refusal,
+                               resume_of=(resume_metadata or {}).get("resume_of"))
+        _safe_mark_failed(execution_id, lane_refusal.message, kind=lane_refusal.kind)
+        return pi_lane.REFUSED_EXIT
+
     # --- Mark running ---------------------------------------------------------
     # The handle the reaper polls: our PID under the subprocess spawner, our
     # container's name when the docker spawner put us in one (a PID would
@@ -242,6 +256,21 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
             run_only=run_only,
         )
         stood_down = result.status == REPLACED_STATUS
+    except pi_lane.LaneDrained as drained:
+        # The Pi lane is stopping and this run left at a turn boundary: interrupted, not
+        # failed. The Pi lane's next start picks it up from its ledger (runner/pi_lane.py).
+        message = ("The Pi lane stopped; the run left at a turn boundary "
+                   f"({drained}) and carries on when the lane starts again.")
+        _update_run_row(
+            execution_id,
+            status="orphaned",
+            completed_at=datetime.now(UTC),
+            error={"message": message, "kind": "drained"},
+        )
+        from temper_ai.observability.reconcile import INTERRUPTED, settle_run_event
+
+        settle_run_event(execution_id, INTERRUPTED, message)
+        return pi_lane.DRAINED_EXIT
     except Exception as exc:
         # execute_workflow already catches its own exceptions and returns
         # ExecuteResult; getting here means a bug in execute_workflow itself.

@@ -58,8 +58,12 @@ class Reaper:
         *,
         interval_seconds: float = 5.0,
         kill_grace_seconds: float = DEFAULT_KILL_GRACE_SECONDS,
+        lane: str | None = None,
     ) -> None:
         self._spawner = spawner
+        # Only this lane's rows (runner/lanes.py): the main worker's reaper must never ask its
+        # own spawner about a Pi run the Pi lane started, nor the Pi lane's about anything else.
+        self._lane = lane
         self._interval = interval_seconds
         self._kill_grace = kill_grace_seconds
         self._stop = threading.Event()
@@ -108,10 +112,13 @@ class Reaper:
         from sqlalchemy import and_, or_
         from sqlmodel import col
 
+        from temper_ai.runner.lanes import lane_clause
+
         with get_session() as session:
             rows = session.exec(
                 select(WorkflowRun).where(
                     col(WorkflowRun.spawner_kind).is_not(None),
+                    lane_clause(col(WorkflowRun.spawner_metadata), self._lane),
                     or_(
                         col(WorkflowRun.status) == "running",
                         # Handed to a box that has not started the run yet.

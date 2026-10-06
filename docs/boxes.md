@@ -40,10 +40,12 @@ box_env:
 - `why:` is required: say who in the box reads the names.
 - The GitHub app's keys (`integrations/github/secret.py` `SERVER_ONLY`) can never be
   listed; loading refuses them. A run asks the server for short-lived tokens instead.
-- Nor can Pi's own settings, the switch `TEMPER_PI_AGENT` and the box config
-  `TEMPER_PI_BOX_CONFIG` (`shared/box_env.py` `PI_ONLY`): Pi steps never run in a run
-  box, so a box gets neither, and with them no way to the Pi runtime, the logins or
-  the role folders the box config names ([pi-agent.md](pi-agent.md)).
+- Nor can Pi's own settings, the switch `TEMPER_PI_AGENT`, the box config
+  `TEMPER_PI_BOX_CONFIG` and the Pi lane's `TEMPER_LANE` and `TEMPER_PI_DRAIN_MARK`
+  (`shared/box_env.py` `PI_ONLY`): Pi steps never run in a run box, so a box gets
+  none of them, and with them no way to the Pi runtime, the logins or the role
+  folders the box config names, nor a claim to be the Pi lane
+  ([pi-agent.md](pi-agent.md), [pi-lane.md](pi-lane.md)).
 - A secret (database URL, secret key, Redis URL, any `*_KEY`, `*_TOKEN`, `*_SECRET`,
   `*_PASSWORD`, `*_CREDENTIALS`) may be listed for the box's process, never with
   `agent_tools: true`.
@@ -201,6 +203,12 @@ What changes for a sealed box:
   `TEMPER_DOCKER_WORKSPACES=all`, `TEMPER_DOCKER_IMAGE`, a run command other than
   `<python> -m temper_ai.cli.main run-workflow`, and a template running as root.
   Explicit no-socket development is not a protected fallback.
+- **Never the subprocess spawner beside a Docker socket** (any install, HOME-REVIEW
+  H1): a worker with `TEMPER_SPAWNER=subprocess` that can reach Docker (a socket at
+  `/var/run/docker.sock` or `/run/docker.sock`, or `DOCKER_HOST`) refuses to start,
+  because every run's tools would share the socket (`spawner/factory.py`). The one
+  exception is the Pi lane's worker, which runs nothing but Pi steps
+  ([pi-lane.md](pi-lane.md)); it in turn refuses any other spawner.
 - **No going back for a run.** A run that ever had a sealed box never gets a
   legacy one. Rolling back means setting `legacy` again and starting fresh runs.
 
@@ -267,7 +275,8 @@ needs BS1's sealed profile: on a legacy install every run is refused.
 - `temper check` loads both files.
 - `ci_box_env` (no model, $0) lists the names in a box's tool environment and in
   every `/proc/*/environ` it can read, and fails on a server-only name anywhere in
-  the box (Pi's `TEMPER_PI_AGENT` and `TEMPER_PI_BOX_CONFIG` count as such) or a
+  the box (Pi's `TEMPER_PI_AGENT`, `TEMPER_PI_BOX_CONFIG`, `TEMPER_LANE` and
+  `TEMPER_PI_DRAIN_MARK` count as such) or a
   secret in a tool's environment. The machine check runs it on every
   commit ([ci-gate.md](ci-gate.md)); after a change to a list, run it live:
   `POST /api/runs {"workflow": "ci_box_env"}`.

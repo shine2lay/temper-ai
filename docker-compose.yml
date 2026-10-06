@@ -304,5 +304,79 @@ services:
     profiles:
       - worker
 
+  # The Pi lane (docs/pi-lane.md): the one worker that runs Pi runs, and
+  # runs nothing else. The main worker never claims a Pi run; this one
+  # claims only Pi runs (TEMPER_LANE=pi), one at a time, counting a parked
+  # one. Each run is a child process here (the subprocess spawner, which
+  # beside a Docker socket only the Pi lane may use), and its Pi members
+  # run in their own locked boxes, which it starts through the socket.
+  #
+  # Off unless asked for: profile `pi`, never started by default, and
+  # nothing else depends on it, so recreating server or worker never
+  # touches it. Same image as the worker, no build of its own: a deploy
+  # recreates it, only while lane-status shows nothing active, with
+  #   docker compose --profile pi up -d --no-deps --no-build \
+  #       --force-recreate pi-worker
+  # Rollback: `docker compose --profile pi stop pi-worker`; the main
+  # worker keeps refusing Pi runs, and they wait for the Pi lane.
+  #
+  # It holds no secrets beyond the database and Redis URLs: no env_file,
+  # no provider keys, no token pool, no TEMPER_SECRET_KEY. Model logins
+  # come per turn from the host helper (temper-pi-host), through the
+  # socket folder below.
+  #
+  # The machine's own folders (state, sockets, pins, role folders, project
+  # roots, local/pi/ with the box config) are mounted at the SAME paths as
+  # on the host, because the member boxes it starts mount them by those
+  # paths. They are this machine's, so they live in the git-ignored
+  # docker-compose.override.yml (a self-sufficient pi-worker entry: image,
+  # profiles, TEMPER_PI_BOX_CONFIG and those mounts), never here.
+  pi-worker:
+    image: ${TEMPER_PI_WORKER_IMAGE:-temper-ai-worker}
+    pull_policy: never
+    restart: unless-stopped
+    # A turn may take 900 s; the lane stops claiming, lets the turn settle
+    # and leaves at the next turn boundary (runner/pi_lane.py drain).
+    stop_grace_period: 960s
+    # tini as PID 1: forwards SIGTERM to the watcher, reaps what it leaves.
+    init: true
+    # The image's user, uid 1000: the only uid the host helper answers.
+    command: ["/app/.venv/bin/python", "-m", "temper_ai.cli.main", "watch-queue"]
+    volumes:
+      - ./temper_ai:/app/temper_ai:ro
+      - ./configs:/app/configs:ro
+      # The checkout's git folder, read-only: each Pi run records the temper
+      # commit it ran on, at start and at every resume (SW-16).
+      - ./.git:/app/.git:ro
+      # Member boxes start through it. Only the Pi lane holds a Docker
+      # socket beside the subprocess spawner (H1).
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
+    environment:
+      HOME: /home/temperai-worker
+      PYTHONDONTWRITEBYTECODE: "1"
+      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:-temper_dev}@postgres:5432/temper_ai
+      TEMPER_REDIS_URL: redis://redis:6379/0
+      TEMPER_LOG_LEVEL: ${TEMPER_LOG_LEVEL:-INFO}
+      # The lane setting: this watcher claims only Pi runs.
+      TEMPER_LANE: pi
+      TEMPER_SPAWNER: subprocess
+      TEMPER_PI_AGENT: "1"
+      # The box config (local/pi/pi-box.json); set by the override.
+      TEMPER_PI_BOX_CONFIG: ${TEMPER_PI_BOX_CONFIG:-}
+      # Read by the preflight only: the server's container, whose mounts
+      # must hold no Pi or project folder, and the workspaces folder, which
+      # must hold no Pi folder (H3). Names and paths, not mounted here.
+      TEMPER_DOCKER_TEMPLATE_CONTAINER: ${TEMPER_DOCKER_TEMPLATE_CONTAINER:-}
+      WORKSPACE_DIR: ${WORKSPACE_DIR:-./workspaces}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    profiles:
+      - pi
+
 volumes:
   postgres-data:

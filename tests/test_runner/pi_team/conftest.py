@@ -28,6 +28,13 @@ def _no_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _in_the_pi_lane(monkeypatch):
+    """Pi steps run only in the Pi lane: every test here runs as it, with the ordinary test
+    step allowed beside the Pi step (tests/test_pi_agent/support.into_the_pi_lane says why)."""
+    sup.into_the_pi_lane(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
 def _invariants_after_every_scenario(request):
     """tables.md I1-I8 after every team scenario, by construction (#37's land check, binding 3):
     every team a test left rows for is checked once the test is over, whether or not the test

@@ -55,16 +55,19 @@ def _row(eid: str) -> dict:
 
 
 def _box(ext, eid: str, monkeypatch, *, finish_pi: bool = False) -> int:
-    """One box for the run, as the worker starts it: claim the queued row, run to the end.
+    """One box for the run, as the Pi lane's worker starts it: claim the queued row (the main
+    worker's claim never takes a Pi run), run to the end.
 
     ``finish_pi``: the box comes to the Pi step's own wait, which lets go too (C7), so it
     exits there; the wait is answered ``done``, the reaper frees and queues the run, and the
     box that carries it on runs. Returns that box's exit code."""
     from temper_ai.cli.run_workflow import cmd_run_workflow
     from temper_ai.cli.watch_queue import _claim_row
+    from temper_ai.runner.lanes import PI_LANE
 
     assert _row(eid)["status"] == "queued"
-    assert _claim_row(eid, spawner_kind="docker")
+    assert not _claim_row(eid, spawner_kind="docker")  # the main lane's claim
+    assert _claim_row(eid, spawner_kind="docker", lane=PI_LANE)
     monkeypatch.setenv("TEMPER_RUN_CONTAINER", f"temper-run-{eid}")
     code = cmd_run_workflow(argparse.Namespace(execution_id=eid, config_dir=None, debug=False))
     if not finish_pi:
@@ -77,9 +80,11 @@ def _box(ext, eid: str, monkeypatch, *, finish_pi: bool = False) -> int:
 
 
 def _reaper():
+    """The Pi lane's reaper: only it looks after Pi runs."""
+    from temper_ai.runner.lanes import PI_LANE
     from temper_ai.spawner.reaper import Reaper
 
-    return Reaper(_GoneBoxes(), interval_seconds=60)  # type: ignore[arg-type]
+    return Reaper(_GoneBoxes(), interval_seconds=60, lane=PI_LANE)  # type: ignore[arg-type]
 
 
 def test_the_box_exits_at_the_approval_and_the_answer_queues_the_next_one(ext, monkeypatch):

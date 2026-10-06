@@ -199,6 +199,12 @@ class SubprocessSpawner(Spawner):
                 f"Failed to {sig.name} worker pid={pid}: {exc}",
             ) from exc
 
+    def live_runs(self) -> list[str]:
+        """The runs whose child process this spawner started and that hasn't ended yet (the
+        Pi lane waits for them when it stops: runner/pi_lane.py)."""
+        with self._lock:
+            return [eid for eid, proc in self._processes.items() if proc.poll() is None]
+
     def reap(self, execution_id: str) -> int | None:
         """Pop the Popen handle for a completed worker and return its exit code.
 

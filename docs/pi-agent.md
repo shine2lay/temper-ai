@@ -8,8 +8,18 @@ and no route, page or event changes.
 
 Switch: the environment setting `TEMPER_PI_AGENT=1` (also `true`, `on`, `yes`), read when
 `temper_ai.agent` is first imported. Box config: `TEMPER_PI_BOX_CONFIG=<json file>`. Both
-are the server's and the worker's own settings: a run box never gets either, and
+are the server's and the Pi lane's own settings: a run box never gets either, and
 `configs/boxes/env.yaml` can't list them (M4 SW-42, [boxes.md](boxes.md)).
+
+**Pi runs run only in the Pi lane** ([pi-lane.md](pi-lane.md), M4 ADR-M4-01): a workflow
+with a Pi step at any depth is marked for the lane when it starts, and only the
+`pi-worker` service runs it, itself off by default (compose profile `pi`). The lane runs only
+Pi steps, team stages of Pi members and gates: anything else is refused at submit, naming
+the step. A Pi step anywhere else refuses "Pi steps run only in the Pi lane". With the lane
+down, a Pi run waits in the queue, "waiting for the Pi lane". Switching Pi on takes all
+of: `TEMPER_PI_AGENT=1` on the server and on `pi-worker`, the box config on `pi-worker`, the
+profile started, and the host helper ([pi-host-helper.md](pi-host-helper.md)); each run's
+preflight names whatever is missing.
 
 **Switching off never fails a waiting run** (M4 ADR-M4-05, SW-32). Only Pi workflows park
 ([gates.md](gates.md) "Pi workflows"), so a parked run is a Pi run, and with the switch off its Pi steps
@@ -379,6 +389,12 @@ no environment value is ever in a wait.
   temper-box folder, so a change to it is a settings change a reopened conversation asks
   the owner about ([above](#settings-changed-while-a-conversation-waits)).
 - The worker's process group and container are always removed when the turn ends.
+- In the Pi lane (M4 ADR-M4-03, SW-43, SW-44; [pi-lane.md](pi-lane.md)): the box runs as
+  the worker's own uid and gid (1000:1000), never the template's or the docker group; with
+  `roots` in the box config, every bind source must be inside them
+  (`bind_source_outside_roots`) and every turn socket path under 100 bytes
+  (`socket_path_too_long`); the step's own assets are mounted from a sealed copy in the
+  state root; and the pi folder check looks under `host_home` as well as the worker's home.
 
 ### Pi's grep and find: pinned `rg` and `fd`
 

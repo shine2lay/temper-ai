@@ -1,5 +1,10 @@
 """The committed zero-cost Pi workflow, ``ci_pi_waits``, loaded from configs/ as the server
-loads it and run on L2's stand-in box: what the live check does, with no model."""
+loads it and run on L2's stand-in box, with no model.
+
+The Pi lane runs only Pi steps, team stages of Pi members and gates, so it refuses
+``ci_pi_waits`` at submit for its script steps (the first test). The tests after it allow
+script steps beside the Pi step, for this file only, to prove parking on the committed
+config."""
 
 from __future__ import annotations
 
@@ -16,7 +21,20 @@ REPO_CONFIGS = Path(__file__).resolve().parents[3] / "configs"
 
 
 @pytest.fixture
-def ci(pw_run):
+def ci_as_committed(pw_run):
+    return _with_repo_configs(pw_run)
+
+
+@pytest.fixture
+def ci(pw_run, monkeypatch):
+    """Script steps allowed beside the Pi step, for this file only (see the module's note)."""
+    from temper_ai.runner import lanes
+
+    monkeypatch.setattr(lanes, "PI_LANE_AGENT_TYPES", (*lanes.PI_LANE_AGENT_TYPES, "script"))
+    return _with_repo_configs(pw_run)
+
+
+def _with_repo_configs(pw_run):
     from temper_ai.api.app_state import AppState
     from temper_ai.api.routes import init_app_state
     from temper_ai.cli.check import _FileConfigs
@@ -38,6 +56,26 @@ def _answer(ci, eid: str, name: str, n_attempts: int) -> None:
     gate = pw.open_gate(ci.client, eid, name)
     r = pw.approve(ci.client, eid, name, event_id=gate["event_id"])
     assert r.status_code == 200 and r.json()["carries_on"] is True, r.text
+
+
+def test_the_pi_lane_refuses_ci_pi_waits_at_submit_naming_its_script_steps(ci_as_committed):
+    from sqlmodel import select
+
+    from temper_ai.database import get_session
+    from temper_ai.runner.models import WorkflowRun
+
+    ci_as_committed.ws.mkdir(parents=True, exist_ok=True)
+    r = ci_as_committed.client.post(
+        "/api/runs", json={"workflow": "ci_pi_waits", "inputs": {"verdict": "done"},
+                           "workspace_path": str(ci_as_committed.ws)})
+    assert r.status_code == 400, r.text
+    detail = r.json()["detail"]
+    assert "runs in the Pi lane" in detail
+    for name in ("ask", "review", "ship"):
+        assert f"'{name}' is a script step" in detail, detail
+    assert "'talk'" not in detail  # the Pi step itself is the lane's
+    with get_session() as session:
+        assert session.exec(select(WorkflowRun)).all() == []  # never became a run
 
 
 def test_ci_pi_waits_ships_after_two_answers_and_one_pi_turn(ci):

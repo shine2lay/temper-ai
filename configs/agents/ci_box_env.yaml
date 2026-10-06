@@ -34,8 +34,9 @@ agent:
         "LINEAR_WEBHOOK_SECRET", "NOTION_WEBHOOK_SECRET", "TEMPER_SLACK_TEST_TOKEN",
         "INTERNAL_API_TOKEN", "TEMPER_API_TOKENS_FILE", "TEMPER_SPAWNER",
         "TEMPER_EXECUTION_MODE", "TEMPER_DOCKER_TEMPLATE_CONTAINER",
-        # Pi steps never run in a run box (configs/boxes/env.yaml, docs/pi-agent.md).
-        "TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG",
+        # Pi steps never run in a run box (configs/boxes/env.yaml, docs/pi-agent.md),
+        # and a run box never claims to be the Pi lane (docs/pi-lane.md).
+        "TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG", "TEMPER_LANE", "TEMPER_PI_DRAIN_MARK",
     }
     # Never in an agent tool's own environment.
     NOT_FOR_TOOLS = SERVER_ONLY | {

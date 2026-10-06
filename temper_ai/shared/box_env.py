@@ -51,10 +51,12 @@ MODE_INHERIT = "inherit"
 #: Always set by the spawner to the box's own container name.
 RUN_CONTAINER_ENV = "TEMPER_RUN_CONTAINER"
 
-#: The Pi switch and the Pi box config (M4 ADR-M4-05, SW-42): Pi steps never run in a run box,
-#: so a box never gets them, listed or inherited, and with them no way to the Pi runtime, the
-#: logins or the role folders the box config names.
-PI_ONLY = frozenset({"TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG"})
+#: The Pi switch, the Pi box config and the Pi lane's own settings (M4 ADR-M4-05, SW-42; the
+#: lane setting and its drain mark, runner/lanes.py and runner/pi_lane.py): Pi steps never run
+#: in a run box, so a box never gets them, listed or inherited, and with them no way to the Pi
+#: runtime, the logins or the role folders the box config names, nor a claim to be the Pi lane.
+PI_ONLY = frozenset({"TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG", "TEMPER_LANE",
+                     "TEMPER_PI_DRAIN_MARK"})
 
 #: A run's GitHub-token key (api/run_tokens.py) is for the run's own process only. It is put in
 #: no environment today; should a later way of handing keys to the box ever put it in the box's

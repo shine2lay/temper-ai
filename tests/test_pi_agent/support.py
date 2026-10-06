@@ -550,6 +550,27 @@ def unregister_types() -> None:
     PiHost.turn_runner = None
 
 
+def into_the_pi_lane(monkeypatch, *extra_types: str, nodes: tuple[str, ...] = ()) -> None:
+    """Run this test as the Pi lane (runner/lanes.py, docs/pi-lane.md).
+
+    The test process is the Pi lane (``TEMPER_LANE=pi``): its in-process server runs a Pi run
+    itself instead of queueing it for the pi-worker, and the Pi step's backstop lets it start.
+    The Pi-only rule keeps checking, with this package's zero-cost test steps allowed beside
+    the Pi step (``STEP_TYPE``, ``extra_types`` and the step classes in ``nodes``, for this test
+    only): the workflows here keep
+    their ordinary steps around the Pi step, which prove a finished step never runs again on
+    resume. Production allows the Pi step alone. The preflight's checks of the real machine
+    (Docker, the helper, the image) are left out here: tests/test_runner/pi_lane tests them.
+    """
+    from temper_ai.runner import lanes, pi_preflight
+
+    monkeypatch.setenv(lanes.LANE_ENV, lanes.PI_LANE)
+    monkeypatch.setattr(lanes, "PI_LANE_AGENT_TYPES",
+                        (*lanes.PI_LANE_AGENT_TYPES, STEP_TYPE, *extra_types))
+    monkeypatch.setattr(lanes, "PI_LANE_OTHER_NODES", (*lanes.PI_LANE_OTHER_NODES, *nodes))
+    monkeypatch.setattr(pi_preflight, "preflight", lambda **_kw: [])
+
+
 # --- running and reading back ---------------------------------------------------------
 
 

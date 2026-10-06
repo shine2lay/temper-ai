@@ -10,7 +10,10 @@ Everything is behind `TEMPER_PI_AGENT` (default off). With it off, a new run of 
 is refused at load ("Unknown strategy: 'team'") and nothing here is imported; a team run
 that was parked waits instead, "Pi switched off", until the switch is back on (M4 SW-32,
 [pi-agent.md](pi-agent.md)). A run box never gets the switch (M4 SW-42,
-[boxes.md](boxes.md)): Pi steps are to run only in the Pi lane, which isn't built yet.
+[boxes.md](boxes.md)): Pi steps run only in the Pi lane, itself switched off
+([pi-lane.md](pi-lane.md)). The lane drains at turn boundaries: on a stop the team starts no
+new member turn, and a turn under way finishes first; the run carries on from its ledger
+when the lane starts again.
 
 ## Starting
 

@@ -182,3 +182,17 @@ def _no_docker_spawner_settings(monkeypatch):
     Tests that want a setting set it themselves."""
     for name in _DOCKER_SPAWNER_ENV:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_docker_socket_for_the_subprocess_spawner(monkeypatch):
+    """H1 refuses the subprocess spawner in a process that can reach Docker, and CI runners
+    and dev hosts have /var/run/docker.sock. Tests see no socket and no lane setting unless
+    they set them (tests/test_spawner/test_subprocess_beside_docker.py,
+    tests/test_runner/pi_lane/)."""
+    from temper_ai.spawner import factory
+
+    monkeypatch.setattr(factory, "DOCKER_SOCKETS", ("/nonexistent/temper-test/docker.sock",))
+    monkeypatch.setattr(factory, "DOCKER_HOST_ENVS", ())
+    monkeypatch.delenv("TEMPER_LANE", raising=False)
+    monkeypatch.delenv("TEMPER_PI_DRAIN_MARK", raising=False)

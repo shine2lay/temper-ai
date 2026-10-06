@@ -29,6 +29,18 @@ def _no_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _in_the_pi_lane(monkeypatch):
+    """Pi steps run only in the Pi lane: every test here runs as it, with this package's
+    zero-cost test steps allowed beside the Pi step (support.into_the_pi_lane says why).
+    ``pi_team_held_fail`` is test_team_runs.py's HELD_FAIL_TYPE; ``AskNode`` is step_support's
+    stand-in for a team stage."""
+    from tests.test_runner.pi_parking import step_support
+
+    sup.into_the_pi_lane(monkeypatch, step_support.ASK_TYPE, pw.FAIL_TYPE, pw.VERDICT_TYPE,
+                         "pi_team_held_fail", nodes=(step_support.AskNode.__name__,))
+
+
+@pytest.fixture(autouse=True)
 def _team_invariants_after_every_scenario(request):
     """tables.md I1-I8 after every team scenario here, by construction (#37's land check,
     binding 3): every Pi team a run left rows for is checked once the test is over, whether or

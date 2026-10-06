@@ -106,6 +106,8 @@ from temper_ai.pi_agent.settings_wait import (
     step_stop_text,
     step_subject,
 )
+from temper_ai.runner.lanes import OUTSIDE_PI_LANE, in_pi_lane
+from temper_ai.runner.pi_lane import leave_if_draining
 from temper_ai.shared.types import AgentResult, ExecutionContext, Status
 from temper_ai.stage.exceptions import (
     CancellationError,
@@ -203,6 +205,10 @@ class PiHost(AgentABC):
         problems = self.validate_config()
         if problems:
             return self._fail("; ".join(problems), started)
+        if not in_pi_lane():
+            # The backstop behind the lane mark and the claim filters (SW-42).
+            return self._fail(f"{OUTSIDE_PI_LANE}: this worker isn't the Pi lane, so the "
+                              "step did not start", started)
         if context.event_recorder is None:
             return self._fail("a Pi step needs the run's event recorder", started)
         try:
@@ -326,6 +332,9 @@ class PiHost(AgentABC):
             if p.get("state") == "ended":
                 text = "the Pi conversation ended when its run was cancelled"
                 return self._result(Status.FAILED, text, started, error=text)
+            # A turn boundary: a Pi lane that is stopping lets the run go here, before a new
+            # turn is claimed; the lane's next start carries it on from the ledger.
+            leave_if_draining(f"Pi step {self.host_path}")
             claimed = self.ledger.claim_turn(self.run_id, self.host_path,
                                              attempt_id=self.attempt_id)
             if claimed is None:

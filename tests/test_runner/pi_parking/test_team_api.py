@@ -294,6 +294,21 @@ def test_a2_team_run_reads_the_outcome_from_its_own_row_only(api):
     assert team_run(api, eid)["outcome"]["reason"] == "read from the outcome row"
 
 
+def test_a_trial_s_run_is_queued_for_the_pi_lane_and_only_the_pi_lane_claims_it(api, monkeypatch):
+    """rm-0b46a085: #48's start goes through POST /api/runs' start code, so a trial's run is
+    written with the lane mark. A server that isn't the Pi lane (production's) queues it for
+    the Pi lane and never starts it itself; only the Pi lane's claim takes it."""
+    from temper_ai.runner.lanes import LANE_ENV
+    from tests.test_runner.pi_lane import support as lane
+
+    monkeypatch.delenv(LANE_ENV, raising=False)
+    monkeypatch.setenv("TEMPER_EXECUTION_MODE", "external")
+    got = start_trial(api, body(api, "lane-1"))
+    assert got["status"] == "queued", got
+    assert got["execution_id"] not in api.state.running
+    lane.only_the_pi_lane_claims(got["execution_id"])
+
+
 def test_a_start_without_a_request_id_is_refused(api):
     r = api.client.post("/api/team/trials", json=body(api, request_id=None))
     assert r.status_code == 400

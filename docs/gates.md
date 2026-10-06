@@ -283,3 +283,6 @@ round in a loop that must fail when it runs out (`verdict: done` ships). It
 needs the Pi step switched on; its tests run it on L2's stand-in box, with no
 model: `tests/test_runner/pi_parking/` (in-process and box modes, restarts,
 waits of days, cancel, 409s) and `tests/test_stage/test_pi_loop_rule.py`.
+The Pi lane runs only Pi steps, team stages of Pi members and gates
+(docs/pi-lane.md), so it refuses `ci_pi_waits` for its script steps: only
+those tests run it, allowing script steps beside the Pi step for themselves.

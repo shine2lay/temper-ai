@@ -21,8 +21,13 @@ workflow:
 
     `verdict` is what `review` says: "again" (the default) goes round once
     more and then runs out (red, "ran out of rounds: 2 of 2"); "done" ships.
-    Script agents and the stand-in box only: no API key, no spend. The tests
-    in tests/test_runner/test_pi_parking*.py and the live check use it.
+    Script agents and the stand-in box only: no API key, no spend.
+
+    The Pi lane runs only Pi steps, team stages of Pi members and gates, so
+    it refuses this workflow at submit for its script steps (docs/pi-lane.md).
+    Only tests run it: tests/test_runner/pi_parking/test_ci_workflow.py
+    (which allows script steps beside the Pi step for that file only) and
+    tests/test_stage/test_pi_loop_rule.py.
 
   inputs:
     verdict:

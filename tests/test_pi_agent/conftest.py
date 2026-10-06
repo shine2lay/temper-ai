@@ -27,6 +27,13 @@ def _pi_no_network(monkeypatch):
     assert guard.attempts == [], f"network connection attempted: {guard.attempts}"
 
 
+@pytest.fixture(autouse=True)
+def _in_the_pi_lane(monkeypatch):
+    """Pi steps run only in the Pi lane: every test here runs as it, with the ordinary test
+    step allowed beside the Pi step (support.into_the_pi_lane says why)."""
+    sup.into_the_pi_lane(monkeypatch)
+
+
 @pytest.fixture
 def pi(tmp_path, request, monkeypatch):
     from fastapi.testclient import TestClient

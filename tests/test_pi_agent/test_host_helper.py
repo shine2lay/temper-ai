@@ -7,7 +7,9 @@ and a stub Pi SDK: no real login, no model call."""
 from __future__ import annotations
 
 import json
+import shutil
 import socket
+import tempfile
 import threading
 from pathlib import Path
 
@@ -40,6 +42,20 @@ TRIAL = "0123456789ab"
 ROUTES = {"anthropic": {"provider": "anthropic", "host": "api.anthropic.com"}}
 
 
+_SOCKET_ROOTS: list[Path] = []
+
+
+@pytest.fixture(autouse=True)
+def _short_socket_root():
+    """A box's socket paths stay under 100 bytes (box.SOCKET_PATH_LIMIT); pytest's tmp paths
+    can be longer, under xdist most of all. Each test's box configs use this root."""
+    root = Path(tempfile.mkdtemp(prefix="pibox-", dir="/tmp"))
+    _SOCKET_ROOTS.append(root)
+    yield root
+    _SOCKET_ROOTS.remove(root)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 @pytest.fixture
 def host():
     h = Host()
@@ -57,6 +73,8 @@ def served(host):
 
 
 def box_config(root: Path, *, drop: tuple[str, ...] = (), **over) -> BoxConfig:
+    if _SOCKET_ROOTS:
+        over.setdefault("socket_root", str(_SOCKET_ROOTS[-1]))
     path = sup.make_box_config(root, routes=ROUTES, **over)
     raw = json.loads(path.read_text())
     for key in drop:

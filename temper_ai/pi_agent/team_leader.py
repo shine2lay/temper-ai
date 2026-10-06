@@ -94,6 +94,8 @@ from temper_ai.pi_agent.team_runtime import (
     stop_text,
     stop_words,
 )
+from temper_ai.runner.lanes import OUTSIDE_PI_LANE, in_pi_lane
+from temper_ai.runner.pi_lane import leave_if_draining
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.exceptions import CancellationError, ReplacedByLaterAttempt
 
@@ -1132,6 +1134,9 @@ class LeaderTeam(TeamRows, Team):
                 if answer is not None:
                     self.apply(wait, answer)
                 continue
+            # A turn boundary: a Pi lane that is stopping lets the run go here, before the
+            # next member turn; the lane's next start carries the team on from the ledger.
+            leave_if_draining(f"team {self.host_path}")
             result = self.step()
             if result.kind in ("completed", "held", "waiting"):
                 continue
@@ -1363,6 +1368,13 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
     host_path = context.step_path or (f"{context.node_path}.{node.name}" if context.node_path
                                       else node.name)
     trial_id = trial_id_of(context.workflow_name)
+    if not in_pi_lane():
+        # The backstop behind the lane mark and the claim filters (SW-42): nothing of the
+        # team is opened or written outside the Pi lane.
+        text = f"{OUTSIDE_PI_LANE}: this worker isn't the Pi lane, so the team did not start"
+        return NodeResult(status=Status.FAILED, output=text, error=text,
+                          duration_seconds=time.monotonic() - started,
+                          metadata={"team": {"settings": settings}})
     ledger = Ledger(get_database().engine)
     try:
         ledger.ensure()

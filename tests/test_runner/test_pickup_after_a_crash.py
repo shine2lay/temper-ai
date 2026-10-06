@@ -200,7 +200,7 @@ class TestPickingThemUp:
         """Stand in for the database reads; the acting itself is what is under test here."""
         monkeypatch.setattr(pickup, "SETTLE_S", 0.0)
         monkeypatch.setattr(pickup, "cut_off_by_this_stop",
-                            lambda marked, since=None: list(marked))
+                            lambda marked, since=None, lane=None: list(marked))
         monkeypatch.setattr(pickup, "candidates_from",
                             lambda marked: [_candidate(str(m["execution_id"])) for m in marked])
         monkeypatch.setattr(pickup, "_stamp_attempt", lambda event_id, attempt: None)
@@ -347,7 +347,7 @@ class TestTheWayItStartsThemAgain:
         started = []
         monkeypatch.setattr(pickup, "SETTLE_S", 0.0)
         monkeypatch.setattr(pickup, "cut_off_by_this_stop",
-                            lambda marked, since=None: list(marked))
+                            lambda marked, since=None, lane=None: list(marked))
         monkeypatch.setattr(pickup, "candidates_from",
                             lambda marked: [_candidate("run-thread")])
         monkeypatch.setattr(pickup, "_stamp_attempt", lambda event_id, attempt: None)
@@ -365,7 +365,7 @@ class TestTheWayItStartsThemAgain:
         looked = []
         monkeypatch.setattr(pickup, "SETTLE_S", 0.0)
         monkeypatch.setattr(pickup, "cut_off_by_this_stop",
-                            lambda marked, since=None: looked.append(list(marked)) or [])
+                            lambda marked, since=None, lane=None: looked.append(list(marked)) or [])
 
         thread = pickup.pick_up_in_the_background([])
 
@@ -382,7 +382,7 @@ class TestTheWayItStartsThemAgain:
         """The reaper ends the runs whose boxes died; looking first would see none of them."""
         order = []
         monkeypatch.setattr(pickup, "cut_off_by_this_stop",
-                            lambda marked, since=None: order.append("looked") or [])
+                            lambda marked, since=None, lane=None: order.append("looked") or [])
 
         pickup.pick_up_interrupted([], settle_s=42, sleep=lambda s: order.append(f"waited {s}"))
 

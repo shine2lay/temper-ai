@@ -54,10 +54,12 @@ def test_the_github_app_s_keys_can_never_be_listed(tmp_path, name):
         load_box_env(tmp_path)
 
 
-@pytest.mark.parametrize("name", ["TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG"])
+@pytest.mark.parametrize("name", ["TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG", "TEMPER_LANE",
+                                  "TEMPER_PI_DRAIN_MARK"])
 @pytest.mark.parametrize("where", ["tracked", "local"])
 def test_the_pi_switch_and_box_config_can_never_be_listed(tmp_path, name, where):
-    """M4 SW-42: Pi steps never run in a run box, so neither file may list Pi's own settings."""
+    """M4 SW-42: Pi steps never run in a run box, so neither file may list Pi's own settings,
+    nor the Pi lane's (a box never claims to be the Pi lane)."""
     group = f"box_env:\n  - names: [{name}]\n    why: tempting\n"
     if where == "tracked":
         _write(tmp_path, group)
@@ -110,6 +112,14 @@ def test_the_switch_is_list_unless_it_says_inherit():
     assert box_env_mode({"TEMPER_BOX_ENV": "all"}) == "list"
 
 
+def test_the_pi_lane_s_own_settings_are_pi_only():
+    from temper_ai.runner.lanes import LANE_ENV
+    from temper_ai.runner.pi_lane import DRAIN_MARK_ENV
+    from temper_ai.shared.box_env import PI_ONLY
+
+    assert {LANE_ENV, DRAIN_MARK_ENV} <= PI_ONLY
+
+
 def test_looks_secret_by_name():
     for name in ("TEMPER_DATABASE_URL", "TEMPER_SECRET_KEY", "X_TOKEN", "Y_PASSWORD", "Z_API_KEY"):
         assert looks_secret(name)
@@ -124,7 +134,8 @@ def test_the_committed_list_loads_and_drops_what_only_the_server_reads():
                     "TEMPER_SLACK_TEST_TOKEN", "INTERNAL_API_TOKEN", "TEMPER_API_TOKENS_FILE",
                     "TEMPER_SPAWNER", "TEMPER_EXECUTION_MODE",
                     # M4 SW-42: Pi steps never run in a run box
-                    "TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG"):
+                    "TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG", "TEMPER_LANE",
+                    "TEMPER_PI_DRAIN_MARK"):
         assert not env.allows(dropped), dropped
     assert {"PATH", "HOME", "WORKSPACE_DIR", "TEMPER_API"} <= env.agent_tools
     assert not {"TEMPER_DATABASE_URL", "TEMPER_SECRET_KEY"} & env.agent_tools

@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 
-from temper_ai.spawner.base import Spawner
+from temper_ai.spawner.base import Spawner, SpawnerError
 from temper_ai.spawner.docker_spawner import DockerSpawner
 from temper_ai.spawner.subprocess_spawner import SubprocessSpawner
 from temper_ai.worker_proto import SpawnerKind
@@ -48,6 +48,7 @@ def get_spawner(kind: SpawnerKind | str | None = None) -> Spawner:
         return _singleton
 
     if kind == SpawnerKind.subprocess:
+        refuse_subprocess_beside_docker()
         _singleton = SubprocessSpawner()
     elif kind == SpawnerKind.docker:
         _singleton = DockerSpawner()
@@ -64,6 +65,48 @@ def get_spawner(kind: SpawnerKind | str | None = None) -> Spawner:
     _singleton_kind = kind
     logger.info("Spawner initialized: %s", kind.value)
     return _singleton
+
+
+#: Where a Docker socket shows up in a container or on a host (HOME-REVIEW H1). A test points
+#: this at a path that doesn't exist (tests/conftest.py), since CI and dev hosts have one.
+DOCKER_SOCKETS: tuple[str, ...] = ("/var/run/docker.sock", "/run/docker.sock")
+#: Settings that point Docker's client somewhere else (same test hook).
+DOCKER_HOST_ENVS: tuple[str, ...] = ("DOCKER_HOST",)
+
+
+class SubprocessBesideDocker(SpawnerError):  # noqa: N818 - a refusal, named for what it refuses
+    """The subprocess spawner was asked for in a process that can reach Docker (H1)."""
+
+
+def docker_reachable() -> str | None:
+    """How this process could reach Docker: a socket path, ``DOCKER_HOST``, or None."""
+    for name in DOCKER_HOST_ENVS:
+        if os.environ.get(name, "").strip():
+            return name
+    for path in DOCKER_SOCKETS:
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def refuse_subprocess_beside_docker() -> None:
+    """H1 / SW-75: a run started as a child process here would share this process's Docker
+    socket, which is the host. Only the Pi lane (``TEMPER_LANE=pi``: the pi-worker service)
+    runs its runs that way beside a socket, because its runs are Pi runs that start their own
+    member boxes and nothing else (runner/lanes.py, the Pi-only rule). Everywhere else --
+    the main worker, the server's subprocess mode -- this refuses, so a worker given the
+    socket without the Pi lane setting never starts."""
+    from temper_ai.runner.lanes import PI_LANE, this_lane
+
+    where = docker_reachable()
+    if where is None:
+        return
+    if this_lane() == PI_LANE:  # a bad TEMPER_LANE raises LaneSettingError: no start either
+        return
+    raise SubprocessBesideDocker(
+        f"TEMPER_SPAWNER=subprocess in a process that can reach Docker ({where}): its runs "
+        f"would hold the host's Docker socket. Use TEMPER_SPAWNER=docker, or take the socket "
+        f"away; only the Pi lane (TEMPER_LANE=pi) runs child processes beside it.")
 
 
 def reset_spawner() -> None:

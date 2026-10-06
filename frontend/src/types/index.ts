@@ -76,6 +76,10 @@ export interface WorkflowExecution {
   /** A parked Pi run while the Pi switch is off, in words: it waits, with any
    *  answer kept, and carries on once the switch is back on (runner/parked.py). */
   pi_switched_off?: string;
+  /** Why a queued run hasn't started, in words: "waiting for the Pi lane" for a Pi run
+   *  the Pi lane hasn't claimed, while another Pi run holds it or the lane is down or
+   *  switched off. It never starts anywhere else (docs/pi-lane.md). */
+  queued_reason?: string;
 }
 
 /** One attempt of a run: when it ran, how it ended, and who started it again. */

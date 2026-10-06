@@ -297,6 +297,17 @@ export function WorkflowHeader() {
         {/* A parked Pi run while the Pi switch is off: it waits, with any answer
             kept, and carries on once the switch is back on. The server says it
             in words (runner/parked.py); Resume is refused meanwhile. */}
+        {/* A Pi run still queued for the Pi lane: Pi runs go one at a time and only
+            there, so it waits its turn rather than starting anywhere else. The server
+            says it in words (api/routes.py _with_lane_wait). */}
+        {displayStatus === 'queued' && workflow?.queued_reason && (
+          <span
+            className="text-[11px] px-1.5 py-0.5 rounded border border-zinc-500/40 bg-zinc-500/15 text-zinc-900 dark:text-zinc-300 cursor-help"
+            title="Pi runs run one at a time, only in the Pi lane. This one starts when the lane is free."
+          >
+            {workflow.queued_reason}
+          </span>
+        )}
         {workflow?.pi_switched_off && (
           <span
             className="text-[11px] px-1.5 py-0.5 rounded border border-zinc-500/40 bg-zinc-500/15 text-zinc-900 dark:text-zinc-300 cursor-help"

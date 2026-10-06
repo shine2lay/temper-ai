@@ -3,9 +3,28 @@
 The API's Start, Resume, Fork and clean-up passes use it, and so does the worker's reaper when
 it carries a parked Pi run on after the owner's answer (runner/parked.py), so a run is put in
 the queue the same way whoever puts it there.
+
+It is one of the two places that write a run row (the server's direct spawn is the other), so
+it sets the run's lane mark on every insert and every re-queue (runner/lanes.py): a Pi run is
+claimed only by the Pi lane, whichever way it got here.
 """
 
 from __future__ import annotations
+
+from typing import Any
+
+from temper_ai.runner.lanes import (
+    KEEP_LANE,
+    LANE_KEY,
+    LANE_RECORD_KEY,
+    lane_of,
+    mark_lane,
+)
+
+#: What only the worker writes into a run's metadata, and a re-queue keeps: the box profile
+#: record (spawner/box_profile.py) and the Pi lane's record of the commits each attempt ran
+#: on (runner/pi_lane.py, SW-16).
+_WORKER_KEPT = ("box_profile", LANE_RECORD_KEY)
 
 
 class AlreadyQueued(Exception):  # noqa: N818 - a refusal, said as a fact
@@ -24,6 +43,8 @@ def queue_run(
     inputs: dict | None,
     start: str | None = None,
     extra: dict | None = None,
+    *,
+    lane: Any = KEEP_LANE,
 ) -> None:
     """Queue a run for the worker, which starts it in its own box.
 
@@ -35,6 +56,12 @@ def queue_run(
     A resumed run keeps its row: a finished one goes back to queued. One
     that is still queued or running is refused (AlreadyQueued), so a run never
     has two boxes.
+
+    ``lane`` is the run's lane, from the workflow the caller loaded
+    (``lanes.lane_for(nodes)``): ``"pi"`` for a Pi run, None for any other. A
+    re-queue whose caller didn't load the workflow passes nothing
+    (:data:`~temper_ai.runner.lanes.KEEP_LANE`) and the row keeps its own mark;
+    a new row then gets none.
     """
     from sqlmodel import select
 
@@ -42,9 +69,11 @@ def queue_run(
     from temper_ai.runner.models import WorkflowRun
 
     metadata: dict = {"start": start} if start else {}
-    # Only the worker writes a run's box profile record (spawner/box_profile.py): whatever
-    # asks for a run can't hand one in.
-    metadata.update({k: v for k, v in (extra or {}).items() if v and k != "box_profile"})
+    # Only the worker writes a run's box profile record (spawner/box_profile.py) and the Pi
+    # lane's commit record: whatever asks for a run can't hand one in.
+    # Nor its lane: only ``lane`` sets the mark.
+    metadata.update({k: v for k, v in (extra or {}).items()
+                     if v and k not in (*_WORKER_KEPT, LANE_KEY)})
     with get_session() as session:
         row = session.exec(
             select(WorkflowRun).where(WorkflowRun.execution_id == execution_id),
@@ -56,7 +85,7 @@ def queue_run(
                 workspace_path=workspace_path or "",
                 inputs=inputs or {},
                 status="queued",
-                spawner_metadata=metadata,
+                spawner_metadata=mark_lane(metadata, None if lane is KEEP_LANE else lane),
             ))
             return
         if row.status in ("queued", "running"):
@@ -68,9 +97,14 @@ def queue_run(
         row.spawner_kind = None
         row.spawner_handle = None
         # The run's box profile record stays: its generation and history (was it ever
-        # sealed?) decide what the next box may be (spawner/box_profile.py).
-        kept = (row.spawner_metadata or {}).get("box_profile")
-        row.spawner_metadata = metadata if kept is None else {**metadata, "box_profile": kept}
+        # sealed?) decide what the next box may be (spawner/box_profile.py). So does the Pi
+        # lane's record of the commit each attempt ran on (SW-16).
+        old = row.spawner_metadata or {}
+        metadata = {**metadata, **{k: old[k] for k in _WORKER_KEPT if old.get(k) is not None}}
+        # The lane is set again on every re-queue: a resumed or forked Pi run that lost its
+        # mark here would be claimed by the main worker (which then refuses its Pi steps).
+        row.spawner_metadata = mark_lane(
+            metadata, lane_of(row.spawner_metadata) if lane is KEEP_LANE else lane)
         row.cancel_requested = False
         row.started_at = None
         row.completed_at = None

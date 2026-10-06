@@ -192,7 +192,7 @@ def _code_tree(install: Install, main: str | None = None) -> None:
         "spawner/__init__.py": "",
         **{f"cli/{name}.py": STUB_PARSER
            for name in ("linear", "github", "slack", "telegram", "notion", "events", "check",
-                        "trim")},
+                        "trim", "pi")},
     }
     for rel, text in files.items():
         (code / rel).parent.mkdir(parents=True, exist_ok=True)

@@ -35,8 +35,13 @@ def main(raw: str) -> int:
                 f"the test tier's throwaway Postgres: {refused}")
             return 2
 
+    import pytest
+
     from tests.test_pi_agent import support as sup
 
+    # The crash worker is the Pi lane, as the test that started it is (its conftest); the
+    # process dies by SIGKILL, so nothing is undone.
+    sup.into_the_pi_lane(pytest.MonkeyPatch())
     guard = sup.NetGuard().install()
 
     from fastapi.testclient import TestClient

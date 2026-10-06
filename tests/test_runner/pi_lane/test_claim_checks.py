@@ -276,6 +276,96 @@ def test_account_1_in_the_settings_is_never_picked(claim, monkeypatch, tmp_path)
     assert ls.account_of("p1")["slot"] == "acct-c"
 
 
+def _row_now(eid: str) -> dict:
+    found = ls.row(eid)
+    return {"workflow_name": found.workflow_name, "inputs": found.inputs,
+            "workspace_path": found.workspace_path, "spawner_metadata": found.spawner_metadata}
+
+
+@pytest.mark.parametrize("stale", [True, False], ids=["stale-row", "fresh-row"])
+def test_the_account_that_won_the_run_is_checked_and_a_disallowed_winner_refuses(
+        claim, monkeypatch, tmp_path, stale):
+    """A claim whose row was read before another claim recorded the run's account (a double
+    claim, a race) gets the winner back: it is the run's account, checked like any recorded
+    one. Settings that no longer allow it refuse the run; the winner is never swapped or
+    picked again. A fresh row (the control) refuses the same way."""
+    ls.make_row("p1")
+    before = _row_now("p1")
+    record_account("p1", {"slot": "acct-b", "by": "room"})  # the other claim won
+    ls.team_settings(monkeypatch, tmp_path / "settings", account_slots=["acct-c"])
+    ls.write_room(claim.room, {"acct-c": {"five_hour": 1, "seven_day": 1}})
+    refusal = pi_lane.claim_checks("p1", before if stale else _row_now("p1"), [])
+    assert refusal is not None and refusal.kind == "account"
+    assert "the run's account acct-b is no longer allowed" in refusal.message
+    assert ls.account_of("p1")["slot"] == "acct-b"
+
+
+def test_a_stale_claim_whose_winner_is_still_allowed_runs_on_the_winner(claim):
+    ls.write_room(claim.room, {"acct-b": {"five_hour": 5, "seven_day": 70},
+                               "acct-c": {"five_hour": 5, "seven_day": 10}})
+    ls.make_row("p1")
+    before = _row_now("p1")
+    record_account("p1", {"slot": "acct-b", "by": "room"})  # the other claim won
+    assert pi_lane.claim_checks("p1", before, []) is None  # this claim would pick acct-c
+    assert ls.account_of("p1") == {"slot": "acct-b", "by": "room"}
+
+
+# --- what a refused claim says and stores (SW-52) ------------------------------------------------
+
+#: An inert token-shaped canary, built so that no literal token sits in the source.
+CANARY = "sk-ant-" + "oat01-" + "Q" * 40
+
+
+def _room_with(kind: str) -> bytes:
+    row = '{"slot": "acct-b", "status": "ok", "observed_at": "2026-10-06T20:00:00Z"'
+    if kind == "top-field":
+        return f'{{"schema_version": 1, "slots": [], "{CANARY}": 1}}'.encode()
+    if kind == "row-field":
+        return f'{{"schema_version": 1, "slots": [{row}, "{CANARY}": 1}}]}}'.encode()
+    if kind == "window-field":
+        return (f'{{"schema_version": 1, "slots": [{row}, "five_hour": '
+                f'{{"used_percent": 1, "{CANARY}": 1}}}}]}}').encode()
+    if kind == "schema-value":
+        return f'{{"schema_version": "{CANARY}", "slots": []}}'.encode()
+    if kind == "duplicate-key":
+        return f'{{"schema_version": 1, "slots": [], "{CANARY}": 1, "{CANARY}": 2}}'.encode()
+    if kind == "duplicate-slot":
+        twin = f'{{"slot": "{CANARY}", "status": "ok"}}'
+        return f'{{"schema_version": 1, "slots": [{twin}, {twin}]}}'.encode()
+    raise AssertionError(kind)
+
+
+@pytest.mark.parametrize("kind", ["top-field", "row-field", "window-field", "schema-value",
+                                  "duplicate-key", "duplicate-slot"])
+def test_a_refused_room_file_never_echoes_its_content_in_the_refusal_or_its_records(
+        claim, kind):
+    """A room file the reader refuses is named in fixed words: no key or value of the file
+    reaches the refusal, the run's row or its refused attempt (SW-52)."""
+    from temper_ai.pi_agent.token_scan import scan
+    from tests.test_pi_agent import support as sup
+
+    claim.room.write_bytes(_room_with(kind))
+    ls.make_row("p1")
+    refusal = claim.check("p1")
+    assert refusal is not None and refusal.kind == "account"
+    assert "account-room file" in refusal.message
+    assert not scan(refusal.message), "the refusal echoed the file"
+    pi_lane.record_refusal("p1", _row_now("p1"), refusal)
+    (attempt,) = sup.attempts("p1")
+    assert attempt["data"]["refused"] == "account"
+    assert not scan(str(attempt["data"]["error"])), "the stored attempt echoed the file"
+    nothing_recorded("p1")
+
+
+def test_a_refusal_s_words_leave_with_any_token_withheld():
+    """The boundary behind the fixed words: whatever a refusal is given, its message holds
+    no token by the time it is logged or stored."""
+    from temper_ai.pi_agent.token_scan import scan
+
+    refusal = pi_lane.Refusal("account", f"something went wrong near {CANARY}")
+    assert not scan(refusal.message) and refusal.message.startswith("something went wrong")
+
+
 # --- the logs of a Pi run (SW-52) ---------------------------------------------------------------
 
 

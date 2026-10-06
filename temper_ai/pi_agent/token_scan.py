@@ -159,7 +159,9 @@ def refuse_tokens(payload: object) -> None:
 
 
 def withhold(text: str) -> str:
-    """``text`` with every rule's match replaced by :data:`WITHHELD` (for logs only)."""
+    """``text`` with every rule's match replaced by :data:`WITHHELD`: for log lines and the
+    Pi lane's refusal words (runner/pi_lane.py ``Refusal``), never for content a run hands
+    on, which is refused instead."""
     for secret in _secrets():
         text = text.replace(secret, WITHHELD)
     for pattern in SHAPES.values():

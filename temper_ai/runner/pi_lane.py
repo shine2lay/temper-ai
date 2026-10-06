@@ -167,10 +167,16 @@ def worker_problem(spawner: Any) -> str | None:
 class Refusal:
     """Why a run process didn't start its run: ``kind`` is ``lane``, ``pi_preflight``,
     ``project_folder`` (the team's folder, checked on its real paths) or ``account`` (the
-    run's one account could not be settled)."""
+    run's one account could not be settled). Its message leaves with every login token
+    withheld: it is logged, stored on the run's row and in its refused attempt (SW-52)."""
 
     kind: str
     message: str
+
+    def __post_init__(self) -> None:
+        from temper_ai.pi_agent.token_scan import withhold
+
+        object.__setattr__(self, "message", withhold(str(self.message)))
 
 
 def check_run(execution_id: str, run_row: dict, *, start: str | None,
@@ -311,17 +317,11 @@ def claim_checks(execution_id: str, run_row: dict, nodes: Any) -> Refusal | None
         if problems:
             return Refusal("project_folder", "The Pi lane's checks of the team's project "
                                              "folder failed: " + "; ".join(problems))
-    from temper_ai.pi_agent.accounts import (
-        AccountError,
-        choose,
-        record_account,
-        recorded_account,
-    )
+    from temper_ai.pi_agent.accounts import AccountError, settle
 
     try:
-        account = choose(run_row, admitted=admitted_before(run_row))
-        if recorded_account(run_row) is None:
-            record_account(execution_id, account)  # an earlier claim's account stands
+        # The account the database keeps stands, checked like any recorded account.
+        settle(execution_id, run_row, admitted=admitted_before(run_row))
     except AccountError as exc:
         return Refusal("account", f"The Pi lane couldn't settle the run's account: {exc}")
     return None

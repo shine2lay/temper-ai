@@ -275,53 +275,50 @@ def _room_bytes(path: str) -> bytes:
     return b"".join(chunks)
 
 
-def _named(value: Any) -> str:
-    return repr(value)[:40]
-
-
 def read_room(path: str | Path, *, now: datetime | None = None) -> RoomReading:
     """The account-room file (version 1; the account-room interface), read once: every slot's
     row judged at ``now``. Raises :class:`AccountError` naming the file when the whole file
     is refused: missing, unreadable, a link, not a regular file, over 64 KiB, not JSON, a
     duplicate JSON key, another schema version, a field version 1 doesn't list, slots that
     aren't a list, or the same slot twice. A row that can't start a run only makes that slot
-    unusable (:class:`Room` ``unusable``)."""
+    unusable (:class:`Room` ``unusable``). Its words are fixed: they never echo a key or a
+    value from the file, which only ops' writer controls (SW-52)."""
     path = str(path)
     raw = _room_bytes(path)
     try:
         data = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_keys)
-    except _DuplicateKey as exc:
-        raise _file_problem(path, f"has the JSON key {_named(exc.args[0])} twice") from None
+    except _DuplicateKey:
+        raise _file_problem(path, "has a JSON key twice") from None
     except ValueError:  # not UTF-8, not JSON
         raise _file_problem(path, "is not JSON") from None
     if not isinstance(data, dict):
         raise _file_problem(path, "is not a JSON object")
-    unlisted = sorted(set(data) - _FILE_FIELDS)
-    if unlisted:
-        raise _file_problem(path, f"has a field version 1 doesn't list ({_named(unlisted[0])})")
+    if set(data) - _FILE_FIELDS:
+        raise _file_problem(path, "has a top-level field version 1 doesn't list")
     version = data.get("schema_version")
     if type(version) is not int or version != ROOM_SCHEMA_VERSION:
-        raise _file_problem(path, f"has schema_version {_named(version)}, not "
-                                  f"{ROOM_SCHEMA_VERSION}")
+        raise _file_problem(path, f"has no schema_version {ROOM_SCHEMA_VERSION}")
     rows = data.get("slots")
     if not isinstance(rows, list):
         raise _file_problem(path, "has slots that aren't a list")
     seen: dict[str, dict] = {}
+    rows_of: dict[str, int] = {}
     for n, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
             raise _file_problem(path, f"has slot row {n} that isn't an object")
-        unlisted = sorted(set(row) - _ROW_FIELDS) + sorted(
-            field for key, _name in _WINDOWS if isinstance(row.get(key), dict)
-            for field in set(row[key]) - _WINDOW_FIELDS)
+        unlisted = set(row) - _ROW_FIELDS or any(
+            set(row[key]) - _WINDOW_FIELDS for key, _name in _WINDOWS
+            if isinstance(row.get(key), dict))
         if unlisted:
-            raise _file_problem(path, f"has a field version 1 doesn't list "
-                                      f"({_named(unlisted[0])}, slot row {n})")
+            raise _file_problem(path, f"has a field version 1 doesn't list in slot row {n}")
         slot = row.get("slot")
         if not isinstance(slot, str) or not slot:
             raise _file_problem(path, f"has slot row {n} without a slot label")
         if slot in seen:
-            raise _file_problem(path, f"lists the slot {_named(slot)} twice")
+            raise _file_problem(path, f"lists one slot twice (slot rows {rows_of[slot]} "
+                                      f"and {n})")
         seen[slot] = row
+        rows_of[slot] = n
     when = now or utcnow()
     return RoomReading({slot: _judge(row, when) for slot, row in seen.items()},
                        hashlib.sha256(raw).hexdigest(), version)
@@ -373,14 +370,7 @@ def choose(run_row: dict, *, config: TeamConfig | None = None,
     cfg = config or load_team_config()
     kept = recorded_account(run_row)
     if kept is not None:
-        slot = str(kept["slot"])
-        why = slot_problem(slot)
-        if why:
-            raise AccountError(f"the run's account {slot} can't be used: {why}")
-        if slot not in cfg.account_slots:
-            raise AccountError(f"the run's account {slot} is no longer allowed (team setting "
-                               "account_slots); a run never moves to another account")
-        return kept
+        return _keep(kept, cfg)
     if admitted:
         raise AccountError("the run started before but has no account recorded; a run's "
                            "account is picked once, at its first claim, and never again "
@@ -397,6 +387,35 @@ def choose(run_row: dict, *, config: TeamConfig | None = None,
     return {"slot": room.slot, "picked_at": when.isoformat(), "by": "room",
             "room": room.figures(),
             "room_file": {"sha256": reading.sha256, "schema_version": reading.schema_version}}
+
+
+def _keep(kept: dict, cfg: TeamConfig) -> dict:
+    """The run's recorded account, if the settings still allow it; never another one."""
+    slot = str(kept["slot"])
+    why = slot_problem(slot)
+    if why:
+        raise AccountError(f"the run's account {slot} can't be used: {why}")
+    if slot not in cfg.account_slots:
+        raise AccountError(f"the run's account {slot} is no longer allowed (team setting "
+                           "account_slots); a run never moves to another account")
+    return kept
+
+
+def settle(execution_id: str, run_row: dict, *, admitted: bool = False,
+           config: TeamConfig | None = None, read: Callable[..., RoomReading] | None = None,
+           now: datetime | None = None) -> dict:
+    """The run's one account, settled at a claim: :func:`choose` on ``run_row``, then -- when
+    the row had none -- recorded. The account the database keeps is the run's account: when
+    an earlier claim recorded one first (a double claim, a race, a stale ``run_row``), that
+    one stands and is checked by the same rules as any recorded account, so a winner the
+    settings no longer allow refuses the run; it is never swapped or picked again. Raises
+    :class:`AccountError`."""
+    cfg = config or load_team_config()
+    account = choose(run_row, config=cfg, read=read, now=now, admitted=admitted)
+    if recorded_account(run_row) is not None:
+        return account
+    won = record_account(execution_id, account)
+    return account if won == account else _keep(won, cfg)
 
 
 def record_account(execution_id: str, account: dict) -> dict:

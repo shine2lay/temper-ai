@@ -98,7 +98,9 @@ The account-room file is ops' read-only snapshot of each slot's 5-hour and 7-day
 (schema version 1, ADR-M4-18). `pi-worker` reads it once at a run's **first** claim: one bounded
 read of a regular file, no links followed. A file that can't be trusted (missing, a link, too
 big, not JSON, a duplicate key, an unknown schema or field, a slot listed twice) refuses the
-run, naming the file. A slot can't be picked when it has no reading, is `unavailable`, has a
+run, naming the file in fixed words: a refusal never repeats a key or a value from the file,
+and every refusal's words leave with any login token withheld before they are logged or stored
+(SW-52). A slot can't be picked when it has no reading, is `unavailable`, has a
 missing, out-of-range or non-numeric figure, a reading 15 minutes old or more (or from the
 future), a reset time that has already passed, or 85% or more of its 5-hour or 90% or more of
 its 7-day use. Of the slots that pass, the one with the least 7-day use is picked; ties go to
@@ -111,7 +113,9 @@ once an account has room.
 The pick is recorded on the run's row (`spawner_metadata.pi_lane.account`: `slot`,
 `picked_at`, `by: room`, the slot's figures with their reading and reset times, and the file's
 sha256 and schema version) before any member works. A second claim of the same run finds it
-and keeps it; it is never overwritten. A resume or retry uses the recorded slot even if the
+and keeps it; it is never overwritten. A claim that loses that race (its row was read before
+another claim recorded the account) runs on the account the database kept, checked by the same
+rules as any recorded account: if the settings no longer allow it, the run is refused. A resume or retry uses the recorded slot even if the
 file changed, went stale or is gone; a run that ran before with no account recorded is refused,
 never picked again; and a slot the settings no longer allow refuses the run rather than move
 it to another account.

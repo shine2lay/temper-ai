@@ -1,0 +1,7 @@
+{
+  "route": "POST /api/runs/{execution_id}/cancel",
+  "status": 404,
+  "body": {
+    "detail": "Execution 'not-a-run' not found"
+  }
+}

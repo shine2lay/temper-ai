@@ -2,9 +2,9 @@
   "route": "GET /api/team/runs/{execution_id}",
   "status": 200,
   "body": {
-    "execution_id": "cb38f93e-8bdf-4a23-a2dd-51716546b2b7",
-    "trial_id": "ae5139aac164",
-    "workflow": "team-trial-ae5139aac164",
+    "execution_id": "e4399998-ad2e-4b1f-a5f2-50dea8c5bb64",
+    "trial_id": "068256457e0b",
+    "workflow": "team-trial-068256457e0b",
     "run_status": "running",
     "state": "running",
     "cost_usd": 0.0,
@@ -50,7 +50,7 @@
         "source": "/srv/example/projects/notes-app",
         "start_commit": null
       },
-      "started_at": "2026-10-06T08:30:48.393983+00:00",
+      "started_at": "2026-10-06T11:11:02.491840+00:00",
       "started_by": "unknown caller",
       "request_id": "r-1"
     },
@@ -76,8 +76,8 @@
         "last_turn": {
           "turn_no": 1,
           "state": "completed",
-          "started_at": "2026-10-06T08:30:48.643077+00:00",
-          "ended_at": "2026-10-06T08:30:48.887696+00:00",
+          "started_at": "2026-10-06T11:11:02.766532+00:00",
+          "ended_at": "2026-10-06T11:11:02.948899+00:00",
           "error": null
         }
       },
@@ -106,7 +106,7 @@
         "last_turn": {
           "turn_no": 1,
           "state": "running",
-          "started_at": "2026-10-06T08:30:48.991446+00:00",
+          "started_at": "2026-10-06T11:11:03.059487+00:00",
           "ended_at": null,
           "error": null
         }
@@ -115,10 +115,10 @@
     "open_waits": [],
     "reviews": [
       {
-        "review_id": "c0e209555f9e4ec49de58157e0102946",
+        "review_id": "971e9073fa0b482dbd13a7a014abb101",
         "round": 1,
         "state": "open",
-        "commit": "388c44789db97d15473748c5094603b9593f08c7",
+        "commit": "88721c99b3acc3a34c77f0682b8278567aafe661",
         "files_count": 2,
         "views": {},
         "decision": null,
@@ -132,9 +132,9 @@
           "event_type": "message: goal",
           "from_agent": "temper",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:48.558720+00:00",
+          "timestamp": "2026-10-06T11:11:02.703250+00:00",
           "data": {
-            "message_id": "988fe329fc974888943149d73a253e9e",
+            "message_id": "df93c18eadc74413a2344ced258b217d",
             "state": "consumed",
             "deliveries": 1,
             "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
@@ -145,23 +145,23 @@
         {
           "event_type": "turn 1: completed",
           "from_agent": "lead",
-          "timestamp": "2026-10-06T08:30:48.643077+00:00",
+          "timestamp": "2026-10-06T11:11:02.766532+00:00",
           "data": {
-            "turn_id": "8e62e33c24cb49ba870c4a7fda0dba05",
+            "turn_id": "1aa79eb97aed45ca8bfb38cffdf6dd3a",
             "turn_no": 1,
             "state": "completed",
-            "ended_at": "2026-10-06T08:30:48.887696+00:00"
+            "ended_at": "2026-10-06T11:11:02.948899+00:00"
           },
           "entry": "member_turn"
         },
         {
           "event_type": "review round 1",
           "from_agent": "lead",
-          "timestamp": "2026-10-06T08:30:48.974434+00:00",
+          "timestamp": "2026-10-06T11:11:03.033047+00:00",
           "data": {
-            "review_id": "c0e209555f9e4ec49de58157e0102946",
+            "review_id": "971e9073fa0b482dbd13a7a014abb101",
             "state": "open",
-            "commit": "388c44789db97d15473748c5094603b9593f08c7",
+            "commit": "88721c99b3acc3a34c77f0682b8278567aafe661",
             "files": {
               "WELCOME.md": "04fe31e747a3e648787d25327fcf2b81e48ffb6ed0941e7b29a12d715a37b995",
               "app.py": "03e693d9f2f687e0f40e36a8df7fcb4d1c22974012b7c2a55c000eb30f305824"
@@ -176,13 +176,13 @@
           "event_type": "message: review_request",
           "from_agent": "temper",
           "to_agent": "checker",
-          "timestamp": "2026-10-06T08:30:48.974993+00:00",
+          "timestamp": "2026-10-06T11:11:03.034260+00:00",
           "data": {
-            "message_id": "00b2389483ba4a00980fb961c91e5584",
+            "message_id": "3e08ceed30ff470a8a730a6039f7f6e5",
             "state": "consumed",
             "deliveries": 1,
-            "review_id": "c0e209555f9e4ec49de58157e0102946",
-            "preview": "Review c0e209555f9e4ec49de58157e0102946 (round 1) from lead: your project copy now holds exactly the version to review (commit 388c44789db9).\nThe team's goal: W..."
+            "review_id": "971e9073fa0b482dbd13a7a014abb101",
+            "preview": "Review 971e9073fa0b482dbd13a7a014abb101 (round 1) from lead: your project copy now holds exactly the version to review (commit 88721c99b3ac).\nThe team's goal: W..."
           },
           "entry": "message",
           "message_kind": "review_request"
@@ -191,13 +191,13 @@
           "event_type": "message: review_request",
           "from_agent": "temper",
           "to_agent": "maker",
-          "timestamp": "2026-10-06T08:30:48.975371+00:00",
+          "timestamp": "2026-10-06T11:11:03.035141+00:00",
           "data": {
-            "message_id": "e9d02d42aa7946f3bf3d06c15da8efd2",
+            "message_id": "1c61b953f781458f9f806feea3432cd5",
             "state": "pending",
             "deliveries": 0,
-            "review_id": "c0e209555f9e4ec49de58157e0102946",
-            "preview": "Review c0e209555f9e4ec49de58157e0102946 (round 1) from lead: your project copy now holds exactly the version to review (commit 388c44789db9).\nThe team's goal: W..."
+            "review_id": "971e9073fa0b482dbd13a7a014abb101",
+            "preview": "Review 971e9073fa0b482dbd13a7a014abb101 (round 1) from lead: your project copy now holds exactly the version to review (commit 88721c99b3ac).\nThe team's goal: W..."
           },
           "entry": "message",
           "message_kind": "review_request"
@@ -205,9 +205,9 @@
         {
           "event_type": "turn 1: running",
           "from_agent": "checker",
-          "timestamp": "2026-10-06T08:30:48.991446+00:00",
+          "timestamp": "2026-10-06T11:11:03.059487+00:00",
           "data": {
-            "turn_id": "3fc4f9b137da474a9f0d54f7e13d191f",
+            "turn_id": "084db21dc5a849008b2edd833bd778b4",
             "turn_no": 1,
             "state": "running",
             "ended_at": null
@@ -219,14 +219,14 @@
     },
     "owner_actions": [
       {
-        "at": "2026-10-06T08:30:48.427043",
+        "at": "2026-10-06T11:11:02.528363+00:00",
         "kind": "start",
         "by": "unknown caller",
         "source": "team_page",
         "request_id": "r-1",
         "detail": {
-          "workflow": "team-trial-ae5139aac164",
-          "trial_id": "ae5139aac164"
+          "workflow": "team-trial-068256457e0b",
+          "trial_id": "068256457e0b"
         }
       }
     ],

@@ -1,9 +1,12 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ExternalLink, RefreshCw, WifiOff } from 'lucide-react';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useTeamRun } from '@/hooks/useTeamRun';
-import { clockTime, firstLine } from '@/lib/teamText';
+import { useTeamStatus } from '@/hooks/useTeamStatus';
+import { useTeamAnswer, type AnswerResult } from '@/hooks/useTeamAnswer';
+import { resultPlace, teamWaits } from '@/lib/teamAnswer';
+import { clockTime, firstLine, waitTitle } from '@/lib/teamText';
 import { TeamNote } from '@/components/team/TeamNote';
 import { EngineQuote } from '@/components/team/TeamQuote';
 import { teamBtn, teamLink } from '@/components/team/teamUi';
@@ -14,6 +17,12 @@ import { WhoDidWhat } from '@/components/team/run/WhoDidWhat';
 import { RoundCard } from '@/components/team/run/RoundCard';
 import { MembersCard } from '@/components/team/run/MembersCard';
 import { GoalCard } from '@/components/team/run/GoalCard';
+import { NeedsYouCard } from '@/components/team/run/NeedsYouCard';
+import { AnswerResultNote } from '@/components/team/run/AnswerResultNote';
+import { OutcomeCard, ReservedDebrief } from '@/components/team/run/OutcomeCard';
+import { StopRunDialog } from '@/components/team/run/StopRunDialog';
+import { runResultHeading } from '@/components/team/run/runFocus';
+import type { TeamRun } from '@/types/team';
 
 function TryNow({ onClick }: { onClick: () => void }) {
   return (
@@ -33,6 +42,40 @@ function RunPageLink({ executionId }: { executionId: string }) {
   );
 }
 
+/**
+ * The last answer's result where the card was, once its question has
+ * closed. When the card it was in went away with the focus, the focus
+ * comes here, so the owner's place on the page isn't lost.
+ */
+function LoneResult({ result, executionId }: { result: AnswerResult; executionId: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) ref.current?.focus();
+  }, [result.seq]);
+  return <AnswerResultNote ref={ref} outcome={result.outcome} executionId={executionId} hasWords={false} />;
+}
+
+/** Stop run is offered while the team is live and not cut off. */
+function stoppable(run: TeamRun | null, ended: boolean): boolean {
+  return run !== null && !ended && run.outcome === null && run.state !== 'interrupted';
+}
+
+/**
+ * When Stop run goes away under the focus (the run has ended), the focus
+ * goes to the outcome's title instead of being lost on the page's body.
+ */
+function useFocusWhenStopGoes(canStop: boolean) {
+  const was = useRef(canStop);
+  useEffect(() => {
+    if (was.current && !canStop) {
+      const active = document.activeElement;
+      if (!active || active === document.body) runResultHeading()?.focus();
+    }
+    was.current = canStop;
+  }, [canStop]);
+}
+
 /** A plain frame for the moments there is no run to show yet. */
 function Frame({ children }: { children: ReactNode }) {
   return (
@@ -44,15 +87,22 @@ function Frame({ children }: { children: ReactNode }) {
 }
 
 /**
- * The run view: one team trial, read every 5 s while it is live. This is
- * the read-only view; answering, messages and stopping come with the next
- * part of the page.
+ * The run view: one team trial, read every 5 s while it is live and once
+ * right after each of the owner's actions. While Temper waits for the
+ * owner the needs-you card leads the page; an ended run shows its outcome.
  */
 export default function TeamRunView() {
   const { executionId = '' } = useParams();
   const read = useTeamRun(executionId);
   const { run } = read;
+  const { status } = useTeamStatus();
+  const sender = useTeamAnswer(executionId, read.refresh);
+  const [stopOpen, setStopOpen] = useState(false);
+  const canStop = stoppable(run, read.ended);
+  useFocusWhenStopGoes(canStop);
   useDocumentTitle(run ? `Team: ${firstLine(run.trial.goal) || run.trial_id}` : 'Team run');
+
+  const result = sender.result;
 
   if (!run) {
     if (read.notTeam !== null) {
@@ -88,6 +138,8 @@ export default function TeamRunView() {
   }
 
   const stale = read.failedAt !== null;
+  const { wait, next } = teamWaits(run);
+  const place = resultPlace(result?.waitId ?? null, wait?.wait_id ?? null, result?.openAfter ?? null);
   return (
     <div className="flex h-full flex-col overflow-auto bg-temper-bg">
       <RunHeader
@@ -95,7 +147,20 @@ export default function TeamRunView() {
         updatedAt={read.updatedAt}
         stale={stale}
         live={!read.ended && run.state !== 'interrupted'}
+        onStop={canStop ? () => setStopOpen(true) : undefined}
       />
+      {/* Stays open when the run ends meanwhile: Temper's answer (G13) is read in it. */}
+      <StopRunDialog
+        open={stopOpen}
+        onOpenChange={setStopOpen}
+        executionId={run.execution_id}
+        workflow={run.workflow}
+        reasonLimit={status?.limits.stop_reason_max_chars}
+        onStopped={read.refresh}
+      />
+      <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="team-needs-you-live">
+        {wait ? `Needs you: ${waitTitle(wait)}` : ''}
+      </p>
       <div className="flex flex-col gap-4 px-6 pt-4 pb-8">
         {stale && read.failedAt !== null && (
           <TeamNote tone="warn" icon={WifiOff} live action={<TryNow onClick={read.refresh} />}>
@@ -107,13 +172,31 @@ export default function TeamRunView() {
           </TeamNote>
         )}
         <RunStateCard run={run} />
+        {result && place === 'alone' && <LoneResult result={result} executionId={run.execution_id} />}
+        {wait && (
+          <NeedsYouCard
+            key={wait.wait_id}
+            run={run}
+            wait={wait}
+            next={next}
+            limits={status?.limits ?? null}
+            sender={sender}
+            result={place === 'card' ? result : null}
+          />
+        )}
+        {run.outcome && (
+          <>
+            <OutcomeCard run={run} />
+            <ReservedDebrief />
+          </>
+        )}
         <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_384px]">
           <div className="flex min-w-0 flex-col gap-4">
             <Timeline run={run} />
             <WhoDidWhat run={run} />
           </div>
           <div className="flex min-w-0 flex-col gap-4">
-            <RoundCard run={run} />
+            {!wait && <RoundCard run={run} />}
             <MembersCard run={run} />
             <GoalCard goal={run.trial.goal} />
           </div>

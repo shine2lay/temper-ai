@@ -3,14 +3,14 @@
   "status": 200,
   "body": {
     "status": "approved",
-    "wait_id": "e06c770c1bab45fda56dc8767fa63392",
-    "event_id": "7c216e39-8b88-416c-b94e-07e65f647348",
+    "wait_id": "341b21adc77844e88b87974fd95e2310",
+    "event_id": "a57caedd-b771-4e97-9e97-e69a8f73f8fd",
     "answer": "stop",
     "text": "We have what we need for now.",
     "repeated": false,
     "carries_on": true,
     "needs_resume": false,
     "by": "owner",
-    "at": "2026-10-06T08:30:42+00:00"
+    "at": "2026-10-06T11:11:00+00:00"
   }
 }

@@ -233,7 +233,13 @@ describe('words', () => {
   it('titles each kind of wait', () => {
     expect(waitTitle({ kind: 'pause', round: 3, member: null, turn_no: null })).toBe('Paused after round 3');
     expect(waitTitle({ kind: 'question', round: null, member: 'maker', turn_no: null })).toBe('maker asks you');
-    expect(waitTitle({ kind: 'recovery', round: null, member: 'qa', turn_no: 2 })).toBe("qa's turn 2 didn't finish");
+    expect(waitTitle({ kind: 'recovery', round: null, member: 'qa', turn_no: 2 })).toBe("qa's turn 2 was cut off");
+    expect(waitTitle({ kind: 'recovery', round: null, member: 'qa', turn_no: 2, why: 'failed' })).toBe(
+      "qa's turn 2 failed",
+    );
+    expect(
+      waitTitle({ kind: 'recovery', round: null, member: 'qa', turn_no: 2, why: 'usage limit: 429 rate_limit_error' }),
+    ).toBe("qa's turn 2 was cut off by a usage limit");
   });
 
   it('counts a run as ended only once its outcome is written and the run is over', () => {
@@ -342,20 +348,20 @@ describe('run view', () => {
     expect(links).toContain(`/workflow/${ID}`);
   });
 
-  it("shows a wait with Temper's question word for word, until answering is built", async () => {
+  it("shows a member's question word for word, with the answer it takes", async () => {
     serve({ run: [runQuestion] });
     showRun();
-    expect(await screen.findByRole('heading', { name: 'maker asks you' })).toBeInTheDocument();
-    expect(screen.getByText('Should the note mention the keyboard shortcut for a new note?')).toBeInTheDocument();
-    expect(screen.getByText('Answering on the Team page is still being built.')).toBeInTheDocument();
-    // Read-only: no answer buttons yet.
-    expect(screen.queryByRole('button', { name: /continue|stop/i })).toBeNull();
+    const heading = await screen.findByRole('heading', { name: /^maker asks you/ });
+    const card = within(heading.closest('section')!);
+    expect(card.getByText('Should the note mention the keyboard shortcut for a new note?')).toBeInTheDocument();
+    expect(card.getByRole('radio', { name: 'reply · needs words' })).not.toBeChecked();
+    expect(card.getByRole('button', { name: 'Send answer' })).toBeEnabled();
   });
 
   it("shows how a trial ended, with Temper's reason and the owner's words apart", async () => {
     serve({ run: [runStopped] });
     showRun();
-    const ended = await screen.findByRole('region', { name: /Ended/ });
+    const ended = await screen.findByRole('region', { name: 'Stopped' });
     expect(within(ended).getByText("Temper's reason")).toBeInTheDocument();
     expect(within(ended).getByText('stopped at the pause after round 1')).toBeInTheDocument();
     expect(within(ended).getByText('Your words')).toBeInTheDocument();

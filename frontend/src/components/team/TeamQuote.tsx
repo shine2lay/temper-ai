@@ -7,10 +7,23 @@ import { ownerWordsLabel, teamWho } from '@/lib/teamText';
  * a bar on the left. Shown as plain text: these strings come from the
  * engine and from members, so they are never rendered as HTML.
  */
-export function EngineQuote({ label, children, className }: { label?: ReactNode; children: string; className?: string }) {
+export function EngineQuote({
+  label,
+  children,
+  className,
+  labelClassName,
+}: {
+  label?: ReactNode;
+  children: string;
+  className?: string;
+  /** Extra classes for the label, e.g. the outcome card's capitals. */
+  labelClassName?: string;
+}) {
   return (
     <figure data-quote="engine" className={cn('m-0', className)}>
-      {label && <figcaption className="mb-1 text-xs font-semibold text-temper-text-muted">{label}</figcaption>}
+      {label && (
+        <figcaption className={cn('mb-1 text-xs font-semibold text-temper-text-muted', labelClassName)}>{label}</figcaption>
+      )}
       <blockquote className="m-0 border-l-[3px] border-temper-control py-1 pl-3 text-sm text-temper-text whitespace-pre-wrap break-words">
         {children}
       </blockquote>
@@ -23,7 +36,18 @@ export function EngineQuote({ label, children, className }: { label?: ReactNode;
  * quote, its own label ("Your words", "temper-ci's words", "Words from an
  * unknown caller"), and the unknown caller's red bar.
  */
-export function OwnerWords({ by, words, className }: { by: string | null | undefined; words: string; className?: string }) {
+export function OwnerWords({
+  by,
+  words,
+  className,
+  labelClassName,
+}: {
+  by: string | null | undefined;
+  words: string;
+  className?: string;
+  /** Extra classes for the label, e.g. the outcome card's capitals. */
+  labelClassName?: string;
+}) {
   const unknown = teamWho(by).kind === 'unknown';
   return (
     <figure data-quote="owner" className={cn('m-0', className)}>
@@ -31,6 +55,7 @@ export function OwnerWords({ by, words, className }: { by: string | null | undef
         className={cn(
           'mb-1 text-xs font-semibold',
           unknown ? 'text-[var(--team-unknown-text)]' : 'text-temper-text-muted',
+          labelClassName,
         )}
       >
         {ownerWordsLabel(by)}

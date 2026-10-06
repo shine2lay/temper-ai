@@ -1,0 +1,19 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 409,
+  "body": {
+    "message": "Already answered by unknown caller at 2026-10-06T11:11:14+00:00: the approval at 'trial.team', round 1 is closed, so this one changed nothing.",
+    "reason": "already_answered",
+    "event_id": "875a6c7a-ac28-4625-a235-2f37c839b587",
+    "node_name": "trial.team~ask-792ba56250b9454e8ee2b255f9fe4c22",
+    "path": "trial.team",
+    "round": 1,
+    "status": "approved",
+    "answered_by": "unknown caller",
+    "answered_at": "2026-10-06T11:11:14+00:00",
+    "request_id": null,
+    "replaced_by": null,
+    "opened_at": "2026-10-06T11:11:14.482437+00:00",
+    "answered_source": "api"
+  }
+}

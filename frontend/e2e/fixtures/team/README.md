@@ -35,12 +35,17 @@ Everything not listed under Derived came from the real routes:
 - `check-*`: a clean check, every problem at once, and each project problem on its own.
 - `trial-start-*`: started, started with a note, a repeated request id, and each refusal.
 - `run-*`: one file per team state (`starting` to `didnt_start`), plus variants: two open
-  waits, a held message, objections at the end, done after guidance, and stopped at each kind
-  of wait. `run-404` is a run that is not a team trial.
+  waits, a held message, objections at the end, done after guidance, stopped at each kind
+  of wait, and a member waiting after a cut-off turn, a failed turn (after a Resume), a
+  usage limit, and an answer that named no choice (asked again). `run-404` is a run that is
+  not a team trial.
 - `message-*`, `message-read-*`: sent (pending, held, repeated), each refusal, and one
   message opened (a member's and the owner's).
-- `answer-*`: each answer that was taken, and each refusal.
-- `cancel-*`: the run page's Stop run, its refusal, and a stop after the end.
+- `answer-*`: each answer that was taken, and each refusal, including an answer that reaches
+  Temper after Stop run closed its question (`answer-404-after-stop`) and one for a question
+  Temper already asked again (`answer-409-asked-again-old`).
+- `cancel-*`: the run page's Stop run, its refusal, a stop after the end, and a run that
+  doesn't exist (`cancel-404`).
 - `trials-*`: the list, page 2, filtered, running only, and empty.
 
 ## Derived
@@ -58,3 +63,10 @@ the fields that differ. Each file names its source in `derived_from`.
 | `answer-400-reply-needs-words`, `answer-400-reply-too-long` | `answer-400-guide-needs-words` | An unasked question can't be answered, so its reply checks never run in the harness. Texts word for word from the routes. |
 | `message-409-team-not-started`, `message-409-member-ended` | `message-409-team-ended` | Timing the harness can't hold. Texts word for word from the routes. |
 | `answer-403`, `message-403`, `trial-start-403` | the matching `-401` | A run's own key trying an owner action; the text comes from `temper_ai/api/caller.py`. |
+| `answer-200-needs-resume` | `answer-200-guide` | The answer is kept but the run isn't running (it can't be carried on in process). The message is the route's `NEEDS_RESUME`, word for word. |
+| `answer-409-replaced`, `answer-409-already-rejected` | `answer-409-already-answered` | A later wait took this one's place after the run was picked up again, and the run was stopped at this question; each body is `temper_ai/stage/gate.py`'s `refusal()` for that status. |
+| `run-stopped-by-ci`, `run-stopped-by-unknown`, `run-stopped-from-chat`, `run-cancelled-by-ci`, `run-cancelled-by-unknown`, `run-cancelled-from-chat` | `run-stopped`, `run-cancelled` | Who stopped the run and from where: the CI key through the API, a caller Temper can't name, and a chat. Only `outcome.by` and the stop's `by` and `source` change. |
+| `run-done-branch-not-made`, `run-done-no-project` | `run-done` | The branch name was taken (`why` "exists"), and a trial with no project (no branch). |
+| `run-failed-cant-go-on`, `run-failed-copies`, `run-failed-cant-open`, `run-failed-recorder` | `run-failed` | The other ways a team fails, in the words `temper_ai/pi_agent/team_leader.py` writes them; the problems come from the check's own texts. |
+| `run-done-big` | `run-done` | A 4,000-character summary and 500 files in the approved version. |
+| `run-stopped-script`, `run-member-waiting-question-script` | `run-stopped`, `run-member-waiting-question` | HTML in the owner's words and in a member's question, which must show as text. |

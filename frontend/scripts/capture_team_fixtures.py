@@ -195,6 +195,8 @@ def derive() -> None:
                           "message": "'checker' has left the team; nothing was sent"},
         "derived_from": "message-409-team-ended"})
 
+    derive_part_b()
+
     # 403: a run's own key tried an owner action (caller.py's words for a box's powers).
     from temper_ai.api import caller
 
@@ -207,6 +209,94 @@ def derive() -> None:
         write(name, {**base, "status": 403,
                      "body": {"detail": f"A run's own key may only {says}, not {action}."},
                      "derived_from": src})
+
+
+def derive_part_b() -> None:
+    """Part B's states the harness can't reach in process: a send kept while the run isn't
+    running, a gate refusal the scenarios don't hit, who stopped a run from elsewhere, the
+    other ways a done run's branch ends, and the other ways a team fails. Every text is the
+    engine's own (the function or the format it writes with)."""
+    from temper_ai.api.routes import NEEDS_RESUME
+    from temper_ai.stage.gate import REJECTED, REPLACED, refusal
+
+    # needs_resume: the answer is kept but the run is not running (the route's own words).
+    guided = read("answer-200-guide")
+    write("answer-200-needs-resume", {
+        **guided, "body": {**guided["body"], "carries_on": False, "needs_resume": True,
+                           "message": NEEDS_RESUME},
+        "derived_from": "answer-200-guide"})
+
+    # replaced: a later wait took this one's place (the gate's own refusal for that status).
+    answered = read("answer-409-already-answered")
+    gate = {k: v for k, v in answered["body"].items()
+            if k not in ("message", "reason", "answered_source")}
+    write("answer-409-replaced", {
+        **answered, "body": {**refusal({**gate, "status": REPLACED, "answered_by": None,
+                                         "answered_at": None}),
+                             "answered_source": "unknown"},
+        "derived_from": "answer-409-already-answered"})
+    # already rejected: the run was stopped at this question (Stop run from the run page).
+    write("answer-409-already-rejected", {
+        **answered, "body": {**refusal({**gate, "status": REJECTED}), "answered_source": "run_page"},
+        "derived_from": "answer-409-already-answered"})
+
+    # who stopped it (R12v): the CI key through the API, a caller Temper can't name, a chat.
+    for src, kind in (("run-stopped", "answer"), ("run-cancelled", "stop")):
+        for slug, by, source in (("by-ci", "temper-ci", "api"),
+                                 ("by-unknown", "unknown caller", "unknown"),
+                                 ("from-chat", "owner", "chat")):
+            out = copy.deepcopy(read(src))
+            body = out["body"]
+            body["outcome"]["by"] = by
+            for action in body["owner_actions"]:
+                if action["kind"] == kind:
+                    action["by"], action["source"] = by, source
+            write(f"{src}-{slug}", {**out, "derived_from": src})
+
+    # a done run's branch: not made (the name was taken), and no project at all.
+    done = read("run-done")
+    taken = copy.deepcopy(done)
+    taken["body"]["outcome"]["done"]["branch"].update(made=False, why="exists")
+    write("run-done-branch-not-made", {**taken, "derived_from": "run-done"})
+    empty = copy.deepcopy(done)
+    empty["body"]["trial"]["project"] = None
+    empty["body"]["outcome"]["done"]["branch"] = None
+    write("run-done-no-project", {**empty, "derived_from": "run-done"})
+
+    # the other ways a team fails (R14v), in team_leader.py's words.
+    problems = [p["text"] for p in read("check-project-dirty")["body"]["problems"]]
+    problems += ["member 'checker': Bash is off until owner-only writes are enforced (#45)"]
+    failed = read("run-failed")
+    for slug, reason, listed in (
+            ("cant-go-on", "the team can't go on: " + "; ".join(problems), problems),
+            ("copies", "the team's project copies could not be made: git clone exited 128: "
+                       "fatal: repository '/srv/example/projects/notes-app' does not exist", []),
+            ("cant-open", "the team can't open: another attempt holds the team", []),
+            ("recorder", "the team needs the run's event recorder and the worker box config", [])):
+        out = copy.deepcopy(failed)
+        out["body"]["outcome"].update(reason=reason, problems=listed)
+        write(f"run-failed-{slug}", {**out, "derived_from": "run-failed"})
+
+    # S4: a 4,000-character summary and 500 files in the approved version.
+    big = copy.deepcopy(done)
+    line = "The team rewrote the importer in small steps, each reviewed. "
+    summary = "## What changed\n\n" + line * 30 + "\n\n## Still open\n\n"
+    summary += "".join(f"- step {i}: <b>not bold</b> stays text\n" for i in range(1, 60))
+    big["body"]["outcome"]["done"]["summary"] = summary[:4000]
+    big["body"]["outcome"]["done"]["files"] = [
+        {"path": f"src/importer/step_{i:03}.py", "sha256": f"{i:064x}"} for i in range(500)]
+    write("run-done-big", {**big, "derived_from": "run-done"})
+
+    # S7: HTML in the owner's words and in a member's question stays text.
+    html = "Stop. <script>alert('boards')</script> <b>bold?</b> <img src=x onerror=alert(1)> & thanks"
+    stopped = copy.deepcopy(read("run-stopped"))
+    stopped["body"]["outcome"]["owner_words"] = html
+    write("run-stopped-script", {**stopped, "derived_from": "run-stopped"})
+    asking = copy.deepcopy(read("run-member-waiting-question"))
+    for wait in asking["body"]["open_waits"]:
+        wait["question"] = "Should the note say " + html + "?"
+    write("run-member-waiting-question-script",
+          {**asking, "derived_from": "run-member-waiting-question"})
 
 
 def check_clean() -> None:
@@ -562,6 +652,10 @@ def test_done(team):
     s.save("cancel-ended", CANCEL, team.client.post(
         f"/api/runs/{eid}/cancel", json={"reason": "too late"},
         headers={**ta.key(OWNER_KEY), **ORIGIN}))
+    r = team.client.post("/api/runs/not-a-run/cancel", json={"reason": ""},
+                         headers={**ta.key(OWNER_KEY), **ORIGIN})
+    s.save("cancel-404", CANCEL, r)
+    assert r.status_code == 404, r.text
 
 
 def test_done_with_objections(team):
@@ -656,7 +750,7 @@ def test_cancelled_from_the_run_page(team):
     s = team.saver
     rounds(team.led, ["keep_going", "done"])
     eid = start(team, trial(team, "k-1", pause_after_rounds=1))["execution_id"]
-    ta.parked(team, eid, 1)
+    wait = ta.parked(team, eid, 1)
     head = {**ta.key(OWNER_KEY), **ORIGIN}
     r = team.client.post(f"/api/runs/{eid}/cancel", json={"reason": "c" * 2001}, headers=head)
     s.save("cancel-400-too-long", CANCEL, r)
@@ -674,6 +768,12 @@ def test_cancelled_from_the_run_page(team):
     sup.wait_for(words, what="the cancel's words on the outcome")
     got = save_run(team, "run-cancelled", eid)
     assert got["state"] == "stopped" and got["outcome"]["decision"] == "cancelled", got
+    # an answer that reaches Temper after Stop run closed the question
+    r = ta.answer(team, eid, wait["wait_id"], "continue", rid="k-late", auth=OWNER_KEY)
+    reason = r.json().get("reason", "") if r.status_code == 409 else ""
+    s.save(f"answer-{r.status_code}-after-stop{'-' + reason.replace('_', '-') if reason else ''}",
+           ANSWER, r)
+    assert r.status_code in (404, 409), r.text
 
 
 def test_quiet_then_stopped(team):
@@ -708,6 +808,64 @@ def test_member_waiting_after_a_cut_off_turn(team):
     assert pw.wait_ended(eid, 2)[-1]["status"] == "failed"
     got = save_run(team, "run-stopped-recovery", eid)
     assert got["state"] == "stopped" and got["run_status"] == "failed", got
+
+
+def test_member_waiting_after_a_failed_turn(team):
+    """member_waiting at a failed turn: the run failed, and after a Resume Temper asks retry
+    or stop (N1), never an automatic re-run."""
+    rounds(team.led, ["done"])
+    ts.SCRIPTS["lead"].insert(0, [{"error": "400 invalid_request_error: the request was "
+                                            "refused"}])
+    eid = start(team, trial(team, "wf-1"))["execution_id"]
+    assert pw.wait_ended(eid, 1)[-1]["status"] == "failed"
+    r = team.client.post(f"/api/runs/{eid}/resume", json={},
+                         headers={**ta.key(OWNER_KEY), **ORIGIN})
+    assert r.status_code == 200, r.text
+    wait = ta.parked(team, eid, 2)
+    got = save_run(team, "run-member-waiting-failed", eid)
+    assert got["state"] == "member_waiting", got["state"]
+    assert [a["answer"] for a in wait["answers"]] == ["retry", "stop"], wait
+    r = ta.answer(team, eid, wait["wait_id"], "stop", rid="wf-stop", auth=OWNER_KEY)
+    assert r.status_code == 200, r.text
+    pw.wait_ended(eid, 3)
+
+
+def test_member_waiting_asked_again(team):
+    """Words naming no choice at a cut-off turn's wait (the run page's GateModal) decide
+    nothing: Temper asks again in a new wait, and the old one is answered."""
+    s = team.saver
+    rounds(team.led, ["done"])
+    ts.SCRIPTS["lead"].insert(0, [ts.send("maker", "Starting on the welcome note now."),
+                                  {"die": True}])
+    eid = start(team, trial(team, "aa-1"))["execution_id"]
+    wait = ta.parked(team, eid, 1)
+    r = pw.pick(team.client, eid, wait["node_name"], event_id=wait["event_id"],
+                question=wait["question"], custom="not sure yet")
+    assert r.status_code == 200, r.text
+    again = ta.parked(team, eid, 2)
+    got = save_run(team, "run-member-waiting-asked-again", eid)
+    assert again["asked_again"] == 1 and again["wait_id"] != wait["wait_id"], again
+    assert got["state"] == "member_waiting", got["state"]
+    r = ta.answer(team, eid, again["wait_id"], "stop", rid="aa-stop", auth=OWNER_KEY)
+    assert r.status_code == 200, r.text
+    pw.wait_ended(eid, 3)
+    r = ta.answer(team, eid, wait["wait_id"], "retry", rid="aa-old")
+    s.save("answer-409-asked-again-old", ANSWER, r)
+    assert r.status_code == 409, r.text
+
+
+def test_member_waiting_at_a_usage_limit(team):
+    """A usage limit holds the turn for the owner, naming the limit (member.usage_limit)."""
+    rounds(team.led, ["done"])
+    ts.SCRIPTS["lead"].insert(0, [{"error": sup.USAGE_LIMIT_ERROR}])
+    eid = start(team, trial(team, "ul-1"))["execution_id"]
+    wait = ta.parked(team, eid, 1)
+    got = save_run(team, "run-member-waiting-usage-limit", eid)
+    assert got["state"] == "member_waiting", got["state"]
+    assert (wait["why"] or "").startswith("usage limit: "), wait
+    r = ta.answer(team, eid, wait["wait_id"], "stop", rid="ul-stop", auth=OWNER_KEY)
+    assert r.status_code == 200, r.text
+    pw.wait_ended(eid, 2)
 
 
 def test_failed(team):

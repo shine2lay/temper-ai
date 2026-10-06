@@ -2,10 +2,10 @@
   "route": "POST /api/team/trials",
   "status": 201,
   "body": {
-    "trial_id": "610212b71c8c",
-    "execution_id": "10b1f9e9-af4a-4855-babe-7c024c2ff643",
+    "trial_id": "f9f192c3a3e2",
+    "execution_id": "1a861036-533c-4a3e-8795-398c47939290",
     "status": "running",
-    "workflow": "team-trial-610212b71c8c",
+    "workflow": "team-trial-f9f192c3a3e2",
     "repeated": false,
     "notes": [
       {

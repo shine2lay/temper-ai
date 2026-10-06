@@ -5,9 +5,9 @@
     "total": 4,
     "trials": [
       {
-        "trial_id": "f1db7f9f5e3a",
-        "execution_id": "5e25a530-5e03-4bdb-bef2-4e0ab55ec3e0",
-        "workflow": "team-trial-f1db7f9f5e3a",
+        "trial_id": "e0a7bfe2036f",
+        "execution_id": "7a4d7d5b-aa45-476c-8820-7577c1abe18c",
+        "workflow": "team-trial-e0a7bfe2036f",
         "goal_first_line": "Name the three buttons on the share dialog.",
         "leader": "lead",
         "members": [
@@ -29,14 +29,14 @@
         "decision": null,
         "round": 1,
         "cost_usd": 0.0,
-        "started_at": "2026-10-06T08:30:37.258986+00:00",
+        "started_at": "2026-10-06T11:11:10.912093+00:00",
         "started_by": "temper-ci",
         "ended_at": null
       },
       {
-        "trial_id": "19e9ee6f56ae",
-        "execution_id": "96f858af-9dab-4465-b2d4-05f21c495c9d",
-        "workflow": "team-trial-19e9ee6f56ae",
+        "trial_id": "c410ef61ec7d",
+        "execution_id": "4b031a5a-74d2-454c-881f-d720686b0f84",
+        "workflow": "team-trial-c410ef61ec7d",
         "goal_first_line": "Tidy the settings page's wording.",
         "leader": "lead",
         "members": [
@@ -58,14 +58,14 @@
         "decision": "stopped",
         "round": 1,
         "cost_usd": 0.0,
-        "started_at": "2026-10-06T08:30:35.600860+00:00",
+        "started_at": "2026-10-06T11:11:09.057268+00:00",
         "started_by": "unknown caller",
-        "ended_at": "2026-10-06T08:30:36.938632+00:00"
+        "ended_at": "2026-10-06T11:11:10.571422+00:00"
       },
       {
-        "trial_id": "7d415d3129dd",
-        "execution_id": "bb5ebc9f-17be-47bf-895d-aedf55d60136",
-        "workflow": "team-trial-7d415d3129dd",
+        "trial_id": "1fc2f2e127c1",
+        "execution_id": "2ea02165-b4fb-4fba-b750-16c728a9c28f",
+        "workflow": "team-trial-1fc2f2e127c1",
         "goal_first_line": "Make the empty notes list say what to do first.",
         "leader": "lead",
         "members": [
@@ -87,14 +87,14 @@
         "decision": "failed",
         "round": 0,
         "cost_usd": 0.0,
-        "started_at": "2026-10-06T08:30:35.154942+00:00",
+        "started_at": "2026-10-06T11:11:08.551346+00:00",
         "started_by": "unknown caller",
-        "ended_at": "2026-10-06T08:30:35.321388+00:00"
+        "ended_at": "2026-10-06T11:11:08.737178+00:00"
       },
       {
-        "trial_id": "eddfc45293ee",
-        "execution_id": "c6c0c6b1-9625-4930-b9e5-7070e41d8b25",
-        "workflow": "team-trial-eddfc45293ee",
+        "trial_id": "0711274fbef7",
+        "execution_id": "5aa60745-2d70-4415-9192-de8c41b6b1de",
+        "workflow": "team-trial-0711274fbef7",
         "goal_first_line": "Write a short welcome note for the notes app's first screen.",
         "leader": "lead",
         "members": [
@@ -116,9 +116,9 @@
         "decision": "done",
         "round": 1,
         "cost_usd": 0.0,
-        "started_at": "2026-10-06T08:30:33.533568+00:00",
+        "started_at": "2026-10-06T11:11:06.796664+00:00",
         "started_by": "unknown caller",
-        "ended_at": "2026-10-06T08:30:34.875186+00:00"
+        "ended_at": "2026-10-06T11:11:08.188305+00:00"
       }
     ]
   }

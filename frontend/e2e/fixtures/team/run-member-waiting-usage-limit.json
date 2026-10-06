@@ -1,0 +1,206 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "10d0875c-50be-4753-aa2f-f889bb41a7d6",
+    "trial_id": "ba30b30da7e5",
+    "workflow": "team-trial-ba30b30da7e5",
+    "run_status": "waiting",
+    "state": "member_waiting",
+    "cost_usd": 0.0,
+    "trial": {
+      "goal": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is shared until you choose to share it.",
+      "leader": "lead",
+      "members": [
+        {
+          "name": "lead",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 3,
+      "communication": "all",
+      "project": {
+        "source": "/srv/example/projects/notes-app",
+        "start_commit": null
+      },
+      "started_at": "2026-10-06T11:10:43.792712+00:00",
+      "started_by": "unknown caller",
+      "request_id": "ul-1"
+    },
+    "round": {
+      "current": 0,
+      "keep_goings": 0,
+      "pause_after_rounds": 3
+    },
+    "members": [
+      {
+        "name": "lead",
+        "role": "planner",
+        "leader": true,
+        "activity": "waiting_on_owner",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 1,
+          "state": "uncertain",
+          "started_at": "2026-10-06T11:10:44.076308+00:00",
+          "ended_at": "2026-10-06T11:10:44.191140+00:00",
+          "error": "usage limit: the last model call failed: 429 rate_limit_error: You have reached your usage limit; it resets at 03:00."
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      }
+    ],
+    "open_waits": [
+      {
+        "wait_id": "070af5fdcb964f1bb4776d46af924463",
+        "event_id": "97dadc64-6e0a-4c80-bad5-4206248e4e86",
+        "node_name": "trial.team~ask-070af5fdcb964f1bb4776d46af924463",
+        "asked": true,
+        "kind": "recovery",
+        "header": "lead turn 1",
+        "question": "lead's turn 1 did not finish (usage limit: the last model call failed: 429 rate_limit_error: You have reached your usage limit; it resets at 03:00.); the model may have acted (its prompt was sent).",
+        "reply_hint": "Reply 'accept' to keep what it did without running it again, or 'retry' to send its messages again.",
+        "answers": [
+          {
+            "answer": "accept",
+            "needs_text": "none",
+            "means": "Keep what lead's turn did, without running it again."
+          },
+          {
+            "answer": "retry",
+            "needs_text": "none",
+            "means": "lead gets the same messages again in a new turn."
+          },
+          {
+            "answer": "stop",
+            "needs_text": "optional",
+            "means": "The team stops here and the run ends failed. Any words you give are kept with it."
+          }
+        ],
+        "round": null,
+        "member": "lead",
+        "turn_no": 1,
+        "why": "usage limit: the last model call failed: 429 rate_limit_error: You have reached your usage limit; it resets at 03:00.",
+        "asked_again": 0,
+        "opened_at": "2026-10-06T11:10:44.192796+00:00"
+      }
+    ],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:44.003190+00:00",
+          "data": {
+            "message_id": "8f23d03f98e04535b9ea9f500587ca7f",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: uncertain",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:44.076308+00:00",
+          "data": {
+            "turn_id": "fbaa4e92e31246cab71d5b333172cec3",
+            "turn_no": 1,
+            "state": "uncertain",
+            "ended_at": "2026-10-06T11:10:44.191140+00:00",
+            "error": "usage limit: the last model call failed: 429 rate_limit_error: You have reached your usage limit; it resets at 03:00."
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "owner wait: recovery",
+          "from_agent": "temper",
+          "to_agent": "owner",
+          "timestamp": "2026-10-06T11:10:44.192796+00:00",
+          "data": {
+            "wait_id": "070af5fdcb964f1bb4776d46af924463",
+            "state": "open",
+            "member": "lead",
+            "turn_no": 1
+          },
+          "entry": "owner_wait",
+          "wait_kind": "recovery"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-06T11:10:43.876767+00:00",
+        "kind": "start",
+        "by": "unknown caller",
+        "source": "team_page",
+        "request_id": "ul-1",
+        "detail": {
+          "workflow": "team-trial-ba30b30da7e5",
+          "trial_id": "ba30b30da7e5"
+        }
+      }
+    ],
+    "outcome": null
+  }
+}

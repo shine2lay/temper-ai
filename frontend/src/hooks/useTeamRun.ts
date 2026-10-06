@@ -19,7 +19,8 @@ export interface TeamRunRead {
   /** The first read failed and there is nothing to show. */
   firstReadFailed: boolean;
   ended: boolean;
-  refresh: () => void;
+  /** Reads the run now; resolves with what was read, or null when the read failed. */
+  refresh: () => Promise<TeamRun | null>;
 }
 
 /**
@@ -62,8 +63,6 @@ export function useTeamRun(executionId: string, { enabled = true }: { enabled?: 
     updatedAt: run ? query.dataUpdatedAt : null,
     firstReadFailed: !run && query.isError && notTeam === null,
     ended: run ? teamRunEnded(run) : false,
-    refresh: () => {
-      void query.refetch();
-    },
+    refresh: () => query.refetch().then((r) => (r.isError ? null : (r.data ?? null))),
   };
 }

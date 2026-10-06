@@ -11,6 +11,12 @@ export const teamBtn = {
   secondary: `${BTN} min-h-8 px-3 text-sm bg-temper-surface text-temper-text border-temper-control hover:bg-temper-accent/10`,
   ghostXs: `${BTN} min-h-7 px-2.5 text-xs bg-transparent text-temper-text border-transparent hover:bg-temper-surface`,
   secondaryXs: `${BTN} min-h-7 px-2.5 text-xs bg-temper-surface text-temper-text border-temper-control hover:bg-temper-accent/10`,
+  /** Stop run and its kin: red words and outline, no fill. */
+  danger: `${BTN} min-h-8 px-3 text-sm bg-transparent text-[var(--badge-failed-text)] border-[var(--badge-failed-border)] hover:bg-[var(--badge-failed-bg)]`,
+  /** The 36 px buttons of a card's or a dialog's footer. */
+  primaryMd: `${BTN} min-h-9 px-4 text-sm bg-temper-accent text-temper-on-accent border-transparent hover:bg-temper-accent-dim`,
+  secondaryMd: `${BTN} min-h-9 px-4 text-sm bg-temper-surface text-temper-text border-temper-control hover:bg-temper-accent/10`,
+  dangerMd: `${BTN} min-h-9 px-4 text-sm bg-transparent text-[var(--badge-failed-text)] border-[var(--badge-failed-border)] hover:bg-[var(--badge-failed-bg)]`,
 } as const;
 
 /** A card: panel colour, border, 8 px corners. */

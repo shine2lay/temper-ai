@@ -1,0 +1,20 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 409,
+  "body": {
+    "message": "This approval at 'trial.team', round 1 was replaced: the run was picked up again and asks again in a new one. Nothing was changed; answer the open one.",
+    "reason": "replaced",
+    "event_id": "a14976c5-d755-40a0-b789-0c1edbba39a6",
+    "node_name": "trial.team~ask-8ec49a8cd4214791915985fd851feea9",
+    "path": "trial.team",
+    "round": 1,
+    "status": "replaced",
+    "answered_by": null,
+    "answered_at": null,
+    "request_id": "a-1",
+    "replaced_by": null,
+    "opened_at": "2026-10-06T11:10:51.701976+00:00",
+    "answered_source": "unknown"
+  },
+  "derived_from": "answer-409-already-answered"
+}

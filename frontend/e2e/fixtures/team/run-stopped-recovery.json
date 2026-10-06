@@ -2,9 +2,9 @@
   "route": "GET /api/team/runs/{execution_id}",
   "status": 200,
   "body": {
-    "execution_id": "8fa23cd6-25b2-4053-b3de-0c70123876ea",
-    "trial_id": "1fa0c1e31d24",
-    "workflow": "team-trial-1fa0c1e31d24",
+    "execution_id": "089557f1-98cf-4c0f-ac3d-b59e2701f719",
+    "trial_id": "d13019253e50",
+    "workflow": "team-trial-d13019253e50",
     "run_status": "failed",
     "state": "stopped",
     "cost_usd": 0.0,
@@ -50,7 +50,7 @@
         "source": "/srv/example/projects/notes-app",
         "start_commit": null
       },
-      "started_at": "2026-10-06T08:30:50.962363+00:00",
+      "started_at": "2026-10-06T11:10:54.018897+00:00",
       "started_by": "unknown caller",
       "request_id": "w-1"
     },
@@ -76,8 +76,8 @@
         "last_turn": {
           "turn_no": 1,
           "state": "failed",
-          "started_at": "2026-10-06T08:30:51.214093+00:00",
-          "ended_at": "2026-10-06T08:30:51.791005+00:00",
+          "started_at": "2026-10-06T11:10:54.270516+00:00",
+          "ended_at": "2026-10-06T11:10:54.846005+00:00",
           "error": "Pi stopped before it settled: the turn did not finish; the worker stopped answering (protocol_eof); the Pi session on disk did not end with a settled answer"
         }
       },
@@ -114,9 +114,9 @@
           "event_type": "message: goal",
           "from_agent": "temper",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:51.161324+00:00",
+          "timestamp": "2026-10-06T11:10:54.225692+00:00",
           "data": {
-            "message_id": "f993b173b06c42bb9204cf87703ac5ba",
+            "message_id": "22d4df43bf8b4344a1c1ce0a6d22bb18",
             "state": "consumed",
             "deliveries": 1,
             "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
@@ -127,12 +127,12 @@
         {
           "event_type": "turn 1: failed",
           "from_agent": "lead",
-          "timestamp": "2026-10-06T08:30:51.214093+00:00",
+          "timestamp": "2026-10-06T11:10:54.270516+00:00",
           "data": {
-            "turn_id": "fea0ac1a77014fbe87294731616b3493",
+            "turn_id": "9ddc6d3391dd4e5d9d243a01d25116c4",
             "turn_no": 1,
             "state": "failed",
-            "ended_at": "2026-10-06T08:30:51.791005+00:00",
+            "ended_at": "2026-10-06T11:10:54.846005+00:00",
             "error": "Pi stopped before it settled: the turn did not finish; the worker stopped answering (protocol_eof); the Pi session on disk did not end with a settled answer"
           },
           "entry": "member_turn"
@@ -141,9 +141,9 @@
           "event_type": "message: info",
           "from_agent": "lead",
           "to_agent": "maker",
-          "timestamp": "2026-10-06T08:30:51.276819+00:00",
+          "timestamp": "2026-10-06T11:10:54.338704+00:00",
           "data": {
-            "message_id": "ed1a698db0eb4832a128d4b4bb5f6eda",
+            "message_id": "bf158d3a481643c59360b64537dce141",
             "state": "undelivered",
             "deliveries": 0,
             "undelivered": "turn_failed",
@@ -156,9 +156,9 @@
           "event_type": "owner wait: recovery",
           "from_agent": "temper",
           "to_agent": "owner",
-          "timestamp": "2026-10-06T08:30:51.405225+00:00",
+          "timestamp": "2026-10-06T11:10:54.476660+00:00",
           "data": {
-            "wait_id": "bafb5fe25c144807af2549d9a9c86e46",
+            "wait_id": "23029ffeb4cf4f85b0b54ff8af991de8",
             "state": "decided",
             "member": "lead",
             "turn_no": 1,
@@ -171,9 +171,9 @@
           "event_type": "owner answer: stop",
           "from_agent": "owner",
           "to_agent": "temper",
-          "timestamp": "2026-10-06T08:30:51.790280+00:00",
+          "timestamp": "2026-10-06T11:10:54.845346+00:00",
           "data": {
-            "wait_id": "bafb5fe25c144807af2549d9a9c86e46",
+            "wait_id": "23029ffeb4cf4f85b0b54ff8af991de8",
             "answer": "stop",
             "answered_by": "owner",
             "answered_source": "team_page",
@@ -199,24 +199,24 @@
     },
     "owner_actions": [
       {
-        "at": "2026-10-06T08:30:50.998586",
+        "at": "2026-10-06T11:10:54.045084+00:00",
         "kind": "start",
         "by": "unknown caller",
         "source": "team_page",
         "request_id": "w-1",
         "detail": {
-          "workflow": "team-trial-1fa0c1e31d24",
-          "trial_id": "1fa0c1e31d24"
+          "workflow": "team-trial-d13019253e50",
+          "trial_id": "d13019253e50"
         }
       },
       {
-        "at": "2026-10-06T08:30:51.790280+00:00",
+        "at": "2026-10-06T11:10:54.845346+00:00",
         "kind": "answer",
         "by": "owner",
         "source": "team_page",
         "request_id": "w-stop",
         "detail": {
-          "wait_id": "bafb5fe25c144807af2549d9a9c86e46",
+          "wait_id": "23029ffeb4cf4f85b0b54ff8af991de8",
           "wait_kind": "recovery",
           "answer": "stop"
         }
@@ -228,7 +228,7 @@
       "owner_words": "This keeps breaking; I'll look later.",
       "problems": [],
       "by": "owner",
-      "at": "2026-10-06T08:30:51.858277+00:00",
+      "at": "2026-10-06T11:10:54.913056+00:00",
       "done": null
     }
   }

@@ -1,0 +1,167 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "82bd4944-6968-40df-861f-6d9cf986f45a",
+    "trial_id": "a1ffd247926f",
+    "workflow": "team-trial-a1ffd247926f",
+    "run_status": "failed",
+    "state": "failed",
+    "cost_usd": 0.0,
+    "trial": {
+      "goal": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is shared until you choose to share it.",
+      "leader": "lead",
+      "members": [
+        {
+          "name": "lead",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 3,
+      "communication": "all",
+      "project": {
+        "source": "/srv/example/projects/notes-app",
+        "start_commit": null
+      },
+      "started_at": "2026-10-06T11:11:15.680568+00:00",
+      "started_by": "unknown caller",
+      "request_id": "f-1"
+    },
+    "round": {
+      "current": 0,
+      "keep_goings": 0,
+      "pause_after_rounds": 3
+    },
+    "members": [
+      {
+        "name": "lead",
+        "role": "planner",
+        "leader": true,
+        "activity": "failed",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 1,
+          "state": "failed",
+          "started_at": "2026-10-06T11:11:15.928483+00:00",
+          "ended_at": "2026-10-06T11:11:16.040016+00:00",
+          "error": "lead (planner) turn 1 failed: the last model call failed: 400 invalid_request_error: the request was refused"
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      }
+    ],
+    "open_waits": [],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:11:15.880691+00:00",
+          "data": {
+            "message_id": "c6dab1c8fdab49cfa9e44d9191db7382",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: failed",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:11:15.928483+00:00",
+          "data": {
+            "turn_id": "b478ee32c4de4ffc8574c36a47a241cf",
+            "turn_no": 1,
+            "state": "failed",
+            "ended_at": "2026-10-06T11:11:16.040016+00:00",
+            "error": "lead (planner) turn 1 failed: the last model call failed: 400 invalid_request_error: the request was refused"
+          },
+          "entry": "member_turn"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-06T11:11:15.705423+00:00",
+        "kind": "start",
+        "by": "unknown caller",
+        "source": "team_page",
+        "request_id": "f-1",
+        "detail": {
+          "workflow": "team-trial-a1ffd247926f",
+          "trial_id": "a1ffd247926f"
+        }
+      }
+    ],
+    "outcome": {
+      "decision": "failed",
+      "reason": "the team's project copies could not be made: git clone exited 128: fatal: repository '/srv/example/projects/notes-app' does not exist",
+      "owner_words": null,
+      "problems": [],
+      "by": null,
+      "at": "2026-10-06T11:11:16.071454+00:00",
+      "done": null
+    }
+  },
+  "derived_from": "run-failed"
+}

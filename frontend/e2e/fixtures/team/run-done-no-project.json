@@ -1,0 +1,658 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "439ec650-b393-4ac5-98b2-98d38cf4cbea",
+    "trial_id": "ceb24c6baea8",
+    "workflow": "team-trial-ceb24c6baea8",
+    "run_status": "completed",
+    "state": "done",
+    "cost_usd": 0.0,
+    "trial": {
+      "goal": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is shared until you choose to share it.",
+      "leader": "lead",
+      "members": [
+        {
+          "name": "lead",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 3,
+      "communication": "all",
+      "project": null,
+      "started_at": "2026-10-06T11:10:47.194352+00:00",
+      "started_by": "unknown caller",
+      "request_id": "r-2"
+    },
+    "round": {
+      "current": 2,
+      "keep_goings": 1,
+      "pause_after_rounds": 3
+    },
+    "members": [
+      {
+        "name": "lead",
+        "role": "planner",
+        "leader": true,
+        "activity": "ended",
+        "turns": 4,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 4,
+          "state": "completed",
+          "started_at": "2026-10-06T11:10:49.414174+00:00",
+          "ended_at": "2026-10-06T11:10:49.603915+00:00",
+          "error": null
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "ended",
+        "turns": 2,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 2,
+          "state": "completed",
+          "started_at": "2026-10-06T11:10:48.943663+00:00",
+          "ended_at": "2026-10-06T11:10:49.171634+00:00",
+          "error": null
+        }
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "ended",
+        "turns": 3,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 3,
+          "state": "completed",
+          "started_at": "2026-10-06T11:10:49.249409+00:00",
+          "ended_at": "2026-10-06T11:10:49.371536+00:00",
+          "error": null
+        }
+      }
+    ],
+    "open_waits": [],
+    "reviews": [
+      {
+        "review_id": "a4430a4329174cf9967aaca9ff687729",
+        "round": 1,
+        "state": "decided",
+        "commit": "e8671600cea1395f3ea92a03560351801d1e8a63",
+        "files_count": 2,
+        "views": {
+          "checker": {
+            "verdict": "changes",
+            "note": "A new user won't know notes save on their own; say it in the first line.",
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "round": 1
+          },
+          "maker": {
+            "verdict": "changes",
+            "note": "The heading wraps to three lines on a phone. Try four words or fewer.",
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "round": 1
+          }
+        },
+        "decision": "keep_going",
+        "refusal": null,
+        "summary": "Round 1: the heading is too long and saving isn't explained. Shortening it."
+      },
+      {
+        "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+        "round": 2,
+        "state": "decided",
+        "commit": "cd714daeb303bfd4aebf0ed2efe1836d6fb30a60",
+        "files_count": 2,
+        "views": {
+          "checker": {
+            "verdict": "satisfied",
+            "note": "Clear now. 'Notes save themselves' sounds odd; maybe 'Your notes save on their own'.",
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "round": 2
+          },
+          "maker": {
+            "verdict": "satisfied",
+            "note": "Better. The second line could say what happens to shared notes.",
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "round": 2
+          }
+        },
+        "decision": "done",
+        "refusal": null,
+        "summary": "Round 2: close. Rewording the saving line and adding the sharing line."
+      }
+    ],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:47.402711+00:00",
+          "data": {
+            "message_id": "c57c7aa395534f16b422ea6919652b40",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: completed",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:47.468433+00:00",
+          "data": {
+            "turn_id": "193b764b9eda4779bc25421fb39036b2",
+            "turn_no": 1,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:47.646623+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "review round 1",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:47.726421+00:00",
+          "data": {
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "state": "decided",
+            "commit": "e8671600cea1395f3ea92a03560351801d1e8a63",
+            "files": {
+              "WELCOME.md": "708773c4e16794aad70736ea801568cbc8cde72fa22f79803320df8dd755488d",
+              "app.py": "03e693d9f2f687e0f40e36a8df7fcb4d1c22974012b7c2a55c000eb30f305824"
+            },
+            "views": {
+              "checker": {
+                "verdict": "changes",
+                "note": "A new user won't know notes save on their own; say it in the first line."
+              },
+              "maker": {
+                "verdict": "changes",
+                "note": "The heading wraps to three lines on a phone. Try four words or fewer."
+              }
+            },
+            "decision": "keep_going"
+          },
+          "entry": "review_round",
+          "round": 1
+        },
+        {
+          "event_type": "message: review_request",
+          "from_agent": "temper",
+          "to_agent": "checker",
+          "timestamp": "2026-10-06T11:10:47.727486+00:00",
+          "data": {
+            "message_id": "46e83a3ced254806bac1b15dcd279979",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "preview": "Review a4430a4329174cf9967aaca9ff687729 (round 1) from lead: your project copy now holds exactly the version to review (commit e8671600cea1).\nThe team's goal: W..."
+          },
+          "entry": "message",
+          "message_kind": "review_request"
+        },
+        {
+          "event_type": "message: review_request",
+          "from_agent": "temper",
+          "to_agent": "maker",
+          "timestamp": "2026-10-06T11:10:47.727876+00:00",
+          "data": {
+            "message_id": "d4f0034f5d9b40438c1157d2c7bda618",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "preview": "Review a4430a4329174cf9967aaca9ff687729 (round 1) from lead: your project copy now holds exactly the version to review (commit e8671600cea1).\nThe team's goal: W..."
+          },
+          "entry": "message",
+          "message_kind": "review_request"
+        },
+        {
+          "event_type": "turn 1: completed",
+          "from_agent": "checker",
+          "timestamp": "2026-10-06T11:10:47.746126+00:00",
+          "data": {
+            "turn_id": "43e13b5668f541e1921d83103a46b40f",
+            "turn_no": 1,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:47.923470+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "view: changes",
+          "from_agent": "checker",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:47.959347+00:00",
+          "data": {
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "verdict": "changes",
+            "note": "A new user won't know notes save on their own; say it in the first line."
+          },
+          "entry": "view",
+          "round": 1
+        },
+        {
+          "event_type": "turn 1: completed",
+          "from_agent": "maker",
+          "timestamp": "2026-10-06T11:10:47.984861+00:00",
+          "data": {
+            "turn_id": "a8ed4b88026c4cadb3d234b28da83453",
+            "turn_no": 1,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:48.175229+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "view: changes",
+          "from_agent": "maker",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.200098+00:00",
+          "data": {
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "verdict": "changes",
+            "note": "The heading wraps to three lines on a phone. Try four words or fewer."
+          },
+          "entry": "view",
+          "round": 1
+        },
+        {
+          "event_type": "message: view",
+          "from_agent": "checker",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.212532+00:00",
+          "data": {
+            "message_id": "69e538cf4d2e4940999fab058ba9316f",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "preview": "View on review a4430a4329174cf9967aaca9ff687729 (round 1, version e8671600cea1): changes. Note: A new user won't know notes save on their own; say it in the fir..."
+          },
+          "entry": "message",
+          "message_kind": "view"
+        },
+        {
+          "event_type": "message: view",
+          "from_agent": "maker",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.212532+00:00",
+          "data": {
+            "message_id": "d0e933f685fa490ea7bb1664c22df81e",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "preview": "View on review a4430a4329174cf9967aaca9ff687729 (round 1, version e8671600cea1): changes. Note: The heading wraps to three lines on a phone. Try four words or f..."
+          },
+          "entry": "message",
+          "message_kind": "view"
+        },
+        {
+          "event_type": "message: notice",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.213152+00:00",
+          "data": {
+            "message_id": "95c601e99b514e2995c50c36e5d1ec2c",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "preview": "Review a4430a4329174cf9967aaca9ff687729 (round 1): the views are in (0 satisfied, 2 changes). Decide with the decide tool, naming review a4430a4329174cf9967aaca..."
+          },
+          "entry": "message",
+          "message_kind": "notice"
+        },
+        {
+          "event_type": "turn 2: completed",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.231615+00:00",
+          "data": {
+            "turn_id": "e0cea41677cf4c9b988b851d47ce4cb7",
+            "turn_no": 2,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:48.403729+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "decision: keep_going",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.434934+00:00",
+          "data": {
+            "review_id": "a4430a4329174cf9967aaca9ff687729",
+            "round": 1,
+            "commit": "e8671600cea1395f3ea92a03560351801d1e8a63",
+            "summary": "Round 1: the heading is too long and saving isn't explained. Shortening it."
+          },
+          "entry": "decision",
+          "round": 1,
+          "decision": "keep_going"
+        },
+        {
+          "event_type": "message: notice",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.435680+00:00",
+          "data": {
+            "message_id": "47879378f4eb49e4b2b7556f3e104dd4",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Keep going: when the next version is ready, call request_review."
+          },
+          "entry": "message",
+          "message_kind": "notice"
+        },
+        {
+          "event_type": "turn 3: completed",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.451456+00:00",
+          "data": {
+            "turn_id": "7048c578b12342f485a7713d8d79aa3c",
+            "turn_no": 3,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:48.616908+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "review round 2",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.689809+00:00",
+          "data": {
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "state": "decided",
+            "commit": "cd714daeb303bfd4aebf0ed2efe1836d6fb30a60",
+            "files": {
+              "WELCOME.md": "04fe31e747a3e648787d25327fcf2b81e48ffb6ed0941e7b29a12d715a37b995",
+              "app.py": "03e693d9f2f687e0f40e36a8df7fcb4d1c22974012b7c2a55c000eb30f305824"
+            },
+            "views": {
+              "checker": {
+                "verdict": "satisfied",
+                "note": "Clear now. 'Notes save themselves' sounds odd; maybe 'Your notes save on their own'."
+              },
+              "maker": {
+                "verdict": "satisfied",
+                "note": "Better. The second line could say what happens to shared notes."
+              }
+            },
+            "decision": "done"
+          },
+          "entry": "review_round",
+          "round": 2
+        },
+        {
+          "event_type": "message: review_request",
+          "from_agent": "temper",
+          "to_agent": "checker",
+          "timestamp": "2026-10-06T11:10:48.690193+00:00",
+          "data": {
+            "message_id": "503b96dded3e47908dff4021d91c9760",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "preview": "Review 3441bd302a6445c9a0fe020ffa8fc59c (round 2) from lead: your project copy now holds exactly the version to review (commit cd714daeb303).\nThe team's goal: W..."
+          },
+          "entry": "message",
+          "message_kind": "review_request"
+        },
+        {
+          "event_type": "message: review_request",
+          "from_agent": "temper",
+          "to_agent": "maker",
+          "timestamp": "2026-10-06T11:10:48.690558+00:00",
+          "data": {
+            "message_id": "bf6505dca2c14082a6842b0346d391bb",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "preview": "Review 3441bd302a6445c9a0fe020ffa8fc59c (round 2) from lead: your project copy now holds exactly the version to review (commit cd714daeb303).\nThe team's goal: W..."
+          },
+          "entry": "message",
+          "message_kind": "review_request"
+        },
+        {
+          "event_type": "turn 2: completed",
+          "from_agent": "checker",
+          "timestamp": "2026-10-06T11:10:48.707266+00:00",
+          "data": {
+            "turn_id": "aa08d2fb720141cead827cd96bdebc12",
+            "turn_no": 2,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:48.885211+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "view: satisfied",
+          "from_agent": "checker",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:48.921600+00:00",
+          "data": {
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "verdict": "satisfied",
+            "note": "Clear now. 'Notes save themselves' sounds odd; maybe 'Your notes save on their own'."
+          },
+          "entry": "view",
+          "round": 2
+        },
+        {
+          "event_type": "turn 2: completed",
+          "from_agent": "maker",
+          "timestamp": "2026-10-06T11:10:48.943663+00:00",
+          "data": {
+            "turn_id": "faf7e561df904de1aca4e47511073e06",
+            "turn_no": 2,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:49.171634+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "message: info",
+          "from_agent": "maker",
+          "to_agent": "checker",
+          "timestamp": "2026-10-06T11:10:49.012882+00:00",
+          "data": {
+            "message_id": "fdd28ab3dc8b4806a0ae361aa7e1add9",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Before you review: the first screen has room for about six lines at 360 pixels wide, so anything past 80 words gets cut off behind the New note button. I measur..."
+          },
+          "entry": "message",
+          "message_kind": "info"
+        },
+        {
+          "event_type": "view: satisfied",
+          "from_agent": "maker",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:49.212174+00:00",
+          "data": {
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "verdict": "satisfied",
+            "note": "Better. The second line could say what happens to shared notes."
+          },
+          "entry": "view",
+          "round": 2
+        },
+        {
+          "event_type": "message: view",
+          "from_agent": "checker",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:49.229079+00:00",
+          "data": {
+            "message_id": "6c58d4aab2ad40249838e5b46f3fbf4f",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "preview": "View on review 3441bd302a6445c9a0fe020ffa8fc59c (round 2, version cd714daeb303): satisfied. Note: Clear now. 'Notes save themselves' sounds odd; maybe 'Your not..."
+          },
+          "entry": "message",
+          "message_kind": "view"
+        },
+        {
+          "event_type": "message: view",
+          "from_agent": "maker",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:49.229079+00:00",
+          "data": {
+            "message_id": "a9e7d9c05fa2470b9015f557d7a1ff01",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "preview": "View on review 3441bd302a6445c9a0fe020ffa8fc59c (round 2, version cd714daeb303): satisfied. Note: Better. The second line could say what happens to shared notes..."
+          },
+          "entry": "message",
+          "message_kind": "view"
+        },
+        {
+          "event_type": "message: notice",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:10:49.230451+00:00",
+          "data": {
+            "message_id": "b096c0bc28f649d19ec7c1eab920fa1b",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "preview": "Review 3441bd302a6445c9a0fe020ffa8fc59c (round 2): the views are in (2 satisfied, 0 changes). Decide with the decide tool, naming review 3441bd302a6445c9a0fe020..."
+          },
+          "entry": "message",
+          "message_kind": "notice"
+        },
+        {
+          "event_type": "turn 3: completed",
+          "from_agent": "checker",
+          "timestamp": "2026-10-06T11:10:49.249409+00:00",
+          "data": {
+            "turn_id": "e1d0941b22ec49b2b0deee9582a396f2",
+            "turn_no": 3,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:49.371536+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "turn 4: completed",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:49.414174+00:00",
+          "data": {
+            "turn_id": "40999348da1c4dc281d3293899c20002",
+            "turn_no": 4,
+            "state": "completed",
+            "ended_at": "2026-10-06T11:10:49.603915+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "decision: done",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:10:49.651429+00:00",
+          "data": {
+            "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+            "round": 2,
+            "commit": "cd714daeb303bfd4aebf0ed2efe1836d6fb30a60",
+            "summary": "Round 2: close. Rewording the saving line and adding the sharing line."
+          },
+          "entry": "decision",
+          "round": 2,
+          "decision": "done"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-06T11:10:47.227011+00:00",
+        "kind": "start",
+        "by": "unknown caller",
+        "source": "team_page",
+        "request_id": "r-2",
+        "detail": {
+          "workflow": "team-trial-ceb24c6baea8",
+          "trial_id": "ceb24c6baea8"
+        }
+      }
+    ],
+    "outcome": {
+      "decision": "done",
+      "reason": "Round 2: close. Rewording the saving line and adding the sharing line.",
+      "owner_words": null,
+      "problems": [],
+      "by": null,
+      "at": "2026-10-06T11:10:49.750869+00:00",
+      "done": {
+        "review_id": "3441bd302a6445c9a0fe020ffa8fc59c",
+        "round": 2,
+        "commit": "cd714daeb303bfd4aebf0ed2efe1836d6fb30a60",
+        "commit_short": "cd714daeb303",
+        "summary": "Round 2: close. Rewording the saving line and adding the sharing line.",
+        "files": [
+          {
+            "path": "WELCOME.md",
+            "sha256": "04fe31e747a3e648787d25327fcf2b81e48ffb6ed0941e7b29a12d715a37b995"
+          },
+          {
+            "path": "app.py",
+            "sha256": "03e693d9f2f687e0f40e36a8df7fcb4d1c22974012b7c2a55c000eb30f305824"
+          }
+        ],
+        "objections": [],
+        "branch": null,
+        "rounds": 2,
+        "cost_usd": 0.0
+      }
+    }
+  },
+  "derived_from": "run-done"
+}

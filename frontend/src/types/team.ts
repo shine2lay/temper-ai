@@ -243,13 +243,44 @@ export interface TeamOwnerAction {
   } | null;
 }
 
+/** The branch made for an approved version (null when the trial had no project). */
+export interface TeamBranch {
+  name: string;
+  made: boolean;
+  /** Why it wasn't made, in Temper's words ('exists', 'denied: ...'). */
+  why: string | null;
+}
+
+export interface TeamObjection {
+  member: string;
+  verdict: string;
+  note: string | null;
+  view_round?: number | null;
+}
+
+/** What a done outcome carries: the approved version. */
+export interface TeamDone {
+  review_id: string;
+  round: number;
+  commit: string | null;
+  commit_short?: string | null;
+  summary: string | null;
+  files: Array<{ path: string; sha256?: string | null }>;
+  objections: TeamObjection[];
+  branch: TeamBranch | null;
+  rounds: number | null;
+  cost_usd: number | null;
+}
+
 export interface TeamOutcome {
+  /** done, stopped, cancelled, failed or didnt_start. */
   decision: string;
   reason: string | null;
   owner_words: string | null;
   problems: unknown[];
   by: string | null;
   at: string | null;
+  done?: TeamDone | null;
 }
 
 export interface TeamRun {
@@ -268,6 +299,46 @@ export interface TeamRun {
   timeline: { entries: Array<TeamEntry | TeamOtherEntry>; not_shown: number };
   owner_actions: TeamOwnerAction[];
   outcome: TeamOutcome | null;
+}
+
+/** What POST .../waits/{wait_id}/answer sends. */
+export interface TeamAnswerRequest {
+  /** One per answer, the same on a retry: Temper counts it once. */
+  request_id: string;
+  answer: string;
+  text: string;
+}
+
+/** Temper's 200 to an answer. */
+export interface TeamAnswerResult {
+  status: string;
+  wait_id: string;
+  answer: string;
+  text: string | null;
+  /** The same request had already reached Temper; it counted once. */
+  repeated: boolean;
+  carries_on: boolean;
+  /** Kept, but the run isn't running: it needs Resume on the run page. */
+  needs_resume: boolean;
+  /** Temper's own words when the answer needs Resume. */
+  message?: string | null;
+  by: string | null;
+  at: string | null;
+}
+
+/** A 409 to an answer: the question was already settled, and by whom. */
+export interface TeamAnswerConflict {
+  reason: string;
+  message: string;
+  answered_by?: string | null;
+  answered_at?: string | null;
+  answered_source?: string | null;
+}
+
+/** Temper's 200 to Stop run: the run's own status after the stop. */
+export interface TeamCancelResult {
+  status: string;
+  execution_id: string;
 }
 
 export interface TeamMessage {

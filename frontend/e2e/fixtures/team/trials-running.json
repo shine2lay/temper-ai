@@ -5,9 +5,9 @@
     "total": 1,
     "trials": [
       {
-        "trial_id": "ae5139aac164",
-        "execution_id": "cb38f93e-8bdf-4a23-a2dd-51716546b2b7",
-        "workflow": "team-trial-ae5139aac164",
+        "trial_id": "068256457e0b",
+        "execution_id": "e4399998-ad2e-4b1f-a5f2-50dea8c5bb64",
+        "workflow": "team-trial-068256457e0b",
         "goal_first_line": "Write a short welcome note for the notes app's first screen.",
         "leader": "lead",
         "members": [
@@ -29,7 +29,7 @@
         "decision": null,
         "round": 1,
         "cost_usd": 0.0,
-        "started_at": "2026-10-06T08:30:48.589984+00:00",
+        "started_at": "2026-10-06T11:11:02.720782+00:00",
         "started_by": "unknown caller",
         "ended_at": null
       }

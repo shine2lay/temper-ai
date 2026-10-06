@@ -1,0 +1,265 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "770eed85-27cc-452e-a04b-dd350df6e643",
+    "trial_id": "22b7c1c84e5c",
+    "workflow": "team-trial-22b7c1c84e5c",
+    "run_status": "waiting",
+    "state": "member_waiting",
+    "cost_usd": 0.0,
+    "trial": {
+      "goal": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is shared until you choose to share it.",
+      "leader": "lead",
+      "members": [
+        {
+          "name": "lead",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 3,
+      "communication": "all",
+      "project": {
+        "source": "/srv/example/projects/notes-app",
+        "start_commit": null
+      },
+      "started_at": "2026-10-06T11:11:13.971840+00:00",
+      "started_by": "unknown caller",
+      "request_id": "aa-1"
+    },
+    "round": {
+      "current": 0,
+      "keep_goings": 0,
+      "pause_after_rounds": 3
+    },
+    "members": [
+      {
+        "name": "lead",
+        "role": "planner",
+        "leader": true,
+        "activity": "waiting_on_owner",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 1,
+          "state": "uncertain",
+          "started_at": "2026-10-06T11:11:14.254026+00:00",
+          "ended_at": "2026-10-06T11:11:14.442159+00:00",
+          "error": "Pi stopped before it settled: the turn did not finish; the worker stopped answering (protocol_eof); the Pi session on disk did not end with a settled answer"
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      }
+    ],
+    "open_waits": [
+      {
+        "wait_id": "efe953ffc2b4455594f11d2e2037345b",
+        "event_id": "1d4704be-32b1-4087-8389-503a9dea7390",
+        "node_name": "trial.team~ask-efe953ffc2b4455594f11d2e2037345b",
+        "asked": true,
+        "kind": "recovery",
+        "header": "lead turn 1",
+        "question": "That answer was not one of: accept, retry, stop. Nothing was decided. lead's turn 1 did not finish (Pi stopped before it settled: the turn did not finish; the worker stopped answering (protocol_eof); the Pi session on disk did not end with a settled answer); the model may have acted (its prompt was sent).",
+        "reply_hint": "Reply 'accept' to keep what it did without running it again, or 'retry' to send its messages again.",
+        "answers": [
+          {
+            "answer": "accept",
+            "needs_text": "none",
+            "means": "Keep what lead's turn did, without running it again."
+          },
+          {
+            "answer": "retry",
+            "needs_text": "none",
+            "means": "lead gets the same messages again in a new turn."
+          },
+          {
+            "answer": "stop",
+            "needs_text": "optional",
+            "means": "The team stops here and the run ends failed. Any words you give are kept with it."
+          }
+        ],
+        "round": null,
+        "member": "lead",
+        "turn_no": 1,
+        "why": "Pi stopped before it settled: the turn did not finish; the worker stopped answering (protocol_eof); the Pi session on disk did not end with a settled answer",
+        "asked_again": 1,
+        "opened_at": "2026-10-06T11:11:14.748696+00:00"
+      }
+    ],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:11:14.189995+00:00",
+          "data": {
+            "message_id": "7ec8c2aa82934b11964d8124cf6a9583",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: uncertain",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:11:14.254026+00:00",
+          "data": {
+            "turn_id": "345a9a80b9544cdf92940c7e9bc832bb",
+            "turn_no": 1,
+            "state": "uncertain",
+            "ended_at": "2026-10-06T11:11:14.442159+00:00",
+            "error": "Pi stopped before it settled: the turn did not finish; the worker stopped answering (protocol_eof); the Pi session on disk did not end with a settled answer"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "message: info",
+          "from_agent": "lead",
+          "to_agent": "maker",
+          "timestamp": "2026-10-06T11:11:14.318097+00:00",
+          "data": {
+            "message_id": "c954014e4b2843a6a8d70fc19ad90c8b",
+            "state": "held",
+            "deliveries": 0,
+            "preview": "Starting on the welcome note now."
+          },
+          "entry": "message",
+          "message_kind": "info"
+        },
+        {
+          "event_type": "owner wait: recovery",
+          "from_agent": "temper",
+          "to_agent": "owner",
+          "timestamp": "2026-10-06T11:11:14.442957+00:00",
+          "data": {
+            "wait_id": "792ba56250b9454e8ee2b255f9fe4c22",
+            "state": "decided",
+            "member": "lead",
+            "turn_no": 1,
+            "answer": "invalid"
+          },
+          "entry": "owner_wait",
+          "wait_kind": "recovery"
+        },
+        {
+          "event_type": "owner answer: invalid",
+          "from_agent": "unknown caller",
+          "to_agent": "temper",
+          "timestamp": "2026-10-06T11:11:14.748278+00:00",
+          "data": {
+            "wait_id": "792ba56250b9454e8ee2b255f9fe4c22",
+            "answer": "invalid",
+            "answered_by": "unknown caller",
+            "answered_source": "api",
+            "request_id": "3adae7755dc14bd0"
+          },
+          "entry": "owner_answer",
+          "wait_kind": "recovery",
+          "answered_by": "unknown caller",
+          "answered_source": "api",
+          "request_id": "3adae7755dc14bd0"
+        },
+        {
+          "event_type": "owner wait: recovery",
+          "from_agent": "temper",
+          "to_agent": "owner",
+          "timestamp": "2026-10-06T11:11:14.748696+00:00",
+          "data": {
+            "wait_id": "efe953ffc2b4455594f11d2e2037345b",
+            "state": "open",
+            "member": "lead",
+            "turn_no": 1
+          },
+          "entry": "owner_wait",
+          "wait_kind": "recovery"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-06T11:11:14.003507+00:00",
+        "kind": "start",
+        "by": "unknown caller",
+        "source": "team_page",
+        "request_id": "aa-1",
+        "detail": {
+          "workflow": "team-trial-22b7c1c84e5c",
+          "trial_id": "22b7c1c84e5c"
+        }
+      },
+      {
+        "at": "2026-10-06T11:11:14.748278+00:00",
+        "kind": "answer",
+        "by": "unknown caller",
+        "source": "api",
+        "request_id": "3adae7755dc14bd0",
+        "detail": {
+          "wait_id": "792ba56250b9454e8ee2b255f9fe4c22",
+          "wait_kind": "recovery",
+          "answer": "invalid"
+        }
+      }
+    ],
+    "outcome": null
+  }
+}

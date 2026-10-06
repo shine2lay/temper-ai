@@ -1,35 +1,35 @@
 import { Fragment, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Square } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { clockTime, firstLine, isoOf, teamCost, teamTime, teamTimeFull } from '@/lib/teamText';
 import type { TeamRun } from '@/types/team';
+import { projectName } from '@/lib/teamOutcome';
 import { TeamStateBadge } from '../TeamStateBadge';
 import { TeamWho } from '../TeamWho';
 import { teamBtn, teamLink } from '../teamUi';
-
-/** The last part of a project path: "notes-app" for /srv/example/projects/notes-app. */
-function projectName(source: string): string {
-  const parts = source.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1] ?? source;
-}
+import { RUN_TITLE_ID } from './runFocus';
 
 /**
  * The run view's header: where you are, when the page last heard from
  * Temper, the goal's first line, the team's state, the run's own status,
- * the way to the run page, and one line of facts.
+ * the way to the run page, Stop run while the team can still be stopped,
+ * and one line of facts.
  */
 export function RunHeader({
   run,
   updatedAt,
   stale,
   live,
+  onStop,
 }: {
   run: TeamRun;
   updatedAt: number | null;
   stale: boolean;
   /** Still running (not ended, not cut off): the cost is "so far". */
   live: boolean;
+  /** Opens the Stop run confirm; no button when the run can't be stopped from here. */
+  onStop?: () => void;
 }) {
   const { trial } = run;
   const title = firstLine(trial.goal) || run.trial_id;
@@ -95,6 +95,16 @@ export function RunHeader({
         </span>
       ),
     });
+  } else if (trial.project === null) {
+    // A trial started from an empty project (board R11).
+    facts.push({
+      key: 'project',
+      node: (
+        <span>
+          Project <b className="font-semibold text-temper-text">none</b> (an empty project)
+        </span>
+      ),
+    });
   }
   facts.push({
     key: 'cost',
@@ -138,7 +148,12 @@ export function RunHeader({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="m-0 min-w-0 flex-1 truncate text-xl font-semibold text-temper-text" title={trial.goal}>
+        <h1
+          id={RUN_TITLE_ID}
+          tabIndex={-1}
+          className="m-0 min-w-0 flex-1 truncate text-xl font-semibold text-temper-text"
+          title={trial.goal}
+        >
           {title}
         </h1>
         <span aria-live="polite" aria-atomic="true" className="inline-flex">
@@ -152,6 +167,12 @@ export function RunHeader({
           <ExternalLink className="h-4 w-4" aria-hidden="true" />
           <span>Run page</span>
         </Link>
+        {onStop && (
+          <button type="button" className={teamBtn.danger} onClick={onStop}>
+            <Square className="h-4 w-4" aria-hidden="true" />
+            <span>Stop run</span>
+          </button>
+        )}
       </div>
       <p className="m-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-temper-text-muted">
         {facts.map((f, i) => (

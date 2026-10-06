@@ -1,0 +1,20 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 409,
+  "body": {
+    "message": "Already turned down by owner at 2026-10-06T11:10:52+00:00 (the run was stopped at 'trial.team', round 1), so this approval changed nothing.",
+    "reason": "already_rejected",
+    "event_id": "a14976c5-d755-40a0-b789-0c1edbba39a6",
+    "node_name": "trial.team~ask-8ec49a8cd4214791915985fd851feea9",
+    "path": "trial.team",
+    "round": 1,
+    "status": "rejected",
+    "answered_by": "owner",
+    "answered_at": "2026-10-06T11:10:52+00:00",
+    "request_id": "a-1",
+    "replaced_by": null,
+    "opened_at": "2026-10-06T11:10:51.701976+00:00",
+    "answered_source": "run_page"
+  },
+  "derived_from": "answer-409-already-answered"
+}

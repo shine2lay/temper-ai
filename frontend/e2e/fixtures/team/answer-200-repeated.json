@@ -3,14 +3,14 @@
   "status": 200,
   "body": {
     "status": "approved",
-    "wait_id": "650302d5298040c8a19b12997ac367a4",
-    "event_id": "b3b03b45-2f97-4645-b776-09c10d3c19dc",
+    "wait_id": "8ec49a8cd4214791915985fd851feea9",
+    "event_id": "a14976c5-d755-40a0-b789-0c1edbba39a6",
     "answer": "guide",
     "text": "Focus on the saving line; the rest is fine.",
     "repeated": true,
     "carries_on": true,
     "needs_resume": false,
     "by": "owner",
-    "at": "2026-10-06T08:30:56+00:00"
+    "at": "2026-10-06T11:10:52+00:00"
   }
 }

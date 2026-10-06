@@ -2,9 +2,9 @@
   "route": "GET /api/team/runs/{execution_id}",
   "status": 200,
   "body": {
-    "execution_id": "cb38f93e-8bdf-4a23-a2dd-51716546b2b7",
-    "trial_id": "ae5139aac164",
-    "workflow": "team-trial-ae5139aac164",
+    "execution_id": "e4399998-ad2e-4b1f-a5f2-50dea8c5bb64",
+    "trial_id": "068256457e0b",
+    "workflow": "team-trial-068256457e0b",
     "run_status": "running",
     "state": "starting",
     "cost_usd": 0.0,
@@ -50,7 +50,7 @@
         "source": "/srv/example/projects/notes-app",
         "start_commit": null
       },
-      "started_at": "2026-10-06T08:30:48.393983+00:00",
+      "started_at": "2026-10-06T11:11:02.491840+00:00",
       "started_by": "unknown caller",
       "request_id": "r-1"
     },
@@ -76,8 +76,8 @@
         "last_turn": {
           "turn_no": 1,
           "state": "completed",
-          "started_at": "2026-10-06T08:30:48.643077+00:00",
-          "ended_at": "2026-10-06T08:30:48.887696+00:00",
+          "started_at": "2026-10-06T11:11:02.766532+00:00",
+          "ended_at": "2026-10-06T11:11:02.948899+00:00",
           "error": null
         }
       },
@@ -106,7 +106,7 @@
         "last_turn": {
           "turn_no": 1,
           "state": "running",
-          "started_at": "2026-10-06T08:30:48.991446+00:00",
+          "started_at": "2026-10-06T11:11:03.059487+00:00",
           "ended_at": null,
           "error": null
         }
@@ -120,9 +120,9 @@
           "event_type": "message: goal",
           "from_agent": "temper",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:48.558720+00:00",
+          "timestamp": "2026-10-06T11:11:02.703250+00:00",
           "data": {
-            "message_id": "988fe329fc974888943149d73a253e9e",
+            "message_id": "df93c18eadc74413a2344ced258b217d",
             "state": "consumed",
             "deliveries": 1,
             "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
@@ -135,14 +135,14 @@
     },
     "owner_actions": [
       {
-        "at": "2026-10-06T08:30:48.427043",
+        "at": "2026-10-06T11:11:02.528363+00:00",
         "kind": "start",
         "by": "unknown caller",
         "source": "team_page",
         "request_id": "r-1",
         "detail": {
-          "workflow": "team-trial-ae5139aac164",
-          "trial_id": "ae5139aac164"
+          "workflow": "team-trial-068256457e0b",
+          "trial_id": "068256457e0b"
         }
       }
     ],

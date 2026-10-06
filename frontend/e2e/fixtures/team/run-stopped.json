@@ -2,9 +2,9 @@
   "route": "GET /api/team/runs/{execution_id}",
   "status": 200,
   "body": {
-    "execution_id": "86cf1423-c7c6-40eb-a711-80a6d4be25d1",
-    "trial_id": "f3c97915b9d7",
-    "workflow": "team-trial-f3c97915b9d7",
+    "execution_id": "0c6a87fd-b241-4e58-b9ec-8322339242a1",
+    "trial_id": "85188d672613",
+    "workflow": "team-trial-85188d672613",
     "run_status": "cancelled",
     "state": "stopped",
     "cost_usd": 0.0,
@@ -50,7 +50,7 @@
         "source": "/srv/example/projects/notes-app",
         "start_commit": null
       },
-      "started_at": "2026-10-06T08:30:40.795771+00:00",
+      "started_at": "2026-10-06T11:10:58.583477+00:00",
       "started_by": "unknown caller",
       "request_id": "x-1"
     },
@@ -76,8 +76,8 @@
         "last_turn": {
           "turn_no": 2,
           "state": "completed",
-          "started_at": "2026-10-06T08:30:42.274766+00:00",
-          "ended_at": "2026-10-06T08:30:42.522017+00:00",
+          "started_at": "2026-10-06T11:10:59.660490+00:00",
+          "ended_at": "2026-10-06T11:10:59.827020+00:00",
           "error": null
         }
       },
@@ -97,8 +97,8 @@
         "last_turn": {
           "turn_no": 1,
           "state": "completed",
-          "started_at": "2026-10-06T08:30:41.916952+00:00",
-          "ended_at": "2026-10-06T08:30:42.166694+00:00",
+          "started_at": "2026-10-06T11:10:59.394601+00:00",
+          "ended_at": "2026-10-06T11:10:59.583921+00:00",
           "error": null
         }
       },
@@ -118,8 +118,8 @@
         "last_turn": {
           "turn_no": 1,
           "state": "completed",
-          "started_at": "2026-10-06T08:30:41.570402+00:00",
-          "ended_at": "2026-10-06T08:30:41.828933+00:00",
+          "started_at": "2026-10-06T11:10:59.153975+00:00",
+          "ended_at": "2026-10-06T11:10:59.336715+00:00",
           "error": null
         }
       }
@@ -127,22 +127,22 @@
     "open_waits": [],
     "reviews": [
       {
-        "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
+        "review_id": "047dde20cc074e41819fa52371ad6be7",
         "round": 1,
         "state": "decided",
-        "commit": "3530efcf116c7a1271b52ed87f63835eb5245ddc",
+        "commit": "dc13333dd80291cf6b96b1b0d4253de16c67cfd1",
         "files_count": 2,
         "views": {
           "checker": {
             "verdict": "changes",
             "note": "A new user won't know notes save on their own; say it in the first line.",
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
             "round": 1
           },
           "maker": {
             "verdict": "changes",
             "note": "The heading wraps to three lines on a phone. Try four words or fewer.",
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
             "round": 1
           }
         },
@@ -157,9 +157,9 @@
           "event_type": "message: goal",
           "from_agent": "temper",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:40.970283+00:00",
+          "timestamp": "2026-10-06T11:10:58.795086+00:00",
           "data": {
-            "message_id": "933fb5c542b34720a0adf9c7c83815ad",
+            "message_id": "270000c99d124b1ba624cb6087500ae5",
             "state": "consumed",
             "deliveries": 1,
             "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
@@ -170,23 +170,23 @@
         {
           "event_type": "turn 1: completed",
           "from_agent": "lead",
-          "timestamp": "2026-10-06T08:30:41.057152+00:00",
+          "timestamp": "2026-10-06T11:10:58.856370+00:00",
           "data": {
-            "turn_id": "dcfb17007cd2480e80fe037f4271466b",
+            "turn_id": "fdf41c17c9984e75afb40504cfe084a5",
             "turn_no": 1,
             "state": "completed",
-            "ended_at": "2026-10-06T08:30:41.324004+00:00"
+            "ended_at": "2026-10-06T11:10:59.039706+00:00"
           },
           "entry": "member_turn"
         },
         {
           "event_type": "review round 1",
           "from_agent": "lead",
-          "timestamp": "2026-10-06T08:30:41.537746+00:00",
+          "timestamp": "2026-10-06T11:10:59.127872+00:00",
           "data": {
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
             "state": "decided",
-            "commit": "3530efcf116c7a1271b52ed87f63835eb5245ddc",
+            "commit": "dc13333dd80291cf6b96b1b0d4253de16c67cfd1",
             "files": {
               "WELCOME.md": "708773c4e16794aad70736ea801568cbc8cde72fa22f79803320df8dd755488d",
               "app.py": "03e693d9f2f687e0f40e36a8df7fcb4d1c22974012b7c2a55c000eb30f305824"
@@ -210,13 +210,13 @@
           "event_type": "message: review_request",
           "from_agent": "temper",
           "to_agent": "checker",
-          "timestamp": "2026-10-06T08:30:41.539110+00:00",
+          "timestamp": "2026-10-06T11:10:59.129243+00:00",
           "data": {
-            "message_id": "3b20dc31c01345f5bffe21db8c303014",
+            "message_id": "d4e8401dbd1e4331aa81e433ac0edcf6",
             "state": "consumed",
             "deliveries": 1,
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
-            "preview": "Review 76cc9df00c26420eb54721bb1f02dd0a (round 1) from lead: your project copy now holds exactly the version to review (commit 3530efcf116c).\nThe team's goal: W..."
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
+            "preview": "Review 047dde20cc074e41819fa52371ad6be7 (round 1) from lead: your project copy now holds exactly the version to review (commit dc13333dd802).\nThe team's goal: W..."
           },
           "entry": "message",
           "message_kind": "review_request"
@@ -225,13 +225,13 @@
           "event_type": "message: review_request",
           "from_agent": "temper",
           "to_agent": "maker",
-          "timestamp": "2026-10-06T08:30:41.540057+00:00",
+          "timestamp": "2026-10-06T11:10:59.130068+00:00",
           "data": {
-            "message_id": "a50bd612b66c4f51b947a44dbe170f9e",
+            "message_id": "5a1673fb57a24ad0b92e5c95c4f89eea",
             "state": "consumed",
             "deliveries": 1,
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
-            "preview": "Review 76cc9df00c26420eb54721bb1f02dd0a (round 1) from lead: your project copy now holds exactly the version to review (commit 3530efcf116c).\nThe team's goal: W..."
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
+            "preview": "Review 047dde20cc074e41819fa52371ad6be7 (round 1) from lead: your project copy now holds exactly the version to review (commit dc13333dd802).\nThe team's goal: W..."
           },
           "entry": "message",
           "message_kind": "review_request"
@@ -239,12 +239,12 @@
         {
           "event_type": "turn 1: completed",
           "from_agent": "checker",
-          "timestamp": "2026-10-06T08:30:41.570402+00:00",
+          "timestamp": "2026-10-06T11:10:59.153975+00:00",
           "data": {
-            "turn_id": "5efce5c1a0674b41b8358cc5eddf7448",
+            "turn_id": "4864136bf25c4bc38585492358b2da4b",
             "turn_no": 1,
             "state": "completed",
-            "ended_at": "2026-10-06T08:30:41.828933+00:00"
+            "ended_at": "2026-10-06T11:10:59.336715+00:00"
           },
           "entry": "member_turn"
         },
@@ -252,9 +252,9 @@
           "event_type": "view: changes",
           "from_agent": "checker",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:41.882818+00:00",
+          "timestamp": "2026-10-06T11:10:59.371270+00:00",
           "data": {
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
             "verdict": "changes",
             "note": "A new user won't know notes save on their own; say it in the first line."
           },
@@ -264,12 +264,12 @@
         {
           "event_type": "turn 1: completed",
           "from_agent": "maker",
-          "timestamp": "2026-10-06T08:30:41.916952+00:00",
+          "timestamp": "2026-10-06T11:10:59.394601+00:00",
           "data": {
-            "turn_id": "5e2c42571a1c443db38acf40bae300d2",
+            "turn_id": "8d51cd4aaa8d4b90a679c1483f58dfd6",
             "turn_no": 1,
             "state": "completed",
-            "ended_at": "2026-10-06T08:30:42.166694+00:00"
+            "ended_at": "2026-10-06T11:10:59.583921+00:00"
           },
           "entry": "member_turn"
         },
@@ -277,9 +277,9 @@
           "event_type": "view: changes",
           "from_agent": "maker",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:42.217449+00:00",
+          "timestamp": "2026-10-06T11:10:59.619046+00:00",
           "data": {
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
             "verdict": "changes",
             "note": "The heading wraps to three lines on a phone. Try four words or fewer."
           },
@@ -290,13 +290,13 @@
           "event_type": "message: view",
           "from_agent": "checker",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:42.246371+00:00",
+          "timestamp": "2026-10-06T11:10:59.639813+00:00",
           "data": {
-            "message_id": "5cca946396cd446f9f372c6746ac4d0a",
+            "message_id": "45bc2ba5e92a453084b90936482ca03b",
             "state": "consumed",
             "deliveries": 1,
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
-            "preview": "View on review 76cc9df00c26420eb54721bb1f02dd0a (round 1, version 3530efcf116c): changes. Note: A new user won't know notes save on their own; say it in the fir..."
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
+            "preview": "View on review 047dde20cc074e41819fa52371ad6be7 (round 1, version dc13333dd802): changes. Note: A new user won't know notes save on their own; say it in the fir..."
           },
           "entry": "message",
           "message_kind": "view"
@@ -305,13 +305,13 @@
           "event_type": "message: view",
           "from_agent": "maker",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:42.246371+00:00",
+          "timestamp": "2026-10-06T11:10:59.639813+00:00",
           "data": {
-            "message_id": "68b52ec2fe464da1b46cbd43d3fdea6e",
+            "message_id": "9fa7817b74ee41ea93c5dd375f469028",
             "state": "consumed",
             "deliveries": 1,
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
-            "preview": "View on review 76cc9df00c26420eb54721bb1f02dd0a (round 1, version 3530efcf116c): changes. Note: The heading wraps to three lines on a phone. Try four words or f..."
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
+            "preview": "View on review 047dde20cc074e41819fa52371ad6be7 (round 1, version dc13333dd802): changes. Note: The heading wraps to three lines on a phone. Try four words or f..."
           },
           "entry": "message",
           "message_kind": "view"
@@ -320,13 +320,13 @@
           "event_type": "message: notice",
           "from_agent": "temper",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:42.247846+00:00",
+          "timestamp": "2026-10-06T11:10:59.641194+00:00",
           "data": {
-            "message_id": "27048facc5ed4d9f8c450f032d87a003",
+            "message_id": "433e34cb41f14407b7c056d13e21765f",
             "state": "consumed",
             "deliveries": 1,
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
-            "preview": "Review 76cc9df00c26420eb54721bb1f02dd0a (round 1): the views are in (0 satisfied, 2 changes). Decide with the decide tool, naming review 76cc9df00c26420eb54721b..."
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
+            "preview": "Review 047dde20cc074e41819fa52371ad6be7 (round 1): the views are in (0 satisfied, 2 changes). Decide with the decide tool, naming review 047dde20cc074e41819fa52..."
           },
           "entry": "message",
           "message_kind": "notice"
@@ -334,23 +334,23 @@
         {
           "event_type": "turn 2: completed",
           "from_agent": "lead",
-          "timestamp": "2026-10-06T08:30:42.274766+00:00",
+          "timestamp": "2026-10-06T11:10:59.660490+00:00",
           "data": {
-            "turn_id": "d4120c5008f140a09f57fe145e9d1196",
+            "turn_id": "71b5f1a97f9a4e6e832439548036582a",
             "turn_no": 2,
             "state": "completed",
-            "ended_at": "2026-10-06T08:30:42.522017+00:00"
+            "ended_at": "2026-10-06T11:10:59.827020+00:00"
           },
           "entry": "member_turn"
         },
         {
           "event_type": "decision: keep_going",
           "from_agent": "lead",
-          "timestamp": "2026-10-06T08:30:42.577383+00:00",
+          "timestamp": "2026-10-06T11:10:59.858444+00:00",
           "data": {
-            "review_id": "76cc9df00c26420eb54721bb1f02dd0a",
+            "review_id": "047dde20cc074e41819fa52371ad6be7",
             "round": 1,
-            "commit": "3530efcf116c7a1271b52ed87f63835eb5245ddc",
+            "commit": "dc13333dd80291cf6b96b1b0d4253de16c67cfd1",
             "summary": "Round 1: the heading is too long and saving isn't explained. Shortening it."
           },
           "entry": "decision",
@@ -361,9 +361,9 @@
           "event_type": "message: notice",
           "from_agent": "temper",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:42.579148+00:00",
+          "timestamp": "2026-10-06T11:10:59.860003+00:00",
           "data": {
-            "message_id": "4637db07a28d4b40ac30e613c3b625cd",
+            "message_id": "7417698f5bb24782a495889e0d8d59d9",
             "state": "undelivered",
             "deliveries": 0,
             "undelivered": "team_stopped",
@@ -376,9 +376,9 @@
           "event_type": "owner wait: pause",
           "from_agent": "temper",
           "to_agent": "owner",
-          "timestamp": "2026-10-06T08:30:42.606684+00:00",
+          "timestamp": "2026-10-06T11:10:59.880332+00:00",
           "data": {
-            "wait_id": "e06c770c1bab45fda56dc8767fa63392",
+            "wait_id": "341b21adc77844e88b87974fd95e2310",
             "state": "decided",
             "round": 1,
             "header": "pause-after-round-1",
@@ -392,9 +392,9 @@
           "event_type": "owner answer: stop",
           "from_agent": "owner",
           "to_agent": "temper",
-          "timestamp": "2026-10-06T08:30:43.028635+00:00",
+          "timestamp": "2026-10-06T11:11:00.197832+00:00",
           "data": {
-            "wait_id": "e06c770c1bab45fda56dc8767fa63392",
+            "wait_id": "341b21adc77844e88b87974fd95e2310",
             "answer": "stop",
             "answered_by": "owner",
             "answered_source": "team_page",
@@ -421,24 +421,24 @@
     },
     "owner_actions": [
       {
-        "at": "2026-10-06T08:30:40.894225",
+        "at": "2026-10-06T11:10:58.609754+00:00",
         "kind": "start",
         "by": "unknown caller",
         "source": "team_page",
         "request_id": "x-1",
         "detail": {
-          "workflow": "team-trial-f3c97915b9d7",
-          "trial_id": "f3c97915b9d7"
+          "workflow": "team-trial-85188d672613",
+          "trial_id": "85188d672613"
         }
       },
       {
-        "at": "2026-10-06T08:30:43.028635+00:00",
+        "at": "2026-10-06T11:11:00.197832+00:00",
         "kind": "answer",
         "by": "owner",
         "source": "team_page",
         "request_id": "x-stop",
         "detail": {
-          "wait_id": "e06c770c1bab45fda56dc8767fa63392",
+          "wait_id": "341b21adc77844e88b87974fd95e2310",
           "wait_kind": "pause",
           "answer": "stop"
         }
@@ -450,7 +450,7 @@
       "owner_words": "We have what we need for now.",
       "problems": [],
       "by": "owner",
-      "at": "2026-10-06T08:30:43.116665+00:00",
+      "at": "2026-10-06T11:11:00.292746+00:00",
       "done": null
     }
   }

@@ -1,0 +1,18 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 200,
+  "body": {
+    "status": "approved",
+    "wait_id": "8ec49a8cd4214791915985fd851feea9",
+    "event_id": "a14976c5-d755-40a0-b789-0c1edbba39a6",
+    "answer": "guide",
+    "text": "Focus on the saving line; the rest is fine.",
+    "repeated": false,
+    "carries_on": false,
+    "needs_resume": true,
+    "by": "owner",
+    "at": "2026-10-06T11:10:52+00:00",
+    "message": "Approved and kept. The run is not running, so it needs Resume; when it comes back it goes on with this answer without asking again."
+  },
+  "derived_from": "answer-200-guide"
+}

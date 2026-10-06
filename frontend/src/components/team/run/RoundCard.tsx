@@ -11,8 +11,11 @@ const MAX_SEGMENTS = 12;
  * The round the team is on: how many rounds have gone by without done
  * (the team pauses for you when it reaches the limit), and the latest
  * review with every member's view and the leader's decision.
+ *
+ * `inWait` draws it inside the needs-you card (under the question, no card
+ * of its own), where it moves while Temper waits for you.
  */
-export function RoundCard({ run }: { run: TeamRun }) {
+export function RoundCard({ run, inWait = false }: { run: TeamRun; inWait?: boolean }) {
   const { round, reviews, trial } = run;
   if (round.current < 1 && reviews.length === 0) return null;
 
@@ -25,11 +28,16 @@ export function RoundCard({ run }: { run: TeamRun }) {
   );
   const meterWords = `${without} of ${limit} rounds without done`;
 
+  const Heading = inWait ? 'h3' : 'h2';
   return (
-    <section aria-labelledby="team-round-title" className={cn(teamCard, 'p-4')}>
-      <h2 id="team-round-title" className={teamLabel}>
+    <section
+      aria-labelledby="team-round-title"
+      data-round-card={inWait ? 'in-wait' : 'card'}
+      className={inWait ? 'border-t border-[var(--team-wait-card-border)] pt-3' : cn(teamCard, 'p-4')}
+    >
+      <Heading id="team-round-title" className={teamLabel}>
         Round {Math.max(round.current, 1)}
-      </h2>
+      </Heading>
       {segments > 0 && (
         <div role="img" aria-label={meterWords} className="mb-2 flex gap-1.5">
           {Array.from({ length: segments }, (_, i) => (

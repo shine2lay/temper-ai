@@ -2,15 +2,15 @@
   "route": "GET /api/team/runs/{execution_id}/messages/{message_id}",
   "status": 200,
   "body": {
-    "message_id": "8d50a27e357645b582f2822d07fca4bc",
+    "message_id": "d0e933f685fa490ea7bb1664c22df81e",
     "from": "maker",
     "to": "lead",
     "kind": "view",
     "state": "consumed",
     "undelivered_reason": null,
-    "review_id": "1082d36f489844ad863f7cbbf460d982",
-    "body": "View on review 1082d36f489844ad863f7cbbf460d982 (round 1, version 063ff655a395): changes. Note: The heading wraps to three lines on a phone. Try four words or fewer.",
-    "created_at": "2026-10-06T08:30:29.658323+00:00",
-    "delivered_at": "2026-10-06T08:30:29.684597+00:00"
+    "review_id": "a4430a4329174cf9967aaca9ff687729",
+    "body": "View on review a4430a4329174cf9967aaca9ff687729 (round 1, version e8671600cea1): changes. Note: The heading wraps to three lines on a phone. Try four words or fewer.",
+    "created_at": "2026-10-06T11:10:48.212532+00:00",
+    "delivered_at": "2026-10-06T11:10:48.231940+00:00"
   }
 }

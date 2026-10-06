@@ -2,9 +2,9 @@
   "route": "GET /api/team/runs/{execution_id}",
   "status": 200,
   "body": {
-    "execution_id": "10b1f9e9-af4a-4855-babe-7c024c2ff643",
-    "trial_id": "610212b71c8c",
-    "workflow": "team-trial-610212b71c8c",
+    "execution_id": "1a861036-533c-4a3e-8795-398c47939290",
+    "trial_id": "f9f192c3a3e2",
+    "workflow": "team-trial-f9f192c3a3e2",
     "run_status": "failed",
     "state": "didnt_start",
     "cost_usd": 0.0,
@@ -50,7 +50,7 @@
         "source": "/srv/example/unseen/notes-app",
         "start_commit": null
       },
-      "started_at": "2026-10-06T08:30:32.024491+00:00",
+      "started_at": "2026-10-06T11:10:57.595592+00:00",
       "started_by": "unknown caller",
       "request_id": "d-1"
     },
@@ -105,14 +105,14 @@
     },
     "owner_actions": [
       {
-        "at": "2026-10-06T08:30:32.056523",
+        "at": "2026-10-06T11:10:57.626192+00:00",
         "kind": "start",
         "by": "unknown caller",
         "source": "team_page",
         "request_id": "d-1",
         "detail": {
-          "workflow": "team-trial-610212b71c8c",
-          "trial_id": "610212b71c8c"
+          "workflow": "team-trial-f9f192c3a3e2",
+          "trial_id": "f9f192c3a3e2"
         }
       }
     ],
@@ -124,7 +124,7 @@
         "project: /srv/example/unseen/notes-app isn't reachable inside Temper"
       ],
       "by": null,
-      "at": "2026-10-06T08:30:32.106015+00:00",
+      "at": "2026-10-06T11:10:57.656441+00:00",
       "done": null
     }
   }

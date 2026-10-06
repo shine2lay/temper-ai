@@ -171,8 +171,13 @@ export function decisionWords(decision: string): string {
   return decision.replace(/_/g, ' ');
 }
 
-/** The kind's title for a wait ("Paused after round 3", "qa asks you"). */
-export function waitTitle(wait: Pick<TeamWait, 'kind' | 'round' | 'member' | 'turn_no'>): string {
+/**
+ * The kind's title for a wait ("Paused after round 3", "backend's turn 4
+ * failed", "qa asks you (turn 5)"). A recovery wait says how the turn
+ * ended, from Temper's `why`: "failed" for a turn that failed, a usage
+ * limit, or any other cut-off.
+ */
+export function waitTitle(wait: Pick<TeamWait, 'kind' | 'round' | 'member' | 'turn_no'> & { why?: string | null }): string {
   switch (wait.kind) {
     case 'pause':
       return wait.round != null ? `Paused after round ${wait.round}` : 'Paused';
@@ -181,13 +186,29 @@ export function waitTitle(wait: Pick<TeamWait, 'kind' | 'round' | 'member' | 'tu
     case 'recovery': {
       const who = wait.member ?? 'A member';
       const turn = wait.turn_no != null ? ` turn ${wait.turn_no}` : ' turn';
-      return `${who}'s${turn} didn't finish`;
+      const why = (wait.why ?? '').trim();
+      if (why === 'failed') return `${who}'s${turn} failed`;
+      if (why.startsWith('usage limit')) return `${who}'s${turn} was cut off by a usage limit`;
+      return `${who}'s${turn} was cut off`;
     }
     case 'question':
-      return `${wait.member ?? 'A member'} asks you`;
+      return `${wait.member ?? 'A member'} asks you${wait.turn_no != null ? ` (turn ${wait.turn_no})` : ''}`;
     default:
       return 'Temper is waiting for you';
   }
+}
+
+/** "11 min ago", "just now", "2 h ago": how long a question has waited. */
+export function agoWords(iso: string | null | undefined, now: number = Date.now()): string {
+  const d = parse(iso);
+  if (!d) return '';
+  const minutes = Math.floor((now - d.getTime()) / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
 }
 
 const NUMBER = new Intl.NumberFormat('en-US');

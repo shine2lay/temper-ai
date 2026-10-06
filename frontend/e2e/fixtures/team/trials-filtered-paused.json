@@ -5,9 +5,9 @@
     "total": 1,
     "trials": [
       {
-        "trial_id": "f1db7f9f5e3a",
-        "execution_id": "5e25a530-5e03-4bdb-bef2-4e0ab55ec3e0",
-        "workflow": "team-trial-f1db7f9f5e3a",
+        "trial_id": "e0a7bfe2036f",
+        "execution_id": "7a4d7d5b-aa45-476c-8820-7577c1abe18c",
+        "workflow": "team-trial-e0a7bfe2036f",
         "goal_first_line": "Name the three buttons on the share dialog.",
         "leader": "lead",
         "members": [
@@ -29,7 +29,7 @@
         "decision": null,
         "round": 1,
         "cost_usd": 0.0,
-        "started_at": "2026-10-06T08:30:37.258986+00:00",
+        "started_at": "2026-10-06T11:11:10.912093+00:00",
         "started_by": "temper-ci",
         "ended_at": null
       }

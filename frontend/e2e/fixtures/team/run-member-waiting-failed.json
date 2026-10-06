@@ -1,0 +1,201 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "a0342ebd-52d5-45ab-a56d-b6aad2d3fc65",
+    "trial_id": "67f4e0bef825",
+    "workflow": "team-trial-67f4e0bef825",
+    "run_status": "waiting",
+    "state": "member_waiting",
+    "cost_usd": 0.0,
+    "trial": {
+      "goal": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is shared until you choose to share it.",
+      "leader": "lead",
+      "members": [
+        {
+          "name": "lead",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 3,
+      "communication": "all",
+      "project": {
+        "source": "/srv/example/projects/notes-app",
+        "start_commit": null
+      },
+      "started_at": "2026-10-06T11:11:00.837281+00:00",
+      "started_by": "unknown caller",
+      "request_id": "wf-1"
+    },
+    "round": {
+      "current": 0,
+      "keep_goings": 0,
+      "pause_after_rounds": 3
+    },
+    "members": [
+      {
+        "name": "lead",
+        "role": "planner",
+        "leader": true,
+        "activity": "waiting_on_owner",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 1,
+          "state": "failed",
+          "started_at": "2026-10-06T11:11:01.105881+00:00",
+          "ended_at": "2026-10-06T11:11:01.232127+00:00",
+          "error": "lead (planner) turn 1 failed: the last model call failed: 400 invalid_request_error: the request was refused"
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      }
+    ],
+    "open_waits": [
+      {
+        "wait_id": "5552dab253184ee5999ff75c635a9d84",
+        "event_id": "4e06f4de-1978-4f79-ab75-1c4d82ee1fea",
+        "node_name": "trial.team~ask-5552dab253184ee5999ff75c635a9d84",
+        "asked": true,
+        "kind": "recovery",
+        "header": "lead turn 1",
+        "question": "lead's turn 1 failed: lead (planner) turn 1 failed: the last model call failed: 400 invalid_request_error: the request was refused.",
+        "reply_hint": "Reply 'retry' to send its messages again, or 'stop' to end the step.",
+        "answers": [
+          {
+            "answer": "retry",
+            "needs_text": "none",
+            "means": "lead gets the same messages again in a new turn."
+          },
+          {
+            "answer": "stop",
+            "needs_text": "optional",
+            "means": "The team stops here and the run ends failed. Any words you give are kept with it."
+          }
+        ],
+        "round": null,
+        "member": "lead",
+        "turn_no": 1,
+        "why": "failed",
+        "asked_again": 0,
+        "opened_at": "2026-10-06T11:11:01.504618+00:00"
+      }
+    ],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-06T11:11:01.038491+00:00",
+          "data": {
+            "message_id": "55cb4affd48b485f97ac29b684a0b495",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: failed",
+          "from_agent": "lead",
+          "timestamp": "2026-10-06T11:11:01.105881+00:00",
+          "data": {
+            "turn_id": "8026748aaad64a03abcc8468910ba6c1",
+            "turn_no": 1,
+            "state": "failed",
+            "ended_at": "2026-10-06T11:11:01.232127+00:00",
+            "error": "lead (planner) turn 1 failed: the last model call failed: 400 invalid_request_error: the request was refused"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "owner wait: recovery",
+          "from_agent": "temper",
+          "to_agent": "owner",
+          "timestamp": "2026-10-06T11:11:01.504618+00:00",
+          "data": {
+            "wait_id": "5552dab253184ee5999ff75c635a9d84",
+            "state": "open",
+            "member": "lead",
+            "turn_no": 1
+          },
+          "entry": "owner_wait",
+          "wait_kind": "recovery"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-06T11:11:00.863233+00:00",
+        "kind": "start",
+        "by": "unknown caller",
+        "source": "team_page",
+        "request_id": "wf-1",
+        "detail": {
+          "workflow": "team-trial-67f4e0bef825",
+          "trial_id": "67f4e0bef825"
+        }
+      }
+    ],
+    "outcome": null
+  }
+}

@@ -2,9 +2,9 @@
   "route": "GET /api/team/runs/{execution_id}",
   "status": 200,
   "body": {
-    "execution_id": "172b1536-4671-4e2c-b611-a9c260e76674",
-    "trial_id": "904d87682451",
-    "workflow": "team-trial-904d87682451",
+    "execution_id": "f980ec6d-673a-4452-87a0-2b18db345ec5",
+    "trial_id": "a964488a3b87",
+    "workflow": "team-trial-a964488a3b87",
     "run_status": "cancelled",
     "state": "stopped",
     "cost_usd": 0.0,
@@ -50,7 +50,7 @@
         "source": "/srv/example/projects/notes-app",
         "start_commit": null
       },
-      "started_at": "2026-10-06T08:30:52.946480+00:00",
+      "started_at": "2026-10-06T11:11:17.109682+00:00",
       "started_by": "unknown caller",
       "request_id": "q-1"
     },
@@ -76,8 +76,8 @@
         "last_turn": {
           "turn_no": 1,
           "state": "completed",
-          "started_at": "2026-10-06T08:30:53.157325+00:00",
-          "ended_at": "2026-10-06T08:30:53.286308+00:00",
+          "started_at": "2026-10-06T11:11:17.309769+00:00",
+          "ended_at": "2026-10-06T11:11:17.413856+00:00",
           "error": null
         }
       },
@@ -114,9 +114,9 @@
           "event_type": "message: goal",
           "from_agent": "temper",
           "to_agent": "lead",
-          "timestamp": "2026-10-06T08:30:53.088988+00:00",
+          "timestamp": "2026-10-06T11:11:17.263224+00:00",
           "data": {
-            "message_id": "a8bc8752f4cc4da4a9f9b46e609297c2",
+            "message_id": "f3524f9589ca470284a1933aaa0cb24d",
             "state": "consumed",
             "deliveries": 1,
             "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
@@ -127,12 +127,12 @@
         {
           "event_type": "turn 1: completed",
           "from_agent": "lead",
-          "timestamp": "2026-10-06T08:30:53.157325+00:00",
+          "timestamp": "2026-10-06T11:11:17.309769+00:00",
           "data": {
-            "turn_id": "350114e908af4997bbecf3969f338da7",
+            "turn_id": "0117e68959f744dcb1e6ecc6887bcffb",
             "turn_no": 1,
             "state": "completed",
-            "ended_at": "2026-10-06T08:30:53.286308+00:00"
+            "ended_at": "2026-10-06T11:11:17.413856+00:00"
           },
           "entry": "member_turn"
         },
@@ -140,9 +140,9 @@
           "event_type": "owner wait: stalled",
           "from_agent": "temper",
           "to_agent": "owner",
-          "timestamp": "2026-10-06T08:30:53.335197+00:00",
+          "timestamp": "2026-10-06T11:11:17.448719+00:00",
           "data": {
-            "wait_id": "0d1795331e74420686ac1972d14ea82d",
+            "wait_id": "6af29b82e9bb4eeb99c51e989afc569a",
             "state": "decided",
             "header": "team-stalled",
             "answer": "stop"
@@ -154,9 +154,9 @@
           "event_type": "owner answer: stop",
           "from_agent": "owner",
           "to_agent": "temper",
-          "timestamp": "2026-10-06T08:30:53.790523+00:00",
+          "timestamp": "2026-10-06T11:11:17.849651+00:00",
           "data": {
-            "wait_id": "0d1795331e74420686ac1972d14ea82d",
+            "wait_id": "6af29b82e9bb4eeb99c51e989afc569a",
             "answer": "stop",
             "answered_by": "owner",
             "answered_source": "team_page",
@@ -182,24 +182,24 @@
     },
     "owner_actions": [
       {
-        "at": "2026-10-06T08:30:53.009672",
+        "at": "2026-10-06T11:11:17.164919+00:00",
         "kind": "start",
         "by": "unknown caller",
         "source": "team_page",
         "request_id": "q-1",
         "detail": {
-          "workflow": "team-trial-904d87682451",
-          "trial_id": "904d87682451"
+          "workflow": "team-trial-a964488a3b87",
+          "trial_id": "a964488a3b87"
         }
       },
       {
-        "at": "2026-10-06T08:30:53.790523+00:00",
+        "at": "2026-10-06T11:11:17.849651+00:00",
         "kind": "answer",
         "by": "owner",
         "source": "team_page",
         "request_id": "q-stop",
         "detail": {
-          "wait_id": "0d1795331e74420686ac1972d14ea82d",
+          "wait_id": "6af29b82e9bb4eeb99c51e989afc569a",
           "wait_kind": "stalled",
           "answer": "stop"
         }
@@ -211,7 +211,7 @@
       "owner_words": "Not worth more rounds today.",
       "problems": [],
       "by": "owner",
-      "at": "2026-10-06T08:30:53.860366+00:00",
+      "at": "2026-10-06T11:11:17.914271+00:00",
       "done": null
     }
   }

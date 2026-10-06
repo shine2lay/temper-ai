@@ -146,18 +146,35 @@ class TestExecutorTimeout:
                 time.sleep(TestExecutorTimeout.OVERRUN)
                 return ToolResult(success=True, result="done")
 
+        released = threading.Event()
+
+        class Held(BaseTool):
+            # Finishes only once released: a tool that merely sleeps past the 1s wait
+            # can finish before a busy machine wakes the waiter, which then reads it
+            # as done (Future.result checks the state after its wait).
+            name = "held"
+            description = "Runs until the test releases it"
+            parameters = {"type": "object", "properties": {}}
+
+            def execute(self, **params: Any) -> ToolResult:
+                released.wait(timeout=10)
+                return ToolResult(success=True, result="done")
+
         executor = ToolExecutor(default_timeout=1)
-        executor.register_tools({"patient": Patient(), "slow": SlowTool()})
+        executor.register_tools({"patient": Patient(), "held": Held()})
 
         result = executor.execute("patient", {"timeout": 3}, allowed_tools=ALL_TOOLS)
         assert result.success is True, result.error
 
         # Only when the schema offers it: a stray `timeout` param on a tool
         # with no such notion changes nothing.
-        result = executor.execute("slow", {"duration": self.OVERRUN, "timeout": 3}, allowed_tools=ALL_TOOLS)
-        assert result.success is False
-        assert "timed out" in result.error.lower()
-        executor.shutdown()
+        try:
+            result = executor.execute("held", {"timeout": 3}, allowed_tools=ALL_TOOLS)
+            assert result.success is False
+            assert "timed out" in result.error.lower()
+        finally:
+            released.set()
+            executor.shutdown()
 
     def test_a_call_that_timed_out_while_queued_never_runs(self):
         """A timed-out call still waiting for a worker is withdrawn, not run later.

@@ -1,0 +1,96 @@
+# QA's flaky-test report: lay out one copy of the repository per repetition (qa_flaky_report's
+# first step).
+#
+# Clones the repository once (a git bundle, a repository folder or a file:// URL the run can read),
+# resolves the commit, and makes a fresh checkout of that commit for every repetition: run_0 to
+# run_<N-1>, each its own clone sharing the first one's objects. A repetition's CI writes into its own
+# tree (.epd/tests.md, its logs), so no two of them see each other's files.
+#
+# A bundle is the safe way in: it is a plain file, so a run reads it whoever owns it, where a clone
+# of another user's repository can be refused as dubious ownership.
+#
+# Fails loud: no repository, no such commit, a report already in out, a count out of range.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: qa_flaky_prepare
+  version: 1
+  type: script
+  timeout_seconds: 900
+  script_template: |
+    #!/bin/sh
+    set -eu
+    REPO={{ repo }}
+    COMMIT={{ commit }}
+    RUNS={{ runs }}
+    LANES={{ parallel | default('') }}
+    OUT={{ out }}
+    WORK_ROOT={{ work_root | default('') }}
+    # An optional workflow input that was not given arrives as Python None.
+    [ "$LANES" = None ] && LANES=""
+    [ "$WORK_ROOT" = None ] && WORK_ROOT=""
+    [ -n "$LANES" ] || LANES=3
+
+    ROOT=""
+    fail() {
+      [ -n "$ROOT" ] && rm -rf "$ROOT"
+      python3 -c 'import json, sys; print(json.dumps({"status": "failed", "error": sys.argv[1]}))' "$1"
+      exit 1
+    }
+
+    case "$RUNS" in ''|*[!0-9]*) fail "runs must be a whole number: $RUNS" ;; esac
+    case "$LANES" in ''|*[!0-9]*) fail "parallel must be a whole number: $LANES" ;; esac
+    [ "$RUNS" -ge 2 ] && [ "$RUNS" -le 100 ] || fail "runs must be 2 to 100: $RUNS"
+    [ "$LANES" -ge 1 ] && [ "$LANES" -le 8 ] || fail "parallel must be 1 to 8: $LANES"
+    case "$COMMIT" in ''|-*|*[!A-Za-z0-9._/-]*) fail "commit must be a commit id or a branch name: $COMMIT" ;; esac
+    case "$OUT" in /*) ;; *) fail "out must be an absolute folder: $OUT" ;; esac
+    case "$OUT" in *..*) fail "out may not hold '..': $OUT" ;; esac
+    [ ! -e "$OUT/report.json" ] || fail "out already holds a report: $OUT/report.json"
+    [ ! -e "$OUT/runs" ] || fail "out already holds runs from another report: $OUT/runs"
+    case "$REPO" in
+      file://*) ;;
+      *) [ -e "$REPO" ] || fail "no repository at $REPO" ;;
+    esac
+
+    [ -n "$WORK_ROOT" ] || WORK_ROOT="$(dirname "$(mktemp -u)")"
+    mkdir -p "$WORK_ROOT" "$OUT" || fail "cannot make $WORK_ROOT or $OUT"
+    ROOT=$(mktemp -d "$WORK_ROOT/qa-flaky.XXXXXX")
+
+    BASE="$ROOT/base"
+    # safe.directory: a repository folder owned by another user than the run's is read, not refused.
+    git -c safe.directory='*' clone -q --no-checkout "$REPO" "$BASE" 2>/dev/null || fail "git clone failed for $REPO"
+    SHA=$(git -C "$BASE" rev-parse -q --verify "origin/$COMMIT^{commit}" 2>/dev/null) \
+      || SHA=$(git -C "$BASE" rev-parse -q --verify "$COMMIT^{commit}" 2>/dev/null) \
+      || fail "the repository has no commit or branch $COMMIT"
+    SUBJECT=$(git -C "$BASE" log -1 --format=%s "$SHA")
+
+    i=0
+    while [ "$i" -lt "$RUNS" ]; do
+      SLOT="$ROOT/run_$i"
+      git clone -q --shared --no-checkout "$BASE" "$SLOT" 2>/dev/null || fail "could not make the copy for repetition $i"
+      git -C "$SLOT" checkout -q --detach "$SHA" 2>/dev/null || fail "could not check out $SHA for repetition $i"
+      i=$((i + 1))
+    done
+    chmod -R a+rX "$ROOT"
+    # Made last, so a prepare that failed leaves out as it was and can simply be started again.
+    mkdir "$OUT/runs" || fail "cannot make $OUT/runs"
+    # Read and tidied afterwards by the host user, who is not the run's.
+    chmod a+rwx "$OUT" "$OUT/runs" 2>/dev/null || true
+
+    echo "flaky report on $(printf %.12s "$SHA") ($SUBJECT): $RUNS repetitions, $LANES at a time, copies in $ROOT"
+    python3 - "$REPO" "$SHA" "$SUBJECT" "$RUNS" "$LANES" "$OUT" "$ROOT" <<'PY'
+    import json, sys
+    repo, sha, subject, runs, lanes, out, root = sys.argv[1:]
+    answer = {
+        "status": "ready",
+        "repo": repo,
+        "commit": sha,
+        "subject": subject,
+        "runs": int(runs),
+        "parallel": int(lanes),
+        "out": out,
+        "work_root": root,
+    }
+    for i in range(int(runs)):
+        answer[f"slot_{i}"] = f"{root}/run_{i}"
+    print(json.dumps(answer))
+    PY

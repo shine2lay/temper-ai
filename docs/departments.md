@@ -32,7 +32,7 @@ role tests and lands a change.
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`. |
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
-| `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`). |
+| `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`), the flaky-test report (`qa_flaky_report`). |
 | `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, the CI and smoke workflows temper-ci runs, and the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests). |
 | `security` | Security | The build's security read and its diff scan, and the security reviewer of `code_review`. |
 | `data` | Data & analytics | The measure stage, the stage scorecard and its judge, the walk report, and the plan stage's numbers engineer. |
@@ -131,6 +131,7 @@ the dashboard.
 | `signal_grade` | A finished signal harvest, against its own evidence: arithmetic, confidence, candidates, provenance, blocked sources, scope and competitor claims (also runs at the end of every `signal_harvest`) | product |
 | `positioning_grade` | One positioning document, against its own evidence folder: Dunford's five components, the messaging hierarchy, every claim traced to a quote, plain words (soundness, not appeal) | marketing |
 | `epd_qa_grade`, `epd_qa_case` | The build's test run and browser check, on copies of past changes with known bugs planted and on clean controls: what each check caught, its false alarms, harness faults apart, cost and time | qa |
+| `qa_flaky_report` | A repository's tests on one commit, N runs of its CI: which tests are flaky (failed and passed on the same code) or broken, their rates and first error lines, checks that failed without test lines apart, and how often the live build counted each as a new failure | qa |
 
 To grade a positioning document, put `positioning.md`, `positioning.json` and its
 evidence folder in a run workspace (the format is
@@ -162,6 +163,25 @@ criteria and a seeded login. Write each finished run as `<case>.json`, then run
 round of the same cases: checks that pass in one round and fail in the other
 are flaky). The grade is `grade.md` and `grade.json` in `out`. `task_test`
 costs no model money; the browser half costs what `task_verify` costs.
+
+To find flaky tests, start `qa_flaky_report` through the API or the dashboard
+(its steps are laid out from `runs` when the run starts, which `temper run`
+cannot do) with `repo` (a git bundle, or a repository the runs can read, under
+`workspaces/`), `commit`, `out`, and `runs` (default 20) and `parallel`
+(default 3). Each repetition is the live `task_test` on its own fresh copy of
+the commit, with the commit itself as base, so every failure is listed with its
+test id. A test that failed in some repetitions and passed in others is flaky;
+one that failed in all is broken; a check that failed without naming a test is
+an infrastructure flake, listed apart. The report is `report.md` and
+`report.json` in `out`, with each test's rate, first error line and the
+repetitions it failed in, and (`history`, on by default) how often the live
+build's `task_test` counted it as a new failure. Twenty repetitions find a test
+that fails 10% of the time about 88% of the time, and one that fails 5% of the
+time only about 64%: no flaky test found is not proof there is none. It only
+reports: the fix goes to whoever owns the test (temper-ai's own rule, in
+[testing.md](testing.md#flaky-tests): fixed, never retried until green). No
+model money, but CI time: RollCall's took about 10 minutes per repetition with
+3 at a time, so 20 repetitions took about 75 minutes.
 
 Still to build: a grader for launch notes (marketing), the walks and the UI
 (design), the frontend side of a build (frontend), seeded flaws for the
@@ -448,7 +468,7 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `epd/agents/task_minors.yaml` | agent (script) |
 | `epd/agents/task_plan.yaml` | agent |
 
-### qa (12)
+### qa (17)
 
 | Config | Kind |
 |---|---|
@@ -458,12 +478,17 @@ workspace. Past direct-CLI execution history stays local-only; do not inject old
 | `epd/agents/epd_qa_finish.yaml` | agent (script) |
 | `epd/agents/epd_qa_prepare.yaml` | agent (script) |
 | `epd/agents/epd_qa_score.yaml` | agent (script) |
+| `epd/agents/qa_flaky_keep.yaml` | agent (script) |
+| `epd/agents/qa_flaky_prepare.yaml` | agent (script) |
+| `epd/agents/qa_flaky_tally.yaml` | agent (script) |
 | `epd/agents/task_seed_slot.yaml` | agent (script) |
 | `epd/agents/task_test.yaml` | agent (script) |
 | `epd/agents/task_verify.yaml` | agent |
+| `epd/bin/qa_flaky_tally.py` | script |
 | `epd/bin/qa_grade_score.py` | script |
 | `epd/workflows/epd_qa_case.yaml` | workflow |
 | `epd/workflows/epd_qa_grade.yaml` | workflow |
+| `epd/workflows/qa_flaky_report.yaml` | workflow |
 
 ### systems (27)
 

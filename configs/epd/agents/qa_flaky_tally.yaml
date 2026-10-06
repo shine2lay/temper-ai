@@ -1,0 +1,49 @@
+# QA's flaky-test report: count what every repetition said and write the report (qa_flaky_report's
+# last step).
+#
+# Runs configs/epd/bin/qa_flaky_tally.py over out/runs/: per test, the repetitions in which its check
+# completed, how many of them it failed, its rate and first error line, and its class (flaky: failed
+# and passed on the same code; broken: failed every time); per check, whether it ever failed without
+# test lines (an infrastructure flake). Writes out/report.json and out/report.md, and removes the
+# copies prepare made. With history on, it also reads (GET only) how often the live build's task_test
+# counted each of those tests as a new failure. Deterministic; no model.
+#
+# Runs after a failed step too; when prepare itself failed it says why and writes no report.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: qa_flaky_tally
+  version: 1
+  type: script
+  timeout_seconds: 900
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd /
+    STATUS={{ prepare_status | default('') }}
+    ERROR={{ prepare_error | default('') }}
+    OUT={{ out | default('') }}
+    RUNS={{ runs | default('') }}
+    COMMIT={{ commit | default('') }}
+    REPO={{ repo | default('') }}
+    SUBJECT={{ subject | default('') }}
+    LANES={{ parallel | default('') }}
+    WORK_ROOT={{ work_root | default('') }}
+    HISTORY={{ history | default('') }}
+    HISTORY_API={{ history_api | default('') }}
+    HISTORY_WORKFLOWS={{ history_workflows | default('') }}
+    RUN_ID={{ run_id | default('') }}
+    [ "$ERROR" = None ] && ERROR=""
+    [ "$WORK_ROOT" = None ] && WORK_ROOT=""
+    [ "$HISTORY_API" = None ] && HISTORY_API=""
+    [ "$HISTORY_WORKFLOWS" = None ] && HISTORY_WORKFLOWS=""
+    [ "$RUN_ID" = None ] && RUN_ID=""
+    if [ "$STATUS" != ready ]; then
+      [ -n "$ERROR" ] || ERROR="prepare did not finish"
+      python3 -c 'import json, sys; print(json.dumps({"status": "failed", "error": "no report: " + sys.argv[1]}))' "$ERROR"
+      exit 1
+    fi
+    case "$HISTORY" in false|False|0|no) HISTORY_API="" ;; esac
+    [ -n "$HISTORY_WORKFLOWS" ] || HISTORY_WORKFLOWS=epd_loop
+    exec python3 -u /app/configs/epd/bin/qa_flaky_tally.py --out "$OUT" --runs "$RUNS" --commit "$COMMIT" \
+      --repo "$REPO" --subject "$SUBJECT" --parallel "$LANES" --run-id "$RUN_ID" --work-root "$WORK_ROOT" \
+      --history-api "$HISTORY_API" --history-workflows "$HISTORY_WORKFLOWS"

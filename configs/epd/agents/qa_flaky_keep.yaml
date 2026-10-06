@@ -1,0 +1,64 @@
+# QA's flaky-test report: keep what one repetition of the CI said, then remove its copy
+# (qa_flaky_report's step after each task_test).
+#
+# Writes out/runs/run_<i>/: output.txt (task_test's answer exactly as it printed it), step.json (how
+# the step ended: its status and error, for a repetition that timed out or never answered), and
+# task_test's report and logs from the copy's .epd folder. Then removes the copy, so twenty
+# repetitions never hold twenty trees at once. Only a copy prepare made is removed: a folder named
+# run_<i> beside base/ under a qa-flaky.* folder.
+#
+# Runs after a failed repetition too: a timeout is a result the tally counts.
+# POSIX sh; no dollar-brace env syntax (config-loader substitution).
+agent:
+  name: qa_flaky_keep
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd /
+    INDEX={{ index }}
+    TREE={{ tree | default('') }}
+    OUT={{ out | default('') }}
+    [ "$TREE" = None ] && TREE=""
+    [ "$OUT" = None ] && OUT=""
+    fail() {
+      python3 -c 'import json, sys; print(json.dumps({"status": "failed", "error": sys.argv[1]}))' "$1"
+      exit 1
+    }
+    case "$INDEX" in ''|*[!0-9]*) fail "index must be a whole number: $INDEX" ;; esac
+    [ -n "$OUT" ] && [ -d "$OUT/runs" ] || fail "no runs folder in out: $OUT"
+
+    KEPT="$OUT/runs/run_$INDEX"
+    rm -rf "$KEPT"
+    mkdir -p "$KEPT"
+    python3 - "$KEPT" <<'PY'
+    import json, os, sys
+    kept = sys.argv[1]
+    output = os.environ.get("{{ result | env }}") or ""
+    with open(os.path.join(kept, "output.txt"), "w", encoding="utf-8") as fh:
+        fh.write(output)
+    step = {
+        "status": os.environ.get("{{ step_status | env }}") or None,
+        "error": os.environ.get("{{ step_error | env }}") or None,
+    }
+    with open(os.path.join(kept, "step.json"), "w", encoding="utf-8") as fh:
+        json.dump(step, fh)
+    PY
+    if [ -n "$TREE" ] && [ -d "$TREE/.epd" ]; then
+      [ -f "$TREE/.epd/tests.md" ] && cp "$TREE/.epd/tests.md" "$KEPT/tests.md"
+      [ -d "$TREE/.epd/tests" ] && cp -R "$TREE/.epd/tests" "$KEPT/logs"
+    fi
+    chmod -R a+rwX "$KEPT" 2>/dev/null || true
+
+    REMOVED=false
+    case "$TREE" in
+      */qa-flaky.*/run_"$INDEX")
+        if [ -d "$(dirname "$TREE")/base" ]; then
+          rm -rf "$TREE" 2>/dev/null || true
+          [ -e "$TREE" ] || REMOVED=true
+        fi ;;
+    esac
+    echo "repetition $INDEX kept in $KEPT; copy removed $REMOVED"
+    python3 -c 'import json, sys; print(json.dumps({"status": "kept", "index": int(sys.argv[1]), "kept": sys.argv[2], "removed": sys.argv[3] == "true"}))' "$INDEX" "$KEPT" "$REMOVED"

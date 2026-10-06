@@ -29,8 +29,11 @@ def main(raw: str) -> int:
     args = json.loads(raw)
     url = args["db_url"]
     if not url.startswith("sqlite:///"):
-        say(event="refused", why="the crash worker only opens a private SQLite file")
-        return 2
+        refused = _not_the_test_tier(url)
+        if refused:
+            say(event="refused", why="the crash worker only opens a private SQLite file or "
+                f"the test tier's throwaway Postgres: {refused}")
+            return 2
 
     from tests.test_pi_agent import support as sup
 
@@ -73,6 +76,24 @@ def main(raw: str) -> int:
     time.sleep(float(args.get("give_up_s", 30)))
     say(event="gave_up", execution_id=eid)
     return 3
+
+
+def _not_the_test_tier(url: str) -> str:
+    """Why ``url`` is not the test tier's throwaway Postgres (tests/pgtier.py), or "" when it
+    is. The worker is handed the URL in TEMPER_DATABASE_URL too, which the tier's own check
+    would take for the live database, so that one comparison is left to the test that
+    started this worker (tests/conftest.py checks every database it opens)."""
+    from tests import pgtier
+
+    handed = os.environ.pop("TEMPER_DATABASE_URL", None)
+    try:
+        pgtier.check_url(url)
+    except RuntimeError as exc:
+        return str(exc)
+    finally:
+        if handed is not None:
+            os.environ["TEMPER_DATABASE_URL"] = handed
+    return ""
 
 
 if __name__ == "__main__":

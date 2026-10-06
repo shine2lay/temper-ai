@@ -19,12 +19,19 @@ from fastapi.responses import JSONResponse
 from pydantic import AliasChoices, BaseModel, Field
 
 from temper_ai.api.app_state import AppState
-from temper_ai.api.caller import Caller, record_action, require_caller_may, who
+from temper_ai.api.caller import (
+    Caller,
+    current_caller,
+    record_action,
+    require_caller_may,
+    who,
+)
 from temper_ai.api.data_service import (
     get_agent_index,
     get_tool_calls,
     get_workflow_execution,
     list_workflow_executions,
+    newest_attempt,
 )
 from temper_ai.api.websocket import ws_manager
 from temper_ai.checkpoint.service import CheckpointService
@@ -37,7 +44,7 @@ from temper_ai.observability.recorder import (
     get_events,
     update_event,
 )
-from temper_ai.runner import holds
+from temper_ai.runner import holds, resume_claim
 from temper_ai.runner import parked as pi_parked
 from temper_ai.runner._helpers import (
     McpPreconnectError,
@@ -736,10 +743,12 @@ def _cancel_run(execution_id: str, body: CancelRequest | None, caller: Caller):
         return {"status": result.get("status"), "execution_id": execution_id}
 
     # Orphaned running workflow — update the workflow.started event status directly
-    # so the list query picks up the new status.
-    start_events = get_events(event_type=EventType("workflow.started"), execution_id=execution_id, limit=1)
-    if start_events:
-        update_event(start_events[0]["id"], status="cancelled", data={"cancelled_reason": "Stale run cancelled by user"})
+    # so the list query picks up the new status. Its newest attempt: the status above is
+    # that attempt's, and a resumed run's first attempt ended long ago.
+    start_events = get_events(event_type=EventType("workflow.started"), execution_id=execution_id, limit=None)
+    stale = newest_attempt(start_events)
+    if stale is not None:
+        update_event(stale["id"], status="cancelled", data={"cancelled_reason": "Stale run cancelled by user"})
         logger.info("Marked stale execution %s as cancelled", execution_id)
     return {"status": "cancelled", "execution_id": execution_id}
 
@@ -921,17 +930,31 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is no longer parked on an answered wait")
     if parked is not None and not pi_parked.claim(parked):
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
+    claimed: str | None = None
     if pi_run and parked is None:
         # Never a second copy of a Pi run: one is going here, or another asker has just
         # claimed it and is starting it. (A box's row refuses a second box on its own.)
         if execution_id in _state().running or pi_parked.being_carried_on(execution_id):
             raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already running")
+        # Askers of the same moment all pass that check before any of them has started: the
+        # one that starts the run is the one that wins its claim (runner/resume_claim.py).
+        claimed = resume_claim.claim(execution_id, by=_caller_label())
+        if claimed is None:
+            raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
     try:
         return _start_resume(execution_id, body, result, nodes, config, checkpoint_svc, restored_outputs)
     except BaseException:
         if parked is not None:
             pi_parked.release(parked)
+        if claimed is not None:
+            resume_claim.release(execution_id, claimed)
         raise
+
+
+def _caller_label() -> str:
+    """Who is asking, as a decision records it (empty when nobody bound a caller)."""
+    caller = current_caller()
+    return caller.label if caller is not None else ""
 
 
 def _start_resume(
@@ -1805,7 +1828,7 @@ def resume_answered_parked_run(execution_id: str) -> RunResponse:
     one named (the run's thread, start-up) it is done under the name "carry-on": the
     server's own step after an answer someone was allowed to give.
     """
-    from temper_ai.api.caller import acting_as, current_caller
+    from temper_ai.api.caller import acting_as
 
     caller = current_caller()
     if caller is not None and caller.name is not None:

@@ -111,6 +111,10 @@ OFF = ("0", "false", "off", "no")
 # how the next start-up counts the attempts, so the count survives a restart.
 STAMP = "auto_resumed"
 
+# Why a run temper meant to pick up was left alone after all: Resume refused it (409),
+# because someone else is carrying it on already. Expected, so said without alarm.
+ALREADY_CARRIED_ON = "already being carried on"
+
 
 def switched_on() -> bool:
     return os.environ.get(SWITCH_ENV, "1").strip().lower() not in OFF
@@ -554,8 +558,17 @@ def pick_up_interrupted(
                 logger.warning("Picked %s (%s) back up where it stopped",
                                choice.short, choice.workflow_name)
             except Exception as exc:  # noqa: BLE001 - one bad run must not stop the rest
-                logger.error("Could not pick %s back up: %s", choice.short, exc, exc_info=True)
                 picks.picked.remove(choice)
+                if getattr(exc, "status_code", None) == 409:
+                    # Someone else is carrying it on already (Resume, an answer, another
+                    # start-up): expected, and nothing went wrong. Left alone, said below.
+                    picks.left.append(Choice(
+                        execution_id=choice.execution_id, workflow_name=choice.workflow_name,
+                        pick_up=False, event_id=choice.event_id, pickups=choice.pickups,
+                        why=ALREADY_CARRIED_ON,
+                    ))
+                    continue
+                logger.error("Could not pick %s back up: %s", choice.short, exc, exc_info=True)
                 picks.failed.append(Choice(
                     execution_id=choice.execution_id, workflow_name=choice.workflow_name,
                     pick_up=False, event_id=choice.event_id, pickups=choice.pickups,

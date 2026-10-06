@@ -9,6 +9,7 @@ import { DURATION_TICK_MS } from '@/lib/constants';
 import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { authFetch } from '@/lib/authFetch';
 import { liveAgents } from '@/lib/liveAgents';
+import { isGoing } from '@/lib/runStatus';
 import { useGates } from '@/hooks/useGates';
 
 export function WorkflowHeader() {
@@ -26,9 +27,10 @@ export function WorkflowHeader() {
 
   const { gates } = useGates(workflow?.id);
   const isGated = (gates?.length ?? 0) > 0;
-  const isRunning = workflow?.status === 'running';
-  // The engine keeps a gated run as "running" (it holds its slot); the
-  // header should still say what is actually true of it to a person.
+  // Waiting on a person is still going: the server says "waiting" then.
+  const isRunning = isGoing(workflow?.status);
+  // A live event may still say "running" while a gate is open (the attempt
+  // holds its slot); the header should say what is actually true of it to a person.
   const displayStatus = isRunning && isGated ? 'waiting' : workflow?.status;
   // Waiting for a person is not quiet, however long it has waited -- the
   // server says so too, but the page knows about the gate first.

@@ -270,6 +270,10 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         return None
 
     workflow_event = max(workflow_candidates, key=_start_completeness)
+    # How the run stands now is its newest attempt's to say, not the most complete one's: a
+    # failed first attempt that cost something must not show a resumed run as failed while
+    # the new attempt runs or waits on a person (shown_status).
+    attempt_now = newest_attempt(workflow_candidates) or workflow_event
 
     # Check for fork metadata — if present, merge source execution's nodes
     fork_meta = next(
@@ -415,7 +419,7 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     result = {
         "id": execution_id,
         "workflow_name": wf_data.get("name", ""),
-        "status": _resolve_status(workflow_event),
+        "status": shown_status(_resolve_status(attempt_now), wait_open=_a_wait_is_open(events)),
         "start_time": workflow_event.get("timestamp"),
         "end_time": _get_end_time(events, workflow_event["id"], "workflow."),
         "duration_seconds": wf_data.get("duration_seconds"),
@@ -442,7 +446,7 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         # resumed -- and whether a person pressed Resume or temper picked it up itself after
         # a crash (runner/pickup.py). The steps of those attempts are merged into the tree
         # above; this is who they were.
-        "attempts": _attempts(workflow_candidates, workflow_event),
+        "attempts": _attempts(workflow_candidates, attempt_now),
     }
     result.update(_quiet_fields(execution_id, result, events))
     _clear_children_index()
@@ -458,11 +462,7 @@ def _quiet_fields(execution_id: str, result: dict, events: list[dict]) -> dict:
     status = str(result.get("status") or "")
     newest = max((e for e in events if e.get("timestamp")),
                  key=lambda e: e.get("timestamp") or "", default=None)
-    at_a_gate = any(
-        e.get("type") == "stage.started" and e.get("status") == "waiting"
-        and (e.get("data") or {}).get("gate")
-        for e in events
-    )
+    at_a_gate = _a_wait_is_open(events)
     try:
         workflow = str(result.get("workflow_name") or "")
         verdict = quiet.look(
@@ -633,6 +633,7 @@ def list_workflow_executions(
     )
 
     by_exec = _one_start_per_run(all_events)
+    attempts_now = _newest_start_per_run(all_events)
 
     # A run parked on a gate is NOT running -- it is waiting for a person,
     # and the listing is where that person looks. Without this the two are
@@ -644,7 +645,9 @@ def list_workflow_executions(
     runs = []
     for execution_id, event in by_exec.items():
         data = event.get("data", {})
-        run_status = _list_status(execution_id, event, awaiting)
+        # Totals and times speak for the run (the most complete attempt); the status is how
+        # its newest attempt stands.
+        run_status = _list_status(execution_id, attempts_now.get(execution_id, event), awaiting)
 
         if status and run_status != status:
             continue
@@ -711,20 +714,71 @@ def _one_start_per_run(events: list[dict]) -> dict[str, dict]:
     return by_exec
 
 
-def _list_status(execution_id: str, event: dict, awaiting: set[str]) -> str:
-    """One run's status as the run list shows it."""
-    # Status comes from the event's own status field (updated in-place
-    # by the executor). Whitelist recognized terminal states;
-    # "interrupted" signals an orphaned run left by a server restart.
-    run_status = event.get("status", "running")
-    if run_status not in ("completed", "failed", "running", "cancelled", "interrupted"):
+def _newest_start_per_run(events: list[dict]) -> dict[str, dict]:
+    """Each run's newest attempt (its latest workflow.started event), by execution id."""
+    by_exec: dict[str, dict] = {}
+    for ev in events:
+        eid = ev.get("execution_id", ev["id"])
+        if not eid:
+            continue
+        prev = by_exec.get(eid)
+        if prev is None or str(ev.get("timestamp") or "") > str(prev.get("timestamp") or ""):
+            by_exec[eid] = ev
+    return by_exec
+
+
+def newest_attempt(events: Sequence[dict]) -> dict | None:
+    """A run's newest attempt: of its ``workflow.started`` events, the latest.
+
+    A resumed run records a new one for each attempt, and the newest says how the run stands
+    now. Which attempt's totals speak for the run is another question (``_start_completeness``).
+    """
+    starts = [e for e in events if e.get("type") == EventType.WORKFLOW_STARTED.value]
+    return max(starts, key=lambda e: str(e.get("timestamp") or ""), default=None)
+
+
+#: How an attempt that is over ended. A run whose newest attempt is over shows how it ended,
+#: even with a wait left open: nobody can answer that wait into the attempt any more (a cancel
+#: or a crash at a gate leaves it behind), and calling the run waiting would hold it in the
+#: list for ever.
+_ATTEMPT_OVER = ("completed", "failed", "cancelled", "interrupted")
+
+
+def shown_status(attempt_status: str, *, wait_open: bool) -> str:
+    """A run's status as the run page, the run list and the Team page show it.
+
+    How its newest attempt stands, except ``waiting`` while that attempt is parked on a
+    person's answer (a Pi run lets its worker go) or still going with a person's wait open
+    in the run: a gate, a step's question to the owner, a Pi recovery question.
+    """
+    if attempt_status == "waiting":
+        return "waiting"
+    if wait_open and attempt_status not in _ATTEMPT_OVER:
+        return "waiting"
+    return attempt_status
+
+
+def _a_wait_is_open(events: Sequence[dict]) -> bool:
+    """Whether any of these events is a wait still open for a person: a ``stage.started`` left
+    in ``waiting`` with ``gate`` set (a gate, or a step's question to the owner). Taken over the
+    whole run, not one attempt: a resumed attempt waits on again the wait an earlier one opened.
+    """
+    return any(
+        e.get("type") == "stage.started" and e.get("status") == "waiting"
+        and (e.get("data") or {}).get("gate")
+        for e in events
+    )
+
+
+def _list_status(execution_id: str, attempt: dict, awaiting: set[str]) -> str:
+    """One run's status as the run list shows it, from its newest attempt (``shown_status``)."""
+    # Status comes from the attempt's own status field (updated in-place by the executor).
+    # Whitelist recognised states: "interrupted" signals an orphaned run left by a server
+    # restart, "waiting" a Pi run parked on a person's answer.
+    run_status = attempt.get("status", "running")
+    if run_status not in ("completed", "failed", "running", "cancelled", "interrupted", "waiting"):
         run_status = "running"
-    # Only an otherwise-running run can be waiting: a finished run with a
-    # stale gate event is finished, and saying otherwise would park it in
-    # the list forever.
-    if run_status == "running" and execution_id in awaiting:
-        run_status = "waiting"
-    return str(run_status)
+    return shown_status(str(run_status), wait_open=execution_id in awaiting)
 
 
 def run_detail_status(execution_id: str) -> str | None:
@@ -733,7 +787,10 @@ def run_detail_status(execution_id: str) -> str | None:
     events = get_events(execution_id=execution_id, type_prefixes=("workflow.",), limit=None)
     if not events:
         return None
-    return _resolve_status(max(events, key=_start_completeness))
+    attempt = newest_attempt(events) or max(events, key=_start_completeness)
+    waits = get_events(execution_id=execution_id, event_type=EventType("stage.started"),
+                       status="waiting", limit=None)
+    return shown_status(_resolve_status(attempt), wait_open=_a_wait_is_open(waits))
 
 
 def run_list_statuses(execution_ids: Sequence[str]) -> dict[str, str]:
@@ -747,9 +804,9 @@ def run_list_statuses(execution_ids: Sequence[str]) -> dict[str, str]:
     for eid in execution_ids:
         starts = get_events(execution_id=eid, event_type=EventType("workflow.started"),
                             limit=None)
-        event = _one_start_per_run(starts).get(eid)
-        if event is not None:
-            out[eid] = _list_status(eid, event, awaiting)
+        attempt = newest_attempt(starts)
+        if attempt is not None:
+            out[eid] = _list_status(eid, attempt, awaiting)
     return out
 
 

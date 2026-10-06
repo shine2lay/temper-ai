@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useTimelineData } from '@/hooks/useTimelineData';
 import { useExecutionStore } from '@/store/executionStore';
+import { isGoing } from '@/lib/runStatus';
 import { TimelineAxis } from './TimelineAxis';
 import { TimelineRow } from './TimelineRow';
 import { TIMELINE } from './constants';
@@ -13,7 +14,7 @@ export function TimelineChart() {
   const { rows, timeRange } = useTimelineData();
   const workflow = useExecutionStore((s) => s.workflow);
   const select = useExecutionStore((s) => s.select);
-  const isRunning = workflow?.status === 'running';
+  const isRunning = isGoing(workflow?.status);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [chartWidth, setChartWidth] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(1);

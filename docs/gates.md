@@ -25,6 +25,12 @@ ever opened, with who decided it, when, and with which request id: `decided_by`
 request id; see [api-access.md](api-access.md)). With the write guard in
 `enforce`, approving needs a named key.
 
+While any wait is open the run shows `waiting`, on the run page, in the run
+list and through the API, however its earlier attempts ended: a resumed run
+always shows how its newest attempt stands, and shows `failed`, `cancelled`
+or `completed` only once that attempt has ended so with no wait open. Its
+cost, tokens and steps are worked out as before.
+
 ## Approving
 
 ```
@@ -150,6 +156,14 @@ run waited and across restarts:
 Whoever comes first claims the parked attempt with a compare-and-set, so the
 run is carried on once; a second Resume meanwhile gets a 409. The attempt that
 waited stays in the run's history as `parked`.
+
+A Pi run cut off while it ran (nothing parked) is held to one copy the same
+way: the first Resume, or temper's start-up pick-up, claims its next attempt
+with one database write (`temper_ai/runner/resume_claim.py`), and every other
+asker gets a 409, "already being carried on", and starts nothing (the pick-up
+notes that at INFO, as nothing is wrong). The claim lasts while the attempt it
+started runs, or two minutes if that start was lost, so a later Resume can
+claim again.
 
 A gated step or stage keeps its answer while any wait inside it lets the
 worker go: a gated stage whose inner step's approval (or a step's own wait)

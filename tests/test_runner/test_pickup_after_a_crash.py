@@ -6,9 +6,11 @@ shy: the tests below are mostly about what it must *not* touch. The rule itself
 here without a database, a workflow or a box.
 """
 
+import logging
 from datetime import timedelta
 
 import pytest
+from fastapi import HTTPException
 
 from temper_ai.checkpoint.models import Checkpoint
 from temper_ai.database.session import get_session
@@ -230,6 +232,50 @@ class TestPickingThemUp:
         assert [c.execution_id for c in picks.failed] == ["run-b"]
         assert "Could not be started again:" in told[0]
         assert "its box would not start" in told[0]
+
+    def test_a_run_someone_else_carries_on_is_left_alone_without_alarm(self, caplog):
+        """F3 (L3): Resume's 409 says someone else is carrying the run on already (Resume
+        pressed at the same moment, an answer, another start-up). That is expected: said at
+        INFO with no traceback, and the run is listed as left alone, not as failed."""
+        def resume(execution_id):
+            raise HTTPException(status_code=409,
+                                detail=f"Execution '{execution_id}' is already being carried on")
+
+        told = []
+        with caplog.at_level(logging.INFO, logger="temper_ai.runner.pickup"):
+            picks = pickup.pick_up_interrupted(
+                self._marked("run-a"), resume=resume, tell=told.append, sleep=lambda s: None,
+            )
+
+        assert picks.picked == [] and picks.failed == []
+        assert [(c.execution_id, c.why) for c in picks.left] == [
+            ("run-a", "already being carried on")]
+        said = [r for r in caplog.records if r.name == "temper_ai.runner.pickup"]
+        assert [r.getMessage() for r in said if r.levelno >= logging.WARNING] == []
+        assert all(r.exc_info is None for r in said)
+        assert any(r.levelno == logging.INFO
+                   and r.getMessage() == "Left run-a (epd_task) alone: already being carried on"
+                   for r in said)
+        assert "Left alone:" in told[0] and "already being carried on" in told[0]
+
+    def test_any_other_refusal_or_failure_is_still_an_error_with_its_traceback(self, caplog):
+        def resume(execution_id):
+            if execution_id == "run-a":
+                raise HTTPException(status_code=400, detail="no checkpoints to resume from")
+            raise RuntimeError("its box would not start")
+
+        with caplog.at_level(logging.INFO, logger="temper_ai.runner.pickup"):
+            picks = pickup.pick_up_interrupted(
+                self._marked("run-a", "run-b"), resume=resume, tell=lambda text: True,
+                sleep=lambda s: None,
+            )
+
+        assert [c.execution_id for c in picks.failed] == ["run-a", "run-b"]
+        errors = [r for r in caplog.records
+                  if r.name == "temper_ai.runner.pickup" and r.levelno == logging.ERROR]
+        assert [r.getMessage().split(":")[0] for r in errors] == [
+            "Could not pick run-a back up", "Could not pick run-b back up"]
+        assert all(r.exc_info is not None for r in errors)
 
     def test_the_attempt_is_written_down_before_it_is_started(self, monkeypatch):
         """The count has to survive the next crash, so it is stamped first."""

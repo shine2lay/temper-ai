@@ -8,6 +8,7 @@ import { enableMapSet } from 'immer';
 import { MAX_EVENT_LOG_SIZE } from '@/lib/constants';
 import { appendChunk, finishTool, newStory, startTool, type AgentStory } from '@/lib/agentStory';
 import * as piStory from '@/lib/piStory';
+import { isGoing } from '@/lib/runStatus';
 import type { StatusFilter } from '@/lib/runSearch';
 import type {
   WorkflowExecution,
@@ -702,7 +703,7 @@ export const useExecutionStore = create<ExecutionState>()(
         // Seed streamingContent for running agents so the graph's cards and
         // the header show activity even after a page refresh mid-execution.
         // (The live panel builds its own story; this is for everything else.)
-        if (workflow.status === 'running') {
+        if (isGoing(workflow.status)) {
           for (const [agentId, agent] of state.agents) {
             if (agent.status === 'running' && !state.streamingContent.has(agentId)) {
               // Seed tool activity from any currently-running tool calls

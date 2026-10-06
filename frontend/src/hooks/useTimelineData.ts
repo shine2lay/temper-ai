@@ -4,6 +4,7 @@ import { selectStageGroups } from '@/store/selectors';
 import { STATUS_COLORS } from '@/lib/constants';
 import { ensureUTC } from '@/lib/utils';
 import { asList } from '@/lib/asList';
+import { isGoing } from '@/lib/runStatus';
 
 export interface TimelineRow {
   id: string;
@@ -142,7 +143,7 @@ export function useTimelineData(): {
     if (maxTime === -Infinity) maxTime = now;
 
     // If workflow is running, extend to now
-    const isRunning = workflow.status === 'running';
+    const isRunning = isGoing(workflow.status);
     if (isRunning && now > maxTime) {
       maxTime = now;
     }

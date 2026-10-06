@@ -14,6 +14,9 @@ from temper_ai.api.data_service import (
     get_agent_index,
     get_workflow_execution,
     list_workflow_executions,
+    run_detail_status,
+    run_list_statuses,
+    shown_status,
 )
 from temper_ai.observability.event_types import EventType
 from temper_ai.runner import quiet
@@ -741,3 +744,168 @@ class TestTheAttemptsOfARun:
         names = [n["name"] for n in get_workflow_execution("run-1")["nodes"]]
 
         assert names == ["plan", "build"]
+
+
+def _store(events: list[dict]):
+    """get_events over a fixed list, honouring every filter it takes."""
+    def query(execution_id=None, event_type=None, parent_id=None, status=None, limit=100,
+              newest_first=False, type_prefixes=(), exclude_type_prefixes=()):
+        out = [e for e in events
+               if execution_id in (None, e["execution_id"])
+               and (event_type is None or e["type"] == EventType(event_type).value)
+               and parent_id in (None, e["parent_id"])
+               and status in (None, e["status"])
+               and (not type_prefixes or e["type"].startswith(tuple(type_prefixes)))
+               and not (exclude_type_prefixes
+                        and e["type"].startswith(tuple(exclude_type_prefixes)))]
+        out = sorted(out, key=lambda e: e["timestamp"], reverse=newest_first)
+        return out if limit is None else out[:limit]
+    return query
+
+
+class TestAResumedRunShowsItsNewestAttempt:
+    """SW-79 (L3 F1): a resumed run says how its newest attempt stands.
+
+    A run used to speak through its most complete attempt: one that completed, else one that
+    cost something, else the newest. So a first attempt that failed after spending money
+    showed the run failed, red and finished-looking, while its resumed attempt ran, or waited
+    on the owner's answer to a recovery question. The status is now the newest attempt's,
+    "waiting" while a person's wait is open in the run, and how that attempt ended once it
+    has. Totals, times and the tree still come from the most complete attempt.
+    """
+
+    def _run(self, newest_status: str, *, wait_under: str | None = None,
+             execution_id: str = "run-1") -> list[dict]:
+        def evt(id, type, **kw):
+            return _evt(f"{execution_id}-{id}", type, execution_id=execution_id, **kw)
+
+        events = [
+            evt("wf1", "workflow.started", status="failed", timestamp="2026-10-05T01:00:00",
+                data={"name": "pi_talk", "cost_usd": 1.25, "total_tokens": 4000,
+                      "duration_seconds": 60, "error": "the turn failed"}),
+            evt("s1", "stage.started", parent_id=f"{execution_id}-wf1", status="failed",
+                timestamp="2026-10-05T01:00:10", data={"name": "talk"}),
+            evt("wf2", "workflow.started", status=newest_status,
+                timestamp="2026-10-05T02:00:00",
+                data={"name": "pi_talk", "resume_of": f"{execution_id}-wf1"}),
+        ]
+        if wait_under is not None:
+            events.append(evt("w1", "stage.started", parent_id=f"{execution_id}-{wait_under}",
+                              status="waiting", timestamp="2026-10-05T02:00:05",
+                              data={"name": "talk_recovery", "gate": True}))
+        return events
+
+    def _shown(self, monkeypatch, events: list[dict]) -> dict[str, str]:
+        """The run's status on the run page (and the run API), in the run list, and through
+        the Team page's two readers."""
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _store(events))
+        monkeypatch.setattr("temper_ai.runner.quiet.activity_of", lambda *a, **k: {})
+        listed = list_workflow_executions()["runs"]
+        return {
+            "page": get_workflow_execution("run-1")["status"],
+            "list": next(r["status"] for r in listed if r["id"] == "run-1"),
+            "team_detail": run_detail_status("run-1"),
+            "team_list": run_list_statuses(["run-1"])["run-1"],
+        }
+
+    def _everywhere(self, status: str) -> dict[str, str]:
+        return dict.fromkeys(("page", "list", "team_detail", "team_list"), status)
+
+    def test_a_resumed_run_at_work_shows_running_not_its_failed_first_attempt(self, monkeypatch):
+        assert self._shown(monkeypatch, self._run("running")) == self._everywhere("running")
+
+    def test_a_resumed_run_with_a_question_open_shows_waiting(self, monkeypatch):
+        """L3 run C: resumed, and at its recovery question, the run said "failed"."""
+        shown = self._shown(monkeypatch, self._run("running", wait_under="wf2"))
+
+        assert shown == self._everywhere("waiting")
+
+    def test_a_wait_the_new_attempt_took_over_from_the_old_one_counts_too(self, monkeypatch):
+        """A resumed attempt waits on again the wait its predecessor opened (the same event,
+        still under the first attempt): open in the run is open."""
+        shown = self._shown(monkeypatch, self._run("running", wait_under="wf1"))
+
+        assert shown == self._everywhere("waiting")
+
+    def test_a_pi_attempt_parked_on_an_answer_shows_waiting(self, monkeypatch):
+        shown = self._shown(monkeypatch, self._run("waiting", wait_under="wf2"))
+
+        assert shown == self._everywhere("waiting")
+
+    def test_a_failed_first_attempt_no_longer_hides_a_finished_second(self, monkeypatch):
+        """The newest attempt ended: the run shows how, failed or done."""
+        assert self._shown(monkeypatch, self._run("failed")) == self._everywhere("failed")
+        assert self._shown(monkeypatch, self._run("completed")) == self._everywhere("completed")
+
+    def test_an_attempt_that_ended_with_a_wait_left_open_shows_how_it_ended(self, monkeypatch):
+        """Nobody can answer that wait into an attempt that is over (a cancel, a crash at a
+        gate): calling the run waiting would hold it in the list for ever."""
+        for ended in ("cancelled", "interrupted", "failed"):
+            shown = self._shown(monkeypatch, self._run(ended, wait_under="wf1"))
+            assert shown == self._everywhere(ended), ended
+
+    def test_the_status_filter_follows_the_shown_status(self, monkeypatch):
+        events = self._run("running", wait_under="wf2")
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _store(events))
+        monkeypatch.setattr("temper_ai.runner.quiet.activity_of", lambda *a, **k: {})
+
+        assert [r["id"] for r in list_workflow_executions(status="waiting")["runs"]] == ["run-1"]
+        assert list_workflow_executions(status="failed")["runs"] == []
+
+    def test_a_resumed_run_that_is_not_a_pi_run_follows_the_same_rule(self, monkeypatch):
+        """Any workflow: a gated build resumed after a failed first try shows its new try."""
+        events = [
+            _evt("b1", "workflow.started", status="failed", timestamp="2026-10-05T01:00:00",
+                 data={"name": "epd_task", "cost_usd": 3.5}),
+            _evt("b2", "workflow.started", status="running", timestamp="2026-10-05T03:00:00",
+                 data={"name": "epd_task", "resume_of": "b1", "restored_node_names": []}),
+        ]
+        assert self._shown(monkeypatch, events) == self._everywhere("running")
+
+        gate = _evt("g", "stage.started", parent_id="b2", status="waiting",
+                    timestamp="2026-10-05T03:01:00", data={"name": "plan_gate", "gate": True})
+        assert self._shown(monkeypatch, [*events, gate]) == self._everywhere("waiting")
+
+        events[1]["status"] = "completed"
+        assert self._shown(monkeypatch, events) == self._everywhere("completed")
+
+    def test_the_totals_and_the_tree_are_what_they_were(self, monkeypatch):
+        """Only the status moved: cost, tokens, times, the error and the tree still come from
+        the most complete attempt, and the newest attempt is the current one."""
+        events = self._run("running", wait_under="wf2")
+        monkeypatch.setattr("temper_ai.api.data_service.get_events", _store(events))
+        monkeypatch.setattr("temper_ai.runner.quiet.activity_of", lambda *a, **k: {})
+
+        run = get_workflow_execution("run-1")
+        listed = list_workflow_executions()["runs"][0]
+
+        assert (run["total_cost_usd"], run["total_tokens"]) == (1.25, 4000)
+        assert (listed["total_cost_usd"], listed["total_tokens"]) == (1.25, 4000)
+        assert run["start_time"] == listed["start_time"] == "2026-10-05T01:00:00"
+        assert run["duration_seconds"] == listed["duration_seconds"] == 60
+        assert run["error_message"] == "the turn failed"
+        assert [n["name"] for n in run["nodes"]] == ["talk", "talk_recovery"]
+        assert [a["status"] for a in run["attempts"]] == ["failed", "running"]
+        assert [a["is_current"] for a in run["attempts"]] == [False, True]
+        assert run["waiting_on_you"] is True
+
+    def test_a_run_that_ran_once_is_shown_as_before(self, monkeypatch):
+        """One attempt: its own status, "waiting" at an open gate, a finished run finished."""
+        once = [_evt("o1", "workflow.started", status="running", timestamp="2026-10-05T01:00:00",
+                     data={"name": "deploy"})]
+        gate = _evt("og", "stage.started", parent_id="o1", status="waiting",
+                    timestamp="2026-10-05T01:00:01", data={"name": "plan", "gate": True})
+
+        assert self._shown(monkeypatch, once) == self._everywhere("running")
+        assert self._shown(monkeypatch, [*once, gate]) == self._everywhere("waiting")
+        once[0]["status"] = "completed"
+        assert self._shown(monkeypatch, [*once, gate]) == self._everywhere("completed")
+
+    def test_the_rule_itself(self):
+        assert shown_status("running", wait_open=False) == "running"
+        assert shown_status("running", wait_open=True) == "waiting"
+        assert shown_status("pending", wait_open=True) == "waiting"
+        assert shown_status("waiting", wait_open=False) == "waiting"
+        for ended in ("completed", "failed", "cancelled", "interrupted"):
+            assert shown_status(ended, wait_open=True) == ended
+            assert shown_status(ended, wait_open=False) == ended

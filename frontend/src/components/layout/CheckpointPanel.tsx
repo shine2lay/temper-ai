@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useExecutionStore } from '@/store/executionStore';
 import { authFetch } from '@/lib/authFetch';
 import { formatDuration, formatTimestamp, cn } from '@/lib/utils';
+import { isGoing } from '@/lib/runStatus';
 import { ResumeDialog } from './ResumeDialog';
 import { HoldBanner } from './HoldBanner';
 import { AttemptsBanner } from './AttemptsBanner';
@@ -125,7 +126,8 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
   if (!executionId) return null;
 
   const checkpoints = data?.checkpoints ?? [];
-  const isTerminal = workflow?.status !== 'running';
+  // A run waiting on a person is not over: it offers no Resume and no fork.
+  const isTerminal = !isGoing(workflow?.status);
   // Only the *latest* checkpoint per node counts. Checking every checkpoint
   // meant a run that failed, was resumed and then finished cleanly still
   // offered "Resume from Last Checkpoint", because the superseded failure was
@@ -216,7 +218,7 @@ export function CheckpointPanel({ onSwitchTab }: CheckpointPanelProps) {
               <span className="text-sm">No checkpoints recorded</span>
               <span className="text-xs text-center">
                 Checkpoints are saved automatically after each stage completes.
-                {workflow?.status === 'running' && ' They will appear as stages finish.'}
+                {isGoing(workflow?.status) && ' They will appear as stages finish.'}
               </span>
             </div>
           ) : (

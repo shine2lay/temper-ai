@@ -104,6 +104,28 @@ class CleanupHold(SQLModel, table=True):
     ended_by: str | None = Field(default=None)  # "deadline", "give_up", "resume", or a run id
 
 
+class ResumeClaim(SQLModel, table=True):
+    """Who is carrying a cut-off Pi run on: one row per run, so only one asker starts it.
+
+    Resume, the API and temper's own pick-up at start-up may all ask at the same moment to
+    carry on a Pi run that was cut off while it ran. Before starting, each asker claims the run
+    with one write that exactly one of them wins (runner/resume_claim.py): the first to insert
+    the row, or, once the claim it holds has ended, the one whose update still finds the token
+    it replaces. A run parked on an answer is claimed on its parked attempt instead
+    (runner/parked.py).
+    """
+
+    __tablename__ = "resume_claims"
+
+    execution_id: str = Field(primary_key=True)
+    # The run's newest attempt when the claim was taken: the one the claimed start carries on.
+    from_attempt: str = Field()
+    # Changes with every claim, so a take-over or a give-back touches only the claim it read.
+    token: str = Field()
+    claimed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    claimed_by: str = Field(default="")
+
+
 # Common query patterns:
 #   "what's currently running" → WHERE status = 'running'
 #   "anything to reap" → WHERE status = 'running' ORDER BY started_at

@@ -8,6 +8,7 @@ import { useInitialData } from '@/hooks/useInitialData';
 import { useAgentLookup } from '@/hooks/useAgentLookup';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useExecutionStore } from '@/store/executionStore';
+import { isGoing } from '@/lib/runStatus';
 import { WorkflowHeader } from '@/components/layout/WorkflowHeader';
 import { WorkflowSummaryBar } from '@/components/layout/WorkflowSummaryBar';
 import { GateModal } from '@/components/layout/GateModal';
@@ -70,7 +71,7 @@ export function ExecutionView() {
   useEffect(() => {
     const was = prevStatus.current;
     const now = workflow?.status;
-    if (was && was !== now && (was === 'running' || was === 'queued')) {
+    if (was && was !== now && (isGoing(was) || was === 'queued')) {
       if (now === 'completed') toast.success('Workflow completed successfully');
       else if (now === 'failed') toast.error('Workflow failed');
       else if (now === 'cancelled') toast.info('Workflow cancelled');

@@ -18,6 +18,7 @@ import { fullStory } from '@/lib/agentStory';
 import { fullStory as piFullStory, isPiAgent } from '@/lib/piStory';
 import { buildRoster, busyCount, newestBusyAgent, statusWord } from '@/lib/agentRoster';
 import { litRosterIds } from '@/lib/runSearch';
+import { isGoing } from '@/lib/runStatus';
 import { cn, formatDuration } from '@/lib/utils';
 import { scriptConfigOf } from '@/lib/scriptLog';
 import { ScriptLogView } from '@/components/scriptlog/ScriptLogView';
@@ -154,7 +155,7 @@ export function LivePanel() {
           Now
         </span>
         <span className="truncate text-xs text-temper-text" data-testid="live-now-line">
-          {nowLine ?? (runStatus === 'running' ? 'Waiting for the first agent…' : 'Nothing running')}
+          {nowLine ?? (isGoing(runStatus) ? 'Waiting for the first agent…' : 'Nothing running')}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {!following && (

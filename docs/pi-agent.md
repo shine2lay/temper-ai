@@ -166,7 +166,9 @@ and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
   answers `accept` or `retry`. A turn that failed visibly (box not sealed, settings not
   effective, role/tools/notebook not as launched, provider error) fails the step red; a
   Resume then asks the owner `retry` or `stop` (there is nothing to accept from a failed
-  turn). The owner may always answer `stop`, which ends the step red: "<role> turn <n>
+  turn). While that question is open the run shows `waiting`, not the failed attempt's red,
+  and only one Resume (or the start-up pick-up) carries a cut-off run on ([gates.md](gates.md)
+  "Pi workflows"). The owner may always answer `stop`, which ends the step red: "<role> turn <n>
   failed and the step was stopped" (or "did not finish"), never naming who stopped it. A
   picked option on the run page counts the same as typing it, and text typed beside a pick
   is its words; with no pick, the typed text's first word is the choice and the rest its

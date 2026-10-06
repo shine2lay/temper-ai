@@ -165,8 +165,12 @@ way: the first Resume, or temper's start-up pick-up, claims its next attempt
 with one database write (`temper_ai/runner/resume_claim.py`), and every other
 asker gets a 409, "already being carried on", and starts nothing (the pick-up
 notes that at INFO, as nothing is wrong). The claim lasts while the attempt it
-started runs, or two minutes if that start was lost, so a later Resume can
-claim again.
+started runs or waits parked on your answer, or two minutes if that start was
+lost, so a later Resume can claim again. Each asker carries the run on only
+from the attempt it saw when it asked: if somebody else's attempt started in
+the meantime (it may already be waiting at its first question), the asker gets
+the same 409 and starts nothing, and the start-up pick-up carries on only an
+attempt the restart cut off.
 
 A gated step or stage keeps its answer while any wait inside it lets the
 worker go: a gated stage whose inner step's approval (or a step's own wait)

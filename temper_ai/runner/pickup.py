@@ -563,13 +563,18 @@ def pick_up_interrupted(
         if not picks:
             return picks
 
+        from temper_ai.runner.resume_claim import only_while_cut_off
+
         start = resume or _resume_through_the_button
         for i, choice in enumerate(list(picks.picked)):
             if i:
                 sleep(gap_s)
             try:
                 _stamp_attempt(choice.event_id, choice.pickups + 1)
-                start(choice.execution_id)
+                # What this stop cut off, and nothing newer: a run somebody carried on since
+                # it was chosen is theirs, and its Resume says so (409, left alone below).
+                with only_while_cut_off():
+                    start(choice.execution_id)
                 logger.warning("Picked %s (%s) back up where it stopped",
                                choice.short, choice.workflow_name)
             except Exception as exc:  # noqa: BLE001 - one bad run must not stop the rest

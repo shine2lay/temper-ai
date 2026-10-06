@@ -68,9 +68,14 @@ def parked_attempt(execution_id: str) -> dict | None:
     from temper_ai.runner.resume import find_latest_workflow_event
 
     latest = find_latest_workflow_event(execution_id)
-    if latest is None or latest.get("status") != WAITING:
-        return None
-    return latest if isinstance(_note(latest), dict) else None
+    return latest if is_parked(latest) else None
+
+
+def is_parked(attempt: dict | None) -> bool:
+    """Whether an attempt waits parked on the owner: its worker let go, and only ``claim``
+    carries it on."""
+    return (attempt is not None and attempt.get("status") == WAITING
+            and isinstance(_note(attempt), dict))
 
 
 def being_carried_on(execution_id: str) -> bool:

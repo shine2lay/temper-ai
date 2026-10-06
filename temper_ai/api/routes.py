@@ -1005,6 +1005,11 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     """
     body = body or ResumeRequest()
 
+    # What this asker sees of the run as it asks, read first: a Pi run is carried on from that
+    # attempt only, so a Resume that reaches its claim after somebody else's attempt has
+    # started (and maybe parked already) starts nothing (runner/resume_claim.py).
+    seen = resume_claim.look(execution_id)
+
     # Find the original workflow name from events
     result = get_workflow_execution(execution_id)
     if not result:
@@ -1042,6 +1047,8 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     parked = pi_parked.parked_attempt(execution_id) if pi_run else None
     if answered_parked_only and (parked is None or pi_parked.answered(execution_id, parked) is None):
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is no longer parked on an answered wait")
+    if pi_run and seen.leaves_alone(parked):
+        raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
     if parked is not None and not pi_parked.claim(parked):
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
     claimed: str | None = None
@@ -1052,7 +1059,7 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
             raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already running")
         # Askers of the same moment all pass that check before any of them has started: the
         # one that starts the run is the one that wins its claim (runner/resume_claim.py).
-        claimed = resume_claim.claim(execution_id, by=_caller_label())
+        claimed = resume_claim.claim(execution_id, by=_caller_label(), seen=seen.attempt)
         if claimed is None:
             raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")
     try:

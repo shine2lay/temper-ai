@@ -13,14 +13,18 @@ Postgres and on SQLite alike:
   from: the first insert wins, and every other asker's insert fails on the key;
 * it holds while its start has yet to write the next attempt down (for ``CLAIM_STARTS_WITHIN``:
   older than that with no next attempt, the start was lost), and then for as long as that
-  attempt is going: it ends with the attempt;
+  attempt is going, or waits parked on a person's answer: it ends with the attempt;
 * an asker who finds the claim ended takes it over with an update naming the token it read,
   which only one asker can win;
+* an asker carries the run on only from the attempt it saw when it asked (``look``): an
+  attempt somebody else started meanwhile is theirs, even once it has parked at its first
+  question, so an asker that reaches its claim late starts nothing; temper's pick-up carries
+  on only an attempt its stop cut off (``only_while_cut_off``);
 * an asker whose start fails gives the claim back.
 
 The asker that loses is told the run is already being carried on, and starts nothing. A run
 parked on a person's answer is claimed on its parked attempt instead (runner/parked.py
-``claim``); runs of other workflows are not claimed here.
+``claim``), by an asker that saw it parked; runs of other workflows are not claimed here.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ import threading
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -50,6 +55,9 @@ GOING = "running"
 # Postgres the primary key and the row lock do that, across processes too.
 _SQLITE_LOCK = threading.Lock()
 
+# Set while temper's pick-up carries a run on (``only_while_cut_off``).
+_CUT_OFF_ONLY: ContextVar[bool] = ContextVar("resume_cut_off_only", default=False)
+
 
 @dataclass(frozen=True)
 class _Held:
@@ -58,13 +66,63 @@ class _Held:
     claimed_at: datetime | None
 
 
-def claim(execution_id: str, *, by: str = "") -> str | None:
-    """Claim the start of a cut-off Pi run's next attempt: the claim's token, or None when
-    another asker holds the claim (the run is already being carried on)."""
+@dataclass(frozen=True)
+class Look:
+    """What an asker saw of a run when it asked to carry it on: the run's newest attempt then
+    (``attempt``, "" for none), whether that attempt was waiting parked on a person's answer,
+    and whether a stop had cut it off. The asker carries the run on from that attempt only."""
+
+    attempt: str
+    parked: bool
+    cut_off: bool
+    cut_off_only: bool = False
+
+    def leaves_alone(self, parked_attempt: dict | None) -> bool:
+        """Whether this asker must leave the run alone because somebody else has carried it
+        on since it looked: temper's pick-up finds the attempt its stop cut off no longer the
+        newest, or the run is parked on an attempt this asker did not see parked (one started
+        after it looked, which has already reached its first question)."""
+        if self.cut_off_only and not self.cut_off:
+            return True
+        if parked_attempt is None:
+            return False
+        return not (self.parked and self.attempt == str(parked_attempt["id"]))
+
+
+@contextmanager
+def only_while_cut_off() -> Iterator[None]:
+    """Carry a run on, inside, only while its newest attempt is the one a stop cut off: temper's
+    pick-up chose the run from what its stop left, and a run somebody carried on since (a
+    Resume, an answer) is theirs. ``look`` notes it; resume_run then says 409."""
+    reset = _CUT_OFF_ONLY.set(True)
+    try:
+        yield
+    finally:
+        _CUT_OFF_ONLY.reset(reset)
+
+
+def look(execution_id: str) -> Look:
+    """What an asker sees of the run now (``Look``): read first thing when it asks."""
+    from temper_ai.observability.reconcile import INTERRUPTED
+    from temper_ai.runner.parked import is_parked
+
+    newest = _newest(execution_id)
+    return Look(attempt=_attempt_id(newest), parked=is_parked(newest),
+                cut_off=newest is not None and newest.get("status") == INTERRUPTED,
+                cut_off_only=_CUT_OFF_ONLY.get())
+
+
+def claim(execution_id: str, *, by: str = "", seen: str | None = None) -> str | None:
+    """Claim the start of a cut-off Pi run's next attempt: the claim's token, or None when the
+    run is already being carried on: another asker holds the claim, or the run's newest attempt
+    is no longer ``seen`` (the one this asker saw when it asked, ``Look.attempt``)."""
     token = uuid.uuid4().hex
     with _one_at_a_time():
         for _try in range(3):
-            if _insert(execution_id, _attempt_id(_newest(execution_id)), token, by):
+            newest = _newest(execution_id)
+            if _moved_on(newest, seen):
+                return None
+            if _insert(execution_id, _attempt_id(newest), token, by):
                 return token
             held = _read(execution_id)
             if held is None:
@@ -72,7 +130,7 @@ def claim(execution_id: str, *, by: str = "") -> str | None:
             # The run's newest attempt, read after the claim was, so whatever the claimed
             # start has done by now counts.
             newest = _newest(execution_id)
-            if _still_held(held, newest):
+            if _still_held(held, newest) or _moved_on(newest, seen):
                 return None
             # Exactly one asker's update still finds the token it read.
             if _take_over(execution_id, held.token, _attempt_id(newest), token, by):
@@ -106,16 +164,24 @@ def _attempt_id(attempt: dict | None) -> str:
     return str(attempt["id"]) if attempt else ""
 
 
+def _moved_on(newest: dict | None, seen: str | None) -> bool:
+    """Whether the run's newest attempt is a later one than the asker saw: somebody else
+    started it since, and it is theirs."""
+    return seen is not None and _attempt_id(newest) != seen
+
+
 def _still_held(held: _Held, newest: dict | None) -> bool:
     """Whether a claim another asker took is still theirs, given the run's newest attempt."""
-    from temper_ai.runner.parked import CLAIM_STARTS_WITHIN
+    from temper_ai.runner.parked import CLAIM_STARTS_WITHIN, is_parked
 
     if held.from_attempt == _attempt_id(newest):
         # Its start has not written the next attempt down yet; past CLAIM_STARTS_WITHIN it
         # never will: the start was lost, and the claim with it.
         return held.claimed_at is not None and utcnow() - held.claimed_at < CLAIM_STARTS_WITHIN
-    # The claimed start wrote its attempt down: the claim lasts while that attempt is going.
-    return newest is not None and str(newest.get("status") or "") == GOING
+    # The claimed start wrote its attempt down: the claim lasts while that attempt is going,
+    # and while it waits parked on a person's answer: a parked attempt is not over, and only
+    # its own claim carries it on (runner/parked.py ``claim``).
+    return newest is not None and (str(newest.get("status") or "") == GOING or is_parked(newest))
 
 
 @contextmanager

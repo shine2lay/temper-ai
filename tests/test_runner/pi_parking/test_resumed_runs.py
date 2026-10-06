@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from tests.test_pi_agent import support as sup
@@ -166,3 +167,176 @@ def test_resumes_and_the_pick_up_at_the_same_moment_start_one_attempt(pw_run, ca
     assert sup.approve(pw_run.client, eid, owner["gate_name"], "done").status_code == 200
     sup.wait_for(lambda: sup.attempts(eid)[-1]["status"] == "completed" and not sup.run_held(eid),
                  what=f"{eid} to complete")
+
+
+# The race behind the SW-80 flake (queue #63): an asker that chose to carry the cut-off run on
+# got to its claim only after another asker's attempt had started and parked at its recovery
+# question. These two hold the late asker at exactly that point, so the race happens every
+# time, with no load and no luck.
+
+
+def _cut_off_mid_turn(run) -> tuple[str, list[dict], datetime, int]:
+    """A Pi run cut off while its turn ran (its worker died), marked at start-up: its id, what
+    start-up marked, when that start-up began, and how many attempts the run has."""
+    from temper_ai.shared.clock import utcnow
+
+    box_json = Path(os.environ["TEMPER_PI_BOX_CONFIG"])
+    eid = sup.crash_child(run.url, run.tmp, "pi_talk", run.ws, box_json)["execution_id"]
+    since = utcnow()
+    marked = sup.reconcile_only()
+    assert eid in [m["execution_id"] for m in marked]
+    assert [t["state"] for t in sup.ledger().snapshot(eid)["turns"]] == ["running"]
+    return eid, marked, since, len(sup.attempts(eid))
+
+
+def _parked_at_its_recovery_question(eid: str, before: int) -> dict:
+    """The one attempt a Resume started has asked the recovery question and parked there: the
+    run let its worker go. The open wait."""
+    rec = sup.open_wait(eid, "recovery")
+    sup.wait_for(lambda: sup.attempts(eid)[-1]["status"] == "waiting" and not sup.run_held(eid),
+                 what=f"{eid} to park at its recovery question")
+    assert len(sup.attempts(eid)) == before + 1
+    return rec
+
+
+def _checkpoints(eid: str) -> list[tuple[int, str, str | None, str | None]]:
+    from sqlmodel import select
+
+    from temper_ai.checkpoint.models import Checkpoint
+    from temper_ai.database import get_session
+
+    with get_session() as session:
+        rows = session.exec(select(Checkpoint).where(Checkpoint.execution_id == eid)
+                            .order_by(Checkpoint.sequence)).all()  # type: ignore[arg-type]
+        return [(r.sequence, r.event_type, r.node_name, r.status) for r in rows]
+
+
+def _left_to_the_attempt_that_parked(eid: str, before: int, rec: dict,
+                                     checkpoints: list[tuple]) -> None:
+    """The late asker started nothing and touched nothing: one attempt, still parked; its
+    recovery question open, asked once, under the same ask; no checkpoint written since; no
+    box started."""
+    assert len(sup.attempts(eid)) == before + 1, "one attempt started, not two"
+    assert sup.attempts(eid)[-1]["status"] == "waiting"
+    asked = [w for w in sup.ledger().snapshot(eid)["waits"] if w["kind"] == "recovery"]
+    assert [(w["wait_id"], w["state"]) for w in asked] == [(rec["wait_id"], "open")]
+    ask = sup.asked_event(eid, asked[0])
+    assert ask is not None and ask["id"] == rec["ask_event_id"]
+    assert _checkpoints(eid) == checkpoints, "nothing else wrote the run's checkpoints"
+    assert FakeBox.STARTS == [], "nothing ran again before the owner decided"
+
+
+def _answered_through_to_the_end(run, eid: str, rec: dict) -> None:
+    """The owner answers retry, then done: the turn runs once more, in one box, and the run
+    completes."""
+    assert sup.approve(run.client, eid, rec["gate_name"], "retry").status_code == 200
+    owner = sup.open_wait(eid, "owner")
+    assert [t["state"] for t in sup.ledger().snapshot(eid)["turns"]] == ["superseded", "completed"]
+    assert len(FakeBox.STARTS) == 1, "the turn ran once more, in one box"
+    assert sup.approve(run.client, eid, owner["gate_name"], "done").status_code == 200
+    sup.wait_for(lambda: sup.attempts(eid)[-1]["status"] == "completed" and not sup.run_held(eid),
+                 what=f"{eid} to complete")
+
+
+def test_a_resume_whose_claim_waited_until_the_started_attempt_parked_starts_nothing(
+        pw_run, monkeypatch):
+    """A Resume looked at the cut-off run and found it free, then waited at its claim (the
+    database was busy) while another Resume claimed the run, started the next attempt, and that
+    attempt parked at its recovery question. The late Resume is told 409 and starts nothing.
+
+    Before, its claim counted the other's claim as ended once that attempt stopped running (it
+    had parked), took it over and started a second attempt, whose checkpoint writer was made
+    before the park: the first checkpoint it wrote reused the sequence the park had taken (the
+    flake's IntegrityError, written when the test's clean-up cancelled that attempt).
+    """
+    from fastapi.testclient import TestClient
+
+    from temper_ai.runner import resume_claim
+    from temper_ai.server import app
+
+    eid, _marked, _since, before = _cut_off_mid_turn(pw_run)
+    at_its_claim = threading.Event()
+    go_on = threading.Event()
+    claims: list[str] = []
+    real_claim = resume_claim.claim
+
+    def claim_after_the_park(*args, **kwargs):
+        claims.append(eid)
+        if len(claims) == 1:  # the late Resume's: held until the other's attempt has parked
+            at_its_claim.set()
+            go_on.wait(timeout=30)
+        return real_claim(*args, **kwargs)
+
+    monkeypatch.setattr(resume_claim, "claim", claim_after_the_park)
+    late: list[tuple[int, str]] = []
+
+    def resume_late() -> None:
+        r = TestClient(app).post(f"/api/runs/{eid}/resume", json={})
+        late.append((r.status_code, r.text))
+
+    thread = threading.Thread(target=resume_late)
+    thread.start()
+    try:
+        assert at_its_claim.wait(timeout=20), "the late Resume never got to its claim"
+        r = pw_run.client.post(f"/api/runs/{eid}/resume", json={})
+        assert r.status_code == 200, r.text
+        rec = _parked_at_its_recovery_question(eid, before)
+        checkpoints = _checkpoints(eid)
+    finally:
+        go_on.set()
+        thread.join(timeout=30)
+    assert not thread.is_alive()
+
+    assert [code for code, _ in late] == [409], late
+    assert "already being carried on" in late[0][1]
+    _left_to_the_attempt_that_parked(eid, before, rec, checkpoints)
+    _answered_through_to_the_end(pw_run, eid, rec)
+
+
+def test_a_pick_up_that_chose_the_run_before_a_resume_carried_it_on_starts_nothing(
+        pw_run, caplog):
+    """temper's pick-up chose the cut-off run, then got to it only after a Resume had started
+    the next attempt and that attempt had parked at its recovery question. The pick-up carries
+    on the attempt the stop cut off and nothing newer: it leaves the run alone (already being
+    carried on), with nothing logged as an error.
+
+    Before, it found the parked attempt, claimed it as if the owner had answered, and started a
+    second attempt.
+    """
+    from temper_ai.runner import pickup
+
+    eid, marked, since, before = _cut_off_mid_turn(pw_run)
+    chosen = threading.Event()
+    go_on = threading.Event()
+    picks: list[pickup.Picks] = []
+
+    def resume_once_it_has_parked(execution_id: str) -> None:
+        chosen.set()
+        go_on.wait(timeout=30)
+        pickup._resume_through_the_button(execution_id)
+
+    def pick_up() -> None:
+        picks.append(pickup.pick_up_interrupted(
+            marked, settle_s=0, since=since, resume=resume_once_it_has_parked,
+            tell=lambda text: True, sleep=lambda _s: None))
+
+    thread = threading.Thread(target=pick_up)
+    with caplog.at_level(logging.INFO, logger="temper_ai.runner.pickup"):
+        thread.start()
+        try:
+            assert chosen.wait(timeout=20), "the pick-up never chose the run"
+            r = pw_run.client.post(f"/api/runs/{eid}/resume", json={})
+            assert r.status_code == 200, r.text
+            rec = _parked_at_its_recovery_question(eid, before)
+            checkpoints = _checkpoints(eid)
+        finally:
+            go_on.set()
+            thread.join(timeout=30)
+    assert not thread.is_alive()
+
+    assert [c.execution_id for c in picks[0].picked] == [], picks[0]
+    assert [(c.execution_id, c.why) for c in picks[0].left] == [(eid, pickup.ALREADY_CARRIED_ON)]
+    assert not [r for r in caplog.records
+                if r.name == "temper_ai.runner.pickup" and r.levelno >= logging.ERROR]
+    _left_to_the_attempt_that_parked(eid, before, rec, checkpoints)
+    _answered_through_to_the_end(pw_run, eid, rec)

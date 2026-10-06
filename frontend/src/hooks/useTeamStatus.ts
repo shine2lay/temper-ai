@@ -11,6 +11,8 @@ export interface TeamSwitch {
   /** False until the first answer (or failure) is in: render nothing yet. */
   settled: boolean;
   status: TeamStatus | null;
+  /** When the status was last read (ms), or null before it is. */
+  updatedAt: number | null;
 }
 
 /**
@@ -34,5 +36,10 @@ export function useTeamStatus({ poll = false }: { poll?: boolean } = {}): TeamSw
     refetchInterval: poll ? TEAM_STATUS_POLL_MS : false,
   });
   const status = query.data ?? null;
-  return { on: status !== null, settled: !query.isPending, status };
+  return {
+    on: status !== null,
+    settled: !query.isPending,
+    status,
+    updatedAt: query.dataUpdatedAt > 0 ? query.dataUpdatedAt : null,
+  };
 }

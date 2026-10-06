@@ -5,9 +5,12 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useTeamRun } from '@/hooks/useTeamRun';
 import { useTeamStatus } from '@/hooks/useTeamStatus';
 import { useTeamAnswer, type AnswerResult } from '@/hooks/useTeamAnswer';
+import { useTeamMessage } from '@/hooks/useTeamMessage';
 import { resultPlace, teamWaits } from '@/lib/teamAnswer';
+import { canMessage } from '@/lib/teamMessage';
 import { clockTime, firstLine, waitTitle } from '@/lib/teamText';
 import { TeamNote } from '@/components/team/TeamNote';
+import { TeamGuardBanner } from '@/components/team/TeamGuardBanner';
 import { EngineQuote } from '@/components/team/TeamQuote';
 import { teamBtn, teamLink } from '@/components/team/teamUi';
 import { RunHeader } from '@/components/team/run/RunHeader';
@@ -21,6 +24,7 @@ import { NeedsYouCard } from '@/components/team/run/NeedsYouCard';
 import { AnswerResultNote } from '@/components/team/run/AnswerResultNote';
 import { OutcomeCard, ReservedDebrief } from '@/components/team/run/OutcomeCard';
 import { StopRunDialog } from '@/components/team/run/StopRunDialog';
+import { MessageComposer } from '@/components/team/run/MessageComposer';
 import { runResultHeading } from '@/components/team/run/runFocus';
 import type { TeamRun } from '@/types/team';
 
@@ -101,6 +105,7 @@ export default function TeamRunView() {
   const { run } = read;
   const { status } = useTeamStatus();
   const sender = useTeamAnswer(executionId, read.refresh);
+  const messenger = useTeamMessage(executionId, read.refresh);
   const [stopOpen, setStopOpen] = useState(false);
   const canStop = stoppable(run, read.ended);
   useFocusWhenStopGoes(canStop);
@@ -167,6 +172,7 @@ export default function TeamRunView() {
         {wait ? `Needs you: ${waitTitle(wait)}` : ''}
       </p>
       <div className="flex flex-col gap-4 px-6 pt-4 pb-8">
+        <TeamGuardBanner mode={status?.guard_mode} />
         {stale && read.failedAt !== null && (
           <TeamNote tone="warn" icon={WifiOff} live action={<TryNow onClick={read.refresh} />}>
             <b className="font-semibold">Couldn&apos;t refresh at {clockTime(read.failedAt)}.</b>{' '}
@@ -198,6 +204,10 @@ export default function TeamRunView() {
         <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_384px]">
           <div className="flex min-w-0 flex-col gap-4">
             <Timeline run={run} />
+            {/* Kept after the run ends while it holds a result, so a refusal and the owner's text stay readable. */}
+            {(canMessage(run) || messenger.result !== null) && (
+              <MessageComposer run={run} limit={status?.limits.message_max_chars} sender={messenger} />
+            )}
             <WhoDidWhat run={run} />
           </div>
           <div className="flex min-w-0 flex-col gap-4">

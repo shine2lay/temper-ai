@@ -10,13 +10,26 @@ import type { TeamEntry, TeamOtherEntry, TeamOwnerAction, TeamOwnerWaitEntry, Te
 
 type AnyEntry = TeamEntry | TeamOtherEntry;
 
+/** The timeline's words for a settings wait (SPEC 5.2a, board O4). */
+export const SETTINGS_WAIT_ENTRY = 'settings changed while the team waited';
+
+/** How an owner's answer names the wait it answered: "quiet", "settings check", "pause"... */
+export function answerWaitWords(waitKind: string | null | undefined): string | null {
+  if (!waitKind) return null;
+  if (waitKind === 'stalled') return 'quiet';
+  if (waitKind === 'settings') return 'settings check';
+  return waitKind;
+}
+
 /**
  * The title of the wait an owner_wait entry stands for, through waitTitle
  * as the needs-you card does: an open wait's own title, word for word; a
  * closed one from the entry's kind, round, member and turn. Never the wait
- * id or Temper's name for the question.
+ * id or Temper's name for the question. A settings wait reads as the
+ * timeline line of Design's SPEC 5.2a, open or closed.
  */
 export function waitEntryTitle(entry: TeamOwnerWaitEntry, run: Pick<TeamRun, 'open_waits'>): string {
+  if (entry.wait_kind === 'settings') return SETTINGS_WAIT_ENTRY;
   const open = run.open_waits.find((w) => w.wait_id === entry.data.wait_id);
   if (open) return waitTitle(open);
   return waitTitle({

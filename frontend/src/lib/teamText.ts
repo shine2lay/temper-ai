@@ -17,6 +17,7 @@ export const TEAM_STATE_WORDS: Record<TeamState, string> = {
   paused: 'Paused',
   quiet: 'Quiet',
   member_waiting: 'Member waiting',
+  settings_changed: 'Settings changed',
   interrupted: 'Interrupted',
   done: 'Done',
   stopped: 'Stopped',
@@ -30,6 +31,7 @@ export const TEAM_STATE_TONES: Record<TeamState, TeamTone> = {
   paused: 'waiting',
   quiet: 'waiting',
   member_waiting: 'waiting',
+  settings_changed: 'waiting',
   interrupted: 'interrupted',
   done: 'completed',
   stopped: 'cancelled',
@@ -48,7 +50,7 @@ export function teamStateTone(state: string): TeamTone {
   return (TEAM_STATE_TONES as Record<string, TeamTone>)[state] ?? 'pending';
 }
 
-export const WAIT_STATES: ReadonlySet<string> = new Set(['paused', 'quiet', 'member_waiting']);
+export const WAIT_STATES: ReadonlySet<string> = new Set(['paused', 'quiet', 'member_waiting', 'settings_changed']);
 export const ENDED_STATES: ReadonlySet<string> = new Set(['done', 'stopped', 'failed', 'didnt_start']);
 
 /** The run's own statuses that never change again. */
@@ -139,6 +141,8 @@ export function ownerActionWhat(action: TeamOwnerAction, run?: Pick<TeamRun, 'ti
             : `${answer} at a member's turn`;
         case 'question':
           return wait?.member ? `reply to ${wait.member}'s question` : "reply to a member's question";
+        case 'settings':
+          return `${answer} at the settings check`;
         default:
           return answer;
       }
@@ -197,9 +201,46 @@ export function waitTitle(wait: Pick<TeamWait, 'kind' | 'round' | 'member' | 'tu
     }
     case 'question':
       return `${wait.member ?? 'A member'} asks you${wait.turn_no != null ? ` (turn ${wait.turn_no})` : ''}`;
+    case 'settings':
+      return "A deploy changed the team's settings while it waited";
     default:
       return 'Temper is waiting for you';
   }
+}
+
+/**
+ * The plain names of temper_ai/pi_agent/settings_wait.py (LABELS and
+ * label()), first letter capitalized, so the "What changed" table, the
+ * engine's question above it and the stop reason share one vocabulary.
+ * A drift-guard test reads that file.
+ */
+const SETTING_LABELS: Readonly<Record<string, string>> = {
+  pi_version: 'Pi version',
+  image: 'Box image',
+  provider: 'Provider',
+  model: 'Model',
+  thinking: 'Thinking',
+  tools: 'Tools',
+  route_host: 'Worker route',
+  workflow: 'Workflow',
+  agent_config_sha256: 'Agent config',
+  cwd: 'Working folder',
+  team: 'Team settings',
+};
+
+/**
+ * A changed setting's name for the "What changed" table: "Model",
+ * "Extension probe", "Add-on pi-tldr". A key with no plain name (a bare
+ * extensions or add_ons key, or one Temper adds later) gives null: the
+ * table then shows the engine's key as it is.
+ */
+export function settingLabel(key: string): string | null {
+  const dot = key.indexOf('.');
+  const head = dot < 0 ? key : key.slice(0, dot);
+  const name = dot < 0 ? '' : key.slice(dot + 1);
+  if (name && head === 'extensions') return `Extension ${name}`;
+  if (name && head === 'add_ons') return `Add-on ${name}`;
+  return Object.prototype.hasOwnProperty.call(SETTING_LABELS, key) ? SETTING_LABELS[key] : null;
 }
 
 /** "11 min ago", "just now", "2 h ago": how long a question has waited. */
@@ -263,6 +304,33 @@ export function teamTime(iso: string | null | undefined, now: Date = new Date())
     return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   }
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/** A list's time: "8:36 AM" today, "Oct 4, 11:02 PM" before (board T1). */
+export function teamDateTime(iso: string | null | undefined, now: Date = new Date()): string {
+  const d = parse(iso);
+  if (!d) return '';
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  if (d.toDateString() === now.toDateString()) return time;
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
+}
+
+/** What a failed read says: Temper's words, or the browser's when no answer came. */
+export function readFailWords(err: unknown): string {
+  if (err && typeof err === 'object' && 'status' in err && 'detail' in err) {
+    const { status, detail } = err as { status: number; detail: unknown };
+    if (typeof detail === 'string' && detail.trim() !== '') return detail;
+    if (detail && typeof detail === 'object') {
+      const d = detail as { problem?: unknown; message?: unknown };
+      if (typeof d.problem === 'string' && d.problem) return d.problem;
+      if (typeof d.message === 'string' && d.message) return d.message;
+    }
+    return `Temper answered ${status}`;
+  }
+  // fetch() itself failed: no reply came at all (board T3b).
+  if (err instanceof TypeError && err.message) return `network error: ${err.message}`;
+  if (err instanceof Error && err.message) return err.message;
+  return "Temper didn't answer";
 }
 
 /** The full date, time and zone, for a title attribute. */

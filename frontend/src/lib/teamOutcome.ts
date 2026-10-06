@@ -96,9 +96,22 @@ export function stopAnswerRunList(kind: TeamWait['kind']): string | null {
       return "The run list will show this run as cancelled, like Stop run. This page shows Stopped, with Temper's reason and your words.";
     case 'recovery':
       return "The run list will show this run as failed: Temper records a stop at a member's failed or unfinished turn as failed. This page shows Stopped, with Temper's reason and your words.";
+    case 'settings':
+      return 'The run list will show this run as cancelled, like Stop run.';
     default:
       return null;
   }
+}
+
+/** The confirm's title and its first "What happens" line, by the kind of question (O1c, O1e). */
+export function stopAnswerWords(kind: TeamWait['kind']): { title: string; ends: string } {
+  if (kind === 'settings') {
+    return {
+      title: 'Stop the team at the settings check?',
+      ends: 'The team ends here, before anything runs with the new settings. Your last answer is not applied, and nothing more is spent.',
+    };
+  }
+  return { title: 'Stop the team at this question?', ends: 'The team ends here and nothing more is spent.' };
 }
 
 /** A problem as Temper wrote it: a string, or an object's own words. */

@@ -6,9 +6,11 @@ const COPIED_RESET_MS = 2000;
 interface CopyButtonProps {
   text: string;
   className?: string;
+  /** The button's name, when several sit side by side (default "Copy to clipboard"). */
+  label?: string;
 }
 
-export function CopyButton({ text, className }: CopyButtonProps) {
+export function CopyButton({ text, className, label }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -21,7 +23,7 @@ export function CopyButton({ text, className }: CopyButtonProps) {
     <button
       onClick={handleCopy}
       className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-temper-text-muted hover:text-temper-text transition-colors ${className ?? ''}`}
-      aria-label={copied ? 'Copied' : 'Copy to clipboard'}
+      aria-label={copied ? 'Copied' : (label ?? 'Copy to clipboard')}
     >
       {copied ? (
         <>

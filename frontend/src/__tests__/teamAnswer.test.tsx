@@ -644,8 +644,10 @@ describe('needs-you card', () => {
     expect(stopAnswerRunList('recovery')).toBe(
       "The run list will show this run as failed: Temper records a stop at a member's failed or unfinished turn as failed. This page shows Stopped, with Temper's reason and your words.",
     );
+    // The settings check (contract E24), as Design's board O1e words it.
+    expect(stopAnswerRunList('settings')).toBe('The run list will show this run as cancelled, like Stop run.');
     // A kind Design hasn't worded yet gets no run-list line rather than a guess.
-    expect(stopAnswerRunList('settings')).toBeNull();
+    expect(stopAnswerRunList('unknown')).toBeNull();
   });
 
   it('answers only the question Temper asks now, and lists the next one', async () => {

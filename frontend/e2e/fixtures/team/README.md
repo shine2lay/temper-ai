@@ -38,7 +38,12 @@ Everything not listed under Derived came from the real routes:
   waits, a held message, objections at the end, done after guidance, stopped at each kind
   of wait, and a member waiting after a cut-off turn, a failed turn (after a Resume), a
   usage limit, and an answer that named no choice (asked again). `run-404` is a run that is
-  not a team trial.
+  not a team trial. The settings wait (contract E24): asked with the pause's continue held
+  (`run-settings-changed`), asked again after words that named neither choice
+  (`run-settings-asked-again`), changed again before go on, so go on applied nothing and a
+  new wait asks (`run-settings-changed-again`), after go on (`run-settings-go-on`) and after
+  stop (`run-settings-stopped`). `run-refused-done` is a done Temper refused because the
+  leader changed the copy after the review (E14): the round counts as keep going.
 - `message-*`, `message-read-*`: sent (pending, held, repeated), each refusal, and one
   message opened (a member's and the owner's).
 - `answer-*`: each answer that was taken, and each refusal, including an answer that reaches
@@ -46,7 +51,11 @@ Everything not listed under Derived came from the real routes:
   Temper already asked again (`answer-409-asked-again-old`).
 - `cancel-*`: the run page's Stop run, its refusal, a stop after the end, and a run that
   doesn't exist (`cancel-404`).
-- `trials-*`: the list, page 2, filtered, running only, and empty.
+- `trials-*`: the list, page 2, filtered, running only, empty, and a trial waiting at a
+  settings check (`trials-settings`).
+- `answer-200-settings-go-on`, `answer-200-settings-stop`, `answer-409-behind-settings`: the
+  settings wait's two answers, and the held question's answer refused while the settings
+  wait is open.
 
 ## Derived
 
@@ -70,3 +79,7 @@ the fields that differ. Each file names its source in `derived_from`.
 | `run-failed-cant-go-on`, `run-failed-copies`, `run-failed-cant-open`, `run-failed-recorder` | `run-failed` | The other ways a team fails, in the words `temper_ai/pi_agent/team_leader.py` writes them; the problems come from the check's own texts. |
 | `run-done-big` | `run-done` | A 4,000-character summary and 500 files in the approved version. |
 | `run-stopped-script`, `run-member-waiting-question-script` | `run-stopped`, `run-member-waiting-question` | HTML in the owner's words and in a member's question, which must show as text. |
+| `trials-with-reruns` | `trials-list` | A re-run and a fork of the stopped trial, started from the run page (contract A-8): each is its own item after the trial's own run, newest first, with its own run, state, round, cost and caller. Starting runs from the run page is outside the harness. |
+| `run-settings-stress` | `run-settings-changed` | The settings wait at its limits (Design's S8): the leader renamed to a 40-character name everywhere; the team's own settings, its 24 add-ons (one removed), the checker's model and four of the maker's settings changed: 30 changes. The question, `settings_changes` and `pins` come from `temper_ai/pi_agent/settings_wait.py`'s `team_subject`, with example digests. |
+| `run-paused-long-next` | `run-paused-two-waits` | The question waiting behind the asked one is long (Design's R16). |
+| `run-unknown-wait` | `run-paused` | A wait of a kind this page doesn't know (`budget`, made up): the page must fall back to Temper's own question and answers. |

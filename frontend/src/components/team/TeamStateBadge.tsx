@@ -1,5 +1,17 @@
 import type { LucideIcon } from 'lucide-react';
-import { Ban, Check, CirclePause, CircleSlash, Hourglass, LoaderCircle, Play, Square, TriangleAlert, X } from 'lucide-react';
+import {
+  Ban,
+  Check,
+  CirclePause,
+  CircleSlash,
+  FileDiff,
+  Hourglass,
+  LoaderCircle,
+  Play,
+  Square,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { teamStateTone, teamStateWord, type TeamTone } from '@/lib/teamText';
 
@@ -9,6 +21,7 @@ const ICONS: Record<string, LucideIcon> = {
   paused: CirclePause,
   quiet: Hourglass,
   member_waiting: TriangleAlert,
+  settings_changed: FileDiff,
   interrupted: CircleSlash,
   done: Check,
   stopped: Square,
@@ -30,7 +43,7 @@ const TONE_CLASSES: Record<TeamTone, string> = {
 
 /**
  * A team run's state: icon and word, always both, so the state never rests
- * on colour alone. Ten states (Design's K1 board); one the page doesn't know
+ * on colour alone. Eleven states (Design's K1 board); one the page doesn't know
  * yet shows its own name in the neutral colours.
  */
 export function TeamStateBadge({ state, className }: { state: string; className?: string }) {

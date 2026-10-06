@@ -1,0 +1,184 @@
+{
+  "route": "GET /api/team/trials",
+  "status": 200,
+  "body": {
+    "total": 6,
+    "trials": [
+      {
+        "trial_id": "e0a7bfe2036f",
+        "execution_id": "7a4d7d5b-aa45-476c-8820-7577c1abe18c",
+        "workflow": "team-trial-e0a7bfe2036f",
+        "goal_first_line": "Name the three buttons on the share dialog.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "paused",
+        "run_status": "waiting",
+        "decision": null,
+        "round": 1,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T11:11:10.912093+00:00",
+        "started_by": "temper-ci",
+        "ended_at": null
+      },
+      {
+        "trial_id": "c410ef61ec7d",
+        "execution_id": "4b031a5a-74d2-454c-881f-d720686b0f84",
+        "workflow": "team-trial-c410ef61ec7d",
+        "goal_first_line": "Tidy the settings page's wording.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "stopped",
+        "run_status": "cancelled",
+        "decision": "stopped",
+        "round": 1,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T11:11:09.057268+00:00",
+        "started_by": "unknown caller",
+        "ended_at": "2026-10-06T11:11:10.571422+00:00"
+      },
+      {
+        "trial_id": "c410ef61ec7d",
+        "execution_id": "3eacb8a3-5c1d-4e0f-9a7b-2d6c8e1f4a90",
+        "workflow": "team-trial-c410ef61ec7d",
+        "goal_first_line": "Tidy the settings page's wording.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "running",
+        "run_status": "running",
+        "decision": null,
+        "round": 1,
+        "cost_usd": 0.18,
+        "started_at": "2026-10-06T13:11:09.057268+00:00",
+        "started_by": "owner",
+        "ended_at": null
+      },
+      {
+        "trial_id": "c410ef61ec7d",
+        "execution_id": "9b1e7c42-0d3a-4f6b-8e25-71c0a4d9b3e6",
+        "workflow": "team-trial-c410ef61ec7d",
+        "goal_first_line": "Tidy the settings page's wording.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "done",
+        "run_status": "completed",
+        "decision": "done",
+        "round": 2,
+        "cost_usd": 0.37,
+        "started_at": "2026-10-06T12:11:09.057268+00:00",
+        "started_by": "owner",
+        "ended_at": "2026-10-06T12:23:09.057268+00:00"
+      },
+      {
+        "trial_id": "1fc2f2e127c1",
+        "execution_id": "2ea02165-b4fb-4fba-b750-16c728a9c28f",
+        "workflow": "team-trial-1fc2f2e127c1",
+        "goal_first_line": "Make the empty notes list say what to do first.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "failed",
+        "run_status": "failed",
+        "decision": "failed",
+        "round": 0,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T11:11:08.551346+00:00",
+        "started_by": "unknown caller",
+        "ended_at": "2026-10-06T11:11:08.737178+00:00"
+      },
+      {
+        "trial_id": "0711274fbef7",
+        "execution_id": "5aa60745-2d70-4415-9192-de8c41b6b1de",
+        "workflow": "team-trial-0711274fbef7",
+        "goal_first_line": "Write a short welcome note for the notes app's first screen.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "done",
+        "run_status": "completed",
+        "decision": "done",
+        "round": 1,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T11:11:06.796664+00:00",
+        "started_by": "unknown caller",
+        "ended_at": "2026-10-06T11:11:08.188305+00:00"
+      }
+    ]
+  },
+  "derived_from": "trials-list"
+}

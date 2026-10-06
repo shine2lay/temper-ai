@@ -24,6 +24,7 @@ from __future__ import annotations
 import copy
 import getpass
 import json
+import os
 import re
 import sys
 import threading
@@ -196,6 +197,7 @@ def derive() -> None:
         "derived_from": "message-409-team-ended"})
 
     derive_part_b()
+    derive_part_c()
 
     # 403: a run's own key tried an owner action (caller.py's words for a box's powers).
     from temper_ai.api import caller
@@ -304,6 +306,102 @@ def derive_part_b() -> None:
         wait["question"] = "Should the note say " + html + "?"
     write("run-member-waiting-question-script",
           {**asking, "derived_from": "run-member-waiting-question"})
+
+
+def _example_digest(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(f"EXAMPLE-{text}".encode()).hexdigest()
+
+
+def derive_part_c() -> None:
+    """Part C's states the harness can't reach in process: a trial's re-run and fork from the
+    run page (A-8), the settings wait at its limits (S8: 30 changes, a 40-character member
+    name, every kind of value, one setting removed) and a long question waiting behind the
+    asked one (R16). The settings question and its typed fields are the engine's own
+    (``settings_wait.team_subject``)."""
+    from datetime import datetime, timedelta
+
+    from temper_ai.pi_agent import settings_wait as sw
+
+    # A-8: a trial's re-run and fork from the run page follow its own run, newest first, each
+    # with its own run, state, round, cost and caller.
+    listed = copy.deepcopy(read("trials-list"))
+    items = listed["body"]["trials"]
+    at = next(i for i, t in enumerate(items) if t["state"] == "stopped")
+    own = items[at]
+    began = datetime.fromisoformat(own["started_at"])
+    rerun = {**own, "execution_id": "3eacb8a3-5c1d-4e0f-9a7b-2d6c8e1f4a90", "state": "running",
+             "run_status": "running", "decision": None, "round": 1, "cost_usd": 0.18,
+             "started_at": (began + timedelta(hours=2)).isoformat(), "started_by": "owner",
+             "ended_at": None}
+    fork = {**own, "execution_id": "9b1e7c42-0d3a-4f6b-8e25-71c0a4d9b3e6", "state": "done",
+            "run_status": "completed", "decision": "done", "round": 2, "cost_usd": 0.37,
+            "started_at": (began + timedelta(hours=1)).isoformat(), "started_by": "owner",
+            "ended_at": (began + timedelta(hours=1, minutes=12)).isoformat()}
+    items[at + 1:at + 1] = [rerun, fork]
+    listed["body"]["total"] = len(items)
+    write("trials-with-reruns", {**listed, "derived_from": "trials-list"})
+
+    # S8: the settings wait at its limits. The leader is renamed to the stress board's
+    # 40-character name everywhere; its 24 add-ons changed (one of them removed), the
+    # checker's model, four of the maker's settings, and the team's own settings.
+    out = copy.deepcopy(read("run-settings-changed"))
+    long_name = STRESS_MEMBERS[1][0]
+    out["body"] = _renamed(out["body"], {"lead": long_name})
+    team_old, team_new = _example_digest("team-old"), _example_digest("team-new")
+    many_old = {"team": team_old, "model": "claude-opus-5-5",
+                "add_ons": {f"addon-{i:02}": _example_digest(f"addon-{i}-old") for i in range(24)}}
+    many_new = {"team": team_new, "model": "claude-opus-5-5",
+                "add_ons": {f"addon-{i:02}": _example_digest(f"addon-{i}-new") for i in range(23)}}
+    changed = [
+        (long_name, "p-lead", many_old, many_new),
+        ("checker", "p-checker", {"team": team_old, "model": "claude-sonnet-x"},
+         {"team": team_new, "model": "claude-sonnet-y"}),
+        ("maker", "p-maker",
+         {"team": team_old, "add_ons": {"pi-tldr": _example_digest("tldr-old")},
+          "agent_config_sha256": _example_digest("config-old"),
+          "image": "sha256:" + _example_digest("image-old"), "pi_version": "0.87.1"},
+         {"team": team_new, "add_ons": {"pi-tldr": _example_digest("tldr-new")},
+          "agent_config_sha256": _example_digest("config-new"),
+          "image": "sha256:" + _example_digest("image-new"), "pi_version": "0.88.0"}),
+    ]
+    subject = sw.team_subject(changed)
+    assert len(subject["settings_changes"]) == 30, len(subject["settings_changes"])
+    wait = out["body"]["open_waits"][0]
+    assert wait["kind"] == "settings", wait["kind"]
+    wait.update(question=subject["question"], settings_changes=subject["settings_changes"],
+                pins=[{k: p[k] for k in ("member", "pin_old", "pin_new")}
+                      for p in subject["pins"]])
+    write("run-settings-stress", {**out, "derived_from": "run-settings-changed"})
+
+    # R16: the question waiting behind the asked one is long; the card shows two lines of it
+    # and says how to read the rest.
+    two = copy.deepcopy(read("run-paused-two-waits"))
+    behind = two["body"]["open_waits"][1]
+    behind["question"] = (
+        "Before I write the empty-state copy: should the note say where the New note button "
+        "is (top right on a laptop, bottom right on a phone), or should it only say what a "
+        "note is for? The design board shows both versions. The first helps someone who "
+        "opens the app for the first time; the second stays true if the button moves. I "
+        "lean to the first, with the phone wording checked on a narrow screen, but the "
+        "leader asked for the shortest text that still tells a new user what to do first.")
+    write("run-paused-long-next", {**two, "derived_from": "run-paused-two-waits"})
+
+    # A wait of a kind this page doesn't know: it shows under the generic "Temper is waiting
+    # for you" with Temper's own question and answers (the contract's fallback).
+    paused = copy.deepcopy(read("run-paused"))
+    needs = {a["answer"]: a["needs_text"] for a in paused["body"]["open_waits"][0]["answers"]}
+    paused["body"]["open_waits"][0].update(
+        kind="budget", header="budget", round=None, member=None, turn_no=None, why=None,
+        question="The team has spent $5.00, its budget for this trial. Raise the budget, or "
+                 "stop the team?",
+        answers=[{"answer": "raise", "needs_text": needs["guide"],
+                  "means": "The team carries on with the budget you give, in US dollars."},
+                 {"answer": "stop", "needs_text": needs["stop"],
+                  "means": "The team stops here and the run ends cancelled. Any words you give "
+                           "are kept with it."}])
+    write("run-unknown-wait", {**paused, "derived_from": "run-paused"})
 
 
 def check_clean() -> None:
@@ -927,3 +1025,96 @@ def test_trials(team):
     s.save("trials-filtered-paused", TRIALS, team.client.get("/api/team/trials?state=paused"))
     assert ta.answer(team, paused, wait["wait_id"], "continue", rid="t-4-go").status_code == 200
     assert pw.wait_ended(paused, 2)[-1]["status"] == "completed"
+
+
+# --- part C: the settings wait (contract E24) and a refused done (E14) ---------------------
+
+
+def change_extension(marker: str) -> None:
+    """A deploy changed the identity extension: its digest is in every member's pin (as
+    ``tests/test_runner/pi_parking/test_settings_wait.py`` does it)."""
+    raw = json.loads(Path(os.environ["TEMPER_PI_BOX_CONFIG"]).read_text())
+    (Path(raw["identity_extension"]) / "index.ts").write_text(
+        f"export default function () {{}} // {marker}\n")
+
+
+def settings_trial(team, rid: str) -> tuple[str, dict, dict]:
+    """A trial paused after round 1; a deploy changes every member's settings; the owner's
+    continue reopens it at the team's settings wait. Returns (run, the pause, the settings
+    wait)."""
+    rounds(team.led, ["keep_going", "done"])
+    eid = start(team, trial(team, rid, pause_after_rounds=1))["execution_id"]
+    pause = ta.parked(team, eid, 1)
+    change_extension(f"EXAMPLE-{rid}")
+    r = ta.answer(team, eid, pause["wait_id"], "continue", rid=f"{rid}-continue",
+                  auth=OWNER_KEY)
+    assert r.status_code == 200, r.text
+    wait = ta.parked(team, eid, 2)
+    assert wait["kind"] == "settings", wait
+    return eid, pause, wait
+
+
+def test_settings_wait(team):
+    """Asked first with the pause's continue held; the held answer refused; words naming
+    neither choice asked again; settings changed again before go on; then go on."""
+    s = team.saver
+    eid, pause, wait = settings_trial(team, "sw-1")
+    got = save_run(team, "run-settings-changed", eid)
+    assert got["state"] == "settings_changed", got["state"]
+    assert [w["kind"] for w in got["open_waits"]] == ["settings", "pause"], got["open_waits"]
+    listed = s.save("trials-settings", TRIALS, team.client.get("/api/team/trials"))
+    assert listed["trials"][0]["state"] == "settings_changed", listed
+    r = ta.answer(team, eid, pause["wait_id"], "continue", rid="sw-1-held")
+    s.save("answer-409-behind-settings", ANSWER, r)
+    assert r.status_code == 409, r.text
+
+    # words naming neither choice (the run page's GateModal) decide nothing: asked again
+    r = pw.pick(team.client, eid, wait["node_name"], event_id=wait["event_id"],
+                question=wait["question"], custom="not sure yet")
+    assert r.status_code == 200, r.text
+    again = ta.parked(team, eid, 3)
+    got = save_run(team, "run-settings-asked-again", eid)
+    assert again["kind"] == "settings" and again["asked_again"] == 1, again
+
+    # the settings change again before go on: go on applies nothing and a new wait asks
+    change_extension("EXAMPLE-sw-1-again")
+    r = ta.answer(team, eid, again["wait_id"], "go on", rid="sw-1-go-1", auth=OWNER_KEY)
+    assert r.status_code == 200, r.text
+    newer = ta.parked(team, eid, 4)
+    got = save_run(team, "run-settings-changed-again", eid)
+    assert newer["kind"] == "settings" and newer["wait_id"] != again["wait_id"], newer
+
+    r = ta.answer(team, eid, newer["wait_id"], "go on", rid="sw-1-go-2", auth=OWNER_KEY)
+    s.save("answer-200-settings-go-on", ANSWER, r)
+    assert r.status_code == 200, r.text
+    assert pw.wait_ended(eid, 5)[-1]["status"] == "completed"
+    got = save_run(team, "run-settings-go-on", eid)
+    assert got["state"] == "done", got["state"]
+
+
+def test_settings_stop(team):
+    eid, _pause, wait = settings_trial(team, "ss-1")
+    r = ta.answer(team, eid, wait["wait_id"], "stop", "Not on these settings; I'll start a new "
+                  "trial.", rid="ss-1-stop", auth=OWNER_KEY)
+    team.saver.save("answer-200-settings-stop", ANSWER, r)
+    assert r.status_code == 200, r.text
+    assert pw.wait_ended(eid, 3)[-1]["status"] == "cancelled"
+    got = save_run(team, "run-settings-stopped", eid)
+    assert (got["state"], got["run_status"]) == ("stopped", "cancelled"), got["state"]
+
+
+def test_refused_done(team):
+    """lead says done on a copy it changed after the review: Temper refuses the done and the
+    round counts as keep going, so two rounds without done pause the team."""
+    rounds(team.led, ["done", "keep_going"])
+    ts.SCRIPTS["lead"][1] = [ls.write("WELCOME.md", DRAFTS[1]),
+                             ls.decide(team.led, None, "done", SUMMARIES[2])]
+    eid = start(team, trial(team, "rd-1", pause_after_rounds=2))["execution_id"]
+    wait = ta.parked(team, eid, 1)
+    got = save_run(team, "run-refused-done", eid)
+    assert got["state"] == "paused", got["state"]
+    assert [r["decision"] for r in got["reviews"]] == ["done_refused", "keep_going"], \
+        got["reviews"]
+    r = ta.answer(team, eid, wait["wait_id"], "stop", rid="rd-stop", auth=OWNER_KEY)
+    assert r.status_code == 200, r.text
+    pw.wait_ended(eid, 2)

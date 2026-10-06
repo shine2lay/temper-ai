@@ -12,166 +12,24 @@
  *
  * Screenshots for reading against Design's boards go to TEAM_SHOTS when set.
  */
-import { expect, test, type Page, type Route } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
+import { expect, test } from '@playwright/test';
 import { startSmokeRun } from './helpers';
-
-interface Fixture {
-  route: string;
-  status: number;
-  body: unknown;
-}
-
-function fixture(name: string): Fixture {
-  const file = path.join(process.cwd(), 'e2e/fixtures/team', `${name}.json`);
-  return JSON.parse(readFileSync(file, 'utf8')) as Fixture;
-}
-
-const RUN_ID = (fixture('run-running').body as { execution_id: string }).execution_id;
-const SHOTS = process.env.TEAM_SHOTS;
-const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'];
-
-/** A fixture's body with the run's id swapped for another (a real run on this server). */
-function asRun(name: string, executionId: string): Fixture {
-  const f = fixture(name);
-  return { ...f, body: { ...(f.body as object), execution_id: executionId } };
-}
-
-const RUN_READ = /^\/api\/team\/runs\/[^/]+$/;
-
-/**
- * The message reads Temper really answered, by message id. A message
- * nobody captured gets Temper's own 404, never another message's body.
- */
-const MESSAGES = new Map(
-  ['message-read', 'message-read-owner'].map((name) => [(fixture(name).body as { message_id: string }).message_id, name]),
-);
-
-function messageRead(pathname: string): Fixture {
-  return fixture(MESSAGES.get(pathname.split('/').pop() ?? '') ?? 'message-read-404');
-}
-
-/**
- * Serve /api/team/* from fixtures. `run` is a list: each read of the run
- * takes the next answer and the last one repeats. It can also be a
- * function, read at each request (to answer by what the page has sent).
- * A message is answered by its id, unless `message` is given.
- */
-async function serveTeam(
-  page: Page,
-  { status = fixture('status-on'), run = [fixture('run-running')], message }: {
-    status?: Fixture;
-    run?: Fixture[] | (() => Fixture);
-    message?: Fixture;
-  } = {},
-): Promise<string[]> {
-  const seen: string[] = [];
-  let reads = 0;
-  await page.route('**/api/team/**', async (route) => {
-    const { pathname } = new URL(route.request().url());
-    seen.push(pathname);
-    let answer: Fixture;
-    if (pathname === '/api/team/status') answer = status;
-    else if (/^\/api\/team\/runs\/[^/]+\/messages\/[^/]+$/.test(pathname)) answer = message ?? messageRead(pathname);
-    else if (RUN_READ.test(pathname)) answer = typeof run === 'function' ? run() : run[Math.min(reads++, run.length - 1)];
-    else answer = { route: '', status: 404, body: { detail: 'Not Found' } };
-    await route.fulfill({ status: answer.status, contentType: 'application/json', body: JSON.stringify(answer.body) });
-  });
-  return seen;
-}
-
-/** A reply to a POST: a fixture, or no reply at all (the connection fails). */
-type Reply = Fixture | 'no reply';
-
-interface Sent {
-  answers: Record<string, unknown>[];
-  cancels: Record<string, unknown>[];
-}
-
-/**
- * Serve the two POSTs this part of the page makes, team_answer and the run
- * page's cancel: each one takes the next reply (the last repeats), and the
- * bodies the page sent are kept in `sent`.
- */
-async function serveActions(page: Page, sent: Sent, { answer = [], cancel = [] }: { answer?: Reply[]; cancel?: Reply[] }) {
-  const reply = async (route: Route, replies: Reply[], n: number) => {
-    const r = replies[Math.min(n - 1, replies.length - 1)];
-    if (!r || r === 'no reply') return route.abort('failed');
-    await route.fulfill({ status: r.status, contentType: 'application/json', body: JSON.stringify(r.body) });
-  };
-  await page.route('**/api/team/runs/*/waits/*/answer', async (route) => {
-    sent.answers.push(route.request().postDataJSON() as Record<string, unknown>);
-    await reply(route, answer, sent.answers.length);
-  });
-  await page.route('**/api/runs/*/cancel', async (route) => {
-    sent.cancels.push(route.request().postDataJSON() as Record<string, unknown>);
-    await reply(route, cancel, sent.cancels.length);
-  });
-}
-
-/** The run view of `before`, which reads as `after` once the page has sent an answer or a stop. */
-async function openRun(
-  page: Page,
-  before: string,
-  { after = before, answer = [], cancel = [], status }: { after?: string; answer?: Reply[]; cancel?: Reply[]; status?: Fixture } = {},
-): Promise<{ sent: Sent; seen: string[] }> {
-  const sent: Sent = { answers: [], cancels: [] };
-  const seen = await serveTeam(page, {
-    status,
-    run: () => fixture(sent.answers.length + sent.cancels.length > 0 ? after : before),
-  });
-  await serveActions(page, sent, { answer, cancel });
-  await page.goto(`/app/team/runs/${RUN_ID}`);
-  await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('Team run');
-  return { sent, seen };
-}
-
-/** Temper's words in a refusal body, as the page must show them. */
-function refusalText(name: string): string {
-  const body = fixture(name).body as { problem?: string; message?: string; detail?: string };
-  return body.problem ?? body.message ?? body.detail ?? '';
-}
-
-const card = (page: Page) => page.locator('[data-card="needs-you"]');
-const answers = (page: Page) => card(page).getByRole('group', { name: 'Your answer' });
-const result = (page: Page) => page.locator('#team-answer-result');
-
-/** Pick an answer in the needs-you card and, when given, write its words. */
-async function pick(page: Page, answer: string, words?: string) {
-  await answers(page).getByRole('radio', { name: new RegExp(`^${answer}\\b`) }).check();
-  if (words !== undefined) await card(page).getByRole('textbox').fill(words);
-}
-
-const runReads = (seen: string[]) => seen.filter((p) => RUN_READ.test(p)).length;
-
-/** axe on the whole page: nothing found. */
-async function expectAxeClean(page: Page) {
-  const results = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
-  const found = results.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
-  expect(found, 'axe found problems').toEqual([]);
-}
-
-/** Every button and link on the Team page is at least 24 x 24 px (WCAG 2.5.8). */
-async function expectTargets(page: Page) {
-  const small = await page.locator('main').evaluate((main) => {
-    const out: string[] = [];
-    for (const el of main.querySelectorAll<HTMLElement>('a[href], button, [role="button"], summary')) {
-      const box = el.getBoundingClientRect();
-      if (box.width === 0 && box.height === 0) continue;
-      if (box.width < 24 || box.height < 24) {
-        out.push(`${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 40)}" ${box.width.toFixed(0)}x${box.height.toFixed(0)}`);
-      }
-    }
-    return out;
-  });
-  expect(small, 'targets under 24 px').toEqual([]);
-}
-
-async function shoot(page: Page, name: string) {
-  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true });
-}
+import {
+  answers,
+  asRun,
+  card,
+  expectAxeClean,
+  expectTargets,
+  fixture,
+  openRun,
+  pick,
+  refusalText,
+  result,
+  RUN_ID,
+  runReads,
+  serveTeam,
+  shoot,
+} from './team-helpers';
 
 /** The run view states that need no answer from the owner, and what each must show. */
 const RUN_STATES: { fixture: string; shows: RegExp | string }[] = [
@@ -503,6 +361,9 @@ for (const theme of ['dark', 'light'] as const) {
       test('needs you: the answers are a radio group, in the page order of section 6', async ({ page }) => {
         await openRun(page, 'run-paused');
         await page.getByRole('button', { name: 'Stop run' }).focus();
+        // The guard notice (part C, guard_mode off here) comes first in the content column.
+        await page.keyboard.press('Tab');
+        await expect(page.getByRole('button', { name: 'Hide this notice for this session' })).toBeFocused();
         await page.keyboard.press('Tab');
         const radios = answers(page).getByRole('radio');
         await expect(radios.nth(0)).toBeFocused();
@@ -897,23 +758,8 @@ for (const theme of ['dark', 'light'] as const) {
         await shoot(page, `${tag}-not-team`);
       });
 
-      for (const [where, url, notice] of [
-        ['trials', '/app/team', 'The trials list is still being built.'],
-        ['roles', '/app/team/roles', 'The roles list is still being built.'],
-        ['new trial', '/app/team/new', 'Starting a trial from here is still being built.'],
-      ] as const) {
-        test(`Team page: ${where}`, async ({ page }) => {
-          await serveTeam(page);
-          await page.goto(url);
-          await expect(page.getByRole('heading', { level: 1, name: 'Team' })).toBeVisible();
-          await expect(page.getByText(notice)).toBeVisible();
-          const nav = page.getByRole('navigation', { name: 'Main navigation' });
-          await expect(nav.getByRole('link', { name: 'Team' })).toBeVisible();
-          await expectAxeClean(page);
-          await expectTargets(page);
-          await shoot(page, `${tag}-page-${where.replace(' ', '-')}`);
-        });
-      }
+      // The trials list, the roles, the form, the composer, the guard notice
+      // and the settings wait: team-c.spec.ts.
 
       test('Team page: Page not found when the switch is off', async ({ page }) => {
         await serveTeam(page, { status: fixture('status-off') });

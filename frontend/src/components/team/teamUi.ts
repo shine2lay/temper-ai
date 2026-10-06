@@ -36,5 +36,13 @@ export const teamChipTone = {
   failed: 'bg-[var(--badge-failed-bg)] text-[var(--badge-failed-text)] border-[var(--badge-failed-border)]',
 } as const;
 
+/** A text field, select or text box; `teamFieldBad` marks one with a problem. */
+export const teamField =
+  'w-full rounded-md border border-temper-control bg-temper-panel px-3 py-2 text-sm text-temper-text placeholder:text-temper-text-dim disabled:cursor-not-allowed disabled:opacity-55';
+export const teamFieldBad = 'border-[var(--badge-failed-border)]';
+
+/** A form's small label beside a field: "required", "optional". */
+export const teamFieldTag = 'text-xs font-normal text-temper-text-muted';
+
 /** An underlined text link with at least a 24 px target. */
 export const teamLink = 'inline-flex min-h-6 items-center gap-1 text-temper-text underline underline-offset-2 decoration-temper-control hover:decoration-temper-text';

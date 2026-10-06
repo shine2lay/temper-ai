@@ -57,6 +57,19 @@ export function wordsLabel(option: TeamAnswerOption, wait: Pick<TeamWait, 'kind'
   return `Words for ${wordsFor(wait, leader)}`;
 }
 
+/**
+ * How the card names an answer: Temper's own word, except at the settings
+ * check, where Design names the two choices (SPEC 5.2a). What is sent is
+ * always Temper's word.
+ */
+export function answerName(wait: Pick<TeamWait, 'kind'>, option: Pick<TeamAnswerOption, 'answer'>): string {
+  if (wait.kind === 'settings') {
+    if (option.answer === 'go on') return 'Go on with the new settings';
+    if (option.answer === 'stop') return 'Stop the team';
+  }
+  return option.answer;
+}
+
 /** " · needs words", " · words optional", or nothing for an answer that takes none. */
 export function needsWordsTag(option: Pick<TeamAnswerOption, 'needs_text'>): string {
   if (option.needs_text === 'required') return 'needs words';

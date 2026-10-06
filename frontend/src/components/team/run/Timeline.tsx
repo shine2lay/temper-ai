@@ -22,7 +22,8 @@ import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
 import { cn } from '@/lib/utils';
 import { fetchTeamMessage, teamKeys, TeamApiError } from '@/lib/teamApi';
 import { teamStopper } from '@/lib/teamOutcome';
-import { entryTime, waitEntryTitle } from '@/lib/teamTimeline';
+import { refusedDoneReview } from '@/lib/teamReview';
+import { answerWaitWords, entryTime, waitEntryTitle } from '@/lib/teamTimeline';
 import {
   countChars,
   decisionWords,
@@ -265,14 +266,15 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
     }
     case 'decision': {
       const e = entry as TeamDecisionEntry;
-      if (e.data.refusal) {
+      const refused = refusedDoneReview(e, run);
+      if (refused) {
         return {
           head: (
             <>
               <Agent name={e.from_agent} /> <Muted>said done; refused</Muted>
             </>
           ),
-          body: <Preview text={e.data.refusal} engine />,
+          body: <Preview text={refused.refusal} engine />,
         };
       }
       if (e.decision === 'stopped') {
@@ -317,12 +319,21 @@ function describe(entry: AnyEntry, run: TeamRun): Row {
     }
     case 'owner_answer': {
       const e = entry as TeamOwnerAnswerEntry;
+      const waitWords = answerWaitWords(e.wait_kind);
       return {
         head: (
           <>
             <TeamWho by={e.answered_by} /> <Muted>{teamSource(e.answered_source).inline}</Muted> <Muted>answered</Muted>{' '}
             <b className="font-semibold text-temper-text">{e.data.answer}</b>
-            {e.wait_kind && <Muted> ({e.wait_kind === 'stalled' ? 'quiet' : e.wait_kind})</Muted>}
+            {waitWords && <Muted> ({waitWords})</Muted>}
+            {e.data.applied === false && (
+              <>
+                {' '}
+                <span data-chip="not-applied" className={cn(teamChip, teamChipTone.neutral)}>
+                  not applied
+                </span>
+              </>
+            )}
           </>
         ),
       };

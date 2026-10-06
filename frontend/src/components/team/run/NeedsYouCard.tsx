@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   CircleAlert,
   CirclePause,
+  FileDiff,
   Hand,
   Hourglass,
   ListOrdered,
@@ -13,8 +14,17 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { HIT_AREA, HIT_AREA_RING } from '@/lib/hitArea';
 import { agoWords, isoOf, teamTime, teamTimeFull, waitTitle } from '@/lib/teamText';
-import { answerLimit, checkAnswer, needsWordsTag, wordsLabel, type AnswerCheck } from '@/lib/teamAnswer';
+import { SETTINGS_WAIT_LINE } from '@/lib/teamSettings';
+import {
+  answerLimit,
+  answerName,
+  checkAnswer,
+  needsWordsTag,
+  wordsLabel,
+  type AnswerCheck,
+} from '@/lib/teamAnswer';
 import type { AnswerResult, TeamAnswerSender } from '@/hooks/useTeamAnswer';
 import type { TeamLimits, TeamRun, TeamWait } from '@/types/team';
 import { TeamCharCount } from '../TeamCharCount';
@@ -22,6 +32,7 @@ import { TeamNote } from '../TeamNote';
 import { teamBtn, teamChip, teamChipTone } from '../teamUi';
 import { AnswerResultNote } from './AnswerResultNote';
 import { RoundCard } from './RoundCard';
+import { SettingsChanges } from './SettingsChanges';
 import { StopAnswerDialog } from './StopAnswerDialog';
 
 const KIND_ICONS: Record<string, LucideIcon> = {
@@ -29,7 +40,60 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   stalled: Hourglass,
   recovery: TriangleAlert,
   question: MessageCircleQuestionMark,
+  settings: FileDiff,
 };
+
+const subLabel = 'm-0 text-xs font-semibold uppercase tracking-[0.06em] text-temper-text-muted';
+
+/**
+ * A next question, cut to two lines (board R16). When it is cut, "Show all"
+ * opens it whole: a disclosure (WAI-ARIA APG) that keyboard and touch
+ * users can reach, not a mouse-only hover. It never answers anything.
+ */
+function NextQuestionText({ question }: { question: string }) {
+  const ids = useId();
+  const text = useRef<HTMLParagraphElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+
+  useLayoutEffect(() => {
+    const el = text.current;
+    if (!el || open) return;
+    const measure = () => setCut(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [open, question]);
+
+  return (
+    <div className="flex min-w-[12rem] flex-1 flex-wrap items-baseline gap-x-2">
+      <p
+        ref={text}
+        id={`${ids}-question`}
+        data-next-question=""
+        className={cn(
+          'm-0 min-w-0 flex-1 text-xs break-words text-temper-text-muted',
+          open ? 'whitespace-pre-wrap' : 'line-clamp-2',
+        )}
+      >
+        {question}
+      </p>
+      {(cut || open) && (
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={`${ids}-question`}
+          onClick={() => setOpen((v) => !v)}
+          className={cn(HIT_AREA, 'inline-flex min-h-6 shrink-0 items-center text-xs text-temper-text')}
+        >
+          <span className={cn('underline underline-offset-2', HIT_AREA_RING)}>{open ? 'Show less' : 'Show all'}</span>
+        </button>
+      )}
+    </div>
+  );
+}
 
 function Since({ iso }: { iso: string | null }) {
   if (!iso) return null;
@@ -64,12 +128,8 @@ function NextQuestions({ next }: { next: TeamWait[] }) {
                 </span>
               )}
             </div>
-            {/* On the same line when it fits, cut short with its full text on hover (board R16). */}
-            {w.question && (
-              <p className="m-0 min-w-[12rem] flex-1 truncate text-xs text-temper-text-muted" title={w.question}>
-                {w.question}
-              </p>
-            )}
+            {/* On the same line when it fits, cut to two lines; "Show all" opens it (board R16). */}
+            {w.question && <NextQuestionText question={w.question} />}
           </li>
         ))}
       </ul>
@@ -134,6 +194,9 @@ export function NeedsYouCard({
   const sending = sender.sending;
   const askedAgain = wait.asked_again ?? 0;
   const why = (wait.why ?? '').trim();
+  const settings = wait.kind === 'settings';
+  // A settings wait's header is only its kind's name; the boards leave it out (R18).
+  const header = settings ? null : wait.header;
 
   function send() {
     const check = checkAnswer(option, text, wait, leader, limits);
@@ -155,8 +218,14 @@ export function NeedsYouCard({
   const sendLabel = sending ? 'Sending…' : stopPicked ? 'Stop the team…' : 'Send answer';
   const answersError = problem?.field === 'answers' ? problem.words : null;
   const wordsError = problem?.field === 'words' ? problem.words : null;
-  const areas =
-    next.length > 0
+  // The settings card's left column holds the table, so the round and the
+  // latest review go under the answers on the right (board R18). The
+  // second row is 1fr so it starts right under the answers.
+  const areas = settings
+    ? next.length > 0
+      ? "[grid-template-areas:'q'_'ans'_'nx'_'ctx'] xl:grid-rows-[auto_1fr_auto] xl:[grid-template-areas:'q_ans'_'q_ctx'_'nx_nx']"
+      : "[grid-template-areas:'q'_'ans'_'ctx'] xl:grid-rows-[auto_1fr] xl:[grid-template-areas:'q_ans'_'q_ctx']"
+    : next.length > 0
       ? "[grid-template-areas:'q'_'ans'_'nx'_'ctx'] xl:[grid-template-areas:'q_ans'_'ctx_ans'_'nx_nx']"
       : "[grid-template-areas:'q'_'ans'_'ctx'] xl:[grid-template-areas:'q_ans'_'ctx_ans']";
 
@@ -182,28 +251,30 @@ export function NeedsYouCard({
                 {title}
               </h2>
             </div>
-            {(wait.opened_at || wait.header) && (
+            {(wait.opened_at || header) && (
               <p className="m-0 flex flex-wrap items-center gap-x-1 text-xs text-temper-text-muted">
                 {wait.opened_at && (
                   <span>
                     Waiting since <Since iso={wait.opened_at} /> ({agoWords(wait.opened_at)})
                   </span>
                 )}
-                {wait.opened_at && wait.header && <span aria-hidden="true">·</span>}
-                {wait.header && (
+                {wait.opened_at && header && <span aria-hidden="true">·</span>}
+                {header && (
                   <span className="font-mono" title="Temper's name for this question">
-                    {wait.header}
+                    {header}
                   </span>
                 )}
               </p>
             )}
           </div>
+          {settings && <p className="m-0 text-sm text-temper-text">{SETTINGS_WAIT_LINE}</p>}
           {askedAgain > 0 && (
             <TeamNote tone="warn" icon={RotateCcw} title={`Asked again (${askedAgain} ${askedAgain === 1 ? 'time' : 'times'})`}>
               The last answer wasn&apos;t one of the choices, so nothing was decided and Temper asked again. Pick one of
               the answers.
             </TeamNote>
           )}
+          {settings && wait.question && <h3 className={subLabel}>Temper asks</h3>}
           {wait.question && (
             <blockquote
               data-quote="engine"
@@ -223,6 +294,7 @@ export function NeedsYouCard({
               while.
             </p>
           )}
+          {settings && <SettingsChanges changes={wait.settings_changes ?? []} pins={wait.pins ?? []} />}
         </div>
 
         <div className="flex min-w-0 flex-col gap-3 [grid-area:ans]">
@@ -276,7 +348,7 @@ export function NeedsYouCard({
                     />
                     <span className="min-w-0 flex-1">
                       <span id={nameId} className="block text-sm text-temper-text">
-                        <b className="font-semibold">{a.answer}</b>
+                        <b className="font-semibold">{answerName(wait, a)}</b>
                         {tag && (
                           <>
                             {' '}
@@ -397,6 +469,7 @@ export function NeedsYouCard({
         }}
         waitTitle={title}
         waitKind={wait.kind}
+        answerLabel={answerName(wait, { answer: 'stop' })}
         words={confirmStop ?? ''}
         onConfirm={() => {
           const words = confirmStop ?? '';

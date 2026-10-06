@@ -1,0 +1,38 @@
+{
+  "route": "GET /api/team/trials",
+  "status": 200,
+  "body": {
+    "total": 1,
+    "trials": [
+      {
+        "trial_id": "54b2f8cbfb20",
+        "execution_id": "37d37e1d-5e8d-4b84-851b-06f08f8114a0",
+        "workflow": "team-trial-54b2f8cbfb20",
+        "goal_first_line": "Write a short welcome note for the notes app's first screen.",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "settings_changed",
+        "run_status": "waiting",
+        "decision": null,
+        "round": 1,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-06T21:40:33.415131+00:00",
+        "started_by": "unknown caller",
+        "ended_at": null
+      }
+    ]
+  }
+}

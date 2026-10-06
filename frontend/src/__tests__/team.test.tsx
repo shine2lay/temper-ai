@@ -45,9 +45,11 @@ import runStopped from '../../e2e/fixtures/team/run-stopped.json';
 import runStoppedByCi from '../../e2e/fixtures/team/run-stopped-by-ci.json';
 import runStoppedByUnknown from '../../e2e/fixtures/team/run-stopped-by-unknown.json';
 import runStoppedFromChat from '../../e2e/fixtures/team/run-stopped-from-chat.json';
+import rolesOk from '../../e2e/fixtures/team/roles-ok.json';
 import runStress from '../../e2e/fixtures/team/run-stress.json';
 import statusOff from '../../e2e/fixtures/team/status-off.json';
 import statusOn from '../../e2e/fixtures/team/status-on.json';
+import trialsList from '../../e2e/fixtures/team/trials-list.json';
 
 interface Answer {
   status: number;
@@ -65,16 +67,22 @@ function serve({
   status = statusOn,
   run = [runRunning],
   message = messageRead,
+  trials = trialsList,
+  roles = rolesOk,
 }: {
   status?: Answer;
   run?: Answer[];
   message?: Answer;
+  trials?: Answer;
+  roles?: Answer;
 } = {}) {
   let reads = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(String(input), 'http://temper.test').pathname;
     let answer: Answer;
     if (path === '/api/team/status') answer = status;
+    else if (path === '/api/team/trials') answer = trials;
+    else if (path === '/api/team/roles') answer = roles;
     else if (/^\/api\/team\/runs\/[^/]+\/messages\/[^/]+$/.test(path)) answer = message;
     else if (/^\/api\/team\/runs\/[^/]+$/.test(path)) answer = run[Math.min(reads++, run.length - 1)];
     else answer = { status: 500, body: { detail: `not served by this test: ${path}` } };
@@ -127,9 +135,9 @@ afterEach(() => {
 // --- shared parts ---------------------------------------------------------------
 
 describe('state badge', () => {
-  it('shows every one of the ten states as an icon and a word', () => {
-    const words = ['Starting', 'Running', 'Paused', 'Quiet', 'Member waiting', 'Interrupted', 'Done', 'Stopped', 'Failed', "Didn't start"];
-    expect(TEAM_STATES).toHaveLength(10);
+  it('shows every one of the eleven states as an icon and a word', () => {
+    const words = ['Starting', 'Running', 'Paused', 'Quiet', 'Member waiting', 'Settings changed', 'Interrupted', 'Done', 'Stopped', 'Failed', "Didn't start"];
+    expect(TEAM_STATES).toHaveLength(11);
     TEAM_STATES.forEach((state, i) => {
       const { container, unmount } = render(<TeamStateBadge state={state} />);
       const badge = container.querySelector('[data-component="team-state-badge"]');
@@ -308,14 +316,16 @@ describe('the Team switch', () => {
 });
 
 describe('Team page header', () => {
-  it('has the title, New trial and the two tabs, with the open one marked', () => {
+  it('has the title, New trial and the two tabs, with the open one marked and counted', async () => {
+    serve();
     show(<TeamPage tab="roles" />);
     expect(screen.getByRole('heading', { level: 1, name: 'Team' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'New trial' })).toHaveAttribute('href', '/team/new');
     const tabs = within(screen.getByRole('navigation', { name: 'Team' }));
-    expect(tabs.getByRole('link', { name: 'Roles' })).toHaveAttribute('aria-current', 'page');
-    expect(tabs.getByRole('link', { name: 'Trials' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByText('The roles list is still being built.')).toBeInTheDocument();
+    expect(await tabs.findByRole('link', { name: 'Roles 4' })).toHaveAttribute('aria-current', 'page');
+    expect(await tabs.findByRole('link', { name: 'Trials 4' })).not.toHaveAttribute('aria-current');
+    // Part A's "still being built" notices are gone.
+    expect(screen.queryByText(/still being built/)).toBeNull();
   });
 });
 

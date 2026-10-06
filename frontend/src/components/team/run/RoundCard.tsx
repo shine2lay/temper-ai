@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import { decisionWords } from '@/lib/teamText';
+import { isRefusedDone, reviewDecision } from '@/lib/teamReview';
 import type { TeamRun } from '@/types/team';
 import { teamCard, teamLabel } from '../teamUi';
 import { VerdictChip } from './Timeline';
@@ -84,13 +85,13 @@ export function RoundCard({ run, inWait = false }: { run: TeamRun; inWait?: bool
               ))}
             </div>
           )}
-          {latest.refusal ? (
+          {isRefusedDone(latest) ? (
             <p className="m-0 mt-2 text-xs text-temper-text-muted">{trial.leader} said done; refused</p>
           ) : (
             latest.decision && (
               <p className="m-0 mt-2 text-xs text-temper-text">
                 <span className="text-temper-text-muted">{trial.leader} decided:</span>{' '}
-                <b className="font-semibold">{decisionWords(latest.decision)}</b>
+                <b className="font-semibold">{decisionWords(reviewDecision(latest) ?? latest.decision)}</b>
               </p>
             )
           )}

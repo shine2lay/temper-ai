@@ -1,0 +1,16 @@
+{
+  "route": "POST /api/team/runs/{execution_id}/waits/{wait_id}/answer",
+  "status": 200,
+  "body": {
+    "status": "approved",
+    "wait_id": "5253d45c994d4ad9a321fd5792e959ef",
+    "event_id": "a8f4f42f-023a-4ac9-9562-37e0a0f3117b",
+    "answer": "stop",
+    "text": "Not on these settings; I'll start a new trial.",
+    "repeated": false,
+    "carries_on": true,
+    "needs_resume": false,
+    "by": "owner",
+    "at": "2026-10-06T21:40:40+00:00"
+  }
+}

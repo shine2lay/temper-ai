@@ -1,0 +1,744 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "37d37e1d-5e8d-4b84-851b-06f08f8114a0",
+    "trial_id": "54b2f8cbfb20",
+    "workflow": "team-trial-54b2f8cbfb20",
+    "run_status": "waiting",
+    "state": "settings_changed",
+    "cost_usd": 0.0,
+    "trial": {
+      "goal": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is shared until you choose to share it.",
+      "leader": "a-very-long-team-name-for-the-stress-40c",
+      "members": [
+        {
+          "name": "a-very-long-team-name-for-the-stress-40c",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 1,
+      "communication": "all",
+      "project": {
+        "source": "/srv/example/projects/notes-app",
+        "start_commit": null
+      },
+      "started_at": "2026-10-06T21:40:33.137954+00:00",
+      "started_by": "unknown caller",
+      "request_id": "sw-1"
+    },
+    "round": {
+      "current": 1,
+      "keep_goings": 1,
+      "pause_after_rounds": 1
+    },
+    "members": [
+      {
+        "name": "a-very-long-team-name-for-the-stress-40c",
+        "role": "planner",
+        "leader": true,
+        "activity": "idle",
+        "turns": 2,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 2,
+          "state": "completed",
+          "started_at": "2026-10-06T21:40:34.377502+00:00",
+          "ended_at": "2026-10-06T21:40:34.560334+00:00",
+          "error": null
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "idle",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 1,
+          "state": "completed",
+          "started_at": "2026-10-06T21:40:34.132215+00:00",
+          "ended_at": "2026-10-06T21:40:34.302423+00:00",
+          "error": null
+        }
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "idle",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": {
+          "model": "claude-opus-5-5",
+          "thinking": "max"
+        },
+        "last_turn": {
+          "turn_no": 1,
+          "state": "completed",
+          "started_at": "2026-10-06T21:40:33.873011+00:00",
+          "ended_at": "2026-10-06T21:40:34.068576+00:00",
+          "error": null
+        }
+      }
+    ],
+    "open_waits": [
+      {
+        "wait_id": "fcc9f665d74843c281df6d71b275a8ee",
+        "event_id": "e56af715-f9e8-486c-a917-efb738ff75be",
+        "node_name": "trial.team~ask-fcc9f665d74843c281df6d71b275a8ee",
+        "asked": true,
+        "kind": "settings",
+        "header": "settings",
+        "question": "The team's settings changed since its conversations started: whole team: team settings 0ac3e0c56f0d -> ea94ae82321d; a-very-long-team-name-for-the-stress-40c: add-on addon-00 5cc1f05a5c43 -> 262370f19782, add-on addon-01 995b02298c92 -> b87b48d8d73a, add-on addon-02 d4f10042501f -> fce438337133, add-on addon-03 1ef2f207c713 -> fef7541a3335, add-on addon-04 724c143b8d61 -> 199a63e59bb5, add-on addon-05 5ec1f2fbeddd -> c14f3813f3e2, add-on addon-06 7fa209db80a8 -> fd0629cb567b, add-on addon-07 bf1dbdeff7ce -> 644208961b76, add-on addon-08 c03847cf3f85 -> a7556b11ffd4, add-on addon-09 1a18def0f78c -> 8ed24f4bf7b5, add-on addon-10 fedb5042cf1b -> 6034c0d281fb, add-on addon-11 9f241693ec3b -> 7ce3cb0c7ea3, add-on addon-12 ed27597a6014 -> beb9dcdd56f1, add-on addon-13 6beac18baba5 -> 9acc8a619845, add-on addon-14 3b3246d9e78e -> 833094243c96, add-on addon-15 83489e163825 -> 60431a368261, add-on addon-16 d84e06c808fb -> 9e1a0687945d, add-on addon-17 aa35f69d2f1e -> 15d71f41e221, add-on addon-18 ccf6513dc81b -> c351a946ac81, add-on addon-19 c3d4da574490 -> 7a0fdfab6e51, add-on addon-20 16912a50720e -> dd334ca38522, add-on addon-21 d3991a4024c3 -> ca18730f23a9, add-on addon-22 4e50f31110e6 -> 3e673593d777, add-on addon-23 5a564450f84b -> (none); checker: model claude-sonnet-x -> claude-sonnet-y; maker: add-on pi-tldr 14ea0f2a6416 -> ee88d42f4f47, agent config fcec518b2ac1 -> c1bf607d9d19, box image sha256:78823280cd97 -> sha256:ed202deb11a2, Pi version 0.87.1 -> 0.88.0. Settings fingerprints: a-very-long-team-name-for-the-stress-40c 13225c1f0286 -> 21d4cf7a7e83, checker 20e0ac4a8652 -> 55da1dadd867, maker 4937c0758e86 -> 3cefb44af2d0. Go on with the new settings, or stop the team?",
+        "reply_hint": "Reply 'go on' or 'stop'.",
+        "answers": [
+          {
+            "answer": "go on",
+            "needs_text": "none",
+            "means": "The team carries on with the new settings, then your last answer is applied."
+          },
+          {
+            "answer": "stop",
+            "needs_text": "optional",
+            "means": "The team stops here and the run ends cancelled; your last answer is not applied. Any words you give are kept with it."
+          }
+        ],
+        "round": null,
+        "member": null,
+        "turn_no": null,
+        "why": null,
+        "asked_again": 0,
+        "settings_changes": [
+          {
+            "scope": "team",
+            "member": null,
+            "key": "team",
+            "value_kind": "sha256",
+            "old": "0ac3e0c56f0d56fdbb13d2d0126a1cc796c89fe5310051ff6d112ee74b4d9a3b",
+            "new": "ea94ae82321ded604399d0f1b32396724fc3eb88f8edacab14dcfe38361c8aea"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-00",
+            "value_kind": "sha256",
+            "old": "5cc1f05a5c43e927e51450ddee1031f9c109b88cfe5b7690c136da867a71fea4",
+            "new": "262370f197827d527a8790c95419871fd2d4d914626393a66c9e941a9983dbbd"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-01",
+            "value_kind": "sha256",
+            "old": "995b02298c92045f1c9711752c45366c376c77de49444154e73ff80bfb3c55f9",
+            "new": "b87b48d8d73a73905bbcfbc07bb5db373ebb7a427bf1682845bce8f8f1fb4272"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-02",
+            "value_kind": "sha256",
+            "old": "d4f10042501f024b9dcefee67c3dee570ef5462f67923de3b6d8142452ca7c6d",
+            "new": "fce4383371331396cbb088c310c4b15233955e18cab0204aae78ba0b7f8aa352"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-03",
+            "value_kind": "sha256",
+            "old": "1ef2f207c7131624cc8429ea57c79bb98e59d551fa9679943ffe2f58b468a5c4",
+            "new": "fef7541a333588edc2375d4ae937a9b51269c79df850d7789c1fc83617c9e7f1"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-04",
+            "value_kind": "sha256",
+            "old": "724c143b8d61db84d61f4f41e46d229f3463314f6a8963552afafb1a570212ea",
+            "new": "199a63e59bb51870173c2ef7cf3597761e948ab39641b7acb1aae50f6f4b096c"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-05",
+            "value_kind": "sha256",
+            "old": "5ec1f2fbeddd04e8652a4238343120e733ad2f3d52a0dc13c5a8d625aae62923",
+            "new": "c14f3813f3e26b8194e2a130f6f773e5261665ed37c1d8d8330b005422802a23"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-06",
+            "value_kind": "sha256",
+            "old": "7fa209db80a8fbf9f1f7676981f4973ab439df3668572becb3d53ae90343f147",
+            "new": "fd0629cb567bf9779c188d628cb3e40c76882f466ce7e159731fe79186315ef9"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-07",
+            "value_kind": "sha256",
+            "old": "bf1dbdeff7ce29d3608977d6216708e015e01b3a764a4dc08b87d5410b5adc3d",
+            "new": "644208961b76c30b7949f884931e7c56596d09cf441060518649ae9e3944fc0f"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-08",
+            "value_kind": "sha256",
+            "old": "c03847cf3f856e9a9bf1d69511bc8574c201b43b0b4b82a91e741cfb0acc490a",
+            "new": "a7556b11ffd4156a265f0c36d8df8b79acc940e38a1d3a0e09c0a7babfead8a5"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-09",
+            "value_kind": "sha256",
+            "old": "1a18def0f78ca7cf1434b9fefb25d84c8a761cbf912121a3f82406335bb52e28",
+            "new": "8ed24f4bf7b53042f6534902592936d13a2a597158b82a6317f8f01cd09327f2"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-10",
+            "value_kind": "sha256",
+            "old": "fedb5042cf1be04e56a4a3b0472e1a7bfd4b8ccd19d2bcdffddaa73faedde6ab",
+            "new": "6034c0d281fba877d54a2dccffe3d3e8bc8b2954dc20e17e58ab6e6df6fc1797"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-11",
+            "value_kind": "sha256",
+            "old": "9f241693ec3b7d9fb6b616640f5c8ff4614586ea7d791f19a65c96258e01600d",
+            "new": "7ce3cb0c7ea3cb542255e7534a88c8e9cb99af9c4a97784f81546015f736eb96"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-12",
+            "value_kind": "sha256",
+            "old": "ed27597a6014da1afe03b1e6943c857ff72336ee5c9a18abae194fec8125abd8",
+            "new": "beb9dcdd56f19931aad3a47e662c5da5ee57db0905931197df498176632adf7d"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-13",
+            "value_kind": "sha256",
+            "old": "6beac18baba53772cbd300d24aa5cccbcf5b132ceeb2081b5d40e4512e02eba4",
+            "new": "9acc8a619845d9736c526ca58e05eee07c5d641e308e1707d20a818e7e0b0438"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-14",
+            "value_kind": "sha256",
+            "old": "3b3246d9e78edcfb8057fd89c348f498c84bf9f684320d554dda9d6f0ec2127d",
+            "new": "833094243c96bd9fef4e942a25368e5734adcd6427a9645b7a2365ac8dc30761"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-15",
+            "value_kind": "sha256",
+            "old": "83489e163825101dac0f504354195445b068b506c714eedebef9552dddac8787",
+            "new": "60431a3682615b0c00ec308494d852220909d0ce2503cd97d699c043c44476cb"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-16",
+            "value_kind": "sha256",
+            "old": "d84e06c808fb58ff7810c3806f4dfd2b61d77e92933222dca9ca129b4f0ae260",
+            "new": "9e1a0687945d0a042bc5bc72199c427eb50c84a06680ffd438f5e9af1f54d78c"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-17",
+            "value_kind": "sha256",
+            "old": "aa35f69d2f1e55130661694bd4cbfb699a14da5065986f47701d56ddfaf537ed",
+            "new": "15d71f41e221e059eae2b554a1dc0fffb9a321fa2147769740ea461f65f4e6d5"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-18",
+            "value_kind": "sha256",
+            "old": "ccf6513dc81bb4fe030e136d3cddaf6a05d4515ba37536eea864fabe6eae0c4d",
+            "new": "c351a946ac81851754deace39befc174fcc6ca15f2c8aaffa2efb15c6c8d245a"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-19",
+            "value_kind": "sha256",
+            "old": "c3d4da574490c7a27682b4ae63cdc7502183fb442f255ff6ca5a9d70c7f8cd17",
+            "new": "7a0fdfab6e514406c258ef83226e666813b6e195a4399109f0c9ad0c2ae4cc68"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-20",
+            "value_kind": "sha256",
+            "old": "16912a50720ec5ce316902aa59b437d3d055782da283effd8e718237b0d06088",
+            "new": "dd334ca385224b7692d8cfae47150bb266581ff04567e41fab105f35090bf016"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-21",
+            "value_kind": "sha256",
+            "old": "d3991a4024c304009488db884f3f4c8c971f471a88504334d2c45fc9beea0e17",
+            "new": "ca18730f23a93ffb33ff8b0e896af47010968b708a94cce9767cea8946d3379f"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-22",
+            "value_kind": "sha256",
+            "old": "4e50f31110e6e7811dc31231897ffeb960c88dba7ddfb24c97c0109bcf7e0f89",
+            "new": "3e673593d777698168d1d9b8de684ae5f892ee0210406d3b42db8ddf60aa8acc"
+          },
+          {
+            "scope": "member",
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "key": "add_ons.addon-23",
+            "value_kind": "sha256",
+            "old": "5a564450f84b6dff70c3d53caf8369ced2e1272f29e703ef1296eb077903648e",
+            "new": null
+          },
+          {
+            "scope": "member",
+            "member": "checker",
+            "key": "model",
+            "value_kind": "text",
+            "old": "claude-sonnet-x",
+            "new": "claude-sonnet-y"
+          },
+          {
+            "scope": "member",
+            "member": "maker",
+            "key": "add_ons.pi-tldr",
+            "value_kind": "sha256",
+            "old": "14ea0f2a641606d13258e3b9e5c177437723506750f9894dbbf431c0b681a71c",
+            "new": "ee88d42f4f47f9929861f3cc917a9e7ae53c3a25c6f5dfe527bdd6ad796ec2b5"
+          },
+          {
+            "scope": "member",
+            "member": "maker",
+            "key": "agent_config_sha256",
+            "value_kind": "sha256",
+            "old": "fcec518b2ac177d43e94f3da451f0a1b2e65ce39050174e20678eec9546dc2bf",
+            "new": "c1bf607d9d19dbff67b401776fc952c7650adb4ec7c02a9f44225bd84de8cd6d"
+          },
+          {
+            "scope": "member",
+            "member": "maker",
+            "key": "image",
+            "value_kind": "text",
+            "old": "sha256:78823280cd97d7b1661733452addb6b8014edd3ccab8e711c0263fa90e1d57a3",
+            "new": "sha256:ed202deb11a2e1adc071ea9f8256342f51f688b54dc32e7bcbea1e5725fb2913"
+          },
+          {
+            "scope": "member",
+            "member": "maker",
+            "key": "pi_version",
+            "value_kind": "text",
+            "old": "0.87.1",
+            "new": "0.88.0"
+          }
+        ],
+        "pins": [
+          {
+            "member": "a-very-long-team-name-for-the-stress-40c",
+            "pin_old": "13225c1f0286147b67535de4c9e5da833e40418e74d8f2c5c0ff8af707e95687",
+            "pin_new": "21d4cf7a7e831480222d0cee8dc821864ed5c86de1ee242c391c92723677a8f4"
+          },
+          {
+            "member": "checker",
+            "pin_old": "20e0ac4a8652139c8738fd6bc1ca30c965fcd9c963b63d471f44b63481428472",
+            "pin_new": "55da1dadd86778b6d8abc83ccf2c25676adc4cbfc4ca8fffffc7969e5d22dae0"
+          },
+          {
+            "member": "maker",
+            "pin_old": "4937c0758e86bd4ba21e8369ff2b6e3065ef33134331612ec625ce5f1701c46e",
+            "pin_new": "3cefb44af2d00bc94a87a666ef5273147aeb8fcc73b30fe6a7f74d6148287800"
+          }
+        ],
+        "opened_at": "2026-10-06T21:40:35.167358+00:00"
+      },
+      {
+        "wait_id": "6a4918bf2ebe40cfadb29c26e6a0cff4",
+        "event_id": null,
+        "node_name": "trial.team~ask-6a4918bf2ebe40cfadb29c26e6a0cff4",
+        "asked": false,
+        "kind": "pause",
+        "header": "pause-after-round-1",
+        "question": "The team kept going 1 round(s) in a row (pause_after_rounds 1) and is paused after round 1.",
+        "reply_hint": "Reply 'continue', 'guide: <what to tell lead>', or 'stop'.",
+        "answers": [
+          {
+            "answer": "continue",
+            "needs_text": "none",
+            "means": "The team carries on, and the count of rounds starts again."
+          },
+          {
+            "answer": "guide",
+            "needs_text": "required",
+            "means": "lead gets your words as guidance, and the team carries on; the count of rounds starts again."
+          },
+          {
+            "answer": "stop",
+            "needs_text": "optional",
+            "means": "The team stops here and the run ends cancelled. Any words you give are kept with it."
+          }
+        ],
+        "round": 1,
+        "member": null,
+        "turn_no": null,
+        "why": null,
+        "asked_again": null,
+        "settings_changes": null,
+        "pins": null,
+        "opened_at": "2026-10-06T21:40:34.624225+00:00"
+      }
+    ],
+    "reviews": [
+      {
+        "review_id": "3c16da46df82422cbeebbcb203789562",
+        "round": 1,
+        "state": "decided",
+        "commit": "1c692766e4ce47fc192e4fccacc6415018e75b4e",
+        "files_count": 2,
+        "views": {
+          "checker": {
+            "verdict": "changes",
+            "note": "A new user won't know notes save on their own; say it in the first line.",
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "round": 1
+          },
+          "maker": {
+            "verdict": "changes",
+            "note": "The heading wraps to three lines on a phone. Try four words or fewer.",
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "round": 1
+          }
+        },
+        "decision": "keep_going",
+        "refusal": null,
+        "summary": "Round 1: the heading is too long and saving isn't explained. Shortening it."
+      }
+    ],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:33.391567+00:00",
+          "data": {
+            "message_id": "aeca989fa17a48eb87ca528232b31737",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "Write a short welcome note for the notes app's first screen.\n\nKeep it under 80 words, friendly and plain. Say that notes save on their own, and that nothing is ..."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: completed",
+          "from_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:33.465241+00:00",
+          "data": {
+            "turn_id": "1c23c6e1ee0d49d8bea57e860397445c",
+            "turn_no": 1,
+            "state": "completed",
+            "ended_at": "2026-10-06T21:40:33.686853+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "review round 1",
+          "from_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:33.838420+00:00",
+          "data": {
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "state": "decided",
+            "commit": "1c692766e4ce47fc192e4fccacc6415018e75b4e",
+            "files": {
+              "WELCOME.md": "708773c4e16794aad70736ea801568cbc8cde72fa22f79803320df8dd755488d",
+              "app.py": "03e693d9f2f687e0f40e36a8df7fcb4d1c22974012b7c2a55c000eb30f305824"
+            },
+            "views": {
+              "checker": {
+                "verdict": "changes",
+                "note": "A new user won't know notes save on their own; say it in the first line."
+              },
+              "maker": {
+                "verdict": "changes",
+                "note": "The heading wraps to three lines on a phone. Try four words or fewer."
+              }
+            },
+            "decision": "keep_going"
+          },
+          "entry": "review_round",
+          "round": 1
+        },
+        {
+          "event_type": "message: review_request",
+          "from_agent": "temper",
+          "to_agent": "checker",
+          "timestamp": "2026-10-06T21:40:33.839071+00:00",
+          "data": {
+            "message_id": "8d247a217a9d42dca718c48bd4c40c01",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "preview": "Review 3c16da46df82422cbeebbcb203789562 (round 1) from lead: your project copy now holds exactly the version to review (commit 1c692766e4ce).\nThe team's goal: W..."
+          },
+          "entry": "message",
+          "message_kind": "review_request"
+        },
+        {
+          "event_type": "message: review_request",
+          "from_agent": "temper",
+          "to_agent": "maker",
+          "timestamp": "2026-10-06T21:40:33.839694+00:00",
+          "data": {
+            "message_id": "82f93a5bd8844e46bfa2e5e5c631b73b",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "preview": "Review 3c16da46df82422cbeebbcb203789562 (round 1) from lead: your project copy now holds exactly the version to review (commit 1c692766e4ce).\nThe team's goal: W..."
+          },
+          "entry": "message",
+          "message_kind": "review_request"
+        },
+        {
+          "event_type": "turn 1: completed",
+          "from_agent": "checker",
+          "timestamp": "2026-10-06T21:40:33.873011+00:00",
+          "data": {
+            "turn_id": "5fea67da17e644288654ace89997e6f0",
+            "turn_no": 1,
+            "state": "completed",
+            "ended_at": "2026-10-06T21:40:34.068576+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "view: changes",
+          "from_agent": "checker",
+          "to_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:34.109804+00:00",
+          "data": {
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "verdict": "changes",
+            "note": "A new user won't know notes save on their own; say it in the first line."
+          },
+          "entry": "view",
+          "round": 1
+        },
+        {
+          "event_type": "turn 1: completed",
+          "from_agent": "maker",
+          "timestamp": "2026-10-06T21:40:34.132215+00:00",
+          "data": {
+            "turn_id": "8f53a7fb438e40b1a1f55afb657efc1b",
+            "turn_no": 1,
+            "state": "completed",
+            "ended_at": "2026-10-06T21:40:34.302423+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "view: changes",
+          "from_agent": "maker",
+          "to_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:34.338779+00:00",
+          "data": {
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "verdict": "changes",
+            "note": "The heading wraps to three lines on a phone. Try four words or fewer."
+          },
+          "entry": "view",
+          "round": 1
+        },
+        {
+          "event_type": "message: view",
+          "from_agent": "checker",
+          "to_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:34.358952+00:00",
+          "data": {
+            "message_id": "a2ee2c666ad546d191949a5ee86b1563",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "preview": "View on review 3c16da46df82422cbeebbcb203789562 (round 1, version 1c692766e4ce): changes. Note: A new user won't know notes save on their own; say it in the fir..."
+          },
+          "entry": "message",
+          "message_kind": "view"
+        },
+        {
+          "event_type": "message: view",
+          "from_agent": "maker",
+          "to_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:34.358952+00:00",
+          "data": {
+            "message_id": "ed574fad27cb431fa2b99befb48e1e28",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "preview": "View on review 3c16da46df82422cbeebbcb203789562 (round 1, version 1c692766e4ce): changes. Note: The heading wraps to three lines on a phone. Try four words or f..."
+          },
+          "entry": "message",
+          "message_kind": "view"
+        },
+        {
+          "event_type": "message: notice",
+          "from_agent": "temper",
+          "to_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:34.359646+00:00",
+          "data": {
+            "message_id": "6a65634a627f4ac6a690317a66a38502",
+            "state": "consumed",
+            "deliveries": 1,
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "preview": "Review 3c16da46df82422cbeebbcb203789562 (round 1): the views are in (0 satisfied, 2 changes). Decide with the decide tool, naming review 3c16da46df82422cbeebbcb..."
+          },
+          "entry": "message",
+          "message_kind": "notice"
+        },
+        {
+          "event_type": "turn 2: completed",
+          "from_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:34.377502+00:00",
+          "data": {
+            "turn_id": "3e824aaa084d44039eccc1f32661435b",
+            "turn_no": 2,
+            "state": "completed",
+            "ended_at": "2026-10-06T21:40:34.560334+00:00"
+          },
+          "entry": "member_turn"
+        },
+        {
+          "event_type": "decision: keep_going",
+          "from_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:34.603964+00:00",
+          "data": {
+            "review_id": "3c16da46df82422cbeebbcb203789562",
+            "round": 1,
+            "commit": "1c692766e4ce47fc192e4fccacc6415018e75b4e",
+            "summary": "Round 1: the heading is too long and saving isn't explained. Shortening it."
+          },
+          "entry": "decision",
+          "round": 1,
+          "decision": "keep_going"
+        },
+        {
+          "event_type": "message: notice",
+          "from_agent": "temper",
+          "to_agent": "a-very-long-team-name-for-the-stress-40c",
+          "timestamp": "2026-10-06T21:40:34.604807+00:00",
+          "data": {
+            "message_id": "85b3608f7a4640678112b23b9105a2aa",
+            "state": "pending",
+            "deliveries": 0,
+            "preview": "Keep going: when the next version is ready, call request_review."
+          },
+          "entry": "message",
+          "message_kind": "notice"
+        },
+        {
+          "event_type": "owner wait: pause",
+          "from_agent": "temper",
+          "to_agent": "owner",
+          "timestamp": "2026-10-06T21:40:34.624225+00:00",
+          "data": {
+            "wait_id": "6a4918bf2ebe40cfadb29c26e6a0cff4",
+            "state": "open",
+            "round": 1,
+            "header": "pause-after-round-1"
+          },
+          "entry": "owner_wait",
+          "wait_kind": "pause",
+          "round": 1
+        },
+        {
+          "event_type": "owner wait: settings",
+          "from_agent": "temper",
+          "to_agent": "owner",
+          "timestamp": "2026-10-06T21:40:35.167358+00:00",
+          "data": {
+            "wait_id": "fcc9f665d74843c281df6d71b275a8ee",
+            "state": "open",
+            "header": "settings"
+          },
+          "entry": "owner_wait",
+          "wait_kind": "settings"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-06T21:40:33.234654+00:00",
+        "kind": "start",
+        "by": "unknown caller",
+        "source": "team_page",
+        "request_id": "sw-1",
+        "detail": {
+          "workflow": "team-trial-54b2f8cbfb20",
+          "trial_id": "54b2f8cbfb20"
+        }
+      }
+    ],
+    "outcome": null
+  },
+  "derived_from": "run-settings-changed"
+}

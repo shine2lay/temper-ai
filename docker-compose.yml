@@ -326,9 +326,10 @@ services:
   # socket folder below.
   #
   # The machine's own folders (state, sockets, pins, role folders, project
-  # roots, local/pi/ with the box config) are mounted at the SAME paths as
-  # on the host, because the member boxes it starts mount them by those
-  # paths. They are this machine's, so they live in the git-ignored
+  # roots) are mounted at the SAME paths as on the host, because the member
+  # boxes it starts mount them by those paths. The box config sits in the
+  # pins folder (~/.local/share/temper/pi-config/), never in this checkout
+  # or local/, which server and worker mount (SW-59 PW05). They are this machine's, so they live in the git-ignored
   # docker-compose.override.yml (a self-sufficient pi-worker entry: image,
   # profiles, TEMPER_PI_BOX_CONFIG and those mounts), never here.
   pi-worker:
@@ -366,7 +367,8 @@ services:
       TEMPER_LANE: pi
       TEMPER_SPAWNER: subprocess
       TEMPER_PI_AGENT: "1"
-      # The box config (local/pi/pi-box.json); set by the override.
+      # The box config (~/.local/share/temper/pi-config/pi-box.json, an
+      # absolute host path); set by the override.
       TEMPER_PI_BOX_CONFIG: ${TEMPER_PI_BOX_CONFIG:-}
       # Read by the preflight only: the server's container, whose mounts
       # must hold no Pi or project folder, and the workspaces folder, which

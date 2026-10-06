@@ -1,8 +1,9 @@
 """The Pi pins: every part a Pi member box runs on, by digest, and the model-free check of them
 (M4 ADR-M4-04; SW-16, SW-24, SW-26, SW-29, SW-50; docs/pi-lane.md, "The pins").
 
-The private box config (``local/pi/pi-box.json``, git-ignored; ``TEMPER_PI_BOX_CONFIG``) names
-each pin and the digest it must have. The check's pins, by name:
+The private box config (``~/.local/share/temper/pi-config/pi-box.json`` on the host, never in
+the checkout; ``TEMPER_PI_BOX_CONFIG``) names each pin and the digest it must have. The check's
+pins, by name:
 
   image               the worker image's id (``image``), present on this Docker host
   image_tag           the image's tag (``image_tag``), which must name that same id, so a

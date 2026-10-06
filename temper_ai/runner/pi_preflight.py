@@ -10,10 +10,11 @@ Reasons, in order:
   pi_switched_off    the Pi step is not switched on in this worker
   commit_unreadable  the temper commit this worker runs can't be read from the checkout's
                      .git, which every Pi run records (SW-16)
-  box_config         the box config can't be read or fails its own checks (box.py
-                     ``BoxConfig.check``): the runtime and Pi version, the identity files, and
-                     the add-on, search-tool, identity and login digests it pins, read back
-                     now (a changed add-on or identity is refused here)
+  box_config         the box config's path isn't absolute, or the box config can't be read or
+                     fails its own checks (box.py ``BoxConfig.check``): the runtime and Pi
+                     version, the identity files, and the add-on, search-tool, identity and
+                     login digests it pins, read back now (a changed add-on or identity is
+                     refused here)
   roots              no roots, a root that isn't a folder here, or a state or socket root that
                      isn't writable
   uid                this worker isn't 1000:1000, so its members wouldn't be (SW-43)
@@ -30,18 +31,25 @@ Reasons, in order:
   identity           the box config pins no digest for the identity extension or the shared
                      identity settings, so they can't be read back, or one changed since
                      (M2-roles D3, SW-26)
-  template_mounts    the run-box template mounts a Pi or project folder (or the account-room
-                     folder), or can't be read
+  template_mounts    the run-box template mounts a Pi or project folder (or the box config's
+                     folder, or the account-room folder), or can't be read
   host_helper        live mode without a helper socket, a helper that doesn't answer ok, or a
                      login bridge that isn't ready
-  workspace_overlap  a Pi folder (or the account-room folder) inside WORKSPACE_DIR, which
-                     every run box may mount (H3)
+  workspace_overlap  a Pi folder (or the box config's folder, or the account-room folder)
+                     inside WORKSPACE_DIR, which every run box may mount (H3)
   account_room       the team settings name no account_room_file, or its folder isn't this
                      worker's own read-only mount (ADR-M4-18). Never whether the file is
                      there or fresh: a run's first claim reads it (pi_agent/accounts.py), so
                      the lane may start before ops' writer first publishes it
   pi_schema          the pi_ tables can't be brought to this build's version (ADR-M4-07)
   disk               less than 2 GiB free under the state root (ADR-M4-11)
+
+The box config's folder (``box_config`` in those two checks) is guarded like a Pi folder: it
+is pi-worker's own read-only mount, in the pins root under ``~/.local/share/temper/``
+(``pi-config/``), which no ordinary container mounts (SW-59 PW05). Put back under the
+checkout or its ``local/``, which the server (the run-box template) and the main worker mount,
+it refuses every Pi run. Both checks compare paths as written (the workspace one with links
+resolved here); what a mount really exposes on the host is not read here.
 
 What it read for the run's record (SW-16), when asked (``record``): every pin's digest as
 checked, and the host's Pi version from the host helper's status.
@@ -104,9 +112,9 @@ def preflight(*, docker: Callable[..., Any] | None = None,
         failed.append(("docker", unreachable))
     else:
         failed += _pins(path, run, record)
-        failed += _template_mounts(cfg, run)
+        failed += _template_mounts(cfg, run, path)
     failed += _host_helper(cfg, record)
-    failed += _workspace_overlap(cfg)
+    failed += _workspace_overlap(cfg, path)
     failed += _account_room()
     failed += _pi_schema(ensure_ledger or _ensure_ledger)
     failed += _disk(cfg)
@@ -114,9 +122,15 @@ def preflight(*, docker: Callable[..., Any] | None = None,
 
 
 def _box_config(path: str) -> tuple[Any, list[Reason]]:
-    """The box config and its own checks (box.py ``BoxConfig.check``); None when it fails."""
-    from temper_ai.pi_agent.box import BoxConfig, BoxError
+    """The box config and its own checks (box.py ``BoxConfig.check``); None when it fails.
+    Its path must be absolute: its folder is checked against the run-box template's mounts
+    and the workspaces as a host path (pi-worker mounts it at its own host path)."""
+    from temper_ai.pi_agent.box import CONFIG_ENV, BoxConfig, BoxError
 
+    if path and not os.path.isabs(path):
+        return None, [("box_config", f"the box config's path ({CONFIG_ENV}) isn't absolute, so "
+                                     "its folder can't be checked against the run-box "
+                                     "template's mounts and the workspaces")]
     try:
         return BoxConfig.load(path), []
     except BoxError as exc:
@@ -210,7 +224,7 @@ def _docker_unreachable(run: Callable[..., Any]) -> str | None:
     return None
 
 
-def _template_mounts(cfg: Any, run: Callable[..., Any]) -> list[Reason]:
+def _template_mounts(cfg: Any, run: Callable[..., Any], config_path: str) -> list[Reason]:
     name = os.environ.get(TEMPLATE_ENV, "").strip()
     if not name:
         return [("template_mounts", f"{TEMPLATE_ENV} is not set, so the run-box template's "
@@ -225,9 +239,9 @@ def _template_mounts(cfg: Any, run: Callable[..., Any]) -> list[Reason]:
         return [("template_mounts", f"the run-box template {name} could not be inspected")]
     sources = [str(m.get("Source") or "") for m in mounts if isinstance(m, dict)]
     # Every Pi path (box.py BoxConfig.pi_paths: state, sockets, pins, role folders, the
-    # helper's socket folder, project roots) and the account-room folder, the mount being
-    # it, inside it or above it.
-    clash = sorted({what for what, path in _guarded_paths(cfg).items()
+    # helper's socket folder, project roots), the box config's folder and the account-room
+    # folder, the mount being it, inside it or above it.
+    clash = sorted({what for what, path in _guarded_paths(cfg, config_path).items()
                     for source in sources if source and overlap(source, path)})
     if clash:
         return [("template_mounts", f"the run-box template {name} mounts a Pi or project "
@@ -244,9 +258,11 @@ def account_room_folder() -> str | None:
     return os.path.dirname(path) if path else None
 
 
-def _guarded_paths(cfg: Any) -> dict[str, str]:
-    """The folders no run box may get: every Pi path, and the account-room folder."""
+def _guarded_paths(cfg: Any, config_path: str) -> dict[str, str]:
+    """The folders no run box may get: every Pi path, the box config's folder (pi-worker's
+    own read-only mount, SW-59 PW05) and the account-room folder."""
     paths = dict(cfg.pi_paths())
+    paths["box_config"] = os.path.dirname(os.path.normpath(config_path))
     folder = account_room_folder()
     if folder:
         paths["account_room"] = folder
@@ -320,12 +336,12 @@ def _host_helper(cfg: Any, record: dict[str, Any]) -> list[Reason]:
     return []
 
 
-def _workspace_overlap(cfg: Any) -> list[Reason]:
+def _workspace_overlap(cfg: Any, config_path: str) -> list[Reason]:
     workspaces = os.environ.get(WORKSPACE_ENV, "").strip()
     if not workspaces:
         return [("workspace_overlap", f"{WORKSPACE_ENV} is not set, so the Pi folders can't be "
                                       "checked against the run workspaces")]
-    inside = sorted(what for what, path in _guarded_paths(cfg).items()
+    inside = sorted(what for what, path in _guarded_paths(cfg, config_path).items()
                     if Path(os.path.realpath(path)).is_relative_to(os.path.realpath(workspaces)))
     if inside:
         return [("workspace_overlap", f"{', '.join(inside)} inside {WORKSPACE_ENV}, which every "

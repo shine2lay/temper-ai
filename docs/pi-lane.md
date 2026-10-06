@@ -67,7 +67,7 @@ reason; nothing of it runs:
 | --- | --- |
 | `pi_switched_off` | the Pi step isn't switched on in the Pi lane's worker |
 | `commit_unreadable` | the temper commit the worker runs can't be read from the checkout's `.git` (a dropped mount, say), which every Pi run records (SW-16) |
-| `box_config` | the box config can't be read or fails its own checks: runtime, Pi version, identity files, and the add-on, search-tool, identity and login digests it pins, read back now |
+| `box_config` | the box config's path isn't absolute, or the box config can't be read or fails its own checks: runtime, Pi version, identity files, and the add-on, search-tool, identity and login digests it pins, read back now |
 | `roots` | no roots, a root that isn't a folder here, a state or socket root that isn't writable |
 | `uid` | the worker isn't 1000:1000, so its members wouldn't be (SW-43) |
 | `socket_path` | a turn's socket path would reach 100 bytes (SW-44) |
@@ -75,9 +75,9 @@ reason; nothing of it runs:
 | `image` | the pinned worker image isn't on this Docker host, or its tag doesn't name it |
 | `pins` | any other pin differs from the box config or isn't recorded there (the image's tar, the runtime, the Pi version its own Pi prints, the search binaries, the add-ons, a route's login extension or catalog), or the pin check couldn't run ([The pins](#the-pins)) |
 | `identity` | the box config pins no digest for the identity extension or the shared identity settings, or one doesn't read back with it (M2-roles D3, SW-26) |
-| `template_mounts` | the run-box template (the server's container) mounts a Pi or project folder or the account-room folder (the folder itself, inside it or above it), or can't be read |
+| `template_mounts` | the run-box template (the server's container) mounts a Pi or project folder, the box config's folder or the account-room folder (the folder itself, inside it or above it), or can't be read |
 | `host_helper` | live mode without the helper's socket, a helper that doesn't answer ok, or a login bridge that isn't ready |
-| `workspace_overlap` | a Pi folder (state, sockets, pins, role folders, the helper's socket folder, project roots, the account-room folder) inside `WORKSPACE_DIR`, which every run box may mount (H3, SW-77) |
+| `workspace_overlap` | a Pi folder (state, sockets, pins, role folders, the helper's socket folder, project roots, the box config's folder, the account-room folder) inside `WORKSPACE_DIR`, which every run box may mount (H3, SW-77) |
 | `account_room` | the team settings name no `account_room_file`, or its folder isn't here, isn't a folder, is reached through a link, isn't its own mount, or isn't read-only (whether the file itself is there or fresh is the claim's to decide, never the preflight's) |
 | `pi_schema` | the `pi_` tables can't be brought to this build's version |
 | `disk` | less than 2 GiB free under the state root |
@@ -93,6 +93,12 @@ runs the same folder check again before it makes a copy.
 Inside `pi-worker`, `workspace_overlap` compares the paths as the container sees them. Docker
 resolves a linked source on the host when it mounts it, so a link on the host can hide an
 overlap from it: the host's own read-back at switch-on (SW-77) stays the real check.
+
+The box config's folder (named `box_config` in `template_mounts` and `workspace_overlap`) is
+guarded like a Pi folder ([Where the box config lives](#where-the-box-config-lives)): put back
+under the checkout or its `local/`, which the server and the main worker mount, it refuses
+every Pi run. Both checks compare paths as written (`workspace_overlap` with links resolved);
+what a mount really exposes on the host is not read by them.
 
 The same run process also imports every temper module before the run (H2, SW-76), at the
 start and at every resume (each is a new process): a deploy that changes the code on disk
@@ -110,8 +116,8 @@ refuses the run (`commit_unreadable`); outside it (in-process, dev, CI) it recor
 ## The pins
 
 Every part a Pi member box runs on is pinned by digest in the private box config
-(`local/pi/pi-box.json`, git-ignored; `TEMPER_PI_BOX_CONFIG`), M4 ADR-M4-04, SW-24, SW-26,
-SW-29, SW-50. The pinned copies sit in folders of their own on the host, under
+(`~/.local/share/temper/pi-config/pi-box.json`, never in the checkout;
+`TEMPER_PI_BOX_CONFIG`), M4 ADR-M4-04, SW-24, SW-26, SW-29, SW-50. The pinned copies sit in folders of their own on the host, under
 `~/.local/share/temper/`, read-only, one folder per version. A pin folder is never edited in
 place: a change is a new folder and a new digest in the box config, and the old folder stays
 until a run on the new one has passed.
@@ -157,8 +163,10 @@ Who checks what:
 cd ~/temper-ai && python3 scripts/pi_pins_check.py --json [--config <box config>]
 ```
 
-Run it as the host user, from the temper checkout: the default box config is that checkout's
-`local/pi/pi-box.json`. It is stdlib only and loads `temper_ai/pi_agent/pins.py` from its file,
+Run it as the host user, from the temper checkout: the default box config is
+`$XDG_DATA_HOME/temper/pi-config/pi-box.json`, which is
+`~/.local/share/temper/pi-config/pi-box.json` when `XDG_DATA_HOME` isn't set (or isn't an
+absolute path). It is stdlib only and loads `temper_ai/pi_agent/pins.py` from its file,
 never the temper package. It reads the box config, the pinned files (sha256), `docker image
 inspect` (with no Docker config folder, so no registry login is read) and the runtime's
 `pi --offline --version`, run in an empty environment. No network, no model, never `.env`, a
@@ -210,10 +218,10 @@ and `WORKSPACE_DIR` (a name and a path; the workspaces are not mounted).
 Its mounts: the code (`temper_ai/`, `configs/`) and the checkout's `.git` (for the commit;
 `pi-worker` alone gets it), read-only; the Docker socket. The machine's own folders are mounted **at the same paths as on the host**,
 because the member boxes it starts mount them by those paths (ADR-M4-03): the state root, the
-socket root (which holds the host helper's socket), the pins (`~/.local/share/temper/`), and,
-read-only, the role folders, the project roots and `local/pi/` (the box config). Those paths are
-this machine's, so they live in the git-ignored `docker-compose.override.yml`, never in the
-public file:
+socket root (which holds the host helper's socket), and, read-only, the pins
+(`~/.local/share/temper/`, the box config's folder included), the role folders and the project
+roots. Those paths are this machine's, so they live in the git-ignored
+`docker-compose.override.yml`, never in the public file:
 
 ```yaml
 # docker-compose.override.yml (git-ignored): a self-sufficient entry, so compose still
@@ -223,16 +231,36 @@ services:
     image: temper-ai-worker
     profiles: [pi]
     environment:
-      TEMPER_PI_BOX_CONFIG: /home/<you>/temper-ai/local/pi/pi-box.json
+      TEMPER_PI_BOX_CONFIG: /home/<you>/.local/share/temper/pi-config/pi-box.json
     volumes:
       - {type: bind, source: /home/<you>/.local/state/temper/pi/runs,
          target: /home/<you>/.local/state/temper/pi/runs, bind: {create_host_path: false}}
-      # ... the socket root and the pins the same way; the role folders, the project
-      # roots and local/pi/ the same way with read_only: true
+      # ... the socket root the same way; the pins (the box config's folder in them),
+      # the role folders and the project roots the same way with read_only: true
 ```
 
-Never mounted: `~/.claude/.credentials.json`, the rest of `local/`, `~/.temper/`, the Claude
-versions folder, `WORKSPACE_DIR`.
+Never mounted: `~/.claude/.credentials.json`, `local/`, `~/.temper/`, the Claude versions
+folder, `WORKSPACE_DIR`.
+
+### Where the box config lives
+
+The box config is at `~/.local/share/temper/pi-config/pi-box.json` (Security review #2, PW05;
+SW-59): in the pins folder that `pi-worker` alone mounts, read-only, so it needs no mount of
+its own, and outside every ordinary mount. The server's container is the run-box template and
+mounts the checkout (`/app/repo`) and its `local/` (`/app/local`), and the main worker mounts
+`local/` too, so a box config under either would reach every ordinary run box.
+
+- `pi-config/` is 0700 and holds the box config alone; the file is 0600 with exactly one link
+  (`stat -c %h` prints 1), so no second name for it sits anywhere else (the host layout check
+  planned in queue #71 refuses a confidential file with more than one).
+- `TEMPER_PI_BOX_CONFIG` in the override names it by that absolute host path, and the host
+  command's default is the same file.
+- To move it: copy it as a new file (`install -m 600`, never a hard link), check that its
+  sha256 is the old one's and that it has one link, point `TEMPER_PI_BOX_CONFIG` and the
+  default at it together, and remove the old one only after that.
+- The preflight refuses a box config under the run-box template's mounts or under
+  `WORKSPACE_DIR` (`template_mounts`, `workspace_overlap`), or one named by a relative path
+  (`box_config`).
 
 Its member boxes (`pi_agent/box.py`, SW-43, SW-44): `--user` the worker's own uid and gid
 (1000:1000), never the template's or the docker group; every bind source inside the box

@@ -5,10 +5,12 @@ SW-50; docs/pi-lane.md, "The pins").
     python3 scripts/pi_pins_check.py --json [--config <box config>]
 
 Run it from the temper checkout as the host user: temper-ci's live check runs it from
-~/temper-ai after each deploy. The default box config is the private one, ``local/pi/pi-box.json``
-in this checkout (git-ignored). It reads that file, the files it pins (sha256), ``docker image
-inspect`` and the pinned runtime's ``pi --version``, run offline in an empty environment;
-nothing else, and it writes nothing.
+~/temper-ai after each deploy. The default box config is the private one,
+``$XDG_DATA_HOME/temper/pi-config/pi-box.json`` (``~/.local/share`` when ``XDG_DATA_HOME`` isn't
+set): in the pins root that only pi-worker mounts, never in the checkout or its ``local/``,
+which the ordinary server and worker mount (SW-59 PW05). It reads that file, the files it pins
+(sha256), ``docker image inspect`` and the pinned runtime's ``pi --version``, run offline in an
+empty environment; nothing else, and it writes nothing.
 
 With ``--json`` it prints one JSON object:
 
@@ -31,17 +33,31 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import signal
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
 PINS_FILE = REPO / "temper_ai" / "pi_agent" / "pins.py"
-DEFAULT_CONFIG = REPO / "local" / "pi" / "pi-box.json"
 #: Seconds past the check's own limit before the alarm stops it, whatever it is doing.
 BACKSTOP_S = 5
+
+
+def default_config(environ: Mapping[str, str] | None = None) -> Path:
+    """The private box config: ``$XDG_DATA_HOME/temper/pi-config/pi-box.json``, under
+    ``~/.local/share`` when ``XDG_DATA_HOME`` is unset, empty or not an absolute path (the XDG
+    base directory rule). Its folder is in the pins root that only pi-worker mounts."""
+    env = os.environ if environ is None else environ
+    data = env.get("XDG_DATA_HOME") or ""
+    base = Path(data) if os.path.isabs(data) else Path.home() / ".local" / "share"
+    return base / "temper" / "pi-config" / "pi-box.json"
+
+
+DEFAULT_CONFIG = default_config()
 
 
 def load_pins(path: Path = PINS_FILE) -> ModuleType:
@@ -101,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
         description="Check the Pi pins on this host (model-free, read-only).")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG),
-                        help="the box config (default: local/pi/pi-box.json in this checkout)")
+                        help="the box config (default: $XDG_DATA_HOME/temper/pi-config/"
+                             "pi-box.json, ~/.local/share without XDG_DATA_HOME)")
     args = parser.parse_args(argv)
     try:
         pins = load_pins()

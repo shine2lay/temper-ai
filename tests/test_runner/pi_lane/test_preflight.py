@@ -65,6 +65,10 @@ def lane(tmp_path, monkeypatch):
             "host_helper_socket": str(short / "helper" / "host.sock"),
             "project_roots": [str(project)]}
     path = sup.make_box_config(box_root, **over)
+    # the box config in a folder of its own beside the folders it names, as on the host
+    # (~/.local/share/temper/pi-config/, SW-59 PW05)
+    (tmp_path / "pi-config").mkdir(mode=0o700)
+    path = path.rename(tmp_path / "pi-config" / "pi-box.json")
     sup.pin_everything(path, short / "pins")
     monkeypatch.setenv("TEMPER_PI_AGENT", "1")
     monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", str(path))
@@ -310,7 +314,7 @@ def test_a_tag_that_names_another_image_is_a_reason(lane):
     ("sock", "socket_root"),
     ("project", "project root 1"),
     ("pins", "runtime_dir"),
-    ("above", "account_room, identities_dir, identity_config, identity_extension, "
+    ("above", "account_room, box_config, identities_dir, identity_config, identity_extension, "
                "project root 1, runtime_dir, state_root"),
 ])
 def test_a_template_that_mounts_a_pi_or_project_folder_is_a_reason(lane, folder, named):
@@ -370,6 +374,64 @@ def test_a_pi_folder_inside_the_run_workspaces_is_a_reason(lane, monkeypatch):
     monkeypatch.delenv(pf.WORKSPACE_ENV)
     assert lane.run() == [("workspace_overlap", "WORKSPACE_DIR is not set, so the Pi folders "
                                                 "can't be checked against the run workspaces")]
+
+
+# --- the box config's folder (SW-59 PW05) -----------------------------------------------------
+
+
+def box_config_in(lane, monkeypatch, folder: Path) -> Path:
+    """The lane's box config copied into ``folder`` and named there."""
+    folder.mkdir(parents=True, exist_ok=True)
+    moved = folder / "pi-box.json"
+    shutil.copyfile(lane.path, moved)
+    monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", str(moved))
+    return moved
+
+
+@pytest.mark.parametrize("mounted", ["checkout", "local", "folder", "file"])
+def test_a_box_config_under_a_template_mount_is_a_reason(lane, monkeypatch, mounted):
+    """Put back under the checkout (the template's /app/repo) or its local/ (/app/local), every
+    ordinary run box could read it: refused, as is a mount of its folder or of the file."""
+    checkout = lane.tmp / "temper-ai"
+    moved = box_config_in(lane, monkeypatch, checkout / "local" / "pi")
+    source = {"checkout": checkout, "local": checkout / "local", "folder": moved.parent,
+              "file": moved}[mounted]
+    lane.docker.mounts.append({"Source": str(source), "Destination": "/app/x"})
+    assert lane.run() == [("template_mounts", f"the run-box template {TEMPLATE} mounts a Pi or "
+                                              "project folder (box_config), which every run "
+                                              "box would get")]
+
+
+def test_a_box_config_inside_the_run_workspaces_is_a_reason(lane, monkeypatch):
+    """H3: every run box may mount WORKSPACE_DIR, the box config's folder never inside it, a
+    link to it included."""
+    workspaces = lane.tmp / "workspaces"
+    moved = box_config_in(lane, monkeypatch, workspaces / "pi-config")
+    assert lane.run() == [("workspace_overlap", "box_config inside WORKSPACE_DIR, which every "
+                                                "run box may mount read-write")]
+    (lane.tmp / "linked").symlink_to(moved.parent)
+    monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", str(lane.tmp / "linked" / moved.name))
+    assert reasons(lane.run()) == ["workspace_overlap"]
+
+
+def test_a_box_config_beside_the_template_mounts_and_workspaces_passes(lane, monkeypatch):
+    """In the pins root, which no ordinary container mounts, beside a template that mounts the
+    checkout and its local/: the placement on the host."""
+    checkout = lane.tmp / "temper-ai"
+    (checkout / "local").mkdir(parents=True)
+    box_config_in(lane, monkeypatch, lane.tmp / "share" / "temper" / "pi-config")
+    lane.docker.mounts += [{"Source": str(checkout), "Destination": "/app/repo"},
+                           {"Source": str(checkout / "local"), "Destination": "/app/local"}]
+    assert lane.run() == []
+
+
+def test_a_box_config_named_by_a_relative_path_is_a_reason(lane, monkeypatch):
+    """Its folder is checked as a host path, so the box config is named by an absolute one."""
+    monkeypatch.chdir(lane.path.parent)
+    monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", lane.path.name)
+    assert lane.run() == [("box_config", "the box config's path (TEMPER_PI_BOX_CONFIG) isn't "
+                                         "absolute, so its folder can't be checked against the "
+                                         "run-box template's mounts and the workspaces")]
 
 
 @pytest.mark.parametrize("error,text", [

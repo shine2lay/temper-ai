@@ -330,9 +330,10 @@ def test_the_runtime_digest_is_the_one_its_install_script_prints(tmp_path):
 # --- the host script ---------------------------------------------------------------------------
 
 
-def run_script(*args: str, cwd: Path) -> subprocess.CompletedProcess:
+def run_script(*args: str, cwd: Path,
+               env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     """The script as temper-ci runs it: plain python3, no temper package on its path (-I)."""
-    return subprocess.run([sys.executable, "-I", str(SCRIPT), *args], cwd=cwd,
+    return subprocess.run([sys.executable, "-I", str(SCRIPT), *args], cwd=cwd, env=env,
                           capture_output=True, text=True, timeout=60, check=False)
 
 
@@ -343,11 +344,35 @@ def test_the_host_script_needs_no_temper_package_and_says_not_set_up(tmp_path):
                                       "error": "there is no private box config yet"}
 
 
-def test_the_host_script_s_default_box_config_is_the_private_one():
+def test_the_host_script_s_default_box_config_is_the_private_one_in_the_data_folder(
+        monkeypatch, tmp_path):
+    """SW-59 PW05: in the pins root that only pi-worker mounts, never in this checkout or its
+    local/, which the ordinary server and worker mount; where by the XDG data folder rule."""
     spec = importlib.util.spec_from_file_location("_pi_pins_check_default", SCRIPT)
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)
-    assert script.DEFAULT_CONFIG == REPO / "local" / "pi" / "pi-box.json"
+    assert script.DEFAULT_CONFIG == script.default_config()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    home = tmp_path / ".local" / "share" / "temper" / "pi-config" / "pi-box.json"
+    assert script.default_config({}) == home
+    assert script.default_config({"XDG_DATA_HOME": ""}) == home
+    assert script.default_config({"XDG_DATA_HOME": "data"}) == home  # not absolute: ignored
+    assert script.default_config({"XDG_DATA_HOME": "/srv/data"}) == Path(
+        "/srv/data/temper/pi-config/pi-box.json")
+
+
+def test_the_host_script_reads_its_default_box_config_from_the_data_folder(tmp_path):
+    """No --config, as temper-ci runs it: the file under $XDG_DATA_HOME, else ~/.local/share."""
+    env = {"HOME": str(tmp_path / "home"), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    got = run_script("--json", cwd=tmp_path, env=env)
+    assert (got.returncode, json.loads(got.stdout)["result"]) == (3, "not_set_up"), got.stderr
+    default = tmp_path / "home" / ".local" / "share" / "temper" / "pi-config" / "pi-box.json"
+    default.parent.mkdir(parents=True)
+    default.write_text("{not json")
+    got = run_script("--json", cwd=tmp_path, env=env)
+    assert (got.returncode, json.loads(got.stdout)["result"]) == (2, "error"), got.stderr
+    got = run_script("--json", cwd=tmp_path, env={**env, "XDG_DATA_HOME": str(tmp_path / "xdg")})
+    assert (got.returncode, json.loads(got.stdout)["result"]) == (3, "not_set_up"), got.stderr
 
 
 def test_the_host_script_says_error_for_a_box_config_it_can_t_read(tmp_path):

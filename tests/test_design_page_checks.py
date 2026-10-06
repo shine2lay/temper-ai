@@ -247,6 +247,10 @@ def test_craft_candidate_anchors_severity_and_judges_pictures_by_section_purpose
     for purpose in ("explain how it works", "show the product or the result", "prove a claim",
                     "guide to the key action", "set the mood", "make data visible"):
         assert purpose in craft, purpose
+    # Revision 2: styled type is words, so a typographic page can't pass as an illustrated one.
+    assert "What counts as showing: a picture" in craft
+    assert "a section whose only visual is styled type is words only" in craft
+    assert "look up or compare exact values" in craft
     assert craft.count('"check": "visual-purpose"') >= 2
 
 

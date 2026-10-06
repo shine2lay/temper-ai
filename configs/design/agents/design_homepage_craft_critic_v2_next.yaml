@@ -7,6 +7,9 @@
 # ratio, text sizes, fonts that failed to load), the measured empty-column page check, and
 # pictures judged by each section's purpose (a section that needs showing is words only; a
 # picture with no job or one that works against its section), never by audience or page type.
+# Candidate revision 2: what counts as showing is defined (pictures and product mock-ups; styled
+# type, rules, numbered steps and plain tables are words), because revision 1 counted big type as a
+# picture and so could not tell an illustrated page from a typographic one.
 agent:
   name: design_homepage_craft_critic_v2_next
   version: 2
@@ -76,7 +79,14 @@ agent:
     imagery plan when it names the section, otherwise inferred from the section's heading
     and words (say so). Purposes: explain how it works, show the product or the result,
     prove a claim, guide to the key action, set the mood, make data visible, or plain
-    information (prices, questions, terms, contact). Then:
+    information (prices, questions, terms, contact). What counts as showing: a picture
+    (an illustration, photo, diagram, chart, map or generated image; facts.md lists them), or a
+    mock-up built from page elements that depicts the product's own screen, card or output as
+    its user would see it. Words set large or styled (numerals, display words, pull quotes),
+    rules and lines, numbered steps, small icons and plain tables are words, however well set:
+    a section whose only visual is styled type is words only. A table is the right form when
+    the section's job is to look up or compare exact values (prices, specs, positions); that
+    is plain information, not something that needs showing. Then:
       - a section whose purpose needs showing (a routine or arrangement in the physical
         world, a multi-step process, the product or result, data) that is words only, when
         a picture, diagram or chart would make it clear at a glance, is a finding;

@@ -537,20 +537,38 @@ def shortlist_contract(v, b, concepts, cold=None):
 
 
 def fixed_palette_check(v, b):
-    """An approved palette is a fixed constraint: a role that shares its name with an approved
-    colour keeps that colour; with no shared role names every colour must be an approved one."""
+    """An approved palette is a fixed constraint: every logo role takes one of the approved
+    colours (or plain white paper). Role names are not matched, because a product's token
+    names (dominant, accent, on-accent ...) mean other things than the logo roles."""
     fixed = {k: x.upper() for k, x in b.get("fixed_palette", {}).items()}
     if not fixed:
         return v
-    allowed = set(fixed.values())
+    allowed = set(fixed.values()) | {"#FFFFFF"}
     for row in v["shortlist"]:
-        shared = set(row["palette"]) & set(fixed)
-        if shared:
-            if any(row["palette"][k] != fixed[k] for k in shared):
-                raise ValueError("shortlist changes an approved palette colour")
-        elif not set(row["palette"].values()) <= allowed:
+        if not {x.upper() for x in row["palette"].values()} <= allowed:
             raise ValueError("shortlist uses colours outside the approved palette")
     return v
+
+
+def fit_fixed_palette(fixed):
+    """The logo roles filled from approved colours only, passing the companion contrast;
+    roles named like an approved colour keep it where contrast allows."""
+    import itertools
+    fixed = {k: x.upper() for k, x in fixed.items()}
+    colours = sorted(set(list(dict.fromkeys(fixed.values()))[:8]) | {"#FFFFFF"})  # bounded search
+    best, score = None, -1
+    for combo in itertools.product(colours, repeat=len(ROLES)):
+        p = dict(zip(ROLES, combo, strict=True))
+        try:
+            palette_contract(p)
+        except ValueError:
+            continue
+        s = sum(p[r] == fixed.get(r) for r in ROLES) * 2 + (p["paper"] == "#FFFFFF") + len(set(combo))
+        if s > score:
+            best, score = p, s
+    if best is None:
+        raise ValueError("approved palette cannot meet the companion contrast")
+    return best
 
 
 def critique_contract(v, b, ids, cold=None):

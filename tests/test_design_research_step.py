@@ -132,6 +132,14 @@ def test_logo_brief_carries_context_meaning_and_category_marks(tmp_path, fake_br
     assert "fixed_palette" not in brief
 
 
+def test_logo_brief_without_a_brief_fails_at_this_step(tmp_path, fake_browser, monkeypatch):
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "logo", monkeypatch)
+    j.decision()
+    with pytest.raises(ValueError):
+        j.logo_brief("")
+
+
 def test_research_gate_off_skips_the_gate(tmp_path, fake_browser):
     ws = packed(tmp_path)
     j = dr.Job(str(ws), fixture=True)
@@ -166,14 +174,28 @@ def shortlist(palette):
 def test_fixed_palette_keeps_approved_colours():
     base = {"ink": "#142E34", "paper": "#FFFFFF", "accent": "#277F88", "accent_on": "#FFFFFF",
             "muted": "#52616A", "surface": "#F1F4F2"}
-    b = brief_with(fixed_palette={"ink": "#142e34", "accent": "#277F88"})
+    b = brief_with(fixed_palette={"ink": "#142e34", "accent": "#277F88", "muted": "#52616A",
+                                  "surface": "#F1F4F2"})
     lc.fixed_palette_check(shortlist(base), b)
-    with pytest.raises(ValueError, match="changes an approved"):
+    with pytest.raises(ValueError, match="outside the approved"):
         lc.fixed_palette_check(shortlist({**base, "accent": "#AA0000"}), b)
     other = brief_with(fixed_palette={"brand.teal": "#277F88", "brand.night": "#142E34", "white": "#FFFFFF"})
     with pytest.raises(ValueError, match="outside the approved"):
         lc.fixed_palette_check(shortlist(base), other)
     lc.fixed_palette_check(shortlist(base), brief_with())  # no approved palette: nothing to keep
+
+
+def test_fit_fixed_palette_uses_approved_colours_that_pass_contrast():
+    # Token names unlike the logo roles: a dark "accent" must not become the logo accent.
+    fixed = {"dominant": "#B8482A", "accent": "#3E5B4A", "ink": "#1F1A17", "surface": "#FBF6EE",
+             "on-dominant": "#FFFFFF", "on-accent": "#FFFFFF"}
+    p = lc.fit_fixed_palette(fixed)
+    lc.palette_contract(p)
+    assert set(p.values()) <= set(fixed.values())
+    assert p["ink"] == "#1F1A17" and p["accent"] == "#B8482A"
+    lc.fixed_palette_check(shortlist(p), brief_with(fixed_palette=fixed))
+    with pytest.raises(ValueError, match="cannot meet"):
+        lc.fit_fixed_palette({"a": "#777777", "b": "#888888"})
 
 
 # ---------------------------------------------------------------- candidate workflows

@@ -97,6 +97,9 @@ def fixture_palette(brief, cold=None):
     """cold: saved cold read of the sketches; without it the rows have the earlier shape."""
     c.brief_contract(brief, "fixture")
     palette = {"ink": "#142E34", "paper": "#FFFFFF", "accent": "#277F88", "accent_on": "#FFFFFF", "muted": "#52616A", "surface": "#F1F4F2"}
+    # An approved palette from the research step is fixed: the roles take approved colours only.
+    if brief.get("fixed_palette"):
+        palette = c.fit_fixed_palette(brief["fixed_palette"])
     rows = []
     for i in range(3):
         row = {"id": "fixture-" + str(i), "palette": palette, "rationale": "Fictional fixture only."}

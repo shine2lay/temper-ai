@@ -723,8 +723,40 @@ class Job:
             write(rdir / "comparison.md", "\n".join(lines) + "\n")
             files["comparison.md"] = df.sha256(rdir / "comparison.md")
             out["research"] = {"dir": str(rdir), "files": files}
+        elif (self.dir / "category" / "capture.json").is_file():
+            # Partial: users and direction are approved (no director ran), but the category was
+            # captured. Context comes from the approved direction; the shots are pinned as they are.
+            cap = load(self.dir / "category" / "capture.json")
+            design_md = self.root / "design-files" / "DESIGN.md"
+            text = design_md.read_text(encoding="utf-8") if design_md.is_file() else ""
+            m = re.search(r"playbook contexts?: ([a-z0-9, -]+)", text)
+            ids = [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+            ctx = next((x for x in ids if not x.startswith("marketing-")), ids[0] if ids else None)
+            if ctx:
+                out["context"] = ctx
+            rdir = self.dir / "logo-research"
+            rdir.mkdir(parents=True, exist_ok=True)
+            files = {}
+            rows = []
+            for s in cap["sites"][:12]:
+                src = self.root / s.get("shot", "")
+                if s.get("usable") and src.is_file():
+                    shutil.copyfile(src, rdir / f"{s['id']}.png")
+                    files[f"{s['id']}.png"] = df.sha256(rdir / f"{s['id']}.png")
+                    rows.append(f"| {s['name']} | {s['kind']} | {s['id']}.png |")
+            lines = ["# Category first screens (research step)", "",
+                     f"Context: {ctx or 'not recorded'} (from the approved direction in DESIGN.md).",
+                     "The direction is approved, so no director described the marks: look at each shot.", "",
+                     "| Site | Kind | Shot |", "|---|---|---|", *rows]
+            write(rdir / "comparison.md", "\n".join(lines) + "\n")
+            files["comparison.md"] = df.sha256(rdir / "comparison.md")
+            out["research"] = {"dir": str(rdir), "files": files}
         if fixed.get("palette"):
             out["fixed_palette"] = fixed["palette"]
+        # Check the merged brief here, so a missing or short brief_json fails at this step with
+        # the contract's own message instead of later in the logo workflow.
+        import logo_contracts
+        logo_contracts.brief_contract(out, "fixture" if out.get("fictional") is True else "real")
         save(self.dir / "logo-brief.json", out)
         return self.receipt("logo_brief", fp, {"status": "completed", "brief": json.dumps(out, ensure_ascii=False),
                                                "context": out.get("context"), "fixed_palette": bool(out.get("fixed_palette")),

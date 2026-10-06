@@ -39,9 +39,10 @@ agent:
     companion uses; logo exemptions are separate. Do not invent WCAG compliance,
     colour-emotion evidence or CMYK/Pantone equivalents. Current blue/cyan is
     context, not a mandate. Shared hue alone cannot distinguish a poor silhouette.
-    When brief.json has fixed_palette, those colours are approved and fixed: a role
-    with the same name as an approved colour uses exactly that hex, and with no
-    shared names every colour comes from the approved ones; the three directions then
+    When brief.json has fixed_palette, those colours are approved and fixed: every
+    role takes one of the approved hex values exactly (plain #FFFFFF paper is also
+    allowed). Token names need not match the roles: pick by what each colour does
+    and by the contrast bars above. The three directions then
     differ in symbol and in how the approved colours are used, not in new colours.
     brief.json context and meaning come from the research step: weigh each idea
     against the meaning and the category marks in logo/comparison.md.

@@ -212,7 +212,10 @@ never repeats a finished (paid) stage.
 7. **Logo brief** (`logo_brief`, logo jobs): the brief gains the playbook context of the product
    (`context`), the product's meaning (`meaning`), the captured first screens plus a marks table as
    pinned research (`research`, read by every logo agent through `logo/comparison.md`) and an approved
-   palette (`fixed_palette`), which the palette stage must keep (`logo_contracts.fixed_palette_check`).
+   palette (`fixed_palette`), which the palette stage must keep (`logo_contracts.fixed_palette_check`:
+   every logo role takes an approved colour or white paper; token names are not matched to roles,
+   because a product's `accent` need not be the logo's accent). The merged brief is checked by the
+   logo brief contract right here, so a missing brief fails at this step, not later.
 
 Research gate answer:
 

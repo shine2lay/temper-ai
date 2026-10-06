@@ -230,8 +230,13 @@ def test_prior_round_rows_new_and_legacy_load_with_who_decided(legacy):
     row = prior_round(legacy)
     c.prior_round_contract(row, ["peer-a.png"])
     assert c.prior_answer(row) == ("None: explore again", "fictional fixture", "owner" if legacy else "design")
-    with pytest.raises(ValueError, match="decided_by design or owner"):
+    with pytest.raises(ValueError, match="decided_by design or owner"):  # a real brief never carries a fixture round
         c.prior_round_contract({**prior_round(), "decided_by": "fixture-test"}, ["peer-a.png"])
+    fixture_row = {**prior_round(), "decided_by": "fixture-test"}
+    assert c.prior_round_contract(fixture_row, ["peer-a.png"], "fixture") is fixture_row
+    assert c.prior_answer(fixture_row)[2] == "fixture-test"
+    with pytest.raises(ValueError, match="design, owner or fixture-test"):
+        c.prior_round_contract({**prior_round(), "decided_by": "someone"}, ["peer-a.png"], "fixture")
 
 
 def test_research_screen_and_rejected_round_reach_the_run_pinned(tmp_path):

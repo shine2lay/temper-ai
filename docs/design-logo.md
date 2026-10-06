@@ -256,7 +256,9 @@ The gate records are `logo/gate-direction.json` and `logo/gate-final-rNN.json`;
 the stage results and `manifest.json` carry `direction_approved` and
 `final_approved`, each `{"approved": bool, "decided_by": ...}`, and the manifest
 names the final record in `final_receipt`. A rejected round in a later brief's
-`prior_rounds` is `{run_id, answer, source, decided_by, rejected, evidence}`.
+`prior_rounds` is `{run_id, answer, source, decided_by, rejected, evidence}`:
+decided_by design or owner in a real brief; a fixture brief may also carry a
+`fixture-test` round, which a real brief refuses.
 
 Records from before 2026-10-05 still load and are never rewritten: answers with
 `approval: owner-direction|owner-final|fixture-test` and `owner_note`,

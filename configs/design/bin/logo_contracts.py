@@ -196,16 +196,19 @@ def prior_answer(row):
     return row["owner_answer"], row["owner_source"], "owner"
 
 
-def prior_round_contract(row, research_files):
+def prior_round_contract(row, research_files, mode="real"):
     """An earlier round the direction gate rejected; carried so the next round avoids it.
 
+    A real brief carries rounds decided_by design or owner; a fixture brief may also carry a
+    fixture round (decided_by fixture-test), never claimed as anyone's decision.
     Legacy rows (owner_answer, owner_source) from briefs written before 2026-10-05 still load."""
     if "owner_answer" in row:
         keys(row, ("run_id", "owner_answer", "owner_source", "rejected", "evidence"))
     else:
         keys(row, ("run_id", "answer", "source", "decided_by", "rejected", "evidence"))
-        if row["decided_by"] not in REAL_DECIDERS:
-            raise ValueError("a prior round's answer is decided_by design or owner")
+        allowed = REAL_DECIDERS + ((FIXTURE_DECIDER,) if mode == "fixture" else ())
+        if row["decided_by"] not in allowed:
+            raise ValueError("a prior round's answer is decided_by " + ", ".join(allowed[:-1]) + " or " + allowed[-1])
     answer, source, _ = prior_answer(row)
     uuid.UUID(str(row["run_id"]))
     text(answer, 600)
@@ -260,7 +263,7 @@ def brief_contract(b, mode="real"):
         if not isinstance(b["prior_rounds"], list) or not 1 <= len(b["prior_rounds"]) <= 2:
             raise ValueError("at most two earlier rejected rounds")
         for row in b["prior_rounds"]:
-            prior_round_contract(row, files)
+            prior_round_contract(row, files, mode)
     return b
 
 

@@ -29,6 +29,14 @@ mistake is cheap by comparison: a limit that really is account-wide (the
 shared five-hour window) costs one rejected request per family before that
 family is cooled too.
 
+An account nearly spent for the week is moved away from before it refuses: a
+pick skips an account whose weekly figure is at or above the week line while
+another available account is under it, and then takes the account the sticky
+key weighs highest among those left, so the agent stays on one account. With
+no account over the line, every pick is exactly the sticky slot as before.
+The figures come from the claude tool's own calls; see
+temper_ai.llm.week_usage.
+
 A token can also be asked for by name, which takes it out of the rotation for
 that call: an agent or a fallback entry that says `token: wai2shine` goes out
 on that account and no other (see temper_ai.llm.fallback). The name is the
@@ -56,7 +64,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from temper_ai.llm import shared_cooldowns
+from temper_ai.llm import shared_cooldowns, week_usage
 
 logger = logging.getLogger(__name__)
 
@@ -264,32 +272,33 @@ class TokenPool:
     def pick(self, sticky_key: str | None = None, model: str | None = None) -> str:
         """The token this call should use.
 
-        The sticky key's slot when it is available; any other available slot
-        when it is not (a cooled favourite must not stall an entire run);
-        `PoolExhausted` when none is. Availability is per model: a slot spent
-        on one model family is still the right slot for another.
+        The sticky key's slot when it is available and under the week line
+        (temper_ai.llm.week_usage); when it is cooling, or over the line while
+        another available slot is under it, the slot the key weighs highest
+        among those left -- the same one on every pick, so a moved agent stays
+        on one account (a cooled favourite must not stall an entire run).
+        `PoolExhausted` when none is available. Availability is per model: a
+        slot spent on one model family is still the right slot for another.
         """
         if not self.tokens:
             raise PoolExhausted(0, None)
         available = self.available(model)
+        if not available:
+            raise PoolExhausted(len(self.tokens), self.soonest_reset(model))
 
         if sticky_key and len(self.tokens) > 1:
             idx = int(hashlib.sha256(sticky_key.encode()).hexdigest(), 16) % len(self.tokens)
-            preferred = self.tokens[idx]
-            if preferred in available:
-                return preferred
-            logger.warning(
-                "%s: sticky %s is cooling — failing over, prompt cache will be cold",
-                self.name, self.label_of(preferred),
-            )
-
-        if available:
-            if not sticky_key:
-                preferred = self.tokens[self._default_slot % len(self.tokens)]
-                if preferred in available:
-                    return preferred
-            return random.choice(available)  # noqa: S311 - load spreading, not cryptography
-        raise PoolExhausted(len(self.tokens), self.soonest_reset(model))
+            first, key = self.tokens[idx], sticky_key
+            if first not in available:
+                logger.warning(
+                    "%s: sticky %s is cooling — failing over, prompt cache will be cold",
+                    self.name, self.label_of(first),
+                )
+        else:
+            first = self.tokens[self._default_slot % len(self.tokens)]
+            key = f"default-{self._default_slot}"
+        chosen = week_usage.choose(available, self.label_of, key=key, first=first, where=self.name)
+        return chosen if chosen is not None else available[0]
 
     def cool(self, token: str, *, until: float | None = None, reason: str = "rate limit",
              model: str | None = None) -> float:

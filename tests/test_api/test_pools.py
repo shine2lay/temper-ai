@@ -83,3 +83,33 @@ def test_the_endpoint_lists_each_pooled_provider(client):
     assert opus["available"] == 1
     assert [s["label"] for s in opus["slots"] if s["cooling_until"]] == ["wai2shine"]
     assert not any(secret in got.text for secret in SECRETS)
+
+
+def test_the_endpoint_shows_each_accounts_week_and_never_a_token(client, monkeypatch):
+    """Queue #66: each Claude account's week figure, when it was seen, and whether it is over
+    the line. An account with no figure is listed too, as unknown (under the line)."""
+    from temper_ai.llm import week_usage
+
+    for name in ["CLAUDE_CODE_OAUTH_TOKEN", *[f"CLAUDE_CODE_OAUTH_TOKEN_{s}" for s in
+                                            ["BACKUP", *range(2, 10)]]]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", SECRETS[0])
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_ACCOUNT", "aungshine")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_2", SECRETS[1])
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_2_ACCOUNT", "wai2shine")
+    resets = time.time() + 2 * 24 * 3600
+    week_usage.store().note("wai2shine", "seven_day", 0.95, resets_at=resets)
+
+    got = client.get("/api/pools")
+    assert got.status_code == 200
+    body = got.json()
+    assert body["week_line"] == 0.9
+    rows = {row["label"]: row for row in body["accounts"]}
+    assert list(rows) == ["aungshine", "wai2shine"]
+    assert rows["aungshine"] == {"label": "aungshine", "week_used": None, "week_kind": None,
+                                 "seen_at": None, "resets_at": None, "over_line": False}
+    spent = rows["wai2shine"]
+    assert (spent["week_used"], spent["week_kind"], spent["over_line"]) == (0.95, "seven_day", True)
+    assert abs(datetime.fromisoformat(spent["resets_at"]).timestamp() - resets) < 1
+    assert abs(datetime.fromisoformat(spent["seen_at"]).timestamp() - time.time()) < 60
+    assert not any(secret in got.text for secret in SECRETS)

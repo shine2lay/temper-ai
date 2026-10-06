@@ -1,0 +1,16 @@
+# Settings for the Claude account pools (temper_ai/llm/week_usage.py, docs/pools.md).
+#
+# week_line: the share of an account's week at or above which a pick moves an
+# agent to another account that is under it. Picks avoid such an account while
+# another one has room; when every account is at or above the line, picks are
+# as they always were. Above 90% of a week, roughly a day of heavy use is left.
+#
+# The figure for each account comes only from calls made through the claude
+# provider (the Claude Code CLI reports it in its own output), so an account
+# temper hasn't used through the claude tool lately has none, and counts as
+# under the line.
+#
+# Read by the next pick in every process, without a restart. A copy in
+# configs/pools/local/pools.yaml (git-ignored) wins over this one.
+pools:
+  week_line: 0.90

@@ -91,7 +91,8 @@ def import_yaml(file_path: str | Path, store: ConfigStore | None = None) -> dict
 
 
 # Subdirectories holding YAMLs that are not workflow/stage/agent configs.
-NON_CONFIG_DIRS = ("boxes", "github", "mcp_servers", "notify", "notion", "slack", "telegram", "tools", "triggers")
+NON_CONFIG_DIRS = ("boxes", "github", "mcp_servers", "notify", "notion", "pools", "slack", "telegram",
+                   "tools", "triggers")
 # The Team page's settings folder, skipped only directly under the configs root (M3 A1).
 TEAM_SETTINGS_DIR = "team"
 # A team trial's workflow and agent names (pi_agent/team_config.py TRIAL_PREFIX; kept here

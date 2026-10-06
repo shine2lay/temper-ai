@@ -101,6 +101,18 @@ def _no_shared_rate_limits():
 
 
 @pytest.fixture(autouse=True)
+def _no_shared_week_usage():
+    """Each account's week figures are shared through Redis the same way
+    (temper_ai.llm.week_usage). A test starts with none, never reads a real
+    Redis's, and leaves none behind for the next test."""
+    from temper_ai.llm import week_usage
+
+    week_usage.use(week_usage.WeekUsage(None))
+    yield
+    week_usage.use(None)
+
+
+@pytest.fixture(autouse=True)
 def _no_sealed_box_guard():
     """A test that ran a sealed box's runner leaves no launch guard behind for the next one
     (temper_ai/spawner/box_guard.py holds it for the process, as a box runs one launch)."""

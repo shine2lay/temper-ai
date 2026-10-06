@@ -332,7 +332,10 @@ class Job:
             return {"status": "completed", "phase": phase, "verdict": "ok", "skipped": True,
                     "why": "no users or category research needed"}
         users_path, pick_path = self.dir / "users.json", self.dir / "category" / "pick.json"
-        fp = digest({"phase": phase, "users": file_digest(users_path), "pick": file_digest(pick_path)})
+        # The rules are part of the fingerprint: a verdict holds only for the checks that made it,
+        # so a fixed check re-judges the same files on resume instead of replaying the old verdict.
+        fp = digest({"phase": phase, "users": file_digest(users_path), "pick": file_digest(pick_path),
+                     "rules": file_digest(Path(rc.__file__))})
         attempt = self.state["checks"].get(f"check-{phase}", 0)
         key = f"check-{phase}-{attempt}"
         prior = self.state["stages"].get(key)
@@ -523,7 +526,8 @@ class Job:
                     "why": "the direction is approved; nothing to assemble"}
         dpath = self.dir / "direction.json"
         fp = digest({"phase": phase, "direction": file_digest(dpath), "users": file_digest(self.dir / "users.json"),
-                     "capture": file_digest(self.dir / "category" / "capture.json")})
+                     "capture": file_digest(self.dir / "category" / "capture.json"),
+                     "rules": file_digest(Path(rc.__file__))})
         attempt = self.state["checks"].get(f"assemble-{phase}", 0)
         key = f"assemble-{phase}-{attempt}"
         prior = self.state["stages"].get(key)

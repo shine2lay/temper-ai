@@ -114,6 +114,17 @@ def test_finished_stages_are_not_repeated(tmp_path, fake_browser, monkeypatch):
     assert j.decision() == again.decision()
 
 
+def test_a_changed_rule_rejudges_the_same_files(tmp_path, fake_browser, monkeypatch):
+    ws = packed(tmp_path)
+    j = research_through_decision(ws, "homepage", monkeypatch)
+    first = j.check("final")
+    assert first.get("reused")  # same files, same rules: the verdict is replayed
+    real = dr.file_digest
+    monkeypatch.setattr(dr, "file_digest", lambda p: "changed" if Path(p) == Path(dr.rc.__file__) else real(p))
+    again = dr.Job(str(ws), fixture=True).check("final")
+    assert not again.get("reused") and again["attempt"] == first["attempt"] + 1
+
+
 def test_logo_brief_carries_context_meaning_and_category_marks(tmp_path, fake_browser, monkeypatch):
     ws = packed(tmp_path)
     j = research_through_decision(ws, "logo", monkeypatch)

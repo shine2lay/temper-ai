@@ -52,7 +52,7 @@ def main(raw: str) -> int:
     from temper_ai.database import get_session, init_database
     from temper_ai.memory import InMemoryStore, MemoryService
     from temper_ai.pi_agent.ledger import Ledger
-    from temper_ai.runner import pi_lane
+    from temper_ai.runner import pi_lane, pi_preflight
     from temper_ai.runner.context import RunnerContext
     from temper_ai.runner.lanes import PI_LANE
     from temper_ai.runner.models import WorkflowRun
@@ -62,7 +62,10 @@ def main(raw: str) -> int:
     from tests.test_runner.pi_lane import support as ls
 
     mp = pytest.MonkeyPatch()
-    sup.into_the_pi_lane(mp)
+    # The Pi lane as pi-worker runs it (TEMPER_LANE comes from the parent), with the default
+    # list: the workflow is Pi-only, so nothing is widened here. Only the preflight's checks
+    # of the real machine are left out (test_preflight.py tests them).
+    mp.setattr(pi_preflight, "preflight", lambda **_kw: [])
     guard = sup.NetGuard().install(mp)
     init_database(url)
     sup.register_types()

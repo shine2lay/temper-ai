@@ -9,6 +9,8 @@ held to it.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -165,3 +167,26 @@ def test_only_the_pi_step_is_on_the_list_in_production():
     (their conftests); nothing in temper widens it."""
     assert lanes.PI_LANE_AGENT_TYPES == ("pi",)
     assert lanes.PI_LANE_OTHER_NODES == ()
+
+
+#: Where the list is widened: the Pi step's own test packages (their fixtures), the one file
+#: that runs the committed ci_pi_waits, the helper itself, and L2's crash child (a process
+#: of its own).
+WIDENED_IN = ["test_pi_agent/child.py", "test_pi_agent/conftest.py", "test_pi_agent/support.py",
+              "test_runner/pi_parking/conftest.py",
+              "test_runner/pi_parking/test_ci_workflow.py", "test_runner/pi_team/conftest.py"]
+
+
+def test_the_rule_s_own_tests_are_out_of_reach_of_the_widening():
+    """Architecture, rm-e61c9a39: the widening is per test, through pytest's monkeypatch
+    (function scope, undone after each test), and never in this package, which holds the
+    rule's own tests: the default list, one refusal per kind and the entry points
+    (test_mark.py), and a Pi-only resume as in production (test_resume_as_in_production.py)."""
+    tests = Path(__file__).resolve().parents[2]
+    widens = re.compile(r"into_the_pi_lane\(|setattr\([^)]*PI_LANE_(AGENT_TYPES|OTHER_NODES)")
+    found = sorted(path.relative_to(tests).as_posix() for path in tests.rglob("*.py")
+                   if widens.search(path.read_text(encoding="utf-8")))
+    assert found == WIDENED_IN
+    for conftest in (name for name in WIDENED_IN if name.endswith("conftest.py")):
+        text = (tests / conftest).read_text(encoding="utf-8")
+        assert "@pytest.fixture(autouse=True)\ndef _in_the_pi_lane(monkeypatch):" in text, conftest

@@ -23,10 +23,11 @@ workflow:
     more and then runs out (red, "ran out of rounds: 2 of 2"); "done" ships.
     Script agents and the stand-in box only: no API key, no spend.
 
-    The Pi lane runs only Pi steps, team stages of Pi members and gates, so
-    it refuses this workflow at submit for its script steps (docs/pi-lane.md).
-    Only tests run it: tests/test_runner/pi_parking/test_ci_workflow.py
-    (which allows script steps beside the Pi step for that file only) and
+    A test fixture: the Pi lane runs only Pi steps, team stages of Pi members
+    and gates, so it refuses this workflow at submit for its script steps
+    (ask, review, ship; docs/pi-lane.md). No live check uses it. Only tests
+    run it: tests/test_runner/pi_parking/ (test_ci_workflow.py allows script
+    steps beside the Pi step, for that file only) and
     tests/test_stage/test_pi_loop_rule.py.
 
   inputs:

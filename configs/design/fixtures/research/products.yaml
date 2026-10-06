@@ -1,4 +1,4 @@
-# Fixture registry for the research step's $0 runs (design_homepage_v2_next_fixture). Fictional
+# Fixture registry for the research step's $0 runs (design_homepage_v2_fixture, design_logo_fixture_v1). Fictional
 # products only; every approval in a fixture says fixture-test, never design or owner. The host copies
 # this file into a scratch folder before a run (design_files.py apply writes the registry), with the
 # scratch folder as the lab root: products live under <lab>/products/<id>.

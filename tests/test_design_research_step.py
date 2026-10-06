@@ -306,7 +306,8 @@ def test_fit_fixed_palette_uses_approved_colours_that_pass_contrast():
         lc.fit_fixed_palette({"a": "#777777", "b": "#888888"})
 
 
-# ---------------------------------------------------------------- candidate workflows
+# ---------------------------------------------------------------- live workflows with the research step
+# (promoted from the _next candidates after the #38 trials; results in ~/design-lab, private)
 
 
 def nodes(name):
@@ -315,9 +316,9 @@ def nodes(name):
     return wf, {n["name"]: n for n in wf["nodes"]}
 
 
-@pytest.mark.parametrize("name", ["design_homepage_v2_next", "design_homepage_v2_next_fixture",
-                                  "design_logo_v1_next", "design_logo_v1_next_fixture"])
-def test_candidates_research_first_with_a_research_gate(name):
+@pytest.mark.parametrize("name", ["design_homepage_v2", "design_homepage_v2_fixture",
+                                  "design_logo_v1", "design_logo_fixture_v1"])
+def test_workflows_research_first_with_a_research_gate(name):
     wf, n = nodes(name)
     gate = n["research_gate"]
     assert gate["gate"] is True and gate["condition"]["source"] == "research.structured.gate"
@@ -330,25 +331,25 @@ def test_candidates_research_first_with_a_research_gate(name):
     assert wf["outputs"]["research_decided_by"] == "research_decision.structured.decided_by"
 
 
-@pytest.mark.parametrize("name", ["design_logo_v1_next", "design_logo_v1_next_fixture"])
-def test_logo_candidates_brief_from_research(name):
+@pytest.mark.parametrize("name", ["design_logo_v1", "design_logo_fixture_v1"])
+def test_logo_brief_from_research(name):
     _, n = nodes(name)
     assert n["research_logo_brief"]["input_map"]["stage"] == "logo_brief"
     assert n["brief"]["input_map"]["brief_json"] == "research_logo_brief.structured.brief"
     assert n["brief"]["depends_on"] == ["research_logo_brief"]
 
 
-def test_logo_candidate_palette_is_bound_by_the_approved_palette():
-    _, n = nodes("design_logo_v1_next")
-    assert n["palette"]["agent"] == "design_logo_palette_v1_next"
-    prompt = yaml.safe_load((AGENTS / "design_logo_palette_v1_next.yaml").read_text())["agent"]["system_prompt"]
+def test_logo_palette_is_bound_by_the_approved_palette():
+    _, n = nodes("design_logo_v1")
+    assert n["palette"]["agent"] == "design_logo_palette_v1"
+    prompt = yaml.safe_load((AGENTS / "design_logo_palette_v1.yaml").read_text())["agent"]["system_prompt"]
     assert "fixed_palette" in prompt
     assert all(m["input_map"]["mode"] == "input.mode" for k, m in n.items()
                if m["agent"] == "design_logo_stage_v1")
 
 
-def test_homepage_candidate_saves_design_files_after_final():
-    wf, n = nodes("design_homepage_v2_next")
+def test_homepage_saves_design_files_after_final():
+    wf, n = nodes("design_homepage_v2")
     assert n["save_files"]["depends_on"] == ["after_final"] and n["after_final"]["depends_on"] == ["final"]
     assert n["save_files"]["condition"] == {"source": "final.structured.verdict", "operator": "equals",
                                            "value": "approved"}
@@ -356,8 +357,8 @@ def test_homepage_candidate_saves_design_files_after_final():
     assert n["copy"]["depends_on"] == ["research_decision"]
 
 
-@pytest.mark.parametrize("name", ["design_logo_v1_next", "design_logo_v1_next_fixture"])
-def test_logo_candidates_save_design_files_after_final(name):
+@pytest.mark.parametrize("name", ["design_logo_v1", "design_logo_fixture_v1"])
+def test_logo_saves_design_files_after_final(name):
     wf, n = nodes(name)
     save = n["save_files"]
     assert save["agent"] == "design_research_stage_v1" and save["depends_on"] == ["final"]
@@ -490,7 +491,13 @@ def test_logo_save_refuses_a_logo_colour_outside_the_approved_palette(tmp_path, 
         j.save_files()
 
 
-def test_live_workflows_unchanged_names():
+def test_candidates_promoted_and_benchmark_twins_keep_the_pre_research_agents():
+    assert not list(WF.glob("*_next*.yaml")) and not list(AGENTS.glob("design_*_next.yaml"))
     for name in ("design_homepage_v2", "design_logo_v1"):
         _, n = nodes(name)
-        assert "research" not in n
+        assert "research" in n and "save_files" in n
+    for name in ("design_homepage_v2_pilot", "design_homepage_v2_bench"):
+        _, n = nodes(name)
+        assert not any(k.startswith("research") for k in n) and "save_files" not in n
+        assert n["copy"]["agent"] == "design_homepage_copywriter_v2_no_research"
+        assert n["concepts"]["agent"] == "design_homepage_art_director_v2_no_research"

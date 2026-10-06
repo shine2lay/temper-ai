@@ -1730,9 +1730,7 @@ def recommendation(spec: dict) -> dict | None:
 
 
 class Job:
-    def __init__(self, workspace: str, fixture: bool, pilot: bool = False, bench: bool = False, variant: str = ""):
-        if variant not in VARIANTS:
-            raise ValueError(f"variant is one of {', '.join(v or '(none)' for v in VARIANTS)}")
+    def __init__(self, workspace: str, fixture: bool, pilot: bool = False, bench: bool = False):
         if fixture + pilot + bench > 1:
             raise ValueError("a run is the fixture or the pilot or the benchmark, not more than one")
         self.root = Path(workspace).resolve()
@@ -1744,9 +1742,7 @@ class Job:
         self.packet = self.root / "homepage"
         self.packet.mkdir(parents=True, exist_ok=True)
         self.state_path = self.packet / "job.json"
-        # A candidate beside the live workflow (queue #38: research first) keeps its own workspaces.
-        workflow = "design_homepage_v2" + (f"_{variant}" if variant else "") \
-            + ("_fixture" if fixture else "_pilot" if pilot else "_bench" if bench else "")
+        workflow = "design_homepage_v2" + ("_fixture" if fixture else "_pilot" if pilot else "_bench" if bench else "")
         self.state = upgrade_state(load(self.state_path)) if self.state_path.exists() else {
             "version": VERSION, "workflow": workflow,
             "created_at": now(), "stages": {}, "round": 0, "revisions": 0, "change_rounds": 0,
@@ -2967,7 +2963,6 @@ STAGES = ("brief", "taste", "copy_fixture", "copy_check", "copy_next", "referenc
           "concepts_next", "direction", "build_fixture", "plan_round", "revise_fixture", "measure", "runtime", "review_fixture",
           "content_fixture", "combine", "next_round", "convert", "verify", "handoff", "final")
 FIXTURE_ONLY = {"copy_fixture", "concepts_fixture", "build_fixture", "revise_fixture", "review_fixture", "content_fixture"}
-VARIANTS = ("", "next")  # "next": queue #38's candidate with the research step first
 
 
 def fixed_part_problems(concepts: list[dict], fixed: dict) -> list[str]:
@@ -3011,7 +3006,6 @@ def main() -> None:
     parser.add_argument("--bench", action="store_true",
                         help="benchmark run: fictional brief, the art director's recommended concept, no gates")
     parser.add_argument("--phase", default="draft")
-    parser.add_argument("--variant", default="", choices=VARIANTS)
     parser.add_argument("--browser", default=None)
     parser.add_argument("--serve-host", default=None)
     args = parser.parse_args()
@@ -3020,7 +3014,7 @@ def main() -> None:
     if args.stage in FIXTURE_ONLY and not args.fixture:
         raise SystemExit(f"{args.stage} is a fixture-only stage")
     try:
-        job = Job(args.workspace, args.fixture, args.pilot, args.bench, args.variant)
+        job = Job(args.workspace, args.fixture, args.pilot, args.bench)
     except ValueError as exc:
         raise SystemExit(f"{args.stage}: {exc}") from None
     raw = os.environ.get("HOMEPAGE_DATA", "")

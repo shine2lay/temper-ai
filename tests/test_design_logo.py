@@ -662,18 +662,25 @@ def test_actual_workflow_schema_native_gates_loop_and_new_agents(name):
     assert not [n for n in nodes if "owner" in n]  # gates are named for what they decide
     assert not [k for k in raw.get("outputs") or {} if "owner" in k]
     assert nodes["final"]["max_loops"] == 2 and nodes["final"]["on_max_loops"] == "fail"
-    assert not set(raw["inputs"]) & {"direction_json", "final_json", "mode", "approval"}
-    assert all(n["agent"].startswith("design_logo_") for n in nodes.values())
-    order = [v["name"] for v in raw["nodes"]]
+    assert not set(raw["inputs"]) & {"direction_json", "final_json", "approval"}
+    # The shared research step (queue #38) runs first and saves the design files after the final gate;
+    # tests/test_design_research_step.py covers those nodes. Everything else is the logo's own.
+    research = {n for n in nodes if n.startswith("research") or n == "save_files"}
+    assert all(nodes[n]["agent"].startswith("design_research_") for n in research)
+    assert all(n["agent"].startswith("design_logo_") for k, n in nodes.items() if k not in research)
+    order = [v["name"] for v in raw["nodes"] if v["name"] not in research]
+    assert [v["name"] for v in raw["nodes"]][:len(research) - 1] == [n for n in nodes if n in research][:-1]
     after = order[order.index("direction") + 1:]
     assert after and all(nodes[n]["condition"] == {"source": "direction.structured.outcome",
                                                    "operator": "equals", "value": "selected"} for n in after)
     assert all("condition" not in nodes[n] for n in order[:order.index("direction") + 1])
+    assert nodes["brief"]["depends_on"] == ["research_logo_brief"]
     assert nodes["save_revision"]["input_map"]["stage"] == "revise"
     if name == "design_logo_v1":
         assert nodes["initial_budget"]["gate"] and nodes["refine_budget"]["gate"]
         assert nodes["final"]["loop_to"] == "refine_budget"
-        assert raw["safety"]["policies"][0]["max_cost_usd"] == c.FULL_ESTIMATE == 11.6
+        assert c.FULL_ESTIMATE == 11.6  # the logo's own stages; the research step runs before them
+        assert raw["safety"]["policies"][0]["max_cost_usd"] == c.RUN_POLICY == 30
         assert nodes["explore"]["input_map"] == {"phase": "draft"} and nodes["revise"]["input_map"] == {"phase": "revise"}
         # Caption-free cold read and same-name check before the shortlist, and again before each selected critic.
         assert nodes["cold_read"]["agent"] == "design_logo_coldread_v1" and nodes["name_check"]["agent"] == "design_logo_names_v1"
@@ -685,7 +692,8 @@ def test_actual_workflow_schema_native_gates_loop_and_new_agents(name):
         assert nodes["save_selected_cold_read"]["depends_on"] == ["selected_cold_read", "selected_name_check"]
         assert nodes["selected_critic"]["depends_on"] == ["save_refine", "save_selected_cold_read"]
     else:
-        assert all(n["agent"] == "design_logo_stage_v1" for n in nodes.values())
+        assert all(n["agent"] == "design_logo_stage_v1" for k, n in nodes.items() if k not in research)
+        assert all(nodes[k]["agent"] == "design_research_stage_v1" for k in research)
         assert all(n["input_map"]["mode"] == "fixture" for n in nodes.values())
         assert nodes["save_cold_read"]["depends_on"] == ["save_revision"]
         assert nodes["save_palette"]["depends_on"] == ["save_cold_read"]

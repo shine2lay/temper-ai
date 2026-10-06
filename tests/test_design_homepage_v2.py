@@ -62,16 +62,44 @@ def test_run_result_says_who_decided_each_gate(name):
     assert not [k for k in raw["outputs"] if "owner" in k]
 
 
+RESEARCH_OUTPUTS = {"research_path", "research_board", "research_direction", "research_decided_by", "design_status",
+                    "design_files", "design_files_approved_by"}
+
+
+def pre_research():
+    """design_homepage_v2 as it was before the research step (queue #38): what the pilot and bench twins keep.
+    The research nodes and save_files go, the copywriter and art director are the pre-research prompts, and
+    the copy follows the taste file directly. tests/test_design_research_step.py covers the research nodes."""
+    raw, nodes = workflow("design_homepage_v2")
+    raw = {**raw, "inputs": {k: v for k, v in raw["inputs"].items() if k != "research_json"},
+           "outputs": {k: v for k, v in raw["outputs"].items() if k not in RESEARCH_OUTPUTS}}
+    kept = {}
+    for name, node in nodes.items():
+        if name.startswith("research") or name == "save_files":
+            continue
+        node = dict(node)
+        if node["agent"] in ("design_homepage_copywriter_v2", "design_homepage_art_director_v2"):
+            node["agent"] += "_no_research"
+        if name == "copy":
+            assert node["depends_on"] == ["research_decision"]
+            node["depends_on"] = ["taste"]
+        kept[name] = node
+    return raw, kept
+
+
 @pytest.mark.parametrize("name", ["design_homepage_v2", "design_homepage_v2_fixture", "design_homepage_v2_pilot"])
 def test_workflow_native_gates_and_bounded_loops(name):
     raw, nodes = workflow(name)
+    research = name != "design_homepage_v2_pilot"
     gates = sorted(n for n, v in nodes.items() if v.get("gate"))
-    assert gates == ["direction", "final"]
+    assert gates == ["direction", "final"] + (["research_gate"] if research else [])
     looping = {n: v for n, v in nodes.items() if v.get("loop_to")}
-    assert set(looping) == {"copy_next", "concepts_next", "next_round", "after_final"}
+    assert set(looping) == {"copy_next", "concepts_next", "next_round", "after_final"} \
+        | ({"research_check_next", "research_assemble_next"} if research else set())
     for node in looping.values():
         assert node["max_loops"] <= 3 and node["on_max_loops"] == "fail"
-        assert node["agent"] == "design_homepage_stage_v2"  # loop control never sits on a model or gate node
+        # loop control never sits on a model or gate node
+        assert node["agent"] in ("design_homepage_stage_v2", "design_research_stage_v1")
     assert nodes["copy_next"]["loop_to"] == "copy_revise" and nodes["copy_next"]["max_loops"] == 2
     assert nodes["copy_next"]["loop_condition"] == {"source": "copy_next.structured.verdict", "operator": "equals",
                                                     "value": "retry"}
@@ -115,6 +143,9 @@ def test_real_workflow_reuses_unchanged_critics_and_new_model_agents():
 
 def test_fixture_workflow_is_model_free():
     _, nodes = workflow("design_homepage_v2_fixture")
+    research = {n for n in nodes if n.startswith("research") or n == "save_files"}
+    assert all(nodes[n]["agent"] == "design_research_stage_v1" for n in research)
+    nodes = {n: v for n, v in nodes.items() if n not in research}
     assert all(v["agent"] == "design_homepage_stage_v2" for v in nodes.values())
     assert all(v["input_map"]["mode"] == "fixture" for v in nodes.values())
     stages = {v["input_map"]["stage"] for v in nodes.values()}
@@ -492,7 +523,7 @@ def test_fixture_and_real_workspaces_never_mix(tmp_path):
 
 
 def test_pilot_workflow_is_v2_with_only_the_mode_changed():
-    real_raw, real = workflow("design_homepage_v2")
+    real_raw, real = pre_research()
     pilot_raw, pilot = workflow("design_homepage_v2_pilot")
     assert list(pilot) == list(real)
     assert pilot_raw["inputs"] == real_raw["inputs"] and pilot_raw["outputs"] == real_raw["outputs"]
@@ -506,7 +537,7 @@ def test_pilot_workflow_is_v2_with_only_the_mode_changed():
 
 
 def test_bench_workflow_is_v2_with_mode_bench_and_no_gates():
-    real_raw, real = workflow("design_homepage_v2")
+    real_raw, real = pre_research()
     bench_raw, bench = workflow("design_homepage_v2_bench")
     assert list(bench) == list(real)
     assert bench_raw["inputs"] == real_raw["inputs"] and bench_raw["outputs"] == real_raw["outputs"]

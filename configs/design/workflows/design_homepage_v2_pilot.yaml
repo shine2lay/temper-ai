@@ -1,5 +1,7 @@
 # Fictional-only companion of design_homepage_v2 (like design_homepage_pilot_v1 for v1).
-# Same nodes, agents and checks; every script stage runs with mode: pilot, which refuses
+# Same design nodes and checks, without v2's research step (queue #38): the copywriter and art
+# director are the pre-research prompts (design_homepage_*_v2_no_research), so pilot runs stay
+# comparable with earlier ones. Every script stage runs with mode: pilot, which refuses
 # real deliverables and takes the worker's provisional direction pick (decided_by design,
 # with reasons; direction_approved stays false). Pilot runs never write taste entries. The
 # final gate is answered like v2's (decided_by design, or owner for his own words).
@@ -45,7 +47,7 @@ workflow:
       input_map: {stage: taste, mode: pilot, data: input.taste_md}
     - name: copy
       type: agent
-      agent: design_homepage_copywriter_v2
+      agent: design_homepage_copywriter_v2_no_research
       depends_on: [taste]
       input_map: {phase: draft}
     - name: copy_check_draft
@@ -60,7 +62,7 @@ workflow:
       input_map: {target: deck}
     - name: copy_revise
       type: agent
-      agent: design_homepage_copywriter_v2
+      agent: design_homepage_copywriter_v2_no_research
       depends_on: [copy_review]
       input_map: {phase: revise}
     - name: copy_check
@@ -84,7 +86,7 @@ workflow:
       input_map: {stage: pairings, mode: pilot}
     - name: concepts
       type: agent
-      agent: design_homepage_art_director_v2
+      agent: design_homepage_art_director_v2_no_research
       depends_on: [references, copy_next, pairings]
       input_map: {phase: draft}
     - name: check_draft
@@ -94,7 +96,7 @@ workflow:
       input_map: {stage: concepts_check, mode: pilot, phase: draft}
     - name: refine
       type: agent
-      agent: design_homepage_art_director_v2
+      agent: design_homepage_art_director_v2_no_research
       depends_on: [check_draft]
       condition: {source: check_draft.structured.verdict, operator: equals, value: retry}
       input_map: {phase: refine}

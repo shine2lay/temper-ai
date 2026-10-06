@@ -31,6 +31,10 @@ COLD_RESERVE = round(CAPS["coldread"] + CAPS["names"], 2)  # .9
 INITIAL_RESERVE = round(CAPS["explore"] + CAPS["revise"] + COLD_RESERVE + CAPS["palette"] + CAPS["critic"], 2)  # 5.75
 REFINE_RESERVE = round(CAPS["refine"] + COLD_RESERVE + CAPS["critic"], 2)  # 2.75
 FULL_ESTIMATE = round(INITIAL_RESERVE + 2 * REFINE_RESERVE + .35, 2)  # 11.6 incl. .35 headroom; not CLI caps
+# design_logo_v1's native budget policy: the logo estimate plus the research step that now runs first
+# (queue #38: users and direction agents, each with up to two revise rounds; trials spent $4-9 on it).
+RESEARCH_RESERVE = 18.4
+RUN_POLICY = round(FULL_ESTIMATE + RESEARCH_RESERVE, 2)  # 30.0, the max_cost_usd in design_logo_v1.yaml
 # Cold read: what a symbol looks like with no caption, at a glance (32 px) and close up (128 px).
 COLD_SIZES = ("32", "128")
 COLD_READINGS = 3

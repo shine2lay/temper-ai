@@ -48,7 +48,24 @@ exit1 and missing script stream did not identify a cause; do not infer a mount,
 credential or geometry error without these safe checks. This stage-only
 instrumentation changes no engine access, login grants or live reviewers.
 
-Real entry takes only `brief_json` and `budget_json`. No ordinary mode/direction/
+## Research first (queue #38)
+
+Since queue #38 the workflow starts with the shared research step
+([design-files.md](design-files.md)): an inventory of the product's approved design files,
+then, only for missing parts, users research, a category scan (competitor marks), context fit
+against `configs/design/knowledge/context-playbook.json` and a research gate (answered like the
+other gates, with `decided_by`). `research_logo_brief` merges the research into `brief_json`:
+the playbook context id, the product meaning, the category comparison as pinned research, and
+an approved palette as `fixed_palette` (the palette agent and `fixed_palette_check` keep it
+exact). After the final gate approves, `save_files` writes the logo, its colours, the users
+profile and the direction as the product's design files (approved by the final gate's
+`decided_by`). The run policy is $30: the logo estimate below ($11.60) plus $18.40 for research.
+Inputs add `research_json` (required) and `mode` (`real`, or `trial`: a fictional brief with
+the real agents, gates answered `fixture-test`).
+
+## Entry
+
+Real entry takes `brief_json`, `budget_json` and `research_json`. No ordinary direction/
 final/approval input exists. Brief fields: product, secondary_name, explicit
 fictional boolean, audience, positioning, qualities, avoid, sources (id/location/
 fact/status), interpretations. V1 supports bounded Latin/LTR names/live text and

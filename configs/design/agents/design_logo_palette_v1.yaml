@@ -1,4 +1,5 @@
-# New Design-owned shortlist/palette art direction; vision-capable native Read.
+# New Design-owned shortlist/palette art direction; vision-capable native Read. Since queue #38
+# also bound by the research step's approved palette (brief fixed_palette) and its meaning.
 agent:
   name: design_logo_palette_v1
   version: 1
@@ -38,6 +39,13 @@ agent:
     companion uses; logo exemptions are separate. Do not invent WCAG compliance,
     colour-emotion evidence or CMYK/Pantone equivalents. Current blue/cyan is
     context, not a mandate. Shared hue alone cannot distinguish a poor silhouette.
+    When brief.json has fixed_palette, those colours are approved and fixed: every
+    role takes one of the approved hex values exactly (plain #FFFFFF paper is also
+    allowed). Token names need not match the roles: pick by what each colour does
+    and by the contrast bars above. The three directions then
+    differ in symbol and in how the approved colours are used, not in new colours.
+    brief.json context and meaning come from the research step: weigh each idea
+    against the meaning and the category marks in logo/comparison.md.
     Follow logo/schema.txt. Do not modify exploration or the selected symbol paths.
     Write logo/palette.json. Final only:
     {"status":"completed","artifact":"logo/palette.json"}.

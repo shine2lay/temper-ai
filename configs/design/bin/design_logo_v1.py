@@ -170,7 +170,7 @@ class Job:
         research = self.research(b)
         save(self.root / "bounds.json", {"estimate_usd": c.FULL_ESTIMATE, "stage_reserves_usd": c.CAPS,
              "refinement_max": 2, "review_max": 3, "roughs": 6, "shortlist": 3,
-             "native_budget_policy_usd": c.FULL_ESTIMATE,
+             "native_budget_policy_usd": c.RUN_POLICY, "research_reserve_usd": c.RESEARCH_RESERVE,
              "note": "Estimate/reservations, not a per-Claude-CLI hard cap. Native policy checks between calls; an in-flight call can overshoot. Every retry counts. No automatic retry of a failed generation stage."})
         client = h.Penpot()
         client.login()

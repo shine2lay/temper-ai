@@ -260,10 +260,13 @@ design for the product takes the defined branch for the parts now approved.
 
 ## Workflows
 
-`design_homepage_v2_next` and `design_logo_v1_next` are the candidates with the research step (beside
-the live workflows until they win their trial; docs/design.md, docs/design-logo.md), with $0 twins
-`design_homepage_v2_next_fixture` and `design_logo_v1_next_fixture` (model-free stand-ins from
-`configs/design/fixtures/research/<product>/`). Their inputs add `research_json`:
+`design_homepage_v2` and `design_logo_v1` run the research step first (docs/design.md,
+docs/design-logo.md). They were built as `_next` candidates and replaced the earlier versions after
+winning their trials (queue #38). Their $0 twins `design_homepage_v2_fixture` and
+`design_logo_fixture_v1` use model-free stand-ins from `configs/design/fixtures/research/<product>/`.
+The homepage pilot and bench twins keep the pre-research copywriter and art director
+(`design_homepage_*_v2_no_research`) and have no research step, so their scores stay comparable with
+earlier benchmark runs. Both workflows take `research_json`:
 
 ```json
 {"job": "homepage", "audience": "", "gate": "on", "force": [], "directions": 3, "taste_md": ""}
@@ -271,6 +274,6 @@ the live workflows until they win their trial; docs/design.md, docs/design-logo.
 
 `job` is homepage, logo, app_screen or marketing; `audience` names the page's audience when it differs
 from the product's users; `force` lists parts to research even when approved. The research gate is
-answered through the API like every gate (no agent answers it). `design_logo_v1_next` also takes `mode`:
+answered through the API like every gate (no agent answers it). `design_logo_v1` also takes `mode`:
 `real`, or `trial` for a fictional brief with the real agents (its gates are then answered
 `fixture-test`). The run's workspace must hold a pack made by `design_files.py pack`.

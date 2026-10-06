@@ -1,5 +1,7 @@
-# Benchmark twin of design_homepage_v2 (queue #10, Design's scoreboard). Same nodes, agents,
-# checks and loops; every script stage runs with mode: bench, and the direction and final
+# Benchmark twin of design_homepage_v2 (queue #10, Design's scoreboard). Same design nodes,
+# checks and loops, without v2's research step (queue #38): the copywriter and art director are
+# the pre-research prompts (design_homepage_*_v2_no_research), so scores stay comparable with
+# the scoreboard's earlier rows. Every script stage runs with mode: bench, and the direction and final
 # gates are plain steps: direction builds the art director's recommended concept
 # (concepts.json "recommended"; direction_approved false, decided_by design), final records
 # "benchmark_skipped" and labels the page not approved (final_approved false).
@@ -49,7 +51,7 @@ workflow:
       input_map: {stage: taste, mode: bench, data: input.taste_md}
     - name: copy
       type: agent
-      agent: design_homepage_copywriter_v2
+      agent: design_homepage_copywriter_v2_no_research
       depends_on: [taste]
       input_map: {phase: draft}
     - name: copy_check_draft
@@ -64,7 +66,7 @@ workflow:
       input_map: {target: deck}
     - name: copy_revise
       type: agent
-      agent: design_homepage_copywriter_v2
+      agent: design_homepage_copywriter_v2_no_research
       depends_on: [copy_review]
       input_map: {phase: revise}
     - name: copy_check
@@ -88,7 +90,7 @@ workflow:
       input_map: {stage: pairings, mode: bench}
     - name: concepts
       type: agent
-      agent: design_homepage_art_director_v2
+      agent: design_homepage_art_director_v2_no_research
       depends_on: [references, copy_next, pairings]
       input_map: {phase: draft}
     - name: check_draft
@@ -98,7 +100,7 @@ workflow:
       input_map: {stage: concepts_check, mode: bench, phase: draft}
     - name: refine
       type: agent
-      agent: design_homepage_art_director_v2
+      agent: design_homepage_art_director_v2_no_research
       depends_on: [check_draft]
       condition: {source: check_draft.structured.verdict, operator: equals, value: retry}
       input_map: {phase: refine}

@@ -1,4 +1,5 @@
-# Design-owned copywriter for design_homepage_v2 (v2.1): writes the homepage's words
+# Design-owned copywriter for design_homepage_v2 (v2.1; research step since queue #38: it writes
+# for the users and in the copy tone the research step decided, research/FOR_DESIGN.md). Writes the homepage's words
 # before any concept is drawn: a copy deck (promise, headline options, subhead, three
 # proof points, CTA labels, FAQ, voice, terms, worked examples and each required notice
 # stated once). Two passes: draft from the brief, then revise from the content critic's
@@ -23,6 +24,14 @@ agent:
                            (the ONLY source of claims)
       homepage/TASTE.md    the owner's taste from earlier gates; follow what they said
                            about words and voice (never quote these notes on the page)
+      research/FOR_DESIGN.md who the page is for (the checked users profile), the chosen
+                           direction and its copy-tone target; write for those people,
+                           in their words, at their level. It tells you about readers,
+                           never facts for the page: claims still come only from BRIEF.md.
+    Copy tone (the check measures it on the page): expert = the users' working terms
+    and figures, few "you", few contractions; friendly = warm second person,
+    contractions, short plain words; neutral = between. Match the target in
+    FOR_DESIGN.md; voice[] says how.
 
     Rules
     - Every claim rests on brief facts; cite their numbers (facts: [n]). Never invent

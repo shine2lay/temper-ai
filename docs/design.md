@@ -442,6 +442,16 @@ the models design where they are strongest, real HTML and CSS, and then converts
 the rendered page into an editable Penpot file, which stays the editable master.
 v1 is unchanged.
 
+Since queue #38, `design_homepage_v2` starts with the shared research step
+([design-files.md](design-files.md)): it reads the product's approved design files (DESIGN.md +
+tokens.json, registry `configs/design/products.yaml`) and researches only what they lack (users
+with every claim sourced or marked assumption, a category scan, playbook context fit and 2-3
+directions), then a **research gate**. The copywriter and art director follow
+`research/FOR_DESIGN.md`; the concept check holds approved colours and fonts exact
+(`research/fixed.json`). After the final gate approves, `save_files` writes the design files.
+Input `research_json` is required. The pilot and bench twins keep the pre-research agents
+(`design_homepage_*_v2_no_research`) so benchmark scores stay comparable.
+
 `design_homepage_v2`: brief + the owner's taste file -> copy deck (copywriter
 draft, word checks, content review, revision; see v2.1 below) and 8-12 category
 references (screenshots, research only; never copied or traced) -> art director

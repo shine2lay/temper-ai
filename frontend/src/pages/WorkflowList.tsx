@@ -334,13 +334,17 @@ function WorkflowRow({
         )}
       </span>
 
-      {/* Studio link */}
+      {/* Studio link. The link itself is 24 px tall: it sits inside the row,
+          which is a target too, so WCAG 2.2's spacing exception can't apply
+          (2.5.8). The pill inside keeps the old look; it was a 19 px target. */}
       <Link
         to={`/studio/${wf.workflow_name}`}
         onClick={(e) => e.stopPropagation()}
-        className="text-[10px] px-2 py-0.5 rounded bg-temper-surface text-temper-text-muted hover:text-temper-text hover:bg-temper-accent/10 transition-colors shrink-0"
+        className="group inline-flex min-h-6 items-center rounded shrink-0"
       >
-        Studio
+        <span className="text-[10px] px-2 py-0.5 rounded bg-temper-surface text-temper-text-muted group-hover:text-temper-text group-hover:bg-temper-accent/10 transition-colors">
+          Studio
+        </span>
       </Link>
     </div>
   );

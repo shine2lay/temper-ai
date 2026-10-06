@@ -53,6 +53,19 @@ test.describe('Workflow list', () => {
     expect(box!.width).toBeGreaterThan(40);
   });
 
+  test("a row's Studio link is at least 24 px square", async ({ page, request }) => {
+    // WCAG 2.2 2.5.8. The link sits inside the row, which is a target too, so
+    // only its own size counts. It was 19 px tall.
+    await startSmokeRun(request);
+    await page.goto('/app/');
+
+    const studio = page.locator('a[href$="/studio/smoke_test"]').first();
+    await expect(studio).toBeVisible();
+    const box = await studio.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(24);
+    expect(box!.width).toBeGreaterThanOrEqual(24);
+  });
+
   test('buttons can be reached by their visible label', async ({ page }) => {
     // aria-label used to replace the visible text, which breaks voice control.
     await page.goto('/app/');

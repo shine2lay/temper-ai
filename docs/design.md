@@ -488,8 +488,9 @@ its home chat first. `decided_by: owner` is only for the owner's own words: they
 go verbatim in `notes`, with `source` naming where he said them, and they
 outrank Design's. Only an owner answer may carry `source`. The old `approval`
 field is refused. `homepage/direction.json`, `homepage/final.json` and each
-change round's `final-rNN.json` keep the answer as given, and `job.json`
-and the stage results carry `direction_approved` and `final_approved`, each
+change round's `final-rNN.json` keep the answer as given, and `job.json`,
+the stage results and the run's outputs (all four v2 workflows) carry
+`direction_approved` and `final_approved`, each
 `{"approved": bool, "decided_by": ...}`; a change round's fix-list items are
 `G1`, `G2` ... with source `final_gate`. No key, node or flag claims an owner
 approval the owner didn't give.

@@ -30,6 +30,8 @@ workflow:
     manifest_path: handoff.structured.manifest_path
     penpot_url: handoff.structured.penpot_url
     final_verdict: final.structured.verdict
+    direction_approved: final.structured.direction_approved
+    final_approved: final.structured.final_approved
   nodes:
     - name: brief
       type: agent

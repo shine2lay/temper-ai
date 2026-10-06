@@ -51,6 +51,17 @@ def workflow(name):
     return raw, {n["name"]: n for n in raw["nodes"]}
 
 
+@pytest.mark.parametrize("name", ["design_homepage_v2", "design_homepage_v2_fixture", "design_homepage_v2_pilot",
+                                  "design_homepage_v2_bench"])
+def test_run_result_says_who_decided_each_gate(name):
+    # The run's outputs carry both gate flags ({approved, decided_by}), so a result never needs job.json to say
+    # who decided; no output is named for the owner.
+    raw, _ = workflow(name)
+    assert raw["outputs"]["direction_approved"] == "final.structured.direction_approved"
+    assert raw["outputs"]["final_approved"] == "final.structured.final_approved"
+    assert not [k for k in raw["outputs"] if "owner" in k]
+
+
 @pytest.mark.parametrize("name", ["design_homepage_v2", "design_homepage_v2_fixture", "design_homepage_v2_pilot"])
 def test_workflow_native_gates_and_bounded_loops(name):
     raw, nodes = workflow(name)
@@ -800,7 +811,7 @@ def test_final_gate_request_changes_needs_notes_and_is_bounded(tmp_path):
         job.final('{' + FIX + '}')
     out = job.final('{"verdict": "request_changes", "notes": ["bigger headline"], ' + FIX + '}')
     assert out["verdict"] == "request_changes" and job.state["fix_list"][0]["problem"] == "bigger headline"
-    assert out["final_approved"] == {"approved": False, "decided_by": "fixture-test"}
+    assert out["final_approved"] == {"approved": False, "decided_by": "fixture-test"} and "direction_approved" in out
     assert job.state["fix_list"][0]["source"] == "final_gate" and job.state["fix_list"][0]["decided_by"] == "fixture-test"
     assert job.plan_round()["action"] == "revise" and job.state["change_rounds"] == 1
     job.state["change_rounds"] = v2.MAX_CHANGE_ROUNDS
@@ -809,7 +820,7 @@ def test_final_gate_request_changes_needs_notes_and_is_bounded(tmp_path):
         job.final('{"verdict": "request_changes", "notes": ["again"], ' + FIX + '}')
     done = job.final('{"verdict": "approve", ' + FIX + '}')
     assert done["verdict"] == "approved" and done["decided_by"] == "fixture-test"
-    assert done["final_approved"] == {"approved": True, "decided_by": "fixture-test"}
+    assert done["final_approved"] == {"approved": True, "decided_by": "fixture-test"} and "direction_approved" in done
     saved = v2.load(job.packet / "final.json")
     assert saved["final_approved"]["decided_by"] == "fixture-test" and saved["reasons"] == "fixture pass-through"
     assert not [k for k in v2.load(job.packet / "job.json") if k.startswith("owner")]

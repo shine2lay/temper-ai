@@ -67,7 +67,7 @@ TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/ 
 ```
 
 `url` starts the test Postgres if it is not up (port 5455, everything in
-RAM), waits until it answers and prints its URL. With that variable set, the
+RAM, at most 4 GB), waits until it answers and prints its URL. With that variable set, the
 tests listed in `tests/pgtier.py` use Postgres and the rest stay on SQLite,
 so the whole suite still takes about twenty seconds.
 

@@ -57,14 +57,18 @@ psql_in() {
 }
 
 start() {
-    # max_wal_size: Postgres keeps up to 1 GB of write-ahead log by default, and
-    # this disk is 512 MB of RAM. max_connections: a run takes up to ~30, and
-    # several runs share the container.
+    # size=4g: up to five builds run their suites here at the same time
+    # (2026-10-05), each in schemas of its own, and 512 MB was a third full
+    # with nothing running. A tmpfs takes RAM only for what it holds, so the
+    # cap costs nothing until it is used. max_wal_size: Postgres keeps up to
+    # 1 GB of write-ahead log by default; here it stays near 128 MB.
+    # max_connections: a run takes up to ~30, and several runs share the
+    # container. The label says which of these settings a container has.
     docker run -d --name "$NAME" \
-        --label temper.test-pg.version=2 \
+        --label temper.test-pg.version=3 \
         -e POSTGRES_DB="$DB" -e POSTGRES_USER=temper_ai -e POSTGRES_PASSWORD=test \
         -e PGDATA=/var/lib/postgresql/data/pgdata \
-        --tmpfs /var/lib/postgresql/data:rw,size=512m \
+        --tmpfs /var/lib/postgresql/data:rw,size=4g \
         -p "127.0.0.1:${PORT}:5432" \
         "$IMAGE" \
         -c fsync=off -c full_page_writes=off -c synchronous_commit=off \

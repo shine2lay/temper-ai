@@ -192,7 +192,7 @@ def launched_tools(cfg: dict) -> list[str]:
 
 _LIMIT_RE = re.compile(
     r"\b429\b|rate[ _-]?limit|usage[ _-]?limit|quota|limit (?:was |has been )?reached"
-    r"|reached (?:your|the) (?:usage |rate )?limit|exceed(?:s|ed)? (?:your|the) .{0,40}limit",
+    r"|reached (?:your|the) (?:usage |rate )?limit|exceed(?:s|ed)? (?:your|the) .{0,40}limit|hit your (?:\w+ ){0,3}limit",
     re.IGNORECASE)
 
 

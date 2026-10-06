@@ -49,6 +49,7 @@ says so once.
 import json
 import logging
 import os
+import random
 import threading
 import time
 from datetime import datetime
@@ -57,7 +58,7 @@ from typing import Any, Protocol
 import httpx
 
 from temper_ai.llm.models import LLMResponse, LLMStreamChunk
-from temper_ai.llm.providers.base import BaseLLM, StreamCallback, _compute_backoff
+from temper_ai.llm.providers.base import BaseLLM, StreamCallback
 from temper_ai.llm.token_pool import (
     NamedToken,
     PoolExhausted,
@@ -78,6 +79,12 @@ DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 OAUTH_TOKEN_PREFIX = "sk-ant-oat"  # noqa: S105 - a prefix, not a secret
 API_KEY_ENV = "ANTHROPIC_API_KEY"
 OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # noqa: S105 - name, not a secret
+# How long, in all, a call whose stream broke keeps waiting to send it again
+# (`stream_retry_budget_s`). An overload burst outlasts a few seconds: with the
+# base class's three attempts (1 s, then 2 s) one ended its agent 30 minutes in.
+DEFAULT_STREAM_RETRY_BUDGET_S = 600.0
+# The longest single wait between two sends of a broken stream.
+_STREAM_RETRY_MAX_WAIT_S = 60.0
 
 AuthMode = str  # "api_key" | "oauth" | "none"
 
@@ -327,6 +334,15 @@ def _stream_broke(exc: Exception) -> bool:
     return kind in ("overloaded_error", "api_error")
 
 
+def _stream_retry_delay(attempt: int) -> float:
+    """The wait before sending a broken stream again: 1, 2, 4, 8, 16 and 32 s, then 60 s each.
+
+    Each with up to a second of jitter, so calls broken by the same burst do
+    not all come back at the same moment.
+    """
+    return min(2.0**attempt, _STREAM_RETRY_MAX_WAIT_S) + random.random()  # noqa: B311 - jitter, not security
+
+
 def _reset_epoch(exc: Exception) -> float | None:
     """When the limited subscription is usable again, from the response headers.
 
@@ -393,6 +409,7 @@ class AnthropicLLM(BaseLLM):
         cache_ttl: str = "5m",
         effort: str | None = None,
         thinking_budget: int | None = None,
+        stream_retry_budget_s: float = DEFAULT_STREAM_RETRY_BUDGET_S,
         **kwargs: Any,
     ):
         super().__init__(
@@ -417,6 +434,10 @@ class AnthropicLLM(BaseLLM):
         # output, so it is the one knob that caps that side of the bill directly.
         # None leaves the model to its own judgement.
         self.thinking_budget = thinking_budget
+        # How long, in all, a call whose stream broke (an overload, an API error
+        # or a stalled read once the answer began) keeps waiting to send it again
+        # before it fails. Anthropic's capacity, not the account's: no cooling.
+        self.stream_retry_budget_s = float(stream_retry_budget_s)
         anthropic_mod = _ensure_anthropic()
         credential, self.auth_mode = resolve_credential(api_key)
         self.api_key = credential
@@ -701,19 +722,32 @@ class AnthropicLLM(BaseLLM):
         One stalled read or one "Overloaded" event failed the call and the
         agent with it, often hours into a round at high effort: 5 of 15,164
         calls in 60 hours, each ending its agent. The request changes nothing by
-        itself, so it goes out again, with the base class's attempts, backoff
-        and retry event (_execute_with_retry, which this SDK path bypasses).
+        itself, so it goes out again. Not on the base class's three attempts
+        (1 s, then 2 s): an overload burst outlasts them, and one ended an
+        architect 30 minutes and $8 in. It waits longer each time
+        (_stream_retry_delay) until `stream_retry_budget_s` of waiting in all,
+        then fails as before. Each retry is recorded (the retry event).
+        Anything that is not a broken stream is raised at once.
         """
+        budget = kwargs.get("stream_retry_budget_s")  # an agent's provider_config wins
+        budget = self.stream_retry_budget_s if budget is None else float(budget)
         attempt = 0
+        waited = 0.0
         while True:
             try:
                 return self._send(create_kwargs, kwargs, run)
             except Exception as exc:  # noqa: BLE001 - re-raised below unless the stream broke
-                if attempt + 1 >= self.max_retries or not _stream_broke(exc):
+                left = budget - waited
+                if left <= 0 or not _stream_broke(exc):
                     raise
-                delay = _compute_backoff(attempt)
-                self._record_retry(exc, attempt, delay)
+                delay = min(_stream_retry_delay(attempt), left)
+                self._record_retry(exc, attempt, delay, extra={
+                    "max_retries": None,
+                    "retry_budget_s": budget,
+                    "waited_s": round(waited, 1),
+                })
                 time.sleep(delay)
+                waited += delay
                 attempt += 1
 
     # The Anthropic and Gemini providers use their SDK clients directly

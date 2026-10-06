@@ -153,6 +153,11 @@ PARAM_DESCRIPTIONS = {
     "max_tokens": "Maximum tokens in response",
     "timeout": "Request timeout in seconds",
     "max_retries": "Max retry attempts on transient failures",
+    "stream_retry_budget_s": (
+        "Seconds of waiting, in all, before a call whose stream broke mid-answer "
+        "(an overload, an API error, a stalled read) fails; it is sent again "
+        "after 1, 2, 4, 8, 16, 32 s, then every 60 s. 0 sends it once only"
+    ),
 }
 
 

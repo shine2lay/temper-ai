@@ -169,6 +169,26 @@ wait_for_allowance: 2d   # or `0` / `false` to never wait
 
 It takes the same durations as `quiet_after`.
 
+A limit or disabled-account message is never an answer, and is never read out
+of one. When a subscription hands back "You've hit your session limit ·
+resets 10:50pm (UTC)" where the answer should be, that account cools until
+the reset and the call starts again at once on another; an account whose
+organisation has turned subscription access off is taken out of use until
+the next restart, and the call starts again the same way. Only when no
+account is left does the agent's fallback list and then this wait take over
+(a disabled account is never waited for: with none left the step fails and
+says so). A response a provider marks as an error never completes a step
+either. A sentence counts only when the call reported an error or the
+sentence is the whole result of a call that did no work, so an agent that
+writes about limits, or quotes these sentences, completes as usual
+(`temper_ai/llm/account_messages.py`).
+
+An Anthropic stream that breaks mid-answer (an overload, an API error, a
+stalled read) is not an allowance: the call is sent again, waiting 1, 2, 4,
+8, 16, 32 seconds and then a minute each time, for up to ten minutes of
+waiting in all (`stream_retry_budget_s` in the agent's `provider_config`)
+before it fails.
+
 One message goes out per quiet spell. A run that comes back to life by
 itself ends the spell and nothing more is said about it; if it goes quiet
 again later, that is a new spell and a new message. The same rule

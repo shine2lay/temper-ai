@@ -40,6 +40,39 @@ def _describe(where: dict[str, str]) -> str:
     return f"{text} on {where['token']}" if where.get("token") else text
 
 
+class ProviderErrorResponse(RuntimeError):
+    """A provider handed back an error where the answer should be (finish_reason "error").
+
+    That is a failed call, never an answer: a step must not complete on "Error:
+    claude token pool exhausted ..." or a CLI's limit banner. Raised from the
+    response's text, so a text that reads as a limit (fallback.is_capacity_error)
+    goes down the agent's fallback list and on to the allowance park like any
+    other capacity failure, and anything else fails the call. Decided on the
+    finish reason alone, never on the words of an answer.
+    """
+
+    def __init__(self, response: LLMResponse):
+        text = " ".join((response.content or "").split()) or "no text"
+        super().__init__(f"{response.provider} answered with an error: {text[:2000]}")
+        # Not `response`: an exception's `response` is an HTTP response elsewhere
+        # (allowance.reset_in_headers reads its headers).
+        self.llm_response = response
+
+
+def _lost_attempts(found: Any) -> dict[str, Any]:
+    """`lost_attempts` for a call's event, when its provider had to start the call again.
+
+    A provider that gives up on an account mid-call (a limit, an account its
+    organisation turned off) and starts again on another one lists what it
+    lost -- which slot, why, what it cost -- on the response's `raw_response`
+    or on the error it finally raises. Recorded beside the call, so a lost
+    session's cost is never silent.
+    """
+    if not found or not isinstance(found, list):
+        return {}
+    return {"lost_attempts": found[:10]}
+
+
 DEFAULT_MAX_ITERATIONS = 10
 # A backstop against unbounded growth, not the working limit: `max_context_tokens`
 # is what governs how much the model may remember, and `_enforce_context_limit`
@@ -306,6 +339,8 @@ class LLMService:
             event_id = self._record_llm_started(iteration)
             try:
                 response = self._invoke_provider(llm_event_id=event_id)
+                if response.finish_reason == "error":
+                    raise ProviderErrorResponse(response)
             except Exception as e:  # noqa: BLE001
                 self._record_llm_failed(iteration, e)
                 if self._drop_extra_room(e):
@@ -777,7 +812,8 @@ class LLMService:
                                            for tc in (response.tool_calls or [])] or None,
                   "iteration": iteration, "response_content": response.content,
                   "reasoning": response.reasoning,
-                  "context": self._context_sent()})
+                  "context": self._context_sent(),
+                  **_lost_attempts((response.raw_response or {}).get("lost_attempts"))})
 
     def _context_sent(self) -> dict[str, Any]:
         """The harness's side of the call just made: which context policy
@@ -802,7 +838,8 @@ class LLMService:
             data={"model": self._model_in_use(), "provider": self.provider.provider_name,
                   "token": self._requested_token(),
                   "iteration": iteration, "error_type": type(exc).__name__,
-                  "error": str(exc)[:500], "agent_name": self._ctx.agent_name})
+                  "error": str(exc)[:500], "agent_name": self._ctx.agent_name,
+                  **_lost_attempts(getattr(exc, "lost_attempts", None))})
 
     def _record_iteration(
         self,

@@ -54,8 +54,11 @@ from temper_ai.llm.token_pool import PoolExhausted
 CAPACITY_STATUSES = frozenset({429, 529})
 
 # How a capacity failure reads when it arrives without a status -- the Codex
-# transport raises one as "Codex endpoint returned HTTP 429: ...", and a
-# provider may wrap the HTTP error in its own. Matched lower-case.
+# transport raises one as "Codex endpoint returned HTTP 429: ...", a provider
+# may wrap the HTTP error in its own, and the Claude CLI's banner reads "You've
+# hit your session limit · resets 10:50pm (UTC)". Matched lower-case, and only
+# ever against an error's text: a completed answer that mentions a limit is an
+# answer (temper_ai.llm.account_messages).
 _CAPACITY_TEXT = (
     "rate limit",
     "rate_limit",
@@ -68,6 +71,10 @@ _CAPACITY_TEXT = (
     "quota reached",
     "insufficient_quota",
     "hit your limit",
+    "you've hit your",
+    "you\u2019ve hit your",
+    "session limit",
+    "weekly limit",
     "limit reached",
     "credit balance is too low",
     "http 429",

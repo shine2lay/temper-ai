@@ -193,11 +193,19 @@ class BaseLLM(ABC):
 
         raise last_error  # type: ignore[misc]
 
-    def _record_retry(self, last_error: Exception | None, attempt: int, delay: float) -> None:
-        """Log and record a retry event."""
+    def _record_retry(
+        self, last_error: Exception | None, attempt: int, delay: float,
+        *, extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Log and record a retry event.
+
+        `extra` adds to (and overrides) the event's data: a retry bounded by
+        time rather than by a number of attempts says so there.
+        """
+        of = (extra or {}).get("max_retries", self.max_retries)
         logger.warning(
-            "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs",
-            attempt + 1, self.max_retries, last_error, delay,
+            "LLM call failed (attempt %d%s): %s. Retrying in %.1fs",
+            attempt + 1, f"/{of}" if of else "", last_error, delay,
         )
         error_code = None
         if isinstance(last_error, httpx.HTTPStatusError):
@@ -213,6 +221,7 @@ class BaseLLM(ABC):
                 "error": str(last_error)[:500],
                 "error_code": error_code,
                 "retry_delay_s": round(delay, 1),
+                **(extra or {}),
             },
         )
 

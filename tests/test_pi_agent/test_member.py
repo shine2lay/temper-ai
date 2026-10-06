@@ -272,6 +272,8 @@ def test_add_on_commands_count_only_from_the_members_own_add_ons():
     "429 Too Many Requests", "rate_limit_error: slow down", "You have reached your usage limit",
     "Claude usage limit reached; resets 3am", "This request would exceed your account's rate limit",
     "quota exhausted",
+    # The Claude CLI's banner, as two research steps really got it back.
+    "You've hit your session limit \u00b7 resets 10:50pm (UTC)", "You've hit your weekly limit",
 ])
 def test_a_usage_or_rate_limit_is_recognised(error):
     assert usage_limit(error) == "usage limit: " + error

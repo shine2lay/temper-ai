@@ -3,6 +3,9 @@
 The SDK retries a request whose response never began and nothing after that.
 A stalled read or an "Overloaded" event mid-stream failed the call and ended
 the agent, hours into a round at high effort (5 of 15,164 calls in 60 hours).
+Three attempts 1 s and 2 s apart did not outlast an overload burst either, so
+the call keeps being sent, waiting longer each time, until
+`stream_retry_budget_s` (10 minutes) of waiting in all.
 """
 
 import logging
@@ -12,6 +15,7 @@ import httpx
 import pytest
 
 from temper_ai.llm.providers import anthropic as mod
+from temper_ai.llm.providers import base as base_mod
 from temper_ai.llm.token_pool import TokenCooling
 
 
@@ -89,12 +93,22 @@ def llm(monkeypatch):
                         lambda: types.SimpleNamespace(Anthropic=lambda **kw: types.SimpleNamespace(messages=messages)))
     waits: list[float] = []
     monkeypatch.setattr(mod.time, "sleep", waits.append)
+    # Half a second of jitter on every wait, so the waits can be counted.
+    monkeypatch.setattr(mod, "random", types.SimpleNamespace(random=lambda: 0.5))
     provider = mod.AnthropicLLM(api_key="sk-ant-api03-abc", model="claude-opus-5-5")
     return provider, messages, waits
 
 
-def _stream(provider):
-    return provider.stream([{"role": "user", "content": "hi"}])
+@pytest.fixture
+def retries(monkeypatch):
+    """The retry events the provider records."""
+    seen: list[dict] = []
+    monkeypatch.setattr(base_mod, "record", lambda kind, data=None, **kw: seen.append(data))
+    return seen
+
+
+def _stream(provider, **kwargs):
+    return provider.stream([{"role": "user", "content": "hi"}], **kwargs)
 
 
 @pytest.mark.parametrize("failure", [
@@ -111,16 +125,60 @@ def test_a_stream_that_broke_part_way_is_sent_again(llm, failure, caplog):
     assert answer.content == "the answer"
     assert messages.calls == 2
     assert len(waits) == 1
-    assert "attempt 1/3" in caplog.text, "the base class's retry record says so"
+    assert "LLM call failed (attempt 1)" in caplog.text, "the retry is logged"
 
 
-def test_it_gives_up_after_the_base_class_attempts_and_raises_what_broke(llm):
+def test_an_overload_burst_longer_than_the_old_three_attempts_is_outlasted(llm, retries):
+    """Broken nine times in a row -- far past the old 1 s + 2 s -- and the call still comes back."""
     provider, messages, waits = llm
-    messages.script = [httpx.ReadTimeout("The read operation timed out")] * 5
+    messages.script = [_StreamError("overloaded_error")] * 9
+    answer = _stream(provider)
+    assert answer.content == "the answer"
+    assert messages.calls == 10
+    assert waits == [1.5, 2.5, 4.5, 8.5, 16.5, 32.5, 60.5, 60.5, 60.5], "growing waits, then a minute each"
+    assert sum(waits) < provider.stream_retry_budget_s == 600
+    assert len(retries) == 9, "every retry is recorded"
+    assert [r["attempt"] for r in retries] == list(range(1, 10))
+    assert retries[0]["retry_budget_s"] == 600
+    assert retries[0]["max_retries"] is None, "bounded by time, not by attempts"
+    assert retries[-1]["waited_s"] == round(sum(waits[:-1]), 1)
+    assert all("overloaded_error" in r["error"] for r in retries)
+
+
+def test_it_gives_up_after_ten_minutes_of_waiting_and_raises_what_broke(llm, retries):
+    provider, messages, waits = llm
+    messages.script = [httpx.ReadTimeout("The read operation timed out")] * 100
     with pytest.raises(httpx.ReadTimeout):
         _stream(provider)
-    assert messages.calls == provider.max_retries == 3
-    assert len(waits) == 2
+    assert sum(waits) == pytest.approx(600), "the whole budget, the last wait cut to what was left"
+    assert waits[:7] == [1.5, 2.5, 4.5, 8.5, 16.5, 32.5, 60.5]
+    assert max(waits) <= 60.5
+    assert messages.calls == len(waits) + 1 == len(retries) + 1
+    assert messages.calls < 100, "it stopped on the budget, not on the script"
+
+
+def test_an_agents_provider_config_sets_its_own_budget(llm):
+    provider, messages, waits = llm
+    messages.script = [_StreamError("overloaded_error")] * 100
+    with pytest.raises(_StreamError):
+        _stream(provider, stream_retry_budget_s=5)
+    assert waits == [1.5, 2.5, 1.0]
+    assert messages.calls == 4
+
+
+def test_a_budget_of_nothing_sends_it_once(llm):
+    provider, messages, waits = llm
+    messages.script = [_StreamError("overloaded_error")]
+    with pytest.raises(_StreamError):
+        _stream(provider, stream_retry_budget_s=0)
+    assert messages.calls == 1
+    assert waits == []
+
+
+def test_the_providers_own_setting_is_the_default(monkeypatch):
+    monkeypatch.setattr(mod, "_ensure_anthropic", lambda: types.SimpleNamespace(Anthropic=lambda **kw: None))
+    assert mod.AnthropicLLM(api_key="sk-ant-api03-abc").stream_retry_budget_s == 600
+    assert mod.AnthropicLLM(api_key="sk-ant-api03-abc", stream_retry_budget_s=30).stream_retry_budget_s == 30
 
 
 @pytest.mark.parametrize("failure", [
@@ -128,10 +186,11 @@ def test_it_gives_up_after_the_base_class_attempts_and_raises_what_broke(llm):
     TokenCooling("wai2shine", "claude-opus-5-5", None),
     ValueError("a bug of ours"),
 ], ids=["refused request", "capacity (the fallback list's)", "anything else"])
-def test_a_failure_that_is_not_the_connection_is_not_sent_again(llm, failure):
+def test_a_failure_that_is_not_the_connection_is_not_sent_again(llm, retries, failure):
     provider, messages, waits = llm
     messages.script = [failure]
     with pytest.raises(type(failure)):
         _stream(provider)
     assert messages.calls == 1
     assert waits == []
+    assert retries == []

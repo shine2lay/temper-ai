@@ -67,6 +67,7 @@ says so once.
 | `cache_ttl` | str | '5m' |  |
 | `effort` | str | None | None |  |
 | `thinking_budget` | int | None | None |  |
+| `stream_retry_budget_s` | float | 600.0 | Seconds of waiting, in all, before a call whose stream broke mid-answer (an overload, an API error, a stalled read) fails; it is sent again after 1, 2, 4, 8, 16, 32 s, then every 60 s. 0 sends it once only |
 
 ## Provider Interface
 

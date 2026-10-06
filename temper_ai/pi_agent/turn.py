@@ -40,7 +40,12 @@ from temper_ai.pi_agent.box import (
     BoxSpec,
     WorkerBox,
     check_session,
-    file_sha256,
+)
+from temper_ai.pi_agent.member_tree import (
+    MemberLink,
+    member_entry,
+    member_file_sha256,
+    read_member_text,
 )
 from temper_ai.pi_agent.rpc import RpcError
 
@@ -214,10 +219,15 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         if req.first_start:
             _ok(rpc.command("prompt", COMMAND_TIMEOUT, message=f"/identity {req.spec.role}"),
                 "identity")
-        state_file = pdir / "state" / Path(STATE_FILE).name
         _ok(rpc.command("prompt", COMMAND_TIMEOUT, message="/temper-box-state"), "box state")
-        box_state = json.loads(state_file.read_text(encoding="utf-8"))
-        notebook = file_sha256(pdir / "memory" / "identities" / req.spec.role / "notebook.md")
+        # Files under the participant's folder are the member's to write: read no-follow
+        # (SW-51). A link is refused; a notebook that is one has no digest, so the role check
+        # fails rather than read through it.
+        try:
+            box_state = json.loads(read_member_text(pdir, f"state/{Path(STATE_FILE).name}"))
+        except MemberLink as exc:
+            raise TurnFailure("member_link_refused", str(exc)) from None
+        notebook = member_file_sha256(pdir, f"memory/identities/{req.spec.role}/notebook.md")
         report.checks["role"] = _check_role(box_state, req.spec, notebook)
         report.checks["add_ons"] = _check_add_ons(box, req.spec, box_state)
         if ui_refused:
@@ -325,10 +335,9 @@ def _rewind(rpc: Any, pdir: Path, session: dict) -> dict:
     """Move the session's active branch back to its settle point (same file, no model call)
     and check Pi reports exactly that leaf on a settled branch."""
     target = str(session["settle_point"])
-    out = pdir / "state" / "box-rewind.json"
     _ok(rpc.command("prompt", COMMAND_TIMEOUT, message=f"/temper-box-rewind {target}"), "rewind")
-    try:
-        got = json.loads(out.read_text(encoding="utf-8"))
+    try:  # no-follow (SW-51): a link there is refused like a missing answer
+        got = json.loads(read_member_text(pdir, "state/box-rewind.json"))
     except (OSError, ValueError):
         got = {}
     if got.get("cancelled") is not False or got.get("error") or got.get("leaf_id") != target \
@@ -448,12 +457,12 @@ def _check_add_ons(box: Any, spec: BoxSpec, state: dict) -> dict:
 def _wait_settled(rpc: Any, rid: str, mapper: PiEventMapper, timeout: float,
                   cancel: threading.Event | None, pdir: Path) -> None:
     deadline = time.monotonic() + timeout
-    blocked = pdir / "state" / "box-blocked.json"
     answered = False
     while True:
         if cancel is not None and cancel.is_set():
             raise TurnFailure("cancelled", "the run was cancelled during the turn", True)
-        if blocked.exists():
+        # anything there, a link too (never followed, SW-51), means the worker blocked it
+        if member_entry(pdir, "state/box-blocked.json") != "missing":
             raise TurnFailure("box_blocked_prompt",
                               "the worker refused the prompt before any model call")
         if answered and mapper.settled:

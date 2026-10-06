@@ -18,6 +18,8 @@ Fixed rules, whatever the files say:
 - TEMPER_RUN_CONTAINER is always set by the spawner (the box's own name).
 - The GitHub app's keys (integrations.github.secret.SERVER_ONLY) can never be
   listed: loading refuses them.
+- Nor can the Pi switch and the Pi box config (``PI_ONLY``), and an inheriting box
+  drops them too: Pi steps never run in a run box (M4 ADR-M4-05, SW-42).
 - A name that holds a secret (database URL, secret key, a *_KEY, *_TOKEN,
   *_SECRET, *_PASSWORD) can be listed for the box's process only, never with
   ``agent_tools: true``.
@@ -48,6 +50,11 @@ MODE_INHERIT = "inherit"
 
 #: Always set by the spawner to the box's own container name.
 RUN_CONTAINER_ENV = "TEMPER_RUN_CONTAINER"
+
+#: The Pi switch and the Pi box config (M4 ADR-M4-05, SW-42): Pi steps never run in a run box,
+#: so a box never gets them, listed or inherited, and with them no way to the Pi runtime, the
+#: logins or the role folders the box config names.
+PI_ONLY = frozenset({"TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG"})
 
 #: A run's GitHub-token key (api/run_tokens.py) is for the run's own process only. It is put in
 #: no environment today; should a later way of handing keys to the box ever put it in the box's
@@ -141,6 +148,10 @@ def _groups(path: Path) -> list[tuple[list[str], bool]]:
                 raise BoxEnvError(
                     f"{where}: {name} stays in the server and can never be listed "
                     "(integrations.github.secret.SERVER_ONLY)")
+            if name in PI_ONLY:
+                raise BoxEnvError(
+                    f"{where}: {name} is Pi's own setting and can never be listed: Pi steps "
+                    "never run in a run box (docs/pi-agent.md)")
             if agent_tools and looks_secret(name):
                 raise BoxEnvError(
                     f"{where}: {name} holds a secret: list it without agent_tools "

@@ -6,9 +6,11 @@ A `strategy: team` stage ([pi-agent.md](pi-agent.md), "A team stage") runs as on
 ([pi-team-messages.md](pi-team-messages.md)) to Architecture's rules (R2 B7–B16, PARK P1/P2,
 the T4T5 bindings, `pi-agent-proofs/M1/answer-1.md`).
 
-Everything is behind `TEMPER_PI_AGENT` (default off). With it off, a team stage is refused
-at load ("Unknown strategy: 'team'") and nothing here is imported. In external mode the run
-box needs the switch too.
+Everything is behind `TEMPER_PI_AGENT` (default off). With it off, a new run of a team stage
+is refused at load ("Unknown strategy: 'team'") and nothing here is imported; a team run
+that was parked waits instead, "Pi switched off", until the switch is back on (M4 SW-32,
+[pi-agent.md](pi-agent.md)). A run box never gets the switch (M4 SW-42,
+[boxes.md](boxes.md)): Pi steps are to run only in the Pi lane, which isn't built yet.
 
 ## Starting
 
@@ -24,8 +26,12 @@ turns ran (outcome `failed`). The goal comes from the run's filled inputs, so a 
 `default:` counts (docs/reference/workflow-inputs.md).
 
 Then the team opens (`Team.open`, which refuses reserved member names again as a backstop),
-each member gets its own git copy of the project, and the leader is sent the goal. A team
-node may be a workflow's first node.
+each member gets its own snapshot of its role folder (M4 SW-25, [pi-agent.md](pi-agent.md)
+"The worker box"), each member gets its own git copy of the project, and the leader is sent
+the goal. A refused snapshot fails the node before any turn: "the team can't open: member
+<m>'s role snapshot was refused: <why>"; nothing is on record, so the next attempt copies
+afresh. A database whose `pi_` tables Pi doesn't know fails it before anything: "Pi
+refused this database: <why>" (M4 SW-13). A team node may be a workflow's first node.
 
 **Project copies** (`ProjectCopies`): each member works on a clone of the run's workspace,
 committed content only, in its own folder. The copies' git data is kept outside every
@@ -34,7 +40,10 @@ ignored files (`.env`) are never copied; a workspace with uncommitted changes is
 with the reason. The copies are separate, but the project is shared: Temper moves every
 reviewer's copy to the leader's review commit. That reopens A7's shared-file side channel
 (the leader can pass anything to the reviewers through the files it commits, outside the
-message rules), which the first slice accepts.
+message rules), which the first slice accepts. Every git step checks the member's working
+folder without following links and refuses one that is a link ("the member's working folder
+<path> is a link; Temper does not follow links in a member's folder", M4 SW-51): git would
+follow it, into `/etc` or another member's copy.
 
 ## A round
 
@@ -155,7 +164,9 @@ failed or cut-off turn and stays failed.
 A cancelled run's team is ended again later if the process died between ending the run row
 and ending its team (`runner/parked.py` `_end_pi_teams`, `end_cancelled_pi_teams`): when a
 team opens, at start-up (`carry_on_at_startup`) and in the trim sweep. Ending is re-runnable,
-so its queued and held messages are always marked undelivered in the end.
+so its queued and held messages are always marked undelivered in the end. A run cancelled
+while the Pi switch is off ends at once, but nothing of Pi is loaded to end its team: the
+team's rows end at the first sweep once the switch is back on (M4 SW-09, T4T5 G-a).
 
 ## The run view
 
@@ -181,7 +192,11 @@ server: done, P1 counts while paused, P2 two pauses, failed team and stage row, 
 through restarts, input defaults at start, resume and fork, bad configs at resume and fork,
 G-a sweeps, the run view). Every team test ends with `check_invariants` (I1–I8 plus the act
 rules) through an autouse teardown. Tests are named by the R2 rule they prove
-(`test_b9_...` to `test_b16_...`). Run them on SQLite and on the Postgres tier:
+(`test_b9_...` to `test_b16_...`), or by the M4 switch-on item (`test_sw..._`):
+`pi_team/test_schema_version.py` (SW-12, SW-13), `pi_team/test_role_snapshots.py` (SW-25),
+`tests/test_pi_agent/test_member_tree.py` (SW-25, SW-51, SW-27), the `test_sw51_` project
+copy tests (SW-51) and the `test_sw09_`/`test_sw32_` workflow tests (SW-09, SW-32). Run
+them on SQLite and on the Postgres tier:
 
 ```bash
 uv run pytest tests/test_runner/pi_team tests/test_runner/pi_parking tests/test_pi_agent
@@ -190,7 +205,9 @@ TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/t
 
 ## Not built yet
 
-`edges` (refused at run start and again at the team node, B7), obligations, unanimous mode,
-`fresh_each_round`, `continue_from`, parallel member turns, a notebook-write tool or
+`edges` (refused at run start and again at the team node, B7), obligations, and, each
+refused with a plain sentence (M4 SW-04, [pi-agent.md](pi-agent.md) "A team stage"):
+unanimous mode, `fresh_each_round`, `continue_from`, private children, parallel member
+turns; a notebook-write tool or
 sending lessons home (M3), the Team page itself (Frontend's; its API is built:
 [pi-team-api.md](pi-team-api.md)), and switching it on anywhere but a private test copy.

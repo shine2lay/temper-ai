@@ -18,6 +18,12 @@ and goes on from its own record. This module carries such a run on, or ends it:
 
 A parked run never expires, never carries on by itself and never starts a new run. The
 start-up pick-up (runner/pickup.py) leaves it alone whatever its age: only an answer moves it.
+
+Only Pi workflows park, so every parked run is a Pi run. While the Pi switch is off it waits
+(M4 ADR-M4-05, SW-32): no carry-on starts it, since its Pi steps can't load ("Unknown strategy
+'team'"); an answer is kept, Resume is refused with :data:`PI_SWITCHED_OFF`, and the run page
+says "Pi switched off". Once the switch is back on, the next carry-on (start-up, an answer,
+Resume) carries it on as usual.
 """
 
 from __future__ import annotations
@@ -42,6 +48,11 @@ CANCEL_MESSAGE = "Workflow cancelled by user"
 # A claimed attempt's next attempt starts within moments (a thread, or a queued box row). A
 # claim older than this with nothing after it is one whose start was lost: Resume may retry.
 CLAIM_STARTS_WITHIN = timedelta(minutes=2)
+
+#: What a parked run says while the Pi switch is off (SW-32): to the owner who answers it, to
+#: Resume, and on the run page.
+PI_SWITCHED_OFF = ("Pi switched off: this run waits, with any answer kept, and carries on once "
+                   "the Pi switch (TEMPER_PI_AGENT) is back on")
 
 
 class AlreadyCarriedOn(Exception):  # noqa: N818 - a refusal, said as a fact
@@ -80,6 +91,24 @@ def being_carried_on(execution_id: str) -> bool:
 def _note(attempt: dict) -> dict | None:
     note = (attempt.get("data") or {}).get("parked")
     return note if isinstance(note, dict) else None
+
+
+def pi_switched_off() -> bool:
+    """Whether parked runs wait for the Pi switch here (SW-32): Pi's steps aren't loaded in
+    this process, because the switch (``TEMPER_PI_AGENT``, read once, when ``temper_ai.agent``
+    is first imported) was off. Judged by the loaded ``pi`` agent type, the switch's effect
+    here, not by the setting itself. Every parked run is a Pi run, and its Pi steps can't load
+    here, so carrying it on would only fail it."""
+    from temper_ai.agent import AGENT_TYPES
+    from temper_ai.pi_agent import AGENT_TYPE
+
+    return AGENT_TYPE not in AGENT_TYPES
+
+
+def waits_for_switch(attempt: dict | None) -> bool:
+    """Whether this attempt -- a run's latest -- is parked and waiting for the Pi switch."""
+    return (attempt is not None and attempt.get("status") == WAITING
+            and _note(attempt) is not None and pi_switched_off())
 
 
 def parked_waits(attempt: dict) -> list[str]:
@@ -138,6 +167,10 @@ def carry_on(execution_id: str, *, start: Callable[[str], Any], by: str) -> bool
     if answer is None:
         return False
     path = (answer.get("data") or {}).get("gate_path")
+    if pi_switched_off():
+        logger.info("Run %s: answered at '%s', but Pi is switched off: it waits (%s)",
+                    execution_id, path, by)
+        return False
     try:
         start(execution_id)
     except Exception as exc:  # noqa: BLE001 - another asker won, or it could not start

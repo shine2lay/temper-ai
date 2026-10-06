@@ -54,6 +54,19 @@ def test_the_github_app_s_keys_can_never_be_listed(tmp_path, name):
         load_box_env(tmp_path)
 
 
+@pytest.mark.parametrize("name", ["TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG"])
+@pytest.mark.parametrize("where", ["tracked", "local"])
+def test_the_pi_switch_and_box_config_can_never_be_listed(tmp_path, name, where):
+    """M4 SW-42: Pi steps never run in a run box, so neither file may list Pi's own settings."""
+    group = f"box_env:\n  - names: [{name}]\n    why: tempting\n"
+    if where == "tracked":
+        _write(tmp_path, group)
+    else:
+        _write(tmp_path, BASIC, local=group)
+    with pytest.raises(BoxEnvError, match=f"{name} is Pi's own setting and can never be listed"):
+        load_box_env(tmp_path)
+
+
 @pytest.mark.parametrize("name", ["TEMPER_DATABASE_URL", "TEMPER_SECRET_KEY", "SLACK_BOT_TOKEN",
                                   "PENPOT_AGENT_PASSWORD", "OPENAI_API_KEY", "LINEAR_CLIENT_SECRET"])
 def test_a_secret_is_never_for_agent_tools(tmp_path, name):
@@ -109,7 +122,9 @@ def test_the_committed_list_loads_and_drops_what_only_the_server_reads():
     for dropped in ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "TELEGRAM_BOT_TOKEN",
                     "GITHUB_APP_WEBHOOK_SECRET", "LINEAR_WEBHOOK_SECRET", "NOTION_WEBHOOK_SECRET",
                     "TEMPER_SLACK_TEST_TOKEN", "INTERNAL_API_TOKEN", "TEMPER_API_TOKENS_FILE",
-                    "TEMPER_SPAWNER", "TEMPER_EXECUTION_MODE"):
+                    "TEMPER_SPAWNER", "TEMPER_EXECUTION_MODE",
+                    # M4 SW-42: Pi steps never run in a run box
+                    "TEMPER_PI_AGENT", "TEMPER_PI_BOX_CONFIG"):
         assert not env.allows(dropped), dropped
     assert {"PATH", "HOME", "WORKSPACE_DIR", "TEMPER_API"} <= env.agent_tools
     assert not {"TEMPER_DATABASE_URL", "TEMPER_SECRET_KEY"} & env.agent_tools

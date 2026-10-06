@@ -42,7 +42,6 @@ import hashlib
 import json
 import logging
 import re
-import shutil
 import time
 import uuid
 from pathlib import Path
@@ -58,11 +57,17 @@ from temper_ai.pi_agent.box import (
     BoxConfig,
     BoxError,
     BoxSpec,
+    session_started,
     stop_leftover_box,
     tree_sha256,
 )
 from temper_ai.pi_agent.inbox import render_batch
-from temper_ai.pi_agent.ledger import Ledger, LedgerConflict, TakeoverRefused
+from temper_ai.pi_agent.ledger import (
+    Ledger,
+    LedgerConflict,
+    LedgerLayoutError,
+    TakeoverRefused,
+)
 from temper_ai.pi_agent.member import (
     DEFAULT_TOOLS,
     add_on_names,
@@ -70,6 +75,13 @@ from temper_ai.pi_agent.member import (
     launched_tools,
     settings,
     usage_limit,
+)
+from temper_ai.pi_agent.member_tree import (
+    MemberLink,
+    SnapshotRefused,
+    member_entry,
+    replace_snapshot,
+    write_member_file,
 )
 from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait, wait_row
 from temper_ai.pi_agent.search_tools import search_tool_problems
@@ -181,19 +193,24 @@ class PiHost(AgentABC):
             return self._fail("; ".join(missing), started)
         self.box = box
         self.ledger = Ledger(get_database().engine)
-        self.ledger.ensure()
+        try:
+            self.ledger.ensure()
+        except LedgerLayoutError as exc:  # a layout this build doesn't know (SW-13)
+            return self._fail(f"Pi refused this database: {exc}", started)
         pin = self._pin(box)
         root = Path(box.state_root) / self.run_id / _slug(self.host_path)
         part, created = self.ledger.attach_participant(
             self.run_id, self.host_path, cfg["role"], role=cfg["role"], session_root=str(root),
             pin=pin, attempt_id=self.attempt_id)
         pdir = Path(part["session_dir"]).parent
-        if created:
-            self._prepare_participant(pdir, input_data)
-        elif part["pin"] != pin:
+        if not created and part["pin"] != pin:
             changed = changed_keys(pin, part["pin"])
             return self._fail("the Pi step's settings changed since its conversation started ("
                               + ", ".join(changed) + "); refusing to reopen it", started)
+        try:
+            self._prepare_participant(pdir, input_data, part)
+        except SnapshotRefused as exc:
+            return self._fail(f"the Pi step's role snapshot was refused: {exc}", started)
         self.participant_id = part["participant_id"]
         self.pdir = pdir
         message = cfg.get("message") or "{{ task }}"
@@ -292,7 +309,7 @@ class PiHost(AgentABC):
                           cancel_event=self.ctx.cancel_event,
                           # The role is bound once, in the session's first start; later
                           # starts reopen that session and check the binding is still there.
-                          first_start=not any((self.pdir / "sessions").glob("*.jsonl")),
+                          first_start=not session_started(self.pdir),
                           rewind_allowed=self._owner_decided_before(turn))
         runner = type(self).turn_runner or run_turn
         report = runner(self.box, req, self.ledger)
@@ -466,8 +483,9 @@ class PiHost(AgentABC):
     def _pin(self, box: BoxConfig) -> dict:
         return pin_for(box, self.config, workflow=self.ctx.workflow_name)
 
-    def _prepare_participant(self, pdir: Path, input_data: dict) -> None:
-        prepare_participant(self.box, pdir, self.config, input_data)
+    def _prepare_participant(self, pdir: Path, input_data: dict, part: dict) -> None:
+        prepare_participant(self.box, pdir, self.config, input_data, ledger=self.ledger,
+                            participant=part)
 
     def _last_error(self) -> str:
         turns = self.ledger.turns_of(self.participant_id)
@@ -540,20 +558,42 @@ def config_digest(cfg: dict) -> str:
                                      default=_plain).encode()).hexdigest()
 
 
-def prepare_participant(box: BoxConfig, pdir: Path, cfg: dict, values: dict) -> None:
-    """Once per participant: the role's private snapshot and the working files."""
+def prepare_participant(box: BoxConfig, pdir: Path, cfg: dict, values: dict, *,
+                        ledger: Ledger, participant: dict) -> str | None:
+    """Before the participant's first turn: its private snapshot of the role folder and its
+    working files (M4 ADR-M4-08, SW-25). Returns the snapshot's digest, or None when there was
+    nothing to do.
+
+    Done on every attach until the snapshot's digest is on the participant row, and recorded
+    last: a crash before that leaves nothing the next attempt reuses -- a temporary copy, or a
+    snapshot without its digest, is removed and the snapshot taken afresh (no turn runs before
+    the digest is recorded). Once recorded the folder is the member's and is never touched
+    again; so is the folder of a participant that already had turns (a row from before the
+    digest). The snapshot follows no link (:func:`member_tree.take_snapshot`). Raises
+    :class:`SnapshotRefused` with the plain problem."""
+    if participant.get("snapshot_sha256") or ledger.turns_of(participant["participant_id"]):
+        return None
     role = cfg["role"]
     src = Path(box.identities_dir) / role
     dst = pdir / "memory" / "identities" / role
-    if not dst.exists():
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst, symlinks=False)
-    work = pdir / "workspace"
-    work.mkdir(parents=True, exist_ok=True)
-    for name, template in (cfg.get("workspace_files") or {}).items():
-        target = work / name
-        if not target.exists():
-            target.write_text(_jinja(template, values), encoding="utf-8")
+    digest = replace_snapshot(src, dst, what=f"role folder {role!r}")
+    try:
+        kind = member_entry(pdir, "workspace")
+        if kind == "missing":
+            (pdir / "workspace").mkdir()
+        elif kind != "dir":
+            raise SnapshotRefused(f"the participant's working folder {pdir / 'workspace'} is "
+                                  "not a folder (a link or a file); Temper won't write into it")
+        for name, template in (cfg.get("workspace_files") or {}).items():
+            write_member_file(pdir, f"workspace/{name}", _jinja(template, values))
+    except MemberLink as exc:
+        raise SnapshotRefused(str(exc)) from None
+    kept = ledger.record_snapshot(participant["participant_id"], digest)
+    if kept != digest:
+        raise SnapshotRefused(f"the role folder {role!r} changed while another attempt copied it "
+                              "too; the snapshot on record is not this copy. Start the step "
+                              "again once nothing is writing to the role folder")
+    return digest
 
 
 def changed_keys(pin: dict, stored: dict) -> list[str]:

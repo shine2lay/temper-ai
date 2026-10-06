@@ -905,6 +905,11 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     if not workflow_name:
         raise HTTPException(status_code=400, detail="Cannot determine workflow name. Provide 'workflow' in request body.")
 
+    # A parked run is a Pi run: while the Pi switch is off it waits, refused plainly here
+    # before loading its workflow could say "Unknown strategy 'team'" (SW-32).
+    if pi_parked.pi_switched_off() and pi_parked.parked_attempt(execution_id) is not None:
+        raise HTTPException(status_code=409, detail=pi_parked.PI_SWITCHED_OFF)
+
     # Load current workflow config
     try:
         nodes, config = _state().graph_loader.load_workflow(workflow_name)
@@ -1341,9 +1346,16 @@ def approve_wait(execution_id: str, node_name: str, body: GateApproval, caller: 
     reply = _approval_reply(execution_id, {**(after or event), "status": APPROVED,
                                            "data": {**(event.get("data") or {}), **decided}})
     if parked is not None or carried:
-        carries_on = carried or _carried_on_elsewhere(execution_id)
+        waits = not carried and pi_parked.waits_for_switch(
+            _find_latest_workflow_event(execution_id))
+        carries_on = carried or (not waits and _carried_on_elsewhere(execution_id))
         reply["carries_on"] = carries_on
-        if not carries_on and pi_parked.parked_attempt(execution_id) is not None:
+        if waits:
+            # The Pi switch is off: the answer is kept and the run carries on once the switch
+            # is back on; Resume would be refused meanwhile (SW-32).
+            reply.update(needs_resume=False, pi_switched_off=True,
+                         message=pi_parked.PI_SWITCHED_OFF)
+        elif not carries_on and pi_parked.parked_attempt(execution_id) is not None:
             # It could not be started: the answer is kept, and Resume carries it on.
             reply.update(needs_resume=True, message=NEEDS_RESUME)
     else:

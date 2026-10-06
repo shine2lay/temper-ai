@@ -124,13 +124,17 @@ _LEDGER: dict[str, Any] = {}
 def _ledger() -> Any:
     """The team ledger on the server's database, its tables made once."""
     from temper_ai.database import get_database
-    from temper_ai.pi_agent.ledger import Ledger
+    from temper_ai.pi_agent.ledger import Ledger, LedgerLayoutError
 
     engine = get_database().engine
     held = _LEDGER.get("ledger")
     if held is None or held.engine is not engine:
         held = Ledger(engine)
-        held.ensure()
+        try:
+            held.ensure()
+        except LedgerLayoutError as exc:  # a layout this build doesn't know (SW-13)
+            raise HTTPException(status_code=503,
+                                detail=f"Pi refused this database: {exc}") from None
         _LEDGER["ledger"] = held
     return held
 

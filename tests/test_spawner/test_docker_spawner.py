@@ -165,6 +165,18 @@ class TestRunContainer:
         _spawner(docker, str(workspace)).spawn("exec-1")
         assert not any(e.startswith("GITHUB_APP_PRIVATE_KEY=") for e in _envs(_run_cmd(docker)))
 
+    @pytest.mark.parametrize("mode", ["list", "inherit"])
+    def test_never_gets_the_pi_switch_or_box_config(self, workspace, monkeypatch, mode):
+        # M4 SW-42: Pi steps never run in a run box, so neither name reaches one -- not from
+        # the list (it can't hold them) and not when inheriting the worker's environment.
+        monkeypatch.setenv("TEMPER_BOX_ENV", mode)
+        info = json.loads(_inspect_json())[0]
+        info["Config"]["Env"] = ["PATH=/usr/bin", "TEMPER_PI_AGENT=1",
+                                 "TEMPER_PI_BOX_CONFIG=/home/x/pi/box.json"]
+        docker = FakeDocker(answers={"inspect": [(0, json.dumps([info]), "")]})
+        _spawner(docker, str(workspace)).spawn("exec-1")
+        assert not any(e.startswith("TEMPER_PI_") for e in _envs(_run_cmd(docker)))
+
     def test_never_gets_the_docker_socket(self, workspace):
         docker = FakeDocker(answers={"inspect": [(0, _inspect_json(), "")]})
         _spawner(docker, str(workspace)).spawn("exec-1")

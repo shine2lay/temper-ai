@@ -21,11 +21,15 @@ Proven here, on top of pi_team/test_leader_loop.py's unit tests of the loop itse
   fresh start, after a resume and after a fork; a resume or a fork with a bad config fails red
   before any member is set up (R2 B7, B8, T4T5 N3).
 - G-a: a process that dies between ending a cancelled run's row and ending its team leaves the
-  team's messages for the next sweep, which records them undelivered.
+  team's messages for the next sweep, which records them undelivered; a cancel while the Pi
+  switch is off leaves the team for the first sweep after it is back on (M4 SW-09).
+- The Pi switch going off while a team run is parked (M4 SW-32): the run waits, saying "Pi
+  switched off", and never fails with "Unknown strategy 'team'"; back on, it carries on.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import inspect
 from datetime import datetime
@@ -838,4 +842,112 @@ def test_g_a_a_crash_between_ending_the_run_and_ending_its_team_is_swept_up_late
     assert (wait["wait_id"], wait["state"]) == (ids["wait"], "cancelled")
     assert {(p["state"], p["ended_reason"]) for p in tr.led.participants_of(eid, ts.HOST)} == {
         ("ended", "run_cancelled")}
+    ts.check_invariants(tr.led, eid)
+
+
+# --- the Pi switch goes off (M4 ADR-M4-05: SW-09, SW-32) --------------------------------------
+
+
+@contextlib.contextmanager
+def switched_off(monkeypatch):
+    """The server as it is after a restart with the Pi switch off: no ``TEMPER_PI_AGENT``, so
+    no ``team`` strategy and no ``pi`` agent type. Leaving the block switches it back on."""
+    from temper_ai.agent import AGENT_TYPES
+    from temper_ai.pi_agent import AGENT_TYPE, SWITCH_ENV
+    from temper_ai.pi_agent.team import STRATEGY
+    from temper_ai.stage import topology
+
+    with monkeypatch.context() as m:
+        m.delenv(SWITCH_ENV, raising=False)
+        for registry in (topology._GENERATORS, topology._VALIDATORS, topology._RUN_START_CHECKS):
+            if STRATEGY in registry:
+                m.delitem(registry, STRATEGY)
+        if AGENT_TYPE in AGENT_TYPES:
+            m.delitem(AGENT_TYPES, AGENT_TYPE)
+        yield
+
+
+@pytest.mark.parametrize("back_on", ["resume", "start-up"])
+def test_sw32_a_team_run_parked_when_pi_goes_off_waits_visibly_and_carries_on_once_back_on(
+        tr, monkeypatch, back_on):
+    """M4 SW-32: park; the switch goes off; the owner answers. The answer is kept and the run
+    waits, never failing with "Unknown strategy 'team'" (what loading it now says): the
+    answer, start-up and the worker's reaper each leave it put, and the answer's reply, the run
+    page and Resume's refusal say "Pi switched off". Switched back on, Resume or the next
+    start-up carries it on with the kept answer, and no finished turn runs again."""
+    from temper_ai.runner import parked
+
+    install(tr, tt.team_stage(strategy_config=PAUSE_1), outputs=OUTPUTS)
+    script(tr.led, ["keep_going", "done"])
+    eid = start(tr, {"goal": GOAL})
+    row, gate = parked_at(tr, eid, 1, "sw32_" + back_on)
+
+    with switched_off(monkeypatch):
+        with pytest.raises(Exception, match="Unknown strategy"):
+            tr.state.graph_loader.load_workflow("team_wf")
+        reply = answer(tr, eid, row, gate, "continue")
+        assert (reply["carries_on"], reply["needs_resume"], reply["pi_switched_off"]) == (
+            False, False, True)
+        assert reply["message"] == parked.PI_SWITCHED_OFF
+        refused = tr.client.post(f"/api/runs/{eid}/resume", json={})
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["detail"] == parked.PI_SWITCHED_OFF
+        assert parked.carry_on_at_startup() == []
+        assert parked.carry_on(eid, start=parked.queue_resume, by="reaper") is False
+        seen = pw.detail(tr.client, eid)
+        assert seen["status"] == "waiting" and seen["pi_switched_off"] == parked.PI_SWITCHED_OFF
+        assert [a["status"] for a in pw.attempts(eid)] == ["waiting"]
+        assert prompts() == {"design": 2, "frontend": 1, "qa": 1}
+
+    assert "pi_switched_off" not in pw.detail(tr.client, eid)
+    if back_on == "resume":
+        r = tr.client.post(f"/api/runs/{eid}/resume", json={})
+        assert r.status_code == 200, r.text
+    else:
+        assert parked.carry_on_at_startup() == [eid]
+    attempts = pw.wait_ended(eid, 2)
+    assert [a["status"] for a in attempts] == ["parked", "completed"], stage_error(eid, "build")
+    assert prompts() == {"design": 4, "frontend": 2, "qa": 2}
+    (decided,) = team_waits(tr, eid)
+    assert decided["wait_id"] == row["wait_id"] and decided["decision"]["answer"] == "continue"
+    assert attempts[-1]["data"]["workflow_output"]["decision"] == "done"
+
+
+def test_sw09_a_cancel_while_pi_is_switched_off_leaves_the_team_for_the_sweep_once_back_on(
+        tr, monkeypatch):
+    """M4 SW-09 (T4T5 G-a, also while the switch is off): a parked run cancelled while the
+    switch is off ends at once, but its team is left exactly as it was -- nothing Pi runs while
+    off, and no sweep touches it then. Once the switch is back on, start-up's sweep ends the
+    team (held and queued messages recorded undelivered, never dropped), and sweeping again
+    changes nothing."""
+    from temper_ai.runner import parked
+
+    c = tr.client
+    eid = sup.start(c, "pw_before_pi", tr.ws)
+    pw.wait_parked(tr.state, eid)
+    pw.open_gate(c, eid, "check")
+    ids = _parked_team_rows(tr, eid)
+    before = ts.rows(tr.led, eid)
+
+    with switched_off(monkeypatch):
+        assert parked.cancel_parked(eid, "not this one") is True
+        assert [a["status"] for a in pw.attempts(eid)] == ["cancelled"]
+        assert parked.carry_on_at_startup() == []
+        _sweep_in_trim(tr)
+        assert ts.rows(tr.led, eid) == before
+
+    assert parked.carry_on_at_startup() == []
+    after = ts.rows(tr.led, eid)
+    msg = {m["message_id"]: m for m in after["messages"]}
+    assert (msg[ids["held"]]["state"], msg[ids["held"]]["undelivered_reason"]) == (
+        "undelivered", "turn_cancelled")
+    assert (msg[ids["queued"]]["state"], msg[ids["queued"]]["undelivered_reason"]) == (
+        "undelivered", "run_cancelled")
+    (wait,) = after["waits"]
+    assert (wait["wait_id"], wait["state"]) == (ids["wait"], "cancelled")
+    assert {(p["state"], p["ended_reason"]) for p in tr.led.participants_of(eid, ts.HOST)} == {
+        ("ended", "run_cancelled")}
+    _sweep_in_trim(tr)
+    assert parked.carry_on_at_startup() == []
+    assert ts.rows(tr.led, eid) == after
     ts.check_invariants(tr.led, eid)

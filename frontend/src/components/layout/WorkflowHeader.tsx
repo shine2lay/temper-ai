@@ -293,6 +293,17 @@ export function WorkflowHeader() {
             waiting on you · {workflow.waiting_for}
           </span>
         )}
+        {/* A parked Pi run while the Pi switch is off: it waits, with any answer
+            kept, and carries on once the switch is back on. The server says it
+            in words (runner/parked.py); Resume is refused meanwhile. */}
+        {workflow?.pi_switched_off && (
+          <span
+            className="text-[11px] px-1.5 py-0.5 rounded border border-zinc-500/40 bg-zinc-500/15 text-zinc-900 dark:text-zinc-300 cursor-help"
+            title={workflow.pi_switched_off}
+          >
+            Pi switched off
+          </span>
+        )}
         {/* Waiting for the model allowance to reopen. A wait with a known end
             and nothing for anybody to do, so it is said apart from "waiting on
             you" — and never as "quiet", which is how it used to read. */}

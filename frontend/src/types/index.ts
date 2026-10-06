@@ -73,6 +73,9 @@ export interface WorkflowExecution {
   parked?: boolean;
   /** When it expects to carry on, ISO. */
   parked_until?: string | null;
+  /** A parked Pi run while the Pi switch is off, in words: it waits, with any
+   *  answer kept, and carries on once the switch is back on (runner/parked.py). */
+  pi_switched_off?: string;
 }
 
 /** One attempt of a run: when it ran, how it ended, and who started it again. */

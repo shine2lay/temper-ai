@@ -70,6 +70,9 @@ export interface GateApprovalResult {
   repeated?: boolean;
   /** The run is not running: the answer is kept, and Resume carries on with it. */
   needs_resume?: boolean;
+  /** A Pi run while the Pi switch is off: the answer is kept, and the run
+   *  carries on once the switch is back on (``message`` says so). */
+  pi_switched_off?: boolean;
   message?: string;
 }
 

@@ -7,7 +7,20 @@ none of their code is imported, no strategy has a run-start check, no `pi_` tabl
 and no route, page or event changes.
 
 Switch: the environment setting `TEMPER_PI_AGENT=1` (also `true`, `on`, `yes`), read when
-`temper_ai.agent` is first imported. Box config: `TEMPER_PI_BOX_CONFIG=<json file>`.
+`temper_ai.agent` is first imported. Box config: `TEMPER_PI_BOX_CONFIG=<json file>`. Both
+are the server's and the worker's own settings: a run box never gets either, and
+`configs/boxes/env.yaml` can't list them (M4 SW-42, [boxes.md](boxes.md)).
+
+**Switching off never fails a waiting run** (M4 ADR-M4-05, SW-32). Only Pi workflows park
+([gates.md](gates.md) "Pi workflows"), so a parked run is a Pi run, and with the switch off its Pi steps
+don't exist. It waits instead of failing with "Unknown strategy 'team'": the run page's
+header shows a grey "Pi switched off" badge; an answer is kept, and the approve reply says
+"Pi switched off: this run waits, with any answer kept, and carries on once the Pi switch
+(TEMPER_PI_AGENT) is back on"; Resume answers 409 with the same sentence; nothing else
+carries it on (`runner/parked.py`, `carry_on`). Once the switch is back on, the next
+carry-on (start-up, an answer, Resume) carries it on as usual. A cancel while switched off
+ends the run at once; its team's rows end at the first sweep once the switch is back on
+(T4T5 G-a, SW-09).
 
 ## A step
 
@@ -106,6 +119,24 @@ models `LeaderMode`, `AllCommunication`, `EdgesCommunication`, `TeamSettings`). 
 sections, types and keys are refused by name; `workspace`, `lessons`, `ask_owner` and
 `conversation` are refused as "not available yet" until their runtime piece exists.
 
+The later slice's features each need their own proof before use, so asking for one is
+refused with a plain sentence, by the name a config would use for it (M4 SW-04; R2's
+`not_approved` list). In the stage's `strategy_config`:
+
+| Asked for | Refused with |
+|---|---|
+| `mode: {type: unanimous}` | `mode: unanimous mode isn't built yet; use leader` |
+| `conversation: {type: fresh_each_round}` (or just `fresh_each_round`) | `conversation: fresh_each_round isn't built yet: members keep their conversation for the whole team stage` |
+| `conversation: {continue_from: <stage>}` (two team stages continuing) | `conversation: continuing members' conversations from an earlier team stage (continue_from) isn't built yet: each team stage starts its members' conversations fresh` |
+| `private_children` (or `children`) | `private_children: private children aren't built yet: a team is the members it lists, and none of them can start a private helper` |
+| `concurrent_turns` (or `concurrency`) | `concurrent_turns: concurrent member turns aren't built yet: members take turns one at a time` |
+| `communication: {type: edges, ...}` | `communication: edges isn't built yet; use all` (below) |
+
+A member's own agent config asking for one of these (`conversation`, `continue_from`,
+`private_children`, `children`, `concurrent_turns`) is refused the same way, prefixed
+`member '<name>':`. A change to the team's settings while its run is going is refused when
+the team reopens ("team settings changed since the team started", R2 C3).
+
 **Pre-run check** (`temper_ai/pi_agent/team_check.py`, `check_team`): when a run starts,
 before any node, with no model call and no container, the loader checks every team stage
 (`GraphLoader.load_workflow(..., run_start=True)`, through the strategy's registered
@@ -147,6 +178,21 @@ and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
   the L2 proof folder `schema.md`, extended for teams in the T4T5 folder `tables.md`). One
   role = one participant = one Pi session, kept for the whole run: a later turn, a Resume
   or a restart reopens the same session.
+- The `pi_` tables carry their layout version in `pi_schema_version`, one row (M4
+  ADR-M4-07, SW-12, SW-13). Version 1 is the tables with every column built from a path or
+  a name as `Text` (`host_path`, `gate_name`, `dedupe_key`, `claim_key`, `claimed_by`,
+  `box_name`, `session_dir`; and the Team page's `request_id`), so a long node path never
+  fails a write; version 2 adds
+  `pi_participants.snapshot_sha256` (the role snapshot below). Every open (`Ledger.ensure`)
+  takes a lock -- a Postgres advisory lock, a plain one on SQLite -- makes what is missing
+  and runs the forward-only steps from the stored version up, in one transaction; a step
+  only adds, never drops or rewrites a row. Pi refuses a database, changing nothing, whose
+  stored version is newer than this Temper knows ("this database's Pi tables are at layout
+  version 3, but this Temper knows only up to version 2: a newer Temper made them; ...") or
+  that has `pi_` tables with no version ("... from a Pi build before their layout was
+  versioned, so their layout is unknown; Temper changed nothing. Use a fresh database for
+  Pi"). A Pi step then fails "Pi refused this database: <why>", a team fails red with the
+  same words before any member is set up, and the Team page's API answers 503.
 - A turn takes every message waiting for the role as one prompt and runs one worker box
   (`temper_ai/pi_agent/turn.py`). Each turn is its own agent on the run page
   (`agent.started` … `agent.completed|failed`, `executed_by: pi`) with its model calls,
@@ -209,6 +255,37 @@ and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
   extensions loaded (identity, the box probe, the route's login extension, the member's
   pinned add-ons), the role is bound (`/identity`) and the probe reports exactly that
   role, the launched tools and the private notebook snapshot.
+- The role snapshot (M4 ADR-M4-08, SW-25; `temper_ai/pi_agent/member_tree.py`): before a
+  participant's first turn its role folder (`<identities_dir>/<role>`) is copied to a
+  temporary folder next to the target (`.<role>.partial-<id>`). The source's digest before
+  the copy, after it, and the copy's must be one; if not, it copies once more, then refuses
+  ("the role folder '<role>' kept changing while Temper copied it (twice); nothing was put
+  in place. ..."). The copy is renamed into place in one step and its digest recorded on
+  the participant row (`snapshot_sha256`) last. Links are never followed: one pointing
+  inside the role folder is kept as a link; one pointing outside it refuses the snapshot,
+  naming it ("the role folder '<role>' has a link 'notes/x.md' pointing outside it
+  ('/etc/passwd'); Temper never follows links out of a role folder, ..."); anything that
+  is not a file, folder or link refuses it too. A crash mid-copy leaves nothing reusable:
+  until the digest is on the row, each attach removes any temporary folder and any copy in
+  place and copies afresh. Once recorded the snapshot is the member's for the whole run:
+  the role's real folder may change meanwhile (M1's live run: Design's did, L4-F4) without
+  reaching it. A refusal fails a Pi step "the Pi step's role snapshot was refused: ...",
+  and a team "member <m>'s role snapshot was refused: ...", before any turn.
+- Reads of what a member writes never follow a link (M4 ADR-M4-08, SW-51). The
+  participant's folder is mounted read-write in its box, so Temper reads there through
+  `member_tree` (`read_member_text`, `member_entry`, `list_member_dir`,
+  `write_member_file`), opening each path part without following links and reading only
+  regular files: the box-state and rewind answers, the notebook's digest, the session
+  folder and file, the working folder handed to git for a team's project copies, and the
+  folders a box start makes. A link there -- to `/etc`, to another member's folder,
+  anywhere -- is refused, never read (`member_link_refused`, `session_folder_not_private`,
+  or the copy's "working folder ... is a link").
+- A member's identity guidance is Temper's own (`assets/temper-box/role-section.md`,
+  written as the box's `pi-identity-role.md`; M4 SW-27, M2-roles D1): it says the box has no
+  notebook, memory_write, daily log, queue or ask-the-owner tools and asks for lessons,
+  findings and questions for the owner in the reply. A chat's own guidance, which tells the
+  role to keep notes with those tools, never reaches a box. The text sits in the pinned
+  temper-box folder, so a change to it is a settings change a reopened conversation refuses.
 - The worker's process group and container are always removed when the turn ends.
 
 ### Pi's grep and find: pinned `rg` and `fd`

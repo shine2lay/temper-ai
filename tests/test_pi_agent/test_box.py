@@ -398,6 +398,51 @@ def test_closed_boxes_leave_no_thread_behind(tmp_path, short_root):
     assert left == [], left
 
 
+@pytest.mark.parametrize("timeout", [None, 0.0], ids=["default_wait", "no_wait"])
+def test_sw11_a_close_while_a_connection_thread_is_starting_never_joins_an_unstarted_one(
+        short_root, monkeypatch, timeout):
+    """SW-11 (C7-b): the accept loop used to register a connection's thread under its lock and
+    start it only after letting go, so a close() landing in between could join a thread not yet
+    started -- "cannot join thread before it is started". Here every connection thread takes
+    0.3 s to start and the close lands in that window, waiting the usual time or not at all:
+    it never raises, and no thread is left running."""
+    from temper_ai.pi_agent import box as box_mod
+
+    starting = threading.Event()
+    made: list[threading.Thread] = []
+
+    class SlowToStart(threading.Thread):
+        def start(self):
+            if self.name.endswith("-conn"):
+                made.append(self)
+                starting.set()
+                time.sleep(0.3)
+            super().start()
+
+    class Threading:
+        Thread = SlowToStart
+
+        def __getattr__(self, name):
+            return getattr(threading, name)
+
+    monkeypatch.setattr(box_mod, "threading", Threading())
+
+    def handler(conn: socket.socket) -> None:
+        while conn.recv(64):
+            pass
+
+    server = box_mod.UnixServer(short_root / "race.sock", handler)
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.connect(str(server.path))
+    assert starting.wait(5), "the connection's thread was never made"
+    server.close(timeout)  # lands while that thread is still starting
+    client.close()
+    assert len(made) == 1 and made[0].ident is not None
+    sup.wait_for(lambda: not server.thread.is_alive() and not made[0].is_alive(), timeout=5,
+                 what="the accept and connection threads ended")
+    server.close()  # idempotent
+
+
 def test_account_ids_are_found_inside_a_jwt():
     assert jwt_account_ids(_jwt("acct-abcdef")) == ["acct-abcdef"]
     assert jwt_account_ids("not-a-jwt") == []

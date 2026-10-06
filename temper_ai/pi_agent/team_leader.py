@@ -59,6 +59,7 @@ from temper_ai.pi_agent.ledger import (
     _LOCK,
     Binding,
     Ledger,
+    LedgerLayoutError,
     TakeoverRefused,
     _fence,
     _new_id,
@@ -69,6 +70,7 @@ from temper_ai.pi_agent.ledger import (
     turns,
     waits,
 )
+from temper_ai.pi_agent.member_tree import member_entry
 from temper_ai.pi_agent.owner_waits import WaitDecided, ask_owner_for_wait
 from temper_ai.pi_agent.route import model as route_model
 from temper_ai.pi_agent.route.router import IDENTITY_CLAIMS, Refusal, content_digest
@@ -214,6 +216,22 @@ class ProjectCopies:
     def worktree(pdir: Path) -> Path:
         return Path(pdir) / "workspace"
 
+    def checked_worktree(self, pdir: Path, *, make: bool = False) -> Path:
+        """The member's working folder, checked without following links before git is given
+        it (SW-51): the member may have replaced it, and git would follow a link there -- read
+        /etc into a commit, or reset and clean another member's folder. Only a real folder is
+        used; ``make`` creates a missing one."""
+        wt = self.worktree(pdir)
+        kind = member_entry(pdir, "workspace")
+        if kind == "missing" and make:
+            wt.mkdir(parents=True, exist_ok=True)
+            kind = member_entry(pdir, "workspace")
+        if kind != "dir":
+            raise CopyError(f"the member's working folder {wt} is "
+                            + ("a link" if kind == "link" else f"not a folder ({kind})")
+                            + "; Temper does not follow links in a member's folder")
+        return wt
+
     def _g(self, args: list[str], *, git_dir: Path | None = None,
            work_tree: Path | None = None, cwd: Path | None = None) -> bytes:
         cmd = list(_GIT)
@@ -282,13 +300,13 @@ class ProjectCopies:
     def ensure(self, member: str, pdir: Path) -> str:
         """The member's copy, made once; returns its commit. A copy that exists is never reset:
         the member's work in it stays."""
-        gd, wt = self.git_dir(member), self.worktree(pdir)
+        gd = self.git_dir(member)
         head = self._head(gd)
         if head:
             return head
         rec = self.record()
         gd.parent.mkdir(parents=True, exist_ok=True)
-        wt.mkdir(parents=True, exist_ok=True)
+        wt = self.checked_worktree(pdir, make=True)
         if not (gd / "HEAD").exists():
             self._g(["init", "-q"], git_dir=gd)
         if rec.get("commit"):
@@ -304,7 +322,7 @@ class ProjectCopies:
 
     def commit_review(self, member: str, pdir: Path, act_id: str) -> str:
         """Commit the member's copy as it is, for the review ``act_id`` asked for (once)."""
-        gd, wt = self.git_dir(member), self.worktree(pdir)
+        gd, wt = self.git_dir(member), self.checked_worktree(pdir)
         tag = f"[temper-act {act_id}]"
         head = self._head(gd)
         if head and tag in self._g(["log", "-1", "--format=%B"], git_dir=gd).decode():
@@ -338,7 +356,7 @@ class ProjectCopies:
 
     def move_to(self, member: str, pdir: Path, leader: str, act_id: str, sha: str) -> None:
         """Make the member's copy exactly commit ``sha`` of the leader's copy."""
-        gd, wt = self.git_dir(member), self.worktree(pdir)
+        gd, wt = self.git_dir(member), self.checked_worktree(pdir)
         if self._head(gd) == sha and self.changes(member, pdir) == 0:
             return
         ref = f"refs/temper/review/{act_id}"
@@ -349,7 +367,7 @@ class ProjectCopies:
 
     def changes(self, member: str, pdir: Path) -> int:
         out = self._g(["status", "--porcelain", "--untracked-files=all"],
-                      git_dir=self.git_dir(member), work_tree=self.worktree(pdir))
+                      git_dir=self.git_dir(member), work_tree=self.checked_worktree(pdir))
         return len([line for line in out.decode("utf-8", "replace").splitlines() if line])
 
     def differs(self, member: str, pdir: Path, sha: str) -> str | None:
@@ -1281,7 +1299,13 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
                                       else node.name)
     trial_id = trial_id_of(context.workflow_name)
     ledger = Ledger(get_database().engine)
-    ledger.ensure()
+    try:
+        ledger.ensure()
+    except LedgerLayoutError as exc:  # SW-13: refuse a layout this build doesn't know,
+        text = f"Pi refused this database: {exc}"  # writing nothing at all
+        return NodeResult(status=Status.FAILED, output=text, error=text,
+                          duration_seconds=time.monotonic() - started,
+                          metadata={"team": {"settings": settings}})
 
     def outcome(decision: str, reason: str, **fields: Any) -> None:
         """The team's typed outcome; a record that could not be written is logged, never

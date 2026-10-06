@@ -449,6 +449,15 @@ def get_workflow_execution(execution_id: str) -> dict | None:
         "attempts": _attempts(workflow_candidates, attempt_now),
     }
     result.update(_quiet_fields(execution_id, result, events))
+    # A parked Pi run waits while the Pi switch is off (SW-32): the page says so, in words.
+    # Its latest attempt says whether it is parked (runner/resume.py's rule: newest wins).
+    from temper_ai.runner import parked as pi_parked
+
+    if pi_parked.pi_switched_off():
+        starts = [e for e in workflow_candidates if e.get("type") == "workflow.started"]
+        latest = max(starts, key=lambda e: e.get("timestamp") or "", default=None)
+        if pi_parked.waits_for_switch(latest):
+            result["pi_switched_off"] = pi_parked.PI_SWITCHED_OFF
     _clear_children_index()
     return result
 

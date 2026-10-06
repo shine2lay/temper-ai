@@ -47,16 +47,30 @@ from pathlib import Path
 from typing import Any
 
 from temper_ai.pi_agent import host_helper
+from temper_ai.pi_agent.member_tree import (
+    MemberLink,
+    list_member_dir,
+    member_entry,
+    read_member_text,
+)
 from temper_ai.pi_agent.rpc import Rpc
 from temper_ai.pi_agent.search_tools import PINS as SEARCH_PINS
 from temper_ai.pi_agent.search_tools import search_tool_problems
 
 ASSETS = Path(__file__).parent / "assets"
 PROBE_DIR = ASSETS / "temper-box"
+#: The identity guidance every member gets (M4 SW-27, M2-roles D1): Temper's own text in place
+#: of a chat's, which tells the role to keep its notebook and daily log with tools a member
+#: doesn't have. Written as the box's ``pi-identity-role.md``, the identity extension's
+#: guidance template; inside PROBE_DIR, so the conversation's pin covers it.
+MEMBER_GUIDANCE = PROBE_DIR / "role-section.md"
 CONFIG_ENV = "TEMPER_PI_BOX_CONFIG"
 CONTAINER_PYTHON = "/usr/local/bin/python3"
 WORKDIR = "/w/workspace"
 STATE_FILE = "/w/state/box-state.json"
+#: The folders a box start makes in the participant's folder (all under /w, the member's).
+MEMBER_FOLDERS = ("sessions", "workspace", "home", "tmp", "cache", "state", "observer",
+                  "memory", "memory/identities")
 BUDGET_SLACK = 2
 FAULTS = ("deny_handoff", "kill_after_prompt")
 ROLE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -337,17 +351,34 @@ def check_session(sessions_dir: Path, session_id: str, *, must_exist: bool) -> d
     active branch runs from that entry up its parents. ``settled`` is False when the branch's
     last message is not a finished assistant message (a dangling tool call or an unanswered
     prompt); ``settle_point`` is then the branch's last entry before the unfinished part --
-    where the owner's decision about the cut-off turn moves the branch back to."""
-    files = sorted(p for p in sessions_dir.iterdir()) if sessions_dir.is_dir() else []
-    mine = [p for p in files if p.is_file() and p.name.endswith(f"_{session_id}.jsonl")]
-    if [p for p in files if p not in mine] or len(mine) > 1:
+    where the owner's decision about the cut-off turn moves the branch back to.
+
+    The folder is the member's to write, so it is read without following any link (SW-51): a
+    link in it, or the folder itself being one, is refused as not private."""
+    root, rel = Path(sessions_dir).parent, Path(sessions_dir).name
+    try:
+        files = list_member_dir(root, rel)
+    except FileNotFoundError:
+        files = []
+    except MemberLink:
+        raise BoxError("session_folder_not_private", "the participant's session folder is a "
+                       "link or a file; Temper does not follow links in a member's folder") from None
+    mine = [name for name, kind in files
+            if kind == "file" and name.endswith(f"_{session_id}.jsonl")]
+    if len(files) != len(mine) or len(mine) > 1:
         raise BoxError("session_folder_not_private",
                        "the participant's session folder holds other files")
     if not mine:
         if must_exist:
             raise BoxError("session_missing", "the participant's Pi session file is missing")
         return {"exists": False, "settled": True, "messages": 0}
-    lines = mine[0].read_text(encoding="utf-8").splitlines()
+    try:
+        lines = read_member_text(root, f"{rel}/{mine[0]}").splitlines()
+    except MemberLink:  # it became a link since it was listed
+        raise BoxError("session_folder_not_private", "the participant's Pi session file is a "
+                       "link; Temper does not follow links in a member's folder") from None
+    except FileNotFoundError:
+        raise BoxError("session_missing", "the participant's Pi session file is missing") from None
     try:
         entries = [json.loads(line) for line in lines if line.strip()]
     except ValueError:
@@ -369,13 +400,25 @@ def check_session(sessions_dir: Path, session_id: str, *, must_exist: bool) -> d
         elif not pending:
             settle_point = entry.get("id")
     settled = not pending
-    return {"exists": True, "file": mine[0].name, "entries": len(entries), "messages": len(msgs),
+    return {"exists": True, "file": mine[0], "entries": len(entries), "messages": len(msgs),
             "leaf_id": branch[-1].get("id") if branch else None,
             "settle_point": settle_point, "branch_entries": len(branch),
             "last_role": last.get("role") if last else None,
             "last_stop": last.get("stopReason") if last else None, "settled": settled,
             "identity_entries": sum(1 for e in branch if e.get("type") == "custom"
                                     and e.get("customType") == "identity")}
+
+
+def session_started(pdir: Path) -> bool:
+    """Whether the participant's session folder holds a session file yet (its first start
+    binds the role), read without following links (SW-51). A link there counts as started:
+    :func:`check_session` then refuses the folder."""
+    try:
+        return any(name.endswith(".jsonl") for name, _kind in list_member_dir(pdir, "sessions"))
+    except FileNotFoundError:
+        return False
+    except MemberLink:
+        return True
 
 
 def _finished(message: dict) -> bool:
@@ -439,8 +482,12 @@ class UnixServer:
                     return
                 worker = threading.Thread(target=self._one, args=(conn,), daemon=True,
                                           name=f"pi-box-{self.path.stem}-conn")
+                # Started under the lock, before close() can see it (SW-11, C7-b): a thread
+                # registered but not yet started can't be joined ("cannot join thread before
+                # it is started"). Its handler's own clean-up waits for the lock, so it is
+                # registered before it can unregister.
+                worker.start()
                 self._conns[conn] = worker
-            worker.start()
 
     def _one(self, conn: socket.socket) -> None:
         try:
@@ -474,7 +521,7 @@ class UnixServer:
             pass
         deadline = time.monotonic() + (self.JOIN_SECONDS if timeout is None else timeout)
         for thread in (self.thread, *open_.values()):
-            if thread is not threading.current_thread():
+            if thread is not threading.current_thread() and thread.ident is not None:
                 thread.join(max(0.0, deadline - time.monotonic()))
 
 
@@ -671,9 +718,12 @@ class WorkerBox:
     # --- setup ---
 
     def _write_agent_dir(self) -> None:
-        """A fresh agent folder at every start: settings, the login command and role config."""
+        """A fresh agent folder at every start: settings, the login command and role config.
+        A link left in its place is removed as a link, never followed (SW-51)."""
         agent = self.pdir / "agent"
-        if agent.exists():
+        if os.path.islink(agent) or agent.is_file():
+            agent.unlink()
+        elif agent.exists():
             shutil.rmtree(agent)
         agent.mkdir(mode=0o700, parents=True)
 
@@ -689,9 +739,11 @@ class WorkerBox:
         if self.route.catalog:
             put("models-store.json", Path(self.route.catalog).read_bytes())
         config = Path(self.cfg.identity_config)
-        for name in ("pi-identity.json", "pi-identity-role.md"):
-            if (config / name).is_file():
-                put(name, (config / name).read_bytes())
+        if (config / "pi-identity.json").is_file():
+            put("pi-identity.json", (config / "pi-identity.json").read_bytes())
+        # Never a chat's own guidance (the identity config's pi-identity-role.md): it tells the
+        # role to use its notebook and memory_write, which a member doesn't have (SW-27).
+        put("pi-identity-role.md", MEMBER_GUIDANCE.read_bytes())
 
     def _identity_copy(self) -> Path:
         """The identity extension without its node_modules, plus a link to the runtime's
@@ -848,9 +900,16 @@ class WorkerBox:
               command: list[str] | None = None) -> Rpc:
         """Create, check and start the container; its attached stdio is the RPC channel."""
         self._check_search_tools()
-        for sub in ("sessions", "workspace", "home", "tmp", "cache", "state", "observer",
-                    "memory/identities"):
-            (self.pdir / sub).mkdir(parents=True, exist_ok=True)
+        # The participant's folder is the member's to write (mounted at /w): Temper makes,
+        # empties and removes things in it only through real folders, never a link (SW-51).
+        for sub in MEMBER_FOLDERS:
+            kind = member_entry(self.pdir, sub)
+            if kind == "missing":
+                (self.pdir / sub).mkdir(parents=True, exist_ok=True)
+            elif kind != "dir":
+                raise BoxError("member_link_refused", f"the participant's {sub} folder is "
+                               + ("a link" if kind == "link" else "not a folder")
+                               + "; Temper does not follow links in a member's folder")
         for stale in ("box-state.json", "box-blocked.json", "box-rewind.json"):
             (self.pdir / "state" / stale).unlink(missing_ok=True)
         self._write_agent_dir()

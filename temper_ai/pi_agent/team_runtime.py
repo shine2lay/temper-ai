@@ -35,7 +35,13 @@ from pathlib import Path
 from typing import Any
 
 from temper_ai.observability.event_types import EventType
-from temper_ai.pi_agent.box import TEAM_TOOL, BoxConfig, BoxSpec, stop_leftover_box
+from temper_ai.pi_agent.box import (
+    TEAM_TOOL,
+    BoxConfig,
+    BoxSpec,
+    session_started,
+    stop_leftover_box,
+)
 from temper_ai.pi_agent.host import (
     INVALID,
     _jsonable,
@@ -48,7 +54,12 @@ from temper_ai.pi_agent.host import (
     recovery_word,
 )
 from temper_ai.pi_agent.inbox import render_batch
-from temper_ai.pi_agent.ledger import Binding, Ledger, process_identity
+from temper_ai.pi_agent.ledger import (
+    Binding,
+    Ledger,
+    LedgerLayoutError,
+    process_identity,
+)
 from temper_ai.pi_agent.member import (
     add_on_names,
     config_problems,
@@ -56,6 +67,7 @@ from temper_ai.pi_agent.member import (
     settings,
     usage_limit,
 )
+from temper_ai.pi_agent.member_tree import SnapshotRefused
 from temper_ai.pi_agent.route.model import RESERVED_IDS
 from temper_ai.pi_agent.route.router import (
     POLICY_VERSION,
@@ -249,14 +261,20 @@ class Team:
         return render_batch(batch, team=True)
 
     def open(self, values: dict | None = None) -> str | None:
-        """Attach every member -- one row and one session each -- or find them again.
-        Returns a refusal text, before any turn and without writing anything, when the team
-        cannot open: bad members, or a resume under changed settings (R2 C3)."""
+        """Attach every member -- one row and one session each -- or find them again, and
+        snapshot each member's role folder until its digest is on record (SW-25).
+        Returns a refusal text, always before any turn, when the team cannot open: bad
+        members, a database Pi doesn't know (SW-13) or a resume under changed settings (R2 C3),
+        all without writing anything; or a role snapshot refused, after the rows are attached
+        but with nothing on record, so the next open copies afresh."""
         problems = self.problems()
         if problems:
             return "; ".join(problems)
         policy_for(self.communication, self.run_id)  # the router knows `all` only (B7)
-        self.ledger.ensure()
+        try:
+            self.ledger.ensure()
+        except LedgerLayoutError as exc:  # SW-13
+            return f"Pi refused this database: {exc}"
         pins = {name: self.pin(m) for name, m in self.members.items()}
         existing = {r["member"]: r for r in self.ledger.participants_of(self.run_id,
                                                                          self.host_path)}
@@ -276,10 +294,15 @@ class Team:
             self.run_id, self.host_path,
             [(name, m.config["role"], pins[name]) for name, m in self.members.items()],
             session_root=str(self.root), attempt_id=self.attempt_id)
-        for row, created in rows:
-            if created:
+        # Every attach, until each member's snapshot is on record (SW-25): a crash before that
+        # left nothing a later attempt reuses.
+        for row, _created in rows:
+            try:
                 prepare_participant(self.box, Path(row["session_dir"]).parent,
-                                    self.members[row["member"]].config, values or {})
+                                    self.members[row["member"]].config, values or {},
+                                    ledger=self.ledger, participant=row)
+            except SnapshotRefused as exc:
+                return f"member {row['member']}'s role snapshot was refused: {exc}"
         return None
 
     def resume(self) -> list[dict]:
@@ -371,7 +394,7 @@ class Team:
                           text=self.prompt_for(member, turn, batch),
                           spec=spec, agent_event_id=agent_event_id, recorder=self.recorder,
                           cancel_event=self.cancel_event,
-                          first_start=not any((pdir / "sessions").glob("*.jsonl")),
+                          first_start=not session_started(pdir),
                           rewind_allowed=owner_decided_before(self.ledger, turn))
         report = (type(self).turn_runner or run_turn)(self.box, req, self.ledger)
         worker = {**(report.worker or {}), "effective": report.effective,

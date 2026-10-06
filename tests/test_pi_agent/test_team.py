@@ -251,6 +251,67 @@ def test_edges_are_checked_but_refused_until_a_later_slice_builds_them(box):
     assert check_team(members(), left_out, inputs=GOAL, box=box) == []
 
 
+# M4 SW-04 (R2 not_approved, l3_scope.must_list_as_not_built): each later-slice feature needs
+# its own proof before use, so asking for one is refused with a plain sentence -- by the name a
+# config would use for it, for the team and for one member. Edges: the test above; a change to
+# the team's settings mid-run: tests/test_runner/pi_team/test_team_state.py test_c3_*.
+UNANIMOUS = "unanimous mode isn't built yet; use leader"
+FRESH = ("fresh_each_round isn't built yet: members keep their conversation for the whole team "
+         "stage")
+CONTINUING = ("continuing members' conversations from an earlier team stage (continue_from) "
+              "isn't built yet: each team stage starts its members' conversations fresh")
+CHILDREN = ("private children aren't built yet: a team is the members it lists, and none of them "
+            "can start a private helper")
+CONCURRENT = "concurrent member turns aren't built yet: members take turns one at a time"
+
+
+@pytest.mark.parametrize("section, value, problem", [
+    ("mode", {"type": "unanimous"}, f"mode: {UNANIMOUS}"),
+    ("conversation", {"type": "fresh_each_round"}, f"conversation: {FRESH}"),
+    ("conversation", "fresh_each_round", f"conversation: {FRESH}"),
+    ("conversation", {"continue_from": "plan"}, f"conversation: {CONTINUING}"),
+    ("private_children", {"max": 2}, f"private_children: {CHILDREN}"),
+    ("children", ["helper"], f"children: {CHILDREN}"),
+    ("concurrent_turns", 2, f"concurrent_turns: {CONCURRENT}"),
+    ("concurrency", 2, f"concurrency: {CONCURRENT}"),
+], ids=["unanimous", "fresh_each_round", "fresh_each_round_short", "two_stages_continuing",
+        "private_children", "children", "concurrent_turns", "concurrency"])
+def test_sw04_a_later_slice_feature_for_the_team_is_refused_with_a_plain_sentence(
+        box, section, value, problem):
+    team = {**RUNNABLE, section: value}
+    assert validate_team(members(), team) == [problem]
+    assert check_team(members(), team, inputs=GOAL, box=box) == [problem]
+
+
+@pytest.mark.parametrize("key, value, problem", [
+    ("conversation", {"type": "fresh_each_round"}, f"conversation: {FRESH}"),
+    ("conversation", {"continue_from": "plan"}, f"conversation: {CONTINUING}"),
+    ("continue_from", "plan", f"continue_from: {CONTINUING}"),
+    ("private_children", ["helper"], f"private_children: {CHILDREN}"),
+    ("concurrent_turns", True, f"concurrent_turns: {CONCURRENT}"),
+], ids=["fresh_each_round", "conversation_continue_from", "continue_from", "private_children",
+        "concurrent_turns"])
+def test_sw04_a_member_asking_for_a_later_slice_feature_is_refused_naming_the_member(
+        box, key, value, problem):
+    team = members()
+    team[1][key] = value
+    assert check_team(team, RUNNABLE, inputs=GOAL, box=box) == [f"member 'frontend': {problem}"]
+
+
+def test_sw04_every_later_slice_feature_asked_at_once_is_refused_at_once(box):
+    team = members()
+    team[2]["private_children"] = ["helper"]
+    asked = {**GOOD, "mode": {"type": "unanimous"}, "concurrent_turns": 2,
+             "conversation": {"type": "fresh_each_round", "continue_from": "plan"}}
+    assert check_team(team, asked, inputs=GOAL, box=box) == [
+        f"member 'qa': private_children: {CHILDREN}",
+        f"concurrent_turns: {CONCURRENT}",
+        f"conversation: {FRESH}",
+        f"conversation: {CONTINUING}",
+        f"mode: {UNANIMOUS}",
+        "communication: edges isn't built yet; use all"]
+
+
 def test_a_missing_role_is_named_with_a_close_name_never_picked(box):
     team = members()
     team[0]["role"] = "architecure"

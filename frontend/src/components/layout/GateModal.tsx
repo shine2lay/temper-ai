@@ -71,6 +71,8 @@ export function GateModal({ executionId }: GateModalProps) {
             onSuccess: (out) => {
               if (out?.needs_resume) {
                 toast.warning(out.message || 'Approved and kept. The run is not running: press Resume to go on.');
+              } else if (out?.pi_switched_off) {
+                toast.warning(out.message || 'Approved and kept. Pi is switched off: the run carries on once it is back on.');
               } else {
                 toast.success(`Approved "${open.node_name}"`);
               }

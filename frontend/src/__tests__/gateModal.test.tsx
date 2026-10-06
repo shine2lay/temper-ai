@@ -301,6 +301,28 @@ describe('GateModal', () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  it('says Pi is switched off when it approved a parked Pi run while the switch is off', async () => {
+    const message =
+      'Pi switched off: this run waits, with any answer kept, and carries on once the Pi switch ' +
+      '(TEMPER_PI_AGENT) is back on';
+    authFetch.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return {
+          ok: true,
+          json: async () => ({ status: 'approved', needs_resume: false, pi_switched_off: true, message }),
+        };
+      }
+      return { ok: true, json: async () => ({ gates: [{ ...GATE, questions: [] }] }) };
+    });
+    renderModal();
+
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: /Approve & continue/ }));
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith(message));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
   it('opens the wait it was asked for when two steps of one name are waiting', async () => {
     const first = { ...GATE, event_id: 'ev-a', path: 'build.approve', questions: [] };
     const second = { ...GATE, event_id: 'ev-b', path: 'ship.approve', round: 2, questions: [] };

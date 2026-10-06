@@ -22,9 +22,15 @@ type's options (build plan, "Team settings format"):
 
 Each section type brings its own parser and check (``MODE_TYPES``, ``COMMUNICATION_TYPES``),
 so a new type adds its options without touching the others. Unknown sections, types and keys
-are refused by name. The strategy's check (:func:`validate_team`) reports every problem at once;
-the run-start check (:mod:`temper_ai.pi_agent.team_check`) adds the members' roles, the
-workflow's safety policies and the goal.
+are refused by name. The later slice's features (R2: each needs its own proof before use) are
+known by the names a config would use for them and refused with a plain sentence (M4 SW-04):
+``mode: {type: unanimous}``, ``conversation: {type: fresh_each_round}``,
+``conversation: {continue_from: ...}`` (two team stages continuing), ``private_children`` and
+``concurrent_turns``, besides ``edges`` above. A change to the team's settings while its run is
+going is refused when the team reopens (``team settings changed``, R2 C3). The strategy's
+check (:func:`validate_team`) reports every problem at once; the run-start check
+(:mod:`temper_ai.pi_agent.team_check`) adds the members' roles, the workflow's safety policies
+and the goal.
 
 The team node itself (:class:`temper_ai.pi_agent.team_node.TeamNode`) runs the leader loop
 (:mod:`temper_ai.pi_agent.team_leader`) on the team runtime (T4 messaging, T5 inboxes).
@@ -52,6 +58,42 @@ NODE_NAME = "team"
 SECTIONS = ("mode", "communication", "pause_after_rounds")
 #: Sections planned for later, each arriving with its runtime piece; refused until then.
 LATER_SECTIONS = ("workspace", "lessons", "ask_owner", "conversation")
+
+# The later slice (R2 not_approved and l3_scope.must_list_as_not_built; M4 SW-04): each feature
+# needs its own proof before use, so asking for one is refused with what it is and what the
+# team does instead. Drop a sentence when its slice builds the feature.
+#: ``mode: {type: unanimous}``.
+UNANIMOUS_NOT_BUILT = "unanimous mode isn't built yet; use leader"
+#: ``conversation: {type: fresh_each_round}``, for the team or one member.
+FRESH_NOT_BUILT = ("fresh_each_round isn't built yet: members keep their conversation for the "
+                   "whole team stage")
+#: ``conversation: {continue_from: <earlier stage>}``: two team stages continuing.
+CONTINUE_NOT_BUILT = ("continuing members' conversations from an earlier team stage "
+                      "(continue_from) isn't built yet: each team stage starts its members' "
+                      "conversations fresh")
+#: ``private_children``: a member's own private helpers (the frozen plan's private child).
+CHILDREN_NOT_BUILT = ("private children aren't built yet: a team is the members it lists, and "
+                      "none of them can start a private helper")
+#: ``concurrent_turns``: members taking turns at the same time.
+CONCURRENT_NOT_BUILT = ("concurrent member turns aren't built yet: members take turns one at a "
+                        "time")
+#: Later-slice sections, by the names a config would use (a synonym says the same).
+LATER_SLICE_SECTIONS = {
+    "private_children": CHILDREN_NOT_BUILT,
+    "children": CHILDREN_NOT_BUILT,
+    "concurrent_turns": CONCURRENT_NOT_BUILT,
+    "concurrency": CONCURRENT_NOT_BUILT,
+}
+#: Later-slice types of a section that exists.
+LATER_SLICE_TYPES = {"mode": {"unanimous": UNANIMOUS_NOT_BUILT}}
+#: Keys in a member's own agent config that ask for a later-slice feature for that member
+#: (``conversation`` is read by :func:`_later_conversation`).
+LATER_SLICE_MEMBER_KEYS = {
+    "continue_from": CONTINUE_NOT_BUILT,
+    "private_children": CHILDREN_NOT_BUILT,
+    "children": CHILDREN_NOT_BUILT,
+    "concurrent_turns": CONCURRENT_NOT_BUILT,
+}
 
 
 # --- section models ---------------------------------------------------------------------------
@@ -187,6 +229,9 @@ def _section(name: str, raw: object, types: dict[str, SectionType]) -> tuple[obj
     if not isinstance(raw, dict):
         return None, [(name, f"must be a mapping with a 'type' (one of: {', '.join(types)})")]
     kind = raw.get("type")
+    later = LATER_SLICE_TYPES.get(name, {})
+    if isinstance(kind, str) and kind in later:
+        return None, [(name, later[kind])]
     if kind not in types:
         what = f"unknown type '{kind}'" if kind is not None else "needs a 'type'"
         return None, [(name, f"{what} (available: {', '.join(types)})")]
@@ -200,7 +245,11 @@ def parse_settings(strategy_config: object) -> tuple[TeamSettings | None, list[P
                                           f"{', '.join(SECTIONS)})")]
     problems: list[Problem] = []
     for key in strategy_config:
-        if key in LATER_SECTIONS:
+        if key in LATER_SLICE_SECTIONS:
+            problems.append((key, LATER_SLICE_SECTIONS[key]))
+        elif key == "conversation" and _later_conversation(strategy_config[key]):
+            problems += [(key, text) for text in _later_conversation(strategy_config[key])]
+        elif key in LATER_SECTIONS:
             problems.append((key, "this section is not available yet; it comes with its runtime "
                                   "piece"))
         elif key not in SECTIONS:
@@ -227,6 +276,31 @@ def parse_settings(strategy_config: object) -> tuple[TeamSettings | None, list[P
     assert isinstance(mode, LeaderMode)  # noqa: B101 - the only mode type
     assert isinstance(comm, (AllCommunication, EdgesCommunication))  # noqa: B101
     return TeamSettings(mode=mode, communication=comm, pause_after_rounds=rounds), []
+
+
+def _later_conversation(raw: object) -> list[str]:
+    """The later-slice sentences a ``conversation`` section asks for (SW-04): fresh_each_round
+    and continue_from. Empty for anything else, which the section's own refusal covers."""
+    if isinstance(raw, str):
+        raw = {"type": raw}
+    if not isinstance(raw, dict):
+        return []
+    out = []
+    if raw.get("type") == "fresh_each_round" or "fresh_each_round" in raw:
+        out.append(FRESH_NOT_BUILT)
+    if "continue_from" in raw or raw.get("type") == "continue_from":
+        out.append(CONTINUE_NOT_BUILT)
+    return out
+
+
+def _later_member(cfg: dict) -> list[str]:
+    """A member's own later-slice settings (SW-04), each refused as ``<key>: <sentence>``."""
+    out = []
+    if "conversation" in cfg:
+        out += [f"conversation: {text}" for text in _later_conversation(cfg["conversation"])
+                or ["this setting is not available yet; it comes with its runtime piece"]]
+    out += [f"{key}: {text}" for key, text in LATER_SLICE_MEMBER_KEYS.items() if key in cfg]
+    return out
 
 
 def member_name(cfg: dict) -> str:
@@ -258,6 +332,7 @@ def stage_findings(agent_configs: list[dict], strategy_config: object) -> list[M
                                     "pointing at a pi role", name))
             continue
         problems += [(where, text, name) for text in config_problems(cfg)]
+        problems += [(where, text, name) for text in _later_member(cfg)]
     problems += [(where, what, None) for where, what in parse_settings(strategy_config)[1]]
     # Each section type's own check, run when the section itself parsed.
     raw = strategy_config if isinstance(strategy_config, dict) else {}

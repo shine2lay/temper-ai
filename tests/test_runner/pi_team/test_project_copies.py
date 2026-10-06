@@ -7,6 +7,8 @@ folder. Model-free and database-free: these pieces are plain git.
 
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -132,3 +134,38 @@ def test_a_reviewers_copy_is_moved_to_exactly_the_review_commit(tmp_path):
     # the leader changing its copy after the review shows as a difference
     (lead_ws / "README.md").write_text("# Tiny, changed after the review\n")
     assert "change(s) since the reviewed version" in copies.differs("lead", pdirs["lead"], sha)
+
+
+@pytest.mark.parametrize("target", ["/etc", "other_member"])
+@pytest.mark.parametrize("step", ["ensure", "commit_review", "move_to", "changes"])
+def test_sw51_git_is_never_given_a_working_folder_that_is_a_link(tmp_path, target, step):
+    """SW-51: a member may swap its working folder for a link -- to /etc, or to another
+    member's copy. git would follow it: commit /etc into a review, or reset and clean the other
+    member's work. Each git step checks the folder without following links, and refuses."""
+    src = ls.project(tmp_path / "proj")
+    copies = ProjectCopies(tmp_path / "team", str(src))
+    pdirs = _member_dirs(tmp_path / "team", "lead", "victim", "mallory")
+    for name in ("lead", "victim") if step == "ensure" else ("lead", "victim", "mallory"):
+        copies.ensure(name, pdirs[name])
+    victim_ws = ProjectCopies.worktree(pdirs["victim"])
+    (victim_ws / "draft.md").write_text("the victim's own work, not committed\n")
+    victim_before = {p: (victim_ws / p).read_text() for p in _files(victim_ws)}
+    sha = copies.commit_review("lead", pdirs["lead"], "act-1")
+    mallory_ws = ProjectCopies.worktree(pdirs["mallory"])
+    if mallory_ws.exists():
+        shutil.rmtree(mallory_ws)
+    os.symlink("/etc" if target == "/etc" else victim_ws, mallory_ws)
+    head = copies._head(copies.git_dir("mallory"))
+
+    step_of = {
+        "ensure": lambda: copies.ensure("mallory", pdirs["mallory"]),
+        "commit_review": lambda: copies.commit_review("mallory", pdirs["mallory"], "act-2"),
+        "move_to": lambda: copies.move_to("mallory", pdirs["mallory"], "lead", "act-1", sha),
+        "changes": lambda: copies.changes("mallory", pdirs["mallory"]),
+    }
+    with pytest.raises(CopyError) as refused:
+        step_of[step]()
+    assert str(refused.value) == (f"the member's working folder {mallory_ws} is a link; Temper "
+                                  "does not follow links in a member's folder")
+    assert {p: (victim_ws / p).read_text() for p in _files(victim_ws)} == victim_before
+    assert copies._head(copies.git_dir("mallory")) == head, "no commit was made"

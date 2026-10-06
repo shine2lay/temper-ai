@@ -26,6 +26,12 @@ Identities kept apart on purpose:
 Every change is one transaction. What must hold across processes is enforced by the database
 (unique keys, compare-and-set updates); the process-wide lock only keeps one process's own
 threads in line.
+
+The layout is versioned (M4 ADR-M4-07, SW-13): ``pi_schema_version`` holds the version the
+tables are at, :meth:`Ledger.ensure` moves them forward one additive step at a time under a
+lock, and a Pi step refuses a database it does not know (newer than this build, or pi_ tables
+with no version record). Path-built columns are ``Text``, never a length a deep step path can
+overflow (SW-12).
 """
 
 from __future__ import annotations
@@ -92,13 +98,14 @@ participants = sa.Table(
     "pi_participants", metadata,
     sa.Column("participant_id", sa.String(64), primary_key=True),
     sa.Column("run_id", sa.String(64), nullable=False, index=True),
-    sa.Column("host_path", sa.String(255), nullable=False),
+    # Path-built columns are Text (SW-12): a step path has no length limit.
+    sa.Column("host_path", sa.Text, nullable=False),
     # The member's team name (its agent config's ``name:``); a single Pi step uses its role.
     sa.Column("member", sa.String(128), nullable=False),
     sa.Column("role", sa.String(128), nullable=False),
     sa.Column("state", sa.String(16), nullable=False),
     sa.Column("session_id", sa.String(64), nullable=False),
-    sa.Column("session_dir", sa.String(1024), nullable=False),
+    sa.Column("session_dir", sa.Text, nullable=False),
     # Pinned at creation and compared before every turn: Pi version, provider, model,
     # thinking, tools, extensions (name -> digest), workflow, cwd, image, team settings.
     sa.Column("pin", sa.JSON, nullable=False),
@@ -110,6 +117,9 @@ participants = sa.Table(
     sa.Column("created_attempt", sa.String(64)),
     sa.Column("created_at", sa.String(40)),
     sa.Column("retired_at", sa.String(40)),
+    # The digest of the member's role snapshot (SW-25, schema version 2), recorded once the
+    # snapshot is in place: a row without it has no usable snapshot yet.
+    sa.Column("snapshot_sha256", sa.String(64)),
     sa.UniqueConstraint("run_id", "host_path", "member", name="uq_pi_participant_member"),
 )
 
@@ -118,9 +128,9 @@ messages = sa.Table(
     sa.Column("seq", sa.Integer, primary_key=True, autoincrement=True),
     sa.Column("message_id", sa.String(64), nullable=False, unique=True),
     # Temper's own key for its posts (seed, owner reply). Members' sends use A7's key below.
-    sa.Column("dedupe_key", sa.String(255), unique=True),
+    sa.Column("dedupe_key", sa.Text, unique=True),
     sa.Column("run_id", sa.String(64), nullable=False, index=True),
-    sa.Column("host_path", sa.String(255), nullable=False),
+    sa.Column("host_path", sa.Text, nullable=False),
     sa.Column("to_participant", sa.String(64)),
     sa.Column("to_member", sa.String(128), nullable=False),
     # Who sent it, always written by Temper: never read from a message (B2).
@@ -158,14 +168,14 @@ turns = sa.Table(
     sa.Column("turn_id", sa.String(64), primary_key=True),
     sa.Column("participant_id", sa.String(64), nullable=False, index=True),
     sa.Column("run_id", sa.String(64), nullable=False, index=True),
-    sa.Column("host_path", sa.String(255), nullable=False),
+    sa.Column("host_path", sa.Text, nullable=False),
     sa.Column("turn_no", sa.Integer, nullable=False),
     sa.Column("attempt_id", sa.String(64)),
     sa.Column("state", sa.String(16), nullable=False),
     # "{run}|{team}" while the turn is unsettled, else null: one unsettled turn per team.
-    sa.Column("claim_key", sa.String(330), unique=True),
+    sa.Column("claim_key", sa.Text, unique=True),
     sa.Column("epoch", sa.Integer, nullable=False),
-    sa.Column("claimed_by", sa.String(255), nullable=False),
+    sa.Column("claimed_by", sa.Text, nullable=False),
     sa.Column("retry_of", sa.String(64)),
     sa.Column("input_seqs", sa.JSON, nullable=False),
     # The highest team seq the claim could see: no batch message is above it.
@@ -179,7 +189,7 @@ turns = sa.Table(
     sa.Column("refusals", sa.JSON, nullable=False),
     # The worker box's container name (written before it is created) and, after a takeover,
     # how it was confirmed stopped.
-    sa.Column("box_name", sa.String(255)),
+    sa.Column("box_name", sa.Text),
     sa.Column("box_stop", sa.JSON),
     sa.Column("output", sa.Text),
     sa.Column("error", sa.Text),
@@ -194,11 +204,11 @@ waits = sa.Table(
     "pi_waits", metadata,
     sa.Column("wait_id", sa.String(64), primary_key=True),
     sa.Column("run_id", sa.String(64), nullable=False, index=True),
-    sa.Column("host_path", sa.String(255), nullable=False),
+    sa.Column("host_path", sa.Text, nullable=False),
     sa.Column("kind", sa.String(16), nullable=False),
     # The name ``ask_owner`` files the wait's events under (``<step path>~ask-<wait id>``):
     # a wait's events are found by it (C7).
-    sa.Column("gate_name", sa.String(255), nullable=False),
+    sa.Column("gate_name", sa.Text, nullable=False),
     # Not read since C7 (a wait's events are ask_owner's own, found by gate_name); still
     # written, because a database made before keeps the column NOT NULL.
     sa.Column("event_id", sa.String(64), nullable=False),
@@ -218,7 +228,7 @@ reviews = sa.Table(
     "pi_reviews", metadata,
     sa.Column("review_id", sa.String(64), primary_key=True),
     sa.Column("run_id", sa.String(64), nullable=False, index=True),
-    sa.Column("host_path", sa.String(255), nullable=False),
+    sa.Column("host_path", sa.Text, nullable=False),
     sa.Column("round", sa.Integer, nullable=False),
     sa.Column("leader_participant", sa.String(64), nullable=False),
     sa.Column("asked_turn", sa.String(64), nullable=False),
@@ -246,7 +256,7 @@ acts = sa.Table(
     "pi_team_acts", metadata,
     sa.Column("act_id", sa.String(64), primary_key=True),
     sa.Column("run_id", sa.String(64), nullable=False, index=True),
-    sa.Column("host_path", sa.String(255), nullable=False),
+    sa.Column("host_path", sa.Text, nullable=False),
     sa.Column("seq", sa.Integer, nullable=False),
     sa.Column("participant_id", sa.String(64), nullable=False),
     sa.Column("member", sa.String(128), nullable=False),
@@ -314,7 +324,7 @@ trials = sa.Table(
 #: result again; the same id with another body is refused (M3 conventions).
 requests = sa.Table(
     "pi_team_requests", metadata,
-    sa.Column("request_id", sa.String(255), primary_key=True),
+    sa.Column("request_id", sa.Text, primary_key=True),  # the caller's own id: no 255 cap
     sa.Column("run_id", sa.String(64), nullable=False, index=True),
     sa.Column("kind", sa.String(16), nullable=False),  # answer | message
     sa.Column("body_sha256", sa.String(64), nullable=False),
@@ -323,6 +333,24 @@ requests = sa.Table(
 )
 
 TABLES = (participants, messages, turns, waits, reviews, acts, outcomes, trials, requests)
+
+#: The pi_ tables' layout version this build knows (M4 ADR-M4-07, SW-13). 1: the tables, every
+#: path-built column Text (SW-12). 2: the member's role snapshot digest (SW-25). A database is
+#: moved forward by additive steps only: no step drops or rewrites a row.
+SCHEMA_VERSION = 2
+
+#: One row (id 1): the version the pi_ tables are at. Made with the tables, so a database
+#: with pi_ tables and no row here comes from a Pi build before versioning.
+schema_version = sa.Table(
+    "pi_schema_version", metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=False),
+    sa.Column("version", sa.Integer, nullable=False),
+    sa.Column("updated_at", sa.String(40)),
+)
+
+#: The Postgres advisory lock every layout step is taken under: one database, one stepper.
+SCHEMA_LOCK_KEY = int.from_bytes(hashlib.sha256(b"temper-pi-schema").digest()[:8], "big",
+                                 signed=True)
 
 #: How a team ends, as the Team page reads it (M3 E2): ``didnt_start`` when no member turn
 #: of the team ever began.
@@ -337,6 +365,11 @@ class LedgerError(Exception):
 
 class LedgerLayoutError(LedgerError):
     """The database has ``pi_`` tables of an older layout: refuse instead of mixing layouts."""
+
+
+class LedgerVersionError(LedgerLayoutError):
+    """The database's ``pi_`` tables are at a version this build does not know (newer than
+    it, or pi_ tables with no version record): a Pi step refuses, changing nothing (SW-13)."""
 
 
 class LedgerConflict(LedgerError):
@@ -413,8 +446,43 @@ def process_identity() -> str:
 
 def _creation_race(exc: Exception) -> bool:
     text = str(exc).lower()
+    # "unique constraint failed": SQLite's word for two processes writing the first version
+    # row at once (Postgres steps under the advisory lock, so it never sees it).
     return any(s in text for s in ("already exists", "duplicate key",
-                                   "pg_type_typname_nsp_index"))
+                                   "pg_type_typname_nsp_index", "unique constraint failed"))
+
+
+def _create_tables(conn: Any) -> None:
+    """Version 1's step: every pi_ table this build has, made only where it is missing (so a
+    table that went missing comes back at this build's layout). Safe to run again."""
+    metadata.create_all(conn, tables=list(TABLES), checkfirst=True)
+
+
+def _add_snapshot_digest(conn: Any) -> None:
+    """Version 2's step: the member's role snapshot digest (SW-25), a nullable column, so
+    every row already there stays as it is."""
+    have = {c["name"] for c in sa.inspect(conn).get_columns(participants.name)}
+    if "snapshot_sha256" not in have:
+        conn.execute(sa.text("ALTER TABLE pi_participants ADD COLUMN snapshot_sha256 "
+                             "VARCHAR(64)"))
+
+
+#: The forward-only steps after version 1, by the version each brings the tables to. Each is
+#: additive and safe to run again; a later one never undoes an earlier one.
+_STEPS: dict[int, Callable[[Any], None]] = {2: _add_snapshot_digest}
+
+
+def _unversioned(old: Sequence[str]) -> str:
+    return ("this database has Pi tables (" + ", ".join(old[:4])
+            + (", ..." if len(old) > 4 else "") + ") from a Pi build before their layout was "
+            "versioned, so their layout is unknown; Temper changed nothing. Use a fresh database "
+            "for Pi")
+
+
+def _too_new(stored: int) -> str:
+    return (f"this database's Pi tables are at layout version {stored}, but this Temper knows "
+            f"only up to version {SCHEMA_VERSION}: a newer Temper made them; Temper changed "
+            "nothing. Run the newer Temper, or use another database for Pi")
 
 
 def _short(value: Any, limit: int = 128) -> str | None:
@@ -438,25 +506,64 @@ class Ledger:
         self.engine = engine
 
     def ensure(self) -> None:
-        """Create the tables if absent and check their layout (N4: a creation race between two
-        processes on Postgres is checked again once, not failed)."""
+        """Bring the pi_ tables to :data:`SCHEMA_VERSION`, or refuse (M4 ADR-M4-07, SW-13).
+
+        One transaction under one lock -- Postgres's transaction-scoped advisory lock, so two
+        processes never step one database at once; on SQLite the process lock -- reads the
+        stored version, makes what is missing and runs the forward-only steps above it. It
+        refuses with :class:`LedgerVersionError`, changing nothing, when the stored version is
+        newer than this build knows, or when it finds pi_ tables with no version record (an
+        earlier Pi build's: their layout is unknown). N4: a creation race (SQLite, or a build
+        without the lock) is checked again once, not failed."""
         with _LOCK:
-            try:
-                metadata.create_all(self.engine, checkfirst=True)
-            except (OperationalError, ProgrammingError, IntegrityError) as exc:
-                if not _creation_race(exc):
-                    raise
-                metadata.create_all(self.engine, checkfirst=True)
-            inspector = sa.inspect(self.engine)
-            missing = []
-            for table in TABLES:
-                have = {c["name"] for c in inspector.get_columns(table.name)}
-                missing += [f"{table.name}.{c.name}" for c in table.columns if c.name not in have]
-            if missing:
-                raise LedgerLayoutError(
-                    "this database's pi_ tables have an older layout (missing "
-                    + ", ".join(missing[:12]) + (", ..." if len(missing) > 12 else "")
-                    + "); they come from an earlier Pi build: use a fresh database")
+            for last in (False, True):
+                try:
+                    with self.engine.begin() as conn:
+                        self._step_forward(conn)
+                    return
+                except (OperationalError, ProgrammingError, IntegrityError) as exc:
+                    if last or not _creation_race(exc):
+                        raise
+
+    @staticmethod
+    def _step_forward(conn: Any) -> None:
+        if conn.dialect.name == "postgresql":
+            conn.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"),
+                         {"key": SCHEMA_LOCK_KEY})
+        names = set(sa.inspect(conn).get_table_names())
+        stored = None
+        if schema_version.name in names:
+            stored = conn.execute(sa.select(schema_version.c.version).where(
+                schema_version.c.id == 1)).scalar()
+        if stored is None:
+            old = sorted(t.name for t in TABLES if t.name in names)
+            if old:
+                raise LedgerVersionError(_unversioned(old))
+            schema_version.create(conn, checkfirst=True)
+            # The row first: on SQLite a write opens the transaction, so the tables made next
+            # are in it too, and a crash leaves no tables without a version.
+            conn.execute(schema_version.insert().values(id=1, version=0, updated_at=_now()))
+            stored = 0
+        if stored > SCHEMA_VERSION:
+            raise LedgerVersionError(_too_new(stored))
+        _create_tables(conn)
+        for version in range(max(stored, 1) + 1, SCHEMA_VERSION + 1):
+            _STEPS[version](conn)
+        if stored < SCHEMA_VERSION:
+            conn.execute(schema_version.update().where(schema_version.c.id == 1).values(
+                version=SCHEMA_VERSION, updated_at=_now()))
+            logger.info("pi_ tables moved from layout version %s to %s", stored, SCHEMA_VERSION)
+        inspector = sa.inspect(conn)
+        missing = []
+        for table in TABLES:
+            have = {c["name"] for c in inspector.get_columns(table.name)}
+            missing += [f"{table.name}.{c.name}" for c in table.columns if c.name not in have]
+        if missing:
+            raise LedgerLayoutError(
+                "this database's pi_ tables don't match their layout version "
+                f"{SCHEMA_VERSION} (missing " + ", ".join(missing[:12])
+                + (", ..." if len(missing) > 12 else "") + "); Temper changed nothing. Use a "
+                "fresh database for Pi")
 
     def _tx(self):
         return self.engine.begin()
@@ -529,6 +636,7 @@ class Ledger:
             "session_dir": f"{session_root.rstrip('/')}/{pid}/sessions", "pin": dict(pin),
             "turns": 0, "retire_requested": False, "epoch": 0, "ended_reason": None,
             "created_attempt": attempt_id, "created_at": _now(), "retired_at": None,
+            "snapshot_sha256": None,
         }
         conn.execute(participants.insert().values(**values))
         return values, True
@@ -556,6 +664,17 @@ class Ledger:
                 participants.c.run_id == run_id, participants.c.host_path == host_path,
                 participants.c.member == member)).mappings().first()
             return dict(row) if row else None
+
+    def record_snapshot(self, participant_id: str, digest: str) -> str | None:
+        """Record the digest of the member's role snapshot once it is in place (SW-25), and
+        return what the row holds. The first digest stays: a later call never writes over it,
+        so a caller that gets back another digest knows its copy is not the member's."""
+        with _LOCK, self._tx() as conn:
+            conn.execute(participants.update().where(
+                participants.c.participant_id == participant_id,
+                participants.c.snapshot_sha256.is_(None)).values(snapshot_sha256=digest))
+            return conn.execute(sa.select(participants.c.snapshot_sha256).where(
+                participants.c.participant_id == participant_id)).scalar()
 
     def set_participant_state(self, participant_id: str, state: str) -> None:
         with _LOCK, self._tx() as conn:
@@ -811,7 +930,7 @@ class Ledger:
             "turn_id": _new_id(), "participant_id": p["participant_id"], "run_id": run_id,
             "host_path": host_path, "turn_no": (last_no or 0) + 1, "attempt_id": attempt_id,
             "state": "running", "claim_key": team_claim_key(run_id, host_path), "epoch": epoch,
-            "claimed_by": claimed_by[:255], "retry_of": retry_of, "input_seqs": seqs,
+            "claimed_by": claimed_by, "retry_of": retry_of, "input_seqs": seqs,
             "cut_seq": cut, "policy_version": POLICY_VERSION, "agent_event_id": None,
             "model_call_ids": [], "effect_state": "none", "refusals": [], "box_name": None,
             "box_stop": None, "output": None, "error": None, "worker": None,

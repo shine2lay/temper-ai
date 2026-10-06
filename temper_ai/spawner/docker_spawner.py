@@ -171,7 +171,8 @@ class BoxEnvSplit:
                 continue  # set below to the box's own name
             # The GitHub app's key stays in the server, in every mode: a box's shell
             # could read the environment the box started with (integrations.github.secret).
-            if name in github_secret.SERVER_ONLY:
+            # So do the Pi switch and box config: Pi steps never run in a run box (SW-42).
+            if name in github_secret.SERVER_ONLY or name in box_env_list.PI_ONLY:
                 dropped.add(name)
             elif mode == box_env_list.MODE_INHERIT or (allowed is not None and allowed.allows(name)):
                 kept.append(var)

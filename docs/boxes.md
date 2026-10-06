@@ -40,6 +40,10 @@ box_env:
 - `why:` is required: say who in the box reads the names.
 - The GitHub app's keys (`integrations/github/secret.py` `SERVER_ONLY`) can never be
   listed; loading refuses them. A run asks the server for short-lived tokens instead.
+- Nor can Pi's own settings, the switch `TEMPER_PI_AGENT` and the box config
+  `TEMPER_PI_BOX_CONFIG` (`shared/box_env.py` `PI_ONLY`): Pi steps never run in a run
+  box, so a box gets neither, and with them no way to the Pi runtime, the logins or
+  the role folders the box config names ([pi-agent.md](pi-agent.md)).
 - A secret (database URL, secret key, Redis URL, any `*_KEY`, `*_TOKEN`, `*_SECRET`,
   `*_PASSWORD`, `*_CREDENTIALS`) may be listed for the box's process, never with
   `agent_tools: true`.
@@ -73,8 +77,8 @@ may only start and fork runs, and which dies with the run. The shared
 ## Emergency rollback
 
 `TEMPER_BOX_ENV=inherit` in the worker's environment brings back the old box: a copy
-of the server's whole environment minus the GitHub app's keys, and the old deny-list
-for agent tools. It is off by default, logs a warning on every spawn, and is for an
+of the server's whole environment minus the GitHub app's keys and Pi's own settings,
+and the old deny-list for agent tools. It is off by default, logs a warning on every spawn, and is for an
 emergency only: with it on, any agent can read every secret the server has. Anything
 else in the switch reads as the list.
 
@@ -213,7 +217,8 @@ in the box (BS6).
 - `temper check` loads both files.
 - `ci_box_env` (no model, $0) lists the names in a box's tool environment and in
   every `/proc/*/environ` it can read, and fails on a server-only name anywhere in
-  the box or a secret in a tool's environment. The machine check runs it on every
+  the box (Pi's `TEMPER_PI_AGENT` and `TEMPER_PI_BOX_CONFIG` count as such) or a
+  secret in a tool's environment. The machine check runs it on every
   commit ([ci-gate.md](ci-gate.md)); after a change to a list, run it live:
   `POST /api/runs {"workflow": "ci_box_env"}`.
   It also checks the box's profile: present, matching its digest and generation,

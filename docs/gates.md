@@ -180,6 +180,15 @@ when the wait starts; there are no reminders. The Pi step's own "what next"
 and recovery waits let the worker go the same way: each is a wait inside the
 step (below; pi-agent.md).
 
+**With the Pi switch off, a parked run waits** (M4 SW-32). Its Pi steps don't
+exist then, so carrying it on would fail it ("Unknown strategy 'team'"). It
+waits instead, with a grey "Pi switched off" badge on the run page: an answer
+is kept, and its reply says "Pi switched off: this run waits, with any answer
+kept, and carries on once the Pi switch (TEMPER_PI_AGENT) is back on"; Resume
+answers 409 with that sentence; start-up leaves it parked. Once the switch is
+back on, the next answer, Resume or start-up carries it on as usual. Cancel
+still ends it at once.
+
 **Resume works before anything finished.** A Pi run often starts by asking
 you something, so Resume of a Pi run with no checkpoint yet starts it again
 from its first step, instead of refusing with "No checkpoints found": a wait

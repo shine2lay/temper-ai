@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
+from datetime import datetime
 
 import pytest
 import sqlalchemy as sa
@@ -500,6 +502,101 @@ def test_e12_a_second_open_wait_is_listed_after_the_asked_one_and_cant_be_answer
         conn.execute(waits.delete().where(waits.c.wait_id == second["wait_id"]))
     assert answer(api, eid, first["wait_id"], "continue", rid="q-2").status_code == 200
     assert pw.wait_ended(eid, 2)[-1]["status"] == "completed"
+
+
+# --- times (#60) -------------------------------------------------------------------------------
+
+#: Every time the Team API sends: ISO 8601 with the UTC offset written out.
+UTC_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?\+00:00$")
+#: Anything that looks like a time, whatever key it sits under.
+LOOKS_LIKE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
+
+
+def times_in(value, path: str = "") -> dict[str, object]:
+    """Every time-valued field in a response, by its path: a key named ``at``, ``timestamp``
+    or ``*_at`` (unless None), and any string that looks like a time under any other key."""
+    found: dict[str, object] = {}
+    if isinstance(value, dict):
+        for k, v in value.items():
+            here = f"{path}.{k}"
+            if (k in ("at", "timestamp") or k.endswith("_at")) and v is not None \
+                    and not isinstance(v, (dict, list)):
+                found[here] = v
+            else:
+                found.update(times_in(v, here))
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            found.update(times_in(v, f"{path}[{i}]"))
+    elif isinstance(value, str) and LOOKS_LIKE_TIME.match(value):
+        found[path] = value
+    return found
+
+
+def test_every_time_the_team_api_sends_carries_the_utc_offset(api):
+    """Every GET route under /api/team, on a team that was started, messaged, answered and
+    stopped, and the replies of the writes: each time is ISO 8601 with ``+00:00`` (#60). The
+    owner's start, stop and message come from the guard's caller.action events, whose stored
+    times have no zone; the page must never have to guess."""
+    seen: dict[str, object] = {}
+
+    def keep(name: str, reply) -> dict:
+        seen.update(times_in(reply, name))
+        return reply
+
+    # one team: started, messaged while paused, guided, then answered again (409)
+    script(api.led, ["keep_going", "done"])
+    done_eid = keep("start", start_trial(api, body(api, pause_after_rounds=1)))["execution_id"]
+    wait = parked(api, done_eid, 1)
+    sent = message(api, done_eid, "frontend", "keep it short", rid="t-m1")
+    assert sent.status_code == 201, sent.text
+    keep("message", sent.json())
+    got = answer(api, done_eid, wait["wait_id"], "guide", "tests first", rid="t-a1")
+    assert got.status_code == 200, got.text
+    keep("answer", got.json())
+    keep("answer.repeated", answer(api, done_eid, wait["wait_id"], "guide", "tests first",
+                                   rid="t-a1").json())
+    assert pw.wait_ended(done_eid, 2)[-1]["status"] == "completed"
+    late = answer(api, done_eid, wait["wait_id"], "continue", rid="t-a2")
+    assert late.status_code == 409
+    keep("answer.409", late.json())
+
+    # another team, stopped from the run page while paused
+    script(api.led, ["keep_going", "done"])
+    stop_eid = start_trial(api, body(api, "start-2", pause_after_rounds=1))["execution_id"]
+    parked(api, stop_eid, 1)
+    r = api.client.post(f"/api/runs/{stop_eid}/cancel", json={"reason": "enough"},
+                        headers={**key(OWNER_KEY), "Origin": "http://testserver"})
+    assert r.status_code == 200, r.text
+    pw.wait_ended(stop_eid, 1)
+    sup.wait_for(lambda: (team_run(api, stop_eid)["outcome"] or {}).get("owner_words"),
+                 what="the stop's words on the outcome")
+
+    gets = {"status": "/api/team/status", "roles": "/api/team/roles",
+            "trials": "/api/team/trials", "run.done": f"/api/team/runs/{done_eid}",
+            "run.stopped": f"/api/team/runs/{stop_eid}",
+            "message.read": f"/api/team/runs/{done_eid}/messages/{sent.json()['message_id']}"}
+    replies = {}
+    for name, url in gets.items():
+        r = api.client.get(url)
+        assert r.status_code == 200, (url, r.text)
+        replies[name] = keep(name, r.json())
+
+    wrong = {path: v for path, v in seen.items()
+             if not (isinstance(v, str) and UTC_TIME.match(v))}
+    assert wrong == {}
+    # the walk saw what it is for: the owner's start, message, stop and answer, the trial's
+    # start, the timeline, the message's own times and the writes' replies
+    actions = replies["run.done"]["owner_actions"] + replies["run.stopped"]["owner_actions"]
+    assert sorted({a["kind"] for a in actions}) == ["answer", "message", "start", "stop"]
+    assert all(a["at"] for a in actions)
+    for path in ("message.at", "answer.at", "message.read.created_at",
+                 "run.done.trial.started_at", "run.done.outcome.at",
+                 "run.done.timeline.entries[0].timestamp", "trials.trials[0].started_at"):
+        assert path in seen, path
+    # oldest first, by the moment (not the text)
+    for run in (replies["run.done"], replies["run.stopped"]):
+        moments = [datetime.fromisoformat(a["at"]) for a in run["owner_actions"]]
+        assert moments == sorted(moments)
 
 
 # --- the guard (#45) --------------------------------------------------------------------------

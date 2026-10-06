@@ -135,6 +135,10 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
 members, state, decision, run_status, round, cost_usd, started_at, started_by, ended_at}`,
 newest first.
 
+Every time the Team API sends, in every route and every reply, is ISO 8601 in UTC with the
+offset written out (`2026-10-06T09:28:00.882441+00:00`); the page shows it in the owner's
+zone. `owner_actions` are sorted by that moment, oldest first.
+
 ## Answering
 
 `POST .../waits/{wait_id}/answer` with `{request_id, answer, text}`. The answer must be one

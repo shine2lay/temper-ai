@@ -17,6 +17,9 @@ Every write goes through the API guard (#45): a trial start counts as a start, a
 a message as decisions; who did it is the guard's caller, never a name the page sends. Each
 write carries the page's ``request_id``: the same id with the same body gives the first
 result again (``repeated: true``); the same id with another body is refused.
+
+Every time sent is ISO 8601 with ``+00:00`` (#60): a time taken from a recorded event, whose
+stored timestamp has no zone, goes through ``team_view.utc_text`` on the way out.
 """
 
 from __future__ import annotations
@@ -631,7 +634,7 @@ def _gate_history(execution_id: str, gate_name: str) -> list[dict]:
 def _answered_refusal(execution_id: str, wait: dict, owners: tuple[str, ...]) -> TeamRefusal:
     """A 409 for a wait already answered, with who answered it and where from (M3 E21)."""
     from temper_ai.pi_agent.team_outcome import UNKNOWN_CALLER, by_name
-    from temper_ai.pi_agent.team_view import SOURCES
+    from temper_ai.pi_agent.team_view import SOURCES, utc_text
     from temper_ai.stage.gate import WAITING, describe_gate, refusal
 
     events = [ev for ev in _gate_history(execution_id, wait["gate_name"])
@@ -651,6 +654,9 @@ def _answered_refusal(execution_id: str, wait: dict, owners: tuple[str, ...]) ->
         by = by_name(decision.get("by"), owners) or UNKNOWN_CALLER
         source = decision.get("source")
     g["answered_by"] = by
+    # a wait's opened_at is its event's timestamp, which has no zone: sent with +00:00 (#60)
+    for field in ("opened_at", "answered_at"):
+        g[field] = utc_text(g.get(field))
     body = refusal(g)
     body["answered_source"] = source if source in SOURCES else "unknown"
     return TeamRefusal(409, body)

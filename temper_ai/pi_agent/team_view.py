@@ -9,6 +9,7 @@ nodes and is never read back here.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 
 from temper_ai.pi_agent.ledger import Ledger, acts, turns, waits
@@ -25,6 +26,7 @@ from temper_ai.pi_agent.team_leader import (
     story,
 )
 from temper_ai.pi_agent.team_outcome import UNKNOWN_CALLER, by_name
+from temper_ai.shared.clock import as_utc
 
 #: The page's state while a wait of that kind is the one Temper asks (contract section 5).
 WAIT_STATE = {"pause": "paused", "stalled": "quiet", "recovery": "member_waiting",
@@ -35,6 +37,27 @@ SOURCES = ("team_page", "run_page", "chat", "api", "unknown")
 RUN_ENDED = ("completed", "failed", "cancelled")
 #: Caller actions shown as owner actions, with the kind the page names them by.
 ACTION_KINDS = {"start": "start", "cancel": "stop", "message": "message"}
+
+
+def utc_moment(value: datetime | str | None) -> datetime | None:
+    """A time the Team API passes on, as an aware UTC datetime; ``None`` stays ``None``.
+    ``value`` is a datetime or ISO text, with or without an offset: no offset means UTC, which
+    is what every zoneless time temper stores means (a recorded event's timestamp is one).
+    Text that isn't ISO is a ValueError."""
+    if value is None or value == "":
+        return None
+    return as_utc(value if isinstance(value, datetime) else datetime.fromisoformat(value))
+
+
+def utc_text(value: datetime | str | None) -> str | None:
+    """A time the Team API sends: ISO 8601 with ``+00:00`` written out, so the page never has
+    to guess the zone (#60). ``None`` stays ``None``."""
+    moment = utc_moment(value)
+    return moment.isoformat() if moment else None
+
+
+#: Where a time-less entry sorts: first.
+_EARLIEST = datetime.min.replace(tzinfo=UTC)
 
 
 class TeamReader(TeamRows):
@@ -276,7 +299,7 @@ def owner_actions(reader: TeamReader | None, actions: list[dict],
     message sent from the Team page -- from the API guard's record of each (#45) -- and each
     answer, from the wait it decided. ``by`` is the credential's name (``owner`` for the
     owner's), ``unknown caller`` when there was none; ``source`` is for display only."""
-    out = []
+    out: list[dict[str, Any]] = []
     for ev in actions:
         d = ev.get("data") or {}
         kind = ACTION_KINDS.get(d.get("action") or "")
@@ -286,7 +309,8 @@ def owner_actions(reader: TeamReader | None, actions: list[dict],
         detail = {k: v for k, v in d.items() if k not in (
             "action", "caller", "caller_from", "caller_request_id", "caller_source",
             "request_id")}
-        out.append({"at": ev.get("timestamp"), "kind": kind,
+        # a recorded event's timestamp has no zone: it is UTC, sent with its offset
+        out.append({"at": utc_text(ev.get("timestamp")), "kind": kind,
                     "by": by_name(d.get("caller"), owners) or UNKNOWN_CALLER,
                     "source": source,
                     "request_id": d.get("request_id") or d.get("caller_request_id"),
@@ -297,7 +321,8 @@ def owner_actions(reader: TeamReader | None, actions: list[dict],
                         "source": a["answered_source"], "request_id": a["request_id"],
                         "detail": {"wait_id": a["data"]["wait_id"], "wait_kind": a["wait_kind"],
                                    "answer": a["data"]["answer"]}})
-    out.sort(key=lambda a: str(a["at"] or ""))
+    # by the moment, not the text: the two sources write different precisions
+    out.sort(key=lambda a: utc_moment(a["at"]) or _EARLIEST)
     return out
 
 

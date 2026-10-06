@@ -42,12 +42,14 @@ class Loader:
 
 
 @pytest.fixture
-def gate(monkeypatch):
+def gate(monkeypatch, tmp_path):
     """check_run with its slow or outside parts recorded: the eager import and the preflight,
-    which hands the run record what it read (``read``: the pins and the host's Pi version)."""
+    which hands the run record what it read (``read``: the pins and the host's Pi version).
+    The team settings allow two account slots, both with room (ADR-M4-09)."""
     calls: list[str] = []
     failed: list = []
     read: dict = {}
+    ls.give_accounts(monkeypatch, tmp_path / "settings")
     monkeypatch.setattr(pi_lane, "eager_import", lambda: calls.append("eager_import"))
 
     def preflight(*, record=None):

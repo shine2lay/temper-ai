@@ -46,21 +46,11 @@ def git(cwd: Path, *args: str) -> str:
 def allow_projects(monkeypatch, settings_root: Path, *entries: str) -> Path:
     """The team settings this test's Temper reads (M3 E5): ``project_roots`` = ``entries``, as
     the owner's git-ignored local file would list them at switch-on. Only the default configs
-    root is replaced; an explicit ``config_dir`` still reads its own files. Returns the file."""
-    import yaml
+    root is replaced; an explicit ``config_dir`` still reads its own files. Other keys already
+    in the file (an account slot list) are kept. Returns the file."""
+    from tests.test_runner.pi_lane.support import team_settings
 
-    from temper_ai.pi_agent import team_config
-
-    local = settings_root / team_config.TEAM_DIR / "local" / "team.yaml"
-    local.parent.mkdir(parents=True, exist_ok=True)
-    local.write_text(yaml.safe_dump({"project_roots": list(entries)}), encoding="utf-8")
-    real = team_config.settings_paths
-
-    def settings_paths(config_dir: str | Path | None = None) -> tuple[Path, Path]:
-        return real(config_dir if config_dir else settings_root)
-
-    monkeypatch.setattr(team_config, "settings_paths", settings_paths)
-    return local
+    return team_settings(monkeypatch, settings_root, project_roots=list(entries))
 
 
 def project(root: Path, files: dict[str, str] | None = None) -> Path:
@@ -81,12 +71,12 @@ def make_leader(led: Ledger, box: Any, *, run_id: str, source: Path | None = Non
                 settings: dict | None = None, names: tuple[str, ...] = ts.NAMES,
                 attempt: str = "attempt-1", recorder: ts.Recorder | None = None,
                 goal: str = GOAL, members: list | None = None, cancel_event: Any = None,
-                host: str = ts.HOST) -> LeaderTeam:
+                host: str = ts.HOST, account: dict | None = None) -> LeaderTeam:
     s = settings or LEADER_SETTINGS
     team = LeaderTeam(led, box, run_id=run_id, host_path=host,
                       members=members or [ts.member(n) for n in names], team_settings=s,
                       recorder=recorder or ts.Recorder(), attempt_id=attempt,
-                      workflow="team_test", cancel_event=cancel_event,
+                      workflow="team_test", cancel_event=cancel_event, account=account,
                       leader=s["mode"]["leader"], pause_after=s["pause_after_rounds"],
                       goal=goal, project=None)  # type: ignore[arg-type]
     team.project = ProjectCopies(team.root, source)

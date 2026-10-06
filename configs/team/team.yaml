@@ -9,6 +9,13 @@
 #   no project folder. The owner lists them at switch-on.
 # owner_callers: the API key names that count as the owner, shown as "You"
 #   on the Team page; any other named caller is shown by its name.
+# account_slots: the host helper's account slots a Pi run may use. The Pi
+#   lane picks one per run when it starts the run (the one with the most
+#   weekly room under 85% of its 5 h and 90% of its 7 d use) and keeps it for
+#   the whole run. Account 1 ("anthropic") is never allowed.
+# account_room_file: where the Pi lane reads the slots' room figures (an
+#   absolute host path, written on the host). Unset: a Pi run doesn't start.
 
 project_roots: []
 owner_callers: [owner-dashboard]
+account_slots: [anthropic-2, anthropic-3]

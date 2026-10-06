@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from temper_ai.pi_agent.team_leader import CopyError, ProjectCopies
+from temper_ai.pi_agent.team_leader import CopyError, CopyFormatError, ProjectCopies
 from tests.test_runner.pi_team import leader_support as ls
 
 SECRET = "TOKEN=not-a-real-secret-but-it-must-stay-home\n"
@@ -169,3 +169,85 @@ def test_sw51_git_is_never_given_a_working_folder_that_is_a_link(tmp_path, targe
                                   "does not follow links in a member's folder")
     assert {p: (victim_ws / p).read_text() for p in _files(victim_ws)} == victim_before
     assert copies._head(copies.git_dir("mallory")) == head, "no commit was made"
+
+
+# --- committed content only, never what backs it (ADR-M4-12, SW-34) --------------------------
+
+
+SUB_CONTENT = "the submodule's own file: it stays home\n"
+LFS_CONTENT = "the large file's real content: it stays home\n"
+POINTER = ("version https://git-lfs.github.com/spec/v1\n"
+           "oid sha256:4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393\n"
+           "size 46\n")
+
+
+def _with_submodule_and_lfs(tmp_path: Path) -> Path:
+    sub = ls.project(tmp_path / "sub", {"inside.txt": SUB_CONTENT})
+    src = ls.project(tmp_path / "proj", {"app.py": "print('hello')\n",
+                                          ".gitattributes": "*.bin filter=lfs diff=lfs merge=lfs -text\n"})
+    ls.git(src, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub),
+           "vendor/sub")
+    (src / "big.bin").write_text(POINTER)
+    ls.git(src, "add", "-A")
+    ls.git(src, "commit", "-qm", "a submodule and an LFS file")
+    # what LFS keeps beside the repository, and a filter in the workspace's own config that
+    # would put it in place: a copy must use neither
+    lfs = src / ".git" / "lfs" / "objects" / "4d" / "7a"
+    lfs.mkdir(parents=True)
+    (lfs / "4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393").write_text(
+        LFS_CONTENT)
+    ls.git(src, "config", "filter.lfs.smudge", f"cat {lfs}/4d7a*")
+    ls.git(src, "config", "filter.lfs.clean", "cat")  # a pointer cleans to itself
+    return src
+
+
+def test_sw34_a_submodule_and_an_lfs_file_reach_a_copy_as_their_ids_never_their_content(
+        tmp_path):
+    src = _with_submodule_and_lfs(tmp_path)
+    assert (src / "vendor" / "sub" / "inside.txt").read_text() == SUB_CONTENT
+    copies = ProjectCopies(tmp_path / "team", str(src))
+    pdir = _member_dirs(tmp_path / "team", "lead")["lead"]
+
+    head = copies.ensure("lead", pdir)
+
+    ws = ProjectCopies.worktree(pdir)
+    assert (ws / "big.bin").read_text() == POINTER, "an LFS file stays its pointer"
+    assert not (ws / "vendor" / "sub" / "inside.txt").exists()
+    assert "vendor/sub" not in _files(ws)
+    files, _count = copies.files("lead", head)
+    assert files["vendor/sub"].startswith("commit:"), "the submodule is its commit id only"
+    assert not (copies.git_dir("lead") / "lfs").exists()
+    assert not (copies.git_dir("lead") / "modules").exists()
+    for path in (tmp_path / "team").rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            data = path.read_bytes()
+            assert b"stays home" not in data, path
+
+
+def test_sw34_no_file_of_a_copy_shares_its_inode_with_the_workspace(tmp_path):
+    """git's own transfer, never hard links: a member changing a copy's file can never
+    change the workspace's."""
+    src = _with_submodule_and_lfs(tmp_path)
+    copies = ProjectCopies(tmp_path / "team", str(src))
+    for name, pdir in _member_dirs(tmp_path / "team", "lead", "builder").items():
+        copies.ensure(name, pdir)
+
+    def inodes(folder: Path) -> set[tuple[int, int]]:
+        return {(st.st_dev, st.st_ino) for p in folder.rglob("*")
+                if p.is_file() and not p.is_symlink() for st in [p.stat()]}
+
+    shared = inodes(tmp_path / "team") & (inodes(src) | inodes(tmp_path / "sub"))
+    assert shared == set()
+
+
+def test_sw34_a_repository_format_git_can_t_read_is_named_before_anything_is_copied(tmp_path):
+    src = ls.project(tmp_path / "proj")
+    ls.git(src, "config", "core.repositoryformatversion", "1")
+    ls.git(src, "config", "extensions.temperTestUnknown", "true")
+    copies = ProjectCopies(tmp_path / "team", str(src))
+    pdir = _member_dirs(tmp_path / "team", "lead")["lead"]
+
+    with pytest.raises(CopyFormatError, match="uses a format this git can't read"):
+        copies.ensure("lead", pdir)
+    assert not copies.record_path.exists()
+    assert not copies.git_dir("lead").exists()

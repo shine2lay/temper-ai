@@ -55,6 +55,18 @@ class TestTheRecordedAnswers:
     def test_the_other_refusal_sentence_too(self):
         assert is_disabled("Claude Code is not available for your organization.")
 
+    def test_the_apis_oauth_sentence_alone_too(self):
+        """The API's words for a 403 oauth_not_allowed_for_organization, as the whole result
+        of a call with no model work (ADR-M4-16's belt-and-braces shape)."""
+        text = "OAuth authentication is currently not allowed for this organization."
+        assert account_trouble(text) == DISABLED
+        assert account_trouble(text, model_work=True) is None
+        assert account_trouble(f"Here is what happened: {text}") is None
+
+    def test_the_apis_oauth_sentence_in_an_error_without_its_code(self):
+        assert account_trouble("Provider error: OAuth authentication is currently not allowed "
+                               "for this organisation", is_error=True) == DISABLED
+
 
 class TestInAnError:
     @pytest.mark.parametrize("text", RECORDED_LIMITS)

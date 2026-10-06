@@ -1176,8 +1176,13 @@ class WorkerBox:
             with self.lock:
                 self.denied += 1
             return
-        # The redactor learns the token (and any account id inside it) before Pi has it.
-        self.redactor.add(token, *jwt_account_ids(token))
+        # The redactor learns the token (and any account id inside it) before Pi has it, and
+        # so does the scan of everything that leaves the run (SW-52, token_scan.py).
+        ids = jwt_account_ids(token)
+        self.redactor.add(token, *ids)
+        from temper_ai.pi_agent import token_scan
+
+        token_scan.remember(token, *ids)
         conn.sendall(token.encode())
 
     def _connect_upstream(self, host: str) -> socket.socket:

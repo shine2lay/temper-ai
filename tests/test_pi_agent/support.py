@@ -39,6 +39,9 @@ NOTE_WORD = "quartzfinch"
 CHECK_WORD = "lanternmoss"
 USAGE_LIMIT_ERROR = ("429 rate_limit_error: You have reached your usage limit; it resets at "
                      "03:00.")
+#: A fake refusal of the run's account, as a structured provider error (ADR-M4-16).
+ACCOUNT_REFUSED_ERROR = ("403 permission_error: OAuth authentication is currently not allowed "
+                         "for this organization. (oauth_not_allowed_for_organization)")
 
 # --- the box config and its folders --------------------------------------------------
 
@@ -252,6 +255,7 @@ class FakeBox:
     ``answer`` (default: reads note.txt with the read tool when asked to, then answers with
     what it knows), ``provider_error`` (the provider refuses; Pi settles with an error),
     ``usage_limit`` (the provider refuses with a usage limit; Pi settles with that error),
+    ``account_refused`` (the provider refuses the run's account: a 403 permission error),
     ``die`` (the worker dies after the prompt), ``die_in_tool`` (the worker dies while a
     tool runs), ``hang`` (nothing more comes), ``ui`` (an extension asks the owner a
     question first). ``lie`` names a check the worker fails (``model``, ``identity``,
@@ -460,9 +464,10 @@ class FakeBox:
             self._append({"type": "message", "message": {**assistant(stop="toolUse")}})
             self.kill()
             return [*out, *ask]
-        if mode in ("provider_error", "usage_limit"):
-            msg = assistant(stop="error", error=USAGE_LIMIT_ERROR if mode == "usage_limit"
-                            else "400 invalid_request_error: the request was refused")
+        if mode in ("provider_error", "usage_limit", "account_refused"):
+            msg = assistant(stop="error", error={
+                "usage_limit": USAGE_LIMIT_ERROR, "account_refused": ACCOUNT_REFUSED_ERROR,
+            }.get(mode, "400 invalid_request_error: the request was refused"))
             self._append({"type": "message", "message": msg})
             return [*out, *said(msg), {"type": "agent_end", "messages": []}, SETTLED]
         # answer

@@ -57,6 +57,7 @@ NOT_ASKED_YET = "Temper hasn't asked this question yet; answer the one before it
 TEAM_ENDED = "the team has ended; nothing was sent"
 TEAM_NOT_STARTED = "the team has not started yet; nothing was sent"
 NO_SUCH_MESSAGE = "no such message in this run"
+NO_VERSION = "the team has made no version yet"
 EMPTY_MESSAGE = "the message is empty"
 
 #: The limit and the words of each answer's text (M3 E13).
@@ -450,6 +451,7 @@ def team_run(execution_id: str) -> dict:
                             open_waits=waits_open,
                             began=ledger.any_turn_began(execution_id, run.host_path)),
         "cost_usd": reader.usage()["cost_usd"],
+        "account": _account_view(execution_id),
         "trial": {
             "goal": run.trial.get("goal"), "leader": run.leader,
             "members": [{"name": m.get("name"), "role": m.get("role"), "tools": m.get("tools"),
@@ -469,6 +471,37 @@ def team_run(execution_id: str) -> dict:
         "owner_actions": owner_actions(reader, actions, owners),
         "outcome": outcome,
     }
+
+
+def _account_view(execution_id: str) -> dict | None:
+    """The run's one account by slot label (ADR-M4-09), as the Pi lane recorded it at start:
+    never an email or an account id, and never the in-box provider name."""
+    from temper_ai.pi_agent.accounts import run_account
+
+    account = run_account(execution_id)
+    if not account.get("slot"):
+        return None
+    return {"slot": account["slot"], "picked_at": account.get("picked_at"),
+            "by": account.get("by"), "room": account.get("room")}
+
+
+@router.get("/runs/{execution_id}/version")
+def team_version(execution_id: str) -> dict:
+    """The team's newest version (M3 contract team_version; ADR-M4-12 H, SW-36): served from
+    the version record the Pi lane stored, never read from a copy. Its commit, the start
+    commit, its files with sha256, and its diff against the start commit, cut past the cap
+    with a note saying so. A version that held a login token is withheld: no files, no
+    diff, the rules that matched only."""
+    from temper_ai.pi_agent import team_versions
+
+    ledger = _ledger()
+    run = _team_run(ledger, execution_id)
+    row = team_versions.latest(ledger.engine, execution_id, run.host_path)
+    if row is None:
+        raise HTTPException(status_code=404, detail=NO_VERSION)
+    branch = ((run.outcome or {}).get("record") or {}).get("branch")
+    made = branch.get("name") if isinstance(branch, dict) and branch.get("made") else None
+    return team_versions.view(row, made)
 
 
 @router.get("/runs/{execution_id}/messages/{message_id}")

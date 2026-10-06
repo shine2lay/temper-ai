@@ -5,14 +5,16 @@ Two levels:
 * **lexical** -- everywhere, no file access: a full path, no ``..``, no spaces or control
   characters, and inside a listed project root by its text;
 * **real** -- only where the folder is visible: after links the folder is still inside a
-  root, it is the top of a git work tree, its git folders are inside the roots, it has a
-  commit, and no tracked file has uncommitted changes.
+  root, it is the top of a git work tree this git can read, its git folders are inside the
+  roots, it has a commit (or, when the team carries on, still has the commit its copies
+  started from), and no tracked file has uncommitted changes.
 
 Where the checks run decides what a folder that isn't visible means. The server (the Team
 page's check and trial start) sees no project folder in production -- nothing under the roots
 is mounted into it, because it is the run-box template -- so there it runs the lexical check
 and gives the note :data:`NOT_VISIBLE_NOTE` instead of refusing. The authoritative check runs
-where the team's node starts (``authoritative=True``), before any copy or model call: there a
+in the Pi lane when it claims the run (runner/pi_lane.py, ADR-M4-12) and again where the
+team's node starts (``authoritative=True``), both before any copy or model call: there a
 folder that can't be seen is a plain problem, "<path> isn't reachable inside Temper".
 
 Every git command runs hardened (:data:`GIT`, :func:`git_env`): no system or global config,
@@ -38,6 +40,19 @@ NO_COMMIT = ("the workspace's git repository has no commit yet: the team works o
              "its committed content")
 DIRTY = ("the workspace has uncommitted changes to tracked files; commit or stash them first: "
          "the team copies committed content only")
+#: What git says when a repository's format is newer than it reads (an unknown
+#: ``extensions.*`` or ``core.repositoryformatversion``).
+_FORMAT_WORDS = ("repository extension", "repository format", "repositoryformatversion")
+
+
+def format_problem(stderr: str) -> str | None:
+    """The plain problem when git refused a repository for its format, else None."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    text = " ".join(lines)
+    if not any(w in text.lower() for w in _FORMAT_WORDS):
+        return None
+    return ("the workspace's git repository uses a format this git can't read "
+            f"({text[:200]}): the team works on copies of its committed content")
 
 
 @dataclass(frozen=True)
@@ -103,10 +118,12 @@ def _inside_any(real: str, bases: Sequence[str]) -> bool:
     return any(real == b or real.startswith(b.rstrip("/") + "/") for b in bases)
 
 
-def real_problems(path: str, roots: Sequence[Root], *, fresh: bool = True) -> list[str]:
+def real_problems(path: str, roots: Sequence[Root], *, fresh: bool = True,
+                  start_commit: str | None = None) -> list[str]:
     """The checks on the folder itself, where it is visible (lexical checks passed).
     ``fresh`` is false when the team carries on with copies already made from it: the
-    folder's own commits and uncommitted changes no longer matter then."""
+    folder's own commits and uncommitted changes no longer matter then, but the commit the
+    copies started from (``start_commit``, when known) must still be in it."""
     norm = os.path.normpath(path)
     real = os.path.realpath(norm)
     held = False
@@ -116,9 +133,9 @@ def real_problems(path: str, roots: Sequence[Root], *, fresh: bool = True) -> li
             held = True
     if not held:
         return [_p(f"{path} leads outside the allowed project folders through a link")]
-    code, out, _err = run_git(["rev-parse", "--show-toplevel"], real)
+    code, out, err = run_git(["rev-parse", "--show-toplevel"], real)
     if code != 0:
-        return [_p(NOT_GIT)]
+        return [_p(format_problem(err) or NOT_GIT)]
     top = os.path.realpath(out.strip())
     if top != real:
         return [_p(f"{path} is inside a git repository but is not its top folder ({top})")]
@@ -131,6 +148,11 @@ def real_problems(path: str, roots: Sequence[Root], *, fresh: bool = True) -> li
         git_dir = os.path.realpath(os.path.join(real, where))
         if not _inside_any(git_dir, bases):
             return [_p(f"its git folder {git_dir} is outside the allowed project folders")]
+    if start_commit:
+        code, _out, _err = run_git(["cat-file", "-e", f"{start_commit}^{{commit}}"], real)
+        if code != 0:
+            return [_p(f"the commit the team's copies started from ({start_commit[:12]}) is "
+                       "no longer in the workspace's repository")]
     if not fresh:
         return []
     code, out, _err = run_git(["rev-parse", "--verify", "-q", "HEAD^{commit}"], real)
@@ -145,12 +167,15 @@ def real_problems(path: str, roots: Sequence[Root], *, fresh: bool = True) -> li
 
 
 def folder_check(path: str, roots: Sequence[Root], *, authoritative: bool,
-                 fresh: bool = True) -> tuple[list[str], list[str]]:
+                 fresh: bool = True,
+                 start_commit: str | None = None) -> tuple[list[str], list[str]]:
     """(problems, notes) for a team's project folder.
 
-    ``authoritative`` is the check where the team's node starts: a folder that can't be seen
-    there is a problem. Elsewhere (the server) a folder whose root isn't visible gets the
-    lexical check and :data:`NOT_VISIBLE_NOTE`; a visible one gets the real checks too."""
+    ``authoritative`` is the check where the Pi lane claims the run and where the team's
+    node starts: a folder that can't be seen there is a problem. Elsewhere (the server) a
+    folder whose root isn't visible gets the lexical check and :data:`NOT_VISIBLE_NOTE`; a
+    visible one gets the real checks too. ``fresh`` and ``start_commit``: see
+    :func:`real_problems`."""
     problems = lexical_problems(path, roots)
     if problems:
         return problems, []
@@ -160,4 +185,4 @@ def folder_check(path: str, roots: Sequence[Root], *, authoritative: bool,
         return [], [NOT_VISIBLE_NOTE]
     if not os.path.isdir(norm):
         return [_p(f"{path} isn't reachable inside Temper")], []
-    return real_problems(path, roots, fresh=fresh), []
+    return real_problems(path, roots, fresh=fresh, start_commit=start_commit), []

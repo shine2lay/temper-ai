@@ -66,6 +66,10 @@ def main(raw: str) -> int:
     # list: the workflow is Pi-only, so nothing is widened here. Only the preflight's checks
     # of the real machine are left out (test_preflight.py tests them).
     mp.setattr(pi_preflight, "preflight", lambda **_kw: [])
+    # The team settings' account slots and their room figures, beside the private database.
+    from pathlib import Path
+
+    ls.give_accounts(mp, Path(url.removeprefix("sqlite:///")).parent / "settings")
     guard = sup.NetGuard().install(mp)
     init_database(url)
     sup.register_types()

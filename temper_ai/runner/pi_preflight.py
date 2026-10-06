@@ -30,10 +30,16 @@ Reasons, in order:
   identity           the box config pins no digest for the identity extension or the shared
                      identity settings, so they can't be read back, or one changed since
                      (M2-roles D3, SW-26)
-  template_mounts    the run-box template mounts a Pi or project folder, or can't be read
+  template_mounts    the run-box template mounts a Pi or project folder (or the account-room
+                     folder), or can't be read
   host_helper        live mode without a helper socket, a helper that doesn't answer ok, or a
                      login bridge that isn't ready
-  workspace_overlap  a Pi folder inside WORKSPACE_DIR, which every run box may mount (H3)
+  workspace_overlap  a Pi folder (or the account-room folder) inside WORKSPACE_DIR, which
+                     every run box may mount (H3)
+  account_room       the team settings name no account_room_file, or its folder isn't this
+                     worker's own read-only mount (ADR-M4-18). Never whether the file is
+                     there or fresh: a run's first claim reads it (pi_agent/accounts.py), so
+                     the lane may start before ops' writer first publishes it
   pi_schema          the pi_ tables can't be brought to this build's version (ADR-M4-07)
   disk               less than 2 GiB free under the state root (ADR-M4-11)
 
@@ -48,6 +54,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -100,6 +107,7 @@ def preflight(*, docker: Callable[..., Any] | None = None,
         failed += _template_mounts(cfg, run)
     failed += _host_helper(cfg, record)
     failed += _workspace_overlap(cfg)
+    failed += _account_room()
     failed += _pi_schema(ensure_ledger or _ensure_ledger)
     failed += _disk(cfg)
     return failed
@@ -217,13 +225,71 @@ def _template_mounts(cfg: Any, run: Callable[..., Any]) -> list[Reason]:
         return [("template_mounts", f"the run-box template {name} could not be inspected")]
     sources = [str(m.get("Source") or "") for m in mounts if isinstance(m, dict)]
     # Every Pi path (box.py BoxConfig.pi_paths: state, sockets, pins, role folders, the
-    # helper's socket folder, project roots), the mount being it, inside it or above it.
-    clash = sorted({what for what, path in cfg.pi_paths().items()
+    # helper's socket folder, project roots) and the account-room folder, the mount being
+    # it, inside it or above it.
+    clash = sorted({what for what, path in _guarded_paths(cfg).items()
                     for source in sources if source and overlap(source, path)})
     if clash:
         return [("template_mounts", f"the run-box template {name} mounts a Pi or project "
                                     f"folder ({', '.join(clash)}), which every run box would get")]
     return []
+
+
+def account_room_folder() -> str | None:
+    """The folder of the team settings' ``account_room_file`` (ops' folder, which pi-worker
+    alone mounts read-only), else None."""
+    from temper_ai.pi_agent.team_config import load_team_config
+
+    path = load_team_config().account_room_file
+    return os.path.dirname(path) if path else None
+
+
+def _guarded_paths(cfg: Any) -> dict[str, str]:
+    """The folders no run box may get: every Pi path, and the account-room folder."""
+    paths = dict(cfg.pi_paths())
+    folder = account_room_folder()
+    if folder:
+        paths["account_room"] = folder
+    return paths
+
+
+def _is_mount(path: str) -> bool:
+    return os.path.ismount(path)
+
+
+def _read_only(path: str) -> bool:
+    return bool(os.statvfs(path).f_flag & os.ST_RDONLY)
+
+
+def _account_room() -> list[Reason]:
+    """The account-room file's folder is this worker's own read-only mount and a folder, its
+    path reached without a link (account-room interface). Whether the file is there or
+    fresh is left to a run's first claim."""
+    folder = account_room_folder()
+    if not folder:
+        return [("account_room", "the team settings name no account_room_file, so no Pi "
+                                 "run's account can be picked")]
+    where = f"the account-room folder {folder}"
+    try:
+        info = os.lstat(folder)
+    except OSError:
+        return [("account_room", f"{where} isn't here (pi-worker's read-only mount of it is "
+                                 "missing)")]
+    if not stat.S_ISDIR(info.st_mode):
+        return [("account_room", f"{where} isn't a folder")]
+    if os.path.realpath(folder) != folder:
+        return [("account_room", f"{where} is reached through a link")]
+    problems = []
+    if not _is_mount(folder):
+        problems.append(f"{where} isn't its own mount (pi-worker's read-only mount of it is "
+                        "missing)")
+    try:
+        read_only = _read_only(folder)
+    except OSError:
+        read_only = False
+    if not read_only:
+        problems.append(f"{where} is writable here; pi-worker mounts it read-only")
+    return [("account_room", "; ".join(problems))] if problems else []
 
 
 def _host_helper(cfg: Any, record: dict[str, Any]) -> list[Reason]:
@@ -259,7 +325,7 @@ def _workspace_overlap(cfg: Any) -> list[Reason]:
     if not workspaces:
         return [("workspace_overlap", f"{WORKSPACE_ENV} is not set, so the Pi folders can't be "
                                       "checked against the run workspaces")]
-    inside = sorted(what for what, path in cfg.pi_paths().items()
+    inside = sorted(what for what, path in _guarded_paths(cfg).items()
                     if Path(os.path.realpath(path)).is_relative_to(os.path.realpath(workspaces)))
     if inside:
         return [("workspace_overlap", f"{', '.join(inside)} inside {WORKSPACE_ENV}, which every "

@@ -15,6 +15,10 @@ that was parked waits instead, "Pi switched off", until the switch is back on (M
 new member turn, and a turn under way finishes first; the run carries on from its ledger
 when the lane starts again.
 
+The project folder's checks at claim, the copies of committed content, the version records,
+the token scan, the run's one account and how a model call can end (a limit, an account
+refusal, a provider error) are in [pi-trial-safety.md](pi-trial-safety.md).
+
 ## Starting
 
 The team node runs `check_team` again when it starts, with the goal it was handed, because

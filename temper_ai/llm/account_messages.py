@@ -52,18 +52,21 @@ _LIMIT_ALONE = re.compile(
 )
 
 # The CLI's refusal for an account whose organisation turned subscription
-# access off, and the API's words for it (a 403 permission_error). Not every
-# "not available for your organization" is one: file sync and projects say so
-# too, about themselves.
+# access off, and the API's words for it (a 403 permission_error,
+# oauth_not_allowed_for_organization: "OAuth authentication is currently not
+# allowed for this organization"). Not every "not available for your
+# organization" is one: file sync and projects say so too, about themselves.
 _DISABLED_IN_ERROR = re.compile(
     r"organi[sz]ation has disabled claude subscription access"
     r"|claude code is not available for your organi[sz]ation"
+    r"|oauth authentication is currently not allowed for this organi[sz]ation"
     r"|oauth_not_allowed_for_organization|\bpermission_error\b",
     re.IGNORECASE,
 )
 _DISABLED_ALONE = re.compile(
     r"(?:(?:your )?organi[sz]ation has disabled claude subscription access(?: for claude code)?"
-    r"|claude code is not available for your organi[sz]ation)" + _AFTER,
+    r"|claude code is not available for your organi[sz]ation"
+    r"|oauth authentication is currently not allowed for this organi[sz]ation)" + _AFTER,
     re.IGNORECASE,
 )
 

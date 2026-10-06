@@ -418,7 +418,11 @@ def test_a_usage_limit_pauses_for_the_owner_naming_the_limit(pi):
     eid = sup.start(pi.client, "pi_talk", pi.ws)
     rec = sup.open_wait(eid, "recovery")
     why = rec["subject"]["why"]
-    assert why.startswith("usage limit: ") and why.endswith(sup.USAGE_LIMIT_ERROR)
+    # The run's account (none recorded in this test), the limit with its reset, the same
+    # account on a retry (ADR-M4-09).
+    assert why.startswith("account unknown hit a usage limit: ")
+    assert sup.USAGE_LIMIT_ERROR.rstrip(".") in why
+    assert why.endswith("Retrying keeps the same account, model and thinking")
     assert "usage limit" in rec["subject"]["question"]
     assert rec["subject"]["options"] == ["accept", "retry"]
     # One worker, same model and account: no quiet switch, no retry on its own.

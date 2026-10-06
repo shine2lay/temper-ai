@@ -1290,6 +1290,8 @@ def _build_agent_execution(agent_event: dict, all_events: list[dict]) -> dict:
         "structured_output": data.get("structured_output"),
         "output_data": data.get("structured_output"),
         "role": data.get("role"),
+        # A Pi turn's account, by slot label (ADR-M4-09): None for every other agent.
+        "account_slot": data.get("account_slot"),
         "error_message": data.get("error"),
         # A script agent's saved log, in figures only (rows, bytes saved, limit, truncated,
         # complete): the log itself is read page by page (GET /api/runs/<id>/agents/<id>/log).
@@ -1306,11 +1308,13 @@ def _build_agent_config_snapshot(agent_event: dict) -> dict | None:
     config = data.get("agent_config")
     if config:
         return {"agent": config}
-    # Fallback: build minimal config from available fields
+    # Fallback: build minimal config from available fields. A Pi turn shows its account's
+    # slot label where the provider goes: inside the box the provider is always the
+    # canonical name, which never says which account was used (ADR-M4-15).
     if data.get("provider") or data.get("model"):
         return {
             "agent": {
-                "provider": data.get("provider"),
+                "provider": data.get("account_slot") or data.get("provider"),
                 "model": data.get("model"),
                 "type": data.get("type", "llm"),
             }

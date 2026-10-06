@@ -162,7 +162,8 @@ def turn_entries(reader: TeamReader, names: dict[str, str]) -> list[dict]:
         member = names.get(t["participant_id"], t["participant_id"])
         error = str(t["error"] or "")
         data: dict[str, Any] = {"turn_id": t["turn_id"], "turn_no": t["turn_no"],
-                                "state": t["state"], "ended_at": _at(t["ended_at"])}
+                                "state": t["state"], "ended_at": _at(t["ended_at"]),
+                                "account_slot": t.get("account_slot")}
         if error:
             data["error"] = error[:VIEW_PREVIEW] + ("..." if len(error) > VIEW_PREVIEW else "")
         out.append({"event_type": f"turn {t['turn_no']}: {t['state']}", "from_agent": member,
@@ -203,6 +204,10 @@ def open_waits_view(reader: TeamReader, asked: dict[str, str]) -> list[dict]:
             "answers": answers_for(kind, s, reader.leader),
             "round": s.get("round"), "member": s.get("member"), "turn_no": s.get("turn_no"),
             "why": s.get("why"),
+            # A limit's recovery wait names the run's account, the limit and its reset
+            # (ADR-M4-09); None for other waits.
+            "account_slot": s.get("account_slot"), "limit": s.get("limit"),
+            "resets": s.get("resets"),
             "asked_again": (int(s.get("asked_again") or 0) if kind in ("recovery", SETTINGS)
                             else None),
             "settings_changes": (list(s.get("settings_changes") or []) if kind == SETTINGS
@@ -260,7 +265,8 @@ def members_view(reader: TeamReader, trial_members: list[dict],
             "effective": _effective(ended[-1]["worker"]) if ended else None,
             "last_turn": ({"turn_no": last["turn_no"], "state": last["state"],
                            "started_at": _at(last["started_at"]),
-                           "ended_at": _at(last["ended_at"]), "error": last["error"]}
+                           "ended_at": _at(last["ended_at"]), "error": last["error"],
+                           "account_slot": last.get("account_slot")}
                           if last else None)})
     return out
 

@@ -165,6 +165,7 @@ def test_the_routes_come_only_with_the_switch(monkeypatch):
     app = FastAPI()
     assert include_team_routes(app) is False
     assert TestClient(app).get("/api/team/status").status_code == 404
+    assert TestClient(app).get("/api/team/runs/any-run/version").status_code == 404
 
 
 def test_status_gives_the_forms_defaults_limits_folders_and_the_guards_mode(api):
@@ -260,6 +261,18 @@ def test_a_trial_starts_in_one_call_with_frozen_configs_and_runs_to_done(api):
         "start", "unknown caller", "team_page")
     members = {m["name"]: m for m in run["members"]}
     assert members["design"]["leader"] is True and members["design"]["turns"] >= 2
+    # a run started in this process has no lane-picked account: none is shown
+    assert run["account"] is None
+
+    # team_version: the done version, served from its stored record (ADR-M4-12 H)
+    version = api.client.get(f"/api/team/runs/{eid}/version")
+    assert version.status_code == 200, version.text
+    v = version.json()
+    assert (v["kind"], v["commit"]) == ("done", run["outcome"]["done"]["commit"])
+    assert v["start_commit"] == ls.git(api.ws, "rev-parse", "HEAD")
+    assert v["files"] and all(len(f["sha256"]) == 64 for f in v["files"])
+    assert v["files_total"] == len(v["files"]) and v["withheld"] is None
+    assert v["truncated"] is False and v["note"] is None
     assert members["qa"]["effective"] == {"model": "unknown", "thinking": "unknown"} or \
         members["qa"]["effective"]["model"]
 
@@ -649,6 +662,19 @@ def test_record_lets_an_unknown_caller_start_and_names_it_so(api, monkeypatch):
     eid = start_trial(api, body(api))["execution_id"]
     pw.wait_ended(eid, 1)
     assert team_run(api, eid)["trial"]["started_by"] == "unknown caller"
+
+
+def test_team_version_before_the_team_made_a_version_is_not_found(api):
+    script(api.led, ["done"])
+    eid = start_trial(api, body(api))["execution_id"]
+    pw.wait_ended(eid, 1)
+    from temper_ai.pi_agent.ledger import versions
+
+    with api.led.engine.begin() as conn:
+        conn.execute(sa.delete(versions).where(versions.c.run_id == eid))
+    r = api.client.get(f"/api/team/runs/{eid}/version")
+    assert r.status_code == 404 and r.json() == {"detail": "the team has made no version yet"}
+    assert api.client.get("/api/team/runs/not-a-run/version").status_code == 404
 
 
 def test_a_run_that_is_no_trial_is_not_found(api):

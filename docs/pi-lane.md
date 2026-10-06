@@ -75,15 +75,20 @@ reason; nothing of it runs:
 | `image` | the pinned worker image isn't on this Docker host, or its tag doesn't name it |
 | `pins` | any other pin differs from the box config or isn't recorded there (the image's tar, the runtime, the Pi version its own Pi prints, the search binaries, the add-ons, a route's login extension or catalog), or the pin check couldn't run ([The pins](#the-pins)) |
 | `identity` | the box config pins no digest for the identity extension or the shared identity settings, or one doesn't read back with it (M2-roles D3, SW-26) |
-| `template_mounts` | the run-box template (the server's container) mounts a Pi or project folder (the folder itself, inside it or above it), or can't be read |
+| `template_mounts` | the run-box template (the server's container) mounts a Pi or project folder or the account-room folder (the folder itself, inside it or above it), or can't be read |
 | `host_helper` | live mode without the helper's socket, a helper that doesn't answer ok, or a login bridge that isn't ready |
-| `workspace_overlap` | a Pi folder (state, sockets, pins, role folders, the helper's socket folder, project roots) inside `WORKSPACE_DIR`, which every run box may mount (H3, SW-77) |
+| `workspace_overlap` | a Pi folder (state, sockets, pins, role folders, the helper's socket folder, project roots, the account-room folder) inside `WORKSPACE_DIR`, which every run box may mount (H3, SW-77) |
+| `account_room` | the team settings name no `account_room_file`, or its folder isn't here, isn't a folder, is reached through a link, isn't its own mount, or isn't read-only (whether the file itself is there or fresh is the claim's to decide, never the preflight's) |
 | `pi_schema` | the `pi_` tables can't be brought to this build's version |
 | `disk` | less than 2 GiB free under the state root |
 
 `image`, `pins` and `identity` are the pin check's reasons: the same check the host command
-runs ([The pins](#the-pins)). The project folder's real checks run at the team's start
-([pi-team-api.md](pi-team-api.md)).
+runs ([The pins](#the-pins)).
+
+After the preflight, still before the run is marked running, the claim settles the team's
+project folder on its real paths and the run's one account (`claim_checks`, refusal kinds
+`project_folder` and `account`; [pi-trial-safety.md](pi-trial-safety.md)). The team's node
+runs the same folder check again before it makes a copy.
 
 Inside `pi-worker`, `workspace_overlap` compares the paths as the container sees them. Docker
 resolves a linked source on the host when it mounts it, so a link on the host can hide an
@@ -238,6 +243,11 @@ Nothing sweeps the socket root: a box removes only its own `b*` folder when it c
 the helper's `host.sock`. A later sweep of stale per-box folders (after a crash) must keep to
 the `b*` folders and come with a test that `host.sock` survives it.
 
+The account-room folder (ops' read-only snapshot of each account slot's use, ADR-M4-18) is
+mounted the same way, read-only, as its own mount: `source` and `target` the folder of the
+team settings' `account_room_file`, `read_only: true`, `create_host_path: false`. It is never
+mounted into a member box or a run box.
+
 **Only the Pi lane may run child processes beside a Docker socket** (H1, SW-75): any worker
 with `TEMPER_SPAWNER=subprocess` that can reach Docker refuses to start, except one with
 `TEMPER_LANE=pi`; that one refuses any other spawner and refuses to start without the Pi
@@ -257,6 +267,7 @@ Every Pi lane decision is read back from rows at the moment it is made (SW-78):
   through `approve_wait`, a message into the ledger's inbox). A parked run carries on only on
   an approved row (`runner/parked.py` `answered`);
 - **the account-limit state**: an uncertain turn and its recovery wait, `pi_` ledger rows;
+  the run's account, its row (`spawner_metadata.pi_lane.account`);
 - **the switch**: the process's own setting, `TEMPER_PI_AGENT`, never a message.
 
 Redis carries only the live chunks and script logs a run streams to the dashboard
@@ -326,7 +337,8 @@ well, follow [pi-agent.md](pi-agent.md).
 `tests/test_runner/pi_lane/`: the mark on every entry point both ways, the claims and one run
 at a time, the Pi-only rule, the preflight's reasons, drain and start-up, lane-status, H1
 (`tests/test_spawner/test_subprocess_beside_docker.py`), H2, H4's forged Redis messages
-(`test_redis_decides_nothing.py`), and the secret key never read, on SQLite and the Postgres
+(`test_redis_decides_nothing.py`), the claim's folder and account checks
+(`test_claim_checks.py`), and the secret key never read, on SQLite and the Postgres
 tier. The pins: `tests/test_pi_agent/test_pins.py` (the check, the host command, the one
 add-on list) and `tests/test_pi_agent/test_box_pins.py` (the read-back at load and at every
 start). A stop and a crash mid-turn, end to end: `tests/test_runner/pi_parking/test_pi_lane_restarts.py`.

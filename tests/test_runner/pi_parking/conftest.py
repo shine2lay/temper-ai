@@ -81,6 +81,10 @@ def pw_run(tmp_path, request, monkeypatch, _no_network):
     monkeypatch.setenv("TEMPER_EXECUTION_MODE", "inprocess")
     monkeypatch.setenv("TEMPER_PI_BOX_CONFIG", str(box_json))
     monkeypatch.setattr(executor_mod, "GATE_POLL_SECONDS", 0.02)
+    # A run the Pi lane claims settles its one account first (ADR-M4-09, -18).
+    from tests.test_runner.pi_lane import support as ls
+
+    ls.give_accounts(monkeypatch, tmp_path / "settings")
 
     pw.RAN.clear()
     pw.VERDICT["say"] = "again"

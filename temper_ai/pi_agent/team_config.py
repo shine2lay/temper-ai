@@ -13,6 +13,13 @@ Keys:
   because inside the containers ``~`` is ``/app``.
 * ``owner_callers`` -- the API guard's credential names that are the owner's own
   (:mod:`temper_ai.api.caller`): an action by one of them shows as by ``owner``.
+* ``account_slots`` -- the account slots (the host helper's labels) a Pi run may use; the Pi
+  lane picks one per run at its start, by room (:mod:`temper_ai.pi_agent.accounts`, ADR-M4-09
+  and -14). None by default here: the tracked file lists them. The canonical provider's own
+  slot (account 1) is never allowed.
+* ``account_room_file`` -- an absolute path, readable where the Pi lane runs, of the account
+  room figures (:func:`temper_ai.pi_agent.accounts.read_room`); none by default: a Pi run
+  then can't pick its account and doesn't start.
 
 A bad entry is dropped and named in :attr:`TeamConfig.problems`: a broken file never widens
 what a team may touch.
@@ -51,7 +58,7 @@ LIMITS = {
 }
 #: The owner's own credential names when the settings don't say (the dashboard's key).
 DEFAULT_OWNER_CALLERS = ("owner-dashboard",)
-_KEYS = ("project_roots", "owner_callers")
+_KEYS = ("project_roots", "owner_callers", "account_slots", "account_room_file")
 
 
 @dataclass(frozen=True)
@@ -60,6 +67,8 @@ class TeamConfig:
 
     project_roots: tuple[str, ...] = ()
     owner_callers: tuple[str, ...] = DEFAULT_OWNER_CALLERS
+    account_slots: tuple[str, ...] = ()
+    account_room_file: str | None = None
     problems: tuple[str, ...] = ()
     files: tuple[str, ...] = field(default=())
 
@@ -150,7 +159,44 @@ def load_team_config(config_dir: str | Path | None = None) -> TeamConfig:
         else:
             problems.append(f"{sources['owner_callers']}: owner_callers must be a list of "
                             "credential names")
+    slots: list[str] = []
+    raw_slots = merged.get("account_slots") or []
+    if not isinstance(raw_slots, list):
+        problems.append(f"{sources['account_slots']}: account_slots must be a list of slot "
+                        "labels")
+        raw_slots = []
+    for i, entry in enumerate(raw_slots):
+        why = slot_problem(entry)
+        if why:
+            problems.append(f"{sources['account_slots']}: account_slots[{i}] {why}")
+        elif entry not in slots:
+            slots.append(entry)
+    room_file = merged.get("account_room_file")
+    if room_file is not None and (not isinstance(room_file, str)
+                                  or not os.path.isabs(room_file)
+                                  or os.path.normpath(room_file) != room_file):
+        problems.append(f"{sources['account_room_file']}: account_room_file must be a plain "
+                        "absolute path")
+        room_file = None
     for problem in problems:
         logger.warning("team settings: %s", problem)
     return TeamConfig(project_roots=tuple(roots), owner_callers=owners,
+                      account_slots=tuple(slots), account_room_file=room_file or None,
                       problems=tuple(problems), files=tuple(files))
+
+
+#: An account slot's label: the host helper's alias (``anthropic-2``), never an email or id.
+SLOT_RE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
+
+
+def slot_problem(slot: object) -> str | None:
+    """Why ``slot`` can't be a Pi run's account, else None. The canonical provider's own
+    name is account 1's slot: never on a member's route (ADR-M4-14), refused by name."""
+    from temper_ai.pi_agent.member import DEFAULT_PROVIDER
+
+    if not isinstance(slot, str) or not SLOT_RE.match(slot):
+        return "must be a slot label (lower-case letters, digits, '-' or '_')"
+    if slot == DEFAULT_PROVIDER:
+        return (f"'{slot}' is account 1, which is never on a Pi member's route (ADR-M4-14): "
+                "list the other slots")
+    return None

@@ -123,6 +123,37 @@ def test_provider_error_fails_the_step_red(pi):
     assert sup.ledger().snapshot(eid)["turns"][0]["state"] == "failed"
 
 
+def test_a_refused_account_fails_the_step_red_naming_the_slot_and_never_waits(pi, monkeypatch):
+    """ADR-M4-16 for a single Pi step: the run's account refused the call (a 403 permission
+    error) -> a red turn naming the slot and the refusal, and the step stops with a plain
+    problem: no recovery wait, no second call, no other account."""
+    import json
+
+    import temper_ai.pi_agent.host as host_mod
+    from temper_ai.pi_agent.accounts import refusal_problem
+
+    monkeypatch.setattr(host_mod, "run_account", lambda _eid: {"slot": "acct-b"})
+    FakeBox.behaviour = "account_refused"
+    eid = sup.start(pi.client, "pi_talk", pi.ws)
+    assert _run_status(eid) == "failed"
+    (agent,) = sup.turn_agents(eid)
+    assert agent["data"]["account_slot"] == "acct-b"
+    end = sup.agent_end(eid, agent["id"])
+    assert end["type"] == "agent.failed" and end["status"] == "failed"
+    snap = sup.ledger().snapshot(eid)
+    (turn,) = snap["turns"]
+    assert turn["state"] == "failed" and turn["account_slot"] == "acct-b"
+    assert ("account acct-b refused the call (not allowed for this organization)"
+            in turn["error"])
+    assert not turn["output"], "the error text is never the answer"
+    assert [w["kind"] for w in snap["waits"]] == [], "no recovery wait"
+    assert snap["participants"][0]["ended_reason"] == "account_refused"
+    assert [s["prompts"] for s in FakeBox.STARTS] == [1], "one call, never retried"
+    problem = refusal_problem("acct-b", "the step")
+    assert problem.endswith("the step was stopped")
+    assert problem in json.dumps([e["data"] for e in sup.events(eid)])
+
+
 @pytest.mark.parametrize("lie, code", [
     ("model", "settings_not_effective"),
     ("identity", "role_not_verified"),

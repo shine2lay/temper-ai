@@ -276,6 +276,11 @@ class PiOutcome:
     llm_calls: int
     tool_calls: int
     counts: dict[str, Any]
+    #: How the last model reply ended (its stop reason; None when no reply ended) and, when
+    #: it ended in an error, the provider's error text (redacted): the error path the Pi
+    #: lane reads an account's refusal or limit from (ADR-M4-16), never the answer's text.
+    last_stop: str | None = None
+    last_error: str | None = None
 
     @property
     def error(self) -> str | None:
@@ -829,6 +834,8 @@ class PiEventMapper:
             tool_calls=self._tool_count,
             counts={"events": dict(self._counts), "unknown": dict(self._unknown),
                     "ignored": dict(self._ignored)},
+            last_stop=answer["stop"] if answer else None,
+            last_error=answer["error"] if answer and answer["stop"] in FAILED_STOPS else None,
         )
 
 

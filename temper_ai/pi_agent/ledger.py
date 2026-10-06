@@ -52,6 +52,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
+from temper_ai.pi_agent import token_scan
 from temper_ai.pi_agent.route import model as route_model
 from temper_ai.pi_agent.route.router import (
     POLICY_VERSION,
@@ -84,11 +85,15 @@ UNSETTLED = ("running", "uncertain")
 MESSAGE_STATES = ("held", "pending", "consumed", "undelivered")
 SENDER_KINDS = ("member", "owner", "temper")
 UNDELIVERED_REASONS = ("turn_failed", "turn_superseded", "turn_cancelled", "run_cancelled",
-                       "run_completed", "team_done", "team_stopped", "late",
+                       "run_completed", "team_done", "team_stopped", "account_refused", "late",
                        "recipient_retired", "recipient_unknown")
 #: Why a team ends: the run was cancelled or finished, or (the leader loop, #38) Temper
 #: recorded the team done, or an owner's answer stopped it (never done, R2 B10).
-END_REASONS = ("run_cancelled", "run_completed", "team_done", "team_stopped")
+END_REASONS = ("run_cancelled", "run_completed", "team_done", "team_stopped",
+               "account_refused")
+#: The team's end when the run's account refused a model call (ADR-M4-16): no reset fixes
+#: it, so the team stops instead of waiting.
+ACCOUNT_REFUSED = "account_refused"
 #: Wait kinds: ``owner`` (next message or finish), ``recovery`` (a turn that was cut off or
 #: failed), ``stalled`` (several members with nothing to do), ``pause`` (the leader loop's
 #: pause after N keep-goings in a row, #38), ``settings`` (a conversation is reopened under
@@ -201,6 +206,8 @@ turns = sa.Table(
     sa.Column("error", sa.Text),
     # The worker box's receipt: container, exit, teardown, handoff and tunnel counts. No tokens.
     sa.Column("worker", sa.JSON),
+    # The account the turn's model calls went to, by slot label (ADR-M4-09; version 3).
+    sa.Column("account_slot", sa.String(40)),
     sa.Column("started_at", sa.String(40)),
     sa.Column("ended_at", sa.String(40)),
     sa.Index("ix_pi_turns_team_state", "run_id", "host_path", "state"),
@@ -338,12 +345,44 @@ requests = sa.Table(
     sa.Column("created_at", sa.String(40), nullable=False),
 )
 
-TABLES = (participants, messages, turns, waits, reviews, acts, outcomes, trials, requests)
+#: A team's versions (M4 ADR-M4-12 H, SW-36): written in the Pi lane when the leader makes a
+#: version and when the team is done; team_version serves the newest from here, never from
+#: a copy. Scanned for login tokens before it is stored (SW-52): a hit stores no files or
+#: diff, only which rules matched where. The diff is capped and says so when cut.
+versions = sa.Table(
+    "pi_team_versions", metadata,
+    sa.Column("version_id", sa.String(32), primary_key=True),
+    sa.Column("run_id", sa.String(64), nullable=False),
+    sa.Column("host_path", sa.Text, nullable=False),
+    sa.Column("seq", sa.Integer, nullable=False),
+    sa.Column("kind", sa.String(16), nullable=False),  # review | done
+    sa.Column("act_id", sa.String(64)),
+    sa.Column("review_id", sa.String(32)),
+    sa.Column("round", sa.Integer),
+    sa.Column("member", sa.Text),
+    sa.Column("commit_sha", sa.String(64), nullable=False),
+    sa.Column("start_commit", sa.String(64)),
+    # [{path, sha256}] (a non-file entry: its kind and object id), the first MAX_FILES
+    sa.Column("files", sa.JSON, nullable=False),
+    sa.Column("files_total", sa.Integer, nullable=False),
+    sa.Column("diff", sa.Text, nullable=False),
+    sa.Column("diff_bytes", sa.Integer, nullable=False),
+    sa.Column("truncated", sa.Boolean, nullable=False),
+    sa.Column("note", sa.Text),
+    # {refused, rules: {rule: count}, paths}: the token scan's hits; never the text
+    sa.Column("scan", sa.JSON),
+    sa.Column("created_at", sa.String(40), nullable=False),
+    sa.UniqueConstraint("run_id", "host_path", "seq", name="uq_pi_team_versions_seq"),
+)
+
+TABLES = (participants, messages, turns, waits, reviews, acts, outcomes, trials, requests,
+          versions)
 
 #: The pi_ tables' layout version this build knows (M4 ADR-M4-07, SW-13). 1: the tables, every
-#: path-built column Text (SW-12). 2: the member's role snapshot digest (SW-25). A database is
-#: moved forward by additive steps only: no step drops or rewrites a row.
-SCHEMA_VERSION = 2
+#: path-built column Text (SW-12). 2: the member's role snapshot digest (SW-25). 3: the turn's
+#: account slot (ADR-M4-09) and the team's version records (ADR-M4-12). A database is moved
+#: forward by additive steps only: no step drops or rewrites a row.
+SCHEMA_VERSION = 3
 
 #: One row (id 1): the version the pi_ tables are at. Made with the tables, so a database
 #: with pi_ tables and no row here comes from a Pi build before versioning.
@@ -473,9 +512,19 @@ def _add_snapshot_digest(conn: Any) -> None:
                              "VARCHAR(64)"))
 
 
+def _add_accounts_and_versions(conn: Any) -> None:
+    """Version 3's step: the turn's account slot (a nullable column, so every row already
+    there stays as it is) and the version records' table, made only where missing."""
+    have = {c["name"] for c in sa.inspect(conn).get_columns(turns.name)}
+    if "account_slot" not in have:
+        conn.execute(sa.text("ALTER TABLE pi_turns ADD COLUMN account_slot VARCHAR(40)"))
+    metadata.create_all(conn, tables=[versions], checkfirst=True)
+
+
 #: The forward-only steps after version 1, by the version each brings the tables to. Each is
 #: additive and safe to run again; a later one never undoes an earlier one.
-_STEPS: dict[int, Callable[[Any], None]] = {2: _add_snapshot_digest}
+_STEPS: dict[int, Callable[[Any], None]] = {2: _add_snapshot_digest,
+                                            3: _add_accounts_and_versions}
 
 
 def _unversioned(old: Sequence[str]) -> str:
@@ -775,6 +824,7 @@ class Ledger:
                 return {"ok": False, "code": route_model.INVALID_CHANNEL,
                         "detail": "this turn's message channel is closed"}
             try:
+                token_scan.refuse_tokens(payload)
                 return self._admit(conn, binding, payload)
             except Refusal as refusal:
                 self._audit(conn, binding, refusal, payload)
@@ -853,7 +903,10 @@ class Ledger:
             turns.c.turn_id == binding.turn_id)).first()
         items = list((row[0] if row else None) or [])
         item: dict[str, Any] = {"at": _now(), "code": refusal.code}
-        if isinstance(payload, dict):
+        if isinstance(refusal, token_scan.TokenRefusal):
+            # A login token was in the call: nothing of it is kept, the rules' names only.
+            item["token_refused"] = refusal.detail
+        elif isinstance(payload, dict):
             item["to"] = _short(payload.get("to"))
             item["client_msg_id"] = _short(payload.get("client_msg_id"))
         if refusal.claims:
@@ -995,8 +1048,10 @@ class Ledger:
         return self._fenced(turn_id, epoch, box_name=box_name)
 
     def set_turn_agent_event(self, turn_id: str, agent_event_id: str, *,
-                             epoch: int | None = None) -> bool:
-        return self._fenced(turn_id, epoch, agent_event_id=agent_event_id)
+                             epoch: int | None = None, account_slot: str | None = None) -> bool:
+        """The turn's run-page event and the account its model calls go to (by slot)."""
+        return self._fenced(turn_id, epoch, agent_event_id=agent_event_id,
+                            account_slot=account_slot or None)
 
     def mark_effect(self, turn_id: str, effect_state: str, *, epoch: int | None = None) -> bool:
         return self._fenced(turn_id, epoch, effect_state=effect_state)
@@ -1093,10 +1148,13 @@ class Ledger:
             return True
 
     def hold_turn(self, turn_id: str, error: str, model_call_ids: list[str],
-                  worker: dict | None, attempt_id: str, *, epoch: int | None) -> dict | None:
+                  worker: dict | None, attempt_id: str, *, epoch: int | None,
+                  details: dict | None = None) -> dict | None:
         """A turn whose effects are unknown (worker gone, timeout, a tool that never ended, a
         usage limit): ``uncertain``, still holding the team's claim, and a recovery wait that
-        pauses the team (B11) -- never a blind re-run. None when no longer this owner's."""
+        pauses the team (B11) -- never a blind re-run. None when no longer this owner's.
+        ``details`` go on the wait's subject as they are (a limit's account slot, limit and
+        reset: ADR-M4-09)."""
         team = self._team_of(turns, turns.c.turn_id, turn_id)
         if team is None:
             return None
@@ -1114,7 +1172,7 @@ class Ledger:
             conn.execute(participants.update().where(
                 participants.c.participant_id == p["participant_id"]).values(state="uncertain"))
             return self._recovery_wait(conn, p, t, error or "cut off", ["accept", "retry"],
-                                       attempt_id)
+                                       attempt_id, details=details)
 
     def interrupted_turns(self, run_id: str, host_path: str) -> list[dict]:
         """Turns still ``running`` in the ledger: when a step starts, their attempt is gone."""
@@ -1209,7 +1267,7 @@ class Ledger:
             return opened
 
     def _recovery_wait(self, conn: Any, p: dict, t: dict, why: str, options: list[str],
-                       attempt_id: str) -> dict:
+                       attempt_id: str, *, details: dict | None = None) -> dict:
         name = p["member"]
         # The question without reply syntax, and the chat's reply syntax apart (M3 E22):
         # chat surfaces show the two joined, the same text as before they were split.
@@ -1222,12 +1280,16 @@ class Ledger:
             question = f"{name}'s turn {t['turn_no']} did not finish ({why}); {did}."
             hint = ("Reply 'accept' to keep what it did without running it again, or 'retry' "
                     "to send its messages again.")
-        return self._open_wait(conn, p["run_id"], p["host_path"], "recovery", {
+        subject = {
             "participant_id": p["participant_id"], "member": name, "role": p["role"],
             "turn_id": t["turn_id"], "turn_no": t["turn_no"],
             "effect_state": t["effect_state"], "input_seqs": t["input_seqs"], "why": why,
             "question": question, "reply_hint": hint, "options": options,
-        }, attempt_id)
+        }
+        for key, value in (details or {}).items():
+            subject.setdefault(key, value)  # never over the wait's own fields
+        return self._open_wait(conn, p["run_id"], p["host_path"], "recovery", subject,
+                               attempt_id)
 
     # --- waits ----------------------------------------------------------------------
 

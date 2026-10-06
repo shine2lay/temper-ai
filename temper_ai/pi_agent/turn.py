@@ -282,6 +282,27 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         after = {"settled": False, "error": exc.code}
     report.checks["session_after"] = after
     outcome = mapper.finish()
+    from temper_ai.pi_agent import token_scan
+    from temper_ai.pi_agent.accounts import whole_result_refusal
+
+    refusal = whole_result_refusal(outcome) if outcome.status == "completed" else None
+    if refusal:
+        # The account's refusal alone, from calls with no model output, is never an answer:
+        # the turn fails with it as its error (ADR-M4-16).
+        outcome.errors = [refusal]
+        outcome.output = ""
+        outcome.structured_output = None
+        outcome.status = "failed"
+    hits = token_scan.scan(outcome.output, f"{req.agent_name}'s answer").merge(
+        token_scan.scan_obj(outcome.structured_output, f"{req.agent_name}'s answer")) \
+        if outcome.status == "completed" else None
+    if hits:
+        # SW-52: an answer holding a login token never leaves the run; the turn fails naming
+        # the rules that matched, never the text.
+        outcome.errors = [f"the answer was withheld: {hits.words()}"]
+        outcome.output = ""
+        outcome.structured_output = None
+        outcome.status = "failed"
     extra: list[str] = []
     if report.error:
         extra.append(report.error)
@@ -291,6 +312,12 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         extra.append("the worker container was not removed")
     if extra:
         outcome.errors = [*outcome.errors, *[e for e in extra if e not in outcome.errors]]
+    # An error's words leave the run too (the turn's row, the run view): never a token.
+    outcome.errors = [token_scan.withhold(str(e)) for e in outcome.errors]
+    if outcome.last_error:
+        outcome.last_error = token_scan.withhold(outcome.last_error)
+    if report.error:
+        report.error = token_scan.withhold(report.error)
         outcome.status = "failed"
     refused = report.worker.get("handoff_refused")
     if refused and outcome.status != "completed":

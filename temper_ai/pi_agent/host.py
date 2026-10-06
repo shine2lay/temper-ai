@@ -60,6 +60,7 @@ from jinja2 import BaseLoader, Environment
 
 from temper_ai.agent.base import AgentABC
 from temper_ai.observability.event_types import EventType
+from temper_ai.pi_agent.accounts import refusal_problem, run_account, turn_ending
 from temper_ai.pi_agent.box import (
     PROBE_DIR,
     WORKDIR,
@@ -72,6 +73,7 @@ from temper_ai.pi_agent.box import (
 )
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
+    ACCOUNT_REFUSED,
     Ledger,
     LedgerConflict,
     LedgerLayoutError,
@@ -83,7 +85,6 @@ from temper_ai.pi_agent.member import (
     config_problems,
     launched_tools,
     settings,
-    usage_limit,
 )
 from temper_ai.pi_agent.member_tree import (
     MemberLink,
@@ -152,6 +153,8 @@ class PiHost(AgentABC):
 
     #: Test seam: ``fn(cfg, request, ledger) -> TurnReport``; default runs the worker box.
     turn_runner: Any = None
+    #: The run's account by slot label (ADR-M4-09), read when the step starts.
+    account_slot: str = ""
     #: Test seam: ``fn(box_name) -> result``; default confirms a cut-off turn's worker box is
     #: stopped and removed, with Docker (:func:`temper_ai.pi_agent.box.stop_leftover_box`).
     stop_box: Any = None
@@ -228,6 +231,9 @@ class PiHost(AgentABC):
         if missing:
             return self._fail("; ".join(missing), started)
         self.box = box
+        # The run's one account, settled when the Pi lane claimed the run (ADR-M4-09).
+        self.account = run_account(self.run_id)
+        self.account_slot = str(self.account.get("slot") or "")
         self.ledger = Ledger(get_database().engine)
         try:
             self.ledger.ensure()
@@ -330,7 +336,9 @@ class PiHost(AgentABC):
                 return self._result(Status.FAILED, self._last_error(), started,
                                     error=self._last_error())
             if p.get("state") == "ended":
-                text = "the Pi conversation ended when its run was cancelled"
+                text = (refusal_problem(self.account_slot, "the step")
+                        if p.get("ended_reason") == ACCOUNT_REFUSED
+                        else "the Pi conversation ended when its run was cancelled")
                 return self._result(Status.FAILED, text, started, error=text)
             # A turn boundary: a Pi lane that is stopping lets the run go here, before a new
             # turn is claimed; the lane's next start carries it on from the ledger.
@@ -369,13 +377,17 @@ class PiHost(AgentABC):
                             "session_id": participant["session_id"],
                             "attempt_id": self.attempt_id},
                 "agent_config": self._public_config(),
+                # The run's account by its slot label (ADR-M4-09); inside the box the
+                # provider stays the canonical one.
+                "account_slot": self.account_slot or None,
             })
-        self.ledger.set_turn_agent_event(turn["turn_id"], agent_event_id, epoch=turn["epoch"])
+        self.ledger.set_turn_agent_event(turn["turn_id"], agent_event_id, epoch=turn["epoch"],
+                                         account_slot=self.account_slot)
         spec = BoxSpec(participant_dir=self.pdir, session_id=participant["session_id"],
                        role=cfg["role"], provider=model["provider"], model=model["model"],
                        thinking=model["thinking"], tools=launched_tools(cfg),
                        labels={"run": self.run_id[:36], "turn": turn["turn_id"][:16]},
-                       add_ons=add_on_names(cfg))
+                       add_ons=add_on_names(cfg), slot=self.account_slot)
         req = TurnRequest(run_id=self.run_id, agent_name=self.name, node_path=self.host_path,
                           participant=participant, turn=turn, text=render_batch(batch),
                           spec=spec, agent_event_id=agent_event_id, recorder=rec,
@@ -407,20 +419,26 @@ class PiHost(AgentABC):
                                           ask_owner=self._ask(participant, turn),
                                           attempt_id=self.attempt_id)
             return LOST_TURN if res is None else None
-        limit = usage_limit(report.error) if report.state != "uncertain" else None
-        if report.state == "uncertain" or limit:
+        # How the turn ended, read on the error path only (ADR-M4-16).
+        ending = turn_ending(report, self.account_slot, self.account.get("room"))
+        if ending.kind == "held":
             # Cut off: the owner decides (never a blind re-run). A usage or rate limit pauses
-            # the step the same way (retry once it resets), naming the limit; never a quiet
-            # switch to another model or account.
+            # the step the same way (retry once it resets), naming the account, the limit
+            # and the reset; never a quiet switch to another model or account.
             # Its recovery wait is written with the hold; the loop asks it next.
-            wait = self.ledger.hold_turn(turn["turn_id"], limit or report.error or "cut off",
-                                         report.model_call_ids, worker, self.attempt_id,
-                                         epoch=turn["epoch"])
+            wait = self.ledger.hold_turn(turn["turn_id"], ending.text, report.model_call_ids,
+                                         worker, self.attempt_id, epoch=turn["epoch"],
+                                         details=ending.details)
             return LOST_TURN if wait is None else None
-        error = f"{cfg['role']} turn {turn['turn_no']} failed: {report.error}"
+        error = f"{cfg['role']} turn {turn['turn_no']} failed: {ending.text}"
         if not self.ledger.fail_turn(turn["turn_id"], error, report.model_call_ids, worker,
                                      epoch=turn["epoch"]):
             return LOST_TURN
+        if ending.kind == "refused":
+            # The run's account refused the call: the step stops, its conversation ended so
+            # that a Resume offers no retry on the same account (ADR-M4-16).
+            self._end_conversation(ACCOUNT_REFUSED)
+            return refusal_problem(self.account_slot, "the step")
         return error
 
     def _owner_decided_before(self, turn: dict) -> bool:

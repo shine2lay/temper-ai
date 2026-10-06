@@ -21,6 +21,7 @@ nothing of it is imported. The team itself runs as described in
 | `GET /api/team/trials` | trials, newest first (`limit`, `offset`, `state`) |
 | `GET /api/team/runs/{execution_id}` | one trial's run: the whole state the page draws |
 | `GET /api/team/runs/{execution_id}/messages/{message_id}` | the full text of one message |
+| `GET /api/team/runs/{execution_id}/version` | the team's newest version, from its stored version record (`team_version`) |
 | `POST /api/team/runs/{execution_id}/waits/{wait_id}/answer` | answer the open question Temper asks |
 | `POST /api/team/runs/{execution_id}/messages` | message a member as the owner (201) |
 
@@ -115,6 +116,10 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
   trial's input, `round`, and each member with its activity, turns, cost, model and the
   model and thinking its turns really used (`effective`, from the turn receipt; `unknown`
   on older rows).
+- `account`: the run's one account by slot label, as the Pi lane recorded it at its first
+  claim (`{slot, picked_at, by, room}`; never an email or an account id), else `null`; each
+  turn's `account_slot` in the timeline and each member's `last_turn`
+  ([pi-trial-safety.md](pi-trial-safety.md)).
 - `open_waits`: every open question, in the order Temper asks them (a settings wait
   first, then oldest first). The first has `asked: true` and its `event_id`; the others
   wait behind it with `event_id: null`. Any open wait holds every member's turn. A member's
@@ -137,6 +142,9 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
     of the member's pin before and after, the exact values `go on` checks and pins.
 
   Every other wait has `settings_changes: null` and `pins: null`.
+- A recovery wait after a usage limit also carries `account_slot`, `limit` and `resets`
+  (the run's slot, the limit's words, and when it resets, or `null`); retry keeps the same
+  account, model and thinking.
 - `reviews`, a typed `timeline` (`entry`: message, review_round, view, decision,
   owner_wait, owner_answer, member_turn; plus `message_kind`, `round`, `decision`,
   `wait_kind`; an owner_answer carries `answered_by` and `answered_source`; the settings
@@ -159,6 +167,20 @@ newest first.
 Every time the Team API sends, in every route and every reply, is ISO 8601 in UTC with the
 offset written out (`2026-10-06T09:28:00.882441+00:00`); the page shows it in the owner's
 zone. `owner_actions` are sorted by that moment, oldest first.
+
+## The team's version (`team_version`)
+
+`GET /api/team/runs/{execution_id}/version` follows contract section 5's `team_version`. It is
+served from the newest version record `pi-worker` stored (when the leader asked for a review,
+or when the trial ended done), never read live from a copy:
+
+`{commit, start_commit, kind, review_id, round, made_by, files: [{path, sha256}],
+files_total, diff, diff_bytes, truncated, note, withheld, branch, made_at}`. The diff is
+against the start commit and cut at 200,000 bytes (`truncated: true` and a `note` say so). A
+version the token scan stopped has no files and no diff, and `withheld: {rules, paths}`
+names why. `branch` is the approved branch's name once made, else `null`. `404 {detail: "the
+team has made no version yet"}` before the first record; like every route here, `404` while
+the switch is off.
 
 ## Answering
 
@@ -224,7 +246,8 @@ and done stays done.
 
 ## Tests (no model, no network)
 
-`tests/test_runner/pi_parking/test_team_api.py` (every route on a real in-process Temper
+`tests/test_runner/pi_team/test_team_versions.py` (version records, the route's record, the
+token scan's ways out), `tests/test_runner/pi_parking/test_team_api.py` (every route on a real in-process Temper
 with scripted members), `test_team_outcomes.py` (outcome rows, E18's cancelled stops, the
 node-start folder refusal, pick plus words), `tests/test_pi_agent/test_team_settings.py`
 (settings, folders, branch through a fake helper socket), `tests/test_api/test_gates.py`
@@ -238,5 +261,5 @@ TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/t
 
 ## Not built yet
 
-`team_version` and `team_debrief`, `edges` communication, deleting a trial's configs, and
+`team_debrief`, `edges` communication, deleting a trial's configs, and
 switching it on anywhere but a private test copy.

@@ -39,7 +39,8 @@ def test_a_bad_settings_file_is_named(tmp_path):
     local = _write(tmp_path / "team" / "local" / "team.yaml",
                    "project_roots: [relative/path]\nextra: 1\n")
     _, problems = check_team_settings(tmp_path)
-    assert f"{local}: unknown key 'extra' (known: project_roots, owner_callers)" in problems
+    assert (f"{local}: unknown key 'extra' (known: project_roots, owner_callers, "
+            "account_slots, account_room_file)") in problems
     assert any(p.startswith(f"{local}: project_roots[0] must be an absolute path")
                for p in problems)
 

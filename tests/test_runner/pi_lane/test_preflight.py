@@ -24,6 +24,7 @@ from temper_ai.pi_agent.ledger import LedgerError
 from temper_ai.runner import pi_lane
 from temper_ai.runner import pi_preflight as pf
 from tests.test_pi_agent import support as sup
+from tests.test_runner.pi_lane import support as ls
 
 TEMPLATE = "temper-ai-server-1"
 NO_SUCH_IMAGE = SimpleNamespace(returncode=1, stdout="", stderr="Error: No such image: x\n")
@@ -75,6 +76,15 @@ def lane(tmp_path, monkeypatch):
     (code / ".git").mkdir(parents=True)
     (code / ".git" / "HEAD").write_text("4ce5f9ffa985603a40c5955f84cc86afc5e5a442\n")
     monkeypatch.setattr(pi_lane, "CODE_ROOT", code)
+    # ops' account-room folder, as pi-worker mounts it: its own read-only mount; the file in
+    # it isn't published yet, which the preflight never minds
+    room = tmp_path / "room"
+    room.mkdir()
+    ls.team_settings(monkeypatch, tmp_path / "settings",
+                     account_room_file=str(room / "account-room.json"))
+    mounts = SimpleNamespace(own={str(room)}, read_only={str(room)})
+    monkeypatch.setattr(pf, "_is_mount", lambda p: p in mounts.own)
+    monkeypatch.setattr(pf, "_read_only", lambda p: p in mounts.read_only)
     helper = SimpleNamespace(answer='ok {"pi": "1.0.1", "bridge": {"state": "ready"}}',
                              asked=[])
 
@@ -100,7 +110,7 @@ def lane(tmp_path, monkeypatch):
 
     yield SimpleNamespace(tmp=tmp_path, short=short, box=box_root, project=project, code=code,
                           docker=docker, helper=helper, ledger=ledger, rewrite=rewrite,
-                          path=path,
+                          path=path, room=room, mounts=mounts,
                           run=lambda **kw: pf.preflight(docker=docker, ensure_ledger=ensure,
                                                         **kw))
     shutil.rmtree(short, ignore_errors=True)
@@ -300,8 +310,8 @@ def test_a_tag_that_names_another_image_is_a_reason(lane):
     ("sock", "socket_root"),
     ("project", "project root 1"),
     ("pins", "runtime_dir"),
-    ("above", "identities_dir, identity_config, identity_extension, project root 1, "
-               "runtime_dir, state_root"),
+    ("above", "account_room, identities_dir, identity_config, identity_extension, "
+               "project root 1, runtime_dir, state_root"),
 ])
 def test_a_template_that_mounts_a_pi_or_project_folder_is_a_reason(lane, folder, named):
     """The main worker's run boxes copy the template's mounts: none may reach a Pi folder,
@@ -389,6 +399,74 @@ def test_every_failed_check_is_named_at_once_in_order(lane, monkeypatch):
     lane.ledger.error = LedgerError("locked")
     assert reasons(lane.run()) == ["uid", "image", "pins", "identity", "host_helper",
                                    "workspace_overlap", "pi_schema"]
+
+
+# --- the account-room folder (ADR-M4-18) ------------------------------------------------------
+
+
+def test_the_account_room_file_need_not_be_there_yet(lane):
+    assert not (lane.room / "account-room.json").exists()
+    assert lane.run() == []
+
+
+def test_no_account_room_file_in_the_settings_is_a_reason(lane, monkeypatch):
+    ls.team_settings(monkeypatch, lane.tmp / "settings", account_room_file=None)
+    assert lane.run() == [("account_room", "the team settings name no account_room_file, so "
+                                           "no Pi run's account can be picked")]
+
+
+def test_an_account_room_folder_that_isn_t_here_is_a_reason(lane):
+    shutil.rmtree(lane.room)
+    (reason, words), = lane.run()
+    assert reason == "account_room" and "isn't here" in words and str(lane.room) in words
+
+
+def test_an_account_room_folder_that_isn_t_its_own_read_only_mount_is_a_reason(lane):
+    lane.mounts.own.clear()
+    lane.mounts.read_only.clear()
+    (reason, words), = lane.run()
+    assert reason == "account_room"
+    assert "isn't its own mount" in words and "is writable here" in words
+
+
+def test_an_account_room_folder_mounted_writable_is_a_reason(lane):
+    lane.mounts.read_only.clear()
+    assert reasons(lane.run()) == ["account_room"]
+
+
+def test_an_account_room_folder_reached_through_a_link_is_a_reason(lane, monkeypatch):
+    real = lane.tmp / "elsewhere"
+    real.mkdir()
+    link = lane.tmp / "linked-room"
+    link.symlink_to(real)
+    ls.team_settings(monkeypatch, lane.tmp / "settings",
+                     account_room_file=str(link / "account-room.json"))
+    lane.mounts.own.add(str(link))
+    lane.mounts.read_only.add(str(link))
+    (reason, words), = lane.run()
+    assert reason == "account_room" and "isn't a folder" in words
+
+
+def test_a_link_above_the_account_room_folder_is_a_reason(lane, monkeypatch):
+    real = lane.tmp / "elsewhere" / "room"
+    real.mkdir(parents=True)
+    (lane.tmp / "linked").symlink_to(lane.tmp / "elsewhere")
+    folder = lane.tmp / "linked" / "room"
+    ls.team_settings(monkeypatch, lane.tmp / "settings",
+                     account_room_file=str(folder / "account-room.json"))
+    lane.mounts.own.add(str(folder))
+    lane.mounts.read_only.add(str(folder))
+    (reason, words), = lane.run()
+    assert reason == "account_room" and "through a link" in words
+
+
+def test_a_template_or_workspace_that_holds_the_account_room_folder_is_a_reason(lane,
+                                                                               monkeypatch):
+    lane.docker.mounts.append({"Source": str(lane.room)})
+    monkeypatch.setenv(pf.WORKSPACE_ENV, str(lane.tmp / "room"))
+    failed = dict(lane.run())
+    assert "account_room" in failed["template_mounts"]
+    assert "account_room" in failed["workspace_overlap"]
 
 
 def test_the_overlap_rule_reads_paths_both_ways():

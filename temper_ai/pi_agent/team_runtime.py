@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from temper_ai.observability.event_types import EventType
+from temper_ai.pi_agent.accounts import turn_ending
 from temper_ai.pi_agent.box import (
     TEAM_TOOL,
     BoxConfig,
@@ -65,7 +66,6 @@ from temper_ai.pi_agent.member import (
     config_problems,
     launched_tools,
     settings,
-    usage_limit,
 )
 from temper_ai.pi_agent.member_tree import SnapshotRefused
 from temper_ai.pi_agent.route.model import RESERVED_IDS
@@ -146,8 +146,10 @@ class StepResult:
 
     ``kind``: ``idle`` (no member has a message), ``waiting`` (a team wait is open: nothing
     runs until it is answered), ``busy`` (another attempt holds the team's turn), or the
-    turn's end: ``completed``, ``held`` (cut off: a recovery wait is open), ``failed`` (the
-    member's turn failed visibly) or ``lost`` (a newer attempt took the turn over meanwhile).
+    turn's end: ``completed``, ``held`` (cut off or a usage limit: a recovery wait is open),
+    ``failed`` (the member's turn failed visibly), ``refused`` (the run's account refused
+    the call: the turn failed and the team must stop, ADR-M4-16) or ``lost`` (a newer
+    attempt took the turn over meanwhile).
     """
 
     kind: str
@@ -208,9 +210,14 @@ class Team:
     def __init__(self, ledger: Ledger, box: BoxConfig, *, run_id: str, host_path: str,
                  members: list[TeamMember], team_settings: dict | None, recorder: Any,
                  attempt_id: str, parent_event_id: str | None = None,
-                 workflow: str | None = None, cancel_event: Any = None):
+                 workflow: str | None = None, cancel_event: Any = None,
+                 account: dict | None = None):
         self.ledger = ledger
         self.box = box
+        #: The run's one account (ADR-M4-09): its slot pins every member's login hand-off
+        #: and is recorded on every turn; never another slot, whatever a call returns.
+        self.account = dict(account or {})
+        self.account_slot = str(self.account.get("slot") or "")
         self.run_id = run_id
         self.host_path = host_path
         self.members = {m.name: m for m in members}
@@ -419,16 +426,20 @@ class Team:
                             "participant_id": part["participant_id"],
                             "session_id": part["session_id"], "member": name,
                             "attempt_id": self.attempt_id},
+                # The account by its slot label; inside the box the provider stays the
+                # canonical one (ADR-M4-15).
+                "account_slot": self.account_slot or None,
             })
         if not self.ledger.set_turn_agent_event(turn["turn_id"], agent_event_id,
-                                                epoch=turn["epoch"]):
+                                                epoch=turn["epoch"],
+                                                account_slot=self.account_slot):
             return StepResult("lost", member=name, turn=turn)
         pdir = Path(part["session_dir"]).parent
         spec = BoxSpec(participant_dir=pdir, session_id=part["session_id"], role=cfg["role"],
                        provider=model["provider"], model=model["model"],
                        thinking=model["thinking"], tools=self.tools_for(member),
                        labels={"run": self.run_id[:36], "turn": turn["turn_id"][:16]},
-                       add_ons=add_on_names(cfg), team=channel)
+                       add_ons=add_on_names(cfg), team=channel, slot=self.account_slot)
         req = TurnRequest(run_id=self.run_id, agent_name=name, node_path=self.host_path,
                           participant=part, turn=turn,
                           text=self.prompt_for(member, turn, batch),
@@ -453,22 +464,27 @@ class Team:
                 return StepResult("lost", member=name, turn=turn)
             return StepResult("completed", member=name, turn=self.ledger.turn(turn["turn_id"]),
                               released=res["released"])
-        limit = usage_limit(report.error) if report.state != "uncertain" else None
-        if report.state == "uncertain" or limit:
+        # How the turn ended, read on the error path only (ADR-M4-16): a member's answer is
+        # never read for an account's words.
+        ending = turn_ending(report, self.account_slot, self.account.get("room"))
+        if ending.kind == "held":
             # Cut off (a hang, a lost box, a cancel) or a usage limit: the owner decides,
-            # and the whole team waits meanwhile (B11). Never a blind re-run.
-            wait = self.ledger.hold_turn(turn["turn_id"], limit or report.error or "cut off",
-                                         report.model_call_ids, worker, self.attempt_id,
-                                         epoch=turn["epoch"])
+            # and the whole team waits meanwhile (B11). Never a blind re-run. A limit names
+            # the account, the limit and the reset; a retry keeps the same account.
+            wait = self.ledger.hold_turn(turn["turn_id"], ending.text, report.model_call_ids,
+                                         worker, self.attempt_id, epoch=turn["epoch"],
+                                         details=ending.details)
             if wait is None:
                 return StepResult("lost", member=name, turn=turn)
-            return StepResult("held", member=name, turn=turn, wait=wait,
-                              error=limit or report.error)
-        error = f"{name} ({cfg['role']}) turn {turn['turn_no']} failed: {report.error}"
+            return StepResult("held", member=name, turn=turn, wait=wait, error=ending.text)
+        # A red turn. When the account refused the call the team stops (no recovery wait, no
+        # other slot, no retry: no reset fixes it); the error is never the member's answer.
+        error = f"{name} ({cfg['role']}) turn {turn['turn_no']} failed: {ending.text}"
         if not self.ledger.fail_turn(turn["turn_id"], error, report.model_call_ids, worker,
                                      epoch=turn["epoch"]):
             return StepResult("lost", member=name, turn=turn)
-        return StepResult("failed", member=name, turn=turn, error=error)
+        return StepResult("refused" if ending.kind == "refused" else "failed", member=name,
+                          turn=turn, error=error)
 
     # --- the owner's answers and the end ---------------------------------------------
 

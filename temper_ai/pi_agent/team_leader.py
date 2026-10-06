@@ -53,10 +53,13 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from temper_ai.pi_agent.host import INVALID, ask_text, owner_reply
+from temper_ai.pi_agent import team_versions, token_scan
+from temper_ai.pi_agent.accounts import refusal_problem, run_account
+from temper_ai.pi_agent.host import INVALID, _slug, ask_text, owner_reply
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
     _LOCK,
+    ACCOUNT_REFUSED,
     Binding,
     Ledger,
     LedgerLayoutError,
@@ -84,7 +87,7 @@ from temper_ai.pi_agent.settings_wait import (
     settings_word,
     team_subject,
 )
-from temper_ai.pi_agent.team_folders import GIT
+from temper_ai.pi_agent.team_folders import GIT, NOT_GIT, format_problem
 from temper_ai.pi_agent.team_runtime import (
     Team,
     TeamChannel,
@@ -202,6 +205,10 @@ class CopyError(Exception):
     """A project copy could not be made, committed or moved: the team fails red."""
 
 
+class CopyFormatError(CopyError):
+    """git can't read the workspace's repository format: named before any model call."""
+
+
 class TeamFailure(Exception):
     """The team can't go on (a copy failed, another attempt holds the team): red."""
 
@@ -245,7 +252,8 @@ class ProjectCopies:
         return wt
 
     def _g(self, args: list[str], *, git_dir: Path | None = None,
-           work_tree: Path | None = None, cwd: Path | None = None) -> bytes:
+           work_tree: Path | None = None, cwd: Path | None = None,
+           stdin: bytes | None = None) -> bytes:
         cmd = list(_GIT)
         if git_dir is not None:
             cmd.append(f"--git-dir={git_dir}")
@@ -257,11 +265,16 @@ class ProjectCopies:
                "GIT_TERMINAL_PROMPT": "0", "HOME": str(self.root), "LC_ALL": "C"}
         try:
             done = subprocess.run(cmd, cwd=str(cwd or work_tree or self.root), env=env,
-                                  capture_output=True, timeout=GIT_TIMEOUT, check=False)
+                                  input=stdin, capture_output=True, timeout=GIT_TIMEOUT,
+                                  check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise CopyError(f"git {args[0]} could not run ({exc.__class__.__name__})") from None
         if done.returncode != 0:
-            err = done.stderr.decode("utf-8", "replace").strip().splitlines()
+            stderr = done.stderr.decode("utf-8", "replace")
+            unreadable = format_problem(stderr)
+            if unreadable:
+                raise CopyFormatError(unreadable)
+            err = stderr.strip().splitlines()
             raise CopyError(f"git {args[0]} failed: {(err[-1] if err else '')[:200]}")
         return done.stdout
 
@@ -273,6 +286,16 @@ class ProjectCopies:
                            git_dir=git_dir).decode().strip() or None
         except CopyError:
             return None
+
+    @staticmethod
+    def recorded(root: Path) -> dict:
+        """What a team root's copies were made from (``{source, commit}``), read only:
+        ``{}`` before the first copy."""
+        try:
+            rec = json.loads((Path(root) / "project.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return rec if isinstance(rec, dict) else {}
 
     def record(self) -> dict:
         """What the team works on, fixed at its first copy: ``{source, commit}``."""
@@ -295,9 +318,10 @@ class ProjectCopies:
             raise CopyError(f"the workspace {self.source} is not a folder")
         try:
             self._g(["rev-parse", "--show-toplevel"], cwd=src)
+        except CopyFormatError:
+            raise
         except CopyError:
-            raise CopyError("the workspace is not a git repository: the team works on copies of "
-                            "its committed content") from None
+            raise CopyError(NOT_GIT) from None
         try:
             commit = self._g(["rev-parse", "--verify", "-q", "HEAD^{commit}"],
                              cwd=src).decode().strip()
@@ -322,8 +346,13 @@ class ProjectCopies:
         if not (gd / "HEAD").exists():
             self._g(["init", "-q"], git_dir=gd)
         if rec.get("commit"):
-            self._g(["fetch", "-q", "--no-tags", rec["source"], rec["commit"]], git_dir=gd)
-            self._g(["reset", "-q", "--hard", rec["commit"]], git_dir=gd, work_tree=wt)
+            # Committed content only, through git's own transfer (never hard links to the
+            # workspace's files): no submodule's content and no LFS object -- the copy has no
+            # filter configured, so an LFS file stays its pointer (ADR-M4-12, SW-34).
+            self._g(["fetch", "-q", "--no-tags", "--no-recurse-submodules", rec["source"],
+                     rec["commit"]], git_dir=gd)
+            self._g(["reset", "-q", "--hard", "--no-recurse-submodules", rec["commit"]],
+                    git_dir=gd, work_tree=wt)
         else:
             self._g(["commit", "-q", "--allow-empty", "--no-verify", "-m",
                      "Temper: the team's project starts empty"], git_dir=gd, work_tree=wt)
@@ -365,6 +394,54 @@ class ProjectCopies:
             else:
                 out[path] = f"{kind}:{oid}"
         return out, len(entries)
+
+    def diff_base(self, member: str, sha: str) -> str:
+        """What a version's diff is taken against: the start commit the copies were made from,
+        or (a team that started empty) the copy's first commit."""
+        start = self.record().get("commit")
+        if start:
+            return str(start)
+        roots = self._g(["rev-list", "--max-parents=0", sha],
+                        git_dir=self.git_dir(member)).decode().split()
+        if not roots:
+            raise CopyError(f"{member}'s copy has no first commit")
+        return roots[-1]
+
+    def diff(self, member: str, base: str, sha: str) -> bytes:
+        """The text diff from ``base`` to ``sha`` (binary files are only named)."""
+        return self._g(["diff", "--no-color", "--no-ext-diff", "--no-textconv",
+                        "--no-renames", base, sha], git_dir=self.git_dir(member))
+
+    def changed_blobs(self, member: str, base: str, sha: str) -> list[tuple[str, bytes]]:
+        """Every file added or changed from ``base`` to ``sha``, with its whole content (binary
+        files too): what the token scan reads before a version leaves the run."""
+        gd = self.git_dir(member)
+        raw = self._g(["diff", "--raw", "-z", "--no-renames", "--no-abbrev", base, sha],
+                      git_dir=gd).split(b"\0")
+        wanted: list[tuple[str, str]] = []
+        for meta, raw_path in zip(raw[0::2], raw[1::2], strict=False):
+            fields = meta.decode("ascii", "replace").lstrip(":").split()
+            if len(fields) < 5:
+                continue
+            new_mode, new_oid = fields[1], fields[3]
+            if new_mode == "160000" or set(new_oid) == {"0"}:
+                continue  # a submodule's commit id, or a deleted file: no content leaves
+            wanted.append((raw_path.decode("utf-8", "replace"), new_oid))
+        if not wanted:
+            return []
+        out = self._g(["cat-file", "--batch"], git_dir=gd,
+                      stdin="".join(f"{oid}\n" for _p, oid in wanted).encode())
+        found: list[tuple[str, bytes]] = []
+        pos = 0
+        for path, _oid in wanted:
+            end = out.index(b"\n", pos)
+            header = out[pos:end].split()
+            if len(header) < 3 or header[1] == b"missing":
+                raise CopyError(f"{member}'s copy is missing the content of {path}")
+            size = int(header[2])
+            found.append((path, out[end + 1:end + 1 + size]))
+            pos = end + 1 + size + 1
+        return found
 
     def move_to(self, member: str, pdir: Path, leader: str, act_id: str, sha: str) -> None:
         """Make the member's copy exactly commit ``sha`` of the leader's copy."""
@@ -547,6 +624,7 @@ class LeaderTeam(TeamRows, Team):
                 return {"ok": False, "code": route_model.INVALID_CHANNEL,
                         "detail": "this turn's message channel is closed"}
             try:
+                token_scan.refuse_tokens(payload)
                 return self._admit_act(conn, binding, payload)
             except Refusal as refusal:
                 Ledger._audit(conn, binding, refusal, payload)
@@ -742,11 +820,17 @@ class LeaderTeam(TeamRows, Team):
         try:
             sha = self.project.commit_review(self.leader, self._pdir(lead), act["act_id"])
             files, count = self.project.files(self.leader, sha)
+            # The leader made a version: its record, token-scanned, is what team_version
+            # serves (ADR-M4-12 H, SW-36, SW-52).
+            version = team_versions.build(self.project, self.leader, sha, files=files,
+                                          files_total=count)
             for r in reviewers:
                 self.project.move_to(r["member"], self._pdir(r), self.leader, act["act_id"], sha)
         except CopyError as exc:
             raise TeamFailure(f"the review of round {self._next_round()} could not be set up: "
                               f"{exc}") from None
+        if team_versions.withheld(version):
+            files = {}  # nothing of a version holding a login token leaves the run
         note = (act["args"] or {}).get("note")
         with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
             round_no = (conn.execute(sa.select(sa.func.max(reviews.c.round)).where(
@@ -763,6 +847,9 @@ class LeaderTeam(TeamRows, Team):
                 commit_sha=sha, files=files, state="open" if reviewers else "collected",
                 decision=None, decided_turn=None, summary=None, cost=None, opened_at=_now(),
                 decided_at=None))
+            team_versions.store(conn, run_id=self.run_id, host_path=self.host_path,
+                                kind="review", record=version, act_id=act["act_id"],
+                                review_id=rid, round_no=round_no, member=self.leader)
             for r in reviewers:
                 body = "\n".join(filter(None, [
                     f"Review {rid} (round {round_no}) from {self.leader}: your project copy now "
@@ -1101,6 +1188,10 @@ class LeaderTeam(TeamRows, Team):
                 return Outcome("stopped", self.stopped() or "the team was stopped")
             if reason == "run_cancelled":
                 return Outcome("cancelled", "the run was cancelled")
+            if reason == ACCOUNT_REFUSED:
+                # The run's account refused a model call: no reset fixes that, so the team
+                # stays stopped, also on a Resume (ADR-M4-16).
+                return Outcome("failed", refusal_problem(self.account_slot))
             if reason is not None:
                 return Outcome("failed", f"the team ended ({reason}) before it was done")
             if self.cancel_event is not None and self.cancel_event.is_set():
@@ -1146,6 +1237,11 @@ class LeaderTeam(TeamRows, Team):
                 continue
             if result.kind == "failed":
                 return Outcome("failed", result.error or f"{result.member}'s turn failed")
+            if result.kind == "refused":
+                # The account refused the call: the turn is red (it names the slot and the
+                # refusal) and the team stops. No wait, no other slot, no retry.
+                self.end(ACCOUNT_REFUSED)
+                continue
             return Outcome("failed", "another attempt of this run is running the team: "
                                      "refusing to run it twice")
 
@@ -1180,6 +1276,36 @@ class LeaderTeam(TeamRows, Team):
             "project": self.project.record() if self.project.record_path.exists() else {},
             "leader": self.leader,
         }
+
+    def done_version(self, record: dict) -> tuple[dict | None, str | None]:
+        """Store the done version's record (kind ``done``; ADR-M4-12 H): the record made when
+        its review was asked for, or (a review made before records were kept) one read now
+        from the leader's copy. Returns it and, when no branch may be made from it, why: it
+        holds a login token, or it couldn't be checked for one. Never raises: done stays
+        done."""
+        sha = (record.get("version") or {}).get("commit")
+        if not sha:
+            return None, None
+        rid = record.get("review_id")
+        try:
+            with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
+                made = (team_versions.of_review(conn, self.run_id, self.host_path, rid)
+                        if rid else None)
+            if made is None or made["commit_sha"] != sha:
+                made = team_versions.build(self.project, self.leader, sha)
+            with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
+                team_versions.store(conn, run_id=self.run_id, host_path=self.host_path,
+                                    kind="done", record=made, review_id=rid,
+                                    round_no=record.get("round"), member=self.leader)
+        except Exception:  # noqa: BLE001 - done stays done; nothing unchecked leaves the run
+            logger.warning("pi team: the done version's record could not be made",
+                           exc_info=True)
+            return None, ("the version could not be checked for login tokens, so no branch "
+                          "was made from it")
+        if team_versions.withheld(made):
+            return made, (f"the version holds {token_scan.Hits.of(made['scan']).words()}, so "
+                          "no branch was made from it")
+        return made, None
 
     def _objections(self, rev: dict, on_done: dict[str, dict],
                     last: dict[str, dict]) -> list[dict]:
@@ -1420,8 +1546,14 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
                           box=box, box_problem=box_problem)
     roots = roots_of(load_team_config().project_roots)
     if context.workspace_path:
+        # The same check the Pi lane ran when it claimed the run (runner/pi_lane.py).
+        start_commit = None
+        if box is not None:
+            start_commit = ProjectCopies.recorded(
+                Path(box.state_root) / context.run_id / _slug(host_path)).get("commit")
         folder_problems, _notes = folder_check(str(context.workspace_path), roots,
-                                               authoritative=True, fresh=not began())
+                                               authoritative=True, fresh=not began(),
+                                               start_commit=start_commit)
         problems += folder_problems
     if problems:
         # A3: before any turn of this team began it can't start; after, it can't go on.
@@ -1438,6 +1570,8 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
         parent_event_id=context.parent_event_id, workflow=context.workflow_name,
         cancel_event=context.cancel_event, leader=node.settings.mode.leader,
         pause_after=node.settings.pause_after_rounds, goal=str(goal),
+        # The run's one account, settled when the Pi lane claimed the run (ADR-M4-09).
+        account=run_account(context.run_id),
         project=None)  # type: ignore[arg-type]
     team.project = ProjectCopies(team.root, context.workspace_path)
     refusal = team.open({"goal": goal, **(input_data or {})})
@@ -1478,9 +1612,20 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
         "duration_seconds": time.monotonic() - started, "metadata": meta}
     if ended.status == "done":
         record = dict(ended.record)
+        _made, no_branch = team.done_version(record)
+        if _made is not None and team_versions.withheld(_made):
+            # Nothing of a version holding a login token leaves the run: not its file names.
+            record["version"] = {**record["version"], "files": {},
+                                 "withheld": dict(_made["scan"].get("rules") or {})}
         if trial_id and context.workspace_path and (record.get("version") or {}).get("commit"):
-            record["branch"] = _trial_branch(team, record, trial_id, str(context.workspace_path),
-                                             roots, box)
+            if no_branch:
+                from temper_ai.pi_agent.team_branch import branch_name
+
+                record["branch"] = {"name": branch_name(trial_id), "made": False,
+                                    "why": no_branch}
+            else:
+                record["branch"] = _trial_branch(team, record, trial_id,
+                                                 str(context.workspace_path), roots, box)
         outcome("done", str(record.get("summary") or "done"), record=record)
         return NodeResult(status=Status.COMPLETED, output=str(record.get("summary") or ""),
                           structured_output=record, **spent)

@@ -165,7 +165,9 @@ def worker_problem(spawner: Any) -> str | None:
 
 @dataclass(frozen=True)
 class Refusal:
-    """Why a run process didn't start its run: ``kind`` is ``lane`` or ``pi_preflight``."""
+    """Why a run process didn't start its run: ``kind`` is ``lane``, ``pi_preflight``,
+    ``project_folder`` (the team's folder, checked on its real paths) or ``account`` (the
+    run's one account could not be settled)."""
 
     kind: str
     message: str
@@ -178,8 +180,9 @@ def check_run(execution_id: str, run_row: dict, *, start: str | None,
     Outside the Pi lane an unmarked run passes untouched and a Pi run is refused (SW-42).
     In the Pi lane a run that isn't a Pi run is refused; a Pi run gets every temper module
     imported now (H2), the Pi-only rule on the workflow as it loads now (SW-41, at claim),
-    the preflight (ADR-M4-05), and its commit recorded with the pins the preflight checked
-    and the host's Pi version (SW-16)."""
+    the preflight (ADR-M4-05), the team's project folder on its real paths and the run's one
+    account (:func:`claim_checks`), and its commit recorded with the pins the preflight
+    checked and the host's Pi version (SW-16)."""
     try:
         here = this_lane()
     except LaneSettingError as exc:
@@ -194,7 +197,11 @@ def check_run(execution_id: str, run_row: dict, *, start: str | None,
         return Refusal("lane", f"{NOT_A_PI_RUN}: this run isn't marked for the Pi lane, so "
                                f"the Pi lane didn't start it")
     eager_import()
-    problems = _pi_only_now(run_row, graph_loader)
+    # Every log line of a Pi run leaves with its login tokens withheld (SW-52).
+    from temper_ai.pi_agent.token_scan import guard_logs
+
+    guard_logs()
+    nodes, problems = _pi_only_now(run_row, graph_loader)
     if problems:
         return Refusal("lane", "The Pi lane runs only Pi steps, team stages of Pi members "
                                "and gates: " + "; ".join(problems))
@@ -210,22 +217,114 @@ def check_run(execution_id: str, run_row: dict, *, start: str | None,
         # The preflight read it a moment ago: refuse rather than record "unknown" (SW-16).
         return Refusal("pi_preflight", "The Pi lane's checks before the run failed: "
                                        f"commit_unreadable: {why}")
+    refusal = claim_checks(execution_id, run_row, nodes)
+    if refusal is not None:
+        return refusal
     record_commit(execution_id, start, commit, pins=seen.get("pins"),
                   host_pi=seen.get("host_pi"))
     return None
 
 
-def _pi_only_now(run_row: dict, graph_loader: Any) -> list[str]:
+def _pi_only_now(run_row: dict, graph_loader: Any) -> tuple[list[Any], list[str]]:
+    """The workflow as it loads now (loaded once) and its Pi-only problems."""
     name = str(run_row.get("workflow_name") or "")
     try:
         nodes, config = graph_loader.load_workflow(name, inputs=run_row.get("inputs") or {})
     except Exception as exc:  # noqa: BLE001 - the run itself reports a workflow that won't load
         logger.warning("Pi lane: workflow %s didn't load for the Pi-only check (%s); the run "
                        "reports it", name, type(exc).__name__)
-        return []
+        return [], []
     if lane_for(nodes) != PI_LANE:
-        return [f"workflow '{name}' has no Pi step any more"]
-    return pi_only_problems(nodes, getattr(config, "safety", None))
+        return nodes, [f"workflow '{name}' has no Pi step any more"]
+    return nodes, pi_only_problems(nodes, getattr(config, "safety", None))
+
+
+# --- At claim, before any copy or model call (ADR-M4-12, ADR-M4-09) --------------------------
+
+_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+
+
+def has_team(nodes: Any) -> bool:
+    """Whether the workflow has a team stage (the only Pi step that copies a project)."""
+    from temper_ai.runner.lanes import _walk
+
+    return any(type(node).__name__ == "TeamNode" for _path, node in _walk(nodes or ()))
+
+
+def recorded_start_commits(execution_id: str) -> list[str]:
+    """The commits a run's team copies started from, as recorded under the Pi state root
+    (none before the first copy, or when the box config can't be read)."""
+    from temper_ai.pi_agent.team_check import load_box
+    from temper_ai.pi_agent.team_leader import ProjectCopies
+
+    if not _RUN_ID.fullmatch(execution_id or ""):
+        return []
+    box, _problem = load_box()
+    if box is None:
+        return []
+    commits: list[str] = []
+    for record in sorted((Path(box.state_root) / execution_id).glob("*/project.json")):
+        commit = ProjectCopies.recorded(record.parent).get("commit")
+        if isinstance(commit, str) and commit and commit not in commits:
+            commits.append(commit)
+    return commits
+
+
+def folder_problems_at_claim(execution_id: str, path: str) -> list[str]:
+    """The team's project folder, checked on its real paths by the same function the team's
+    node runs before it makes a copy (team_folders.folder_check, authoritative): inside a
+    listed root, the top of a git work tree whose git folders are inside the roots, with its
+    start commit (the one its copies started from, once recorded), no link leading out."""
+    from temper_ai.pi_agent.team_config import load_team_config
+    from temper_ai.pi_agent.team_folders import folder_check, roots_of
+
+    roots = roots_of(load_team_config().project_roots)
+    commits = recorded_start_commits(execution_id)
+    if not commits:
+        return folder_check(path, roots, authoritative=True, fresh=True)[0]
+    problems: list[str] = []
+    for commit in commits:
+        for problem in folder_check(path, roots, authoritative=True, fresh=False,
+                                    start_commit=commit)[0]:
+            if problem not in problems:
+                problems.append(problem)
+    return problems
+
+
+def admitted_before(run_row: dict) -> bool:
+    """Whether the run passed a claim before: an attempt's commit is on its row (SW-16),
+    written only once the claim's checks passed."""
+    meta = run_row.get("spawner_metadata") or {}
+    record = meta.get(LANE_RECORD_KEY) if isinstance(meta, dict) else None
+    return bool(isinstance(record, dict) and record.get("commits"))
+
+
+def claim_checks(execution_id: str, run_row: dict, nodes: Any) -> Refusal | None:
+    """What the Pi lane settles when it claims a run, before any copy or model call: a team's
+    project folder on its real paths (ADR-M4-12, SW-33), then the run's one account -- kept
+    from an earlier attempt, else picked at the run's first claim by the account-room file
+    from the allowed slots and recorded on the run, where a second claim finds it and keeps
+    it (ADR-M4-09, -14, -18). A refusal names why; nothing is copied and no model is called."""
+    workspace = run_row.get("workspace_path")
+    if workspace and has_team(nodes):
+        problems = folder_problems_at_claim(execution_id, str(workspace))
+        if problems:
+            return Refusal("project_folder", "The Pi lane's checks of the team's project "
+                                             "folder failed: " + "; ".join(problems))
+    from temper_ai.pi_agent.accounts import (
+        AccountError,
+        choose,
+        record_account,
+        recorded_account,
+    )
+
+    try:
+        account = choose(run_row, admitted=admitted_before(run_row))
+        if recorded_account(run_row) is None:
+            record_account(execution_id, account)  # an earlier claim's account stands
+    except AccountError as exc:
+        return Refusal("account", f"The Pi lane couldn't settle the run's account: {exc}")
+    return None
 
 
 def record_refusal(execution_id: str, run_row: dict, refusal: Refusal, *,

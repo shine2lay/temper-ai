@@ -83,9 +83,10 @@ def columns(engine, table: str) -> set[str]:
 
 def test_sw13_a_fresh_database_is_made_at_this_build_s_version_and_again_changes_nothing(fresh):
     Ledger(fresh).ensure()
-    assert stored(fresh) == SCHEMA_VERSION == 2
+    assert stored(fresh) == SCHEMA_VERSION == 3
     assert {t.name for t in TABLES} | {"pi_schema_version"} <= names(fresh)
     assert "snapshot_sha256" in columns(fresh, "pi_participants")
+    assert "account_slot" in columns(fresh, "pi_turns") and "pi_team_versions" in names(fresh)
     with fresh.connect() as conn:
         assert conn.execute(sa.select(sa.func.count()).select_from(schema_version)).scalar() == 1
     Ledger(fresh).ensure()
@@ -102,16 +103,50 @@ def test_sw13_an_older_version_is_moved_forward_by_its_steps_keeping_every_row(f
     led.post(RUN, "talk", "scout", "hello", dedupe_key=f"{RUN}:talk:seed:0")
     with fresh.begin() as conn:  # back to version 1's layout
         conn.execute(sa.text("ALTER TABLE pi_participants DROP COLUMN snapshot_sha256"))
+        conn.execute(sa.text("ALTER TABLE pi_turns DROP COLUMN account_slot"))
+        conn.execute(sa.text("DROP TABLE pi_team_versions"))
         conn.execute(schema_version.update().values(version=1))
     assert "snapshot_sha256" not in columns(fresh, "pi_participants")
 
     Ledger(fresh).ensure()
     assert stored(fresh) == SCHEMA_VERSION
     assert "snapshot_sha256" in columns(fresh, "pi_participants")
+    assert "account_slot" in columns(fresh, "pi_turns") and "pi_team_versions" in names(fresh)
     (row,) = led.participants_of(RUN, "talk")
     assert row == {**p, "snapshot_sha256": None}
     assert [m["body"] for m in led.pending_for(p["participant_id"])] == ["hello"]
     assert led.record_snapshot(p["participant_id"], "d" * 64) == "d" * 64
+
+
+def test_version_3_s_step_adds_the_turn_s_account_and_the_version_records_keeping_rows(fresh):
+    """A database at version 2 (before ADR-M4-09's turn account and ADR-M4-12's version
+    records): ensure adds the nullable column and the table, moving the record to 3; the turn
+    already there is kept, its account empty, and a turn after it records its slot."""
+    led = Ledger(fresh)
+    led.ensure()
+    p, _ = led.attach_participant(RUN, "talk", "scout", session_root="/state/run/talk",
+                                  pin={"model": "m"}, attempt_id="a1")
+    led.post(RUN, "talk", "scout", "hello", dedupe_key=f"{RUN}:talk:seed:0")
+    claimed = led.claim_turn(RUN, "talk", attempt_id="a1")
+    assert claimed is not None
+    turn, _batch = claimed
+    with fresh.begin() as conn:  # back to version 2's layout
+        conn.execute(sa.text("ALTER TABLE pi_turns DROP COLUMN account_slot"))
+        conn.execute(sa.text("DROP TABLE pi_team_versions"))
+        conn.execute(schema_version.update().values(version=2))
+
+    Ledger(fresh).ensure()
+    assert stored(fresh) == SCHEMA_VERSION == 3
+    assert "account_slot" in columns(fresh, "pi_turns") and "pi_team_versions" in names(fresh)
+    with fresh.connect() as conn:
+        rows = conn.execute(sa.text("SELECT turn_id, state, account_slot FROM pi_turns")).all()
+    assert [(r[0], r[2]) for r in rows] == [(turn["turn_id"], None)]
+    assert led.set_turn_agent_event(turn["turn_id"], "ev-1", epoch=turn["epoch"],
+                                    account_slot="acct-b")
+    with fresh.connect() as conn:
+        assert conn.execute(sa.text("SELECT account_slot FROM pi_turns")).scalar() == "acct-b"
+    Ledger(fresh).ensure()  # again: nothing changes
+    assert stored(fresh) == SCHEMA_VERSION
 
 
 def test_sw13_a_table_missing_at_the_current_version_comes_back_at_this_layout(fresh):
@@ -130,8 +165,8 @@ def test_sw13_a_database_newer_than_this_build_is_refused_changing_nothing(fresh
     with pytest.raises(LedgerVersionError) as refused:
         Ledger(fresh).ensure()
     assert str(refused.value) == (
-        "this database's Pi tables are at layout version 3, but this Temper knows only up to "
-        "version 2: a newer Temper made them; Temper changed nothing. Run the newer Temper, or "
+        f"this database's Pi tables are at layout version {SCHEMA_VERSION + 1}, but this "
+        f"Temper knows only up to version {SCHEMA_VERSION}: a newer Temper made them; Temper changed nothing. Run the newer Temper, or "
         "use another database for Pi")
     assert isinstance(refused.value, LedgerLayoutError)
     assert stored(fresh) == SCHEMA_VERSION + 1 and "pi_team_requests" not in names(fresh)
@@ -153,12 +188,12 @@ def test_sw13_pi_tables_from_before_versioning_are_refused_changing_nothing(fres
 
 
 def test_sw13_a_version_record_whose_tables_lack_a_column_is_refused(fresh):
-    """A record that says version 2 over tables without version 2's column (made by hand, or
+    """A record that says version 3 over tables without version 2's column (made by hand, or
     a step undone): refused, never written to."""
     Ledger(fresh).ensure()
     with fresh.begin() as conn:
         conn.execute(sa.text("ALTER TABLE pi_turns DROP COLUMN box_stop"))
-    with pytest.raises(LedgerLayoutError, match=r"don't match their layout version 2 \(missing "
+    with pytest.raises(LedgerLayoutError, match=r"don't match their layout version 3 \(missing "
                                                 r"pi_turns\.box_stop\); Temper changed nothing"):
         Ledger(fresh).ensure()
 

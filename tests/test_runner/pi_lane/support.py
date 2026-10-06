@@ -7,6 +7,7 @@ so with :func:`as_the_pi_lane`.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -70,6 +71,82 @@ def as_the_pi_lane(monkeypatch) -> None:
     from temper_ai.runner import lanes
 
     monkeypatch.setenv(lanes.LANE_ENV, PI_LANE)
+
+
+#: The account slots these tests' team settings allow: any labels but account 1's.
+TEST_SLOTS = ("acct-b", "acct-c")
+
+
+def team_settings(monkeypatch, settings_root: Path, **keys: Any) -> Path:
+    """The team settings this test's Temper reads: ``keys`` merged into the owner's
+    git-ignored local file under ``settings_root`` (other keys already there are kept). Only
+    the default configs root is replaced. Returns the file."""
+    import yaml
+
+    from temper_ai.pi_agent import team_config
+
+    local = settings_root / team_config.TEAM_DIR / "local" / "team.yaml"
+    local.parent.mkdir(parents=True, exist_ok=True)
+    have = (yaml.safe_load(local.read_text(encoding="utf-8")) or {}) if local.exists() else {}
+    local.write_text(yaml.safe_dump({**have, **keys}), encoding="utf-8")
+    real = team_config.settings_paths
+
+    def settings_paths(config_dir: str | Path | None = None) -> tuple[Path, Path]:
+        return real(config_dir if config_dir else settings_root)
+
+    monkeypatch.setattr(team_config, "settings_paths", settings_paths)
+    return local
+
+
+def room_rows(figures: dict[str, dict], *, observed_at: str | None = None) -> list[dict]:
+    """Version 1 rows (the account-room interface) for ``{slot: {five_hour, seven_day,
+    five_hour_resets_at, seven_day_resets_at}}``; a slot given ``{"reason": ...}`` is
+    unavailable. Observed now (whole seconds, UTC with Z) unless ``observed_at``."""
+    from temper_ai.shared.clock import utcnow
+
+    when = observed_at or utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = []
+    for slot, got in figures.items():
+        if "reason" in got:
+            rows.append({"slot": slot, "status": "unavailable", "reason": got["reason"]})
+            continue
+        rows.append({"slot": slot, "status": "ok", "observed_at": when,
+                     "five_hour": {"used_percent": got.get("five_hour"),
+                                   "resets_at": got.get("five_hour_resets_at")},
+                     "seven_day": {"used_percent": got.get("seven_day"),
+                                   "resets_at": got.get("seven_day_resets_at")}})
+    return rows
+
+
+def write_room(path: Path, figures: dict[str, dict], *, observed_at: str | None = None) -> Path:
+    """An account-room file as ops' writer publishes it (version 1; accounts.read_room)."""
+    import json
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"schema_version": 1,
+                                "slots": room_rows(figures, observed_at=observed_at)}),
+                    encoding="utf-8")
+    return path
+
+
+def give_accounts(monkeypatch, settings_root: Path, *, slots: tuple[str, ...] = TEST_SLOTS,
+                  figures: dict[str, dict] | None = None) -> Path:
+    """The team settings' account slots and a fresh account-room file beside them, as the
+    owner's settings and ops' writer have them at switch-on: every slot has room, the first
+    the most. Returns the room file."""
+    room = write_room(settings_root / "account-room.json", figures if figures is not None else {
+        slot: {"five_hour": 10.0, "seven_day": 20.0 + 10 * i} for i, slot in enumerate(slots)})
+    team_settings(monkeypatch, settings_root, account_slots=list(slots),
+                  account_room_file=str(room))
+    return room
+
+
+def account_of(execution_id: str) -> dict | None:
+    """The account recorded on the run's row."""
+    from temper_ai.pi_agent.accounts import recorded_account
+
+    found = row(execution_id)
+    return recorded_account({"spawner_metadata": found.spawner_metadata if found else None})
 
 
 def row(execution_id: str) -> Any:

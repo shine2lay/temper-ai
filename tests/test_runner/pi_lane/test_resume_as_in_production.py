@@ -66,6 +66,7 @@ def lane_box(srv, monkeypatch, tmp_path):
     monkeypatch.setattr("temper_ai.cli.run_workflow._install_signal_handlers", lambda *a: None)
     monkeypatch.setattr(pi_preflight, "preflight", lambda **_kw: [])
     monkeypatch.setattr(pi_lane, "read_commit", lambda root=None: (SHA, ""))
+    ls.give_accounts(monkeypatch, tmp_path / "settings")
     monkeypatch.setattr(executor_mod, "GATE_POLL_SECONDS", 0.02)
     monkeypatch.setitem(sup.WORKFLOWS, WORKFLOW, two_pi_steps)
     srv.box_json = sup.make_box_config(tmp_path / "box")

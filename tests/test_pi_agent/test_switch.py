@@ -157,6 +157,7 @@ TEAM_ROUTES = [
     "['GET'] /api/team/roles",
     "['GET'] /api/team/runs/{execution_id}",
     "['GET'] /api/team/runs/{execution_id}/messages/{message_id}",
+    "['GET'] /api/team/runs/{execution_id}/version",
     "['GET'] /api/team/status",
     "['GET'] /api/team/trials",
     "['POST'] /api/team/runs/{execution_id}/messages",
@@ -167,7 +168,7 @@ TEAM_ROUTES = [
 
 def test_the_switch_adds_only_the_team_page_routes(probes):
     """Switched off (unset or off) Temper has exactly the routes it had before #48; switched
-    on it adds the Team page's nine, all under /api/team, and changes no other route."""
+    on it adds the Team page's ten (#52's team_version among them), all under /api/team, and changes no other route."""
     assert probes["unset"]["routes"] == probes["off"]["routes"]
     added = sorted(set(probes["on"]["routes"]) - set(probes["off"]["routes"]))
     assert added == sorted(TEAM_ROUTES)

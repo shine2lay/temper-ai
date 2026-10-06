@@ -34,6 +34,8 @@ PROMPTS: dict[str, list[str]] = defaultdict(list)
 SENDS: list[dict] = []
 #: The binding of the turn being played now (a script's callable may read its run and team).
 CURRENT: dict[str, Binding] = {}
+#: What each model turn's box was pinned to, as (member, slot, model, thinking), in order.
+SLOTS_USED: list[tuple[str, str, str, str]] = []
 
 
 def reset() -> None:
@@ -42,6 +44,7 @@ def reset() -> None:
     PROMPTS.clear()
     SENDS.clear()
     CURRENT.clear()
+    SLOTS_USED.clear()
     Team.turn_runner = None
     Team.stop_box = None
 
@@ -96,6 +99,7 @@ class TeamFakeBox(FakeBox):
         self.log["prompts"] += 1
         self.log["allowance_at_prompt"] = self.allowance
         self.log["member"] = member
+        SLOTS_USED.append((member, self.spec.slot, self.spec.model, self.spec.thinking))
         PROMPTS[member].append(message)
         self._append({"type": "message", "message": {"role": "user", "content": [
             {"type": "text", "text": message}]}})
@@ -120,9 +124,19 @@ class TeamFakeBox(FakeBox):
             elif "hang" in action:  # nothing more comes: the hang guard cuts the turn off
                 return out
             elif "error" in action:  # the provider refuses: Pi settles with an error
-                msg = assistant(stop="error", error=action["error"])
+                # (``text``: what came with the error reply; it is never the answer)
+                came = action.get("text", "")
+                msg = assistant(came, stop="error", error=action["error"])
                 self._append({"type": "message", "message": msg})
-                return [*out, *said(msg), {"type": "agent_end", "messages": []}, SETTLED]
+                return [*out, *said(msg, (came,) if came else ()),
+                        {"type": "agent_end", "messages": []}, SETTLED]
+            elif "alone" in action:  # a call with no model output: its whole result is text
+                msg = assistant(action["alone"])
+                msg["usage"] = {"input": 12, "output": 0, "totalTokens": 12,
+                                "cost": {"total": 0}}
+                self._append({"type": "message", "message": msg})
+                return [*out, *said(msg, (action["alone"],)),
+                        {"type": "agent_end", "messages": []}, SETTLED]
         msg = assistant(text)
         self._append({"type": "message", "message": msg})
         return [*out, *said(msg, (text,)), {"type": "agent_end", "messages": []}, SETTLED]

@@ -7,9 +7,11 @@
  * Used in agent cards, detail panels, and anywhere long text needs
  * to be readable instead of a raw blob.
  */
-import { useState, useMemo } from 'react';
+import { Fragment, useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
+import { CODE_TOKEN_CLASS, tokenizeCodeLine } from '@/lib/codeTokens';
 import { CopyButton } from './CopyButton';
+import { SafeMarkdown } from './SafeMarkdown';
 
 interface SmartContentProps {
   content: string;
@@ -129,10 +131,12 @@ function JsonNode({ value, path, depth, collapsed, toggle }: {
 
 /* --- Markdown --- */
 
+/**
+ * Markdown through the shared safe renderer (text only, checked links, no
+ * images), in the compact look this box has always had. A single newline is
+ * a line break here, as it always was.
+ */
 function MarkdownContent({ content, compact }: { content: string; compact?: boolean }) {
-  // Lightweight markdown rendering without heavy dependencies
-  // Handles: headers, bold, italic, code blocks, inline code, lists, links
-  const html = useMemo(() => renderMarkdown(content), [content]);
   return (
     <div
       className={cn(
@@ -142,6 +146,9 @@ function MarkdownContent({ content, compact }: { content: string; compact?: bool
         '[&_h1]:text-sm [&_h1]:font-bold [&_h1]:text-temper-text [&_h1]:mt-3 [&_h1]:mb-1',
         '[&_h2]:text-xs [&_h2]:font-bold [&_h2]:text-temper-text [&_h2]:mt-2 [&_h2]:mb-1',
         '[&_h3]:text-xs [&_h3]:font-semibold [&_h3]:text-temper-text [&_h3]:mt-2 [&_h3]:mb-0.5',
+        '[&_h4]:text-xs [&_h4]:font-semibold [&_h4]:text-temper-text [&_h4]:mt-2 [&_h4]:mb-0.5',
+        '[&_h5]:text-xs [&_h5]:font-semibold [&_h5]:text-temper-text [&_h5]:mt-2 [&_h5]:mb-0.5',
+        '[&_h6]:text-xs [&_h6]:font-semibold [&_h6]:text-temper-text [&_h6]:mt-2 [&_h6]:mb-0.5',
         '[&_p]:mb-1.5 [&_p]:text-temper-text',
         '[&_ul]:pl-4 [&_ul]:mb-1.5 [&_ul]:list-disc',
         '[&_ol]:pl-4 [&_ol]:mb-1.5 [&_ol]:list-decimal',
@@ -154,48 +161,12 @@ function MarkdownContent({ content, compact }: { content: string; compact?: bool
         '[&_strong]:font-semibold [&_strong]:text-temper-text',
         '[&_a]:text-temper-text dark:[&_a]:text-temper-accent [&_a]:underline',
         '[&_blockquote]:border-l-2 [&_blockquote]:border-temper-accent/30 [&_blockquote]:pl-3 [&_blockquote]:text-temper-text-dim [&_blockquote]:italic',
+        '[&_hr]:my-2 [&_hr]:border-temper-border',
       )}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    >
+      <SafeMarkdown content={content} softBreaks />
+    </div>
   );
-}
-
-/** Lightweight markdown to HTML — handles common patterns without a full parser. */
-function renderMarkdown(md: string): string {
-  let html = md
-    // Escape HTML
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    // Code blocks (``` ... ```)
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-    // Headers
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    // Bold + italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // Unordered lists
-    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-    // Numbered lists
-    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-    // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-    // Blockquotes
-    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
-    // Paragraphs (double newline)
-    .replace(/\n\n/g, '</p><p>')
-    // Line breaks
-    .replace(/\n/g, '<br/>');
-
-  // Wrap consecutive <li> in <ul>
-  html = html.replace(/(<li>.*?<\/li>(?:<br\/>)?)+/g, (match) => {
-    return '<ul>' + match.replace(/<br\/>/g, '') + '</ul>';
-  });
-
-  return '<p>' + html + '</p>';
 }
 
 /* --- Code --- */
@@ -219,25 +190,20 @@ function CodeContent({ content }: { content: string }) {
   );
 }
 
-/** Basic syntax highlighting for common patterns. */
+/** Light colouring for common patterns: React text in spans, never HTML. */
 function highlightCodeLine(line: string): React.ReactNode {
-  // Keywords
-  const highlighted = line
-    .replace(/\b(import|from|export|default|const|let|var|function|return|class|if|else|for|while|async|await|try|catch|def|self|None|True|False)\b/g,
-      '<kw>$1</kw>')
-    .replace(/(["'`])([^"'`]*)\1/g, '<str>$1$2$1</str>')
-    .replace(/\/\/.*/g, '<cmt>$&</cmt>')
-    .replace(/#.*/g, '<cmt>$&</cmt>');
-
   return (
-    <span dangerouslySetInnerHTML={{ __html: highlighted
-      .replace(/<kw>/g, '<span class="text-violet-400 font-medium">')
-      .replace(/<\/kw>/g, '</span>')
-      .replace(/<str>/g, '<span class="text-emerald-400">')
-      .replace(/<\/str>/g, '</span>')
-      .replace(/<cmt>/g, '<span class="text-temper-text-dim italic">')
-      .replace(/<\/cmt>/g, '</span>')
-    }} />
+    <span>
+      {tokenizeCodeLine(line).map((token, i) =>
+        token.kind === 'plain' ? (
+          <Fragment key={i}>{token.text}</Fragment>
+        ) : (
+          <span key={i} className={CODE_TOKEN_CLASS[token.kind]}>
+            {token.text}
+          </span>
+        ),
+      )}
+    </span>
   );
 }
 

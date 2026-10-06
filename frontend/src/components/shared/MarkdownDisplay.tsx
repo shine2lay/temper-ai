@@ -1,6 +1,5 @@
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
+import { SafeMarkdown } from './SafeMarkdown';
 
 interface MarkdownDisplayProps {
   content: string;
@@ -23,7 +22,7 @@ export function MarkdownDisplay({ content, className, maxHeight }: MarkdownDispl
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <SafeMarkdown content={content} gfm />
     </div>
   );
 }

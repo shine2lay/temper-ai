@@ -10,6 +10,8 @@ run page, and runs nothing.
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -252,6 +254,37 @@ def test_a_pi_run_a_main_worker_claimed_fails_red_and_says_why(srv, run_process)
     assert (attempt["data"]["error"], attempt["data"]["refused"]) == (message, "lane")
     detail = srv.client.get(f"/api/workflows/{eid}").json()
     assert detail["status"] == "failed"
+
+
+def test_a_room_file_the_claim_refuses_leaves_no_token_in_any_record_or_log(
+        srv, run_process, monkeypatch, tmp_path, caplog):
+    """SW-52 where the run process's words leave it: a Pi run whose account-room file the
+    reader refuses fails red, and what it says (the run's error, its stored refused attempt,
+    the run page's detail and the log) holds no key or value of the file."""
+    from temper_ai.pi_agent.token_scan import scan
+
+    canary = "sk-ant-" + "oat01-" + "R" * 40  # inert, built so no literal token sits here
+    ls.as_the_pi_lane(monkeypatch)
+    room = ls.give_accounts(monkeypatch, tmp_path / "settings")
+    room.write_text(f'{{"schema_version": 1, "slots": [], "{canary}": 1}}', encoding="utf-8")
+    monkeypatch.setattr(pi_lane, "eager_import", lambda: None)
+    monkeypatch.setattr(pi_preflight, "preflight", lambda *, record=None: [])
+    monkeypatch.setattr(pi_lane, "read_commit", lambda root=None: (SHA, ""))
+    eid = srv.client.post("/api/runs", json={"workflow": "lane_pi", "inputs": {},
+                                             "workspace_path": str(srv.ws)}).json()["execution_id"]
+    caplog.set_level(logging.INFO)
+    assert run_process(eid) == pi_lane.REFUSED_EXIT
+    found = ls.row(eid)
+    assert found.status == "failed" and found.error["kind"] == "account"
+    assert "account-room file" in found.error["message"]
+    (attempt,) = sup.attempts(eid)
+    assert (attempt["status"], attempt["data"]["refused"]) == ("failed", "account")
+    detail = srv.client.get(f"/api/workflows/{eid}").text
+    said = {"run error": json.dumps(found.error), "stored attempt": json.dumps(attempt, default=str),
+            "run page": detail, "log": caplog.text}
+    assert {where: bool(scan(text)) or canary in text for where, text in said.items()} == {
+        where: False for where in said}
+    assert ls.account_of(eid) is None
 
 
 def test_the_commit_is_read_from_the_checkout_without_running_git():

@@ -131,22 +131,34 @@ GATE_D1 = {"decided_by": "fixture-test", "direction": "D1", "users": "confirm",
            "reasons": "fixture run: the recommended direction"}
 
 
-def test_a_fork_with_new_research_works_the_decision_out_again(tmp_path, fake_browser, monkeypatch):
-    """A fork that assembles the research again (same gate answer) gets a fresh decision, not a refusal."""
+def test_a_fork_with_new_research_asks_the_gate_again_and_decides_again(tmp_path, fake_browser, monkeypatch):
+    """A fork that assembles the research again gets a fresh gate answer and decision: no refusal, and no
+    answer on file that was given to the earlier research (#38 fork 9d2df739 kept a 09:48Z answer)."""
     ws = packed(tmp_path)
     j = research_through_decision(ws, "homepage", monkeypatch)
     assert j.decision()["direction"] == "D1"
+    first = json.loads((ws / "research/gate.json").read_text())
+    assert first["answered"] == {"research_sha256": dr.file_digest(ws / "research/research.json"),
+                                 "users_sha256": dr.file_digest(ws / "research/USERS.md")}
     research = json.loads((ws / "research/research.json").read_text())
     research["directions"][0]["axes"]["density"] = "medium"  # as a re-assembly under new rules would
     (ws / "research/research.json").write_text(json.dumps(research))
     again = dr.Job(str(ws), fixture=True)
-    assert again.gate(json.dumps(GATE_D1)).get("reused")  # the same answer is not recorded twice
+    with pytest.raises(ValueError, match="answer it again"):
+        again.decision()  # the answer on file was given to the earlier research
+    assert not again.gate(json.dumps(GATE_D1)).get("reused")  # the same answer to new research is recorded anew
+    gate = json.loads((ws / "research/gate.json").read_text())
+    assert gate["answered"]["research_sha256"] == dr.file_digest(ws / "research/research.json")
+    assert json.loads((ws / "research/gate-superseded-1.json").read_text())["answered"] == first["answered"]
     out = again.decision()
     assert not out.get("reused") and out["direction"] == "D1" and out["decided_by"] == "fixture-test"
     assert json.loads((ws / "research/fixed.json").read_text())["axes"]["density"] == "medium"
     state = json.loads((ws / "research/state.json").read_text())
-    assert [s["stage"] for s in state["superseded"]] == ["decision"]
-    assert again.decision().get("reused")
+    assert [s["stage"] for s in state["superseded"]] == ["gate", "decision"]
+    assert again.gate(json.dumps(GATE_D1)).get("reused") and again.decision().get("reused")
+    # A gate record from before this rule (no "answered") is still read.
+    (ws / "research/gate.json").write_text(json.dumps({k: v for k, v in gate.items() if k != "answered"}))
+    assert dr.Job(str(ws), fixture=True).decision()["direction"] == "D1"
 
 
 def test_a_new_research_gate_answer_is_recorded_and_the_earlier_one_kept(tmp_path, fake_browser, monkeypatch):

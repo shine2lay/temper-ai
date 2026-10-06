@@ -654,14 +654,20 @@ class Job:
         ids = ([d["id"] for d in load(self.dir / "research.json")["directions"]] if inv["research"]["direction"]
                else ["keep"])
         answer = rc.gate_answer(raw, ids, self.deciders())
-        fp = digest(answer)
+        seen = self.gate_inputs()
+        fp = digest({"answer": answer, "answered": seen})  # the same answer to new research is a new answer
         cached = self.cached("gate", fp)
         if cached:
             return cached
-        record = {**answer, "gate": "research", "gated": True, "recorded_at": now()}
+        record = {**answer, "gate": "research", "gated": True, "answered": seen, "recorded_at": now()}
         save(self.dir / "gate.json", record)
         return self.receipt("gate", fp, {"status": "completed", "decided_by": answer["decided_by"],
                                          "direction": answer["direction"], "users": answer["users"]})
+
+    def gate_inputs(self) -> dict:
+        """What a research gate answer was given to: the research and the users profile, by sha256."""
+        return {"research_sha256": file_digest(self.dir / "research.json"),
+                "users_sha256": file_digest(self.dir / "USERS.md")}
 
     def decision(self) -> dict:
         inv = self.inv
@@ -669,6 +675,8 @@ class Job:
         gate = load(gate_path) if gate_path.exists() else None
         if inv["gate"] == "on" and gate is None:
             raise ValueError("the research gate is on but has no answer")
+        if gate is not None and gate.get("answered") not in (None, self.gate_inputs()):  # older records lack it
+            raise ValueError("the research gate was answered before the research or users changed; answer it again")
         research = load(self.dir / "research.json") if inv["research"]["direction"] else None
         fp = digest({"gate": gate, "research": file_digest(self.dir / "research.json"),
                      "users": file_digest(self.dir / "USERS.md"), "inv": inv["status"]})

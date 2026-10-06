@@ -208,7 +208,10 @@ again, those three are worked out again; the earlier receipt stays under `supers
 5. **Research gate** (`research`): Design confirms or corrects the users and picks a direction, with
    reasons (answer below). On by default whenever research ran; `research_json` `{"gate": "off"}`
    switches it off (the recommendation is then recorded with `decided_by: null`). Skipped on the
-   defined branch. Fixture runs answer `fixture-test`.
+   defined branch. Fixture runs answer `fixture-test`. The record (`research/gate.json`) keeps the
+   sha256 of the research and users profile it answered (`answered`); when a fork assembles the
+   research again, the decision refuses the old answer until the gate is answered again, and the
+   earlier answer stays on record as `gate-superseded-<n>.json`.
 6. **Decision** (`decision`): writes `research/decision.json`, `research/FOR_DESIGN.md` (what the
    copywriter and art director read) and `research/fixed.json` (the approved parts, their colours and
    fonts, and the five audience targets of the chosen direction; the homepage concept check measures

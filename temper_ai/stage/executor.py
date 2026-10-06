@@ -15,6 +15,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from temper_ai.observability.event_types import EventType
+from temper_ai.observability.recorder import event_parents
+from temper_ai.observability.run_totals import attempt_spend
 from temper_ai.shared.clock import utcnow
 from temper_ai.shared.types import ExecutionContext, NodeResult, Status
 from temper_ai.stage.conditions import evaluate_condition, source_value
@@ -199,6 +201,8 @@ def execute_graph(
     # Attempts discarded by a loop rewind. They are gone from node_outputs but
     # they were paid for, so the run's totals have to keep them.
     retired: list[NodeResult] = []
+    # What a resume kept from earlier attempts: paid for there, counted here as at a normal end.
+    kept = tuple(node_outputs.values())
     stood_down = False
 
     try:
@@ -229,7 +233,7 @@ def execute_graph(
         return _end_graph(
             WorkflowError(f"'{stop.path}' failed while '{parked.path}' waited on you: {stop.reason}"),
             nodes, node_outputs, retired, input_data, context, graph_event_id, start,
-            is_workflow=is_workflow,
+            is_workflow=is_workflow, kept=kept,
         )
 
     except ReplacedByLaterAttempt as replaced:
@@ -243,7 +247,7 @@ def execute_graph(
 
     except Exception as exc:
         return _end_graph(exc, nodes, node_outputs, retired, input_data, context, graph_event_id,
-                          start, is_workflow=is_workflow)
+                          start, is_workflow=is_workflow, kept=kept)
 
     finally:
         if is_workflow and not stood_down:
@@ -350,6 +354,7 @@ def _end_graph(
     start: float,
     *,
     is_workflow: bool,
+    kept: tuple[NodeResult, ...] = (),
 ) -> NodeResult:
     """End a graph that was thrown out: cancelled by hand, or broken."""
     duration = time.monotonic() - start
@@ -365,21 +370,56 @@ def _end_graph(
         if isinstance(stop, RunStop):
             stop.note_failure(context.node_path or "the run", str(exc))
         stopped = _settle_run(context, nodes, node_outputs, input_data)
-    context.event_recorder.update_event(
-        graph_event_id,
-        status=terminal.value,
-        data={"error": str(exc), "duration_seconds": duration,
-              **({"stopped": stopped} if stopped else {})},
-    )
+    data: dict = {"error": str(exc), "duration_seconds": duration,
+                  **({"stopped": stopped} if stopped else {})}
+    if is_workflow:
+        # Every way a run ends leaves what it spent, as a completed run's does (queue #65).
+        data.update(_ended_run_totals(context, graph_event_id, node_outputs, retired, kept))
+    context.event_recorder.update_event(graph_event_id, status=terminal.value, data=data)
     return NodeResult(
         status=terminal,
         error=str(exc),
         agent_results=[r for nr in node_outputs.values() for r in nr.agent_results],
         node_results=node_outputs,
         duration_seconds=duration,
-        cost_usd=sum(r.cost_usd for r in (*node_outputs.values(), *retired)),
-        total_tokens=sum(r.total_tokens for r in (*node_outputs.values(), *retired)),
+        cost_usd=data.get("cost_usd", sum(r.cost_usd for r in (*node_outputs.values(), *retired))),
+        total_tokens=data.get("total_tokens", sum(r.total_tokens for r in (*node_outputs.values(), *retired))),
     )
+
+
+def _ended_run_totals(
+    context: ExecutionContext,
+    graph_event_id: str,
+    node_outputs: dict[str, NodeResult],
+    retired: list[NodeResult],
+    kept: tuple[NodeResult, ...] = (),
+) -> dict:
+    """A thrown-out run's totals for its event, by the completed-run rule plus the step in flight.
+
+    At a normal end (``_build_final_result``) the steps' results say what the run spent: the
+    finished steps, what a resume kept from earlier attempts (``kept``) and the attempts a loop
+    threw away. A step in flight when the run was thrown out hands no result back, so here
+    this attempt's own spend is read from what its agents recorded (observability/run_totals.py:
+    every model call under this graph's event, rewound attempts and the step in flight
+    included), with what was kept from earlier attempts added. The results' sum is the floor.
+    If the events can't be read, the results alone are written: the run still ends.
+    """
+    spent = (*node_outputs.values(), *retired)
+    cost = sum(r.cost_usd for r in spent)
+    tokens = sum(r.total_tokens for r in spent)
+    try:
+        parents = event_parents(context.run_id, ("workflow.", "stage.", "agent."))
+        recorded = attempt_spend(context.run_id, graph_event_id, parents)
+        cost = max(cost, sum(r.cost_usd for r in kept) + recorded.cost_usd)
+        tokens = max(tokens, sum(r.total_tokens for r in kept) + recorded.total_tokens)
+    except Exception as exc:  # noqa: BLE001 - the results' share is still right; the end goes on
+        logger.warning("Run %s: could not read the spend of the step in flight: %s", context.run_id, exc)
+    totals: dict = {"cost_usd": cost, "total_tokens": tokens}
+    retired_agents = [a for r in retired for a in r.agent_results]
+    if retired_agents:
+        totals["retired_llm_calls"] = sum(a.llm_calls for a in retired_agents)
+        totals["retired_tool_calls"] = sum(a.tool_calls for a in retired_agents)
+    return totals
 
 
 def _settle_run(

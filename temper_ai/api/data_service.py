@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from temper_ai.observability import get_events
 from temper_ai.observability.event_types import EventType
 from temper_ai.observability.recorder import event_parents
+from temper_ai.observability.run_totals import Spend, run_spend, stored_totals
 from temper_ai.observability.script_logs import SCRIPT_LOG_PREFIX
 from temper_ai.runner import quiet
 from temper_ai.stage.gate import APPROVED, REJECTED
@@ -399,12 +400,8 @@ def get_workflow_execution(execution_id: str) -> dict | None:
     # right rule per node type; the workflow event's own totals (computed by
     # the executor over every node, dispatched included) win when present.
     wf_data = workflow_event.get("data", {})
-    total_cost = wf_data.get("cost_usd")
-    if total_cost is None:
-        total_cost = _sum_node_metric(nodes, "cost_usd")
-    total_tokens = wf_data.get("total_tokens")
-    if total_tokens is None:
-        total_tokens = _sum_node_metric(nodes, "total_tokens")
+    totals = run_totals({execution_id: wf_data})[execution_id]
+    total_cost, total_tokens = totals.cost_usd, totals.total_tokens
     # The node tree holds one entry per name, so attempts a loop rewind
     # discarded aren't in it. The executor publishes their share separately;
     # add it rather than replace, since these two counts come from different
@@ -682,8 +679,6 @@ def list_workflow_executions(
             "start_time": started,
             "end_time": end_time,
             "duration_seconds": duration,
-            "total_cost_usd": data.get("cost_usd", 0),
-            "total_tokens": data.get("total_tokens", 0),
         })
 
     # Sort by start_time descending (most recent first)
@@ -691,9 +686,30 @@ def list_workflow_executions(
 
     total = len(runs)
     runs = runs[offset: offset + limit]
+    # The same totals as the run's own page, by one rule and one query for the page.
+    totals = run_totals({r["id"]: by_exec[r["id"]].get("data") for r in runs})
+    for r in runs:
+        r["total_cost_usd"] = totals[r["id"]].cost_usd
+        r["total_tokens"] = totals[r["id"]].total_tokens
     _mark_the_quiet_ones(runs, awaiting)
 
     return {"runs": runs, "total": total}
+
+
+def run_totals(event_data: dict[str, dict | None]) -> dict[str, Spend]:
+    """Each run's totals, from its speaking workflow event's data, by execution id.
+
+    The event's own totals when it has them (a run that ended or parked, since queue #65 every
+    way of ending). Otherwise, for runs from before that and runs whose box died before any
+    end, what the run's recorded events say it spent (observability/run_totals.py: the
+    completed-run rule, rewound attempts and a step in flight included), one query for all.
+    The run list and the run's page both read their totals here, so they agree.
+    """
+    found = {eid: stored_totals(data) for eid, data in event_data.items()}
+    missing = [eid for eid, spend in found.items() if spend is None]
+    from_events = run_spend(missing) if missing else {}
+    return {eid: spend if spend is not None else from_events.get(eid, Spend())
+            for eid, spend in found.items()}
 
 
 def _start_completeness(ev: dict) -> tuple:

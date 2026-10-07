@@ -774,13 +774,58 @@ for (const theme of ['dark', 'light'] as const) {
         await looks(page, 'refused-done');
       });
 
-      test('a long question waiting behind the asked one (R16)', async ({ page }) => {
-        await openRun(page, 'run-paused-long-next');
-        const next = card(page).getByRole('button', { name: 'Show all' });
-        await expect(next).toHaveAttribute('aria-expanded', 'false');
+      test('a long question waiting behind the asked one (R16): at rest, by keyboard, by touch', async ({
+        page,
+        browser,
+        baseURL,
+      }) => {
+        const whole = (fixture('run-paused-long-next').body as { open_waits: { question: string }[] }).open_waits[1].question;
+        const { sent } = await openRun(page, 'run-paused-long-next');
+        const text = card(page).locator('[data-next-question]');
+        const cut = () => text.evaluate((el) => el.scrollHeight > el.clientHeight + 1);
+
+        // At rest: two lines, the rest behind Show all; screen readers have the whole text.
+        const toggle = card(page).getByRole('button', { name: /^Show (all|less)$/ });
+        await expect(toggle).toHaveText('Show all');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(toggle).toHaveAttribute('aria-controls', (await text.getAttribute('id')) ?? 'no id');
+        await expect(text).toHaveText(whole);
+        expect(await cut()).toBe(true);
         await looks(page, 'long-next');
-        await next.click();
-        await expect(card(page).getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
+
+        // By keyboard: the app's focus ring, Enter shows the whole text, Space folds it again.
+        await toggle.focus();
+        await page.keyboard.press('Shift+Tab');
+        await page.keyboard.press('Tab');
+        await expect(toggle).toBeFocused();
+        const ring = await toggle.locator('span').evaluate((el) => getComputedStyle(el).outlineStyle);
+        expect(ring).not.toBe('none');
+        await page.keyboard.press('Enter');
+        await expect(toggle).toHaveText('Show less');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(toggle).toBeFocused();
+        expect(await cut()).toBe(false);
+        await looks(page, 'long-next-open');
+        await page.keyboard.press('Space');
+        await expect(toggle).toHaveText('Show all');
+        expect(await cut()).toBe(true);
+
+        // By touch: a tap opens it and a tap folds it.
+        const touch = await browser.newContext({ baseURL, hasTouch: true, viewport: { width, height: 900 } });
+        await touch.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
+        const phone = await touch.newPage();
+        const { sent: tapped } = await openRun(phone, 'run-paused-long-next');
+        const tap = card(phone).getByRole('button', { name: /^Show (all|less)$/ });
+        await tap.tap();
+        await expect(tap).toHaveAttribute('aria-expanded', 'true');
+        await expect(card(phone).locator('[data-next-question]')).toHaveText(whole);
+        await tap.tap();
+        await expect(tap).toHaveAttribute('aria-expanded', 'false');
+        await touch.close();
+
+        // It never answers anything: nothing was sent either way.
+        expect(sent).toEqual(nothingSent());
+        expect(tapped).toEqual(nothingSent());
       });
     });
   }

@@ -443,7 +443,7 @@ describe('the form on the page', () => {
     await fillF3();
     fireEvent.change(document.getElementById('team-pause')!, { target: { value: '2' } });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Run trial' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Run project' }));
     });
     expect(await screen.findByText(/Temper didn't answer\. Trying again is safe/)).toBeInTheDocument();
     await act(async () => {
@@ -454,7 +454,7 @@ describe('the form on the page', () => {
     expect(typeof sent[0].body.request_id).toBe('string');
     fireEvent.change(document.getElementById('team-pause')!, { target: { value: '3' } });
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Run trial' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Run project' }));
     });
     expect(await screen.findByText(`run ${trialStart201.body.execution_id}`)).toBeInTheDocument();
     expect(sent).toHaveLength(3);

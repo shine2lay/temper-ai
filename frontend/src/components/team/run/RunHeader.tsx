@@ -85,7 +85,7 @@ export function RunHeader({
       key: 'project',
       node: (
         <span>
-          Project <b className="font-semibold text-temper-text" title={project}>{projectName(project)}</b>
+          Code folder <b className="font-semibold text-temper-text" title={project}>{projectName(project)}</b>
           {trial.project?.start_commit && (
             <>
               {' '}
@@ -101,7 +101,7 @@ export function RunHeader({
       key: 'project',
       node: (
         <span>
-          Project <b className="font-semibold text-temper-text">none</b> (an empty project)
+          Code folder <b className="font-semibold text-temper-text">none</b> (an empty project)
         </span>
       ),
     });
@@ -128,7 +128,7 @@ export function RunHeader({
             <li aria-hidden="true">/</li>
             <li>
               <Link to="/team" className={teamLink}>
-                Trials
+                Projects
               </Link>
             </li>
             <li aria-hidden="true">/</li>

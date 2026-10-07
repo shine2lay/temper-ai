@@ -131,7 +131,7 @@ async function holdReads(page: Page, pathname: string, answer: Fixture) {
   return wait.release;
 }
 
-const trialsList = (page: Page) => page.getByRole('list', { name: 'Trials' });
+const trialsList = (page: Page) => page.getByRole('list', { name: 'Projects' });
 const trialRows = (page: Page) => page.locator('[data-trial-row]');
 const tabs = (page: Page) => page.getByRole('navigation', { name: 'Team' });
 const banner = (page: Page) => page.locator('[data-guard-mode]');
@@ -183,7 +183,7 @@ async function openForm(page: Page, serve: Parameters<typeof serveTeam>[1] = {},
   const sent = nothingSent();
   await serveActions(page, sent, replies);
   await page.goto('/app/team/new');
-  await expect(page.getByRole('heading', { level: 1, name: 'New trial' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible();
   await expect(member(page, 1).getByLabel('Role')).toBeEnabled();
   return { seen, sent };
 }
@@ -211,7 +211,7 @@ for (const theme of ['dark', 'light'] as const) {
         await go();
         await expect(page.getByRole('heading', { level: 1, name: 'Team' })).toBeVisible();
         await expect(trialRows(page)).toHaveCount(4);
-        await expect(tabs(page).getByRole('link', { name: 'Trials 4' })).toHaveAttribute('aria-current', 'page');
+        await expect(tabs(page).getByRole('link', { name: 'Projects 4' })).toHaveAttribute('aria-current', 'page');
         await expect(tabs(page).getByRole('link', { name: 'Roles 4' })).toBeVisible();
         await expect(page.getByText(/^Updated \d/)).toBeVisible();
         // One row needs the owner: amber, with its chip.
@@ -297,7 +297,7 @@ for (const theme of ['dark', 'light'] as const) {
         await expect(trialRows(page)).toHaveCount(25);
         await expect(page.getByTestId('trials-showing')).toHaveText('Showing 1–25 of 57 · newest first');
         await expect(page.getByRole('button', { name: 'Previous' })).toBeDisabled();
-        await expect(tabs(page).getByRole('link', { name: 'Trials 57' })).toBeVisible();
+        await expect(tabs(page).getByRole('link', { name: 'Projects 57' })).toBeVisible();
         await looks(page, 'trials-page-1');
         await page.getByRole('button', { name: 'Next' }).click();
         await expect(page.getByTestId('trials-showing')).toHaveText('Showing 26–50 of 57 · newest first');
@@ -311,13 +311,13 @@ for (const theme of ['dark', 'light'] as const) {
       test('trials: none yet (T2)', async ({ page }) => {
         const { go } = await openTeam(page, '/app/team', { trials: fixture('trials-empty') });
         await go();
-        await expect(page.getByRole('heading', { name: 'No trials yet' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'No projects yet' })).toBeVisible();
         await expect(
           page.getByText(
-            "A trial puts a few pi roles on one goal. They work in rounds, review each other's work and stop when the leader's version is approved. Start one with New trial at the top right.",
+            "A project puts a few pi roles on one goal. They work in rounds, review each other's work and stop when the leader's version is approved. Start one with New project at the top right.",
           ),
         ).toBeVisible();
-        await expect(tabs(page).getByRole('link', { name: 'Trials 0' })).toBeVisible();
+        await expect(tabs(page).getByRole('link', { name: 'Projects 0' })).toBeVisible();
         await expect(page.getByTestId('trials-showing')).toHaveCount(0);
         await looks(page, 'trials-empty');
       });
@@ -326,7 +326,7 @@ for (const theme of ['dark', 'light'] as const) {
         await serveTeam(page);
         const release = await holdReads(page, '/api/team/trials', fixture('trials-list'));
         await page.goto('/app/team');
-        await expect(page.getByRole('status').filter({ hasText: 'Loading the trials…' })).toBeVisible();
+        await expect(page.getByRole('status').filter({ hasText: 'Loading the projects…' })).toBeVisible();
         await looks(page, 'trials-loading');
         release();
         await expect(trialRows(page)).toHaveCount(4);
@@ -335,7 +335,7 @@ for (const theme of ['dark', 'light'] as const) {
       test("trials: Temper couldn't be read (T3b)", async ({ page }) => {
         const { go } = await openTeam(page, '/app/team', { trials: fixture('trials-error') });
         await go();
-        const note = page.locator('[data-note="bad"]').filter({ hasText: "Couldn't load the trials." });
+        const note = page.locator('[data-note="bad"]').filter({ hasText: "Couldn't load the projects." });
         await expect(note).toBeVisible();
         await expect(note).toContainText('Temper said:');
         await expect(note).toContainText('Internal Server Error');
@@ -390,7 +390,7 @@ for (const theme of ['dark', 'light'] as const) {
         const note = page.locator('[data-note="warn"]').filter({ hasText: "The role list isn't set up" });
         await expect(note).toContainText('Temper said:');
         await expect(note).toContainText((fixture('roles-not-set-up').body as { problem: string }).problem);
-        await expect(note).toContainText("No roles can join a team until it is. Trials can't start; the trials list still shows past trials.");
+        await expect(note).toContainText("No roles can join a team until it is. Projects can't start; the projects list still shows past projects.");
         await expect(tabs(page).getByRole('link', { name: 'Roles 0' })).toBeVisible();
         await looks(page, 'roles-not-set-up');
       });
@@ -438,9 +438,10 @@ for (const theme of ['dark', 'light'] as const) {
         await expect(page.locator('#team-bash-why')).toContainText('Bash is off until owner-only writes are enforced (#45)');
         await expect(page.getByRole('radio', { name: /^edges/ })).toBeDisabled();
         await expect(page.getByText('comes later', { exact: true })).toBeVisible();
-        const aside = page.getByRole('complementary', { name: 'About this trial' });
+        const aside = page.getByRole('complementary', { name: 'About this project' });
         await expect(aside).toContainText('claude-opus-5-5 · anthropic · thinking max');
         await expect(aside).toContainText('Every member uses these. Choosing per member comes later.');
+        await expect(page.getByLabel('Code folder (optional)', { exact: true })).toHaveAttribute('id', 'team-project');
         await expect(page.locator('#team-project-help')).toContainText('/srv/example/projects/notes-app');
         await expect(member(page, 1).getByLabel('Role').locator('option', { hasText: "scribe: Scribe (can't join)" })).toBeDisabled();
         await looks(page, 'form');
@@ -488,7 +489,7 @@ for (const theme of ['dark', 'light'] as const) {
         const wait = held(fixture('trial-start-201'));
         await openForm(page, {}, { trial: [wait.reply] });
         await fillForm(page);
-        await page.getByRole('button', { name: 'Run trial' }).click();
+        await page.getByRole('button', { name: 'Run project' }).click();
         await expect(page.getByRole('button', { name: 'Starting…' })).toBeDisabled();
         await expect(page.getByText('Sending to Temper…')).toBeVisible();
         await expect(page.locator('#team-goal')).toBeDisabled();
@@ -499,7 +500,7 @@ for (const theme of ['dark', 'light'] as const) {
       test("form: Temper didn't answer (F4b)", async ({ page }) => {
         await openForm(page, {}, { trial: ['no reply'] });
         await fillForm(page);
-        await page.getByRole('button', { name: 'Run trial' }).click();
+        await page.getByRole('button', { name: 'Run project' }).click();
         const note = formResult(page).locator('[data-note="bad"]');
         await expect(note).toContainText("Temper didn't answer. Trying again is safe: the same request counts once.");
         await expect(note).toContainText(/Request [0-9a-f]{8} · your inputs are kept\./);
@@ -511,9 +512,9 @@ for (const theme of ['dark', 'light'] as const) {
       test('form: the guard refused (F5)', async ({ page }) => {
         await openForm(page, {}, { trial: [fixture('trial-start-403')] });
         await fillForm(page);
-        await page.getByRole('button', { name: 'Run trial' }).click();
+        await page.getByRole('button', { name: 'Run project' }).click();
         const note = formResult(page).locator('[data-note="bad"]');
-        await expect(note).toContainText('Temper refused to start the trial.');
+        await expect(note).toContainText('Temper refused to start the project.');
         await expect(note).toContainText(refusalText('trial-start-403'));
         await expect(note).toContainText('Nothing was saved or started.');
         await expect(page.locator('#team-pause')).toHaveValue('2');
@@ -528,7 +529,7 @@ for (const theme of ['dark', 'light'] as const) {
         );
         await openForm(page, {}, { trial: [fixture('trial-start-401')] });
         await fillForm(page);
-        await page.getByRole('button', { name: 'Run trial' }).click();
+        await page.getByRole('button', { name: 'Run project' }).click();
         await expect(page.getByRole('heading', { name: 'This action needs your key' })).toBeVisible();
       });
 
@@ -638,7 +639,7 @@ for (const theme of ['dark', 'light'] as const) {
         [
           'off',
           "Answers, messages and stops aren't limited to you.",
-          '#45 is off: anyone who can reach Temper can answer, message or stop a trial.',
+          '#45 is off: anyone who can reach Temper can answer, message or stop a project.',
         ],
         [
           'record',
@@ -907,11 +908,11 @@ test.describe('Team page C: behaviour', () => {
     await expect(page.locator('[data-role-row]')).toHaveCount(4);
   });
 
-  test('form: Run trial sends the form and opens the run', async ({ page }) => {
+  test('form: Run project sends the form and opens the run', async ({ page }) => {
     const { sent } = await openForm(page, {}, { trial: [fixture('trial-start-201')] });
     await fillForm(page);
     await member(page, 2).getByRole('checkbox', { name: 'Edit' }).uncheck();
-    await page.getByRole('button', { name: 'Run trial' }).click();
+    await page.getByRole('button', { name: 'Run project' }).click();
     const started = fixture('trial-start-201').body as { execution_id: string };
     await expect(page).toHaveURL(new RegExp(`/app/team/runs/${started.execution_id}$`));
     expect(sent.trials).toHaveLength(1);
@@ -934,15 +935,15 @@ test.describe('Team page C: behaviour', () => {
   test("form: after no answer, Try again sends the same request id; a changed form a new one", async ({ page }) => {
     const { sent } = await openForm(page, {}, { trial: ['no reply', 'no reply', fixture('trial-start-201-repeated')] });
     await fillForm(page);
-    await page.getByRole('button', { name: 'Run trial' }).click();
+    await page.getByRole('button', { name: 'Run project' }).click();
     await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
     await page.getByRole('button', { name: 'Try again' }).click();
     await expect(formResult(page).locator('[data-note="bad"]')).toBeVisible();
     expect(sent.trials).toHaveLength(2);
     expect(sent.trials[1].request_id).toBe(sent.trials[0].request_id);
     await page.locator('#team-pause').fill('3');
-    await expect(page.getByRole('button', { name: 'Run trial' })).toBeVisible();
-    await page.getByRole('button', { name: 'Run trial' }).click();
+    await expect(page.getByRole('button', { name: 'Run project' })).toBeVisible();
+    await page.getByRole('button', { name: 'Run project' }).click();
     await expect(page).toHaveURL(/\/app\/team\/runs\//);
     expect(sent.trials).toHaveLength(3);
     expect(sent.trials[2].request_id).not.toBe(sent.trials[0].request_id);
@@ -989,8 +990,8 @@ test.describe('Team page C: behaviour', () => {
   test('form: a problem with no field sits in the top list only, with no link (A-5)', async ({ page }) => {
     await openForm(page, {}, { trial: [fixture('trial-start-400-run-refused')] });
     await fillForm(page);
-    await page.getByRole('button', { name: 'Run trial' }).click();
-    await expect(problemsBox(page).getByRole('heading', { name: "Temper didn't start the trial: 1 problem" })).toBeFocused();
+    await page.getByRole('button', { name: 'Run project' }).click();
+    await expect(problemsBox(page).getByRole('heading', { name: "Temper didn't start the project: 1 problem" })).toBeFocused();
     await expect(problemsBox(page).getByRole('listitem')).toHaveText(['the run start said no']);
     await expect(problemsBox(page).getByRole('link')).toHaveCount(0);
   });
@@ -998,9 +999,9 @@ test.describe('Team page C: behaviour', () => {
   test('form: the 400 of a start, placed (leader)', async ({ page }) => {
     await openForm(page, {}, { trial: [fixture('trial-start-400-problems')] });
     await fillForm(page);
-    await page.getByRole('button', { name: 'Run trial' }).click();
+    await page.getByRole('button', { name: 'Run project' }).click();
     const text = (fixture('trial-start-400-problems').body as { problems: { text: string }[] }).problems[0].text;
-    await expect(problemsBox(page).getByRole('heading', { name: "Temper didn't start the trial: 1 problem" })).toBeVisible();
+    await expect(problemsBox(page).getByRole('heading', { name: "Temper didn't start the project: 1 problem" })).toBeVisible();
     await expect(page.locator('#team-members-problems')).toContainText(text);
   });
 
@@ -1009,9 +1010,9 @@ test.describe('Team page C: behaviour', () => {
     test(`form: refusal word for word (${name})`, async ({ page }) => {
       await openForm(page, {}, { trial: [fixture(name)] });
       await fillForm(page);
-      await page.getByRole('button', { name: 'Run trial' }).click();
+      await page.getByRole('button', { name: 'Run project' }).click();
       const note = formResult(page).locator('[data-note="bad"]');
-      await expect(note).toContainText('Temper refused to start the trial.');
+      await expect(note).toContainText('Temper refused to start the project.');
       await expect(note.locator('[data-engine-words]')).toHaveText(refusalText(name));
       await expect(page.locator('#team-goal')).toHaveValue('Write a short welcome note for the notes app.');
     });
@@ -1031,7 +1032,7 @@ test.describe('Team page C: behaviour', () => {
   test('form: the role list not set up, and a team settings problem', async ({ page }) => {
     await serveTeam(page, { roles: fixture('roles-not-set-up'), status: fixture('status-project-problems') });
     await page.goto('/app/team/new');
-    await expect(page.getByRole('heading', { level: 1, name: 'New trial' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible();
     await expect(page.getByText("The role list isn't set up")).toBeVisible();
     await expect(page.getByText("Temper's team settings have a problem:")).toBeVisible();
     const problem = (fixture('status-project-problems').body as { project_problems: string[] }).project_problems[0];

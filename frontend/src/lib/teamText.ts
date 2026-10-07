@@ -122,7 +122,7 @@ export function ownerActionWhat(action: TeamOwnerAction, run?: Pick<TeamRun, 'ti
   const detail = action.detail ?? {};
   switch (action.kind) {
     case 'start':
-      return 'started the trial';
+      return 'started the project';
     case 'message':
       return detail.to ? `message to ${detail.to}` : 'sent a message';
     case 'stop':

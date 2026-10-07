@@ -95,7 +95,7 @@ function journeyServer() {
 }
 
 test.describe('Team page journey', () => {
-  test('start a trial, watch it, answer, message, read the outcome and the trials, in both themes', async ({
+  test('start a project, watch it, answer, message, read the outcome and the projects, in both themes', async ({
     browser,
     baseURL,
   }, testInfo) => {
@@ -174,7 +174,7 @@ test.describe('Team page journey', () => {
     browser,
     baseURL,
   }) => {
-    // Team on (status 200), stopped after the Team step: the form step never begins, so Run trial is never clicked.
+    // Team on (status 200), stopped after the Team step: the form step never begins, so Run project is never clicked.
     const atTeam = journeyServer();
     const begun: JourneyStep[] = [];
     const first = await teamJourney(browser, {

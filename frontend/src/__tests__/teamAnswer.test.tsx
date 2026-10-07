@@ -908,7 +908,7 @@ describe('ended runs', () => {
     cleanup();
     o = await outcome(runDoneNoProject);
     expect(
-      o.getByText('No branch: this trial started from an empty project. Getting its files out comes later.'),
+      o.getByText('No branch: this project started from an empty project. Getting its files out comes later.'),
     ).toBeInTheDocument();
   });
 });

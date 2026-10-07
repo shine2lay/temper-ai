@@ -159,7 +159,7 @@ export function RolesTable({ read }: { read: TeamListRead<TeamRoles> }) {
           </EngineQuote>
         )}
         <p className="m-0 mt-2 text-temper-text-muted">
-          No roles can join a team until it is. Trials can&apos;t start; the trials list still shows past trials.
+          No roles can join a team until it is. Projects can&apos;t start; the projects list still shows past projects.
         </p>
       </TeamNote>
     );

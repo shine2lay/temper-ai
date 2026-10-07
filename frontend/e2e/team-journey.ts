@@ -1,9 +1,9 @@
 /**
  * The Team page's happy path as one journey with many checks (the owner's
  * direction of 2026-10-06: happy paths first, many things in one test): open
- * Team, fill the Run trial form and start the trial, watch the run view,
+ * Team, fill the Run project form and start the project, watch the run view,
  * answer the needs-you card, send a message, then read the outcome card and
- * the trials list.
+ * the projects list.
  *
  * Two entries run it:
  * - e2e/team-journey.spec.ts, in the gate: every /api/team answer comes from
@@ -14,8 +14,8 @@
  *   on, such as temper's practice-run rig (README.md, "Team journey (live)").
  *
  * The journey installs no route and makes no API call of its own. The
- * owner's context clicks only New trial (the Run trial control), Add member
- * (when the form is given more than one role), Run trial, one answer and
+ * owner's context clicks only New project (the Run project control), Add member
+ * (when the form is given more than one role), Run project, one answer and
  * Send answer, and Send message; never Stop, Cancel or a setting. Each step
  * is then looked at in both themes at the same URL: light in the owner's
  * context, dark in an observer context that only opens pages. A look runs
@@ -35,7 +35,7 @@ export const JOURNEY_STEPS = ['team', 'form', 'run', 'needs-you', 'message', 'ou
 export type JourneyStep = (typeof JOURNEY_STEPS)[number];
 export type Theme = 'light' | 'dark';
 
-/** The Run trial form's choices, named after its labels. Unset: the form's own first choice. */
+/** The Run project form's choices, named after its labels. Unset: the form's own first choice. */
 export interface JourneyForm {
   /** Role, one per member in order (the first leads). Default: one member, the first role offered. */
   roles?: string[];
@@ -43,7 +43,7 @@ export interface JourneyForm {
   pause?: string;
   /** Who can message whom: the visible label of the way to pick. Default: the one the form picked. */
   whoCanMessage?: string;
-  /** Project. Default: empty (Temper's own default). */
+  /** Code folder (optional). Default: empty (Temper's own default). */
   project?: string;
 }
 
@@ -275,7 +275,7 @@ class Journey {
     }
   }
 
-  // 1. Open Team: the heading, the guard notice as Temper's status says, the Run trial control, no error.
+  // 1. Open Team: the heading, the guard notice as Temper's status says, the Run project control, no error.
   private async team() {
     const { owner } = this;
     const status = owner.waitForResponse((r) => new URL(r.url()).pathname === '/api/team/status', { timeout: 30_000 });
@@ -294,41 +294,48 @@ class Journey {
         ? expect(owner.locator('[data-guard-mode]')).toHaveCount(0)
         : expect(owner.locator(`[data-guard-mode="${guard}"]`)).toBeVisible(),
     );
-    const newTrial = owner.getByRole('link', { name: 'New trial' });
-    await this.check('the Run trial control (New trial) is there and goes to the form', async () => {
-      await expect(newTrial).toBeVisible();
-      await expect(newTrial).toHaveAttribute('href', /\/team\/new$/);
-      await expect(newTrial).not.toHaveAttribute('aria-disabled', 'true');
+    const newProject = owner.getByRole('link', { name: 'New project' });
+    await this.check('the Run project control (New project) is there and goes to the form', async () => {
+      await expect(newProject).toBeVisible();
+      await expect(newProject).toHaveAttribute('href', /\/team\/new$/);
+      await expect(newProject).not.toHaveAttribute('aria-disabled', 'true');
+      await expect(owner.getByRole('link', { name: 'New trial' })).toHaveCount(0);
+      await expect(owner.getByRole('navigation', { name: 'Team', exact: true }).getByRole('link', { name: /^Projects/ })).toBeVisible();
     });
     await this.check('no error alert', () => expect(owner.getByRole('alert')).toHaveCount(0));
     await this.look('team', async (page) => {
       await expect(page.getByRole('heading', { level: 1, name: 'Team' })).toBeVisible();
       await expect(
-        page.getByRole('list', { name: 'Trials' }).or(page.locator('section[aria-labelledby="trials-empty"]')).first(),
+        page.getByRole('list', { name: 'Projects' }).or(page.locator('section[aria-labelledby="trials-empty"]')).first(),
       ).toBeVisible();
     });
   }
 
-  // 2. The Run trial form: labelled fields, filled with the tag and the choices; not sent here.
+  // 2. The Run project form: labelled fields, filled with the tag and the choices; not sent here.
   private async form() {
     const { owner, opts } = this;
     const form = owner.getByTestId('team-form');
-    await owner.getByRole('link', { name: 'New trial' }).click();
-    await this.check('New trial opens the form', async () => {
+    await owner.getByRole('link', { name: 'New project' }).click();
+    await this.check('New project opens the form', async () => {
       await expect(owner).toHaveURL(/\/team\/new$/);
-      await expect(owner.getByRole('heading', { level: 1, name: 'New trial' })).toBeVisible();
-      await expect(form).toBeVisible();
+      await expect(owner.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible();
+      await expect(owner).toHaveTitle('Temper AI — New project');
+      await expect(form).toHaveAccessibleName('New project');
+      await expect(form.getByRole('button', { name: 'Run project' })).toBeVisible();
+      await expect(form.getByRole('button', { name: 'Run trial' })).toHaveCount(0);
     });
     const goal = form.getByLabel('Goal', { exact: true });
     const pause = form.getByLabel('Pause after this many rounds without done');
     const ways = form.getByRole('group', { name: 'Who can message whom' });
-    await this.check('the required fields have labels: Goal, Role, Team name, Leader, Pause, Who can message whom', async () => {
+    await this.check('the form fields have labels: Goal, Role, Team name, Leader, Pause, Who can message whom, Code folder (optional)', async () => {
       await expect(goal).toBeEditable();
       await expect(member(owner, 1).getByLabel('Role')).toBeEnabled();
       await expect(member(owner, 1).getByLabel('Team name')).toBeEditable();
       await expect(member(owner, 1).getByRole('radio', { name: 'Leader' })).toBeChecked();
       await expect(pause).toBeEditable();
       await expect(ways.getByRole('radio').first()).toBeVisible();
+      await expect(form.getByLabel('Code folder (optional)', { exact: true })).toBeEditable();
+      await expect(form.getByLabel('Project', { exact: true })).toHaveCount(0);
     });
 
     const roles = opts.form?.roles?.length ? opts.form.roles : (await rolesOffered(owner)).slice(0, 1);
@@ -340,7 +347,7 @@ class Journey {
     const pauseAfter = opts.form?.pause ?? '1';
     await pause.fill(pauseAfter);
     if (opts.form?.whoCanMessage) await ways.getByRole('radio', { name: startsWith(opts.form.whoCanMessage) }).check();
-    if (opts.form?.project) await form.getByLabel('Project', { exact: true }).fill(opts.form.project);
+    if (opts.form?.project) await form.getByLabel('Code folder (optional)', { exact: true }).fill(opts.form.project);
     const way = ways.getByRole('radio', { checked: true });
     await this.check('the form holds the tagged goal, the roles, the pause and one way to message', async () => {
       await expect(goal).toHaveValue(journeyGoal(opts.tag));
@@ -355,25 +362,25 @@ class Journey {
       project: opts.form?.project ? 'given' : 'empty',
     };
     await this.look('form', async (page) => {
-      await expect(page.getByRole('heading', { level: 1, name: 'New trial' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible();
       await rolesOffered(page);
     });
   }
 
-  // 3. Run trial: the run opens, running, with members, and a new timeline entry comes in without a reload.
+  // 3. Run project: the run opens, running, with members, and a new timeline entry comes in without a reload.
   private async run() {
     const { owner, opts } = this;
-    await owner.getByTestId('team-form').getByRole('button', { name: 'Run trial' }).click();
+    await owner.getByTestId('team-form').getByRole('button', { name: 'Run project' }).click();
     const note = owner.getByTestId('team-form-result');
     const opened = () => RUN_PATH.test(new URL(owner.url()).pathname);
-    await this.check('Temper starts the trial and its run opens', async () => {
+    await this.check('Temper starts the project and its run opens', async () => {
       await expect
         .poll(async () => opened() || ((await note.innerText().catch(() => '')).trim() !== ''), {
           timeout: opts.timeoutMs,
           message: 'the run never opened',
         })
         .toBe(true);
-      if (!opened()) throw new Error(`Temper did not start the trial: ${(await note.innerText()).trim()}`);
+      if (!opened()) throw new Error(`Temper did not start the project: ${(await note.innerText()).trim()}`);
     });
     this.executionId = decodeURIComponent(RUN_PATH.exec(new URL(owner.url()).pathname)?.[1] ?? '');
     this.report.execution_id = this.executionId;
@@ -472,7 +479,7 @@ class Journey {
     await this.look('message', (page) => expect(tagged(page)).toBeVisible({ timeout: 30_000 }));
   }
 
-  // 6. The end: the outcome card, the same state in the trials list, and its link back to the run.
+  // 6. The end: the outcome card, the same state in the projects list, and its link back to the run.
   private async outcome() {
     const { owner, opts } = this;
     const outcomeCard = (page: Page) => page.locator('[data-card="outcome"]');
@@ -492,7 +499,7 @@ class Journey {
     await owner.goto('/app/team');
     const row = trialRow(owner, opts.tag);
     const link = row.locator(`a[href$="/team/runs/${encodeURIComponent(this.executionId)}"]`).first();
-    await this.check('the trials list shows the tagged trial', () => expect(row).toHaveCount(1, { timeout: 30_000 }));
+    await this.check('the projects list shows the tagged project', () => expect(row).toHaveCount(1, { timeout: 30_000 }));
     await this.check(`there it is ${state} too`, () =>
       expect(row.locator('[data-component="team-state-badge"]').first()).toHaveAttribute('data-state', state, {
         timeout: 30_000,

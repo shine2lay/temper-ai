@@ -135,7 +135,7 @@ export function branchWords(
   if (!branch) {
     return {
       kind: 'none',
-      words: 'No branch: this trial started from an empty project. Getting its files out comes later.',
+      words: 'No branch: this project started from an empty project. Getting its files out comes later.',
     };
   }
   if (branch.made) {

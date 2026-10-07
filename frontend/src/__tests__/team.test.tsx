@@ -235,7 +235,7 @@ describe('words', () => {
   it('says what each owner action did', () => {
     const action = (kind: string, detail: Record<string, string> = {}): TeamOwnerAction =>
       ({ at: null, kind, by: 'owner', source: 'team_page', request_id: 'r', detail }) as unknown as TeamOwnerAction;
-    expect(ownerActionWhat(action('start'))).toBe('started the trial');
+    expect(ownerActionWhat(action('start'))).toBe('started the project');
     expect(ownerActionWhat(action('message', { to: 'maker' }))).toBe('message to maker');
     expect(ownerActionWhat(action('stop'))).toBe('stopped the run');
     expect(ownerActionWhat(action('answer', { answer: 'continue', wait_kind: 'stalled' }))).toBe(
@@ -316,14 +316,16 @@ describe('the Team switch', () => {
 });
 
 describe('Team page header', () => {
-  it('has the title, New trial and the two tabs, with the open one marked and counted', async () => {
+  it('has the title, New project and the two tabs, with the open one marked and counted', async () => {
     serve();
     show(<TeamPage tab="roles" />);
     expect(screen.getByRole('heading', { level: 1, name: 'Team' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'New trial' })).toHaveAttribute('href', '/team/new');
+    expect(screen.getByRole('link', { name: 'New project' })).toHaveAttribute('href', '/team/new');
     const tabs = within(screen.getByRole('navigation', { name: 'Team' }));
     expect(await tabs.findByRole('link', { name: 'Roles 4' })).toHaveAttribute('aria-current', 'page');
-    expect(await tabs.findByRole('link', { name: 'Trials 4' })).not.toHaveAttribute('aria-current');
+    expect(await tabs.findByRole('link', { name: 'Projects 4' })).not.toHaveAttribute('aria-current');
+    expect(screen.queryByRole('link', { name: 'New trial' })).toBeNull();
+    expect(tabs.queryByRole('link', { name: /^Trials/ })).toBeNull();
     // Part A's "still being built" notices are gone.
     expect(screen.queryByText(/still being built/)).toBeNull();
   });
@@ -340,6 +342,10 @@ describe('run view', () => {
       "Write a short welcome note for the notes app's first screen.",
     );
     expect(document.querySelector('[data-component="team-state-badge"]')).toHaveTextContent('Running');
+    const breadcrumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(breadcrumb.getByRole('link', { name: 'Projects' })).toHaveAttribute('href', '/team');
+    expect(breadcrumb.queryByRole('link', { name: 'Trials' })).toBeNull();
+    expect(screen.getByText(/^Code folder/)).toBeInTheDocument();
 
     const members = within(screen.getByRole('region', { name: /Members/ }));
     for (const name of ['lead', 'maker', 'checker']) expect(members.getByText(name)).toBeInTheDocument();
@@ -350,7 +356,7 @@ describe('run view', () => {
     expect(round.getByRole('img', { name: '0 of 3 rounds without done' })).toBeInTheDocument();
 
     const actions = within(screen.getByRole('region', { name: 'Who did what' }));
-    expect(actions.getByText('started the trial')).toBeInTheDocument();
+    expect(actions.getByText('started the project')).toBeInTheDocument();
     expect(actions.getByText('Dashboard')).toBeInTheDocument();
     // The captured start came with no name on it: it must not pass as yours.
     expect(actions.getByText('Started by an unknown caller')).toBeInTheDocument();
@@ -416,7 +422,7 @@ describe('run view', () => {
   it("says when a run isn't a team trial, in Temper's words, as information and not a failure", async () => {
     serve({ run: [run404] });
     showRun();
-    const title = await screen.findByText("This run isn't a team trial");
+    const title = await screen.findByText("This run isn't a team project");
     expect(screen.getByText('not a team trial, or no such run')).toBeInTheDocument();
     expect(title.closest('[data-note]')).toHaveAttribute('data-note', 'info');
     // The heading stays for screen readers only; the note says it all (Design's R0).

@@ -226,7 +226,7 @@ function ColumnNames() {
         'hidden px-4 text-xs font-semibold tracking-[0.06em] text-temper-text-muted uppercase xl:grid',
       )}
     >
-      <span>Trial</span>
+      <span>Project</span>
       <span>State</span>
       <span>Round</span>
       <span>Started</span>
@@ -261,7 +261,7 @@ export function TrialsList({
         <TeamNote
           tone="bad"
           live
-          title="Couldn't load the trials."
+          title="Couldn't load the projects."
           action={<TryButton label="Try again" onClick={read.refresh} />}
         >
           <EngineQuote className="mt-1" label="Temper said:">
@@ -277,7 +277,7 @@ export function TrialsList({
       <div className="flex flex-col gap-2" aria-busy="true">
         <ColumnNames />
         <p role="status" className="m-0 px-4 text-sm text-temper-text-muted">
-          Loading the trials…
+          Loading the projects…
         </p>
       </div>
     );
@@ -287,11 +287,11 @@ export function TrialsList({
     return (
       <section aria-labelledby="trials-empty" className="rounded-lg border border-temper-border bg-temper-panel px-6 py-8">
         <h2 id="trials-empty" className="m-0 text-base font-semibold text-temper-text">
-          No trials yet
+          No projects yet
         </h2>
         <p className="m-0 mt-2 max-w-[60ch] text-sm text-temper-text-muted">
-          A trial puts a few pi roles on one goal. They work in rounds, review each other&apos;s work and stop when the
-          leader&apos;s version is approved. Start one with New trial at the top right.
+          A project puts a few pi roles on one goal. They work in rounds, review each other&apos;s work and stop when the
+          leader&apos;s version is approved. Start one with New project at the top right.
         </p>
       </section>
     );
@@ -310,7 +310,7 @@ export function TrialsList({
         </TeamNote>
       )}
       <ColumnNames />
-      <ul aria-label="Trials" className="m-0 flex list-none flex-col gap-2 p-0">
+      <ul aria-label="Projects" className="m-0 flex list-none flex-col gap-2 p-0">
         {groups.map((g) => (
           <li key={g.key} className="flex flex-col gap-2">
             {g.head && <TrialMainRow row={g.head} />}

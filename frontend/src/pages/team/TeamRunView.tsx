@@ -118,7 +118,7 @@ export default function TeamRunView() {
       return (
         <Frame quietTitle>
           {/* Nothing failed: the run is simply not a team trial (Design's R0). */}
-          <TeamNote tone="info" title="This run isn't a team trial">
+          <TeamNote tone="info" title="This run isn't a team project">
             <EngineQuote className="mt-1" label="Temper's answer">
               {read.notTeam}
             </EngineQuote>

@@ -39,7 +39,7 @@ export function FindingsSummary({
 }) {
   const title =
     from === 'start'
-      ? `Temper didn't start the trial: ${problemCount(placed.length)}`
+      ? `Temper didn't start the project: ${problemCount(placed.length)}`
       : `The check found ${problemCount(placed.length)}`;
   return (
     <div

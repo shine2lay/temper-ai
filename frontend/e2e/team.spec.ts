@@ -96,7 +96,7 @@ const ENDED: { fixture: string; title: string; shows: (RegExp | string)[] }[] = 
   {
     fixture: 'run-done-no-project',
     title: "Done: the leader's version was approved",
-    shows: ['No branch: this trial started from an empty project. Getting its files out comes later.'],
+    shows: ['No branch: this project started from an empty project. Getting its files out comes later.'],
   },
   {
     fixture: 'run-stopped',
@@ -747,10 +747,10 @@ for (const theme of ['dark', 'light'] as const) {
       test("run view: a run that isn't a team trial", async ({ page }) => {
         await serveTeam(page, { run: [fixture('run-404')] });
         await page.goto(`/app/team/runs/${RUN_ID}`);
-        await expect(page.getByText("This run isn't a team trial")).toBeVisible();
+        await expect(page.getByText("This run isn't a team project")).toBeVisible();
         await expect(page.getByText('not a team trial, or no such run')).toBeVisible();
         // Information, not a failure; the heading is for screen readers only (Design's R0).
-        await expect(page.locator('[data-note="info"]')).toContainText("This run isn't a team trial");
+        await expect(page.locator('[data-note="info"]')).toContainText("This run isn't a team project");
         await expect(page.locator('[data-note="bad"]')).toHaveCount(0);
         await expect(page.getByRole('heading', { level: 1, name: 'Team run' })).toHaveClass(/sr-only/);
         await expect(page.getByRole('link', { name: 'Open the run page' })).toBeVisible();

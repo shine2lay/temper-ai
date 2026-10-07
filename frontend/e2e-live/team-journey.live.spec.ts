@@ -8,7 +8,7 @@
  *
  * README.md, "Team journey (live)", lists every variable. This file installs
  * no route and makes no API call: what the journey does is click, as the
- * owner would. It starts one trial (unless TEAM_JOURNEY_STOP_AFTER stops it
+ * owner would. It starts one project (unless TEAM_JOURNEY_STOP_AFTER stops it
  * sooner), so point it only at a Temper meant for practice runs.
  */
 import { test } from '@playwright/test';

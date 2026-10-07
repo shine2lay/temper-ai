@@ -7,7 +7,7 @@ import { teamBtn, teamLink } from './teamUi';
 export type TeamTab = 'trials' | 'roles';
 
 const TABS: Array<{ id: TeamTab; label: string; to: string }> = [
-  { id: 'trials', label: 'Trials', to: '/team' },
+  { id: 'trials', label: 'Projects', to: '/team' },
   { id: 'roles', label: 'Roles', to: '/team/roles' },
 ];
 
@@ -24,7 +24,7 @@ function Updated({ at, stale }: { at: number | null | undefined; stale?: boolean
 
 /**
  * The Team page's header (the Workflows page pattern) and its two tabs,
- * each with its count once it is known. `tab` null is the New trial page:
+ * each with its count once it is known. `tab` null is the New project page:
  * a breadcrumb back to Team instead of the tabs (board F1).
  */
 export function TeamPageHeader({
@@ -50,10 +50,10 @@ export function TeamPageHeader({
                 </Link>
               </li>
               <li aria-hidden="true">/</li>
-              <li aria-current="page">New trial</li>
+              <li aria-current="page">New project</li>
             </ol>
           </nav>
-          <h1 className="m-0 text-xl font-semibold text-temper-text">New trial</h1>
+          <h1 className="m-0 text-xl font-semibold text-temper-text">New project</h1>
         </div>
         <span className="flex-1" />
         <Updated at={updatedAt} stale={stale} />
@@ -69,7 +69,7 @@ export function TeamPageHeader({
         <Updated at={updatedAt} stale={stale} />
         <Link to="/team/new" className={teamBtn.primary}>
           <Plus className="h-4 w-4" aria-hidden="true" />
-          <span>New trial</span>
+          <span>New project</span>
         </Link>
       </header>
       <nav aria-label="Team" className="flex gap-1 border-b border-temper-border px-6">
@@ -89,7 +89,7 @@ export function TeamPageHeader({
               )}
             >
               {t.label}
-              {/* A space, so a screen reader says "Trials 4", not "Trials4". */}
+              {/* A space, so a screen reader says "Projects 4", not "Projects4". */}
               {count !== null && count !== undefined && ' '}
               {count !== null && count !== undefined && (
                 <span data-tab-count="" className="text-xs font-normal text-temper-text-muted">

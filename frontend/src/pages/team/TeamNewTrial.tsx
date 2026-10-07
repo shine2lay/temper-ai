@@ -92,13 +92,13 @@ function describedBy(id: string, problems: readonly TeamFinding[], notes: readon
 }
 
 /**
- * New trial: the form (Design's SPEC 3, boards F1-F5, S1, S2, S6). It
- * checks nothing itself but the character counts; Check and Run trial ask
+ * New project: the form (Design's SPEC 3, boards F1-F5, S1, S2, S6). It
+ * checks nothing itself but the character counts; Check and Run project ask
  * Temper, and Temper's problems and notes come back word for word, each
  * under its field and all in a list at the top.
  */
 export default function TeamNewTrial() {
-  useDocumentTitle('New trial');
+  useDocumentTitle('New project');
   const navigate = useNavigate();
   const { status, updatedAt } = useTeamStatus();
   const roles = useTeamRoles();
@@ -191,7 +191,7 @@ export default function TeamNewTrial() {
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_384px]">
           <form
             data-testid="team-form"
-            aria-label="New trial"
+            aria-label="New project"
             noValidate
             onSubmit={(event) => event.preventDefault()}
             className="flex min-w-0 flex-col gap-4"
@@ -402,10 +402,9 @@ export default function TeamNewTrial() {
 
             <section className={cn(teamCard, 'p-4')}>
               <div className="flex items-baseline gap-2">
-                <label htmlFor="team-project" className="text-sm font-semibold text-temper-text">
-                  Project
+                <label htmlFor="team-project" className="inline-flex items-baseline gap-2 text-sm font-semibold text-temper-text">
+                  Code folder <span className={teamFieldTag}>(optional)</span>
                 </label>
-                <span className={teamFieldTag}>optional</span>
               </div>
               <input
                 id="team-project"
@@ -477,7 +476,7 @@ export default function TeamNewTrial() {
               {value?.kind === 'refused' && (
                 <TeamNote
                   tone="bad"
-                  title={value.from === 'start' ? 'Temper refused to start the trial.' : 'Temper refused the check.'}
+                  title={value.from === 'start' ? 'Temper refused to start the project.' : 'Temper refused the check.'}
                 >
                   <p className="m-0 break-words" data-engine-words>
                     {value.words}
@@ -522,12 +521,12 @@ export default function TeamNewTrial() {
                 className={teamBtn.primaryMd}
               >
                 {retry ? <RefreshCw className="h-4 w-4" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-                <span>{busy === 'start' ? 'Starting…' : retry ? 'Try again' : 'Run trial'}</span>
+                <span>{busy === 'start' ? 'Starting…' : retry ? 'Try again' : 'Run project'}</span>
               </button>
             </div>
           </form>
 
-          <aside className="flex min-w-0 flex-col gap-4" aria-label="About this trial">
+          <aside className="flex min-w-0 flex-col gap-4" aria-label="About this project">
             <section className={cn(teamCard, 'p-4')}>
               <h2 className={teamLabel}>Model and thinking</h2>
               {model ? (
@@ -544,7 +543,7 @@ export default function TeamNewTrial() {
               </p>
             </section>
             <section className={cn(teamCard, 'p-4')}>
-              <h2 className={teamLabel}>When you press Run trial</h2>
+              <h2 className={teamLabel}>When you press Run project</h2>
               <ol className="m-0 flex list-decimal flex-col gap-1.5 pl-5 text-xs text-temper-text">
                 <li>
                   Temper starts one run named <code className="font-mono">team-trial-…</code>; it shows in Workflows

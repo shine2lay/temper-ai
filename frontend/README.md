@@ -46,15 +46,15 @@ src/
 
 ## Team journey (live)
 
-The Team page's happy path as one test: open Team, fill the Run trial form and start a
-trial, watch the run, answer the needs-you card, send a message, then read the outcome card
-and the trials list. Every step is checked in the light and the dark theme: what the page
+The Team page's happy path as one test: open Team, fill the Run project form and start a
+project, watch the run, answer the needs-you card, send a message, then read the outcome card
+and the projects list. Every step is checked in the light and the dark theme: what the page
 should show, axe (nothing found) and every button and link at least 24 x 24 px, with a
 full-page screenshot of each.
 
 The gate runs it against recorded answers (`e2e/team-journey.spec.ts`). This entry runs it
 against a live Temper with Team switched on, such as temper's practice-run rig. **It starts a
-real trial** (unless `TEAM_JOURNEY_STOP_AFTER` stops it first), so point it only at a Temper
+real project** (unless `TEAM_JOURNEY_STOP_AFTER` stops it first), so point it only at a Temper
 meant for practice runs. The gate never runs it: the default config's `testDir` is `./e2e`.
 
 ```bash
@@ -74,10 +74,10 @@ TEAM_JOURNEY_SHOTS_DIR=/absolute/private/folder \
 | `TEAM_JOURNEY_ROLES` | one member, the first role offered | The form's Role for each member, comma-separated; the first one leads. |
 | `TEAM_JOURNEY_PAUSE` | `1` | The form's "Pause after this many rounds without done": 1 makes the team ask after its first round. |
 | `TEAM_JOURNEY_WHO_CAN_MESSAGE` | the form's own choice | The form's "Who can message whom", by the start of its visible label. |
-| `TEAM_JOURNEY_PROJECT` | empty (Temper's default) | The form's Project. |
-| `TEAM_JOURNEY_STOP_AFTER` | none: the whole journey | Stop, passed, after this step: `team`, `form`, `run`, `needs-you`, `message` or `outcome`. `form` stops with the form filled in and not sent, so no trial starts. |
+| `TEAM_JOURNEY_PROJECT` | empty (Temper's default) | The form's Code folder (optional). |
+| `TEAM_JOURNEY_STOP_AFTER` | none: the whole journey | Stop, passed, after this step: `team`, `form`, `run`, `needs-you`, `message` or `outcome`. `form` stops with the form filled in and not sent, so no project starts. |
 
-The journey types a tag (`journey-<time>`) first in the trial's goal and in the message, and
+The journey types a tag (`journey-<time>`) first in the project's goal and in the message, and
 finds both again by it; it needs no member's words. For it to pass, the team must:
 
 - be running when the page first reads the run, keep working for at least 10 seconds (the
@@ -87,12 +87,12 @@ finds both again by it; it needs no member's words. For it to pass, the team mus
 - then end: done, stopped, failed or didn't start.
 
 The journey installs no route and makes no API call of its own. The owner's browser clicks
-only New trial, Add member (when given more than one role), Run trial, one answer and Send
+only New project, Add member (when given more than one role), Run project, one answer and Send
 answer, and Send message; never Stop run, Cancel or a setting. The dark-theme looks come
 from a second browser that only opens pages. If `GET /api/team/status` answers 404, the
 journey stops at step 1 with "Team is switched off on this server".
 
 `report.json`, written after every step, holds per step its checks and, per theme, the URL,
 the checks passed, axe's findings by impact, any target under 24 px and the screenshot's
-name; then the trial's run id, the answer picked, who Temper says answered, the end state and
+name; then the project's run id, the answer picked, who Temper says answered, the end state and
 the result (`passed`, `failed` with the failing step and its error, or `stopped`).

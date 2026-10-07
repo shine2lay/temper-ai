@@ -49,8 +49,9 @@ export default defineConfig({
     css: false,
     // `e2e/` holds Playwright specs (run with `npx playwright test`, which
     // needs @playwright/test installed). Vitest picking them up made
-    // `vitest run` fail before it ran a single unit test.
-    exclude: ['node_modules/**', 'dist/**', 'e2e/**'],
+    // `vitest run` fail before it ran a single unit test. `e2e-live/` holds
+    // the live Team journey (playwright.live.config.ts), for the same reason.
+    exclude: ['node_modules/**', 'dist/**', 'e2e/**', 'e2e-live/**'],
     // A few tests are deliberately heavy: bigRunLive.test.tsx renders a run
     // of 63 agents, replays its whole event stream and mounts a panel for
     // every one of them. Locally that is 2-3s, which fit under vitest's 5s

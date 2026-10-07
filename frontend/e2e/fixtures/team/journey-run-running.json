@@ -1,0 +1,162 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "0df8884d-e7be-4976-8084-9b28edfd09f8",
+    "trial_id": "cbb719f43fae",
+    "workflow": "team-trial-cbb719f43fae",
+    "run_status": "running",
+    "state": "running",
+    "cost_usd": 0.0,
+    "account": null,
+    "trial": {
+      "goal": "journey-2026-01-01T09:00:00.000Z\n\nA practice run of the Team page journey.",
+      "leader": "lead",
+      "members": [
+        {
+          "name": "lead",
+          "role": "planner",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": true
+        },
+        {
+          "name": "maker",
+          "role": "builder",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        },
+        {
+          "name": "checker",
+          "role": "reviewer",
+          "tools": [
+            "Read",
+            "Grep",
+            "Glob",
+            "Edit",
+            "Write"
+          ],
+          "leader": false
+        }
+      ],
+      "pause_after_rounds": 1,
+      "communication": "all",
+      "project": {
+        "source": "/srv/example/projects/notes-app",
+        "start_commit": null
+      },
+      "started_at": "2026-10-07T02:17:42.112243+00:00",
+      "started_by": "owner",
+      "request_id": "j-1"
+    },
+    "round": {
+      "current": 0,
+      "keep_goings": 0,
+      "pause_after_rounds": 1
+    },
+    "members": [
+      {
+        "name": "lead",
+        "role": "planner",
+        "leader": true,
+        "activity": "working",
+        "turns": 1,
+        "cost_usd": 0.0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": {
+          "turn_no": 1,
+          "state": "running",
+          "started_at": "2026-10-07T02:17:42.529949+00:00",
+          "ended_at": null,
+          "error": null,
+          "account_slot": null
+        }
+      },
+      {
+        "name": "maker",
+        "role": "builder",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      },
+      {
+        "name": "checker",
+        "role": "reviewer",
+        "leader": false,
+        "activity": "idle",
+        "turns": 0,
+        "cost_usd": 0,
+        "model": "claude-opus-5-5",
+        "thinking": "max",
+        "effective": null,
+        "last_turn": null
+      }
+    ],
+    "open_waits": [],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {
+          "event_type": "message: goal",
+          "from_agent": "temper",
+          "to_agent": "lead",
+          "timestamp": "2026-10-07T02:17:42.444667+00:00",
+          "data": {
+            "message_id": "00406a482b244b408528781100fc0efc",
+            "state": "consumed",
+            "deliveries": 1,
+            "preview": "journey-2026-01-01T09:00:00.000Z\n\nA practice run of the Team page journey."
+          },
+          "entry": "message",
+          "message_kind": "goal"
+        },
+        {
+          "event_type": "turn 1: running",
+          "from_agent": "lead",
+          "timestamp": "2026-10-07T02:17:42.529949+00:00",
+          "data": {
+            "turn_id": "90efc90de95e44bda5376cff106e4eea",
+            "turn_no": 1,
+            "state": "running",
+            "ended_at": null,
+            "account_slot": null
+          },
+          "entry": "member_turn"
+        }
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {
+        "at": "2026-10-07T02:17:42.163735+00:00",
+        "kind": "start",
+        "by": "owner",
+        "source": "team_page",
+        "request_id": "j-1",
+        "detail": {
+          "workflow": "team-trial-cbb719f43fae",
+          "trial_id": "cbb719f43fae"
+        }
+      }
+    ],
+    "outcome": null
+  }
+}

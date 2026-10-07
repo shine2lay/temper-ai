@@ -194,15 +194,21 @@ export async function pick(page: Page, answer: string, words?: string) {
 
 export const runReads = (seen: string[]) => seen.filter((p) => RUN_READ.test(p)).length;
 
-/** axe on the whole page: nothing found. */
-export async function expectAxeClean(page: Page) {
+export type AxeViolations = Awaited<ReturnType<AxeBuilder['analyze']>>['violations'];
+
+/** axe on the whole page: nothing found. `keep` gets what axe found before the check (for a report). */
+export async function expectAxeClean(page: Page, keep?: (violations: AxeViolations, found: string[]) => void) {
   const results = await new AxeBuilder({ page }).withTags(AXE_TAGS).analyze();
   const found = results.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
+  keep?.(results.violations, found);
   expect(found, 'axe found problems').toEqual([]);
 }
 
-/** Every button and link on the Team page is at least 24 x 24 px (WCAG 2.5.8). */
-export async function expectTargets(page: Page) {
+/**
+ * Every button and link on the Team page is at least 24 x 24 px (WCAG 2.5.8).
+ * `keep` gets the targets under 24 px before the check (for a report).
+ */
+export async function expectTargets(page: Page, keep?: (small: string[]) => void) {
   const small = await page.locator('main').evaluate((main) => {
     const out: string[] = [];
     for (const el of main.querySelectorAll<HTMLElement>('a[href], button, [role="button"], summary')) {
@@ -214,11 +220,13 @@ export async function expectTargets(page: Page) {
     }
     return out;
   });
+  keep?.(small);
   expect(small, 'targets under 24 px').toEqual([]);
 }
 
-export async function shoot(page: Page, name: string) {
-  if (!SHOTS) return;
+/** A full-page shot, `name`.png in `dir` (TEAM_SHOTS unless given); none without a folder. */
+export async function shoot(page: Page, name: string, dir: string | undefined = SHOTS) {
+  if (!dir) return;
   // The dashboard scrolls inside its main column, so a full-page shot stops at the window's
   // height. Grow the window to the tallest scrolled content for the shot, then put it back.
   const size = page.viewportSize();
@@ -232,6 +240,6 @@ export async function shoot(page: Page, name: string) {
     return Math.ceil(bottom);
   });
   if (size && tall > size.height) await page.setViewportSize({ width: size.width, height: tall });
-  await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: true });
+  await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
   if (size && tall > size.height) await page.setViewportSize(size);
 }

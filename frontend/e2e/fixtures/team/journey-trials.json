@@ -1,0 +1,38 @@
+{
+  "route": "GET /api/team/trials",
+  "status": 200,
+  "body": {
+    "total": 1,
+    "trials": [
+      {
+        "trial_id": "cbb719f43fae",
+        "execution_id": "0df8884d-e7be-4976-8084-9b28edfd09f8",
+        "workflow": "team-trial-cbb719f43fae",
+        "goal_first_line": "journey-2026-01-01T09:00:00.000Z",
+        "leader": "lead",
+        "members": [
+          {
+            "name": "lead",
+            "role": "planner"
+          },
+          {
+            "name": "maker",
+            "role": "builder"
+          },
+          {
+            "name": "checker",
+            "role": "reviewer"
+          }
+        ],
+        "state": "done",
+        "run_status": "completed",
+        "decision": "done",
+        "round": 2,
+        "cost_usd": 0.0,
+        "started_at": "2026-10-07T02:17:42.470276+00:00",
+        "started_by": "owner",
+        "ended_at": "2026-10-07T02:17:46.348755+00:00"
+      }
+    ]
+  }
+}

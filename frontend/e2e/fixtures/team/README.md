@@ -25,6 +25,15 @@ answer, then writes the derived files below. It deletes the old JSON files first
 to finish if a file holds a home folder, a temporary path or a real id. Every name, goal,
 role and path is made up.
 
+The journey's files can be made again on their own, leaving every other file as it is:
+
+```bash
+uv run python frontend/scripts/capture_team_fixtures.py --only journey
+```
+
+The journey's test pins the page clock five minutes after their last event
+(`NOW` in `e2e/team-journey.spec.ts`); move it with them.
+
 ## Captured
 
 Everything not listed under Derived came from the real routes:
@@ -56,6 +65,13 @@ Everything not listed under Derived came from the real routes:
 - `answer-200-settings-go-on`, `answer-200-settings-stop`, `answer-409-behind-settings`: the
   settings wait's two answers, and the held question's answer refused while the settings
   wait is open.
+- `journey-*`: one trial as the page journey (`e2e/team-journey.spec.ts`) drives it, with the
+  journey's tag in its goal and message: started from the form with the owner's key
+  (`journey-trial-start-201`), running (`journey-run-running`), running with more entries
+  (`journey-run-running-more`), paused after its first round (`journey-run-paused`), the
+  owner's continue (`journey-answer-200`, `journey-run-answered`), the owner's message to the
+  leader (`journey-message-201`, `journey-run-messaged`), done (`journey-run-done`) and the
+  trials list holding it (`journey-trials`).
 
 ## Derived
 

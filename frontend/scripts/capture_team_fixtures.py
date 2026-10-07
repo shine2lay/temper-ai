@@ -17,6 +17,12 @@ States the harness can't reach are derived from a captured file afterwards, chan
 the fields that differ; ``README.md`` in that folder lists each one and why. Every name,
 goal, role and path is made up, and temporary paths are rewritten to ``/srv/example/...``
 before anything is written.
+
+One group can be captured again on its own, leaving every other file as it is:
+
+    uv run python frontend/scripts/capture_team_fixtures.py --only journey
+
+runs only ``test_journey`` and rewrites only ``journey-*.json`` (the Team page journey's).
 """
 
 from __future__ import annotations
@@ -411,19 +417,29 @@ def check_clean() -> None:
         assert found is None, f"{path.name}: {found.group(0)!r} must not be in a fixture"
 
 
-def main() -> int:
+#: Groups that ``--only`` can capture again on their own: the test that makes them.
+ONLY = {"journey": "test_journey"}
+
+
+def main(argv: list[str] | None = None) -> int:
     import pytest
 
+    args = sys.argv[1:] if argv is None else argv
+    only = args[1] if len(args) == 2 and args[0] == "--only" else None
+    if args and only not in ONLY:
+        print(f"usage: capture_team_fixtures.py [--only {'|'.join(ONLY)}]", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
-    for old in OUT.glob("*.json"):
+    for old in OUT.glob(f"{only}-*.json" if only else "*.json"):
         old.unlink()
     code = pytest.main([str(Path(__file__).resolve()), "-q", "-x", "-p", "no:cacheprovider",
                         "-p", "tests.conftest", "-p", "tests.test_runner.pi_parking.conftest",
                         "-c", str(ROOT / "pyproject.toml"), "--rootdir", str(ROOT),
-                        "-o", "timeout=600"])
+                        "-o", "timeout=600"] + (["-k", ONLY[only]] if only else []))
     if code != 0:
         return int(code)
-    derive()
+    if not only:
+        derive()
     check_clean()
     print(f"{len(list(OUT.glob('*.json')))} fixtures in {OUT.relative_to(ROOT)}")
     return 0
@@ -491,6 +507,12 @@ LONG_MESSAGE = (
     "interviews, and the help page uses the same order, so the two will read alike.")
 OWNER_HELD = "Please keep the note under 60 words if you can; the screen is small."
 OWNER_PENDING = "When you get to it, check the note on a narrow phone too."
+
+#: The Team page journey (frontend/e2e/team-journey.ts) types its tag first in the goal and
+#: in the message, in these words; the gated journey is given this tag.
+JOURNEY_TAG = "journey-2026-01-01T09:00:00.000Z"
+JOURNEY_GOAL = f"{JOURNEY_TAG}\n\nA practice run of the Team page journey."
+JOURNEY_MESSAGE = f"{JOURNEY_TAG} A message from the Team page journey."
 
 ROLES = {
     "planner": ("Planner", "# Planner\n\nTurns a goal into a short plan and keeps each version "
@@ -1118,3 +1140,68 @@ def test_refused_done(team):
     r = ta.answer(team, eid, wait["wait_id"], "stop", rid="rd-stop", auth=OWNER_KEY)
     assert r.status_code == 200, r.text
     pw.wait_ended(eid, 2)
+
+
+# --- the Team page journey (e2e/team-journey.spec.ts) --------------------------------------
+
+
+def test_journey(team):
+    """One trial the way the page journey drives it, read at each step it checks: started
+    from the form with the owner's key and a pause after one round; running, then running
+    with more entries; paused (the first answer offered is continue); answered by the owner
+    while maker's next turn runs, then the owner's message to the leader, whom the page's
+    message box picks first (pending: checker's turn comes first, then lead reads it with the
+    views and decides done); done; the trials list."""
+    s = team.saver
+    rounds(team.led, ["keep_going", "done"])
+    early, more, later = Hold(), Hold(), Hold()
+    ts.SCRIPTS["lead"][0].insert(0, early.action())
+    ts.SCRIPTS["checker"][0].insert(0, more.action())
+    ts.SCRIPTS["maker"][1].insert(0, later.action())
+    raw = trial(team, "j-1", goal=JOURNEY_GOAL, pause_after_rounds=1,
+                members=[{"name": "lead", "role": "planner"},
+                         {"name": "maker", "role": "builder"},
+                         {"name": "checker", "role": "reviewer"}])
+    r = team.client.post("/api/team/trials", json=raw, headers=ta.key(OWNER_KEY))
+    started = s.save("journey-trial-start-201", START, r)
+    assert r.status_code == 201, r.text
+    eid = started["execution_id"]
+
+    counts = []
+    for hold, name in ((early, "journey-run-running"), (more, "journey-run-running-more")):
+        assert hold.reached.wait(timeout=20), f"{name}: the held turn never began"
+        try:
+            view = save_run(team, name, eid)
+            assert view["state"] == "running", (name, view["state"])
+            counts.append(len(view["timeline"]["entries"]))
+        finally:
+            hold.release.set()
+    assert counts[1] > counts[0], counts
+
+    wait = ta.parked(team, eid, 1)
+    view = save_run(team, "journey-run-paused", eid)
+    assert view["state"] == "paused", view["state"]
+    assert wait["answers"][0]["answer"] == "continue", wait["answers"]
+    r = ta.answer(team, eid, wait["wait_id"], "continue", rid="j-a", auth=OWNER_KEY)
+    got = s.save("journey-answer-200", ANSWER, r)
+    assert r.status_code == 200 and got["by"] == "owner", r.text
+
+    assert later.reached.wait(timeout=20), "maker's second turn never began"
+    try:
+        view = save_run(team, "journey-run-answered", eid)
+        assert view["state"] == "running", view["state"]
+        assert [e for e in view["timeline"]["entries"] if e["entry"] == "owner_answer"], \
+            view["timeline"]["entries"]
+        r = ta.message(team, eid, "lead", JOURNEY_MESSAGE, rid="j-m", auth=OWNER_KEY)
+        sent = s.save("journey-message-201", MESSAGE, r)
+        assert r.status_code == 201 and sent["state"] == "pending", r.text
+        view = save_run(team, "journey-run-messaged", eid)
+        assert first_message(view, sender="owner")["data"]["preview"].startswith(JOURNEY_TAG)
+    finally:
+        later.release.set()
+
+    assert pw.wait_ended(eid, 2)[-1]["status"] == "completed"
+    done = save_run(team, "journey-run-done", eid)
+    assert done["state"] == "done", done["state"]
+    trials = s.save("journey-trials", TRIALS, team.client.get("/api/team/trials"))
+    assert [i["execution_id"] for i in trials["trials"]] == [eid], trials

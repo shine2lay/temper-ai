@@ -1,0 +1,12 @@
+{
+  "route": "POST /api/team/trials",
+  "status": 201,
+  "body": {
+    "trial_id": "cbb719f43fae",
+    "execution_id": "0df8884d-e7be-4976-8084-9b28edfd09f8",
+    "status": "running",
+    "workflow": "team-trial-cbb719f43fae",
+    "repeated": false,
+    "notes": []
+  }
+}

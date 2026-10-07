@@ -130,6 +130,14 @@ loops that run out of rounds use the zero-cost `ci_gate_rounds`
 (`frontend/e2e/gateRounds.spec.ts`; [gates.md](gates.md)). Set
 `TEMPER_PROOF_DIR` to keep its screenshots.
 
+### The Pi rehearsal rig (manual)
+
+A team run in real member boxes, with a scripted model in place of the
+provider, on its own compose project: `scripts/pi_rehearsal/` (its README
+has the steps). It is run by hand, never by the gate. The gate runs only
+`tests/test_pi_rehearsal/`, which checks the rig's pure parts with no Docker
+and no model.
+
 ## Flaky tests
 
 **A flaky test is a broken test.** It is fixed, never skipped, never deleted,

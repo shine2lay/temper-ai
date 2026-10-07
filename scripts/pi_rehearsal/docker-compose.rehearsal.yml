@@ -1,0 +1,137 @@
+# The Pi rehearsal rig's compose overlay (scripts/pi_rehearsal/README.md).
+#
+# Used only by rig.py, on top of docker-compose.yml, from the rig's own checkout and with the
+# rig's compose.env (COMPOSE_PROJECT_NAME pi-rehearsal-<id>): never with the live stack's
+# override or .env. Every bind source is inside the rig's tree (RIG_ROOT) or its checkout,
+# except pi-worker's Docker socket (PW02); rig.py's mount check refuses anything else before a
+# container starts.
+#
+# Networks: everything sits on "rig", which is internal (no way out). The server also sits on
+# "edge" for its one published port on 127.0.0.1; edge does no masquerading, so nothing on it
+# reaches past this host either. The provider names resolve to 127.0.0.1 in every service, so a
+# stray call fails here instead of reaching a provider. (The list is written out in each
+# service: YAML allows no tag such as !override on an alias.)
+
+networks:
+  rig:
+    internal: true
+  edge:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+
+services:
+  postgres:
+    restart: "no"
+    ports: !reset []
+    volumes: !reset []
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks: [rig]
+
+  redis:
+    restart: "no"
+    ports: !reset []
+    tmpfs:
+      - /data
+    networks: [rig]
+
+  server:
+    image: pi-rehearsal-server:${RIG_ID:?run through rig.py}
+    restart: "no"
+    ports: !override
+      - "127.0.0.1:${RIG_PORT:?}:8420"
+    volumes: !override
+      - {type: bind, source: ./temper_ai, target: /app/temper_ai, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: ./configs, target: /app/configs, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${WORKSPACE_DIR:?}", target: /app/workspaces, bind: {create_host_path: false}}
+      - {type: bind, source: ./frontend/dist, target: /app/frontend/dist, read_only: true, bind: {create_host_path: false}}
+    env_file: !reset []
+    environment: !override
+      HOME: /app
+      PYTHONDONTWRITEBYTECODE: "1"
+      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:?}@postgres:5432/temper_ai
+      TEMPER_REDIS_URL: redis://redis:6379/0
+      TEMPER_LOG_LEVEL: INFO
+      TEMPER_EXECUTION_MODE: external
+      TEMPER_API: http://server:8420
+      TEMPER_API_GUARD: ${TEMPER_API_GUARD:?}
+      TEMPER_API_KEYS_FILE: /app/workspaces/.api-keys.json
+      TEMPER_PI_AGENT: "1"
+    extra_hosts: !override ["api.anthropic.com:127.0.0.1", "console.anthropic.com:127.0.0.1",
+                            "claude.ai:127.0.0.1", "statsig.anthropic.com:127.0.0.1",
+                            "api.openai.com:127.0.0.1", "chatgpt.com:127.0.0.1",
+                            "auth.openai.com:127.0.0.1"]
+    networks: [rig, edge]
+
+  worker:
+    image: pi-rehearsal-worker:${RIG_ID:?}
+    restart: "no"
+    # The image's own command is "uv run python -m temper_ai.cli.main watch-queue": uv would
+    # rebuild the project first, and the rig has no way out to fetch the build backend. So the
+    # same watcher starts from the image's environment directly, as pi-worker's does.
+    command: ["/app/.venv/bin/python", "-m", "temper_ai.cli.main", "watch-queue"]
+    volumes: !override
+      - {type: bind, source: ./temper_ai, target: /app/temper_ai, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: ./configs, target: /app/configs, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${WORKSPACE_DIR:?}", target: "${WORKSPACE_DIR:?}", bind: {create_host_path: false}}
+    env_file: !reset []
+    environment: !override
+      HOME: /home/temperai-worker
+      PYTHONDONTWRITEBYTECODE: "1"
+      TEMPER_DATABASE_URL: postgresql://temper_ai:${POSTGRES_PASSWORD:?}@postgres:5432/temper_ai
+      TEMPER_REDIS_URL: redis://redis:6379/0
+      TEMPER_LOG_LEVEL: INFO
+      TEMPER_SPAWNER: subprocess
+      TEMPER_API: http://server:8420
+      WORKSPACE_DIR: ${WORKSPACE_DIR:?}
+    extra_hosts: !override ["api.anthropic.com:127.0.0.1", "console.anthropic.com:127.0.0.1",
+                            "claude.ai:127.0.0.1", "statsig.anthropic.com:127.0.0.1",
+                            "api.openai.com:127.0.0.1", "chatgpt.com:127.0.0.1",
+                            "auth.openai.com:127.0.0.1"]
+    networks: [rig]
+
+  pi-worker:
+    restart: "no"
+    volumes: !override
+      - {type: bind, source: ./temper_ai, target: /app/temper_ai, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: ./configs, target: /app/configs, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: ./.git, target: /app/.git, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /var/run/docker.sock, target: /var/run/docker.sock, bind: {create_host_path: false}}
+      - {type: bind, source: "${RIG_ROOT:?}/state/runs", target: "${RIG_ROOT:?}/state/runs", bind: {create_host_path: false}}
+      - {type: bind, source: "${RIG_ROOT:?}/sock", target: "${RIG_ROOT:?}/sock", bind: {create_host_path: false}}
+      - {type: bind, source: "${RIG_ROOT:?}/share", target: "${RIG_ROOT:?}/share", read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${RIG_ROOT:?}/roles", target: "${RIG_ROOT:?}/roles", read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${RIG_ROOT:?}/projects", target: "${RIG_ROOT:?}/projects", read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${RIG_ROOT:?}/boxcfg", target: "${RIG_ROOT:?}/boxcfg", read_only: true, bind: {create_host_path: false}}
+    extra_hosts: !override ["api.anthropic.com:127.0.0.1", "console.anthropic.com:127.0.0.1",
+                            "claude.ai:127.0.0.1", "statsig.anthropic.com:127.0.0.1",
+                            "api.openai.com:127.0.0.1", "chatgpt.com:127.0.0.1",
+                            "auth.openai.com:127.0.0.1"]
+    networks: [rig]
+
+  # The provider stand-in (standin.py), in pi-worker's network namespace: the egress relay's
+  # rehearsal connector reaches it at 127.0.0.1:RIG_UPSTREAM_PORT. Nothing else can.
+  standin:
+    image: pi-rehearsal-worker:${RIG_ID:?}
+    pull_policy: never
+    restart: "no"
+    profiles: [pi]
+    network_mode: "service:pi-worker"
+    user: "${RIG_UID:?}:${RIG_GID:?}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["/app/.venv/bin/python", "/rehearsal/standin.py"]
+    command: []
+    volumes:
+      - {type: bind, source: ./scripts/pi_rehearsal, target: /rehearsal, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${RIG_ROOT:?}/standin", target: "${RIG_ROOT:?}/standin", bind: {create_host_path: false}}
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      STANDIN_PORT: ${RIG_UPSTREAM_PORT:?}
+      STANDIN_CERT: ${RIG_ROOT:?}/standin/tls/leaf.pem
+      STANDIN_KEY: ${RIG_ROOT:?}/standin/tls/leaf.key
+      STANDIN_LOG: ${RIG_ROOT:?}/standin/standin.jsonl
+      STANDIN_GATES: ${RIG_ROOT:?}/standin/gates
+      STANDIN_SCENARIO: ${RIG_SCENARIO:-normal}

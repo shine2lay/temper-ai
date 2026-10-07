@@ -143,7 +143,10 @@ def stand_in(data: dict) -> list[dict]:
                               "same": len(sets) == 1 and set(next(iter(sets))) == pinned,
                               "extra": sorted(seen_all - pinned),
                               "missing": sorted(pinned - seen_all),
-                              "bash_offered": "bash" in seen_all}
+                              "bash_offered": "bash" in seen_all,
+                              # pi-ai's reserved entry, kept apart by the stand-in (shown)
+                              "reserved": sorted({str(t) for r in rows if r.get("member") == m
+                                                  for t in r.get("reserved") or ()})}
     held = [r.get("held_s") or {} for r in rows if r.get("hold_gate")]
     events = data.get("standin") or []
     tripped = [r for r in events if r.get("event") == "tripwire"]

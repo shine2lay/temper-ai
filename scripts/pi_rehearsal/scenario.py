@@ -12,6 +12,9 @@ to ``SCENARIOS``; the bundled normal run is ``normal``.
 
 What it logs is metadata only (rule, step, tool name, model, thinking settings, the names of
 the tools the request offered), never a prompt, a message body or a token.
+
+pi-ai's reserved tool entry (``PI_AI_PLACEHOLDER``) is kept apart from the offered tools: it
+is in every request for a model with mid-conversation tool changes, and no member can call it.
 """
 from __future__ import annotations
 
@@ -32,6 +35,10 @@ VIEWS_IN = re.compile(r"Review (?P<rid>[^ ]+) \(round (?P<round>\d+)\): the view
 DONE_REFUSED = re.compile(r"Done on review (?P<rid>[^ ]+) was refused: ")
 REFUSED_RESULT = ("Not sent (", "Not recorded (")
 BODY_PREFIX = "| "
+#: pi-ai 0.87.1's DEFERRED_TOOL_PLACEHOLDER: a reserved entry ("Never available. Never call
+#: this.", defer_loading true) that it appends to the tool list whenever it uses
+#: mid-conversation tool changes (Claude Opus 5.5). It isn't a tool the member is offered.
+PI_AI_PLACEHOLDER = "__pi_deferred_placeholder__"
 
 
 @dataclass(frozen=True)
@@ -52,9 +59,10 @@ class Turn:
     batch: tuple[Message, ...]
     step: int                         # model calls already answered in this turn
     last_result_refused: bool         # the previous tool call's result was a refusal
-    tools: frozenset[str]
+    tools: frozenset[str]             # the tools offered, pi-ai's reserved entry left out
     model: str
     thinking: dict[str, Any]
+    reserved: frozenset[str] = frozenset()   # pi-ai's reserved entry, when the request had it
 
     @property
     def leads(self) -> bool:
@@ -183,6 +191,12 @@ def turn_effort(request: dict[str, Any]) -> tuple[str, str]:
     return "", ""
 
 
+def reserved_entry(tool: dict[str, Any]) -> bool:
+    """pi-ai's reserved placeholder, exactly: its name with defer_loading true. A tool that only
+    shares the name stays among the offered tools, where the readback catches it."""
+    return tool.get("name") == PI_AI_PLACEHOLDER and tool.get("defer_loading") is True
+
+
 def read_turn(request: dict[str, Any]) -> Turn:
     """The member's turn from an Anthropic messages request (the whole conversation).
 
@@ -215,8 +229,9 @@ def read_turn(request: dict[str, Any]) -> Turn:
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 refused = refused or bool(block.get("is_error")) or _result_text(block).startswith(
                     REFUSED_RESULT)
-    tools = frozenset(str(t.get("name")) for t in request.get("tools") or []
-                      if isinstance(t, dict) and t.get("name"))
+    listed = [t for t in request.get("tools") or [] if isinstance(t, dict) and t.get("name")]
+    tools = frozenset(str(t["name"]) for t in listed if not reserved_entry(t))
+    reserved = frozenset(str(t["name"]) for t in listed if reserved_entry(t))
     thinking = request.get("thinking") if isinstance(request.get("thinking"), dict) else {}
     settings = {k: v for k, v in thinking.items() if k in ("type", "budget_tokens")}
     effort, said_in = turn_effort(request)
@@ -230,7 +245,8 @@ def read_turn(request: dict[str, Any]) -> Turn:
                 settings["request_effort"] = top_effort
     return Turn(member=framing.group("name").strip(), leader=framing.group("leader"),
                 roster=roster, batch=parse_batch(text), step=step, last_result_refused=refused,
-                tools=tools, model=str(request.get("model") or ""), thinking=settings)
+                tools=tools, model=str(request.get("model") or ""), thinking=settings,
+                reserved=reserved)
 
 
 # --- the bundled normal run (#74) ---------------------------------------------------------------

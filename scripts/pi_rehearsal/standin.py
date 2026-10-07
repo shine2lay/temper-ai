@@ -170,7 +170,8 @@ def make_handler(settings: Settings, log: Log) -> type[BaseHTTPRequestHandler]:
                       tool_id=tool_id if answer.action.tool else None,
                       text=not answer.action.tool, flag=answer.flag or None,
                       model=turn.model, thinking=turn.thinking,
-                      offered=sorted(turn.tools), held_s=held,
+                      offered=sorted(turn.tools), reserved=sorted(turn.reserved) or None,
+                      held_s=held,
                       hold_gate=answer.action.hold or None)
 
         def _frame(self, name: str, data: dict) -> None:

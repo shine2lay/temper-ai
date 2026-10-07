@@ -8,7 +8,9 @@ fail before a rehearsal does.
 The request's shape is pi-ai 0.87.1's for Claude Opus 5.5 (a model with mid-conversation
 effort): adaptive thinking and a fixed "high" at the top, an effort marker (a system message)
 before each earlier assistant message, and one closing the conversation with the member's
-own effort (pi-ai's buildParams and insertThinkingLevelMessages).
+own effort (pi-ai's buildParams and insertThinkingLevelMessages). Its tool list ends with
+pi-ai's reserved entry (DEFERRED_TOOL_PLACEHOLDER), as every member's request in the evidence
+rig did.
 """
 
 from __future__ import annotations
@@ -31,6 +33,12 @@ FIRST = "architecture"  # the first name on the roster who isn't the leader
 LEAD_TOOLS = ["decide", "edit", "read", "request_review", "send_message", "write"]
 REVIEW_TOOLS = ["edit", "give_view", "read", "send_message", "write"]
 MODEL = "claude-opus-5-5"
+#: pi-ai 0.87.1's DEFERRED_TOOL_PLACEHOLDER, as it appends it to the tool list when it uses
+#: mid-conversation tool changes (Opus 5.5).
+PI_AI_RESERVED = {"name": "__pi_deferred_placeholder__",
+                  "description": "Reserved placeholder. Never available. Never call this.",
+                  "input_schema": {"type": "object", "properties": {}, "required": []},
+                  "defer_loading": True}
 
 
 def msg(mid: str, kind: str, body: str, *, sender: str = "temper", reply_to: str | None = None,
@@ -86,7 +94,8 @@ def request(member: str, batch: list[dict], answered: tuple = (), *, refused_las
             {"type": "tool_result", "tool_use_id": f"toolu_{i}", "content": result}]})
     if marks:
         messages.append(effort_marker(effort))
-        return {"model": MODEL, "messages": messages, "tools": [{"name": t} for t in tools],
+        return {"model": MODEL, "messages": messages,
+                "tools": [{"name": t} for t in tools] + [dict(PI_AI_RESERVED)],
                 "thinking": {"type": "adaptive", "display": "summarized"},
                 "output_config": {"effort": "high"}, "stream": True}
     return {"model": MODEL, "messages": messages, "tools": [{"name": t} for t in tools],
@@ -114,7 +123,8 @@ def play(member: str, batch: list[dict], log: list[dict]) -> list:
         log.append({"event": "answer", "member": turn.member, "rule": answer.rule,
                     "step": answer.step, "tool": answer.action.tool or None,
                     "flag": answer.flag or None, "model": turn.model, "thinking": turn.thinking,
-                    "offered": sorted(turn.tools), "hold_gate": answer.action.hold or None,
+                    "offered": sorted(turn.tools), "reserved": sorted(turn.reserved) or None,
+                    "hold_gate": answer.action.hold or None,
                     "held_s": {"seconds": 1.0, "released": True} if answer.action.hold else None})
         if not answer.action.tool:
             return answers
@@ -194,6 +204,8 @@ def test_the_bundled_normal_run_plays_from_goal_to_done_on_temper_s_own_texts():
     offered = rows["every member's requests offered exactly its pinned tools (names, no Bash)"]
     assert set(offered["detail"]) == set(MEMBERS) and all(
         v["same"] and not v["extra"] and not v["missing"] for v in offered["detail"].values())
+    assert all(v["reserved"] == ["__pi_deferred_placeholder__"]
+               for v in offered["detail"].values())
 
 
 def test_a_member_s_words_are_never_acted_on():
@@ -226,6 +238,13 @@ def test_a_turn_reads_who_and_where_from_the_request():
                                    "effort_in": "closing system message",
                                    "request_effort": "high"}
     assert first_call.tools == frozenset(LEAD_TOOLS) and first_call.model == MODEL
+    # pi-ai's reserved entry is kept apart; a tool that only shares its name is offered.
+    assert first_call.reserved == {"__pi_deferred_placeholder__"}
+    look_alike = request(LEADER, batch)
+    look_alike["tools"][-1] = {"name": "__pi_deferred_placeholder__"}
+    assert scenario.read_turn(look_alike).tools == frozenset(
+        LEAD_TOOLS + ["__pi_deferred_placeholder__"])
+    assert not scenario.read_turn(look_alike).reserved
 
     write = scenario.Step("write", {"path": "NOTES.md", "content": "x"})
     later = scenario.read_turn(request(LEADER, batch, (write, write), refused_last=True))
@@ -235,6 +254,7 @@ def test_a_turn_reads_who_and_where_from_the_request():
     # The older shape, with the effort only at the top of the request, reads the same way.
     older = scenario.read_turn(request(LEADER, batch, shape="top_level"))
     assert older.thinking == {"type": "enabled", "budget_tokens": 31999, "effort": "max"}
+    assert older.tools == frozenset(LEAD_TOOLS) and not older.reserved
     older_later = scenario.read_turn(request(LEADER, batch, (write, write), refused_last=True,
                                              shape="top_level"))
     assert (older_later.step, older_later.last_result_refused) == (2, True)
@@ -252,13 +272,19 @@ def test_the_members_model_thinking_and_tools_are_compared_with_their_pins():
     thinking = "model and thinking for every member (from the requests)"
     offered = "every member's requests offered exactly its pinned tools (names, no Bash)"
 
-    def logged(member: str, **kw) -> dict:
-        turn = scenario.read_turn(request(member, goal, **kw))
+    def logged(member: str, look_alike: bool = False, **kw) -> dict:
+        req = request(member, goal, **kw)
+        if look_alike:  # a tool that only shares the reserved entry's name
+            req["tools"][-1] = {"name": "__pi_deferred_placeholder__"}
+        turn = scenario.read_turn(req)
         return {"event": "answer", "member": member, "rule": "x", "model": turn.model,
-                "thinking": turn.thinking, "offered": sorted(turn.tools)}
+                "thinking": turn.thinking, "offered": sorted(turn.tools),
+                "reserved": sorted(turn.reserved) or None}
 
     good = [logged(m) for m in MEMBERS]
     assert rows_for(good, pins())[thinking]["ok"] and rows_for(good, pins())[offered]["ok"]
+    assert rows_for(good, pins())[offered]["detail"][FIRST]["reserved"] == [
+        "__pi_deferred_placeholder__"]
 
     # pi-ai's fixed top-level "high" isn't the member's effort: a pin of "high" doesn't match.
     assert not rows_for(good, pins("high"))[thinking]["ok"]
@@ -271,6 +297,10 @@ def test_the_members_model_thinking_and_tools_are_compared_with_their_pins():
     row = rows_for(with_bash, pins())[offered]
     assert not row["ok"] and row["detail"][FIRST]["bash_offered"]
     assert row["detail"][FIRST]["extra"] == ["bash"]
+
+    named_like_it = [logged(m, look_alike=m == FIRST) for m in MEMBERS]
+    row = rows_for(named_like_it, pins())[offered]
+    assert not row["ok"] and row["detail"][FIRST]["extra"] == ["__pi_deferred_placeholder__"]
 
     short = [logged(m, tools=["read"]) if m == LEADER else logged(m) for m in MEMBERS]
     row = rows_for(short, pins())[offered]

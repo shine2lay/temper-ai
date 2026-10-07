@@ -71,6 +71,7 @@ def answers() -> list[dict]:
         rows.append({"event": "answer", "member": member, "rule": rule, "flag": None,
                      "model": "claude-opus-5-5", "thinking": dict(THINKING),
                      "offered": sorted(CC_NAMES.get(t, t) for t in pinned_tools(member)),
+                     "reserved": ["__pi_deferred_placeholder__"],  # pi-ai's, kept apart
                      "hold_gate": hold,
                      "held_s": {"seconds": 12.5, "released": True} if hold else None})
     return [{"event": "tripwire_armed", "port": 443}, {"event": "tripwire_armed", "port": 80},

@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import logging
 import re
+import string
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Any
 
 from temper_ai.pi_agent.route.model import INVALID_MESSAGE
 from temper_ai.pi_agent.route.router import Refusal
@@ -31,6 +33,11 @@ SHAPES: dict[str, re.Pattern[str]] = {
     "anthropic_oauth_refresh_token": re.compile(r"sk-ant-ort\d{2}-[A-Za-z0-9_\-]{20,}"),
     "anthropic_api_key": re.compile(r"sk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_\-]{20,}"),
 }
+#: Every shape is this prefix, a kind tag and a run of :data:`RUN_CHARS`, all of it run
+#: characters: a match lies inside one run and ends where the run ends. The live-stream
+#: guard (temper_ai/pi_agent/event_guard.py ``ShapeStream``) leans on that.
+SHAPE_PREFIX = "sk-ant-"
+RUN_CHARS = frozenset(string.ascii_letters + string.digits + "_-")
 RUN_TOKEN = "run_token"
 WITHHELD = "[withheld: a login token]"
 
@@ -159,14 +166,43 @@ def refuse_tokens(payload: object) -> None:
 
 
 def withhold(text: str) -> str:
-    """``text`` with every rule's match replaced by :data:`WITHHELD`: for log lines and the
-    Pi lane's refusal words (runner/pi_lane.py ``Refusal``), never for content a run hands
-    on, which is refused instead."""
+    """``text`` with every rule's match replaced by :data:`WITHHELD`: for log lines, a Pi
+    run's events (:func:`withhold_obj`) and the Pi lane's refusal words (runner/pi_lane.py
+    ``Refusal``), never for content a run hands on, which is refused instead."""
     for secret in _secrets():
         text = text.replace(secret, WITHHELD)
     for pattern in SHAPES.values():
         text = pattern.sub(WITHHELD, text)
     return text
+
+
+def withhold_obj(value: Any) -> Any:
+    """``value`` with :func:`withhold` applied to every string in it, dict keys included: a
+    Pi run's event data on its way out (temper_ai/pi_agent/event_guard.py). ``value`` itself
+    comes back when nothing in it changed, so a str enum keeps its type. Two keys withheld
+    to the same words are told apart by a number, so neither value is lost."""
+    if isinstance(value, str):
+        guarded = withhold(value)
+        return value if guarded == value else guarded
+    if isinstance(value, dict):
+        out: dict = {}
+        changed = False
+        for key, item in value.items():
+            new_key, new_item = withhold_obj(key), withhold_obj(item)
+            changed = changed or new_key is not key or new_item is not item
+            if new_key in out:
+                n = 2
+                while f"{new_key} ({n})" in out:
+                    n += 1
+                new_key = f"{new_key} ({n})"
+            out[new_key] = new_item
+        return out if changed else value
+    if isinstance(value, (list, tuple)):
+        items = [withhold_obj(v) for v in value]
+        if all(new is old for new, old in zip(items, value, strict=True)):
+            return value
+        return items if isinstance(value, list) else tuple(items)
+    return value
 
 
 class LogGuard(logging.Filter):

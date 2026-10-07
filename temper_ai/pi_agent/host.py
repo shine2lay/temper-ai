@@ -71,6 +71,7 @@ from temper_ai.pi_agent.box import (
     stop_leftover_box,
     tree_sha256,
 )
+from temper_ai.pi_agent.event_guard import guarded_context
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
     ACCOUNT_REFUSED,
@@ -194,7 +195,8 @@ class PiHost(AgentABC):
         from temper_ai.database import get_database
         from temper_ai.runner.attempts import later_attempts, stand_down_if_replaced
 
-        self.ctx = context
+        # The step's events, its turns' and its owner waits' leave through the door.
+        self.ctx = guarded_context(context)
         self.run_id = context.run_id
         self.host_path = context.node_path or self.name
         self.attempt_id = context.graph_event_id or f"attempt-{uuid.uuid4().hex}"

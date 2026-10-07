@@ -28,7 +28,10 @@ chunks again (G3).
 
 Pi's ``system`` message declares the prompt and tools sent to the model: it is never read,
 mapped or stored here. Configured secret values and secret-named fields are replaced before
-anything is recorded or broadcast, including a secret split across two streamed deltas.
+anything is recorded or broadcast, including a secret split across two streamed deltas. A
+caller may inject one more rule (:class:`Guard`; the Pi lane's login-token rule): every
+string the mapper records or broadcasts then passes it too, before any of the cuts below,
+and a live stream lets out no character of a match however the deltas split.
 """
 
 from __future__ import annotations
@@ -132,12 +135,34 @@ class JsonlSplitter:
         return value
 
 
-class Redactor:
-    """Replace configured secret values, and values of secret-named fields."""
+class GuardStream(Protocol):
+    """A :class:`Guard`'s rule for a text that arrives in pieces."""
 
-    def __init__(self, secrets: Iterable[str] = (), fields: Iterable[str] = DEFAULT_SECRET_FIELDS):
+    def feed(self, piece: str) -> str: ...
+
+    def flush(self) -> str: ...
+
+
+class Guard(Protocol):
+    """One more rule a caller injects into a :class:`Redactor` (the Pi lane's login-token
+    rule, temper_ai/pi_agent/event_guard.py): this module never imports it."""
+
+    def text(self, value: str) -> str: ...
+
+    def obj(self, value: Any) -> Any: ...
+
+    def stream(self) -> GuardStream: ...
+
+
+class Redactor:
+    """Replace configured secret values, and values of secret-named fields; then apply the
+    injected :class:`Guard`, if there is one (without one, nothing else changes)."""
+
+    def __init__(self, secrets: Iterable[str] = (), fields: Iterable[str] = DEFAULT_SECRET_FIELDS,
+                 guard: Guard | None = None):
         self.secrets = sorted({s for s in secrets if s and len(s) >= MIN_SECRET_LENGTH}, key=len, reverse=True)
         self.fields = tuple(f.lower() for f in fields)
+        self.guard = guard
 
     def add(self, *secrets: str) -> None:
         """Learn more secret values (a credential handed to the worker mid-turn). Call it before
@@ -148,6 +173,11 @@ class Redactor:
             self.secrets = sorted(set(self.secrets) | new, key=len, reverse=True)
 
     def text(self, value: Any) -> Any:
+        return self.guard_text(self.unguarded_text(value))
+
+    def unguarded_text(self, value: Any) -> Any:
+        """``value`` with the secrets replaced but without the guard: only for the answer
+        kept for :meth:`PiEventMapper.finish`, which the caller scans and refuses whole."""
         if not isinstance(value, str) or not self.secrets:
             return value
         for secret in self.secrets:
@@ -155,13 +185,23 @@ class Redactor:
                 value = value.replace(secret, REDACTED)
         return value
 
+    def guard_text(self, value: Any) -> Any:
+        """``value`` with the guard's rule applied (unchanged when there is no guard)."""
+        if self.guard is None or not isinstance(value, str):
+            return value
+        return self.guard.text(value)
+
     def obj(self, value: Any) -> Any:
+        value = self._unguarded_obj(value)
+        return value if self.guard is None else self.guard.obj(value)
+
+    def _unguarded_obj(self, value: Any) -> Any:
         if isinstance(value, str):
-            return self.text(value)
+            return self.unguarded_text(value)
         if isinstance(value, dict):
-            return {k: (REDACTED if self._secret_field(k) else self.obj(v)) for k, v in value.items()}
+            return {k: (REDACTED if self._secret_field(k) else self._unguarded_obj(v)) for k, v in value.items()}
         if isinstance(value, list):
-            return [self.obj(v) for v in value]
+            return [self._unguarded_obj(v) for v in value]
         return value
 
     def _secret_field(self, key: Any) -> bool:
@@ -174,16 +214,22 @@ class Redactor:
 
 class StreamRedaction:
     """Redact a text that arrives in pieces: hold back any tail that could be the start of a
-    secret, so a secret split across two deltas never goes out in either."""
+    secret, so a secret split across two deltas never goes out in either. What it lets out
+    then passes the guard's own stream rule, if the redactor has a guard."""
 
     def __init__(self, redactor: Redactor):
         self._r = redactor
         self._buf = ""
+        self._guard = redactor.guard.stream() if redactor.guard is not None else None
 
     def feed(self, piece: str) -> str:
+        out = self._feed_secrets(piece)
+        return out if self._guard is None else self._guard.feed(out)
+
+    def _feed_secrets(self, piece: str) -> str:
         if not self._r.secrets:
             return piece
-        self._buf = self._r.text(self._buf + piece)
+        self._buf = self._r.unguarded_text(self._buf + piece)
         hold = 0
         for k in range(min(len(self._buf), len(self._r.secrets[0]) - 1), 0, -1):
             tail = self._buf[-k:]
@@ -195,7 +241,9 @@ class StreamRedaction:
 
     def flush(self) -> str:
         out, self._buf = self._buf, ""
-        return out
+        if self._guard is None:
+            return out
+        return self._guard.feed(out) + self._guard.flush()
 
 
 class Recorder(Protocol):
@@ -286,11 +334,14 @@ class PiOutcome:
     def error(self) -> str | None:
         return "; ".join(self.errors) if self.errors else None
 
-    def agent_event_data(self, agent_name: str, duration_seconds: float | None = None) -> dict:
-        """The data of ``agent.completed`` / ``agent.failed``, shaped as llm_agent records it."""
+    def agent_event_data(self, agent_name: str, duration_seconds: float | None = None,
+                         scrub: Callable[[str], str] | None = None) -> dict:
+        """The data of ``agent.completed`` / ``agent.failed``, shaped as llm_agent records it.
+        ``scrub`` (the mapper's guard) applies to the output before it is cut."""
+        output = scrub(self.output) if scrub else self.output
         data = {
             "agent_name": agent_name,
-            "output": self.output[:AGENT_OUTPUT_LIMIT],
+            "output": output[:AGENT_OUTPUT_LIMIT],
             "output_length": len(self.output),
             "has_structured_output": self.structured_output is not None,
             "structured_output": self.structured_output,
@@ -541,7 +592,8 @@ class PiEventMapper:
                     self._requested_by[str(part["id"])] = call.id
             else:
                 other[str(pt)] += 1
-        text = self.redact.text("\n\n".join(texts))
+        said = self.redact.unguarded_text("\n\n".join(texts))
+        text = self.redact.guard_text(said)
         reasoning = self.redact.text("\n\n".join(thinking)) if thinking else None
         usage = _usage(msg.get("usage"))
         self._add_usage(usage)
@@ -567,7 +619,9 @@ class PiEventMapper:
             self._record(EventType.LLM_CALL_COMPLETED, self.stable_id("llm-end", call.ordinal),
                          status="completed", data=data)
         self._chunk(call, "", "content", done=True)
-        self._last_answer = {"stop": stop, "text": text, "error": data.get("error"), "call_id": call.id}
+        # The answer kept for finish() skips the guard: the caller scans it and refuses it whole
+        # (temper_ai/pi_agent/turn.py, SW-52) instead of handing on a withheld version.
+        self._last_answer = {"stop": stop, "text": said, "error": data.get("error"), "call_id": call.id}
         self._call = None
 
     def _add_usage(self, usage: dict) -> None:
@@ -845,7 +899,8 @@ def record_outcome(recorder: Recorder, mapper: PiEventMapper, outcome: PiOutcome
     failed = outcome.status != "completed"
     event_id = mapper.stable_id("agent-end")
     recorder.record(EventType.AGENT_FAILED if failed else EventType.AGENT_COMPLETED,
-                    data=outcome.agent_event_data(mapper.agent_name, duration_seconds),
+                    data=outcome.agent_event_data(mapper.agent_name, duration_seconds,
+                                                  scrub=mapper.redact.guard_text),
                     parent_id=mapper.agent_id, execution_id=mapper.execution_id,
                     status="failed" if failed else "completed", event_id=event_id)
     return event_id

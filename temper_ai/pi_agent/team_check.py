@@ -21,6 +21,12 @@ not start. It checks:
 The role list is the worker box config's ``identities_dir`` (``TEMPER_PI_BOX_CONFIG``), the same
 folder a Pi step copies its role from; the check only reads it. Unset means "role list not
 configured". Only imported with the Pi switch (``TEMPER_PI_AGENT``) on.
+
+Where the check reads it (ADR-M4-21, :func:`load_box_or_lane_view`): in the Pi lane, from the
+disk, as always; anywhere else (the server, which is the run boxes' template and holds no Pi
+folder), only from the Pi lane view pi-worker publishes (shared/pi_lane_view.py), never the
+disk. The view is advisory: the Pi lane checks again on disk at run start and at the team node's
+start (:func:`load_box`), with the same words.
 """
 
 from __future__ import annotations
@@ -47,6 +53,8 @@ from temper_ai.pi_agent.team import EDGES_NOT_BUILT, member_name, stage_findings
 from temper_ai.pi_agent.team_config import NAME_RE
 
 if TYPE_CHECKING:  # the stage package imports this module's registration; no import cycle
+    from collections.abc import Iterable
+
     from temper_ai.stage.topology import RunStart
 
 #: The role's about page, which the identity extension shows as the role's description.
@@ -93,6 +101,15 @@ def finding(where: str, what: str, member: str | None = None) -> Finding:
     return Finding(f"{where}: {what}", field, member)
 
 
+def not_listed(role: str, ids: Iterable[str]) -> str:
+    """The words for a role that isn't in the role list, with a close id as a hint (never
+    picked): the same from the disk (:class:`RoleList`) and from the Pi lane view
+    (:class:`ViewRoles`)."""
+    close = difflib.get_close_matches(role, list(ids), n=1, cutoff=0.6)
+    hint = f" (did you mean '{close[0]}'? Not picked automatically)" if close else ""
+    return f"role '{role}' is not in the role list{hint}"
+
+
 @dataclass(frozen=True)
 class RoleList:
     """The folder of pi roles, read only: one folder per role id."""
@@ -109,9 +126,7 @@ class RoleList:
         """What keeps ``role`` from being used as it is (empty when it can be)."""
         folder = self.root / role
         if not ROLE_RE.match(role) or not folder.is_dir():
-            close = difflib.get_close_matches(role, self.ids(), n=1, cutoff=0.6)
-            hint = f" (did you mean '{close[0]}'? Not picked automatically)" if close else ""
-            return [f"role '{role}' is not in the role list{hint}"]
+            return [not_listed(role, self.ids())]
         problems = []
         try:
             identity = json.loads((folder / "identity.json").read_text(encoding="utf-8"))
@@ -153,14 +168,89 @@ class RoleList:
                 "problems": self.problems(role)}
 
 
+class ViewRoles:
+    """The role list as the Pi lane view carries it (shared/pi_lane_view.py): the ids and
+    each role's card, read on disk by pi-worker. Answers like :class:`RoleList`, word for
+    word: a role in the list has the problems its card has, any other gets
+    :func:`not_listed` over the same ids."""
+
+    def __init__(self, ids: list[str], cards: list[dict]):
+        self._ids = list(ids)
+        self._cards = {card["id"]: dict(card) for card in cards}
+
+    def ids(self) -> list[str]:
+        return list(self._ids)
+
+    def problems(self, role: str) -> list[str]:
+        card = self._cards.get(role)
+        if card is None:
+            return [not_listed(role, self._ids)]
+        return list(card["problems"])
+
+    def card(self, role: str) -> dict:
+        card = self._cards.get(role)
+        if card is None:
+            return {"id": role, "title": role, "about": None, "has_home_chat": False,
+                    "problems": self.problems(role)}
+        return {**card, "problems": list(card["problems"])}
+
+
+@dataclass(frozen=True)
+class LaneView:
+    """What the checks read of the worker box config, from the Pi lane view instead of the
+    disk (ADR-M4-21): the role list and the route, add-on and search-tool names. Only outside
+    the Pi lane (:func:`load_box_or_lane_view`)."""
+
+    roles: ViewRoles
+    routes: frozenset[str]
+    add_ons: frozenset[str]
+    search_tools: frozenset[str]
+    box_config_sha256: str
+    published_at: str
+
+    @classmethod
+    def of(cls, view: dict) -> LaneView:
+        """A view :func:`temper_ai.shared.pi_lane_view.parse` accepted."""
+        return cls(roles=ViewRoles(view["role_ids"], view["roles"]),
+                   routes=frozenset(view["routes"]), add_ons=frozenset(view["add_ons"]),
+                   search_tools=frozenset(view["search_tools"]),
+                   box_config_sha256=view["box_config_sha256"],
+                   published_at=view["published_at"])
+
+
+def role_list(box: BoxConfig | LaneView) -> RoleList | ViewRoles:
+    """The role list ``box`` names: its folder on disk, or the one the Pi lane view carries."""
+    if isinstance(box, LaneView):
+        return box.roles
+    return RoleList(Path(box.identities_dir))
+
+
 def load_box() -> tuple[BoxConfig | None, str | None]:
-    """The worker box config (it names the role list), or why there is none."""
+    """The worker box config from the disk (it names the role list), or why there is none.
+    The Pi lane's own reader: its run-start, node-start and claim checks."""
     try:
         return BoxConfig.load(), None
     except BoxError as exc:
         if exc.code == "box_not_configured":
             return None, f"role list not configured (set {CONFIG_ENV} to the worker box config)"
         return None, str(exc)
+
+
+def load_box_or_lane_view() -> tuple[BoxConfig | LaneView | None, str | None]:
+    """What the team checks read, by where they run (ADR-M4-21): in the Pi lane the box config
+    from the disk (:func:`load_box`), never the view; anywhere else only the Pi lane view from
+    Redis (shared/pi_lane_view.py), never the disk, and no usable view is a roles problem in
+    plain words."""
+    from temper_ai.runner.lanes import in_pi_lane
+
+    if in_pi_lane():
+        return load_box()
+    from temper_ai.shared import pi_lane_view
+
+    view, problem = pi_lane_view.read()
+    if view is None:
+        return None, problem
+    return LaneView.of(view), None
 
 
 def goal_problem(input_map: dict | None, inputs: dict) -> str | None:
@@ -200,7 +290,8 @@ def safety_problems(safety: dict | None) -> list[str]:
 def check_team(agent_configs: list[dict], strategy_config: object, *,
                input_map: dict | None = None, inputs: dict | None = None,
                safety: dict | None = None, unloaded: dict[str, str] | None = None,
-               box: BoxConfig | None = None, box_problem: str | None = None) -> list[str]:
+               box: BoxConfig | LaneView | None = None,
+               box_problem: str | None = None) -> list[str]:
     """Every problem with a team stage, as ``"<where>: <what>"`` texts, in a stable order
     (:func:`team_findings`' texts)."""
     return [f.text for f in team_findings(
@@ -211,18 +302,18 @@ def check_team(agent_configs: list[dict], strategy_config: object, *,
 def team_findings(agent_configs: list[dict], strategy_config: object, *,
                   input_map: dict | None = None, inputs: dict | None = None,
                   safety: dict | None = None, unloaded: dict[str, str] | None = None,
-                  box: BoxConfig | None = None,
+                  box: BoxConfig | LaneView | None = None,
                   box_problem: str | None = None) -> list[Finding]:
     """Every problem with a team stage, each with its form field and member, in a stable
     order.
 
     ``agent_configs`` are the members' resolved agent configs; ``unloaded`` maps a member whose
-    config could not be loaded to the loader's error. ``box`` is the worker box config (loaded
-    from ``TEMPER_PI_BOX_CONFIG`` when neither it nor ``box_problem`` is given). Reads the role
-    folders, never writes; no model call, no container.
+    config could not be loaded to the loader's error. ``box`` is the worker box config or the
+    Pi lane view (:func:`load_box_or_lane_view` when neither it nor ``box_problem`` is given).
+    Reads the role folders or the view, never writes; no model call, no container.
     """
     if box is None and box_problem is None:
-        box, box_problem = load_box()
+        box, box_problem = load_box_or_lane_view()
     problems = [finding(f"member '{name}'", f"its agent config can't be loaded: {error}", name)
                 for name, error in (unloaded or {}).items()]
     problems += [finding(where, what, member)
@@ -235,7 +326,7 @@ def team_findings(agent_configs: list[dict], strategy_config: object, *,
     if box is None:
         problems.append(finding("roles", str(box_problem)))
     else:
-        roles = RoleList(Path(box.identities_dir))
+        roles = role_list(box)
         for cfg in agent_configs:
             role = cfg.get("role")
             if cfg.get("type") != AGENT_TYPE or not isinstance(role, str):

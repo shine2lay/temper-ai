@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
@@ -289,11 +288,15 @@ def team_status() -> dict:
     and the guard's mode."""
     from temper_ai.pi_agent.member import settings
     from temper_ai.pi_agent.route.model import RESERVED_IDS
-    from temper_ai.pi_agent.team_check import BASH_OFF, bash_allowed, load_box
+    from temper_ai.pi_agent.team_check import (
+        BASH_OFF,
+        bash_allowed,
+        load_box_or_lane_view,
+    )
     from temper_ai.pi_agent.team_config import LIMITS, NAME_PATTERN, load_team_config
     from temper_ai.pi_agent.team_trials import DEFAULT_TOOLS
 
-    box, box_problem = load_box()
+    box, box_problem = load_box_or_lane_view()
     team = load_team_config()
     bash = bash_allowed()
     return {
@@ -316,23 +319,24 @@ def team_status() -> dict:
 @router.get("/roles")
 def team_roles() -> dict:
     """The roles a member can take: id, title, about page, whether it has a home chat, and its
-    problems. Nothing else of a role's folder leaves the server."""
-    from temper_ai.pi_agent.team_check import RoleList, load_box
+    problems. Nothing else of a role's folder leaves the server. Outside the Pi lane they come
+    from the Pi lane view pi-worker publishes (ADR-M4-21)."""
+    from temper_ai.pi_agent.team_check import load_box_or_lane_view, role_list
 
-    box, problem = load_box()
+    box, problem = load_box_or_lane_view()
     if box is None:
         return {"configured": False, "problem": problem, "roles": []}
-    roles = RoleList(Path(box.identities_dir))
+    roles = role_list(box)
     return {"configured": True, "problem": None,
             "roles": [roles.card(role) for role in roles.ids()]}
 
 
 def _check(body: dict) -> Any:
     from temper_ai.api.routes import _state
-    from temper_ai.pi_agent.team_check import load_box
+    from temper_ai.pi_agent.team_check import load_box_or_lane_view
     from temper_ai.pi_agent.team_trials import check_trial
 
-    box, box_problem = load_box()
+    box, box_problem = load_box_or_lane_view()
     return check_trial(body, store=_state().config_store, box=box, box_problem=box_problem)
 
 

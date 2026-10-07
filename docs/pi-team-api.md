@@ -28,6 +28,17 @@ nothing of it is imported. The team itself runs as described in
 Errors follow `api.json`'s conventions: `400 {problem}` for one bad field, `400
 {problems, notes}` from a check, `404 {detail}`, `409 {reason, message, ...}`.
 
+**Where the role list comes from (ADR-M4-21).** The server is the run boxes' template, so it
+holds no Pi folder. The status, roles, check and start routes read the role cards and the
+route, add-on and search-tool names from the Pi lane view that pi-worker publishes
+([pi-lane.md](pi-lane.md), "The Pi lane view"), never the disk. With no current view
+(pi-worker stopped, or its preflight failing), `roles_configured` is false, and
+`roles_problem`, `GET /roles`' `problem` and a check's `roles` finding say "the Pi lane isn't
+running or hasn't passed its checks, so the server has no current role list from it
+(<why>)". The replies keep their shapes. The view only lets the page offer a start: the Pi
+lane checks the roles again on its own disk when its run process loads the workflow and when
+the team starts.
+
 ### Who did it (#45)
 
 There is no second guard and no `by` in any body. Starting a trial counts as a run start

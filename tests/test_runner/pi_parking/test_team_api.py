@@ -348,8 +348,10 @@ def test_a_trial_s_run_is_queued_for_the_pi_lane_and_only_the_pi_lane_claims_it(
     written with the lane mark. A server that isn't the Pi lane (production's) queues it for
     the Pi lane and never starts it itself; only the Pi lane's claim takes it."""
     from temper_ai.runner.lanes import LANE_ENV
+    from tests.test_pi_agent import lane_view_support as lv
     from tests.test_runner.pi_lane import support as lane
 
+    lv.publish(monkeypatch)  # ADR-M4-21: outside the Pi lane the server reads pi-worker's view
     monkeypatch.delenv(LANE_ENV, raising=False)
     monkeypatch.setenv("TEMPER_EXECUTION_MODE", "external")
     got = start_trial(api, body(api, "lane-1"))

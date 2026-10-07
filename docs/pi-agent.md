@@ -174,7 +174,10 @@ ids -- `owner`, `system`, `all`, ... from `pi_agent/route/model.py` `RESERVED_ID
 member given Bash while `TEMPER_API_GUARD` isn't `enforce`: "member '<m>': Bash is off
 until owner-only writes are enforced (#45)") and the workflow (each `safety: policies:` entry
 is refused by name, since a team can't enforce one yet). The role list is the box config's
-`identities_dir`, only read; unset means "role list not configured". A resume or a fork
+`identities_dir`, only read; unset means "role list not configured". The server holds no Pi
+folder, so there the check reads the role list and the box config's names from the Pi lane
+view pi-worker publishes ([pi-lane.md](pi-lane.md), ADR-M4-21); the Pi lane reads the disk.
+A resume or a fork
 never runs this check (they run the workflow config as it is now), so the team node runs it
 again when it starts, with the goal it was handed, and fails red before any member is set
 up. The run-start problems, the graph's own and the Pi loop rule come in one error. The

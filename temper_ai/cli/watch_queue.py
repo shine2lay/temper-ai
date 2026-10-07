@@ -30,6 +30,11 @@ touches a Pi run; the Pi lane's watcher (TEMPER_LANE=pi, the pi-worker
 service) touches nothing else, claims one Pi run at a time (counting a
 parked one) in the order they came, and does its own start-up and drain
 (runner/pi_lane.py).
+
+The Pi lane's watcher also writes the Pi lane view each tick when due
+(shared/pi_lane_view.py, ADR-M4-21): the role list and the box config's
+names, for the server's Team page and start checks. It only writes it,
+never reads it, and its claims never depend on it.
 """
 
 from __future__ import annotations
@@ -100,6 +105,9 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
         pi_lane.eager_import()
         pi_lane.arm_drain_mark()
         logger.info("Pi lane start-up: %s", pi_lane.start_up())
+        view = _lane_view_publisher()
+    else:
+        view = None
     requeued = _requeue_stuck_claims(spawner, lane)
     if requeued:
         logger.warning("Put %d run(s) a restart caught mid-claim back in the queue", requeued)
@@ -129,8 +137,12 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
                     logger.info("Dispatched %d new run(s)", claimed)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Watcher tick failed (continuing): %s", exc)
+            if not stop.is_set():
+                _publish_lane_view(view)
             stop.wait(args.poll_interval)
     finally:
+        if view is not None:
+            view.withdraw()  # the Team page says the lane isn't running from now on
         if lane == PI_LANE:
             # Claims nothing more; its runs leave at their next turn boundary. The reaper
             # keeps going meanwhile, so a run that parks is let go as usual.
@@ -139,6 +151,25 @@ def cmd_watch_queue(args: argparse.Namespace) -> int:
         logger.info("Watcher stopped")
 
     return 0
+
+
+def _lane_view_publisher():
+    """The Pi lane view's writer (ADR-M4-21): the preflight every run gets, then the view from
+    the disk, into the Redis the server reads."""
+    from temper_ai.runner.pi_preflight import preflight
+    from temper_ai.shared import pi_lane_view
+
+    return pi_lane_view.Publisher(pi_lane_view.redis_url(), preflight=preflight)
+
+
+def _publish_lane_view(view) -> None:
+    """Write the Pi lane view when due; nothing it does stops the watcher or a claim."""
+    if view is None:
+        return
+    try:
+        view.tick()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Pi lane view: writing it failed (continuing): %s", type(exc).__name__)
 
 
 def _scan_and_dispatch(spawner, lane: str | None = None) -> int:

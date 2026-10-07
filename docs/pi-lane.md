@@ -259,6 +259,34 @@ with `TEMPER_SPAWNER=subprocess` that can reach Docker refuses to start, except 
 switch. An unknown `TEMPER_LANE` stops any worker. A run box never gets `TEMPER_LANE`
 (`shared/box_env.py` `PI_ONLY`, [boxes.md](boxes.md)).
 
+## The Pi lane view: the server's role list (ADR-M4-21)
+
+The server is the run boxes' template, so it holds no Pi folder: the box config and the role
+folders are mounted into pi-worker only. The Team page still needs the role list, and its
+checks need the route, add-on and search-tool names. So pi-worker publishes them:
+
+- **Who writes it:** the Pi lane's watcher (`cli/watch_queue.py`, `shared/pi_lane_view.py`
+  `Publisher`), about every 30 s, only while the preflight passes (run again every 300 s; a
+  failed one at every write, and the view is deleted until it passes). It writes one Redis key,
+  `temper:pi:lane-view`, expiring after 120 s, and deletes it when the watcher stops. It never
+  reads it. Without a Redis URL it writes nothing and says so once.
+- **What it holds:** names only, from the disk: the role ids, each role's Team page card (id,
+  title, about, has_home_chat, problems: `RoleList.card`), the route, add-on and search-tool
+  names, the box config file's sha256 and when it was published (schema 1). No paths, chat
+  ids, slot or account names, credentials or other digests. Its logs carry counts and the
+  digest's head, never a card.
+- **Who reads it:** only the checks outside the Pi lane: the Team API's status, roles, check
+  and start, and the run-start check on the server (`pi_agent/team_check.py`
+  `load_box_or_lane_view`). They read nothing else, and they give the disk's words for every
+  role, the "did you mean" hint included. A view that is missing, expired, published more
+  than 120 s ago, unreadable, wrongly typed or over 512 KiB gives one roles problem, "the Pi
+  lane isn't running or hasn't passed its checks, so the server has no current role list from
+  it (<why>)", never a 500.
+- **It decides nothing in the lane:** the Pi lane reads the disk only, when its run process
+  loads the workflow and when the team node starts, and refuses what the disk refuses whatever
+  the view said. A forged
+  view can make the page offer a start; it can't make the lane run one (H4 below).
+
 ## Decided from database rows (H4)
 
 Every Pi lane decision is read back from rows at the moment it is made (SW-78):
@@ -276,8 +304,9 @@ Every Pi lane decision is read back from rows at the moment it is made (SW-78):
 - **the switch**: the process's own setting, `TEMPER_PI_AGENT`, never a message.
 
 Redis carries only the live chunks and script logs a run streams to the dashboard
-(`streaming/`) and the token pool's shared cooldowns, which Pi doesn't use. No module the lane
-decides in reads it; the lane polls the database, so there is nothing for a message to wake.
+(`streaming/`), the token pool's shared cooldowns, which Pi doesn't use, and the Pi lane view
+(above), which the lane writes and only the server reads. No module the lane decides in reads
+it; the lane polls the database, so there is nothing for a message to wake.
 A forged message (a cancel, an answer, a switch-off, a cleared limit, a claim) only reaches
 the dashboard's live view. This defeats forged Redis events only: until the box secrets steps
 (#46) and a restricted database role (#26) stop run boxes writing the database, those rows are
@@ -342,7 +371,9 @@ well, follow [pi-agent.md](pi-agent.md).
 `tests/test_runner/pi_lane/`: the mark on every entry point both ways, the claims and one run
 at a time, the Pi-only rule, the preflight's reasons, drain and start-up, lane-status, H1
 (`tests/test_spawner/test_subprocess_beside_docker.py`), H2, H4's forged Redis messages
-(`test_redis_decides_nothing.py`), the claim's folder and account checks
+(`test_redis_decides_nothing.py`), the Pi lane view (`tests/test_pi_agent/test_lane_view.py`,
+and its routes in `tests/test_runner/pi_parking/test_lane_view_api.py`), the claim's folder and
+account checks
 (`test_claim_checks.py`), and the secret key never read, on SQLite and the Postgres
 tier. The pins: `tests/test_pi_agent/test_pins.py` (the check, the host command, the one
 add-on list) and `tests/test_pi_agent/test_box_pins.py` (the read-back at load and at every

@@ -590,6 +590,11 @@ for (const theme of ['dark', 'light'] as const) {
 
       for (const { fixture: name, after, kind, shows } of REFUSALS) {
         test(`needs you: refused, ${name.replace(/^answer-/, '')}`, async ({ page }) => {
+          // "Already answered ... at <time>" gives the time of day only for an answer made today, and the
+          // date on any later day. The page's clock is set to 5 minutes after the fixture's answer, so the
+          // test reads the same on any day and in any time zone (it failed in CI from 00:00 UTC on 7 Oct).
+          const answeredAt = (fixture(name).body as { answered_at?: string | null }).answered_at;
+          if (answeredAt) await page.clock.setFixedTime(new Date(Date.parse(answeredAt) + 5 * 60_000));
           const { seen } = await openRun(page, 'run-paused', { after, answer: [fixture(name)] });
           await pick(page, 'continue');
           const reads = runReads(seen);

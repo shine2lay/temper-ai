@@ -26,7 +26,7 @@ role tests and lands a change.
 
 | Role | Department | Looks after |
 |---|---|---|
-| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
+| `product` | Product management | Finding and building a new product that reaches product-market fit and pays, with a temper pipeline for each product-management process: so far the market scan, the signal harvest and its quality grade (`signal_grade`), the opportunity brief (business and consumer versions), the feature screen (`feature_screen`), the confidence check before anything is built (`confidence_check`), the first-version shaping (`shape_mvp`), the fit and revenue measurement (`pmf_evidence`) and the validation engine. New products only: RollCall's loop is not its part. |
 | `marketing` | Product marketing | `blog_writer` and its agents, `positioning` (a product's positioning and messaging hierarchy from an evidence folder) with its evidence script, and `positioning_grade`; next, launch notes for what the loop ships. |
 | `design` | Design | The personas, walks and report stage; measured design reviews and their planted-problem grader; editable Penpot homepage workflows (v1 templates; v2 designed in code and converted to Penpot, with a benchmark twin and a craft-critic benchmark for blind version comparison) and original vector logo workflows with direction and final gates; a product's design files (DESIGN.md + tokens.json, registry `design/products.yaml`) and the shared research step that runs before a design when they are missing (`design/bin/design_research.py`, used by `design_homepage_v2` and `design_logo_v1`); a helper for the host's free local image models (`design/bin/design_image.py`) ([design.md](design.md), [design-logo.md](design-logo.md), [design-files.md](design-files.md)). |
 | `architecture` | System architecture | The plan stage (lead, architect, check), the build's reviewer, the code lens, the structure and pattern graders, the build rules, `code_review`, and the land-check draft of big temper branches (`arch_land_check`) with its grader. |
@@ -252,7 +252,7 @@ Paths are under `configs/`. *agent (script)* is an agent that runs a script
 instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 `validation/bin/`).
 
-### product (110)
+### product (116)
 
 | Config | Kind |
 |---|---|
@@ -343,6 +343,12 @@ instead of a model; *script* is a helper in a `bin/` folder (`epd/bin/`,
 | `agents/feature_screen_assets/check_features.py` | script |
 | `agents/feature_screen_assets/cite.py` | script |
 | `agents/feature_screen_assets/method.md` | contract |
+| `workflows/confidence_check.yaml` | workflow |
+| `agents/confidence_setup.yaml` | agent (script) |
+| `agents/confidence_rater.yaml` | agent |
+| `agents/confidence_final.yaml` | agent (script) |
+| `agents/confidence_check_assets/check_confidence.py` | script |
+| `agents/confidence_check_assets/method.md` | contract |
 | `validation/workflows/validation_engine.yaml` | workflow |
 | `validation/agents/ve_campaign.yaml` | agent |
 | `validation/agents/ve_collect.yaml` | agent (script) |

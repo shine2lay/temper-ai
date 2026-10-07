@@ -339,6 +339,56 @@ test of the screen itself). A candidate run also stages its own
 The first run (travel matcher, queue #26) and its hand check are in
 `~/product-autopilot/research/feature-screen/`.
 
+## Rate an idea's confidence before building (`confidence_check`)
+
+`confidence_check` asks, before anything is shaped or built, how far an idea's risks are
+retired by the research we already saved. Six parts read the idea's saved research side by
+side, one for each risk: value (will the buyer want it), viability (will it pay us),
+feasibility (can we build the hard part), usability (can they use it), serving barriers
+(procurement and security reviews, platform approvals, licensing, legal duties) and the
+idea's original deal-breakers (passed, failed or open). Every evidence line quotes one saved
+file exactly and is classed on the demand ladder (money > behaviour > words). The last step is
+a script, not a model: it confirms every quote in its file (a quote not found is dropped and
+flagged), sets each level by the fixed rule (high = money or behaviour from the target buyer;
+medium = independent public evidence specific to this buyer and job; low = words, vendor
+claims, inference or our own notes; unknown = none), applies the ready gate (value, viability
+and feasibility at least medium, no original deal-breaker open or failed, no serving barrier
+blocking) and picks the single next test (among tests that settle an open deal-breaker, else
+among all tests that move a blocking item: least effort first, so free reads and owner data
+come before contact and money; then the highest evidence rung; then cost). It fails the
+run when a part left no usable output (the queue #23 guard). It never searches the web,
+contacts anyone or spends. The rules are frozen in
+`configs/agents/confidence_check_assets/method.md`. Two of them in short: when the best line
+for and the best line against a risk rank the same, the part reads which side the decisive
+lines favour (yes gives medium, no gives low) and the table marks the level contested; a
+deal-breaker the owner settled is shown with the owner's own words, quoted exactly from a
+saved file, and not counted (without such a quote it stays open; setup lists every notes file
+whose name contains `owner` for the part to read first); and a later test's pass bar is shown
+as a test, never counted as a deal-breaker.
+
+Put the idea's research in one folder: saved outside pages or datasets under a folder named
+`pages`, `sources` or `data`; owner-supplied records (payments, deposits, sign-ups, usage
+numbers) under a folder named `owner`; our reports, checks and run outputs anywhere else. Our
+own notes never rank above words, so a claim in them cannot raise a level; an owner record can.
+
+```sh
+JOB=confidence-my-idea
+mkdir ~/temper-ai/workspaces/product/$JOB
+python3 ~/product-autopilot/server.py stage /path/to/research-folder \
+  --workspace ~/temper-ai/workspaces/product/$JOB --relative _research
+~/product-autopilot/start.sh $JOB confidence_check --workspace ~/temper-ai/workspaces/product/$JOB \
+  --inputs ~/product-autopilot/inputs/$JOB.json
+```
+
+The inputs file needs `idea` (target buyer, job, what we would sell and at what price) and
+`research_dir` (`<workspace>/_research`); optional `deal_breakers` (one per line, `D1: ...`)
+when the research does not write them itself. A candidate run also stages its own
+`configs/agents/confidence_check_assets` as `_assets` and passes
+`"assets_dir": "<workspace>/_assets"`. Outputs: `state/confidence/report.md` (verdict, single
+next test, rules, risk table, deal-breakers, barriers, tests by part, flags, every evidence
+line), `confidence.json` and `check.md`. The bar, case runs and hand checks of the first
+version are in `~/product-autopilot/results/2026-10-06-confidence-32/`.
+
 ## Checks
 
 Run Product helper checks once after revisions:
@@ -351,6 +401,7 @@ uv run pytest tests/test_shape_mvp -q
 uv run pytest tests/test_signal_grade -q
 uv run pytest tests/test_pmf_evidence -q
 uv run pytest tests/test_feature_screen -q
+uv run pytest tests/test_confidence_check -q
 ```
 
 These use fake status/config APIs, not model request fixtures or third-party services. New

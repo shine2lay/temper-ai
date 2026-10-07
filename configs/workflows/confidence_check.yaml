@@ -1,0 +1,128 @@
+workflow:
+  name: confidence_check
+  # PRODUCT CONFIDENCE CHECK (product role; built 2026-10-06, queue #32). Goal: gain all the
+  # confidence we can upfront, instead of launching to find out. Reads one idea's SAVED
+  # research and, for each product risk, gives the cited evidence, a confidence level set by a
+  # fixed rule and the cheapest next upfront test; it ends ready or not ready to shape, so
+  # nothing is shaped, built or launched before its risks are retired upfront. No new web
+  # research, no contact, no money: it names the next test, the research workflows run it.
+  #
+  #   setup (script) -> value, viability, feasibility, usability, serving, breakers side by side
+  #                  -> final (script: part guard, quote check, levels, gate, next test, report)
+  #
+  # Risks: Cagan's four (value: will the buyer want it; viability: will it pay us; feasibility:
+  # can we build the hard part; usability: can they use it) plus serving barriers (owner rule
+  # 2026-10-02: procurement and security reviews, platform approvals, licensing, legal duties),
+  # plus the idea's original deal-breakers. Levels (demand ladder, money > behaviour > words):
+  # high = money or behaviour from the target buyer; medium = independent public evidence
+  # specific to this buyer and job; low = words only, vendor or interested-party claims,
+  # inference, snippets; unknown = no evidence. The final step, not a model, sets each level
+  # from the verified lines and applies the ready gate: value, viability and feasibility each at
+  # least medium, no original deal-breaker open or failed, no serving barrier blocking.
+  # Method (frozen): configs/agents/confidence_check_assets/method.md; checker
+  # check_confidence.py (same folder, standard library only). Bar, runs and hand checks: product
+  # results/2026-10-06-confidence-32/. How to run: docs/product-runs.md.
+  version: 1
+  description: |
+    Rate one idea's confidence before anything is built, from its saved research only. For
+    value, viability, feasibility, usability and serving barriers: the evidence with exact
+    quotes (each confirmed in its saved file), a level by a fixed rule (money or behaviour from
+    the buyer > independent public evidence > words), and the cheapest next upfront test
+    (runnable, or needs the owner, with a cost). Also each original deal-breaker: passed,
+    failed or open. Ends ready or not ready to shape, with the single next test that would move
+    it most. Never searches the web, contacts anyone or spends.
+  inputs:
+    idea:
+      type: string
+      required: true
+      description: "The idea in a few sentences: the target buyer, the job, what we would sell and at what price."
+    research_dir:
+      type: string
+      required: true
+      description: "Folder in the run workspace with the idea's saved research. Saved outside pages or datasets go under a folder named pages, sources or data; owner-supplied records (payments, sign-ups, usage numbers) under a folder named owner; reports and checks anywhere else. Copied into state/confidence/research/."
+    deal_breakers:
+      type: string
+      required: false
+      default: ""
+      description: "The idea's original deal-breakers, one per line as 'D1: ...', when they are not written in the research itself."
+    assets_dir:
+      type: string
+      required: false
+      default: "/app/configs/agents/confidence_check_assets"
+      description: "Folder with check_confidence.py and method.md: the deployed copy by default; a candidate run stages its own copy into the workspace."
+  outputs:
+    status: final.structured.status
+    verdict: final.structured.verdict
+    levels: final.structured.levels
+    next_test: final.structured.next_test
+    deal_breakers: final.structured.deal_breakers
+    report_path: final.structured.report_path
+    quote_misses: final.structured.quote_misses
+    flags: final.structured.flags
+    problems: final.structured.problems
+
+  nodes:
+    # No model: stages the method and checker, copies the research, writes input.md. Stops with
+    # every problem listed, at $0, when an input is missing.
+    - name: setup
+      type: agent
+      agent: confidence_setup
+      input_map:
+        idea: input.idea
+        research_dir: input.research_dir
+        deal_breakers: input.deal_breakers
+        assets_dir: input.assets_dir
+
+    # One part per risk, side by side; each writes state/confidence/parts/<part>.json.
+    - name: value
+      type: agent
+      agent: confidence_rater
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {part: value}
+    - name: viability
+      type: agent
+      agent: confidence_rater
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {part: viability}
+    - name: feasibility
+      type: agent
+      agent: confidence_rater
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {part: feasibility}
+    - name: usability
+      type: agent
+      agent: confidence_rater
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {part: usability}
+    - name: serving
+      type: agent
+      agent: confidence_rater
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {part: serving}
+    - name: breakers
+      type: agent
+      agent: confidence_rater
+      depends_on: [setup]
+      condition: {source: setup.structured.status, operator: equals, value: ready}
+      input_map: {part: breakers}
+
+    # No model, every path: the part guard, the quote check, the levels by the fixed rule, the
+    # gate, the next test and the report. It gets each part's final answer, so a part an
+    # account limit stopped fails the run by name.
+    - name: final
+      type: agent
+      agent: confidence_final
+      depends_on: [value, viability, feasibility, usability, serving, breakers]
+      run_after_failure: true
+      input_map:
+        value_answer: value.output
+        viability_answer: viability.output
+        feasibility_answer: feasibility.output
+        usability_answer: usability.output
+        serving_answer: serving.output
+        breakers_answer: breakers.output

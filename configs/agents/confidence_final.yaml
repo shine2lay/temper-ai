@@ -1,0 +1,30 @@
+# @description PRODUCT CONFIDENCE CHECK last step (product role, queue #32): the mechanical check and
+# the report. No model; runs on every path. Refuses the run (status fail) when setup did not finish
+# or a part left no usable output (its file missing, empty, invalid or an account-limit message, or
+# its final answer such a message: the queue #23 part guard). Otherwise confirms every quote in the
+# saved file it cites (a quote not found is dropped and flagged), ranks each line by its file's kind
+# and its class, sets each risk's level by the fixed rule, applies the fixed ready gate and picks the
+# single next test by the fixed rule. Writes state/confidence/confidence.json, report.md and
+# check.md and owns the workflow outputs. Part of workflows/confidence_check.yaml.
+agent:
+  name: confidence_final
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    {% set va = value_answer[:4000] if value_answer is string else '__unwired__' %}
+    {% set via = viability_answer[:4000] if viability_answer is string else '__unwired__' %}
+    {% set fa = feasibility_answer[:4000] if feasibility_answer is string else '__unwired__' %}
+    {% set ua = usability_answer[:4000] if usability_answer is string else '__unwired__' %}
+    {% set sa = serving_answer[:4000] if serving_answer is string else '__unwired__' %}
+    {% set ba = breakers_answer[:4000] if breakers_answer is string else '__unwired__' %}
+    if [ ! -f state/confidence/check_confidence.py ]; then
+      echo '{"status": "fail", "verdict": "", "levels": {}, "next_test": null, "deal_breakers": {}, "report_path": "", "quote_misses": 0, "flags": 0, "problems": ["the setup did not finish (see the setup step)"]}'
+      exit 0
+    fi
+    python3 state/confidence/check_confidence.py check --run-id {{ (run_id or '') | env }} \
+      --answer value={{ va | env }} --answer viability={{ via | env }} --answer feasibility={{ fa | env }} \
+      --answer usability={{ ua | env }} --answer serving={{ sa | env }} --answer breakers={{ ba | env }}

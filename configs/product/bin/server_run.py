@@ -27,7 +27,7 @@ SHARED = Path(os.environ.get("PRODUCT_WORKSPACES_ROOT", Path.home() / "temper-ai
 API = os.environ.get("PRODUCT_TEMPER_API", "http://127.0.0.1:8420").rstrip("/")
 UI = os.environ.get("PRODUCT_TEMPER_UI", "https://temper-dev.wai2shine.com/app").rstrip("/")
 LIVE = {"scan_market", "scan_serving", "signal_harvest", "signal_grade", "opportunity_brief", "desk_check", "shape_mvp",
-        "pmf_evidence", "feature_screen"}
+        "pmf_evidence", "feature_screen", "confidence_check"}
 TERMINAL = {"completed": 0, "failed": 1, "cancelled": 2}
 
 

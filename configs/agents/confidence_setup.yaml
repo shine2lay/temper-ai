@@ -1,0 +1,50 @@
+# @description PRODUCT CONFIDENCE CHECK step 1 (product role, queue #32): stage the frozen method and
+# the checker into state/confidence/, copy the idea's saved research into
+# state/confidence/research/, record each file's kind in manifest.json (source: a saved page or
+# dataset, under a pages, sources or data folder; owner: an owner-supplied record, under an owner
+# folder; notes: our own reports and checks) and write state/confidence/input.md. No model. A
+# missing idea or research folder, a folder outside the run workspace or with no readable text file,
+# or a used state/confidence/ stops here at $0 (status not_ready, every problem listed). Part of
+# workflows/confidence_check.yaml.
+agent:
+  name: confidence_setup
+  version: 1
+  type: script
+  timeout_seconds: 300
+  script_template: |
+    #!/bin/sh
+    set -eu
+    cd "{{ workspace_path }}"
+    python3 - <<'PY'
+    import json
+    import os
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+
+    def stop(problem):
+        print(json.dumps({"status": "not_ready", "files": 0, "kinds": {}, "problems": [problem]}))
+        sys.exit(0)
+
+
+    # `or ''`: the server passes an input the run did not give as None, which the value stash
+    # would hand over as the text 'None' (signal_grade's first benchmark run, 1b7aef1a).
+    assets = Path((os.environ.get('{{ (assets_dir or '') | env }}') or '').strip()
+                  or '/app/configs/agents/confidence_check_assets')
+    dest = Path('state/confidence')
+    if dest.exists() and any(dest.iterdir()):
+        stop('state/confidence already holds a check: run in a fresh workspace')
+    names = ('check_confidence.py', 'method.md')
+    for name in names:
+        if not (assets / name).is_file():
+            stop(f'assets_dir {assets} has no {name}')
+    dest.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        shutil.copyfile(assets / name, dest / name)
+    sys.exit(subprocess.call([
+        sys.executable, str(dest / 'check_confidence.py'), 'setup', '--assets', str(assets),
+        '--idea', '{{ (idea or '') | env }}', '--research-dir', '{{ (research_dir or '') | env }}',
+        '--deal-breakers', '{{ (deal_breakers or '') | env }}', '--run-id', '{{ (run_id or '') | env }}']))
+    PY

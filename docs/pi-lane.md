@@ -78,7 +78,7 @@ reason; nothing of it runs:
 | `template_mounts` | the run-box template (the server's container) mounts a Pi or project folder or the account-room folder (the folder itself, inside it or above it), or can't be read |
 | `host_helper` | live mode without the helper's socket, a helper that doesn't answer ok, or a login bridge that isn't ready |
 | `workspace_overlap` | a Pi folder (state, sockets, pins, role folders, the helper's socket folder, project roots, the account-room folder) inside `WORKSPACE_DIR`, which every run box may mount (H3, SW-77) |
-| `account_room` | the team settings name no `account_room_file`, or its folder isn't here, isn't a folder, is reached through a link, isn't its own mount, or isn't read-only (whether the file itself is there or fresh is the claim's to decide, never the preflight's) |
+| `account_room` | the team settings' `account_pick` can't be used (not `room` or `settings_order`, or `settings_order` beside an `account_room_file`: every Pi run stops until it is fixed, never picking the other way), or they name no `account_room_file`, or its folder isn't here, isn't a folder, is reached through a link, isn't its own mount, or isn't read-only (whether the file itself is there or fresh is the claim's to decide, never the preflight's). Not checked under `account_pick: settings_order` (ADR-M4-19), which names and reads no file: the claim takes the first allowed slot with no capacity check ([pi-trial-safety.md](pi-trial-safety.md)) |
 | `pi_schema` | the `pi_` tables can't be brought to this build's version |
 | `disk` | less than 2 GiB free under the state root |
 
@@ -87,8 +87,12 @@ runs ([The pins](#the-pins)).
 
 After the preflight, still before the run is marked running, the claim settles the team's
 project folder on its real paths and the run's one account (`claim_checks`, refusal kinds
-`project_folder` and `account`; [pi-trial-safety.md](pi-trial-safety.md)). The team's node
-runs the same folder check again before it makes a copy.
+`project_folder` and `account`; [pi-trial-safety.md](pi-trial-safety.md)): by the
+account-room file (`account_pick: room`, the default), or the first allowed slot in the
+settings' order with no capacity check (`account_pick: settings_order`, ADR-M4-19, which reads
+no file and records `capacity: not_checked`). An `account_pick` that can't be used refuses
+the claim first, even for a run with an account kept. The team's node runs the same folder
+check again before it makes a copy.
 
 Inside `pi-worker`, `workspace_overlap` compares the paths as the container sees them. Docker
 resolves a linked source on the host when it mounts it, so a link on the host can hide an
@@ -246,7 +250,8 @@ the `b*` folders and come with a test that `host.sock` survives it.
 The account-room folder (ops' read-only snapshot of each account slot's use, ADR-M4-18) is
 mounted the same way, read-only, as its own mount: `source` and `target` the folder of the
 team settings' `account_room_file`, `read_only: true`, `create_host_path: false`. It is never
-mounted into a member box or a run box.
+mounted into a member box or a run box. Under `account_pick: settings_order` (ADR-M4-19) there
+is no file and no such mount.
 
 **Only the Pi lane may run child processes beside a Docker socket** (H1, SW-75): any worker
 with `TEMPER_SPAWNER=subprocess` that can reach Docker refuses to start, except one with

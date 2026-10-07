@@ -1,18 +1,29 @@
 """One account per Pi run, and what an account's refusal or limit does (M4 ADR-M4-09, -14,
--16, -18; SW-53, SW-54, SW-20).
+-16, -18, -19; SW-53, SW-54, SW-20).
 
 **The run's account.** The Pi lane picks it once, at the run's first claim (runner/pi_lane.py),
-from the team settings' ``account_slots`` (:mod:`temper_ai.pi_agent.team_config`), by the
-account-room file ops' writer publishes on the host (``account_room_file``, which pi-worker
-reads through its read-only mount; ADR-M4-18, docs/pi-lane.md): of the slots whose reading is
-fresh and under 85% of their 5-hour and 90% of their 7-day use (R-D6), the one with the least
-7-day use, ties in the settings' order (:func:`read_room`, :func:`pick`). It is recorded by its
-slot label on the run's row (``spawner_metadata`` ``pi_lane.account``) with the reading it was
-picked by and the file's sha256 and schema version, kept for every attempt of the run, and
-never swapped for another: a resume, and Continue after a limit, carry on with the same
-account and never read the file again. Account 1 -- the slot named like the canonical
+from the team settings' ``account_slots`` (:mod:`temper_ai.pi_agent.team_config`), the way the
+settings' ``account_pick`` says:
+
+* ``room`` (the default; ADR-M4-18, docs/pi-lane.md) -- by the account-room file ops' writer
+  publishes on the host (``account_room_file``, which pi-worker reads through its read-only
+  mount): of the slots whose reading is fresh and under 85% of their 5-hour and 90% of their
+  7-day use (R-D6), the one with the least 7-day use, ties in the settings' order
+  (:func:`read_room`, :func:`pick`). Recorded with the reading it was picked by and the
+  file's sha256 and schema version (``by: room``);
+* ``settings_order`` (ADR-M4-19, the frozen first trial) -- the first allowed slot in the
+  settings' order with **no capacity check** (:func:`pick_by_settings_order`): no file is
+  read, no usage is asked and no figure is recorded, so the slot may be near or at its limit.
+  Recorded as ``by: settings_order`` with ``capacity: not_checked``.
+
+Either way it is recorded by its slot label on the run's row (``spawner_metadata``
+``pi_lane.account``) before any member works, kept for every attempt of the run, and never
+swapped for another: a resume, and Continue after a limit, carry on with the same account and
+never pick again (nor read the file). Account 1 -- the slot named like the canonical
 provider -- is refused by name. Inside a member's box the provider stays the canonical one;
-only the host helper sees the slot.
+only the host helper sees the slot. Any other ``account_pick``, or ``settings_order`` beside
+an ``account_room_file``, picks no account at all: every Pi run is refused, even one with an
+account kept, until the settings are fixed (``TeamConfig.account_pick_refusal``).
 
 **How a model call can end** (:func:`call_trouble`), read on the error path only:
 
@@ -46,7 +57,12 @@ from typing import Any
 
 from temper_ai.llm.account_messages import DISABLED, LIMIT, account_trouble
 from temper_ai.pi_agent.member import usage_limit
-from temper_ai.pi_agent.team_config import TeamConfig, load_team_config, slot_problem
+from temper_ai.pi_agent.team_config import (
+    PICK_BY_SETTINGS_ORDER,
+    TeamConfig,
+    load_team_config,
+    slot_problem,
+)
 from temper_ai.shared.clock import as_utc, utcnow
 
 logger = logging.getLogger(__name__)
@@ -80,6 +96,9 @@ UNAVAILABLE_REASONS = {
 }
 #: Where the run's account is recorded: ``spawner_metadata[pi_lane][account]``.
 ACCOUNT_KEY = "account"
+#: What a run picked by the settings' order records of its account's capacity: nothing was
+#: checked (ADR-M4-19). Never a figure, a snapshot or a reset time.
+CAPACITY_NOT_CHECKED = "not_checked"
 #: The two ways an account stops a call (:func:`call_trouble`).
 REFUSED = "refused"
 LIMITED = "limit"
@@ -347,11 +366,23 @@ def pick(slots: tuple[str, ...] | list[str], rooms: dict[str, Room]) -> Room:
     return min(passing, key=lambda p: (p[0], p[1]))[2]
 
 
+def pick_by_settings_order(slots: tuple[str, ...] | list[str]) -> str:
+    """The first allowed slot (never account 1) in the settings' order: the run's account
+    under ``account_pick: settings_order`` (ADR-M4-19). It does **no capacity check**: it
+    reads no account-room file and asks nothing about any account's use, so the slot may be
+    near or at its limit; a limit then ends a turn like on any account (a recovery wait on
+    the same slot). Raises :class:`AccountError` when no slot is allowed."""
+    for slot in slots:
+        if not slot_problem(slot):
+            return slot
+    raise AccountError("no account slot is allowed for Pi runs (team setting account_slots)")
+
+
 # --- the run's account -----------------------------------------------------------------------
 
 def recorded_account(run_row: dict | None) -> dict | None:
-    """The account recorded on a run's row (``{slot, picked_at, by, room, room_file}``),
-    else None."""
+    """The account recorded on a run's row (picked by room: ``{slot, picked_at, by, room,
+    room_file}``; by the settings' order: ``{slot, picked_at, by, capacity}``), else None."""
     meta = (run_row or {}).get("spawner_metadata") or {}
     from temper_ai.runner.pi_lane import LANE_RECORD_KEY
 
@@ -364,10 +395,19 @@ def choose(run_row: dict, *, config: TeamConfig | None = None,
            read: Callable[..., RoomReading] | None = None,
            now: datetime | None = None, admitted: bool = False) -> dict:
     """The run's account: the one already recorded on its row (every later attempt keeps it,
-    if the settings still allow it), else -- at the run's first claim only -- picked now by
-    the account-room file. A run ``admitted`` before (it ran) with no account recorded is
-    refused: a run's account is never picked again. Raises :class:`AccountError`."""
+    if the settings still allow it), else -- at the run's first claim only -- picked now: by
+    the account-room file (``account_pick: room``), or the first allowed slot in the
+    settings' order with no capacity check (``settings_order``: no file is read, ``read`` is
+    never called, and the record says ``capacity: not_checked`` with no figure). A run
+    ``admitted`` before (it ran) with no account recorded is refused: a run's account is never
+    picked again. Settings whose ``account_pick`` can't be used refuse every run first, even
+    one with an account kept, and read nothing. Raises :class:`AccountError`."""
     cfg = config or load_team_config()
+    refusal = cfg.account_pick_refusal
+    if refusal:
+        # first: a bad account_pick never turns into the other way of picking, nor admits
+        # a run on the account it kept (Architecture's #75 check, F1)
+        raise AccountError(refusal)
     kept = recorded_account(run_row)
     if kept is not None:
         return _keep(kept, cfg)
@@ -378,6 +418,11 @@ def choose(run_row: dict, *, config: TeamConfig | None = None,
     if not cfg.account_slots:
         raise AccountError("no account slot is allowed for Pi runs (team setting "
                            "account_slots)")
+    if cfg.picks_without_capacity_check:
+        # ADR-M4-19: the settings' order, nothing read and no figure recorded or made up
+        return {"slot": pick_by_settings_order(cfg.account_slots),
+                "picked_at": (now or utcnow()).isoformat(), "by": PICK_BY_SETTINGS_ORDER,
+                "capacity": CAPACITY_NOT_CHECKED}
     if not cfg.account_room_file:
         raise AccountError("the Pi lane has no account-room file to pick the run's account "
                            "by (team setting account_room_file)")
@@ -534,7 +579,7 @@ def refusal_problem(slot: str, stopped: str = "the team") -> str:
 
 def limit_reset(error: str, room: dict | None = None) -> str | None:
     """When the limit resets: from the error's words, else the room figures recorded at the
-    run's start, else None."""
+    run's start (a run picked by the settings' order has none), else None."""
     m = _RESET_RE.search(error or "")
     reset = m.group(1).strip().rstrip(".") if m else None
     if not reset and room:

@@ -36,10 +36,14 @@ Reasons, in order:
                      login bridge that isn't ready
   workspace_overlap  a Pi folder (or the account-room folder) inside WORKSPACE_DIR, which
                      every run box may mount (H3)
-  account_room       the team settings name no account_room_file, or its folder isn't this
+  account_room       the team settings' account_pick can't be used (not room or
+                     settings_order, or settings_order beside an account_room_file), or
+                     they name no account_room_file, or its folder isn't this
                      worker's own read-only mount (ADR-M4-18). Never whether the file is
                      there or fresh: a run's first claim reads it (pi_agent/accounts.py), so
-                     the lane may start before ops' writer first publishes it
+                     the lane may start before ops' writer first publishes it. Not checked
+                     under account_pick settings_order (ADR-M4-19), which reads no file: the
+                     claim takes the first allowed slot, with no capacity check
   pi_schema          the pi_ tables can't be brought to this build's version (ADR-M4-07)
   disk               less than 2 GiB free under the state root (ADR-M4-11)
 
@@ -235,12 +239,12 @@ def _template_mounts(cfg: Any, run: Callable[..., Any]) -> list[Reason]:
     return []
 
 
-def account_room_folder() -> str | None:
+def account_room_folder(config: Any = None) -> str | None:
     """The folder of the team settings' ``account_room_file`` (ops' folder, which pi-worker
-    alone mounts read-only), else None."""
+    alone mounts read-only), else None. ``config``: the settings already loaded."""
     from temper_ai.pi_agent.team_config import load_team_config
 
-    path = load_team_config().account_room_file
+    path = (config or load_team_config()).account_room_file
     return os.path.dirname(path) if path else None
 
 
@@ -264,8 +268,19 @@ def _read_only(path: str) -> bool:
 def _account_room() -> list[Reason]:
     """The account-room file's folder is this worker's own read-only mount and a folder, its
     path reached without a link (account-room interface). Whether the file is there or
-    fresh is left to a run's first claim."""
-    folder = account_room_folder()
+    fresh is left to a run's first claim. Nothing to check under ``account_pick:
+    settings_order`` (ADR-M4-19): no file is named or read, and the claim takes the first
+    allowed slot with no capacity check. An ``account_pick`` that can't be used is a reason
+    first, whatever the folder: it never turns into the other way of picking."""
+    from temper_ai.pi_agent.team_config import load_team_config
+
+    cfg = load_team_config()
+    refusal = cfg.account_pick_refusal
+    if refusal:
+        return [("account_room", refusal)]
+    if cfg.picks_without_capacity_check:
+        return []
+    folder = account_room_folder(cfg)
     if not folder:
         return [("account_room", "the team settings name no account_room_file, so no Pi "
                                  "run's account can be picked")]

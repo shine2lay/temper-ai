@@ -1,5 +1,7 @@
 """How a member's model call can end, on the run's one account (M4 ADR-M4-09, ADR-M4-16):
-model-free, every member a scripted Pi on a team whose account is slot ``acct-b``.
+model-free, every member a scripted Pi on a team whose account is slot ``acct-b``. The
+refusal and limit endings are the same whether the account was picked by room (ADR-M4-18)
+or by the settings' order with no capacity check (ADR-M4-19), which records no figures.
 
 - A call the account refuses (disabled, or not allowed for the organization) makes a red turn
   naming the slot and the refusal and stops the team with a plain problem: never a recovery
@@ -33,15 +35,26 @@ SLOT = "acct-b"
 ACCOUNT = {"slot": SLOT, "picked_at": "2026-10-06T12:00:00+00:00", "by": "room",
            "room": {"five_hour": 20.0, "seven_day": 30.0,
                     "five_hour_resets_at": "2026-10-06T17:00:00+00:00"}}
+#: The run's account as the Pi lane records it under each account_pick.
+ACCOUNTS = {
+    "room": ACCOUNT,
+    "settings-order": {"slot": SLOT, "picked_at": "2026-10-06T12:00:00+00:00",
+                       "by": "settings_order", "capacity": "not_checked"},
+}
 #: The refusal's sentences, as the provider and the CLI give them.
 OAUTH_403 = ("403 permission_error: OAuth authentication is currently not allowed for this "
              "organization. (oauth_not_allowed_for_organization)")
 DISABLED = "Your organization has disabled Claude subscription access for Claude Code"
 
 
-def open_team(led, box, run_id, tmp_path, **kw):
+@pytest.fixture(params=list(ACCOUNTS.values()), ids=list(ACCOUNTS))
+def account(request) -> dict:
+    return request.param
+
+
+def open_team(led, box, run_id, tmp_path, *, account=ACCOUNT, **kw):
     return ls.open_leader(led, box, run_id=run_id, source=ls.project(tmp_path / "proj"),
-                          account=ACCOUNT, **kw)
+                          account=account, **kw)
 
 
 def _member_of(led, run_id, turn):
@@ -79,12 +92,12 @@ REFUSALS = {
 
 @pytest.mark.parametrize("script", list(REFUSALS.values()), ids=list(REFUSALS))
 def test_a_refused_call_is_a_red_turn_and_stops_the_team_never_a_wait_a_switch_or_a_retry(
-        led, box, run_id, tmp_path, monkeypatch, script):
+        led, box, run_id, tmp_path, monkeypatch, script, account):
     owner = ls.Owner(led, "retry", "retry").install(monkeypatch)
     rounds(led, run_id, ["done"])
     ts.SCRIPTS["builder"].insert(0, script)
     recorder = ts.Recorder()
-    team = open_team(led, box, run_id, tmp_path, recorder=recorder)
+    team = open_team(led, box, run_id, tmp_path, recorder=recorder, account=account)
     out = team.drive(ls.Context())
 
     # the team stops with a plain problem, never done
@@ -202,11 +215,11 @@ LIMIT = "429 rate_limit_error: You've hit your session limit \u00b7 resets 3pm (
 
 
 def test_a_limit_is_a_recovery_wait_naming_the_slot_the_limit_and_the_reset(
-        led, box, run_id, tmp_path, monkeypatch):
+        led, box, run_id, tmp_path, monkeypatch, account):
     owner = ls.Owner(led, "retry").install(monkeypatch)
     rounds(led, run_id, ["done"])
     ts.SCRIPTS["builder"].insert(0, [{"error": LIMIT}])
-    out = open_team(led, box, run_id, tmp_path).drive(ls.Context())
+    out = open_team(led, box, run_id, tmp_path, account=account).drive(ls.Context())
     assert out.status == "done", out.text
 
     (ask,) = owner.asked
@@ -227,16 +240,24 @@ def test_a_limit_is_a_recovery_wait_naming_the_slot_the_limit_and_the_reset(
     ts.check_invariants(led, run_id)
 
 
-def test_a_limit_without_its_reset_names_the_reset_from_the_room_at_the_start(
-        led, box, run_id, tmp_path, monkeypatch):
+def test_a_limit_without_its_reset_names_the_reset_from_the_room_at_the_start_if_any(
+        led, box, run_id, tmp_path, monkeypatch, account):
+    """A room pick names the reset its figures had at the run's start; a settings-order pick
+    checked nothing, so the wait says the provider didn't say when: no time is made up."""
     owner = ls.Owner(led, "stop").install(monkeypatch)
     rounds(led, run_id, ["done"])
     ts.SCRIPTS["builder"].insert(0, [{"error": "429 rate_limit_error: rate limited"}])
-    out = open_team(led, box, run_id, tmp_path).drive(ls.Context())
+    out = open_team(led, box, run_id, tmp_path, account=account).drive(ls.Context())
     assert out.status == "stopped"
     (ask,) = owner.asked
-    assert ask["row"]["subject"]["resets"] == ("2026-10-06T17:00:00+00:00 (room figures at "
-                                               "the run's start)")
+    subject = ask["row"]["subject"]
+    if account["by"] == "room":
+        assert subject["resets"] == ("2026-10-06T17:00:00+00:00 (room figures at the run's "
+                                     "start)")
+    else:
+        assert subject["resets"] is None
+        assert "it resets at a time the provider did not say" in subject["question"]
+    assert subject["account_slot"] == SLOT and slots_used() == {SLOT}
     ts.check_invariants(led, run_id)
 
 

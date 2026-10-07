@@ -415,6 +415,38 @@ def test_no_account_room_file_in_the_settings_is_a_reason(lane, monkeypatch):
                                            "no Pi run's account can be picked")]
 
 
+def test_the_settings_order_pick_reads_no_account_room_file_so_its_absence_is_no_reason(
+        lane, monkeypatch):
+    """ADR-M4-19: under account_pick settings_order a run's claim takes the first allowed
+    slot with no capacity check, so there is no file or folder to check; every other check
+    still runs."""
+    settings = lane.tmp / "settings"
+    ls.team_settings(monkeypatch, settings, account_room_file=None, account_pick="settings_order")
+    assert lane.run() == []
+
+
+@pytest.mark.parametrize("keys", [
+    {"account_pick": "settings_order"},
+    {"account_pick": "Settings_Order"},
+    {"account_pick": None},
+    {"account_pick": ["settings_order"]},
+    {"account_pick": "none", "account_room_file": None},
+], ids=["settings-order-beside-a-room-file", "wrong-case", "null", "a-list",
+        "unknown-with-no-room-file"])
+def test_an_account_pick_that_can_t_be_used_is_a_reason_whatever_the_folder(lane, monkeypatch,
+                                                                            keys):
+    """Architecture's #75 check, F1: the settings as loaded -- their account_room_file too,
+    its folder this worker's own read-only mount -- are the reason, first: a bad
+    account_pick never turns into the other way of picking. The folder going away changes
+    nothing."""
+    from temper_ai.pi_agent.team_config import ACCOUNT_PICK_REFUSAL
+
+    ls.team_settings(monkeypatch, lane.tmp / "settings", **keys)
+    assert lane.run() == [("account_room", ACCOUNT_PICK_REFUSAL)]
+    shutil.rmtree(lane.room)
+    assert lane.run() == [("account_room", ACCOUNT_PICK_REFUSAL)]
+
+
 def test_an_account_room_folder_that_isn_t_here_is_a_reason(lane):
     shutil.rmtree(lane.room)
     (reason, words), = lane.run()

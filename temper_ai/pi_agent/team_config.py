@@ -14,15 +14,24 @@ Keys:
 * ``owner_callers`` -- the API guard's credential names that are the owner's own
   (:mod:`temper_ai.api.caller`): an action by one of them shows as by ``owner``.
 * ``account_slots`` -- the account slots (the host helper's labels) a Pi run may use; the Pi
-  lane picks one per run at its start, by room (:mod:`temper_ai.pi_agent.accounts`, ADR-M4-09
-  and -14). None by default here: the tracked file lists them. The canonical provider's own
-  slot (account 1) is never allowed.
+  lane picks one per run at its start, as ``account_pick`` says
+  (:mod:`temper_ai.pi_agent.accounts`, ADR-M4-09 and -14). None by default here: the tracked
+  file lists them. The canonical provider's own slot (account 1) is never allowed.
 * ``account_room_file`` -- an absolute path, readable where the Pi lane runs, of the account
-  room figures (:func:`temper_ai.pi_agent.accounts.read_room`); none by default: a Pi run
-  then can't pick its account and doesn't start.
+  room figures (:func:`temper_ai.pi_agent.accounts.read_room`); none by default: under the
+  room pick a Pi run then can't pick its account and doesn't start.
+* ``account_pick`` -- how a Pi run's account is picked: ``room`` (the default, ADR-M4-18), by
+  the account-room file's figures; or ``settings_order`` (ADR-M4-19, the frozen first
+  trial), the first allowed slot in ``account_slots`` order with **no capacity check**: no
+  usage file is read and no usage is asked, and the run records its capacity as not checked
+  (:attr:`TeamConfig.picks_without_capacity_check`). It must be said: an unset
+  ``account_room_file`` alone still stops every Pi run. Any other value, or
+  ``settings_order`` beside an ``account_room_file``, is a problem that stops every Pi run
+  until it is fixed (:attr:`TeamConfig.account_pick_refusal`): it never turns into the other
+  way of picking.
 
-A bad entry is dropped and named in :attr:`TeamConfig.problems`: a broken file never widens
-what a team may touch.
+A bad entry is dropped (a bad ``account_pick`` stops every Pi run instead) and named in
+:attr:`TeamConfig.problems`: a broken file never widens what a team may touch.
 """
 
 from __future__ import annotations
@@ -58,19 +67,53 @@ LIMITS = {
 }
 #: The owner's own credential names when the settings don't say (the dashboard's key).
 DEFAULT_OWNER_CALLERS = ("owner-dashboard",)
-_KEYS = ("project_roots", "owner_callers", "account_slots", "account_room_file")
+#: How a Pi run's account is picked (``account_pick``): by the account-room file's figures
+#: (ADR-M4-18, the default), or the first allowed slot in the settings' order with no
+#: capacity check (ADR-M4-19).
+PICK_BY_ROOM = "room"
+PICK_BY_SETTINGS_ORDER = "settings_order"
+ACCOUNT_PICKS = (PICK_BY_ROOM, PICK_BY_SETTINGS_ORDER)
+#: Why no Pi run's account is picked when the settings' ``account_pick`` can't be used.
+ACCOUNT_PICK_REFUSAL = ("the team settings' account_pick can't be used (it must be room or "
+                        "settings_order, and settings_order takes no account_room_file), so "
+                        "no Pi run's account is picked until it is fixed")
+_KEYS = ("project_roots", "owner_callers", "account_slots", "account_room_file",
+         "account_pick")
 
 
 @dataclass(frozen=True)
 class TeamConfig:
-    """The team settings as loaded, with every problem found in the files."""
+    """The team settings as loaded, with every problem found in the files. ``account_pick``
+    is None when the settings name one that can't be used (:attr:`account_pick_refusal`)."""
 
     project_roots: tuple[str, ...] = ()
     owner_callers: tuple[str, ...] = DEFAULT_OWNER_CALLERS
     account_slots: tuple[str, ...] = ()
     account_room_file: str | None = None
+    account_pick: str | None = PICK_BY_ROOM
     problems: tuple[str, ...] = ()
     files: tuple[str, ...] = field(default=())
+
+    @property
+    def picks_without_capacity_check(self) -> bool:
+        """Whether a Pi run's account is the first allowed slot in ``account_slots`` order
+        with no capacity check (``account_pick: settings_order``, ADR-M4-19): no account-room
+        file is read and no usage is asked. Never beside an ``account_room_file``: the
+        settings refuse that pair, and a config built with both picks no account at all
+        (:attr:`account_pick_refusal`)."""
+        return self.account_pick == PICK_BY_SETTINGS_ORDER and not self.account_room_file
+
+    @property
+    def account_pick_refusal(self) -> str | None:
+        """Why no Pi run's account can be picked under ``account_pick``, else None: it isn't
+        room or settings_order (None: the settings named one that can't be used), or it is
+        settings_order beside an ``account_room_file``. Every Pi run is then refused -- at
+        the preflight, and at its claim before its kept account or any account reading --
+        until the settings are fixed: a bad account_pick never turns into the other way of
+        picking (ADR-M4-19; Architecture's #75 check, F1)."""
+        if self.account_pick == PICK_BY_ROOM or self.picks_without_capacity_check:
+            return None
+        return ACCOUNT_PICK_REFUSAL
 
 
 def is_trial_name(name: str | None) -> bool:
@@ -178,11 +221,26 @@ def load_team_config(config_dir: str | Path | None = None) -> TeamConfig:
         problems.append(f"{sources['account_room_file']}: account_room_file must be a plain "
                         "absolute path")
         room_file = None
+    account_pick: str | None = PICK_BY_ROOM
+    if "account_pick" in merged:
+        raw_pick = merged["account_pick"]
+        where = sources["account_pick"]
+        account_pick = None  # said, but can't be used: no Pi run's account is picked
+        if raw_pick not in ACCOUNT_PICKS:
+            problems.append(f"{where}: account_pick must be room or settings_order; no Pi "
+                            "run starts until it is")
+        elif raw_pick == PICK_BY_SETTINGS_ORDER and merged.get("account_room_file") is not None:
+            # set at all, valid or not: the pair neither turns the room's check off nor on
+            problems.append(f"{where}: account_pick settings_order reads no account-room "
+                            "file; remove account_room_file or use room (no Pi run starts "
+                            "until then)")
+        else:
+            account_pick = raw_pick
     for problem in problems:
         logger.warning("team settings: %s", problem)
     return TeamConfig(project_roots=tuple(roots), owner_callers=owners,
                       account_slots=tuple(slots), account_room_file=room_file or None,
-                      problems=tuple(problems), files=tuple(files))
+                      account_pick=account_pick, problems=tuple(problems), files=tuple(files))
 
 
 #: An account slot's label: the host helper's alias (``anthropic-2``), never an email or id.

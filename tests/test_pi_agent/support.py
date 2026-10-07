@@ -830,6 +830,28 @@ class NetGuard:
         return self
 
 
+class Tripwire:
+    """Something a test proves never runs: each call is counted, then fails the test."""
+
+    def __init__(self, what: str):
+        self.what, self.calls = what, 0
+
+    def __call__(self, *_a, **_k):
+        self.calls += 1
+        raise AssertionError(f"{self.what} was called")
+
+
+def socket_tripwire(monkeypatch) -> Tripwire:
+    """Every socket connection of any family -- the host helper's is a Unix socket, which
+    :class:`NetGuard` lets through -- counted and refused for the rest of the test."""
+    import socket
+
+    wire = Tripwire("a socket connection")
+    monkeypatch.setattr(socket.socket, "connect", lambda _sock, address: wire(address))
+    monkeypatch.setattr(socket.socket, "connect_ex", lambda _sock, address: wire(address))
+    return wire
+
+
 def _run_threads_left() -> list[threading.Thread]:
     return [t for t in threading.enumerate()
             if t.name.startswith("temper-run-") and t.is_alive()]

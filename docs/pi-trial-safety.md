@@ -86,13 +86,43 @@ A hit is reported by rule name, where and how many, and never the matched text:
   why);
 - a log line has the match replaced by `[withheld: a login token]`.
 
-## One account per run (ADR-M4-09, -14, -18)
+## One account per run (ADR-M4-09, -14, -18, -19)
 
 The team settings name the account slots Pi runs may use (`account_slots`, defaults in
-`configs/team/team.yaml`; none in code, so a missing setting allows none) and the
-account-room file to pick by (`account_room_file`, set only in the private
+`configs/team/team.yaml`; none in code, so a missing setting allows none), how a run's account
+is picked (`account_pick`: `room`, the default, or `settings_order`) and, for the room pick,
+the account-room file to pick by (`account_room_file`, set only in the private
 `configs/team/local/team.yaml`). Account 1, the base provider's own slot (`anthropic`), is
 refused by name wherever a slot is named, and is never picked.
+
+### The settings' order, with no capacity check (ADR-M4-19)
+
+For the frozen first trial (the owner's order of 6 Oct: no account checker and no allowance
+check by hand; a limit is accepted) the private settings say `account_pick: settings_order`
+and name no `account_room_file`. A run's first claim then takes the first allowed slot in
+`account_slots` order (never account 1). Nothing about any account's use is read or asked:
+no account-room file, no usage call, no snapshot, no percentage and no reset date. The slot
+may be near or at its limit.
+
+The run records `{slot, picked_at, by: settings_order, capacity: not_checked}` on its row
+before any member works, with no figures, and the Team API's run view shows the same
+(`capacity: not_checked`, `room: null`). Everything else is as for the room pick below: one
+account per run, recorded once (a second claim keeps the first one's), kept by every resume,
+retry and Continue even if the settings' order changes, refused rather than moved when the
+settings no longer allow it, never another slot, and a run that ran before with no account
+recorded is refused, never picked again. A limit is the usual recovery wait on
+the same slot (its reset taken from the provider's words, else "at a time the provider did
+not say"); a refused or disabled account is the usual red turn, and the team stops.
+
+It has to be said: an unset `account_room_file` alone still stops every Pi run (the
+preflight's `account_room` reason, then the claim's), so a forgotten setting never turns the
+check off. `settings_order` beside an `account_room_file`, or any other `account_pick` value,
+is a settings problem that stops every Pi run until it is fixed: the preflight's
+`account_room` reason, and the claim's refusal before the run's kept account or any reading,
+so a mistyped setting never turns into the other way of picking. Pi stays off: this is not
+the switch-on.
+
+### The account-room file (ADR-M4-18)
 
 The account-room file is ops' read-only snapshot of each slot's 5-hour and 7-day use
 (schema version 1, ADR-M4-18). `pi-worker` reads it once at a run's **first** claim: one bounded
@@ -119,6 +149,8 @@ rules as any recorded account: if the settings no longer allow it, the run is re
 file changed, went stale or is gone; a run that ran before with no account recorded is refused,
 never picked again; and a slot the settings no longer allow refuses the run rather than move
 it to another account.
+
+### Either way
 
 Each turn records the slot (`pi_turns.account_slot`, `agent.started` events). The Team API's
 run view shows the run's `account` and each turn's `account_slot`; the run page's agent rows
@@ -147,10 +179,16 @@ for the run and no Pi module imports the pool.
 
 ## Switching on (not done here)
 
+With the room pick:
+
 - the private `configs/team/local/team.yaml` names `account_room_file`;
 - `pi-worker` mounts the account-room folder read-only (its own mount; the preflight's
   `account_room` check);
 - ops' writer of the file runs (disabled until switch-on).
+
+For the frozen first trial (ADR-M4-19) instead: the private `configs/team/local/team.yaml`
+says `account_pick: settings_order`, lists the trial's slot in `account_slots`, and names no
+`account_room_file`; no account-room mount and no writer.
 
 ## Tests (no model, no network)
 
@@ -158,9 +196,13 @@ for the run and no Pi module imports the pool.
 uv run pytest tests/test_pi_agent/test_accounts.py tests/test_pi_agent/test_token_scan.py \
   tests/test_runner/pi_lane/test_claim_checks.py tests/test_runner/pi_lane/test_preflight.py \
   tests/test_runner/pi_team/test_account_endings.py tests/test_runner/pi_team/test_team_versions.py
-TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/test_runner/pi_team
+TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/test_runner/pi_team \
+  tests/test_runner/pi_lane/test_claim_checks.py
 ```
 
 They use fake boxes, throwaway git repositories with planted links, a fake token in each way
 out, a scripted limit, a scripted 403, a call with no model output, an error reply carrying
-text, and a normal answer quoting the refusal sentence.
+text, and a normal answer quoting the refusal sentence. The settings'-order pick runs with
+tripwires on the room reader and on every socket connection, each counted and never hit; its
+two claims at once under different orders need the Postgres row lock, so that test runs only
+on the Postgres tier.

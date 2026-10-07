@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -34,6 +35,7 @@ from temper_ai.pi_agent.accounts import (
 )
 from temper_ai.pi_agent.member import DEFAULT_PROVIDER
 from temper_ai.pi_agent.team_config import TeamConfig, load_team_config, slot_problem
+from tests.test_pi_agent import support as sup
 
 SLOTS = ("acct-b", "acct-c")
 #: A fake 403 as the API words it for an organisation that doesn't allow OAuth.
@@ -304,6 +306,223 @@ def test_a_recorded_account_the_settings_no_longer_allow_stops_the_run_rather_th
 def test_without_slots_or_room_figures_a_run_doesn_t_start(over, says):
     with pytest.raises(AccountError, match=says):
         choose({}, config=config(**over), read=lambda *_a, **_k: rooms(acct_b=(1, 1)))
+
+
+# --- the settings' order, with no capacity check (ADR-M4-19) ------------------------------------
+
+
+def team_settings(tmp_path, **keys) -> TeamConfig:
+    """The team settings read from a tracked file holding ``keys`` (a configs root of its
+    own)."""
+    tracked = tmp_path / team_config.TEAM_DIR / "team.yaml"
+    tracked.parent.mkdir(parents=True, exist_ok=True)
+    tracked.write_text(yaml.safe_dump(keys), encoding="utf-8")
+    return load_team_config(tmp_path)
+
+
+BY_ORDER = {"account_pick": "settings_order"}
+
+
+def test_by_the_settings_order_the_run_takes_the_first_allowed_slot_reads_nothing_and_keeps_it(
+        tmp_path, monkeypatch, record_property):
+    """ADR-M4-19's whole path at the account's level. The settings say ``settings_order`` and
+    name no account-room file: the run's first claim takes the first allowed slot in the
+    settings' order with no capacity check (no file read, no socket: both tripwires stay at
+    0), records exactly ``{slot, picked_at, by, capacity}`` with no figure, and every later
+    attempt keeps that slot even when the order changes. A limit on it is the usual recovery
+    wait on the same slot (its reset from the provider's words, else none: no room figures
+    to fall back on), and a refused account the usual red turn."""
+    room_reader = sup.Tripwire("accounts.read_room")
+    monkeypatch.setattr(accounts, "read_room", room_reader)
+    passed_reader = sup.Tripwire("choose's read")
+    sockets = sup.socket_tripwire(monkeypatch)
+
+    cfg = team_settings(tmp_path, account_slots=["acct-c", "acct-b"], **BY_ORDER)
+    assert (cfg.problems, cfg.account_pick, cfg.account_room_file) == ((), "settings_order",
+                                                                       None)
+    assert cfg.picks_without_capacity_check
+
+    got = choose({}, config=cfg, read=passed_reader, now=NOW)
+    assert got == {"slot": "acct-c", "picked_at": NOW.isoformat(), "by": "settings_order",
+                   "capacity": "not_checked"}
+    assert json.loads(json.dumps(got)) == got  # stored as it is, on the run's row
+    assert choose({}, config=cfg, now=NOW) == got  # no reader passed: the module's isn't used
+
+    # a resume, a retry or Continue: the recorded slot, whatever the settings' order now
+    row = {"spawner_metadata": {"pi_lane": {"account": got}}}
+    reordered = replace(cfg, account_slots=("acct-b", "acct-c"))
+    assert choose(row, config=reordered, read=passed_reader) == got
+    assert choose(row, config=reordered, read=passed_reader, admitted=True) == got
+
+    # a limit: the usual recovery wait on the same slot, the reset from the provider's words
+    worded = outcome(stop="error", error=LIMIT, completion=0, status="failed")
+    held = turn_ending(report("failed", "the last model call failed", worded), got["slot"],
+                       got.get("room"))
+    assert held.kind == "held"
+    assert held.details == {"account_slot": "acct-c", "limit": " ".join(LIMIT.split()),
+                            "resets": "10:50pm (UTC)"}
+    assert "account acct-c hit a usage limit" in held.text
+    assert "Retrying keeps the same account, model and thinking" in held.text
+    # ... else a time the provider did not say: nothing is made up
+    bare = outcome(stop="error", error="429 too many requests", completion=0, status="failed")
+    held = turn_ending(report("failed", "429 too many requests", bare), got["slot"],
+                       got.get("room"))
+    assert held.kind == "held"
+    assert held.details == {"account_slot": "acct-c", "limit": "429 too many requests",
+                            "resets": None}
+    assert "it resets at a time the provider did not say" in held.text
+    assert "room figures" not in held.text
+
+    # a refused account: the usual red turn, never a wait
+    refused = outcome(stop="error", error=REFUSAL_403, completion=0, status="failed")
+    ending = turn_ending(report("failed", "the last model call failed", refused), got["slot"],
+                         got.get("room"))
+    assert ending.kind == "refused" and ending.details is None
+    assert ending.text.startswith("account acct-c refused the call (not allowed for this "
+                                  "organization)")
+
+    record_property("tripwire_calls", {"accounts.read_room": room_reader.calls,
+                                       "choose_read": passed_reader.calls,
+                                       "socket_connect": sockets.calls})
+    assert (room_reader.calls, passed_reader.calls, sockets.calls) == (0, 0, 0)
+
+
+@pytest.mark.parametrize("slots, picked", [
+    (("acct-b",), "acct-b"),
+    (("acct-b", "acct-c"), "acct-b"),
+    (("acct-c", "acct-b"), "acct-c"),
+    ((DEFAULT_PROVIDER, "acct-c", "acct-b"), "acct-c"),
+], ids=["one-slot", "b-then-c", "c-then-b", "account-1-first"])
+def test_by_the_settings_order_the_first_allowed_slot_is_picked_never_account_1(slots, picked):
+    reader = sup.Tripwire("choose's read")
+    cfg = TeamConfig(account_slots=slots, **BY_ORDER)
+    assert accounts.pick_by_settings_order(slots) == picked
+    assert choose({}, config=cfg, read=reader, now=NOW)["slot"] == picked
+    assert reader.calls == 0
+
+
+@pytest.mark.parametrize("slots", [(DEFAULT_PROVIDER,), ()], ids=["account-1-only", "none"])
+def test_by_the_settings_order_no_allowed_slot_refuses_the_run(slots):
+    with pytest.raises(AccountError, match="no account slot is allowed for Pi runs"):
+        choose({}, config=TeamConfig(account_slots=slots, **BY_ORDER),
+               read=sup.Tripwire("choose's read"))
+
+
+def test_by_the_settings_order_a_run_admitted_before_with_no_account_is_refused():
+    reader = sup.Tripwire("choose's read")
+    with pytest.raises(AccountError, match="picked once, at its first claim, and never again"):
+        choose({}, config=TeamConfig(account_slots=SLOTS, **BY_ORDER), read=reader,
+               admitted=True)
+    assert reader.calls == 0
+
+
+def test_by_the_settings_order_a_kept_slot_the_settings_dropped_refuses_never_moves():
+    kept = {"slot": "acct-c", "picked_at": NOW.isoformat(), "by": "settings_order",
+            "capacity": "not_checked"}
+    row = {"spawner_metadata": {"pi_lane": {"account": kept}}}
+    with pytest.raises(AccountError, match="acct-c is no longer allowed .* never moves to "
+                                           "another account"):
+        choose(row, config=TeamConfig(account_slots=("acct-b",), **BY_ORDER),
+               read=sup.Tripwire("choose's read"))
+
+
+@pytest.mark.parametrize("keys, pick", [
+    ({}, "room"),
+    ({"account_pick": "room", "account_room_file": "/rooms/now.json"}, "room"),
+    (BY_ORDER, "settings_order"),
+    ({**BY_ORDER, "account_room_file": None}, "settings_order"),
+], ids=["default", "room", "settings-order", "settings-order-file-null"])
+def test_account_pick_is_room_unless_settings_order_is_said_with_no_room_file(tmp_path, keys,
+                                                                              pick):
+    """No account_pick is the room pick (ADR-M4-18, as before); room, or settings_order with
+    no account_room_file, is that pick, with no problem."""
+    cfg = team_settings(tmp_path, account_slots=list(SLOTS), **keys)
+    assert (cfg.account_pick, cfg.account_pick_refusal) == (pick, None)
+    assert cfg.picks_without_capacity_check is (pick == "settings_order")
+    assert [p for p in cfg.problems if ": account_pick " in p] == []  # (tmp_path has the word)
+
+
+MUST_BE = "account_pick must be room or settings_order; no Pi run starts until it is"
+NO_FILE = ("account_pick settings_order reads no account-room file; remove account_room_file "
+           "or use room (no Pi run starts until then)")
+
+
+@pytest.mark.parametrize("keys, problem", [
+    ({"account_pick": "Settings_Order"}, MUST_BE),
+    ({"account_pick": "none"}, MUST_BE),
+    ({"account_pick": True}, MUST_BE),
+    ({"account_pick": None}, MUST_BE),
+    ({"account_pick": ["settings_order"]}, MUST_BE),
+    ({"account_pick": {"pick": "settings_order"}}, MUST_BE),
+    ({"account_pick": "none", "account_room_file": None}, MUST_BE),
+    ({**BY_ORDER, "account_room_file": "/rooms/now.json"}, NO_FILE),
+    ({**BY_ORDER, "account_room_file": "relative/room.json"}, NO_FILE),
+], ids=["wrong-case", "unknown-word", "not-a-word", "null", "a-list", "a-mapping",
+        "unknown-with-no-room-file", "beside-a-room-file", "beside-a-bad-room-file"])
+def test_an_account_pick_that_can_t_be_used_refuses_every_run_and_reads_nothing(
+        tmp_path, monkeypatch, record_property, keys, problem):
+    """Architecture's #75 check, F1. Any value but the two, or ``settings_order`` beside an
+    ``account_room_file`` (valid or not), is a problem naming the key and the fix -- and it
+    never turns into the other way of picking: the settings as loaded (their room file too)
+    refuse a run's first claim, and a run with an account kept by either pick, before any
+    reading."""
+    room_reader = sup.Tripwire("accounts.read_room")
+    monkeypatch.setattr(accounts, "read_room", room_reader)
+    passed_reader = sup.Tripwire("choose's read")
+    sockets = sup.socket_tripwire(monkeypatch)
+    cfg = team_settings(tmp_path, account_slots=list(SLOTS), **keys)
+    named = [p for p in cfg.problems if ": account_pick " in p]  # (tmp_path has the word)
+    assert len(named) == 1 and named[0].endswith(f": {problem}"), cfg.problems
+    if keys.get("account_room_file") == "/rooms/now.json":
+        assert cfg.account_room_file == "/rooms/now.json"  # loaded as it is, not set aside
+    assert (cfg.account_pick, cfg.picks_without_capacity_check) == (None, False)
+    assert cfg.account_pick_refusal == team_config.ACCOUNT_PICK_REFUSAL
+
+    by_order = {"slot": "acct-b", "picked_at": NOW.isoformat(), "by": "settings_order",
+                "capacity": "not_checked"}
+    by_room = {"slot": "acct-b", "picked_at": NOW.isoformat(), "by": "room",
+               "room": {"five_hour": 10.0, "seven_day": 30.0},
+               "room_file": {"sha256": "ab" * 32, "schema_version": 1}}
+    for kept in (None, by_order, by_room):
+        row = {"spawner_metadata": {"pi_lane": {"account": kept}}} if kept else {}
+        for admitted in (False, True):
+            for read in (passed_reader, None):
+                with pytest.raises(AccountError) as refused:
+                    choose(row, config=cfg, read=read, now=NOW, admitted=admitted)
+                assert str(refused.value) == team_config.ACCOUNT_PICK_REFUSAL
+
+    record_property("tripwire_calls", {"accounts.read_room": room_reader.calls,
+                                       "choose_read": passed_reader.calls,
+                                       "socket_connect": sockets.calls})
+    assert (room_reader.calls, passed_reader.calls, sockets.calls) == (0, 0, 0)
+
+
+@pytest.mark.parametrize("over", [BY_ORDER, {"account_pick": "Settings_Order"},
+                                  {"account_pick": None}],
+                         ids=["settings-order-beside-a-room-file", "wrong-case", "none"])
+def test_an_account_pick_that_can_t_be_used_in_a_built_config_refuses_too(over):
+    """Settings built in code keep the file's rule (the config itself says it): neither pick
+    applies, nothing is read, and a kept account isn't admitted."""
+    cfg = config(**over)
+    assert cfg.account_pick_refusal == team_config.ACCOUNT_PICK_REFUSAL
+    assert not cfg.picks_without_capacity_check
+    reader = sup.Tripwire("choose's read")
+    kept = {"spawner_metadata": {"pi_lane": {"account": {"slot": "acct-b", "by": "room"}}}}
+    for row in ({}, kept):
+        with pytest.raises(AccountError, match="account_pick can't be used"):
+            choose(row, config=cfg, read=reader, now=NOW)
+    assert reader.calls == 0
+
+
+def test_the_tracked_settings_keep_the_room_pick(tmp_path):
+    """The tracked settings never say settings_order: only an install's own local file may
+    (the frozen first trial's, at switch-on)."""
+    from pathlib import Path
+
+    tracked = Path(__file__).resolve().parents[2] / "configs" / team_config.TEAM_DIR / "team.yaml"
+    cfg = team_settings(tmp_path, **yaml.safe_load(tracked.read_text(encoding="utf-8")))
+    assert (cfg.account_pick, cfg.picks_without_capacity_check) == ("room", False)
+    assert not [p for p in cfg.problems if "account_pick" in p]
 
 
 # --- account 1 is refused by name -------------------------------------------------------------

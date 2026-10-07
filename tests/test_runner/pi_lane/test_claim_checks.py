@@ -1,25 +1,29 @@
 """What the Pi lane settles when it claims a run, before any copy or model call (runner/
 pi_lane.py claim_checks): a team's project folder on its real paths (ADR-M4-12, SW-33), by the
 same function the team's node runs, and the run's one account, picked by room from the allowed
-slots and recorded on the run (ADR-M4-09, -14). Model-free: throwaway git repositories, planted
-links, fake room figures.
+slots (ADR-M4-09, -14) or, under ``account_pick: settings_order``, the first allowed slot with
+no capacity check (ADR-M4-19), and recorded on the run. Model-free: throwaway git
+repositories, planted links, fake room figures.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from temper_ai.pi_agent import team_check
+from temper_ai.pi_agent import accounts, team_check
 from temper_ai.pi_agent.accounts import record_account
 from temper_ai.pi_agent.member import DEFAULT_PROVIDER
+from temper_ai.pi_agent.team_config import ACCOUNT_PICK_REFUSAL, TeamConfig
 from temper_ai.pi_agent.token_scan import LogGuard
 from temper_ai.runner import pi_lane, pi_preflight
 from temper_ai.runner.lanes import LANE_RECORD_KEY
+from tests.test_pi_agent import support as sup
 from tests.test_runner.pi_lane import support as ls
 from tests.test_runner.pi_lane.test_run_gate import SHA, Loader
 from tests.test_runner.pi_team.leader_support import git, project
@@ -308,6 +312,131 @@ def test_a_stale_claim_whose_winner_is_still_allowed_runs_on_the_winner(claim):
     record_account("p1", {"slot": "acct-b", "by": "room"})  # the other claim won
     assert pi_lane.claim_checks("p1", before, []) is None  # this claim would pick acct-c
     assert ls.account_of("p1") == {"slot": "acct-b", "by": "room"}
+
+
+# --- the settings' order, with no capacity check (ADR-M4-19) --------------------------------------
+
+
+@pytest.fixture
+def by_order(claim, monkeypatch):
+    """The frozen first trial's settings: ``account_pick: settings_order`` over the slots
+    (acct-c, acct-b), no account-room file named and none on disk, and tripwires on all a
+    capacity check would touch -- the room reader and every socket connection (the host
+    helper's is a Unix socket) -- each counted."""
+    settings = claim.tmp / "settings"
+    ls.team_settings(monkeypatch, settings, account_pick="settings_order",
+                     account_room_file=None, account_slots=["acct-c", "acct-b"])
+    claim.room.unlink()
+    room_reader = sup.Tripwire("accounts.read_room")
+    monkeypatch.setattr(accounts, "read_room", room_reader)
+    sockets = sup.socket_tripwire(monkeypatch)
+    return SimpleNamespace(
+        settings=lambda **keys: ls.team_settings(monkeypatch, settings, **keys),
+        counts=lambda: {"read_room": room_reader.calls, "socket_connect": sockets.calls})
+
+
+def test_by_the_settings_order_the_claim_records_the_first_allowed_slot_before_work_and_keeps_it(
+        claim, by_order, record_property):
+    """ADR-M4-19's happy path at the claim. The first claim admits the run on the first
+    allowed slot in the settings' order, recorded on the run's row before any member works,
+    as exactly ``{slot, picked_at, by, capacity}`` with no figure; a member's box takes that
+    slot (run_account is where host.py gets BoxSpec.slot). A resume or a fork after the
+    order changed keeps it; a new run takes the new order's first slot. Nothing read a room
+    file or opened a socket."""
+    ls.make_row("p1")
+    assert claim.check("p1") is None
+    account = ls.account_of("p1")
+    assert set(account) == {"slot", "picked_at", "by", "capacity"}
+    assert (account["slot"], account["by"], account["capacity"]) == (
+        "acct-c", "settings_order", "not_checked")
+    assert accounts.run_account("p1") == account  # the member box's slot: acct-c
+
+    by_order.settings(account_slots=["acct-b", "acct-c"])
+    for start in ("resume", "fork"):
+        assert claim.check("p1", start=start) is None
+        assert ls.account_of("p1") == account
+    ls.make_row("p2")
+    assert claim.check("p2") is None
+    assert ls.account_of("p2")["slot"] == "acct-b"
+
+    by_order.settings(account_slots=["acct-b"])  # the run's slot dropped: refused, never moved
+    refusal = claim.check("p1", start="resume")
+    assert refusal is not None and refusal.kind == "account"
+    assert "the run's account acct-c is no longer allowed" in refusal.message
+    assert ls.account_of("p1") == account
+    record_property("tripwire_calls", by_order.counts())
+    assert by_order.counts() == {"read_room": 0, "socket_connect": 0}
+
+
+def test_by_the_settings_order_two_claims_at_once_under_different_orders_get_one_account(
+        claim, by_order, monkeypatch, record_property):
+    """Two claims of one run settle at the same moment, each under its own order of the same
+    slots (each alone would pick a different one): the row lock lets one record its pick,
+    and the other gets that account back."""
+    from temper_ai.database import get_database
+
+    if get_database().engine.dialect.name != "postgresql":
+        pytest.skip("the row lock (SELECT ... FOR UPDATE) is Postgres's; SQLite has none")
+    ls.make_row("p1")
+    before = _row_now("p1")
+    together = threading.Barrier(2)
+    real_record = accounts.record_account
+
+    def record_together(eid: str, account: dict) -> dict:
+        together.wait(timeout=20)
+        return real_record(eid, account)
+
+    monkeypatch.setattr(accounts, "record_account", record_together)
+    orders = {"b-first": ("acct-b", "acct-c"), "c-first": ("acct-c", "acct-b")}
+    got: dict[str, dict] = {}
+    errors: list[BaseException] = []
+
+    def settle(name: str, slots: tuple[str, ...]) -> None:
+        try:
+            got[name] = accounts.settle("p1", before, config=TeamConfig(
+                account_slots=slots, account_pick="settings_order"))
+        except BaseException as exc:  # noqa: BLE001 - shown by the assert below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=settle, args=item) for item in orders.items()]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert not any(t.is_alive() for t in threads) and errors == []
+    winner = ls.account_of("p1")
+    assert got == {"b-first": winner, "c-first": winner}
+    assert winner["slot"] in ("acct-b", "acct-c") and winner["capacity"] == "not_checked"
+    record_property("tripwire_calls", by_order.counts())
+    assert by_order.counts() == {"read_room": 0, "socket_connect": 0}
+
+
+@pytest.mark.parametrize("keys", [
+    {"account_pick": "settings_order"},
+    {"account_pick": "Settings_Order"},
+    {"account_pick": None},
+], ids=["settings-order-beside-a-room-file", "wrong-case", "null"])
+def test_an_account_pick_that_can_t_be_used_refuses_the_claim_before_any_reading_or_work(
+        claim, by_order, monkeypatch, record_property, keys):
+    """Architecture's #75 check, F1, at the claim. The settings change to an account_pick
+    that can't be used, beside an account-room file on disk with room for every slot: a run
+    with its account kept (claimed again, resumed or forked) and a new run's first claim are
+    all refused, kind account, before any member works -- nothing recorded or changed on the
+    rows, no room file read and no socket opened."""
+    ls.make_row("p1")
+    assert claim.check("p1") is None
+    account = ls.account_of("p1")
+    ls.give_accounts(monkeypatch, claim.tmp / "settings", slots=("acct-c", "acct-b"))
+    by_order.settings(**keys)
+    ls.make_row("p2")
+    for eid, start in (("p1", None), ("p1", "resume"), ("p1", "fork"), ("p2", None)):
+        refusal = claim.check(eid, start=start)
+        assert refusal is not None and refusal.kind == "account", (eid, start)
+        assert ACCOUNT_PICK_REFUSAL in refusal.message
+    assert ls.account_of("p1") == account
+    nothing_recorded("p2")
+    record_property("tripwire_calls", by_order.counts())
+    assert by_order.counts() == {"read_room": 0, "socket_connect": 0}
 
 
 # --- what a refused claim says and stores (SW-52) ------------------------------------------------

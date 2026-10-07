@@ -475,14 +475,18 @@ def team_run(execution_id: str) -> dict:
 
 def _account_view(execution_id: str) -> dict | None:
     """The run's one account by slot label (ADR-M4-09), as the Pi lane recorded it at start:
-    never an email or an account id, and never the in-box provider name."""
+    never an email or an account id, and never the in-box provider name. ``capacity`` is
+    ``not_checked`` for a run picked by the settings' order (ADR-M4-19), whose ``room`` is
+    null: no figure is ever made up. A room pick records no ``capacity`` (null); its
+    figures are in ``room``."""
     from temper_ai.pi_agent.accounts import run_account
 
     account = run_account(execution_id)
     if not account.get("slot"):
         return None
     return {"slot": account["slot"], "picked_at": account.get("picked_at"),
-            "by": account.get("by"), "room": account.get("room")}
+            "by": account.get("by"), "capacity": account.get("capacity"),
+            "room": account.get("room")}
 
 
 @router.get("/runs/{execution_id}/version")

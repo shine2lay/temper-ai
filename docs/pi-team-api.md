@@ -117,9 +117,12 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
   model and thinking its turns really used (`effective`, from the turn receipt; `unknown`
   on older rows).
 - `account`: the run's one account by slot label, as the Pi lane recorded it at its first
-  claim (`{slot, picked_at, by, room}`; never an email or an account id), else `null`; each
-  turn's `account_slot` in the timeline and each member's `last_turn`
-  ([pi-trial-safety.md](pi-trial-safety.md)).
+  claim (`{slot, picked_at, by, capacity, room}`; never an email or an account id), else
+  `null`. `by` is `room` (picked by the account-room file's figures, which are in `room`;
+  `capacity` is `null`) or `settings_order` (the first allowed slot in the settings' order
+  with no capacity check, ADR-M4-19: `capacity` is `not_checked` and `room` is `null`; no
+  figure is ever made up). Each turn's `account_slot` is in the timeline and each member's
+  `last_turn` ([pi-trial-safety.md](pi-trial-safety.md)).
 - `open_waits`: every open question, in the order Temper asks them (a settings wait
   first, then oldest first). The first has `asked: true` and its `event_id`; the others
   wait behind it with `event_id: null`. Any open wait holds every member's turn. A member's

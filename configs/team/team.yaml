@@ -10,11 +10,19 @@
 # owner_callers: the API key names that count as the owner, shown as "You"
 #   on the Team page; any other named caller is shown by its name.
 # account_slots: the host helper's account slots a Pi run may use. The Pi
-#   lane picks one per run when it starts the run (the one with the most
-#   weekly room under 85% of its 5 h and 90% of its 7 d use) and keeps it for
-#   the whole run. Account 1 ("anthropic") is never allowed.
+#   lane picks one per run when it starts the run, as account_pick says, and
+#   keeps it for the whole run. Account 1 ("anthropic") is never allowed.
+# account_pick: how that pick is made. "room" (the default): the slot with
+#   the most weekly room under 85% of its 5 h and 90% of its 7 d use, read
+#   from account_room_file. "settings_order": the first allowed slot in
+#   account_slots order, with no capacity check at all (no file, no usage
+#   call; the run records its capacity as not checked); it takes no
+#   account_room_file. Any other value, or settings_order with an
+#   account_room_file, stops every Pi run until it is fixed. This file leaves
+#   it at room; an install's local file may say settings_order.
 # account_room_file: where the Pi lane reads the slots' room figures (an
-#   absolute host path, written on the host). Unset: a Pi run doesn't start.
+#   absolute host path, written on the host). Unset under the room pick: a
+#   Pi run doesn't start.
 
 project_roots: []
 owner_callers: [owner-dashboard]

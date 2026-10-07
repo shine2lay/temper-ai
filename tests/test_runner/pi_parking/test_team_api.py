@@ -307,6 +307,42 @@ def test_a2_team_run_reads_the_outcome_from_its_own_row_only(api):
     assert team_run(api, eid)["outcome"]["reason"] == "read from the outcome row"
 
 
+PICKED_AT = "2026-10-06T19:00:00+00:00"
+FIGURES = {"five_hour": 20.0, "seven_day": 30.0, "observed_at": "2026-10-06T18:58:00+00:00"}
+#: (the account the Pi lane records, the run view's account) for each account_pick.
+PICKS = {
+    "settings-order": (
+        {"slot": "acct-c", "picked_at": PICKED_AT, "by": "settings_order",
+         "capacity": "not_checked"},
+        {"slot": "acct-c", "picked_at": PICKED_AT, "by": "settings_order",
+         "capacity": "not_checked", "room": None}),
+    "room": (
+        {"slot": "acct-c", "picked_at": PICKED_AT, "by": "room", "room": FIGURES,
+         "room_file": {"sha256": "ab" * 32, "schema_version": 1}},
+        {"slot": "acct-c", "picked_at": PICKED_AT, "by": "room", "capacity": None,
+         "room": FIGURES}),
+}
+
+
+@pytest.mark.parametrize("recorded, shown", list(PICKS.values()), ids=list(PICKS))
+def test_the_run_view_s_account_says_how_it_was_picked_and_makes_up_no_figure(api, recorded,
+                                                                              shown):
+    """The run's account in team_run says how the Pi lane picked it: by the settings' order
+    (ADR-M4-18), its figures and no capacity word. Never the room file's digest. The account
+    goes where the Pi lane writes it, on the run's row (a run in a box has one; one started
+    in this process gets it here)."""
+    from temper_ai.pi_agent.accounts import record_account
+    from tests.test_runner.pi_lane.support import make_row
+
+    script(api.led, ["done"])
+    eid = start_trial(api, body(api))["execution_id"]
+    pw.wait_ended(eid, 1)
+    assert team_run(api, eid)["account"] is None
+    make_row(eid, status="completed")
+    assert record_account(eid, recorded) == recorded
+    assert team_run(api, eid)["account"] == shown
+
+
 def test_a_trial_s_run_is_queued_for_the_pi_lane_and_only_the_pi_lane_claims_it(api, monkeypatch):
     """rm-0b46a085: #48's start goes through POST /api/runs' start code, so a trial's run is
     written with the lane mark. A server that isn't the Pi lane (production's) queues it for

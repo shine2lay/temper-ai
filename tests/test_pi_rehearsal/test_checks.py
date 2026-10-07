@@ -38,6 +38,27 @@ def member_box(name: str) -> dict:
             mount("/w", "state_root", rw=True)]}}
 
 
+LEAD_TOOLS = ["decide", "edit", "find", "grep", "ls", "read", "request_review",
+              "send_message", "tldr", "write"]
+REVIEW_TOOLS = ["edit", "find", "give_view", "grep", "ls", "read", "send_message", "tldr",
+                "write"]
+#: How a member's request offers its tools: Pi's built-ins under Claude Code's names (OAuth).
+CC_NAMES = {"edit": "Edit", "grep": "Grep", "read": "Read", "write": "Write"}
+#: What a request for Opus 5.5 says about thinking (pi-ai: the member's effort closes it).
+THINKING = {"type": "adaptive", "effort": "max", "effort_in": "closing system message",
+            "request_effort": "high"}
+
+
+def pinned_tools(member: str) -> list[str]:
+    return LEAD_TOOLS if member == "product" else REVIEW_TOOLS
+
+
+def participants() -> list[dict]:
+    return [{"participant_id": f"p-{m}", "member": m,
+             "pin": {"model": "claude-opus-5-5", "thinking": "max", "tools": pinned_tools(m)}}
+            for m in ("product", "architecture", "design")]
+
+
 def answers() -> list[dict]:
     rows = []
     for rule, member, hold in (("lead_first_version", "product", None),
@@ -48,7 +69,8 @@ def answers() -> list[dict]:
                                ("noted", "product", None),
                                ("lead_done", "product", None)):
         rows.append({"event": "answer", "member": member, "rule": rule, "flag": None,
-                     "model": "claude-opus-5-5", "thinking": {"effort": "max"},
+                     "model": "claude-opus-5-5", "thinking": dict(THINKING),
+                     "offered": sorted(CC_NAMES.get(t, t) for t in pinned_tools(member)),
                      "hold_gate": hold,
                      "held_s": {"seconds": 12.5, "released": True} if hold else None})
     return [{"event": "tripwire_armed", "port": 443}, {"event": "tripwire_armed", "port": 80},
@@ -83,6 +105,7 @@ def good() -> dict:
                      {"at": "2026-10-07T16:00:00+00:00", "start": True, "commit": HEAD,
                       "pins": PINS, "host_pi": "0.0.0-stub"}]}}}],
         "pi_turns": turns,
+        "pi_participants": participants(),
         "pi_messages": messages,
         "pi_waits": [{"wait_id": "w-1", "kind": "pause", "state": "answered",
                       "decision": {"by": OWNER, "source": "api"}}],
@@ -211,6 +234,17 @@ def _not_owner(data):
     data["ledger"]["pi_waits"][0]["decision"]["by"] = "unknown"
 
 
+def _top_level_effort(data):
+    # The request's fixed top-level "high" read as the member's effort (the rig's old reading).
+    for row in data["standin"]:
+        if row.get("event") == "answer":
+            row["thinking"] = {"type": "adaptive", "effort": "high"}
+
+
+def _bash_offered(data):
+    data["standin"][3]["offered"] = sorted([*data["standin"][3]["offered"], "Bash"])
+
+
 def _page_step_failed(data):
     data["page"]["steps"][3]["passed"] = False
     data["page"]["failed_step"] = "needs-you"
@@ -246,6 +280,8 @@ def _dark_without_screenshot(data):
     (_out_of_order, "the normal run's steps came in order"),
     (_set("standin.6.held_s", {"seconds": 240.0, "released": False}),
      "round 2's views waited until the owner's message had reached the team"),
+    (_top_level_effort, "model and thinking for every member (from the requests)"),
+    (_bash_offered, "every member's requests offered exactly its pinned tools (names, no Bash)"),
     (_second_pause, "the team paused for the owner once, and the answer closed it once"),
     (_doubled_message, "no doubled message (ids and client ids unique)"),
     (_not_owner, "the owner's answer and message are recorded as by the owner"),

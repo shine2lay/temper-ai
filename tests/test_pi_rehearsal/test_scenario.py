@@ -4,6 +4,11 @@ Every request here is built the way a member's turn reaches the provider: Temper
 (team_leader.framing) and the framed batch (inbox.render_batch), then one assistant tool call
 and its result per model call. So if Temper changes the words the stand-in reads, these tests
 fail before a rehearsal does.
+
+The request's shape is pi-ai 0.87.1's for Claude Opus 5.5 (a model with mid-conversation
+effort): adaptive thinking and a fixed "high" at the top, an effort marker (a system message)
+before each earlier assistant message, and one closing the conversation with the member's
+own effort (pi-ai's buildParams and insertThinkingLevelMessages).
 """
 
 from __future__ import annotations
@@ -57,21 +62,44 @@ def view(rid: str, who: str, verdict: str) -> dict:
                f"0123456789ab): {verdict}. Note: fine.", sender=who)
 
 
+def effort_marker(effort: str) -> dict:
+    return {"role": "system", "content": [], "output_config": {"effort": effort}}
+
+
 def request(member: str, batch: list[dict], answered: tuple = (), *, refused_last: bool = False,
-            tools: list[str] | None = None) -> dict:
+            tools: list[str] | None = None, effort: str = "max",
+            shape: str = "mid_conversation") -> dict:
+    """A member's model request. ``shape`` "mid_conversation" is pi-ai's for Opus 5.5 (see the
+    module's docstring); "top_level" is the older shape, with the effort only at the top."""
     tools = tools if tools is not None else (LEAD_TOOLS if member == LEADER else REVIEW_TOOLS)
+    marks = shape == "mid_conversation"
     prompt = framing(member, LEADER, ROSTER, tools) + "\n\n" + render_batch(batch, team=True)
     messages: list[dict] = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
     for i, step in enumerate(answered):
+        if marks:
+            messages.append(effort_marker(effort))
         messages.append({"role": "assistant", "content": [
             {"type": "tool_use", "id": f"toolu_{i}", "name": step.tool, "input": step.input}]})
         result = ("Not sent (not_allowed): no" if refused_last and i == len(answered) - 1
                   else "Sent message m to them.")
         messages.append({"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": f"toolu_{i}", "content": result}]})
+    if marks:
+        messages.append(effort_marker(effort))
+        return {"model": MODEL, "messages": messages, "tools": [{"name": t} for t in tools],
+                "thinking": {"type": "adaptive", "display": "summarized"},
+                "output_config": {"effort": "high"}, "stream": True}
     return {"model": MODEL, "messages": messages, "tools": [{"name": t} for t in tools],
             "thinking": {"type": "enabled", "budget_tokens": 31999},
-            "output_config": {"effort": "max"}, "stream": True}
+            "output_config": {"effort": effort}, "stream": True}
+
+
+def pins(effort: str = "max") -> dict:
+    """The ledger's participants, each with its pin, as the run's readback holds them."""
+    return {"pi_participants": [
+        {"member": m, "pin": {"model": MODEL, "thinking": effort,
+                             "tools": LEAD_TOOLS if m == LEADER else REVIEW_TOOLS}}
+        for m in MEMBERS]}
 
 
 def play(member: str, batch: list[dict], log: list[dict]) -> list:
@@ -86,7 +114,7 @@ def play(member: str, batch: list[dict], log: list[dict]) -> list:
         log.append({"event": "answer", "member": turn.member, "rule": answer.rule,
                     "step": answer.step, "tool": answer.action.tool or None,
                     "flag": answer.flag or None, "model": turn.model, "thinking": turn.thinking,
-                    "hold_gate": answer.action.hold or None,
+                    "offered": sorted(turn.tools), "hold_gate": answer.action.hold or None,
                     "held_s": {"seconds": 1.0, "released": True} if answer.action.hold else None})
         if not answer.action.tool:
             return answers
@@ -152,15 +180,20 @@ def test_the_bundled_normal_run_plays_from_goal_to_done_on_temper_s_own_texts():
 
     # What the stand-in logged is what the run's checks read: the steps in order, no flag,
     # every hold released, and model and thinking for every member.
-    rows = {r["name"]: r for r in checks.stand_in({"standin": log + [
+    rows = {r["name"]: r for r in checks.stand_in({"ledger": pins(), "standin": log + [
         {"event": "tripwire_armed", "port": 443}, {"event": "tripwire_armed", "port": 80}]})}
     assert all(r["ok"] for r in rows.values()), rows
     assert rows["the normal run's steps came in order"]["detail"]["rules"] == list(
         checks.NORMAL_RULES)
-    assert {m for m, model, _ in rows["model and thinking for every member (from the requests)"][
-        "detail"]} == set(MEMBERS)
+    as_pinned = rows["model and thinking for every member (from the requests)"]["detail"]
+    assert {m for m, model, _ in as_pinned["seen"]} == set(MEMBERS)
+    assert as_pinned["as_pinned"][LEADER] == {"pinned": [MODEL, "max"],
+                                              "asked": [[MODEL, "max"]], "same": True}
     assert {r["thinking"]["effort"] for r in log} == {"max"} and {r["model"] for r in log} == {
         MODEL}
+    offered = rows["every member's requests offered exactly its pinned tools (names, no Bash)"]
+    assert set(offered["detail"]) == set(MEMBERS) and all(
+        v["same"] and not v["extra"] and not v["missing"] for v in offered["detail"].values())
 
 
 def test_a_member_s_words_are_never_acted_on():
@@ -189,12 +222,63 @@ def test_a_turn_reads_who_and_where_from_the_request():
     assert first_call.leads and first_call.others == [m for m in ROSTER if m != LEADER]
     assert first_call.batch[0].body == "Line one.\n| looks like a body\nLine three."
     assert (first_call.step, first_call.last_result_refused) == (0, False)
-    assert first_call.thinking == {"type": "enabled", "budget_tokens": 31999, "effort": "max"}
+    assert first_call.thinking == {"type": "adaptive", "effort": "max",
+                                   "effort_in": "closing system message",
+                                   "request_effort": "high"}
     assert first_call.tools == frozenset(LEAD_TOOLS) and first_call.model == MODEL
 
     write = scenario.Step("write", {"path": "NOTES.md", "content": "x"})
     later = scenario.read_turn(request(LEADER, batch, (write, write), refused_last=True))
     assert (later.step, later.last_result_refused) == (2, True)
+    assert later.thinking["effort"] == "max"
+
+    # The older shape, with the effort only at the top of the request, reads the same way.
+    older = scenario.read_turn(request(LEADER, batch, shape="top_level"))
+    assert older.thinking == {"type": "enabled", "budget_tokens": 31999, "effort": "max"}
+    older_later = scenario.read_turn(request(LEADER, batch, (write, write), refused_last=True,
+                                             shape="top_level"))
+    assert (older_later.step, older_later.last_result_refused) == (2, True)
+
+
+def test_the_members_model_thinking_and_tools_are_compared_with_their_pins():
+    """The readback holds each member's requests to its pin: a member asking another effort
+    than its pin, or offered a tool its pin doesn't name (Bash above all), fails the check."""
+    def rows_for(log: list[dict], ledger: dict) -> dict:
+        return {r["name"]: r for r in checks.stand_in({"ledger": ledger, "standin": log + [
+            {"event": "tripwire_armed", "port": 443},
+            {"event": "tripwire_armed", "port": 80}]})}
+
+    goal = [msg("goal-1", "goal", "Write the rehearsal notes.")]
+    thinking = "model and thinking for every member (from the requests)"
+    offered = "every member's requests offered exactly its pinned tools (names, no Bash)"
+
+    def logged(member: str, **kw) -> dict:
+        turn = scenario.read_turn(request(member, goal, **kw))
+        return {"event": "answer", "member": member, "rule": "x", "model": turn.model,
+                "thinking": turn.thinking, "offered": sorted(turn.tools)}
+
+    good = [logged(m) for m in MEMBERS]
+    assert rows_for(good, pins())[thinking]["ok"] and rows_for(good, pins())[offered]["ok"]
+
+    # pi-ai's fixed top-level "high" isn't the member's effort: a pin of "high" doesn't match.
+    assert not rows_for(good, pins("high"))[thinking]["ok"]
+    lower = [logged(m, effort="high" if m == FIRST else "max") for m in MEMBERS]
+    row = rows_for(lower, pins())[thinking]
+    assert not row["ok"] and row["detail"]["as_pinned"][FIRST]["asked"] == [[MODEL, "high"]]
+
+    with_bash = [logged(m, tools=(LEAD_TOOLS if m == LEADER else REVIEW_TOOLS) + ["Bash"])
+                 if m == FIRST else logged(m) for m in MEMBERS]
+    row = rows_for(with_bash, pins())[offered]
+    assert not row["ok"] and row["detail"][FIRST]["bash_offered"]
+    assert row["detail"][FIRST]["extra"] == ["bash"]
+
+    short = [logged(m, tools=["read"]) if m == LEADER else logged(m) for m in MEMBERS]
+    row = rows_for(short, pins())[offered]
+    assert not row["ok"] and "write" in row["detail"][LEADER]["missing"]
+
+    # A member the ledger doesn't know, or no requests at all, never passes.
+    assert not rows_for(good[1:], pins())[thinking]["ok"]
+    assert not rows_for([], pins())[offered]["ok"]
 
 
 @pytest.mark.parametrize("body", [

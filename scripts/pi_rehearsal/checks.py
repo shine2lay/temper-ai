@@ -121,6 +121,29 @@ def stand_in(data: dict) -> list[dict]:
             rules.append(r["rule"])
     wanted = [r for r in rules if r in NORMAL_RULES]
     models = sorted({(r.get("member"), r.get("model"), repr(r.get("thinking"))) for r in rows})
+    pins = member_pins(data)
+    asked = {}
+    for r in rows:
+        asked.setdefault(r.get("member"), set()).add(
+            (r.get("model"), (r.get("thinking") or {}).get("effort")))
+    as_pinned = {m: {"pinned": [pins.get(m, {}).get("model"), pins.get(m, {}).get("thinking")],
+                     "asked": sorted(map(list, seen), key=repr),
+                     "same": seen == {(pins.get(m, {}).get("model"),
+                                       pins.get(m, {}).get("thinking"))}}
+                 for m, seen in sorted(asked.items(), key=lambda kv: str(kv[0]))}
+    offered = {}
+    for r in rows:
+        offered.setdefault(r.get("member"), set()).add(
+            tuple(sorted(str(t).lower() for t in r.get("offered") or ())))
+    tools_as_pinned = {}
+    for m, sets in sorted(offered.items(), key=lambda kv: str(kv[0])):
+        pinned = {str(t).lower() for t in pins.get(m, {}).get("tools") or ()}
+        seen_all = set().union(*map(set, sets))
+        tools_as_pinned[m] = {"requests": len([r for r in rows if r.get("member") == m]),
+                              "same": len(sets) == 1 and set(next(iter(sets))) == pinned,
+                              "extra": sorted(seen_all - pinned),
+                              "missing": sorted(pinned - seen_all),
+                              "bash_offered": "bash" in seen_all}
     held = [r.get("held_s") or {} for r in rows if r.get("hold_gate")]
     events = data.get("standin") or []
     tripped = [r for r in events if r.get("event") == "tripwire"]
@@ -139,8 +162,24 @@ def stand_in(data: dict) -> list[dict]:
         check("round 2's views waited until the owner's message had reached the team",
               bool(held) and all(h.get("released") is True for h in held), held),
         check("model and thinking for every member (from the requests)",
-              bool(models) and all(m[1] for m in models), models),
+              bool(models) and all(m[1] for m in models) and bool(as_pinned)
+              and set(as_pinned) == set(pins) and all(v["same"] for v in as_pinned.values()),
+              {"seen": models, "as_pinned": as_pinned}),
+        check("every member's requests offered exactly its pinned tools (names, no Bash)",
+              bool(tools_as_pinned) and set(tools_as_pinned) == set(pins)
+              and all(v["same"] and not v["bash_offered"] for v in tools_as_pinned.values()),
+              tools_as_pinned),
     ]
+
+
+def member_pins(data: dict) -> dict[str, dict]:
+    """Each member's pinned model, thinking and tools, from the ledger's participants."""
+    out: dict[str, dict] = {}
+    for p in (data.get("ledger") or {}).get("pi_participants") or []:
+        pin = p.get("pin") or {}
+        out[p.get("member")] = {"model": pin.get("model"), "thinking": pin.get("thinking"),
+                                "tools": list(pin.get("tools") or ())}
+    return out
 
 
 def owner_path(data: dict) -> list[dict]:

@@ -10,8 +10,8 @@ A scenario is an ordered list of rules. The first rule whose ``when`` matches th
 the turn's steps: one tool call per model call, then a closing text. #54 adds its scenarios
 to ``SCENARIOS``; the bundled normal run is ``normal``.
 
-What it logs is metadata only (rule, step, tool name, model, thinking settings), never a
-prompt, a message body or a token.
+What it logs is metadata only (rule, step, tool name, model, thinking settings, the names of
+the tools the request offered), never a prompt, a message body or a token.
 """
 from __future__ import annotations
 
@@ -163,10 +163,36 @@ def parse_batch(text: str) -> tuple[Message, ...]:
     return tuple(messages)
 
 
+def turn_effort(request: dict[str, Any]) -> tuple[str, str]:
+    """The thinking effort the request asks for this turn, and where it says so.
+
+    For a model with mid-conversation effort (Claude Opus 5.5 in Pi's runtime), pi-ai sends a
+    fixed "high" at the top of the request and the member's own effort in a system message
+    that closes the conversation (pi-ai's insertThinkingLevelMessages); the closing one is the
+    turn's. Other models carry it only at the top."""
+    for msg in reversed(request.get("messages") or []):
+        if not isinstance(msg, dict) or msg.get("role") != "system":
+            break
+        effort = (msg.get("output_config") or {}).get("effort") if isinstance(
+            msg.get("output_config"), dict) else None
+        if effort:
+            return str(effort), "closing system message"
+    top = request.get("output_config")
+    if isinstance(top, dict) and top.get("effort"):
+        return str(top["effort"]), "request"
+    return "", ""
+
+
 def read_turn(request: dict[str, Any]) -> Turn:
-    """The member's turn from an Anthropic messages request (the whole conversation)."""
+    """The member's turn from an Anthropic messages request (the whole conversation).
+
+    System messages (pi-ai's effort markers and setting updates) carry no member text, so the
+    batch, the step count and the last tool result are read from the others."""
     messages = request.get("messages")
     if not isinstance(messages, list) or not messages:
+        raise NotATurn("no messages")
+    messages = [m for m in messages if isinstance(m, dict) and m.get("role") != "system"]
+    if not messages:
         raise NotATurn("no messages")
     start = None
     for i in range(len(messages) - 1, -1, -1):
@@ -192,11 +218,16 @@ def read_turn(request: dict[str, Any]) -> Turn:
     tools = frozenset(str(t.get("name")) for t in request.get("tools") or []
                       if isinstance(t, dict) and t.get("name"))
     thinking = request.get("thinking") if isinstance(request.get("thinking"), dict) else {}
-    effort = (request.get("output_config") or {}).get("effort") if isinstance(
-        request.get("output_config"), dict) else None
     settings = {k: v for k, v in thinking.items() if k in ("type", "budget_tokens")}
+    effort, said_in = turn_effort(request)
     if effort:
         settings["effort"] = effort
+        top = request.get("output_config")
+        top_effort = top.get("effort") if isinstance(top, dict) else None
+        if said_in != "request":
+            settings["effort_in"] = said_in
+            if top_effort and top_effort != effort:
+                settings["request_effort"] = top_effort
     return Turn(member=framing.group("name").strip(), leader=framing.group("leader"),
                 roster=roster, batch=parse_batch(text), step=step, last_result_refused=refused,
                 tools=tools, model=str(request.get("model") or ""), thinking=settings)

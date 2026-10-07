@@ -41,6 +41,7 @@ from temper_ai.pi_agent.box import (
     WorkerBox,
     check_session,
 )
+from temper_ai.pi_agent.event_guard import TOKEN_GUARD, guarded
 from temper_ai.pi_agent.member_tree import (
     MemberLink,
     member_entry,
@@ -137,8 +138,10 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
     """Run one turn. Never raises: every failure is a report the host turns into state."""
     started = time.monotonic()
     pdir = Path(req.spec.participant_dir)
-    redactor = Redactor()
-    mapper = PiEventMapper(ChunkSink(req.recorder), execution_id=req.run_id,
+    # Every event and live chunk of the turn leaves through the Pi lane's door (event_guard).
+    recorder = guarded(req.recorder)
+    redactor = Redactor(guard=TOKEN_GUARD)
+    mapper = PiEventMapper(ChunkSink(recorder), execution_id=req.run_id,
                            agent_event_id=req.agent_event_id, agent_name=req.agent_name,
                            session_id=req.spec.session_id, node_path=req.node_path,
                            redactor=redactor)
@@ -329,7 +332,7 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
     report.model_call_ids = mapper.call_ids
     report.output = outcome.output
     try:
-        _record_end(req.recorder, mapper, outcome, duration, outcome_data_extra)
+        _record_end(recorder, mapper, outcome, duration, outcome_data_extra)
     except Exception:  # noqa: BLE001 - the ledger still holds the turn's state
         pass
     if outcome.status == "completed":

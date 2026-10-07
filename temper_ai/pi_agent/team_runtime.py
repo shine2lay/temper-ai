@@ -44,6 +44,7 @@ from temper_ai.pi_agent.box import (
     session_started,
     stop_leftover_box,
 )
+from temper_ai.pi_agent.event_guard import guarded
 from temper_ai.pi_agent.host import (
     INVALID,
     _jsonable,
@@ -223,7 +224,8 @@ class Team:
         self.members = {m.name: m for m in members}
         self.team_settings = dict(team_settings or {"communication": {"type": "all"}})
         self.communication = (self.team_settings.get("communication") or {}).get("type", "all")
-        self.recorder = recorder
+        # The team's own records, its turns' and its owner waits' leave through the door.
+        self.recorder = guarded(recorder)
         self.attempt_id = attempt_id
         self.parent_event_id = parent_event_id
         self.workflow = workflow

@@ -28,7 +28,10 @@ chunks again (G3).
 
 Pi's ``system`` message declares the prompt and tools sent to the model: it is never read,
 mapped or stored here. Configured secret values and secret-named fields are replaced before
-anything is recorded or broadcast, including a secret split across two streamed deltas.
+anything is recorded or broadcast, including a secret split across two streamed deltas. A
+caller may inject one more rule (:class:`Guard`; the Pi lane's login-token rule): it sees
+original text BEFORE secret substitutions can break a shaped span, and before display cuts.
+A live stream lets out no character of a match however the deltas split.
 """
 
 from __future__ import annotations
@@ -132,12 +135,38 @@ class JsonlSplitter:
         return value
 
 
-class Redactor:
-    """Replace configured secret values, and values of secret-named fields."""
+class GuardStream(Protocol):
+    """A :class:`Guard`'s rule for a text that arrives in pieces."""
 
-    def __init__(self, secrets: Iterable[str] = (), fields: Iterable[str] = DEFAULT_SECRET_FIELDS):
+    def feed(self, piece: str) -> str: ...
+
+    def flush(self) -> str: ...
+
+
+class Guard(Protocol):
+    """One more rule a caller injects into a :class:`Redactor` (the Pi lane's login-token
+    rule, temper_ai/pi_agent/event_guard.py): this module never imports it. Implementations
+    may optionally provide ``compose_text(value, secrets, marker)`` and
+    ``compose_stream(secrets_getter, marker)`` to merge original protection spans with exact
+    secrets while retaining their marker. The three basic hooks remain sufficient."""
+
+    def text(self, value: str) -> str: ...
+
+    def obj(self, value: Any) -> Any: ...
+
+    def stream(self) -> GuardStream: ...
+
+
+class Redactor:
+    """Compose an optional original-span guard with exact secrets. Field decisions use
+    original keys; outgoing keys are protected independently. Without a guard, defaults stay
+    unchanged."""
+
+    def __init__(self, secrets: Iterable[str] = (), fields: Iterable[str] = DEFAULT_SECRET_FIELDS,
+                 guard: Guard | None = None):
         self.secrets = sorted({s for s in secrets if s and len(s) >= MIN_SECRET_LENGTH}, key=len, reverse=True)
         self.fields = tuple(f.lower() for f in fields)
+        self.guard = guard
 
     def add(self, *secrets: str) -> None:
         """Learn more secret values (a credential handed to the worker mid-turn). Call it before
@@ -148,6 +177,20 @@ class Redactor:
             self.secrets = sorted(set(self.secrets) | new, key=len, reverse=True)
 
     def text(self, value: Any) -> Any:
+        compose = getattr(self.guard, "compose_text", None)
+        if callable(compose) and isinstance(value, str):
+            return compose(value, self.secrets, REDACTED)
+        return self.unguarded_text(self.guard_text(value))
+
+    def answer_for_refusal(self, value: str) -> str:
+        """Keep a rule-matching ORIGINAL answer for whole-answer refusal. Otherwise preserve
+        exact-secret masking, including secrets learned mid-turn only through :meth:`add`.
+        The guard must see the original before a substitution can destroy its shape."""
+        return value if self.guard_text(value) != value else self.unguarded_text(value)
+
+    def unguarded_text(self, value: Any) -> Any:
+        """Replace exact secrets only. Guarded writes apply their rule BEFORE this step;
+        a caller's whole-answer refusal instead uses :meth:`answer_for_refusal`."""
         if not isinstance(value, str) or not self.secrets:
             return value
         for secret in self.secrets:
@@ -155,13 +198,47 @@ class Redactor:
                 value = value.replace(secret, REDACTED)
         return value
 
+    def guard_text(self, value: Any) -> Any:
+        """``value`` with the guard's rule applied (unchanged when there is no guard)."""
+        if self.guard is None or not isinstance(value, str):
+            return value
+        return self.guard.text(value)
+
     def obj(self, value: Any) -> Any:
+        if self.guard is None:
+            return self._unguarded_obj(value)
+
+        def protect(original: Any) -> Any:
+            if isinstance(original, str):
+                return self.text(original)
+            if isinstance(original, dict):
+                out: dict = {}
+                for key, item in original.items():
+                    # The guard's generated marker may itself contain a secret-field word.
+                    # Only the ORIGINAL key decides field masking; no outgoing key is raw.
+                    new_key = self.text(key)
+                    new_item = REDACTED if self._secret_field(key) else protect(item)
+                    if new_key in out:
+                        number = 2
+                        while f"{new_key} ({number})" in out:
+                            number += 1
+                        new_key = f"{new_key} ({number})"
+                    out[new_key] = new_item
+                return out
+            if isinstance(original, (list, tuple)):
+                items = [protect(item) for item in original]
+                return items if isinstance(original, list) else tuple(items)
+            return original
+
+        return self.guard.obj(protect(value))
+
+    def _unguarded_obj(self, value: Any) -> Any:
         if isinstance(value, str):
-            return self.text(value)
+            return self.unguarded_text(value)
         if isinstance(value, dict):
-            return {k: (REDACTED if self._secret_field(k) else self.obj(v)) for k, v in value.items()}
+            return {k: (REDACTED if self._secret_field(k) else self._unguarded_obj(v)) for k, v in value.items()}
         if isinstance(value, list):
-            return [self.obj(v) for v in value]
+            return [self._unguarded_obj(v) for v in value]
         return value
 
     def _secret_field(self, key: Any) -> bool:
@@ -174,16 +251,26 @@ class Redactor:
 
 class StreamRedaction:
     """Redact a text that arrives in pieces: hold back any tail that could be the start of a
-    secret, so a secret split across two deltas never goes out in either."""
+    secret, so a secret split across two deltas never goes out in either. An injected guard
+    sees the ORIGINAL stream first: learned-secret markers cannot break a matching shape."""
 
     def __init__(self, redactor: Redactor):
         self._r = redactor
         self._buf = ""
+        compose = getattr(redactor.guard, "compose_stream", None)
+        self._composed = callable(compose)
+        self._guard = (compose(lambda: redactor.secrets, REDACTED) if callable(compose)
+                       else redactor.guard.stream() if redactor.guard is not None else None)
 
     def feed(self, piece: str) -> str:
+        if self._guard is not None:
+            piece = self._guard.feed(piece)
+        return piece if self._composed else self._feed_secrets(piece)
+
+    def _feed_secrets(self, piece: str) -> str:
         if not self._r.secrets:
             return piece
-        self._buf = self._r.text(self._buf + piece)
+        self._buf = self._r.unguarded_text(self._buf + piece)
         hold = 0
         for k in range(min(len(self._buf), len(self._r.secrets[0]) - 1), 0, -1):
             tail = self._buf[-k:]
@@ -194,8 +281,11 @@ class StreamRedaction:
         return out
 
     def flush(self) -> str:
-        out, self._buf = self._buf, ""
-        return out
+        if self._composed and self._guard is not None:
+            return self._guard.flush()
+        out = self._feed_secrets(self._guard.flush()) if self._guard is not None else ""
+        tail, self._buf = self._buf, ""
+        return out + tail
 
 
 class Recorder(Protocol):
@@ -286,11 +376,14 @@ class PiOutcome:
     def error(self) -> str | None:
         return "; ".join(self.errors) if self.errors else None
 
-    def agent_event_data(self, agent_name: str, duration_seconds: float | None = None) -> dict:
-        """The data of ``agent.completed`` / ``agent.failed``, shaped as llm_agent records it."""
+    def agent_event_data(self, agent_name: str, duration_seconds: float | None = None,
+                         scrub: Callable[[str], str] | None = None) -> dict:
+        """The data of ``agent.completed`` / ``agent.failed``, shaped as llm_agent records it.
+        ``scrub`` (the mapper's guard) applies to the output before it is cut."""
+        output = scrub(self.output) if scrub else self.output
         data = {
             "agent_name": agent_name,
-            "output": self.output[:AGENT_OUTPUT_LIMIT],
+            "output": output[:AGENT_OUTPUT_LIMIT],
             "output_length": len(self.output),
             "has_structured_output": self.structured_output is not None,
             "structured_output": self.structured_output,
@@ -541,7 +634,9 @@ class PiEventMapper:
                     self._requested_by[str(part["id"])] = call.id
             else:
                 other[str(pt)] += 1
-        text = self.redact.text("\n\n".join(texts))
+        original = "\n\n".join(texts)
+        said = self.redact.answer_for_refusal(original)
+        text = self.redact.text(original)
         reasoning = self.redact.text("\n\n".join(thinking)) if thinking else None
         usage = _usage(msg.get("usage"))
         self._add_usage(usage)
@@ -567,7 +662,9 @@ class PiEventMapper:
             self._record(EventType.LLM_CALL_COMPLETED, self.stable_id("llm-end", call.ordinal),
                          status="completed", data=data)
         self._chunk(call, "", "content", done=True)
-        self._last_answer = {"stop": stop, "text": text, "error": data.get("error"), "call_id": call.id}
+        # A rule-matching answer stays original for the caller's whole-answer refusal
+        # (temper_ai/pi_agent/turn.py, SW-52). Known-only exact secrets stay redacted.
+        self._last_answer = {"stop": stop, "text": said, "error": data.get("error"), "call_id": call.id}
         self._call = None
 
     def _add_usage(self, usage: dict) -> None:
@@ -845,7 +942,8 @@ def record_outcome(recorder: Recorder, mapper: PiEventMapper, outcome: PiOutcome
     failed = outcome.status != "completed"
     event_id = mapper.stable_id("agent-end")
     recorder.record(EventType.AGENT_FAILED if failed else EventType.AGENT_COMPLETED,
-                    data=outcome.agent_event_data(mapper.agent_name, duration_seconds),
+                    data=outcome.agent_event_data(mapper.agent_name, duration_seconds,
+                                                  scrub=mapper.redact.text),
                     parent_id=mapper.agent_id, execution_id=mapper.execution_id,
                     status="failed" if failed else "completed", event_id=event_id)
     return event_id

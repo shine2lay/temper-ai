@@ -55,6 +55,7 @@ import sqlalchemy as sa
 
 from temper_ai.pi_agent import team_versions, token_scan
 from temper_ai.pi_agent.accounts import refusal_problem, run_account
+from temper_ai.pi_agent.event_guard import guarded_context
 from temper_ai.pi_agent.host import INVALID, _slug, ask_text, owner_reply
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
@@ -1561,6 +1562,8 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
         return failed(head + "; ".join(problems), problems=problems)
     if context.event_recorder is None or box is None:
         return failed("the team needs the run's event recorder and the worker box config")
+    # From here on the team and its owner waits record through the door (event_guard).
+    context = guarded_context(context)
     end_cancelled_teams(ledger)  # G-a: a cancelled run's team the process died before ending
     members = [TeamMember(member_name(cfg), cfg) for cfg in node.members]
     attempt_id = context.graph_event_id or f"attempt-{uuid.uuid4().hex}"

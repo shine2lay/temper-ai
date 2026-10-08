@@ -209,6 +209,18 @@ def tree_digest(root: Path) -> str:
     return digest(items)
 
 
+# The converter's source (the HTML->Penpot script, its page extractor, its layout planner and the Penpot
+# builder they share). A convert-N receipt keeps their digest: a resumed or forked run whose converter
+# changed since that conversion is refused instead of silently reusing the old Penpot file (queue #43).
+CONVERTER_DIR = HERE
+CONVERTER_FILES = ("html_to_penpot.py", "html_dom_extract.js", "penpot_layout.py", "penpot_homepage_source.py")
+
+
+def converter_digest(root: Path | None = None) -> str:
+    root = root or CONVERTER_DIR
+    return digest([[name, hashlib.sha256((root / name).read_bytes()).hexdigest()] for name in CONVERTER_FILES])
+
+
 # ---------------------------------------------------------------- contracts
 
 
@@ -2750,7 +2762,13 @@ class Job:
     def convert(self) -> dict:
         number = self.state["round"]
         out = self.packet / "penpot" / f"r{number:02d}"
-        fp = digest({"round": number, "site": tree_digest(self.site)})
+        converter = converter_digest()
+        fp = digest({"round": number, "site": tree_digest(self.site), "converter": converter})
+        saved = self.state["stages"].get(f"convert-{number}")
+        if saved and saved["output"].get("converter") != converter:
+            raise ValueError(f"converter changed since this conversion of round {number} (saved "
+                             f"{saved['output'].get('converter') or 'not recorded'}, now {converter}); "
+                             "use a fresh workspace")
         cached = self.cached(f"convert-{number}", fp)
         if cached:
             if not (out / "conversion.json").exists():
@@ -2767,7 +2785,7 @@ class Job:
         summary = {"status": "completed", "round": number, "passed": report["passed"], "file_id": report["file"]["file_id"],
                    "url": report["file"]["url"], "fidelity_passed": report["fidelity_passed"],
                    "verify_passed": report["verify"]["passed"], "issues": report["issue_counts"],
-                   "conversion": f"homepage/penpot/r{number:02d}/conversion.json"}
+                   "conversion": f"homepage/penpot/r{number:02d}/conversion.json", "converter": converter}
         return self.receipt(f"convert-{number}", fp, summary)
 
     def verify(self) -> dict:

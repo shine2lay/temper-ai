@@ -132,6 +132,11 @@ def text_plan(n: dict) -> dict:
     t = n.get("text") or {}
     x, y, w, h = _box(n)
     fit = n.get("fit") or "height"
+    if fit == "clip" or t.get("clipped"):
+        # Saved native maxima alone do not bound hugging text. Keep the safe
+        # fixed paint viewport until shrink-and-cap behavior is proved natively.
+        return {"grow": "fixed", "box": [x, y, w, max(h, 0.01)],
+                "delta": [0.0, 0.0, 0.0, 0.0]}
     lines = t.get("lines") or []
     if fit == "width" and not (n.get("item") or {}).get("anon") and lines:
         tight = max(f["x"] + f["w"] for f in lines) - min(f["x"] for f in lines)
@@ -311,6 +316,16 @@ def _tracks_px(tracks: list[dict], total: float, gap: float, needs: list[tuple],
     flex = [k for k, t in enumerate(tracks) if t["type"] == "flex"]
     if flex and auto:
         fr = max([0.01] + [size[k] / tracks[k]["value"] for k in flex])
+        # An intrinsic grid must also fit children spanning a flexible track.
+        # Without their contribution its simulated hug height is too small,
+        # so the planner freezes the captured height instead of allowing reflow.
+        for start, span, need in needs:
+            idx = list(range(start, min(start + span, len(tracks))))
+            flexible = [k for k in idx if tracks[k]["type"] == "flex"]
+            if span > 1 and flexible:
+                fixed = sum(size[k] for k in idx if k not in flexible)
+                units = sum(tracks[k]["value"] for k in flexible)
+                fr = max(fr, (need - fixed - gap * (len(idx) - 1)) / units)
         for k in flex:
             size[k] = max(size[k], fr * tracks[k]["value"])
     elif flex:  # Penpot's set-fr-value: fr from sum(max(1, fr)); tracks below their minimum keep it
@@ -519,6 +534,163 @@ def width_spec(spec: str | None) -> tuple[bool, float | None, float | None]:
     return fluid, cap, gutter
 
 
+def fluid_width(curve: dict | None) -> tuple[float, float, float | None] | None:
+    """A browser-probed width -> affine parent fraction, px offset and optional min() cap.
+
+    Require the branch to agree at a third measured width, rather than guessing from a
+    computed px value. Viewport gutters have already been resolved by the browser probe.
+    """
+    samples = (curve or {}).get("samples") or []
+    if len(samples) < 3:
+        return None
+    (p0, w0), (p1, w1) = samples[:2]
+    if p1 <= p0:
+        return None
+    fraction = (w1 - w0) / (p1 - p0)
+    if not 0.001 < fraction <= 1.0001:
+        return None
+    fraction = min(fraction, 1.0)
+    offset = w0 - fraction * p0
+    cap = None
+    for pw, width in samples[2:]:
+        predicted = fraction * pw + offset
+        if abs(predicted - width) <= TOL:
+            continue
+        # A constant upper branch (min()/max-width): don't mistake nonlinear rules
+        # for a fluid width. Its other sample must show the same cap.
+        if width < predicted and sum(abs(w - width) <= TOL for _, w in samples) >= 2:
+            cap = width if cap is None else min(cap, width)
+        else:
+            return None
+    return fraction, offset, cap
+
+
+def _auto_margin_spacers(n: dict) -> None:
+    """Flex auto-left margin -> a growing unpainted item, not a frozen px gap."""
+    L = n.get("layout") or {}
+    if L.get("display") not in ("flex", "inline-flex") or L.get("dir") != "row" or L.get("wrap") not in (None, "nowrap"):
+        return
+    cx, cy, _, ch = _content(n)
+    gap = float((L.get("gap") or [0, 0])[1])
+    children, previous = [], None
+    for c in n.get("children", []):
+        it = c.get("item") or {}
+        if c.get("deco") or it.get("pos") in ("absolute", "fixed"):
+            children.append(c)
+            continue
+        if it.get("autoMarginLeft") and not c.get("synthetic"):
+            left = previous[0] + previous[2] + gap if previous else cx
+            right = _box(c)[0] - gap
+            free = right - left
+            if free > TOL:
+                c["item"] = {**it, "autoMarginLeft": False, "margin": list(it.get("margin") or [0, 0, 0, 0])}
+                c["item"]["margin"][3] = 0
+                children.append({"kind": "board", "name": "CSS auto margin spacer", "synthetic": True,
+                                 "layoutSpacer": True, "box": {"x": left, "y": cy, "w": free, "h": max(ch, 1)},
+                                 "fills": [], "children": [], "layout": {"display": "block", "pad": [0, 0, 0, 0]},
+                                 "item": {"pos": "static", "grow": 1, "basis": "0px", "minW": 0,
+                                          "nat": {"w": free, "h": max(ch, 1)}, "margin": [0, 0, 0, 0]}})
+        children.append(c)
+        previous = _box(c)
+    n["children"] = children
+
+
+def _zero_min_grid_cells(n: dict) -> None:
+    """Keep fixed glyph runs from imposing a content minimum on minmax(0,fr).
+
+    Penpot's grid cells enlarge to a nested flex's content even with min-w:0.
+    An unpainted, non-layout cell lets a fixed-height glyph run overflow its cell
+    like the browser, without enlarging the row or freezing its fractional tracks.
+    This is limited to one-character glyph leaves; wrapping labels remain layouts.
+    """
+    L = n.get("layout") or {}
+    spec = L.get("colsSpec") or ""
+    zero = r"minmax\(\s*0(?:px)?\s*,\s*[\d.]+fr\s*\)"
+    if L.get("display") != "grid" or not spec or re.sub(zero, "", spec).strip():
+        return  # only all-zero-minimum fractional columns, never auto/min-content
+
+    def glyphs(c: dict) -> list[str]:
+        if c.get("kind") == "text":
+            return [(c.get("text") or {}).get("plain", "")]
+        return [v for child in c.get("children", []) for v in glyphs(child)]
+
+    children = []
+    for c in n.get("children", []):
+        it, cl = c.get("item") or {}, c.get("layout") or {}
+        letters = glyphs(c)
+        if (c.get("kind") != "board" or c.get("synthetic") or c.get("deco")
+                or it.get("pos") in ("absolute", "fixed") or it.get("float")
+                or it.get("minW") not in (None, 0) or cl.get("display") not in ("flex", "inline-flex")
+                or cl.get("dir") != "row" or not letters or not all(len(v) == 1 for v in letters)):
+            children.append(c)
+            continue
+        x, y, w, h = _box(c)
+        children.append({"kind": "board", "name": "Zero-min glyph cell / " + c.get("name", "glyphs"),
+                         "synthetic": True, "isolateGridMinimum": True, "z": c.get("z", 0),
+                         "fills": [], "children": [c], "box": {"x": x, "y": y, "w": w, "h": h},
+                         "item": dict(it), "layout": {"pad": [0, 0, 0, 0]}})
+    n["children"] = children
+
+
+def _fluid_children(n: dict) -> None:
+    """Represent a fractional block width as native fill tracks plus fixed gutters.
+
+    Penpot has percent tracks but not calc() item widths. An unpainted full-width
+    wrapper gives the child its percent area; a margin carries the formula's offset.
+    Only flow columns are eligible, and today's measured geometry must agree.
+    """
+    L = n.get("layout") or {}
+    if L.get("display") not in ("block", "flow-root", "flex") or (L.get("display") == "flex" and L.get("dir") != "column"):
+        return
+    cx, _, cw, _ = _content(n)
+    children = []
+    for c in n.get("children", []):
+        it = c.get("item") or {}
+        if c.get("synthetic") or c.get("deco") or it.get("pos") in ("absolute", "fixed") or it.get("float") or not c.get("box"):
+            children.append(c)
+            continue
+        x, y, w, h = _box(c)
+        fit = None
+        # width:100% can be constrained by an active fractional max-width. Pick
+        # the rule that reproduces the measured box, not simply the first curve.
+        for curve in (it.get("widthCurve"), it.get("maxWidthCurve")):
+            candidate = fluid_width(curve)
+            if (candidate and candidate[2] is None and abs(curve["parent"] - cw) <= TOL
+                    and (candidate[0] < 0.999 or (candidate[1] < -TOL and abs(x - cx) <= TOL))
+                    and abs(candidate[0] * cw + candidate[1] - w) <= TOL):
+                fit = candidate
+                break
+        if not fit:
+            children.append(c)  # an inactive max-width must not stretch the child
+            continue
+        fraction, offset, _ = fit
+        ml = x - cx
+        mr = fraction * cw - w - ml
+        margins = list(it.get("margin") or [0, 0, 0, 0])
+        padding, cols, spec = [0, 0, 0, 0], [fraction * cw], f"{fraction * 100:.8f}%"
+        if fraction < 0.999:
+            cols.append((1 - fraction) * cw)
+            spec += " 1fr"
+        if offset <= 0 and abs(ml) <= TOL:
+            # f*parent + offset = f*(parent - gutter). Fractional fill tracks
+            # avoid Penpot's percent-track content minimum freezing the old px
+            # width; the gutter stays fixed while the tracks divide new space.
+            gutter = -offset / fraction
+            padding = [0, gutter, 0, 0]
+            cols = [w] + ([(cw - gutter) - w] if fraction < 0.999 else [])
+            spec = f"{fraction:.8f}fr" + (f" {1 - fraction:.8f}fr" if fraction < 0.999 else "")
+            ml = mr = 0
+        c["item"] = {**it, "margin": [0, mr, 0, ml], "widthCurve": None, "maxWidthCurve": None}
+        children.append({"kind": "board", "name": "Fluid width / " + c.get("name", "block"),
+                         "synthetic": True, "z": c.get("z", 0), "fills": [], "children": [c],
+                         "box": {"x": cx, "y": y, "w": cw, "h": h},
+                         "item": {"pos": "static", "grow": 0, "margin": [margins[0], 0, margins[2], 0], "wspec": "100%"},
+                         "layout": {"display": "grid", "pad": padding, "gap": [0, 0],
+                                    "cols": cols, "rows": [h], "colsSpec": spec,
+                                    "rowsSpec": "auto", "justify": "start", "alignContent": "start"}})
+    n["children"] = children
+
+
 def _is_zero(c: dict) -> bool:
     return c["kind"] == "board" and (c["box"]["w"] < 0.5 or c["box"]["h"] < 0.5)
 
@@ -565,7 +737,15 @@ def _stretched(f: dict, row: bool) -> bool:
     if not nat:
         return False
     b = _box(f["n"])
-    return (nat["h"] if row else nat["w"]) < (b[3] if row else b[2]) - 0.5
+    natural_cross = nat["h"] if row else nat["w"]
+    captured_cross = b[3] if row else b[2]
+    if f["n"].get("layoutSpacer") and natural_cross == 0 and captured_cross <= 1:
+        # Extraction keeps a zero-height/width growing spacer as a 1px empty
+        # frame. That visibility floor is not CSS cross-axis stretching: fill
+        # would expand it to the row/column and reject the semantic flex plan,
+        # freezing its main-axis free space in the measured fallback instead.
+        return False
+    return natural_cross < captured_cross - 0.5
 
 
 def _main_sizing(f: dict, row: bool, grow: bool = True) -> str:
@@ -579,6 +759,8 @@ def _main_sizing(f: dict, row: bool, grow: bool = True) -> str:
 
 
 def _cross_sizing(f: dict, row: bool) -> str:
+    if f["text"] == "fixed" and row:
+        return "fix"
     if f["text"] == "auto-width" or (f["text"] and row):
         return "auto"
     if _stretched(f, row):
@@ -944,9 +1126,20 @@ def _try_flex(n: dict, flow: list[dict], kind: str, shrink_fill: bool = False, g
                 return "children overlap" if row else "children overlap vertically"
         gap = (0.0, 0.0)
     if semantic and row and text_fill:
+        # Keep wrappable labels bounded when an item is wider than a later
+        # viewport. Native flex has no CSS shrink-after-wrap operation: keeping
+        # an intrinsic auto-width basis instead overflows a narrow page.
         _refit_texts(infos, cw, gap[1])
     for f in infos:
         main, cross = _main_sizing(f, row, grow), _cross_sizing(f, row)
+        if (semantic and shrink_fill and row and not wrap and main == "fix" and f["text"] == "auto-height"
+                and float(f["it"].get("shrink", 1) or 0) > 0
+                and (f["it"].get("wspec") or "auto").strip() == "auto"):
+            # A CSS text item can be a little narrower than the row's remaining
+            # space (its longest line ends early) and still shrink on resize.
+            # Bounded fill preserves today's width without freezing that width.
+            main = "fill"
+            f["minmax"]["max-w"] = f["box"][2]
         if f.get("capped") or (semantic and row and not wrap and main != "fill" and _held_at_max(f)):
             main = "fill"
         f["hs"], f["vs"] = (main, cross) if row else (cross, main)
@@ -987,7 +1180,7 @@ def _try_flex(n: dict, flow: list[dict], kind: str, shrink_fill: bool = False, g
         if abs(used - cw) <= TOL and not any(f["hs"] == "fill" for f in infos):
             for f in infos:
                 shrinks = float(f["it"].get("shrink", 1) or 0) > 0
-                if shrinks and (f["text"] == "auto-height" or (f["n"]["kind"] == "board" and not _hugs(f, 0))):
+                if shrinks and (f["text"] in ("auto-height", "fixed") or (f["n"]["kind"] == "board" and not _hugs(f, 0))):
                     f["hs"] = "fill"
     # cross axis: fill what spans (block flow) or was stretched; align the rest from the geometry
     c0, csz = (cy, ch) if row else (cx, cw)
@@ -1018,6 +1211,10 @@ def _try_flex(n: dict, flow: list[dict], kind: str, shrink_fill: bool = False, g
             space_l, space_r = epos - c0, c0 + csz - epos - esize
             mid = abs(space_l - space_r) <= TOL and space_l > TOL
             fluid, cap, gutter = width_spec(f["it"].get("wspec"))
+            resolved = fluid_width(f["it"].get("widthCurve"))
+            if resolved and abs(resolved[0] - 1) < 0.001:
+                gutter = max(0.0, -resolved[1])
+                cap = resolved[2] if resolved[2] is not None else cap
             if centered and fluid:  # e.g. width: min(100% - 48px, 1200px); margin: 0 auto
                 f["hs"], f["align"] = "fill", "center"
                 if cap is not None and abs(cap - esize) <= TOL:
@@ -1111,6 +1308,12 @@ def _try_grid(n: dict, flow: list[dict]) -> dict | str:
     if cols is None:
         cols = [{"type": "fixed", "value": _r(v)} for v in colpx]
         notes.append(f"columns '{L.get('colsSpec') or 'implicit'}' kept as fixed widths")
+    elif (gap[1] <= TOL and all(t["type"] == "percent" for t in cols)
+          and abs(sum(t["value"] for t in cols) - 100) < 0.001):
+        # A complete percentage partition with no gaps is the same ratio in fr.
+        # Native percent tracks otherwise pin the grid's content minimum to its
+        # captured width, preventing table rows from narrowing with their parent.
+        cols = [{"type": "flex", "value": t["value"]} for t in cols]
     rows = parse_tracks(L.get("rowsSpec"), len(rowpx))
     if rows is None and (L.get("rowsSpec") or "").strip() in unset:
         auto = _track(L.get("autoRows") or "auto")
@@ -1153,11 +1356,13 @@ def _try_grid(n: dict, flow: list[dict]) -> dict | str:
                 f["hs"], f["minmax"]["max-w"] = "fill", float(f["it"]["maxW"]) + dl + dr
             spans_h = abs(b[3] + m[0] + m[2] - ah) <= TOL
             if f["text"]:
-                f["vs"] = "auto"
+                f["vs"] = "fix" if f["text"] == "fixed" else "auto"
             elif spans_h and (_stretched(f, True) or not _hugs(f, 1)):
                 f["vs"] = "fill"
             else:
                 f["vs"] = "auto" if _hugs(f, 1) else "fix"
+        if f["n"].get("isolateGridMinimum"):
+            f["vs"] = "fix"  # fixed-height glyphs remain an auto-row height anchor
         sized = all(cols[k]["type"] != "auto" for k in range(cell["c"], cell["c"] + cell["cs"]))
         if (f["hs"] != "fill" and sized and aw - (b[2] + m[1] + m[3]) > TOL and abs(b[0] - m[3] - ax) <= TOL
                 and (f["it"].get("wspec") or "auto").strip() == "auto"):
@@ -1174,6 +1379,8 @@ def _try_grid(n: dict, flow: list[dict]) -> dict | str:
             f["js"], m[3], m[1] = _grid_align(b[0], b[2], ax, aw, m[3], m[1], False)
         if f["vs"] != "fill":
             f["al"], m[0], m[2] = _grid_align(b[1], b[3], ay, ah, m[0], m[2], True)
+            if f["n"].get("isolateGridMinimum") and L.get("alignItems") == "center":
+                f["al"] = "center"
     # each auto row needs one item that hugs (the tallest), so text growth reaches the grid
     for r_ in range(len(rowpx)):
         members = [f for f in infos if f["cell"]["r"] == r_ and f["cell"]["rs"] == 1]
@@ -1222,8 +1429,8 @@ def _plan_board(n: dict) -> None:
     pp.update({"mode": None, "attrs": {}, "order": [], "cells": None, "kind": "positioned", "why": None,
                "hug": [None, None], "notes": []})
     flow, other = _split(n)
-    if not flow or n.get("formControl"):
-        pp["kind"] = "no flow children"
+    if not flow or n.get("formControl") or n.get("isolateGridMinimum"):
+        pp["kind"] = "no layout / zero-min glyph cell" if n.get("isolateGridMinimum") else "no flow children"
         _keep_in_place(n)  # its borders and badges follow it when a layout resizes it
         return
     d = (n.get("layout") or {}).get("display") or "block"
@@ -1363,6 +1570,10 @@ def group_plan(n: dict) -> dict:
 
 def plan_tree(n: dict) -> None:
     """Plan a board and everything under it (children first: a parent needs their hug sizes)."""
+    if n["kind"] == "board":
+        _auto_margin_spacers(n)
+        _zero_min_grid_cells(n)
+        _fluid_children(n)
     for c in n.get("children", []):
         if c["kind"] == "board":
             plan_tree(c)

@@ -372,8 +372,10 @@ class FakePenpot:
         return {"path": str(destination), "bytes": 6}
 
 
-def fake_convert(tmp_path, monkeypatch, client):
+def fake_convert(tmp_path, monkeypatch, client, scene_fn=None):
     recorded = scenes()
+    if scene_fn:
+        recorded = {w: scene_fn(s) for w, s in recorded.items()}
     for w, s in recorded.items():
         (tmp_path / f"scene-{w}.json").write_text(json.dumps(s))
     monkeypatch.setattr(h2p, "capture", lambda *a, **k: {"base": BASE, "summary": {}, "scenes": recorded})
@@ -423,6 +425,58 @@ def test_reopen_checks_layouts_text_growth_and_variants(tmp_path, monkeypatch):
     lost = fake_convert(tmp_path / "lost", monkeypatch, LayoutLosingPenpot())
     assert not lost["passed"] and not lost["verify"]["checks"]["layouts_kept"]
     assert all(": layout-grid-cells " in p and p.endswith("-> None") for p in lost["verify"]["problems"]["layout"])
+
+
+def without_components(scene):
+    """The recorded page as if it marked no data-component (a states sheet, a report list)."""
+    scene = json.loads(json.dumps(scene))
+    for n in h2p.walk_scene(scene["nodes"]):
+        n.pop("component", None)
+    return scene
+
+
+class ComponentLosingPenpot(FakePenpot):
+    def update(self, file_id, changes):
+        super().update(file_id, changes)
+        self.comps.clear()
+
+
+class LinkLosingPenpot(FakePenpot):
+    def update(self, file_id, changes):
+        super().update(file_id, changes)
+        for k, o in list(self.objects.items()):
+            self.objects[k] = {a: v for a, v in o.items() if a != "shape-ref"}
+
+
+def test_page_without_components_passes_component_checks_as_not_applicable_with_a_warning(tmp_path, monkeypatch):
+    report = fake_convert(tmp_path, monkeypatch, FakePenpot(), without_components)
+    v = report["verify"]
+    assert report["components"] == [] and report["instances"] == []
+    assert report["passed"] and v["checks"]["components"] and v["checks"]["instances_linked"]
+    assert v["not_applicable"] == {"components": "no components marked", "instances_linked": "no components marked"}
+    assert v["warnings"] == ["components not applicable (no components marked)",
+                             "instances_linked not applicable (no components marked)"]
+    saved = json.loads((tmp_path / "conversion.json").read_text())["verify"]
+    assert saved["warnings"] == v["warnings"]  # a reviewer reads it in the saved report, never a silent pass
+
+
+@pytest.mark.parametrize("client, failed", [(ComponentLosingPenpot, "components"), (LinkLosingPenpot, "instances_linked")])
+def test_page_with_components_still_fails_a_missing_component_or_link(tmp_path, monkeypatch, client, failed):
+    report = fake_convert(tmp_path, monkeypatch, client())
+    v = report["verify"]
+    assert not report["passed"] and not v["checks"][failed]
+    assert v["not_applicable"] == {} and v["warnings"] == []
+
+
+def test_marked_components_that_were_never_built_fail():
+    b = built()
+    file = {"data": {"pages-index": {"page": {"objects": {o["id"]: o for o in b["objects"]}}},
+                     "components": {c["id"]: {"id": c["id"]} for c in b["components"]}}}
+    assert b["marked_components"] and h2p.verify(file, "page", b)["checks"]["components"]
+    lost = {**b, "components": [], "instances": []}  # the page marked components, none became one
+    checked = h2p.verify(file, "page", lost)
+    assert not checked["checks"]["components"] and not checked["checks"]["instances_linked"]
+    assert checked["warnings"] == []
 
 
 def test_lost_layer_fails_reopen_visibly(tmp_path, monkeypatch):
@@ -508,6 +562,70 @@ def test_parallel_stages_keep_each_others_receipts(tmp_path):
     assert {"brief", "references", "taste"} <= set(saved)
     assert v2.Job(str(tmp_path), fixture=True).cached("references", "fp-references")["reused"]
     assert not list((tmp_path / "homepage").glob(".job.json.*.tmp"))  # written in one step, nothing left over
+
+
+def converter_copy(tmp_path, monkeypatch):
+    """The converter's source files copied aside, so a test can change one without touching the real ones."""
+    src = tmp_path / "converter"
+    src.mkdir()
+    for name in v2.CONVERTER_FILES:
+        shutil.copyfile(BIN / name, src / name)
+    monkeypatch.setattr(v2, "CONVERTER_DIR", src)
+    return src
+
+
+def converted_round(tmp_path, monkeypatch):
+    """A fixture workspace at round 1 with a stand-in converter that counts its Penpot conversions."""
+    job = fixture_job(tmp_path)
+    job.site.mkdir(parents=True, exist_ok=True)
+    (job.site / "index.html").write_text("<!doctype html><title>Atlas</title><h1>Atlas</h1>")
+    job.state["round"] = 1
+    job.commit()
+    calls = []
+
+    def fake_convert(site, page, out, name, **kw):
+        calls.append(name)
+        out.mkdir(parents=True, exist_ok=True)
+        report = {"passed": True, "file": {"file_id": f"file-{len(calls)}", "url": "https://pen.example/x"},
+                  "fidelity_passed": True, "verify": {"passed": True}, "issue_counts": {}}
+        v2.save(out / "conversion.json", report)
+        return report
+
+    monkeypatch.setattr(v2.h2p, "convert", fake_convert)
+    return job, calls
+
+
+def test_convert_reuses_its_receipt_while_the_converter_is_unchanged(tmp_path, monkeypatch):
+    src = converter_copy(tmp_path, monkeypatch)
+    job, calls = converted_round(tmp_path / "ws", monkeypatch)
+    first = job.convert()
+    assert first["converter"] == v2.converter_digest(src) and len(calls) == 1
+    again = v2.Job(str(tmp_path / "ws"), fixture=True).convert()  # a resume or fork re-enters the stage
+    assert again["reused"] is True and again["file_id"] == "file-1" and len(calls) == 1
+
+
+@pytest.mark.parametrize("changed", ["html_to_penpot.py", "html_dom_extract.js", "penpot_layout.py",
+                                     "penpot_homepage_source.py"])
+def test_convert_refuses_a_saved_conversion_made_by_another_converter(tmp_path, monkeypatch, changed):
+    src = converter_copy(tmp_path, monkeypatch)
+    job, calls = converted_round(tmp_path / "ws", monkeypatch)
+    job.convert()
+    (src / changed).write_text((src / changed).read_text() + "\n// changed\n")
+    with pytest.raises(ValueError, match=r"converter changed since this conversion of round 1 .*use a fresh workspace"):
+        v2.Job(str(tmp_path / "ws"), fixture=True).convert()
+    assert len(calls) == 1  # never silently reused, never silently repeated
+
+
+def test_convert_refuses_a_receipt_saved_before_converter_digests(tmp_path, monkeypatch):
+    converter_copy(tmp_path, monkeypatch)
+    job, calls = converted_round(tmp_path / "ws", monkeypatch)
+    job.convert()
+    state = v2.load(tmp_path / "ws/homepage/job.json")
+    del state["stages"]["convert-1"]["output"]["converter"]  # how receipts looked before queue #43
+    v2.save(tmp_path / "ws/homepage/job.json", state)
+    with pytest.raises(ValueError, match=r"converter changed .*saved not recorded.*use a fresh workspace"):
+        v2.Job(str(tmp_path / "ws"), fixture=True).convert()
+    assert len(calls) == 1
 
 
 def test_fixture_and_real_workspaces_never_mix(tmp_path):

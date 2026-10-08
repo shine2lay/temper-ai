@@ -46,6 +46,12 @@ def built():
                     media[fill["src"]] = {"id": "22222222-2222-4222-8222-222222222222", "width": 10, "height": 10,
                                           "mtype": "image/png", "name": "background-texture.png"}
     b = h2p.build(recorded, "file", "page", fonts, media, "Rich")
+    # Keep fixture source dimensions for native-layout vs paint contracts.
+    b["source_boxes"] = {}
+    for scene in recorded.values():
+        for n in h2p.walk_scene(scene["nodes"]):
+            if n.get("kind") == "board":
+                b["source_boxes"].setdefault(n["name"], []).append(n["box"])
     b["by_id"] = {o["id"]: o for o in b["objects"]}
     adds = [c for chunk in b["chunks"] for c in chunk["changes"] if c["type"] == "add-obj"]
     b["kids"] = {}
@@ -89,8 +95,11 @@ def test_text_inside_aria_hidden_step_circles_is_drawn_above_the_route_line(buil
     on_pages = [s for s in stops if on_page(built, s)]
     assert len(on_pages) == 2 * 3  # three tickets at each width
     for stop in stops:
-        texts = [built["by_id"][i] for i in built["kids"][stop["id"]]]
-        assert [t["type"] for t in texts] == ["text"]
+        children = [built["by_id"][i] for i in built["kids"][stop["id"]]]
+        texts = [o for o in children if o["type"] == "text"]
+        assert len(texts) == 1
+        assert all(o["name"] == "Border / snapped paint" and o["layout-item-absolute"]
+                   for o in children if o["type"] != "text")
         assert h2p.content_text(texts[0]["content"]).strip() in {"1", "2", "3"}
         assert stop["r1"] == stop["width"] / 2  # a circle
     for line in named(built, "Route line"):
@@ -137,8 +146,12 @@ def test_layered_backgrounds_keep_every_layer_in_css_order(built):
         assert [f["fill-color-gradient"]["type"] for f in glow["fills"]] == ["radial"]
         assert ["fill-image" in f for f in texture["fills"]] == [True]
         for layer in (glow, texture):
-            assert (layer["x"], layer["y"], layer["width"], layer["height"]) == (
-                hero["x"], hero["y"], hero["width"], hero["height"])
+            # Native frame layout keeps CSS fractions; independently painted
+            # background layers snap without changing that layout's text wrap.
+            assert (layer["x"], layer["y"], layer["width"], layer["height"]) == pytest.approx((
+                hero["x"], hero["y"], hero["width"], hero["height"]), abs=1)
+            for v in (layer["x"], layer["y"], layer["x"] + layer["width"], layer["y"] + layer["height"]):
+                assert v == pytest.approx(round(v), abs=1e-6)
     for card in named(built, "Paper card"):  # a glow fading to transparent over the paper colour
         glow, paper = card["fills"]
         stops = glow["fill-color-gradient"]["stops"]
@@ -162,8 +175,12 @@ def test_textures_are_named_picture_fills_and_each_is_an_issue(built):
 def test_dashed_dotted_and_double_borders_are_native_strokes(built):
     kinds = [i["kind"] for i in built["issues"]]
     assert "border-style-approximated" not in kinds and "background-unsupported" not in kinds
-    for box in named(built, "Price list"):  # four equal dashed sides: the box's own stroke
-        assert strokes(box) == [("dashed", 2, "inner")]
+    for box in named(built, "Price list"):  # native layout excludes independent stroke paint
+        paint = [built["by_id"][i] for i in built["kids"].get(box["id"], [])
+                 if built["by_id"][i]["name"] == "Border / snapped paint"]
+        assert len(paint) == 1 and not strokes(box)
+        assert strokes(paint[0]) == [("dashed", 2, "inner")]
+        assert paint[0]["layout-item-absolute"] is True
     heads = [p for p in named(built, "Border / bottom") if ancestors(built, p)[0]["name"] == "Div / ticket-head"]
     assert heads and all(strokes(p) == [("dashed", 2, "center")] for p in heads)
     steps = [p for p in named(built, "Border / left") if ancestors(built, p)[0]["name"] == "Span / step-line"]
@@ -172,11 +189,15 @@ def test_dashed_dotted_and_double_borders_are_native_strokes(built):
     assert len(leaders) == 2 * 3 and all(strokes(p) == [("dotted", 2, "center")] for p in leaders)
     marks = [p for p in named(built, "Border / bottom") if ancestors(built, p)[0]["name"] == "P / fine"]
     assert len(marks) == 2 and all(strokes(p) == [("dotted", 2, "center")] for p in marks)  # an inline word
-    for stamp in (s for s in named(built, "Stamp") if s["type"] == "frame"):  # a double ring: outer line on the box, inner line as a layer
-        assert strokes(stamp) == [("solid", 2, "inner")]
+    for stamp in (s for s in named(built, "Stamp") if s["type"] == "frame"):  # double ring keeps both native strokes outside layout sizing
+        outer = [built["by_id"][i] for i in built["kids"][stamp["id"]]
+                 if built["by_id"][i]["name"] == "Border / snapped paint"]
+        assert len(outer) == 1 and not strokes(stamp)
+        assert strokes(outer[0]) == [("solid", 2, "inner")] and outer[0]["layout-item-absolute"]
         inner = [built["by_id"][i] for i in built["kids"][stamp["id"]] if built["by_id"][i]["name"] == "Border / double (inner line)"]
         assert len(inner) == 1 and strokes(inner[0]) == [("solid", 2, "inner")]
-        assert inner[0]["width"] == stamp["width"] - 8 and inner[0]["r1"] == stamp["r1"] - 4
+        assert inner[0]["width"] == pytest.approx(stamp["width"] - 8, abs=1)
+        assert inner[0]["r1"] == stamp["r1"] - 4
     for fares in named(built, "Section / Fares"):  # double top and bottom sides: two lines each
         lines = sorted(built["by_id"][i]["name"] for i in built["kids"][fares["id"]] if built["by_id"][i]["name"].startswith("Border"))
         assert lines == ["Border / bottom (inner line)", "Border / bottom (outer line)",
@@ -185,14 +206,25 @@ def test_dashed_dotted_and_double_borders_are_native_strokes(built):
                    if built["by_id"][i]["name"].startswith("Border"))
 
 
-def test_painted_boxes_on_the_pages_sit_on_whole_pixels(built):
-    """Chrome paints box edges on whole pixels; Penpot would draw half-tone seams at fractional ones."""
+def test_independent_paint_snaps_but_native_layout_keeps_source_fractions(built):
+    """Snapping layout boxes changes wrapping; border paint snaps independently."""
     painted = [o for o in built["objects"] if o["type"] in ("rect", "frame") and (o.get("fills") or o.get("strokes"))
                and on_page(built, o)]
     assert len(painted) > 40
+    fractional_layouts = []
     for o in painted:
-        for v in (o["x"], o["y"], o["x"] + o["width"], o["y"] + o["height"]):
-            assert v == pytest.approx(round(v), abs=1e-6), o["name"]
+        if o.get("layout"):
+            # Board offsets differ, but dimensions must equal a recorded source
+            # box, not a pixel-rounded layout box. Paint has separate contracts.
+            candidates = built["source_boxes"][o["name"]]
+            assert any((o["width"], o["height"]) == pytest.approx((b["w"], b["h"]))
+                       for b in candidates), o["name"]
+            assert not o.get("strokes")  # painted on an absolute, non-layout child
+            fractional_layouts.append(o)
+        else:
+            for v in (o["x"], o["y"], o["x"] + o["width"], o["y"] + o["height"]):
+                assert v == pytest.approx(round(v), abs=1e-6), o["name"]
+    assert fractional_layouts and any(o["height"] != round(o["height"]) for o in fractional_layouts)
 
 
 def test_textures_are_read_only_from_the_capture_folder(tmp_path):

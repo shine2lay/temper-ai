@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beacon dispatch — fictional converter fixture</title>
+<style>
+@font-face{font-family:"Atkinson Hyperlegible";font-weight:400;src:url("fonts/atkinsonhyperlegible/AtkinsonHyperlegible-400.ttf") format("truetype")}
+@font-face{font-family:"Atkinson Hyperlegible";font-weight:700;src:url("fonts/atkinsonhyperlegible/AtkinsonHyperlegible-700.ttf") format("truetype")}
+:root{--paper:#FFFFFF;--ink:#14212E;--accent:#17634A;--line:#657784}
+:root[data-theme="night"]{--paper:#14212E;--ink:#FFFFFF;--accent:#71DBAB;--line:#98ABBC}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/24px "Atkinson Hyperlegible",sans-serif}
+.wrap{width:min(100% - 2*clamp(20px,4vw,64px),1320px);margin:auto;padding:24px 0}
+h1{font-size:28px;line-height:32px;margin:0}h2{font-size:20px;margin:16px 0 8px}
+p{margin:0 0 8px}.toolbar{display:flex;gap:12px;align-items:center;margin:16px 0}.spacer{flex:1}
+button{background:var(--accent);color:var(--paper);border:0;border-radius:4px;padding:8px 16px;font:inherit}.auto{margin-left:auto}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:flex;flex-direction:column;gap:4px}
+input,textarea,select{appearance:none;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;padding:8px;width:100%;border-radius:4px}input::placeholder,textarea::placeholder{color:var(--line)}textarea{height:112px;resize:none;overflow-wrap:break-word}
+.ellipsis{width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:2px}.clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin-top:8px}
+.fraction{max-width:calc((100% - 128px)/3);margin-top:12px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th:first-child,td:first-child{width:30%}
+ul,ol{margin:8px 0;padding-left:32px}li::marker{color:var(--accent);font-size:18px}.square{list-style-type:square}.roman{list-style-type:upper-roman}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.controls{display:flex;gap:16px;margin-top:12px}.controls label{display:flex;flex-direction:row;align-items:center}.controls input{appearance:auto;width:16px;height:16px;margin:0;accent-color:var(--accent)}a{color:var(--ink);text-decoration-color:var(--accent);text-underline-offset:2px}
+@media(max-width:600px){.fields{grid-template-columns:1fr}.fraction{max-width:100%}}
+</style></head>
+<body><main class="wrap" data-name="Dispatch">
+<h1>Beacon dispatch</h1><p>Fictional jobs for a converter contract, not a customer screen.</p>
+<div class="toolbar"><span>Three jobs</span><div class="spacer"></div><button data-component="Action">New job</button></div>
+<div class="toolbar"><span>Next collection</span><button class="auto" data-component="Action">Refresh</button></div>
+<div class="fields"><label>Destination<input value="Harbor depot"></label><label>Reference<input placeholder="Enter reference"></label>
+<label>Route<select><option>North loop</option><option selected>East loop</option></select></label>
+<label>Notes<textarea>First collection
+
+Leave the empty line intact.
+Return before sunset.
+GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG</textarea></label></div>
+<h2>Fixed-height text</h2><p class="ellipsis">A deliberately long single-line dispatch description that clips rather than growing its card when narrowed.</p>
+<p class="clamp">This description takes at most two lines even when the board becomes narrower. More dispatch detail stays editable in the source text, but the rendered card does not become taller just to show it all.</p>
+<p class="fraction">A narrow note has a percentage of its parent's width, less a fixed allowance.</p>
+<table data-name="Jobs"><thead><tr><th>Job</th><th>Destination</th><th>Status</th></tr></thead><tbody>
+<tr><td>BX-14</td><td>Harbor depot</td><td>Ready</td></tr><tr><td>BX-15</td><td>A longer destination name wraps in a narrower column</td><td>Waiting</td></tr></tbody></table>
+<div class="controls"><label><input type="checkbox" checked>Ready</label><label><input type="checkbox" disabled>Hold</label><label><input type="radio" checked>East route</label></div>
+<p><a href="#jobs">Review the dispatch detail</a></p>
+<h2>Before collection</h2><ul><li>Check the label</li><li>Confirm the route</li></ul>
+<ul class="square"><li>Keep the package dry</li></ul>
+<ol start="4"><li>Scan the job</li><li>Load the van</li></ol>
+<ol reversed start="9" class="roman"><li>First return</li><li value="6">Second return</li><li>Last return</li></ol>
+<span class="sr-only">Dispatch status is updated automatically.</span>
+</main></body></html>

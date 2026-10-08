@@ -629,9 +629,10 @@ media queries and no viewport units, so each width's board keeps the layout and
 sizes the browser used at that width: a board narrowed past one of the page's
 breakpoints keeps its own layout (the 390 and 768 boards carry the others), and
 type or spacing set with `vw` (`clamp(3rem, 8vw, 8rem)`) keeps its captured
-size. Sizes written as a share of the parent (`max-width: calc((100% - 128px) / 3)`)
-keep today's pixels too, since Penpot sizes boards in pixels (grid tracks are the
-only percentages), so such a box does not narrow with its parent. Centred
+size. Validated sizes written as a share of the parent (for example,
+`max-width: calc((100% - 128px) / 3)`) become native fraction/fill tracks with
+explicit offsets, so these boxes narrow with their parent; unsupported formulas
+remain reported limits, not guessed percentages. Centred
 containers (`width: min(100% - 48px, 1200px)`) fill up to their cap with the
 gutter as margins; a block held at its `max-width` (in a flex row, a column or
 a grid cell) fills up to it, so a narrower parent narrows it; a one-line text
@@ -668,6 +669,70 @@ differing by more than 48 (with a 1 px shift allowed) at most 2.0% overall,
 hinting differ there); and in 32 px tiles at most 20% differing and a mean
 difference of at most 40, so a single lost card cannot hide in a page-wide
 average.
+
+**App parts and converter receipts (queue #43).**
+
+- A conversion receipt includes the converter/extractor/layout/source-builder
+  digest. Unchanged conversions reuse their receipt; a changed or unrecorded
+  converter refuses with “use a fresh workspace”. Forking/resuming is not a
+  reason to silently reuse layers made by old code.
+- Formula widths are probed in the browser at multiple containing-block widths.
+  Validated parent fractions become native fraction/fill tracks; pixel offsets
+  and resolved `min()`/`calc()` gutters stay explicit. Native percentage tracks
+  can pin a grid's minimum to its captured width, so complete no-gap percentage
+  partitions use equivalent fractions. Fixed glyph cells in zero-minimum grids
+  keep their height without imposing a width minimum. Wrappable flex labels
+  remain bounded fills: native flex cannot combine CSS intrinsic wrap bases
+  with shrink-after-wrap. Keeping an unbounded auto-width label can overflow a
+  narrow board; the safe mapping can differ in total height from CSS's row wrap.
+  A fixed viewport unit
+  stays at the captured viewport's value, rather than pretending to be a
+  parent percentage.
+- **Breakpoints:** Penpot has no CSS breakpoints. Make one board per breakpoint
+  width; the homepage workflow converts **390 / 768 / 1440**. Resizing a board
+  tests layout within that captured breakpoint, not a different media query.
+- Native form-field value, placeholder and selected-option text are editable
+  layers; textarea paragraphs keep their empty lines. Checkbox/radio browser
+  skins are tiny, deduplicated picture fills, each explicitly reported as
+  `native-widget-rasterized`; their labels remain editable text. Other native
+  widget chrome (such as a select arrow) is not invented by the converter.
+  Independent underline colour/offset become editable line layers instead of
+  silently taking the text colour (important for linked error messages).
+- Active computed root custom properties define the shared theme colours,
+  including `:root[data-theme=...]`; inactive theme declarations do not leak
+  into the library. Auto left margins and empty growing flex spacers become
+  growing layout space. Table rows use measured column ratios as fill tracks.
+- One-line ellipsis and line-clamp text use fixed-height, clipped boxes that
+  narrow with their parent. **Penpot cannot draw the CSS “…” truncation glyph**;
+  clipping without that glyph is the accepted approximation. The full text
+  remains editable; narrowing must not grow the card just to reveal it.
+  **Multiline widening limit:** this safe mask retains the captured height even
+  when wider text could occupy fewer lines. Verify records
+  `fixed-multiline-clip-limit` in `clipping_limits` and warnings for multiline
+  clamps without an authored fixed height. Saved max-height on a hugging frame
+  is not native enforcement; a fill-height alternative can cap edits yet break
+  natural shrinking and ancestor reflow. Neither is used by this converter.
+  This documents the measured limit, not acceptance of a failed resize bar.
+- Screen-reader-only, clipped 1 px text is not drawn. Verify lists every omitted
+  text, its location and reason, and records a warning; this is not silent
+  permission to lose accessible source text.
+- Unordered bullets and ordered numbers are editable text layers per list
+  item, using the computed `list-style-type` and `::marker` colour/font size.
+  Ordered-list `start`, `reversed` and item `value` are honoured. Verify counts
+  list items, expected markers and saved drawn markers; unsupported counter
+  styles are explicitly warned, not silently dropped.
+- A page marking no `data-component` nodes reports both component checks as
+  **not applicable (no components marked)**, with verify warnings. Marked
+  components must still exist and have linked instances; missing/unlinked
+  components remain failures.
+- Editor proof counts colour links in text as well as shape fills (not cached
+  text positions). Open retries once at most and lists the retry as a warning,
+  retaining first-attempt console/backend evidence when an Internal Error
+  appears. Retrying never changes the fidelity bars or turns two failures
+  into a pass. Large-file edit proof can take more than 60 seconds, even for
+  pre-rich-detail conversions; record total and colour-render times with 30 s
+  screenshot waits. Layer/picture counts alone do not identify the bottleneck.
+  A longer wait or a successful retry is not a performance pass.
 
 **Rich details (queue #31).** What real designed pages use comes across as
 native, editable Penpot shapes:

@@ -14,7 +14,8 @@
   const W = doc.clientWidth;
   const H = Math.max(doc.scrollHeight, document.body ? document.body.scrollHeight : 0);
   const issues = [];
-  const stats = {elements: 0, boards: 0, groups: 0, rects: 0, texts: 0, paths: 0, images: 0};
+  const stats = {elements: 0, boards: 0, groups: 0, rects: 0, texts: 0, paths: 0, images: 0, list_items: 0, markers: 0};
+  const omittedText = [], lists = [];
   const SKIP = new Set(['script', 'style', 'noscript', 'template', 'head', 'meta', 'link', 'title', 'base']);
   const ISSUE_LIMIT = 200;
   const issue = (kind, el, detail) => {
@@ -73,25 +74,15 @@
   const vars = [];
   const seenVar = new Set();
   const rootStyle = getComputedStyle(doc);
-  for (const sheet of document.styleSheets) {
-    let rules;
-    try { rules = sheet.cssRules; } catch (e) { issue('stylesheet-unreadable', null, String(sheet.href || '')); continue; }
-    const walkRules = (list) => {
-      for (const rule of list) {
-        if (rule.cssRules && !rule.selectorText) { walkRules(rule.cssRules); continue; }
-        if (!rule.style || !rule.selectorText) continue;
-        if (!/^(:root|html)$/.test(rule.selectorText.trim())) continue;
-        for (let i = 0; i < rule.style.length; i++) {
-          const name = rule.style[i];
-          if (!name.startsWith('--') || seenVar.has(name)) continue;
-          seenVar.add(name);
-          const value = rootStyle.getPropertyValue(name).trim();
-          const c = /gradient|url\(/.test(value) ? null : parseColor(value);
-          if (c) vars.push({name, value, color: c.color, opacity: c.opacity});
-        }
-      }
-    };
-    walkRules(rules);
+  // Read the active cascade, not selector spelling. This includes :root[data-theme],
+  // media queries and inherited aliases without mixing inactive theme values.
+  for (let i = 0; i < rootStyle.length; i++) {
+    const name = rootStyle[i];
+    if (!name.startsWith('--') || seenVar.has(name)) continue;
+    seenVar.add(name);
+    const value = rootStyle.getPropertyValue(name).trim();
+    const c = /gradient|url\(/.test(value) ? null : parseColor(value);
+    if (c) vars.push({name, value, color: c.color, opacity: c.opacity});
   }
 
   // ---------- fonts (only faces that actually loaded) ----------
@@ -763,19 +754,25 @@
     for (const c of node.children) if (!isInlineLevel(c)) return false;
     return true;
   };
-  const styleOf = (el) => {
-    const cs = getComputedStyle(el);
+  const styleOf = (el, pseudo = null) => {
+    const cs = getComputedStyle(el, pseudo);
     const fam = familyOf(cs, el);
     const size = parseFloat(cs.fontSize);
     const color = parseColor(cs.color) || {color: '#000000', opacity: 1};
     const weight = String(cs.fontWeight);
+    const underlinePaint = parseColor(cs.textDecorationColor) || color;
+    const ownUnderline = (cs.textDecorationLine || '').includes('underline') &&
+      (underlinePaint.color !== color.color || (parseFloat(cs.textUnderlineOffset) || 0) !== 0 ||
+       (parseFloat(cs.textDecorationThickness) || 0) !== 0);
     usedFonts.set(fam.toLowerCase() + '|' + weight + '|' + cs.fontStyle, {family: fam, weight, style: cs.fontStyle});
     if (cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text') issue('text-background-clip-approximated', el, 'gradient text drawn as its solid colour');
     if (cs.webkitTextStroke && parseFloat(cs.webkitTextStrokeWidth) > 0) issue('text-stroke-ignored', el, cs.webkitTextStroke);
     if (cs.textShadow && cs.textShadow !== 'none') issue('text-shadow-ignored', el, cs.textShadow.slice(0, 60));
     return {family: fam, weight, style: cs.fontStyle, size, lineHeight: cs.lineHeight === 'normal' ? null : parseFloat(cs.lineHeight),
       letterSpacing: cs.letterSpacing === 'normal' ? 0 : parseFloat(cs.letterSpacing) || 0, transform: cs.textTransform,
-      decoration: (cs.textDecorationLine || 'none').includes('underline') ? 'underline' : ((cs.textDecorationLine || '').includes('line-through') ? 'line-through' : 'none'),
+      decoration: ownUnderline ? 'none' : (cs.textDecorationLine || 'none').includes('underline') ? 'underline' : ((cs.textDecorationLine || '').includes('line-through') ? 'line-through' : 'none'),
+      ...(ownUnderline ? {underline: {...underlinePaint, offset:parseFloat(cs.textUnderlineOffset) || 0,
+        thickness:parseFloat(cs.textDecorationThickness) || 1, style:cs.textDecorationStyle || 'solid'}} : {}),
       color: color.color, opacity: color.opacity, role: (el.closest('[data-typography]') || {dataset: {}}).dataset.typography || null,
       tag: el.tagName.toLowerCase()};
   };
@@ -884,6 +881,7 @@
       if (tag === 'br') { paragraphs.push([]); lastWasSpace = true; plain += ' '; brk = 'end'; return; }
       const cs = getComputedStyle(node);
       if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      if (screenReaderOnly(node, cs)) { omitText(node); return; }
       const dec = decoration(node, cs, node.getBoundingClientRect());
       if (dec.visible) {
         const rects = [...node.getClientRects()];
@@ -936,7 +934,9 @@
     const right = anon ? maxRight : Math.max(contentRight, maxRight);
     // How the Penpot text should grow when edited: one shrink-wrapped line grows in width, the rest in height.
     const nowrap = /^(nowrap|pre)$/.test(bcs.whiteSpace);
-    const fit = lines.length === 1 && (anon || nowrap || Math.abs((contentRight - contentLeft) - (maxRight - minLeft)) < 1.5) ? 'width' : 'height';
+    const clamp = parseInt(bcs.webkitLineClamp, 10) || 0;
+    const clipped = (bcs.textOverflow === 'ellipsis' && bcs.overflowX !== 'visible') || clamp > 0;
+    const fit = clipped ? 'clip' : lines.length === 1 && (anon || nowrap || Math.abs((contentRight - contentLeft) - (maxRight - minLeft)) < 1.5) ? 'width' : 'height';
     const top = lines[0].top - half;
     const lastHalf = Math.max(0, (lineBox - (lines[lines.length - 1].bottom - lines[lines.length - 1].top)) / 2);
     const bottom = lines[lines.length - 1].bottom + lastHalf;
@@ -963,15 +963,47 @@
         fw: l.fwR === undefined ? null : r2(l.fwR - l.fwL), fsp: l.fsp === undefined ? null : r2(l.fsp)};
     });
     for (const d of decor) out.push(d);
+    const clipHeight = clipped ? Math.min(bottom - top, br.height - parseFloat(bcs.paddingTop) - parseFloat(bcs.paddingBottom)
+      - parseFloat(bcs.borderTopWidth) - parseFloat(bcs.borderBottomWidth)) : Infinity;
+    const heightSpec = specified(block, 'height');
+    // Retain the authored height for the fixed-mask approximation/limit warning.
+    // Native shrinking with an enforced maximum is not supported by this mapping.
     const label = short(paragraphs.map((p) => p.map((l) => l.text).join('')).join(' '), 40);
     const tag = block.tagName.toLowerCase();
     const role = /^h[1-6]$/.test(tag) ? tag.toUpperCase() : (tag === 'a' || tag === 'button' ? titleCase(tag) : 'Text');
     out.push({kind: 'text', name: (block.dataset && block.dataset.name && block.childElementCount === 0 ? block.dataset.name : role + ' — ' + label),
       fit, z: 0, item: anon ? {anon: true, pos: 'static', grow: 0, alignSelf: 'auto', justifySelf: 'auto', margin: [0, 0, 0, 0]} : undefined,
-      box: {x: r2(x), y: r2(top), w: r2(right - x), h: r2(bottom - top)},
+      box: clipped ? {x: r2(contentLeft), y: r2(top), w: r2(contentRight - contentLeft), h: r2(clipHeight)}
+        : {x: r2(x), y: r2(top), w: r2(right - x), h: r2(bottom - top)},
       text: {align, lineHeight: r2(lineBox), paragraphs: paragraphs.map((para) => para.map((leaf) => ({text: leaf.text, style: leaf.style}))), lines: frags,
-        wrap, plain: clean(plain), ...(nowrap ? {nowrap: true} : {})}});
+        wrap, plain: clean(plain), ...(nowrap ? {nowrap: true} : {}),
+        ...(clipped ? {clipped: true, clamp, clipHeight: r2(clipHeight), heightSpec} : {})}});
     stats.texts += 1;
+    // Independent CSS underline colour/offset cannot be represented by a Penpot text leaf.
+    // Draw editable lines from measured fragments; do not rewrite the source or bake its HTML.
+    const underlines = new Map();
+    let ctx;
+    for (const f of frags) {
+      const st = paragraphs[f.p]?.[f.l]?.style, u = st?.underline;
+      if (!u) continue;
+      ctx ||= document.createElement('canvas').getContext('2d');
+      ctx.font = `${st.style} ${st.weight} ${st.size}px "${st.family}"`;
+      const asc = ctx.measureText(f.text).fontBoundingBoxAscent || st.size;
+      const y = Math.round(f.y - f.h + asc + u.offset);
+      if (clipped && (y < top || y >= top + clipHeight)) continue;
+      const left = clipped ? Math.max(contentLeft, f.x) : f.x;
+      const right = clipped ? Math.min(contentRight, f.x + f.w) : f.x + f.w;
+      if (right <= left) continue;
+      const key = JSON.stringify([y, u]);
+      const old = underlines.get(key);
+      underlines.set(key, {u, y, x:Math.min(left, old?.x ?? left), right:Math.max(right, old?.right ?? right)});
+    }
+    for (const {u, x, right, y} of underlines.values()) {
+      if (u.style !== 'solid') issue('text-decoration-style-approximated', block, u.style + ' underline drawn solid');
+      out.push({kind:'rect', name:'Text underline', box:{x:r2(x), y, w:r2(right-x), h:r2(u.thickness)},
+        fills:[{type:'color', color:u.color, opacity:u.opacity}], strokes:[], radius:[0,0,0,0], deco:'over', z:0});
+      stats.rects++;
+    }
     void firstSize;
   };
 
@@ -1009,6 +1041,129 @@
     return false;
   };
   const textContentOnlyWhitespace = (nodes) => nodes.every((n) => n.nodeType !== Node.TEXT_NODE || !n.data.trim());
+  const screenReaderOnly = (el, cs) => {
+    const b = el.getBoundingClientRect();
+    return /absolute|fixed/.test(cs.position) && b.width <= 1.1 && b.height <= 1.1 &&
+      (cs.clip !== 'auto' || cs.clipPath !== 'none' || cs.overflow === 'hidden');
+  };
+  const omitText = (el) => {
+    const text = clean(el.textContent);
+    if (text && !omittedText.some((n) => n.where === where(el) && n.text === text))
+      omittedText.push({where: where(el), text, reason: 'screen-reader-only (clipped, not visible)'});
+  };
+  // The browser's native checkbox/radio skin is not CSS box decoration. Capture that
+  // tiny skin alone (like a background texture); labels and field text remain live text.
+  const nativeWidget = (el, cs, rect, out) => {
+    if (el.tagName.toLowerCase() !== 'input' || !/^(checkbox|radio)$/.test(el.type) || cs.appearance === 'none') return;
+    const w = r2(rect.width), h = r2(rect.height);
+    if (w < 1 || h < 1) return;
+    const css = `position:absolute;left:0;top:0;margin:0;box-sizing:border-box;width:${w}px;height:${h}px;` +
+      `appearance:${cs.appearance || 'auto'};accent-color:${cs.accentColor || 'auto'};color-scheme:${cs.colorScheme || 'normal'};`;
+    const widget = {type:el.type, checked:!!el.checked, indeterminate:!!el.indeterminate, disabled:!!el.disabled};
+    let backdrop = '';
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const bg = getComputedStyle(p).backgroundColor;
+      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') { backdrop = bg; break; }
+    }
+    const paint = [cs.color, cs.backgroundColor, cs.borderColor, cs.borderWidth, backdrop].join(';');
+    const key = `widget-${Math.round(w)}x${Math.round(h)}-${fnv(css + paint + JSON.stringify(widget))}`;
+    if (!textures.some((t) => t.key === key)) textures.push({key, w, h, css, widget, crop:box(rect)});
+    out.push({kind:'rect', name:'Native ' + el.type + ' skin (raster)', box:box(rect),
+      fills:[{type:'image', src:key + '.png', texture:true, fit:'fill'}], strokes:[], radius:[0,0,0,0], deco:'over', z:0});
+    issue('native-widget-rasterized', el, el.type + ' browser skin; label and field text remain editable');
+  };
+  const formText = (el, cs, rect, out) => {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'input' && /^(checkbox|radio|hidden|file|color|range)$/.test(el.type)) return;
+    const placeholder = !el.value && tag !== 'select';
+    let value = tag === 'select' ? [...el.selectedOptions].map((o) => o.text).join(' ')
+      : el.value || el.getAttribute('placeholder') || '';
+    if (el.type === 'password' && !placeholder) value = '•'.repeat(value.length);
+    if (!value) return;
+    const mirror = document.createElement('div');
+    mirror.style.cssText = `position:absolute;left:${rect.left + sx}px;top:${rect.top + sy}px;width:${rect.width}px;height:${rect.height}px;box-sizing:border-box;margin:0;opacity:0;pointer-events:none;overflow:hidden`;
+    for (const key of ['font-family', 'font-size', 'font-weight', 'font-style', 'font-stretch', 'line-height',
+      'letter-spacing', 'word-spacing', 'word-break', 'overflow-wrap', 'hyphens', 'tab-size',
+      'text-align', 'text-transform', 'color', 'padding-top', 'padding-right',
+      'padding-bottom', 'padding-left', 'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width'])
+      mirror.style.setProperty(key, cs.getPropertyValue(key));
+    mirror.style.borderStyle = 'solid';
+    mirror.style.whiteSpace = tag === 'textarea' ? 'pre-wrap' : 'nowrap';
+    if (tag !== 'textarea') { mirror.style.display = 'flex'; mirror.style.alignItems = 'center'; }
+    if (placeholder) mirror.style.color = getComputedStyle(el, '::placeholder').color;
+    // A selected option reserves the native arrow's space (the arrow remains a native-widget limit).
+    if (tag === 'select' && cs.appearance !== 'none') mirror.style.paddingRight = (parseFloat(cs.paddingRight) + 18) + 'px';
+    mirror.textContent = value;
+    document.body.appendChild(mirror);
+    emitRun([...mirror.childNodes], mirror, out);
+    for (const node of out) {
+      if (node.kind === 'text') {
+        node.name = `Field ${placeholder ? 'placeholder' : 'value'} — ${short(value, 40)}`;
+        node.fit = tag === 'textarea' ? 'height' : 'clip';
+        if (tag !== 'textarea') node.text.clipped = true;
+      }
+    }
+    mirror.remove();
+  };
+  const alphabet = (n, letters) => {
+    if (n <= 0) return String(n);
+    let out = '';
+    while (n) { n--; out = letters[n % letters.length] + out; n = Math.floor(n / letters.length); }
+    return out;
+  };
+  const roman = (n) => {
+    if (n <= 0 || n > 3999) return String(n);
+    let out = '';
+    for (const [v, s] of [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']])
+      while (n >= v) { out += s; n -= v; }
+    return out;
+  };
+  const markerText = (el, cs, ms) => {
+    const style = cs.listStyleType;
+    if (ms.content && ms.content !== 'normal' && ms.content !== 'none') {
+      const m = ms.content.match(/^"(.*)"$/); if (m) return m[1];
+    }
+    if (style === 'none') return '';
+    if (style.startsWith('"')) return style.slice(1, -1);
+    const symbols = {disc:'•', circle:'◦', square:'▪', 'disclosure-open':'▾', 'disclosure-closed':'▸'};
+    if (symbols[style]) return symbols[style];
+    const list = el.parentElement, peers = [...list.children].filter((x) => getComputedStyle(x).display === 'list-item');
+    const reverse = list.hasAttribute('reversed'), step = reverse ? -1 : 1;
+    let number = list.hasAttribute('start') ? Number(list.getAttribute('start')) : reverse ? peers.length : 1;
+    for (const peer of peers) { if (peer.hasAttribute('value')) number = Number(peer.getAttribute('value')); if (peer === el) break; number += step; }
+    let label;
+    if (style === 'decimal') label = String(number);
+    else if (style === 'decimal-leading-zero') label = (number < 0 ? '-' : '') + String(Math.abs(number)).padStart(2, '0');
+    else if (/^(lower|upper)-(alpha|latin)$/.test(style)) label = alphabet(number, 'abcdefghijklmnopqrstuvwxyz');
+    else if (style === 'lower-greek') label = alphabet(number, 'αβγδεζηθικλμνξοπρστυφχψω');
+    else if (/^(lower|upper)-roman$/.test(style)) label = roman(number).toLowerCase();
+    else { issue('list-marker-style-approximated', el, style + ' drawn as decimal'); label = String(number); }
+    if (style.startsWith('upper-')) label = label.toUpperCase();
+    return label + '.';
+  };
+  const drawMarker = (el, cs, kids) => {
+    if (cs.display !== 'list-item') return;
+    stats.list_items++;
+    const ms = getComputedStyle(el, '::marker'), value = markerText(el, cs, ms);
+    const entry = {where: where(el), style: cs.listStyleType, text: value, expected: !!value};
+    if (registering) lists.push(entry);
+    if (!value) return;
+    const st = styleOf(el, '::marker'), rc = el.getBoundingClientRect();
+    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+    ctx.font = `${st.style} ${st.weight} ${st.size}px "${st.family}"`;
+    const width = ctx.measureText(value).width, gap = ctx.measureText(' ').width;
+    const first = kids.flatMap((n) => n.kind === 'text' ? n.text.lines : []).find((ln) => ln.text.trim());
+    const lineHeight = st.lineHeight || parseFloat(cs.lineHeight) || st.size * 1.2;
+    const y = first ? first.y - first.h : rc.top + sy + parseFloat(cs.paddingTop);
+    const x = cs.listStylePosition === 'inside' && first ? first.x - width - gap
+      : rc.left + sx + parseFloat(cs.paddingLeft) - width - gap;
+    const node = {kind: 'text', name: 'List marker — ' + value, fit: 'clip', listMarker: entry,
+      box: {x:r2(x), y:r2(y), w:r2(width + 0.1), h:r2(lineHeight)}, z:0, deco:'over',
+      item:{pos:'absolute', margin:[0,0,0,0]}, text:{align:'left', lineHeight,
+        paragraphs:[[{text:value, style:st}]], plain:value,
+        lines:[{p:0,l:0,x:r2(x),y:r2(y + (first ? first.h : st.size)),w:r2(width),h:r2(first ? first.h : st.size),text:value}]}};
+    kids.push(node); stats.markers++;
+  };
 
   // ---------- layout facts (for Penpot flex and grid layouts) ----------
   const pxOrNull = (v) => (v && /px$/.test(v)) ? r2(parseFloat(v)) : null;
@@ -1054,7 +1209,16 @@
     const d = cs.display;
     const side = (s) => (parseFloat(cs['padding' + s]) || 0) + (parseFloat(cs['border' + s + 'Width']) || 0);
     const L = {display: d, pad: ['Top', 'Right', 'Bottom', 'Left'].map((s) => r2(side(s))), textAlign: cs.textAlign};
-    if (/flex/.test(d)) {
+    if (d === 'table-row') {
+      const table = el.closest('table');
+      const rows = table ? [...table.rows] : [el];
+      const full = rows.find((row) => [...row.cells].every((cell) => cell.colSpan === 1) && row.cells.length >= el.cells.length) || el;
+      const widths = [...full.cells].map((cell) => cell.getBoundingClientRect().width);
+      const total = widths.reduce((a, b) => a + b, 0);
+      if (total > 0) Object.assign(L, {display:'grid', gap:[0,0], cols:widths, rows:[r2(el.getBoundingClientRect().height)],
+        colsSpec:widths.map((w) => (w / total * 100).toFixed(8) + '%').join(' '), rowsSpec:'auto',
+        justify:'start', alignItems:'start', alignContent:'start', tableColumns:true});
+    } else if (/flex/.test(d)) {
       Object.assign(L, {dir: cs.flexDirection, wrap: cs.flexWrap, gap: [gapPx(cs.rowGap), gapPx(cs.columnGap)],
         justify: cs.justifyContent, alignItems: cs.alignItems, alignContent: cs.alignContent});
     } else if (/grid/.test(d)) {
@@ -1065,6 +1229,32 @@
     }
     return L;
   };
+  // Resolve parent-relative formulas with the browser, without changing the page's layout.
+  // Viewport units stay at capture width (Penpot has no breakpoints/viewport units); percentages
+  // vary with the containing block. Samples below a min() cap expose its fluid branch.
+  const widthSamples = (el, cs, spec) => {
+    if (!spec || !spec.includes('%') || !el.parentElement) return null;
+    const parent = el.parentElement, ps = getComputedStyle(parent);
+    const pw = parent.clientWidth - parseFloat(ps.paddingLeft) - parseFloat(ps.paddingRight);
+    if (!(pw > 1)) return null;
+    const host = document.createElement('div'), probe = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-100000px;top:0;height:0;visibility:hidden;pointer-events:none;contain:layout';
+    probe.style.cssText = 'display:block;position:static;margin:0;min-width:0;max-width:none;height:0';
+    for (const key of ['box-sizing', 'font-size', 'padding-left', 'padding-right', 'border-left-width', 'border-right-width'])
+      probe.style.setProperty(key, cs.getPropertyValue(key));
+    probe.style.borderStyle = 'solid';
+    probe.style.width = spec;
+    if (!probe.style.width) return null;
+    // Inherit element-scoped custom properties too, not only the active root theme.
+    for (let i = 0; i < cs.length; i++) if (cs[i].startsWith('--')) probe.style.setProperty(cs[i], cs.getPropertyValue(cs[i]));
+    host.appendChild(probe); parent.appendChild(host);
+    const samples = [0.55, 0.75, 1, 1.15].map((f) => {
+      host.style.width = (pw * f) + 'px';
+      return [r2(pw * f), r2(probe.getBoundingClientRect().width)];
+    });
+    host.remove();
+    return {parent: r2(pw), spec, samples};
+  };
   // How this element sits in its parent's layout. Flex and grid items also get their natural size
   // (what they measure when not stretched), so stretched items can become "fill" in Penpot.
   const itemOf = (el, cs, pcs) => {
@@ -1072,11 +1262,13 @@
       alignSelf: cs.alignSelf, justifySelf: cs.justifySelf,
       margin: [cs.marginTop, cs.marginRight, cs.marginBottom, cs.marginLeft].map((v) => r2(parseFloat(v) || 0)),
       minW: pxOrNull(cs.minWidth), maxW: pxOrNull(cs.maxWidth), minH: pxOrNull(cs.minHeight), maxH: pxOrNull(cs.maxHeight),
+      autoMarginLeft: specified(el, 'margin-left') === 'auto', autoMarginRight: specified(el, 'margin-right') === 'auto',
       float: cs.cssFloat !== 'none',
       offset: cs.position === 'relative' && ['top', 'right', 'bottom', 'left'].some((k) => cs[k] !== 'auto' && parseFloat(cs[k]) !== 0)};
-    // A centred block's own width rule (e.g. min(100% - 48px, 1200px)) tells whether it follows its parent.
-    if (!/absolute|fixed/.test(cs.position) && cs.marginLeft === cs.marginRight && parseFloat(cs.marginLeft) > 0.5) {
-      it.wspec = specified(el, 'width');
+    it.wspec = specified(el, 'width');
+    if (!/absolute|fixed/.test(cs.position)) {
+      it.widthCurve = widthSamples(el, cs, it.wspec);
+      it.maxWidthCurve = widthSamples(el, cs, specified(el, 'max-width'));
     }
     if (pcs && /flex|grid/.test(pcs.display) && !/absolute|fixed/.test(cs.position)) {
       const saved = el.getAttribute('style');
@@ -1120,6 +1312,7 @@
     if (cs.display === 'none') return;
     if (cs.display === 'contents') { processChildren(el, out, pcs); return; }
     stats.elements += 1;
+    if (screenReaderOnly(el, cs)) { omitText(el); return; }
     if (cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) {
       if (el.querySelector('*') && cs.visibility === 'hidden') issue('hidden-subtree-skipped', el, 'visibility:hidden');
       return;
@@ -1163,9 +1356,12 @@
       const fb = box(rect);
       const sides = dec.border && dec.border.sides
         ? borderLayers(el, dec, [Math.round(fb.x), Math.round(fb.y), Math.round(fb.x + fb.w), Math.round(fb.y + fb.h)]) : [];
+      const children = [...sides];
+      nativeWidget(el, cs, rect, children);
+      formText(el, cs, rect, children);
       out.push(...tagged([{kind: 'board', name: nameOf(el), box: fb, fills: dec.fills, strokes: dec.strokes, radius: dec.radius,
-        shadows: dec.shadows, opacity: parseFloat(cs.opacity) || 1, clip: true, children: sides, formControl: tag}]));
-      issue('form-control-text-not-carried', el, 'value/placeholder not converted');
+        shadows: dec.shadows, opacity: parseFloat(cs.opacity) || 1, clip: true, children, formControl: tag,
+        layout: layoutOf(el, cs)}]));
       stats.boards += 1;
       return;
     }
@@ -1176,6 +1372,7 @@
     const opacity = parseFloat(cs.opacity);
     const kids = [];
     processChildren(el, kids, cs);
+    drawMarker(el, cs, kids);
     const own = section || component || dec.visible || named || opacity < 1;
     // A static box that paints nothing and holds only positioned content is no layer of its own in
     // CSS: that content paints among the positioned boxes, in tree order, so the box takes their place.
@@ -1183,7 +1380,7 @@
     if (z === 0 && !dec.visible && kids.length && kids.every((k) => (k.z || 0) > 0)) zz = Math.min(...kids.map((k) => k.z));
     const b = box(rect);
     if (!own) {
-      if (!kids.length) return;  // empty spacers: the layout margins keep their space
+      if (!kids.length && !(parseFloat(cs.flexGrow) > 0 || /auto/.test(specified(el, 'margin-left') || '') || /auto/.test(specified(el, 'margin-right') || ''))) return;
       // A plain wrapper around exactly one layer of the same size adds nothing: the layer takes its
       // place (and its place in the parent's layout).
       if (kids.length === 1 && !kids[0].deco && sameBox(kids[0].box, b)) {
@@ -1201,6 +1398,9 @@
       clip: cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible' || false,
       section, component, layout: layoutOf(el, cs), item: itemOf(el, cs, pcs), z: zz, tag, children: kids};
     if (!own) node.wrapper = true;
+    if (!kids.length && parseFloat(cs.flexGrow) > 0 && b.w > 0 && b.h < 1) {
+      node.layoutSpacer = true; node.box.h = 1;
+    }
     // The browser paints borders on whole pixels (it snaps the border box's edges to the pixel
     // grid); Penpot draws a layer where it is put, so a hairline at y 247.56 would smear over two rows.
     const L = Math.round(b.x), T = Math.round(b.y), R = Math.round(b.x + b.w), B = Math.round(b.y + b.h);
@@ -1292,6 +1492,12 @@
   return {version: 2, url: location.href, title: document.title, width: W, height: H,
     viewport: [window.innerWidth, window.innerHeight], background: pageFills, vars,
     body: {box: box(body.getBoundingClientRect()), layout: layoutOf(body, bodyCs)},
-    fonts: fonts.filter((f) => usedFonts.has(f.family.toLowerCase() + '|' + f.weight + '|' + f.style)),
-    fontsUsed: [...usedFonts.values()], nodes, textures, issues, stats};
+    // The requested weight can be synthetic (600 text with a 400-only mono face). Keep the
+    // available family faces; Fonts.resolve picks the nearest, instead of omitting the family.
+    fonts: fonts.filter((f) => [...usedFonts.values()].some((u) => {
+      const candidates = fonts.filter((face) => face.family.toLowerCase() === u.family.toLowerCase());
+      candidates.sort((a, b) => (a.style !== u.style) - (b.style !== u.style) || Math.abs(Number(a.weight) - Number(u.weight)) - Math.abs(Number(b.weight) - Number(u.weight)));
+      return candidates[0] === f;
+    })),
+    fontsUsed: [...usedFonts.values()], nodes, textures, issues, stats, omittedText, lists};
 }

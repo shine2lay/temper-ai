@@ -252,10 +252,23 @@ def capture_code(base: str, page: str, widths: tuple[int, ...]) -> str:
         await tp.goto(A.base + '/__blank', {waitUntil: 'load'});
         for (const t of scene.textures) {
           await tp.setViewportSize({width: Math.min(4000, Math.max(16, Math.ceil(t.w))), height: Math.min(4000, Math.max(16, Math.ceil(t.h)))});
-          await tp.evaluate(async (css) => {
+          await tp.evaluate(async ({texture, source}) => {
+            const css = texture.css;
             document.documentElement.style.background = 'transparent';
             document.body.style.cssText = 'margin:0;background:transparent';
             document.body.innerHTML = '';
+            if (texture.widget) {
+              // Crop only the native skin from this browser's render. A fresh transparent
+              // document otherwise changes normal/auto native controls to a white skin.
+              const image = new Image();
+              await new Promise((res, rej) => { image.onload=res; image.onerror=rej; image.src=source; });
+              const canvas = document.createElement('canvas'); canvas.style.display = 'block';
+              canvas.width = Math.ceil(texture.w); canvas.height = Math.ceil(texture.h);
+              const b = texture.crop;
+              canvas.getContext('2d').drawImage(image, b.x, b.y, b.w, b.h, 0, 0, texture.w, texture.h);
+              document.body.appendChild(canvas);
+              return;
+            }
             const d = document.createElement('div');
             d.setAttribute('style', css);
             document.body.appendChild(d);
@@ -263,7 +276,7 @@ def capture_code(base: str, page: str, widths: tuple[int, ...]) -> str:
             await Promise.race([Promise.all(urls.map((u) => new Promise((r) => { const i = new Image(); i.onload = r; i.onerror = r; i.src = u; }))),
               new Promise((r) => setTimeout(r, 10000))]);
             await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-          }, t.css);
+          }, {texture:t, source:t.widget ? 'data:image/png;base64,' + shot.toString('base64') : null});
           const png = await tp.screenshot({clip: {x: 0, y: 0, width: t.w, height: t.h}, fullPage: true, omitBackground: true,
             animations: 'disabled', caret: 'hide', scale: 'css'});
           r = await page.request.put(A.base + '/__put/' + t.key + '.png', {data: png, headers: {'content-type': 'application/octet-stream'}});
@@ -672,6 +685,7 @@ class Builder:
         self.instances: list[dict] = []
         self.boards: list[dict] = []
         self.plain: dict[str, str] = {}
+        self.list_markers: list[dict] = []
         self.made: dict[int, str] = {}       # id(scene node) -> its Penpot layer (grid cells name their layer)
         self.paths: dict[str, tuple] = {}    # Penpot layer -> its path under its component root (links instances)
         self.variants: list[dict] = []
@@ -854,11 +868,15 @@ class Builder:
 
     # -- nodes
     def place(self, n: dict, dx: float, dy: float, root: bool = False) -> tuple[float, float, float, float]:
-        """Where a box goes. A painted box sits on whole pixels, as Chrome paints it (each edge rounded
-        to the pixel grid); at fractional edges Penpot would draw half-tone seams. A fixed size in a
-        layout never grows by it, so a full row can't wrap when Penpot lays it out again."""
+        """Keep layout geometry fractional; snap only independently painted boxes.
+
+        Chrome snaps paint, not flex/grid dimensions. Flooring a painted layout frame
+        changes its content size when Penpot remeasures text: glyph runs accumulate
+        the lost fractions and rows move. Side-border decoration is snapped separately.
+        A fixed decorative box still cannot round up and push a full row onto two lines.
+        """
         b = n["box"]
-        if not (n.get("fills") or n.get("strokes")):
+        if (n.get("kind") == "board" and (n.get("pp") or {}).get("mode")) or not (n.get("fills") or n.get("strokes")):
             return b["x"] + dx, b["y"] + dy, b["w"], b["h"]
         item = {} if root else ((n.get("pp") or {}).get("item") or {})
         flow = not item.get("layout-item-absolute")
@@ -870,6 +888,34 @@ class Builder:
                 s1 = math.floor(s)
             got += [a, s] if s1 < 1 else [a0, s1]
         return got[0] + dx, got[2] + dy, got[1], got[3]
+
+    def border_paint(self, obj: dict, n: dict, dx: float, dy: float, path: tuple) -> None:
+        """Snap stroke paint without rounding the frame's native layout dimensions.
+
+        CSS paints a one-pixel border on whole pixels even when the flex/grid box is
+        fractional. Keeping that border on a fractional Penpot frame smears it across
+        two rows. A separate editable, absolute rectangle follows the frame on resize
+        but never participates in its layout minimum or changes its text's wrapping.
+        Always create it for stroked layout frames: main/copy paths must not depend on
+        which copy happens to start at an integer coordinate.
+        """
+        if not (n.get("pp") or {}).get("mode") or not obj.get("strokes"):
+            return
+        b = n["box"]
+        paint = {"kind": "rect", "box": b, "strokes": n.get("strokes") or [{}],
+                 "pp": {"item": {"layout-item-absolute": True}}}
+        border = p.shape("rect", "Border / snapped paint", obj["id"], obj["id"],
+                         *self.place(paint, dx, dy), [])
+        border["strokes"] = obj.pop("strokes")
+        for key in ("r1", "r2", "r3", "r4"):
+            if key in obj:
+                border[key] = obj[key]
+        border.update({"layout-item-h-sizing": "fix", "layout-item-v-sizing": "fix",
+                       "layout-item-absolute": True, "layout-item-z-index": -1,
+                       "constraints-h": "leftright", "constraints-v": "topbottom"})
+        self.exact[border["id"]] = {"x": b["x"] + dx, "y": b["y"] + dy,
+                                    "width": b["w"], "height": b["h"]}
+        self.put(border, path=path + ("border-paint",))
 
     def node(self, n: dict, parent: str, frame: str, dx: float, dy: float, in_component: bool = False,
              path: tuple = (), plain: bool = False, root: bool = False) -> None:
@@ -896,6 +942,7 @@ class Builder:
                 obj.update(copy.deepcopy(n["pp"]["attrs"]))
             self.item(obj, n, root)
             self.put(obj, n, path)
+            self.border_paint(obj, n, dx, dy, path)
             self.children(obj, n, dx, dy, in_component, path)
             return
         if kind == "group":
@@ -971,7 +1018,12 @@ class Builder:
             y = b["y"] + dy
             w, h = b["w"] + slack, max(b["h"], 1)
         paragraphs = []
+        default_style = next((leaf["style"] for para in t["paragraphs"] for leaf in para), None)
         for para in t["paragraphs"]:
+            # Keep empty paragraphs: removing one shifts every later browser fragment's p index,
+            # so textarea text after a blank line loses its position-data and vanishes in exports.
+            if not para and default_style:
+                para = [{"text": "", "style": default_style}]
             kids = [{"text": leaf["text"], **self.leaf(leaf["style"], t.get("lineHeight") or 0)} for leaf in para]
             if not kids:
                 continue
@@ -979,13 +1031,30 @@ class Builder:
             paragraphs.append({"type": "paragraph", "text-align": align, "text-direction": "ltr", **head, "children": kids})
         if not paragraphs:
             return
+        viewport = None
+        if t.get("clipped"):
+            # Growth controls layout, not paint. A real clipped frame keeps glyphs
+            # out of neighbouring cells, including after native text edits.
+            viewport = p.shape("frame", "Clip / " + n["name"], parent, frame, x, y, w, h, [])
+            viewport["show-content"] = False
+            self.item(viewport, n, root)
+            if (float(t.get("clamp") or 0) > 1
+                    and (t.get("heightSpec") or "auto").strip().lower() in ("auto", "initial", "unset")):
+                self.note("fixed-multiline-clip-limit", n["name"],
+                          "Multiline clamp uses a fixed-height editable mask; it cannot shrink on widening.")
+            self.put(viewport, n, path)
+            parent = frame = viewport["id"]
         obj = p.shape("text", n["name"], parent, frame, x, y, w, h, [])
         if t.get("plain") is not None:
             self.plain[obj["id"]] = t["plain"]
         obj["content"] = {"type": "root", "vertical-align": "top",
                           "children": [{"type": "paragraph-set", "children": paragraphs}]}
         obj["grow-type"] = plan.get("grow") or "fixed"
-        self.item(obj, n, root)
+        if viewport is None:
+            self.item(obj, n, root)
+        else:
+            obj.update({"layout-item-h-sizing": "fix", "layout-item-v-sizing": "fix",
+                        "constraints-h": "leftright", "constraints-v": "top"})
         positions = []
         for frag in t.get("lines", []):
             try:
@@ -1006,7 +1075,9 @@ class Builder:
             obj["position-data"] = positions
         else:
             self.note("text-without-lines", n["name"], "no line boxes; Penpot lays it out itself")
-        self.put(obj, n, path)
+        self.put(obj, n if viewport is None else None, path if viewport is None else path + ("clip-text",))
+        if n.get("listMarker"):
+            self.list_markers.append({"id": obj["id"], **n["listMarker"]})
 
     # -- components
     def component_main(self, n: dict, x: float, y: float, name: str, container: dict | None = None,
@@ -1258,7 +1329,23 @@ def build(scenes: dict[int, dict], file_id: str, page_id: str, fonts: Fonts, med
         kind = "layout-positioned" if f["mapped"] == "positioned" else "layout-measured"
         issues.append({"kind": kind, "where": f"{f['board']} ({f['width']} px)", "detail": f"{f['mapped']}: {f['why']}"})
     sections = [o["name"] for o in b.objects if o["type"] == "frame" and re.match(r"^(Section|Header|Footer|Navigation|Main)\b", o["name"])]
+    # What the page marked with data-component (any width): with none marked, the component checks don't apply.
+    marked = sorted({n["component"] for w in widths for n in walk_scene(scenes[w]["nodes"]) if n.get("component")})
+    parents = {o["id"]: o.get("parent-id") for o in b.objects}
+    page_ids = {o["id"] for o in b.boards}
+    def on_page(sid: str) -> bool:
+        seen = set()
+        while sid in parents and sid not in seen:
+            if sid in page_ids:
+                return True
+            seen.add(sid)
+            sid = parents[sid]
+        return False
+    markers = [m for m in b.list_markers if on_page(m["id"])]
+    lists = [{"width": w, **item} for w in widths for item in scenes[w].get("lists", [])]
+    omitted = [{"width": w, **item} for w in widths for item in scenes[w].get("omittedText", [])]
     return {"chunks": [c for c in chunks if c["changes"]], "objects": b.objects, "boards": b.boards,
+            "marked_components": marked, "list_items": lists, "list_markers": markers, "omitted_text": omitted,
             "components": [{"id": m["id"], "name": m["name"], "root": m["root"], "objects": len(m["objects"]),
                             **({"state": m["state"]} if m["state"] else {})} for m in b.all_mains],
             "instances": b.instances, "colors": lib.colors, "typographies": list(lib.typographies.values()),
@@ -1460,6 +1547,8 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
         for key, value in o.items():  # layouts, item sizing and grid cells survive the save
             if key.startswith("layout") and got.get(key) != value:
                 layout_bad.append(f"{o['name']}: {key} {str(value)[:40]} -> {str(got.get(key))[:40]}")
+        if o["type"] == "frame" and o.get("show-content") is False and got.get("show-content") is not False:
+            layout_bad.append(f"{o['name']}: clipping mask was lost on save")
         if o.get("is-variant-container") != got.get("is-variant-container") or o.get("variant-id") != got.get("variant-id"):
             variant_bad.append(o["name"])
         if o["type"] == "text":
@@ -1491,6 +1580,21 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
     refs = [o for o in built["objects"] if o.get("shape-ref")]
     refs_ok = all(objects.get(o["id"], {}).get("shape-ref") == o["shape-ref"] and o["shape-ref"] in objects for o in refs)
     custom = {t["font-id"] for t in built["typographies"] if t["font-id"].startswith("custom-")}
+    # A page that marks no data-component (a states sheet, a report list) has no components to check: both
+    # component checks pass as not applicable, recorded as a warning, never silently. A page that marks
+    # components still needs every main and every instance link (queue #43, from #42).
+    unmarked = "marked_components" in built and not built["marked_components"]
+    not_applicable = {k: "no components marked" for k in ("components", "instances_linked")} if unmarked else {}
+    warnings = [f"{k} not applicable (no components marked)" for k in not_applicable]
+    clipping_limits = [i for i in built.get("issues", []) if i.get("kind") == "fixed-multiline-clip-limit"]
+    warnings.extend(f"{i['where']}: {i['detail']}" for i in clipping_limits)
+    omitted = built.get("omitted_text", [])
+    if omitted:
+        warnings.append(f"{len(omitted)} screen-reader-only text nodes not drawn; see omitted_text")
+    markers = built.get("list_markers", [])
+    expected_markers = sum(bool(i.get("expected")) for i in built.get("list_items", []))
+    marker_ok = len(markers) == expected_markers and all(
+        content_text(objects.get(m["id"], {}).get("content")) == m["text"] for m in markers)
     checks = {
         "boards": all(b["ok"] for b in boards) and len(boards) == len(built["boards"]),
         "all_layers_present": not missing,
@@ -1502,24 +1606,29 @@ def verify(file: dict, page_id: str, built: dict) -> dict:
         "named_sections": len(built["sections"]) > 0,
         "shared_colours": all(c["id"] in colors for c in built["colors"]) and len(built["colors"]) > 0,
         "shared_typographies": all(t["id"] in typos for t in built["typographies"]) and len(built["typographies"]) > 0,
-        "components": comp_ok and len(built["components"]) > 0,
-        "instances_linked": refs_ok and len(built["instances"]) > 0,
+        "components": comp_ok and (len(built["components"]) > 0 or unmarked),
+        "instances_linked": refs_ok and (len(built["instances"]) > 0 or unmarked),
         "custom_fonts_used": len(custom) > 0,
         "layouts_kept": not layout_bad,
         "text_growth_kept": not grow_bad,
         "variants_kept": not variant_bad,
+        "list_markers_drawn": marker_ok,
     }
     return {"checks": checks, "passed": all(checks.values()), "boards": boards,
+            "not_applicable": not_applicable, "warnings": warnings, "omitted_text": omitted,
+            "clipping_limits": clipping_limits, "list_items": built.get("list_items", []),
             "counts": {"objects": len(built["objects"]), "reopened_objects": len(objects),
                        "texts": sum(o["type"] == "text" for o in built["objects"]),
                        "paths": sum(o["type"] == "path" for o in built["objects"]),
                        "images": sum(any("fill-image" in f for f in o.get("fills", [])) for o in built["objects"]),
                        "frames": sum(o["type"] == "frame" for o in built["objects"]),
+                       "clipping_frames": sum(o["type"] == "frame" and o.get("show-content") is False for o in built["objects"]),
                        "groups": sum(o["type"] == "group" for o in built["objects"]),
                        "colors": len(built["colors"]), "typographies": len(built["typographies"]),
                        "components": len(built["components"]), "instances": len(built["instances"]),
                        "frames_with_layout": sum(o["type"] == "frame" and bool(o.get("layout")) for o in built["objects"]),
-                       "variant_sets": len(variants)},
+                       "variant_sets": len(variants), "list_items": len(built.get("list_items", [])),
+                       "expected_markers": expected_markers, "drawn_markers": len(markers)},
             "problems": {"missing": missing[:20], "wrong": wrong[:20], "text": text_bad[:20],
                          "line_boxes": pos_missing[:20], "paths": path_bad[:20], "page_text": page_text_bad[:20],
                          "layout": layout_bad[:20], "growth": grow_bad[:20], "variants": variant_bad[:20]}}
@@ -1675,6 +1784,7 @@ def main() -> int:
         return 0
     report = convert(args.site, args.page, args.out, args.name, widths, args.browser, args.serve_host, label=args.label)
     print(json.dumps({"passed": report["passed"], "file": report["file"], "verify": report["verify"]["checks"],
+                      "warnings": report["verify"].get("warnings", []),
                       "fidelity": {w: {k: f[k] for k in ("overall_pct", "nontext_pct", "text_pct", "passed")}
                                    for w, f in report["fidelity"].items()},
                       "issues": report["issue_counts"]}))

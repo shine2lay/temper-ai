@@ -13,13 +13,14 @@
 #                               removes the copy. `parallel` repetitions run at a time: run_<i>
 #                               starts after keep_<i - parallel>.
 #   tally                       qa_flaky_tally.py: the counts, the classes, out/report.md and
-#                               out/report.json; with history on, how often the live build's
-#                               task_test counted each such test as a new failure (runs API, GET
-#                               only)
+#                               out/report.json; with history on and a test flaky or broken, how
+#                               often the live build's task_test counted it as a new failure
+#                               (runs API, GET only)
 #
 # It only reports: no messages, no change to any repository, nothing pushed. Whoever owns the
 # repository gets the fix request from QA. No model anywhere ($0), but CI time: RollCall's took
-# about 10 minutes per repetition with 3 at a time, so 20 repetitions took about 75 minutes.
+# 10 to 15 minutes per repetition with 3 at a time, so 20 repetitions took 75 to 115 minutes
+# (longer on a busy machine).
 #
 # Start it through the API or the dashboard: the steps are laid out from `runs` and `parallel` when
 # the run starts (template nodes), which `temper run` on the command line cannot do.

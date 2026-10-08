@@ -503,6 +503,14 @@ def test_a_framed_message_is_named_by_its_error_line(tmp_path):
     assert rep["checks"]["qa · Walk"]["said"] == "exited 1: Error: BrowserType.launch: Executable doesn't exist"
 
 
+def test_a_framed_line_is_shown_without_its_frame(tmp_path):
+    out = tmp_path / "out"
+    framed = "exited 1: \u2551 Host system is missing dependencies to run browsers. \u2551"
+    write_rep(out, 0, answer([("qa · Walk", framed)], [("qa · Walk", "failed")]))
+    rep = tally.read_repetition(out / "runs" / "run_0")
+    assert rep["checks"]["qa · Walk"]["said"] == "exited 1: Host system is missing dependencies to run browsers."
+
+
 def test_an_answer_without_checks_is_no_answer(tmp_path):
     out = tmp_path / "out"
     write_rep(out, 0, json.dumps({"verdict": "skipped", "summary": "no worktree at /x", "checks": []}))
@@ -595,6 +603,27 @@ def test_a_history_that_cannot_be_read_costs_the_report_nothing(tmp_path):
     report = json.loads((out / "report.json").read_text())
     assert report["history"]["status"] == "unavailable" and report["tests"][0]["class"] == "flaky"
     assert "Not read:" in (out / "report.md").read_text()
+
+
+def test_a_history_with_nothing_to_look_up_says_so_and_asks_nothing(tmp_path, runs_api):
+    out = tmp_path / "out"
+    write_rep(out, 0, answer([], [("backend · Tests", "passed")]))
+    write_rep(out, 1, answer([], [("backend · Tests", "passed")]))
+    assert tally.main(["--out", str(out), "--runs", "2", "--commit", "abc", "--history-api", runs_api]) == 0
+    report = json.loads((out / "report.json").read_text())
+    assert report["history"] == {"status": "skipped", "why": "no flaky or broken test to look up"}
+    assert "Not read: no flaky or broken test to look up." in (out / "report.md").read_text()
+    assert FakeRuns.seen == [], "nothing to look up -> the runs API is not asked"
+
+
+def test_a_history_turned_off_says_so(tmp_path):
+    out = tmp_path / "out"
+    write_rep(out, 0, answer([("backend · Tests", f"FAILED {CRUST} - boom")], [("backend · Tests", "failed")]))
+    write_rep(out, 1, answer([], [("backend · Tests", "passed")]))
+    assert tally.main(["--out", str(out), "--runs", "2", "--commit", "abc", "--history-api", ""]) == 0
+    report = json.loads((out / "report.json").read_text())
+    assert report["history"]["status"] == "off"
+    assert "Not read: history was off for this run." in (out / "report.md").read_text()
 
 
 # ---- the workflow ---------------------------------------------------------------------------------

@@ -66,6 +66,8 @@ ROW = re.compile(r"^- (.+?) \u2014 (.*)$")
 LISTED = 20
 ERRORISH = re.compile(r"(?i)\b(error|exception|fail(ed|ure)?|fatal|cannot|can't|could not|not found|missing"
                       r"|refused|denied|doesn't exist|no such)\b")
+# Box drawing (U+2500-U+257F): the frame some tools draw around a message (Playwright's "\u2551 ... \u2551").
+BOX = re.compile(r"[\u2500-\u257f]+")
 
 
 # ---------------------------------------------------------------- reading one answer
@@ -158,6 +160,11 @@ def better_line(log: Path, said: str) -> str:
     return said
 
 
+def unframed(said: str) -> str:
+    """The line without the frame drawn around it, so the report shows only the words."""
+    return re.sub(r"\s+", " ", BOX.sub(" ", said)).strip()
+
+
 def read_repetition(folder: Path) -> dict:
     """One repetition -> {answered, why, checks: {check: {state, items}}}.
     state: completed, no test lines, timed out, not run, cut short."""
@@ -218,6 +225,8 @@ def read_repetition(folder: Path) -> dict:
         said = next((x["error"] for x in mine if x["kind"] in ("exit", "timeout")), None)
         if state == "no test lines" and said and len(re.findall(r"[A-Za-z]", said.split(": ", 1)[-1])) < 3:
             said = better_line(folder / "logs" / Path(str(c.get("log") or "")).name, said)
+        if said:
+            said = unframed(said)
         rep["checks"][name] = {"state": state,
                                "items": [x for x in mine if x["kind"] in ("test", "file", "line")],
                                "said": said, "why": c.get("why")}
@@ -471,8 +480,10 @@ def main(argv: list[str] | None = None) -> int:
                        "caches, so a check that uses a fixed port or file can trip over another; re-check an "
                        "infrastructure flake with parallel 1 before blaming the repository. Load also makes "
                        "timing races fail more often than on an idle machine.")
-    hist = {"status": "off"}
-    if a.history_api and (flaky or broken):
+    hist = {"status": "off", "why": "history was off for this run"}
+    if a.history_api and not (flaky or broken):
+        hist = {"status": "skipped", "why": "no flaky or broken test to look up"}
+    elif a.history_api:
         hist = history(a.history_api, [w for w in a.history_workflows.split(",") if w],
                        flaky + broken, a.history_max_runs)
         if hist.get("status") == "read":

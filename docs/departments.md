@@ -192,14 +192,16 @@ test id. A test that failed in some repetitions and passed in others is flaky;
 one that failed in all is broken; a check that failed without naming a test is
 an infrastructure flake, listed apart. The report is `report.md` and
 `report.json` in `out`, with each test's rate, first error line and the
-repetitions it failed in, and (`history`, on by default) how often the live
-build's `task_test` counted it as a new failure. Twenty repetitions find a test
+repetitions it failed in, and (`history`, on by default; asked only when a test
+is flaky or broken) how often the live build's `task_test` counted it as a new
+failure. Twenty repetitions find a test
 that fails 10% of the time about 88% of the time, and one that fails 5% of the
 time only about 64%: no flaky test found is not proof there is none. It only
 reports: the fix goes to whoever owns the test (temper-ai's own rule, in
 [testing.md](testing.md#flaky-tests): fixed, never retried until green). No
-model money, but CI time: RollCall's took about 10 minutes per repetition with
-3 at a time, so 20 repetitions took about 75 minutes.
+model money, but CI time: RollCall's took 10 to 15 minutes per repetition with
+3 at a time, so 20 repetitions took 75 to 115 minutes (longer on a busy
+machine).
 
 Still to build: a grader for launch notes (marketing), the walks and the UI
 (design), the frontend side of a build (frontend), seeded flaws for the

@@ -307,8 +307,9 @@ needs BS1's sealed profile: on a legacy install every run is refused.
   every `/proc/*/environ` it can read, and fails on a server-only name anywhere in
   the box (Pi's `TEMPER_PI_AGENT`, `TEMPER_PI_BOX_CONFIG`, `TEMPER_LANE` and
   `TEMPER_PI_DRAIN_MARK` count as such) or a
-  secret in a tool's environment. The machine check runs it on every
-  commit ([ci-gate.md](ci-gate.md)); after a change to a list, run it live:
+  secret in a tool's environment. Nothing runs it per commit since
+  the throwaway temper was stopped ([ci-gate.md](ci-gate.md)); after a change
+  to a list, run it live:
   `POST /api/runs {"workflow": "ci_box_env"}`.
   It also checks the box's profile: present, matching its digest and generation,
   listing what it leaves open, and in a sealed box the absent paths and

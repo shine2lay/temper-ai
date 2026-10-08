@@ -24,6 +24,10 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 
+# The real ``runs_going`` (it asks the live temper over HTTP), kept for the tests of it.
+_REAL: dict = {}
+
+
 @pytest.fixture
 def dep(tmp_path, monkeypatch):
     monkeypatch.setenv("TEMPER_CI_STATE", str(tmp_path / "state"))
@@ -37,6 +41,11 @@ def dep(tmp_path, monkeypatch):
     paths.ensure_dirs()
     monkeypatch.setattr(deploy, "LAST_RESTART", tmp_path / "last-restart.json")
     monkeypatch.setattr(deploy, "RESTART_REQUEST", tmp_path / "request.json")
+    # No run is going, and a deploy need not sit out a quiet spell first: the tests of that
+    # ("no restart under a run", at the end) say otherwise for themselves.
+    _REAL["runs_going"] = deploy.runs_going
+    monkeypatch.setattr(deploy, "runs_going", lambda: [])
+    monkeypatch.setattr(deploy, "QUIET_SECONDS", 0)
     return deploy, tmp_path
 
 
@@ -216,7 +225,7 @@ def test_it_will_not_go_back_to_a_commit_the_gate_never_passed(dep, monkeypatch)
     """What really happened: on the day the gate was installed, master was a
     commit from before it existed. That was written down as "the good one", so
     when a live check failed the machine reverted to it \u2014 and the revert could
-    never pass its own gate, because those files have no docker-compose.ci.yml.
+    never pass the gate of the day, because those files had no docker-compose.ci.yml.
     Two unlandable revert commits later, master had not moved and nobody had
     been told anything useful.
     """
@@ -933,3 +942,218 @@ def test_a_failed_deploy_is_put_down_to_what_counts_never_to_the_pins(dep, monke
 
     assert reverted["reason"] == "the live check failed: the dashboard"
     assert len(said) == 1 and "what failed: the dashboard\n" in said[0] and "Pi pins" not in said[0]
+
+
+# -- no restart under a run --------------------------------------------------
+#
+# temper-deploy restarts within 30 s when runs live in boxes, runs or no runs. It is temper-ci
+# that waits: until no run is going on the live temper, and then two quiet minutes more.
+
+_RUN = {"id": "5a3e0c11-0000-4000-8000-000000000000", "workflow": "team-trial", "status": "running"}
+
+
+def _moved(deploy, monkeypatch, *, quiet: int = 120) -> tuple[list[float], list[str]]:
+    """master has moved on from a good, deployed commit; the clock and deploy() are stood in for."""
+    deploy.save({"last_good": "1" * 40, "deployed": "1" * 40})
+    monkeypatch.setattr(deploy, "master_sha", lambda: "2" * 40)
+    monkeypatch.setattr(deploy, "QUIET_SECONDS", quiet)
+    clock = [0.0]
+    monkeypatch.setattr(deploy, "_now", lambda: clock[0])
+    deployed: list[str] = []
+    monkeypatch.setattr(deploy, "deploy", lambda sha: (deployed.append(sha), {"sha": sha})[1])
+    return clock, deployed
+
+
+def test_a_deploy_waits_while_a_run_is_going(dep, monkeypatch):
+    """The owner's word: nothing restarts the live temper under a run that is going, however
+    long it takes."""
+    deploy, _ = dep
+    clock, deployed = _moved(deploy, monkeypatch)
+    monkeypatch.setattr(deploy, "runs_going", lambda: [dict(_RUN)])
+
+    for minute in range(180):
+        clock[0] = minute * 60.0
+        assert deploy.watch_master() is None
+
+    assert deployed == [], "it restarted temper under a run"
+    hold = deploy.state()["hold"]
+    assert "team-trial 5a3e0c11 (running)" in hold["why"]
+    assert hold["quiet_since"] is None
+    held = [line for line in _log_lines(deploy) if "held" in line]
+    assert len(held) == 1, "three hours of the same hold were logged more than once"
+
+
+def test_it_goes_once_no_run_has_been_going_for_two_minutes(dep, monkeypatch):
+    """A run that ends and the next one that starts a moment later is not a quiet temper."""
+    deploy, _ = dep
+    clock, deployed = _moved(deploy, monkeypatch)
+    going: list[dict] = [dict(_RUN)]
+    monkeypatch.setattr(deploy, "runs_going", lambda: going)
+
+    deploy.watch_master()
+    going.clear()
+    clock[0] = 10.0
+    deploy.watch_master()
+    assert deploy.state()["hold"]["quiet_since"] == 10.0
+
+    clock[0] = 100.0
+    going.append(dict(_RUN, id="3c0ffee0-0000-4000-8000-000000000000", status="queued"))
+    deploy.watch_master()
+    assert deploy.state()["hold"]["quiet_since"] is None, "the next run did not start the quiet over"
+
+    going.clear()
+    clock[0] = 110.0
+    deploy.watch_master()
+    clock[0] = 229.0
+    deploy.watch_master()
+    assert deployed == [], "it went before two quiet minutes"
+
+    clock[0] = 230.0
+    deploy.watch_master()
+    assert deployed == ["2" * 40]
+    assert "hold" not in deploy.state()
+
+
+def test_even_a_quiet_temper_is_watched_for_two_minutes_first(dep, monkeypatch):
+    deploy, _ = dep
+    clock, deployed = _moved(deploy, monkeypatch)
+
+    deploy.watch_master()
+    assert deployed == [] and deploy.state()["hold"]["quiet_since"] == 0.0
+    clock[0] = 120.0
+    deploy.watch_master()
+    assert deployed == ["2" * 40]
+
+
+def test_when_the_live_temper_cannot_say_it_counts_as_a_run_going(dep, monkeypatch):
+    """Not knowing is no reason to restart."""
+    deploy, _ = dep
+    clock, deployed = _moved(deploy, monkeypatch)
+    monkeypatch.setattr(deploy, "runs_going", lambda: None)
+
+    for minute in range(10):
+        clock[0] = minute * 60.0
+        deploy.watch_master()
+
+    assert deployed == []
+    assert "could not say" in deploy.state()["hold"]["why"]
+
+
+def test_it_asks_the_live_temper_for_every_run_not_over_yet(dep, monkeypatch):
+    """pending, queued, running, waiting, cancelling: a run parked at a gate, or waiting on a
+    person, is not over either."""
+    deploy, _ = dep
+    monkeypatch.setattr(deploy, "live_api", lambda: "http://127.0.0.1:9")
+    asked: list[str] = []
+
+    class _Answer:
+        def __init__(self, body: dict) -> None:
+            self.body = json.dumps(body).encode()
+
+        def read(self) -> bytes:
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def urlopen(url, timeout=0):
+        asked.append(url)
+        status = url.split("status=")[1].split("&")[0]
+        runs = [{"id": "77aa", "workflow_name": "team-trial", "status": "waiting"}] if status == "waiting" else []
+        return _Answer({"runs": runs, "total": len(runs)})
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    assert _REAL["runs_going"]() == [{"id": "77aa", "workflow": "team-trial", "status": "waiting"}]
+    assert {u.split("status=")[1].split("&")[0] for u in asked} == set(deploy.LIVE_STATUSES)
+    assert all(u.startswith("http://127.0.0.1:9/api/workflows?") for u in asked)
+
+    def refused(url, timeout=0):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
+    assert _REAL["runs_going"]() is None, "not knowing must hold a deploy, not wave it through"
+
+
+def test_it_holds_for_every_status_the_server_counts_as_not_over(dep):
+    """The list is the server's own (temper_ai/api/data_service.py); a status added there and
+    not here would let a deploy restart temper under a run in it."""
+    import re  # noqa: PLC0415
+
+    deploy, _ = dep
+    source = (Path(__file__).resolve().parents[2] / "temper_ai/api/data_service.py").read_text(
+        encoding="utf-8")
+    found = re.search(r"^_LIVE_RUN_STATUSES = \(([^)]*)\)", source, re.MULTILINE)
+    assert found, "data_service.py no longer says which runs are not over"
+    assert set(re.findall(r'"(\w+)"', found.group(1))) == set(deploy.LIVE_STATUSES)
+
+
+def test_a_failed_live_check_goes_back_only_once_no_run_is_going(dep, monkeypatch):
+    """Going back restarts temper too. The owner hears at once; the revert waits for the runs."""
+    deploy, tmp_path = dep
+    deploy.save({"last_good": "4" * 40, "deployed": "4" * 40})
+    monkeypatch.setattr(deploy.gate, "result_for", lambda sha: {"ok": True})
+    now = dt.datetime.now(dt.UTC)
+    monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: _restarted(
+        deploy, tmp_path, now + dt.timedelta(seconds=5), head=sha[:8]))
+    monkeypatch.setattr(deploy, "live_check", lambda shots: {
+        "ok": False, "parts": [{"name": "hooks", "ok": False, "detail": "Slack said 500"}]})
+    reverted: list[tuple[str, str]] = []
+    monkeypatch.setattr(deploy, "revert_to", lambda good, bad, reason: (
+        reverted.append((good, bad)), {"ok": True, "revert": "9" * 40})[1])
+    said: list[str] = []
+    monkeypatch.setattr(deploy, "dm", said.append)
+    monkeypatch.setattr(deploy, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, "5555555 Add a thing\n", ""))
+    monkeypatch.setattr(deploy, "master_sha", lambda: "5" * 40)
+    going: list[dict] = [dict(_RUN)]
+    monkeypatch.setattr(deploy, "runs_going", lambda: going)
+
+    out = deploy.deploy("5" * 40)      # a person's deploy: not held itself, but its revert is
+
+    assert out["rolled_back"] is False and "waits" in out["reason"]
+    assert reverted == []
+    assert len(said) == 1 and "waits until no run is going" in said[0] and "team-trial" in said[0]
+    assert deploy.state()["revert_waits"]["good"] == "4" * 40
+
+    assert deploy.watch_master() is None
+    assert reverted == [], "it went back under a run"
+
+    going.clear()
+    deploy.watch_master()               # QUIET_SECONDS is 0 here: it goes at once
+    assert reverted == [("4" * 40, "5" * 40)]
+    assert "revert_waits" not in deploy.state()
+    assert deploy.state()["deployed"] == "9" * 40
+    assert "put back" in said[-1]
+
+
+def test_a_waiting_revert_is_dropped_once_master_moves_on(dep, monkeypatch):
+    """A newer commit gets its own deploy and live check; going back under it would take that
+    one back out too."""
+    deploy, _ = dep
+    _, deployed = _moved(deploy, monkeypatch, quiet=0)
+    data = deploy.state()
+    data["revert_waits"] = {"good": "1" * 40, "bad": "5" * 40, "parts": "hooks", "since": "earlier"}
+    deploy.save(data)
+    monkeypatch.setattr(deploy, "revert_to", lambda *a: pytest.fail("it reverted a commit master moved past"))
+
+    deploy.watch_master()
+
+    assert "revert_waits" not in deploy.state()
+    assert deployed == ["2" * 40]
+
+
+def test_a_person_deploying_by_hand_is_not_held(dep, monkeypatch):
+    """`temper-ci deploy` is a person's call, made knowing what is running."""
+    deploy, _ = dep
+    deploy.save({"hold": {"for": "2222", "since": "earlier", "why": "runs going", "quiet_since": None}})
+    monkeypatch.setattr(deploy, "runs_going", lambda: pytest.fail("a deploy by hand asked about runs"))
+    asked: list[str] = []
+    monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: asked.append(sha))
+    monkeypatch.setattr(deploy, "wait_for_restart", lambda since, *a, **k: None)
+
+    deploy.deploy("2" * 40)
+
+    assert asked == ["2" * 40]
+    assert "hold" not in deploy.state()

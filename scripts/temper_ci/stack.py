@@ -1,50 +1,25 @@
-"""The throwaway temper a commit is checked in.
+"""temper-ci's own clone of temper-ai, and what the gate reads from it.
 
-One commit, one stack: its own compose project name (``temper-box-<sha>``),
-its own published ports, its own database (a tmpfs, so there is nothing to
-leave behind), its own workspace tree, and no model keys at all. The live
-``temper-ai`` project is never named on any command line here, and every
-destructive call asserts the project name it is about to act on starts with
-``temper-box-``.
+Until 2026-10-08 this module also built a throwaway temper for every commit
+and ran a smoke set in it. That is gone: there is one temper only, the live
+one, and no test copies of it. What stays is the clone, so the gate can
+fetch a commit, say what it changed and write down its tree, and the deploy
+can go back to a commit it has recorded.
 
-The commit's own files are what runs: a worktree of that exact commit,
-taken from a clone of temper-ai that temper-ci keeps for itself, so
-``~/temper-ai`` is never checked out, fetched into or otherwise touched.
-
-Runs happen in boxes, the way they do live: the stack's worker holds the
-host's docker socket and starts a container per run from the stack's own
-server container. A run therefore gets this stack's database and network,
-never the live one's.
+The clone is temper-ci's own, so ``~/temper-ai`` is never checked out,
+fetched into or otherwise touched.
 """
 
 from __future__ import annotations
 
-import json
-import shutil
-import subprocess
-import time
-import urllib.error
-import urllib.request
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths
-from .paths import MAIN_REPO, MIRROR, WORK, log, sh
-
-COMPOSE_FILES = ("docker-compose.yml", "docker-compose.ci.yml")
-UP_TIMEOUT = 300
-API_TIMEOUT = 180
+from .paths import MAIN_REPO, MIRROR, sh
 
 
-class BoxError(RuntimeError):
+class MirrorError(RuntimeError):
     pass
-
-
-def _docker_gid() -> str:
-    try:
-        return str(Path("/var/run/docker.sock").stat().st_gid)
-    except OSError:
-        return "988"
 
 
 def mirror() -> Path:
@@ -58,7 +33,7 @@ def mirror() -> Path:
     if not (MIRROR / "HEAD").exists() and not (MIRROR / ".git").exists():
         r = sh("git", "clone", "--quiet", "--bare", str(MAIN_REPO), str(MIRROR), timeout=600)
         if r.returncode:
-            raise BoxError(f"could not clone {MAIN_REPO} into {MIRROR}: {r.stderr.strip()}")
+            raise MirrorError(f"could not clone {MAIN_REPO} into {MIRROR}: {r.stderr.strip()}")
         sh("git", "-C", str(MIRROR), "remote", "add", "upstream",
            f"https://github.com/{paths.GH_REPO}.git")
     return MIRROR
@@ -71,9 +46,8 @@ def fetch(ref: str = "") -> None:
        "+refs/heads/*:refs/heads/*", timeout=300)
     sh("git", "-C", str(m), "fetch", "--quiet", "--prune", "upstream",
        "+refs/heads/*:refs/remotes/github/*", timeout=300)
-    # Pull requests too, so the owner can check one by hand after reading it — including one
-    # from a fork, whose commits are on no branch here. Fetching is only reading; nothing is
-    # ever *checked* from a fork unless a person asks for that exact commit.
+    # Pull requests too, so the owner can look at one by hand after reading it — including one
+    # from a fork, whose commits are on no branch here. Fetching is only reading.
     sh("git", "-C", str(m), "fetch", "--quiet", "--prune", "upstream",
        "+refs/pull/*/head:refs/remotes/pr/*", timeout=300)
     if ref:
@@ -96,380 +70,3 @@ def changed_files(sha: str) -> list[str]:
 
 def tree_sha(sha: str) -> str:
     return sh("git", "-C", str(mirror()), "rev-parse", f"{sha}^{{tree}}").stdout.strip()
-
-
-def docs_only(files: list[str]) -> bool:
-    if not files:
-        return False
-    for f in files:
-        if any(f.startswith(d) for d in paths.DOCS_DIRS):
-            continue
-        if any(f.lower().endswith(ext) for ext in paths.DOCS_ONLY):
-            continue
-        return False
-    return True
-
-
-def touches_image(files: list[str]) -> bool:
-    return any(f in paths.IMAGE_INPUTS for f in files)
-
-
-@dataclass
-class Box:
-    """A throwaway temper for one commit."""
-
-    sha: str
-    project: str = ""
-    tree: Path = field(default_factory=Path)
-    workspaces: Path = field(default_factory=Path)
-    server_port: int = 0
-    postgres_port: int = 0
-    redis_port: int = 0
-    env_file: Path = field(default_factory=Path)
-    built: dict[str, str] = field(default_factory=dict)
-    up_at: float = 0.0
-    # The stack runs its write guard in enforce (docs/api-access.md): this key, made for the
-    # one check and kept only here in memory, is named "temper-ci-box" in its keys file.
-    write_key: str = ""
-
-    # -- setting up ---------------------------------------------------------
-
-    def __post_init__(self) -> None:
-        short = self.sha[:12]
-        self.project = f"{paths.BOX_PREFIX}{short}"
-        self.tree = WORK / short
-        self.workspaces = WORK / f"{short}-workspaces"
-        self.env_file = WORK / f"{short}.env"
-
-    @property
-    def api(self) -> str:
-        return f"http://127.0.0.1:{self.server_port}"
-
-    def _guard(self) -> None:
-        if not self.project.startswith(paths.BOX_PREFIX) or self.project == paths.LIVE_PROJECT:
-            raise BoxError(f"{self.project!r} is not a throwaway project name; refusing")
-
-    def _compose(self, *args: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        self._guard()
-        cmd = ["docker", "compose", "-p", self.project, "--env-file", str(self.env_file)]
-        for f in COMPOSE_FILES:
-            cmd += ["-f", f]
-        # The worker lives behind a profile in the base file; every call here
-        # needs to see it, `build` included.
-        cmd += ["--profile", "worker"]
-        return sh(*cmd, *args, cwd=self.tree, timeout=timeout)
-
-    def checkout(self) -> None:
-        """A worktree of the commit, in temper-ci's own clone."""
-        if not has_commit(self.sha):
-            fetch()
-        if not has_commit(self.sha):
-            raise BoxError(f"{self.sha} is not a commit this machine has, even after fetching")
-        self.remove_tree()
-        self.tree.parent.mkdir(parents=True, exist_ok=True)
-        r = sh("git", "-C", str(mirror()), "worktree", "add", "--quiet", "--detach",
-               str(self.tree), self.sha, timeout=300)
-        if r.returncode:
-            raise BoxError(f"could not check {self.sha} out into {self.tree}: {r.stderr.strip()}")
-        self.workspaces.mkdir(parents=True, exist_ok=True)
-
-    def write_env(self) -> None:
-        self.server_port = paths.free_port()
-        self.postgres_port = paths.free_port()
-        self.redis_port = paths.free_port()
-        lines = [
-            "# Written by temper-ci for one commit's check. Not a copy of the live .env:",
-            "# there are no model keys here, and no Slack, Telegram or Notion token.",
-            f"COMPOSE_PROJECT_NAME={self.project}",
-            f"TEMPER_CI_SERVER_PORT={self.server_port}",
-            f"POSTGRES_PORT={self.postgres_port}",
-            f"REDIS_PORT={self.redis_port}",
-            f"PLAYWRIGHT_MCP_PORT={paths.free_port()}",
-            "TEMPER_BIND=127.0.0.1",
-            "FRONTEND_DIST=/dev/null",  # never used: the ci overlay drops that mount
-            "POSTGRES_PASSWORD=box",
-            f"WORKSPACE_DIR={self.workspaces}",
-            f"TEMPER_CI_TEMPLATE_CONTAINER={self.project}-server-1",
-            f"TEMPER_CI_IMAGE_SERVER=temper-ci-server:{self.sha[:12]}",
-            f"TEMPER_CI_IMAGE_WORKER=temper-ci-worker:{self.sha[:12]}",
-            f"DOCKER_GID={_docker_gid()}",
-            "TEMPER_LOG_LEVEL=INFO",
-            "TEMPER_CI_LINEAR_SECRET=box-linear-secret",
-            "TEMPER_CI_NOTION_SECRET=box-notion-secret",
-            "TEMPER_SLACK_TEST_TOKEN=box-slack-test-token",
-            "TEMPER_CI_API_GUARD=enforce",
-        ]
-        self.env_file.parent.mkdir(parents=True, exist_ok=True)
-        self.env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        self.write_keys_file()
-
-    def write_keys_file(self) -> None:
-        """A throwaway named key for this check's writes; only its hash goes to the stack."""
-        import hashlib
-        import secrets
-
-        self.write_key = "tk_" + secrets.token_urlsafe(32)
-        digest = hashlib.sha256(self.write_key.encode()).hexdigest()
-        keys = self.workspaces / ".api-keys.json"
-        keys.parent.mkdir(parents=True, exist_ok=True)
-        keys.write_text(json.dumps({"keys": {"temper-ci-box": f"sha256:{digest}"}}) + "\n",
-                        encoding="utf-8")
-
-    def build(self) -> dict[str, str]:
-        """Build the images this commit needs.
-
-        Always asked for, never always done: docker's layer cache means a
-        commit that changed no image input reuses every layer and this takes
-        seconds, while one that changed the Dockerfile, the lock file or a
-        package file really does build a new image — which is then the image
-        the check runs, and the one the deploy afterwards reuses.
-        """
-        r = self._compose("build", "server", "worker", timeout=2400)
-        if r.returncode:
-            tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-25:])
-            raise BoxError(f"building the images for {self.sha[:12]} failed:\n{tail}")
-        for service in ("server", "worker"):
-            got = self._compose("images", "--format", "json", service, timeout=60)
-            try:
-                rows = json.loads(got.stdout or "[]")
-                self.built[service] = (rows[0].get("ID") or "")[:19] if rows else ""
-            except (ValueError, IndexError, AttributeError):
-                self.built[service] = ""
-        return self.built
-
-    def up(self) -> None:
-        """Server first, then the worker.
-
-        Both of them make the tables they need when they find a database
-        without any. The live database has had tables for months, so nobody
-        ever noticed; a box's database is empty every single time, and
-        starting the two together has them both run ``CREATE TABLE events``
-        at the same moment, one of which loses with "relation already
-        exists" and exits. So: the server brings the schema up, and the
-        worker joins a database that is already made.
-        """
-        r = self._compose("up", "-d", "--no-build", "server", timeout=UP_TIMEOUT)
-        if r.returncode:
-            tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-25:])
-            raise BoxError(f"the throwaway stack for {self.sha[:12]} did not come up:\n{tail}")
-        self.up_at = time.time()
-        self.wait_for_api()
-        r = self._compose("up", "-d", "--no-build", "worker", timeout=UP_TIMEOUT)
-        if r.returncode:
-            tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-25:])
-            raise BoxError(f"the box's worker did not start:\n{tail}")
-        self.wait_for_worker()
-
-    def wait_for_worker(self, seconds: int = 90) -> None:
-        """A worker that exited takes every run with it, so say so early."""
-        deadline = time.time() + seconds
-        state = ""
-        while time.time() < deadline:
-            state = sh("docker", "inspect", "-f", "{{.State.Status}}",
-                       self.container("worker"), timeout=30).stdout.strip()
-            if state == "running":
-                time.sleep(3)   # let it take the queue
-                return
-            if state in ("exited", "dead"):
-                tail = "\n".join(sh("docker", "logs", "--tail", "25",
-                                    self.container("worker"), timeout=30).stderr.splitlines()[-12:])
-                raise BoxError(f"the box's worker stopped ({state}):\n{tail}")
-            time.sleep(2)
-        raise BoxError(f"the box's worker never started (it is {state or 'unknown'})")
-
-    def wait_for_api(self, seconds: int = API_TIMEOUT) -> None:
-        deadline = time.time() + seconds
-        last = ""
-        while time.time() < deadline:
-            try:
-                self.get("/api/health", timeout=5)
-                return
-            except Exception as exc:  # noqa: BLE001 - any failure means "not yet"
-                last = str(exc)
-                time.sleep(2)
-        raise BoxError(f"the box's API never answered on {self.api} ({last})")
-
-    # -- talking to it ------------------------------------------------------
-
-    def request(self, method: str, path: str, body=None, timeout: int = 30,
-                headers: dict[str, str] | None = None, raw: bytes | None = None,
-                with_key: bool = True):
-        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
-        # Writes carry the check's own key (write_keys_file); with_key=False shows what a
-        # caller without one gets.
-        keyed = {"Authorization": f"Bearer {self.write_key}"} if with_key and self.write_key else {}
-        req = urllib.request.Request(  # noqa: S310 - a fixed loopback address
-            self.api + path, data=data, method=method,
-            headers={"Content-Type": "application/json", **keyed, **(headers or {})},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
-            text = resp.read().decode()
-            try:
-                return json.loads(text) if text else {}
-            except ValueError:
-                return {"_text": text}
-
-    def get(self, path: str, timeout: int = 30):
-        return self.request("GET", path, timeout=timeout)
-
-    def get_with_token(self, path: str, timeout: int = 30):
-        """A GET on the box's private test entry, with that entry's own token."""
-        return self.request("GET", path, timeout=timeout,
-                            headers={"X-Temper-Test-Token": "box-slack-test-token"})
-
-    def post(self, path: str, body=None, timeout: int = 30, **kw):
-        return self.request("POST", path, body, timeout=timeout, **kw)
-
-    def status_of(self, method: str, path: str, raw: bytes = b"{}",
-                  headers: dict[str, str] | None = None, with_key: bool = True) -> tuple[int, str]:
-        """The status code a call comes back with, errors included."""
-        try:
-            self.request(method, path, raw=raw, headers=headers, timeout=20, with_key=with_key)
-            return 200, ""
-        except urllib.error.HTTPError as exc:
-            return exc.code, exc.read().decode()[:400]
-        except Exception as exc:  # noqa: BLE001
-            return 0, str(exc)
-
-    # -- runs ---------------------------------------------------------------
-
-    def start_run(self, workflow: str, inputs: dict | None = None) -> str:
-        # Every run a box starts is stamped with the box's own name. It costs nothing, and it
-        # is what lets the check prove afterwards that none of its runs ended up in the
-        # owner's live database \u2014 the sharpest evidence that the box kept to itself.
-        marked = {"ci_box": self.project, **(inputs or {})}
-        got = self.post("/api/runs", {"workflow": workflow, "inputs": marked}, timeout=60)
-        run_id = got.get("execution_id") or got.get("id") or ""
-        if not run_id:
-            raise BoxError(f"starting {workflow} gave back no run id: {got}")
-        return run_id
-
-    def run_status(self, run_id: str) -> str:
-        return str(self.get(f"/api/workflows/{run_id}").get("status") or "")
-
-    def wait_for(self, run_id: str, want=("completed",), seconds: int = 240) -> str:
-        """Wait until the run reaches one of `want` or a state it cannot leave."""
-        settled = {"completed", "failed", "cancelled", "stopped", "error", "interrupted", "orphaned"}
-        deadline = time.time() + seconds
-        status = ""
-        while time.time() < deadline:
-            try:
-                status = self.run_status(run_id)
-            except Exception:  # noqa: BLE001 - the server may be restarting under us
-                time.sleep(2)
-                continue
-            if status in want:
-                return status
-            if status in settled:
-                raise BoxError(f"run {run_id[:8]} is {status}, and it was meant to reach {'/'.join(want)}")
-            time.sleep(2)
-        raise BoxError(f"run {run_id[:8]} was still {status or 'unknown'} after {seconds}s")
-
-    def workspace_of(self, run_id: str) -> Path:
-        """Where the run's files are on this host."""
-        info = self.get(f"/api/workflows/{run_id}")
-        for key in ("workspace_path", "workspace"):
-            value = info.get(key)
-            if value:
-                return Path(str(value))
-        return self.workspaces / run_id
-
-    # -- looking at the containers -----------------------------------------
-
-    def container(self, service: str) -> str:
-        return f"{self.project}-{service}-1"
-
-    def server_log(self, since: float | None = None) -> str:
-        args = ["docker", "logs"]
-        if since:
-            args += ["--since", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since))]
-        r = sh(*args, self.container("server"), timeout=60)
-        return (r.stdout or "") + (r.stderr or "")
-
-    def restart_server(self) -> None:
-        self._guard()
-        r = sh("docker", "restart", self.container("server"), timeout=180)
-        if r.returncode:
-            raise BoxError(f"could not restart the box's server: {r.stderr.strip()}")
-        self.wait_for_api()
-
-    # -- tearing down -------------------------------------------------------
-
-    def remove_tree(self) -> None:
-        if self.tree.exists():
-            sh("git", "-C", str(mirror()), "worktree", "remove", "--force", str(self.tree), timeout=120)
-        if self.tree.exists():
-            shutil.rmtree(self.tree, ignore_errors=True)
-        sh("git", "-C", str(mirror()), "worktree", "prune", timeout=60)
-
-    def down(self) -> None:
-        """Everything this box made, gone: containers, network, volumes, files."""
-        self._guard()
-        # Run containers the worker started are the box's children, but they
-        # are not in its compose project, so `down` would leave them.
-        leftovers = sh("docker", "ps", "-aq", "--filter", "label=temper.role=run",
-                       "--filter", f"network={self.project}_default", timeout=60).stdout.split()
-        for cid in leftovers:
-            sh("docker", "rm", "-f", cid, timeout=60)
-        self._compose("down", "-v", "--remove-orphans", "-t", "10", timeout=300)
-        self.remove_tree()
-        shutil.rmtree(self.workspaces, ignore_errors=True)
-        self.env_file.unlink(missing_ok=True)
-
-    # -- the whole thing ----------------------------------------------------
-
-    def __enter__(self) -> Box:
-        self.checkout()
-        self.write_env()
-        log(f"{self.project}: building the images")
-        self.build()
-        log(f"{self.project}: starting it on {self.api}")
-        self.up()
-        return self
-
-    def __exit__(self, *exc) -> None:
-        try:
-            self.down()
-        except Exception as err:  # noqa: BLE001 - tearing down must not hide the real failure
-            log(f"{self.project}: tearing down had a problem: {err}")
-
-
-LIVE_CONTAINERS = ("temper-ai-server-1", "temper-ai-worker-1", "temper-ai-postgres-1")
-
-
-def live_fingerprint() -> dict[str, str]:
-    """Enough about the live stack to prove a box never touched it.
-
-    Only things a box could break, and nothing the live temper does on its
-    own: it is a working server, so rows appear in it while a check runs \u2014
-    a growing row count says the owner's temper is alive, not that the box
-    reached into it. What must not change is the containers themselves (a
-    box that recreated or restarted one would show a new start time) and
-    the volumes their data lives on.
-    """
-    out: dict[str, str] = {}
-    for container in LIVE_CONTAINERS:
-        r = sh("docker", "inspect", "-f",
-               "{{.State.StartedAt}} {{.State.Status}} {{.Id}}", container, timeout=30)
-        out[container] = r.stdout.strip() or "missing"
-    r = sh("docker", "volume", "ls", "--filter", "label=com.docker.compose.project=temper-ai",
-           "--format", "{{.Name}}", timeout=30)
-    out["volumes"] = ",".join(sorted(r.stdout.split())) or "none"
-    return out
-
-
-def live_saw_box_runs(project: str) -> str:
-    """Did anything the box started end up in the live database?
-
-    The other half of the isolation proof, and the sharper one: every run a
-    box starts carries its project name in ``inputs``. Finding one of those
-    in the live database would mean the box was talking to the owner's
-    temper. Returns "" when there is nothing, or what it found.
-    """
-    r = sh("docker", "exec", "temper-ai-postgres-1", "psql", "-U", "temper_ai", "-d", "temper_ai",
-           "-tAc", "select count(*) from workflow_runs where inputs::text like '%" + project + "%'",
-           timeout=60)
-    if r.returncode:
-        return f"could not ask the live database: {r.stderr.strip()[:120]}"
-    found = r.stdout.strip()
-    return "" if found in ("0", "") else f"{found} run(s) the box started are in the live database"

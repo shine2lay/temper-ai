@@ -1,13 +1,10 @@
 """temper-ci's judgement, without starting anything.
 
-The parts that decide *whether* to run a whole temper — a docs-only commit,
-a tree that already passed, a commit already answered for, who is allowed to
-have pushed it — are the parts that keep the gate quick and keep a stranger's
-code off this machine. They are all pure enough to test in milliseconds, so
-they are tested here, in temper's own suite, which the gate itself runs.
-
-The stack and the smoke set are not tested here: their test is doing it for
-real, which is what `temper-ci check` is.
+Which commits the gate looks at, who is allowed to have pushed them, what it
+remembers and the status it posts. Since 2026-10-08 a check builds nothing and
+starts no temper (one temper only, the live one, and no test copy of it): it
+fetches the commit, writes its tree down and posts ``temper/boxes``. All of it
+is quick enough to test here, in temper's own suite.
 """
 
 from __future__ import annotations
@@ -39,41 +36,35 @@ def ci(tmp_path, monkeypatch):
 
 # -- passing at once ---------------------------------------------------------
 
-@pytest.mark.parametrize("files, docs_only", [
-    (["docs/ci-gate.md"], True),
-    (["README.md", "docs/a.md", "docs/img/shot.png"], True),
-    (["CHANGELOG.txt"], True),
-    (["docs/ci-gate.md", "temper_ai/api/routes.py"], False),
-    (["configs/workflows/ci_smoke.yaml"], False),
-    ([".github/workflows/ci.yml"], False),
-    (["scripts/temper_ci/smoke.py"], False),
-    ([], False),          # a commit that changed nothing still gets looked at
-    (["docs/x.md", "uv.lock"], False),
-])
-def test_only_writing_passes_at_once(ci, files, docs_only):
-    """Writing changes nothing a run reads; anything else gets a real stack.
+def test_a_check_records_the_commit_and_starts_nothing(ci, monkeypatch):
+    """The owner's word, 2026-10-08: one temper only, the live one, and no test copy of it.
+    A check fetches the commit, writes its tree down and posts temper/boxes; it runs
+    nothing but git, and there is no throwaway temper left to build."""
+    _, gate, _, stack = ci
+    ran: list[tuple] = []
+    monkeypatch.setattr(stack, "fetch", lambda: None)
+    monkeypatch.setattr(stack, "has_commit", lambda sha: True)
+    monkeypatch.setattr(stack, "mirror", lambda: Path("/nonexistent/mirror"))
+    monkeypatch.setattr(stack, "changed_files", lambda sha: ["temper_ai/api/routes.py"])
+    monkeypatch.setattr(stack, "tree_sha", lambda sha: "t9")
+    monkeypatch.setattr(gate, "sh", lambda *a, **k: (
+        ran.append(a), subprocess.CompletedProcess(a, 0, "Add a thing\n", ""))[1])
+    posted: list[tuple] = []
+    monkeypatch.setattr(gate, "post_status", lambda sha, state, said, url="": (
+        posted.append((sha, state, said)), True)[1])
 
-    The list is deliberately unforgiving: a workflow YAML, a lock file or a
-    script under scripts/ all change what a run does, however docs-ish they
-    look.
-    """
-    _, _, _, stack = ci
-    assert stack.docs_only(files) is docs_only
+    verdict = gate.check("a" * 40, "some-branch")
 
-
-def test_a_tree_that_already_passed_is_not_run_again(ci):
-    """A rebase that changed no file, or a revert to a known-good tree, is the
-    same code as something that already passed — and a rollback has to be
-    quick, because temper is unwell while it waits."""
-    _, gate, _, _ = ci
-    gate.remember("a" * 40, {"ok": True, "tree": "t1", "finished_at": "2026-01-01T00:00:00+00:00"})
-    assert gate.passed_trees() == {"t1": "a" * 40}
-    # A failure never lends its tree to anything.
-    gate.remember("b" * 40, {"ok": False, "tree": "t2", "finished_at": "2026-01-01T00:01:00+00:00"})
-    assert "t2" not in gate.passed_trees()
-    # And the first commit to pass with a tree keeps the credit.
-    gate.remember("c" * 40, {"ok": True, "tree": "t1", "finished_at": "2026-01-01T00:02:00+00:00"})
-    assert gate.passed_trees()["t1"] == "a" * 40
+    assert verdict["ok"] is True
+    assert verdict["tree"] == "t9" and verdict["subject"] == "Add a thing"
+    assert posted == [("a" * 40, "success", gate.PASSED_SHORT)]
+    assert len(gate.PASSED_SHORT) <= 139, "GitHub cuts a status description at 140"
+    assert gate.result_for("a" * 40)["ok"] is True, "a revert reads this record"
+    assert ran and all(a[0] == "git" for a in ran), f"it ran more than git: {ran}"
+    assert not hasattr(stack, "Box")
+    root = Path(__file__).resolve().parents[2]
+    assert not (root / "docker-compose.ci.yml").exists()
+    assert not (root / "scripts/temper_ci/smoke.py").exists()
 
 
 def test_what_it_remembers_stays_small(ci):
@@ -100,7 +91,7 @@ def test_a_land_can_ask_for_a_commit_without_waiting_for_github(ci):
 
 
 def test_one_check_at_a_time(ci):
-    """Two stacks at once would fight over docker and make both slower."""
+    """Two looks at one commit at once would write over each other's record."""
     _, gate, _, _ = ci
     with gate.one_at_a_time():
         with pytest.raises(BlockingIOError):
@@ -169,10 +160,9 @@ def _heads(gate, monkeypatch, mapping: dict[str, str]) -> None:
 
 
 def test_a_fresh_gate_notes_where_everything_is_and_checks_nothing(ci, monkeypatch):
-    """On the day this is installed the repository has a dozen branches, all
-    from before the gate existed: no CI compose file, so they could not pass
-    even in principle. Putting red crosses on them ten minutes apart would be
-    wrong twice over.
+    """On the day this was installed the repository had a dozen branches, all
+    from before the gate existed. Going back over them would post statuses on
+    history nobody asked about.
     """
     _, gate, _, _ = ci
     monkeypatch.setattr(gate, "only_we_can_push", lambda: True)
@@ -218,7 +208,8 @@ def test_it_asks_git_rather_than_githubs_event_feed(ci, monkeypatch):
 def test_it_stops_looking_at_branches_when_someone_new_can_push(ci, monkeypatch):
     """Looking at branch heads is only safe because a branch in this repository
     can only be put there by someone with write access. Give write access to
-    someone else and this machine would start building and running their code.
+    someone else and this machine would vouch for their commits on master's
+    required check.
     """
     _, gate, paths, _ = ci
     mine = paths.ALLOWED_PUSHERS[0]
@@ -238,7 +229,7 @@ def test_it_stops_looking_at_branches_when_someone_new_can_push(ci, monkeypatch)
 
 
 def test_a_commit_already_answered_for_is_not_checked_again(ci, monkeypatch):
-    """Ten minutes of docker for an answer we already have, on every poll."""
+    """A second record and a second status for an answer we already have, on every poll."""
     _, gate, _, _ = ci
     gate.remember("e" * 40, {"ok": True, "tree": "t", "finished_at": "2026-01-01T00:00:00+00:00"})
     monkeypatch.setattr(gate, "check", lambda *a, **k: pytest.fail("it checked a commit it already knew"))

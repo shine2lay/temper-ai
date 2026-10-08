@@ -5,6 +5,10 @@ somewhere that still makes sense in a week: what was checked, what each
 check proved, how long it took, what the screenshots looked like, and —
 when it failed — the reason, in the first screenful. Once the commit has gone
 live, the page also says what the deploy's live check found.
+
+Since 2026-10-08 the gate builds nothing (one live temper only, no test copy
+of it), so a new commit's page says it was recorded, and the deploy's live
+check is what it shows. Pages of older commits keep their box checks.
 """
 
 from __future__ import annotations
@@ -161,6 +165,21 @@ def _page(sha: str, verdict: dict) -> Path:
     )
 
     skipped = verdict.get("skipped") or ""
+    if not ok:
+        said = html.escape(str(verdict.get("reason") or "Something failed."))
+    elif skipped and not checks:
+        said = "Recorded and passed at once: nothing was run here."
+    else:
+        said = "Everything the machine check runs passed."
+    # Only a commit from the days of the throwaway temper has a stack to describe.
+    stack_html = f"""<h2>The stack it ran in</h2>
+<table>
+<tr><td>compose project</td><td><code>{html.escape(str(verdict.get('project') or ''))}</code></td></tr>
+<tr><td>its own ports</td><td><code>{html.escape(str(verdict.get('ports') or ''))}</code></td></tr>
+<tr><td>images built</td><td><code>{html.escape(json.dumps(verdict.get('built') or {}))}</code></td></tr>
+<tr><td>model keys</td><td>none — every agent it runs is a script, so the check costs $0</td></tr>
+<tr><td>live temper</td><td>{html.escape(str(verdict.get('isolation') or 'not compared'))}</td></tr>
+</table>""" if verdict.get("project") else ""
     body = f"""<!doctype html><meta charset=utf-8>
 <title>temper/boxes — {sha[:12]}</title><style>{STYLE}</style>
 <div class=wrap>
@@ -169,20 +188,13 @@ def _page(sha: str, verdict: dict) -> Path:
 {html.escape(str(verdict.get('branch') or ''))} · checked {html.escape(str(verdict.get('finished_at') or stamp()))}
  · {verdict.get('seconds', 0):.0f}s total</div>
 <div class="verdict {'pass' if ok else 'fail'}">
-{'Everything the machine check runs passed.' if ok else html.escape(str(verdict.get('reason') or 'Something failed.'))}
+{said}
 </div>
 {f"<p>{html.escape(skipped)}</p>" if skipped else ""}
 {f"<table><tr><th></th><th>check</th><th>took</th></tr>{''.join(rows)}</table>" if rows else ""}
 {live_html}
 {f"<h2>What the page looked like</h2>{shot_html}" if shots else ""}
-<h2>The stack it ran in</h2>
-<table>
-<tr><td>compose project</td><td><code>{html.escape(str(verdict.get('project') or ''))}</code></td></tr>
-<tr><td>its own ports</td><td><code>{html.escape(str(verdict.get('ports') or ''))}</code></td></tr>
-<tr><td>images built</td><td><code>{html.escape(json.dumps(verdict.get('built') or {}))}</code></td></tr>
-<tr><td>model keys</td><td>none — every agent it runs is a script, so the check costs $0</td></tr>
-<tr><td>live temper</td><td>{html.escape(str(verdict.get('isolation') or 'not compared'))}</td></tr>
-</table>
+{stack_html}
 </div>"""
     page = d / "index.html"
     page.write_text(body, encoding="utf-8")

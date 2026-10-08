@@ -1,15 +1,15 @@
 [Unit]
 # The machine half of the gate in front of master.
 #
-# It watches GitHub for the owner's pushes to this repository's own branches, runs the
-# smoke set in a throwaway temper for each one, and posts the result back as the
-# "temper/boxes" commit status that master's protection waits for. When master itself
-# moves, it restarts temper onto it and checks it live.
+# It watches GitHub for the owner's pushes to this repository's own branches, records each
+# one, and posts the "temper/boxes" commit status that master's protection waits for;
+# nothing is built (one temper only, the live one, and no test copy of it). When master
+# itself moves, it waits until no run is going, restarts temper onto it and checks it live.
 #
 # It is a *user* service on purpose. A self-hosted GitHub runner on a public repository
 # would let a stranger's pull request change the workflow and run their code here; this
 # asks GitHub questions instead of letting GitHub tell it what to run.
-Description=temper-ci: check every pushed commit in a throwaway temper, then take master live
+Description=temper-ci: post every pushed commit's status, then take master live once no run is going
 Documentation=file://%h/temper-ai/docs/ci-gate.md
 After=docker.service network-online.target
 Wants=network-online.target
@@ -26,10 +26,10 @@ RestartSec=20
 # does not have on its PATH.
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PYTHONUNBUFFERED=1
-# A check builds images and runs a whole temper; give it room, but never
-# let a wedged one sit there forever.
+# A deploy can be waiting on temper-deploy when it is stopped; give it room,
+# but never let a wedged one sit there forever.
 TimeoutStopSec=120
-# Building images must not make the machine unpleasant to use meanwhile.
+# Its git fetches and screenshots must not make the machine unpleasant to use.
 Nice=5
 IOSchedulingClass=best-effort
 IOSchedulingPriority=6

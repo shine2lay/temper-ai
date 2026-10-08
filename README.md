@@ -313,8 +313,8 @@ so and runs nothing. The old in-terminal flags (`--provider`, `--model`,
 `--config-dir`, `--no-db`) are refused, each with what to do instead.
 
 To try a config that hasn't landed, save it under a new name through the
-Studio config API ([docs/product-runs.md](docs/product-runs.md)) or start a
-throwaway stack (`scripts/temper_ci/stack.py`).
+Studio config API ([docs/product-runs.md](docs/product-runs.md)) and run it
+on the live server: there is one temper, and no test copies of it.
 
 ---
 

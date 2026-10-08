@@ -207,9 +207,8 @@ counts it as an unknown caller and enforce refuses it.
 
 - `tests/test_api/test_api_guard.py`: the modes, keys, the MCP side door, the
   in-process names, a run's own key, the record.
-- The machine check ([ci-gate.md](ci-gate.md)) runs its throwaway stack in
-  `enforce` with a throwaway key: "write guard" parks a `gate_smoke` wait,
-  shows a keyless answer refused, runs `ci_run_token` (its script tries to
-  answer and cancel the wait with its run key and is refused, then starts a
-  `smoke_test` run, which it may), and checks the wait is still open before
-  its own key answers it, recorded under that key's name.
+- Until 2026-10-08 the machine check ([ci-gate.md](ci-gate.md)) also ran it
+  end to end, in a throwaway temper in `enforce` with a throwaway key: a
+  parked `gate_smoke` wait, a keyless answer refused, and `ci_run_token`'s
+  run key refused when it tried to answer or cancel that wait. With one live
+  temper only, nothing runs that per commit now.

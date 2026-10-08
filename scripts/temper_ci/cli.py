@@ -1,6 +1,6 @@
 """``temper-ci`` — the gate in front of temper-ai's master.
 
-    temper-ci check <commit>     run the machine check here and now
+    temper-ci check <commit>     record a commit and post its status (nothing is built)
     temper-ci ask <commit>       put a commit in the queue for the watcher
     temper-ci watch              the service: pushes in, statuses out, deploys after
     temper-ci status             what is being checked, the last deploy, the last good one
@@ -96,6 +96,17 @@ def cmd_status(_args) -> int:
     if master and d.get("handled") == master and d.get("deployed") != master:
         print("  held back:   master went wrong once and the owner was told; it is not tried "
               "again until master moves (`temper-ci deploy` tries it now)")
+    waits = d.get("revert_waits") or {}
+    if waits:
+        print(f"  revert waits: back to {str(waits.get('good') or '?')[:12]} after "
+              f"{str(waits.get('bad') or '?')[:12]} failed its live check ({waits.get('parts')}), "
+              f"since {waits.get('since')}; it goes once no run is going")
+    hold = d.get("hold") or {}
+    if hold:
+        print(f"  held:        {hold.get('for')} since {hold.get('since')} \u2014 {hold.get('why')}")
+        if not waits:
+            print("               no restart under a run that is going; `temper-ci deploy` by "
+                  "a person is not held")
     print(f"\n  reports:    {REPORTS}  (served at {paths.REPORT_BASE})")
     print(f"  log:        {paths.LOG}")
     return 0
@@ -158,7 +169,7 @@ PROTECTION = {
             "tests (postgres)",
             "frontend",
             "e2e",
-            "temper/boxes",            # this machine: a whole temper, built from the commit
+            "temper/boxes",            # this machine: the commit recorded; nothing built since 2026-10-08
         ],
     },
     "enforce_admins": True,                   # the owner goes through it too
@@ -208,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    c = sub.add_parser("check", help="run the machine check on a commit now")
+    c = sub.add_parser("check", help="record a commit and post its status now (nothing is built)")
     c.add_argument("commit")
     c.add_argument("--branch", default="")
     c.add_argument("--no-post", action="store_true", help="don't put a status on GitHub")

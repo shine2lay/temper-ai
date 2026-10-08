@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Photograph one page of the throwaway temper, and say what was on it.
+"""Photograph one page of the live temper, and say what was on it.
 
     python3 shot.py <url> <file.png> [--expect TEXT]...
 

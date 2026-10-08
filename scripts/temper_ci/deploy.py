@@ -1,18 +1,24 @@
 """What happens after master moves: it goes live, or it goes back.
 
-The ordinary path is short. master moved, so ask ``temper-deploy restart``
-for a restart; it already waits until no run is going, and several lands
-that arrive together join one restart. When it has restarted, look at the
-live temper for real: its own check, its hooks, one free run in a box, and
-the dashboard. The Pi pins are looked at too, and shown, but never counted.
+The ordinary path is short. master moved, so wait until the live temper has
+had no run going for two minutes, then ask ``temper-deploy restart`` for a
+restart. The wait is temper-ci's own: temper-deploy restarts at once when
+runs live in boxes (they carry on in their boxes), but nothing may restart
+the live temper under a run that is going. Several lands that arrive while
+it waits join one deploy. When it has restarted, look at the live temper for real: its
+own check, its hooks, one free run, and the dashboard. The Pi pins are
+looked at too, and shown, but never counted.
+
+That look is the only look at the code once it lands. There is one temper,
+the live one, and no test copy of it; GitHub's lint, types and tests are
+what stands in front of master.
 
 The unhappy path is the point of all this. If the live check fails, master
 does not move backwards — a revert commit goes on top, through the same
 gate as everything else. That revert's files are exactly those of the last
-commit that was live and well, so the machine check passes it at once
-instead of spending ten minutes proving the same tree twice. Then temper
-restarts onto it, and the owner gets a DM saying what failed and what was
-taken back out.
+commit that was live and well. Then temper restarts onto it, and the owner
+gets a DM saying what failed and what was taken back out. If runs are going
+by then, the revert waits for them like any deploy, and the DM says so.
 
 Whichever way a failure goes, it is said once. The commit is written down as
 handled, and the watcher leaves it alone until master moves on; only a person
@@ -37,6 +43,14 @@ LAST_RESTART = Path.home() / ".local/state/temper-deploy/last-restart.json"
 TEMPER_DEPLOY = Path.home() / ".local/bin/temper-deploy"
 LIVE_PORT_DEFAULT = 8420            # what docker-compose.yml publishes
 RESTART_PATIENCE = 60 * 60          # an hour: a long run may be going
+# A deploy (or a revert) waits while any run on the live temper is in one of these: the
+# server's own list of runs that are not over yet. "waiting" is a run parked at a gate or on a
+# person's answer; it is not over, so it holds the deploy too.
+LIVE_STATUSES = ("pending", "queued", "running", "waiting", "cancelling")
+# A deploy goes only once the live temper has had no run going for this long: a run that ends
+# and the next one that starts a moment later (a run of runs) is not a quiet temper. The same
+# two minutes temper-deploy itself waited for, before runs lived in boxes.
+QUIET_SECONDS = 120
 LIVE_CHECK_RUNS = "smoke_test"      # $0, script agents only
 # temper-ci's own key for the live check's run start (docs/api-access.md): a file on the host,
 # outside every folder mounted into temper's containers. No file, no key: fine until the
@@ -92,6 +106,80 @@ def save(data: dict) -> None:
 
 def master_sha() -> str:
     return sh("git", "-C", str(MAIN_REPO), "rev-parse", "refs/heads/master").stdout.strip()
+
+
+# -- no restart under a run --------------------------------------------------
+
+def _now() -> float:
+    return time.time()
+
+
+def runs_going() -> list[dict] | None:
+    """The runs on the live temper that are not over yet; None when the API could not say."""
+    import urllib.request
+    api = live_api()
+    going: list[dict] = []
+    try:
+        for status in LIVE_STATUSES:
+            url = f"{api}/api/workflows?status={status}&limit=20"
+            with urllib.request.urlopen(url, timeout=20) as resp:  # noqa: S310 - loopback
+                rows = json.loads(resp.read()).get("runs") or []
+            going += [{"id": str(r.get("id") or ""), "workflow": str(r.get("workflow_name") or ""),
+                       "status": str(r.get("status") or status)} for r in rows]
+    except Exception as exc:  # noqa: BLE001 - not knowing counts as runs going
+        log(f"could not ask the live temper which runs are going: {type(exc).__name__}: {exc}")
+        return None
+    return going
+
+
+def _said(going: list[dict] | None) -> str:
+    if going is None:
+        return "the live temper could not say which runs are going"
+    names = ", ".join(f"{r['workflow'] or '?'} {r['id'][:8]} ({r['status']})" for r in going[:5])
+    more = f" and {len(going) - 5} more" if len(going) > 5 else ""
+    return f"runs going on the live temper: {names}{more}"
+
+
+def held_for_runs(data: dict, what: str) -> bool:
+    """Should the deploy (or revert) of ``what`` wait? Keeps ``data["hold"]`` up to date.
+
+    It waits while any run is going, and while the live temper cannot say; then it goes once
+    the temper has been quiet for QUIET_SECONDS in a row. A run that starts meanwhile starts
+    the quiet over. A person running ``temper-ci deploy`` is not held: that is their call.
+    """
+    going = runs_going()
+    hold = data.get("hold") or {}
+    if going is None or going:
+        why = _said(going)
+        if not hold or hold.get("quiet_since") is not None:
+            log(f"{what}: held — {why}")
+        elif hold.get("why") != why:
+            log(f"{what}: still held — {why}")
+        data["hold"] = {"for": what, "since": hold.get("since") or stamp(), "why": why,
+                        "quiet_since": None}
+        save(data)
+        return True
+    if QUIET_SECONDS <= 0:
+        if hold:
+            data.pop("hold", None)
+            save(data)
+        return False
+    if hold.get("quiet_since") is None:
+        data["hold"] = {"for": what, "since": hold.get("since") or stamp(),
+                        "why": f"no run going; it goes once that has lasted {QUIET_SECONDS} seconds",
+                        "quiet_since": _now()}
+        save(data)
+        log(f"{what}: no run is going; it goes once that has lasted {QUIET_SECONDS} seconds")
+        return True
+    if _now() - float(hold["quiet_since"]) < QUIET_SECONDS:
+        if hold.get("for") != what:
+            data["hold"] = {**hold, "for": what}
+            save(data)
+        return True
+    data.pop("hold", None)
+    save(data)
+    log(f"{what}: no run for {QUIET_SECONDS} seconds; going ahead (held since {hold.get('since')})")
+    return False
 
 
 # -- the live look -----------------------------------------------------------
@@ -403,8 +491,8 @@ def revert_to(good: str, bad: str, reason: str) -> dict:
         message = (f"Revert to {good[:12]}: the live check failed after {bad[:12]}\n\n"
                    f"{reason}\n\n"
                    "Put in by temper-ci. The files here are exactly those of "
-                   f"{good[:12]}, which was live and well, so the machine check "
-                   "recognises the tree and passes it at once.")
+                   f"{good[:12]}, which was live and well; the machine check "
+                   "records it and passes it at once.")
         c = sh("git", "-C", str(work), "commit", "-q", "-a", "-m", message, timeout=120)
         if c.returncode and "nothing to commit" not in (c.stdout + c.stderr):
             out["detail"] = f"could not make the revert commit: {(c.stderr or c.stdout).strip()}"
@@ -451,16 +539,15 @@ def dm(text: str) -> None:
 def can_be_gone_back_to(sha: str) -> bool:
     """Is this a commit the gate itself has passed?
 
-    Going back to a commit from before the gate existed cannot work: its files
-    have no ``docker-compose.ci.yml``, so the throwaway temper cannot be built
-    from it, so the revert fails its own gate and master never moves. The
-    machine then tries again on the next failure and leaves a trail of revert
-    commits nobody can land \u2014 which is what happened here, twice, before this
-    check existed.
+    Going back to a commit from before the gate existed went wrong here twice:
+    the revert could not pass the gate of the day, master never moved, and
+    the machine tried again on the next failure, leaving a trail of revert
+    commits nobody could land.
 
-    A commit is somewhere to go back to only if the box check has been run on
-    it and passed. Anything else is a guess, and a guess is worse than saying
-    plainly that there is nowhere to go and letting the owner decide.
+    A commit is somewhere to go back to only if the gate has recorded it and
+    passed it (and, while the throwaway temper still existed, checked it).
+    Anything else is a guess, and a guess is worse than saying plainly that
+    there is nowhere to go and letting the owner decide.
     """
     if not sha:
         return False
@@ -486,6 +573,9 @@ def deploy(sha: str) -> dict:
 
 def _deploy(sha: str) -> dict:
     data = state()
+    # Whoever started this deploy (the watcher once the runs were over, or a person), any hold
+    # on record is over now. Every way out of here saves ``data``.
+    data.pop("hold", None)
     good = data.get("last_good") or ""
     if good and not can_be_gone_back_to(good):
         log(f"{good[:12]} was on record as the good one, but the gate never passed it; "
@@ -562,6 +652,24 @@ def _deploy(sha: str) -> dict:
         out["reason"] = "a revert was already outstanding"
         return out
 
+    # A revert restarts temper too, so it waits for the runs like any deploy: watch_master
+    # makes it once they are over, unless master has moved on by then.
+    data = state()
+    if held_for_runs(data, f"the revert of {sha[:12]}"):
+        data["revert_waits"] = {"good": good, "bad": sha, "parts": bad_parts, "since": stamp()}
+        save(data)
+        dm(f"temper: the live check failed after {sha[:12]} ({bad_parts}). Going back to "
+           f"{good[:12]} restarts temper, so it waits until no run is going "
+           f"({data['hold']['why']}). Temper stays on {sha[:12]} meanwhile. "
+           f"`temper-ci status`, report: {report.url(sha)}")
+        out["rolled_back"] = False
+        out["reason"] = "the revert waits until no run is going on the live temper"
+        return out
+    return _go_back(sha, good, bad_parts, out)
+
+
+def _go_back(sha: str, good: str, bad_parts: str, out: dict) -> dict:
+    """Revert master to ``good`` after ``sha`` failed its live check, and tell the owner."""
     back = revert_to(good, sha, f"the live check failed: {bad_parts}")
     out["rollback"] = back
     data = state()
@@ -586,6 +694,20 @@ def watch_master() -> dict | None:
     """Called from the watcher's loop: has master moved since we last deployed?"""
     data = state()
     sha = master_sha()
+    waits = data.get("revert_waits")
+    if waits and waits.get("bad") != sha:
+        log(f"the revert of {str(waits.get('bad'))[:12]} is not needed any more: master moved on "
+            f"to {sha[:12]}, whose own deploy and live check decide now")
+        data.pop("revert_waits", None)
+        save(data)
+        waits = None
+    if waits:
+        if held_for_runs(data, f"the revert of {sha[:12]}"):
+            return None
+        data.pop("revert_waits", None)
+        save(data)
+        return _go_back(sha, waits.get("good") or "", waits.get("parts") or "",
+                        dict(data.get("last_deploy") or {"sha": sha}))
     if not sha or data.get("deployed") == sha:
         return None
     if data.get("handled") == sha:
@@ -595,9 +717,9 @@ def watch_master() -> dict | None:
     if not data.get("last_good"):
         # First time: what is live now is where we would go back to \u2014 but only if
         # the gate has passed it. On the day the gate is installed master is a
-        # commit from before it existed, and going back to that is impossible
-        # (no docker-compose.ci.yml in its files), so record nothing and let the
-        # first commit that passes become the one to go back to.
+        # commit from before it existed, which the gate never recorded, so
+        # record nothing and let the first commit that passes become the one to
+        # go back to.
         data["deployed"] = sha
         if can_be_gone_back_to(sha):
             data["last_good"] = sha
@@ -607,5 +729,7 @@ def watch_master() -> dict | None:
             log(f"first look: master is {sha[:12]}, which the gate never checked; there is "
                 "nowhere to go back to until a commit passes")
         save(data)
+        return None
+    if held_for_runs(data, sha[:12]):
         return None
     return deploy(sha)

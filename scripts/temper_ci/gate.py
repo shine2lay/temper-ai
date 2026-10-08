@@ -4,20 +4,25 @@ Why a plain user service and not a GitHub runner: temper-ai is a public
 repository, so a stranger's pull request can propose a workflow file, and
 anything self-hosted would then be a stranger's code on the owner's
 machine. So GitHub never starts anything here. This service watches from
-the inside, and only ever runs commits that are *on a branch of the
+the inside, and only ever looks at commits that are *on a branch of the
 repository itself* and were pushed by someone on the allow-list. A fork's
 pull request is never a branch here, so it never gets this far.
 
-What a check is:
+What a check is, since 2026-10-08: the commit is fetched, its tree is
+written down, and ``temper/boxes`` is posted as passed. Nothing is built
+and no temper is started. There is one temper only, the live one
+(temper-dev): no test copies of it, and the throwaway temper this check
+used to build for every commit was one.
 
-* docs-only commit → passes at once, nothing is started;
-* a tree we have already passed (a rebase that changed no file, a revert
-  back to a known-good tree) → passes at once, borrowing that result;
-* otherwise → a throwaway temper of that exact commit, the smoke set, a
-  report, and the result posted on the commit.
+The status keeps its name because master's protection and ``wt land`` wait
+for it, and because the deploy's way back reads what is written down here:
+the last good commit is one this gate recorded, and a revert comes through
+here too. What stands in front of master is GitHub's lint, types and tests;
+what looks at the code once it runs is the deploy's live check on the live
+temper, which reverts a commit that fails it (deploy.py).
 
-One at a time, by a lock file: two throwaway stacks at once would fight
-over docker and make both slower than doing them in turn.
+One at a time, by a lock file, so two looks at one commit never write over
+each other's record.
 """
 
 from __future__ import annotations
@@ -29,15 +34,21 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from dataclasses import asdict
 from pathlib import Path
 
-from . import paths, report, smoke, stack
+from . import paths, report, stack
 from .paths import CONTEXT, GATE_STATE, LOCK, log, read_json, sh, stamp, write_json
-from .stack import Box
 
 POLL_SECONDS = int(os.environ.get("TEMPER_CI_POLL", "25"))
 QUEUE = paths.STATE / "queue"
+
+# What the status (GitHub cuts a description at 140) and the report say about every commit.
+PASSED_SHORT = ("recorded; no test temper (one live temper only): GitHub's checks gate it, "
+                "the live check follows the deploy")
+PASSED_WHY = ("Nothing was built: since 2026-10-08 there is one temper only, the live one, and "
+              "no test copies of it. GitHub's lint, types and tests stand in front of master; "
+              "once this lands, the deploy's live check looks at the live temper and reverts "
+              "it if that fails.")
 
 
 # -- what we remember --------------------------------------------------------
@@ -54,11 +65,6 @@ def result_for(sha: str) -> dict | None:
     return (state().get("commits") or {}).get(sha)
 
 
-def passed_trees() -> dict[str, str]:
-    """tree sha → the commit that first passed with it."""
-    return state().get("trees") or {}
-
-
 def remember(sha: str, verdict: dict) -> None:
     data = state()
     commits = data.setdefault("commits", {})
@@ -68,8 +74,6 @@ def remember(sha: str, verdict: dict) -> None:
     if len(commits) > 200:
         for old in sorted(commits, key=lambda s: commits[s].get("finished_at") or "")[:-200]:
             commits.pop(old, None)
-    if verdict.get("ok") and verdict.get("tree"):
-        data.setdefault("trees", {}).setdefault(verdict["tree"], sha)
     data["last"] = {"sha": sha, "ok": verdict.get("ok"), "at": stamp()}
     save(data)
 
@@ -198,9 +202,8 @@ def our_pushes() -> list[dict]:
 
     The first look writes down where every branch is and checks nothing. On
     the day this is installed the repository has a dozen branches, all from
-    before the gate existed; they have no ``docker-compose.ci.yml`` and could
-    not be checked even in principle. Putting red crosses on them, ten minutes
-    apart, would be wrong twice over.
+    before the gate existed; answering for them all at once would be
+    answering for work nobody asked about.
     """
     if not only_we_can_push():
         return []
@@ -251,7 +254,7 @@ def already_posted(sha: str) -> str:
 # -- the check itself --------------------------------------------------------
 
 def check(sha: str, branch: str = "", post: bool = True) -> dict:
-    """Run the machine check on one commit and come back with the verdict."""
+    """Record one commit and pass it: fetched, its tree written down, nothing built or started."""
     started = time.time()
     stack.fetch()
     if not stack.has_commit(sha):
@@ -267,81 +270,15 @@ def check(sha: str, branch: str = "", post: bool = True) -> dict:
     verdict: dict = {"sha": sha, "branch": branch, "subject": subject, "tree": tree,
                      "files": len(files), "checks": [], "ok": False}
 
-    if post:
-        post_status(sha, "pending", "checking it in a throwaway temper", report.url(sha))
-
-    # -- the two ways a commit passes without a stack ------------------------
-    shortcut = ""
-    if stack.docs_only(files):
-        shortcut = ("Only writing changed, so nothing a run reads is different: "
-                    f"{', '.join(files[:6])}{' …' if len(files) > 6 else ''}.")
-    else:
-        seen = passed_trees().get(tree)
-        if seen and seen != sha:
-            shortcut = (f"Every file here is exactly as in {seen[:12]}, which already passed, "
-                        "so the same stack would run the same code.")
-    if shortcut:
-        verdict.update({"ok": True, "skipped": shortcut, "seconds": time.time() - started,
-                        "finished_at": stamp(), "reason": ""})
-        verdict["report"] = report.url(sha)
-        report.write(sha, verdict)
-        remember(sha, verdict)
-        if post:
-            post_status(sha, "success", shortcut[:139], report.url(sha))
-        log(f"{sha[:12]}: passed at once — {shortcut}")
-        return verdict
-
-    # -- the real thing ------------------------------------------------------
-    before = stack.live_fingerprint()
-    box = Box(sha)
-    try:
-        with box:
-            verdict["project"] = box.project
-            verdict["ports"] = (f"server {box.server_port}, postgres {box.postgres_port}, "
-                                f"redis {box.redis_port}")
-            verdict["built"] = box.built
-            verdict["image_inputs_changed"] = stack.touches_image(files)
-            results = smoke.run_all(box, report.folder(sha))
-            verdict["checks"] = [asdict(r) for r in results]
-            failed = [r for r in results if not r.ok]
-            verdict["ok"] = not failed
-            # The set stops at the first failure, so say what was reached rather
-            # than leaving it to look as if the rest were fine.
-            not_reached = max(smoke.SET_SIZE - len(results), 0)
-            verdict["not_reached"] = not_reached
-            verdict["reason"] = "" if not failed else (
-                "; ".join(f"{r.name} — {r.detail[:120]}" for r in failed) +
-                (f" (stopped there; {not_reached} of the set not reached)" if not_reached else ""))
-    except Exception as exc:  # noqa: BLE001 - a stack that will not start is a failure
-        verdict["ok"] = False
-        verdict["reason"] = f"the throwaway temper could not be used: {exc}"
-        log(f"{sha[:12]}: {verdict['reason']}")
-
-    after = stack.live_fingerprint()
-    leaked = stack.live_saw_box_runs(box.project)
-    if before != after:
-        verdict["isolation"] = f"CHANGED, which must never happen: {before} → {after}"
-    elif leaked:
-        verdict["isolation"] = f"the box reached the live temper: {leaked}"
-    else:
-        verdict["isolation"] = ("untouched — the live containers are the same ones, started at the "
-                                "same moment, on the same volumes, and nothing the box ran is in "
-                                "the live database")
-    if before != after or leaked:
-        verdict["ok"] = False
-        verdict["reason"] = ((verdict.get("reason") or "") +
-                             " The box did not keep to itself; that is a failure by itself.")
-
-    verdict["seconds"] = time.time() - started
-    verdict["finished_at"] = stamp()
-    verdict["report"] = report.url(sha)
+    # Nothing is built and nothing is started: see the module's docstring.
+    verdict.update({"ok": True, "skipped": PASSED_WHY, "reason": "",
+                    "seconds": time.time() - started, "finished_at": stamp(),
+                    "report": report.url(sha)})
     report.write(sha, verdict)
     remember(sha, verdict)
     if post:
-        post_status(sha, "success" if verdict["ok"] else "failure",
-                    "the smoke set passed in a throwaway temper" if verdict["ok"]
-                    else verdict["reason"], report.url(sha))
-    log(f"{sha[:12]}: {'passed' if verdict['ok'] else 'FAILED'} in {verdict['seconds']:.0f}s")
+        post_status(sha, "success", PASSED_SHORT, report.url(sha))
+    log(f"{sha[:12]}: recorded and passed at once; nothing built (one live temper only)")
     return verdict
 
 
@@ -424,9 +361,10 @@ def restart_if_our_code_changed(known: str) -> str:
 def watch_with_deploys() -> int:
     """The service: check what is pushed, and take what lands on master live.
 
-    One loop for both on purpose. A deploy asks temper-deploy to restart and
-    then waits for it, and while it waits nothing else here should be
-    starting a throwaway stack that would make that restart wait longer.
+    One loop for both on purpose: a deploy that waits for its restart holds
+    the next look at pushes, so the two never run over each other. A deploy
+    held back while runs are going on the live temper returns at once
+    (deploy.watch_master), so pushes are still answered meanwhile.
     """
     from . import deploy as deploy_mod
 

@@ -8,6 +8,13 @@
 //   the active tools differ from TEMPER_BOX_ROLE / TEMPER_BOX_TOOLS, or the session's active
 //   branch ends unsettled, and writes a marker file the host reads. Extension commands never
 //   reach input handlers, so binding still works.
+// - One exception to "unsettled", in a team member's box only (TEMPER_BOX_TEAM=1): a team
+//   message Temper hands into the member's running turn. It arrives over RPC as a steer (Pi
+//   queues it after the current tool calls, before the next model call) and its text starts
+//   with TEAM_MESSAGE_PREFIX. Identity, tools and helper checks still apply; an image with it
+//   is refused. Temper checks afterwards that each handed message is in the session file.
+//   A refused handed message writes no marker: it came after the prompt went in, so it never
+//   says the prompt was refused. Temper finds it missing from the session file.
 // - Command "/temper-box-rewind <entry id>" moves the active branch back to a settled entry in
 //   the same session file (after the owner decided about a cut-off turn).
 // - In a team member's box only (TEMPER_BOX_TEAM=1): the "send_message" tool. It writes the
@@ -28,6 +35,10 @@ import { dirname, join } from "node:path";
 
 const TEAM_SOCKET = "/box-sock/team.sock";
 const TEAM_TIMEOUT_MS = 30000;
+// The text a team message handed into a running turn starts with. The host's turn runner
+// (temper_ai/pi_agent/turn.py) reads this exact line, so it stays one line and one plain
+// double-quoted string: one constant for both sides.
+const TEAM_MESSAGE_PREFIX = "[temper:team-message] ";
 
 // One send: one JSON line out, one JSON line back.
 const teamSend = (payload: Record<string, unknown>): Promise<any> =>
@@ -245,11 +256,19 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  pi.on("input", (_event, ctx) => {
+  pi.on("input", (event, ctx) => {
     const now = state(ctx);
-    const allowed = now.identity_id === role && !now.helper_env && now.branch_settled &&
+    const same = now.identity_id === role && !now.helper_env &&
       JSON.stringify(now.active_tools) === JSON.stringify(tools);
+    // Temper's team message in a team member's box, over RPC...
+    const handed = process.env.TEMPER_BOX_TEAM === "1" && event.source === "rpc" &&
+      typeof event.text === "string" && event.text.startsWith(TEAM_MESSAGE_PREFIX);
+    // ...is the one input let in while the branch is unsettled (mid-turn), as a steer.
+    const teamSteer = handed && event.streamingBehavior === "steer" &&
+      !(event.images && event.images.length);
+    const allowed = same && (now.branch_settled || teamSteer);
     if (allowed) return { action: "continue" };
+    if (handed) return { action: "handled" };  // refused, no marker (see the top)
     write(blockedOut, { blocked: true, identity_id: now.identity_id, branch_settled: now.branch_settled,
       active_tools: now.active_tools, expected_tools: tools, before_provider: true });
     return { action: "handled" };

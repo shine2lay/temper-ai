@@ -66,6 +66,12 @@ jobs:
       - name: Show what is installed
         run: uv run python scripts/show_versions.py
 
+      # The host helper loads its byte-identical TypeScript checker with Node's
+      # built-in type stripping, as production does; no transpiler or live network.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+
       # No -x. Stopping at the first failure hid every other one, so each red
       # run told you about a single test and you found the next only after
       # fixing that. -n auto: the runners have 2-4 cores.
@@ -115,6 +121,10 @@ jobs:
 
       - name: Show what is installed
         run: uv run python scripts/show_versions.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
 
       - name: Run the tests, with the database tier on Postgres
         env:

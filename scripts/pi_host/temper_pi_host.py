@@ -7,6 +7,7 @@ connection, one answer line back, one request at a time.
 
     token <slot>                                         ok <token> | denied <why>
     status                                               ok <json>  | denied <why>
+    usage <slot>                                         ok <json>  | denied <why>
     branch <repo> <leader git dir> <commit> <trial id>   made | exists | denied <why>
 
 Everything deployment-specific (the socket, the served uid, the Pi state root, the allowed
@@ -20,6 +21,9 @@ What it can touch (docs/pi-host-helper.md says the same, in more words):
 - it runs the host ``pi`` CLI for its version and the read-only ``auth check --no-refresh``;
 - it runs the auth bridge, which reads (and, when a login is due, refreshes) Pi logins
   through the pinned Pi SDK's own auth storage, for the allowed multi-pass alias slots only;
+- for ``usage``, the bridge only reads the slot's stored login (never refreshes it) and asks
+  the provider's fixed OAuth usage page once (one retry), through pi-multi-pass's own limits
+  check vendored beside it (``vendor/pi-multi-pass-b8423d2``): no model call, no other address;
 - with the branch verb on, it runs hardened git to create one branch
   ``refs/heads/team/<trial id>`` in a source repo under the project roots, from a leader's
   git copy under the Pi state root.  Never checkout, push or force.
@@ -28,15 +32,17 @@ It stores nothing.  It logs one line per request to stderr (the journal, under s
 never a token, a fingerprint of one, an account id or any content.
 
 Subcommands: ``serve`` (the service), ``check`` (config and bridge start check, no socket),
-``ask`` (ask a running helper for its status), ``selftest`` (an isolated run with a stub Pi
-CLI and a stub Pi SDK: no real login, no model call).
+``ask`` (ask a running helper for its status, or for one slot's usage), ``selftest`` (an
+isolated run with a stub Pi CLI and a stub Pi SDK: no real login, no model call).
 """
 
 from __future__ import annotations
 
 import argparse
+import calendar
 import collections
 import json
+import math
 import os
 import re
 import select
@@ -65,6 +71,13 @@ SOCKET_PATH_LIMIT = 100  # bytes; the socket path must be shorter
 MAX_REQUEST = 4096
 MAX_BRIDGE_LINE = 1 << 16
 REQUEST_READ_TIMEOUT_S = 5.0
+# The usage check (docs/pi-host-helper.md, "usage"): pi-multi-pass's own deadline per attempt,
+# passed to the bridge; the bridge gives the whole check 2 x 10 s + 5 s + 1 s = 26 s at most.
+USAGE_ATTEMPT_TIMEOUT_MS = 10_000
+USAGE_WAIT_S = 30.0
+USAGE_KEY_RE = re.compile(r"^(?:5h|7d|7d:[a-z0-9-]{1,40})$")
+UTC_TIME_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+MAX_USAGE_WINDOWS = 40
 CLI_TIMEOUT_S = 20.0
 GIT_TIMEOUT_S = 120.0
 HOUR_S = 3600.0
@@ -107,6 +120,20 @@ REFUSALS = {
     "bridge_down": "slot {slot}: the auth bridge stopped",
     "bad_answer": "slot {slot}: the auth bridge gave an unusable answer",
 }
+
+# A usage request the helper refuses outright (``denied``): the same slot checks as a token.
+USAGE_DENIALS = frozenset({"bad_slot", "account_1", "not_alias", "not_served", "not_registered",
+                           "registry_unreadable", "no_bridge"})
+# Why a served usage request has no reading (``ok {"status":"unavailable","reason":...}``).
+# Fixed words only: never text from the provider, the Pi SDK or an exception.
+USAGE_REASONS = frozenset({
+    "signed_out", "not_subscription", "sign_in_expired", "busy", "timeout", "no_answer",
+    "incomplete_reading", "stale_reading", "check_failed", "auth_unreadable", "login_changed",
+    "sdk_changed", "sdk_unreadable", "checker_unreadable", "unsupported", "bridge_down",
+})
+# A bridge that would not start, for a usage request.
+USAGE_START_REASONS = {"sdk_version_mismatch": "sdk_changed", "sdk_unreadable": "sdk_unreadable",
+                       "sdk_surface": "sdk_unreadable"}
 
 
 # --- config ----------------------------------------------------------------------------
@@ -451,7 +478,8 @@ class Bridge:
                 "--sdk-version", b.sdk_version, "--ai-version", b.ai_version or "-",
                 "--agent-dir", self.cfg.pi_agent_dir, "--base-provider", self.cfg.base_provider,
                 "--slots", ",".join(self.cfg.allowed_slots) or "-",
-                "--min-validity-ms", str(MIN_VALIDITY_MS), "--timeout-ms", str(timeout_ms)]
+                "--min-validity-ms", str(MIN_VALIDITY_MS), "--timeout-ms", str(timeout_ms),
+                "--usage-timeout-ms", str(int(USAGE_ATTEMPT_TIMEOUT_MS))]
 
     def start(self) -> dict:
         self.stop_now()
@@ -800,6 +828,41 @@ def slot_problem(cfg: Config, slot: str) -> str | None:
     return None
 
 
+def utc_seconds(text: Any) -> int | None:
+    """``YYYY-MM-DDTHH:MM:SSZ`` as Unix seconds; None for anything else."""
+    if not isinstance(text, str) or not UTC_TIME_RE.match(text):
+        return None
+    try:
+        seconds = calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
+        return seconds if time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(seconds)) == text else None
+    except ValueError:
+        return None
+
+
+def usage_reading(answer: dict) -> dict | None:
+    """The bridge's usage reading, checked field by field and rebuilt (nothing else passes
+    through); None when anything is malformed.  The five-hour and overall weekly windows come
+    first, then the per-model weekly ones in the bridge's order."""
+    observed, windows = answer.get("observed_at"), answer.get("windows")
+    if utc_seconds(observed) is None or not isinstance(windows, list) or len(windows) > MAX_USAGE_WINDOWS:
+        return None
+    out: list[dict[str, Any]] = []
+    for window in windows:
+        if not isinstance(window, dict) or set(window) != {"key", "used_percent", "resets_at"}:
+            return None
+        key, used, resets = window["key"], window["used_percent"], window["resets_at"]
+        if not isinstance(key, str) or not USAGE_KEY_RE.match(key) or any(w["key"] == key for w in out):
+            return None
+        if isinstance(used, bool) or not isinstance(used, int | float) or not math.isfinite(used) \
+                or not 0 <= used <= 100:
+            return None
+        if resets is not None and utc_seconds(resets) is None:
+            return None
+        out.append({"key": key, "used_percent": used, "resets_at": resets})
+    out.sort(key=lambda w: {"5h": 0, "7d": 1}.get(w["key"], 2))
+    return {"status": "ok", "observed_at": observed, "windows": out}
+
+
 def peer_cred(conn: socket.socket) -> tuple[int, int]:
     """(pid, uid) of the process at the other end of a Unix socket (SO_PEERCRED)."""
     fmt = "3i"
@@ -858,9 +921,11 @@ class Helper:
             return
         line = read_request(conn)
         parts = line.split(" ") if line else []
-        verb = parts[0] if parts and parts[0] in ("token", "status", "branch") else "-"
+        verb = parts[0] if parts and parts[0] in ("token", "status", "usage", "branch") else "-"
         if verb == "token" and len(parts) == 2:
             answer, fields = self.token(parts[1])
+        elif verb == "usage" and len(parts) == 2:
+            answer, fields = self.usage(parts[1])
         elif verb == "status" and len(parts) == 1:
             answer, fields = self.status()
         elif verb == "branch" and len(parts) == 5:
@@ -904,6 +969,52 @@ class Helper:
         code = word(answer.get("reason"), "bad_answer")
         return denied(code if code in REFUSALS else "bad_answer",
                       found=word(answer.get("found_version")), expected=expected)
+
+    def usage(self, slot: str) -> tuple[str, dict]:
+        """The slot's usage windows, read now, without refreshing its login or taking a token
+        from the hourly ceiling (docs/pi-host-helper.md, "usage")."""
+        cfg = self.cfg
+        shown = slot if WORD_RE.match(slot) else "-"
+        fields: dict[str, Any] = {"slot": shown}
+
+        def denied(code: str) -> tuple[str, dict]:
+            return "denied " + refusal(code, shown, cfg), {**fields, "result": "denied", "why": code}
+
+        def unavailable(reason: str) -> tuple[str, dict]:
+            body = {"status": "unavailable", "reason": reason}
+            return "ok " + json.dumps(body, separators=(",", ":")), {**fields, "result": "unavailable",
+                                                                     "why": reason}
+
+        problem = slot_problem(cfg, slot)
+        if problem:
+            return denied(problem)
+        if self.bridge is None:
+            return denied("no_bridge")
+        asked_at = time.time()
+        try:
+            answer = self.bridge.request("usage", slot, USAGE_WAIT_S)
+        except BridgeTimeout:
+            return unavailable("timeout")
+        except BridgeRefused as exc:
+            return unavailable(USAGE_START_REASONS.get(exc.code, "bridge_down"))
+        if answer.get("ok") is not True:
+            code = word(answer.get("reason"), "-")
+            return denied(code) if code in USAGE_DENIALS and answer.get("slot") == slot else unavailable("check_failed")
+        if answer.get("slot") != slot:
+            return unavailable("check_failed")
+        if answer.get("status") == "unavailable":
+            reason = answer.get("reason")
+            return unavailable(reason if isinstance(reason, str) and reason in USAGE_REASONS else "check_failed")
+        reading = usage_reading(answer) if answer.get("status") == "ok" else None
+        if reading is None:
+            return unavailable("check_failed")
+        observed = utc_seconds(reading["observed_at"])
+        if observed is None or observed < math.floor(asked_at) - 1 or observed > time.time() + 1:
+            return unavailable("stale_reading")
+        if not {"5h", "7d"} <= {w["key"] for w in reading["windows"]}:
+            return unavailable("incomplete_reading")
+        return ("ok " + json.dumps(reading, separators=(",", ":")),
+                {**fields, "result": "ok", "windows": len(reading["windows"])})
 
     def status(self) -> tuple[str, dict]:
         cfg = self.cfg
@@ -1405,6 +1516,10 @@ class Selftest:
                    "token: the stub login comes back on the socket only (not printed here)")
         self.check(asked(f"token {SELFTEST_BASE}").startswith(f"denied slot {SELFTEST_BASE} is account 1"),
                    "token: the base slot (account 1) is refused")
+        self.check(asked(f"usage {SELFTEST_SLOT}") == 'ok {"status":"unavailable","reason":"unsupported"}',
+                   "usage: the vendored limits check loads; a base with no usage page reads nothing")
+        self.check(asked("usage") == "denied the request is not one this helper knows",
+                   "usage: a slot must be named (no default)")
 
         mark = len(self.events())
         set_stub_version(self.sdk_root, SELFTEST_SDK_VERSION + "-changed")
@@ -1467,9 +1582,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--config", required=True)
     p = sub.add_parser("check", help="check the config and the bridge's Pi SDK, without serving")
     p.add_argument("--config", required=True)
-    p = sub.add_parser("ask", help="ask a running helper for its status")
+    p = sub.add_parser("ask", help="ask a running helper for its status, or for one slot's usage")
     p.add_argument("--socket", required=True)
-    p.add_argument("request", choices=["status"])
+    p.add_argument("request", choices=["status", "usage"])
+    p.add_argument("--slot", help="usage only: the slot to read (there is no default)")
     p = sub.add_parser("selftest", help="an isolated run with a stub Pi CLI and a stub Pi SDK")
     p.add_argument("--bridge", default=str(Path(__file__).resolve().with_name("temper_pi_host_bridge.mjs")))
     p.add_argument("--node", default="node")
@@ -1480,8 +1596,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         return check_config(args.config)
     if args.command == "ask":
+        if (args.request == "usage") != (args.slot is not None):
+            parser.error("ask usage needs --slot <slot>; ask status takes no --slot")
         try:
-            answer = ask(args.socket, args.request)
+            answer = ask(args.socket, f"usage {args.slot}" if args.request == "usage" else "status")
         except OSError as exc:
             print(f"no answer from {args.socket} ({type(exc).__name__})")
             return 1

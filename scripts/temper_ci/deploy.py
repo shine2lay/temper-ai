@@ -6,8 +6,18 @@ restart. The wait is temper-ci's own: temper-deploy restarts at once when
 runs live in boxes (they carry on in their boxes), but nothing may restart
 the live temper under a run that is going. Several lands that arrive while
 it waits join one deploy. When it has restarted, look at the live temper for real: its
-own check, its hooks, one free run, and the dashboard. The Pi pins are
-looked at too, and shown, but never counted.
+own check, its hooks, one free run, the dashboard, and then, on runs of its own, an
+ordinary run's box environment and the owner's own controls: stop and resume, and a
+gate answered through the API (live_checks.py). Every run it starts is quiet (notify off) and tidied away,
+pass or fail. The Pi pins are looked at too, and shown, but never counted.
+
+The look never runs beside someone else's run. A part that had to step aside for one is
+owed: temper stays on the new commit, but it is not recorded as the good one to go back
+to until the owed parts have passed, tried again once no run is going (settle_owed),
+before any newer commit is deployed on top. A part that fails then fails the look like
+any other. Owed is never a pass (Security, reply to rm-e71dc2dc): the third look in a
+row at a commit that ends owed fails it, and so does a record of what is owed that is
+missing or cannot be read.
 
 That look is the only look at the code once it lands. There is one temper,
 the live one, and no test copy of it; GitHub's lint, types and tests are
@@ -31,9 +41,10 @@ import datetime as dt
 import json
 import subprocess
 import time
+from collections.abc import Collection
 from pathlib import Path
 
-from . import gate, paths, report
+from . import gate, live_checks, paths, report
 from .paths import DEPLOY_STATE, MAIN_REPO, log, read_json, sh, stamp, write_json
 
 DEPLOY_DIR = Path.home() / ".local/state/temper-deploy"
@@ -51,7 +62,13 @@ LIVE_STATUSES = ("pending", "queued", "running", "waiting", "cancelling")
 # and the next one that starts a moment later (a run of runs) is not a quiet temper. The same
 # two minutes temper-deploy itself waited for, before runs lived in boxes.
 QUIET_SECONDS = 120
-LIVE_CHECK_RUNS = "smoke_test"      # $0, script agents only
+LIVE_CHECK_RUNS = live_checks.FREE_RUN_WORKFLOW   # $0, script agents only; the dashboard shows it
+# The third look in a row at a commit that ends owed fails it: a temper that is never quiet for
+# long enough must not keep a commit live, untried, for ever (Security, reply to rm-e71dc2dc).
+OWED_TRIES = 3
+# The name temper-ci's key goes by on the live temper (GET /api/guard lists it): the caller a
+# gate answered by the live look must be recorded under.
+CI_CALLER = "temper-ci"
 # temper-ci's own key for the live check's run start (docs/api-access.md): a file on the host,
 # outside every folder mounted into temper's containers. No file, no key: fine until the
 # server's write guard is set to enforce.
@@ -98,6 +115,12 @@ def live_api() -> str:
 
 def state() -> dict:
     return read_json(DEPLOY_STATE, {}) or {}
+
+
+def state_unreadable() -> bool:
+    """deploy.json is there, but cannot be read: which commit is good, and what a live check
+    still owes, are lost with it."""
+    return DEPLOY_STATE.exists() and not isinstance(read_json(DEPLOY_STATE, None), dict)
 
 
 def save(data: dict) -> None:
@@ -189,18 +212,17 @@ def _temper_deploy(*args: str, timeout: int = 300) -> subprocess.CompletedProces
 
 
 def live_check(shots: Path) -> dict:
-    """Four questions of the temper that is actually serving people, and the Pi pins.
+    """Seven questions of the temper that is actually serving people, and the Pi pins.
 
-    The four count: any one failing fails the live check, and that reverts the deploy. The
-    pins are information only (see pin_check): shown in the report and ``temper-ci status``,
-    never in ``ok``.
+    The seven count: any one failing fails the live check (``ok``), and that reverts the
+    deploy. One that stepped aside for someone else's run is owed instead (``owed``, see
+    settle_owed). The pins are information only (see pin_check): shown in the report and
+    ``temper-ci status``, never in ``ok``.
     """
-    out: dict = {"at": stamp(), "parts": [], "ok": True, "shots": []}
+    out: dict = {"at": stamp(), "parts": [], "ok": True, "owed": [], "shots": []}
 
     def part(name: str, ok: bool, detail: str) -> None:
-        out["parts"].append({"name": name, "ok": ok, "detail": detail[:600]})
-        if not ok:
-            out["ok"] = False
+        _count(out, {"name": name, "ok": ok, "detail": detail[:600]})
 
     r = _temper_deploy("check")
     part("temper-deploy check", r.returncode == 0, (r.stdout or r.stderr).strip())
@@ -210,48 +232,63 @@ def live_check(shots: Path) -> dict:
 
     api = live_api()
     out["api"] = api
+    _with_runs(out, shots, api, ci_key_headers())
 
-    # One free run, in a box, on the live server — the same thing a person
-    # would do first: does it still run anything at all?
-    run_id = ""
-    try:
-        import urllib.request
-        req = urllib.request.Request(  # noqa: S310 - loopback
-            f"{api}/api/runs", method="POST",
-            data=json.dumps({"workflow": LIVE_CHECK_RUNS,
-                             "inputs": {"message": "after the deploy"}}).encode(),
-            headers={"Content-Type": "application/json", **ci_key_headers()})
-        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
-            run_id = json.loads(resp.read()).get("execution_id") or ""
-        status, deadline = "", time.time() + 240
-        while time.time() < deadline:
-            with urllib.request.urlopen(f"{api}/api/workflows/{run_id}", timeout=20) as resp:  # noqa: S310
-                status = json.loads(resp.read()).get("status") or ""
-            if status in ("completed", "failed", "cancelled", "error"):
-                break
-            time.sleep(3)
-        part("a free run on the live temper", status == "completed",
-             f"{LIVE_CHECK_RUNS} {run_id[:8]} ended as {status or 'unknown'} (at {api})")
-    except Exception as exc:  # noqa: BLE001
-        part("a free run on the live temper", False, f"{type(exc).__name__}: {exc} (at {api})")
-
-    # The dashboard lives under /app — its router's basename. The API's own root is a 404
-    # by design, and photographing that was once counted as the page being fine.
-    shots.mkdir(parents=True, exist_ok=True)
-    target = shots / "live-dashboard.png"
-    args = ["python3", str(Path(__file__).with_name("shot.py")), f"{api}/app/", str(target),
-            "--expect", LIVE_CHECK_RUNS]
-    r = sh(*args, timeout=180)
-    took = target.exists()
-    if took:
-        out["shots"].append(str(target))
-    part("the dashboard", r.returncode == 0 and took,
-         "it showed the workflow list" if r.returncode == 0
-         else ((r.stdout or "").strip().splitlines()[-1:] or [(r.stderr or "").strip()])[0][:300])
-
-    # Not through part(): whatever it says, it never touches out["ok"].
+    # Not through _count(): whatever it says, it never touches out["ok"].
     out["parts"].append(pin_check())
     return out
+
+
+def _count(out: dict, result: dict) -> None:
+    """Put a part that counts on the look: one that failed fails it, one owed is owed."""
+    out["parts"].append(result)
+    if result.get("owed"):
+        out["owed"].append(str(result["name"]))
+    elif not result.get("ok"):
+        out["ok"] = False
+
+
+def _with_runs(out: dict, shots: Path, api: str, headers: dict[str, str],
+               only: Collection[str] | None = None) -> None:
+    """The parts that start runs of their own, and the dashboard: all of them, or only the
+    ones named in ``only`` (the dashboard goes with the free run)."""
+    if only is None or live_checks.FREE_RUN in only:
+        # One free run, in a box, on the live server — the same thing a person
+        # would do first: does it still run anything at all? Quiet, and tidied away if it
+        # does not end (live_checks.py).
+        free = live_checks.run_one(live_checks.FREE_RUN, live_checks.free_run,
+                                   live_checks.Live(api, dict(headers)))
+        _count(out, free)
+        # The run it just made is what the list must show. With none made (someone else's
+        # run was going) the page only has to come up; it is looked at again with the free run.
+        _dashboard(out, shots, api, expect=not free.get("owed"))
+
+    # Then what the owner does to his own runs, each on a $0 run of its own: the box's
+    # environment, stop and resume, a gate answered through the API. After the dashboard, so
+    # its picture is taken with the free run on top. Each tidies its own runs before its verdict.
+    for result in live_checks.run_all(api, headers, CI_CALLER, only=only):
+        _count(out, result)
+
+
+def _dashboard(out: dict, shots: Path, api: str, *, expect: bool) -> None:
+    """The dashboard, photographed. It lives under /app — its router's basename. The API's
+    own root is a 404 by design, and photographing that was once counted as the page being
+    fine."""
+    shots.mkdir(parents=True, exist_ok=True)
+    target = shots / "live-dashboard.png"
+    # A picture left by an earlier look must not pass for this one's.
+    target.unlink(missing_ok=True)
+    args = ["python3", str(Path(__file__).with_name("shot.py")), f"{api}/app/", str(target)]
+    if expect:
+        args += ["--expect", LIVE_CHECK_RUNS]
+    r = sh(*args, timeout=180)
+    took = target.exists()
+    if took and str(target) not in out["shots"]:
+        out["shots"].append(str(target))
+    _count(out, {"name": "the dashboard", "ok": r.returncode == 0 and took,
+                 "detail": ("it showed the workflow list" if r.returncode == 0
+                            else ((r.stdout or "").strip().splitlines()[-1:]
+                                  or [(r.stderr or "").strip()])[0][:300])})
 
 
 def pin_check() -> dict:
@@ -609,12 +646,144 @@ def _deploy(sha: str) -> dict:
         save(data)
         return out
 
-    shots = report.folder(sha) / "live"
-    live = live_check(shots)
+    out["live"] = live_check(report.folder(sha) / "live")
+    return _decide(sha, out, data, good)
+
+
+def _dict(value: object) -> dict:
+    """``value`` when it is a dict, else an empty one: a record read back may hold anything."""
+    return value if isinstance(value, dict) else {}
+
+
+def settle_owed(sha: str) -> dict:
+    """Try the parts the last look at ``sha`` owes, now that no run is going; then decide.
+
+    Their fresh results take their places in that look (with the dashboard's, when the free
+    run was owed: the page is looked at again for its run). A part owed again stays owed,
+    and is tried at the next quiet, up to OWED_TRIES looks in all; one that fails fails the
+    look, as on the day.
+    """
+    data = state()
+    owed = _dict(data.get("owed"))
+    last = _dict(data.get("last_deploy"))
+    # The look being finished is this commit's; anything else on record is another's.
+    out = dict(last) if last.get("sha") == sha else {"sha": sha, "restarted": True}
+    live = dict(out.get("live") or {})
+    names = set(owed.get("parts") or live.get("owed") or [])
+    good = data.get("last_good") or ""
+    if good and not can_be_gone_back_to(good):
+        good = ""
+    log(f"{sha[:12]}: no run is going, so trying again what its live check owes (look "
+        f"{_owed_tries(owed) + 1} of {OWED_TRIES}): {'; '.join(sorted(names))}")
+    fresh: dict = {"parts": [], "ok": True, "owed": [], "shots": list(live.get("shots") or [])}
+    _with_runs(fresh, report.folder(sha) / "live", live_api(), ci_key_headers(), only=names)
+    new = {str(p.get("name")): p for p in fresh["parts"]}
+    parts = [new.pop(str(p.get("name")), p) for p in live.get("parts") or []]
+    parts += list(new.values())
+    live.update({"parts": parts, "owed": fresh["owed"], "shots": fresh["shots"],
+                 "ok": not any(report.mark(p) == "FAIL" for p in parts), "owed_tried_at": stamp()})
     out["live"] = live
-    out["ok"] = bool(live.get("ok"))
+    out = _decide(sha, out, data, good)
+    try:
+        report.write_live(sha, out)
+    except Exception as exc:  # noqa: BLE001 - the deploy is decided and saved already
+        log(f"{sha[:12]}: could not put the live check on its report: {type(exc).__name__}: {exc}")
+    return out
+
+
+def _owed_tries(owed: dict) -> int:
+    """How many looks in a row at its commit have ended owed so far (a record from before
+    they were counted is its first). One that cannot be read counts as the last."""
+    try:
+        return max(1, int(owed.get("step_asides") or 1))
+    except (TypeError, ValueError):
+        return OWED_TRIES
+
+
+def _fail_owed(live: dict, why: str) -> None:
+    """Every part the look owes fails instead, saying why (with none listed, a part of its
+    own says it): owed is never a pass."""
+    owed = [p for p in live.get("parts") or [] if p.get("owed")]
+    for p in owed:
+        p.pop("owed", None)
+        p["ok"] = False
+        p["detail"] = f"FAILED: {why}. Before that: {p.get('detail') or ''}"[:600]
+    if not owed:
+        live.setdefault("parts", []).append(
+            {"name": "what the live check owed", "ok": False, "detail": f"FAILED: {why}"[:600]})
+    live["owed"] = []
+    live["ok"] = False
+
+
+def _owed_record(data: dict) -> tuple[dict | None, str]:
+    """What the last look owes, as kept on disk, and what is wrong with that record, if anything.
+
+    It is kept in deploy.json, so it outlasts a restart of temper-ci. A record that cannot be
+    read, or a look that ended owed with no record of it, is not a pass (Security, reply to
+    rm-e71dc2dc): the caller fails what it owed.
+    """
+    if "owed" in data:
+        owed = data["owed"]
+        parts = owed.get("parts") if isinstance(owed, dict) else None
+        if (not isinstance(owed, dict) or not isinstance(owed.get("sha"), str) or not owed["sha"]
+                or not isinstance(parts, list) or not parts
+                or not all(isinstance(p, str) and p for p in parts)):
+            return None, "the record of what its live check owes cannot be read"
+        return owed, ""
+    last = _dict(data.get("last_deploy"))
+    looked = _dict(last.get("live"))
+    sha = str(last.get("sha") or "")
+    if (sha and looked.get("ok") and looked.get("owed") and not last.get("ok")
+            and data.get("deployed") == sha and data.get("handled") != sha
+            and data.get("last_good") != sha):
+        return None, "its last live check ended owed, but the record of what it owes is missing"
+    return None, ""
+
+
+def _owed_lost(data: dict, problem: str) -> dict | None:
+    """The record of what is owed is gone or garbled: what it owed fails, like any failure."""
+    owed = _dict(data.get("owed"))
+    last = _dict(data.get("last_deploy"))
+    sha = owed.get("sha") if isinstance(owed.get("sha"), str) and owed.get("sha") else ""
+    sha = sha or str(data.get("deployed") or last.get("sha") or "")
+    data.pop("owed", None)
+    if not sha:
+        log(f"{problem}, and no commit is on record as live; nothing to fail")
+        save(data)
+        return None
+    log(f"{sha[:12]}: {problem}; what it owed counts as failed")
+    out = dict(last) if last.get("sha") == sha else {"sha": sha, "restarted": True}
+    live = dict(out.get("live") or {"at": stamp(), "parts": [], "ok": True, "owed": [], "shots": []})
+    live["parts"] = [dict(p) for p in live.get("parts") or [] if isinstance(p, dict)]
+    _fail_owed(live, problem)
+    out["live"] = live
+    good = data.get("last_good") or ""
+    if good and not can_be_gone_back_to(good):
+        good = ""
+    out = _decide(sha, out, data, good)
+    try:
+        report.write_live(sha, out)
+    except Exception as exc:  # noqa: BLE001 - the deploy is decided and saved already
+        log(f"{sha[:12]}: could not put the live check on its report: {type(exc).__name__}: {exc}")
+    return out
+
+
+def _decide(sha: str, out: dict, data: dict, good: str) -> dict:
+    """What the live look at ``sha`` found decides it: well, owed, or going back to ``good``."""
+    live = out["live"]
+    owed = [str(name) for name in live.get("owed") or []]
+    earlier = _dict(data.get("owed"))
+    same = earlier.get("sha") == sha
+    tries = (_owed_tries(earlier) if same else 0) + 1
+    if owed and live.get("ok") and tries >= OWED_TRIES:
+        _fail_owed(live, f"it stepped aside for someone else's run {tries} looks in a row at this "
+                         f"commit, and look {OWED_TRIES} fails")
+        owed = []
+    out["ok"] = bool(live.get("ok")) and not owed
     data["last_deploy"] = out
     if out["ok"]:
+        data.pop("owed", None)
+        data.pop("state_lost_at", None)
         data["last_good"] = sha
         data["deployed"] = sha
         data["revert_outstanding"] = ""
@@ -624,8 +793,33 @@ def _deploy(sha: str) -> dict:
         log(f"{sha[:12]}: live and well")
         return out
 
-    # Only the parts that count: an information-only one (the Pi pins) never failed anything.
-    bad_parts = "; ".join(p["name"] for p in live["parts"] if not p["ok"] and not p.get("info"))
+    if live.get("ok"):
+        # Nothing failed, but not everything was tried: someone else's run was going. Live,
+        # and not the commit to go back to until the owed parts have passed (watch_master).
+        # Nobody is told: nothing is wrong. The record says which runs it stepped aside for.
+        because = sorted({str(i) for p in live.get("parts") or [] if p.get("owed")
+                          for i in p.get("because") or []})
+        # One line per step-aside, ids and names only (Security, reply to rm-e71dc2dc): whose
+        # run it was, and which runs of its own temper-ci cancelled (they ended, no box left).
+        for p in live.get("parts") or []:
+            if p.get("owed"):
+                log(f"{sha[:12]}: {p.get('name')} stepped aside for "
+                    f"{', '.join(str(i)[:8] for i in p.get('because') or []) or 'a run not named'}; "
+                    f"cancelled its own: {', '.join(str(i)[:8] for i in p.get('cancelled') or []) or 'none'}")
+        data["deployed"] = sha
+        data["owed"] = {"sha": sha, "parts": owed, "since": earlier.get("since") if same else stamp(),
+                        "step_asides": tries, "because": because}
+        save(data)
+        log(f"{sha[:12]}: live, but not yet recorded as good: owed (look {tries} of "
+            f"{OWED_TRIES}), because someone else's run was going "
+            f"({', '.join(b[:8] for b in because) or 'not named'}): {'; '.join(owed)}. They are "
+            "tried again once no run is going, before any newer deploy")
+        return out
+
+    data.pop("owed", None)
+    # Only the parts that count and failed: an information-only one (the Pi pins) never
+    # failed anything, and an owed one has not been tried.
+    bad_parts = "; ".join(str(p["name"]) for p in live["parts"] if report.mark(p) == "FAIL")
     log(f"{sha[:12]}: the live check failed ({bad_parts})")
     # Handled, whichever way it goes from here: the owner hears about this failure
     # once, and the watcher leaves this commit alone until master moves on (or a
@@ -690,8 +884,31 @@ def _go_back(sha: str, good: str, bad_parts: str, out: dict) -> dict:
     return out
 
 
+def _state_lost() -> None:
+    """deploy.json is there but cannot be read, so which commit is good, and what a live
+    check still owes, went with it. Nothing passes on that (Security, reply to rm-e71dc2dc):
+    the file is kept aside, the owner is told once, and the record starts again with
+    nothing to go back to until a commit passes its whole live check. Without this the
+    first-look path would record master as good without a look."""
+    aside = DEPLOY_STATE.with_name(f"{DEPLOY_STATE.name}.unreadable-{dt.datetime.now(dt.UTC):%Y%m%dT%H%M%SZ}")
+    try:
+        DEPLOY_STATE.replace(aside)
+    except OSError as exc:
+        log(f"deploy.json cannot be read, nor moved aside ({type(exc).__name__}): writing a new one over it")
+    sha = master_sha()
+    save({"deployed": sha, "state_lost_at": stamp()})
+    log(f"deploy.json could not be read (kept as {aside.name}): nothing is on record as good now, "
+        "and nothing a live check owed counts as passed")
+    dm(f"temper: temper-ci could not read its record of deploys (kept as {aside}), so it no longer "
+       "knows which commit is good, or what a live check still owed. Nothing counts as passed: "
+       f"master {sha[:12]} is taken as live, and there is nowhere to go back to until a commit "
+       "passes its live check. `temper-ci status`")
+
+
 def watch_master() -> dict | None:
     """Called from the watcher's loop: has master moved since we last deployed?"""
+    if state_unreadable():
+        _state_lost()
     data = state()
     sha = master_sha()
     waits = data.get("revert_waits")
@@ -708,6 +925,16 @@ def watch_master() -> dict | None:
         save(data)
         return _go_back(sha, waits.get("good") or "", waits.get("parts") or "",
                         dict(data.get("last_deploy") or {"sha": sha}))
+    owed, problem = _owed_record(data)
+    if problem:
+        return _owed_lost(data, problem)
+    if owed:
+        # Before anything newer goes on top, even when master has moved on (Security, reply
+        # to rm-e71dc2dc): temper is still on the owed commit. The same wait as a deploy:
+        # the owed parts start runs of their own, and never beside someone else's.
+        if held_for_runs(data, f"what the live check of {owed['sha'][:12]} owes"):
+            return None
+        return settle_owed(owed["sha"])
     if not sha or data.get("deployed") == sha:
         return None
     if data.get("handled") == sha:

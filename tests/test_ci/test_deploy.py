@@ -14,11 +14,14 @@ import html
 import json
 import subprocess
 import sys
+import types
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+
+from tests.test_ci.live_fake import FakeLiveTemper
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -662,7 +665,7 @@ def test_temper_ci_deploy_by_hand_tries_a_handled_commit_again(dep, monkeypatch,
 # -- the Pi pins: shown after every deploy, never counted ----------------------
 #
 # temper's pin check (scripts/pi_pins_check.py --json) is stood in for: no box config,
-# image or tar is read. The live temper around it passes all four parts that count, so
+# image or tar is read. The live temper around it passes all seven parts that count, so
 # whatever the pins say is the only thing that changes -- and the live check passes anyway.
 
 
@@ -680,24 +683,9 @@ def _pins_said(result: str, pins: list[dict], code: int, error: str = "") -> sub
     return subprocess.CompletedProcess(["python3"], code, json.dumps(said) + "\n", "")
 
 
-class _Answer:
-    """The live API's answer to one request."""
-
-    def __init__(self, body: dict) -> None:
-        self._body = json.dumps(body).encode()
-
-    def __enter__(self) -> _Answer:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
-
-    def read(self) -> bytes:
-        return self._body
-
-
-def _live_temper(deploy, tmp_path, monkeypatch, pins: object) -> list[tuple]:
-    """Stand in for a live temper whose four counted parts all pass.
+def _live_temper(deploy, tmp_path, monkeypatch, pins: object,
+                 fake: FakeLiveTemper | None = None) -> list[tuple]:
+    """Stand in for a live temper whose seven counted parts all pass (or as ``fake`` says).
 
     ``pins`` is what the pin check does: a CompletedProcess to return, or an exception to
     raise. Returns the pin check's calls, each as (argv, cwd, timeout).
@@ -707,14 +695,10 @@ def _live_temper(deploy, tmp_path, monkeypatch, pins: object) -> list[tuple]:
     script.write_text("# stands in for temper's pin check; never run\n", encoding="utf-8")
     monkeypatch.setattr(deploy, "PIN_CHECK", script)
     monkeypatch.setattr(deploy, "_temper_deploy", lambda *a, **k: subprocess.CompletedProcess(a, 0, "well\n", ""))
-    monkeypatch.setattr(deploy, "ci_key_headers", lambda *a, **k: {})
-
-    def urlopen(req, timeout=None):
-        if isinstance(req, urllib.request.Request) and req.get_method() == "POST":
-            return _Answer({"execution_id": "run-0001"})
-        return _Answer({"status": "completed"})
-
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(deploy, "ci_key_headers", lambda *a, **k: {"Authorization": "Bearer not-a-real-key"})
+    fake = (fake or FakeLiveTemper()).install(monkeypatch)
+    # The owner's controls wait on the fake's clock, not a real one.
+    monkeypatch.setattr(deploy.live_checks, "time", types.SimpleNamespace(sleep=fake.sleep, monotonic=fake.clock))
     calls: list[tuple] = []
 
     def sh(*args, cwd=None, timeout=120, **_kwargs):
@@ -740,7 +724,7 @@ def _pins_part(out: dict) -> dict:
 
 
 def test_pins_that_match_are_shown_as_ok(dep, monkeypatch):
-    """temper's own command, run the way docs/pi-lane.md gives it, after the four parts that
+    """temper's own command, run the way docs/pi-lane.md gives it, after the seven parts that
     count, with a backstop of its own on top of the check's 60 s."""
     deploy, tmp_path = dep
     pins = [_pin(name) for name in ("image", "image tar", "runtime", "add-on pi-tldr")]
@@ -872,10 +856,373 @@ def test_each_part_reads_as_what_it_is(dep, part, mark):
     assert report.mark(part) == mark
 
 
+COUNTED = ("temper-deploy check", "temper-deploy hooks", "a free run on the live temper",
+           "the dashboard", "an ordinary run's box environment", "stop, then resume",
+           "a gate answered through the API")
+GATE = "a gate answered through the API"
+TEAM_RUN = "someone else's run is going: c8626bf7 (team-trial-5e1b72713191, running)"
+
+
 def _counted_parts(failing: str = "") -> list[dict]:
     return [{"name": name, "ok": name != failing, "detail": "it said no" if name == failing else ""}
-            for name in ("temper-deploy check", "temper-deploy hooks",
-                         "a free run on the live temper", "the dashboard")]
+            for name in COUNTED]
+
+
+def test_the_live_check_asks_seven_things_in_order_then_shows_the_pins(dep, monkeypatch):
+    """The owner's controls come after the dashboard, so its picture has the free run on top;
+    every run the look starts is quiet, and none is left going."""
+    deploy, tmp_path = dep
+    fake = FakeLiveTemper()
+    _live_temper(deploy, tmp_path, monkeypatch, _pins_said("pass", [_pin("image")], 0), fake)
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert out["ok"] is True, out["parts"]
+    assert [p["name"] for p in out["parts"]] == [*COUNTED, "the Pi pins"]
+    assert [w for w, _ in fake.started()] == ["smoke_test", "ci_box_env", "ci_slow", "gate_smoke"]
+    assert all(notify == {"question": "off", "stuck": "off", "failed": "off", "finished": "off"}
+               for _, notify in fake.started())
+    assert fake.going() == []
+    assert deploy.CI_CALLER == "temper-ci"
+
+
+def test_a_control_that_fails_fails_the_live_check(dep, monkeypatch):
+    """A new part counts like the old four: the live check fails, which reverts the deploy."""
+    deploy, tmp_path = dep
+    _live_temper(deploy, tmp_path, monkeypatch, _pins_said("pass", [_pin("image")], 0),
+                 FakeLiveTemper(ends_as={"ci_box_env": "failed"}))
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert out["ok"] is False
+    [bad] = [p for p in out["parts"] if not p["ok"] and not p.get("info")]
+    assert bad["name"] == "an ordinary run's box environment" and "ended as failed" in bad["detail"]
+
+
+# -- owed: a part that stepped aside for someone else's run ---------------------
+
+
+def _shots_asked(deploy, monkeypatch) -> list[tuple]:
+    """Keep the arguments of each picture of the dashboard (on top of _live_temper's sh)."""
+    inner, asked = deploy.sh, []
+
+    def sh(*args, **kwargs):
+        if str(args[1]).endswith("shot.py"):
+            asked.append(args)
+        return inner(*args, **kwargs)
+
+    monkeypatch.setattr(deploy, "sh", sh)
+    return asked
+
+
+def test_a_part_that_meets_someone_elses_run_is_owed(dep, monkeypatch):
+    """A Team Project's run starts while the look is under way: the part not yet begun is
+    owed, neither passed nor failed, and nothing of the look's own is left going."""
+    deploy, tmp_path = dep
+    fake = FakeLiveTemper(someone_else=(1.0, "team-trial-5e1b72713191"))
+    _live_temper(deploy, tmp_path, monkeypatch, _pins_said("pass", [_pin("image")], 0), fake)
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert (out["ok"], out["owed"]) == (True, [GATE]), out["parts"]
+    [gate] = [p for p in out["parts"] if p["name"] == GATE]
+    assert (gate["ok"], gate["owed"]) == (None, True) and gate["detail"].startswith(f"owed, not started: {TEAM_RUN}")
+    assert [w for w, _ in fake.started()] == ["smoke_test", "ci_box_env", "ci_slow"]
+    assert fake.going() == []
+
+
+def test_with_someone_elses_run_going_throughout_every_part_with_runs_is_owed(dep, monkeypatch):
+    """The box environment too (Security, reply to rm-e71dc2dc). The dashboard only has to
+    come up, with no free run of the look's own to show."""
+    deploy, tmp_path = dep
+    fake = FakeLiveTemper(someone_else=(0.0, "team-trial-5e1b72713191"))
+    _live_temper(deploy, tmp_path, monkeypatch, _pins_said("pass", [_pin("image")], 0), fake)
+    shots = _shots_asked(deploy, monkeypatch)
+
+    out = deploy.live_check(tmp_path / "shots")
+
+    assert fake.started() == [], "not one run beside someone else's"
+    assert out["ok"] is True, "nothing failed"
+    assert out["owed"] == ["a free run on the live temper", "an ordinary run's box environment",
+                           "stop, then resume", GATE]
+    assert len(shots) == 1 and "--expect" not in shots[0]
+
+
+TEAM_ID = "c8626bf7-team-project"
+
+
+def _owed_look(owed: tuple[str, ...] = (GATE,)) -> dict:
+    return {"at": "2026-10-08T19:00:00Z", "api": "http://127.0.0.1:8420", "ok": True, "owed": list(owed),
+            "shots": [],
+            "parts": [{"name": n, "ok": None, "owed": True, "detail": f"owed, not started: {TEAM_RUN}",
+                       "because": [TEAM_ID], "cancelled": []}
+                      if n in owed else {"name": n, "ok": True, "detail": ""} for n in COUNTED]}
+
+
+def test_an_owed_deploy_stays_live_but_is_not_the_one_to_go_back_to(dep, monkeypatch, capsys):
+    """Nothing failed, so nothing is reverted and nobody is told; but a part was never tried,
+    so the commit is not recorded as good either."""
+    deploy, tmp_path = dep
+    from temper_ci import cli, report  # noqa: PLC0415
+
+    deploy.save({"last_good": "4" * 40, "deployed": "4" * 40})
+    monkeypatch.setattr(deploy.gate, "result_for", lambda sha: {"ok": True})
+    now = dt.datetime.now(dt.UTC)
+    monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: _restarted(
+        deploy, tmp_path, now + dt.timedelta(seconds=5), head=sha[:8]))
+    monkeypatch.setattr(deploy, "live_check", lambda shots: _owed_look())
+    monkeypatch.setattr(deploy, "revert_to", lambda *a: pytest.fail("it reverted over a part it never tried"))
+    monkeypatch.setattr(deploy, "dm", lambda text: pytest.fail(f"it told the owner about an owed part: {text}"))
+
+    out = deploy.deploy("5" * 40)
+
+    assert out["ok"] is False
+    data = deploy.state()
+    assert data["deployed"] == "5" * 40, "temper stays on it"
+    assert data["last_good"] == "4" * 40, "not the one to go back to until the owed part passes"
+    assert (data["owed"]["sha"], data["owed"]["parts"]) == ("5" * 40, [GATE])
+    # Kept on disk, so it outlasts a restart of temper-ci, with whose run it stepped aside for.
+    assert (data["owed"]["step_asides"], data["owed"]["because"]) == (1, [TEAM_ID])
+    assert "handled" not in data, "the watcher comes back to it"
+    page = html.unescape((report.folder("5" * 40) / "index.html").read_text(encoding="utf-8"))
+    assert "Live, but not yet recorded as good. Owed, because someone else's run was going: " + GATE in page
+
+    monkeypatch.setattr(deploy, "master_sha", lambda: "5" * 40)
+    assert cli.main(["status"]) == 0
+    shown = capsys.readouterr().out
+    assert "last deploy: 555555555555 live, not yet recorded as good: parts owed" in shown
+    assert f"owed a gate answered through the API \u2014 owed, not started: {TEAM_RUN}\n" in shown
+    assert ("owed:        555555555555 is live but not yet recorded as good: a gate answered through "
+            "the API stepped aside for someone else's run (c8626bf7), look 1 of 3, since ") in shown
+    assert "before any newer deploy; look 3 fails it" in shown
+    assert "last good:   444444444444" in shown
+    # temper-ci's log has each step-aside, ids and names only (Security, reply to rm-e71dc2dc).
+    from temper_ci import paths  # noqa: PLC0415
+
+    logged = paths.LOG.read_text(encoding="utf-8")
+    assert ("555555555555: a gate answered through the API stepped aside for c8626bf7; "
+            "cancelled its own: none\n") in logged
+    assert "555555555555: live, but not yet recorded as good: owed (look 1 of 3)" in logged
+
+
+def _owing(deploy, monkeypatch, *, tried_as: dict, owed: object = None, master: str = "5" * 40) -> list[set]:
+    """temper is live on 5555, which owes the gate part; trying it again gives ``tried_as``.
+    The record is one from before looks were counted, unless ``owed`` says otherwise."""
+    deploy.save({"last_good": "4" * 40, "deployed": "5" * 40,
+                 "owed": {"sha": "5" * 40, "parts": [GATE], "since": "earlier"} if owed is None else owed,
+                 "last_deploy": {"sha": "5" * 40, "restarted": True, "ok": False, "live": _owed_look()}})
+    monkeypatch.setattr(deploy, "master_sha", lambda: master)
+    monkeypatch.setattr(deploy.gate, "result_for", lambda sha: {"ok": True})
+    monkeypatch.setattr(deploy, "live_api", lambda: "http://127.0.0.1:8420")
+    monkeypatch.setattr(deploy, "ci_key_headers", lambda *a, **k: {})
+    monkeypatch.setattr(deploy, "ask_restart", lambda *a: pytest.fail("it restarted temper to try an owed part"))
+    tried: list[set] = []
+
+    def with_runs(out, shots, api, headers, only=None):
+        tried.append(set(only or ()))
+        deploy._count(out, dict(tried_as))
+
+    monkeypatch.setattr(deploy, "_with_runs", with_runs)
+    return tried
+
+
+def test_what_is_owed_is_tried_once_no_run_is_going_and_then_the_deploy_is_good(dep, monkeypatch):
+    deploy, _ = dep
+    tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": True, "detail": "passed this time"})
+    monkeypatch.setattr(deploy, "dm", lambda text: pytest.fail(f"it told the owner: {text}"))
+    monkeypatch.setattr(deploy, "QUIET_SECONDS", 120)
+    clock = [0.0]
+    monkeypatch.setattr(deploy, "_now", lambda: clock[0])
+    going: list[dict] = [dict(_RUN)]
+    monkeypatch.setattr(deploy, "runs_going", lambda: going)
+
+    for minute in range(30):
+        clock[0] = minute * 60.0
+        assert deploy.watch_master() is None
+    going.clear()
+    clock[0] = 1800.0
+    deploy.watch_master()
+    clock[0] = 1919.0
+    deploy.watch_master()
+    assert tried == [], "it tried an owed part beside someone else's run, or before two quiet minutes"
+    # Only a step-aside counts toward the third look; waiting for quiet does not (Security).
+    assert deploy.state()["owed"].get("step_asides", 1) == 1
+
+    clock[0] = 1920.0
+    out = deploy.watch_master()
+
+    assert tried == [{GATE}] and out["ok"] is True
+    from temper_ci import paths  # noqa: PLC0415
+
+    logged = paths.LOG.read_text(encoding="utf-8")
+    assert ("555555555555: no run is going, so trying again what its live check owes (look 2 of 3): "
+            f"{GATE}\n") in logged
+    assert "555555555555: live and well\n" in logged
+    data = deploy.state()
+    assert data["last_good"] == "5" * 40 and "owed" not in data
+    parts = data["last_deploy"]["live"]["parts"]
+    assert [p["name"] for p in parts] == list(COUNTED), "each part keeps its place"
+    assert parts[-1] == {"name": GATE, "ok": True, "detail": "passed this time"}
+    deploy.watch_master()
+    assert tried == [{GATE}], "tried once"
+
+
+def test_an_owed_part_that_fails_when_tried_goes_back_like_any_failure(dep, monkeypatch):
+    deploy, _ = dep
+    _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": False, "detail": "no gate opened"})
+    reverted: list[tuple[str, str]] = []
+    monkeypatch.setattr(deploy, "revert_to", lambda good, bad, reason: (
+        reverted.append((good, bad)), {"ok": True, "revert": "9" * 40})[1])
+    said: list[str] = []
+    monkeypatch.setattr(deploy, "dm", said.append)
+    monkeypatch.setattr(deploy, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, "5555555 Add a thing\n", ""))
+
+    deploy.watch_master()
+
+    assert reverted == [("4" * 40, "5" * 40)]
+    assert "owed" not in deploy.state() and deploy.state()["last_good"] == "4" * 40
+    assert len(said) == 1 and f"what failed: {GATE}\n" in said[0]
+
+
+def test_a_part_owed_again_stays_owed_from_the_first_time(dep, monkeypatch):
+    deploy, _ = dep
+    tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": None, "owed": True,
+                                                  "detail": f"owed, stopped part-way: {TEAM_RUN}"})
+    monkeypatch.setattr(deploy, "dm", lambda text: pytest.fail(f"it told the owner: {text}"))
+
+    deploy.watch_master()
+
+    data = deploy.state()
+    assert tried == [{GATE}]
+    assert (data["owed"]["parts"], data["owed"]["since"]) == ([GATE], "earlier")
+    assert data["owed"]["step_asides"] == 2, "the second look in a row that ends owed"
+    assert data["last_good"] == "4" * 40 and data["deployed"] == "5" * 40
+    assert data["last_deploy"]["live"]["owed_tried_at"]
+
+
+def _reverts(deploy, monkeypatch) -> tuple[list[tuple[str, str]], list[str]]:
+    reverted: list[tuple[str, str]] = []
+    monkeypatch.setattr(deploy, "revert_to", lambda good, bad, reason: (
+        reverted.append((good, bad)), {"ok": True, "revert": "9" * 40})[1])
+    said: list[str] = []
+    monkeypatch.setattr(deploy, "dm", said.append)
+    monkeypatch.setattr(deploy, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, "5555555 Add a thing\n", ""))
+    return reverted, said
+
+
+def test_the_third_look_in_a_row_that_ends_owed_fails_and_goes_back(dep, monkeypatch):
+    """Owed is never a pass (Security, reply to rm-e71dc2dc): a temper never quiet for long
+    enough must not keep an untried commit live for ever."""
+    deploy, _ = dep
+    tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": None, "owed": True,
+                                                  "detail": f"owed, stopped part-way: {TEAM_RUN}"},
+                   owed={"sha": "5" * 40, "parts": [GATE], "since": "earlier", "step_asides": 2,
+                         "because": [TEAM_ID]})
+    reverted, said = _reverts(deploy, monkeypatch)
+
+    deploy.watch_master()
+
+    assert tried == [{GATE}]
+    assert reverted == [("4" * 40, "5" * 40)]
+    data = deploy.state()
+    assert "owed" not in data and data["last_good"] == "4" * 40
+    [gate] = [p for p in data["last_deploy"]["live"]["parts"] if p["name"] == GATE]
+    assert gate["ok"] is False and "owed" not in gate
+    assert gate["detail"].startswith("FAILED: it stepped aside for someone else's run 3 looks in a row "
+                                     "at this commit, and look 3 fails")
+    assert len(said) == 1 and f"what failed: {GATE}\n" in said[0]
+
+
+@pytest.mark.parametrize("owed", [
+    "a gate answered through the API",
+    {"sha": "5" * 40, "parts": "a gate answered through the API"},
+    {"sha": "5" * 40, "parts": []},
+    {"parts": [GATE]},
+])
+def test_a_record_of_what_is_owed_that_cannot_be_read_fails_it(dep, monkeypatch, owed):
+    """Missing or unreadable is a failure, never a pass (Security, reply to rm-e71dc2dc)."""
+    deploy, _ = dep
+    tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": True, "detail": ""}, owed=owed)
+    reverted, said = _reverts(deploy, monkeypatch)
+
+    deploy.watch_master()
+
+    assert tried == [], "nothing is tried on a record that cannot be read"
+    assert reverted == [("4" * 40, "5" * 40)]
+    data = deploy.state()
+    assert "owed" not in data and data["last_good"] == "4" * 40 and data["handled"] == "5" * 40
+    [gate] = [p for p in data["last_deploy"]["live"]["parts"] if p["name"] == GATE]
+    assert gate["detail"].startswith("FAILED: the record of what its live check owes cannot be read")
+    assert len(said) == 1
+    deploy.watch_master()
+    assert len(reverted) == 1 and len(said) == 1, "once"
+
+
+def test_a_look_that_ended_owed_with_no_record_of_it_fails(dep, monkeypatch):
+    deploy, _ = dep
+    _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": True, "detail": ""})
+    data = deploy.state()
+    del data["owed"]
+    deploy.save(data)
+    reverted, said = _reverts(deploy, monkeypatch)
+
+    deploy.watch_master()
+
+    assert reverted == [("4" * 40, "5" * 40)]
+    [gate] = [p for p in deploy.state()["last_deploy"]["live"]["parts"] if p["name"] == GATE]
+    assert gate["detail"].startswith("FAILED: its last live check ended owed, but the record of what "
+                                     "it owes is missing")
+    assert len(said) == 1
+
+
+def test_what_is_owed_is_settled_before_a_newer_commit_goes_on_top(dep, monkeypatch):
+    """Not dropped when master moves on (Security, reply to rm-e71dc2dc): temper is still on
+    the owed commit, so its owed parts are tried first, and only then is the newer one
+    deployed."""
+    deploy, _ = dep
+    order: list[str] = []
+    tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": True, "detail": "passed this time"},
+                   master="6" * 40)
+    inner = deploy._with_runs
+    monkeypatch.setattr(deploy, "_with_runs", lambda *a, **k: (order.append("settle"), inner(*a, **k))[1])
+    monkeypatch.setattr(deploy, "deploy", lambda sha: (order.append(f"deploy {sha[:4]}"), {"sha": sha})[1])
+    monkeypatch.setattr(deploy, "dm", lambda text: pytest.fail(f"it told the owner: {text}"))
+
+    deploy.watch_master()
+
+    assert tried == [{GATE}] and order == ["settle"]
+    data = deploy.state()
+    assert data["last_good"] == "5" * 40 and "owed" not in data
+
+    deploy.watch_master()
+
+    assert order == ["settle", "deploy 6666"]
+
+
+def test_a_record_that_cannot_be_read_counts_nothing_as_good(dep, monkeypatch, capsys):
+    """Which commit is good, and what a live check still owed, went with it: the watcher keeps
+    the file aside, tells the owner once, and records nothing as good until a commit passes
+    its whole live check. (A first look would otherwise record master as good unlooked at.)"""
+    deploy, _ = dep
+    from temper_ci import cli, paths  # noqa: PLC0415
+
+    paths.DEPLOY_STATE.write_text('{"last_good": "4444", "owed": {"sha": "55', encoding="utf-8")
+    monkeypatch.setattr(deploy, "master_sha", lambda: "7" * 40)
+    monkeypatch.setattr(deploy.gate, "result_for", lambda sha: {"ok": True})
+    monkeypatch.setattr(deploy, "deploy", lambda sha: pytest.fail("it deployed on a lost record"))
+    said: list[str] = []
+    monkeypatch.setattr(deploy, "dm", said.append)
+
+    assert deploy.watch_master() is None
+    assert deploy.watch_master() is None
+
+    data = deploy.state()
+    assert data["deployed"] == "7" * 40 and not data.get("last_good"), "nothing passed on a lost record"
+    assert len(said) == 1 and "Nothing counts as passed" in said[0]
+    [aside] = list(paths.DEPLOY_STATE.parent.glob("deploy.json.unreadable-*"))
+    assert aside.read_text(encoding="utf-8").startswith('{"last_good": "4444"'), "kept as it was"
+    assert cli.main(["status"]) == 0
+    assert "record lost: deploy.json could not be read at " in capsys.readouterr().out
 
 
 PINS_OFF = {"name": "the Pi pins", "ok": False, "info": True, "result": "mismatch",

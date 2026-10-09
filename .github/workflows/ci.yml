@@ -155,62 +155,64 @@ jobs:
       - run: npm run build
 
   e2e:
-    # Browser tests against a real server serving the built dashboard. They
-    # create their own data with the zero-cost `smoke_test` workflow, so no
-    # API key and no seeded database are needed.
+    # The browser tests that need no temper. No temper is started here, not
+    # even a throwaway one: AGENTS.md rule 15 allows no copy of Temper but the
+    # live one, GitHub's included. The spec files listed in
+    # frontend/e2e/server-free.txt answer every API call themselves and run
+    # against this commit's own build, served by scripts/e2e_static_server.py
+    # (frontend/playwright.server-free.config.ts). The live dashboard is looked
+    # at by temper-ci after every deploy (docs/ci-gate.md). The job keeps its
+    # name: master's branch protection and `wt land` wait for it.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          python-version: '3.12'
+
+      - name: Which browser tests need no temper
+        id: list
+        run: |
+          specs=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' frontend/e2e/server-free.txt | grep -v '^$' || true)
+          count=$(printf '%s\n' "$specs" | grep -c . || true)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Browser tests"
+            echo
+            echo "No temper is started here (AGENTS.md rule 15: no copy of Temper but the live one, GitHub's included)."
+            echo "temper-ci looks at the live dashboard after every deploy (docs/ci-gate.md)."
+            echo
+            if [ "$count" = 0 ]; then
+              echo "No spec file is listed in \`frontend/e2e/server-free.txt\`, so none ran."
+            else
+              echo "$count spec file(s) from \`frontend/e2e/server-free.txt\`, against this commit's own build:"
+              printf -- '- %s\n' $specs
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/setup-node@v4
+        if: steps.list.outputs.count != '0'
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
-      - run: uv sync --frozen
       - name: Build the dashboard
+        if: steps.list.outputs.count != '0'
         working-directory: frontend
         run: |
           npm ci
           npm run build
       - name: Install the browser
+        if: steps.list.outputs.count != '0'
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Start the server
-        env:
-          TEMPER_DATABASE_URL: sqlite:///e2e.db
-        run: |
-          uv run temper serve --port 8420 > server.log 2>&1 &
-          echo "SERVER_PID=$!" >> "$GITHUB_ENV"
-          for i in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8420/api/health && break
-            sleep 1
-          done
-          # Fail here, loudly, if the server never came up. Without this the
-          # job carried on and every browser test failed with a connection
-          # error, hiding a one-line import failure behind twelve of them.
-          if ! curl -sf http://127.0.0.1:8420/api/health > /dev/null; then
-            echo "::error::server did not start"
-            cat server.log
-            exit 1
-          fi
-
-      - name: Run end-to-end tests
+      - name: Run the browser tests that need no temper
+        if: steps.list.outputs.count != '0'
         working-directory: frontend
         env:
-          # 127.0.0.1, not localhost: the server binds IPv4 and the runner
-          # resolves localhost to ::1 first.
-          TEMPER_E2E_BASE_URL: http://127.0.0.1:8420
           PLAYWRIGHT_JUNIT_OUTPUT_NAME: playwright-junit.xml
-        run: npx playwright test --reporter=list,junit
+        run: npx playwright test -c playwright.server-free.config.ts --reporter=list,junit
 
       - name: Summarise
-        if: always()
+        if: always() && steps.list.outputs.count != '0'
         working-directory: frontend
         run: python3 ../scripts/junit_summary.py playwright-junit.xml --title "Browser tests"
 
@@ -219,25 +221,15 @@ jobs:
       # lose. The nightly repeats the suite and does treat flakiness as a
       # failure, and that is what sends the message.
       - name: Say which tests only passed on their retry
-        if: always()
+        if: always() && steps.list.outputs.count != '0'
         working-directory: frontend
         run: python3 ../scripts/flaky_report.py playwright-junit.xml --title "Browser tests" --soft
 
-      # The server holds uv's cache lock for as long as it runs, and
-      # setup-uv's own cleanup prunes that cache once the job is over. Left
-      # alive, it made that prune wait five minutes and then exit 2, which
-      # failed a job whose 22 browser tests had all passed. A job should not
-      # walk away from a running server in any case.
-      - name: Stop the server
-        if: always()
-        run: kill "$SERVER_PID" 2>/dev/null || true
-
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.list.outputs.count != '0'
         with:
           name: e2e-failures
           path: |
             frontend/test-results/
             frontend/playwright-junit.xml
-            server.log
           retention-days: 7

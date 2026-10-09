@@ -1,10 +1,10 @@
 workflow:
   name: ci_slow
   description: |
-    A run that takes long enough to do something to while it is going: the
-    machine check stops it and resumes it, and restarts the throwaway
-    server under another one to see it carry on. Script agents only, so it
-    costs nothing and needs no API key.
+    A run that takes long enough to do something to while it is going:
+    temper-ci's live look stops it and resumes it on the live temper after
+    every deploy (scripts/temper_ci/live_checks.py). Script agents only, so
+    it costs nothing and needs no API key.
 
       temper run ci_slow --input seconds=20
       POST /api/runs {"workflow": "ci_slow", "inputs": {"seconds": "20"}}

@@ -1,6 +1,6 @@
 /**
  * The Team page journey (e2e/team-journey.ts) against a live Temper with Team
- * on, such as temper's practice-run rig. Run by hand, never in the gate (the
+ * on. Run by hand, never in the gate (the
  * default config's testDir is ./e2e):
  *
  *   cd frontend && TEAM_JOURNEY_BASE_URL=http://127.0.0.1:<port> \
@@ -9,7 +9,8 @@
  * README.md, "Team journey (live)", lists every variable. This file installs
  * no route and makes no API call: what the journey does is click, as the
  * owner would. It starts one project (unless TEAM_JOURNEY_STOP_AFTER stops it
- * sooner), so point it only at a Temper meant for practice runs.
+ * sooner), so run it only against temper-dev, when a project start is
+ * approved and none is running.
  */
 import { test } from '@playwright/test';
 import { existsSync, readFileSync, statSync } from 'node:fs';

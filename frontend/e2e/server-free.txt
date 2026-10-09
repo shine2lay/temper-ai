@@ -1,0 +1,18 @@
+# The browser specs GitHub runs (the e2e job, the nightly repeat): ones that need no
+# temper at all. AGENTS.md rule 15 allows no copy of Temper but the live one, GitHub's
+# included, and a browser test that starts runs or writes never runs on the live one.
+#
+# A spec listed here answers every API call itself (page.route fixtures). It runs against
+# this commit's own build, served by scripts/e2e_static_server.py, where every /api and
+# /ws call gets a 503: a test that leans on a server fails loudly there. A test in a
+# listed file that does need a server is tagged @needs-server and left out.
+#
+# One spec file name per line, as it is in e2e/. Frontend says what goes here. With none
+# listed, GitHub runs no browser tests and its summary says why.
+bigView.spec.ts
+liveview.spec.ts
+piA2.spec.ts
+safeRendering.spec.ts
+team-c.spec.ts
+team-journey.spec.ts
+team.spec.ts

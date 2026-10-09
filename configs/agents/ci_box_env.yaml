@@ -4,8 +4,8 @@
 # agent's Bash sees; /proc/*/environ shows what every process in the box started
 # with (the box's own process included), as far as this user can read it.
 # Prints names, never values, and fails (exit 1) when it finds a name that must
-# not be there (docs/boxes.md). Used by the machine check's smoke set and as the
-# live probe after a change to the box list.
+# not be there (docs/boxes.md). Run by temper-ci's live look after every deploy
+# (scripts/temper_ci/live_checks.py) and the live probe after a change to the box list.
 #
 # It also checks the box's profile (docs/boxes.md, "The box profile"): the box was
 # started with one, it matches its digest, it says what it leaves open (BS2-BS6 and a

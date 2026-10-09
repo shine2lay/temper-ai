@@ -4,8 +4,8 @@
  *
  * The /api/team routes are served from the fixtures the routes really
  * answered (e2e/fixtures/team, made by scripts/capture_team_fixtures.py), so
- * the specs run on a server with the Team switch off, as CI's is, and start
- * no team trial and call no model.
+ * the specs need no Temper (GitHub runs them against the build alone,
+ * playwright.server-free.config.ts), start no team trial and call no model.
  */
 import { expect, type Page, type Route } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';

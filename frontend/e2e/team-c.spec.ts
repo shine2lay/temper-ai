@@ -855,7 +855,8 @@ test.describe('Team page C: behaviour', () => {
     await go();
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page).toHaveURL(/\/app\/team\?page=2$/);
-    expect(seen).toContain('/api/team/trials?limit=26&offset=24');
+    // The address changes before the page asks for page 2: wait for the read.
+    await expect.poll(() => seen).toContain('/api/team/trials?limit=26&offset=24');
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByTestId('trials-showing')).toHaveText('Showing 51–57 of 57 · newest first');
     await expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();

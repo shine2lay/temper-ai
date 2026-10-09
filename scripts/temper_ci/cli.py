@@ -74,14 +74,19 @@ def cmd_status(_args) -> int:
     print()
     dep = d.get("last_deploy") or {}
     if dep:
+        looked = dep.get("live") or {}
         verdict = ("live and well" if dep.get("ok")
                    else "temper never restarted onto it" if dep.get("restarted") is False
+                   else "live, not yet recorded as good: parts owed"
+                   if looked.get("ok") and looked.get("owed")
                    else "FAILED its live check")
         print(f"  last deploy: {dep.get('sha', '')[:12]} {verdict} ({dep.get('asked_at', '')})")
         for p in (dep.get("live") or {}).get("parts", []):
             # An information-only part (the Pi pins) never counts: its mark says so, and its
             # first line says what it found.
-            said = str(p.get("detail") or "").splitlines()[:1] if p.get("info") else []
+            # So does a part owed, because it stepped aside for someone else's run.
+            said = (str(p.get("detail") or "").splitlines()[:1]
+                    if p.get("info") or report.mark(p) == "owed" else [])
             found = f" \u2014 {said[0]}" if said else ""
             print(f"      {report.mark(p):<4} {p['name']}{found}")
         if dep.get("rollback"):
@@ -101,10 +106,25 @@ def cmd_status(_args) -> int:
         print(f"  revert waits: back to {str(waits.get('good') or '?')[:12]} after "
               f"{str(waits.get('bad') or '?')[:12]} failed its live check ({waits.get('parts')}), "
               f"since {waits.get('since')}; it goes once no run is going")
+    owed = d.get("owed") if isinstance(d.get("owed"), dict) else {}
+    if owed:
+        # Ids and names only (Security, reply to rm-e71dc2dc).
+        because = ", ".join(str(i)[:8] for i in owed.get("because") or []) or "not named"
+        print(f"  owed:        {str(owed.get('sha') or '?')[:12]} is live but not yet recorded as "
+              f"good: {'; '.join(str(n) for n in owed.get('parts') or [])} stepped aside for "
+              f"someone else's run ({because}), look {owed.get('step_asides') or 1} of "
+              f"{deploy_mod.OWED_TRIES}, since {owed.get('since')}; tried again once no run is "
+              f"going, before any newer deploy; look {deploy_mod.OWED_TRIES} fails it")
+    if deploy_mod.state_unreadable():
+        print("  record lost: deploy.json cannot be read; the watcher keeps it aside on its next "
+              "loop, and nothing counts as good until a commit passes its live check")
+    elif d.get("state_lost_at"):
+        print(f"  record lost: deploy.json could not be read at {d['state_lost_at']}; nothing is "
+              "on record as good until a commit passes its live check")
     hold = d.get("hold") or {}
     if hold:
         print(f"  held:        {hold.get('for')} since {hold.get('since')} \u2014 {hold.get('why')}")
-        if not waits:
+        if not waits and not owed:
             print("               no restart under a run that is going; `temper-ci deploy` by "
                   "a person is not held")
     print(f"\n  reports:    {REPORTS}  (served at {paths.REPORT_BASE})")

@@ -3,8 +3,9 @@ import path from 'node:path';
 import { privateFolder } from './e2e/privateFolder';
 
 /**
- * The Team page journey against a live Temper with Team on (temper's
- * practice-run rig), run by hand:
+ * The Team page journey against a live Temper with Team on, run by hand. It
+ * starts a real project: only against temper-dev, when a project start is
+ * approved and none is running.
  *
  *   TEAM_JOURNEY_BASE_URL=http://127.0.0.1:<port> TEAM_JOURNEY_SHOTS_DIR=<private folder> \
  *     npx playwright test -c playwright.live.config.ts

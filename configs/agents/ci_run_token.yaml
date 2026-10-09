@@ -4,11 +4,13 @@
 #   * answers the wait `wait_run` is parked at, with its key   -> must be refused (403)
 #   * answers it with no key at all                           -> must be refused (401)
 #   * cancels `wait_run` with its key                         -> must be refused (403)
-#   * starts a smoke_test run with its key                    -> must start (200)
+#   * starts a smoke_test run with its key, notify off        -> must start (200)
 #
 # and prints, as one JSON line, the statuses and the id of the run it started. Exit 1
 # when any of them is not what it must be. Never prints the key. Only meaningful with
-# TEMPER_API_GUARD=enforce (the machine check's stack); costs nothing.
+# TEMPER_API_GUARD=enforce; costs nothing. temper-ci does not run it today: the live
+# temper is the only one (AGENTS.md rule 15) and its guard records rather than refuses
+# (docs/ci-gate.md).
 agent:
   name: ci_run_token
   type: script
@@ -44,8 +46,10 @@ agent:
         "approve_without_key": post(approve, {"response": "nor this"}, False)[0],
         "cancel_with_key": post(f"/api/runs/{run}/cancel", {"reason": "a box must not"}, True)[0],
     }
+    quiet = {"question": "off", "stuck": "off", "failed": "off", "finished": "off"}
     status, started = post("/api/runs", {"workflow": "smoke_test",
-                                         "inputs": {"message": "started by a run's own key"}}, True)
+                                         "inputs": {"message": "started by a run's own key"},
+                                         "notify": quiet}, True)
     seen["start_with_key"] = status
     seen["started"] = started.get("execution_id", "")
     print(json.dumps(seen))

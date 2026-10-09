@@ -53,9 +53,10 @@ should show, axe (nothing found) and every button and link at least 24 x 24 px, 
 full-page screenshot of each.
 
 The gate runs it against recorded answers (`e2e/team-journey.spec.ts`). This entry runs it
-against a live Temper with Team switched on, such as temper's practice-run rig. **It starts a
-real project** (unless `TEAM_JOURNEY_STOP_AFTER` stops it first), so point it only at a Temper
-meant for practice runs. The gate never runs it: the default config's `testDir` is `./e2e`.
+against a live Temper with Team switched on. **It starts a real project** (unless
+`TEAM_JOURNEY_STOP_AFTER` stops it first), so run it by hand, only against temper-dev (the one
+Temper there is), when a project start is approved and none is running. The gate never runs it:
+the default config's `testDir` is `./e2e`.
 
 ```bash
 cd frontend

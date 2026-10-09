@@ -4,11 +4,15 @@
  *
  * Most tests serve the /api/team routes from the fixtures the routes really
  * answered (e2e/fixtures/team, made by scripts/capture_team_fixtures.py), so
- * they run on a server with the Team switch off, as CI's is, and start no
- * team trial and call no model. Each runs in both themes at 1024 and 1440 px
- * wide and must pass axe (WCAG 2.2 A/AA and best practice) with nothing
- * found. The last group runs with no mocks at all and checks that with the
- * switch off nothing of the Team shows.
+ * they need no Temper: GitHub runs them against the build alone
+ * (playwright.server-free.config.ts), and they start no team trial and call
+ * no model. Each runs in both themes at 1024 and 1440 px wide and must pass
+ * axe (WCAG 2.2 A/AA and best practice) with nothing found.
+ *
+ * The last two groups need a real server: they start a smoke_test run on it,
+ * or read its Team switch. They are tagged @needs-server, so the server-free
+ * run leaves them out. They never run on the live temper (temper-dev), the
+ * only Temper there is.
  *
  * Screenshots for reading against Design's boards go to TEAM_SHOTS when set.
  */
@@ -771,7 +775,7 @@ for (const theme of ['dark', 'light'] as const) {
   }
 }
 
-test.describe("the run page's Team run view link", () => {
+test.describe("the run page's Team run view link", { tag: '@needs-server' }, () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test('goes to the run view and back for a team trial', async ({ page, request }) => {
@@ -800,11 +804,12 @@ test.describe("the run page's Team run view link", () => {
 });
 
 /**
- * No mocks: the server's own answers. With the switch off (CI, and every
- * server unless its owner turns the Team on) nothing of the Team shows and
- * the run page asks nothing about team runs.
+ * No mocks: the server's own answers. With the switch off (every server
+ * unless its owner turns the Team on) nothing of the Team shows and the run
+ * page asks nothing about team runs. Tagged, not left to skip: the static
+ * build's 503 isn't the switch-off 404, so these would skip without a word.
  */
-test.describe('with the Team switch off', () => {
+test.describe('with the Team switch off', { tag: '@needs-server' }, () => {
   test.beforeEach(async ({ request }) => {
     const status = await request.get('/api/team/status');
     test.skip(status.status() !== 404, 'this server has the Team switch on');

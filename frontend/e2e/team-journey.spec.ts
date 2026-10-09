@@ -2,9 +2,9 @@
  * The Team page journey in the gate: e2e/team-journey.ts with every
  * /api/team answer taken from one trial the real routes answered
  * (fixtures/team/journey-*.json, scripts/capture_team_fixtures.py --only
- * journey) and the page clock pinned. The same journey runs live in temper's
- * practice-run rig (e2e-live/team-journey.live.spec.ts), so a page change
- * that would break the practice run fails here first.
+ * journey) and the page clock pinned. The same journey runs live by hand
+ * (e2e-live/team-journey.live.spec.ts), where it starts a real project, so a
+ * page change that would break it fails here first.
  *
  * The run's answers follow the journey: the first read after the start is
  * running, later reads running with more entries, the needs-you step paused,
@@ -12,8 +12,9 @@
  * done. The observer's reads never move it on.
  *
  * No journey here may write to a real Temper: every page's first route stops
- * any write the mocks don't answer, and the run against this server stops
- * after the Team step.
+ * any write the mocks don't answer. One test needs a real server (Team off) and
+ * is tagged @needs-server, so the server-free run leaves it out; it stops after
+ * the Team step.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -213,7 +214,7 @@ test.describe('Team page journey', () => {
     expect([...server.writes, ...server.stopped]).toEqual([]);
   });
 
-  test('Team off: stops at the first step with the switched-off message and writes nothing, mocked and on this server', async ({
+  test('Team off, mocked: stops at the first step with the switched-off message and writes nothing', async ({
     browser,
     baseURL,
   }) => {
@@ -238,8 +239,10 @@ test.describe('Team page journey', () => {
       }),
     ).rejects.toThrow('Team is switched off on this server');
     expect(mocked).toEqual({ stopped: [], begun: ['team'] });
+  });
 
-    // This server (the gate's own Temper, Team off), read only: stopped after the Team step, and every
+  test('Team off, on this server: stops at the first step and writes nothing', { tag: '@needs-server' }, async ({ browser, baseURL }) => {
+    // A real server with Team off, read only: stopped after the Team step, and every
     // write stopped in the browser, so whatever it answers, nothing is sent to it.
     const here = { stopped: [] as string[], begun: [] as JourneyStep[] };
     await expect(

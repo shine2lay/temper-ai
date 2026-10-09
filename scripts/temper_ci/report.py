@@ -27,6 +27,7 @@ h1{font-size:21px;margin:0 0 4px}
 .sub{color:#57606a;font-size:13px;margin-bottom:22px}
 .verdict{padding:12px 16px;border-radius:8px;font-weight:600;margin-bottom:22px}
 .pass{background:#dafbe1;color:#0a5227}.fail{background:#ffebe9;color:#82071e}
+.owed{background:#fff8c5;color:#7d4e00}
 table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;
  box-shadow:0 1px 3px rgba(0,0,0,.08)}
 th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #eaeef2;vertical-align:top}
@@ -64,7 +65,12 @@ def mark(part: dict) -> str:
     A part that counts passes or fails. An information-only one (``"info": true``: the Pi
     pins) never counts, so it says so: "FAIL (doesn't block)" when it found something wrong
     or couldn't run, and a plain "info" when there is nothing to check yet (not set up).
+    A part that stepped aside for someone else's run reads "owed": not tried yet, so
+    neither passed nor failed; temper-ci tries it again once no run is going, and until it
+    passes the commit is not recorded as good (live_checks.py, deploy.settle_owed).
     """
+    if part.get("owed"):
+        return "owed"
     if part.get("ok"):
         return "ok"
     if not part.get("info"):
@@ -108,10 +114,16 @@ def _live_html(deploy: object) -> str:
             f"{f'<div class=detail>{detail}</div>' if detail else ''}</td></tr>"
         )
     ok = bool(deploy.get("ok"))
+    owed = [str(p.get("name")) for p in parts if mark(p) == "owed"]
+    bad = "; ".join(str(p.get("name")) for p in parts if mark(p) == "FAIL")
+    tone = "pass" if ok else "owed" if owed and not bad else "fail"
     if ok:
         said = "Live and well: every part of the live check that counts passed."
+    elif tone == "owed":
+        said = (f"Live, but not yet recorded as good. Owed, because someone else's run was "
+                f"going: {'; '.join(owed)}. temper-ci tries them again once no run is going; "
+                "nothing has failed.")
     else:
-        bad = "; ".join(str(p.get("name")) for p in parts if not p.get("ok") and not p.get("info"))
         said = f"The live check failed: {bad or 'see below'}."
         back = deploy.get("rollback")
         if isinstance(back, dict):
@@ -126,7 +138,7 @@ def _live_html(deploy: object) -> str:
     return (f"<h2>After it went live</h2>\n"
             f"<div class=sub>checked {html.escape(str(live.get('at') or ''))}"
             f" · {html.escape(str(live.get('api') or ''))}</div>\n"
-            f"<div class=\"verdict {'pass' if ok else 'fail'}\">{html.escape(said)}</div>\n"
+            f"<div class=\"verdict {tone}\">{html.escape(said)}</div>\n"
             f"{table}")
 
 

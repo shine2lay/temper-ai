@@ -33,7 +33,7 @@ role tests and lands a change.
 | `frontend` | Frontend engineering | The plan stage's frontend engineer, `frontend_dev`, and the frontend side of every build. |
 | `backend` | Backend engineering | The plan stage's backend engineer, the build workflow with its planner, coder and verdict steps, the build replays and grader. |
 | `qa` | QA | The plan stage's QA engineer, the reach and break lenses, the build's test run and browser check, the walkers' seeded accounts, the planted-bug grader (`epd_qa_grade`), the flaky-test report (`qa_flaky_report`). |
-| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, temper-ci (the commit status, the live check after each deploy and its revert), the zero-cost smoke workflows, and the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests). |
+| `systems` | System engineering | Claims, worktrees, test stacks, deploys, cleanup, shipping, the probe, the leftover audit, temper-ci (the commit status, the live check after each deploy with the owner's controls tried on quiet $0 runs, and its revert), the zero-cost smoke workflows, and the gate's shared test Postgres (scripts/test-postgres.sh and tests/pgtier.py's per-run schemas; the TIER list stays open to anyone adding tests). |
 | `security` | Security | The build's security read and its diff scan, and the security reviewer of `code_review`. |
 | `data` | Data & analytics | The measure stage, the stage scorecard and its judge, the walk report, and the plan stage's numbers engineer. |
 | `docs` | Docs | The knowledge-folder check (`.temper/`) and capability maps; next, a docs grader, a doc step for builds, changelogs. |
@@ -92,8 +92,8 @@ the dashboard.
    winner too.
 5. **Land only a winner.** Promote the candidate into the live config in a
    worktree of its own, and land it through the repository's gate: lint,
-   types, the tests (including `tests/test_epd`), the frontend and e2e must all
-   pass before master moves. temper-ci deploys a landed commit by itself once
+   types, the tests (including `tests/test_epd`), the frontend and e2e (the
+   browser tests that need no temper) must all pass before master moves. temper-ci deploys a landed commit by itself once
    no run is going, checks it live and reverts it if that fails; temper is
    never restarted by hand. Configs reach runs only from master: each run's worker reads
    `configs/` from master when it starts.
@@ -128,7 +128,7 @@ the dashboard.
 | `epd_build_replay`, `epd_build_new` | The candidate coder and reviewer, on a past bet or a new project | backend |
 | `epd_scorecard` | Every stage of one shipped bet, by three judges who don't see each other | data |
 | `epd_probe` | Claim, worktree, stack, deploy, verify and cleanup, pass or fail | systems |
-| `smoke_test`, `gate_smoke`, `ci_*` | An installation, at no model cost: temper-ci runs `smoke_test` on the live temper after each deploy; the rest are run by hand | systems |
+| `smoke_test`, `gate_smoke`, `ci_*` | An installation, at no model cost: temper-ci runs `smoke_test`, `ci_slow` (stop, then resume), `gate_smoke` (a gate answered through the API) and `ci_box_env` on the live temper after each deploy, quiet and tidied away (docs/ci-gate.md); the rest are run by hand | systems |
 | `signal_grade` | A finished signal harvest, against its own evidence: arithmetic, confidence, candidates, provenance, blocked sources, scope and competitor claims (also runs at the end of every `signal_harvest`) | product |
 | `positioning_grade` | One positioning document, against its own evidence folder: Dunford's five components, the messaging hierarchy, every claim traced to a quote, plain words (soundness, not appeal) | marketing |
 | `epd_qa_grade`, `epd_qa_case` | The build's test run and browser check, on copies of past changes with known bugs planted and on clean controls: what each check caught, its false alarms, harness faults apart, cost and time | qa |

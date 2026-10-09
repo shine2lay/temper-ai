@@ -10,8 +10,8 @@
  *   the journey-*.json fixtures (one trial the real routes answered,
  *   scripts/capture_team_fixtures.py --only journey) and the page clock is
  *   pinned.
- * - e2e-live/team-journey.live.spec.ts, by hand, against a Temper with Team
- *   on, such as temper's practice-run rig (README.md, "Team journey (live)").
+ * - e2e-live/team-journey.live.spec.ts, by hand, against temper-dev with Team
+ *   on, when a project start is approved (README.md, "Team journey (live)").
  *
  * The journey installs no route and makes no API call of its own. The
  * owner's context clicks only New project (the Run project control), Add member

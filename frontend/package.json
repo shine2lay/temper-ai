@@ -10,8 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
-    "e2e": "playwright test",
-    "e2e:ui": "playwright test --ui",
+    "e2e": "playwright test -c playwright.server-free.config.ts",
+    "e2e:ui": "playwright test -c playwright.server-free.config.ts --ui",
     "proofs": "playwright test e2e/proofs.spec.ts",
     "check:brand": "node scripts/check-brand-contrast.mjs"
   },

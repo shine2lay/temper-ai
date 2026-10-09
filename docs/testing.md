@@ -7,8 +7,8 @@ And where to look when something is red.
 | Where | What runs | When |
 | --- | --- | --- |
 | Your machine, before each commit | ruff · mypy · the whole Python suite · the dashboard's checks (when it changed) · the Postgres tier (when stored data changed) | `git commit` |
-| GitHub, on every push and PR | the same, on Python 3.11 **and** 3.12, plus the Postgres tier and the browser tests | push |
-| GitHub, nightly at 03:17 UTC | the newest library versions · the Python suite three times · the browser tests three times | `schedule`, or by hand |
+| GitHub, on every push and PR | the same, on Python 3.11 **and** 3.12, plus the Postgres tier and the browser tests that need no temper | push |
+| GitHub, nightly at 03:17 UTC | the newest library versions · the Python suite three times · those browser tests three times | `schedule`, or by hand |
 | Your machine, every 10 minutes | reads GitHub's results and DMs you on Slack when they change | a user timer |
 
 All three install from **`uv.lock`**. That is the point of the arrangement:
@@ -110,25 +110,40 @@ to it when a new test starts storing something.
 cd frontend
 npx tsc -b          # types
 npx vitest run      # unit tests
-npx playwright test # the browser tests, against a running server
+npm run build && npm run e2e
+                    # the browser tests that need no temper, as GitHub runs them
 ```
 
-The browser tests need a server with the built dashboard:
+No temper is started for the browser tests, here or on GitHub: AGENTS.md
+rule 15 allows no copy of Temper but the live one (temper-dev), and a browser
+test that starts runs or writes never runs on the live one.
 
-```bash
-cd frontend && npm run build
-TEMPER_DATABASE_URL=sqlite:///e2e.db uv run temper serve --port 8420
-cd frontend && TEMPER_E2E_BASE_URL=http://127.0.0.1:8420 npx playwright test
-```
+So GitHub's e2e job and the nightly run only the spec files listed in
+`frontend/e2e/server-free.txt`: ones that answer every API call themselves. A
+test in a listed file that does need a server is tagged `@needs-server` and
+left out. They run against the commit's own build, served by
+`scripts/e2e_static_server.py`, which answers every `/api` and `/ws` call with
+a 503 that says there is no temper, so a test that leans on a server fails
+loudly instead of writing to one. (Not `vite preview`: its proxy sends `/api`
+to localhost:8420, and on the box that is the live temper.) With none listed,
+the job runs no browser tests and its summary says why.
 
-They make their own data with the zero-cost `smoke_test` workflow, so no API
-key is needed. Script agents' live output and saved logs are checked the
-same way, with the zero-cost `ci_script_log` and `ci_script_log_timeout`
-workflows (made-up output on a timer, a failure, a timeout, a cancel and a
-flood past the 10 MB limit; `frontend/e2e/scriptLog.spec.ts`). Approvals and
-loops that run out of rounds use the zero-cost `ci_gate_rounds`
-(`frontend/e2e/gateRounds.spec.ts`; [gates.md](gates.md)). Set
-`TEMPER_PROOF_DIR` to keep its screenshots.
+The rest need an address given on purpose: without `TEMPER_E2E_BASE_URL`, a
+plain `npx playwright test` stops before any test (`frontend/e2e/requireBaseURL.ts`),
+so none of them reaches the live temper by accident.
+
+The other specs in `frontend/e2e/` make their own data on a real temper with
+the zero-cost workflows, so they ran against a throwaway server until
+2026-10-08 and are not run by GitHub now: `smoke_test` for the runs they look
+at; `ci_script_log` and `ci_script_log_timeout` for script agents' live output
+and saved logs (made-up output on a timer, a failure, a timeout, a cancel and
+a flood past the 10 MB limit; `frontend/e2e/scriptLog.spec.ts`);
+`ci_gate_rounds` for approvals and loops that run out of rounds
+(`frontend/e2e/gateRounds.spec.ts`; [gates.md](gates.md)). The live dashboard
+itself is looked at by temper-ci after every deploy, and an ordinary run's box
+environment and the owner's controls (stop and resume, a gate answered through
+the API) are tried there on quiet $0 runs ([ci-gate.md](ci-gate.md)). Set `TEMPER_PROOF_DIR` to keep a spec's
+screenshots.
 
 ### The Pi rehearsal rig (manual)
 

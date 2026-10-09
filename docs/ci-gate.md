@@ -7,8 +7,10 @@ itself, when no run is going, and takes it back out if it turns out to be unwell
 There is one temper: the live one. Nothing here builds a test copy of it. Until
 2026-10-08 this machine built a whole throwaway temper for every pushed commit and put a
 smoke set through it; the owner stopped that ("only use the live temper, no more test
-temper"). So the live check after a deploy is now the only look at the code on a real
-temper, and the revert behind it is what puts a bad land right.
+temper"), and GitHub's browser tests no longer start a short-lived temper of their own
+either (they run against the commit's built pages only; [testing.md](testing.md)). So the
+live check after a deploy is now the only look at the code on a real temper, and the
+revert behind it is what puts a bad land right.
 
 This page is for the owner, the next agent, and the bad evening when it has to be
 switched off.
@@ -20,6 +22,7 @@ wt land                 (in a temper-ai worktree)
   │
   ├─ pushes your branch to GitHub
   ├─ GitHub runs: lint, typecheck, tests, frontend, e2e      a few minutes
+  │    (e2e: the browser tests that need no temper; none is started)
   └─ this machine posts: temper/boxes                        at once
        the commit is recorded; nothing is built, no temper is started
   │
@@ -29,9 +32,13 @@ wt land                 (in a temper-ai worktree)
        └─ temper-ci notices master moved
             ├─ waits until no run is going on the live temper, then two quiet minutes
             ├─ asks temper-deploy to restart the server and worker
-            ├─ looks at the live thing: check, hooks, one $0 run, the page
+            ├─ looks at the live thing: check, hooks, one $0 run, the page, then
+            │    on quiet $0 runs: an ordinary run's box environment, and the
+            │    owner's controls: stop and resume, a gate answered through the API
             │    (and the Pi pins: shown in the report, never counted)
             ├─ fine     → this commit becomes "the last good one"
+            ├─ owed     → a part met someone else's run and stepped aside: temper
+            │             stays on it, and tries that part again once no run is going
             └─ not fine → a revert commit back to the last good one, through the same
                           gate; temper restarts onto it (waiting, like any deploy,
                           while a run is going), and you get a DM saying what failed
@@ -58,13 +65,15 @@ temper; a run that starts meanwhile starts the two minutes over.
 * If a live check fails while runs are going, the owner is told at once and the revert
   waits for the runs. If master moves on first, the newer commit's own deploy and live
   check decide instead.
+* A live check that ended owed (below) is finished before anything newer is deployed on
+  top, even when master has moved on meanwhile.
 * `temper-ci deploy <commit>` by hand is not held: that is a person's call.
 
 ## Where everything lives
 
 | Thing | Path |
 |---|---|
-| the gate's code | `scripts/temper_ci/` in this repo (`gate.py`, `deploy.py`, `stack.py` (the git mirror), `report.py`, `shot.py`) |
+| the gate's code | `scripts/temper_ci/` in this repo (`gate.py`, `deploy.py`, `live_checks.py` (the owner's controls, tried live), `stack.py` (the git mirror), `report.py`, `shot.py`) |
 | the command | `temper-ci` → `scripts/temper-ci` |
 | its state | `~/.local/state/temper-ci/` (`gate.json`, `deploy.json`, `reports/`, `mirror/`) |
 | the reports | `~/.local/state/temper-ci/reports/<commit>/`: `index.html`, `report.json`, `live.json` (the deploy's live check), screenshots |
@@ -85,7 +94,9 @@ temper-ci deploy <commit>     # restart onto a commit and check it live, now, ru
 ```
 
 The `ci_*` workflows in `configs/` were the throwaway temper's smoke set. Nothing runs
-them per commit any more; the deploy's live check runs `smoke_test`.
+them per commit any more. The deploy's live check runs `smoke_test`, `ci_slow`,
+`gate_smoke` and `ci_box_env` on the live temper; the rest (`ci_parallel`,
+`ci_run_token`, ...) only by hand.
 
 ## Every way into master, and where its gate is
 
@@ -162,7 +173,7 @@ it asked carried it); not on it, nothing went live. A restart still waiting afte
 is left to the next loop, which asks again.
 
 Then it looks at the live temper: `temper-deploy check`, `temper-deploy hooks`, one $0
-run, and the page. It also runs the Pi pin check (`scripts/pi_pins_check.py --json`,
+run, the page, and then the owner's own controls (below). It also runs the Pi pin check (`scripts/pi_pins_check.py --json`,
 model-free and read-only; [pi-lane.md](pi-lane.md), "The pins") and shows what it says,
 but never counts it: the pins match (`ok`), a mismatch naming the pins or a check that
 couldn't run (`FAIL (doesn't block)`), or not set up (`info`). A pin that's off already
@@ -170,7 +181,73 @@ stops every Pi run at the Pi lane's own preflight, and a revert would put no pin
 All of it goes on the commit's report under "After it went live" and in `temper-ci
 status`.
 
-If any of the four fail:
+### The owner's controls, on runs of its own
+
+What the owner does to his live Projects is tried on the live temper after every deploy,
+each on a $0 run of temper-ci's own, started with temper-ci's key
+(`scripts/temper_ci/live_checks.py`):
+
+* **an ordinary run's box environment**, first: a `ci_box_env` run, and its one step,
+  must complete (it fails when a box sees a name it must not; it prints names, never
+  values, and the look copies none of its output; [boxes.md](boxes.md)). It looks at its
+  own box, an ordinary run's: Pi member boxes are not covered (Security's watch covers
+  those during a Project). It fails closed: an error, a timeout, or a cancel by anyone
+  but temper-ci itself fails it (Security);
+* **stop, then resume**: a `ci_slow` run (`seconds: 40`) is stopped a few seconds into
+  its long step, must leave a checkpoint, is resumed, and must complete;
+* **a gate answered through the API**: a `gate_smoke` run parks at its gate; temper-ci
+  answers it (`POST /api/runs/{id}/approve/decide`), the run must complete, and the
+  decision must name `temper-ci` as the caller.
+
+They are quiet: every run the live check starts (these, and the free `smoke_test`) says
+`"notify": {"question": "off", "stuck": "off", "failed": "off", "finished": "off"}`, so
+none of them sends the owner a notice. They still show in the dashboard's plain run list
+(temper has no way to hide a run), never on the Team page.
+
+They tidy up after themselves: pass or fail, before its verdict each part cancels any run
+of its own that has not ended. A run of its own still going after that fails the part,
+because a run left waiting would hold every later deploy, and this deploy's revert too.
+
+They never run beside someone else's run. A box of temper-ci's own up while a Team
+Project runs would be a STOP for Security's watch of that Project, and the owner's runs
+come first anyway. The deploy already waits until no run is going, so the look normally
+has the temper to itself; if someone's run is going all the same, a part does not start,
+and a part under way cancels its own runs at once (it looks every 10 s). That part is
+**owed**: not passed and not failed. Owed is never a pass (Security's conditions):
+
+* Temper stays on the new commit, but it is not recorded as the good one to go back to:
+  `last good` stays where it was, and `temper-ci status` shows the commit, the owed
+  parts, which look in a row this is, and the ids of the runs they stepped aside for.
+* A part stepped aside only when temper-ci itself cancelled its runs and they ended with
+  no box of theirs left up (docker, by the run's `temper.execution_id` label). A run of
+  its own still going, a box still up after a minute, or docker unable to say: the part
+  fails.
+* What is owed is kept in `deploy.json`, so it outlasts a restart of temper-ci. A record
+  of it that is missing or cannot be read fails what it owed; a `deploy.json` that cannot
+  be read is kept aside, the owner is told once, and no commit counts as good until one
+  passes its whole live check.
+* Once no run has gone for two minutes, the same wait as a deploy, temper-ci tries just
+  the owed parts again, before anything newer goes on top. When they pass, the commit is
+  good; one that fails fails the look like any other.
+* The third look in a row at one commit that ends owed fails it: a temper never quiet for
+  long enough does not keep an untried commit live for ever.
+
+Nobody is told about an owed part: nothing is wrong yet. The free run can be owed the
+same way; the dashboard then only has to come up, and is looked at again, run and all,
+with the free run. The box environment can be owed too (Security: failing it would only
+revert, and the revert waits for the runs as well). A box of the look's own that is up
+when a Pi member's box starts still trips the watch's quiet-window STOP, which is
+intended. temper-ci's log (`gate.log`) has a line for each step-aside (whose run, and
+which runs of its own it cancelled), each try again and each outcome: ids and names only.
+
+The write guard is not tried here (Security's call). The live guard records writes
+rather than refusing them (`GET /api/guard` shows mode `record`), so a check that a box's
+key is refused cannot pass on the live temper, and probe writes would only add to the
+`seen` counts the switch to enforce is decided on. It joins the look once the live guard
+enforces; until then `ci_run_token` keeps that check for a temper whose guard enforces,
+run by hand.
+
+If any of the parts that count fail (an owed part has not, yet):
 
 * it makes a revert commit back to the last good commit and takes it through the gate
   (which records it and passes it at once);
@@ -193,7 +270,10 @@ fixing what was wrong, `temper-ci deploy <commit>` tries that commit again.
 ## The rules this gate keeps
 
 * Agents never switch protection off, and `wt` has no bypass flag.
-* One temper only: nothing here builds or starts a test copy of temper.
+* One temper only: nothing here builds or starts a test copy of temper, and neither does
+  GitHub (its e2e job serves the commit's built pages with no temper behind them).
+* What the live check starts on the live temper is $0, quiet (notify off) and tidied away,
+  pass or fail.
 * The gate looks only at commits the owner pushed to a branch *of this repository*. A
   stranger's pull request never starts anything here; that is the whole reason there is
   no self-hosted GitHub runner. A fork PR's commit is vouched for only if the owner reads

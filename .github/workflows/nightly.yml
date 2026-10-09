@@ -133,72 +133,67 @@ jobs:
           retention-days: 14
 
   repeat-e2e:
+    # The same browser tests as the e2e job, with no temper behind them
+    # (AGENTS.md rule 15): the spec files listed in
+    # frontend/e2e/server-free.txt, against this commit's own build.
     name: the browser tests, three times over
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          python-version: '3.12'
+
+      - name: Which browser tests need no temper
+        id: list
+        run: |
+          specs=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' frontend/e2e/server-free.txt | grep -v '^$' || true)
+          count=$(printf '%s\n' "$specs" | grep -c . || true)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" = 0 ]; then
+            echo "No spec file is listed in \`frontend/e2e/server-free.txt\`, so none ran (AGENTS.md rule 15: no temper here)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.list.outputs.count != '0'
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
-      - run: uv sync --frozen
       - name: Build the dashboard
+        if: steps.list.outputs.count != '0'
         working-directory: frontend
         run: |
           npm ci
           npm run build
       - name: Install the browser
+        if: steps.list.outputs.count != '0'
         working-directory: frontend
         run: npx playwright install --with-deps chromium
-
-      - name: Start the server
-        env:
-          TEMPER_DATABASE_URL: sqlite:///e2e.db
-        run: |
-          uv run temper serve --port 8420 > server.log 2>&1 &
-          for i in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8420/api/health && break
-            sleep 1
-          done
-          if ! curl -sf http://127.0.0.1:8420/api/health > /dev/null; then
-            echo "::error::server did not start"
-            cat server.log
-            exit 1
-          fi
 
       # No retries here, on purpose. Retries are what hid the Compare flake
       # for weeks: a test that needs a second go is the thing being looked
       # for, so let it fail and be named.
       - name: Run the browser tests three times
+        if: steps.list.outputs.count != '0'
         continue-on-error: true
         working-directory: frontend
-        env:
-          TEMPER_E2E_BASE_URL: http://127.0.0.1:8420
         run: |
           for i in 1 2 3; do
             echo "::group::run $i"
             PLAYWRIGHT_JUNIT_OUTPUT_NAME="playwright-$i.xml" \
-              npx playwright test --reporter=list,junit --retries=0 || echo "run $i had failures"
+              npx playwright test -c playwright.server-free.config.ts --reporter=list,junit --retries=0 \
+              || echo "run $i had failures"
             echo "::endgroup::"
           done
 
       - name: Which tests did not agree with themselves
-        if: always()
+        if: always() && steps.list.outputs.count != '0'
         working-directory: frontend
         run: python3 ../scripts/flaky_report.py playwright-*.xml --title "Browser tests · 3 runs"
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.list.outputs.count != '0'
         with:
           name: nightly-e2e
           path: |
             frontend/playwright-*.xml
             frontend/test-results/
-            server.log
           retention-days: 14

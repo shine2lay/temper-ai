@@ -1128,8 +1128,9 @@ class Ledger:
 
     @staticmethod
     def _requeued_from(conn: Any, participant_id: str) -> str | None:
-        """The member's last turn when Temper put it back to run again (an automatic retry or
-        a usage limit) and it carried no messages: the next turn is still its retry."""
+        """The member's last turn when it was put back to run again (an automatic retry, a
+        usage limit, a lane drain or the owner's retry) and it carried no messages: the next
+        turn is still its retry."""
         last = conn.execute(sa.select(turns.c.turn_id, turns.c.worker).where(
             turns.c.participant_id == participant_id).order_by(
             turns.c.turn_no.desc()).limit(1)).first()
@@ -1842,9 +1843,13 @@ class Ledger:
                 self._release(conn, turn_id)
             member_state = "idle"
         elif word == "retry":
+            # "requeued" marks the next turn as this one's retry even when it carried no
+            # messages (M1): it is told its sends, shares and question were withheld, and
+            # retried_before counts the owner's retry, so a second failure asks him again.
             if conn.execute(turns.update().where(
                     turns.c.turn_id == turn_id, turns.c.state.in_(("uncertain", "failed")),
-            ).values(state="superseded", claim_key=None)).rowcount == 1:
+            ).values(state="superseded", claim_key=None,
+                     worker={**(t["worker"] or {}), "requeued": "owner"})).rowcount == 1:
                 self._withhold(conn, turn_id, "turn_superseded")
                 conn.execute(messages.update().where(
                     messages.c.turn_id == turn_id, messages.c.state == "consumed",

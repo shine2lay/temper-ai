@@ -22,7 +22,7 @@ from temper_ai.api import team_routes as api
 from temper_ai.pi_agent import flow_view, team_leader
 from temper_ai.pi_agent.box import WorkerBox
 from temper_ai.pi_agent.ledger import waits
-from temper_ai.pi_agent.team_flow import FlowTeam
+from temper_ai.pi_agent.team_flow import MEMBER_QUESTION_NOTE, FlowTeam
 from temper_ai.pi_agent.team_leader import LeaderTeam
 from temper_ai.pi_agent.team_view import TeamReader
 from temper_ai.shared.clock import utcnow
@@ -182,7 +182,9 @@ def test_free_flowing_team_works_at_once_shares_one_version_checks_in_and_finish
     assert not [t for t in snap["turns"]
                 if pause["opened_at"] < t["started_at"] < pause["decided_at"]]
     asked = {a["wait_id"]: a for a in owner.asked}
-    assert sorted(a["header"] for a in asked.values()) == ["owner", "pause-at-$100"]
+    assert sorted(a["header"] for a in asked.values()) == ["ana asks", "pause-at-$100"]
+    assert {a["detail"] for a in asked.values() if a["header"] == "ana asks"} \
+        == {MEMBER_QUESTION_NOTE}
     (question,) = [w for w in ls.table(led, waits, run_id) if w["kind"] == "owner"]
     assert question["subject"]["member"] == "ana" and question["decision"]["answer"] == "given"
     assert by["ana"][1]["turn_id"] == question["subject"]["turn_id"]

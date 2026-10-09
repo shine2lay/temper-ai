@@ -1079,6 +1079,8 @@ class LeaderTeam(TeamRows, Team):
             f"{subject.get('member')} turn {subject.get('turn_no')}"
             if wait["kind"] == "recovery" else wait["kind"])
         ask_extras: dict[str, Any] = {"also": also} if also else {}
+        if subject.get("note"):  # a fixed line under the question (a member's: Security S1)
+            ask_extras["detail"] = str(subject["note"])
         try:
             return ask_owner_for_wait(context, self.ledger, wait["wait_id"], question=question,
                                       header=str(header), options=subject.get("options") or (),

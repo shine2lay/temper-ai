@@ -239,8 +239,9 @@ def open_waits_view(reader: TeamReader, asked: dict[str, str], *, flow: bool = F
             "asked": event_id is not None, "kind": kind, "header": header,
             "question": s.get("question"), "reply_hint": s.get("reply_hint"),
             "answers": answers_for(kind, s, reader.leader),
-            **({"words": wait_words(s), "scope": "member" if w["kind"] in ("owner", "recovery")
-               else "team", "at_usd": s.get("at_usd"),
+            **({"words": wait_words(s), "note": s.get("note"),
+                "scope": "member" if w["kind"] in ("owner", "recovery") else "team",
+                "at_usd": s.get("at_usd"),
                "next_check_in_usd": s.get("at_usd")} if flow else {"round": s.get("round")}),
             "member": s.get("member"), "turn_no": s.get("turn_no"),
             "why": s.get("why"),

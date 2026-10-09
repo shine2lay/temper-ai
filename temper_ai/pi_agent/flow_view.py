@@ -433,7 +433,11 @@ def _event(e: dict, waits_by_id: dict[str, dict]) -> dict | None:
             return None
         if d.get("wait_kind") == "limit":
             if kind == "wait_opened":
-                return {**base, "kind": "limit", "resumes_at": utc_text(s.get("resumes_at")),
+                # the wait's latest check time, and only while it is still open: a settled
+                # limit has no next check (F2)
+                live = w.get("state") == "open"
+                return {**base, "kind": "limit",
+                        "resumes_at": utc_text(s.get("resumes_at")) if live else None,
                         "resets_known": s.get("how") == "reset",
                         "weekly": (s.get("kind") or limit_kind(s.get("limit"))) != FIVE_HOUR}
             if d.get("word") in ("resumed", "restart"):

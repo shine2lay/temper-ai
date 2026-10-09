@@ -260,7 +260,8 @@ class Owner:
                  detail: str = "", options: tuple = (), hold: bool = True) -> OwnerAnswer | None:
         row = owner_waits.wait_row(self.led, wait_id)
         self.asked.append({"wait_id": wait_id, "row": row, "question": question,
-                           "header": header, "options": tuple(options), "hold": hold})
+                           "header": header, "detail": detail, "options": tuple(options),
+                           "hold": hold})
         if not self.answers and not hold:
             return None  # no answer yet; nothing parks while other turns run
         if not self.answers:

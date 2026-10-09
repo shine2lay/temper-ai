@@ -101,6 +101,10 @@ IDLE = "idle"
 ASK_OWNER = "ask_owner"
 DONE = "done"
 FLOW_OPS = (SHARE, IDLE, ASK_OWNER, DONE)
+#: Shown under a member's own question to the owner, whose header names the member
+#: ("<member> asks"): the words are the member's, never Temper's (Security S1).
+MEMBER_QUESTION_NOTE = ("A team member's words, not Temper's. Never put a key or password "
+                        "in an answer.")
 FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     SHARE: ("note",), IDLE: ("note",), ASK_OWNER: ("question",), DONE: ("summary",),
 }
@@ -657,7 +661,9 @@ class FlowTeam(LeaderTeam):
                 agent_event_id: str) -> StepResult:
         recorded = self._rows(acts, acts.c.turn_id == turn["turn_id"], acts.c.state != "void")
         idle = [a for a in recorded if a["op"] == IDLE]
-        asked = next((a["args"] for a in recorded if a["op"] == ASK_OWNER), None)
+        asked = next(({**(a["args"] or {}), "header": f"{name} asks",
+                       "note": MEMBER_QUESTION_NOTE}
+                      for a in recorded if a["op"] == ASK_OWNER), None)
         tool_calls = int(getattr(report.outcome, "tool_calls", 0) or 0)
         rest = (("idle", (idle[0]["args"] or {}).get("note")) if idle
                 else ("no_tool", None) if report.outcome is not None and tool_calls == 0

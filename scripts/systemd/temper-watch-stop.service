@@ -1,0 +1,36 @@
+[Unit]
+# Cancels a team Project's run when the box watch writes a record whose verdict
+# isn't PASS, or when the watch's own unit stops being active for over a minute
+# (scripts/pi_watch_stop.py, docs/pi-watch-stop.md). It only reads the watch's
+# records folder: it never writes, moves or deletes anything there.
+#
+# Installed and enabled when a Project opens, disabled when it ends; enabled, it
+# comes back after a reboot and replays the records from SINCE.
+Description=temper watch-stop: cancel the Project's run when the box watch says STOP
+Documentation=file://%h/temper-ai/docs/pi-watch-stop.md
+
+[Service]
+Type=simple
+# The main checkout, never a worktree: worktrees come and go.
+WorkingDirectory=%h/temper-ai
+# The Project's settings, in a file only the owner reads (600):
+#   RUN=<the run id>
+#   SINCE=<when the watch was armed for this Project, UTC, e.g. 2026-10-09T17:00:00Z>
+#   RECORDS=<the watch's records folder, absolute>
+#   WATCH_UNIT=<the watch's user unit>   (optional; the default is below)
+Environment=WATCH_UNIT=security-trial-watch
+EnvironmentFile=%h/.config/temper/watch-stop.env
+ExecStart=/usr/bin/python3 %h/temper-ai/scripts/pi_watch_stop.py --records ${RECORDS} --run ${RUN} --since ${SINCE} --key-file %h/.config/temper/api-keys/watch-stop.key --watch-unit ${WATCH_UNIT}
+# Exit 1: the cancel kept failing for a minute. Start again: the replay finds the
+# same record and tries again. Exit 2 (bad settings) and 3 (no such run) need a
+# person, so the unit stays failed.
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=2 3
+# systemctl lives in /usr/bin; a user unit starts with almost no PATH.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

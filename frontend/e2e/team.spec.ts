@@ -9,15 +9,14 @@
  * no model. Each runs in both themes at 1024 and 1440 px wide and must pass
  * axe (WCAG 2.2 A/AA and best practice) with nothing found.
  *
- * The last two groups need a real server: they start a smoke_test run on it,
- * or read its Team switch. They are tagged @needs-server, so the server-free
- * run leaves them out. They never run on the live temper (temper-dev), the
- * only Temper there is.
+ * The last two groups, the run page's way in and the Team switch off, answer
+ * the run page's own reads too (a made-up finished run), so no test here
+ * needs a server.
  *
  * Screenshots for reading against Design's boards go to TEAM_SHOTS when set.
  */
-import { expect, test } from '@playwright/test';
-import { startSmokeRun } from './helpers';
+import { expect, test, type Page } from '@playwright/test';
+import { runSnapshot } from './safeRenderingScenes';
 import {
   answers,
   asRun,
@@ -775,11 +774,42 @@ for (const theme of ['dark', 'light'] as const) {
   }
 }
 
-test.describe("the run page's Team run view link", { tag: '@needs-server' }, () => {
+/** The made-up finished run the run page shows in the last two groups. */
+const RUN_PAGE_ID = 'team-link-0001';
+
+/**
+ * The run page's own reads for RUN_PAGE_ID, a made-up finished run. Every
+ * other /api read gets a 404 (the run list an empty one), so nothing reaches
+ * a server. Register it before serveTeam: the route added last answers
+ * first, so /api/team/* stays serveTeam's. Every path asked is kept in the
+ * list returned. The socket (/ws) gets the static server's 503; a finished
+ * run needs none.
+ */
+async function serveRunPage(page: Page): Promise<string[]> {
+  const seen: string[] = [];
+  const run = { ...runSnapshot([{ name: 'writer' }]), id: RUN_PAGE_ID };
+  await page.route('**/api/**', async (route) => {
+    const { pathname } = new URL(route.request().url());
+    seen.push(pathname);
+    let body: unknown = { detail: 'Not Found' };
+    let status = 200;
+    if (pathname === `/api/workflows/${RUN_PAGE_ID}`) body = run;
+    else if (pathname === `/api/workflows/${RUN_PAGE_ID}/agents`) body = { agents: [] };
+    else if (pathname === `/api/runs/${RUN_PAGE_ID}/checkpoints`) body = { execution_id: RUN_PAGE_ID, checkpoints: [], total: 0 };
+    else if (pathname.startsWith(`/api/runs/${RUN_PAGE_ID}/`)) body = { gates: [] };
+    else if (pathname === '/api/workflows') body = { runs: [], total: 0 };
+    else status = 404;
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+  return seen;
+}
+
+test.describe("the run page's Team run view link", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('goes to the run view and back for a team trial', async ({ page, request }) => {
-    const id = await startSmokeRun(request);
+  test('goes to the run view and back for a team trial', async ({ page }) => {
+    const id = RUN_PAGE_ID;
+    await serveRunPage(page);
     await serveTeam(page, { run: [asRun('run-done', id)] });
     await page.goto(`/app/workflow/${id}`);
     const link = page.getByRole('link', { name: 'Team run view' });
@@ -791,10 +821,12 @@ test.describe("the run page's Team run view link", { tag: '@needs-server' }, () 
     await expect(page.getByText('Who did what')).toBeVisible();
     await page.getByRole('link', { name: 'Run page', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/app/workflow/${id}$`));
+    await expect(page.getByRole('link', { name: 'Team run view' })).toBeVisible();
   });
 
-  test("isn't there for a run that isn't a team trial", async ({ page, request }) => {
-    const id = await startSmokeRun(request);
+  test("isn't there for a run that isn't a team trial", async ({ page }) => {
+    const id = RUN_PAGE_ID;
+    await serveRunPage(page);
     const seen = await serveTeam(page, { run: [fixture('run-404')] });
     await page.goto(`/app/workflow/${id}`);
     await expect(page.getByRole('link', { name: 'Edit in Studio' })).toBeVisible();
@@ -804,38 +836,40 @@ test.describe("the run page's Team run view link", { tag: '@needs-server' }, () 
 });
 
 /**
- * No mocks: the server's own answers. With the switch off (every server
- * unless its owner turns the Team on) nothing of the Team shows and the run
- * page asks nothing about team runs. Tagged, not left to skip: the static
- * build's 503 isn't the switch-off 404, so these would skip without a word.
+ * With the switch off (/api/team/status answers its designed 404, as on
+ * every server unless its owner turns the Team on) nothing of the Team shows
+ * and the run page asks nothing about team runs.
  */
-test.describe('with the Team switch off', { tag: '@needs-server' }, () => {
-  test.beforeEach(async ({ request }) => {
-    const status = await request.get('/api/team/status');
-    test.skip(status.status() !== 404, 'this server has the Team switch on');
-  });
+test.describe('with the Team switch off', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
 
   test('the sidebar has no Team item and /app/team is Page not found', async ({ page }) => {
+    await serveRunPage(page);
+    await serveTeam(page, { status: fixture('status-off') });
     await page.goto('/app/');
     const nav = page.getByRole('navigation', { name: 'Main navigation' });
     await expect(nav.getByRole('link', { name: 'Workflows' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Team' })).toHaveCount(0);
     for (const url of ['/app/team', '/app/team/roles', '/app/team/new', '/app/team/runs/anything']) {
       await page.goto(url);
       await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+      // Page not found means the page has read the switch as off: the sidebar has too.
+      await expect(nav.getByRole('link', { name: 'Workflows' })).toBeVisible();
+      await expect(nav.getByRole('link', { name: 'Team' })).toHaveCount(0);
     }
   });
 
-  test('the run page has no Team run view button and asks nothing about team runs', async ({ page, request }) => {
-    const id = await startSmokeRun(request);
-    const asked: string[] = [];
-    page.on('request', (r) => {
-      const { pathname } = new URL(r.url());
-      if (pathname.startsWith('/api/team/')) asked.push(pathname);
-    });
+  test('the run page has no Team run view button and asks nothing about team runs', async ({ page }) => {
+    const id = RUN_PAGE_ID;
+    const reads = await serveRunPage(page);
+    // Were it asked, the run read would say "a team trial": only the switch keeps the link away.
+    const asked = await serveTeam(page, { status: fixture('status-off'), run: [asRun('run-done', id)] });
     await page.goto(`/app/workflow/${id}`);
     await expect(page.getByRole('link', { name: 'Edit in Studio' })).toBeVisible();
-    await page.waitForTimeout(1500);
+    await expect.poll(() => asked).toContain('/api/team/status');
+    // A read the page makes only later, on a click: once it is in, anything the page
+    // asked while it settled on the switch is in too.
+    await page.getByRole('tab', { name: 'Checkpoints' }).click();
+    await expect.poll(() => reads).toContain(`/api/runs/${id}/checkpoints`);
     await expect(page.getByRole('link', { name: 'Team run view' })).toHaveCount(0);
     // The one switch read per page load is all; never a team run.
     expect(asked.filter((p) => p !== '/api/team/status')).toEqual([]);

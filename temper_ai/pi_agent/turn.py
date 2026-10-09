@@ -19,21 +19,31 @@ Order (every check happens before the turn's first model call, R1 K6/K10):
 The turn is settled only from the session on disk after the box is gone. A worker that dies,
 times out or leaves a tool call open after the prompt was sent makes the turn *uncertain*
 (the owner decides: accept or retry); it is never re-run here.
+
+A team member's turn can also take messages while it runs (FLOW, owner bp-d3f3f571): the
+request's ``inbox`` is polled during the turn and each new item goes to Pi once, as a steer
+(delivered after the current tool calls, before the next model call). Its text must start
+with :data:`TEAM_MESSAGE_PREFIX`, the one input the box's guard lets in mid-turn. Once the box
+is gone, the session file says which handed messages reached the turn
+(``TurnReport.handed_in``). ``on_tools`` gets the running turn's tool-call counts.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from temper_ai.llm.pi_stream import PiEventMapper, Redactor, record_outcome
 from temper_ai.pi_agent.box import (
+    PROBE_DIR,
     STATE_FILE,
     BoxConfig,
     BoxError,
@@ -42,6 +52,7 @@ from temper_ai.pi_agent.box import (
     check_session,
 )
 from temper_ai.pi_agent.event_guard import TOKEN_GUARD, guarded
+from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.member_tree import (
     MemberLink,
     member_entry,
@@ -67,6 +78,44 @@ ADD_ON_PROOFS: dict[str, dict[str, str]] = {
     "pi-image-trim": {"env_not_off": "PI_IMAGE_TRIM"},
 }
 _OFF = {"0", "off", "false", "no"}
+#: How often a running team turn's inbox is polled (also right after each tool call ends).
+INBOX_POLL_S = 2.0
+#: At most this often, ``on_tools`` gets the running turn's tool-call counts.
+TOOLS_EVERY_S = 5.0
+_PREFIX_LINE = re.compile(r'^const TEAM_MESSAGE_PREFIX = "([^"\\\n]+)";$', re.M)
+
+
+def _prefix_from_box_extension() -> str:
+    """Temper's team-message prefix, read from its one definition in the box extension
+    (``assets/temper-box/index.ts``), so the host and the box's input guard can't drift apart.
+    An extension without exactly one such line stops the import: no turn could hand a message
+    in that the guard would let through."""
+    found = _PREFIX_LINE.findall((PROBE_DIR / "index.ts").read_text(encoding="utf-8"))
+    if len(found) != 1:
+        raise RuntimeError("temper-box/index.ts must define TEAM_MESSAGE_PREFIX exactly once, "
+                           "on one line, as a plain double-quoted string")
+    return found[0]
+
+
+#: The text every team message handed into a running turn starts with (the box's input guard
+#: lets nothing else in mid-turn). Defined once, in the box extension.
+TEAM_MESSAGE_PREFIX = _prefix_from_box_extension()
+
+
+class Handed(TypedDict):
+    """One team message for a running turn: the ledger's ``seq`` and the text to hand in
+    (made by :func:`render_handed`)."""
+
+    seq: int
+    text: str
+
+
+def render_handed(message: dict) -> str:
+    """The text of one team message handed into a running turn: the team-message prefix, then
+    the message framed exactly as a turn's batch (:func:`render_batch`: its id, its real sender
+    and its kind, all from the ledger), so the member can't mistake who sent it."""
+    return (TEAM_MESSAGE_PREFIX + "A team message reached you during this turn.\n"
+            + render_batch([message], team=True))
 
 
 @dataclass
@@ -85,6 +134,16 @@ class TurnRequest:
     #: The owner decided about the cut-off turn before this one (accept or retry): an
     #: unsettled session may be moved back to its last settled entry before the prompt.
     rewind_allowed: bool = False
+    #: Team messages for this member that arrived while its turn runs. Polled about every
+    #: :data:`INBOX_POLL_S` and right after each tool call ends, while Pi's run is active
+    #: (from its agent_start until it settles), on the turn's own thread; each new ``seq``
+    #: goes to Pi once, as a steer. An item whose text lacks :data:`TEAM_MESSAGE_PREFIX` is
+    #: never sent (reported unconfirmed). A failing inbox is noted, never fails the turn.
+    #: None: nothing is handed in, as before.
+    inbox: Callable[[], list[Handed]] | None = None
+    #: Gets the running turn's tool calls counted by tool name, most first, at most every
+    #: :data:`TOOLS_EVERY_S` and only when they changed. None: not counted.
+    on_tools: Callable[[dict[str, int]], None] | None = None
 
 
 @dataclass
@@ -100,6 +159,139 @@ class TurnReport:
     worker: dict = field(default_factory=dict)
     prompt_sent: bool = False
     outcome: Any = None
+    #: Only with an ``inbox``: which handed messages reached the turn, read from the session
+    #: file once the box is confirmed gone: ``{"confirmed": [seq...], "unconfirmed":
+    #: [seq...], "unexpected": n}``, plus ``"refused": [seq...]`` (Pi answered the steer
+    #: with an error) and ``"problems": [words...]`` when there were any. Confirmed: its exact
+    #: text is a user message this turn added to the file. Unconfirmed: everything else that
+    #: was polled (not sent, refused by Pi or the box's guard, queued too late, or the box not
+    #: confirmed gone). ``unexpected`` counts user messages of this turn that start with the
+    #: team-message prefix but were not handed in by Temper.
+    handed_in: dict | None = None
+
+
+class _MidTurn:
+    """A running team turn's live side (FLOW, owner bp-d3f3f571): team messages handed in as
+    Pi steers, and the turn's tool-call counts. Every call happens on the turn runner's
+    thread (the RPC sink runs inside ``rpc.next``)."""
+
+    def __init__(self, inbox: Callable[[], list[Handed]] | None,
+                 on_tools: Callable[[dict[str, int]], None] | None,
+                 clock: Callable[[], float] = time.monotonic):
+        self.inbox = inbox
+        self.on_tools = on_tools
+        self.clock = clock
+        self.rpc: Any = None  # set when the prompt is sent
+        # Pi's run is active: from its agent_start until its agent_settled (Pi takes a steer
+        # then, and a steer it queued late still runs before it settles).
+        self.running = False
+        self.sent: dict[int, str] = {}  # seq -> text, in the order sent
+        self.unsent: list[int] = []  # seqs never sent: no prefix, or the worker was gone
+        self.steers: dict[str, int] = {}  # RPC request id -> seq
+        self.refused: list[int] = []  # seqs whose steer Pi answered with an error
+        self.problems: list[str] = []
+        self.tool_ended = False
+        self.polled_at: float | None = None
+        self.tool_ids: set[str] = set()
+        self.counts: Counter[str] = Counter()
+        self.counts_new = False
+        self.counts_at: float | None = None
+
+    def observe(self, record: dict) -> bool:
+        """See one Pi record of the turn. True for the answer to one of these steers: it is
+        kept from the event mapper (a refused steer never fails the turn; it stays
+        unconfirmed)."""
+        kind = record.get("type")
+        if kind == "agent_start":
+            self.running = True
+        elif kind == "agent_settled":
+            self.running = False
+        elif kind in ("tool_execution_start", "tool_execution_end"):
+            call_id = record.get("toolCallId")
+            if call_id:  # one call, however many of its events arrive
+                counted = str(call_id) not in self.tool_ids
+                self.tool_ids.add(str(call_id))
+            else:
+                counted = kind == "tool_execution_start"
+            if counted:
+                self.counts[str(record.get("toolName") or "tool")[:64]] += 1
+                self.counts_new = True
+            if kind == "tool_execution_end":
+                self.tool_ended = True
+        elif kind == "response" and record.get("command") == "steer" \
+                and record.get("id") in self.steers:
+            if not record.get("success"):
+                self.refused.append(self.steers[record["id"]])
+            return True
+        return False
+
+    def tick(self) -> None:
+        """Called by the turn's wait loop after each record and at least every half second."""
+        now = self.clock()
+        if self.inbox is not None and self.rpc is not None and self.running and (
+                self.tool_ended or self.polled_at is None
+                or now - self.polled_at >= INBOX_POLL_S):
+            self.tool_ended = False
+            self.polled_at = now
+            self._hand_in()
+        if self.on_tools is not None and self.counts_new and (
+                self.counts_at is None or now - self.counts_at >= TOOLS_EVERY_S):
+            self.counts_new = False
+            self.counts_at = now
+            counts = dict(sorted(self.counts.items(), key=lambda kv: (-kv[1], kv[0])))
+            try:
+                self.on_tools(counts)
+            except Exception as exc:  # noqa: BLE001 - a counting bug never fails the turn
+                self._problem(f"on_tools failed ({type(exc).__name__})")
+
+    def _hand_in(self) -> None:
+        assert self.inbox is not None
+        try:
+            items = list(self.inbox() or [])
+        except Exception as exc:  # noqa: BLE001 - the turn goes on; the messages stay pending
+            self._problem(f"inbox failed ({type(exc).__name__})")
+            return
+        for item in items:
+            seq = item.get("seq") if isinstance(item, dict) else None
+            if not isinstance(seq, int) or isinstance(seq, bool):
+                self._problem("a handed message had no seq: not sent")
+                continue
+            if seq in self.sent or seq in self.unsent:
+                continue
+            text = item.get("text")
+            if not isinstance(text, str) or not text.startswith(TEAM_MESSAGE_PREFIX):
+                self.unsent.append(seq)
+                self._problem("a handed message lacked the team-message prefix: not sent")
+                continue
+            try:
+                rid = self.rpc.send("steer", message=text)
+            except RpcError:  # the worker is gone: the turn ends uncertain
+                self.unsent.append(seq)
+                raise
+            self.sent[seq] = text
+            self.steers[rid] = seq
+
+    def _problem(self, words: str) -> None:
+        if words not in self.problems:
+            self.problems.append(words)
+
+    def handed_in(self, turn_user_texts: list[str] | None) -> dict:
+        """Each handed ``seq`` confirmed only when its exact text is a user message this turn
+        wrote to the session file; ``turn_user_texts`` None (box not confirmed gone, file
+        unreadable) confirms nothing."""
+        found = set(turn_user_texts or ())
+        confirmed = [s for s, text in self.sent.items() if text in found]
+        unconfirmed = [s for s in [*self.sent, *self.unsent] if s not in confirmed]
+        handed = set(self.sent.values())
+        unexpected = sum(1 for text in turn_user_texts or ()
+                         if text.startswith(TEAM_MESSAGE_PREFIX) and text not in handed)
+        out: dict[str, Any] = {"confirmed": confirmed, "unconfirmed": unconfirmed,
+                               "unexpected": unexpected}
+        if self.refused:
+            out["refused"] = list(self.refused)
+        if self.problems:
+            out["problems"] = list(self.problems)
+        return out
 
 
 class ChunkSink:
@@ -150,6 +342,8 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
     box: WorkerBox | None = None
     report = TurnReport(state="failed")
     rpc = None
+    mid = _MidTurn(req.inbox, req.on_tools) \
+        if req.inbox is not None or req.on_tools is not None else None
 
     def sink(record: dict) -> None:
         if record.get("type") == "extension_ui_request":
@@ -164,6 +358,8 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
                 ui_refused.append(method or "unknown")
             return
         if feeding.is_set():
+            if mid is not None and mid.observe(record):
+                return
             mapper.handle(record)
 
     try:
@@ -245,12 +441,14 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
                               "the prompt was not sent")
         report.prompt_sent = True
         feeding.set()
+        if mid is not None:
+            mid.rpc = rpc
         if cfg.fault == "kill_after_prompt":
             rid = rpc.send("prompt", message=req.text)
             box.kill()
         else:
             rid = rpc.send("prompt", message=req.text)
-        _wait_settled(rpc, rid, mapper, cfg.turn_timeout_s, req.cancel_event, pdir)
+        _wait_settled(rpc, rid, mapper, cfg.turn_timeout_s, req.cancel_event, pdir, mid)
         feeding.clear()
     except TurnFailure as exc:
         report.error = f"{exc.code}: {exc}"
@@ -276,6 +474,8 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
     duration = time.monotonic() - started
     if not report.prompt_sent:
         report.model_call_ids = []
+        if mid is not None and req.inbox is not None:
+            report.handed_in = mid.handed_in(None)
         return report
 
     # Settled only from the session on disk, after the worker is gone (K7).
@@ -284,6 +484,12 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
     except BoxError as exc:
         after = {"settled": False, "error": exc.code}
     report.checks["session_after"] = after
+    if mid is not None and req.inbox is not None:
+        # The same file, once the box is confirmed gone: which handed messages reached Pi.
+        gone = bool(report.worker.get("container_removed"))
+        report.handed_in = mid.handed_in(
+            _turn_user_texts(pdir, report.checks.get("session_before") or {}, after)
+            if gone else None)
     outcome = mapper.finish()
     from temper_ai.pi_agent import token_scan
     from temper_ai.pi_agent.accounts import whole_result_refusal
@@ -487,8 +693,37 @@ def _check_add_ons(box: Any, spec: BoxSpec, state: dict) -> dict:
     return {"extensions": len(actual), "add_ons": proven}
 
 
+def _turn_user_texts(pdir: Path, before: dict, after: dict) -> list[str] | None:
+    """The user messages this turn added to the participant's session file (the entries past
+    the ones it held before the turn), read without following links (SW-51). None when the
+    file can't be read."""
+    name = after.get("file")
+    if not after.get("exists") or not name:
+        return None
+    try:
+        lines = read_member_text(pdir, f"sessions/{name}").splitlines()
+        entries = [json.loads(line) for line in lines if line.strip()]
+    except (OSError, ValueError):  # a link (MemberLink), gone, or not JSON lines
+        return None
+    start = before.get("entries", 0) if before.get("file") == name else 0
+    texts: list[str] = []
+    for entry in entries[start:]:
+        message = entry.get("message") \
+            if isinstance(entry, dict) and entry.get("type") == "message" else None
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            texts.append(content)
+        elif isinstance(content, list):
+            texts.append("".join(str(part.get("text") or "") for part in content
+                                 if isinstance(part, dict) and part.get("type") == "text"))
+    return texts
+
+
 def _wait_settled(rpc: Any, rid: str, mapper: PiEventMapper, timeout: float,
-                  cancel: threading.Event | None, pdir: Path) -> None:
+                  cancel: threading.Event | None, pdir: Path,
+                  mid: _MidTurn | None = None) -> None:
     deadline = time.monotonic() + timeout
     answered = False
     while True:
@@ -514,3 +749,5 @@ def _wait_settled(rpc: Any, rid: str, mapper: PiEventMapper, timeout: float,
             answered = True
             if not rpc.responses[rid].get("success"):
                 raise TurnFailure("prompt_refused", "Pi refused the prompt")
+        if mid is not None and answered and not mapper.settled:
+            mid.tick()

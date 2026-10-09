@@ -631,17 +631,21 @@ class LeaderTeam(TeamRows, Team):
                 Ledger._audit(conn, binding, refusal, payload)
                 return {"ok": False, "code": refusal.code, "detail": refusal.detail}
 
+    #: The team tools recorded with the calling turn, and each one's fields.
+    OPS: tuple[str, ...] = REVIEW_OPS
+    ACT_FIELDS: dict[str, tuple[str, ...]] = OP_FIELDS
+
     def _admit_act(self, conn: Any, binding: Binding, payload: dict) -> dict:
         op = payload.get("op")
-        if op not in REVIEW_OPS:
-            raise Refusal(route_model.INVALID_MESSAGE, "op must be one of: " + ", ".join(REVIEW_OPS))
+        if op not in self.OPS:
+            raise Refusal(route_model.INVALID_MESSAGE, "op must be one of: " + ", ".join(self.OPS))
         trusted = binding.trusted()
         forged = tuple(k for k in IDENTITY_CLAIMS
                        if k in payload and str(payload[k]) != str(trusted.get(k, "")))
         if forged:
             raise Refusal(route_model.IDENTITY_CLAIM_MISMATCH,
                           "a call cannot say who made it: Temper fills that in", claims=forged)
-        allowed = {"op", "client_msg_id", *OP_FIELDS[op], *IDENTITY_CLAIMS}
+        allowed = {"op", "client_msg_id", *self.ACT_FIELDS[op], *IDENTITY_CLAIMS}
         unknown = sorted(k for k in payload if k not in allowed)
         if unknown:
             raise Refusal(route_model.INVALID_MESSAGE, "unknown field(s): " + ", ".join(unknown)[:200])
@@ -659,19 +663,11 @@ class LeaderTeam(TeamRows, Team):
                               "that call id was already used for a different call")
             first = (existing["result"] or {}).get("reply") or {}
             return {**first, "ok": True, "act_id": existing["act_id"], "duplicate": True}
-        is_leader = binding.member == self.leader
-        if op in LEADER_TOOLS and not is_leader:
-            raise Refusal(route_model.NOT_AUTHORIZED, f"only the leader ({self.leader}) can {op}")
-        if op == GIVE_VIEW and is_leader:
-            raise Refusal(route_model.NOT_AUTHORIZED, "the leader gives no view on its own work")
         mine = [dict(r) for r in conn.execute(sa.select(acts).where(
             acts.c.run_id == binding.run_id, acts.c.host_path == binding.host_path,
             acts.c.turn_id == binding.turn_id, acts.c.epoch == binding.epoch,
             acts.c.state != "void")).mappings().all()]
-        revs = {r["review_id"]: dict(r) for r in conn.execute(sa.select(reviews).where(
-            reviews.c.run_id == binding.run_id,
-            reviews.c.host_path == binding.host_path)).mappings().all()}
-        detail = getattr(self, f"_allow_{op}")(conn, binding, args, mine, revs)
+        detail = self._allow(conn, binding, op, args, mine)
         seq = (conn.execute(sa.select(sa.func.max(acts.c.seq)).where(
             acts.c.run_id == binding.run_id,
             acts.c.host_path == binding.host_path)).scalar() or 0) + 1
@@ -684,6 +680,21 @@ class LeaderTeam(TeamRows, Team):
             content_sha256=digest, op=op, args=args, review_id=args.get("review_id"),
             state="recorded", result={"reply": reply}, created_at=_now(), carried_at=None))
         return {"ok": True, "act_id": act_id, "detail": detail, "duplicate": False}
+
+    def _allow(self, conn: Any, binding: Binding, op: str, args: dict,
+               mine: list[dict]) -> str:
+        """Whether the team's state allows this call now: the tool's reply, or a Refusal.
+        ``mine``: the calls this turn already recorded."""
+        is_leader = binding.member == self.leader
+        if op in LEADER_TOOLS and not is_leader:
+            raise Refusal(route_model.NOT_AUTHORIZED, f"only the leader ({self.leader}) can {op}")
+        if op == GIVE_VIEW and is_leader:
+            raise Refusal(route_model.NOT_AUTHORIZED, "the leader gives no view on its own work")
+        revs = {r["review_id"]: dict(r) for r in conn.execute(sa.select(reviews).where(
+            reviews.c.run_id == binding.run_id,
+            reviews.c.host_path == binding.host_path)).mappings().all()}
+        detail: str = getattr(self, f"_allow_{op}")(conn, binding, args, mine, revs)
+        return detail
 
     @staticmethod
     def _act_args(op: str, payload: dict) -> dict:
@@ -1054,10 +1065,12 @@ class LeaderTeam(TeamRows, Team):
             return self.ledger._open_wait(conn, self.run_id, self.host_path, kind, subject,
                                           self.attempt_id)
 
-    def ask(self, context: Any, wait: dict) -> Any:
+    def ask(self, context: Any, wait: dict, *, hold: bool = True) -> Any:
         """The owner's answer at an open wait, asked under the wait row's own id. In a Pi
         workflow an unanswered wait parks the run (``RunParked`` goes up untouched). None when
-        another attempt decided the wait meanwhile."""
+        another attempt decided the wait meanwhile, or (``hold=False``: other turns are
+        running) when there is no answer yet: the question stays with the owner and nothing
+        parks."""
         subject = wait["subject"] or {}
         question = ask_text(subject, "The team is waiting for you.")
         header = subject.get("header") or (
@@ -1065,7 +1078,8 @@ class LeaderTeam(TeamRows, Team):
             if wait["kind"] == "recovery" else wait["kind"])
         try:
             return ask_owner_for_wait(context, self.ledger, wait["wait_id"], question=question,
-                                      header=str(header), options=subject.get("options") or ())
+                                      header=str(header), options=subject.get("options") or (),
+                                      hold=hold)
         except WaitDecided:
             return None  # decided (or cancelled with the team's end) meanwhile: re-read
         except ReplacedByLaterAttempt:
@@ -1370,7 +1384,7 @@ def _at(value: Any) -> str | None:
 
 #: The wait kinds as the Team page names them: a member's question is ``owner`` in the ledger.
 WAIT_KIND_SHOWN = {"owner": "question", "pause": "pause", "stalled": "stalled",
-                   "recovery": "recovery", SETTINGS: SETTINGS}
+                   "recovery": "recovery", SETTINGS: SETTINGS, "limit": "limit"}
 
 
 def run_view(team: TeamRows) -> list[dict]:
@@ -1441,7 +1455,20 @@ def story(team: TeamRows, *, full: bool = False, answers: tuple | list = (),
                 "entry": "decision", "round": r["round"],
                 # A refused done counts as keep going (its why is on the review).
                 "decision": "done" if r["decision"] == "done" else "keep_going"}))
+    if not full:  # the run graph's existing story; the Team page maps the event feed itself
+        for ev in team.ledger.events_after(team.run_id, team.host_path, 0, 100_000):
+            kind = ev["kind"]
+            if kind not in ("share", "idle", "wake", "closing", "done", "done_refused",
+                            "conflict"):
+                continue
+            entries.append((ev["at"], 2.5, {
+                "event_type": "decision: done" if kind == "done" else kind,
+                "from_agent": ev["member"], "timestamp": ev["at"], "data": ev["data"],
+                "entry": "decision" if kind == "done" else kind,
+                **({"decision": "done"} if kind == "done" else {})}))
     for w in team._rows(waits, order=waits.c.opened_at):
+        if w["kind"] == "closing":
+            continue  # engine bookkeeping, not an owner question
         s, d = w["subject"] or {}, w["decision"] or {}
         data = {"wait_id": w["wait_id"], "state": w["state"],
                 **{k: s[k] for k in ("round", "member", "turn_no", "header") if k in s}}
@@ -1567,15 +1594,18 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
     end_cancelled_teams(ledger)  # G-a: a cancelled run's team the process died before ending
     members = [TeamMember(member_name(cfg), cfg) for cfg in node.members]
     attempt_id = context.graph_event_id or f"attempt-{uuid.uuid4().hex}"
-    team = LeaderTeam(
+    from temper_ai.pi_agent.team_flow import FlowTeam
+
+    team = FlowTeam(
         ledger, box, run_id=context.run_id, host_path=host_path, members=members,
         team_settings=settings, recorder=context.event_recorder, attempt_id=attempt_id,
         parent_event_id=context.parent_event_id, workflow=context.workflow_name,
         cancel_event=context.cancel_event, leader=node.settings.mode.leader,
-        pause_after=node.settings.pause_after_rounds, goal=str(goal),
+        pause_every_usd=node.settings.pause_every_usd,
+        max_parallel=node.settings.max_parallel, goal=str(goal),
         # The run's one account, settled when the Pi lane claimed the run (ADR-M4-09).
         account=run_account(context.run_id),
-        project=None)  # type: ignore[arg-type]
+        project=None)
     team.project = ProjectCopies(team.root, context.workspace_path)
     refusal = team.open({"goal": goal, **(input_data or {})})
     if refusal:
@@ -1585,8 +1615,14 @@ def run_team_node(node: Any, input_data: dict, context: ExecutionContext) -> Nod
             team.project.ensure(name, team._pdir(row))
     except CopyError as exc:
         return failed(f"the team's project copies could not be made: {exc}")
+    try:
+        team.shared.ensure()
+    except Exception as exc:  # noqa: BLE001 - VersionError or a git failure: can't start
+        return failed(f"the team's shared version could not be made: {exc}")
     team.post(team.leader, str(goal), sender="temper", sender_kind="temper", kind="goal",
               dedupe_key=f"{context.run_id}:{host_path}:brief")
+    # Only the leader starts: the others wait for its message.
+    team.rest_the_others()
     # Never a turn of an attempt that started after this one: that one is alive, and this
     # one stands down instead of taking its turns over.
     stand_down_if_replaced(context.run_id, context.graph_event_id,
@@ -1669,6 +1705,8 @@ def _trial_branch(team: LeaderTeam, record: dict, trial_id: str, source: str, ro
     fails the done team: a branch that wasn't made says why."""
     from temper_ai.pi_agent.team_branch import make_branch
 
+    # A free-flowing team's done version is the shared version, which the leader's copy
+    # holds: done counts only when the leader's own share made it (or found it unchanged).
     return make_branch(source=source, leader_git_dir=str(team.project.git_dir(team.leader)),
                        commit=str(record["version"]["commit"]), trial_id=trial_id, roots=roots,
                        helper_socket=getattr(box, "host_helper_socket", "") or "")

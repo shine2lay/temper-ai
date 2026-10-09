@@ -460,7 +460,7 @@ def test_6_a_member_changed_while_paused_asks_one_team_settings_wait_and_go_on_f
     assert [a["status"] for a in attempts] == ["parked", "parked", "completed"], \
         runs.stage_error(eid, "build")
     out = attempts[-1]["data"]["workflow_output"]
-    assert out["decision"] == "done" and out["round"] == 2
+    assert out["decision"] == "done" and out["cost"]["cost_usd"] == 100.0
     now = _team_pins(tr, eid)
     assert now["qa"]["pin"]["thinking"] == "high"
     assert pin_digest(now["qa"]["pin"]) == subject["pins"][0]["pin_new"]
@@ -514,7 +514,7 @@ def _trial_reopened_at_settings(api) -> tuple[str, dict, dict]:
     """A trial paused after round 1; a deploy changes the identity extension (every member's
     pin); the owner's continue reopens it at the team's settings wait."""
     runs.script(api.led, ["keep_going", "done"])
-    eid = team_api.start_trial(api, team_api.body(api, pause_after_rounds=1))["execution_id"]
+    eid = team_api.start_trial(api, team_api.body(api))["execution_id"]
     pause = team_api.parked(api, eid, 1)
     assert pause["kind"] == "pause"
     _change_extension("SECRET-EXT-7")

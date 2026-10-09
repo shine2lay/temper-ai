@@ -1,4 +1,4 @@
-"""Team runs through a real in-process Temper (#38): a team stage's node runs the leader loop,
+"""Team runs through an in-process Temper: a free-flowing team stage runs the leader,
 its owner waits park the run, and the owner's answer carries it on in the same run.
 
 Every member is a scripted Pi (tests/test_runner/pi_team/support.py's TeamFakeBox) behind the
@@ -36,7 +36,7 @@ from datetime import datetime
 
 import pytest
 
-from temper_ai.pi_agent.ledger import Ledger, reviews, waits
+from temper_ai.pi_agent.ledger import Ledger, waits
 from temper_ai.pi_agent.team_runtime import Team
 from temper_ai.shared.clock import as_utc, utcnow
 from tests.test_pi_agent import support as sup
@@ -53,14 +53,16 @@ HOST = "build.team"
 GOAL = "This tiny project has no README. Write a short one."
 GOAL_DEFAULT = "Write a short README for this tiny project."
 README = "# Tiny\n\nPrints hello. Run it with `python app.py`.\n"
-PAUSE_1 = {**tt.RUNNABLE, "pause_after_rounds": 1}
+PAUSE_1 = {**tt.RUNNABLE, "pause_every_usd": 100.0, "max_parallel": 1}
+#: Costs scripted at the action that earned them; failures and retries keep their own cost.
+COSTS: dict[str, float] = {}
 BRIEF = {"agent:brief": {"name": "brief", "type": sup.STEP_TYPE}}
 BRIEF_NODE = {"name": "brief", "type": "agent", "agent": "brief"}
 DEFAULTED = {"goal": {"type": "string", "required": True, "default": GOAL_DEFAULT}}
 # The team node's outputs, read by the workflow's outputs the way a later node reads them.
 OUTPUTS = {"decision": "build.structured.decision", "version": "build.structured.version",
-           "views": "build.structured.views", "summary": "build.structured.summary",
-           "rounds": "build.structured.rounds", "round": "build.structured.round"}
+           "shares": "build.structured.shares", "summary": "build.structured.summary",
+           "turns": "build.structured.turns", "cost": "build.structured.cost"}
 
 
 class Crash(BaseException):
@@ -74,7 +76,8 @@ def tr(pw_run, team_on, monkeypatch, tmp_path):
     from temper_ai.database import get_database
 
     ts.reset()
-    Team.turn_runner = ts.fake_runner
+    COSTS.clear()
+    Team.turn_runner = costed_runner
     Team.stop_box = ts.Stopper()
     ls.project(pw_run.ws, {"app.py": "print('hello')\n"})
     ls.allow_projects(monkeypatch, tmp_path / "team-settings", str(pw_run.ws))
@@ -93,6 +96,11 @@ def install(tr, *nodes: dict, inputs: dict | None = None, outputs: dict | None =
     """The workflow ``team_wf`` the run loads (a resume or a fork reads it as it is then)."""
     from temper_ai.stage.loader import GraphLoader
 
+    # These are integration tests of parking, not scheduling: a cap of one makes the
+    # scripted send/reply order deterministic. The combined FLOW test proves parallelism.
+    nodes = tuple({**n, "strategy_config": {**(n.get("strategy_config") or {}),
+                                            "max_parallel": 1}}
+                  if n.get("strategy") == "team" else n for n in nodes)
     workflow: dict = {"name": "team_wf", "nodes": list(nodes)}
     if inputs:
         workflow["inputs"] = inputs
@@ -109,18 +117,60 @@ def start(tr, inputs: dict) -> str:
     return r.json()["execution_id"]
 
 
+def costed_runner(cfg, req, ledger):
+    report = ts.fake_runner(cfg, req, ledger)
+    if report.outcome is not None:
+        report.outcome.tokens["cost_usd"] = COSTS.get(req.turn["turn_id"], 0.0)
+    return report
+
+
 def script(led: Ledger, decisions: list[str], *, last_views: str = "satisfied") -> None:
-    """design's rounds: write a version and ask for a review; frontend and qa each give a view
-    of it (changes, or ``last_views`` before a done); design decides each in its own turn."""
-    design, frontend, qa = [], [], []
-    for i, d in enumerate(decisions, 1):
-        verdict = last_views if d == "done" else "changes"
-        design.append([ls.write("README.md", README if d == "done" else f"# Tiny v{i}\n"),
-                       ls.request_review(f"draft {i}")])
-        frontend.append([ls.give_view(led, None, verdict, f"frontend note {i}")])
-        qa.append([ls.give_view(led, None, verdict, f"qa note {i}")])
-        design.append([ls.decide(led, None, d, f"summary {i}")])
-    ts.SCRIPTS["design"], ts.SCRIPTS["frontend"], ts.SCRIPTS["qa"] = design, frontend, qa
+    """Write and share drafts, send work to the others, then carry on or say done. Each
+    carry-on costs $100, triggering a check-in; no review protocol or round state exists."""
+    def charge(_box, _message):
+        COSTS[ts.CURRENT["binding"].turn_id] = 100.0
+
+    i, sent = 1, False
+
+    def design_turn():
+        nonlocal i, sent
+        d = decisions[min(i, len(decisions)) - 1]
+        if not sent:
+            sent = True
+            return [ls.write("README.md", README if d == "done" else f"# Tiny v{i}\n"),
+                    ls.op("share", note=f"draft {i}"),
+                    ts.send("frontend", f"Look at draft {i}", "work_request"),
+                    ts.send("qa", f"Look at draft {i}", "work_request"), ls.op("idle")]
+        heard = {h["id"] for p in ts.PROMPTS["design"] for h in ts.headers(p)
+                 if h["from"] in {'member "frontend"', 'member "qa"'}}
+        if len(heard) < 2 * i:
+            return [ls.op("idle", note="waiting for both replies")]
+        if d == "done":
+            return [ls.op("done", summary=f"summary {i}")]
+        i, sent = i + 1, False
+        return [ls.op("share"), {"call": charge}]
+
+    ts.SCRIPTS["design"] = ls.Turns(design_turn)
+    ts.SCRIPTS["design"].append(design_turn())
+    def worker(member: str):
+        replied: set[str] = set()
+
+        def turn():
+            actions = []
+            prompt = ts.PROMPTS[member][-1] if ts.PROMPTS[member] else ""
+            for head in ts.headers(prompt):
+                if (head["from"] != 'member "design"' or head["kind"] != "work_request"
+                        or head["id"] in replied):
+                    continue
+                replied.add(head["id"])
+                actions.append(ts.send(body=f"{member} note {len(replied)}", kind="reply",
+                                       in_reply_to=head["id"]))
+            return [*actions, ls.op("idle")]
+
+        return ls.Turns(turn)
+
+    ts.SCRIPTS["frontend"] = worker("frontend")
+    ts.SCRIPTS["qa"] = worker("qa")
 
 
 def prompts() -> dict[str, int]:
@@ -128,7 +178,7 @@ def prompts() -> dict[str, int]:
 
 
 def team_waits(tr, eid: str) -> list[dict]:
-    return ls.table(tr.led, waits, eid, HOST)
+    return [w for w in ls.table(tr.led, waits, eid, HOST) if w["kind"] != "closing"]
 
 
 def open_team_wait(tr, eid: str) -> dict:
@@ -211,35 +261,30 @@ def turns_by_member(tr, eid: str) -> dict[str, list[str]]:
 # --- a team stage runs -------------------------------------------------------------------------
 
 
-def test_a_team_stage_runs_its_review_rounds_and_ends_on_the_reviewed_version(tr):
-    """The leader writes, asks for a review, the others give their views, the leader decides;
-    Temper records done on the reviewed version, and its record is the node's outputs."""
+def test_a_team_stage_shares_a_version_and_ends_with_the_shared_result(tr):
+    """The leader shares work, gets replies and says done; the shared result is the output."""
     install(tr, tt.team_stage(), outputs=OUTPUTS)
-    script(tr.led, ["keep_going", "done"])
+    script(tr.led, ["done"])
     eid = start(tr, {"goal": GOAL})
     attempts = pw.wait_ended(eid, 1)
     assert [a["status"] for a in attempts] == ["completed"], stage_error(eid, "build")
     assert stage_row(eid) == ["completed"] and team_row(eid) == ["completed"]
 
     out = attempts[-1]["data"]["workflow_output"]
-    (_first, second) = ls.table(tr.led, reviews, eid, HOST)
-    assert out["decision"] == "done" and out["rounds"] == 2 and out["round"] == 2
-    assert out["version"]["commit"] == second["commit_sha"]
+    assert out["decision"] == "done" and out["version"]["commit"]
     assert out["version"]["files"]["README.md"] == hashlib.sha256(README.encode()).hexdigest()
-    assert {m: v["verdict"] for m, v in out["views"].items()} == {"frontend": "satisfied",
-                                                                   "qa": "satisfied"}
-    assert out["summary"] == "summary 2"
+    assert out["summary"] == "summary 1" and out["shares"][0]["who"] == "design"
     # every turn ran once; one conversation (participant, session) per member
-    assert prompts() == {"design": 4, "frontend": 2, "qa": 2}
-    assert turns_by_member(tr, eid) == {"design": ["completed"] * 4,
-                                        "frontend": ["completed"] * 2, "qa": ["completed"] * 2}
+    assert prompts() == {"design": 2, "frontend": 1, "qa": 1}
+    assert turns_by_member(tr, eid) == {"design": ["completed"] * 2,
+                                        "frontend": ["completed"], "qa": ["completed"]}
     snap = ts.rows(tr.led, eid, HOST)
     assert sorted(p["member"] for p in snap["participants"]) == ["design", "frontend", "qa"]
     assert {p["ended_reason"] for p in snap["participants"]} == {"team_done"}
     # each message delivered exactly once, nothing left pending
     assert all(m["state"] == "consumed" and m["delivery_count"] == 1 for m in snap["messages"])
     assert team_waits(tr, eid) == []
-    assert len(FakeBox.STARTS) == 8
+    assert len(FakeBox.STARTS) == 4
 
 
 # --- the pause (R2 B10, PARK P1 and P2) ---------------------------------------------------------
@@ -252,7 +297,7 @@ def test_b10_p1_the_pause_holds_no_worker_and_continue_carries_the_same_run_on(t
     script(tr.led, ["keep_going", "done"])
     eid = start(tr, {"goal": GOAL})
     row, gate = parked_at(tr, eid, 1, "team_pause")
-    assert row["kind"] == "pause" and row["subject"]["header"] == "pause-after-round-1"
+    assert row["kind"] == "pause" and row["subject"]["header"] == "pause-at-$100"
     assert row["subject"]["options"] == ["continue", "guide", "stop"]
     asked_after_its_row(eid, row)
     assert prompts() == {"design": 2, "frontend": 1, "qa": 1}
@@ -271,72 +316,11 @@ def test_b10_p1_the_pause_holds_no_worker_and_continue_carries_the_same_run_on(t
                                         "frontend": ["completed"] * 2, "qa": ["completed"] * 2}
     after = {p["member"]: p["session_id"] for p in ts.rows(tr.led, eid, HOST)["participants"]}
     assert after == sessions
-    (decided,) = team_waits(tr, eid)
+    (decided,) = [w for w in team_waits(tr, eid) if w["kind"] == "pause"]
     assert decided["wait_id"] == row["wait_id"] and decided["state"] == "decided"
     assert decided["decision"]["answer"] == "continue"
     out = attempts[-1]["data"]["workflow_output"]
-    assert out["decision"] == "done" and out["round"] == 2
-
-
-def _team_view(tr, eid: str) -> list[dict]:
-    """The team's story as the run page gets it: the team node inside the stage, latest attempt."""
-    page = tr.client.get(f"/api/workflows/{eid}")
-    assert page.status_code == 200, page.text
-    (stage,) = [n for n in page.json()["nodes"] if n["name"] == "build"]
-    (team,) = [n for n in stage["child_nodes"] if n["name"] == "team"]
-    return team["collaboration_events"]
-
-
-def test_the_run_view_shows_messages_reviews_the_pause_its_answer_and_the_decision(tr):
-    """The brief's run view: messages sender to receiver, each review round with its views, the
-    pause with the owner's answer, and the decision, on the team node's row (the stage view's
-    Collaboration fold), while paused and after a reload."""
-    install(tr, tt.team_stage(strategy_config=PAUSE_1), outputs=OUTPUTS)
-    script(tr.led, ["keep_going", "done"])
-    eid = start(tr, {"goal": GOAL})
-    row, gate = parked_at(tr, eid, 1, "team_view")
-    paused = _team_view(tr, eid)
-    (wait,) = [e for e in paused if e["event_type"] == "owner wait: pause"]
-    assert wait["data"]["wait_id"] == row["wait_id"] and wait["data"]["state"] == "open"
-    assert "answer" not in wait["data"]
-
-    answer(tr, eid, row, gate, "continue")
-    assert [a["status"] for a in pw.wait_ended(eid, 2)] == ["parked", "completed"]
-    view = _team_view(tr, eid)
-    kinds = [e["event_type"] for e in view]
-    # messages, sender to receiver, each with its id, delivered once
-    msgs = [e for e in view if e["event_type"].startswith("message: ")]
-    snap = ts.rows(tr.led, eid, HOST)
-    assert sorted(e["data"]["message_id"] for e in msgs) == sorted(
-        m["message_id"] for m in snap["messages"])
-    (goal,) = [e for e in msgs if e["event_type"] == "message: goal"]
-    assert goal["from_agent"] == "temper" and goal["to_agent"] == "design"
-    asks = [e for e in msgs if e["event_type"] == "message: review_request"]
-    assert sorted(e["to_agent"] for e in asks) == ["frontend", "frontend", "qa", "qa"]
-    # Temper asks: it pinned the version the leader's request names
-    assert all(e["from_agent"] == "temper" and e["data"]["review_id"] for e in asks)
-    views = [e for e in msgs if e["event_type"] == "message: view"]
-    assert sorted(e["from_agent"] for e in views) == ["frontend", "frontend", "qa", "qa"]
-    assert all(e["to_agent"] == "design" and e["data"]["deliveries"] == 1 for e in msgs
-               if e in views)
-    # each review round with its version and views; the pause with its answer; the decision
-    first, second = ls.table(tr.led, reviews, eid, HOST)
-    r1, r2 = [e for e in view if e["event_type"].startswith("review round ")]
-    assert r1["data"]["commit"] == first["commit_sha"] and r1["data"]["decision"] == "keep_going"
-    assert {m: v["verdict"] for m, v in r1["data"]["views"].items()} == {
-        "frontend": "changes", "qa": "changes"}
-    assert {m: v["verdict"] for m, v in r2["data"]["views"].items()} == {
-        "frontend": "satisfied", "qa": "satisfied"}
-    (wait,) = [e for e in view if e["event_type"] == "owner wait: pause"]
-    assert wait["data"] == {**wait["data"], "wait_id": row["wait_id"], "state": "decided",
-                            "answer": "continue", "round": 1}
-    assert wait["from_agent"] == "temper" and wait["to_agent"] == "owner"
-    (done,) = [e for e in view if e["event_type"] == "decision: done"]
-    assert done["data"]["commit"] == second["commit_sha"] and done["data"]["round"] == 2
-    # in the order it happened: round 1, its keep-going, the pause, round 2, done
-    order = [k for k in kinds if not k.startswith("message: ")]
-    assert order == ["review round 1", "decision: keep_going", "owner wait: pause",
-                     "review round 2", "decision: done"], order
+    assert out["decision"] == "done" and out["cost"]["cost_usd"] == 100.0
 
 
 def test_b10_p2_two_pauses_in_one_go_each_ask_the_owner_and_stop_ends_it_cancelled(tr):
@@ -351,7 +335,7 @@ def test_b10_p2_two_pauses_in_one_go_each_ask_the_owner_and_stop_ends_it_cancell
 
     second, gate2 = parked_at(tr, eid, 2, "team_pause_2")
     assert second["wait_id"] != first["wait_id"]
-    assert second["subject"]["header"] == "pause-after-round-2"
+    assert second["subject"]["header"] == "pause-at-$200"
     asked_after_its_row(eid, first)
     asked_after_its_row(eid, second)
     assert len(ss.step_waits(eid, HOST)) == 2
@@ -361,13 +345,13 @@ def test_b10_p2_two_pauses_in_one_go_each_ask_the_owner_and_stop_ends_it_cancell
     attempts = pw.wait_ended(eid, 3)
     assert [a["status"] for a in attempts] == ["parked", "parked", "cancelled"]
     assert stage_row(eid)[-1] == "cancelled" and team_row(eid)[-1] == "cancelled"
-    assert "stopped at the pause after round 2" in stage_error(eid, "build")
+    assert "stopped at the check-in at $200" in stage_error(eid, "build")
     assert "Workflow cancelled by user" not in str(attempts[-1])
     # the stop is recorded the way done is, as stopped (the node's outputs say so)
     assert attempts[-1]["data"]["workflow_output"]["decision"] == "stopped"
     snap = ts.rows(tr.led, eid, HOST)
     assert {p["ended_reason"] for p in snap["participants"]} == {"team_stopped"}
-    assert [r["decision"] for r in ls.table(tr.led, reviews, eid, HOST)] == ["keep_going"] * 2
+    assert [w["subject"]["at_usd"] for w in team_waits(tr, eid)] == [100.0, 200.0]
     assert prompts() == {"design": 4, "frontend": 2, "qa": 2}  # nothing ran after the stop
 
 
@@ -402,7 +386,7 @@ def test_a_pause_that_cannot_park_holds_its_worker_and_a_cancel_there_ends_the_t
     assert not [m for m in snap["messages"] if m["state"] in ("pending", "held")]
     assert [(w["wait_id"], w["state"]) for w in team_waits(tr, eid)] == [
         (row["wait_id"], "cancelled")]
-    assert "done" not in [r["decision"] for r in ls.table(tr.led, reviews, eid, HOST)]
+    assert not [e for e in tr.led.events_after(eid, HOST) if e["kind"] == "done"]
     assert stage_row(eid)[-1] != "completed" and team_row(eid)[-1] != "completed"
     assert prompts() == {"design": 2, "frontend": 1, "qa": 1}  # nothing ran after the cancel
 
@@ -465,7 +449,9 @@ def test_b13_a_failed_team_fails_its_stage_row_and_the_run_while_other_stages_st
     install(tr, review, tt.team_stage(),
             agents={"agent:ok": {"name": "ok", "type": sup.STEP_TYPE},
                     "agent:bad": {"name": "bad", "type": HELD_FAIL_TYPE}})
-    ts.SCRIPTS["design"] = [[{"error": "400 invalid_request_error: the request was refused"}]]
+    # A revoked account is terminal for the team, unlike a member's retryable failure.
+    ts.SCRIPTS["design"] = [[{"error": "403 permission_error: OAuth authentication is "
+                                      "currently not allowed for this organization"}]]
     try:
         eid = start(tr, {"goal": GOAL})
         attempts = pw.wait_ended(eid, 1)
@@ -476,7 +462,7 @@ def test_b13_a_failed_team_fails_its_stage_row_and_the_run_while_other_stages_st
     assert pw.RAN["bad"] == 1  # the lane ran and failed
     assert stage_row(eid, "review") == ["completed"]  # the tolerant rule, unchanged
     assert stage_row(eid) == ["failed"] and team_row(eid) == ["failed"]
-    assert "design (architecture) turn 1 failed" in stage_error(eid, "build")
+    assert "refused the call" in stage_error(eid, "build")
     assert turns_by_member(tr, eid) == {"design": ["failed"]}
     assert prompts() == {"design": 1, "frontend": 0, "qa": 0}
 
@@ -508,7 +494,7 @@ def test_f1_retry_picked_at_a_cut_off_turn_runs_it_again(tr):
     as accept while the rendered answer ("Q: ...\\nA: retry") was read."""
     install(tr, tt.team_stage())
     script(tr.led, ["done"])
-    ts.SCRIPTS["design"].insert(0, CUT_OFF)
+    ts.SCRIPTS["design"][0:0] = [CUT_OFF, CUT_OFF]  # automatic retry, then member hold
     eid = start(tr, {"goal": GOAL})
     row, gate = parked_at(tr, eid, 1, "f1_cut_off_retry")
     assert (row["kind"], row["subject"]["options"]) == ("recovery", ["accept", "retry"])
@@ -523,19 +509,16 @@ def test_f1_retry_picked_at_a_cut_off_turn_runs_it_again(tr):
 
 
 def test_f1_retry_picked_at_a_failed_turn_runs_it_again(tr):
-    """After a Resume, picking "retry" at a failed turn's wait retries it; it was read as stop
-    and ended the team."""
+    """After the automatic retry also fails, a picked retry retries this member, not a stop."""
     install(tr, tt.team_stage())
     script(tr.led, ["done"])
-    ts.SCRIPTS["design"].insert(0, REFUSED)
+    ts.SCRIPTS["design"][0:0] = [REFUSED, REFUSED]
     eid = start(tr, {"goal": GOAL})
-    assert pw.wait_ended(eid, 1)[-1]["status"] == "failed"
-    assert tr.client.post(f"/api/runs/{eid}/resume", json={}).status_code == 200
-    row, gate = parked_at(tr, eid, 2, "f1_failed_retry")
+    row, gate = parked_at(tr, eid, 1, "f1_failed_retry")
     assert (row["kind"], row["subject"]["options"]) == ("recovery", ["retry", "stop"])
 
     assert pick(tr, eid, row, gate, "retry")["carries_on"] is True
-    assert pw.wait_ended(eid, 3)[-1]["status"] == "completed", stage_error(eid, "build")
+    assert pw.wait_ended(eid, 2)[-1]["status"] == "completed", stage_error(eid, "build")
     assert recovery_decisions(tr, eid) == ["retry"]
     assert turns_by_member(tr, eid)["design"][0] == "superseded"
     assert stage_row(eid)[-1] == "completed" and team_row(eid)[-1] == "completed"
@@ -547,10 +530,10 @@ def test_f1_an_answer_naming_no_choice_never_accepts_or_stops_and_is_asked_again
     new wait for the same turn. A picked retry then runs it again."""
     install(tr, tt.team_stage())
     script(tr.led, ["done"])
-    ts.SCRIPTS["design"].insert(0, CUT_OFF)
+    ts.SCRIPTS["design"][0:0] = [CUT_OFF, CUT_OFF]
     eid = start(tr, {"goal": GOAL})
     row, gate = parked_at(tr, eid, 1, "f1_no_choice_1")
-    held = ts.SENDS[0]["reply"]["message_id"]
+    held = ts.SENDS[1]["reply"]["message_id"]
 
     assert pick(tr, eid, row, gate)["carries_on"] is True  # approved with nothing said
     second, gate2 = parked_at(tr, eid, 2, "f1_no_choice_2")
@@ -567,9 +550,9 @@ def test_f1_an_answer_naming_no_choice_never_accepts_or_stops_and_is_asked_again
                                                  + row["subject"]["question"])
     assert third["subject"]["asked_again"] == 2
     assert recovery_decisions(tr, eid) == ["invalid", "invalid", None]
-    assert turns_by_member(tr, eid) == {"design": ["uncertain"]}, "not accepted, not stopped"
+    assert turns_by_member(tr, eid) == {"design": ["superseded", "uncertain"]}
     assert ts.message(tr.led, eid, held)["state"] == "held", "what it sent was not released"
-    assert prompts() == {"design": 1, "frontend": 0, "qa": 0}
+    assert prompts() == {"design": 2, "frontend": 0, "qa": 0}
 
     assert pick(tr, eid, third, gate3, "retry")["carries_on"] is True
     assert pw.wait_ended(eid, 4)[-1]["status"] == "completed", stage_error(eid, "build")
@@ -673,7 +656,7 @@ def test_a_left_out_goal_reaches_the_nodes_own_check_with_its_default_at_start_r
 
 BAD_CONFIGS = {
     # R2 B7: edges stay refused when the node starts, as at run start
-    "edges": ({"strategy_config": {**tt.GOOD, "pause_after_rounds": 1}}, {},
+    "edges": ({"strategy_config": tt.GOOD}, {},
               "communication: edges isn't built yet; use all"),
     # M2 binding B8: one member per role
     "same_role": ({"agents": ["design", "design2", "qa"]},
@@ -908,7 +891,7 @@ def test_sw32_a_team_run_parked_when_pi_goes_off_waits_visibly_and_carries_on_on
     attempts = pw.wait_ended(eid, 2)
     assert [a["status"] for a in attempts] == ["parked", "completed"], stage_error(eid, "build")
     assert prompts() == {"design": 4, "frontend": 2, "qa": 2}
-    (decided,) = team_waits(tr, eid)
+    (decided,) = [w for w in team_waits(tr, eid) if w["kind"] == "pause"]
     assert decided["wait_id"] == row["wait_id"] and decided["decision"]["answer"] == "continue"
     assert attempts[-1]["data"]["workflow_output"]["decision"] == "done"
 

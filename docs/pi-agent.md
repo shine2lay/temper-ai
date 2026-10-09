@@ -114,7 +114,8 @@ role); the member is known in the team by that config's `name:`.
   strategy_config:
     mode: {type: leader, leader: design}  # who gets the brief and says done
     communication: {type: all}            # the default; edges isn't built yet (below)
-    pause_after_rounds: 3                 # required, no default
+    pause_every_usd: 100                  # default 100: check-in on Project spend
+    max_parallel: 3                      # optional: default every member
 ```
 
 ```yaml
@@ -148,11 +149,11 @@ refused with a plain sentence, by the name a config would use for it (M4 SW-04; 
 | `conversation: {type: fresh_each_round}` (or just `fresh_each_round`) | `conversation: fresh_each_round isn't built yet: members keep their conversation for the whole team stage` |
 | `conversation: {continue_from: <stage>}` (two team stages continuing) | `conversation: continuing members' conversations from an earlier team stage (continue_from) isn't built yet: each team stage starts its members' conversations fresh` |
 | `private_children` (or `children`) | `private_children: private children aren't built yet: a team is the members it lists, and none of them can start a private helper` |
-| `concurrent_turns` (or `concurrency`) | `concurrent_turns: concurrent member turns aren't built yet: members take turns one at a time` |
+| `pause_after_rounds` (non-null) | Removed: use `pause_every_usd`; old round teams require a new Project. |
 | `communication: {type: edges, ...}` | `communication: edges isn't built yet; use all` (below) |
 
 A member's own agent config asking for one of these (`conversation`, `continue_from`,
-`private_children`, `children`, `concurrent_turns`) is refused the same way, prefixed
+`private_children`, `children`) is refused the same way, prefixed
 `member '<name>':`. A change to the team's members while its run is going (one added,
 removed or renamed, or a member given another role) is refused when the team reopens ("team
 settings changed since the team started (members)", R2 C3). Any other change to the team's
@@ -168,7 +169,7 @@ config loads; a valid `type: pi` config; its role exists under that exact id, wi
 name suggested but never picked; `identity.json` and `about.md` readable; `identity.json`
 names a home chat; a worker route for its provider; pinned copies of its add-ons), the team
 (leader is a member, edges name members, every member reachable from the leader, edges not
-used yet, `pause_after_rounds` set, a goal, no two members with the same role, every
+used yet, valid `pause_every_usd` and `max_parallel`, a goal, no two members with the same role, every
 member's name matching `^[a-z][a-z0-9_-]{0,39}$`, no member named like one of Temper's own
 ids -- `owner`, `system`, `all`, ... from `pi_agent/route/model.py` `RESERVED_IDS`, and no
 member given Bash while `TEMPER_API_GUARD` isn't `enforce`: "member '<m>': Bash is off
@@ -189,8 +190,9 @@ A team's members are `type: pi` agents, so a workflow with a team stage is a Pi 
 its gates park and its loops must say `on_max_loops: fail`.
 
 **The team node** (`temper_ai/pi_agent/team_node.py`, `TeamNode`): the stage holds one
-node, `<stage>.team`, which runs the leader loop on the team's messages and inboxes:
-review rounds, the pause after `pause_after_rounds` keep-goings, done recorded by Temper
+node, `<stage>.team`, which runs the free-flowing loop on the team's messages and inboxes:
+only the leader starts with the goal; messaged members work in parallel, share one version,
+rest with `idle`, check in at each dollar-spend boundary, and call `done(summary)` for closing
 ([pi-team-runtime.md](pi-team-runtime.md); messaging and inboxes:
 [pi-team-messages.md](pi-team-messages.md)). A failed team fails its stage too; a stop at
 the pause or when stalled ends it, its stage and its run cancelled. The Team page starts
@@ -199,7 +201,8 @@ and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
 ## How it runs (ADR-A6-1)
 
 - The node keeps its conversation in its own ledger (`temper_ai/pi_agent/ledger.py`,
-  tables `pi_participants`, `pi_messages`, `pi_turns`, `pi_waits`, `pi_reviews`; schema in
+  tables `pi_participants`, `pi_messages`, `pi_turns`, `pi_waits`, `pi_team_acts`,
+  `pi_team_events` and the legacy `pi_reviews`; schema in
   the L2 proof folder `schema.md`, extended for teams in the T4T5 folder `tables.md`). One
   role = one participant = one Pi session, kept for the whole run: a later turn, a Resume
   or a restart reopens the same session.
@@ -208,12 +211,13 @@ and follows trials through its own API, [pi-team-api.md](pi-team-api.md).
   a name as `Text` (`host_path`, `gate_name`, `dedupe_key`, `claim_key`, `claimed_by`,
   `box_name`, `session_dir`; and the Team page's `request_id`), so a long node path never
   fails a write; version 2 adds
-  `pi_participants.snapshot_sha256` (the role snapshot below). Every open (`Ledger.ensure`)
+  `pi_participants.snapshot_sha256` (the role snapshot below). Version 4 adds nullable rest
+  and conflict fields and the cursor event table for free-flowing teams. Every open (`Ledger.ensure`)
   takes a lock -- a Postgres advisory lock, a plain one on SQLite -- makes what is missing
   and runs the forward-only steps from the stored version up, in one transaction; a step
   only adds, never drops or rewrites a row. Pi refuses a database, changing nothing, whose
   stored version is newer than this Temper knows ("this database's Pi tables are at layout
-  version 3, but this Temper knows only up to version 2: a newer Temper made them; ...") or
+  version 5, but this Temper knows only up to version 4: a newer Temper made them; ...") or
   that has `pi_` tables with no version ("... from a Pi build before their layout was
   versioned, so their layout is unknown; Temper changed nothing. Use a fresh database for
   Pi"). A Pi step then fails "Pi refused this database: <why>", a team fails red with the
@@ -481,8 +485,8 @@ carries them (queue #47):
 - May be the first node of a workflow: an owner wait saves where the run is under the
   wait's own id (a `step_parked` checkpoint), so the answer carries the run on from there
   even when nothing ran before it.
-- One role per step; several roles work together only as a team stage, whose messaging
-  is built ([pi-team-messages.md](pi-team-messages.md)) but whose leader loop is not yet.
+- One role per step; several roles work together as a free-flowing team stage, with
+  per-member claims and sessions ([pi-team-runtime.md](pi-team-runtime.md)).
 - The step never returns empty output, and raises only `RunParked` (its run let the worker
   go at an owner wait) and `CancellationError` (the run was stopped while the step held its
   worker at a wait).

@@ -39,8 +39,7 @@ TRIAL_STAGE = "trial"
 DEFAULT_TOOLS = ("Read", "Grep", "Glob", "Edit", "Write")
 #: The team's structured outcome, copied to the workflow's outputs (A2: the Team page reads
 #: the outcome from ``pi_team_outcomes``, never from these).
-OUTPUT_KEYS = ("decision", "reason", "review_id", "round", "version", "views", "objections",
-               "summary", "rounds", "branch")
+OUTPUT_KEYS = ("decision", "reason", "version", "summary", "shares", "turns", "cost", "branch")
 #: A start whose configs were saved but whose run never began is finished by a retry with the
 #: same request id once it is this old (a start still under way is younger).
 UNFINISHED_AFTER = timedelta(seconds=120)
@@ -60,8 +59,9 @@ class TrialCheck:
     goal: str
     members: list[dict]
     leader: str
-    pause_after_rounds: Any
+    pause_every_usd: Any
     project_path: str | None
+    max_parallel: Any = None
     communication: str = "all"
     configs: dict[tuple[str, str], dict] = field(default_factory=dict)
     problems: list = field(default_factory=list)
@@ -76,10 +76,11 @@ class TrialCheck:
 
     def record(self) -> dict:
         """The trial as started, for ``pi_team_trials.trial`` and ``team_run.trial``."""
-        return {"goal": self.goal, "leader": self.leader,
+        return {"kind": "flow", "goal": self.goal, "leader": self.leader,
                 "members": [dict(m) for m in self.members],
-                "pause_after_rounds": self.pause_after_rounds,
-                "communication": self.communication,
+                "pause_every_usd": self.pause_every_usd,
+                "max_parallel": self.max_parallel if self.max_parallel is not None
+                else len(self.members), "communication": self.communication,
                 "project_path": self.project_path}
 
 
@@ -163,7 +164,8 @@ def check_trial(body: dict, *, store: Any = None, team: TeamConfig | None = None
     project: str | None = (str(raw_project).strip() if raw_project is not None else "") or None
     members, problems = _member_rows(body.get("members"))
     check = TrialCheck(trial_id=tid, workflow=workflow, goal=goal, members=members,
-                       leader=leader, pause_after_rounds=body.get("pause_after_rounds"),
+                       leader=leader, pause_every_usd=body.get("pause_every_usd", 100.0),
+                       max_parallel=body.get("max_parallel"),
                        project_path=project, problems=problems,
                        communication=str(body.get("communication") or "all"))
     if len(goal) > LIMITS["goal_max_chars"]:
@@ -177,9 +179,11 @@ def check_trial(body: dict, *, store: Any = None, team: TeamConfig | None = None
         agents.append(cfg)
         check.configs[("agent", f"{workflow}-{member['name']}")] = {"agent": cfg}
     strategy: dict = {"mode": {"type": "leader", "leader": leader},
-                      "communication": {"type": check.communication}}
-    if check.pause_after_rounds is not None:
-        strategy["pause_after_rounds"] = check.pause_after_rounds
+                      "communication": {"type": check.communication},
+                      "pause_every_usd": check.pause_every_usd,
+                      "max_parallel": check.max_parallel}
+    if body.get("pause_after_rounds") is not None:
+        strategy["pause_after_rounds"] = body["pause_after_rounds"]
     check.configs[("workflow", workflow)] = {"workflow": {
         "name": workflow,
         "description": "A team trial started from the Team page",

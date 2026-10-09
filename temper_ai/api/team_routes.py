@@ -103,7 +103,9 @@ class TrialInput(BaseModel):
     goal: str = ""
     members: list[Any] = []
     leader: str = ""
-    pause_after_rounds: Any = None
+    pause_after_rounds: Any = None  # a stale form gets the engine's explicit refusal
+    pause_every_usd: Any = 100.0
+    max_parallel: Any = None
     project_path: str | None = None
     communication: str = "all"
 
@@ -217,6 +219,7 @@ class TeamRun:
     outcome: dict | None
     host_path: str
     run_status: str | None
+    completed_at: Any = None
 
     @property
     def record(self) -> dict:
@@ -255,7 +258,14 @@ def _team_run(ledger: Any, execution_id: str) -> TeamRun:
             raise HTTPException(status_code=404, detail=NO_SUCH_TRIAL)
     outcome = outcomes[0] if outcomes else None
     host_path = outcome["host_path"] if outcome else f"{team_trials.TRIAL_STAGE}.team"
-    return TeamRun(execution_id, trial, outcome, host_path, run_status)
+    from temper_ai.database import get_database
+    from temper_ai.runner.models import WorkflowRun
+
+    table = sa.inspect(WorkflowRun).local_table
+    with get_database().engine.connect() as conn:
+        completed_at = conn.execute(sa.select(table.c.completed_at).where(
+            table.c.execution_id == execution_id)).scalar()
+    return TeamRun(execution_id, trial, outcome, host_path, run_status, completed_at)
 
 
 def _caller_actions(execution_id: str) -> list[dict]:
@@ -304,13 +314,14 @@ def team_status() -> dict:
         "api_version": API_VERSION,
         "roles_configured": box is not None,
         "roles_problem": box_problem,
-        "defaults": {**settings({}), "source": "temper"},
+        "defaults": {**settings({}), "pause_every_usd": 100.0,
+                     "max_parallel": None, "source": "temper"},
         "tools": {"available": list(TOOLS_AVAILABLE), "default": list(DEFAULT_TOOLS),
                   "source": "temper", "bash_allowed": bash,
                   "bash_why": None if bash else BASH_OFF},
         "communication": {"available": ["all"], "later": ["edges"]},
-        "limits": {**LIMITS, "name_pattern": NAME_PATTERN,
-                   "reserved_names": sorted(RESERVED_IDS)},
+        "limits": {**LIMITS, "pause_every_usd": {"min": 1, "max": 10000},
+                   "name_pattern": NAME_PATTERN, "reserved_names": sorted(RESERVED_IDS)},
         "project_roots": list(team.project_roots),
         "project_problems": list(team.problems),
         "guard_mode": guard_mode(),
@@ -360,6 +371,7 @@ def team_trials_list(limit: int = Query(50, ge=1, le=200), offset: int = Query(0
     re-run or fork of it from the run page)."""
     from temper_ai.api.data_service import run_list_statuses
     from temper_ai.pi_agent import team_trials
+    from temper_ai.pi_agent.flow_view import run_kind
     from temper_ai.pi_agent.ledger import outcomes
     from temper_ai.pi_agent.team_leader import WAIT_KIND_SHOWN
     from temper_ai.pi_agent.team_outcome import by_name
@@ -405,8 +417,10 @@ def team_trials_list(limit: int = Query(50, ge=1, le=200), offset: int = Query(0
             "leader": record.get("leader"),
             "members": [{"name": m.get("name"), "role": m.get("role")}
                         for m in record.get("members") or []],
+            "kind": run_kind(record, reader._reviews()),
             "state": item_state, "run_status": run_status, "decision": decision,
-            "round": max((r["round"] for r in ledger.reviews_of(eid, host)), default=0),
+            **({"round": max((r["round"] for r in reader._reviews()), default=0)}
+               if run_kind(record, reader._reviews()) == "rounds" else {}),
             "cost_usd": reader.usage()["cost_usd"],
             "started_at": (orow or {}).get("started_at") or row.get("created_at"),
             "started_by": started_by,
@@ -419,6 +433,7 @@ def team_run(execution_id: str) -> dict:
     """One team run, in the contract's order (section 5): its open waits, members, reviews,
     typed timeline, owner actions and outcome (read only from ``pi_team_outcomes``, A2)."""
     from temper_ai.api.routes import _waiting_gate_events
+    from temper_ai.pi_agent.flow_view import flow_view, run_kind
     from temper_ai.pi_agent.team_view import (
         TeamReader,
         members_view,
@@ -441,14 +456,21 @@ def team_run(execution_id: str) -> dict:
         for key in (data.get("name"), data.get("gate_path")):
             if key:
                 asked[key] = ev["id"]
-    waits_open = open_waits_view(reader, asked)
+    kind = run_kind(run.record, reader._reviews())
+    waits_open = open_waits_view(reader, asked, flow=kind == "flow")
     outcome = outcome_view(run.outcome, owners)
     actions = _caller_actions(execution_id)
     record = run.record
     done_project = ((run.outcome or {}).get("record") or {}).get("project") or {}
     project = record.get("project_path")
+    base_members = members_view(reader, run.members, waits_open)
+    glance = (flow_view(reader, record, outcome=outcome, run_status=run.run_status,
+                        members=base_members, started_at=run.trial.get("created_at"),
+                        ended_at=run.completed_at)
+              if kind == "flow" else {})
     return {
         "execution_id": execution_id,
+        "kind": kind,
         "trial_id": run.trial["trial_id"],
         "workflow": run.trial["workflow"],
         "run_status": run.run_status,
@@ -461,21 +483,36 @@ def team_run(execution_id: str) -> dict:
             "goal": run.trial.get("goal"), "leader": run.leader,
             "members": [{"name": m.get("name"), "role": m.get("role"), "tools": m.get("tools"),
                          "leader": bool(m.get("leader"))} for m in run.members],
-            "pause_after_rounds": record.get("pause_after_rounds"),
+            **({"pause_after_rounds": record.get("pause_after_rounds")} if kind == "rounds"
+               else {"pause_every_usd": record.get("pause_every_usd", 100.0),
+                     "max_parallel": record.get("max_parallel") or len(run.members)}),
             "communication": record.get("communication") or "all",
             "project": ({"source": project, "start_commit": done_project.get("commit")}
                         if project else None),
             "started_at": run.trial.get("created_at"),
             "started_by": _started_by(actions, run.trial, owners),
             "request_id": run.trial.get("request_id")},
-        "round": round_view(reader, record.get("pause_after_rounds")),
-        "members": members_view(reader, run.members, waits_open),
+        **({"round": round_view(reader, record.get("pause_after_rounds")),
+            "reviews": reviews_view(reader)} if kind == "rounds" else {}),
+        "members": base_members,
         "open_waits": waits_open,
-        "reviews": reviews_view(reader),
         "timeline": timeline(reader, owners),
         "owner_actions": owner_actions(reader, actions, owners),
         "outcome": outcome,
+        **glance,
     }
+
+
+@router.get("/runs/{execution_id}/events")
+def team_events(execution_id: str, after: int = Query(0, ge=0),
+                limit: int = Query(200, ge=1, le=500)) -> dict:
+    """The released event feed after a cursor, not a count (FLOW E6)."""
+    from temper_ai.pi_agent.flow_view import events_view
+    from temper_ai.pi_agent.team_view import TeamReader
+
+    ledger = _ledger()
+    run = _team_run(ledger, execution_id)
+    return events_view(TeamReader(ledger, execution_id, run.host_path, run.leader), after, limit)
 
 
 def _account_view(execution_id: str) -> dict | None:
@@ -495,7 +532,7 @@ def _account_view(execution_id: str) -> dict | None:
 
 
 @router.get("/runs/{execution_id}/version")
-def team_version(execution_id: str) -> dict:
+def team_version(execution_id: str, version_no: int | None = Query(None, ge=1)) -> dict:
     """The team's newest version (M3 contract team_version; ADR-M4-12 H, SW-36): served from
     the version record the Pi lane stored, never read from a copy. Its commit, the start
     commit, its files with sha256, and its diff against the start commit, cut past the cap
@@ -505,7 +542,9 @@ def team_version(execution_id: str) -> dict:
 
     ledger = _ledger()
     run = _team_run(ledger, execution_id)
-    row = team_versions.latest(ledger.engine, execution_id, run.host_path)
+    row = (team_versions.latest(ledger.engine, execution_id, run.host_path)
+           if version_no is None else
+           team_versions.of_share(ledger, execution_id, run.host_path, version_no))
     if row is None:
         raise HTTPException(status_code=404, detail=NO_VERSION)
     branch = ((run.outcome or {}).get("record") or {}).get("branch")
@@ -780,7 +819,11 @@ def team_answer(execution_id: str, wait_id: str, body: AnswerBody) -> dict:
     if wait["state"] != "open":
         raise HTTPException(status_code=404, detail=NO_LONGER_OPEN)
     open_now = ledger.open_waits(execution_id, run.host_path)
-    if not open_now or open_now[0]["wait_id"] != wait_id:
+    from temper_ai.pi_agent.flow_view import FlowRead, run_kind
+
+    flow = run_kind(run.record, ledger.reviews_of(execution_id, run.host_path)) == "flow"
+    if (not open_now or (not flow and open_now[0]["wait_id"] != wait_id)
+            or (flow and not FlowRead.owner_answers(wait))):
         raise TeamRefusal(409, {"reason": "not_asked_yet", "message": NOT_ASKED_YET})
     asking = _gate_history(execution_id, wait["gate_name"])
     if not asking:
@@ -816,8 +859,8 @@ def team_answer(execution_id: str, wait_id: str, body: AnswerBody) -> dict:
 
 @router.post("/runs/{execution_id}/messages", status_code=201)
 def team_message_post(execution_id: str, body: MessageBody) -> dict:
-    """Message a member as the owner. Held while any wait is open (every member's turn waits
-    then), else it reaches the member at its next turn."""
+    """Message a member as the owner. Flow member waits hold only their own recipient;
+    run-level holds and old round teams hold all recipients. Running flow inboxes poll it."""
     from temper_ai.pi_agent.ledger import LedgerConflict
     from temper_ai.pi_agent.team_config import LIMITS
     from temper_ai.pi_agent.team_outcome import by_name
@@ -860,7 +903,14 @@ def team_message_post(execution_id: str, body: MessageBody) -> dict:
         if why == "recipient_unknown":
             raise TeamRefusal(400, {"problem": not_member})
         raise TeamRefusal(409, {"reason": "team_ended", "message": TEAM_ENDED})
-    held = bool(ledger.open_waits(execution_id, run.host_path))
+    waits_open = ledger.open_waits(execution_id, run.host_path)
+    from temper_ai.pi_agent.flow_view import run_kind
+    from temper_ai.pi_agent.team_view import TeamReader
+
+    held = bool(waits_open)
+    if run_kind(run.record, TeamReader(ledger, execution_id, run.host_path, run.leader)._reviews()) == "flow":
+        held = any(w["kind"] not in ("owner", "recovery")
+                   or (w.get("subject") or {}).get("member") == to for w in waits_open)
     if not posted.get("duplicate"):
         record_action(execution_id, "message", caller, to=to, message_id=posted["message_id"],
                       request_id=rid)

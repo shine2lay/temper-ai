@@ -100,7 +100,14 @@ ACCOUNT_REFUSED = "account_refused"
 #: settings other than the ones it was started with: go on with the new ones, or stop;
 #: SW-85, temper_ai/pi_agent/settings_wait.py). An open ``settings`` wait is asked before
 #: every other open wait (:meth:`Ledger.open_waits`).
-WAIT_KINDS = ("owner", "recovery", "stalled", "pause", "settings")
+WAIT_KINDS = ("owner", "recovery", "stalled", "pause", "settings", "limit", "closing")
+#: A free-flowing team's run-level holds (FLOW R2): while one is open no member's turn starts
+#: (``closing`` lets only the leader's start, and the driver says so with ``only``). Member
+#: waits (``owner``, ``recovery``: their subject names a ``participant_id``) hold only that
+#: member.
+RUN_HOLD_KINDS = ("stalled", "pause", "settings", "limit")
+#: Why a free-flowing team's member is at rest (``idle_reason``).
+REST_REASONS = ("start", "idle", "no_tool")
 #: The wait kind asked first.
 SETTINGS_KIND = "settings"
 MAX_REFUSALS = 200
@@ -131,6 +138,16 @@ participants = sa.Table(
     # The digest of the member's role snapshot (SW-25, schema version 2), recorded once the
     # snapshot is in place: a row without it has no usable snapshot yet.
     sa.Column("snapshot_sha256", sa.String(64)),
+    # A free-flowing team's member at rest (FLOW F1, version 4): why (``start``: waiting for the
+    # leader's first message, set by Temper; ``idle``: its idle tool; ``no_tool``: a turn with
+    # no tool call), its note, since when. Null: on, it takes the next turn. A message released
+    # to it clears all three (a wake).
+    sa.Column("idle_reason", sa.String(16)),
+    sa.Column("idle_note", sa.Text),
+    sa.Column("idle_since", sa.String(40)),
+    # Its open merge conflicts in its copy (FLOW R3): [Conflict.as_dict()], set at each sync
+    # and share.
+    sa.Column("conflicts", sa.JSON),
     sa.UniqueConstraint("run_id", "host_path", "member", name="uq_pi_participant_member"),
 )
 
@@ -375,14 +392,31 @@ versions = sa.Table(
     sa.UniqueConstraint("run_id", "host_path", "seq", name="uq_pi_team_versions_seq"),
 )
 
+#: A free-flowing team's event feed (FLOW E6, version 4): one row per thing that happened
+#: (message released, share, idle, wake, turn start and end, check-in, closing, done, ...).
+#: Written only inside the team's lock, so a team's rows come in commit order and ``seq`` is
+#: the cursor the Team page reads from.
+events = sa.Table(
+    "pi_team_events", metadata,
+    sa.Column("seq", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("run_id", sa.String(64), nullable=False),
+    sa.Column("host_path", sa.Text, nullable=False),
+    sa.Column("kind", sa.String(32), nullable=False),
+    sa.Column("member", sa.String(128)),
+    sa.Column("data", sa.JSON, nullable=False),
+    sa.Column("at", sa.String(40), nullable=False),
+    sa.Index("ix_pi_team_events_team", "run_id", "host_path", "seq"),
+)
+
 TABLES = (participants, messages, turns, waits, reviews, acts, outcomes, trials, requests,
-          versions)
+          versions, events)
 
 #: The pi_ tables' layout version this build knows (M4 ADR-M4-07, SW-13). 1: the tables, every
 #: path-built column Text (SW-12). 2: the member's role snapshot digest (SW-25). 3: the turn's
-#: account slot (ADR-M4-09) and the team's version records (ADR-M4-12). A database is moved
-#: forward by additive steps only: no step drops or rewrites a row.
-SCHEMA_VERSION = 3
+#: account slot (ADR-M4-09) and the team's version records (ADR-M4-12). 4: free-flowing teams'
+#: member rest and conflicts, and the event feed (FLOW). A database is moved forward by
+#: additive steps only: no step drops or rewrites a row.
+SCHEMA_VERSION = 4
 
 #: One row (id 1): the version the pi_ tables are at. Made with the tables, so a database
 #: with pi_ tables and no row here comes from a Pi build before versioning.
@@ -474,6 +508,20 @@ def gate_name_for(host_path: str, wait_id: str) -> str:
     return wait_name(host_path, wait_id)
 
 
+def member_claim_key(run_id: str, host_path: str, participant_id: str) -> str:
+    """An unsettled turn's claim key (FLOW E1): one unsettled turn per member."""
+    return f"{run_id}|{host_path}|{participant_id}"
+
+
+def first_line(body: str | None, limit: int = 120) -> str:
+    """A message's subject: its first non-empty line, cut to ``limit``."""
+    for line in (body or "").splitlines():
+        if line.strip():
+            line = line.strip()
+            return line if len(line) <= limit else line[:limit - 1] + "\u2026"
+    return ""
+
+
 def team_claim_key(run_id: str, host_path: str) -> str:
     return f"{run_id}|{host_path}"
 
@@ -523,8 +571,20 @@ def _add_accounts_and_versions(conn: Any) -> None:
 
 #: The forward-only steps after version 1, by the version each brings the tables to. Each is
 #: additive and safe to run again; a later one never undoes an earlier one.
+def _add_flow(conn: Any) -> None:
+    """Version 4's step (FLOW): the member's rest and conflicts (nullable columns, so every row
+    already there stays as it is) and the event feed's table, made only where missing."""
+    have = {c["name"] for c in sa.inspect(conn).get_columns(participants.name)}
+    for name, kind in (("idle_reason", "VARCHAR(16)"), ("idle_note", "TEXT"),
+                       ("idle_since", "VARCHAR(40)"), ("conflicts", "JSON")):
+        if name not in have:
+            conn.execute(sa.text(f"ALTER TABLE pi_participants ADD COLUMN {name} {kind}"))
+    metadata.create_all(conn, tables=[events], checkfirst=True)
+
+
 _STEPS: dict[int, Callable[[Any], None]] = {2: _add_snapshot_digest,
-                                            3: _add_accounts_and_versions}
+                                            3: _add_accounts_and_versions,
+                                            4: _add_flow}
 
 
 def _unversioned(old: Sequence[str]) -> str:
@@ -809,6 +869,10 @@ class Ledger:
             "created_at": _now(),
         }
         seq = conn.execute(messages.insert().values(**values)).inserted_primary_key[0]
+        if state == "pending":
+            self._message_event(conn, values)
+            to_pid = values["to_participant"]
+            self._wake(conn, str(to_pid) if to_pid else None, sender)
         return {**values, "seq": seq, "duplicate": False}
 
     def member_send(self, binding: Binding, payload: Any) -> dict:
@@ -932,17 +996,30 @@ class Ledger:
     # --- turns ----------------------------------------------------------------------
 
     def claim_turn(self, run_id: str, host_path: str, *, attempt_id: str,
-                   claimed_by: str | None = None) -> tuple[dict, list[dict]] | None:
+                   claimed_by: str | None = None, flow: bool = False,
+                   max_parallel: int | None = None,
+                   only: str | None = None) -> tuple[dict, list[dict]] | None:
         """The team's next turn, or None (R2 B6): no turn while any wait is open, while a turn
         is unsettled, or while a member's turn awaits the owner (failed or uncertain). The
         idle member holding the team's oldest pending message goes; its batch is the messages
         of a retried turn (same ids, B1) if it has one, else every message pending for it up
         to now, in order (later ones wait for the next turn boundary). All or nothing: the
         unique claim key, the member's epoch compare-and-set and the batch's row count make a
-        second process's claim of the same turn fail."""
+        second process's claim of the same turn fail.
+
+        ``flow`` (a free-flowing team, FLOW E1 + R2): up to ``max_parallel`` turns run at once
+        (None: every member), one per member. Only a run-level hold (``RUN_HOLD_KINDS``) stops
+        every claim; a member's own wait or failed/uncertain turn holds only that member. Any
+        member that is on (idle, not at rest, not held) may go, with or without messages: the
+        oldest pending message's member first, then the one whose last turn ended longest
+        ago. ``only``: just this member may go (the closing's lone leader turn)."""
         with _LOCK:
             try:
                 with self._team_tx(run_id, host_path) as conn:
+                    if flow:
+                        return self._claim_flow(conn, run_id, host_path, attempt_id,
+                                                claimed_by or process_identity(),
+                                                max_parallel, only)
                     return self._claim(conn, run_id, host_path, attempt_id,
                                        claimed_by or process_identity())
             except (_Rollback, IntegrityError):
@@ -990,13 +1067,89 @@ class Ledger:
                                      .order_by(messages.c.seq)).scalars())
         if not seqs:
             return None
+        turn, batch = self._take(conn, p, seqs, retry_of, cut, attempt_id, claimed_by)
+        # A wait opened by a turn that settled while this claim ran (its owner question)
+        # is seen here, after the claim key was taken: no turn starts past an open wait.
+        if self._open_wait_count(conn, run_id, host_path):
+            raise _Rollback
+        return turn, batch
+
+    def _claim_flow(self, conn: Any, run_id: str, host_path: str, attempt_id: str,
+                    claimed_by: str, max_parallel: int | None,
+                    only: str | None) -> tuple[dict, list[dict]] | None:
+        team = (participants.c.run_id == run_id, participants.c.host_path == host_path)
+        open_w = [dict(r) for r in conn.execute(sa.select(waits.c.kind, waits.c.subject).where(
+            waits.c.run_id == run_id, waits.c.host_path == host_path,
+            waits.c.state == "open")).mappings().all()]
+        if any(w["kind"] in RUN_HOLD_KINDS for w in open_w):
+            return None
+        held = {(w["subject"] or {}).get("participant_id") for w in open_w} - {None}
+        # A member whose last turn's tool calls are not carried out yet (its share merges its
+        # copy) waits for them: the copy is never shared while its next turn works in it.
+        held |= set(conn.execute(sa.select(acts.c.participant_id).where(
+            acts.c.run_id == run_id, acts.c.host_path == host_path,
+            acts.c.state == "recorded")).scalars())
+        running = conn.execute(sa.select(sa.func.count()).select_from(turns).where(
+            turns.c.run_id == run_id, turns.c.host_path == host_path,
+            turns.c.state == "running")).scalar_one()
+        if max_parallel is not None and running >= max_parallel:
+            return None
+        ready = [dict(r) for r in conn.execute(sa.select(participants).where(
+            *team, participants.c.state == "idle", participants.c.idle_reason.is_(None),
+            participants.c.retire_requested.is_(False))).mappings().all()
+            if r["participant_id"] not in held and (only is None or r["member"] == only)]
+        if not ready:
+            return None
+        ids = [p["participant_id"] for p in ready]
+        oldest = dict(conn.execute(sa.select(messages.c.to_participant, sa.func.min(
+            messages.c.seq)).where(messages.c.to_participant.in_(ids),
+                                   messages.c.state == "pending")
+            .group_by(messages.c.to_participant)).all())
+        last_end = dict(conn.execute(sa.select(turns.c.participant_id, sa.func.max(
+            turns.c.ended_at)).where(turns.c.participant_id.in_(ids))
+            .group_by(turns.c.participant_id)).all())
+        ready.sort(key=lambda p: (p["participant_id"] not in oldest,
+                                  oldest.get(p["participant_id"], 0),
+                                  last_end.get(p["participant_id"]) or "", p["member"]))
+        p = ready[0]
+        cut = conn.execute(sa.select(sa.func.max(messages.c.seq)).where(
+            messages.c.run_id == run_id, messages.c.host_path == host_path)).scalar()
+        mine = (messages.c.to_participant == p["participant_id"], messages.c.state == "pending")
+        redeliver = conn.execute(sa.select(messages.c.seq, messages.c.redeliver_turn).where(
+            *mine, messages.c.redeliver_turn.is_not(None)).order_by(messages.c.seq)).all()
+        retry_of = self._requeued_from(conn, p["participant_id"])
+        if redeliver:
+            retry_of = redeliver[0][1]
+            seqs = [r[0] for r in redeliver if r[1] == retry_of]
+        else:
+            seqs = list(conn.execute(sa.select(messages.c.seq).where(*mine)
+                                     .order_by(messages.c.seq)).scalars())
+        return self._take(conn, p, seqs, retry_of, cut, attempt_id, claimed_by)
+
+    @staticmethod
+    def _requeued_from(conn: Any, participant_id: str) -> str | None:
+        """The member's last turn when Temper put it back to run again (an automatic retry or
+        a usage limit) and it carried no messages: the next turn is still its retry."""
+        last = conn.execute(sa.select(turns.c.turn_id, turns.c.worker).where(
+            turns.c.participant_id == participant_id).order_by(
+            turns.c.turn_no.desc()).limit(1)).first()
+        if last is not None and (last[1] or {}).get("requeued"):
+            return last[0]
+        return None
+
+    def _take(self, conn: Any, p: dict, seqs: list[int], retry_of: str | None,
+              cut: int | None, attempt_id: str, claimed_by: str) -> tuple[dict, list[dict]]:
+        """The claim itself: the turn row, the member running, its batch consumed."""
+        run_id, host_path = p["run_id"], p["host_path"]
         last_no = conn.execute(sa.select(sa.func.max(turns.c.turn_no)).where(
             turns.c.participant_id == p["participant_id"])).scalar()
         epoch = p["epoch"] + 1
         turn = {
             "turn_id": _new_id(), "participant_id": p["participant_id"], "run_id": run_id,
             "host_path": host_path, "turn_no": (last_no or 0) + 1, "attempt_id": attempt_id,
-            "state": "running", "claim_key": team_claim_key(run_id, host_path), "epoch": epoch,
+            "state": "running",
+            "claim_key": member_claim_key(run_id, host_path, p["participant_id"]),
+            "epoch": epoch,
             "claimed_by": claimed_by, "retry_of": retry_of, "input_seqs": seqs,
             "cut_seq": cut, "policy_version": POLICY_VERSION, "agent_event_id": None,
             "model_call_ids": [], "effect_state": "none", "refusals": [], "box_name": None,
@@ -1015,12 +1168,13 @@ class Ledger:
                  delivery_count=messages.c.delivery_count + 1, redeliver_turn=None,
                  delivered_at=_now())).rowcount != len(seqs):
             raise _Rollback
-        # A wait opened by a turn that settled while this claim ran (its owner question)
-        # is seen here, after the claim key was taken: no turn starts past an open wait.
-        if self._open_wait_count(conn, run_id, host_path):
-            raise _Rollback
         batch = [dict(r) for r in conn.execute(sa.select(messages).where(
             messages.c.seq.in_(seqs)).order_by(messages.c.seq)).mappings().all()]
+        retry_no = (conn.execute(sa.select(turns.c.turn_no).where(
+            turns.c.turn_id == retry_of)).scalar() if retry_of else None)
+        self._event(conn, run_id, host_path, "turn_start", p["member"],
+                    turn_id=turn["turn_id"], turn_no=turn["turn_no"], messages=len(seqs),
+                    retry_of=retry_no)
         return turn, batch
 
     def turn(self, turn_id: str) -> dict | None:
@@ -1056,8 +1210,215 @@ class Ledger:
     def mark_effect(self, turn_id: str, effect_state: str, *, epoch: int | None = None) -> bool:
         return self._fenced(turn_id, epoch, effect_state=effect_state)
 
+    # --- free-flowing teams: events, rest and wake, hand-in, requeue (FLOW) ------------
+
     @staticmethod
-    def _release(conn: Any, turn_id: str) -> dict[str, int]:
+    def _event(conn: Any, run_id: str, host_path: str, kind: str, member: str | None = None,
+               **data: Any) -> None:
+        """One row of the team's event feed (E6), inside the caller's team transaction."""
+        conn.execute(events.insert().values(run_id=run_id, host_path=host_path, kind=kind,
+                                            member=member, data=data, at=_now()))
+
+    def record_event(self, run_id: str, host_path: str, kind: str, member: str | None = None,
+                     **data: Any) -> None:
+        with _LOCK, self._team_tx(run_id, host_path) as conn:
+            self._event(conn, run_id, host_path, kind, member, **data)
+
+    def turn_tools(self, turn_id: str, epoch: int, counts: dict[str, int]) -> None:
+        """Record a running turn's tool counts, fenced against takeover. No content is kept."""
+        team = self._team_of(turns, turns.c.turn_id, turn_id)
+        if team is None:
+            return
+        with _LOCK, self._team_tx(*team) as conn:
+            t = conn.execute(sa.select(turns).where(
+                turns.c.turn_id == turn_id, turns.c.epoch == epoch,
+                turns.c.state == "running")).mappings().first()
+            if t is None:
+                return
+            worker = {**(t["worker"] or {}), "tools_now": dict(counts)}
+            conn.execute(turns.update().where(turns.c.turn_id == turn_id).values(worker=worker))
+
+    def turn_usage(self, turn_id: str, epoch: int, usage: dict[str, int | float]) -> None:
+        """Persist a running turn's known usage, fenced against takeover (FLOW R4).
+        Stored on the same receipt final settlement replaces; never added to that receipt,
+        so live and final spend cannot be counted twice. A cut-off keeps the last value."""
+        team = self._team_of(turns, turns.c.turn_id, turn_id)
+        if team is None:
+            return
+        with _LOCK, self._team_tx(*team) as conn:
+            t = conn.execute(sa.select(turns).where(
+                turns.c.turn_id == turn_id, turns.c.epoch == epoch,
+                turns.c.state == "running")).mappings().first()
+            if t is None:
+                return
+            worker = {**(t["worker"] or {}), "usage": dict(usage)}
+            conn.execute(turns.update().where(turns.c.turn_id == turn_id).values(worker=worker))
+
+    def events_after(self, run_id: str, host_path: str, after: int = 0,
+                     limit: int = 200) -> list[dict]:
+        """The team's events after the cursor ``after``, oldest first."""
+        with _LOCK, self._tx() as conn:
+            rows = conn.execute(sa.select(events).where(
+                events.c.run_id == run_id, events.c.host_path == host_path,
+                events.c.seq > after).order_by(events.c.seq).limit(limit)).mappings().all()
+            return [dict(r) for r in rows]
+
+    def last_event_seq(self, run_id: str, host_path: str) -> int:
+        with _LOCK, self._tx() as conn:
+            return conn.execute(sa.select(sa.func.max(events.c.seq)).where(
+                events.c.run_id == run_id, events.c.host_path == host_path)).scalar() or 0
+
+    def _wake(self, conn: Any, participant_id: str | None, by: str) -> None:
+        """A member at rest gets a message: it is on again (F1)."""
+        if participant_id is None:
+            return
+        p = conn.execute(sa.select(participants.c.member, participants.c.idle_reason,
+                                   participants.c.run_id, participants.c.host_path).where(
+            participants.c.participant_id == participant_id)).first()
+        if p is None or p[1] is None:
+            return
+        conn.execute(participants.update().where(
+            participants.c.participant_id == participant_id).values(
+            idle_reason=None, idle_note=None, idle_since=None))
+        self._event(conn, p[2], p[3], "wake", p[0], by=by, was=p[1])
+
+    def _message_event(self, conn: Any, m: dict, mid_turn: bool = False) -> None:
+        self._event(conn, m["run_id"], m["host_path"], "message", m["sender"],
+                    to=m["to_member"], message_kind=m["kind"], subject=first_line(m["body"]),
+                    message_id=m["message_id"], sender_kind=m["sender_kind"],
+                    mid_turn=mid_turn)
+
+    def rest(self, participant_id: str, reason: str, note: str | None = None, *,
+             only_if_new: bool = False) -> bool:
+        """The member goes to rest (``REST_REASONS``) unless a message is waiting for it (it
+        stays on and takes it). ``only_if_new``: only a member that never had a turn or a
+        message (the leader-first start)."""
+        team = self._team_of(participants, participants.c.participant_id, participant_id)
+        if team is None:
+            return False
+        with _LOCK, self._team_tx(*team) as conn:
+            p = conn.execute(sa.select(participants).where(
+                participants.c.participant_id == participant_id)).mappings().one()
+            if p["state"] in ("ended", "retired"):
+                return False
+            have = conn.execute(sa.select(sa.func.count()).select_from(messages).where(
+                messages.c.to_participant == participant_id,
+                messages.c.state == ("pending" if not only_if_new else messages.c.state),
+            )).scalar_one()
+            if have or (only_if_new and (p["turns"] or p["idle_reason"])):
+                return False
+            conn.execute(participants.update().where(
+                participants.c.participant_id == participant_id).values(
+                idle_reason=reason, idle_note=note, idle_since=_now()))
+            self._event(conn, p["run_id"], p["host_path"], "idle", p["member"],
+                        reason=reason, note=note)
+            return True
+
+    def set_conflicts(self, participant_id: str, conflicts: list[dict]) -> None:
+        with _LOCK, self._tx() as conn:
+            conn.execute(participants.update().where(
+                participants.c.participant_id == participant_id).values(
+                conflicts=list(conflicts)))
+
+    def hand_in(self, turn_id: str, epoch: int | None) -> list[dict]:
+        """The messages that reached a member while its turn runs (FLOW): every
+        pending one is consumed by the running turn now, in order, and returned to be handed
+        into its box. Nothing when the turn is no longer this owner's."""
+        team = self._team_of(turns, turns.c.turn_id, turn_id)
+        if team is None or epoch is None:
+            return []
+        with _LOCK, self._team_tx(*team) as conn:
+            t = conn.execute(sa.select(turns).where(
+                turns.c.turn_id == turn_id, turns.c.state == "running",
+                turns.c.epoch == epoch)).mappings().first()
+            if t is None:
+                return []
+            rows = [dict(r) for r in conn.execute(sa.select(messages).where(
+                messages.c.to_participant == t["participant_id"],
+                messages.c.state == "pending").order_by(messages.c.seq)).mappings().all()]
+            if not rows:
+                return []
+            conn.execute(messages.update().where(
+                messages.c.seq.in_([m["seq"] for m in rows]), messages.c.state == "pending",
+            ).values(state="consumed", turn_id=turn_id,
+                     delivery_count=messages.c.delivery_count + 1, redeliver_turn=None,
+                     delivered_at=_now()))
+            conn.execute(turns.update().where(turns.c.turn_id == turn_id).values(
+                input_seqs=list(t["input_seqs"] or []) + [m["seq"] for m in rows]))
+            for m in rows:
+                self._event(conn, t["run_id"], t["host_path"], "handed_in", m["to_member"],
+                            message_id=m["message_id"], turn_id=turn_id)
+            return rows
+
+    def unhand(self, turn_id: str, seqs: Sequence[int]) -> int:
+        """Messages handed into a turn that its session never shows: back to pending, so the
+        member's next turn gets them (delivered once, never lost)."""
+        if not seqs:
+            return 0
+        with _LOCK, self._tx() as conn:
+            n = conn.execute(messages.update().where(
+                messages.c.seq.in_(list(seqs)), messages.c.turn_id == turn_id,
+                messages.c.state == "consumed").values(
+                state="pending", turn_id=None, delivered_at=None)).rowcount
+            t = conn.execute(sa.select(turns.c.input_seqs).where(
+                turns.c.turn_id == turn_id)).scalar()
+            conn.execute(turns.update().where(turns.c.turn_id == turn_id).values(
+                input_seqs=[s for s in (t or []) if s not in set(seqs)]))
+            return n
+
+    def requeue_turn(self, turn_id: str, *, epoch: int | None, error: str,
+                     model_call_ids: list[str], worker: dict | None, why: str) -> bool:
+        """A turn Temper runs again by itself (``why``: ``retry``, its one automatic retry
+        after a failure or cut-off; ``limit``, the account's usage limit,
+        and ``drain``, a Pi lane stopping, which never use up the retry). Only after its box is confirmed gone (C1): the turn is
+        superseded, what it sent is never delivered, its messages go back to the member with
+        the same ids (B1) and the member is on again. Its cost stays in the spend (R4)."""
+        team = self._team_of(turns, turns.c.turn_id, turn_id)
+        if team is None:
+            return False
+        with _LOCK, self._team_tx(*team) as conn:
+            if conn.execute(turns.update().where(
+                    turns.c.turn_id == turn_id, turns.c.state == "running",
+                    turns.c.epoch == epoch,
+            ).values(state="superseded", claim_key=None, error=error,
+                     model_call_ids=list(model_call_ids),
+                     worker={**(worker or {}), "requeued": why}, ended_at=_now())).rowcount != 1:
+                return False
+            t = conn.execute(sa.select(turns).where(turns.c.turn_id == turn_id)).mappings().one()
+            self._withhold(conn, turn_id, "turn_superseded")
+            conn.execute(messages.update().where(
+                messages.c.turn_id == turn_id, messages.c.state == "consumed",
+            ).values(state="pending", turn_id=None, redeliver_turn=turn_id, delivered_at=None))
+            p = conn.execute(sa.select(participants).where(
+                participants.c.participant_id == t["participant_id"])).mappings().one()
+            conn.execute(participants.update().where(
+                participants.c.participant_id == p["participant_id"],
+                participants.c.state == "running").values(state="idle",
+                                                          turns=p["turns"] + 1))
+            self._event(conn, t["run_id"], t["host_path"], "turn_end", p["member"],
+                        turn_id=turn_id, turn_no=t["turn_no"], state=why,
+                        error=(error or "")[:300])
+            return True
+
+    def retried_before(self, turn: dict) -> bool:
+        """True when this turn is already the automatic retry of a failed or cut-off turn
+        (a usage limit or a lane stop in the chain doesn't count)."""
+        with _LOCK, self._tx() as conn:
+            seen: set[str] = set()
+            tid = turn.get("retry_of")
+            while tid and tid not in seen:
+                seen.add(tid)
+                row = conn.execute(sa.select(turns.c.worker, turns.c.retry_of).where(
+                    turns.c.turn_id == tid)).first()
+                if row is None:
+                    return False
+                why = (row[0] or {}).get("requeued")
+                if why not in ("limit", "drain"):
+                    return True  # a retry (automatic or the owner's) of a failed turn
+                tid = row[1]
+            return False
+
+    def _release(self, conn: Any, turn_id: str) -> dict[str, int]:
         """A settled turn's held messages leave (B4), each recipient checked again (C5)."""
         held = conn.execute(sa.select(messages.c.seq, messages.c.to_participant).where(
             messages.c.sender_turn == turn_id, messages.c.state == "held")).all()
@@ -1074,8 +1435,13 @@ class Ledger:
             else:
                 values = {"state": "pending", "released_at": now}
                 counts["pending"] += 1
-            conn.execute(messages.update().where(messages.c.seq == seq,
-                                                 messages.c.state == "held").values(**values))
+            if conn.execute(messages.update().where(
+                    messages.c.seq == seq, messages.c.state == "held").values(
+                    **values)).rowcount == 1 and values["state"] == "pending":
+                m = dict(conn.execute(sa.select(messages).where(
+                    messages.c.seq == seq)).mappings().one())
+                self._message_event(conn, m)
+                self._wake(conn, pid, m["sender"])
         return counts
 
     @staticmethod
@@ -1087,7 +1453,8 @@ class Ledger:
 
     def finish_turn(self, turn_id: str, *, epoch: int | None, output: str,
                     model_call_ids: list[str], worker: dict | None, ask_owner: dict | None,
-                    attempt_id: str, retire: bool = False) -> dict | None:
+                    attempt_id: str, retire: bool = False,
+                    rest: tuple[str, str | None] | None = None) -> dict | None:
         """Complete a turn: its held messages leave, the member goes idle (or retires) and,
         when ``ask_owner`` is given (``{"question", "options"}``), the owner wait follows -- in
         one transaction. None when the turn is no longer this owner's (stale write)."""
@@ -1117,6 +1484,19 @@ class Ledger:
                 state="retired" if retired else "idle", turns=p["turns"] + 1,
                 retire_requested=bool(retire) and not retired,
                 retired_at=_now() if retired else None))
+            self._event(conn, p["run_id"], p["host_path"], "turn_end", p["member"],
+                        turn_id=turn_id, turn_no=t["turn_no"], state="completed",
+                        ended_by=(worker or {}).get("ended_by"),
+                        cost_usd=((worker or {}).get("usage") or {}).get("cost_usd"),
+                        tool_calls=(worker or {}).get("tool_calls"))
+            # FLOW F1/(g): the member rests (its idle tool, or a turn with no tool call) --
+            # unless a message already waits for it, which it takes next.
+            if rest is not None and not retired and arrived == 0:
+                conn.execute(participants.update().where(
+                    participants.c.participant_id == p["participant_id"]).values(
+                    idle_reason=rest[0], idle_note=rest[1], idle_since=_now()))
+                self._event(conn, p["run_id"], p["host_path"], "idle", p["member"],
+                            reason=rest[0], note=rest[1])
             wait = None
             if ask_owner and not retired:
                 wait = self._open_wait(conn, p["run_id"], p["host_path"], "owner", {
@@ -1145,6 +1525,11 @@ class Ledger:
             self._withhold(conn, turn_id, "turn_failed")
             conn.execute(participants.update().where(
                 participants.c.participant_id == t["participant_id"]).values(state="failed"))
+            member = conn.execute(sa.select(participants.c.member).where(
+                participants.c.participant_id == t["participant_id"])).scalar()
+            self._event(conn, t["run_id"], t["host_path"], "turn_end", member,
+                        turn_id=turn_id, turn_no=t["turn_no"], state="failed",
+                        error=(error or "")[:300])
             return True
 
     def hold_turn(self, turn_id: str, error: str, model_call_ids: list[str],
@@ -1171,6 +1556,9 @@ class Ledger:
                 participants.c.participant_id == t["participant_id"])).mappings().one())
             conn.execute(participants.update().where(
                 participants.c.participant_id == p["participant_id"]).values(state="uncertain"))
+            self._event(conn, t["run_id"], t["host_path"], "turn_end", p["member"],
+                        turn_id=turn_id, turn_no=t["turn_no"], state="uncertain",
+                        error=(error or "")[:300])
             return self._recovery_wait(conn, p, t, error or "cut off", ["accept", "retry"],
                                        attempt_id, details=details)
 
@@ -1310,6 +1698,9 @@ class Ledger:
             "decided_at": None, "event_recorded": False,
         }
         conn.execute(waits.insert().values(**values))
+        self._event(conn, run_id, host_path, "wait_opened", (subject or {}).get("member"),
+                    wait_id=wait_id, wait_kind=kind, label=(subject or {}).get("label"),
+                    question=first_line((subject or {}).get("question"), 200))
         return values
 
     def open_wait(self, run_id: str, host_path: str, kind: str, subject: dict,
@@ -1327,6 +1718,31 @@ class Ledger:
                     waits.c.kind == kind, waits.c.state == "open")).scalar_one():
                 return None
             return self._open_wait(conn, run_id, host_path, kind, subject, attempt_id)
+
+    def update_limit_wait(self, wait_id: str, expected_subject: dict, subject: dict) -> dict | None:
+        """Keep the limit wait's identity while recording its fresh usage check. A decided
+        wait or a newer subject wins; a late helper answer never overwrites either."""
+        team = self._team_of(waits, waits.c.wait_id, wait_id)
+        if team is None:
+            return None
+        with _LOCK, self._team_tx(*team) as conn:
+            row = conn.execute(sa.select(waits).where(
+                waits.c.wait_id == wait_id, waits.c.state == "open", waits.c.kind == "limit",
+            )).mappings().first()
+            if row is None or row["subject"] != expected_subject:
+                return None
+            conn.execute(waits.update().where(
+                waits.c.wait_id == wait_id, waits.c.state == "open",
+            ).values(subject=subject))
+            reading = subject.get("usage") or {}
+            self._event(conn, row["run_id"], row["host_path"], "limit_checked",
+                        subject.get("member"), wait_id=wait_id,
+                        status=reading.get("status"), reason=reading.get("reason"),
+                        observed_at=reading.get("observed_at"),
+                        verified=subject.get("resume_verified") is True,
+                        resumes_at=subject.get("resumes_at"),
+                        blocked_windows=subject.get("blocked_windows") or [])
+            return {**dict(row), "subject": subject}
 
     def decided_waits(self, run_id: str, host_path: str, kind: str) -> list[dict]:
         """The decided waits of one kind, in the order they were decided."""
@@ -1388,6 +1804,12 @@ class Ledger:
                     state="decided", decision=decision, decided_attempt=attempt_id,
                     decided_at=_now())).rowcount != 1:
                 return False
+            self._event(conn, w["run_id"], w["host_path"], "wait_answered",
+                        (w["subject"] or {}).get("member"), wait_id=wait_id,
+                        wait_kind=w["kind"],
+                        word=((decision or {}).get("answer") or (decision or {}).get("recovery")
+                              or (decision or {}).get("word")),
+                        by=(decision or {}).get("by"))
             if applied:
                 for pid, _old, new in repin:
                     conn.execute(participants.update().where(

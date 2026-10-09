@@ -31,7 +31,7 @@ from temper_ai.shared.clock import as_utc
 
 #: The page's state while a wait of that kind is the one Temper asks (contract section 5).
 WAIT_STATE = {"pause": "paused", "stalled": "quiet", "recovery": "member_waiting",
-              "question": "member_waiting", SETTINGS: SETTINGS_STATE}
+              "question": "member_waiting", "limit": "paused", SETTINGS: SETTINGS_STATE}
 #: Where an owner action came from, for display only (M3 E15).
 SOURCES = ("team_page", "run_page", "chat", "api", "unknown")
 #: The run's own statuses that mean the team can't change any more.
@@ -77,6 +77,14 @@ def _answer(word: str, needs_text: str, means: str) -> dict:
     return {"answer": word, "needs_text": needs_text, "means": means}
 
 
+def wait_words(subject: dict) -> str | None:
+    """The first sentence of a wait's question, without reply syntax, at most 160 chars."""
+    from temper_ai.pi_agent.ledger import first_line
+
+    text = str(subject.get("question") or "").split(". ", 1)[0]
+    return first_line(text, 160) or None
+
+
 def answers_for(kind: str, subject: dict, leader: str) -> list[dict]:
     """The answers an open wait takes, in the order the page offers them, each with whether it
     needs words (``required``, ``optional`` or ``none``) and what it does, worded by Temper.
@@ -85,11 +93,15 @@ def answers_for(kind: str, subject: dict, leader: str) -> list[dict]:
     stop_cancels = _answer("stop", "optional", "The team stops here and the run ends cancelled. "
                                                "Any words you give are kept with it.")
     if kind == "pause":
-        return [_answer("continue", "none", "The team carries on, and the count of rounds "
-                                            "starts again."),
+        again = ("the next check-in is after the next spend step" if "at_usd" in subject
+                 else "the count of rounds starts again")
+        return [_answer("continue", "none", f"The team carries on; {again}."),
                 _answer("guide", "required", f"{leader} gets your words as guidance, and the "
-                                             "team carries on; the count of rounds starts again."),
+                                             f"team carries on; {again}."),
                 stop_cancels]
+    if kind == "limit":
+        return [_answer("restart", "none", "Restart on the same account after its weekly "
+                                           "limit reset, keeping the team's work."), stop_cancels]
     if kind == "stalled":
         return [_answer("nudge", "optional", f"{leader} gets a nudge to finish or say done, with "
                                              "your words if you give any."),
@@ -130,11 +142,15 @@ def response_for(kind: str, answer: str, text: str) -> str:
 # --- the parts of a team run ----------------------------------------------------------------
 
 def owner_answers(reader: TeamReader, owners: Iterable[str]) -> list[dict]:
-    """One typed timeline entry per decided wait: what was answered, who answered it and where
-    from (M3 E14, E21). A wait decided before #48 kept no caller: ``unknown caller``."""
+    """One typed timeline entry per owner answer (M3 E14, E21), not Temper's own closing
+    checks or automatic allowance resumes. An old wait with no caller says unknown caller."""
     out = []
     for w in reader._rows(waits, waits.c.state == "decided", order=waits.c.decided_at):
         d, s = w["decision"] or {}, w["subject"] or {}
+        if w["kind"] == "closing" or (w["kind"] == "limit"
+                                        and d.get("answer") == "resumed"
+                                        and d.get("by") == "temper"):
+            continue
         answer = d.get("answer") or d.get("recovery")
         by = by_name(d.get("by"), owners) or UNKNOWN_CALLER
         source = d.get("source") if d.get("source") in SOURCES else "unknown"
@@ -177,11 +193,25 @@ def timeline(reader: TeamReader, owners: Iterable[str]) -> dict:
     names = {p["participant_id"]: p["member"] for p in reader._member_rows().values()}
     entries = story(reader, full=True, answers=owner_answers(reader, owners),
                     turn_rows=turn_entries(reader, names))
+    from temper_ai.pi_agent.flow_view import _event
+
+    feed_waits = {w["wait_id"]: w for w in reader._rows(waits)}
+    for ev in reader.ledger.events_after(reader.run_id, reader.host_path, 0, 100_000):
+        if ev["kind"] not in ("share", "idle", "wake", "closing", "done", "done_refused",
+                               "conflict"):
+            continue
+        shown = _event(ev, feed_waits)
+        if shown is not None:
+            entries.append({"event_type": ev["kind"], "from_agent": ev["member"],
+                            "timestamp": ev["at"], "data": shown,
+                            "entry": "decision" if ev["kind"] == "done" else ev["kind"],
+                            **shown})
+    entries.sort(key=lambda e: utc_moment(e.get("timestamp")) or _EARLIEST)
     hidden = max(0, len(entries) - VIEW_LIMIT)
     return {"entries": entries[hidden:], "not_shown": hidden}
 
 
-def open_waits_view(reader: TeamReader, asked: dict[str, str]) -> list[dict]:
+def open_waits_view(reader: TeamReader, asked: dict[str, str], *, flow: bool = False) -> list[dict]:
     """The open waits in the order Temper asks them (oldest first; the loop asks the first).
     ``asked`` maps a wait's step name to the waiting owner event asking it: only the first can
     have one (M3 E12). Each keeps its question and, apart, the reply syntax chat shows after it
@@ -191,10 +221,17 @@ def open_waits_view(reader: TeamReader, asked: dict[str, str]) -> list[dict]:
     ``pins`` (each named member's ``pin_old`` and ``pin_new`` digests); both are None for
     other kinds."""
     out = []
-    for i, w in enumerate(reader.ledger.open_waits(reader.run_id, reader.host_path)):
+    rows = reader.ledger.open_waits(reader.run_id, reader.host_path)
+    settings_open = any(w["kind"] == SETTINGS for w in rows)
+    for i, w in enumerate(rows):
         s = w["subject"] or {}
+        if flow:
+            from temper_ai.pi_agent.flow_view import FlowRead
+            if not FlowRead.owner_answers(w):
+                continue
         kind = WAIT_KIND_SHOWN.get(w["kind"], w["kind"])
-        event_id = asked.get(w["gate_name"]) if i == 0 else None
+        answerable = (flow and (not settings_open or w["kind"] == SETTINGS)) or i == 0
+        event_id = asked.get(w["gate_name"]) if answerable else None
         header = s.get("header") or (f"{s.get('member')} turn {s.get('turn_no')}"
                                      if kind == "recovery" else kind)
         out.append({
@@ -202,12 +239,20 @@ def open_waits_view(reader: TeamReader, asked: dict[str, str]) -> list[dict]:
             "asked": event_id is not None, "kind": kind, "header": header,
             "question": s.get("question"), "reply_hint": s.get("reply_hint"),
             "answers": answers_for(kind, s, reader.leader),
-            "round": s.get("round"), "member": s.get("member"), "turn_no": s.get("turn_no"),
+            **({"words": wait_words(s), "scope": "member" if w["kind"] in ("owner", "recovery")
+               else "team", "at_usd": s.get("at_usd"),
+               "next_check_in_usd": s.get("at_usd")} if flow else {"round": s.get("round")}),
+            "member": s.get("member"), "turn_no": s.get("turn_no"),
             "why": s.get("why"),
             # A limit's recovery wait names the run's account, the limit and its reset
             # (ADR-M4-09); None for other waits.
             "account_slot": s.get("account_slot"), "limit": s.get("limit"),
             "resets": s.get("resets"),
+            **({"resumes_at": utc_text(s.get("resumes_at")),
+                "usage": s.get("usage"), "usage_checked_at": utc_text(s.get("usage_checked_at")),
+                "resume_verified": s.get("resume_verified") is True,
+                "blocked_windows": list(s.get("blocked_windows") or [])}
+               if flow and w["kind"] == "limit" else {}),
             "asked_again": (int(s.get("asked_again") or 0) if kind in ("recovery", SETTINGS)
                             else None),
             "settings_changes": (list(s.get("settings_changes") or []) if kind == SETTINGS
@@ -307,12 +352,16 @@ def outcome_view(row: dict | None, owners: Iterable[str]) -> dict | None:
         version = rec.get("version") or {}
         commit = version.get("commit")
         files = sorted((version.get("files") or {}).items())
-        done = {"review_id": rec.get("review_id"), "round": rec.get("round"),
+        done = {
+                **({"decision": "done", "version": version, "shares": rec.get("shares") or [],
+                    "turns": rec.get("turns") or {}, "leader": rec.get("leader"),
+                    "project": rec.get("project")} if rec.get("kind") == "flow" else
+                   {"review_id": rec.get("review_id"), "round": rec.get("round"),
+                    "objections": rec.get("objections") or [], "rounds": rec.get("rounds")}),
                 "commit": commit, "commit_short": commit[:12] if commit else None,
                 "summary": (rec.get("summary") or "")[:MAX_SUMMARY] or None,
                 "files": [{"path": p, "sha256": h} for p, h in files[:MAX_FILES]],
-                "objections": rec.get("objections") or [],
-                "branch": rec.get("branch"), "rounds": rec.get("rounds"),
+                "branch": rec.get("branch"),
                 "cost_usd": float((rec.get("cost") or {}).get("cost_usd") or 0.0)}
     return {"decision": row["decision"], "reason": row["reason"],
             "owner_words": row.get("owner_words"), "problems": list(row.get("problems") or []),

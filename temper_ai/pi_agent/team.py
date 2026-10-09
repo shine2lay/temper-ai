@@ -7,9 +7,10 @@ How the team runs is the stage's ``strategy_config``, in sections, each with a `
 type's options (build plan, "Team settings format"):
 
     strategy_config:
-      mode:          {type: leader, leader: design}     # who gets the brief and says done
+      mode:          {type: leader, leader: design}     # who gets the goal and says done
       communication: {type: all}                        # or {type: edges, edges: {...}}
-      pause_after_rounds: 3                             # required, no default
+      pause_every_usd: 100                              # check-in every $100 spent (default)
+      max_parallel: 3                                   # members at once (default: all)
 
 * ``mode``: required; first type ``leader`` (``leader:`` names a member).
 * ``communication``: ``all`` (any member may message any member; the default when the section
@@ -18,15 +19,24 @@ type's options (build plan, "Team settings format"):
   reachable from the leader. The first team runtime is ``all`` only (R2 rule B7): ``edges`` is
   parsed and checked here, and the run-start check refuses it with ``EDGES_NOT_BUILT`` until
   the later slice builds it.
-* ``pause_after_rounds``: how many rounds before the team pauses for the owner; required.
+* ``pause_every_usd``: each time the Project spends this much since its start or the owner's
+  last continue / guide, no new turn starts, running turns finish, and the owner is asked
+  continue / guide / stop (FLOW F6, R4). Default 100.
+* ``max_parallel``: how many members may run a turn at the same moment (FLOW E1). Default:
+  every member.
+
+The team is free-flowing: only the leader gets the goal and starts; the other members wait
+for its first message. Once woken, members work in parallel and stay on until they call
+``idle``. No rounds are run. A non-null ``pause_after_rounds`` is refused by name; null is
+ignored so the old page's empty form works across a deploy.
 
 Each section type brings its own parser and check (``MODE_TYPES``, ``COMMUNICATION_TYPES``),
 so a new type adds its options without touching the others. Unknown sections, types and keys
 are refused by name. The later slice's features (R2: each needs its own proof before use) are
 known by the names a config would use for them and refused with a plain sentence (M4 SW-04):
 ``mode: {type: unanimous}``, ``conversation: {type: fresh_each_round}``,
-``conversation: {continue_from: ...}`` (two team stages continuing), ``private_children`` and
-``concurrent_turns``, besides ``edges`` above. A change to the team's members while its run is
+``conversation: {continue_from: ...}`` (two team stages continuing) and ``private_children``,
+besides ``edges`` above. Concurrency is built: use ``max_parallel``. A change to the team's members while its run is
 going is refused when the team reopens (``team settings changed``, R2 C3); any other change to
 the team's settings or a member's is asked about at a settings wait (SW-85,
 :mod:`temper_ai.pi_agent.settings_wait`). The strategy's
@@ -34,8 +44,8 @@ check (:func:`validate_team`) reports every problem at once; the run-start check
 (:mod:`temper_ai.pi_agent.team_check`) adds the members' roles, the workflow's safety policies
 and the goal.
 
-The team node itself (:class:`temper_ai.pi_agent.team_node.TeamNode`) runs the leader loop
-(:mod:`temper_ai.pi_agent.team_leader`) on the team runtime (T4 messaging, T5 inboxes).
+The team node itself (:class:`temper_ai.pi_agent.team_node.TeamNode`) runs the free-flowing
+loop (:mod:`temper_ai.pi_agent.team_flow`) on the team runtime (T4 messaging, T5 inboxes).
 Registered only with the Pi switch (``TEMPER_PI_AGENT``) on.
 
 This module imports nothing from ``temper_ai.stage``: the stage package imports the topology
@@ -57,7 +67,18 @@ STRATEGY = "team"
 EDGES_NOT_BUILT = "edges isn't built yet; use all"
 #: The name of the one node a team stage holds (its path is ``<stage>.team``).
 NODE_NAME = "team"
-SECTIONS = ("mode", "communication", "pause_after_rounds")
+SECTIONS = ("mode", "communication", "pause_every_usd", "max_parallel")
+#: The check-in's default and its bounds (US dollars).
+PAUSE_EVERY_USD = 100.0
+PAUSE_EVERY_MIN = 1.0
+PAUSE_EVERY_MAX = 10000.0
+#: Said when a team that ran in review rounds is resumed, forked or re-run (FLOW E4).
+ROUNDS_TEAM = ("this team ran in review rounds, which Temper no longer runs; start a new "
+               "Project")
+#: Said for the old review rounds' setting, ``pause_after_rounds``, given a value in a config
+#: or a New Project form (FLOW R4).
+ROUNDS_GONE = ("pause_after_rounds is gone: teams work free-flowing now; set pause_every_usd "
+               "(default 100)")
 #: Sections planned for later, each arriving with its runtime piece; refused until then.
 LATER_SECTIONS = ("workspace", "lessons", "ask_owner", "conversation")
 
@@ -76,15 +97,11 @@ CONTINUE_NOT_BUILT = ("continuing members' conversations from an earlier team st
 #: ``private_children``: a member's own private helpers (the frozen plan's private child).
 CHILDREN_NOT_BUILT = ("private children aren't built yet: a team is the members it lists, and "
                       "none of them can start a private helper")
-#: ``concurrent_turns``: members taking turns at the same time.
-CONCURRENT_NOT_BUILT = ("concurrent member turns aren't built yet: members take turns one at a "
-                        "time")
 #: Later-slice sections, by the names a config would use (a synonym says the same).
 LATER_SLICE_SECTIONS = {
     "private_children": CHILDREN_NOT_BUILT,
     "children": CHILDREN_NOT_BUILT,
-    "concurrent_turns": CONCURRENT_NOT_BUILT,
-    "concurrency": CONCURRENT_NOT_BUILT,
+    "pause_after_rounds": ROUNDS_GONE,
 }
 #: Later-slice types of a section that exists.
 LATER_SLICE_TYPES = {"mode": {"unanimous": UNANIMOUS_NOT_BUILT}}
@@ -94,7 +111,6 @@ LATER_SLICE_MEMBER_KEYS = {
     "continue_from": CONTINUE_NOT_BUILT,
     "private_children": CHILDREN_NOT_BUILT,
     "children": CHILDREN_NOT_BUILT,
-    "concurrent_turns": CONCURRENT_NOT_BUILT,
 }
 
 
@@ -129,14 +145,17 @@ class TeamSettings:
 
     mode: LeaderMode
     communication: AllCommunication | EdgesCommunication
-    pause_after_rounds: int
+    pause_every_usd: float = PAUSE_EVERY_USD
+    #: None: every member may run at once.
+    max_parallel: int | None = None
 
     def as_dict(self) -> dict:
         comm: dict = {"type": self.communication.type}
         if isinstance(self.communication, EdgesCommunication):
             comm["edges"] = {k: list(v) for k, v in self.communication.edges.items()}
         return {"mode": {"type": self.mode.type, "leader": self.mode.leader},
-                "communication": comm, "pause_after_rounds": self.pause_after_rounds}
+                "communication": comm, "pause_every_usd": self.pause_every_usd,
+                "max_parallel": self.max_parallel}
 
 
 Problem = tuple[str, str]  # (where, what): where is a section name or "member '<name>'"
@@ -247,6 +266,8 @@ def parse_settings(strategy_config: object) -> tuple[TeamSettings | None, list[P
                                           f"{', '.join(SECTIONS)})")]
     problems: list[Problem] = []
     for key in strategy_config:
+        if key == "pause_after_rounds" and strategy_config[key] is None:
+            continue  # today's dashboard form sends it empty: accepted and ignored (old+new live)
         if key in LATER_SLICE_SECTIONS:
             problems.append((key, LATER_SLICE_SECTIONS[key]))
         elif key == "conversation" and _later_conversation(strategy_config[key]):
@@ -265,19 +286,21 @@ def parse_settings(strategy_config: object) -> tuple[TeamSettings | None, list[P
     comm, got = _section("communication", strategy_config.get("communication", {"type": "all"}),
                          COMMUNICATION_TYPES)
     problems += got
-    rounds = strategy_config.get("pause_after_rounds")
-    if "pause_after_rounds" not in strategy_config:
-        problems.append(("pause_after_rounds", "required, no default: how many rounds before "
-                                               "the team pauses for the owner"))
-        rounds = None
-    elif isinstance(rounds, bool) or not isinstance(rounds, int) or rounds < 1:
-        problems.append(("pause_after_rounds", "must be a whole number of rounds, 1 or more"))
-        rounds = None
-    if mode is None or comm is None or rounds is None or problems:
+    every = strategy_config.get("pause_every_usd", PAUSE_EVERY_USD)
+    if (isinstance(every, bool) or not isinstance(every, (int, float))
+            or not PAUSE_EVERY_MIN <= every <= PAUSE_EVERY_MAX):
+        problems.append(("pause_every_usd", f"must be a number of US dollars from "
+                                            f"{PAUSE_EVERY_MIN:g} to {PAUSE_EVERY_MAX:g}"))
+    most = strategy_config.get("max_parallel")
+    if most is not None and (isinstance(most, bool) or not isinstance(most, int) or most < 1):
+        problems.append(("max_parallel", "must be a whole number of members, 1 or more (leave "
+                                         "it out for every member)"))
+    if mode is None or comm is None or problems:
         return None, problems
     assert isinstance(mode, LeaderMode)  # noqa: B101 - the only mode type
     assert isinstance(comm, (AllCommunication, EdgesCommunication))  # noqa: B101
-    return TeamSettings(mode=mode, communication=comm, pause_after_rounds=rounds), []
+    return TeamSettings(mode=mode, communication=comm, pause_every_usd=float(every),
+                        max_parallel=most), []
 
 
 def _later_conversation(raw: object) -> list[str]:
@@ -338,6 +361,10 @@ def stage_findings(agent_configs: list[dict], strategy_config: object) -> list[M
     problems += [(where, what, None) for where, what in parse_settings(strategy_config)[1]]
     # Each section type's own check, run when the section itself parsed.
     raw = strategy_config if isinstance(strategy_config, dict) else {}
+    most = raw.get("max_parallel")
+    if isinstance(most, int) and not isinstance(most, bool) and most > len(agent_configs) >= 1:
+        problems.append(("max_parallel", f"is {most}, more than the team's "
+                                         f"{len(agent_configs)} member(s)", None))
     mode, _ = _section("mode", raw.get("mode"), MODE_TYPES) if "mode" in raw else (None, [])
     leader = None
     if isinstance(mode, LeaderMode):

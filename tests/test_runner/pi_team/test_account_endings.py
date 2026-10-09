@@ -29,7 +29,7 @@ from temper_ai.pi_agent.ledger import ACCOUNT_REFUSED, reviews, waits
 from temper_ai.stage.exceptions import RunParked
 from tests.test_runner.pi_team import leader_support as ls
 from tests.test_runner.pi_team import support as ts
-from tests.test_runner.pi_team.test_leader_loop import rounds
+from tests.test_runner.pi_team.leader_support import legacy_rounds as rounds
 
 SLOT = "acct-b"
 ACCOUNT = {"slot": SLOT, "picked_at": "2026-10-06T12:00:00+00:00", "by": "room",

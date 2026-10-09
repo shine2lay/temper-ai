@@ -83,7 +83,7 @@ def columns(engine, table: str) -> set[str]:
 
 def test_sw13_a_fresh_database_is_made_at_this_build_s_version_and_again_changes_nothing(fresh):
     Ledger(fresh).ensure()
-    assert stored(fresh) == SCHEMA_VERSION == 3
+    assert stored(fresh) == SCHEMA_VERSION == 4
     assert {t.name for t in TABLES} | {"pi_schema_version"} <= names(fresh)
     assert "snapshot_sha256" in columns(fresh, "pi_participants")
     assert "account_slot" in columns(fresh, "pi_turns") and "pi_team_versions" in names(fresh)
@@ -113,7 +113,8 @@ def test_sw13_an_older_version_is_moved_forward_by_its_steps_keeping_every_row(f
     assert "snapshot_sha256" in columns(fresh, "pi_participants")
     assert "account_slot" in columns(fresh, "pi_turns") and "pi_team_versions" in names(fresh)
     (row,) = led.participants_of(RUN, "talk")
-    assert row == {**p, "snapshot_sha256": None}
+    assert row == {**p, "snapshot_sha256": None, "idle_reason": None, "idle_note": None,
+                   "idle_since": None, "conflicts": None}
     assert [m["body"] for m in led.pending_for(p["participant_id"])] == ["hello"]
     assert led.record_snapshot(p["participant_id"], "d" * 64) == "d" * 64
 
@@ -136,7 +137,7 @@ def test_version_3_s_step_adds_the_turn_s_account_and_the_version_records_keepin
         conn.execute(schema_version.update().values(version=2))
 
     Ledger(fresh).ensure()
-    assert stored(fresh) == SCHEMA_VERSION == 3
+    assert stored(fresh) == SCHEMA_VERSION == 4
     assert "account_slot" in columns(fresh, "pi_turns") and "pi_team_versions" in names(fresh)
     with fresh.connect() as conn:
         rows = conn.execute(sa.text("SELECT turn_id, state, account_slot FROM pi_turns")).all()
@@ -188,12 +189,12 @@ def test_sw13_pi_tables_from_before_versioning_are_refused_changing_nothing(fres
 
 
 def test_sw13_a_version_record_whose_tables_lack_a_column_is_refused(fresh):
-    """A record that says version 3 over tables without version 2's column (made by hand, or
+    """A record that says version 4 over tables without version 2's column (made by hand, or
     a step undone): refused, never written to."""
     Ledger(fresh).ensure()
     with fresh.begin() as conn:
         conn.execute(sa.text("ALTER TABLE pi_turns DROP COLUMN box_stop"))
-    with pytest.raises(LedgerLayoutError, match=r"don't match their layout version 3 \(missing "
+    with pytest.raises(LedgerLayoutError, match=r"don't match their layout version 4 \(missing "
                                                 r"pi_turns\.box_stop\); Temper changed nothing"):
         Ledger(fresh).ensure()
 
@@ -265,7 +266,7 @@ def test_sw12_a_step_path_over_255_characters_is_stored_whole(fresh):
     assert [m["message_id"] for m in batch] == [msg["message_id"]]
     (row,) = snap["turns"]
     assert (row["host_path"], row["claimed_by"], row["box_name"]) == (DEEP, claimed_by, box)
-    assert row["claim_key"] == f"{RUN}|{DEEP}"
+    assert row["claim_key"] == f"{RUN}|{DEEP}|{p['participant_id']}"
     (w,) = snap["waits"]
     assert (w["host_path"], w["gate_name"]) == (DEEP, gate_name_for(DEEP, wait["wait_id"]))
     assert len(w["gate_name"]) > 300

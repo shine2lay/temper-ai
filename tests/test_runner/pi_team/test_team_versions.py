@@ -22,7 +22,7 @@ from temper_ai.pi_agent.ledger import reviews, versions
 from temper_ai.pi_agent.team_leader import ProjectCopies
 from tests.test_runner.pi_team import leader_support as ls
 from tests.test_runner.pi_team import support as ts
-from tests.test_runner.pi_team.test_leader_loop import rounds
+from tests.test_runner.pi_team.leader_support import legacy_rounds as rounds
 
 #: A fake login token of the access-token shape (built here so no file holds one whole).
 FAKE = "sk-ant-" + "oat01-" + "Z" * 32

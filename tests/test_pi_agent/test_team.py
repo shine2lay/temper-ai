@@ -47,7 +47,7 @@ ROLES = {"architecture": "System architecture", "frontend": "Frontend", "qa": "Q
 GOOD = {"mode": {"type": "leader", "leader": "design"},
         "communication": {"type": "edges", "edges": {"design": ["frontend", "qa"],
                                                      "frontend": ["qa"]}},
-        "pause_after_rounds": 3}
+        "pause_every_usd": 100.0}
 # What a run can use today (R2 rule B7: the first team runtime is communication: all only).
 RUNNABLE = {**GOOD, "communication": {"type": "all"}}
 GOAL = {"goal": "Add a sign-up page"}
@@ -107,15 +107,16 @@ def test_a_team_config_parses_into_its_sections():
         mode=LeaderMode(leader="design"),
         communication=EdgesCommunication(edges={"design": ("frontend", "qa"),
                                                 "frontend": ("qa",)}),
-        pause_after_rounds=3)
-    assert settings.as_dict() == GOOD
+        pause_every_usd=100.0)
+    assert settings.as_dict() == {**GOOD, "max_parallel": None}
 
 
 def test_communication_defaults_to_all():
-    settings, problems = parse_settings({"mode": {"type": "leader", "leader": "design"},
-                                         "pause_after_rounds": 1})
+    settings, problems = parse_settings({"mode": {"type": "leader", "leader": "design"}})
     assert problems == [] and settings is not None
     assert settings.communication == AllCommunication()
+    # the check-in comes every $100 and every member may work at once, unless set
+    assert settings.pause_every_usd == 100.0 and settings.max_parallel is None
     assert settings.as_dict()["communication"] == {"type": "all"}
 
 
@@ -147,18 +148,18 @@ def _with(**sections) -> dict:
     (_with(communication={"type": "edges", "edges": {"design": "qa"}}),
      "communication: type edges needs 'edges: {member: [members it can start a conversation "
      "with]}'"),
-    (_with(pause_after_rounds=None),
-     "pause_after_rounds: required, no default: how many rounds before the team pauses for the "
-     "owner"),
-    (_with(pause_after_rounds=0), "pause_after_rounds: must be a whole number of rounds, 1 or more"),
-    (_with(pause_after_rounds=True),
-     "pause_after_rounds: must be a whole number of rounds, 1 or more"),
-    (_with(pause_after_rounds="3"),
-     "pause_after_rounds: must be a whole number of rounds, 1 or more"),
+    (_with(pause_after_rounds=3),
+     "pause_after_rounds: pause_after_rounds is gone: teams work free-flowing now; set "
+     "pause_every_usd (default 100)"),
+    (_with(pause_every_usd=0), "pause_every_usd: must be a number of US dollars from 1 to 10000"),
+    (_with(pause_every_usd=True),
+     "pause_every_usd: must be a number of US dollars from 1 to 10000"),
+    (_with(pause_every_usd="100"),
+     "pause_every_usd: must be a number of US dollars from 1 to 10000"),
     (_with(budget={"usd": 5}),
-     "budget: unknown section (known: mode, communication, pause_after_rounds)"),
+     "budget: unknown section (known: mode, communication, pause_every_usd, max_parallel)"),
     ("leader", "strategy_config: must be a mapping of team sections (mode, communication, "
-               "pause_after_rounds)"),
+               "pause_every_usd, max_parallel)"),
 ])
 def test_each_format_problem_is_refused_by_name(cfg, problem):
     assert parse_settings(cfg)[0] is None
@@ -262,7 +263,8 @@ CONTINUING = ("continuing members' conversations from an earlier team stage (con
               "isn't built yet: each team stage starts its members' conversations fresh")
 CHILDREN = ("private children aren't built yet: a team is the members it lists, and none of them "
             "can start a private helper")
-CONCURRENT = "concurrent member turns aren't built yet: members take turns one at a time"
+UNKNOWN_CONCURRENCY = ("unknown section (known: mode, communication, pause_every_usd, "
+                       "max_parallel)")
 
 
 @pytest.mark.parametrize("section, value, problem", [
@@ -272,8 +274,8 @@ CONCURRENT = "concurrent member turns aren't built yet: members take turns one a
     ("conversation", {"continue_from": "plan"}, f"conversation: {CONTINUING}"),
     ("private_children", {"max": 2}, f"private_children: {CHILDREN}"),
     ("children", ["helper"], f"children: {CHILDREN}"),
-    ("concurrent_turns", 2, f"concurrent_turns: {CONCURRENT}"),
-    ("concurrency", 2, f"concurrency: {CONCURRENT}"),
+    ("concurrent_turns", 2, f"concurrent_turns: {UNKNOWN_CONCURRENCY}"),
+    ("concurrency", 2, f"concurrency: {UNKNOWN_CONCURRENCY}"),
 ], ids=["unanimous", "fresh_each_round", "fresh_each_round_short", "two_stages_continuing",
         "private_children", "children", "concurrent_turns", "concurrency"])
 def test_sw04_a_later_slice_feature_for_the_team_is_refused_with_a_plain_sentence(
@@ -288,9 +290,7 @@ def test_sw04_a_later_slice_feature_for_the_team_is_refused_with_a_plain_sentenc
     ("conversation", {"continue_from": "plan"}, f"conversation: {CONTINUING}"),
     ("continue_from", "plan", f"continue_from: {CONTINUING}"),
     ("private_children", ["helper"], f"private_children: {CHILDREN}"),
-    ("concurrent_turns", True, f"concurrent_turns: {CONCURRENT}"),
-], ids=["fresh_each_round", "conversation_continue_from", "continue_from", "private_children",
-        "concurrent_turns"])
+], ids=["fresh_each_round", "conversation_continue_from", "continue_from", "private_children"])
 def test_sw04_a_member_asking_for_a_later_slice_feature_is_refused_naming_the_member(
         box, key, value, problem):
     team = members()
@@ -305,7 +305,7 @@ def test_sw04_every_later_slice_feature_asked_at_once_is_refused_at_once(box):
              "conversation": {"type": "fresh_each_round", "continue_from": "plan"}}
     assert check_team(team, asked, inputs=GOAL, box=box) == [
         f"member 'qa': private_children: {CHILDREN}",
-        f"concurrent_turns: {CONCURRENT}",
+        f"concurrent_turns: {UNKNOWN_CONCURRENCY}",
         f"conversation: {FRESH}",
         f"conversation: {CONTINUING}",
         f"mode: {UNANIMOUS}",
@@ -451,8 +451,6 @@ def test_a_broken_team_gets_every_problem_at_once(box):
         f"member 'frontend': tool 'WebFetch' has no Pi equivalent (a Pi member can use {TOOLS})",
         f"member 'qa': add-on 'relays' is not allowed: {REFUSED_ADD_ONS['relays']}",
         "workspace: this section is not available yet; it comes with its runtime piece",
-        "pause_after_rounds: required, no default: how many rounds before the team pauses for "
-        "the owner",
         "mode: leader 'boss' is not a member (members: design, frontend, qa)",
         "communication: edges for 'design' name 'ghost', which is not a member",
         "communication: edges isn't built yet; use all",
@@ -535,7 +533,7 @@ def test_a_good_team_stage_loads_as_one_team_node(team_on):
     assert len(nodes) == 1 and isinstance(nodes[0], StageNode)
     (team,) = nodes[0].child_nodes
     assert isinstance(team, TeamNode)
-    assert team.settings.as_dict() == RUNNABLE
+    assert team.settings.as_dict() == {**RUNNABLE, "max_parallel": None}
     assert [m["role"] for m in team.members] == ["architecture", "frontend", "qa"]
     assert [c["name"] for c in nodes[0].agent_configs()] == ["design", "frontend", "qa"]
 
@@ -546,10 +544,9 @@ def test_a_refused_team_lists_every_problem_and_builds_nothing(team_on):
 
     broken = team_stage(agents=["design", "ghost", "frontend", "design"],
                         strategy_config={"mode": {"type": "leader", "leader": "boss"},
-                                         "pause_after_rounds": 0})
+                                         "pause_every_usd": 0})
     second = team_stage("check", agents=["qa"],
-                        strategy_config={"mode": {"type": "leader", "leader": "qa"},
-                                         "pause_after_rounds": 1},
+                        strategy_config={"mode": {"type": "leader", "leader": "qa"}},
                         input_map={"goal": "build.output"}, depends_on=["build"])
     loader = GraphLoader(store(broken, second,
                                safety={"policies": [{"type": "file_access", "name": "repo"}]}))
@@ -565,7 +562,7 @@ def test_a_refused_team_lists_every_problem_and_builds_nothing(team_on):
         "config 'ghost': Config not found: agent:ghost",
         "Stage 'build': agents: the member name 'design' is used more than once; give each "
         "member its own name:",
-        "Stage 'build': pause_after_rounds: must be a whole number of rounds, 1 or more",
+        "Stage 'build': pause_every_usd: must be a number of US dollars from 1 to 10000",
         "Stage 'build': mode: leader 'boss' is not a member (members: design, frontend)",
         "Stage 'build': goal: the stage reads it from the run input 'goal', which is not set",
         f"Stage 'build': {policy}",
@@ -672,8 +669,7 @@ def test_a_refused_team_never_becomes_a_run(pi, team_on, monkeypatch):
                                           "workspace_path": str(pi.ws)})
     assert r.status_code == 400
     detail = r.json()["detail"]
-    for problem in ("pause_after_rounds: required, no default",
-                    "mode: leader 'boss' is not a member",
+    for problem in ("mode: leader 'boss' is not a member",
                     "goal: the stage reads it from the run input 'goal', which is not set"):
         assert f"Stage 'build': {problem}" in detail
     assert get_events(event_type="workflow.started", limit=1000) == []

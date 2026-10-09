@@ -65,7 +65,7 @@ class RunParked(Exception):  # noqa: N818 - a state the run is put in, not an er
     """
 
     def __init__(self, *, event_id: str, node: str, path: str, round: int, checkpoint_id: str,
-                 wait_id: str | None = None):
+                 wait_id: str | None = None, wake_at: str | None = None):
         super().__init__(f"waiting on you at '{path}'")
         self.event_id = event_id
         self.node = node
@@ -74,6 +74,8 @@ class RunParked(Exception):  # noqa: N818 - a state the run is put in, not an er
         self.checkpoint_id = checkpoint_id
         # The step's own wait id when a step asked from inside its work; None for a gate.
         self.wait_id = wait_id
+        # A timed usage-limit wait frees the worker too; the reaper carries it on when due.
+        self.wake_at = wake_at
         # Steps that finished in the same parallel batch before it parked: the batch hands
         # them up so they are kept (and checkpointed) like any finished step.
         self.finished: list = []
@@ -83,6 +85,7 @@ class RunParked(Exception):  # noqa: N818 - a state the run is put in, not an er
 
     def as_dict(self) -> dict:
         return {"event_id": self.event_id, "node": self.node, "path": self.path,
-                "round": self.round, "checkpoint_id": self.checkpoint_id,
+                **({"wake_at": self.wake_at, "kind": "usage_limit"} if self.wake_at else
+                   {"round": self.round}), "checkpoint_id": self.checkpoint_id,
                 **({"wait_id": self.wait_id} if self.wait_id is not None else {}),
                 **({"also": list(self.also)} if self.also else {})}

@@ -14,7 +14,7 @@ not start. It checks:
   has a worker route, and the search binary its Pi grep or find runs (rg, fd) is pinned in the
   worker box config;
 * the team: its sections (leader is a member, edges name members, every member reachable from
-  the leader, ``pause_after_rounds`` set) and its goal; ``communication: edges`` is refused for
+  the leader, ``pause_every_usd`` and ``max_parallel`` valid) and its goal; ``communication: edges`` is refused for
   now (R2 rule B7: the first team runtime is ``all`` only);
 * the workflow: every ``safety: policies:`` entry, since a team can't enforce one yet.
 
@@ -71,7 +71,9 @@ NAME_RULE = ("a name starts with a lowercase letter and has only lowercase lette
 #: The Team page's form field each team section's problems belong to (M3 E20). A member's
 #: problems belong to ``members``; a section with no form field gets none.
 SECTION_FIELDS = {"agents": "members", "mode": "leader", "communication": "communication",
-                  "pause_after_rounds": "pause_after_rounds", "goal": "goal",
+                  "pause_after_rounds": "pause_after_rounds",
+                  "pause_every_usd": "pause_every_usd", "max_parallel": "max_parallel",
+                  "goal": "goal",
                   "project": "project_path"}
 
 

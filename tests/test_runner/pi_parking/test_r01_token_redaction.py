@@ -13,18 +13,18 @@ WorkerBox._handoff hands it (the turn's redactor and the token scan learn it bef
 Each case has its own tokens, so rows another test left in a shared test database never count.
 
 - a, the done path (gap 1), the whole feature in one run: a member commits a file holding a
-  token, and one holding the run's own token, into its version, and a review call holding the
+  token, and one holding the run's own token, into its version, and a share call holding the
   token is refused before a clean one. The team ends done, the version is withheld and no
   branch is made, and the token is in no stored row of the test database (the outcome row, the
   node's output, the workflow outputs, every event, every pi_ row), in no file of the run's
   log folder (its event log), in no answer the server gives about the run (the run page's routes, the Team API's, the version route that names
   rules and paths only), in no member's prompt and in none of Temper's answers to the members.
-- b, the review tool (gap 2): a request_review note, a give_view note and a decide summary,
+- b, the team tools (gap 2): a share note, an idle note and a done summary,
   each holding a token, are refused naming the rule; the turn keeps the refusal's words only,
   and nothing of the call is kept anywhere.
-- c, a provider error (gap 4): an error reply whose words hold a token ends the turn; the
-  turn's error, the stage's and the run's, the events, the event log, the run page and the
-  Team API carry a marker in its place, never the token.
+- c, a provider error (gap 4): a terminal account-refusal reply holds a token and ends the
+  turn. Its recorded error carries a marker, never the token. The stage and run report the
+  account refusal without echoing provider text; all events, logs and API replies are safe.
 
 Every check of a case runs, and a case that fails lists the places by name (a table and its
 columns, a route, a prompt), never the text found there: that text is a token.
@@ -50,6 +50,7 @@ import sqlalchemy as sa
 from temper_ai.llm.pi_stream import REDACTED, PiEventMapper, Redactor, record_outcome
 from temper_ai.pi_agent import token_scan
 from temper_ai.pi_agent import turn as turn_mod
+from temper_ai.pi_agent.accounts import refusal_problem
 from temper_ai.pi_agent.event_guard import (
     STREAM_HOLD_CAP,
     TOKEN_GUARD,
@@ -58,7 +59,7 @@ from temper_ai.pi_agent.event_guard import (
     guarded,
     guarded_context,
 )
-from temper_ai.pi_agent.ledger import messages, outcomes, reviews
+from temper_ai.pi_agent.ledger import messages, outcomes
 from temper_ai.pi_agent.team_runtime import Team
 from temper_ai.shared.types import ExecutionContext
 from tests.test_pi_agent import support as sup
@@ -134,8 +135,13 @@ def handed_off(token: str) -> dict:
 
 def with_hand_off(token: str) -> None:
     """Every scripted turn of every member starts with its hand-off."""
-    for member, scripts in list(ts.SCRIPTS.items()):
-        ts.SCRIPTS[member] = [[handed_off(token), *turn] for turn in scripts]
+    def wrapped(play):
+        return lambda: [handed_off(token), *play()]
+
+    for scripts in ts.SCRIPTS.values():
+        scripts[:] = [[handed_off(token), *turn] for turn in scripts]
+        if isinstance(scripts, ls.Turns):
+            scripts.play = wrapped(scripts.play)
 
 
 def refusal(rule: str) -> str:
@@ -344,14 +350,14 @@ def no_wires(findings: Findings, wires: Wires, record_property) -> None:
 
 def test_a_planted_token_never_leaves_a_team_run_that_ends_done(api, wires, record_property):
     """A member commits a file holding a token, and one holding the run's own token, into its
-    version, and asks for a review with the token in its note (refused) before a clean ask.
+    version, and shares with the token in its note (refused) before a clean share.
     The team ends done on that version: withheld, no branch, and no token anywhere."""
     token, own, _rule = tokens("shape", "a")
     runs.script(api.led, ["done"])
-    write_readme, ask = ts.SCRIPTS["design"][0]
+    first = ts.SCRIPTS["design"][0]
     ts.SCRIPTS["design"][0] = [ls.write("config.env", f"ANTHROPIC_TOKEN={token}\n"),
-                               ls.write("notes.txt", f"login: {own}\n"), write_readme,
-                               ls.request_review(f"draft 1, signed {token}"), ask]
+                               ls.write("notes.txt", f"login: {own}\n"),
+                               ls.op("share", note=f"draft 1, signed {token}"), *first]
     with_hand_off(own)
     started = team_api.start_trial(api, team_api.body(api))
     tid, eid = started["trial_id"], started["execution_id"]
@@ -363,20 +369,17 @@ def test_a_planted_token_never_leaves_a_team_run_that_ends_done(api, wires, reco
     out = ended[-1]["data"].get("workflow_output") or {}
     f.clean("the workflow outputs", out)
 
-    # the refused review call: named, audited by its words only, nothing of it kept
+    # the refused share call: named, audited by its words only, nothing of it kept
     snap, by_turn = snapshot(api, eid)
-    refused_calls(f, snap, by_turn, SHAPE, [("design", 1, "request_review")])
-    f.check([a["op"] for a in snap["acts"]]
-            == ["request_review", "give_view", "give_view", "decide"], "the acts kept",
-            [a["op"] for a in snap["acts"]])
-    review = one_row(f, api, reviews, eid)
-    f.check((review.get("decision"), review.get("summary")) == ("done", "summary 1"),
-            "the review's decision", review)
-    f.check(not review.get("files"), "the withheld version's review row keeps no files",
-            review.get("files"))
-    asked = [m for m in snap["messages"] if m["kind"] == "review_request"]
+    refused_calls(f, snap, by_turn, SHAPE, [("design", 1, "share")])
+    ops = [a["op"] for a in snap["acts"]]
+    f.check(ops.count("share") == 1 and ops.count("done") == 1 and ops.count("idle") >= 3
+            and set(ops) <= {"share", "idle", "done"}, "the clean acts kept", ops)
+    asked = [m for m in snap["messages"] if m["kind"] == "work_request"]
     f.check(sorted(m["to_member"] for m in asked) == ["frontend", "qa"],
-            "one review request to each member", asked)
+            "one work request to each member", asked)
+    run = f.json(answers, "/api/team/runs/{id}")
+    shared_commit = ((run.get("work") or {}).get("latest") or {}).get("commit")
 
     # the done record: the outcome row, the node's output, the workflow outputs
     row = one_row(f, api, outcomes, eid)
@@ -389,8 +392,8 @@ def test_a_planted_token_never_leaves_a_team_run_that_ends_done(api, wires, reco
                 f"{place}: done", rec)
         f.check(version.get("files") == {} and version.get("withheld") == held,
                 f"{place}: the version's files withheld", version)
-        f.check(version.get("commit") == review.get("commit_sha"),
-                f"{place}: the reviewed commit", version)
+        f.check(version.get("commit") == shared_commit,
+                f"{place}: the shared commit", version)
         f.check(branch.get("name") == f"team/{tid}" and branch.get("made") is False,
                 f"{place}: no branch made", branch)
         f.check(str(branch.get("why") or "").startswith(why)
@@ -419,22 +422,41 @@ def test_a_planted_token_never_leaves_a_team_run_that_ends_done(api, wires, reco
     assert f.failed == [], "\n".join(f.failed)
 
 
-# --- b, the review tool (gap 2) ----------------------------------------------------------------
+# --- b, the team tools (gap 2) -----------------------------------------------------------------
 
 
 @pytest.mark.parametrize(("kind", "mark"), [("shape", "b"), ("own", "c")],
                          ids=["a-token-s-shape", "the-run-s-own-token"])
 def test_a_review_call_holding_a_token_is_refused_and_nothing_of_it_is_kept(
         api, wires, record_property, kind, mark):
-    """A request_review note, a give_view note and a decide summary holding a token, each sent
-    through the review tool before a clean call: refused naming the rule, the turn keeps the
+    """A share note, an idle note and a done summary holding a token, each sent
+    through the team tools before a clean call: refused naming the rule, the turn keeps the
     refusal's words only, and nothing of the call is kept anywhere."""
     token, own, rule = tokens(kind, mark)
     runs.script(api.led, ["done"])
     design, frontend = ts.SCRIPTS["design"], ts.SCRIPTS["frontend"]
-    design[0].insert(1, ls.request_review(f"draft 1, signed {token}"))
-    frontend[0].insert(0, ls.give_view(api.led, None, "satisfied", f"fine; key {token}"))
-    design[1].insert(0, ls.decide(api.led, None, "done", f"done, with {token}"))
+    design[0].insert(1, ls.op("share", note=f"draft 1, signed {token}"))
+    front_play, first_frontend = frontend.play, True
+
+    def frontend_turn():
+        nonlocal first_frontend
+        actions = front_play()
+        if first_frontend:
+            first_frontend = False
+            return [ls.op("idle", note=f"fine; key {token}"), *actions]
+        return actions
+
+    frontend.play = frontend_turn
+    play = design.play
+
+    def done_turn():
+        actions = play()
+        if any(callable(a.get("send")) and a["send"]("").get("op") == "done"
+               for a in actions):
+            actions.insert(0, ls.op("done", summary=f"done, with {token}"))
+        return actions
+
+    design.play = done_turn
     with_hand_off(own)
     eid = team_api.start_trial(api, team_api.body(api))["execution_id"]
     ended = pw.wait_ended(eid, 1)
@@ -443,25 +465,24 @@ def test_a_review_call_holding_a_token_is_refused_and_nothing_of_it_is_kept(
     f.check(ended[-1]["status"] == "completed", "the run completed", runs.stage_error(eid, "trial"))
     answers = f.everywhere(api, eid)
     snap, by_turn = snapshot(api, eid)
-    refused_calls(f, snap, by_turn, rule, [("design", 1, "request_review"),
-                                           ("frontend", 1, "give_view"), ("design", 2, "decide")])
+    done_no = next((n for (m, n), t in by_turn.items()
+                    if m == "design" and n > 1 and t.get("refusals")), 0)
+    refused_calls(f, snap, by_turn, rule, [("design", 1, "share"),
+                                           ("frontend", 1, "idle"), ("design", done_no, "done")])
     f.check(not [s for s in ts.SENDS if s["reply"].get("ok") is True and f.holds(s["payload"])],
             "only clean calls were taken")
-    f.check([a["op"] for a in snap["acts"]]
-            == ["request_review", "give_view", "give_view", "decide"], "the acts kept",
-            [a["op"] for a in snap["acts"]])
-    review = one_row(f, api, reviews, eid)
-    f.check((review.get("decision"), review.get("summary")) == ("done", "summary 1"),
-            "the decision is the clean call's", review)
-    asked = [m for m in snap["messages"] if m["kind"] == "review_request"]
-    f.check(len(asked) == 2, "one review request to each member", asked)
+    ops = [a["op"] for a in snap["acts"]]
+    f.check(ops.count("share") == 1 and ops.count("done") == 1 and ops.count("idle") >= 3
+            and set(ops) <= {"share", "idle", "done"}, "the clean acts kept", ops)
+    asked = [m for m in snap["messages"] if m["kind"] == "work_request"]
+    f.check(len(asked) == 2, "one work request to each member", asked)
     row = one_row(f, api, outcomes, eid)
     record = row.get("record") or {}
     f.check(row.get("decision") == "done" and record.get("summary") == "summary 1",
             "the outcome is the clean decision's", row)
-    views = {m: (v or {}).get("note") for m, v in (record.get("views") or {}).items()}
-    f.check(views == {"frontend": "frontend note 1", "qa": "qa note 1"},
-            "the views are the clean calls'", views)
+    replies = {m["sender"]: m["body"] for m in snap["messages"] if m["kind"] == "reply"}
+    f.check(replies == {"frontend": "frontend note 1", "qa": "qa note 1"},
+            "the replies are the clean calls'", replies)
     run = f.json(answers, "/api/team/runs/{id}")
     f.check(run.get("state") == "done", "the Team API's run is done", run.get("state"))
 
@@ -476,13 +497,14 @@ def test_a_review_call_holding_a_token_is_refused_and_nothing_of_it_is_kept(
                          ids=["a-token-s-shape", "the-run-s-own-token"])
 def test_a_provider_error_holding_a_token_never_shows_it(api, wires, record_property, kind,
                                                          mark):
-    """The provider's error reply holds a token and ends design's first turn: the turn's error,
-    the stage's and the run's, the events, the run page and the Team API show a marker in its
-    place (the token scan's for a token's shape, the redactor's for the run's own token)."""
+    """A terminal provider refusal holds a token. The turn's recorded error shows the proper
+    marker; the stage and run report only the account refusal, without echoing its words.
+    All stored events and API replies stay free of the token."""
     token, own, _rule = tokens(kind, mark)
     runs.script(api.led, ["done"])
-    ts.SCRIPTS["design"].insert(0, [{"error": "400 invalid_request_error: the request was "
-                                              f"refused (it named {token})"}])
+    ts.SCRIPTS["design"].insert(0, [{"error": "403 permission_error: OAuth authentication is "
+                                              "currently not allowed for this organization "
+                                              f"(it named {token})"}])
     with_hand_off(own)
     eid = team_api.start_trial(api, team_api.body(api))["execution_id"]
     ended = pw.wait_ended(eid, 1)
@@ -496,18 +518,31 @@ def test_a_provider_error_holding_a_token_never_shows_it(api, wires, record_prop
     error = str(turn.get("error") or "")
     f.check(turn.get("state") == "failed", "design's turn failed", turn.get("state"))
     f.check(error.startswith("design (architecture) turn 1 failed: ")
-            and "400 invalid_request_error" in error and marker in error,
+            and "403 permission_error" in error and marker in error,
             "the turn's error keeps the provider's words with a marker for the token", error)
     stage = runs.stage_error(eid, "trial")
-    f.check("design (architecture) turn 1 failed" in stage and marker in stage,
-            "the stage's error carries the marker", stage)
+    stage_errors = [part for part in stage.split(" | ") if part]
+    reason = refusal_problem(None)
+    # The graph stores the stage error; node events store status and metrics, not
+    # NodeResult.error. The bare refusal is checked on the outcome below.
+    safe_stage = stage_errors == [f"1 node(s) failed: team (team: {reason})"]
+    f.check(safe_stage,
+            "the stage reports the terminal account refusal without echoing provider text", stage)
     row = one_row(f, api, outcomes, eid)
-    f.check(row.get("decision") == "failed" and marker in str(row.get("reason") or ""),
-            "the outcome row names the failed turn with the marker", row)
+    f.check(row.get("decision") == "failed" and row.get("reason") == refusal_problem(None),
+            "the outcome reports the account refusal without echoing provider text", row)
     run = f.json(answers, "/api/team/runs/{id}")
     f.check((run.get("outcome") or {}).get("decision") == "failed",
             "the Team API's run shows the failure", run.get("outcome"))
 
+    record_property("flow_check_terminal_turn", turn.get("state") == "failed")
+    record_property("flow_check_terminal_error_prefix",
+                    error.startswith("design (architecture) turn 1 failed: "))
+    record_property("flow_check_terminal_provider_code", "403 permission_error" in error)
+    record_property("flow_check_terminal_marker", marker in error)
+    record_property("flow_check_terminal_stage", safe_stage)
+    record_property("flow_check_terminal_outcome",
+                    row.get("decision") == "failed" and row.get("reason") == refusal_problem(None))
     no_wires(f, wires, record_property)
     assert f.failed == [], "\n".join(f.failed)
 
@@ -617,7 +652,8 @@ class DoorBox(ts.TeamFakeBox):
     def _model_turn(self, rid, message, ok):
         team = self.spec.team
         member = team.binding.member if team is not None else None
-        actions = ts.SCRIPTS[member][0] if member is not None and ts.SCRIPTS[member] else []
+        script = ts.SCRIPTS[member] if member is not None else []
+        actions = script[0] if len(script) else []
         events = [e for action in actions for e in action.get("pi", [])]
         out = super()._model_turn(rid, message, ok)
         return [out[0], *events, *out[1:]]

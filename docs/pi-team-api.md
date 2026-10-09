@@ -1,4 +1,4 @@
-# The Team page's API (`/api/team`) — switched off
+# The Team page's API (`/api/team`)
 
 The Team page starts a team trial from a form, shows where it is, and lets the owner answer
 its questions and message its members. These routes are its API, built to Architecture's M3
@@ -20,6 +20,7 @@ nothing of it is imported. The team itself runs as described in
 | `POST /api/team/trials` | start a trial in one call (201) |
 | `GET /api/team/trials` | trials, newest first (`limit`, `offset`, `state`) |
 | `GET /api/team/runs/{execution_id}` | one trial's run: the whole state the page draws |
+| `GET /api/team/runs/{execution_id}/events?after=0&limit=200` | cursor feed: events, cursor, more and UTC as_of |
 | `GET /api/team/runs/{execution_id}/messages/{message_id}` | the full text of one message |
 | `GET /api/team/runs/{execution_id}/version` | the team's newest version, from its stored version record (`team_version`) |
 | `GET /api/team/runs/{execution_id}/boxes` | every named box turn for the watch's continuity check (named API key required) |
@@ -83,7 +84,10 @@ answer's or message's in `pi_team_requests`; a message also uses it as the ledge
 ## Starting a trial
 
 `POST /api/team/trials` with `{request_id, goal, members: [{role, name?, tools?}], leader,
-pause_after_rounds, communication?, project_path?}`:
+pause_every_usd?, max_parallel?, communication?, project_path?}`. The check-in defaults to
+$100 and the parallel cap to every member. Non-null `pause_after_rounds` is refused; a null
+field sent by the old form is ignored:
+
 
 1. The trial gets a 12-hex-character id. Its workflow `team-trial-<id>` has one team stage,
    `trial` (node `trial.team`), whose outputs map the node's typed outcome; each member gets
@@ -106,7 +110,7 @@ deletes them on day one, so a trial's run can be resumed or forked.
 `team_check` and every 400 of a start give `problems` and non-blocking `notes` as `[{field,
 member?, text}]`. `text` is the engine's sentence word for word, with its `<where>:` prefix,
 so chat and the page read the same words. `field` is the form's field (`goal`, `members`,
-`leader`, `communication`, `pause_after_rounds`, `project_path`, or null) and `member` the
+`leader`, `communication`, `pause_every_usd`, `max_parallel`, `project_path`, or null) and `member` the
 member row's name; both come from where the problem was found, never from the sentence.
 
 ### Project folders (M4 item 0)
@@ -140,7 +144,7 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
 - `run_status` (the run list's own status), `state` (`didnt_start`, `starting`, `running`,
   `paused`, `quiet`, `member_waiting`, `settings_changed`, `interrupted`, `done`, `stopped`,
   `failed`), the
-  trial's input, `round`, and each member with its activity, turns, cost, model and the
+  trial's input, explicit `kind: flow | rounds`, and each member with its activity, turns, cost, model and the
   model and thinking its turns really used (`effective`, from the turn receipt; `unknown`
   on older rows).
 - `account`: the run's one account by slot label, as the Pi lane recorded it at its first
@@ -151,9 +155,10 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
   figure is ever made up). Each turn's `account_slot` is in the timeline and each member's
   `last_turn` ([pi-trial-safety.md](pi-trial-safety.md)).
 - `open_waits`: every open question, in the order Temper asks them (a settings wait
-  first, then oldest first). The first has `asked: true` and its `event_id`; the others
-  wait behind it with `event_id: null`. Any open wait holds every member's turn. A member's
-  question shows as `kind: question`. Each wait has its `question` without reply syntax,
+  first, then oldest first). Flow member questions can each have `asked: true` and an
+  `event_id`; each holds only its member. Settings questions take precedence. Old round
+  records retain their first-question-only shape. A member's question shows as `kind: question`.
+  Flow waits add `scope: member | team` and first-sentence `words` (at most 160 characters). Each wait has its `question` without reply syntax,
   the chat's `reply_hint` apart ("Reply 'continue', 'guide: <what to tell design>', or
   'stop'."), its `answers` with `needs_text` (`required`, `optional`, `none`), and
   `asked_again` (how many times a recovery or settings question was asked again after an
@@ -172,10 +177,19 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
     of the member's pin before and after, the exact values `go on` checks and pins.
 
   Every other wait has `settings_changes: null` and `pins: null`.
-- A recovery wait after a usage limit also carries `account_slot`, `limit` and `resets`
-  (the run's slot, the limit's words, and when it resets, or `null`); retry keeps the same
-  account, model and thinking.
-- `reviews`, a typed `timeline` (`entry`: message, review_round, view, decision,
+- Flow usage limits are team holds. A timer only schedules a fresh read-only usage check
+  on the kept account; it is not permission to start. Only verified available usage allows
+  five-hour automatic resume or a weekly/unknown `restart`/`stop` question. Unavailable,
+  stale, expired-sign-in or still-exhausted readings keep waiting without expiry, with
+  another check scheduled (15 minutes when no usable reset is known). A delayed weekly
+  restart answer is checked again before clearing the hold.
+  Phase adds `usage`, `usage_checked_at`, `resume_verified` and `blocked_windows`;
+  `reason` names an unavailable reading's fixed code. `resumes_at` is the next check time,
+  not a restart permission. Answerable flow limit waits carry those same fields. Before
+  verification the hold appears in phase, not as an answerable question. Historical
+  recovery waits retain their `account_slot`, `limit` and `resets` fields.
+- A typed `timeline` (flow adds share, idle, wake, closing, done_refused and conflict;
+  old round records keep `reviews`, `round` and the old entries): message, review_round, view, decision,
   owner_wait, owner_answer, member_turn; plus `message_kind`, `round`, `decision`,
   `wait_kind`; an owner_answer carries `answered_by` and `answered_source`; the settings
   answer is an owner_answer with `wait_kind: settings` and its `answer`, `go on` or
@@ -186,12 +200,20 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
   `outcome`.
 - The outcome is read only from `pi_team_outcomes`: `decision` (`done`, `stopped`,
   `cancelled`, `failed`, `didnt_start`), `reason`, `owner_words`, `problems`, `by`, `at`
-  and, when done, the done record with its `objections` (reviewers whose view of the
-  approved version wasn't `satisfied`) and the trial's `branch`. The node's
+  and, when done, the shared commit, summary, ordered shares, per-member turns, cost,
+  file hashes and the trial's `branch`. Historical round outcomes keep their `objections`. The node's
   `structured_output` gets a copy for workflow outputs, but the API never reads it back.
 
-`GET /api/team/trials` lists `{trial_id, execution_id, workflow, goal_first_line, leader,
-members, state, decision, run_status, round, cost_usd, started_at, started_by, ended_at}`,
+Flow replies also include `phase` (name/words/since/running/asked/reset information),
+`as_of`, `started_at`, frozen ended `elapsed_s`, `last_activity_at`, `spend` (total, baseline,
+next check-in and history), `you` (count/first owner question), `counts`, `links`, `work`
+(latest shared version and share history), `events_cursor` and visible `events_total`.
+Members add state/since, current `on`, live tools, ready-message count, last sent message,
+last share, conflicts, idle reason/note and last-turn error. A raw event cursor can exceed the
+visible count because internal bookkeeping is not shown. Flow omits `round` and `reviews`.
+
+`GET /api/team/trials` lists `{trial_id, execution_id, kind, workflow, goal_first_line, leader,
+members, state, decision, run_status, cost_usd, started_at, started_by, ended_at}` (old rounds retain `round`),
 newest first.
 
 Every time the Team API sends, in every route and every reply, is ISO 8601 in UTC with the
@@ -201,8 +223,9 @@ zone. `owner_actions` are sorted by that moment, oldest first.
 ## The team's version (`team_version`)
 
 `GET /api/team/runs/{execution_id}/version` follows contract section 5's `team_version`. It is
-served from the newest version record `pi-worker` stored (when the leader asked for a review,
-or when the trial ended done), never read live from a copy:
+served from the newest version record `pi-worker` stored (a share, a completed Project,
+or a historical review), never read live from a copy. `?version_no=N` selects a flow share:
+
 
 `{commit, start_commit, kind, review_id, round, made_by, files: [{path, sha256}],
 files_total, diff, diff_bytes, truncated, note, withheld, branch, made_at}`. The diff is
@@ -237,7 +260,7 @@ typed response.
 
 A stop at the pause, at a stalled wait or at a settings wait, with or without words, ends
 the run **cancelled** (an owner's decision, not a failure), with the outcome `stopped`, the
-neutral reason ("stopped at the pause after round <N>", "stopped when the team had nothing
+neutral reason ("stopped at the check-in at $<N>", "stopped when the team had nothing
 left to do", "stopped when the team's settings changed since its conversations started
 (<member>: <keys>; ...)"), the words as `owner_words` and `by` whoever answered. After a
 settings stop, the answer it held is never applied. A stop at a recovery wait
@@ -245,9 +268,10 @@ follows a failed or cut-off turn and stays failed.
 
 ## Messages
 
-`POST .../messages` with `{request_id, to, body}` posts as the owner. While any wait is open
-the message is `held` and delivers `after_open_wait`; otherwise it is `pending` and reaches
-the member at its `next_turn`. Refusals: `400` "'<to>' is not a member of this team
+`POST .../messages` with `{request_id, to, body}` posts as the owner. A run hold or that
+recipient's member wait reports `held` / `after_open_wait`; an unrelated member wait does
+not hold it. Otherwise it reports `pending` / `next_turn`; a running flow inbox can receive
+it in its current turn. Old round records keep their whole-team hold description. Refusals: `400` "'<to>' is not a member of this team
 (members: <names>)", "the message is empty", "the message is too long (<n> characters; at
 most 20000)"; `409` `team_ended` "the team has ended; nothing was sent", `team_not_started`
 "the team has not started yet; nothing was sent", `member_ended` "'<to>' has left the team;
@@ -257,7 +281,8 @@ nothing was sent".
 
 `team_status.limits`: `goal_max_chars` 20000, `message_max_chars` 20000, `guide_max_chars`
 20000, `reply_max_chars` 20000, `nudge_max_chars` 4000, `stop_reason_max_chars` 2000,
-`name_pattern` `^[a-z][a-z0-9_-]{0,39}$`, `reserved_names`. The server enforces them. The
+`name_pattern` `^[a-z][a-z0-9_-]{0,39}$`, `reserved_names`, and
+`pause_every_usd: {min: 1, max: 10000}`. The server enforces them. The
 cancel route's `reason` is limited to 2000 characters for every run (`400 {problem: "the
 reason is too long (<n> characters; at most 2000)"}`, nothing cancelled); a team's
 cancel reason becomes its outcome's `owner_words`.
@@ -277,8 +302,7 @@ and done stays done.
 ## Tests (no model, no network)
 
 `tests/test_runner/pi_team/test_team_versions.py` (version records, the route's record, the
-token scan's ways out), `tests/test_runner/pi_parking/test_team_api.py` (every route on a real in-process Temper
-with scripted members), `test_team_outcomes.py` (outcome rows, E18's cancelled stops, the
+token scan's ways out), `tests/test_runner/pi_parking/test_team_api.py` (the in-process unit-test harness with scripted members; no separate running server), `test_team_outcomes.py` (outcome rows, E18's cancelled stops, the
 node-start folder refusal, pick plus words), `tests/test_pi_agent/test_team_settings.py`
 (settings, folders, branch through a fake helper socket), `tests/test_api/test_gates.py`
 (the approve core and the cancel reason's limit), `test_studio_trial_names.py`,
@@ -291,5 +315,5 @@ TEMPER_TEST_DATABASE_URL="$(scripts/test-postgres.sh url)" uv run pytest tests/t
 
 ## Not built yet
 
-`team_debrief`, `edges` communication, deleting a trial's configs, and
-switching it on anywhere but a private test copy.
+`team_debrief`, `edges` communication and deleting a trial's configs.
+Only the configured live Temper is used for any real run; tests never start a second copy.

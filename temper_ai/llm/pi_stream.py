@@ -477,6 +477,12 @@ class PiEventMapper:
         self.settled = False
         self.recorded: list[str] = []
 
+    def usage_snapshot(self) -> dict[str, int | float]:
+        """Usage known so far, including retries and compaction; no message content.
+        A running team's spend must not wait for the whole turn to end (FLOW R4)."""
+        return {"cost_usd": round(self._cost, 10), "total_tokens": self._totals["total_tokens"],
+                "llm_calls": self._ordinal}
+
     # ---- ids and recording -------------------------------------------------
 
     def stable_id(self, *parts: Any) -> str:

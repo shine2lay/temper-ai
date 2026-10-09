@@ -70,7 +70,8 @@ MEMBER_UID = 1000
 MEMBER_GID = 1000
 MIN_FREE_BYTES = 2 * 1024**3
 DOCKER_TIMEOUT_S = 20.0
-HELPER_TIMEOUT_S = 5.0
+# The helper may be serving a login for up to 30 seconds before it answers this probe.
+HELPER_TIMEOUT_S = 40.0
 TEMPLATE_ENV = "TEMPER_DOCKER_TEMPLATE_CONTAINER"
 WORKSPACE_ENV = "WORKSPACE_DIR"
 #: The helper's login bridge may be ready, or not set up at all (a route without one).

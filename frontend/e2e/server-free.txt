@@ -15,4 +15,5 @@ piA2.spec.ts
 safeRendering.spec.ts
 team-c.spec.ts
 team-journey.spec.ts
+team-status.spec.ts
 team.spec.ts

@@ -1,0 +1,166 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "6c1e2f40-3b7a-4d2e-9f81-2a5c7d9e0b13",
+    "trial_id": "3f9a1c2e7b40",
+    "workflow": "team-trial-3f9a1c2e7b40",
+    "run_status": "waiting",
+    "kind": "flow",
+    "state": "paused",
+    "phase": {
+      "name": "check_in",
+      "words": "Check-in at $100.40: the team waits for you",
+      "since": "2026-10-09T09:02:11.000000+00:00",
+      "running": 0,
+      "asked": true,
+      "reason": null
+    },
+    "started_at": "2026-10-09T08:00:00.410000+00:00",
+    "elapsed_s": 3800,
+    "last_activity_at": "2026-10-09T09:03:20.000000+00:00",
+    "cost_usd": 100.4,
+    "spend": {
+      "cost_usd": 100.4,
+      "pause_every_usd": 100.0,
+      "last_check_in_usd": 0.0,
+      "next_check_in_usd": 100.0,
+      "since_check_in_usd": 100.4,
+      "check_ins": 1
+    },
+    "you": {
+      "count": 1,
+      "first": {
+        "wait_id": "9a8b7c6d5e4f30211a2b3c4d5e6f7a8b",
+        "kind": "pause",
+        "member": null,
+        "header": "check-in at $100",
+        "words": "The Project has spent $100.40. Continue, guide the leader, or stop?",
+        "opened_at": "2026-10-09T09:03:20.000000+00:00"
+      }
+    },
+    "counts": {"members": 4, "working": 0, "ready": 3, "idle": 1, "held": 0, "failed": 0, "ended": 0},
+    "account": null,
+    "trial": {
+      "goal": "Add a dark mode switch to the notes app's settings screen.\n\nRemember the choice between visits, and keep every colour readable.",
+      "leader": "lead",
+      "members": [
+        {"name": "lead", "role": "planner", "tools": ["Read", "Grep", "Glob", "Edit", "Write"], "leader": true},
+        {"name": "maker", "role": "builder", "tools": ["Read", "Edit", "Write"], "leader": false},
+        {"name": "styler", "role": "designer", "tools": ["Read", "Edit", "Write"], "leader": false},
+        {"name": "checker", "role": "reviewer", "tools": ["Read", "Grep"], "leader": false}
+      ],
+      "pause_every_usd": 100.0,
+      "max_parallel": 4,
+      "communication": "all",
+      "project": {"source": "/srv/example/projects/notes-app", "start_commit": null},
+      "started_at": "2026-10-09T08:00:00.410000+00:00",
+      "started_by": "owner",
+      "request_id": "f-1"
+    },
+    "round": null,
+    "members": [
+      {
+        "name": "lead", "role": "planner", "leader": true, "activity": "idle",
+        "state": "ready", "since": "2026-10-09T09:03:20.000000+00:00", "turn_no": null,
+        "on": {"kind": "goal", "text": "Add a dark mode switch to the notes app's settings screen.", "from": "temper", "at": "2026-10-09T08:00:00.900000+00:00", "message_id": "a0b1c2d3e4f5061728394a5b6c7d8e9f"},
+        "idle_note": null, "ready_messages": 2, "last_sent": null,
+        "last_share": {"version_no": 1, "commit_short": "1a2b3c4d5e6f", "note": "Plan in PLAN.md: who does what", "at": "2026-10-09T08:05:12.000000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 9, "cost_usd": 30.4, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 9, "state": "completed", "started_at": "2026-10-09T08:58:00.000000+00:00", "ended_at": "2026-10-09T09:03:20.000000+00:00", "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T09:03:20.000000+00:00"
+      },
+      {
+        "name": "maker", "role": "builder", "leader": false, "activity": "idle",
+        "state": "ready", "since": "2026-10-09T09:02:40.000000+00:00", "turn_no": null,
+        "on": {"kind": "work_request", "text": "Add a test that the choice survives a reload.", "from": "checker", "at": "2026-10-09T08:57:00.000000+00:00", "message_id": "0617283940a5b6c7d8e9f0a1b2c3d4e5"},
+        "idle_note": null, "ready_messages": 1, "last_sent": null,
+        "last_share": {"version_no": 6, "commit_short": "6f7a8b9c0d1e", "note": "Reload test in test_settings.py", "at": "2026-10-09T09:02:38.000000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 11, "cost_usd": 38.6, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 11, "state": "completed", "started_at": "2026-10-09T08:57:30.000000+00:00", "ended_at": "2026-10-09T09:02:40.000000+00:00", "error": null, "ended_by": "call_cap"},
+        "last_activity_at": "2026-10-09T09:02:40.000000+00:00"
+      },
+      {
+        "name": "styler", "role": "designer", "leader": false, "activity": "idle",
+        "state": "idle", "since": "2026-10-09T08:49:00.000000+00:00", "turn_no": null,
+        "on": {"kind": "work_request", "text": "Style the switch to match the dark colours.", "from": "lead", "at": "2026-10-09T08:30:00.000000+00:00", "message_id": "17283940a5b6c7d8e9f0a1b2c3d4e5f6"},
+        "idle_note": "Switch styled in v5; nothing else is mine.", "ready_messages": 0, "last_sent": null,
+        "last_share": {"version_no": 5, "commit_short": "5e6f7a8b9c0d", "note": "Switch styled in theme.css", "at": "2026-10-09T08:48:50.000000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 5, "cost_usd": 14.2, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 5, "state": "completed", "started_at": "2026-10-09T08:44:00.000000+00:00", "ended_at": "2026-10-09T08:49:00.000000+00:00", "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T08:49:00.000000+00:00"
+      },
+      {
+        "name": "checker", "role": "reviewer", "leader": false, "activity": "idle",
+        "state": "ready", "since": "2026-10-09T09:02:11.000000+00:00", "turn_no": null,
+        "on": {"kind": "work_request", "text": "Check v3 once maker's switch is in: does the choice survive a reload?", "from": "lead", "at": "2026-10-09T08:20:05.300000+00:00", "message_id": "b1c2d3e4f5061728394a5b6c7d8e9f0a"},
+        "idle_note": null, "ready_messages": 1, "last_sent": null, "last_share": null,
+        "conflicts": [], "wait_id": null,
+        "turns": 6, "cost_usd": 17.2, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 6, "state": "completed", "started_at": "2026-10-09T08:59:00.000000+00:00", "ended_at": "2026-10-09T09:02:11.000000+00:00", "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T09:02:11.000000+00:00"
+      }
+    ],
+    "links": [
+      {"from": "checker", "to": "maker", "count": 2, "last_at": "2026-10-09T08:57:00.000000+00:00"},
+      {"from": "maker", "to": "lead", "count": 3, "last_at": "2026-10-09T09:02:39.000000+00:00"},
+      {"from": "lead", "to": "maker", "count": 2, "last_at": "2026-10-09T08:40:00.000000+00:00"}
+    ],
+    "work": {
+      "latest": {"version_no": 6, "commit": "6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a", "commit_short": "6f7a8b9c0d1e", "by": "maker", "at": "2026-10-09T09:02:38.000000+00:00", "note": "Reload test in test_settings.py", "files_changed": 1, "files_total": 7},
+      "shares": [
+        {"version_no": 6, "commit": "6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a", "commit_short": "6f7a8b9c0d1e", "by": "maker", "at": "2026-10-09T09:02:38.000000+00:00", "note": "Reload test in test_settings.py", "files_changed": 1, "files_total": 7},
+        {"version_no": 5, "commit": "5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f", "commit_short": "5e6f7a8b9c0d", "by": "styler", "at": "2026-10-09T08:48:50.000000+00:00", "note": "Switch styled in theme.css", "files_changed": 1, "files_total": 6}
+      ],
+      "shares_total": 6,
+      "summary": null
+    },
+    "events_cursor": 151,
+    "open_waits": [
+      {
+        "wait_id": "9a8b7c6d5e4f30211a2b3c4d5e6f7a8b",
+        "event_id": "2c4e6a8b-0d1f-4a3c-8e5b-7d9f1a3c5e7b",
+        "node_name": "trial.team~ask-9a8b7c6d5e4f30211a2b3c4d5e6f7a8b",
+        "asked": true,
+        "scope": "team",
+        "kind": "pause",
+        "header": "check-in at $100",
+        "question": "The Project has spent $100.40 (check-in every $100). No new turn started after it reached $100; the turns that were running have finished.",
+        "reply_hint": "Reply 'continue', 'guide: <what to tell lead>', or 'stop'.",
+        "answers": [
+          {"answer": "continue", "needs_text": "none", "means": "The team carries on; the next check-in is when spend reaches $200.40."},
+          {"answer": "guide", "needs_text": "required", "means": "lead gets your words as guidance, and the team carries on; the next check-in is when spend reaches $200.40."},
+          {"answer": "stop", "needs_text": "optional", "means": "The team stops here and the run ends cancelled. Any words you give are kept with it."}
+        ],
+        "round": null,
+        "at_usd": 100.4,
+        "next_check_in_usd": 200.4,
+        "member": null,
+        "turn_no": null,
+        "why": null,
+        "asked_again": null,
+        "opened_at": "2026-10-09T09:03:20.000000+00:00"
+      }
+    ],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {"event_type": "message: goal", "from_agent": "temper", "to_agent": "lead", "timestamp": "2026-10-09T08:00:00.900000+00:00", "data": {"message_id": "a0b1c2d3e4f5061728394a5b6c7d8e9f", "state": "consumed", "deliveries": 1, "preview": "Add a dark mode switch to the notes app's settings screen."}, "entry": "message", "message_kind": "goal"},
+        {"event_type": "share v6", "from_agent": "maker", "timestamp": "2026-10-09T09:02:38.000000+00:00", "data": {"version_no": 6, "commit_short": "6f7a8b9c0d1e", "note": "Reload test in test_settings.py", "files_changed": 1}, "entry": "share"},
+        {"event_type": "check-in at $100.40", "from_agent": "temper", "timestamp": "2026-10-09T09:03:20.000000+00:00", "data": {"wait_id": "9a8b7c6d5e4f30211a2b3c4d5e6f7a8b", "kind": "pause", "at_usd": 100.4}, "entry": "owner_wait"}
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {"at": "2026-10-09T08:00:00.300000+00:00", "kind": "start", "by": "owner", "source": "team_page", "request_id": "f-1", "detail": {"workflow": "team-trial-3f9a1c2e7b40", "trial_id": "3f9a1c2e7b40"}}
+    ],
+    "outcome": null
+  }
+}

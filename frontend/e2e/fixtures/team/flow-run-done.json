@@ -1,0 +1,169 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "6c1e2f40-3b7a-4d2e-9f81-2a5c7d9e0b13",
+    "trial_id": "3f9a1c2e7b40",
+    "workflow": "team-trial-3f9a1c2e7b40",
+    "run_status": "completed",
+    "kind": "flow",
+    "state": "done",
+    "phase": {
+      "name": "done",
+      "words": "Done",
+      "since": "2026-10-09T09:31:05.000000+00:00",
+      "running": 0,
+      "asked": false,
+      "reason": null
+    },
+    "started_at": "2026-10-09T08:00:00.410000+00:00",
+    "elapsed_s": 5465,
+    "last_activity_at": "2026-10-09T09:31:05.000000+00:00",
+    "cost_usd": 126.85,
+    "spend": {
+      "cost_usd": 126.85,
+      "pause_every_usd": 100.0,
+      "last_check_in_usd": 100.4,
+      "next_check_in_usd": 200.4,
+      "since_check_in_usd": 26.45,
+      "check_ins": 1
+    },
+    "you": {"count": 0, "first": null},
+    "counts": {"members": 4, "working": 0, "ready": 0, "idle": 0, "held": 0, "failed": 0, "ended": 4},
+    "account": null,
+    "trial": {
+      "goal": "Add a dark mode switch to the notes app's settings screen.\n\nRemember the choice between visits, and keep every colour readable.",
+      "leader": "lead",
+      "members": [
+        {"name": "lead", "role": "planner", "tools": ["Read", "Grep", "Glob", "Edit", "Write"], "leader": true},
+        {"name": "maker", "role": "builder", "tools": ["Read", "Edit", "Write"], "leader": false},
+        {"name": "styler", "role": "designer", "tools": ["Read", "Edit", "Write"], "leader": false},
+        {"name": "checker", "role": "reviewer", "tools": ["Read", "Grep"], "leader": false}
+      ],
+      "pause_every_usd": 100.0,
+      "max_parallel": 4,
+      "communication": "all",
+      "project": {"source": "/srv/example/projects/notes-app", "start_commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"},
+      "started_at": "2026-10-09T08:00:00.410000+00:00",
+      "started_by": "owner",
+      "request_id": "f-1"
+    },
+    "round": null,
+    "members": [
+      {
+        "name": "lead", "role": "planner", "leader": true, "activity": "ended",
+        "state": "ended", "since": "2026-10-09T09:31:05.000000+00:00", "turn_no": null,
+        "on": {"kind": "goal", "text": "Add a dark mode switch to the notes app's settings screen.", "from": "temper", "at": "2026-10-09T08:00:00.900000+00:00", "message_id": "a0b1c2d3e4f5061728394a5b6c7d8e9f"},
+        "idle_note": null, "ready_messages": 0, "last_sent": null,
+        "last_share": {"version_no": 8, "commit_short": "8b9c0d1e2f3a", "note": "Done: the switch, its colours and a reload test", "at": "2026-10-09T09:30:40.000000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 13, "cost_usd": 41.9, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 13, "state": "completed", "started_at": "2026-10-09T09:27:00.000000+00:00", "ended_at": "2026-10-09T09:30:40.000000+00:00", "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T09:31:05.000000+00:00"
+      },
+      {
+        "name": "maker", "role": "builder", "leader": false, "activity": "ended",
+        "state": "ended", "since": "2026-10-09T09:31:05.000000+00:00", "turn_no": null,
+        "on": {"kind": "work_request", "text": "Add a test that the choice survives a reload.", "from": "checker", "at": "2026-10-09T08:57:00.000000+00:00", "message_id": "0617283940a5b6c7d8e9f0a1b2c3d4e5"},
+        "idle_note": "Reload test is in; nothing else is mine.", "ready_messages": 0, "last_sent": null,
+        "last_share": {"version_no": 7, "commit_short": "7a8b9c0d1e2f", "note": "Reload test fixed for the first visit", "at": "2026-10-09T09:20:10.000000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 14, "cost_usd": 47.05, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 14, "state": "completed", "started_at": "2026-10-09T09:15:00.000000+00:00", "ended_at": "2026-10-09T09:20:30.000000+00:00", "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T09:20:30.000000+00:00"
+      },
+      {
+        "name": "styler", "role": "designer", "leader": false, "activity": "ended",
+        "state": "ended", "since": "2026-10-09T09:31:05.000000+00:00", "turn_no": null,
+        "on": {"kind": "work_request", "text": "Style the switch to match the dark colours.", "from": "lead", "at": "2026-10-09T08:30:00.000000+00:00", "message_id": "17283940a5b6c7d8e9f0a1b2c3d4e5f6"},
+        "idle_note": "Switch styled in v5; nothing else is mine.", "ready_messages": 0, "last_sent": null,
+        "last_share": {"version_no": 5, "commit_short": "5e6f7a8b9c0d", "note": "Switch styled in theme.css", "at": "2026-10-09T08:48:50.000000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 5, "cost_usd": 14.2, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 5, "state": "completed", "started_at": "2026-10-09T08:44:00.000000+00:00", "ended_at": "2026-10-09T08:49:00.000000+00:00", "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T08:49:00.000000+00:00"
+      },
+      {
+        "name": "checker", "role": "reviewer", "leader": false, "activity": "ended",
+        "state": "ended", "since": "2026-10-09T09:31:05.000000+00:00", "turn_no": null,
+        "on": {"kind": "work_request", "text": "Check v7: does the choice survive a reload now?", "from": "maker", "at": "2026-10-09T09:20:12.000000+00:00", "message_id": "283940a5b6c7d8e9f0a1b2c3d4e5f607"},
+        "idle_note": "v7 passes: the choice survives a reload.", "ready_messages": 0, "last_sent": null, "last_share": null,
+        "conflicts": [], "wait_id": null,
+        "turns": 8, "cost_usd": 23.7, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 8, "state": "completed", "started_at": "2026-10-09T09:21:00.000000+00:00", "ended_at": "2026-10-09T09:25:00.000000+00:00", "error": null, "ended_by": "no_tool_call"},
+        "last_activity_at": "2026-10-09T09:25:00.000000+00:00"
+      }
+    ],
+    "links": [],
+    "work": {
+      "latest": {"version_no": 8, "commit": "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c", "commit_short": "8b9c0d1e2f3a", "by": "lead", "at": "2026-10-09T09:30:40.000000+00:00", "note": "Done: the switch, its colours and a reload test", "files_changed": 0, "files_total": 7},
+      "shares": [
+        {"version_no": 8, "commit": "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c", "commit_short": "8b9c0d1e2f3a", "by": "lead", "at": "2026-10-09T09:30:40.000000+00:00", "note": "Done: the switch, its colours and a reload test", "files_changed": 0, "files_total": 7},
+        {"version_no": 7, "commit": "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b", "commit_short": "7a8b9c0d1e2f", "by": "maker", "at": "2026-10-09T09:20:10.000000+00:00", "note": "Reload test fixed for the first visit", "files_changed": 1, "files_total": 7}
+      ],
+      "shares_total": 8,
+      "summary": "Dark mode is a switch in settings; the choice is saved between visits; dark colours pass the contrast check; a test covers reloads."
+    },
+    "events_cursor": 233,
+    "open_waits": [],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {"event_type": "message: goal", "from_agent": "temper", "to_agent": "lead", "timestamp": "2026-10-09T08:00:00.900000+00:00", "data": {"message_id": "a0b1c2d3e4f5061728394a5b6c7d8e9f", "state": "consumed", "deliveries": 1, "preview": "Add a dark mode switch to the notes app's settings screen."}, "entry": "message", "message_kind": "goal"},
+        {"event_type": "closing", "from_agent": "lead", "timestamp": "2026-10-09T09:30:40.000000+00:00", "data": {"summary": "Dark mode is a switch in settings; the choice is saved between visits; dark colours pass the contrast check; a test covers reloads."}, "entry": "closing"},
+        {"event_type": "decision: done", "from_agent": "temper", "timestamp": "2026-10-09T09:31:05.000000+00:00", "data": {"decision": "done", "commit_short": "8b9c0d1e2f3a"}, "entry": "decision"}
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {"at": "2026-10-09T08:00:00.300000+00:00", "kind": "start", "by": "owner", "source": "team_page", "request_id": "f-1", "detail": {"workflow": "team-trial-3f9a1c2e7b40", "trial_id": "3f9a1c2e7b40"}},
+      {"at": "2026-10-09T09:05:00.000000+00:00", "kind": "answer", "by": "owner", "source": "team_page", "request_id": "f-2", "detail": {"wait_id": "9a8b7c6d5e4f30211a2b3c4d5e6f7a8b", "answer": "continue"}}
+    ],
+    "outcome": {
+      "decision": "done",
+      "reason": "Dark mode is a switch in settings; the choice is saved between visits; dark colours pass the contrast check; a test covers reloads.",
+      "owner_words": null,
+      "problems": [],
+      "by": null,
+      "at": "2026-10-09T09:31:05.000000+00:00",
+      "done": {
+        "decision": "done",
+        "commit": "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c",
+        "commit_short": "8b9c0d1e2f3a",
+        "summary": "Dark mode is a switch in settings; the choice is saved between visits; dark colours pass the contrast check; a test covers reloads.",
+        "version": {
+          "commit": "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c",
+          "files": [
+            {"path": "PLAN.md", "sha256": "5d41402abc4b2a76b9719d911017c592ae2e1f4b8c7d6e5f4a3b2c1d0e9f8a7b"},
+            {"path": "settings.py", "sha256": "7d793037a0760186574b0282f2f435e7a1b2c3d4e5f60718293a4b5c6d7e8f90"},
+            {"path": "test_settings.py", "sha256": "9e107d9d372bb6826bd81d3542a419d6a1b2c3d4e5f60718293a4b5c6d7e8f91"}
+          ]
+        },
+        "files": [
+          {"path": "PLAN.md", "sha256": "5d41402abc4b2a76b9719d911017c592ae2e1f4b8c7d6e5f4a3b2c1d0e9f8a7b"},
+          {"path": "settings.py", "sha256": "7d793037a0760186574b0282f2f435e7a1b2c3d4e5f60718293a4b5c6d7e8f90"},
+          {"path": "test_settings.py", "sha256": "9e107d9d372bb6826bd81d3542a419d6a1b2c3d4e5f60718293a4b5c6d7e8f91"}
+        ],
+        "shares": [
+          {"member": "lead", "commit": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", "order": 1},
+          {"member": "styler", "commit": "2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c", "order": 2},
+          {"member": "maker", "commit": "3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d", "order": 3},
+          {"member": "maker", "commit": "4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e", "order": 4},
+          {"member": "styler", "commit": "5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f", "order": 5},
+          {"member": "maker", "commit": "6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a", "order": 6},
+          {"member": "maker", "commit": "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b", "order": 7},
+          {"member": "lead", "commit": "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c", "order": 8}
+        ],
+        "turns": {"lead": 13, "maker": 14, "styler": 5, "checker": 8},
+        "cost_usd": 126.85,
+        "branch": {"name": "team/3f9a1c2e7b40", "made": true, "why": null},
+        "leader": "lead",
+        "project": {"source": "/srv/example/projects/notes-app", "commit": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c"}
+      }
+    }
+  }
+}

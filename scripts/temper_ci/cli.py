@@ -112,9 +112,9 @@ def cmd_status(_args) -> int:
         because = ", ".join(str(i)[:8] for i in owed.get("because") or []) or "not named"
         print(f"  owed:        {str(owed.get('sha') or '?')[:12]} is live but not yet recorded as "
               f"good: {'; '.join(str(n) for n in owed.get('parts') or [])} stepped aside for "
-              f"someone else's run ({because}), look {owed.get('step_asides') or 1} of "
-              f"{deploy_mod.OWED_TRIES}, since {owed.get('since')}; tried again once no run is "
-              f"going, before any newer deploy; look {deploy_mod.OWED_TRIES} fails it")
+              f"someone else's run ({because}), look {owed.get('step_asides') or 1}, "
+              f"since {owed.get('since')}; tried again after {deploy_mod.OWED_QUIET_SECONDS} "
+              "quiet seconds, before any newer deploy; step-asides never fail it")
     if deploy_mod.state_unreadable():
         print("  record lost: deploy.json cannot be read; the watcher keeps it aside on its next "
               "loop, and nothing counts as good until a commit passes its live check")

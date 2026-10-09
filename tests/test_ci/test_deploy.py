@@ -14,6 +14,7 @@ import html
 import json
 import subprocess
 import sys
+import time
 import types
 import urllib.request
 from collections.abc import Callable
@@ -47,8 +48,11 @@ def dep(tmp_path, monkeypatch):
     # No run is going, and a deploy need not sit out a quiet spell first: the tests of that
     # ("no restart under a run", at the end) say otherwise for themselves.
     _REAL["runs_going"] = deploy.runs_going
+    _REAL["quiet_seconds"] = deploy.QUIET_SECONDS
+    _REAL["owed_quiet_seconds"] = deploy.OWED_QUIET_SECONDS
     monkeypatch.setattr(deploy, "runs_going", lambda: [])
     monkeypatch.setattr(deploy, "QUIET_SECONDS", 0)
+    monkeypatch.setattr(deploy, "OWED_QUIET_SECONDS", 0)
     return deploy, tmp_path
 
 
@@ -208,9 +212,9 @@ def test_a_half_finished_revert_does_not_block_the_next_one(dep, monkeypatch):
 
     def fake_sh(*args, **kwargs):
         ran.append(args)
-        # Pretend the worktree could not be added, so revert_to returns early
-        # and we only inspect what it did to clear the way first.
-        if "add" in args:
+        # Pretend commit-tree failed, so revert_to returns early and we only
+        # inspect how it cleared the old worktree and branch first.
+        if "commit-tree" in args:
             return subprocess.CompletedProcess(args, 1, "", "already exists")
         return subprocess.CompletedProcess(args, 0, "", "")
 
@@ -222,6 +226,135 @@ def test_a_half_finished_revert_does_not_block_the_next_one(dep, monkeypatch):
     assert any("branch -q -D revert-bbbbbbbb" in c.replace("  ", " ") for c in joined), \
         "a stale branch of the same name is left in the way"
     assert any(c.startswith("rm -rf") for c in joined), "the old folder is left in the way"
+
+
+def test_the_revert_is_the_good_tree_on_master_without_any_commit_hook(dep, monkeypatch):
+    """Real git, with failing commit hooks: rollback takes seconds, not the full suite.
+    Gate, push and restart are stood in for; no server or third-party service is used.
+    """
+    deploy, tmp_path = dep
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args: str) -> str:
+        result = deploy.paths.sh("git", "-C", str(repo), *args, timeout=10)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+    git("init", "--quiet", "--initial-branch=master")
+    git("config", "user.name", "temper-ci test")
+    git("config", "user.email", "temper-ci-test@example.invalid")
+    git("config", "commit.gpgsign", "false")
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    git("config", "core.hooksPath", str(hooks))
+    (repo / "files.txt").write_text("last good's exact files\n", encoding="utf-8")
+    git("add", "files.txt")
+    git("commit", "--quiet", "-m", "Good")
+    good = git("rev-parse", "HEAD")
+    (repo / "files.txt").write_text("the bad deploy\n", encoding="utf-8")
+    git("commit", "--quiet", "-a", "-m", "Bad")
+    bad = git("rev-parse", "HEAD")
+    # Also prove a leftover from the old worktree-based revert cannot block this one.
+    old_work = deploy.paths.STATE / "revert"
+    git("worktree", "add", "--quiet", "-b", f"revert-{bad[:8]}", str(old_work), "master")
+    for name in ("pre-commit", "prepare-commit-msg", "commit-msg"):
+        hook = hooks / name
+        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+
+    monkeypatch.setattr(deploy, "MAIN_REPO", repo)
+    ran: list[tuple[str, ...]] = []
+
+    def sh(*args, **kwargs):
+        ran.append(args)
+        if args[:4] == ("git", "-C", str(repo), "push"):
+            return subprocess.CompletedProcess(args, 0, "", "")
+        return deploy.paths.sh(*args, **kwargs)
+
+    monkeypatch.setattr(deploy, "sh", sh)
+    asked: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(deploy.gate, "ask_for", lambda *a: asked.append(a))
+    checked: list[str] = []
+
+    def check(sha, branch):
+        # The real gate fetches branch heads from MAIN_REPO: this name must exist till merge.
+        assert git("rev-parse", f"refs/heads/revert-{bad[:8]}") == sha
+        assert branch == "master"
+        checked.append(sha)
+        return {"ok": True}
+
+    monkeypatch.setattr(deploy.gate, "check", check)
+    restarted: list[str] = []
+    monkeypatch.setattr(deploy, "ask_restart", lambda sha, why: restarted.append(sha))
+
+    began = time.monotonic()
+    out = deploy.revert_to(good, bad, "the live check failed: hooks")
+    seconds = time.monotonic() - began
+
+    assert out["ok"] is True and out["gate_ok"] is True and out["pushed"] is True
+    revert = out["revert"]
+    assert git("rev-parse", f"{revert}^{{tree}}") == git("rev-parse", f"{good}^{{tree}}")
+    assert git("rev-list", "--parents", "-n", "1", revert) == f"{revert} {bad}"
+    assert git("rev-parse", "master") == revert
+    assert git("log", "-1", "--format=%s") == f"Revert to {good[:12]}: the live check failed after {bad[:12]}"
+    assert "without git hooks" in git("log", "-1", "--format=%B")
+    assert asked == [(revert, "master", f"revert of {bad[:12]}")]
+    assert checked == restarted == [revert]
+    assert seconds < 20, f"the revert took {seconds:.1f}s with failing commit hooks"
+    assert not old_work.exists() and git("branch", "--list", "revert-*") == ""
+    assert [a[3] for a in ran if a[0] == "git" and a[3] in ("commit", "commit-tree")] == ["commit-tree"]
+    assert all("--no-verify" not in a for a in ran)
+
+
+@pytest.mark.parametrize("waiting", [False, True], ids=["immediate", "waiting"])
+@pytest.mark.parametrize("error", [
+    subprocess.TimeoutExpired(["git", "commit-tree"], 120),
+    RuntimeError("the revert broke"),
+], ids=["timeout", "exception"])
+def test_a_revert_exception_is_recorded_and_said_without_losing_its_wait(dep, monkeypatch, waiting, error):
+    deploy, _ = dep
+    good, bad = "4" * 40, "5" * 40
+    out = {"sha": bad, "ok": False, "restarted": True,
+           "live": {"ok": False, "parts": [{"name": "hooks", "ok": False}]}}
+    data = {"last_good": good, "deployed": bad, "last_deploy": out}
+    if waiting:
+        data["revert_waits"] = {"good": good, "bad": bad, "parts": "hooks", "since": "earlier"}
+    deploy.save(data)
+    monkeypatch.setattr(deploy, "master_sha", lambda: bad)
+    saved: list[dict] = []
+    save = deploy.save
+
+    def record(data):
+        saved.append(json.loads(json.dumps(data)))
+        save(data)
+
+    monkeypatch.setattr(deploy, "save", record)
+
+    def revert(*args):
+        assert ("revert_waits" in deploy.state()) is waiting, "the wait vanished before any outcome"
+        raise error
+
+    monkeypatch.setattr(deploy, "revert_to", revert)
+    said: list[str] = []
+    monkeypatch.setattr(deploy, "dm", said.append)
+    monkeypatch.setattr(deploy, "sh", lambda *a, **k: subprocess.CompletedProcess(a, 0, "5555555 Bad\n", ""))
+
+    result = deploy.watch_master() if waiting else deploy._go_back(bad, good, "hooks", out)
+
+    back = result["rollback"]
+    assert back == {"ok": False, "detail": f"{type(error).__name__}: {error}"[:600]}
+    data = deploy.state()
+    assert data["last_deploy"]["rollback"] == back
+    assert data["revert_outstanding"] == data["handled"] == data["deployed"] == bad
+    assert data["last_good"] == good
+    assert "revert_waits" not in data
+    assert all("revert_waits" in d or d.get("revert_outstanding") == bad for d in saved)
+    assert len(said) == 1 and "THE REVERT ITSELF DID NOT GO THROUGH" in said[0]
+    assert back["detail"] in said[0]
+    if waiting:
+        deploy.watch_master()
+        assert len(said) == 1, "the failed revert was retried or told twice"
 
 
 def test_it_will_not_go_back_to_a_commit_the_gate_never_passed(dep, monkeypatch):
@@ -993,8 +1126,8 @@ def test_an_owed_deploy_stays_live_but_is_not_the_one_to_go_back_to(dep, monkeyp
     assert "last deploy: 555555555555 live, not yet recorded as good: parts owed" in shown
     assert f"owed a gate answered through the API \u2014 owed, not started: {TEAM_RUN}\n" in shown
     assert ("owed:        555555555555 is live but not yet recorded as good: a gate answered through "
-            "the API stepped aside for someone else's run (c8626bf7), look 1 of 3, since ") in shown
-    assert "before any newer deploy; look 3 fails it" in shown
+            "the API stepped aside for someone else's run (c8626bf7), look 1, since ") in shown
+    assert "before any newer deploy; step-asides never fail it" in shown
     assert "last good:   444444444444" in shown
     # temper-ci's log has each step-aside, ids and names only (Security, reply to rm-e71dc2dc).
     from temper_ci import paths  # noqa: PLC0415
@@ -1002,7 +1135,7 @@ def test_an_owed_deploy_stays_live_but_is_not_the_one_to_go_back_to(dep, monkeyp
     logged = paths.LOG.read_text(encoding="utf-8")
     assert ("555555555555: a gate answered through the API stepped aside for c8626bf7; "
             "cancelled its own: none\n") in logged
-    assert "555555555555: live, but not yet recorded as good: owed (look 1 of 3)" in logged
+    assert "555555555555: live, but not yet recorded as good: owed (look 1)" in logged
 
 
 def _owing(deploy, monkeypatch, *, tried_as: dict, owed: object = None, master: str = "5" * 40) -> list[set]:
@@ -1031,6 +1164,8 @@ def test_what_is_owed_is_tried_once_no_run_is_going_and_then_the_deploy_is_good(
     tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": True, "detail": "passed this time"})
     monkeypatch.setattr(deploy, "dm", lambda text: pytest.fail(f"it told the owner: {text}"))
     monkeypatch.setattr(deploy, "QUIET_SECONDS", 120)
+    assert _REAL["owed_quiet_seconds"] == 300
+    monkeypatch.setattr(deploy, "OWED_QUIET_SECONDS", 300)
     clock = [0.0]
     monkeypatch.setattr(deploy, "_now", lambda: clock[0])
     going: list[dict] = [dict(_RUN)]
@@ -1042,20 +1177,22 @@ def test_what_is_owed_is_tried_once_no_run_is_going_and_then_the_deploy_is_good(
     going.clear()
     clock[0] = 1800.0
     deploy.watch_master()
-    clock[0] = 1919.0
-    deploy.watch_master()
-    assert tried == [], "it tried an owed part beside someone else's run, or before two quiet minutes"
-    # Only a step-aside counts toward the third look; waiting for quiet does not (Security).
+    for seconds in (119, 120, 180, 299):
+        clock[0] = 1800.0 + seconds
+        assert deploy.watch_master() is None
+    assert tried == [], "it tried an owed part beside someone else's run, or before five quiet minutes"
+    assert "300 seconds" in deploy.state()["hold"]["why"]
+    # Only a step-aside counts as a look; waiting for quiet does not.
     assert deploy.state()["owed"].get("step_asides", 1) == 1
 
-    clock[0] = 1920.0
+    clock[0] = 2100.0
     out = deploy.watch_master()
 
     assert tried == [{GATE}] and out["ok"] is True
     from temper_ci import paths  # noqa: PLC0415
 
     logged = paths.LOG.read_text(encoding="utf-8")
-    assert ("555555555555: no run is going, so trying again what its live check owes (look 2 of 3): "
+    assert ("555555555555: no run is going, so trying again what its live check owes (look 2): "
             f"{GATE}\n") in logged
     assert "555555555555: live and well\n" in logged
     data = deploy.state()
@@ -1110,27 +1247,35 @@ def _reverts(deploy, monkeypatch) -> tuple[list[tuple[str, str]], list[str]]:
     return reverted, said
 
 
-def test_the_third_look_in_a_row_that_ends_owed_fails_and_goes_back(dep, monkeypatch):
-    """Owed is never a pass (Security, reply to rm-e71dc2dc): a temper never quiet for long
-    enough must not keep an untried commit live for ever."""
+def test_third_fourth_and_later_step_asides_stay_owed_before_any_newer_deploy(dep, monkeypatch, capsys):
+    """An untried commit is not good, but busy time is not failure: keep trying it first."""
     deploy, _ = dep
+    from temper_ci import cli  # noqa: PLC0415
+
     tried = _owing(deploy, monkeypatch, tried_as={"name": GATE, "ok": None, "owed": True,
-                                                  "detail": f"owed, stopped part-way: {TEAM_RUN}"},
+                                                  "detail": f"owed, stopped part-way: {TEAM_RUN}",
+                                                  "because": [TEAM_ID]},
                    owed={"sha": "5" * 40, "parts": [GATE], "since": "earlier", "step_asides": 2,
-                         "because": [TEAM_ID]})
-    reverted, said = _reverts(deploy, monkeypatch)
+                         "because": [TEAM_ID]}, master="6" * 40)
+    monkeypatch.setattr(deploy, "deploy", lambda sha: pytest.fail("it deployed newer code over owed parts"))
+    monkeypatch.setattr(deploy, "revert_to", lambda *a: pytest.fail("it reverted an untried commit"))
+    monkeypatch.setattr(deploy, "dm", lambda text: pytest.fail(f"it told the owner about busy time: {text}"))
 
-    deploy.watch_master()
+    for count in range(3, 8):
+        out = deploy.watch_master()
+        assert out["ok"] is False and out["live"]["ok"] is True and out["live"]["owed"] == [GATE]
+        data = deploy.state()
+        assert data["owed"]["step_asides"] == count and data["owed"]["since"] == "earlier"
+        assert data["last_good"] == "4" * 40 and data["deployed"] == "5" * 40
+        assert not data.get("handled") and not data.get("revert_outstanding")
+        [part] = [p for p in data["last_deploy"]["live"]["parts"] if p["name"] == GATE]
+        assert part["ok"] is None and part["owed"] is True and not part["detail"].startswith("FAILED")
+        assert cli.main(["status"]) == 0
+        shown = capsys.readouterr().out
+        assert f"look {count}, since earlier" in shown and "step-asides never fail it" in shown
+        assert "FAILED" not in shown
 
-    assert tried == [{GATE}]
-    assert reverted == [("4" * 40, "5" * 40)]
-    data = deploy.state()
-    assert "owed" not in data and data["last_good"] == "4" * 40
-    [gate] = [p for p in data["last_deploy"]["live"]["parts"] if p["name"] == GATE]
-    assert gate["ok"] is False and "owed" not in gate
-    assert gate["detail"].startswith("FAILED: it stepped aside for someone else's run 3 looks in a row "
-                                     "at this commit, and look 3 fails")
-    assert len(said) == 1 and f"what failed: {GATE}\n" in said[0]
+    assert tried == [{GATE}] * 5
 
 
 @pytest.mark.parametrize("owed", [
@@ -1138,6 +1283,8 @@ def test_the_third_look_in_a_row_that_ends_owed_fails_and_goes_back(dep, monkeyp
     {"sha": "5" * 40, "parts": "a gate answered through the API"},
     {"sha": "5" * 40, "parts": []},
     {"parts": [GATE]},
+    {"sha": "5" * 40, "parts": [GATE], "step_asides": "garbled"},
+    {"sha": "5" * 40, "parts": [GATE], "step_asides": [1]},
 ])
 def test_a_record_of_what_is_owed_that_cannot_be_read_fails_it(dep, monkeypatch, owed):
     """Missing or unreadable is a failure, never a pass (Security, reply to rm-e71dc2dc)."""
@@ -1363,6 +1510,7 @@ def test_it_goes_once_no_run_has_been_going_for_two_minutes(dep, monkeypatch):
 
 def test_even_a_quiet_temper_is_watched_for_two_minutes_first(dep, monkeypatch):
     deploy, _ = dep
+    assert _REAL["quiet_seconds"] == 120
     clock, deployed = _moved(deploy, monkeypatch)
 
     deploy.watch_master()
@@ -1467,8 +1615,15 @@ def test_a_failed_live_check_goes_back_only_once_no_run_is_going(dep, monkeypatc
     assert deploy.watch_master() is None
     assert reverted == [], "it went back under a run"
 
+    monkeypatch.setattr(deploy, "QUIET_SECONDS", 120)
+    clock = [0.0]
+    monkeypatch.setattr(deploy, "_now", lambda: clock[0])
     going.clear()
-    deploy.watch_master()               # QUIET_SECONDS is 0 here: it goes at once
+    assert deploy.watch_master() is None
+    clock[0] = 119.0
+    assert deploy.watch_master() is None and reverted == []
+    clock[0] = 120.0
+    deploy.watch_master()               # a revert keeps the ordinary two-minute quiet
     assert reverted == [("4" * 40, "5" * 40)]
     assert "revert_waits" not in deploy.state()
     assert deploy.state()["deployed"] == "9" * 40

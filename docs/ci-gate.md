@@ -38,7 +38,7 @@ wt land                 (in a temper-ai worktree)
             │    (and the Pi pins: shown in the report, never counted)
             ├─ fine     → this commit becomes "the last good one"
             ├─ owed     → a part met someone else's run and stepped aside: temper
-            │             stays on it, and tries that part again once no run is going
+            │             stays on it, and retries after five quiet minutes (no retry cap)
             └─ not fine → a revert commit back to the last good one, through the same
                           gate; temper restarts onto it (waiting, like any deploy,
                           while a run is going), and you get a DM saying what failed
@@ -56,7 +56,9 @@ new master or for a revert, it asks the live temper which runs are not over yet
 (`pending`, `queued`, `running`, `waiting`, `cancelling`: the server's own list) and holds
 while there are any, or while the live temper cannot say. Once none is going, it waits two
 quiet minutes more, so the gap between one run and the next is not taken for a quiet
-temper; a run that starts meanwhile starts the two minutes over.
+temper; a run that starts meanwhile starts the two minutes over. After a live look's
+first step-aside, its owed retries need five quiet minutes (300 seconds) instead of two
+(120 seconds). First deploys and reverts still wait two minutes.
 
 * Lands that arrive while it holds go live together, in one deploy.
 * A run parked at a gate, or waiting on a person, is not over: it holds deploys for as
@@ -226,11 +228,16 @@ and a part under way cancels its own runs at once (it looks every 10 s). That pa
   of it that is missing or cannot be read fails what it owed; a `deploy.json` that cannot
   be read is kept aside, the owner is told once, and no commit counts as good until one
   passes its whole live check.
-* Once no run has gone for two minutes, the same wait as a deploy, temper-ci tries just
-  the owed parts again, before anything newer goes on top. When they pass, the commit is
-  good; one that fails fails the look like any other.
-* The third look in a row at one commit that ends owed fails it: a temper never quiet for
-  long enough does not keep an untried commit live for ever.
+* After the first step-aside, once no run has gone for five minutes (300 seconds),
+  temper-ci tries just the owed parts again, before anything newer goes on top. When they
+  pass, the commit is good; one that fails fails the look like any other. Back-to-back
+  runs left gaps of about 2.5–3 minutes: two quiet minutes did not leave room for the
+  look's own roughly 85 seconds of runs.
+* Step-asides never fail or revert a commit, whether the third, fourth or any later look.
+  The commit stays owed, not good, and `step_asides` keeps counting. A revert needs the
+  same quiet window as a fresh look, so trying beats reverting an untried commit blind.
+  This replaces the three-look limit: on 2026-10-09 it would have taken out 2a7c7f7d,
+  3bf5795d and e1ed6b35 simply because other legitimate runs kept starting.
 
 Nobody is told about an owed part: nothing is wrong yet. The free run can be owed the
 same way; the dashboard then only has to come up, and is looked at again, run and all,
@@ -251,9 +258,27 @@ If any of the parts that count fail (an owed part has not, yet):
 
 * it makes a revert commit back to the last good commit and takes it through the gate
   (which records it and passes it at once);
-* it restarts temper onto the revert: at once if no run is going, otherwise once none is;
+* it restarts temper onto the revert after two quiet minutes, like a first deploy;
 * it DMs the owner: what failed, which commits went out, what was taken back, or that
   the revert waits for runs.
+
+The revert is made with `git commit-tree <good>^{tree} -p <master sha> -m <message>`:
+its tree is byte-for-byte the last good commit's, and its parent is the current master.
+No worktree, `read-tree` or `git commit` is used, and no git hook runs to make it. This is
+not skipping checks of new files: those exact files passed the hook and GitHub's checks
+when they landed, and GitHub checks the revert after the push too. It still goes through
+`gate.ask_for` / `gate.check`, an ff-only merge in the main repo, push and `ask_restart`.
+A temporary branch keeps it fetchable by the gate until the merge. The old revert folder,
+worktree registration and branch are cleared first, so a leftover from older code cannot
+block it.
+
+Why no hook: `gate.log` at 2026-10-05T18:07:21Z (47711f99) and 2026-10-09T10:29:57Z
+(e1ed6b35) records the old `git commit` timing out after 120 seconds while the pre-commit
+hook ran the full suite. A rollback must not wait several minutes for tests or depend on
+test Postgres. Any exception or timeout in the revert now records `revert_outstanding`
+and the failed outcome in `deploy.json`, and DMs the owner with the reason and
+“THE REVERT ITSELF DID NOT GO THROUGH”. A waiting revert is removed only together with
+that saved outcome, never silently before it is tried.
 
 One revert at a time: if one is already outstanding, or no commit the gate passed is
 there to go back to, it DMs the owner and stops there.

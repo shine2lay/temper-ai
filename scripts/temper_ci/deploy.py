@@ -15,9 +15,10 @@ The look never runs beside someone else's run. A part that had to step aside for
 owed: temper stays on the new commit, but it is not recorded as the good one to go back
 to until the owed parts have passed, tried again once no run is going (settle_owed),
 before any newer commit is deployed on top. A part that fails then fails the look like
-any other. Owed is never a pass (Security, reply to rm-e71dc2dc): the third look in a
-row at a commit that ends owed fails it, and so does a record of what is owed that is
-missing or cannot be read.
+any other. Owed is never a pass (Security, reply to rm-e71dc2dc): a record of what is
+owed that is missing or cannot be read fails it. Step-asides never fail it, however
+many; after the first, retries wait for five quiet minutes instead of two. A revert
+needs quiet too, so trying an untried commit beats reverting it blind.
 
 That look is the only look at the code once it lands. There is one temper,
 the live one, and no test copy of it; GitHub's lint, types and tests are
@@ -63,9 +64,10 @@ LIVE_STATUSES = ("pending", "queued", "running", "waiting", "cancelling")
 # two minutes temper-deploy itself waited for, before runs lived in boxes.
 QUIET_SECONDS = 120
 LIVE_CHECK_RUNS = live_checks.FREE_RUN_WORKFLOW   # $0, script agents only; the dashboard shows it
-# The third look in a row at a commit that ends owed fails it: a temper that is never quiet for
-# long enough must not keep a commit live, untried, for ever (Security, reply to rm-e71dc2dc).
-OWED_TRIES = 3
+# After a step-aside, wait longer: back-to-back runs can leave gaps of 2.5–3 minutes,
+# just long enough for the ordinary wait but not for the look's own ~85 seconds of runs.
+# Step-asides never fail or revert a commit: a revert needs the same quiet as a fresh look.
+OWED_QUIET_SECONDS = 300
 # The name temper-ci's key goes by on the live temper (GET /api/guard lists it): the caller a
 # gate answered by the live look must be recorded under.
 CI_CALLER = "temper-ci"
@@ -163,13 +165,16 @@ def _said(going: list[dict] | None) -> str:
     return f"runs going on the live temper: {names}{more}"
 
 
-def held_for_runs(data: dict, what: str) -> bool:
+def held_for_runs(data: dict, what: str, quiet_seconds: int | None = None) -> bool:
     """Should the deploy (or revert) of ``what`` wait? Keeps ``data["hold"]`` up to date.
 
     It waits while any run is going, and while the live temper cannot say; then it goes once
-    the temper has been quiet for QUIET_SECONDS in a row. A run that starts meanwhile starts
-    the quiet over. A person running ``temper-ci deploy`` is not held: that is their call.
+    the temper has been quiet for ``quiet_seconds`` in a row (QUIET_SECONDS by default).
+    Owed retries use OWED_QUIET_SECONDS. A run that starts meanwhile starts the quiet over.
+    A person running ``temper-ci deploy`` is not held: that is their call.
     """
+    if quiet_seconds is None:
+        quiet_seconds = QUIET_SECONDS
     going = runs_going()
     hold = data.get("hold") or {}
     if going is None or going:
@@ -182,26 +187,26 @@ def held_for_runs(data: dict, what: str) -> bool:
                         "quiet_since": None}
         save(data)
         return True
-    if QUIET_SECONDS <= 0:
+    if quiet_seconds <= 0:
         if hold:
             data.pop("hold", None)
             save(data)
         return False
+    quiet_why = f"no run going; it goes once that has lasted {quiet_seconds} seconds"
     if hold.get("quiet_since") is None:
         data["hold"] = {"for": what, "since": hold.get("since") or stamp(),
-                        "why": f"no run going; it goes once that has lasted {QUIET_SECONDS} seconds",
-                        "quiet_since": _now()}
+                        "why": quiet_why, "quiet_since": _now()}
         save(data)
-        log(f"{what}: no run is going; it goes once that has lasted {QUIET_SECONDS} seconds")
+        log(f"{what}: no run is going; it goes once that has lasted {quiet_seconds} seconds")
         return True
-    if _now() - float(hold["quiet_since"]) < QUIET_SECONDS:
-        if hold.get("for") != what:
-            data["hold"] = {**hold, "for": what}
+    if _now() - float(hold["quiet_since"]) < quiet_seconds:
+        if hold.get("for") != what or hold.get("why") != quiet_why:
+            data["hold"] = {**hold, "for": what, "why": quiet_why}
             save(data)
         return True
     data.pop("hold", None)
     save(data)
-    log(f"{what}: no run for {QUIET_SECONDS} seconds; going ahead (held since {hold.get('since')})")
+    log(f"{what}: no run for {quiet_seconds} seconds; going ahead (held since {hold.get('since')})")
     return False
 
 
@@ -515,27 +520,33 @@ def revert_to(good: str, bad: str, reason: str) -> dict:
     sh("rm", "-rf", str(work), timeout=60)
     sh("git", "-C", str(MAIN_REPO), "worktree", "prune", timeout=60)
     sh("git", "-C", str(MAIN_REPO), "branch", "-q", "-D", f"revert-{bad[:8]}", timeout=60)
-    r = sh("git", "-C", str(MAIN_REPO), "worktree", "add", "--quiet", "-b",
-           f"revert-{bad[:8]}", str(work), "master", timeout=300)
-    if r.returncode:
-        out["detail"] = f"could not make a worktree to revert in: {r.stderr.strip()}"
-        return out
     try:
-        # The tree of the last good commit, as a new commit on top of master.
-        if sh("git", "-C", str(work), "read-tree", "-u", "--reset", good, timeout=120).returncode:
-            out["detail"] = f"could not take {good[:12]}'s files"
-            return out
+        # commit-tree makes the last good tree a new commit on top of master, without any
+        # git hook. This is not a skipped check of new files: these exact bytes already
+        # passed the hook and GitHub's checks when they landed, and GitHub checks the revert
+        # after the push too. A rollback must not wait minutes for tests or test Postgres.
         message = (f"Revert to {good[:12]}: the live check failed after {bad[:12]}\n\n"
                    f"{reason}\n\n"
                    "Put in by temper-ci. The files here are exactly those of "
                    f"{good[:12]}, which was live and well; the machine check "
-                   "records it and passes it at once.")
-        c = sh("git", "-C", str(work), "commit", "-q", "-a", "-m", message, timeout=120)
-        if c.returncode and "nothing to commit" not in (c.stdout + c.stderr):
+                   "records it and passes it at once.\n\n"
+                   "Made with git commit-tree, without git hooks: these exact files already "
+                   "passed the hook and GitHub's checks when they landed. GitHub checks this "
+                   "revert after the push too; a rollback must not wait on the full suite "
+                   "or test Postgres.")
+        c = sh("git", "-C", str(MAIN_REPO), "commit-tree", f"{good}^{{tree}}",
+               "-p", master_sha(), "-m", message, timeout=120)
+        if c.returncode:
             out["detail"] = f"could not make the revert commit: {(c.stderr or c.stdout).strip()}"
             return out
-        sha = sh("git", "-C", str(work), "rev-parse", "HEAD").stdout.strip()
+        sha = c.stdout.strip()
         out["revert"] = sha
+        # The gate's mirror fetches branch heads from MAIN_REPO. Keep the new commit on a
+        # temporary branch until it has been checked and master has fast-forwarded onto it.
+        ref = sh("git", "-C", str(MAIN_REPO), "branch", "-q", f"revert-{bad[:8]}", sha, timeout=60)
+        if ref.returncode:
+            out["detail"] = f"could not name the revert for the gate: {ref.stderr.strip()}"
+            return out
 
         # Through the same gate as everything else.
         gate.ask_for(sha, "master", f"revert of {bad[:12]}")
@@ -554,7 +565,6 @@ def revert_to(good: str, bad: str, reason: str) -> dict:
         out["ok"] = True
         return out
     finally:
-        sh("git", "-C", str(MAIN_REPO), "worktree", "remove", "--force", str(work), timeout=120)
         sh("git", "-C", str(MAIN_REPO), "branch", "-q", "-D", f"revert-{bad[:8]}", timeout=60)
 
 
@@ -660,8 +670,8 @@ def settle_owed(sha: str) -> dict:
 
     Their fresh results take their places in that look (with the dashboard's, when the free
     run was owed: the page is looked at again for its run). A part owed again stays owed,
-    and is tried at the next quiet, up to OWED_TRIES looks in all; one that fails fails the
-    look, as on the day.
+    however many step-asides, and is tried after five quiet minutes; one that fails fails
+    the look, as on the day.
     """
     data = state()
     owed = _dict(data.get("owed"))
@@ -674,7 +684,7 @@ def settle_owed(sha: str) -> dict:
     if good and not can_be_gone_back_to(good):
         good = ""
     log(f"{sha[:12]}: no run is going, so trying again what its live check owes (look "
-        f"{_owed_tries(owed) + 1} of {OWED_TRIES}): {'; '.join(sorted(names))}")
+        f"{_owed_tries(owed) + 1}): {'; '.join(sorted(names))}")
     fresh: dict = {"parts": [], "ok": True, "owed": [], "shots": list(live.get("shots") or [])}
     _with_runs(fresh, report.folder(sha) / "live", live_api(), ci_key_headers(), only=names)
     new = {str(p.get("name")): p for p in fresh["parts"]}
@@ -693,11 +703,8 @@ def settle_owed(sha: str) -> dict:
 
 def _owed_tries(owed: dict) -> int:
     """How many looks in a row at its commit have ended owed so far (a record from before
-    they were counted is its first). One that cannot be read counts as the last."""
-    try:
-        return max(1, int(owed.get("step_asides") or 1))
-    except (TypeError, ValueError):
-        return OWED_TRIES
+    they were counted is its first). The record check fails an unreadable count."""
+    return max(1, int(owed.get("step_asides") or 1))
 
 
 def _fail_owed(live: dict, why: str) -> None:
@@ -728,6 +735,10 @@ def _owed_record(data: dict) -> tuple[dict | None, str]:
         if (not isinstance(owed, dict) or not isinstance(owed.get("sha"), str) or not owed["sha"]
                 or not isinstance(parts, list) or not parts
                 or not all(isinstance(p, str) and p for p in parts)):
+            return None, "the record of what its live check owes cannot be read"
+        try:
+            _owed_tries(owed)
+        except (TypeError, ValueError):
             return None, "the record of what its live check owes cannot be read"
         return owed, ""
     last = _dict(data.get("last_deploy"))
@@ -775,10 +786,6 @@ def _decide(sha: str, out: dict, data: dict, good: str) -> dict:
     earlier = _dict(data.get("owed"))
     same = earlier.get("sha") == sha
     tries = (_owed_tries(earlier) if same else 0) + 1
-    if owed and live.get("ok") and tries >= OWED_TRIES:
-        _fail_owed(live, f"it stepped aside for someone else's run {tries} looks in a row at this "
-                         f"commit, and look {OWED_TRIES} fails")
-        owed = []
     out["ok"] = bool(live.get("ok")) and not owed
     data["last_deploy"] = out
     if out["ok"]:
@@ -810,8 +817,8 @@ def _decide(sha: str, out: dict, data: dict, good: str) -> dict:
         data["owed"] = {"sha": sha, "parts": owed, "since": earlier.get("since") if same else stamp(),
                         "step_asides": tries, "because": because}
         save(data)
-        log(f"{sha[:12]}: live, but not yet recorded as good: owed (look {tries} of "
-            f"{OWED_TRIES}), because someone else's run was going "
+        log(f"{sha[:12]}: live, but not yet recorded as good: owed (look {tries}), "
+            "because someone else's run was going "
             f"({', '.join(b[:8] for b in because) or 'not named'}): {'; '.join(owed)}. They are "
             "tried again once no run is going, before any newer deploy")
         return out
@@ -864,7 +871,10 @@ def _decide(sha: str, out: dict, data: dict, good: str) -> dict:
 
 def _go_back(sha: str, good: str, bad_parts: str, out: dict) -> dict:
     """Revert master to ``good`` after ``sha`` failed its live check, and tell the owner."""
-    back = revert_to(good, sha, f"the live check failed: {bad_parts}")
+    try:
+        back = revert_to(good, sha, f"the live check failed: {bad_parts}")
+    except Exception as exc:  # noqa: BLE001 - every failed revert must be recorded and said
+        back = {"ok": False, "detail": f"{type(exc).__name__}: {exc}"[:600]}
     out["rollback"] = back
     data = state()
     data["last_deploy"] = out
@@ -872,6 +882,10 @@ def _go_back(sha: str, good: str, bad_parts: str, out: dict) -> dict:
     data["handled"] = sha
     # Cleared once a deploy is well again; until then, no second revert.
     data["revert_outstanding"] = "" if back.get("ok") else (back.get("revert") or sha)
+    # Consume a waiting revert only together with its saved outcome, never before trying it.
+    # A timeout used to lose the wait and escape before recording or telling the owner.
+    if _dict(data.get("revert_waits")).get("bad") == sha:
+        data.pop("revert_waits", None)
     save(data)
     subjects = sh("git", "-C", str(MAIN_REPO), "log", "--format=%h %s", f"{good}..{sha}").stdout.strip()
     dm("temper: the live check failed after the last land, so master has been put back.\n"
@@ -921,8 +935,6 @@ def watch_master() -> dict | None:
     if waits:
         if held_for_runs(data, f"the revert of {sha[:12]}"):
             return None
-        data.pop("revert_waits", None)
-        save(data)
         return _go_back(sha, waits.get("good") or "", waits.get("parts") or "",
                         dict(data.get("last_deploy") or {"sha": sha}))
     owed, problem = _owed_record(data)
@@ -930,9 +942,10 @@ def watch_master() -> dict | None:
         return _owed_lost(data, problem)
     if owed:
         # Before anything newer goes on top, even when master has moved on (Security, reply
-        # to rm-e71dc2dc): temper is still on the owed commit. The same wait as a deploy:
-        # the owed parts start runs of their own, and never beside someone else's.
-        if held_for_runs(data, f"what the live check of {owed['sha'][:12]} owes"):
+        # to rm-e71dc2dc): temper is still on the owed commit. After its first step-aside,
+        # leave a longer quiet window: the owed parts start runs of their own, and never
+        # beside someone else's. Legacy owed records without a count are the first look.
+        if held_for_runs(data, f"what the live check of {owed['sha'][:12]} owes", OWED_QUIET_SECONDS):
             return None
         return settle_owed(owed["sha"])
     if not sha or data.get("deployed") == sha:

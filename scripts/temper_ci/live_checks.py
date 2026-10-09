@@ -37,9 +37,8 @@ runs at once. Either way that part is owed: not passed, and not failed. Owed onl
 temper-ci's own record, though (Security, reply to rm-e71dc2dc): the runs it cancelled
 have ended, and none of them has a box left up; a part that cannot show both fails. The
 deploy stays live but is not recorded as good, and temper-ci tries the owed parts again
-once no run is going, before any newer deploy (deploy.settle_owed); only then does the
-commit become the one to go back to. The third look in a row at a commit that ends owed
-fails it.
+after five quiet minutes, before any newer deploy (deploy.settle_owed); only then does
+the commit become the one to go back to. Step-asides never fail it, however many.
 
 A part that fails counts like the live look's other parts: the live check fails, and the
 deploy is reverted.

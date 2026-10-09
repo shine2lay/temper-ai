@@ -1,25 +1,31 @@
 {
-  "route": "GET /api/team/runs/{execution_id}/events?after=0&limit=15",
+  "route": "GET /api/team/runs/{execution_id}/events?after=0&limit=21",
   "status": 200,
   "body": {
     "events": [
       {"seq": 1, "at": "2026-10-09T08:00:00.900000+00:00", "kind": "message", "member": "lead", "from": "temper", "from_kind": "temper", "to": "lead", "message_kind": "goal", "text": "Add a dark mode switch to the notes app's settings screen.", "message_id": "a0b1c2d3e4f5061728394a5b6c7d8e9f"},
-      {"seq": 2, "at": "2026-10-09T08:00:03.120000+00:00", "kind": "turn_start", "member": "lead", "turn_no": 1},
-      {"seq": 3, "at": "2026-10-09T08:00:03.300000+00:00", "kind": "turn_start", "member": "maker", "turn_no": 1},
-      {"seq": 4, "at": "2026-10-09T08:00:03.410000+00:00", "kind": "turn_start", "member": "styler", "turn_no": 1},
-      {"seq": 5, "at": "2026-10-09T08:00:03.520000+00:00", "kind": "turn_start", "member": "checker", "turn_no": 1},
-      {"seq": 6, "at": "2026-10-09T08:01:40.000000+00:00", "kind": "idle", "member": "checker", "note": "Nothing to check until a version has the switch."},
-      {"seq": 7, "at": "2026-10-09T08:01:40.100000+00:00", "kind": "turn_end", "member": "checker", "turn_no": 1, "ended": "completed", "ended_by": null, "cost_usd": 0.62, "tool_calls": 3},
-      {"seq": 8, "at": "2026-10-09T08:05:12.000000+00:00", "kind": "share", "member": "lead", "version_no": 1, "commit_short": "1a2b3c4d5e6f", "note": "Plan in PLAN.md: who does what", "files_changed": 1},
-      {"seq": 9, "at": "2026-10-09T08:05:39.000000+00:00", "kind": "turn_end", "member": "lead", "turn_no": 1, "ended": "completed", "ended_by": null, "cost_usd": 3.4, "tool_calls": 11},
-      {"seq": 10, "at": "2026-10-09T08:05:40.000000+00:00", "kind": "message", "member": "maker", "from": "lead", "from_kind": "member", "to": "maker", "message_kind": "work_request", "text": "Build the switch in settings.py and save the choice between visits.", "message_id": "c2d3e4f5061728394a5b6c7d8e9f0a1b"},
-      {"seq": 11, "at": "2026-10-09T08:05:41.000000+00:00", "kind": "message", "member": "checker", "from": "lead", "from_kind": "member", "to": "checker", "message_kind": "work_request", "text": "Check each version with the switch: does the choice survive a reload?", "message_id": "3940a5b6c7d8e9f0a1b2c3d4e5f60718"},
-      {"seq": 12, "at": "2026-10-09T08:05:41.200000+00:00", "kind": "wake", "member": "checker", "by": "lead"},
-      {"seq": 13, "at": "2026-10-09T08:12:05.000000+00:00", "kind": "conflict", "member": "styler", "at_step": "sync", "paths": [{"path": "theme.css", "kind": "markers"}]},
-      {"seq": 14, "at": "2026-10-09T08:12:30.000000+00:00", "kind": "turn_end", "member": "maker", "turn_no": 1, "ended": "completed", "ended_by": "no_tool_call", "cost_usd": 1.15, "tool_calls": 0},
-      {"seq": 15, "at": "2026-10-09T08:12:30.100000+00:00", "kind": "idle", "member": "maker", "note": null}
+      {"seq": 2, "at": "2026-10-09T08:00:01.000000+00:00", "kind": "idle", "member": "maker", "note": null, "reason": "start"},
+      {"seq": 3, "at": "2026-10-09T08:00:01.000000+00:00", "kind": "idle", "member": "styler", "note": null, "reason": "start"},
+      {"seq": 4, "at": "2026-10-09T08:00:01.000000+00:00", "kind": "idle", "member": "checker", "note": null, "reason": "start"},
+      {"seq": 5, "at": "2026-10-09T08:00:03.120000+00:00", "kind": "turn_start", "member": "lead", "turn_no": 1, "retry_of": null},
+      {"seq": 6, "at": "2026-10-09T08:05:12.000000+00:00", "kind": "share", "member": "lead", "version_no": 1, "commit_short": "1a2b3c4d5e6f", "note": "Plan in PLAN.md: who does what", "files_changed": 1},
+      {"seq": 7, "at": "2026-10-09T08:05:39.000000+00:00", "kind": "turn_end", "member": "lead", "turn_no": 1, "ended": "completed", "ended_by": null, "cost_usd": 3.4, "tool_calls": 11},
+      {"seq": 8, "at": "2026-10-09T08:05:40.000000+00:00", "kind": "message", "member": "maker", "from": "lead", "from_kind": "member", "to": "maker", "message_kind": "work_request", "text": "Build the switch in settings.py and save the choice between visits.", "message_id": "c2d3e4f5061728394a5b6c7d8e9f0a1b"},
+      {"seq": 9, "at": "2026-10-09T08:05:40.100000+00:00", "kind": "wake", "member": "maker", "by": "lead"},
+      {"seq": 10, "at": "2026-10-09T08:05:41.000000+00:00", "kind": "message", "member": "styler", "from": "lead", "from_kind": "member", "to": "styler", "message_kind": "work_request", "text": "Pick dark colours that stay readable, in theme.css.", "message_id": "e4f5061728394a5b6c7d8e9f0a1b2c3d"},
+      {"seq": 11, "at": "2026-10-09T08:05:41.100000+00:00", "kind": "wake", "member": "styler", "by": "lead"},
+      {"seq": 12, "at": "2026-10-09T08:05:41.500000+00:00", "kind": "turn_start", "member": "lead", "turn_no": 2, "retry_of": null},
+      {"seq": 13, "at": "2026-10-09T08:05:42.000000+00:00", "kind": "turn_start", "member": "maker", "turn_no": 1, "retry_of": null},
+      {"seq": 14, "at": "2026-10-09T08:05:42.100000+00:00", "kind": "turn_start", "member": "styler", "turn_no": 1, "retry_of": null},
+      {"seq": 15, "at": "2026-10-09T08:09:10.000000+00:00", "kind": "turn_end", "member": "styler", "turn_no": 1, "ended": "failed", "ended_by": null, "cost_usd": 0.8, "tool_calls": 4},
+      {"seq": 16, "at": "2026-10-09T08:09:10.200000+00:00", "kind": "turn_start", "member": "styler", "turn_no": 2, "retry_of": 1},
+      {"seq": 17, "at": "2026-10-09T08:12:05.000000+00:00", "kind": "conflict", "member": "styler", "at_step": "sync", "paths": [{"path": "theme.css", "kind": "markers"}]},
+      {"seq": 18, "at": "2026-10-09T08:12:30.000000+00:00", "kind": "turn_end", "member": "maker", "turn_no": 1, "ended": "completed", "ended_by": "no_tool_call", "cost_usd": 1.15, "tool_calls": 0},
+      {"seq": 19, "at": "2026-10-09T08:12:30.100000+00:00", "kind": "idle", "member": "maker", "note": null, "reason": "no_tool_call"},
+      {"seq": 20, "at": "2026-10-09T08:14:00.000000+00:00", "kind": "limit", "member": null, "resumes_at": "2026-10-09T14:00:00+00:00", "resets_known": true},
+      {"seq": 21, "at": "2026-10-09T14:00:02.000000+00:00", "kind": "limit_over", "member": null}
     ],
-    "cursor": 15,
+    "cursor": 21,
     "more": true
   }
 }

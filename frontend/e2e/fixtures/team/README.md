@@ -82,10 +82,10 @@ from a model-free free-flowing team like the files above.
 
 | File | What it shows |
 | --- | --- |
-| `flow-run-working` | `GET /api/team/runs/{id}` of a free-flowing team: two members working, one idle, one held by its own recovery wait while the others carry on; three shares in the shared version. |
+| `flow-run-working` | `GET /api/team/runs/{id}` of a free-flowing team: two members working (with their tool counts), one idle, one held by its own recovery wait after Temper's one automatic retry failed too, while the others carry on; three shares in the shared version. |
 | `flow-run-check-in` | The $100 check-in asked: no turn running, the pause wait open at team level. |
 | `flow-run-done` | Done counted: the leader's summary, the shared version's shares in order, turns per member. |
-| `flow-events` | `GET /api/team/runs/{id}/events?after=0`: the start of a run's event feed (cursor paging). |
+| `flow-events` | `GET /api/team/runs/{id}/events?after=0`: the start of a run's event feed (cursor paging): only the leader has the goal and the others wait for its first message, a failed turn retried by itself, a conflict, a turn with no tool call, and the usage limit with the team carrying on after it. |
 
 ## Derived
 

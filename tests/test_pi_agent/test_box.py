@@ -563,33 +563,103 @@ for line in sys.stdin:
 """
 
 
-def _alive(pid: int) -> bool:
+def _process_stat(pid: int) -> tuple[str, int] | None:
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    # A zombie still answers kill(0); read its state.
-    try:
-        return Path(f"/proc/{pid}/stat").read_text().split()[2] != "Z"
-    except OSError:
-        return False
+        raw = Path(f"/proc/{pid}/stat").read_text()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    # comm is parenthesized but may itself contain spaces and ')' characters.
+    fields = raw.rsplit(")", 1)[1].split()
+    return fields[0], int(fields[19])  # state (field 3), starttime (field 22)
 
 
-def test_closing_a_worker_stops_everything_it_started(tmp_path):
-    seen: list[dict] = []
+def _alive(pid: int, start_time: int) -> bool:
+    stat = _process_stat(pid)
+    # Z (zombie) and X/x (dead) cannot execute. A reused PID is not our child.
+    return stat is not None and stat[1] == start_time and stat[0] not in {"Z", "X", "x"}
+
+
+def _assert_grandchild_stopped(pid: int, start_time: int) -> None:
+    deadline = time.monotonic() + 5
+    alive = _alive(pid, start_time)
+    while alive and time.monotonic() < deadline:
+        time.sleep(0.05)
+        alive = _alive(pid, start_time)
+    # Keep the terminal observation: re-reading a bare PID can mistake a dead
+    # process's Z -> X transition or a replacement process for a resurrection.
+    assert not alive, "nothing the worker started outlives it"
+
+
+@pytest.fixture
+def fake_worker_rpc(tmp_path):
+    kill_group = os.killpg  # teardown must work even when a test suppresses cleanup
     rpc = Rpc([sys.executable, "-c", CHILD], cwd=str(tmp_path),
-              env={"PATH": os.environ.get("PATH", "")}, event_sink=seen.append)
+              env={"PATH": os.environ.get("PATH", "")}, event_sink=lambda _record: None)
+    try:
+        yield rpc
+    finally:
+        try:
+            kill_group(rpc.process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        rpc.close(wait=5)
+        for thread in rpc.threads:
+            thread.join(timeout=3)
+        assert all(not thread.is_alive() for thread in rpc.threads)
+
+
+def test_closing_a_worker_stops_everything_it_started(fake_worker_rpc):
+    rpc = fake_worker_rpc
     hello = rpc.next(time.monotonic() + 10)
     grandchild = hello["grandchild"]
+    stat = _process_stat(grandchild)
+    assert stat is not None and _alive(grandchild, stat[1]), "the grandchild started alive"
     assert rpc.command("get_state", 10)["success"] is True
     assert os.getpgid(grandchild) == rpc.process.pid, "the worker has its own process group"
     receipt = rpc.close(wait=5)
     assert receipt["exit_code"] == 0
-    deadline = time.monotonic() + 5
-    while _alive(grandchild) and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert not _alive(grandchild), "nothing the worker started outlives it"
+    _assert_grandchild_stopped(grandchild, stat[1])
+    assert receipt["reader_threads_stopped"] is True
     assert "group_leftovers_killed" in receipt["escalation"]
     with pytest.raises(RpcError, match="command_pipe_closed"):
         rpc.send("prompt", message="late")
-    _ = signal
+
+
+def test_cleanup_regression_rejects_a_surviving_original_grandchild(fake_worker_rpc, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "killpg", lambda _pid, _sig: None)
+        with pytest.raises(AssertionError, match="nothing the worker started outlives it"):
+            test_closing_a_worker_stops_everything_it_started(fake_worker_rpc)
+
+
+@pytest.mark.parametrize("state, start_time, expected", [
+    ("S", 1234, True), ("Z", 1234, False), ("X", 1234, False), ("x", 1234, False),
+    ("S", 5678, False),
+], ids=["living", "zombie", "dead", "dead_lowercase", "reused_pid"])
+def test_cleanup_observer_tracks_identity_and_terminal_states(monkeypatch, state, start_time, expected):
+    # Exactly stat fields 3..22, with a deliberately awkward comm (field 2).
+    raw = f"42 (fake worker) name) {state} " + "0 " * 18 + str(start_time)
+    monkeypatch.setattr(Path, "read_text", lambda _path: raw)
+    assert _alive(42, 1234) is expected
+
+
+def test_cleanup_observer_requires_a_readable_stat_or_a_gone_process(monkeypatch):
+    def gone(_path):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(Path, "read_text", gone)
+    assert _alive(42, 1234) is False
+
+    def unreadable(_path):
+        raise PermissionError
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+    with pytest.raises(PermissionError):
+        _alive(42, 1234)
+
+
+def test_cleanup_wait_keeps_its_terminal_observation(monkeypatch):
+    observations = iter([False, True])
+    monkeypatch.setattr(sys.modules[__name__], "_alive", lambda _pid, _start: next(observations))
+    _assert_grandchild_stopped(42, 1234)
+    assert next(observations) is True, "the dead child must not be checked for resurrection"

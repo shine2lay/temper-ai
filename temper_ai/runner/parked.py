@@ -173,6 +173,56 @@ def timer_due(attempt: dict | None) -> bool:
     return bool(at is not None and utcnow() >= at)
 
 
+def repark_timer_refusal(execution_id: str, run_row: dict, refusal: Any, *,
+                         resume_of: str | None) -> bool:
+    """A due usage wake whose temporary start check failed stays parked (FLOW M6).
+
+    Bind to the exact claimed attempt, not caller-supplied timer metadata. Record a new
+    waiting attempt with the same checkpoint/wait and a later check time. No member is
+    claimed and no owner's answer is consumed. The CLI leaves its transport handle for the
+    ordinary reaper to confirm gone before the run's row becomes box-free waiting.
+    """
+    if not getattr(refusal, "retryable", False) or not resume_of:
+        return False
+    from temper_ai.pi_agent.accounts import LIMIT_RECHECK_S
+    from temper_ai.runner import pi_lane
+    from temper_ai.runner.resume import find_latest_workflow_event
+
+    attempt = find_latest_workflow_event(execution_id)
+    if (attempt is None or str(attempt.get("id")) != resume_of
+            or attempt.get("status") != CARRIED_ON or not timer_due(attempt)):
+        return False
+    note = {k: v for k, v in (_note(attempt) or {}).items() if k != "carried_on_at"}
+    note["wake_at"] = (utcnow() + timedelta(seconds=LIMIT_RECHECK_S)).isoformat()
+    note["start_refused"] = refusal.kind
+    if not pi_lane.record_refusal(execution_id, run_row, refusal,
+                                  resume_of=resume_of, parked=note):
+        return False
+    # Keep the existing glance fields truthful too: this is a later check, not a reset or
+    # verified room. Preserve known scopes and any owner's question; never spend its answer.
+    if note.get("path") and note.get("wait_id"):
+        from temper_ai.database import get_database
+        from temper_ai.pi_agent.ledger import Ledger
+
+        try:
+            ledger = Ledger(get_database().engine)
+            for wait in ledger.open_waits(execution_id, str(note["path"])):
+                if wait["wait_id"] != note["wait_id"] or wait["kind"] != "limit":
+                    continue
+                subject = wait["subject"] or {}
+                ledger.update_limit_wait(wait["wait_id"], subject, {
+                    **subject, "how": "recheck", "resumes_at": note["wake_at"],
+                    "usage_verified": False, "usage_status": "unavailable",
+                    "usage_reason": "start_check_unavailable", "usage_checked_at": None,
+                    "usage": {"status": "unavailable", "reason": "start_check_unavailable"},
+                })
+                break
+        except Exception as exc:  # noqa: BLE001 - recorded waiting remains safe on readback failure
+            logger.warning("Run %s: could not update its limit check time (%s)",
+                           execution_id, type(exc).__name__)
+    return True
+
+
 def carry_on(execution_id: str, *, start: Callable[[str], Any], by: str) -> bool:
     """Carry a parked run on if the owner has answered where it waits. Returns whether it did.
 

@@ -3,8 +3,9 @@ model-free, every member a scripted Pi.
 
 The leader gets the goal, splits it and sends each member its part; the members wake on that
 message and work AT THE SAME TIME, each in its own copy, sharing into the team's one shared
-version. A member nobody gives work stays idle. At $100 of spend the team checks in with the
-owner; nothing new starts until he answers. The leader calls done once every part is shared;
+version. A member nobody gives work stays idle. One worker asks the owner and only that
+worker waits, then takes the answer on its next turn. At $100 of spend the team checks in
+with the owner; nothing new starts until he answers. The leader calls done once every part is shared;
 Temper counts it and records the shared version as the team's result.
 """
 
@@ -33,6 +34,7 @@ WORKERS = ("ana", "ben", "cal")
 #: What each turn costs: the leader's first turn $5, every worker turn $25, the rest nothing.
 #: 5 + 6 x 25 = $155, so the team checks in once, at $100.
 COST = {("lead", 1): 5.0, **{(w, n): 25.0 for w in WORKERS for n in (1, 2)}}
+# Ana's second turn asks the owner; its third turn finishes the part at no extra cost.
 
 
 def lead_turn() -> list[dict]:
@@ -51,11 +53,17 @@ def lead_turn() -> list[dict]:
 def worker_turns(name: str, barrier: threading.Barrier) -> list[list[dict]]:
     def together(_box: Any, _message: str) -> None:
         barrier.wait()  # breaks (and fails the turn) unless all three run at once
-    return [[ls.write(f"{name}.md", f"# {name}\n"), {"call": together},
-             ls.op("share", note=f"{name} part 1"), ts.reply_to_first("part 1 shared",
-                                                                       sender="lead")],
-            [ls.write(f"{name}-2.md", f"# {name} 2\n"), ls.op("share", note=f"{name} part 2"),
-             ts.send("lead", f"{name}: part 2 shared", "info"), ls.op("idle")]]
+    first = [ls.write(f"{name}.md", f"# {name}\n"), {"call": together},
+             ls.op("share", note=f"{name} part 1"),
+             ts.reply_to_first("part 1 shared", sender="lead")]
+    last = [ls.write(f"{name}-2.md", f"# {name} 2\n"), ls.op("share", note=f"{name} part 2"),
+            ts.send("lead", f"{name}: part 2 shared", "info"), ls.op("idle")]
+    if name == "ana":
+        def owner_answer_seen(_box: Any, message: str) -> None:
+            assert any(h["kind"] == "owner_reply" for h in ts.headers(message))
+        return [first, [ls.op("ask_owner", question="May I finish the second part?")],
+                [{"call": owner_answer_seen}, *last]]
+    return [first, last]
 
 
 @pytest.fixture
@@ -84,7 +92,8 @@ def costs(monkeypatch):
 
 def test_free_flowing_team_works_at_once_shares_one_version_checks_in_and_finishes(
         led, box, run_id, tmp_path, monkeypatch, costs):
-    owner = ls.Owner(led, "continue").install(monkeypatch)
+    # Both the member's question and the check-in get an answer; either may come first.
+    owner = ls.Owner(led, "continue", "continue").install(monkeypatch)
     src = ls.project(tmp_path / "proj")
     barrier = threading.Barrier(len(WORKERS), timeout=30)
     ts.SCRIPTS["lead"] = ls.Turns(lead_turn)
@@ -137,7 +146,7 @@ def test_free_flowing_team_works_at_once_shares_one_version_checks_in_and_finish
     # the three workers' first turns ran at the same time (the barrier held all three)
     firsts = [by[w][0] for w in WORKERS]
     assert max(t["started_at"] for t in firsts) < min(t["ended_at"] for t in firsts)
-    assert {w: len(by[w]) for w in WORKERS} == {w: 2 for w in WORKERS}
+    assert {w: len(by[w]) for w in WORKERS} == {"ana": 3, "ben": 2, "cal": 2}
     assert by["spare"] == []  # never messaged: never takes a turn, not even an empty one
     spare = next(p for p in snap["participants"] if p["member"] == "spare")
     assert spare["idle_reason"] == "start" and spare["idle_note"] is None
@@ -172,7 +181,15 @@ def test_free_flowing_team_works_at_once_shares_one_version_checks_in_and_finish
     assert pause["subject"]["at_usd"] == 100.0 and pause["decision"]["answer"] == "continue"
     assert not [t for t in snap["turns"]
                 if pause["opened_at"] < t["started_at"] < pause["decided_at"]]
-    assert [a["header"] for a in owner.asked] == ["pause-at-$100"]
+    asked = {a["wait_id"]: a for a in owner.asked}
+    assert sorted(a["header"] for a in asked.values()) == ["owner", "pause-at-$100"]
+    (question,) = [w for w in ls.table(led, waits, run_id) if w["kind"] == "owner"]
+    assert question["subject"]["member"] == "ana" and question["decision"]["answer"] == "given"
+    assert by["ana"][1]["turn_id"] == question["subject"]["turn_id"]
+    assert by["ana"][2]["started_at"] >= question["decided_at"]
+    assert not [w for w in ls.table(led, waits, run_id)
+                if w["kind"] == "owner" and (w["subject"] or {}).get("participant_id")
+                != question["subject"]["participant_id"]]
     # every turn's spend counts, and the team's total is their sum
     assert team.usage()["cost_usd"] == pytest.approx(155.0)
     assert record["cost"]["cost_usd"] == pytest.approx(155.0)
@@ -185,7 +202,12 @@ def test_free_flowing_team_works_at_once_shares_one_version_checks_in_and_finish
 
     # Design G1-G5: real run/event serializers, using this happy path's actual rows.
     paused = next(r for r in at_pause if r["phase"]["name"] == "check_in")
-    assert paused["you"]["count"] == 1
+    seen_at = datetime.fromisoformat(paused["as_of"])
+    member_question_open = (datetime.fromisoformat(question["opened_at"]) <= seen_at
+                            < datetime.fromisoformat(question["decided_at"]))
+    expected_questions = 1 + int(member_question_open)  # check-in, plus Ana if still held
+    assert paused["you"]["count"] == expected_questions
+    assert len(paused["open_waits"]) == expected_questions
     assert paused["open_waits"][0]["words"] == paused["you"]["first"]["words"]
     assert "\n" not in paused["you"]["first"]["words"]
     assert len(paused["you"]["first"]["words"]) <= 160

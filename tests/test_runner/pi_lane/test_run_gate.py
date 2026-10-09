@@ -389,5 +389,5 @@ def test_a_commit_unreadable_after_the_preflight_refuses_and_records_nothing(gat
                         lambda root=None: (None, "there is no /app/.git"))
     assert gate.check("pi") == pi_lane.Refusal(
         "pi_preflight", "The Pi lane's checks before the run failed: commit_unreadable: "
-                        "there is no /app/.git")
+                        "there is no /app/.git", retryable=True)
     assert commits("pi") == []

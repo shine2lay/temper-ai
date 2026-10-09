@@ -397,7 +397,7 @@ class PiHost(AgentABC):
                           # The role is bound once, in the session's first start; later
                           # starts reopen that session and check the binding is still there.
                           first_start=not session_started(self.pdir),
-                          rewind_allowed=self._owner_decided_before(turn))
+                          rewind_allowed=self._session_rewind_allowed_before(turn))
         runner = type(self).turn_runner or run_turn
         report = runner(self.box, req, self.ledger)
         self.turns_run += 1
@@ -443,8 +443,8 @@ class PiHost(AgentABC):
             return refusal_problem(self.account_slot, "the step")
         return error
 
-    def _owner_decided_before(self, turn: dict) -> bool:
-        return owner_decided_before(self.ledger, turn)
+    def _session_rewind_allowed_before(self, turn: dict) -> bool:
+        return session_rewind_allowed_before(self.ledger, turn)
 
     def _close_turn_event(self, turn: dict, why: str) -> None:
         rec = self.ctx.event_recorder
@@ -792,13 +792,20 @@ def prepare_participant(box: BoxConfig, pdir: Path, cfg: dict, values: dict, *,
     return digest
 
 
-def owner_decided_before(ledger: Ledger, turn: dict) -> bool:
-    """Whether the turn before this one was cut off or failed and the owner decided about
-    it (accept or retry): only then may an unsettled session be moved back."""
+def session_rewind_allowed_before(ledger: Ledger, turn: dict) -> bool:
+    """An owner accept/retry, an automatic retry, or a completed FLOW natural boundary may
+    reopen an unsettled session. A natural boundary needs the previous box's gone receipt;
+    it is not a retry and its carried effects stay carried."""
     earlier = [t for t in ledger.turns_of(turn["participant_id"])
                if t["turn_no"] < turn["turn_no"]]
-    return bool(earlier) and max(earlier, key=lambda t: t["turn_no"])["state"] in (
-        "accepted", "superseded")
+    if not earlier:
+        return False
+    prior = max(earlier, key=lambda t: t["turn_no"])
+    if prior["state"] in ("accepted", "superseded"):
+        return True
+    worker = prior.get("worker") or {}
+    return (prior["state"] == "completed" and worker.get("container_removed") is True
+            and worker.get("ended_by") in ("time_limit", "call_cap"))
 
 
 INVALID = "invalid"

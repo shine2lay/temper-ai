@@ -603,7 +603,9 @@ def test_sw27_every_member_gets_temper_s_guidance_never_a_chat_s(tmp_path, short
     for tool in ("notebook", "memory_write", "daily log"):
         mentions = [s for s in sentences if tool in s and not s.startswith("Rules (notebook.md)")]
         assert mentions and all("has no" in s for s in mentions), (tool, mentions)
-    assert "Put any lessons, findings and questions for the owner in your reply" in written
+    assert "Put lessons and findings in your reply" in written
+    assert "use Temper's ask_owner tool when only the owner can answer" in written
+    assert "If that tool is not provided, put questions in your reply instead" in written
     import re
 
     used = {m.group(1) for m in re.finditer(r"\{\{\s*[#/^]?\s*([A-Za-z_]+)\s*\}\}", written)}

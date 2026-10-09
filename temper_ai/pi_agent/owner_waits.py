@@ -52,18 +52,19 @@ def wait_row(ledger: Ledger, wait_id: str) -> dict | None:
 @overload
 def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: str,
                        header: str = "", detail: str = "", options: Sequence[str] = (),
-                       hold: Literal[True] = True) -> OwnerAnswer: ...
+                       hold: Literal[True] = True, also: tuple[dict, ...] = ()) -> OwnerAnswer: ...
 
 
 @overload
 def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: str,
                        header: str = "", detail: str = "", options: Sequence[str] = (),
-                       hold: bool) -> OwnerAnswer | None: ...
+                       hold: bool, also: tuple[dict, ...] = ()) -> OwnerAnswer | None: ...
 
 
 def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: str,
                        header: str = "", detail: str = "",
-                       options: Sequence[str] = (), hold: bool = True) -> OwnerAnswer | None:
+                       options: Sequence[str] = (), hold: bool = True,
+                       also: tuple[dict, ...] = ()) -> OwnerAnswer | None:
     """The owner's answer at the open ``pi_waits`` row ``wait_id``, asked under that same id.
 
     ``context`` is the step's own (``ask_owner`` files the wait under its ``step_path``).
@@ -88,4 +89,4 @@ def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: 
                 conn.execute(waits.update().where(
                     waits.c.wait_id == wait_id, waits.c.state == "open").values(gate_name=name))
     return ask_owner(context, wait_id, question=question, header=header, detail=detail,
-                     options=tuple(options), hold=hold)
+                     options=tuple(options), hold=hold, **({"also": also} if also else {}))

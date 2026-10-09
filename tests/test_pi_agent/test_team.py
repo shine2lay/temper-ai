@@ -149,8 +149,7 @@ def _with(**sections) -> dict:
      "communication: type edges needs 'edges: {member: [members it can start a conversation "
      "with]}'"),
     (_with(pause_after_rounds=3),
-     "pause_after_rounds: pause_after_rounds is gone: teams work free-flowing now; set "
-     "pause_every_usd (default 100)"),
+     "pause_after_rounds: pause_after_rounds belonged to review rounds; start a new Project"),
     (_with(pause_every_usd=0), "pause_every_usd: must be a number of US dollars from 1 to 10000"),
     (_with(pause_every_usd=True),
      "pause_every_usd: must be a number of US dollars from 1 to 10000"),

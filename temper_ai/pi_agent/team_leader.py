@@ -129,9 +129,10 @@ KEEP_GOINGS = ("keep_going", "done_refused")
 MAX_FILES = 500
 GIT_TIMEOUT = 120
 
-TOOLS_NOTE = ("Temper note: in this Temper run your tools are: {tools}. Notes, memory, questions "
-              "to the owner and queue tools are not available in a Temper run: put any lessons "
-              "and questions in your reply.")
+TOOLS_NOTE = ("Temper note: in this Temper run your tools are: {tools}. Chat notebook, memory, "
+              "daily log and queue tools are not available. Put lessons and findings in your reply. "
+              "If ask_owner is listed, use it for owner-only questions and finish this turn; "
+              "otherwise put questions in your reply.")
 
 
 def tools_note(tools: list[str]) -> str:
@@ -1065,7 +1066,8 @@ class LeaderTeam(TeamRows, Team):
             return self.ledger._open_wait(conn, self.run_id, self.host_path, kind, subject,
                                           self.attempt_id)
 
-    def ask(self, context: Any, wait: dict, *, hold: bool = True) -> Any:
+    def ask(self, context: Any, wait: dict, *, hold: bool = True,
+            also: tuple[dict, ...] = ()) -> Any:
         """The owner's answer at an open wait, asked under the wait row's own id. In a Pi
         workflow an unanswered wait parks the run (``RunParked`` goes up untouched). None when
         another attempt decided the wait meanwhile, or (``hold=False``: other turns are
@@ -1076,10 +1078,11 @@ class LeaderTeam(TeamRows, Team):
         header = subject.get("header") or (
             f"{subject.get('member')} turn {subject.get('turn_no')}"
             if wait["kind"] == "recovery" else wait["kind"])
+        ask_extras: dict[str, Any] = {"also": also} if also else {}
         try:
             return ask_owner_for_wait(context, self.ledger, wait["wait_id"], question=question,
                                       header=str(header), options=subject.get("options") or (),
-                                      hold=hold)
+                                      hold=hold, **ask_extras)
         except WaitDecided:
             return None  # decided (or cancelled with the team's end) meanwhile: re-read
         except ReplacedByLaterAttempt:

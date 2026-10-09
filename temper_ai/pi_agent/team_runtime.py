@@ -49,11 +49,11 @@ from temper_ai.pi_agent.host import (
     INVALID,
     _jsonable,
     _slug,
-    owner_decided_before,
     pin_for,
     prepare_participant,
     recovery_asked_again,
     recovery_word,
+    session_rewind_allowed_before,
 )
 from temper_ai.pi_agent.inbox import render_batch
 from temper_ai.pi_agent.ledger import (
@@ -407,7 +407,7 @@ class Team:
         return self._run(turn, batch)
 
     def _run(self, turn: dict, batch: list[dict]) -> StepResult:
-        from temper_ai.pi_agent.turn import TurnRequest, run_turn
+        from temper_ai.pi_agent.turn import TurnReport, TurnRequest, run_turn
 
         part = self.ledger.participant(turn["participant_id"]) or {}
         name = part["member"]
@@ -449,20 +449,20 @@ class Team:
                        add_ons=add_on_names(cfg), team=channel, slot=self.account_slot)
         try:
             text = self.prompt_for(member, turn, batch)
-        except Exception as exc:  # noqa: BLE001 -- before any box: the turn fails red
+        except Exception as exc:  # noqa: BLE001 -- no box exists, but use normal turn policy
             error = f"{name} ({cfg['role']}) turn {turn['turn_no']} could not start: {exc}"
-            if not self.ledger.fail_turn(turn["turn_id"], error, [], {"box_started": False},
-                                         epoch=turn["epoch"]):
-                return StepResult("lost", member=name, turn=turn)
-            self._close_turn_event({**turn, "agent_event_id": agent_event_id,
-                                    "member": name}, error)
-            return StepResult("failed", member=name, turn=turn, error=error)
+            result = self.settle(turn, name, cfg, TurnReport(state="failed", error=error),
+                                 {"box_started": False}, agent_event_id)
+            if result.kind != "lost":
+                self._close_turn_event({**turn, "agent_event_id": agent_event_id,
+                                        "member": name}, error)
+            return result
         req = TurnRequest(run_id=self.run_id, agent_name=name, node_path=self.host_path,
                           participant=part, turn=turn, text=text,
                           spec=spec, agent_event_id=agent_event_id, recorder=self.recorder,
                           cancel_event=self.cancel_event,
                           first_start=not session_started(pdir),
-                          rewind_allowed=owner_decided_before(self.ledger, turn),
+                          rewind_allowed=session_rewind_allowed_before(self.ledger, turn),
                           **self.request_extras(turn))
         report = (type(self).turn_runner or run_turn)(self.box, req, self.ledger)
         worker = {**(report.worker or {}), "effective": report.effective,

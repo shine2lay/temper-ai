@@ -77,8 +77,7 @@ ROUNDS_TEAM = ("this team ran in review rounds, which Temper no longer runs; sta
                "Project")
 #: Said for the old review rounds' setting, ``pause_after_rounds``, given a value in a config
 #: or a New Project form (FLOW R4).
-ROUNDS_GONE = ("pause_after_rounds is gone: teams work free-flowing now; set pause_every_usd "
-               "(default 100)")
+ROUNDS_GONE = "pause_after_rounds belonged to review rounds; start a new Project"
 #: Sections planned for later, each arriving with its runtime piece; refused until then.
 LATER_SECTIONS = ("workspace", "lessons", "ask_owner", "conversation")
 
@@ -286,7 +285,9 @@ def parse_settings(strategy_config: object) -> tuple[TeamSettings | None, list[P
     comm, got = _section("communication", strategy_config.get("communication", {"type": "all"}),
                          COMMUNICATION_TYPES)
     problems += got
-    every = strategy_config.get("pause_every_usd", PAUSE_EVERY_USD)
+    every = strategy_config.get("pause_every_usd")
+    if every is None:
+        every = PAUSE_EVERY_USD  # the nullable New Project field means the same as omitted
     if (isinstance(every, bool) or not isinstance(every, (int, float))
             or not PAUSE_EVERY_MIN <= every <= PAUSE_EVERY_MAX):
         problems.append(("pause_every_usd", f"must be a number of US dollars from "

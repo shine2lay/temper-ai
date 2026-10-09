@@ -172,6 +172,9 @@ class Refusal:
 
     kind: str
     message: str
+    #: A temporary start check may re-arm an already parked usage timer (FLOW M6).
+    #: Ordinary starts still fail; lane/config refusals never gain this permission.
+    retryable: bool = False
 
     def __post_init__(self) -> None:
         from temper_ai.pi_agent.token_scan import withhold
@@ -216,13 +219,16 @@ def check_run(execution_id: str, run_row: dict, *, start: str | None,
     seen: dict[str, Any] = {}
     failed = preflight(record=seen)
     if failed:
+        # Schema/config failures are not an allowance reset; do not loop on a bad layout.
+        transient = {"docker", "host_helper", "disk", "commit_unreadable"}
         return Refusal("pi_preflight", "The Pi lane's checks before the run failed: "
-                       + "; ".join(f"{reason}: {text}" for reason, text in failed))
+                       + "; ".join(f"{reason}: {text}" for reason, text in failed),
+                       retryable=all(reason in transient for reason, _text in failed))
     commit, why = read_commit()
     if commit is None:
         # The preflight read it a moment ago: refuse rather than record "unknown" (SW-16).
         return Refusal("pi_preflight", "The Pi lane's checks before the run failed: "
-                                       f"commit_unreadable: {why}")
+                                       f"commit_unreadable: {why}", retryable=True)
     refusal = claim_checks(execution_id, run_row, nodes)
     if refusal is not None:
         return refusal
@@ -328,9 +334,9 @@ def claim_checks(execution_id: str, run_row: dict, nodes: Any) -> Refusal | None
 
 
 def record_refusal(execution_id: str, run_row: dict, refusal: Refusal, *,
-                   resume_of: str | None = None) -> None:
-    """Make a refused attempt show on the run page: a failed ``workflow.started`` event that
-    names why (without it, a refused resume would show the attempt before it)."""
+                   resume_of: str | None = None, parked: dict | None = None) -> bool:
+    """Record the refused start, normally failed. A re-armed usage timer supplies its
+    parked note instead: the attempt stays waiting and says why no work started."""
     from temper_ai.observability.event_recorder import EventRecorder
     from temper_ai.observability.event_types import EventType
 
@@ -344,11 +350,17 @@ def record_refusal(execution_id: str, run_row: dict, refusal: Refusal, *,
     }
     if resume_of:
         data["resume_of"] = resume_of
+    if parked is not None:
+        data["parked"] = parked
+        data["usage_timer_start_held"] = True
     try:
         EventRecorder(execution_id).record(EventType.WORKFLOW_STARTED, data=data,
-                                           execution_id=execution_id, status="failed")
+                                           execution_id=execution_id,
+                                           status="waiting" if parked is not None else "failed")
+        return True
     except Exception:  # noqa: BLE001 - the row still says why
         logger.warning("Could not record %s's refused attempt", execution_id, exc_info=True)
+        return False
 
 
 # --- H2: everything imported before the first turn -------------------------------------------

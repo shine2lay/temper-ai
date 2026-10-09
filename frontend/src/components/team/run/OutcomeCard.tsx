@@ -1,7 +1,6 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarClock, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Info } from 'lucide-react';
-import { MarkdownDisplay } from '@/components/shared/MarkdownDisplay';
+import { CalendarClock, CircleCheck, ExternalLink, Info } from 'lucide-react';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { cn } from '@/lib/utils';
 import { isoOf, shortId, teamCost, teamSource, teamTime, teamTimeFull } from '@/lib/teamText';
@@ -18,8 +17,9 @@ import { TeamNote } from '../TeamNote';
 import { EngineQuote, OwnerWords } from '../TeamQuote';
 import { TeamStateBadge } from '../TeamStateBadge';
 import { TeamWho } from '../TeamWho';
-import { teamBtn, teamChip, teamChipTone, teamLabel, teamLink } from '../teamUi';
+import { teamChip, teamChipTone, teamLabel, teamLink } from '../teamUi';
 import { VerdictChip } from './Timeline';
+import { ClampedSummary, ShowAll } from './ClampedSummary';
 import { OUTCOME_TITLE_ID } from './runFocus';
 
 /** The card's quote labels in capitals, like its other labels (board R12). */
@@ -43,40 +43,9 @@ function Time({ iso }: { iso: string | null | undefined }) {
   );
 }
 
-function ShowAll({ all, onToggle, more }: { all: boolean; onToggle: () => void; more: string }) {
-  return (
-    <button type="button" className={cn(teamBtn.ghostXs, 'mt-1 self-start')} aria-expanded={all} onClick={onToggle}>
-      {all ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
-      <span>{all ? 'Show less' : more}</span>
-    </button>
-  );
-}
-
-/** The leader's summary: six lines, then the rest on request. Markdown without raw HTML. */
+/** The leader's summary: six lines, then the rest on request. */
 function Summary({ content }: { content: string }) {
-  const [all, setAll] = useState(false);
-  const [long, setLong] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el || all) return;
-    const measure = () => setLong(el.scrollHeight > el.clientHeight + 1);
-    measure();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [content, all]);
-
-  return (
-    <div className="flex flex-col">
-      <div ref={box} className={cn(!all && 'line-clamp-6')}>
-        <MarkdownDisplay content={content} className="rounded-none border-0 bg-transparent p-0" />
-      </div>
-      {(long || all) && <ShowAll all={all} onToggle={() => setAll((v) => !v)} more="Show all" />}
-    </div>
-  );
+  return <ClampedSummary content={content} lines={6} />;
 }
 
 function Facts({ rows }: { rows: Array<{ label: string; value: ReactNode }> }) {

@@ -46,3 +46,51 @@ export function refusedDoneReview(
   const review = run.reviews.find((r) => r.review_id === reviewId);
   return review && isRefusedDone(review) ? review : null;
 }
+
+function isDecided(review: TeamReview): boolean {
+  return review.state === 'decided' || review.decision !== null;
+}
+
+function newest(reviews: TeamReview[], keep: (review: TeamReview) => boolean): TeamReview | null {
+  return reviews.reduce<TeamReview | null>(
+    (best, r) => (keep(r) && (best === null || r.round >= best.round) ? r : best),
+    null,
+  );
+}
+
+/**
+ * The newest review with the leader's decision, and a newer one still
+ * without it. Temper opens the next round's review in the same second it
+ * records a keep going, so the newest review is often still empty: the
+ * round card shows it on its own line, and it never takes the decided
+ * one's place.
+ */
+export function roundReviews(reviews: TeamReview[]): { decided: TeamReview | null; open: TeamReview | null } {
+  const decided = newest(reviews, isDecided);
+  const open = newest(reviews, (r) => !isDecided(r) && (decided === null || r.round > decided.round));
+  return { decided, open };
+}
+
+function verdictsIn(count: number): string {
+  return count === 1 ? '1 verdict in' : `${count} verdicts in`;
+}
+
+/**
+ * The line for a review without a decision, from Temper's own state, in
+ * Design's words ("verdicts", never "views", which reads like a page view):
+ * open, with members' verdicts coming in; collected, all in and the leader
+ * decides next; or left undecided by a run that has ended (`live` false).
+ * A review carries no expected number of verdicts, so the line never says
+ * "2 of 4".
+ */
+export function openReviewWords(
+  review: TeamReview,
+  leader: string,
+  live: boolean,
+): { head: string; rest: string } {
+  const count = Object.keys(review.views).length;
+  const head = `Round ${review.round} review`;
+  if (!live) return { head, rest: count === 0 ? 'never decided, no verdicts' : `never decided, ${verdictsIn(count)}` };
+  if (review.state === 'collected') return { head, rest: `all verdicts in, waiting for ${leader}'s decision` };
+  return { head: `${head} open`, rest: count === 0 ? 'no verdicts yet' : verdictsIn(count) };
+}

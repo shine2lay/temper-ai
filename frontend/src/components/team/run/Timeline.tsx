@@ -93,13 +93,24 @@ function Preview({ text, engine }: { text: string | null | undefined; engine?: b
   );
 }
 
+/**
+ * A satisfied verdict, in the done tone's own colours (no new colour): the outline
+ * in its text green, 3:1 or more against what is around it (Design's chip bar,
+ * rm-91ea14d3; the tone's own border is about 2:1). The chip sits on the panel
+ * colour, so its see-through dark tint reads the same on the tinted needs-you card,
+ * where the text would drop to 3.97:1.
+ */
+const SATISFIED = 'bg-[var(--badge-completed-bg)] text-[var(--badge-completed-text)] border-[var(--badge-completed-text)]';
+
 function VerdictChip({ verdict, label }: { verdict: string; label?: string }) {
   const text = label ?? verdict;
   if (verdict === 'satisfied') {
     return (
-      <span className={cn(teamChip, teamChipTone.done)}>
-        <Check className="h-3.5 w-3.5" aria-hidden="true" />
-        <span>{text}</span>
+      <span className="inline-flex rounded-md bg-temper-panel" data-chip-backing>
+        <span className={cn(teamChip, SATISFIED)}>
+          <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>{text}</span>
+        </span>
       </span>
     );
   }

@@ -218,16 +218,19 @@ export function NeedsYouCard({
   const sendLabel = sending ? 'Sending…' : stopPicked ? 'Stop the team…' : 'Send answer';
   const answersError = problem?.field === 'answers' ? problem.words : null;
   const wordsError = problem?.field === 'words' ? problem.words : null;
-  // The settings card's left column holds the table, so the round and the
-  // latest review go under the answers on the right (board R18). The
-  // second row is 1fr so it starts right under the answers.
+  // In one column (under 1280 px) the round and the latest decided review come
+  // between the question and the answers: the owner answers on that decision
+  // (Design rm-a79c1512, fix A), and the page reads in that order too. In two
+  // columns they sit under the question, except on the settings card, whose
+  // left column holds the table: there they go under the answers on the right
+  // (board R18), the second row 1fr so it starts right under the answers.
   const areas = settings
     ? next.length > 0
-      ? "[grid-template-areas:'q'_'ans'_'nx'_'ctx'] xl:grid-rows-[auto_1fr_auto] xl:[grid-template-areas:'q_ans'_'q_ctx'_'nx_nx']"
-      : "[grid-template-areas:'q'_'ans'_'ctx'] xl:grid-rows-[auto_1fr] xl:[grid-template-areas:'q_ans'_'q_ctx']"
+      ? "[grid-template-areas:'q'_'ctx'_'ans'_'nx'] xl:grid-rows-[auto_1fr_auto] xl:[grid-template-areas:'q_ans'_'q_ctx'_'nx_nx']"
+      : "[grid-template-areas:'q'_'ctx'_'ans'] xl:grid-rows-[auto_1fr] xl:[grid-template-areas:'q_ans'_'q_ctx']"
     : next.length > 0
-      ? "[grid-template-areas:'q'_'ans'_'nx'_'ctx'] xl:[grid-template-areas:'q_ans'_'ctx_ans'_'nx_nx']"
-      : "[grid-template-areas:'q'_'ans'_'ctx'] xl:[grid-template-areas:'q_ans'_'ctx_ans']";
+      ? "[grid-template-areas:'q'_'ctx'_'ans'_'nx'] xl:[grid-template-areas:'q_ans'_'ctx_ans'_'nx_nx']"
+      : "[grid-template-areas:'q'_'ctx'_'ans'] xl:[grid-template-areas:'q_ans'_'ctx_ans']";
 
   return (
     <section
@@ -295,6 +298,11 @@ export function NeedsYouCard({
             </p>
           )}
           {settings && <SettingsChanges changes={wait.settings_changes ?? []} pins={wait.pins ?? []} />}
+        </div>
+
+        {/* Before the answers in the page's order too, so a screen reader and the keyboard meet it first. */}
+        <div className="min-w-0 [grid-area:ctx]">
+          <RoundCard run={run} inWait />
         </div>
 
         <div className="flex min-w-0 flex-col gap-3 [grid-area:ans]">
@@ -456,10 +464,6 @@ export function NeedsYouCard({
         </div>
 
         {next.length > 0 && <NextQuestions next={next} />}
-
-        <div className="min-w-0 [grid-area:ctx]">
-          <RoundCard run={run} inWait />
-        </div>
       </div>
 
       <StopAnswerDialog

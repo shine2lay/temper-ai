@@ -35,7 +35,9 @@ export function WhoDidWhat({ run }: { run: TeamRun }) {
       {run.owner_actions.length === 0 ? (
         <p className="m-0 text-sm text-temper-text-muted">Nothing yet.</p>
       ) : (
-        <div className="overflow-x-auto">
+        // On a narrow screen the table scrolls sideways: the box takes the keyboard's focus so
+        // the arrow keys can scroll it (WCAG 2.1.1; axe scrollable-region-focusable).
+        <div className="overflow-x-auto" tabIndex={0} role="group" aria-label="Who did what, table">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr>

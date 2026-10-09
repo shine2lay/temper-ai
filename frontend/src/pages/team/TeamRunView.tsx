@@ -203,6 +203,10 @@ export default function TeamRunView() {
         )}
         <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_384px]">
           <div className="flex min-w-0 flex-col gap-4">
+            {/* Where the team stands: after the needs-you or outcome card, in the main column above
+                the history at every width (Design rm-91ea14d3). While Temper waits it is inside the
+                needs-you card instead. */}
+            {!wait && <RoundCard run={run} />}
             <Timeline run={run} />
             {/* Kept after the run ends while it holds a result, so a refusal and the owner's text stay readable. */}
             {(canMessage(run) || messenger.result !== null) && (
@@ -211,7 +215,6 @@ export default function TeamRunView() {
             <WhoDidWhat run={run} />
           </div>
           <div className="flex min-w-0 flex-col gap-4">
-            {!wait && <RoundCard run={run} />}
             <MembersCard run={run} />
             <GoalCard goal={run.trial.goal} />
           </div>

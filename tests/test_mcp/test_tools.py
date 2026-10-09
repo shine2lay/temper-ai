@@ -5,6 +5,8 @@ context being flooded, so the tests care most about what is *left out* of
 each response and about failures being explained rather than silent.
 """
 
+import asyncio
+import threading
 from unittest.mock import patch  # noqa: F401
 
 import anyio  # noqa: E402
@@ -211,31 +213,77 @@ class TestWait:
     def test_waiting_does_not_block_the_event_loop(self, tools):
         """The bug this replaced: FastMCP calls sync tools directly on the
         event loop, so sleeping inside one froze the whole server — the
-        dashboard and the API stopped answering while an agent waited."""
-        running = {**RUN, "status": "running"}
-        progressed = 0
-        progressed_when_wait_returned = -1
+        dashboard and the API stopped answering while an agent waited.
+
+        Checked by the order things happen in, not with a stopwatch. A
+        request reaches the server while the wait reads the run, and one
+        just as it pauses between reads; the event loop has to answer each
+        before the wait takes its next step. Counting 50 ms ticks of other
+        work instead failed on CI when a stall used up the 0.4 s before the
+        first read came back, so the wait gave up without ever pausing.
+        """
 
         async def scenario():
-            nonlocal progressed, progressed_when_wait_returned
+            loop = asyncio.get_running_loop()
+            loop_thread = threading.get_ident()
+            real_clock = anyio.current_time
+            real_hand_off = anyio.to_thread.run_sync
+            happened = []
+            reads = 0
 
-            async def other_work():
-                nonlocal progressed
-                while True:
-                    await anyio.sleep(0.05)
-                    progressed += 1
+            def request_arrives(what):
+                # Answered when the event loop next gets a turn.
+                loop.call_soon_threadsafe(happened.append, f"answered {what}")
 
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(other_work)
-                with _with_run(running):
-                    await tools.wait_for_run("run-1", timeout_seconds=0.4)
-                # Sampled here, not after the task group drains, or a
-                # blocking implementation would look fine in hindsight.
-                progressed_when_wait_returned = progressed
-                tg.cancel_scope.cancel()
+            def read_the_run(execution_id):
+                nonlocal reads
+                reads += 1
+                happened.append(f"read {reads}")
+                request_arrives(f"during read {reads}")
+                return {**RUN, "status": "running"}
 
-        anyio.run(scenario)
-        assert progressed_when_wait_returned >= 3
+            # Only this wait's own calls are scripted below; anything else in
+            # the process keeps the real clock and the real hand-off.
+            def clock():
+                # Looked at to set the deadline and after every read. Time
+                # stands still until the second read, so however slow the
+                # machine, the wait reads, pauses, reads again, and only then
+                # finds its 0.4 s gone.
+                if threading.get_ident() != loop_thread:
+                    return real_clock()
+                happened.append("clock")
+                if reads == 1:
+                    request_arrives("as it pauses")
+                return 0.0 if reads < 2 else 1.0
+
+            async def hand_off(func, *args, **kwargs):
+                if threading.get_ident() == loop_thread:
+                    happened.append("hand off")
+                return await real_hand_off(func, *args, **kwargs)
+
+            with (
+                patch(
+                    "temper_ai.api.data_service.get_workflow_execution",
+                    side_effect=read_the_run,
+                ),
+                patch.object(anyio, "current_time", clock),
+                patch.object(anyio.to_thread, "run_sync", hand_off),
+            ):
+                result = await tools.wait_for_run("run-1", timeout_seconds=0.4)
+            # Copied before the loop runs anything else, so every answer in
+            # it came while the wait was still waiting, none in hindsight.
+            return result, list(happened)
+
+        result, happened = anyio.run(scenario)
+        assert happened == [
+            "clock",  # sets the deadline
+            "hand off", "read 1", "answered during read 1",
+            "clock",  # time left, so it pauses
+            "answered as it pauses",
+            "hand off", "read 2", "answered during read 2",
+            "clock",  # time is up
+        ]
+        assert result["timed_out"] is True
 
 
 class TestNodeSummary:

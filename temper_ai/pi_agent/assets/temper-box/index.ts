@@ -23,7 +23,8 @@
 //   message is Temper's to say. Pi activates the tool only when --tools names it.
 // - Also in a team member's box: the free-flowing team's tools (FLOW F3/F4), over the same
 //   socket: "share" (put your work into the team's shared version), "idle" (nothing more for
-//   you now; a message wakes you) and the leader's "done" (the shared version is the result).
+//   you now; a message wakes you), "ask_owner" (only this member waits for the owner), and the
+//   leader's "done" (the shared version is the result).
 //   Each records a request with Temper for this turn; Temper carries it out once the turn has
 //   finished, and decides who may use which (it refuses a call from the wrong member). Pi
 //   activates only the ones --tools names, so a member sees only its own.
@@ -237,6 +238,20 @@ export default function (pi: ExtensionAPI) {
       }),
       async execute(toolCallId: string, params: any) {
         return teamCall("idle", toolCallId, params, ["note"]);
+      },
+    });
+    pi.registerTool({
+      name: "ask_owner",
+      label: "Ask owner",
+      description:
+        "Ask the owner a question only they can answer, then finish this turn. Temper holds " +
+        "only you until the answer reaches your next turn; the other members keep working. " +
+        "Do not call done in this turn.",
+      parameters: Type.Object({
+        question: Type.String({ description: "What you need the owner to answer (at most 1000 characters)" }),
+      }),
+      async execute(toolCallId: string, params: any) {
+        return teamCall("ask_owner", toolCallId, params, ["question"]);
       },
     });
     pi.registerTool({

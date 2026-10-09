@@ -65,6 +65,7 @@ from temper_ai.pi_agent.rpc import RpcError
 logger = logging.getLogger(__name__)
 
 COMMAND_TIMEOUT = 60.0
+TIME_LIMIT_SETTLE_S = 10.0
 UI_SILENT = ("notify", "setStatus", "setWidget", "setTitle", "set_editor_text")
 #: Extension commands each allowed extension must register, by its folder in the box.
 EXPECTED_COMMANDS = {"identity": "/ext/identity/", "temper-box-state": "/ext/temper-box/"}
@@ -351,6 +352,7 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
     mid = _MidTurn(req.inbox, req.on_tools) \
         if req.inbox is not None or req.on_tools is not None else None
     reported_usage: dict[str, int | float] = {}
+    ended_by: str | None = None
 
     def sink(record: dict) -> None:
         if record.get("type") == "extension_ui_request":
@@ -467,6 +469,25 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
         feeding.clear()
     except TurnFailure as exc:
         report.error = f"{exc.code}: {exc}"
+        if exc.code == "turn_timeout":
+            ended_by = "time_limit"  # the mapper can replace the error's words at finish
+            if rpc is not None:
+                stop_deadline = time.monotonic() + TIME_LIMIT_SETTLE_S
+                try:
+                    # Abort must not drain queued steering into another model call. Discard
+                    # queue text without reading it; C1/session checks handle redelivery.
+                    _ok(rpc.command("clear_queue", max(0.1, stop_deadline - time.monotonic())),
+                        "clear_queue")
+                    abort_id = rpc.send("abort")
+                    _wait_settled(rpc, abort_id, mapper,
+                                  max(0.1, stop_deadline - time.monotonic()), None, pdir)
+                    _ok(rpc.command("prompt", max(0.1, stop_deadline - time.monotonic()),
+                                    message="/temper-box-state"), "box state")
+                    report.checks["time_limit_settled"] = True
+                except (TurnFailure, RpcError):
+                    # Closing still proves C1. A session left unsettled may only be rewound
+                    # at the next natural boundary, with carried-effect framing.
+                    report.checks["time_limit_settled"] = False
         if exc.code == "box_blocked_prompt":
             # The probe stopped the prompt before any model call: a visible failure.
             report.prompt_sent = False
@@ -485,6 +506,10 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
             report.worker = box.close()
             if ui_refused:
                 report.worker["ui_requests_refused"] = list(ui_refused)
+        else:
+            report.worker = {"box_started": False}
+        if ended_by is not None:
+            report.worker["ended_by"] = ended_by
 
     duration = time.monotonic() - started
     if not report.prompt_sent:

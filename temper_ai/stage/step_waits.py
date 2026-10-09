@@ -199,13 +199,13 @@ def park_until(context: ExecutionContext, wait_id: str, *, resumes_at: str) -> b
 @overload
 def ask_owner(context: ExecutionContext, wait_id: str, *, question: str, header: str = "",
               detail: str = "", options: tuple[str, ...] | list[str] = (),
-              hold: Literal[True] = True) -> OwnerAnswer: ...
+              hold: Literal[True] = True, also: tuple[dict, ...] = ()) -> OwnerAnswer: ...
 
 
 @overload
 def ask_owner(context: ExecutionContext, wait_id: str, *, question: str, header: str = "",
               detail: str = "", options: tuple[str, ...] | list[str] = (),
-              hold: bool) -> OwnerAnswer | None: ...
+              hold: bool, also: tuple[dict, ...] = ()) -> OwnerAnswer | None: ...
 
 
 def ask_owner(
@@ -217,6 +217,7 @@ def ask_owner(
     detail: str = "",
     options: tuple[str, ...] | list[str] = (),
     hold: bool = True,
+    also: tuple[dict, ...] = (),
 ) -> OwnerAnswer | None:
     """The owner's answer at this step's wait ``wait_id``; asks for it when there is none yet.
 
@@ -224,6 +225,9 @@ def ask_owner(
     put to the owner (its waiting event recorded once) and, with no answer yet, None comes
     back at once -- nothing parks and no worker is held; the caller asks again later and gets
     the answer from the history.
+
+    ``also`` names other already-registered waits of this step. A free-flowing team parks
+    on the whole set, so an answer to any member's question can carry the run on.
 
     ``context`` is the one the step was run with: the wait is filed under the step's own path,
     which the executor puts on it (``step_path``) for every kind of node. Raises RunParked when
@@ -303,8 +307,9 @@ def ask_owner(
         return None
     # A Pi workflow does not hold its worker while it waits (docs/gates.md).
     if getattr(context, "park_at_gates", False):
+        park_extras: dict[str, Any] = {"also": list(also)} if also else {}
         parked = park(context, event_id=event_id, node=path.rsplit(".", 1)[-1], path=path,
-                      round=round_, wait_id=wait_id)
+                      round=round_, wait_id=wait_id, **park_extras)
         if parked is not None:
             raise parked
     return _hold(context, name, path, wait_id, event_id, round_, registry)

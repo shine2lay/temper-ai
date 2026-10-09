@@ -85,8 +85,8 @@ answer's or message's in `pi_team_requests`; a message also uses it as the ledge
 
 `POST /api/team/trials` with `{request_id, goal, members: [{role, name?, tools?}], leader,
 pause_every_usd?, max_parallel?, communication?, project_path?}`. The check-in defaults to
-$100 and the parallel cap to every member. Non-null `pause_after_rounds` is refused; a null
-field sent by the old form is ignored:
+$100 and the parallel cap to every member. Omitted or null `pause_every_usd` uses that default.
+Non-null `pause_after_rounds` is refused with “start a new Project”; a null field sent by the old form is ignored:
 
 
 1. The trial gets a 12-hex-character id. Its workflow `team-trial-<id>` has one team stage,
@@ -155,8 +155,10 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
   figure is ever made up). Each turn's `account_slot` is in the timeline and each member's
   `last_turn` ([pi-trial-safety.md](pi-trial-safety.md)).
 - `open_waits`: every open question, in the order Temper asks them (a settings wait
-  first, then oldest first). Flow member questions can each have `asked: true` and an
-  `event_id`; each holds only its member. Settings questions take precedence. Old round
+  first, then oldest first). A flow member records `ask_owner(question)` and finishes its turn; its member question
+  then has the existing reply answer shape. Flow member questions can each have `asked: true`
+  and an `event_id`; each holds only its member. A parked run registers all answerable gate ids,
+  so any one answer can wake it. Settings questions take precedence. Old round
   records retain their first-question-only shape. A member's question shows as `kind: question`.
   Flow waits add `scope: member | team` and first-sentence `words` (at most 160 characters). Each wait has its `question` without reply syntax,
   the chat's `reply_hint` apart ("Reply 'continue', 'guide: <what to tell design>', or
@@ -181,8 +183,12 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
   on the kept account; it is not permission to start. Only verified available usage allows
   five-hour automatic resume or a weekly/unknown `restart`/`stop` question. Unavailable,
   stale, expired-sign-in or still-exhausted readings keep waiting without expiry, with
-  another check scheduled (15 minutes when no usable reset is known). A delayed weekly
-  restart answer is checked again before clearing the hold.
+  another check scheduled (15 minutes when no usable reset is known). A ready weekly answer
+  is applied before another timer; Stop is not delayed by an unnecessary usage read. A delayed
+  weekly restart answer is checked again before clearing the hold; an unavailable or newly
+  exhausted reading re-arms the question rather than saving the old answer for a later reset.
+  A timer-origin transient run-start refusal returns to waiting with a 15-minute recheck;
+  permanent lane/configuration refusals keep their normal failed outcome.
   Phase adds `usage`, `usage_checked_at`, `resume_verified` and `blocked_windows`;
   `reason` names an unavailable reading's fixed code. `resumes_at` is the next check time,
   not a restart permission. Answerable flow limit waits carry those same fields. Before

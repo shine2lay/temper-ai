@@ -184,6 +184,21 @@ def cmd_run_workflow(args: argparse.Namespace) -> int:
     lane_refusal = pi_lane.check_run(execution_id, run_row, start=start,
                                      graph_loader=runner_ctx.graph_loader)
     if lane_refusal is not None:
+        from temper_ai.runner.parked import repark_timer_refusal
+
+        if start == "resume" and repark_timer_refusal(
+                execution_id, run_row, lane_refusal,
+                resume_of=(resume_metadata or {}).get("resume_of")):
+            # This transport did start, but no member did. Keep its handle until the
+            # reaper confirms it gone, exactly as for an ordinary parked workflow.
+            _update_run_row(
+                execution_id, status="running", started_at=datetime.now(UTC),
+                spawner_handle=os.environ.get("TEMPER_RUN_CONTAINER") or str(os.getpid()),
+                attempts=run_row["attempts"] + 1,
+            )
+            logger.info("Run %s: usage-check wake held by %s; stays waiting for its next "
+                        "check", execution_id, lane_refusal.kind)
+            return 0
         logger.error("Run %s refused: %s", execution_id, lane_refusal.message)
         pi_lane.record_refusal(execution_id, run_row, lane_refusal,
                                resume_of=(resume_metadata or {}).get("resume_of"))

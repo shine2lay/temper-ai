@@ -18,7 +18,7 @@ Messages released while a recipient is working can be handed into that existing 
 
 After the box is gone, Temper confirms which handed entries actually landed from the saved session's exact user entries. Only confirmed input is consumed. Unconfirmed input remains pending. A failed/cut-off retry redelivers all input, including confirmed hand-ins, under the same message ids; outgoing messages from that failed turn remain void. Unexpected or refused hand-ins are recorded, not silently counted as delivery.
 
-A leader's done boundary is the time of its `done` call. A message released after that boundary still refuses done, even if it was read later in the same turn.
+A leader's done boundary is the time of its `done` call. A non-system message still pending, created or released after that boundary, or delivered after it, refuses done even if it was read later in the same turn. Owner and decision messages count even when they have no release timestamp.
 
 ## Claims, rest and recovery
 
@@ -26,9 +26,11 @@ A running claim belongs to `(run_id, host_path, participant_id)`, not the whole 
 
 `idle(note?)` rests the member after its turn. A turn with no tool calls also rests. A pending or racing message wins over idle, so no message is hidden by an idle call. Members never messaged at start have `idle_reason: start` and no invented activity or idle note.
 
-A failed/cut-off turn gets one automatic retry only after its box is confirmed removed. A second failure or uncertain turn opens that member's recovery wait. Retry/accept choices are fenced and require confirmation that the old box is gone. Other members may continue; done cannot count while a member wait or failed/uncertain turn is open.
+`ask_owner(question)` lets any flow member ask one owner-only question and then finish its turn. The fenced settlement opens only that member's wait; its answer is an `owner_reply` in the next turn. Done and ask_owner cannot be recorded together.
 
-When no turn runs and nothing can be claimed, an unanswered owner wait parks the run durably with no worker held. While members run, asking the owner does not park those members. Settings answers have precedence. Usage limits, dollar check-ins, closing, Stop/cancel and lane drain hold new claims for the whole run.
+A failed/cut-off turn gets one automatic retry only after its box is confirmed removed, or after proving no box was made. The retry framing distinguishes its voided acts and undelivered sends from local edits that remain; old conversation acknowledgments do not imply delivery. A second failure or uncertain turn opens that member's recovery wait. Retry/accept choices are fenced and require confirmation that the old box is gone. Other members may continue; done cannot count while a member wait or failed/uncertain turn is open.
+
+When no turn runs and nothing can be claimed, all answerable owner waits are registered and the run parks on their gate ids durably with no worker held; any one answer can wake it. While members run, asking the owner does not park those members. Settings answers have precedence. Usage limits, dollar check-ins, closing, Stop/cancel and lane drain hold new claims for the whole run.
 
 ## Stop and stale callbacks
 

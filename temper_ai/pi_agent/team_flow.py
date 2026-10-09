@@ -15,11 +15,12 @@ call at all). A message wakes it again. There are no rounds anywhere.
   nothing new starts, the running turns finish, and done counts only when nothing reached
   the leader after its done call, no share landed after it, and no member is held or
   failed. Otherwise the leader is told why and gets one more turn on its own.
-- **Holds** (R2): a member's failed or cut-off turn is retried once by itself, after its
-  box is confirmed gone (C1); a second failure holds only that member (a recovery wait).
+- **Holds** (R2): ``ask_owner(question)`` holds only its member after settlement. A member's
+  failed or cut-off turn is retried once by itself, after its box is confirmed gone (C1)
+  or before any box was made; a second failure holds only that member (a recovery wait).
   Run-level holds: the check-in at every ``pause_every_usd`` of spend (F6, R4), the
-  account's usage limit (a 5-hour limit carries on by itself at its reset; a
-  weekly or unknown one asks the owner before restarting), the settings wait,
+  account's usage limit (a 5-hour limit resumes only after fresh verified room; a
+  weekly or unknown one verifies room then asks the owner before restarting), the settings wait,
   Stop and cancel, a lane stop, and the closing.
 - **R1**: a turn that ends at its call cap or time limit, with its box confirmed gone, is a
   normal end: its tool calls are carried out and the member's next turn starts at once.
@@ -97,9 +98,12 @@ logger = logging.getLogger(__name__)
 
 SHARE = "share"
 IDLE = "idle"
+ASK_OWNER = "ask_owner"
 DONE = "done"
-FLOW_OPS = (SHARE, IDLE, DONE)
-FLOW_FIELDS: dict[str, tuple[str, ...]] = {SHARE: ("note",), IDLE: ("note",), DONE: ("summary",)}
+FLOW_OPS = (SHARE, IDLE, ASK_OWNER, DONE)
+FLOW_FIELDS: dict[str, tuple[str, ...]] = {
+    SHARE: ("note",), IDLE: ("note",), ASK_OWNER: ("question",), DONE: ("summary",),
+}
 #: The check-in's spend step when a team names none: every $100.
 PAUSE_EVERY_USD = 100.0
 LIMIT_OPTIONS = ("restart", "stop")
@@ -172,6 +176,9 @@ def flow_framing(name: str, leader: str, roster: list[str], tools: list[str]) ->
     else:
         text += ("\nWork on what is asked of you, tell whoever asked (usually the leader) when "
                  "it is done or if you are stuck, and share your work.")
+    text += ("\nIf only the owner can answer, call ask_owner with your question and finish "
+             "this turn. Only you wait for the answer; the other members carry on. Your "
+             "send_message calls reach their recipients only after your turn finishes.")
     return text + "\n" + tools_note(tools)
 
 
@@ -219,18 +226,22 @@ class FlowTeam(LeaderTeam):
     # --- tools and prompt -------------------------------------------------------------------
 
     def tools_for(self, member: TeamMember) -> list[str]:
-        own = {SHARE, IDLE} | ({DONE} if member.name == self.leader else set())
+        own = {SHARE, IDLE, ASK_OWNER} | ({DONE} if member.name == self.leader else set())
         return sorted(set(member_tools(member.config)) | own)
 
     def prompt_for(self, member: TeamMember, turn: dict, batch: list[dict]) -> str:
         part = self.ledger.participant(turn["participant_id"]) or {}
         pdir = self._pdir(part)
         recorded = [Conflict.from_dict(c) for c in part.get("conflicts") or []]
+        git_started = time.monotonic()
         with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
             synced = self.shared.sync(member.name, pdir, recorded)
             conn.execute(participants.update().where(
                 participants.c.participant_id == turn["participant_id"]).values(
                 conflicts=[c.as_dict() for c in synced.conflicts]))
+        git_seconds = time.monotonic() - git_started
+        if git_seconds > 10:
+            logger.warning("flow: sync for %s took %.3fs including ledger lock wait", member.name, git_seconds)
         new = [c for c in synced.conflicts if c.path not in {r.path for r in recorded}]
         if new:
             self.ledger.record_event(self.run_id, self.host_path, "conflict", member.name,
@@ -241,10 +252,43 @@ class FlowTeam(LeaderTeam):
         lines = conflict_lines(list(synced.conflicts))
         if lines:
             text += "\n\n" + "\n".join(lines)
+        if turn.get("retry_of"):
+            text += "\n\n" + self._retry_framing(turn["retry_of"])
+        else:
+            earlier = [t for t in self.ledger.turns_of(turn["participant_id"])
+                       if t["turn_no"] < turn["turn_no"]]
+            prior = max(earlier, key=lambda t: t["turn_no"]) if earlier else None
+            if (prior is not None and prior["state"] == "completed"
+                    and (prior.get("worker") or {}).get("ended_by") in ("call_cap", "time_limit")):
+                text += ("\n\n[Temper] Your last turn ended at a natural boundary and was "
+                         "committed, NOT retried. Its recorded team acts and outgoing messages "
+                         "were carried out. An incomplete conversation may have been moved "
+                         "back to its settled point; do not repeat those effects. Carry on "
+                         "with the next part, checking the shared version and these messages.")
         if batch:
             return text + "\n\n" + render_batch(batch, team=True)
         return text + ("\n\n[Temper] No new messages: carry on with your part, or call idle "
                        "if nothing is yours right now.")
+
+    def _retry_framing(self, turn_id: str) -> str:
+        """Reconcile the kept transcript with withheld ledger effects (M1), without reading
+        model text. Local edits stay; recorded team acts and outgoing messages did not happen."""
+        prior = self.ledger.turn(turn_id) or {}
+        recorded = self._rows(acts, acts.c.turn_id == turn_id)
+        outgoing = self._rows(messages, messages.c.sender_turn == turn_id)
+        recipients = sorted({str(m["to_member"]) for m in outgoing if m.get("to_member")})
+        ops = sorted({str(a["op"]) for a in recorded})
+        return (
+            f"[Temper] This is a retry of your turn {prior.get('turn_no', '?')}. Its "
+            "conversation may still contain successful tool replies, but that turn was not "
+            "committed: NONE of its recorded team acts were carried out and NONE of its "
+            "outgoing messages were delivered. Recorded acts: " + (", ".join(ops) or "none")
+            + ". Withheld message recipients: " + (", ".join(recipients) or "none")
+            + ". In particular, any share was not published and any owner question was not "
+            "asked. Your local file edits remain. Incoming messages are supplied again with "
+            "the same ids. Repeat every still-needed message, share or question with a new "
+            "tool call; do not assume an earlier successful tool reply made it happen."
+        )
 
     def request_extras(self, turn: dict) -> dict:
         """Wire the running turn's fenced inbox and tool counts (Part B, owner part 2/3)."""
@@ -264,9 +308,10 @@ class FlowTeam(LeaderTeam):
 
     @staticmethod
     def _act_args(op: str, payload: dict) -> dict:
-        limit, name = (MAX_SUMMARY, "summary") if op == DONE else (MAX_NOTE, "note")
+        limit, name = ((MAX_SUMMARY, "summary") if op == DONE else
+                       (MAX_NOTE, "question") if op == ASK_OWNER else (MAX_NOTE, "note"))
         value = payload.get(name)
-        if value is None and op != DONE:
+        if value is None and op in (SHARE, IDLE):
             return {name: None}
         if not isinstance(value, str) or not value.strip():
             raise Refusal(route_model.INVALID_MESSAGE, f"{name} must be a non-empty string")
@@ -278,6 +323,11 @@ class FlowTeam(LeaderTeam):
                mine: list[dict]) -> str:
         if any(a["op"] == op for a in mine):
             raise Refusal(NOT_NOW, f"{op} was already called in this turn")
+        if op in (ASK_OWNER, DONE) and any(a["op"] in (ASK_OWNER, DONE) for a in mine):
+            raise Refusal(NOT_NOW, "done and ask_owner cannot be called in the same turn")
+        if op == ASK_OWNER:
+            return ("Recorded. Finish this turn: Temper puts your question to the owner and "
+                    "holds only you until the answer arrives. Other members keep working.")
         if op == SHARE:
             return ("Recorded. When this turn has finished, Temper merges your copy into the "
                     "team's shared version and tells you about any conflict.")
@@ -337,6 +387,7 @@ class FlowTeam(LeaderTeam):
         if row is None:
             raise TeamFailure(f"{member} has no conversation")
         recorded = [Conflict.from_dict(c) for c in row.get("conflicts") or []]
+        git_started = time.monotonic()
         try:
             with _LOCK, self.ledger._team_tx(self.run_id, self.host_path) as conn:
                 got = self.shared.share(member, self._pdir(row), recorded, note)
@@ -353,6 +404,9 @@ class FlowTeam(LeaderTeam):
                                        paths=[c.path for c in got.conflicts])
         except VersionError as exc:
             raise TeamFailure(f"{member}'s share could not be carried out: {exc}") from exc
+        git_seconds = time.monotonic() - git_started
+        if git_seconds > 10:
+            logger.warning("flow: share for %s took %.3fs including ledger lock wait", member, git_seconds)
         result: dict[str, Any] = {"status": got.status, "text": got.text}
         if got.version is not None:
             v = got.version
@@ -381,6 +435,10 @@ class FlowTeam(LeaderTeam):
     def _carry_idle(self, act: dict) -> None:
         # The member's rest itself was set when its turn finished (finish_turn's rest).
         self._settle_act(act, "carried_out", {"rested": True})
+
+    def _carry_ask_owner(self, act: dict) -> None:
+        # The fenced finish_turn transaction opened this member's owner wait.
+        self._settle_act(act, "carried_out", {"asked": True})
 
     def _carry_done(self, act: dict) -> None:
         for w in self._closing_waits():
@@ -425,10 +483,13 @@ class FlowTeam(LeaderTeam):
         late = [m for m in self._rows(messages, messages.c.to_participant
                                       == lead.get("participant_id"))
                 if m["sender_kind"] != "temper" and m["state"] in ("pending", "consumed")
-                and str(m["released_at"] or "") > began]
+                and (m["state"] == "pending"
+                     or str(m["delivered_at"] or "") > began
+                     or str(m["released_at"] or m["created_at"] or "") > began)]
         if late:
-            out.append({"reason": "message", "detail": "messages reached you after your done "
-                        "call: " + ", ".join(sorted({str(m["sender"]) for m in late}))})
+            out.append({"reason": "message", "detail": "messages still wait for you or reached "
+                        "you after your done call: "
+                        + ", ".join(sorted({str(m["sender"]) for m in late}))})
         later = [v for v in self.shared.versions()
                  if v.version_no > 0 and v.by != self.leader and str(v.at) > began]
         if later:
@@ -538,7 +599,14 @@ class FlowTeam(LeaderTeam):
                 "llm_calls": max(int(known.get("llm_calls") or 0),
                                  int(usage.get("llm_calls") or 0)),
             }}
-        gone = bool(worker.get("container_removed"))
+        no_box = worker.get("box_started") is False or not saved.get("box_name")
+        gone = bool(worker.get("container_removed") or no_box)
+        if no_box:
+            worker = {**worker, "box_started": False}
+        if report.state == "completed" and not gone:
+            # Even settled output is not permission for a second writer beside an old box.
+            report.state = "uncertain"
+            report.error = "box_not_confirmed_gone: the completed turn's box was not confirmed gone"
         handed = getattr(report, "handed_in", None) or {}
         if gone:
             unconfirmed = set(handed.get("unconfirmed") or []) | set(handed.get("refused") or [])
@@ -548,7 +616,8 @@ class FlowTeam(LeaderTeam):
         error = str(report.error or "")
         trouble = call_trouble(report.outcome, report.error) if report.state != "completed" else None
         if report.state != "completed" and gone and not halting:
-            ended_by = ("time_limit" if error.startswith("turn_timeout")
+            ended_by = ("time_limit" if worker.get("ended_by") == "time_limit"
+                        or error.startswith("turn_timeout")
                         else "call_cap" if int(worker.get("calls_capped") or 0) > 0 else None)
             if ended_by and trouble is None:  # R1: a normal end, not an account hold/refusal
                 report.state = "completed"
@@ -560,7 +629,12 @@ class FlowTeam(LeaderTeam):
             # cut off too. Ordinary step/round-team recovery mapping stays unchanged.
             report.state = "failed"
         ending = turn_ending(report, self.account_slot, self.account.get("room"))
-        if ending.kind == "refused" or not gone:
+        if ending.kind == "refused":
+            return super().settle(turn, name, cfg, report, worker, agent_event_id)
+        if not gone:
+            # A known box without a teardown receipt is uncertain even when the prompt
+            # never went in. Keep its claim until C1; other members can still carry on.
+            report.state = "uncertain"
             return super().settle(turn, name, cfg, report, worker, agent_event_id)
         if halting:
             if self.halt.why == "drain" and not self.halt.run_cancelled():
@@ -581,8 +655,9 @@ class FlowTeam(LeaderTeam):
 
     def _finish(self, turn: dict, name: str, report: Any, worker: dict,
                 agent_event_id: str) -> StepResult:
-        idle = [a for a in self._rows(acts, acts.c.turn_id == turn["turn_id"],
-                                      acts.c.op == IDLE, acts.c.state != "void")]
+        recorded = self._rows(acts, acts.c.turn_id == turn["turn_id"], acts.c.state != "void")
+        idle = [a for a in recorded if a["op"] == IDLE]
+        asked = next((a["args"] for a in recorded if a["op"] == ASK_OWNER), None)
         tool_calls = int(getattr(report.outcome, "tool_calls", 0) or 0)
         rest = (("idle", (idle[0]["args"] or {}).get("note")) if idle
                 else ("no_tool", None) if report.outcome is not None and tool_calls == 0
@@ -591,7 +666,7 @@ class FlowTeam(LeaderTeam):
         res = self.ledger.finish_turn(turn["turn_id"], epoch=turn["epoch"],
                                       output=report.output,
                                       model_call_ids=report.model_call_ids, worker=worker,
-                                      ask_owner=None, attempt_id=self.attempt_id, rest=rest)
+                                      ask_owner=asked, attempt_id=self.attempt_id, rest=rest)
         if res is None:
             return StepResult("lost", member=name, turn=turn)
         return StepResult("completed", member=name, turn=self.ledger.turn(turn["turn_id"]),
@@ -620,8 +695,24 @@ class FlowTeam(LeaderTeam):
         subject = {**details, **resume, "label": "usage-limit", "header": "usage-limit",
                    "member": member, "turn_no": turn["turn_no"], "question": question,
                    "reply_hint": "Reply 'restart' or 'stop'.", "options": list(LIMIT_OPTIONS)}
-        self.ledger.open_wait_unless_open(self.run_id, self.host_path, "limit", subject,
-                                          self.attempt_id)
+        opened = self.ledger.open_wait_unless_open(self.run_id, self.host_path, "limit", subject,
+                                                   self.attempt_id)
+        if opened is None and weekly:
+            # Concurrent receipts may meet an existing 5-hour hold. Weekly is the stronger
+            # hold: elevate it without losing any known scope, never lower it to auto-resume.
+            for held in self.ledger.open_waits(self.run_id, self.host_path):
+                prior = held["subject"] or {}
+                if held["kind"] != "limit" or prior.get("kind") != FIVE_HOUR:
+                    continue
+                required = sorted(set(prior.get("required_windows") or ())
+                                  | set(prior.get("blocked_windows") or ())
+                                  | set(subject.get("required_windows") or ())
+                                  | set(subject.get("blocked_windows") or ()))
+                stronger = {**prior, **subject, "required_windows": required,
+                            "usage_verified": False, "usage_status": "unavailable",
+                            "usage_checked_at": None}
+                self.ledger.update_limit_wait(held["wait_id"], prior, stronger)
+                break
 
     def _refresh_limit(self, wait: dict) -> dict | None:
         """Verify the held account with the helper, preserving the wait and the kept slot.
@@ -792,7 +883,12 @@ class FlowTeam(LeaderTeam):
                 logger.exception("pi team: %s's turn broke", name)
                 self.halt.set("failed")
                 return Outcome("failed", f"{name}'s turn could not be run: {exc}")
-            if result.kind == "refused":
+            if result.kind == "failed":
+                # Includes pre-box preparation failures, which bypassed the old settle
+                # recovery path. A member failure must always have an actionable wait.
+                self.ledger.open_recovery_for_failed(self.run_id, self.host_path,
+                                                     self.attempt_id)
+            elif result.kind == "refused":
                 self.halt.set("refused")
                 self.end(ACCOUNT_REFUSED)
             elif result.kind == "lost":
@@ -935,6 +1031,10 @@ class FlowTeam(LeaderTeam):
             if running:
                 self._tick(running)
                 return True
+            if s.get("kind") != FIVE_HOUR and limit_restart_ready(s):
+                # Verified weekly room means this is now an owner wait. Consume its
+                # answer before any timer refresh; restart itself checks freshness again.
+                return False
             if draining():
                 self._halt_for_draining()
                 leave_if_draining(f"team {self.host_path}")
@@ -984,13 +1084,40 @@ class FlowTeam(LeaderTeam):
         return applied
 
     def _park(self, context: Any) -> bool:
-        """Nothing runs and nothing can start: ask the owner the first open question (this
-        parks the run when unanswered). False when there is none."""
+        """Nothing runs or can start: register every question, then park on all of them.
+        An answer to any held member wakes the run, not just the first member's answer.
+        False when there is no askable wait."""
         found = self._askable()
         if not found:
             return False
+        if len(found) > 1:
+            applied = False
+            for wait in found:
+                answer = self.ask(context, wait, hold=False)
+                if answer is not None:
+                    self.apply(wait, answer)
+                    applied = True
+                    if self.stopped():
+                        return True
+            if applied:
+                return True
+            found = self._askable()  # includes gate_name written by the registration bridge
+            if not found:
+                return True
+        also: list[dict] = []
+        recorder = getattr(context, "event_recorder", None)
+        if len(found) > 1 and getattr(context, "park_at_gates", False) and recorder is not None:
+            path = context.step_path
+            extra = {w["gate_name"]: w["wait_id"] for w in found[1:] if w.get("gate_name")}
+            for event in recorder.gate_events():
+                data = event.get("data") or {}
+                if (event.get("status") == "waiting" and data.get("gate_path") == path
+                        and data.get("name") in extra):
+                    also.append({"event_id": str(event["id"]), "node": path.rsplit(".", 1)[-1],
+                                 "path": path, "round": int(data.get("gate_round") or 1),
+                                 "wait_id": extra[data["name"]]})
         wait = found[0]
-        answer = self.ask(context, wait)
+        answer = self.ask(context, wait, also=tuple(also))
         if answer is not None:
             self.apply(wait, answer)
         return True

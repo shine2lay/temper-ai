@@ -149,7 +149,7 @@ refused with a plain sentence, by the name a config would use for it (M4 SW-04; 
 | `conversation: {type: fresh_each_round}` (or just `fresh_each_round`) | `conversation: fresh_each_round isn't built yet: members keep their conversation for the whole team stage` |
 | `conversation: {continue_from: <stage>}` (two team stages continuing) | `conversation: continuing members' conversations from an earlier team stage (continue_from) isn't built yet: each team stage starts its members' conversations fresh` |
 | `private_children` (or `children`) | `private_children: private children aren't built yet: a team is the members it lists, and none of them can start a private helper` |
-| `pause_after_rounds` (non-null) | Removed: use `pause_every_usd`; old round teams require a new Project. |
+| `pause_after_rounds` (non-null) | Removed: `pause_after_rounds belonged to review rounds; start a new Project`. |
 | `communication: {type: edges, ...}` | `communication: edges isn't built yet; use all` (below) |
 
 A member's own agent config asking for one of these (`conversation`, `continue_from`,
@@ -192,7 +192,8 @@ its gates park and its loops must say `on_max_loops: fail`.
 **The team node** (`temper_ai/pi_agent/team_node.py`, `TeamNode`): the stage holds one
 node, `<stage>.team`, which runs the free-flowing loop on the team's messages and inboxes:
 only the leader starts with the goal; messaged members work in parallel, share one version,
-rest with `idle`, check in at each dollar-spend boundary, and call `done(summary)` for closing
+rest with `idle`, ask owner-only questions with `ask_owner(question)` (only that member waits),
+check in at each dollar-spend boundary, and call `done(summary)` for closing
 ([pi-team-runtime.md](pi-team-runtime.md); messaging and inboxes:
 [pi-team-messages.md](pi-team-messages.md)). A failed team fails its stage too; a stop at
 the pause or when stalled ends it, its stage and its run cancelled. The Team page starts
@@ -410,8 +411,9 @@ no environment value is ever in a wait.
   or the copy's "working folder ... is a link").
 - A member's identity guidance is Temper's own (`assets/temper-box/role-section.md`,
   written as the box's `pi-identity-role.md`; M4 SW-27, M2-roles D1): it says the box has no
-  notebook, memory_write, daily log, queue or ask-the-owner tools and asks for lessons,
-  findings and questions for the owner in the reply. A chat's own guidance, which tells the
+  chat notebook, memory_write, daily log or queue tools. A flow member uses the provided
+  `ask_owner` tool for owner-only questions; a single Pi step puts them in its reply.
+  Lessons and findings go in the reply. A chat's own guidance, which tells the
   role to keep notes with those tools, never reaches a box. The text sits in the pinned
   temper-box folder, so a change to it is a settings change a reopened conversation asks
   the owner about ([above](#settings-changed-while-a-conversation-waits)).

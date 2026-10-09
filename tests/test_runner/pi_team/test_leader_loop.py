@@ -49,9 +49,9 @@ def test_each_members_framing_carries_the_tools_note_with_exactly_its_tools(
     work_scripts()
     team = open_flow(led, box, run_id, tmp_path)
     assert team.drive(ls.Context()).status == "done"
-    expected = {"lead": ["done", "idle", "read", "send_message", "share"],
-                "builder": ["idle", "read", "send_message", "share"],
-                "checker": ["idle", "read", "send_message", "share"]}
+    expected = {"lead": ["ask_owner", "done", "idle", "read", "send_message", "share"],
+                "builder": ["ask_owner", "idle", "read", "send_message", "share"],
+                "checker": ["ask_owner", "idle", "read", "send_message", "share"]}
     for name, tools in expected.items():
         assert sorted(team.tools_for(team.members[name])) == tools
         note = tools_note(tools)

@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, overload
 
@@ -111,6 +112,7 @@ def park(
     round: int,  # noqa: A002 - the wait's round, as RunParked calls it
     wait_id: str | None = None,
     log: logging.Logger | None = None,
+    also: Sequence[dict] = (),
 ) -> RunParked | None:
     """Save where a Pi run waits, under the wait's own id, so it can let its worker go.
 
@@ -119,7 +121,9 @@ def park(
     checkpoint could not be saved: then the wait holds its worker, as any wait outside a Pi
     workflow does, rather than letting go of a run nothing would know how to carry on.
     ``log`` is the logger to tell it on: the executor passes its own for approvals, so their
-    lines read exactly as they did before this path was shared.
+    lines read exactly as they did before this path was shared. ``also`` names the step's
+    other open waits, as RunParked.as_dict() shapes them: an answer to any of them wakes
+    the run (a team with several owner questions open, M7).
     """
     log = log or logger
     what = "Gate" if wait_id is None else "Step wait"
@@ -143,8 +147,10 @@ def park(
     else:
         log.info("Step wait: '%s' waits on you at '%s', round %s; the run lets its worker go "
                  "(execution %s, event %s)", path, wait_id, round, context.run_id, event_id)
-    return RunParked(event_id=event_id, node=node, path=path, round=round,
-                     checkpoint_id=checkpoint_id, wait_id=wait_id)
+    parked = RunParked(event_id=event_id, node=node, path=path, round=round,
+                       checkpoint_id=checkpoint_id, wait_id=wait_id)
+    parked.also = [dict(w) for w in also]
+    return parked
 
 
 def finish_usage_timer(context: ExecutionContext, wait_id: str, *, cancelled: bool = False) -> None:
@@ -307,9 +313,8 @@ def ask_owner(
         return None
     # A Pi workflow does not hold its worker while it waits (docs/gates.md).
     if getattr(context, "park_at_gates", False):
-        park_extras: dict[str, Any] = {"also": list(also)} if also else {}
         parked = park(context, event_id=event_id, node=path.rsplit(".", 1)[-1], path=path,
-                      round=round_, wait_id=wait_id, **park_extras)
+                      round=round_, wait_id=wait_id, also=also)
         if parked is not None:
             raise parked
     return _hold(context, name, path, wait_id, event_id, round_, registry)

@@ -159,7 +159,9 @@ it can't see is refused there as "project: <path> isn't reachable inside Temper"
   then has the existing reply answer shape. Flow member questions can each have `asked: true`
   and an `event_id`; each holds only its member. A parked run registers all answerable gate ids,
   so any one answer can wake it. Settings questions take precedence. Old round
-  records retain their first-question-only shape. A member's question shows as `kind: question`.
+  records retain their first-question-only shape. A member's question shows as `kind: question`,
+  with `header` "<member> asks" and a fixed `note` (the words are the member's, not Temper's;
+  no key or password in an answer); `note` is null for other waits.
   Flow waits add `scope: member | team` and first-sentence `words` (at most 160 characters). Each wait has its `question` without reply syntax,
   the chat's `reply_hint` apart ("Reply 'continue', 'guide: <what to tell design>', or
   'stop'."), its `answers` with `needs_text` (`required`, `optional`, `none`), and
@@ -216,7 +218,8 @@ next check-in and history), `you` (count/first owner question), `counts`, `links
 (latest shared version and share history), `events_cursor` and visible `events_total`.
 Members add state/since, current `on`, live tools, ready-message count, last sent message,
 last share, conflicts, idle reason/note and last-turn error. A raw event cursor can exceed the
-visible count because internal bookkeeping is not shown. Flow omits `round` and `reviews`.
+visible count because internal bookkeeping is not shown. A feed `limit` row carries the hold's
+latest `resumes_at` only while that hold is open; once it has ended the row's `resumes_at` is null. Flow omits `round` and `reviews`.
 
 `GET /api/team/trials` lists `{trial_id, execution_id, kind, workflow, goal_first_line, leader,
 members, state, decision, run_status, cost_usd, started_at, started_by, ended_at}` (old rounds retain `round`),

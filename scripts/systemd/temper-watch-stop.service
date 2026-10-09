@@ -15,7 +15,8 @@ Type=simple
 WorkingDirectory=%h/temper-ai
 # The Project's settings, in a file only the owner reads (600):
 #   RUN=<the run id>
-#   SINCE=<when the watch was armed for this Project, UTC, e.g. 2026-10-09T17:00:00Z>
+#   SINCE=<fixed Project open-word time, UTC, e.g. 2026-10-09T17:00:00Z>
+# Keep SINCE unchanged across reader restarts and watch re-arms.
 #   RECORDS=<the watch's records folder, absolute>
 #   WATCH_UNIT=<the watch's user unit>   (optional; the default is below)
 Environment=WATCH_UNIT=security-trial-watch
@@ -27,8 +28,8 @@ ExecStart=/usr/bin/python3 %h/temper-ai/scripts/pi_watch_stop.py --records ${REC
 Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=2 3
-# systemctl lives in /usr/bin; a user unit starts with almost no PATH.
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Include the supported user tools as well as systemctl in /usr/bin.
+Environment=PATH=%h/.local/bin:%h/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin
 NoNewPrivileges=true
 PrivateTmp=true
 

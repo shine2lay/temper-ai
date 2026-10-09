@@ -34,12 +34,16 @@ the replay tries again); 2 bad arguments or setup; 3 the server has no such run.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
+import math
 import os
+import re
 import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -49,26 +53,46 @@ from typing import Any
 REASON_MAX_CHARS = 2000  # the cancel route refuses a longer reason (docs/api-access.md)
 DEFAULT_SERVER = "http://127.0.0.1:8420"
 DEFAULT_WATCH_UNIT = "security-trial-watch"
+MAX_RECORD_BYTES = 1024 * 1024
+MAX_JSON_DEPTH = 64
+
+
+def safe_text(text: str) -> str:
+    """Keep valid Unicode; escape unpaired surrogates and controls on one line."""
+    text = text.encode("utf-8", "backslashreplace").decode("utf-8")
+    return "".join(ch if ch >= " " and ch != "\x7f" else f"\\x{ord(ch):02x}" for ch in text)
 
 
 def log(text: str) -> None:
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    print(f"{stamp} {text}", flush=True)
+    try:
+        encoding = sys.stdout.encoding or "utf-8"
+        line = f"{stamp} {safe_text(text)}".encode(encoding, "backslashreplace").decode(encoding)
+        print(line, flush=True)
+    except (OSError, UnicodeError, ValueError):
+        # A broken log stream must not prevent the ordinary cancel request.
+        pass
 
 
 def parse_time(text: str, *, need_zone: bool = True) -> datetime:
-    """An ISO time such as 2026-10-09T17:00:00Z. Without a zone it is refused,
-    unless ``need_zone`` is False, when it is read as UTC (the watch's records
-    are UTC)."""
+    """Full ISO datetime only. Naive full datetimes may be read as UTC for
+    legacy records; unusable record dates must fall back to the file's mtime."""
+    if not isinstance(text, str):
+        raise ValueError("not a datetime string")
     raw = text.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})?", raw):
+        raise ValueError("expected a full ISO datetime, not a date alone")
     if raw.endswith(("Z", "z")):
         raw = raw[:-1] + "+00:00"
-    when = datetime.fromisoformat(raw)
-    if when.tzinfo is None:
-        if need_zone:
-            raise ValueError(f"{text!r} has no zone (add Z for UTC)")
-        when = when.replace(tzinfo=UTC)
-    return when.astimezone(UTC)
+    try:
+        when = datetime.fromisoformat(raw)
+        if when.tzinfo is None:
+            if need_zone:
+                raise ValueError("time has no zone (add Z for UTC)")
+            when = when.replace(tzinfo=UTC)
+        return when.astimezone(UTC)
+    except OverflowError:
+        raise ValueError("datetime is out of range") from None
 
 
 def _since_arg(text: str) -> datetime:
@@ -90,14 +114,44 @@ class Finding:
 
     def reason(self) -> str:
         what = self.kind if self.subject == self.kind else f"{self.kind} {self.subject}"
-        return f"Security watch {self.verdict}: {what}: {self.first_reason}"[:REASON_MAX_CHARS]
+        return safe_text(f"Security watch {self.verdict}: {what}: {self.first_reason}")[:REASON_MAX_CHARS]
 
 
 def _mtime(path: Path) -> datetime | None:
     try:
         return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
-    except OSError:
+    except (OSError, OverflowError, ValueError):
         return None
+
+
+def read_record(path: Path) -> dict[str, Any]:
+    """Bound bytes and nesting before decoding; every failure follows re-read."""
+    with path.open("rb") as source:
+        raw = source.read(MAX_RECORD_BYTES + 1)
+    if len(raw) > MAX_RECORD_BYTES:
+        raise ValueError(f"record exceeds {MAX_RECORD_BYTES} bytes")
+    text = raw.decode("utf-8")
+    depth, in_string, escaped = 0, False, False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "[{":
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                raise ValueError(f"record exceeds {MAX_JSON_DEPTH} nesting levels")
+        elif ch in "]}":
+            depth -= 1
+    rec = json.loads(text)
+    if not isinstance(rec, dict):
+        raise ValueError("not a JSON object")
+    return rec
 
 
 def _describe(rec: dict[str, Any], name: str) -> tuple[str, str]:
@@ -116,7 +170,7 @@ def unit_state(systemctl: str, unit: str) -> str:
     try:
         done = subprocess.run([systemctl, "--user", "is-active", unit],
                               capture_output=True, text=True, timeout=10, check=False)
-    except (OSError, subprocess.SubprocessError) as exc:
+    except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
         return f"unknown ({type(exc).__name__})"
     lines = done.stdout.strip().splitlines()
     return lines[0].strip() if lines else "unknown (no answer)"
@@ -168,16 +222,15 @@ class Reader:
     def _read(self, name: str) -> tuple[datetime, str, Finding] | None:
         path = self.records / name
         try:
-            rec = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(rec, dict):
-                raise ValueError("not a JSON object")
-        except (OSError, ValueError) as exc:
+            rec = read_record(path)
+        except (OSError, ValueError, RecursionError) as exc:
             problem = f"{type(exc).__name__}: {str(exc)[:200]}"
             if name not in self.again_at:
                 self.again_at[name] = time.monotonic() + self.reread
                 log(f"read {name}: doesn't parse ({problem}); reading it again in {self.reread:g} s")
                 return None
             self.done.add(name)
+            self.again_at.pop(name, None)
             when = _mtime(path) or datetime.now(UTC)
             if when < self.since:
                 log(f"read {name} again: still doesn't parse, but it is older than --since: not acted on")
@@ -186,8 +239,9 @@ class Reader:
             return when, name, Finding("COULD NOT CHECK", "record", name,
                                        f"record does not parse ({problem})", name)
         self.done.add(name)
+        self.again_at.pop(name, None)
         try:
-            when = parse_time(str(rec.get("checked_at") or ""), need_zone=False)
+            when = parse_time(rec.get("checked_at"), need_zone=False)
         except ValueError:
             when = _mtime(path) or datetime.now(UTC)
         kind, subject = _describe(rec, name)
@@ -220,32 +274,48 @@ class Reader:
         return None
 
 
-def post_cancel(server: str, run: str, key: str, reason: str) -> tuple[int | None, str]:
-    """One cancel call: (HTTP status, body), or (None, why) when nothing answered.
-    No proxy: the server is on this host."""
-    url = f"{server.rstrip('/')}/api/runs/{run}/cancel"
-    request = urllib.request.Request(
-        url, data=json.dumps({"reason": reason}).encode("utf-8"), method="POST",
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward the key, or mistake a different endpoint for a cancel."""
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str,
+                         headers: Any, newurl: str) -> None:
+        return None
+
+
+def post_cancel(server: str, run: str, key: str, reason: str, *,
+                timeout: float = 15.0) -> tuple[int | None, str]:
+    """One POST to the configured cancel URL, with no proxies or redirects.
+    Return content-free transport errors: header exceptions can contain keys."""
     try:
-        with opener.open(request, timeout=15) as reply:
-            return reply.status, reply.read(2000).decode("utf-8", "replace")
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc.read(2000).decode("utf-8", "replace")
-    except (urllib.error.URLError, OSError) as exc:
-        return None, f"{type(exc).__name__}: {exc}"
+        url = f"{server.rstrip('/')}/api/runs/{run}/cancel"
+        request = urllib.request.Request(
+            url, data=json.dumps({"reason": reason}).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        try:
+            with opener.open(request, timeout=timeout) as reply:
+                return reply.status, reply.read(2000).decode("utf-8", "replace").replace(key, "[redacted]")
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read(2000).decode("utf-8", "replace").replace(key, "[redacted]")
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as exc:
+        return None, f"{type(exc).__name__}: request failed"
 
 
 def cancel(server: str, run: str, key: str, finding: Finding, *, retry_every: float,
            retry_for: float) -> int:
     reason = finding.reason()
     log(f"{finding.verdict} from {finding.source}: cancelling run {run}: {reason}")
-    deadline = time.monotonic() + retry_for
+    started = time.monotonic()
+    deadline = started + retry_for
     attempt = 0
     while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            log(f"cancel still failing after {retry_for:g} s (elapsed {time.monotonic() - started:.2f} s): "
+                "exit 1 (systemd starts the reader again; it replays the records and tries again)")
+            return 1
         attempt += 1
-        status, body = post_cancel(server, run, key, reason)
+        status, body = post_cancel(server, run, key, reason, timeout=min(15.0, remaining))
         if status is not None and 200 <= status < 300:
             log(f"cancel answered {status}: {body.strip()[:300]}")
             log(f"done: run {run} cancel answered after {finding.verdict} from {finding.source}")
@@ -255,11 +325,7 @@ def cancel(server: str, run: str, key: str, finding: Finding, *, retry_every: fl
             return 3
         log(f"cancel attempt {attempt} failed: {status if status is not None else 'no answer'}: "
             f"{body.strip()[:300]}")
-        if time.monotonic() + retry_every > deadline:
-            log(f"cancel still failing after {retry_for:g} s: exit 1 (systemd starts the reader again; "
-                "it replays the records and tries again)")
-            return 1
-        time.sleep(retry_every)
+        time.sleep(min(retry_every, max(0.0, deadline - time.monotonic())))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -268,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="the watch's records folder (absolute); only read")
     parser.add_argument("--run", required=True, help="the run to cancel")
     parser.add_argument("--since", type=_since_arg, required=True,
-                        help="act on records checked at or after this time (when the watch was armed), e.g. 2026-10-09T17:00:00Z")
+                        help="act on records checked at or after the fixed Project open-word time, e.g. 2026-10-09T17:00:00Z")
     parser.add_argument("--key-file", type=Path, required=True,
                         help="a named API key's file (docs/api-access.md); the key is never printed")
     parser.add_argument("--server", default=os.environ.get("TEMPER_SERVER_URL") or DEFAULT_SERVER,
@@ -288,16 +354,36 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     run = args.run.strip()
-    if not run or "/" in run:
-        parser.error(f"--run {args.run!r} is not a run id")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", run):
+        parser.error("--run must be a non-empty URL-safe run id")
+    try:
+        server = urllib.parse.urlsplit(args.server)
+        args.server.encode("ascii")
+        valid_server = (server.scheme in {"http", "https"} and bool(server.hostname)
+                        and server.username is None and server.password is None
+                        and not server.query and not server.fragment
+                        and not any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in args.server))
+        _ = server.port  # validate the port, including its range
+    except (ValueError, UnicodeError):
+        valid_server = False
+    if not valid_server:
+        parser.error("--server must be an http(s) URL with a host and no credentials, query or fragment")
+    for option in ("poll", "reread", "retry_every", "retry_for", "watch_grace"):
+        value = getattr(args, option)
+        if not math.isfinite(value) or value < 0 or (value == 0 and option != "watch_grace"):
+            parser.error(f"--{option.replace('_', '-')} must be finite and {'non-negative' if option == 'watch_grace' else 'positive'}")
+    if not args.watch_unit or args.watch_unit.startswith("-"):
+        parser.error("--watch-unit must name a user unit")
     if not args.records.is_absolute() or not args.records.is_dir():
         parser.error(f"--records {args.records} is not an absolute path to an existing folder")
     try:
         key = args.key_file.expanduser().read_text(encoding="utf-8").strip()
-    except OSError as exc:
-        parser.error(f"--key-file {args.key_file} can't be read ({type(exc).__name__})")
+    except (OSError, UnicodeError) as exc:
+        parser.error(f"--key-file can't be read ({type(exc).__name__}); contents withheld")
     if not key:
-        parser.error(f"--key-file {args.key_file} is empty")
+        parser.error("--key-file is empty")
+    if not re.fullmatch(r"[!-~]+", key):
+        parser.error("--key-file must hold one printable ASCII token; contents withheld")
 
     reader = Reader(args.records, args.since, watch_unit=args.watch_unit,
                     watch_grace=args.watch_grace, reread=args.reread, systemctl=args.systemctl)

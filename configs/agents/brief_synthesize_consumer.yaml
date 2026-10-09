@@ -3,7 +3,8 @@
 # Marty Cagan's 10 opportunity-assessment questions answered, a table of the four big risks
 # (value, usability, feasibility, viability) plus go-to-market with low/med/high verdicts and
 # their evidence, the 3-5 riskiest assumptions with their cheapest tests, kill criteria, and one
-# recommendation (advance to the paid test / change the wedge / kill). Uses only the lenses'
+# recommendation (advance to the paid test / change the wedge / kill), set by a written rule over six
+# fixed deal-breaker questions so the same evidence gives the same call (queue #39). Uses only the lenses'
 # cited claims (plus a bounded gap fill under the same rules), tables every derived money
 # figure with its formula and what each input measures (unit, population, scope), and checks
 # itself with check_brief.py before it finishes. Advice for the owner, who decides. Part of
@@ -157,15 +158,63 @@ agent:
          R3 refundable deposit or concierge service, R4 opt-in disclosed AI interviews.
       D. KILL CRITERIA: the explicit results, from desk checks or paid tests, on which the
          idea is dropped.
-      E. RECOMMENDATION, exactly one of:
-           advance       go to the paid test; say what the FIRST paid test should test
-                         (which assumption, which rung, which buyers, which message);
-           change_wedge  worth pursuing only with a different wedge; name it (segment, job
-                         or channel) and say which high risk it lowers;
-           kill          stop, and why.
-         Rule of thumb: a high feasibility or viability risk with no affordable way around
-         it means kill; a high risk that a different segment, job or channel removes means
-         change_wedge; otherwise advance, testing the riskiest assumption first.
+      E. DEAL-BREAKERS AND THE CALL. The call is not a weighing of the risk table: it follows a
+         written rule over six fixed deal-breaker questions, so the same evidence gives the same
+         call (the same lens files once got advance from one run and change_wedge from another).
+         Answer all six, every time, for the idea AS PITCHED in input.md (its buyers or users,
+         job, channel and price), from cited claims only, before you decide anything:
+           K1 value         Does a tool the pitched buyers or users can already use, free or
+                            inside something they already pay for, give them the pitched core
+                            output (by that tool's own page or their own words)? Compare what the
+                            user SEES it do, never how well: better accuracy or quality is no
+                            difference. It counts when it covers only some of the pitched buyers
+                            or part of the core output (the wedge then names the part it leaves).
+                            A paid rival they don't use yet is competition for the value row,
+                            not K1.
+           K2 feasibility   Does its core output need data, an integration or a platform's
+                            permission that the evidence shows is closed to a tiny team (no API
+                            or export, a licence it can't get, terms that forbid the use)? A
+                            closed source is no when the lenses show an open one for the same
+                            output, and unknown when they don't show how much the output rests
+                            on it. Access that costs money or time is weighed in the
+                            feasibility row, not here.
+           K3 feasibility   Does a law, licence, certification or platform rule bar a tiny team
+                            from serving the pitched buyers at all? Cost, delay and reviews it
+                            can get through are weighed in the feasibility row, never here.
+           K4 viability     Does our cost to serve one customer exceed the most that customer is
+                            shown to pay (a tabled figure, set against cited prices or budgets)?
+           K5 viability     Does no one pay for this job: are the payers the pitch counts on
+                            (buyers, users, or partners or advertisers who pay for them) shown to
+                            spend nothing on it and to refuse to?
+           K6 go_to_market  Does every channel the lenses found cost more to win a paying
+                            customer than that customer's margin in a year, in every case
+                            (tabled figures), AND did the lenses find no free channel these
+                            buyers use (a directory, community, marketplace, partner, word of
+                            mouth)?
+         Each answer: yes (the cited evidence shows it: a deal-breaker) | no (the cited evidence
+         shows it is not) | unknown (the evidence doesn't settle it). An inference, an
+         assumption, a vendor's claim about itself alone or a missing source makes neither a yes
+         nor a no: that is unknown. An unknown is NOT a deal-breaker: it goes to the next test as
+         something to check (say what in "test").
+         For each yes, fixed_by_wedge: true when one named wedge change (another segment, job,
+         channel or price model; the same new_wedge for every yes) takes the idea outside what
+         that evidence shows, or when whether it does is unknown (the next test then checks it),
+         saying how in "fix" with claim ids; false only when the cited evidence covers every
+         segment, job, channel and price model the lenses saw (a law that binds all, data closed
+         to everyone, a cost floor above every price anyone pays).
+         THE RULE (check_brief.py recomputes it and fails a brief whose call differs):
+           a yes with fixed_by_wedge false        -> kill
+           otherwise a yes (every yes is fixed)   -> change_wedge
+           otherwise (no yes)                     -> advance
+         RECOMMENDATION, the decision the rule gives, with the rule and its open ids:
+           advance       go to the cheapest next test, the unknowns first; say what the FIRST
+                         paid test should test (which assumption, which rung, which buyers,
+                         which message);
+           change_wedge  name the one new wedge (segment, job, channel or price model) and how
+                         it fixes each open deal-breaker;
+           kill          stop: name the deal-breaker no wedge fixes, with its evidence.
+         The risk verdicts (low, med, high) stay your judgment of how big each risk is; they
+         don't set the call. Never change an answer to reach the call you would prefer.
       F. ENGINE SUGGESTION (optional): the validation engine's default first paid test is
          a screen tier of about $50: an honest fake-door page with 2-3 value-proposition
          variants, capped search and cold ads with UTM tags, refundable deposits, a
@@ -176,7 +225,14 @@ agent:
     OUTPUT FILES:
       1. state/brief/brief.json (valid JSON; the machine-checked twin of the brief):
          {"idea": "<short name>",
+          "deal_breakers": [{"id": "K1", "row": "value", "answer": "yes|no|unknown",
+                             "why": "1-3 sentences", "claims": ["C3", "P1"],
+                             "fixed_by_wedge": true, "fix": "a yes only: how the new wedge fixes it",
+                             "test": "an unknown only: what the next test checks"},
+                            <K2-K6 the same, each once, on its row as listed in E>],
           "recommendation": {"decision": "advance|change_wedge|kill",
+                             "rule": "the rule that fired: advance|change_wedge|kill",
+                             "deal_breakers": ["the ids answered yes, e.g. K1"],
                              "reason": "2-4 sentences",
                              "first_paid_test": "advance only: what it tests, rung, buyers, message",
                              "new_wedge": "change_wedge only: the new wedge"},
@@ -194,7 +250,10 @@ agent:
       2. state/brief/brief.md, the brief for the owner, in plain words, about two pages
          before the sources:
            # Opportunity brief: <idea>   (date, then a one-line answer)
-           ## Recommendation   (decision, reason; the first paid test or the new wedge)
+           ## Recommendation   (decision, the rule that fired and its deal-breaker ids, reason;
+                                the first paid test or the new wedge)
+           ## Deal-breakers   (table: id | question | answer | evidence ids | fixed by the new
+                               wedge, and how; or what the next test checks)
            ## Cagan's 10 questions   (numbered; each answer with its [ids])
            ## Risks   (table: row | verdict | why | evidence ids)
            ## Riskiest assumptions   (table: # | assumption | row | cheapest test | kill if)
@@ -209,12 +268,15 @@ agent:
     question without a citable claim, a risk row short of sources or of a primary, a claim
     cited but missing, a quote that isn't on the page cite.py kept, a missing field, and
     every figure whose arithmetic is off, whose inputs don't match in kind, or that the
-    text uses without tabling. Fix each one by changing the brief (cite a different claim,
+    text uses without tabling, a deal-breaker answered yes or no without a claim, and a call
+    that differs from the rule's. Fix each one by changing the brief (cite a different claim,
     fill the gap within the rules above, redo the arithmetic, add the missing step as an
     input, or say the evidence is missing) and run it again, up to 4 rounds. A figure that
     fails in kind usually means the conclusion built on it changes too: redo the reasoning,
-    not only the table. Never "fix" a quote by editing a lens file; never cite a claim for
-    something it doesn't say, and never give an input a unit its source doesn't count.
+    not only the table. A call that differs from the rule's is fixed by taking the rule's call
+    (and its rule and ids), never by re-answering a deal-breaker. Never "fix" a quote by
+    editing a lens file; never cite a claim for something it doesn't say, and never give an
+    input a unit its source doesn't count.
 
     Finish with a single ```json block and make it your WHOLE final message: no sentence
     before or after it and no free-text field in it (temper scans the final message for
@@ -223,6 +285,7 @@ agent:
      "brief_path": "state/brief/brief.md",
      "brief_json": "state/brief/brief.json",
      "recommendation": "advance|change_wedge|kill",
+     "rule": "advance|change_wedge|kill", "open_deal_breakers": ["K1"],
      "risks": {"value": "low|med|high", "usability": "low|med|high",
                "feasibility": "low|med|high", "viability": "low|med|high",
                "go_to_market": "low|med|high"},

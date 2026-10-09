@@ -250,10 +250,33 @@ def good_brief(questions, rows):
                          "test": "a refundable deposit on the fake door", "kill_if": "fewer than 2 deposits in 100 visits",
                          "claims": ["F2"]} for n in (1, 2, 3)],
         "kill_criteria": ["Kill if fewer than 2 deposits in 100 visits."],
-        "recommendation": {"decision": "change_wedge", "reason": reason,
-                           "new_wedge": "denial follow-up for independent offices"},
+        "deal_breakers": deal_breakers(K1="yes"),
+        "recommendation": {"decision": "change_wedge", "rule": "change_wedge", "deal_breakers": ["K1"],
+                           "reason": reason, "new_wedge": "denial follow-up for independent offices"},
         "claims": [dict(c) for c in CLAIMS[:2]],
     }
+
+
+# The deal-breaker checklist (queue #39): its ids and rows, as check_brief.py and both synthesizers list them.
+CHECKLIST = {"K1": "value", "K2": "feasibility", "K3": "feasibility", "K4": "viability", "K5": "viability",
+             "K6": "go_to_market"}
+
+
+def deal_breakers(fixed=("K1", "K2", "K3", "K4", "K5", "K6"), **answers):
+    """K1-K6 answered (no unless given), each with its evidence; a yes is fixed by the wedge if it is in fixed."""
+    entries = []
+    for kid, row in CHECKLIST.items():
+        answer = answers.get(kid, "no")
+        entry = {"id": kid, "row": row, "answer": answer, "claims": ["F1"] if answer == "yes" else ["F2"],
+                 "why": f"What the cited evidence shows for {kid}, in a sentence or two of plain words."}
+        if answer == "unknown":
+            entry.update(claims=[], test="a desk count of the offices that already pay for it")
+        if answer == "yes":
+            entry["fixed_by_wedge"] = kid in fixed
+            if kid in fixed:
+                entry["fix"] = "Independent offices use no tool that does this follow-up yet [F1], so the new wedge leaves it."
+        entries.append(entry)
+    return entries
 
 
 FIGURE_CLAIMS = {
@@ -342,6 +365,30 @@ BREAKS = [
      "recommendation change_wedge: name the new wedge"),
     ("a copy with another URL", lambda b, lens: b["claims"][1].update(url="https://www.example.com/other"),
      "claim F2: the brief's copy has a different URL"),
+    # The call rule (queue #39).
+    ("no deal-breaker checklist", lambda b, lens: b.pop("deal_breakers"), "deal_breakers: missing"),
+    ("a question left out", lambda b, lens: b["deal_breakers"].pop(), "deal-breaker K6 (go_to_market): not answered"),
+    ("a question off the checklist", lambda b, lens: b["deal_breakers"].append(dict(b["deal_breakers"][1], id="K7")),
+     "deal_breakers: unknown ids K7"),
+    ("a question on another row", lambda b, lens: b["deal_breakers"][1].update(row="usability"),
+     "deal-breaker K2: row must be feasibility"),
+    ("a yes with no evidence", lambda b, lens: b["deal_breakers"][0].update(claims=[]),
+     "deal-breaker K1: a yes cites no claim"),
+    ("a yes from an invented source", lambda b, lens: b["deal_breakers"][0].update(claims=["F9"]),
+     "claim F9: cited but in no lens file"),
+    ("an unknown with no test", lambda b, lens: b["deal_breakers"][3].update(answer="unknown", claims=[]),
+     "deal-breaker K4: unknown, so say what the next test checks"),
+    ("a yes not marked fixed or not", lambda b, lens: b["deal_breakers"][0].pop("fixed_by_wedge"),
+     "deal-breaker K1: a yes needs fixed_by_wedge true or false"),
+    ("a fix that says nothing", lambda b, lens: b["deal_breakers"][0].update(fix="the wedge"),
+     "deal-breaker K1: fixed_by_wedge, so say how the named wedge fixes it"),
+    ("a call the deal-breakers don't give", lambda b, lens: b["recommendation"].update(
+        decision="advance", first_paid_test="a fake door for independent offices with deposits"),
+     "call rule: the deal-breakers give change_wedge"),
+    ("the wrong rule named", lambda b, lens: b["recommendation"].update(rule="advance"),
+     "recommendation.rule must name the rule that fired: change_wedge"),
+    ("the open deal-breakers not listed", lambda b, lens: b["recommendation"].update(deal_breakers=[]),
+     "recommendation.deal_breakers must list the open deal-breakers: [K1]"),
 ]
 
 
@@ -730,3 +777,55 @@ def test_the_synthesizer_is_told_to_table_its_figures(name):
     prompt = by_name(name)["system_prompt"]
     assert "DERIVED FIGURES" in prompt and '"figures": [<every derived figure' in prompt
     assert "An input's unit is what ITS SOURCE counts" in prompt
+
+
+# The call rule: the same evidence should give the same call. Six fixed deal-breaker questions feed
+# a written rule, and the check recomputes the decision independently of the synthesizer's judgment.
+
+CALLS = [
+    ("nothing open", {}, (), "advance"),
+    ("unknowns are no deal-breakers", {"K2": "unknown", "K6": "unknown"}, (), "advance"),
+    ("one yes the wedge fixes", {"K1": "yes"}, ("K1",), "change_wedge"),
+    ("every yes fixed by the one wedge", {"K1": "yes", "K6": "yes", "K3": "unknown"}, ("K1", "K6"), "change_wedge"),
+    ("a yes no wedge fixes", {"K3": "yes"}, (), "kill"),
+    ("one of two yes unfixed", {"K1": "yes", "K4": "yes"}, ("K1",), "kill"),
+]
+
+
+@pytest.mark.parametrize(("answers", "fixed", "call"), [c[1:] for c in CALLS], ids=[c[0] for c in CALLS])
+def test_the_call_is_the_one_the_deal_breakers_give(workspace, answers, fixed, call):
+    open_ids = sorted(k for k, a in answers.items() if a == "yes")
+
+    def as_ruled(brief):
+        brief["deal_breakers"] = deal_breakers(fixed, **answers)
+        brief["recommendation"].update(decision=call, rule=call, deal_breakers=open_ids,
+                                       first_paid_test="a fake door for independent offices with deposits")
+
+    rewrite(workspace, as_ruled)
+    result = check(workspace)
+    assert result["verdict"] == "pass", result["problems"]
+    assert (result["rule"], result["open_deal_breakers"]) == (call, open_ids)
+    for other in sorted({"advance", "change_wedge", "kill"} - {call}):
+        rewrite(workspace, lambda b: b["recommendation"].update(decision=other, rule=other))
+        result = check(workspace)
+        assert result["verdict"] == "fail" and not result["items"]["call_rule"]
+        assert any(p.startswith(f"call rule: the deal-breakers give {call}") for p in result["problems"]), \
+            result["problems"]
+
+
+def deal_breaker_block(name):
+    prompt = by_name(name)["system_prompt"]
+    found = re.search(r"^ *E\. DEAL-BREAKERS AND THE CALL\..*?(?=^ *F\. ENGINE SUGGESTION)", prompt, re.S | re.M)
+    assert found, f"{name} no longer has its deal-breaker block"
+    return found.group(0)
+
+
+def test_both_synthesizers_ask_the_checklist_the_check_recomputes(workspace):
+    business, consumer = deal_breaker_block("brief_synthesize"), deal_breaker_block("brief_synthesize_consumer")
+    assert business == consumer, "both versions answer the same questions in the same words"
+    assert dict(re.findall(r"^ +(K\d) (\w+) ", business, re.M)) == CHECKLIST
+    assert dict(load(workspace / "check_brief.py").DEAL_BREAKERS) == CHECKLIST
+    for name in ("brief_synthesize", "brief_synthesize_consumer"):
+        prompt = by_name(name)["system_prompt"]
+        assert "Rule of thumb" not in prompt, "the call is the rule's, not a weighing of the risk table"
+        assert '"deal_breakers": [{"id": "K1"' in prompt and '"rule": "the rule that fired' in prompt

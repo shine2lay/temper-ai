@@ -235,6 +235,14 @@ agent:
     things. Quote checks passed run 57dc513d, which weighed $175 per paying user against $9.50 of
     margin per active user, and run fc575760, which divided a $2.14 cost per click by a 5.83% lead
     rate (leads / clicks) as if it were the share of clickers who start the quiz.
+
+    It recomputes the call from the brief's deal-breakers (queue #39): the six checklist questions
+    K1-K6, each answered yes, no or unknown with its claims, and each yes marked fixed or not by the
+    one named wedge change. Any yes the wedge does not fix -> kill; every yes fixed -> change_wedge;
+    no yes -> advance. A brief whose decision, rule or listed deal-breakers differ from that fails.
+    The same travel and business evidence got different calls from the synthesizer's own judgment
+    (b512682b advance, 542baf8b change_wedge on the same lens files; bdfca8d0 kill, a80bc9a7
+    change_wedge on the same lens files).
     """
     import ast
     import glob
@@ -263,6 +271,25 @@ agent:
     ]
     BRIEF_DIR = os.path.join("state", "brief")
     LENSES = ["feasibility", "viability", "gtm", "competition"]
+    # The call rule (queue #39): the decision follows from the deal-breaker checklist, so the same
+    # evidence gives the same call. Ids and rows are fixed here; the questions' words are the
+    # synthesizers' DEAL-BREAKERS block (the same block in both, test-enforced).
+    DEAL_BREAKERS = [("K1", "value"), ("K2", "feasibility"), ("K3", "feasibility"),
+                     ("K4", "viability"), ("K5", "viability"), ("K6", "go_to_market")]
+    ANSWERS = ["yes", "no", "unknown"]
+    RULES = {
+        "kill": "an open deal-breaker that the named wedge change does not fix",
+        "change_wedge": "the one named wedge change fixes every open deal-breaker",
+        "advance": "no open deal-breaker",
+    }
+
+
+    def call_of(open_ids, fixed):
+        """The call the rule gives: open_ids are the yes answers, fixed the ones the named wedge fixes."""
+        if not open_ids:
+            return "advance"
+        return "change_wedge" if all(k in fixed for k in open_ids) else "kill"
+
     # What a part says when its account or the service stopped it, instead of research.
     NON_ANSWER = re.compile(
         r"session limit|usage limit|weekly limit|daily limit|rate[ _-]?limit|limit (?:reached|exceeded)"
@@ -961,6 +988,84 @@ agent:
         return not problems, problems, cited, notes
 
 
+    def check_call(brief, rec, decision, resolve):
+        """The deal-breaker checklist and the call it gives (queue #39).
+
+        Every checklist question K1-K6 is answered once, on its row: yes (the cited evidence shows the
+        deal-breaker), no (the cited evidence shows it isn't one) or unknown (the evidence doesn't
+        settle it; it goes to the next test, so it names what that test checks). A yes or a no cites a
+        claim; a yes says whether the one named wedge change fixes it, and how. The decision, the rule
+        named in recommendation.rule and the open ids in recommendation.deal_breakers must be the ones
+        the rule gives. Returns (ok, problems, claim ids cited, {"rule", "open", "answers"}).
+        """
+        problems, cited = [], set()
+        entries = brief.get("deal_breakers")
+        if not isinstance(entries, list) or not entries:
+            return False, ["deal_breakers: missing; answer each of %s yes, no or unknown"
+                           % ", ".join(k for k, _ in DEAL_BREAKERS)], cited, {}
+        by_id = {}
+        for n, entry in enumerate(entries, 1):
+            if not isinstance(entry, dict):
+                problems.append("deal_breakers entry %d is not an object" % n)
+                continue
+            kid = text_of(entry.get("id"))
+            if kid in by_id:
+                problems.append("deal-breaker %s: answered twice" % kid)
+            by_id[kid] = entry
+        rows = dict(DEAL_BREAKERS)
+        extra = sorted(set(by_id) - set(rows))
+        if extra:
+            problems.append("deal_breakers: unknown ids %s (the checklist is %s)"
+                            % (", ".join(extra), ", ".join(k for k, _ in DEAL_BREAKERS)))
+        answers, open_ids, fixed = {}, [], set()
+        for kid, row in DEAL_BREAKERS:
+            entry = by_id.get(kid)
+            if entry is None:
+                problems.append("deal-breaker %s (%s): not answered" % (kid, row))
+                continue
+            answer = text_of(entry.get("answer")).lower()
+            answers[kid] = answer
+            if text_of(entry.get("row")) != row:
+                problems.append("deal-breaker %s: row must be %s" % (kid, row))
+            if answer not in ANSWERS:
+                problems.append("deal-breaker %s: answer must be yes, no or unknown" % kid)
+                continue
+            if len(text_of(entry.get("why"))) < 40:
+                problems.append("deal-breaker %s: no reason given" % kid)
+            ids = [str(c) for c in entry.get("claims") or []]
+            cited.update(ids)
+            good = [c for c in ids if resolve(c)]
+            if answer in ("yes", "no") and not good:
+                problems.append("deal-breaker %s: a %s cites no claim that exists with a URL and a date "
+                                "(evidence that settles nothing makes it unknown)" % (kid, answer))
+            if answer == "unknown" and len(text_of(entry.get("test"))) < 20:
+                problems.append("deal-breaker %s: unknown, so say what the next test checks" % kid)
+            if answer != "yes":
+                continue
+            open_ids.append(kid)
+            flag = entry.get("fixed_by_wedge")
+            if not isinstance(flag, bool):
+                problems.append("deal-breaker %s: a yes needs fixed_by_wedge true or false" % kid)
+            elif flag:
+                fixed.add(kid)
+                if len(text_of(entry.get("fix"))) < 40:
+                    problems.append("deal-breaker %s: fixed_by_wedge, so say how the named wedge fixes it" % kid)
+        complete = len(answers) == len(DEAL_BREAKERS) and all(a in ANSWERS for a in answers.values())
+        rule = call_of(open_ids, fixed) if complete else None
+        if rule:
+            stated = rec.get("deal_breakers")
+            stated = sorted(str(k) for k in stated) if isinstance(stated, list) else None
+            if decision != rule:
+                problems.append("call rule: the deal-breakers give %s (%s; open: %s), but the decision is %s"
+                                % (rule, RULES[rule], ", ".join(open_ids) or "none", decision or "missing"))
+            if text_of(rec.get("rule")) != rule:
+                problems.append("recommendation.rule must name the rule that fired: %s" % rule)
+            if stated != sorted(open_ids):
+                problems.append("recommendation.deal_breakers must list the open deal-breakers: [%s]"
+                                % ", ".join(open_ids))
+        return not problems, problems, cited, {"rule": rule, "open": open_ids, "answers": answers}
+
+
     def check():
         problems = []
         index = {}
@@ -1110,6 +1215,13 @@ agent:
             problems.append("recommendation change_wedge: name the new wedge")
         items["recommendation"] = rec_ok
 
+        # 5b. The call follows the rule over the deal-breaker checklist (queue #39).
+        call_ok, call_problems, call_claims, call = check_call(brief, rec if isinstance(rec, dict) else {},
+                                                               decision, resolve)
+        cited.update(call_claims)
+        problems.extend(call_problems)
+        items["call_rule"] = call_ok
+
         # 6. Derived figures: shown, recomputed, and counted over matching things (queue #25).
         figures_ok, figure_problems, figure_claims, figure_notes = check_figures(brief, resolve, input_text)
         cited.update(figure_claims)
@@ -1155,6 +1267,9 @@ agent:
             "items": items,
             "problems": problems,
             "decision": decision,
+            "rule": call.get("rule"),
+            "open_deal_breakers": call.get("open"),
+            "deal_breaker_answers": call.get("answers"),
             "claims_cited": len(resolved),
             "primary_cited": sum(1 for c in resolved.values() if c.get("quality") == "primary"),
             "spot_check": sample,

@@ -1,0 +1,25 @@
+{
+  "route": "GET /api/team/runs/{execution_id}/events?after=0&limit=15",
+  "status": 200,
+  "body": {
+    "events": [
+      {"seq": 1, "at": "2026-10-09T08:00:00.900000+00:00", "kind": "message", "member": "lead", "from": "temper", "from_kind": "temper", "to": "lead", "message_kind": "goal", "text": "Add a dark mode switch to the notes app's settings screen.", "message_id": "a0b1c2d3e4f5061728394a5b6c7d8e9f"},
+      {"seq": 2, "at": "2026-10-09T08:00:03.120000+00:00", "kind": "turn_start", "member": "lead", "turn_no": 1},
+      {"seq": 3, "at": "2026-10-09T08:00:03.300000+00:00", "kind": "turn_start", "member": "maker", "turn_no": 1},
+      {"seq": 4, "at": "2026-10-09T08:00:03.410000+00:00", "kind": "turn_start", "member": "styler", "turn_no": 1},
+      {"seq": 5, "at": "2026-10-09T08:00:03.520000+00:00", "kind": "turn_start", "member": "checker", "turn_no": 1},
+      {"seq": 6, "at": "2026-10-09T08:01:40.000000+00:00", "kind": "idle", "member": "checker", "note": "Nothing to check until a version has the switch."},
+      {"seq": 7, "at": "2026-10-09T08:01:40.100000+00:00", "kind": "turn_end", "member": "checker", "turn_no": 1, "ended": "completed", "ended_by": null, "cost_usd": 0.62, "tool_calls": 3},
+      {"seq": 8, "at": "2026-10-09T08:05:12.000000+00:00", "kind": "share", "member": "lead", "version_no": 1, "commit_short": "1a2b3c4d5e6f", "note": "Plan in PLAN.md: who does what", "files_changed": 1},
+      {"seq": 9, "at": "2026-10-09T08:05:39.000000+00:00", "kind": "turn_end", "member": "lead", "turn_no": 1, "ended": "completed", "ended_by": null, "cost_usd": 3.4, "tool_calls": 11},
+      {"seq": 10, "at": "2026-10-09T08:05:40.000000+00:00", "kind": "message", "member": "maker", "from": "lead", "from_kind": "member", "to": "maker", "message_kind": "work_request", "text": "Build the switch in settings.py and save the choice between visits.", "message_id": "c2d3e4f5061728394a5b6c7d8e9f0a1b"},
+      {"seq": 11, "at": "2026-10-09T08:05:41.000000+00:00", "kind": "message", "member": "checker", "from": "lead", "from_kind": "member", "to": "checker", "message_kind": "work_request", "text": "Check each version with the switch: does the choice survive a reload?", "message_id": "3940a5b6c7d8e9f0a1b2c3d4e5f60718"},
+      {"seq": 12, "at": "2026-10-09T08:05:41.200000+00:00", "kind": "wake", "member": "checker", "by": "lead"},
+      {"seq": 13, "at": "2026-10-09T08:12:05.000000+00:00", "kind": "conflict", "member": "styler", "at_step": "sync", "paths": [{"path": "theme.css", "kind": "markers"}]},
+      {"seq": 14, "at": "2026-10-09T08:12:30.000000+00:00", "kind": "turn_end", "member": "maker", "turn_no": 1, "ended": "completed", "ended_by": "no_tool_call", "cost_usd": 1.15, "tool_calls": 0},
+      {"seq": 15, "at": "2026-10-09T08:12:30.100000+00:00", "kind": "idle", "member": "maker", "note": null}
+    ],
+    "cursor": 15,
+    "more": true
+  }
+}

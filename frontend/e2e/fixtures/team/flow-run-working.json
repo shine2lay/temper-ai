@@ -1,0 +1,175 @@
+{
+  "route": "GET /api/team/runs/{execution_id}",
+  "status": 200,
+  "body": {
+    "execution_id": "6c1e2f40-3b7a-4d2e-9f81-2a5c7d9e0b13",
+    "trial_id": "3f9a1c2e7b40",
+    "workflow": "team-trial-3f9a1c2e7b40",
+    "run_status": "running",
+    "kind": "flow",
+    "state": "member_waiting",
+    "phase": {
+      "name": "working",
+      "words": "2 of 4 members are working",
+      "since": "2026-10-09T08:00:03.120000+00:00",
+      "running": 2,
+      "asked": false,
+      "reason": null
+    },
+    "started_at": "2026-10-09T08:00:00.410000+00:00",
+    "elapsed_s": 1520,
+    "last_activity_at": "2026-10-09T08:24:10.050000+00:00",
+    "cost_usd": 41.35,
+    "spend": {
+      "cost_usd": 41.35,
+      "pause_every_usd": 100.0,
+      "last_check_in_usd": 0.0,
+      "next_check_in_usd": 100.0,
+      "since_check_in_usd": 41.35,
+      "check_ins": 0
+    },
+    "you": {
+      "count": 1,
+      "first": {
+        "wait_id": "c4d07a1e9b2f4e6d8a3c5b7e9f1a2c4d",
+        "kind": "recovery",
+        "member": "checker",
+        "header": "checker turn 3",
+        "words": "checker's turn 3 did not finish; the model may have acted.",
+        "opened_at": "2026-10-09T08:22:30.700000+00:00"
+      }
+    },
+    "counts": {"members": 4, "working": 2, "ready": 0, "idle": 1, "held": 1, "failed": 0, "ended": 0},
+    "account": null,
+    "trial": {
+      "goal": "Add a dark mode switch to the notes app's settings screen.\n\nRemember the choice between visits, and keep every colour readable.",
+      "leader": "lead",
+      "members": [
+        {"name": "lead", "role": "planner", "tools": ["Read", "Grep", "Glob", "Edit", "Write"], "leader": true},
+        {"name": "maker", "role": "builder", "tools": ["Read", "Edit", "Write"], "leader": false},
+        {"name": "styler", "role": "designer", "tools": ["Read", "Edit", "Write"], "leader": false},
+        {"name": "checker", "role": "reviewer", "tools": ["Read", "Grep"], "leader": false}
+      ],
+      "pause_every_usd": 100.0,
+      "max_parallel": 4,
+      "communication": "all",
+      "project": {"source": "/srv/example/projects/notes-app", "start_commit": null},
+      "started_at": "2026-10-09T08:00:00.410000+00:00",
+      "started_by": "owner",
+      "request_id": "f-1"
+    },
+    "round": null,
+    "members": [
+      {
+        "name": "lead", "role": "planner", "leader": true, "activity": "working",
+        "state": "working", "since": "2026-10-09T08:24:10.050000+00:00", "turn_no": 4,
+        "on": {"kind": "goal", "text": "Add a dark mode switch to the notes app's settings screen.", "from": "temper", "at": "2026-10-09T08:00:00.900000+00:00", "message_id": "a0b1c2d3e4f5061728394a5b6c7d8e9f"},
+        "idle_note": null, "ready_messages": 0,
+        "last_sent": {"to": "checker", "kind": "work_request", "text": "Check v3 once maker's switch is in: does the choice survive a reload?", "at": "2026-10-09T08:20:05.300000+00:00", "message_id": "b1c2d3e4f5061728394a5b6c7d8e9f0a"},
+        "last_share": {"version_no": 1, "commit_short": "1a2b3c4d5e6f", "note": "Plan in PLAN.md: who does what", "at": "2026-10-09T08:05:12.000000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 4, "cost_usd": 12.1, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 4, "state": "running", "started_at": "2026-10-09T08:24:10.050000+00:00", "ended_at": null, "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T08:24:10.050000+00:00"
+      },
+      {
+        "name": "maker", "role": "builder", "leader": false, "activity": "working",
+        "state": "working", "since": "2026-10-09T08:23:40.200000+00:00", "turn_no": 5,
+        "on": {"kind": "work_request", "text": "Build the switch in settings.py and save the choice between visits.", "from": "lead", "at": "2026-10-09T08:05:40.000000+00:00", "message_id": "c2d3e4f5061728394a5b6c7d8e9f0a1b"},
+        "idle_note": null, "ready_messages": 1,
+        "last_sent": {"to": "lead", "kind": "info", "text": "v3 has the switch; it saves to local storage.", "at": "2026-10-09T08:23:36.000000+00:00", "message_id": "d3e4f5061728394a5b6c7d8e9f0a1b2c"},
+        "last_share": {"version_no": 3, "commit_short": "3c4d5e6f7a8b", "note": "Switch in settings.py; the choice is saved between visits", "at": "2026-10-09T08:23:35.400000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 5, "cost_usd": 16.8, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 5, "state": "running", "started_at": "2026-10-09T08:23:40.200000+00:00", "ended_at": null, "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T08:23:40.200000+00:00"
+      },
+      {
+        "name": "styler", "role": "designer", "leader": false, "activity": "idle",
+        "state": "idle", "since": "2026-10-09T08:21:02.000000+00:00", "turn_no": null,
+        "on": {"kind": "work_request", "text": "Pick dark colours that stay readable, in theme.css.", "from": "lead", "at": "2026-10-09T08:05:41.000000+00:00", "message_id": "e4f5061728394a5b6c7d8e9f0a1b2c3d"},
+        "idle_note": "Colours are in v2; I'll style the switch once maker shares it.", "ready_messages": 0,
+        "last_sent": {"to": "maker", "kind": "info", "text": "The switch can use the .toggle class from theme.css.", "at": "2026-10-09T08:20:55.000000+00:00", "message_id": "f5061728394a5b6c7d8e9f0a1b2c3d4e"},
+        "last_share": {"version_no": 2, "commit_short": "2b3c4d5e6f7a", "note": "Dark colours in theme.css, contrast checked", "at": "2026-10-09T08:20:50.000000+00:00"},
+        "conflicts": [], "wait_id": null,
+        "turns": 3, "cost_usd": 7.25, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 3, "state": "completed", "started_at": "2026-10-09T08:18:20.000000+00:00", "ended_at": "2026-10-09T08:21:02.000000+00:00", "error": null, "ended_by": null},
+        "last_activity_at": "2026-10-09T08:21:02.000000+00:00"
+      },
+      {
+        "name": "checker", "role": "reviewer", "leader": false, "activity": "waiting_on_owner",
+        "state": "held", "since": "2026-10-09T08:22:30.700000+00:00", "turn_no": null,
+        "on": {"kind": "work_request", "text": "Check v3 once maker's switch is in: does the choice survive a reload?", "from": "lead", "at": "2026-10-09T08:20:05.300000+00:00", "message_id": "b1c2d3e4f5061728394a5b6c7d8e9f0a"},
+        "idle_note": null, "ready_messages": 0,
+        "last_sent": null,
+        "last_share": null,
+        "conflicts": [], "wait_id": "c4d07a1e9b2f4e6d8a3c5b7e9f1a2c4d",
+        "turns": 3, "cost_usd": 5.2, "model": "claude-opus-5-5", "thinking": "max",
+        "effective": {"model": "claude-opus-5-5", "thinking": "max"},
+        "last_turn": {"turn_no": 3, "state": "uncertain", "started_at": "2026-10-09T08:20:10.000000+00:00", "ended_at": "2026-10-09T08:22:30.600000+00:00", "error": "the worker stopped answering (protocol_eof)", "ended_by": null},
+        "last_activity_at": "2026-10-09T08:22:30.700000+00:00"
+      }
+    ],
+    "links": [
+      {"from": "lead", "to": "maker", "count": 3, "last_at": "2026-10-09T08:18:00.000000+00:00"},
+      {"from": "lead", "to": "styler", "count": 1, "last_at": "2026-10-09T08:05:41.000000+00:00"},
+      {"from": "lead", "to": "checker", "count": 1, "last_at": "2026-10-09T08:20:05.300000+00:00"},
+      {"from": "maker", "to": "lead", "count": 2, "last_at": "2026-10-09T08:23:36.000000+00:00"},
+      {"from": "styler", "to": "maker", "count": 1, "last_at": "2026-10-09T08:20:55.000000+00:00"}
+    ],
+    "work": {
+      "latest": {"version_no": 3, "commit": "3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d", "commit_short": "3c4d5e6f7a8b", "by": "maker", "at": "2026-10-09T08:23:35.400000+00:00", "note": "Switch in settings.py; the choice is saved between visits", "files_changed": 2, "files_total": 6},
+      "shares": [
+        {"version_no": 3, "commit": "3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d", "commit_short": "3c4d5e6f7a8b", "by": "maker", "at": "2026-10-09T08:23:35.400000+00:00", "note": "Switch in settings.py; the choice is saved between visits", "files_changed": 2, "files_total": 6},
+        {"version_no": 2, "commit": "2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c", "commit_short": "2b3c4d5e6f7a", "by": "styler", "at": "2026-10-09T08:20:50.000000+00:00", "note": "Dark colours in theme.css, contrast checked", "files_changed": 1, "files_total": 5},
+        {"version_no": 1, "commit": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b", "commit_short": "1a2b3c4d5e6f", "by": "lead", "at": "2026-10-09T08:05:12.000000+00:00", "note": "Plan in PLAN.md: who does what", "files_changed": 1, "files_total": 5}
+      ],
+      "shares_total": 3,
+      "summary": null
+    },
+    "events_cursor": 64,
+    "open_waits": [
+      {
+        "wait_id": "c4d07a1e9b2f4e6d8a3c5b7e9f1a2c4d",
+        "event_id": "8e2f4a6c-1b3d-4f5e-9a7c-0d2e4f6a8b1c",
+        "node_name": "trial.team~ask-c4d07a1e9b2f4e6d8a3c5b7e9f1a2c4d",
+        "asked": true,
+        "scope": "member",
+        "kind": "recovery",
+        "header": "checker turn 3",
+        "question": "checker's turn 3 did not finish (the worker stopped answering (protocol_eof)); the model may have acted (its prompt was sent). Only checker waits; the others keep working.",
+        "reply_hint": "Reply 'accept' to keep what it did without running it again, or 'retry' to send its messages again.",
+        "answers": [
+          {"answer": "accept", "needs_text": "none", "means": "Keep what checker's turn did, without running it again."},
+          {"answer": "retry", "needs_text": "none", "means": "checker gets the same messages again in a new turn."},
+          {"answer": "stop", "needs_text": "optional", "means": "The team stops here and the run ends failed. Any words you give are kept with it."}
+        ],
+        "round": null,
+        "member": "checker",
+        "turn_no": 3,
+        "why": "the worker stopped answering (protocol_eof)",
+        "asked_again": 0,
+        "opened_at": "2026-10-09T08:22:30.700000+00:00"
+      }
+    ],
+    "reviews": [],
+    "timeline": {
+      "entries": [
+        {"event_type": "message: goal", "from_agent": "temper", "to_agent": "lead", "timestamp": "2026-10-09T08:00:00.900000+00:00", "data": {"message_id": "a0b1c2d3e4f5061728394a5b6c7d8e9f", "state": "consumed", "deliveries": 1, "preview": "Add a dark mode switch to the notes app's settings screen."}, "entry": "message", "message_kind": "goal"},
+        {"event_type": "share v1", "from_agent": "lead", "timestamp": "2026-10-09T08:05:12.000000+00:00", "data": {"version_no": 1, "commit_short": "1a2b3c4d5e6f", "note": "Plan in PLAN.md: who does what", "files_changed": 1}, "entry": "share"},
+        {"event_type": "share v2", "from_agent": "styler", "timestamp": "2026-10-09T08:20:50.000000+00:00", "data": {"version_no": 2, "commit_short": "2b3c4d5e6f7a", "note": "Dark colours in theme.css, contrast checked", "files_changed": 1}, "entry": "share"},
+        {"event_type": "idle", "from_agent": "styler", "timestamp": "2026-10-09T08:21:02.000000+00:00", "data": {"note": "Colours are in v2; I'll style the switch once maker shares it."}, "entry": "idle"},
+        {"event_type": "turn 3: uncertain", "from_agent": "checker", "timestamp": "2026-10-09T08:20:10.000000+00:00", "data": {"turn_no": 3, "state": "uncertain", "ended_at": "2026-10-09T08:22:30.600000+00:00", "ended_by": null}, "entry": "member_turn"},
+        {"event_type": "share v3", "from_agent": "maker", "timestamp": "2026-10-09T08:23:35.400000+00:00", "data": {"version_no": 3, "commit_short": "3c4d5e6f7a8b", "note": "Switch in settings.py; the choice is saved between visits", "files_changed": 2}, "entry": "share"}
+      ],
+      "not_shown": 0
+    },
+    "owner_actions": [
+      {"at": "2026-10-09T08:00:00.300000+00:00", "kind": "start", "by": "owner", "source": "team_page", "request_id": "f-1", "detail": {"workflow": "team-trial-3f9a1c2e7b40", "trial_id": "3f9a1c2e7b40"}}
+    ],
+    "outcome": null
+  }
+}

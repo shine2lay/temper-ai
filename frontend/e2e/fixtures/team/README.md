@@ -73,6 +73,20 @@ Everything not listed under Derived came from the real routes:
   leader (`journey-message-201`, `journey-run-messaged`), done (`journey-run-done`) and the
   trials list holding it (`journey-trials`).
 
+## Hand-written: free-flowing teams (until the engine is in)
+
+The `flow-*.json` files are written by hand from the free-flowing teams' field list (FLOW E5/E6)
+while the engine is being built, so the Team page can be coded against them. They are not made
+by the script yet, and running it deletes them; once the engine is in, the script captures them
+from a model-free free-flowing team like the files above.
+
+| File | What it shows |
+| --- | --- |
+| `flow-run-working` | `GET /api/team/runs/{id}` of a free-flowing team: two members working, one idle, one held by its own recovery wait while the others carry on; three shares in the shared version. |
+| `flow-run-check-in` | The $100 check-in asked: no turn running, the pause wait open at team level. |
+| `flow-run-done` | Done counted: the leader's summary, the shared version's shares in order, turns per member. |
+| `flow-events` | `GET /api/team/runs/{id}/events?after=0`: the start of a run's event feed (cursor paging). |
+
 ## Derived
 
 The harness can't reach these states, so each is made from a captured file, changing only

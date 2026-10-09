@@ -27,7 +27,6 @@ from tests.test_runner.pi_parking.test_team_runs import (
     HOST,
     OUTPUTS,
     PAUSE_1,
-    REFUSED,
     answer,
     install,
     parked_at,
@@ -92,11 +91,11 @@ def test_e18_a_stop_at_the_pause_with_words_ends_the_run_cancelled(tr):
     row, gate = parked_at(tr, eid, 1, "e18_pause_stop")
     assert answer(tr, eid, row, gate, "stop: we have what we need")["carries_on"] is True
 
-    attempts = ended_cancelled(tr, eid, 2, "stopped at the pause after round 1")
+    attempts = ended_cancelled(tr, eid, 2, "stopped at the check-in at $100")
     assert attempts[-1]["data"]["workflow_output"]["decision"] == "stopped"
     got = outcome(tr, eid)
     assert (got["decision"], got["reason"], got["owner_words"]) == (
-        "stopped", "stopped at the pause after round 1", "we have what we need")
+        "stopped", "stopped at the check-in at $100", "we have what we need")
     assert got["decided_by"] == row_decision(tr, eid)["by"]
     assert got["by_source"] == row_decision(tr, eid)["source"]
     assert got["problems"] == []
@@ -138,7 +137,7 @@ def test_e18_a_stop_when_the_team_had_nothing_left_to_do_ends_the_run_cancelled(
 def test_e18_a_stop_at_a_recovery_wait_still_fails_the_run(tr):
     install(tr, tt.team_stage())
     script(tr.led, ["done"])
-    ts.SCRIPTS["design"].insert(0, CUT_OFF)
+    ts.SCRIPTS["design"][0:0] = [CUT_OFF, CUT_OFF]  # automatic retry, then owner recovery
     eid = start(tr, {"goal": GOAL})
     row, gate = parked_at(tr, eid, 1, "e18_recovery_stop")
     assert row["kind"] == "recovery"
@@ -147,7 +146,7 @@ def test_e18_a_stop_at_a_recovery_wait_still_fails_the_run(tr):
     attempts = pw.wait_ended(eid, 2)
     assert attempts[-1]["status"] == "failed"
     assert listed_status(tr, eid) == "failed"
-    text = "design turn 1 did not finish and the team was stopped"
+    text = "design turn 2 did not finish and the team was stopped"
     assert text in stage_error(eid, "build")
     got = outcome(tr, eid)
     assert (got["decision"], got["reason"], got["owner_words"]) == (
@@ -172,7 +171,7 @@ def test_e17_a_picked_guide_with_written_words_passes_the_words_to_the_leader(tr
     (guidance,) = [m for m in ts.rows(tr.led, eid, HOST)["messages"]
                    if m["sender_kind"] == "owner"]
     assert guidance["to_member"] == "design"
-    assert guidance["body"] == ("Guidance from the owner at the pause after round 1: "
+    assert guidance["body"] == ("Guidance from the owner at the check-in at $100: "
                                 "focus on the tests")
 
 
@@ -182,7 +181,7 @@ def test_e17_a_picked_stop_with_written_words_keeps_them_as_the_owners_words(tr)
     eid = start(tr, {"goal": GOAL})
     row, gate = parked_at(tr, eid, 1, "e17_stop_pick")
     assert pick(tr, eid, row, gate, "stop", custom="good enough")["carries_on"] is True
-    ended_cancelled(tr, eid, 2, "stopped at the pause after round 1")
+    ended_cancelled(tr, eid, 2, "stopped at the check-in at $100")
     assert outcome(tr, eid)["owner_words"] == "good enough"
 
 
@@ -191,11 +190,12 @@ def test_e17_a_picked_stop_with_written_words_keeps_them_as_the_owners_words(tr)
 
 def test_e3_a_turn_that_failed_makes_the_outcome_failed(tr):
     install(tr, tt.team_stage())
-    ts.SCRIPTS["design"] = [REFUSED]
+    ts.SCRIPTS["design"] = [[{"error": "403 permission_error: OAuth authentication is "
+                                      "currently not allowed for this organization"}]]
     eid = start(tr, {"goal": GOAL})
     assert pw.wait_ended(eid, 1)[-1]["status"] == "failed"
     got = outcome(tr, eid)
-    assert got["decision"] == "failed" and "design (architecture) turn 1 failed" in got["reason"]
+    assert got["decision"] == "failed" and "refused the call" in got["reason"]
     assert got["owner_words"] is None and got["decided_by"] is None
 
 

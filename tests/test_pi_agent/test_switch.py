@@ -46,7 +46,7 @@ try:
     topology.build_topology("team", [{"name": "lead", "type": "pi", "role": "scout"},
                                      {"name": "builder", "type": "pi", "role": "scout"}],
                             {"mode": {"type": "leader", "leader": "lead"},
-                             "communication": {"type": "all"}, "pause_after_rounds": 3})
+                             "communication": {"type": "all"}, "pause_every_usd": 100.0})
     team_stage = "built"
 except Exception as exc:
     team_stage = f"{type(exc).__name__}: {exc}"
@@ -157,6 +157,7 @@ TEAM_ROUTES = [
     "['GET'] /api/team/roles",
     "['GET'] /api/team/runs/{execution_id}",
     "['GET'] /api/team/runs/{execution_id}/boxes",
+    "['GET'] /api/team/runs/{execution_id}/events",
     "['GET'] /api/team/runs/{execution_id}/messages/{message_id}",
     "['GET'] /api/team/runs/{execution_id}/version",
     "['GET'] /api/team/status",
@@ -169,7 +170,8 @@ TEAM_ROUTES = [
 
 def test_the_switch_adds_only_the_team_page_routes(probes):
     """Switched off (unset or off) Temper has exactly the routes it had before #48; switched
-    on it adds the Team page's eleven (the named-key watch read among them), all under
+    on it adds only the Team page's routes, including the named-key watch read, versions,
+    and the flow event feed, all under
     /api/team, and changes no other route."""
     assert probes["unset"]["routes"] == probes["off"]["routes"]
     added = sorted(set(probes["on"]["routes"]) - set(probes["off"]["routes"]))

@@ -1,15 +1,14 @@
 """Waits inside a step: a step that needs the owner's answer asks for it by a stable id.
 
 An approval step (``gate: true``) waits before its step runs. Some steps need an answer in
-the middle of their own work -- a team's pause after a round, the recovery of a turn that
+the middle of their own work -- a team's spend check-in, the recovery of a turn that
 did not settle. They ask here::
 
-    answer = ask_owner(context, "pause-after-round-3", question="Round 3 is done. Go on?",
-                       options=("go on", "stop"))
+    answer = ask_owner(context, "check-in-100", question="The team spent $100. Continue?",
+                       options=("continue", "stop"))
 
-The wait id is the step's own: it comes from the step's durable record (round 3's pause is
-``pause-after-round-3`` however often the step runs), so a step that runs again asks the
-same wait again and finds its answer instead of opening a new one.
+The wait id is the step's own: it comes from the step's durable record, so a step that runs
+again asks the same wait again and finds its answer instead of opening a new one.
 
 * answered: the answer comes back at once, and the step goes on from its own record;
 * still open, in a Pi workflow (``context.park_at_gates``): the run saves where it is under
@@ -36,7 +35,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal, overload
 
 from temper_ai.observability.event_types import EventType
 from temper_ai.shared.clock import utcnow
@@ -148,6 +147,67 @@ def park(
                      checkpoint_id=checkpoint_id, wait_id=wait_id)
 
 
+def finish_usage_timer(context: ExecutionContext, wait_id: str, *, cancelled: bool = False) -> None:
+    """Close the usage timer when its worker wakes or the team ends; never answer an owner
+    question or permit a member claim."""
+    from temper_ai.observability.recorder import get_event
+
+    path = getattr(context, "step_path", None)
+    if not getattr(context, "park_at_gates", False) or not path:
+        return
+    event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{context.run_id}:{path}:{wait_id}:timer"))
+    if get_event(event_id) is not None:
+        context.event_recorder.update_event(
+            event_id, status="cancelled" if cancelled else "completed",
+            data={"timer_finished_at": utcnow().isoformat()})
+
+
+def park_until(context: ExecutionContext, wait_id: str, *, resumes_at: str) -> bool:
+    """Free a Pi workflow's worker until a durable usage-limit check time. No owner question.
+    The reaper uses the parked-attempt CAS; at wake the step rechecks fresh usage, not a
+    member claim. Re-arming the same timer updates its time without opening another event.
+    False outside Pi or if the checkpoint cannot be saved (the caller holds instead)."""
+    from temper_ai.observability.recorder import get_event
+
+    if not getattr(context, "park_at_gates", False):
+        return False
+    path = context.step_path
+    if not path or not WAIT_ID.fullmatch(wait_id):
+        raise ValueError("park_until needs the step's path and a valid stable wait id")
+    cancel = context.cancel_event
+    if cancel is not None and cancel.is_set():
+        raise CancellationError("Workflow cancelled by user")
+    event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{context.run_id}:{path}:{wait_id}:timer"))
+    if get_event(event_id) is None:
+        context.event_recorder.record(
+            EventType.STAGE_STARTED,
+            data={"name": wait_name(path, wait_id), "type": "step_timer", "depends_on": [],
+                  "wait_id": wait_id, "wake_at": resumes_at, "reason": "usage_limit"},
+            parent_id=context.parent_event_id, execution_id=context.run_id,
+            status=WAITING, event_id=event_id)
+    else:
+        context.event_recorder.update_event(event_id, status=WAITING,
+                                             data={"wake_at": resumes_at})
+    parked = park(context, event_id=event_id, node=path.rsplit(".", 1)[-1], path=path,
+                  round=1, wait_id=wait_id)
+    if parked is not None:
+        parked.wake_at = resumes_at
+        raise parked
+    return False
+
+
+@overload
+def ask_owner(context: ExecutionContext, wait_id: str, *, question: str, header: str = "",
+              detail: str = "", options: tuple[str, ...] | list[str] = (),
+              hold: Literal[True] = True) -> OwnerAnswer: ...
+
+
+@overload
+def ask_owner(context: ExecutionContext, wait_id: str, *, question: str, header: str = "",
+              detail: str = "", options: tuple[str, ...] | list[str] = (),
+              hold: bool) -> OwnerAnswer | None: ...
+
+
 def ask_owner(
     context: ExecutionContext,
     wait_id: str,
@@ -156,8 +216,14 @@ def ask_owner(
     header: str = "",
     detail: str = "",
     options: tuple[str, ...] | list[str] = (),
-) -> OwnerAnswer:
+    hold: bool = True,
+) -> OwnerAnswer | None:
     """The owner's answer at this step's wait ``wait_id``; asks for it when there is none yet.
+
+    ``hold=False`` (a free-flowing team asking while its other members work): the question is
+    put to the owner (its waiting event recorded once) and, with no answer yet, None comes
+    back at once -- nothing parks and no worker is held; the caller asks again later and gets
+    the answer from the history.
 
     ``context`` is the one the step was run with: the wait is filed under the step's own path,
     which the executor puts on it (``step_path``) for every kind of node. Raises RunParked when
@@ -232,6 +298,9 @@ def ask_owner(
             event_id=event_id,
         )
 
+    if not hold:
+        _note_asked(context, path)
+        return None
     # A Pi workflow does not hold its worker while it waits (docs/gates.md).
     if getattr(context, "park_at_gates", False):
         parked = park(context, event_id=event_id, node=path.rsplit(".", 1)[-1], path=path,

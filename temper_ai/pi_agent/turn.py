@@ -20,7 +20,7 @@ The turn is settled only from the session on disk after the box is gone. A worke
 times out or leaves a tool call open after the prompt was sent makes the turn *uncertain*
 (the owner decides: accept or retry); it is never re-run here.
 
-A team member's turn can also take messages while it runs (FLOW, owner bp-d3f3f571): the
+A team member's turn can also take messages while it runs (FLOW): the
 request's ``inbox`` is polled during the turn and each new item goes to Pi once, as a steer
 (delivered after the current tool calls, before the next model call). Its text must start
 with :data:`TEAM_MESSAGE_PREFIX`, the one input the box's guard lets in mid-turn. Once the box
@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import threading
 import time
@@ -60,6 +61,8 @@ from temper_ai.pi_agent.member_tree import (
     read_member_text,
 )
 from temper_ai.pi_agent.rpc import RpcError
+
+logger = logging.getLogger(__name__)
 
 COMMAND_TIMEOUT = 60.0
 UI_SILENT = ("notify", "setStatus", "setWidget", "setTitle", "set_editor_text")
@@ -144,6 +147,9 @@ class TurnRequest:
     #: Gets the running turn's tool calls counted by tool name, most first, at most every
     #: :data:`TOOLS_EVERY_S` and only when they changed. None: not counted.
     on_tools: Callable[[dict[str, int]], None] | None = None
+    #: Known model usage after each change, including compaction and retries, so a team's
+    #: check-in counts running turns too. No text; None leaves ordinary Pi steps unchanged.
+    on_usage: Callable[[dict[str, int | float]], None] | None = None
 
 
 @dataclass
@@ -171,7 +177,7 @@ class TurnReport:
 
 
 class _MidTurn:
-    """A running team turn's live side (FLOW, owner bp-d3f3f571): team messages handed in as
+    """A running team turn's live side (FLOW): team messages handed in as
     Pi steers, and the turn's tool-call counts. Every call happens on the turn runner's
     thread (the RPC sink runs inside ``rpc.next``)."""
 
@@ -344,6 +350,7 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
     rpc = None
     mid = _MidTurn(req.inbox, req.on_tools) \
         if req.inbox is not None or req.on_tools is not None else None
+    reported_usage: dict[str, int | float] = {}
 
     def sink(record: dict) -> None:
         if record.get("type") == "extension_ui_request":
@@ -361,6 +368,14 @@ def run_turn(cfg: BoxConfig, req: TurnRequest, ledger: Any,
             if mid is not None and mid.observe(record):
                 return
             mapper.handle(record)
+            if req.on_usage is not None:
+                usage = mapper.usage_snapshot()
+                if usage != reported_usage:
+                    try:
+                        req.on_usage(usage)
+                        reported_usage.update(usage)
+                    except Exception:  # noqa: BLE001 - final receipt still keeps the usage
+                        logger.warning("pi turn: live usage could not be recorded", exc_info=True)
 
     try:
         # 1. the session folder (K6)

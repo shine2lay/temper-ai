@@ -96,6 +96,66 @@ def open_leader(led: Ledger, box: Any, **kw: Any) -> LeaderTeam:
     return team
 
 
+def legacy_rounds(led, run_id, decisions, *, last_views="satisfied"):
+    """Scripts for existing legacy-record tests, not the free-flowing TeamNode."""
+    lead, builder, checker = [], [], []
+    for i, decision in enumerate(decisions, 1):
+        verdict = last_views if decision == "done" else "changes"
+        lead.append([write("README.md", f"# Tiny v{i}\n"), request_review(f"draft {i}")])
+        builder.append([give_view(led, run_id, verdict, f"builder note {i}")])
+        checker.append([give_view(led, run_id, verdict, f"checker note {i}")])
+        lead.append([decide(led, run_id, decision, f"summary {i}")])
+    ts.SCRIPTS["lead"], ts.SCRIPTS["builder"], ts.SCRIPTS["checker"] = lead, builder, checker
+
+
+#: A free-flowing team (FLOW): check-in every $100, every member at once.
+FLOW_SETTINGS = {"mode": {"type": "leader", "leader": "lead"},
+                 "communication": {"type": "all"}, "pause_every_usd": 100.0}
+
+
+class Turns(list):
+    """Scripted turns chosen from what the member actually heard, not a presumed order."""
+
+    def __init__(self, play: Any) -> None:
+        super().__init__()
+        self.play = play
+
+    def __bool__(self) -> bool:
+        return True
+
+    def pop(self, index: Any = -1) -> Any:
+        return super().pop(index) if len(self) else self.play()
+
+
+def open_flow(led: Ledger, box: Any, *, run_id: str, source: Path | None = None,
+              settings: dict | None = None, names: tuple[str, ...] = ts.NAMES,
+              attempt: str = "attempt-1", recorder: ts.Recorder | None = None,
+              goal: str = GOAL, cancel_event: Any = None, host: str = ts.HOST,
+              account: dict | None = None) -> Any:
+    """A free-flowing team opened exactly as ``run_team_node`` opens it: members attached,
+    project copies and the shared version made, the goal to the leader, the others waiting
+    for the leader's message."""
+    from temper_ai.pi_agent.team_flow import FlowTeam
+
+    s = settings or FLOW_SETTINGS
+    team = FlowTeam(led, box, run_id=run_id, host_path=host,
+                    members=[ts.member(n) for n in names], team_settings=s,
+                    recorder=recorder or ts.Recorder(), attempt_id=attempt,
+                    workflow="team_test", cancel_event=cancel_event, account=account,
+                    leader=s["mode"]["leader"], pause_every_usd=s.get("pause_every_usd", 100.0),
+                    max_parallel=s.get("max_parallel"), goal=goal, project=None)
+    team.project = ProjectCopies(team.root, source)
+    refusal = team.open({"goal": goal})
+    assert refusal is None, refusal
+    for name, row in team._member_rows().items():
+        team.project.ensure(name, team._pdir(row))
+    team.shared.ensure()
+    team.post(team.leader, goal, sender="temper", sender_kind="temper", kind="goal",
+              dedupe_key=f"{team.run_id}:{team.host_path}:brief")
+    team.rest_the_others()
+    return team
+
+
 def workspace(team: LeaderTeam, name: str) -> Path:
     return team._pdir(team._member_rows()[name]) / "workspace"
 
@@ -197,10 +257,12 @@ class Owner:
         self.asked: list[dict] = []
 
     def __call__(self, context: Any, wait_id: str, *, question: str, header: str = "",
-                 detail: str = "", options: tuple = ()) -> OwnerAnswer:
+                 detail: str = "", options: tuple = (), hold: bool = True) -> OwnerAnswer | None:
         row = owner_waits.wait_row(self.led, wait_id)
         self.asked.append({"wait_id": wait_id, "row": row, "question": question,
-                           "header": header, "options": tuple(options)})
+                           "header": header, "options": tuple(options), "hold": hold})
+        if not self.answers and not hold:
+            return None  # no answer yet; nothing parks while other turns run
         if not self.answers:
             raise RunParked(event_id=f"ev-{uuid.uuid4().hex[:8]}", node="team",
                             path=getattr(context, "step_path", "") or "", round=1,

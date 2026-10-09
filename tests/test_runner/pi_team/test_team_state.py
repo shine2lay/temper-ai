@@ -41,7 +41,7 @@ def test_tables_extend_l2_layout(led):
     names = [t.name for t in ledger_module.TABLES]
     assert names == ["pi_participants", "pi_messages", "pi_turns", "pi_waits", "pi_reviews",
                      "pi_team_acts", "pi_team_outcomes", "pi_team_trials",
-                     "pi_team_requests", "pi_team_versions"]
+                     "pi_team_requests", "pi_team_versions", "pi_team_events"]
     inspector = sa.inspect(led.engine)
     assert set(names) <= set(inspector.get_table_names())
     msg_cols = {c["name"] for c in inspector.get_columns("pi_messages")}
@@ -184,13 +184,14 @@ def test_c3_a_changed_member_set_is_refused_and_changed_settings_are_listed_for_
                 for c in team_subject(other.settings_changed())["settings_changes"]]
 
     # the team's own settings: one entry for the whole team, each member re-pinned
-    paused = make_team(led, box, run_id=run_id, attempt="attempt-2",
-                       settings={**ts.SETTINGS, "pause_after_rounds": 5})
-    assert listed(paused) == [("team", None, "team")]
-    assert sorted(m for m, *_ in paused.settings_changed()) == ["builder", "checker", "lead"]
     leader = make_team(led, box, run_id=run_id, attempt="attempt-2",
                        settings={**ts.SETTINGS, "mode": {"type": "leader", "leader": "builder"}})
     assert listed(leader) == [("team", None, "team")]
+    assert sorted(m for m, *_ in leader.settings_changed()) == ["builder", "checker", "lead"]
+    # the check-in amount and the parallel cap are taken each time the team opens: no wait
+    every = make_team(led, box, run_id=run_id, attempt="attempt-2",
+                      settings={**ts.SETTINGS, "pause_every_usd": 250.0, "max_parallel": 2})
+    assert listed(every) == []
     # a member's own settings: that member's keys
     model = make_team(led, box, run_id=run_id, attempt="attempt-2",
                       members=[member("lead", thinking="high"), member("builder"),

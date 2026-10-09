@@ -19,7 +19,7 @@ are not used since C7.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal, overload
 
 import sqlalchemy as sa
 
@@ -49,9 +49,21 @@ def wait_row(ledger: Ledger, wait_id: str) -> dict | None:
     return dict(row) if row is not None else None
 
 
+@overload
+def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: str,
+                       header: str = "", detail: str = "", options: Sequence[str] = (),
+                       hold: Literal[True] = True) -> OwnerAnswer: ...
+
+
+@overload
+def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: str,
+                       header: str = "", detail: str = "", options: Sequence[str] = (),
+                       hold: bool) -> OwnerAnswer | None: ...
+
+
 def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: str,
                        header: str = "", detail: str = "",
-                       options: Sequence[str] = ()) -> OwnerAnswer:
+                       options: Sequence[str] = (), hold: bool = True) -> OwnerAnswer | None:
     """The owner's answer at the open ``pi_waits`` row ``wait_id``, asked under that same id.
 
     ``context`` is the step's own (``ask_owner`` files the wait under its ``step_path``).
@@ -76,4 +88,4 @@ def ask_owner_for_wait(context: Any, ledger: Ledger, wait_id: str, *, question: 
                 conn.execute(waits.update().where(
                     waits.c.wait_id == wait_id, waits.c.state == "open").values(gate_name=name))
     return ask_owner(context, wait_id, question=question, header=header, detail=detail,
-                     options=tuple(options))
+                     options=tuple(options), hold=hold)

@@ -28,7 +28,9 @@ from temper_ai.pi_agent.ledger import _now, versions
 
 #: The diff a record keeps, in bytes; past it the record says it was cut.
 MAX_DIFF_BYTES = 200_000
-KINDS = ("review", "done")
+#: review: asked for review (old round teams); share: a free-flowing member's share into the
+#: team's shared version; done: the team's done version.
+KINDS = ("review", "share", "done")
 #: The record's columns that hold the version itself (the rest say whose and when).
 CONTENT = ("commit_sha", "start_commit", "files", "files_total", "diff", "diff_bytes",
            "truncated", "note", "scan")
@@ -113,6 +115,21 @@ def latest(engine: Any, run_id: str, host_path: str) -> dict | None:
     return dict(row) if row else None
 
 
+def of_share(ledger: Any, run_id: str, host_path: str, version_no: int) -> dict | None:
+    """A particular shared version, by the share event's version number (not table seq)."""
+    event = next((e for e in ledger.events_after(run_id, host_path, 0, 100_000)
+                  if e["kind"] == "share"
+                  and (e["data"] or {}).get("version_no") == version_no), None)
+    if event is None:
+        return None
+    with ledger.engine.connect() as conn:
+        row = conn.execute(sa.select(versions).where(
+            versions.c.run_id == run_id, versions.c.host_path == host_path,
+            versions.c.kind == "share",
+            versions.c.act_id == event["data"].get("act_id"))).mappings().first()
+    return dict(row) if row else None
+
+
 def withheld(record: dict | None) -> bool:
     """True when the token scan refused the version: nothing of it may leave the run."""
     return bool(((record or {}).get("scan") or {}).get("refused"))
@@ -122,7 +139,9 @@ def view(row: dict, branch: Any = None) -> dict:
     """team_version's answer (M3 contract, as amended: the stored record, the diff capped)."""
     return {
         "commit": row["commit_sha"], "start_commit": row["start_commit"], "kind": row["kind"],
-        "review_id": row["review_id"], "round": row["round"], "made_by": row["member"],
+        **({"review_id": row["review_id"], "round": row["round"]}
+           if row["review_id"] is not None or row["round"] is not None else {}),
+        "made_by": row["member"],
         "files": list(row["files"] or []), "files_total": row["files_total"],
         "diff": row["diff"], "diff_bytes": row["diff_bytes"], "truncated": row["truncated"],
         "note": row["note"],

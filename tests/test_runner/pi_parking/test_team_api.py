@@ -88,7 +88,8 @@ def api(tr, monkeypatch, tmp_path):
 
 
 def body(tr, rid: str = "start-1", **over) -> dict:
-    raw = {"request_id": rid, "goal": GOAL, "leader": "design", "pause_after_rounds": 3,
+    raw = {"request_id": rid, "goal": GOAL, "leader": "design", "pause_every_usd": 100.0,
+           "max_parallel": 1,
            "members": [{"name": "design", "role": "architecture"},
                        {"name": "frontend", "role": "frontend", "tools": ["Read", "Edit"]},
                        {"name": "qa", "role": "qa", "tools": ["Read", "Grep"]}],
@@ -178,7 +179,8 @@ def test_status_gives_the_forms_defaults_limits_folders_and_the_guards_mode(api)
                              "guide_max_chars": 20000, "reply_max_chars": 20000,
                              "nudge_max_chars": 4000, "stop_reason_max_chars": 2000,
                              "name_pattern": "^[a-z][a-z0-9_-]{0,39}$",
-                             "reserved_names": sorted(RESERVED_IDS)}
+                             "reserved_names": sorted(RESERVED_IDS),
+                             "pause_every_usd": {"min": 1.0, "max": 10000.0}}
     assert got["tools"]["available"] == ["Read", "Grep", "Glob", "Edit", "Write", "Bash"]
     assert got["tools"]["default"] == ["Read", "Grep", "Glob", "Edit", "Write"]
     # Bash stays off until #45 enforces (E11)
@@ -253,10 +255,11 @@ def test_a_trial_starts_in_one_call_with_frozen_configs_and_runs_to_done(api):
     assert run["trial"]["project"]["source"] == str(api.ws)
     assert run["trial"]["started_by"] == "unknown caller" and run["trial"]["request_id"] == "start-1"
     assert run["outcome"]["decision"] == "done" and run["outcome"]["by"] is None
-    assert run["outcome"]["done"]["commit"] and run["outcome"]["done"]["objections"] == []
+    assert run["outcome"]["done"]["commit"] and run["outcome"]["done"]["shares"]
+    assert run["kind"] == "flow" and run["phase"]["name"] == "done"
     assert run["open_waits"] == []
     entries = {e["entry"] for e in run["timeline"]["entries"]}
-    assert {"member_turn", "review_round", "decision"} <= entries, entries
+    assert {"member_turn", "share", "decision"} <= entries, entries
     (started,) = run["owner_actions"]
     assert (started["kind"], started["by"], started["source"]) == (
         "start", "unknown caller", "team_page")
@@ -465,11 +468,12 @@ def test_m4_item0_a_folder_temper_cant_see_is_a_note_then_the_node_refuses_it(ap
 
 def test_typed_answers_at_the_pause_messages_and_who_answered(api):
     script(api.led, ["keep_going", "done"])
-    eid = start_trial(api, body(api, pause_after_rounds=1))["execution_id"]
+    eid = start_trial(api, body(api))["execution_id"]
     wait = parked(api, eid, 1)
     run = team_run(api, eid)
-    assert run["state"] == "paused" and run["round"]["current"] == 1
-    assert (wait["kind"], wait["asked"], wait["round"]) == ("pause", True, 1)
+    assert run["state"] == "paused" and run["phase"]["name"] == "check_in"
+    assert (wait["kind"], wait["asked"], wait["at_usd"]) == ("pause", True, 100.0)
+    assert "round" not in run and "round" not in wait
     assert wait["event_id"] and wait["question"] and "Reply" not in wait["question"]
     assert wait["reply_hint"] == "Reply 'continue', 'guide: <what to tell design>', or 'stop'."
     assert [a["answer"] for a in wait["answers"]] == ["continue", "guide", "stop"]
@@ -547,7 +551,7 @@ def test_typed_answers_at_the_pause_messages_and_who_answered(api):
 
 def test_e18_a_stop_answer_with_words_ends_the_trial_cancelled(api):
     script(api.led, ["keep_going", "done"])
-    eid = start_trial(api, body(api, pause_after_rounds=1), auth=None)["execution_id"]
+    eid = start_trial(api, body(api), auth=None)["execution_id"]
     wait = parked(api, eid, 1)
     r = answer(api, eid, wait["wait_id"], "stop", "we have what we need", rid="s-1", auth=CI_KEY)
     assert r.status_code == 200, r.text
@@ -557,7 +561,7 @@ def test_e18_a_stop_answer_with_words_ends_the_trial_cancelled(api):
     assert run["run_status"] == "cancelled" and run["state"] == "stopped"
     out = run["outcome"]
     assert (out["decision"], out["reason"], out["owner_words"], out["by"]) == (
-        "stopped", "stopped at the pause after round 1", "we have what we need", "temper-ci")
+        "stopped", "stopped at the check-in at $100", "we have what we need", "temper-ci")
     (item,) = api.client.get("/api/team/trials").json()["trials"]
     assert (item["run_status"], item["decision"], item["state"]) == (
         "cancelled", "stopped", "stopped")
@@ -565,7 +569,7 @@ def test_e18_a_stop_answer_with_words_ends_the_trial_cancelled(api):
 
 def test_e15_a_cancel_from_the_run_page_is_the_owners_stop_with_its_words(api):
     script(api.led, ["keep_going", "done"])
-    eid = start_trial(api, body(api, pause_after_rounds=1))["execution_id"]
+    eid = start_trial(api, body(api))["execution_id"]
     parked(api, eid, 1)
     r = api.client.post(f"/api/runs/{eid}/cancel", json={"reason": "enough for today"},
                         headers={**key(OWNER_KEY), "Origin": "http://testserver"})
@@ -584,7 +588,7 @@ def test_e15_a_cancel_from_the_run_page_is_the_owners_stop_with_its_words(api):
 
 def test_e12_a_second_open_wait_is_listed_after_the_asked_one_and_cant_be_answered_yet(api):
     script(api.led, ["keep_going", "done"])
-    eid = start_trial(api, body(api, pause_after_rounds=1))["execution_id"]
+    eid = start_trial(api, body(api))["execution_id"]
     first = parked(api, eid, 1)
     second = api.led.open_wait(eid, THOST, "owner",
                                {"member": "frontend", "question": "Which colour?"}, "attempt-x")
@@ -645,7 +649,7 @@ def test_every_time_the_team_api_sends_carries_the_utc_offset(api):
 
     # one team: started, messaged while paused, guided, then answered again (409)
     script(api.led, ["keep_going", "done"])
-    done_eid = keep("start", start_trial(api, body(api, pause_after_rounds=1)))["execution_id"]
+    done_eid = keep("start", start_trial(api, body(api)))["execution_id"]
     wait = parked(api, done_eid, 1)
     sent = message(api, done_eid, "frontend", "keep it short", rid="t-m1")
     assert sent.status_code == 201, sent.text
@@ -662,7 +666,7 @@ def test_every_time_the_team_api_sends_carries_the_utc_offset(api):
 
     # another team, stopped from the run page while paused
     script(api.led, ["keep_going", "done"])
-    stop_eid = start_trial(api, body(api, "start-2", pause_after_rounds=1))["execution_id"]
+    stop_eid = start_trial(api, body(api, "start-2"))["execution_id"]
     parked(api, stop_eid, 1)
     r = api.client.post(f"/api/runs/{stop_eid}/cancel", json={"reason": "enough"},
                         headers={**key(OWNER_KEY), "Origin": "http://testserver"})

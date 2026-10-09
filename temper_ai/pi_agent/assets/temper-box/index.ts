@@ -21,9 +21,10 @@
 //   message to the box's team socket and shows Temper's answer. The socket is bound by Temper
 //   to this member's running turn, so the tool sends no identity and no token: who sent a
 //   message is Temper's to say. Pi activates the tool only when --tools names it.
-// - Also in a team member's box: the review tools of the leader loop (task #38), over the same
-//   socket: "request_review" and "decide" (the leader's) and "give_view" (a reviewer's). Each
-//   records a request with Temper for this turn; Temper carries it out once the turn has
+// - Also in a team member's box: the free-flowing team's tools (FLOW F3/F4), over the same
+//   socket: "share" (put your work into the team's shared version), "idle" (nothing more for
+//   you now; a message wakes you) and the leader's "done" (the shared version is the result).
+//   Each records a request with Temper for this turn; Temper carries it out once the turn has
 //   finished, and decides who may use which (it refuses a call from the wrong member). Pi
 //   activates only the ones --tools names, so a member sees only its own.
 import { Type } from "@earendil-works/pi-ai";
@@ -162,8 +163,8 @@ export default function (pi: ExtensionAPI) {
       name: "send_message",
       label: "Send message",
       description:
-        "Send a message to another member of your team, through Temper. It reaches them at " +
-        "their next turn, once your turn has finished. Members you can message: " +
+        "Send a message to another member of your team, through Temper. It reaches them once " +
+        "your turn has finished (in their running turn if they are working). Members you can message: " +
         (members.length ? members.join(", ") : "(none)") + ". kind: work_request (asks " +
         "for work), info (for their information) or reply (answers a message you received: " +
         "set in_reply_to to its id; it goes back to its sender).",
@@ -183,7 +184,7 @@ export default function (pi: ExtensionAPI) {
         const text = reply?.ok
           ? `Sent message ${reply.message_id} to ${reply.to}` +
             (reply.duplicate ? " (already sent: the same message, sent once)" : "") +
-            ". It reaches them at their next turn, after this turn finishes."
+            ". It reaches them after this turn finishes."
           : `Not sent (${reply?.code ?? "invalid_channel"}): ${reply?.detail ?? ""}`;
         return {
           content: [{ type: "text" as const, text }],
@@ -192,9 +193,9 @@ export default function (pi: ExtensionAPI) {
       },
     });
 
-    // The leader loop's review tools. Temper's answer says what it recorded; nothing happens
-    // until this turn has finished.
-    const reviewCall = async (op: string, toolCallId: string, params: any, keys: string[]) => {
+    // The team's own tools. Temper's answer says what it recorded; nothing happens until this
+    // turn has finished.
+    const teamCall = async (op: string, toolCallId: string, params: any, keys: string[]) => {
       const payload: Record<string, unknown> = { op, client_msg_id: String(toolCallId).slice(0, 128) };
       for (const key of keys) {
         if (params?.[key] !== undefined && params?.[key] !== null) payload[key] = params[key];
@@ -210,48 +211,47 @@ export default function (pi: ExtensionAPI) {
       };
     };
     pi.registerTool({
-      name: "request_review",
-      label: "Request review",
+      name: "share",
+      label: "Share",
       description:
-        "Ask the other members to review your work as it is when this turn finishes. Temper " +
-        "commits your project copy, gives every reviewer exactly that version, and brings " +
-        "you their views (satisfied or changes, with a note).",
+        "Put your work into the team's shared version, as your project copy is when this " +
+        "turn finishes. Temper commits your copy and merges it into the shared version; if " +
+        "it conflicts, your copy keeps git's conflict markers and the files are named to you " +
+        "at your next turn: fix them and share again. Sharing wakes nobody: tell the members " +
+        "who need it with send_message.",
       parameters: Type.Object({
-        note: Type.Optional(Type.String({ description: "What to look at, in a sentence or two" })),
+        note: Type.Optional(Type.String({ description: "What changed, in a sentence" })),
       }),
       async execute(toolCallId: string, params: any) {
-        return reviewCall("request_review", toolCallId, params, ["note"]);
+        return teamCall("share", toolCallId, params, ["note"]);
       },
     });
     pi.registerTool({
-      name: "give_view",
-      label: "Give view",
+      name: "idle",
+      label: "Idle",
       description:
-        "Give your view on the version under review: satisfied, or changes (say which in " +
-        "the note). Name the review by the id in the review request.",
+        "Nothing more is yours to do now: stop after this turn. A message to you wakes you " +
+        "again. Without it you keep working, turn after turn.",
       parameters: Type.Object({
-        review_id: Type.String({ description: "The review's id, from the review request" }),
-        verdict: Type.String({ description: "satisfied or changes" }),
-        note: Type.String({ description: "A short note: what is good, or what to change" }),
+        note: Type.Optional(Type.String({ description: "Why, or what you wait for" })),
       }),
       async execute(toolCallId: string, params: any) {
-        return reviewCall("give_view", toolCallId, params, ["review_id", "verdict", "note"]);
+        return teamCall("idle", toolCallId, params, ["note"]);
       },
     });
     pi.registerTool({
-      name: "decide",
-      label: "Decide",
+      name: "done",
+      label: "Done",
       description:
-        "After the views of a review have reached you: done (the reviewed version is the " +
-        "result) or keep_going (another round). Done counts only if your copy is still " +
-        "exactly the reviewed version and nothing new has reached you since this turn began.",
+        "The leader's: the team's shared version is the result. Temper shares your copy, lets " +
+        "running turns finish, and counts done only if the shared version is then exactly " +
+        "your copy and nothing new reached you after this done call; otherwise you get one " +
+        "more turn with what came in.",
       parameters: Type.Object({
-        review_id: Type.String({ description: "The review's id" }),
-        decision: Type.String({ description: "done or keep_going" }),
-        summary: Type.String({ description: "A short summary of the result or of what comes next" }),
+        summary: Type.String({ description: "A short summary of the result" }),
       }),
       async execute(toolCallId: string, params: any) {
-        return reviewCall("decide", toolCallId, params, ["review_id", "decision", "summary"]);
+        return teamCall("done", toolCallId, params, ["summary"]);
       },
     });
   }

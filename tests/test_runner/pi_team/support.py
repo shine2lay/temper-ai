@@ -326,8 +326,11 @@ def check_invariants(led: Ledger, run_id: str, host: str = HOST) -> None:
     msgs = snap["messages"]
     by_seq = {m["seq"]: m for m in msgs}
 
-    # I1 at most one turn per team holds the team's claim.
-    assert sum(1 for t in turns.values() if t["claim_key"]) <= 1, "I1"
+    # I1 at most one turn per member holds a claim (a free-flowing team's members work at
+    # once; each claim is the member's own), and no claim key is held twice.
+    claimed = [t for t in turns.values() if t["claim_key"]]
+    assert max(Counter(t["participant_id"] for t in claimed).values(), default=0) <= 1, "I1"
+    assert len({t["claim_key"] for t in claimed}) == len(claimed), "I1 key"
     for t in turns.values():
         assert (t["claim_key"] is not None) == (t["state"] in UNSETTLED), ("I1", t["state"])
 

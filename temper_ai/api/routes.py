@@ -1045,7 +1045,9 @@ def _resume_run(execution_id: str, body: ResumeRequest | None = None, *,
     # A Pi run parked at a gate is carried on once, by whoever claims its parked attempt
     # first: the owner's answer, the worker that let go, start-up, or this button.
     parked = pi_parked.parked_attempt(execution_id) if pi_run else None
-    if answered_parked_only and (parked is None or pi_parked.answered(execution_id, parked) is None):
+    if answered_parked_only and (parked is None or
+                                (pi_parked.answered(execution_id, parked) is None
+                                 and not pi_parked.timer_due(parked))):
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is no longer parked on an answered wait")
     if pi_run and seen.leaves_alone(parked):
         raise HTTPException(status_code=409, detail=f"Execution '{execution_id}' is already being carried on")

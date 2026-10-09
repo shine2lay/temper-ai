@@ -597,6 +597,150 @@ def limit_words(slot: str, error: str, room: dict | None = None) -> str:
     return words + ". Retrying keeps the same account, model and thinking"
 
 
+FIVE_HOUR = "five_hour"
+WEEKLY = "weekly"
+#: A free-flowing team's five-hour limit carries on at reset. Anything else -- a weekly or
+#: model limit, or words that do not say -- waits and asks the owner before restarting.
+_FIVE_HOUR_RE = re.compile(r"\bsession limit\b|\b5[- ]?hour\b|\b5 ?h\b|\bfive[- ]hour\b",
+                           re.IGNORECASE)
+_WEEKLY_RE = re.compile(r"\bweekly\b|\bweek\b|\b7[- ]?day\b|\bopus\b", re.IGNORECASE)
+#: Re-check a limit whose reset time can't be read this long after it was hit.
+LIMIT_RECHECK_S = 15 * 60
+#: Wait this long past a read reset time before the next turn.
+LIMIT_PAD_S = 30
+_CLOCK_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b(?:\s*\(([A-Za-z_]+/[A-Za-z_/]+)\))?",
+                       re.IGNORECASE)
+
+
+def limit_kind(error: str | None) -> str:
+    """``five_hour`` when the limit's own words name the 5-hour (session) limit and nothing
+    weekly; otherwise ``weekly`` (unknown words take the weekly path)."""
+    text = error or ""
+    if _FIVE_HOUR_RE.search(text) and not _WEEKLY_RE.search(text):
+        return FIVE_HOUR
+    return WEEKLY
+
+
+def reset_moment(reset: str | None, *, now: datetime | None = None) -> datetime | None:
+    """The reset time the limit's words give (an ISO time, epoch seconds, or a clock time
+    like ``3pm (America/Los_Angeles)``, taken as its next occurrence), or None."""
+    from zoneinfo import ZoneInfo
+
+    from temper_ai.llm.allowance import _as_moment, reset_in_text
+
+    if not reset:
+        return None
+    now = _aware(now)
+    raw = reset.split(" (room figures", 1)[0].strip()
+    seconds = _as_moment(raw) or reset_in_text(raw)
+    if seconds is not None:
+        return datetime.fromtimestamp(seconds, tz=now.tzinfo)
+    m = _CLOCK_RE.search(raw)
+    if not m:
+        return None
+    hour = int(m.group(1)) % 12 + (12 if m.group(3).lower() == "pm" else 0)
+    minute = int(m.group(2) or 0)
+    if hour > 23 or minute > 59:
+        return None
+    try:
+        zone = ZoneInfo(m.group(4)) if m.group(4) else now.tzinfo
+    except Exception:  # noqa: BLE001 - an unknown zone: no time read
+        return None
+    local = now.astimezone(zone)
+    when = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if when <= local:
+        from datetime import timedelta
+
+        when += timedelta(days=1)
+    return as_utc(when)
+
+
+def limit_ready(subject: dict, *, now: datetime | None = None) -> bool:
+    """Whether the next fresh usage check is due, not permission to restart.
+    A missing or unreadable time is never due."""
+    try:
+        at = as_utc(datetime.fromisoformat(str(subject.get("resumes_at"))))
+    except (ValueError, TypeError):
+        return False
+    return bool(at is not None and (now or utcnow()) >= at)
+
+
+def limit_resume(details: dict, *, now: datetime | None = None) -> dict:
+    """When a team held by a usage limit tries again: ``{kind, resumes_at, how}`` -- the
+    read reset time plus a short pad (``how`` ``reset``), or a re-check after
+    ``LIMIT_RECHECK_S`` when no time can be read (``how`` ``recheck``)."""
+    from datetime import timedelta
+
+    moment = _aware(now)
+    kind = limit_kind(details.get("limit"))
+    when = reset_moment(details.get("resets"), now=moment)
+    if when is not None and when > moment:
+        at = when + timedelta(seconds=LIMIT_PAD_S)
+        return {"kind": kind, "resumes_at": at.isoformat(), "how": "reset"}
+    later = moment + timedelta(seconds=LIMIT_RECHECK_S)
+    return {"kind": kind, "resumes_at": later.isoformat(), "how": "recheck"}
+
+
+def limit_restart_ready(subject: dict, *, now: datetime | None = None) -> bool:
+    """Only a fresh available reading, not a timer or an expired sign-in, permits restart."""
+    return subject.get("resume_verified") is True and limit_ready(subject, now=now)
+
+
+def limit_after_check(subject: dict, reading: dict, *, now: datetime | None = None) -> dict:
+    """The held team's next state from the helper's fresh, rebuilt usage reading.
+
+    Unavailable readings keep the hold and schedule another check, without an expiry.
+    Every reported exhausted window must reset; a weekly window makes the hold weekly
+    (never downgrading an already weekly or unknown hold to automatic five-hour resume).
+    Once a scoped cap is known, every later check must report that scope, including the
+    fresh check of a delayed owner answer. Overall weekly usage is not a substitute.
+    """
+    from datetime import timedelta
+
+    moment = _aware(now)
+    later = moment + timedelta(seconds=LIMIT_RECHECK_S)
+    required = {"5h", "7d", *(subject.get("required_windows") or []),
+                *(subject.get("blocked_windows") or [])}
+    out = {**subject, "usage": dict(reading), "usage_checked_at": moment.isoformat(),
+           "resume_verified": False, "resumes_at": later.isoformat(), "how": "recheck",
+           "required_windows": sorted(required),
+           "blocked_windows": list(subject.get("blocked_windows") or [])}
+    if reading.get("status") != "ok":
+        return out
+    windows = reading.get("windows") or []
+    if not required <= {w["key"] for w in windows}:
+        out["usage"] = {"status": "unavailable", "reason": "incomplete_reading"}
+        return out
+    blocked = [w for w in windows if w["used_percent"] >= 100]
+    out["blocked_windows"] = [w["key"] for w in blocked]
+    out["required_windows"] = sorted(required | {w["key"] for w in blocked})
+    if not blocked:
+        return {**out, "resume_verified": True, "resumes_at": moment.isoformat(),
+                "how": "verified"}
+    if any(w["key"].startswith("7d") for w in blocked):
+        out["kind"] = WEEKLY
+    dates: list[datetime] = []
+    unknown = False
+    for window in blocked:
+        when = reset_moment(window.get("resets_at"), now=moment)
+        if when is not None and when > moment:
+            dates.append(when + timedelta(seconds=LIMIT_PAD_S))
+        else:
+            unknown = True
+    if dates:
+        at = min(max(dates), later) if unknown else max(dates)
+        out.update(resumes_at=at.isoformat(), how="recheck" if unknown else "reset")
+    return out
+
+
+def _aware(now: datetime | None) -> datetime:
+    """``now`` (or the clock's now) as an aware UTC datetime."""
+    got = as_utc(now or utcnow())
+    if got is None:  # pragma: no cover - as_utc keeps a datetime a datetime
+        raise ValueError("no time")
+    return got
+
+
 def limit_details(slot: str, error: str, room: dict | None = None) -> dict:
     """The limit's fields on its recovery wait (the run view shows them)."""
     return {"account_slot": slot or None, "limit": _short(error, 200),

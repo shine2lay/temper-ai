@@ -97,6 +97,7 @@ class Reaper:
 
     def tick(self) -> None:
         """One reap pass. Public so tests can drive it deterministically."""
+        self._wake_due_timers()
         rows = self._load_live_rows()
         for row in rows:
             try:
@@ -105,6 +106,25 @@ class Reaper:
                 logger.exception("Reaper: %s failed (continuing): %s", row["execution_id"], exc)
 
     # -- Internals ----------------------------------------------------------
+
+    def _wake_due_timers(self) -> None:
+        """Resume this lane's box-free usage-limit waits at reset (never a second box)."""
+        from sqlmodel import col
+
+        from temper_ai.runner import parked
+        from temper_ai.runner.lanes import lane_clause
+
+        with get_session() as session:
+            ids = session.exec(select(WorkflowRun.execution_id).where(
+                col(WorkflowRun.status) == parked.WAITING,
+                lane_clause(col(WorkflowRun.spawner_metadata), self._lane))).all()
+        for eid in ids:
+            try:
+                attempt = parked.parked_attempt(eid)
+                if parked.timer_due(attempt):
+                    parked.carry_on(eid, start=parked.queue_resume, by="limit reset")
+            except Exception:  # noqa: BLE001 - one failed wake never holds another run
+                logger.exception("Reaper: could not wake usage-limit wait for %s", eid)
 
     def _load_live_rows(self) -> list[dict]:
         """Read just the columns we need, snapshot to dicts, release the

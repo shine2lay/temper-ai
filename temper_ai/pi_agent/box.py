@@ -171,8 +171,11 @@ class BoxConfig:
     memory: str = "4g"
     cpus: str = "4"
     pids: int = 512
-    turn_timeout_s: float = 900.0
-    model_calls_per_turn: int = 6
+    #: How long one turn may run and how many model calls it may make. A free-flowing
+    #: team's turn that reaches either ends normally (Architecture's R1), so these are set
+    #: so a normal piece of work fits in one turn (owner: "let it go its natural").
+    turn_timeout_s: float = 86_400.0
+    model_calls_per_turn: int = 1_000_000
     #: Proof-harness failure injection only: ``deny_handoff`` or ``kill_after_prompt``.
     fault: str | None = None
     #: The add-ons a member may load, each from a pinned copy (name -> :class:`AddOnPin`).
@@ -798,6 +801,9 @@ class WorkerBox:
         self.allowance = 0
         self.handoffs = 0
         self.denied = 0
+        #: Handoffs denied only because the turn's call allowance was spent (R1: the turn
+        #: reached its call cap), not for a fault, a provider mismatch or a missing token.
+        self.calls_capped = 0
         self.team_sends = 0
         self.team_refused = 0
         self.tunnels: list[dict] = []
@@ -1169,6 +1175,9 @@ class WorkerBox:
                 self.handoffs += 1
             else:
                 self.denied += 1
+                if (provider == self.route.provider and self.allowance <= 0
+                        and self.cfg.fault != "deny_handoff"):
+                    self.calls_capped += 1
         if not ok:
             return
         token = self.owner_token(provider)
@@ -1276,7 +1285,7 @@ class WorkerBox:
         with self.lock:
             receipt.update({
                 "handoff_slot": self.slot, "handoffs": self.handoffs,
-                "handoffs_denied": self.denied,
+                "handoffs_denied": self.denied, "calls_capped": self.calls_capped,
                 "tunnels": len(self.tunnels),
                 "tunnels_allowed": sum(1 for t in self.tunnels if t["allowed"]),
                 "tunnels_refused": sum(1 for t in self.tunnels if not t["allowed"]),

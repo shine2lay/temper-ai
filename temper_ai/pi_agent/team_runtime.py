@@ -105,7 +105,7 @@ def stop_ends_cancelled(wait: dict | None) -> bool:
     the pause, when the team had nothing left to do, or when its settings changed while it
     waited (SW-85) is the owner's decision, and nothing failed there. A stop at a recovery
     wait follows a failed or cut-off turn: it fails."""
-    return wait is not None and wait.get("kind") in ("pause", "stalled", SETTINGS)
+    return wait is not None and wait.get("kind") in ("pause", "stalled", "limit", SETTINGS)
 
 
 def recovery_stop_text(member: Any, turn_no: Any, options: Any) -> str:
@@ -122,7 +122,11 @@ def stop_text(wait: dict) -> str | None:
     decision, subject = wait.get("decision") or {}, wait.get("subject") or {}
     kind = wait.get("kind")
     if kind == "pause" and decision.get("answer") == "stop":
+        if subject.get("at_usd") is not None:  # a free-flowing team's check-in
+            return f"stopped at the check-in at ${float(subject['at_usd']):g}"
         return f"stopped at the pause after round {subject.get('round')}"
+    if kind == "limit" and decision.get("answer") == "stop":
+        return "stopped at the usage limit"
     if kind == "stalled" and decision.get("answer") == "stop":
         return "stopped when the team had nothing left to do"
     if kind == SETTINGS and decision.get("answer") == STOP:
@@ -180,15 +184,16 @@ class TeamChannel:
 
 def team_digest(members: list[TeamMember], team_settings: dict) -> str:
     """What every member's conversation was started under (R2 C3): the roster with roles, the
-    communication type, the router's policy version, the leader and pause_after_rounds. A
-    resume under different team settings is refused before any turn."""
+    communication type, the router's policy version and the leader. A resume under different
+    team settings is refused before any turn. The check-in amount and the cap on turns at
+    once are not in it: changing them changes nothing a member was told."""
     doc = {
         "members": sorted([m.name, m.config.get("role")] for m in members),
         "communication": (team_settings.get("communication") or {}).get("type", "all"),
         "edges": (team_settings.get("communication") or {}).get("edges"),
         "policy": POLICY_VERSION,
         "leader": (team_settings.get("mode") or {}).get("leader"),
-        "pause_after_rounds": team_settings.get("pause_after_rounds"),
+        "team": "free",
     }
     return hashlib.sha256(json.dumps(doc, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -442,16 +447,35 @@ class Team:
                        thinking=model["thinking"], tools=self.tools_for(member),
                        labels={"run": self.run_id[:36], "turn": turn["turn_id"][:16]},
                        add_ons=add_on_names(cfg), team=channel, slot=self.account_slot)
+        try:
+            text = self.prompt_for(member, turn, batch)
+        except Exception as exc:  # noqa: BLE001 -- before any box: the turn fails red
+            error = f"{name} ({cfg['role']}) turn {turn['turn_no']} could not start: {exc}"
+            if not self.ledger.fail_turn(turn["turn_id"], error, [], {"box_started": False},
+                                         epoch=turn["epoch"]):
+                return StepResult("lost", member=name, turn=turn)
+            self._close_turn_event({**turn, "agent_event_id": agent_event_id,
+                                    "member": name}, error)
+            return StepResult("failed", member=name, turn=turn, error=error)
         req = TurnRequest(run_id=self.run_id, agent_name=name, node_path=self.host_path,
-                          participant=part, turn=turn,
-                          text=self.prompt_for(member, turn, batch),
+                          participant=part, turn=turn, text=text,
                           spec=spec, agent_event_id=agent_event_id, recorder=self.recorder,
                           cancel_event=self.cancel_event,
                           first_start=not session_started(pdir),
-                          rewind_allowed=owner_decided_before(self.ledger, turn))
+                          rewind_allowed=owner_decided_before(self.ledger, turn),
+                          **self.request_extras(turn))
         report = (type(self).turn_runner or run_turn)(self.box, req, self.ledger)
         worker = {**(report.worker or {}), "effective": report.effective,
                   "checks": _jsonable(report.checks)}
+        return self.settle(turn, name, cfg, report, worker, agent_event_id)
+
+    def request_extras(self, turn: dict) -> dict:
+        """More fields for the turn's request (a free-flowing team adds its inbox)."""
+        return {}
+
+    def settle(self, turn: dict, name: str, cfg: dict, report: Any, worker: dict,
+               agent_event_id: str) -> StepResult:
+        """Record how the turn ended (completed, held for the owner, or failed)."""
         if report.outcome is None:
             self.recorder.record(EventType.AGENT_FAILED, parent_id=agent_event_id,
                                  execution_id=self.run_id, status="failed", data={

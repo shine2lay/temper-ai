@@ -481,6 +481,18 @@ class SharedVersion:
         return Synced(head=self._rev("HEAD", gd) or "", shared=shared, kept_leftovers=kept,
                       merge=merge, conflicts=open_)
 
+    def unshared(self, member: str, pdir: Path) -> str | None:
+        """Why the member's copy differs from the shared head, or None (F5). Read only;
+        the caller holds the team lock and has confirmed the member's box is gone."""
+        gd, wt = self._copy(member, pdir)
+        if self._out(["status", "--porcelain", "--untracked-files=normal"],
+                     git_dir=gd, work_tree=wt):
+            return "your copy still has work that has not been shared"
+        head = self.head()
+        if head is None or self._rev("HEAD", gd) != head.commit:
+            return "your copy is not the team's latest shared version"
+        return None
+
     def share(self, member: str, pdir: Path, recorded: tuple[Conflict, ...] | list[Conflict] = (),
               note: str | None = None) -> Shared:
         """After the member's turn has settled: commit its copy, merge the shared version

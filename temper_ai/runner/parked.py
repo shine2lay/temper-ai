@@ -16,8 +16,12 @@ and goes on from its own record. This module carries such a run on, or ends it:
   on once.
 * A cancel, or a rejection, ends it cancelled, holding what a cancel during a held wait holds.
 
-A parked run never expires, never carries on by itself and never starts a new run. The
-start-up pick-up (runner/pickup.py) leaves it alone whatever its age: only an answer moves it.
+A parked run never expires and never starts a new run. Owner waits move only on an answer.
+A usage-limit timer is the exception: at its recorded wake_at the reaper carries the same
+run on through Resume, so the team can re-check its account. This is not permission to
+claim a turn: the team's limit hold stays until that check and, for a weekly limit, the
+owner's answer. Start-up pick-up (runner/pickup.py) leaves ordinary owner waits alone
+whatever their age.
 
 Only Pi workflows park, so every parked run is a Pi run. While the Pi switch is off it waits
 (M4 ADR-M4-05, SW-32): no carry-on starts it, since its Pi steps can't load ("Unknown strategy
@@ -159,6 +163,16 @@ def release(attempt: dict) -> None:
                        attempt.get("execution_id"), exc)
 
 
+def timer_due(attempt: dict | None) -> bool:
+    """A parked usage-limit wake is due. Missing/bad times never wake a run."""
+    raw = (_note(attempt or {}) or {}).get("wake_at")
+    try:
+        at = as_utc(datetime.fromisoformat(str(raw)))
+    except (ValueError, TypeError):
+        return False
+    return bool(at is not None and utcnow() >= at)
+
+
 def carry_on(execution_id: str, *, start: Callable[[str], Any], by: str) -> bool:
     """Carry a parked run on if the owner has answered where it waits. Returns whether it did.
 
@@ -169,9 +183,10 @@ def carry_on(execution_id: str, *, start: Callable[[str], Any], by: str) -> bool
     if attempt is None:
         return False
     answer = answered(execution_id, attempt)
-    if answer is None:
+    if answer is None and not timer_due(attempt):
         return False
-    path = (answer.get("data") or {}).get("gate_path")
+    path = ((answer.get("data") or {}).get("gate_path") if answer else
+            (_note(attempt) or {}).get("path"))
     if pi_switched_off():
         logger.info("Run %s: answered at '%s', but Pi is switched off: it waits (%s)",
                     execution_id, path, by)

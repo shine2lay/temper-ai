@@ -75,8 +75,8 @@ def log(text: str) -> None:
 
 
 def parse_time(text: str, *, need_zone: bool = True) -> datetime:
-    """Full ISO datetime only. Naive full datetimes may be read as UTC for
-    legacy records; unusable record dates must fall back to the file's mtime."""
+    """Parse a full ISO datetime, requiring a zone by default.
+    Missing or unusable record dates must fall back to the file's mtime."""
     if not isinstance(text, str):
         raise ValueError("not a datetime string")
     raw = text.strip()
@@ -241,7 +241,7 @@ class Reader:
         self.done.add(name)
         self.again_at.pop(name, None)
         try:
-            when = parse_time(rec.get("checked_at"), need_zone=False)
+            when = parse_time(rec.get("checked_at"), need_zone=True)
         except ValueError:
             when = _mtime(path) or datetime.now(UTC)
         kind, subject = _describe(rec, name)
@@ -374,8 +374,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"--{option.replace('_', '-')} must be finite and {'non-negative' if option == 'watch_grace' else 'positive'}")
     if not args.watch_unit or args.watch_unit.startswith("-"):
         parser.error("--watch-unit must name a user unit")
-    if not args.records.is_absolute() or not args.records.is_dir():
-        parser.error(f"--records {args.records} is not an absolute path to an existing folder")
+    if not args.records.is_absolute():
+        parser.error(f"--records {args.records} is not an absolute path")
     try:
         key = args.key_file.expanduser().read_text(encoding="utf-8").strip()
     except (OSError, UnicodeError) as exc:

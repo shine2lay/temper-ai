@@ -1,9 +1,10 @@
 """pi_watch_stop: a box watch's non-PASS record cancels the run (docs/pi-watch-stop.md).
 
 One test, many checks (owner bp-be8d76b9: happy path first, many things in one
-test). The reader runs as the real script against temp records, a loopback HTTP
-stub and a stub systemctl: the combined happy path first, then regressions for
-reproduced unsafe inputs. No Temper copy, real systemd or outside network.
+test). The reader runs as the real script against temp records, a loopback-only
+stub of the cancel and box-evidence routes, and a stub systemctl. The combined
+happy path comes first; reproduced regressions stay. No Temper copy, real
+systemd or outside network.
 """
 
 from __future__ import annotations
@@ -29,6 +30,21 @@ class _Cancels(BaseHTTPRequestHandler):
     run "down" -> 503, any other run -> 200. Every call is kept."""
 
     calls: list[dict[str, Any]] = []
+    reads: list[dict[str, Any]] = []
+    boxes: list[dict[str, Any]] = []
+
+    def do_GET(self) -> None:
+        if self.path.startswith("/api/team/runs/") and self.path.endswith("/boxes"):
+            self.reads.append({"path": self.path, "auth": self.headers.get("Authorization")})
+            reply = json.dumps({"boxes": self.boxes}).encode()
+        else:
+            self.calls.append({"path": self.path, "auth": self.headers.get("Authorization"), "body": {}})
+            reply = b""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(reply)))
+        self.end_headers()
+        self.wfile.write(reply)
 
     def do_POST(self) -> None:
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -45,12 +61,6 @@ class _Cancels(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(reply)))
         self.end_headers()
         self.wfile.write(reply)
-
-    def do_GET(self) -> None:
-        self.calls.append({"path": self.path, "auth": self.headers.get("Authorization"), "body": {}})
-        self.send_response(200)
-        self.send_header("Content-Length", "0")
-        self.end_headers()
 
     def log_message(self, *_: Any) -> None:
         pass
@@ -87,6 +97,8 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
     threading.Thread(target=server.serve_forever, daemon=True).start()
     calls = _Cancels.calls
     calls.clear()
+    _Cancels.reads.clear()
+    _Cancels.boxes.clear()
     key_file = tmp_path / "watch-stop.key"
     key_file.write_text(KEY + "\n", encoding="utf-8")
     os.chmod(key_file, 0o600)
@@ -95,16 +107,19 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
     systemctl.write_text(f"#!/bin/sh\ncat '{state}'\n", encoding="utf-8")
     os.chmod(systemctl, 0o755)
     since = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=5)
+    processes: list[subprocess.Popen[bytes]] = []
 
     def start(folder: Path, run: str, log: Path, *extra: str) -> subprocess.Popen[bytes]:
         folder.mkdir(parents=True, exist_ok=True)
         with log.open("wb") as out:
-            return subprocess.Popen(
+            proc = subprocess.Popen(
                 [sys.executable, str(SCRIPT), "--records", str(folder), "--run", run,
                  "--since", _stamp(since), "--key-file", str(key_file),
                  "--server", f"http://127.0.0.1:{server.server_port}",
                  "--systemctl", str(systemctl), *FAST, *extra],
                 stdout=out, stderr=subprocess.STDOUT)
+        processes.append(proc)
+        return proc
 
     def finish(proc: subprocess.Popen[bytes], log: Path) -> tuple[int, str]:
         try:
@@ -144,7 +159,44 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
         assert ".writing.json" not in text and "nested.json" not in text
         assert _snapshot(live) == before, "the reader must not touch the records folder"
 
-        # 2. Replay: a COULD NOT CHECK written after --since but before the reader
+        # 2. A reboot gap with every overlapping ledger box PASS carries on. The
+        #    continuity file sorts before its evidence: the whole batch must be read
+        #    before judging it. Old/future turns and a final never-created receipt
+        #    need no evidence; an ended turn that overlapped the gap still does.
+        calls.clear()
+        _Cancels.reads.clear()
+        state.write_text("active\n", encoding="utf-8")
+        complete = tmp_path / "complete-gap"
+        gap_from, gap_to = since + timedelta(seconds=10), since + timedelta(seconds=30)
+        _Cancels.boxes[:] = [
+            {"box_name": "temper-pi-active", "turn_id": "turn-active",
+             "started_at": _stamp(gap_from), "ended_at": None, "created": None},
+            {"box_name": "temper-pi-ended", "turn_id": "turn-ended",
+             "started_at": _stamp(since), "ended_at": _stamp(gap_to), "created": True},
+            {"box_name": "temper-pi-before", "turn_id": "turn-before",
+             "started_at": _stamp(since), "ended_at": _stamp(gap_from - timedelta(seconds=1))},
+            {"box_name": "temper-pi-after", "turn_id": "turn-after",
+             "started_at": _stamp(gap_to + timedelta(seconds=1)), "ended_at": None},
+            {"box_name": "temper-pi-never", "turn_id": "turn-never",
+             "started_at": _stamp(gap_from), "ended_at": _stamp(gap_to), "created": False}]
+        _record(complete, "a-continuity.json", gap_to, "COULD NOT CHECK",
+                kind="watch", subject="continuity", gap_from=_stamp(gap_from),
+                gap_to=_stamp(gap_to), reasons=["Docker events cannot cover the gap"])
+        for box in ("temper-pi-active", "temper-pi-ended"):
+            _record(complete, f"z-{box}.json", gap_to, "PASS", kind="box", subject=box)
+        log5 = tmp_path / "complete-gap.log"
+        proc = start(complete, "run-5", log5)
+        _wait_for(log5, "all gap boxes have PASS records; carrying on", proc)
+        assert calls == []
+        assert _Cancels.reads == [{"path": "/api/team/runs/run-5/boxes", "auth": f"Bearer {KEY}"}]
+        _record(complete, "later-stop.json", datetime.now(UTC), "STOP",
+                kind="box", subject="temper-pi-active", reasons=["a box's STOP still acts"])
+        code, text = finish(proc, log5)
+        assert code == 0, text
+        assert len(calls) == 1 and calls[0]["body"]["reason"] == (
+            "Security watch STOP: box temper-pi-active: a box's STOP still acts")
+
+        # 3. Replay: a COULD NOT CHECK written after --since but before the reader
         #    started (it was down) is acted on as soon as it starts.
         calls.clear()
         replay = tmp_path / "replay"
@@ -155,7 +207,7 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
         assert [c["body"]["reason"] for c in calls] == [
             "Security watch COULD NOT CHECK: pins: pins read failed twice"]
 
-        # 3. A record that doesn't parse is read again, still doesn't parse, and counts
+        # 4. A record that doesn't parse is read again, still doesn't parse, and counts
         #    as COULD NOT CHECK. The run is gone (404): logged, exit 3, no retry.
         calls.clear()
         broken = tmp_path / "broken"
@@ -169,7 +221,7 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
             "Security watch COULD NOT CHECK: record torn.json: record does not parse")
         assert "cancel answered 404" in text
 
-        # 4. The watch's own unit stuck other than active past the grace counts as
+        # 5. The watch's own unit stuck other than active past the grace counts as
         #    COULD NOT CHECK. Here the server keeps failing (503): the reader retries,
         #    then exits 1 so systemd starts it again.
         calls.clear()
@@ -258,6 +310,35 @@ def test_watch_stop_reader_cancels_on_non_pass_records_only(tmp_path: Path) -> N
             log = tmp_path / f"setup-{n}.log"
             code, text = finish(start(tmp_path / "setup", "setup", log, *extra), log)
             assert code == 2 and not calls, text
+
+        # 6. A gap box without PASS cancels after exactly one re-check. Missing
+        #    bounds use --since and checked_at, so a turn ending at --since counts.
+        #    An earlier Project's PASS can't excuse it; an unknown receipt can't
+        #    excuse it either. No record in either folder was changed by the reader.
+        calls.clear()
+        _Cancels.reads.clear()
+        missing = tmp_path / "missing-gap"
+        _Cancels.boxes[:] = [{"box_name": "temper-pi-missing", "turn_id": "turn-missing",
+                             "started_at": _stamp(since - timedelta(seconds=1)),
+                             "ended_at": _stamp(since), "created": None}]
+        _record(missing, "old-pass.json", since - timedelta(seconds=1), "PASS",
+                kind="box", subject="temper-pi-missing")
+        _record(missing, "continuity.json", gap_to, "COULD NOT CHECK", kind="watch",
+                subject="continuity", gap_from="not a time", reasons=["unproven gap"])
+        before = _snapshot(missing)
+        log6 = tmp_path / "missing-gap.log"
+        code, text = finish(start(missing, "run-6", log6, "--continuity-wait", "0.2"), log6)
+        assert code == 0, text
+        assert "checking again in 0.2 s" in text
+        assert _Cancels.reads == [{"path": "/api/team/runs/run-6/boxes", "auth": f"Bearer {KEY}"}] * 2
+        assert calls == [{"path": "/api/runs/run-6/cancel", "auth": f"Bearer {KEY}",
+                          "body": {"reason": "Security watch COULD NOT CHECK: watch continuity: "
+                                             "temper-pi-missing has no PASS record"}}]
+        assert _snapshot(missing) == before
     finally:
+        for proc in processes:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
         server.shutdown()
         server.server_close()

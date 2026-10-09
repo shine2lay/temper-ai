@@ -22,6 +22,7 @@ nothing of it is imported. The team itself runs as described in
 | `GET /api/team/runs/{execution_id}` | one trial's run: the whole state the page draws |
 | `GET /api/team/runs/{execution_id}/messages/{message_id}` | the full text of one message |
 | `GET /api/team/runs/{execution_id}/version` | the team's newest version, from its stored version record (`team_version`) |
+| `GET /api/team/runs/{execution_id}/boxes` | every named box turn for the watch's continuity check (named API key required) |
 | `POST /api/team/runs/{execution_id}/waits/{wait_id}/answer` | answer the open question Temper asks |
 | `POST /api/team/runs/{execution_id}/messages` | message a member as the owner (201) |
 
@@ -45,8 +46,23 @@ There is no second guard and no `by` in any body. Starting a trial counts as a r
 (`require_caller_may("start")`); answers and messages count as decisions
 (`require_caller_may("approve")`), so with `TEMPER_API_GUARD=enforce` they need one of the
 server's named keys ([api-access.md](api-access.md)) and a run box's own key can't do them.
-Reads are open. Every write records a `caller.action` event (start, answer, message), and
-the run page's cancel records its own.
+Page reads are open. The watch-only `/runs/{execution_id}/boxes` read always
+requires a named API key, even with the write guard off; it uses the same hashed
+keys as cancel. Every write records a `caller.action` event (start, answer,
+message), and the run page's cancel records its own.
+
+The box read returns `{execution_id, boxes: [{box_name, turn_id, started_at,
+ended_at, created}]}` from every named `pi_turns` row for this run, including
+past attempts, sorted by start time and turn id. Times have an explicit UTC
+zone. `created` is `true` for a settled turn's receipt confirming creation;
+`false` requires both `created: false` and `creation_attempted: false` in that
+receipt. Anything uncertain is `null`: the older `created: false` alone also
+covers a Docker-create timeout and cannot prove the container never existed.
+Current older receipts therefore need PASS evidence even when they say false.
+Only a proven `false` on a settled turn can excuse missing watch evidence.
+No member output, prompts, tokens or full receipts are returned.
+There is no pagination that could hide an earlier gap box. See
+[pi-watch-stop.md](pi-watch-stop.md) for the continuity rule.
 
 `by` is the caller's name: `owner` for the names in `owner_callers` (below), another named
 caller by its name (`temper-ci`, `autopilot`; names are not secrets, hashes never leave the

@@ -29,7 +29,7 @@ from datetime import datetime
 import pytest
 import sqlalchemy as sa
 
-from temper_ai.pi_agent.ledger import Ledger, outcomes, requests, trials, waits
+from temper_ai.pi_agent.ledger import Ledger, outcomes, requests, trials, turns, waits
 from tests.test_pi_agent import support as sup
 from tests.test_pi_agent import test_team as tt
 from tests.test_runner.pi_parking import support as pw
@@ -166,6 +166,7 @@ def test_the_routes_come_only_with_the_switch(monkeypatch):
     assert include_team_routes(app) is False
     assert TestClient(app).get("/api/team/status").status_code == 404
     assert TestClient(app).get("/api/team/runs/any-run/version").status_code == 404
+    assert TestClient(app).get("/api/team/runs/any-run/boxes").status_code == 404
 
 
 def test_status_gives_the_forms_defaults_limits_folders_and_the_guards_mode(api):
@@ -294,6 +295,39 @@ def test_a_trial_starts_in_one_call_with_frozen_configs_and_runs_to_done(api):
             item["state"]) == (tid, eid, "completed", "done", "done")
     assert item["goal_first_line"] == GOAL and item["started_by"] == "unknown caller"
     assert api.client.get("/api/team/trials?state=paused").json() == {"total": 0, "trials": []}
+
+    # The STOP reader's continuity read is named-key-only, even with the guard
+    # off. It returns every named turn, including settled ones, and nothing of
+    # the member's output or full worker receipt. Ordinary page reads stay open.
+    boxes_url = f"/api/team/runs/{eid}/boxes"
+    assert api.client.get(boxes_url).status_code == 401
+    assert api.client.get(boxes_url, headers=key("not-a-key")).status_code == 401
+    boxes_reply = api.client.get(boxes_url, headers=key(CI_KEY))
+    assert boxes_reply.status_code == 200, boxes_reply.text
+    boxes = boxes_reply.json()["boxes"]
+    assert boxes and all(set(b) == {"box_name", "turn_id", "started_at", "ended_at", "created"}
+                         for b in boxes)
+    with api.led.engine.connect() as conn:
+        named = conn.execute(sa.select(turns.c.turn_id).where(
+            turns.c.run_id == eid, turns.c.box_name.is_not(None), turns.c.box_name != ""
+        )).scalars().all()
+    assert {b["turn_id"] for b in boxes} == set(named)
+    assert all(b["started_at"].endswith("+00:00") and b["ended_at"].endswith("+00:00")
+               and b["created"] is True for b in boxes)
+    # created=False alone can follow an uncertain Docker-create timeout.
+    # Only an explicit no-create-attempt receipt proves the box never existed.
+    with api.led.engine.begin() as conn:
+        conn.execute(turns.update().where(turns.c.turn_id == boxes[0]["turn_id"]).values(
+            worker={"created": False, "container_removed": True, "handoffs": 0}))
+    assert api.client.get(boxes_url, headers=key(CI_KEY)).json()["boxes"][0]["created"] is None
+    with api.led.engine.begin() as conn:
+        conn.execute(turns.update().where(turns.c.turn_id == boxes[0]["turn_id"]).values(
+            worker={"created": False, "creation_attempted": False, "container_removed": True}))
+    assert api.client.get(boxes_url, headers=key(CI_KEY)).json()["boxes"][0]["created"] is False
+    with api.led.engine.begin() as conn:
+        conn.execute(turns.update().where(turns.c.turn_id == boxes[0]["turn_id"]).values(worker={}))
+    assert api.client.get(boxes_url, headers=key(CI_KEY)).json()["boxes"][0]["created"] is None
+    assert api.client.get("/api/team/runs/no-such-run/boxes", headers=key(CI_KEY)).status_code == 404
 
 
 def test_a2_team_run_reads_the_outcome_from_its_own_row_only(api):

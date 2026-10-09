@@ -10,7 +10,9 @@ new top-level ``*.json`` once (names starting with "." and subfolders are left
 alone). It logs each record it reads. The first record dated at or after
 ``--since`` whose verdict is not exactly ``PASS`` gets the run's ordinary cancel,
 ``POST /api/runs/<run>/cancel`` with a reason, the same as the owner's Stop; then
-the reader exits. Notes never count, only the verdict.
+the reader exits. Notes never count, only the verdict. A watch/continuity COULD NOT CHECK record
+is the one exception: every box whose ledger turn overlaps that gap must have a
+PASS record. Missing evidence gets one more check after 10 s, then cancels.
 
 It fails closed:
 - a record that still doesn't parse when read again after ``--reread`` seconds
@@ -54,6 +56,7 @@ REASON_MAX_CHARS = 2000  # the cancel route refuses a longer reason (docs/api-ac
 DEFAULT_SERVER = "http://127.0.0.1:8420"
 DEFAULT_WATCH_UNIT = "security-trial-watch"
 MAX_RECORD_BYTES = 1024 * 1024
+MAX_BOX_REPLY_BYTES = 16 * 1024 * 1024
 MAX_JSON_DEPTH = 64
 
 
@@ -176,12 +179,21 @@ def unit_state(systemctl: str, unit: str) -> str:
     return lines[0].strip() if lines else "unknown (no answer)"
 
 
+@dataclass
+class Continuity:
+    gap_from: datetime
+    gap_to: datetime
+    check_after: float = 0.0
+    checked_once: bool = False
+
+
 class Reader:
-    """The folder and the watch unit, polled. :meth:`poll` returns the first
-    reason to cancel, or None."""
+    """The folder, pending continuity checks and watch unit, polled. :meth:`poll`
+    returns the first reason to cancel, or None. Only the API reads the ledger."""
 
     def __init__(self, records: Path, since: datetime, *, watch_unit: str, watch_grace: float,
-                 reread: float, systemctl: str) -> None:
+                 reread: float, systemctl: str, server: str, run: str, key: str,
+                 continuity_wait: float) -> None:
         self.records = records
         self.since = since
         self.watch_unit = watch_unit
@@ -192,10 +204,15 @@ class Reader:
         self.again_at: dict[str, float] = {}  # names that didn't parse: when to read them again
         self.unit_down_since: float | None = None
         self.unit_last_state: str | None = None
+        self.server, self.run, self.key = server, run, key
+        self.continuity_wait = continuity_wait
+        self.pass_boxes: set[str] = set()
+        self.continuities: dict[str, Continuity] = {}
 
     def poll(self) -> Finding | None:
-        found = self._poll_records()
-        return found if found is not None else self._poll_unit()
+        # Read the whole batch first: a continuity record may sort before its PASS
+        # evidence. An ordinary non-PASS always wins, even during the 10 s wait.
+        return self._poll_records() or self._poll_continuities() or self._poll_unit()
 
     def _poll_records(self) -> Finding | None:
         try:
@@ -252,10 +269,69 @@ class Reader:
             return None
         log(f"read {name}: {kind} {subject}: {verdict}")
         if verdict == "PASS":
+            if kind == "box":
+                self.pass_boxes.add(subject)
             return None
         reasons = rec.get("reasons")
         first = str(reasons[0]) if isinstance(reasons, list) and reasons else "no reason given"
-        return when, name, Finding(verdict, kind, subject, first, name)
+        finding = Finding(verdict, kind, subject, first, name)
+        if (kind, subject, verdict) == ("watch", "continuity", "COULD NOT CHECK"):
+            def gap_time(field: str, fallback: datetime) -> datetime:
+                try:
+                    return parse_time(rec.get(field), need_zone=True)
+                except ValueError:
+                    return fallback
+            self.continuities[name] = Continuity(
+                gap_time("gap_from", self.since), gap_time("gap_to", when))
+            return None
+        return when, name, finding
+
+    def _poll_continuities(self) -> Finding | None:
+        for name, gap in list(self.continuities.items()):
+            now = time.monotonic()
+            if now < gap.check_after:
+                continue
+            problem = self._continuity_problem(gap)
+            if problem is None:
+                log(f"continuity {name}: all gap boxes have PASS records; carrying on")
+                del self.continuities[name]
+                continue
+            if not gap.checked_once:
+                gap.checked_once = True
+                gap.check_after = time.monotonic() + self.continuity_wait
+                log(f"continuity {name}: {problem}; checking again in {self.continuity_wait:g} s")
+                continue
+            return Finding("COULD NOT CHECK", "watch", "continuity", problem, name)
+        return None
+
+    def _continuity_problem(self, gap: Continuity) -> str | None:
+        if gap.gap_to < gap.gap_from:
+            return "gap_to is before gap_from"
+        status, body = get_boxes(self.server, self.run, self.key)
+        if status != 200:
+            return f"can't read the run's member boxes ({'no answer' if status is None else f'HTTP {status}'})"
+        try:
+            payload = json.loads(body)
+            if not isinstance(payload, dict) or not isinstance(payload.get("boxes"), list):
+                raise ValueError("no boxes list")
+            missing: set[str] = set()
+            for box in payload["boxes"]:
+                if not isinstance(box, dict) or not isinstance(box.get("box_name"), str) or not box["box_name"]:
+                    raise ValueError("no box name")
+                started = parse_time(box.get("started_at"), need_zone=True)
+                ended = (parse_time(box["ended_at"], need_zone=True)
+                         if box.get("ended_at") else None)
+                if started > gap.gap_to or (ended is not None and ended < gap.gap_from):
+                    continue
+                # Only an explicit final worker receipt can prove no container
+                # was created. Missing/older receipts mean the box needs a PASS.
+                if box.get("created") is False and ended is not None:
+                    continue
+                if box["box_name"] not in self.pass_boxes:
+                    missing.add(box["box_name"])
+        except (ValueError, TypeError, KeyError, RecursionError):
+            return "can't read the run's member boxes (invalid reply or turn time)"
+        return f"{sorted(missing)[0]} has no PASS record" if missing else None
 
     def _poll_unit(self) -> Finding | None:
         state = unit_state(self.systemctl, self.watch_unit)
@@ -301,6 +377,27 @@ def post_cancel(server: str, run: str, key: str, reason: str, *,
         return None, f"{type(exc).__name__}: request failed"
 
 
+def get_boxes(server: str, run: str, key: str) -> tuple[int | None, str]:
+    """Read only the run's box names, times and creation evidence, under the same
+    named key as cancel. Never connect to the database or print the key."""
+    try:
+        request = urllib.request.Request(
+            f"{server.rstrip('/')}/api/team/runs/{run}/boxes",
+            headers={"Authorization": f"Bearer {key}"})
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        try:
+            with opener.open(request, timeout=15) as reply:
+                body = reply.read(MAX_BOX_REPLY_BYTES + 1)
+                if len(body) > MAX_BOX_REPLY_BYTES:
+                    return None, ""
+                return reply.status, body.decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            return exc.code, ""
+    except (urllib.error.URLError, OSError, ValueError, UnicodeError, http.client.HTTPException):
+        # No exception text: malformed headers can echo the bearer token.
+        return None, ""
+
+
 def cancel(server: str, run: str, key: str, finding: Finding, *, retry_every: float,
            retry_for: float) -> int:
     reason = finding.reason()
@@ -341,8 +438,10 @@ def main(argv: list[str] | None = None) -> int:
                         help=f"temper's API (default TEMPER_SERVER_URL, else {DEFAULT_SERVER})")
     parser.add_argument("--watch-unit", default=DEFAULT_WATCH_UNIT,
                         help=f"the watch's systemd user unit (default {DEFAULT_WATCH_UNIT})")
-    parser.add_argument("--watch-grace", type=float, default=60.0,
-                        help="seconds the watch unit may be other than active before it counts as COULD NOT CHECK")
+    parser.add_argument("--watch-grace", type=float, default=300.0,
+                        help="seconds the watch unit may be other than active before it counts as COULD NOT CHECK (default 300)")
+    parser.add_argument("--continuity-wait", type=float, default=10.0,
+                        help="seconds before checking a continuity gap's missing PASS evidence once more (default 10)")
     parser.add_argument("--poll", type=float, default=2.0, help="seconds between looks (default 2)")
     parser.add_argument("--reread", type=float, default=2.0,
                         help="seconds before a record that doesn't parse is read again (default 2)")
@@ -368,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
         valid_server = False
     if not valid_server:
         parser.error("--server must be an http(s) URL with a host and no credentials, query or fragment")
-    for option in ("poll", "reread", "retry_every", "retry_for", "watch_grace"):
+    for option in ("poll", "reread", "retry_every", "retry_for", "watch_grace", "continuity_wait"):
         value = getattr(args, option)
         if not math.isfinite(value) or value < 0 or (value == 0 and option != "watch_grace"):
             parser.error(f"--{option.replace('_', '-')} must be finite and {'non-negative' if option == 'watch_grace' else 'positive'}")
@@ -386,7 +485,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--key-file must hold one printable ASCII token; contents withheld")
 
     reader = Reader(args.records, args.since, watch_unit=args.watch_unit,
-                    watch_grace=args.watch_grace, reread=args.reread, systemctl=args.systemctl)
+                    watch_grace=args.watch_grace, reread=args.reread, systemctl=args.systemctl,
+                    server=args.server, run=run, key=key, continuity_wait=args.continuity_wait)
     log(f"watching {args.records} for run {run}: records checked from "
         f"{args.since:%Y-%m-%dT%H:%M:%SZ}; watch unit {args.watch_unit} (grace {args.watch_grace:g} s); "
         f"cancel via {args.server} with the key in {args.key_file}")

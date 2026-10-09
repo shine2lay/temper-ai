@@ -9,6 +9,7 @@ router is never included, so every route here answers 404 and nothing else chang
 * ``POST /api/team/trials``                     start a trial (one call: configs + run)
 * ``GET  /api/team/trials``                     the trials, newest first, one item per run
 * ``GET  /api/team/runs/{id}``                  one team run's state
+* ``GET  /api/team/runs/{id}/boxes``            box names and ledger times (named key)
 * ``GET  /api/team/runs/{id}/messages/{mid}``   one message's full text
 * ``POST /api/team/runs/{id}/waits/{wid}/answer``  answer the open wait Temper asks
 * ``POST /api/team/runs/{id}/messages``         message a member as the owner
@@ -510,6 +511,46 @@ def team_version(execution_id: str) -> dict:
     branch = ((run.outcome or {}).get("record") or {}).get("branch")
     made = branch.get("name") if isinstance(branch, dict) and branch.get("made") else None
     return team_versions.view(row, made)
+
+
+@router.get("/runs/{execution_id}/boxes")
+def team_boxes(execution_id: str, request: Request) -> dict:
+    """Watch continuity evidence: every named box turn in this run, including past
+    attempts. A named API key is required even when the write guard is off. No
+    output, prompt, token or worker receipt leaves this route, only its creation
+    boolean (None when the final receipt says nothing for sure)."""
+    from temper_ai.api import api_keys, auth
+    from temper_ai.pi_agent.ledger import turns
+    from temper_ai.pi_agent.team_view import utc_text
+
+    if api_keys.identify_key(auth._write_key(dict(request.scope))) is None:
+        raise HTTPException(status_code=401, detail="This read needs a named API key.",
+                            headers={"WWW-Authenticate": 'Bearer realm="temper"'})
+    ledger = _ledger()
+    _team_run(ledger, execution_id)
+    with ledger.engine.connect() as conn:
+        rows = conn.execute(sa.select(
+            turns.c.box_name, turns.c.turn_id, turns.c.started_at, turns.c.ended_at,
+            turns.c.worker).where(
+                turns.c.run_id == execution_id, turns.c.box_name.is_not(None),
+                turns.c.box_name != "").order_by(
+                    turns.c.started_at, turns.c.turn_id)).mappings().all()
+    boxes = []
+    for row in rows:
+        worker = row["worker"]
+        created: bool | None = None
+        if isinstance(worker, dict) and row["ended_at"]:
+            if worker.get("created") is True:
+                created = True
+            elif worker.get("created") is False and worker.get("creation_attempted") is False:
+                # created=False alone can also mean the Docker client timed out
+                # after asking the daemon to create a container. It is uncertain.
+                created = False
+        boxes.append({"box_name": row["box_name"], "turn_id": row["turn_id"],
+                      "started_at": utc_text(row["started_at"]),
+                      "ended_at": utc_text(row["ended_at"]),
+                      "created": created})
+    return {"execution_id": execution_id, "boxes": boxes}
 
 
 @router.get("/runs/{execution_id}/messages/{message_id}")

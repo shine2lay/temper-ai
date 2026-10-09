@@ -1,6 +1,7 @@
 [Unit]
 # Cancels a team Project's run when the box watch writes a record whose verdict
-# isn't PASS, or when the watch's own unit stops being active for over a minute
+# isn't PASS, or when the watch's own unit stops being active for over five minutes.
+# A continuity gap first checks every overlapping box for PASS evidence
 # (scripts/pi_watch_stop.py, docs/pi-watch-stop.md). It only reads the watch's
 # records folder: it never writes, moves or deletes anything there.
 #

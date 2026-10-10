@@ -26,21 +26,24 @@
 }
 
 /* The four symbols Source Sans Pro lacks (U+2192, U+2193, U+25B6, U+26A0: the
-   right and down arrows, play and warning signs), from two small Noto
-   subsets (SIL Open Font License 1.1, Noto-OFL.txt; sources and commands in
+   right and down arrows, play and warning signs), from small Noto subsets
+   (SIL Open Font License 1.1, Noto-OFL.txt; sources and commands in
    symbols-licenses.json), so no browser draws them in a system font. The
    unicode-range keeps each file unloaded until a page shows one of its
    symbols, and ?no-inline keeps it a file of its own (Vite would put files
    this small into the stylesheet, so every page would carry them). Each
-   file is declared once per face above, with the same descriptors: browsers
-   only join faces with equal descriptors into one font, and with any other
-   weight range they pick the symbol face alone for a whole weight, drawing
-   every letter in a system font. The arrows' weight axis follows the text
-   (400, 600); the play and warning signs have one weight and are never
+   symbol is declared once per face above, with the same descriptors:
+   browsers only join faces with equal descriptors into one font, and with
+   any other weight range they pick the symbol face alone for a whole
+   weight, drawing every letter in a system font. The arrows are as heavy as
+   the letters beside them (Design D100): each face gets the Noto Sans
+   Symbols weight whose shaft is as thick as its own "l" stem, Bold (700)
+   beside the regular face and Black (900, the heaviest there is) beside the
+   semibold one. The play and warning signs have one weight and are never
    faked bold. */
 @font-face {
   font-family: 'Source Sans Pro';
-  src: url('./assets/fonts/notosanssymbols-arrows.woff2?no-inline') format('woff2');
+  src: url('./assets/fonts/notosanssymbols-arrows-regular.woff2?no-inline') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -49,7 +52,7 @@
 
 @font-face {
   font-family: 'Source Sans Pro';
-  src: url('./assets/fonts/notosanssymbols-arrows.woff2?no-inline') format('woff2');
+  src: url('./assets/fonts/notosanssymbols-arrows-semibold.woff2?no-inline') format('woff2');
   font-weight: 500 900;
   font-style: normal;
   font-display: swap;

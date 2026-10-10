@@ -1,21 +1,30 @@
 {
-  "purpose": "Source Sans Pro (licenses.json) has no glyphs for these four characters, so each browser drew them in its own system font. Two small Noto subsets supply exactly these four, under the CSS family 'Source Sans Pro' with a unicode-range each (index.css), so they are the same everywhere.",
+  "purpose": "Source Sans Pro (licenses.json) has no glyphs for these four characters, so each browser drew them in its own system font. Small Noto subsets supply exactly these four, under the CSS family 'Source Sans Pro' with a unicode-range each (index.css), so they are the same everywhere. The arrows are as heavy as the letters beside them (Design D100): each face of the text gets the Noto Sans Symbols weight whose shaft is as thick as that face's 'l' stem.",
   "css_family": "Source Sans Pro",
   "installed_fonts": [
     {
-      "file": "notosanssymbols-arrows.woff2",
-      "bytes": 1316,
-      "sha256": "d5d7b005b91bc1fa4a7ac333c42f73b771bc7c9aac0bb16a1d70363a15864118",
+      "file": "notosanssymbols-arrows-regular.woff2",
+      "bytes": 848,
+      "sha256": "10aeba5aac5bc6f1fe6cea9ef993c15dd2be5214829f89029479e4b7b6cdb8e4",
       "code_points": ["U+2192", "U+2193"],
       "characters": "\u2192 \u2193",
-      "css": {"unicode_range": "U+2192-2193", "font_weight": ["400", "500 900"]},
-      "variation_axes": {"wght": {"min": 100, "default": 400, "max": 900}},
+      "css": {"unicode_range": "U+2192-2193", "font_weight": "400"},
+      "instance": {
+        "wght": 700,
+        "style": "Bold",
+        "stem": "The shaft of both arrows is 82/1000 em thick; the 'l' stem of sourcesanspro-regular.ttf is 168/2048 = 82.03/1000 em (ratio 1.00). Of wght 100..900 in steps of 10, 700 is the closest (the default 400 is 42/1000, half the stem).",
+        "bytes": 184992,
+        "sha256": "401920731c95f8b23bb62a794eb600bea0f2794ec20e1b5c9141567f479edfd3",
+        "command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 fonttools varLib.instancer 'NotoSansSymbols[wght].ttf' wght=700 --update-name-table --no-recalc-timestamp -o NotoSansSymbols-wght700.ttf"
+      },
+      "variation_axes": {},
       "name_table": {
         "0": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)",
         "1": "Noto Sans Symbols",
-        "4": "Noto Sans Symbols Regular",
+        "2": "Bold",
+        "4": "Noto Sans Symbols Bold",
         "5": "Version 2.003",
-        "6": "NotoSansSymbols-Regular"
+        "6": "NotoSansSymbols-Bold"
       },
       "source": {
         "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf",
@@ -25,7 +34,42 @@
         "sha256": "f7e7e04b4a24b6c78893d50cbfd2b2f6cae49617ab047bfef668d252adb128f7",
         "upstream": "https://github.com/notofonts/symbols at commit b61fa7f86fb7d4163ee11d46d0977393f98d4f7a"
       },
-      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset 'NotoSansSymbols[wght].ttf' --unicodes=U+2192,U+2193 --layout-features= --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols-arrows.woff2",
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols-wght700.ttf --unicodes=U+2192,U+2193 --layout-features= --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols-arrows-regular.woff2",
+      "license": "SIL Open Font License 1.1, Noto-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
+    },
+    {
+      "file": "notosanssymbols-arrows-semibold.woff2",
+      "bytes": 860,
+      "sha256": "dae2c8486478a2b851aff4f288f7e6a8e48b5567a2c88e26d9bdfd30b88d8fe4",
+      "code_points": ["U+2192", "U+2193"],
+      "characters": "\u2192 \u2193",
+      "css": {"unicode_range": "U+2192-2193", "font_weight": "500 900"},
+      "instance": {
+        "wght": 900,
+        "style": "Black",
+        "stem": "The shaft of both arrows is 108/1000 em thick; the 'l' stem of sourcesanspro-semibold.ttf is 235/2048 = 114.75/1000 em (ratio 0.94). 900 is the heaviest weight the font has, so the closest.",
+        "bytes": 184832,
+        "sha256": "9e45280a9cc4b2bb35fc15071e6dee238def68859c18cc81adb710f2ee8e68c1",
+        "command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 fonttools varLib.instancer 'NotoSansSymbols[wght].ttf' wght=900 --update-name-table --no-recalc-timestamp -o NotoSansSymbols-wght900.ttf"
+      },
+      "variation_axes": {},
+      "name_table": {
+        "0": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)",
+        "1": "Noto Sans Symbols Black",
+        "2": "Regular",
+        "4": "Noto Sans Symbols Black",
+        "5": "Version 2.003",
+        "6": "NotoSansSymbols-Black"
+      },
+      "source": {
+        "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf",
+        "pinned_url": "https://raw.githubusercontent.com/google/fonts/caa8c83707a5797d62fd02f14301391986f21d75/ofl/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf",
+        "file": "NotoSansSymbols[wght].ttf",
+        "bytes": 372684,
+        "sha256": "f7e7e04b4a24b6c78893d50cbfd2b2f6cae49617ab047bfef668d252adb128f7",
+        "upstream": "https://github.com/notofonts/symbols at commit b61fa7f86fb7d4163ee11d46d0977393f98d4f7a"
+      },
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols-wght900.ttf --unicodes=U+2192,U+2193 --layout-features= --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols-arrows-semibold.woff2",
       "license": "SIL Open Font License 1.1, Noto-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
     },
     {
@@ -66,5 +110,5 @@
     "note": "Both upstream OFL.txt files are this same file, copied unchanged."
   },
   "license": "SIL Open Font License 1.1",
-  "note": "Reproducible: the two commands above, run on the upstream files, give these exact bytes. Each subset holds .notdef and its two glyphs, with no layout features. The Source Sans Pro files are unchanged."
+  "note": "Reproducible: the commands above, run on the upstream files, give these exact bytes (an arrows file: the instance command, then its subset command). Each subset holds .notdef and its glyphs, with no layout features. The Source Sans Pro files are unchanged."
 }

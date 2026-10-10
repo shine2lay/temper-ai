@@ -24,7 +24,7 @@ from temper_ai.pi_agent.box import WorkerBox
 from temper_ai.pi_agent.ledger import waits
 from temper_ai.pi_agent.team_flow import MEMBER_QUESTION_NOTE, FlowTeam
 from temper_ai.pi_agent.team_leader import LeaderTeam
-from temper_ai.pi_agent.team_view import TeamReader
+from temper_ai.pi_agent.team_view import TeamReader, utc_text
 from temper_ai.shared.clock import utcnow
 from tests.test_runner.pi_team import leader_support as ls
 from tests.test_runner.pi_team import support as ts
@@ -242,3 +242,7 @@ def test_free_flowing_team_works_at_once_shares_one_version_checks_in_and_finish
         assert first["phase"]["name"] == later["phase"]["name"] == phase
         assert later["as_of"] > first["as_of"]
         assert later["elapsed_s"] == first["elapsed_s"]
+        # once the run has ended every member is ended, since the run's end
+        assert {m["state"] for m in later["members"]} == {"ended"}
+        assert {m["since"] for m in later["members"]} == {utc_text(view_run.completed_at)}
+        assert later["counts"]["ended"] == len(NAMES)

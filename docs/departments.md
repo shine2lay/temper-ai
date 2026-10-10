@@ -96,8 +96,11 @@ the dashboard.
      new project from nothing), or `epd_probe` (the deploy and verify
      mechanics, with no model work except the browser check).
 3. **Grade both**, the live config's work and the candidate's, with the role's
-   grader (below). A role without one builds one first, and checks it against
-   verdicts the owner has already given.
+   grader (below). Measured checks come first: whatever a script can count or
+   measure decides by itself. A model judge counts only for what can't be
+   measured, and only after it has given the right answer on known cases in
+   every one of several runs. A role without a grader builds one first, and
+   checks it against verdicts the owner has already given.
 4. **Compare score and cost.** A candidate that scores the same for less is a
    winner too.
 5. **Land only a winner.** Promote the candidate into the live config in a
@@ -110,6 +113,22 @@ the dashboard.
 6. **Record it.** The result goes into the role's journal: what changed, both
    scores and costs, the run ids. A change to an EPD agent affects live bets
    from the next run on, so RollCall is told as well.
+
+**Building a new workflow**
+
+- **Deterministic steps first.** Every step that a script or tool can do
+  (fetch, count, measure, compare, check against a rule or a number,
+  transform, check a format) is a script step, not an agent. An agent goes
+  only where judgment or language is really needed (reading meaning,
+  writing, taste); it gets fixed inputs and a checklist, and writes
+  structured output that a script checks. The role turns a model's judgment
+  into a measured check wherever it can, starting with decisions the model
+  keeps making. Every model step is one more place where results can vary
+  from run to run and money is spent, so a role that changes a workflow
+  also looks for model steps that a script could do.
+- **Then the same six steps.** The new workflow is the candidate (in a
+  `local/` folder while it's tried), and the way the work is done now, by
+  hand or by an older workflow, is the live side.
 
 **Trial rules**
 

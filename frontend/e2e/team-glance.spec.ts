@@ -31,6 +31,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   expectAxeClean,
   expectTargets,
+  glanceFontsSettled,
   nothingSent,
   RUN_ID,
   runReads,
@@ -144,8 +145,9 @@ async function open(page: Page, start: Step, options?: { cap?: number; clock?: s
   const served = await serveFlow(page, start, options);
   await page.goto(`/app/team/runs/${served.state.id}`);
   await expect(page.getByTestId('glance-page')).toBeVisible();
-  // The whole history is read before anything is asserted.
+  // The whole history is read, and the map measured with the page's own fonts, before anything is asserted.
   await expect(page.getByTestId('glance-just-sent')).not.toContainText('Reading the team');
+  await glanceFontsSettled(page);
   return served;
 }
 
@@ -163,6 +165,7 @@ async function openFresh(page: Page, state: { step: Step; id: string }, step: 'c
   await page.goto(`/app/team/runs/${state.id}`);
   await expect(page.getByTestId('glance-page')).toHaveAttribute('data-phase', step);
   await expect(page.getByTestId('glance-just-sent')).not.toContainText('Reading the team');
+  await glanceFontsSettled(page);
 }
 
 const phase = (page: Page) => page.getByTestId('glance-page');

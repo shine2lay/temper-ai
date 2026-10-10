@@ -51,8 +51,16 @@ import {
   type GlanceMessageEvent,
   type GlanceRun,
 } from '@/lib/teamGlance';
-import { flightPoints, hubRoute, mapGeometry, type Point, type Rect } from '@/lib/teamGlanceRoute';
-import { onFontsLoaded } from '@/lib/fontsLoaded';
+import {
+  flightPoints,
+  hubPaths,
+  mapGeometry,
+  type HubPath,
+  type HubPathsInput,
+  type Point,
+  type Rect,
+} from '@/lib/teamGlanceRoute';
+import { onFontsLoaded, type FontsState } from '@/lib/fontsLoaded';
 import type { GlanceFeed } from '@/hooks/useTeamGlanceEvents';
 import { teamCard, teamLabel } from '@/components/team/teamUi';
 import { MemberCard } from './MemberCard';
@@ -146,6 +154,8 @@ export function TeamMap({
   const extrasRef = useRef<HTMLDivElement>(null);
   const cards = useRef(new Map<string, HTMLElement>());
   const [layout, setLayout] = useState<Layout | null>(null);
+  // Whether the boxes were measured again once the page's own faces loaded (D80); the checks wait for it.
+  const [fonts, setFonts] = useState<FontsState>('waiting');
   const launched = useRef(0);
   const extras = useRef(0);
   // The last batch of fresh messages that was flown (or let go): each batch flies once.
@@ -205,7 +215,7 @@ export function TeamMap({
     const box = boxRef.current;
     // The page's own font can arrive after the first layout: measure again once it has, so no box
     // measured with a fallback font is kept (a card can change size while the map box doesn't) [D80].
-    const stopFonts = onFontsLoaded(measure);
+    const stopFonts = onFontsLoaded(measure, setFonts);
     const ro = box && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => measure()) : null;
     if (box && ro) {
       ro.observe(box);
@@ -251,9 +261,23 @@ export function TeamMap({
   const anyGreen = lines.some((l) => green.has(l.key));
   const onMap = useMemo(() => new Set(lines.map((l) => l.key)), [lines]);
 
-  // The flight of one message, from its sender (a member or a hub) to its receiver.
+  // What a batch's You/Temper lines are routed round (D81): the cards, the hub, the drawn lines
+  // before hops and the drawn counts (a forced count is never drawn, D57).
+  const hubInput = useMemo((): HubPathsInput | null => {
+    if (!layout || !parts) return null;
+    return {
+      rects: parts.cards,
+      hub: layout.rects[HUB] ?? null,
+      lines: lines.map((l) => l.route),
+      badges: (geometry?.badges ?? []).filter((b) => !b.forced).map((b) => b.box),
+      width: layout.box.w,
+      height: layout.box.h,
+    };
+  }, [layout, parts, lines, geometry]);
+
+  // The flight of one message, from its sender (a member or the hub) to its receiver.
   const flightOf = useCallback(
-    (m: GlanceMessageEvent): Point[] | null => {
+    (m: GlanceMessageEvent, hubRoutes: Map<string, HubPath>): Point[] | null => {
       if (!layout || !parts) return null;
       if (m.fromKind === 'member') {
         const line = lines.find((l) => l.key === pairKey(m.from, m.to));
@@ -261,11 +285,8 @@ export function TeamMap({
         const path = flightPoints(line.pts);
         return m.from === line.a ? path : [...path].reverse();
       }
-      const hub = layout.rects[HUB];
-      if (!hub || !parts.cards.has(m.to)) return null;
-      // The corner's line leaves from the middle of its side that faces the receiver (D5).
-      const route = hubRoute(hub, m.to, parts.cards, [], layout.box);
-      return route ? flightPoints(route) : null;
+      const route = hubRoutes.get(m.to);
+      return route ? flightPoints(route.pts) : null;
     },
     [layout, parts, lines],
   );
@@ -299,9 +320,21 @@ export function TeamMap({
     if (!ringsMove || !motionAllowed() || !box || !layer || !cues || !layout) return;
     // A message between two members whose pair isn't drawn joins "+N more sent" (D43).
     const plan = dotPlan(feed.fresh, onMap, members);
+    // The batch's You/Temper lines, one receiver at a time after the drawn lines (D81): clear of the
+    // counts, never beside a drawn or earlier hub line, hopped where they cross.
+    const receivers = plan.dots.filter((d) => d.event.fromKind !== 'member').map((d) => d.event.to);
+    const hubRoutes = hubInput ? hubPaths(receivers, hubInput) : new Map<string, HubPath>();
+    if (hubInput && hubRoutes.size > 0) {
+      // For the checks only, never shown: what the batch's hub lines were routed round, and how.
+      box.dataset.hubRoutes = JSON.stringify({
+        ...hubInput,
+        rects: Object.fromEntries(hubInput.rects),
+        routes: [...hubRoutes].map(([to, r]) => ({ to, try: r.try, hops: r.hops, unhopped: r.unhopped, base: r.base, pts: r.pts })),
+      });
+    }
     let lastDelay = 0;
     for (const { event, delay } of plan.dots) {
-      const flight = flightOf(event);
+      const flight = flightOf(event, hubRoutes);
       if (!flight || flight.length < 2) continue;
       lastDelay = delay;
       const dot = document.createElement('div');
@@ -437,6 +470,7 @@ export function TeamMap({
         data-badge-tiers={badges.map((b) => b.tier).join(',')}
         // The boxes the lines were routed round, as last measured: the checks compare them with the painted cards [D80].
         data-card-boxes={layout ? JSON.stringify(layout.rects) : ''}
+        data-fonts={fonts}
       >
         <svg className="glance-lines" aria-hidden="true" focusable="false" data-testid="glance-lines">
           {/* Each line over a 6 px panel-coloured casing, with a socket at both ends (D23, D58). */}

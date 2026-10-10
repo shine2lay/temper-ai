@@ -12,8 +12,10 @@
  * the lines is tried (at most 6) and the one with the fewest failures, then
  * shared stretches, then the lowest crossings x 700 + px beside a card x 6
  * + px in a bundle x 6 + length wins. A crossing that remains is drawn with
- * a hop, and the dot follows the painted path. Pure geometry: the page
- * measures the cards.
+ * a hop, and the dot follows the painted path. You/Temper hub lines are
+ * later lines (D81, hubPaths): routed after the drawn ones, clear of the
+ * counts, hopped where they cross. Pure geometry: the page measures the
+ * cards.
  */
 
 export interface Rect {
@@ -492,8 +494,16 @@ export interface RouteOptions {
   height: number;
   /** Rects the lines avoid but never join (the You/Temper hub). */
   obstacles?: Rect[];
-  /** Names whose port is always the middle of the side that faces the other end (the hub, D5). */
-  centred?: Iterable<string>;
+  /**
+   * Polylines already drawn (D81): a new line pays to cross or run near them,
+   * never runs within LINE.track beside them and never takes their ports.
+   * Empty for the map's own lines.
+   */
+  placed?: Point[][];
+  /** Rects a new line keeps clear of without adding grid midlines (count badges, D81). */
+  avoid?: Rect[];
+  /** Prices over LINE's (D81: a hub line pays less to cross or run near a line, as it hops and lasts one cue). */
+  cost?: Partial<Record<keyof typeof LINE, number>>;
 }
 
 interface Job {
@@ -518,10 +528,9 @@ const OPPOSITE: Record<Side, Side> = { left: 'right', right: 'left', top: 'botto
 export function routeLines(
   pairs: Array<{ a: string; b: string }>,
   rects: Map<string, Rect>,
-  { width, height, obstacles = [], centred = [] }: RouteOptions,
+  { width, height, obstacles = [], placed: fixedLines = [], avoid = [], cost: prices = {} }: RouteOptions,
 ): RouteResult {
-  const P = LINE;
-  const fixed = new Set(centred);
+  const P: Record<keyof typeof LINE, number> = { ...LINE, ...prices };
   const all = [...rects.values(), ...obstacles];
   // D58: vertical midlines come from the cards only (not the hub).
   const cardsOnly = [...rects.values()];
@@ -541,8 +550,8 @@ export function routeLines(
     const [a, b] = sideSpan(r, s);
     const min = a + P.corner;
     const max = b - P.corner;
-    // A side too short for corner margins (the hub's ends), or the hub (D5): one port, in its middle.
-    if (min > max || fixed.has(name)) {
+    // A side too short for corner margins (the You/Temper hub's 24 px ends, D5): one port, in its middle.
+    if (min > max) {
       const c = (a + b) / 2;
       return isFree(name, s, c) && ok(c) ? c : null;
     }
@@ -554,7 +563,23 @@ export function routeLines(
     }
     return null;
   };
-  const placedSegs = (): Seg[] => [...out.values()].flatMap((o) => segsOf(o.pts));
+  const fixedSegs: Seg[] = fixedLines.flatMap((pts) => segsOf(pts));
+  const placedSegs = (): Seg[] => [...fixedSegs, ...[...out.values()].flatMap((o) => segsOf(o.pts))];
+  // D81: a placed line's ends keep their ports, so a later line (a hub line) never lands on a socket.
+  const seedTaken = () => {
+    for (const pts of fixedLines) {
+      for (const p of [pts[0], pts[pts.length - 1]]) {
+        for (const [name, r] of rects) {
+          for (const s of ['left', 'right', 'top', 'bottom'] as const) {
+            const c = horizSide(s) ? p.y : p.x;
+            const q = portPoint(r, s, c);
+            const [lo, hi] = sideSpan(r, s);
+            if (Math.hypot(q.x - p.x, q.y - p.y) < 0.6 && c >= lo && c <= hi) take(name, s, c);
+          }
+        }
+      }
+    }
+  };
   // A run alongside a placed line closer than three tracks reads as one bundle (near); one on the same stretch is
   // forbidden in effect (reuse); a crossing costs a short detour (cross).
   const used = (p: Point, q: Point) => {
@@ -628,20 +653,15 @@ export function routeLines(
     taken = new Map();
     out = new Map();
     failed = [];
+    seedTaken();
     for (const j of order) {
       const { A, B, sa, sb } = j;
-      const obs = others(A, B).map((r) => inflate(r, P.pad - 0.5));
+      const obs = [...others(A, B), ...avoid].map((r) => inflate(r, P.pad - 0.5));
       const segBlocked = (p: Point, q: Point) => obs.some((r) => segRect(p, q, r));
       // 1. Straight, when the facing sides overlap and nothing is between.
       if (j.straightable) {
         const [lo, hi] = j.overlap;
         const mid = (lo + hi) / 2;
-        // The hub's line leaves from its side's middle (D5): straight only there.
-        const hubAt = fixed.has(j.a)
-          ? (sideSpan(A, sa)[0] + sideSpan(A, sa)[1]) / 2
-          : fixed.has(j.b)
-            ? (sideSpan(B, sb)[0] + sideSpan(B, sb)[1]) / 2
-            : null;
         // SPEC [D58]: a line stays 28 px from a card it doesn't join. glance.mjs takes the first free
         // height from the middle out, which can pass a card 10 px off when card heights differ (the app's
         // cards grow with their words); so the nearest height that keeps 28 px wins, else glance.mjs's pick.
@@ -649,8 +669,7 @@ export function routeLines(
         let done: { c: number; p: Point; q: Point } | null = null;
         let fallback: { c: number; p: Point; q: Point } | null = null;
         for (let k = 0; k < 80 && !done; k++) {
-          const cs = hubAt !== null ? (k === 0 ? [hubAt] : []) : k === 0 ? [mid] : [mid + 3 * k, mid - 3 * k];
-          for (const c of cs) {
+          for (const c of k === 0 ? [mid] : [mid + 3 * k, mid - 3 * k]) {
             if (c < lo || c > hi || !isFree(j.a, sa, c) || !isFree(j.b, sb, c)) continue;
             const p = portPoint(A, sa, c);
             const q = portPoint(B, sb, c);
@@ -705,7 +724,7 @@ export function routeLines(
         if (fa && xb) combos.push([...fa, ...xb]);
         if (xa && xb) combos.push([...xa, ...xb]);
       }
-      const allObs = all.map((r) => inflate(r, P.pad - 0.5));
+      const allObs = [...all, ...avoid].map((r) => inflate(r, P.pad - 0.5));
       const nodeFree = (p: Point) => !allObs.some((r) => inside(p, r));
       const fullBlocked = (p: Point, q: Point) => allObs.some((r) => segRect(p, q, r));
       const cost = (p: Point, q: Point) => used(p, q) + hugLength(p, q, all) * P.hugCost;
@@ -1088,20 +1107,84 @@ export function mapGeometry(
   };
 }
 
+// --- You/Temper hub lines (D81) ---------------------------------------------------------
+
+/** A hub line keeps at least this far from every count badge (D81). */
+export const HUB_BADGE_CLEAR = 16;
+/** A hub line's prices to cross or run near a line: below a drawn line's 700/400, as it hops and lasts one cue (D81). */
+export const HUB_COST = { cross: 350, near: 200 } as const;
+
+export interface HubPath {
+  /** The painted route, with a hop at each crossing: the dot follows it. */
+  pts: Point[];
+  path: string;
+  /** The route before hops (what a later hub line is routed round). */
+  base: Point[];
+  /** Which try drew it: 1 = strict; 2-4 only when the stricter ones can't route it. */
+  try: number;
+  hops: number;
+  unhopped: number;
+}
+
+export interface HubPathsInput {
+  /** The member cards by name, map-relative. */
+  rects: Map<string, Rect>;
+  /** The You/Temper hub, or null when it isn't measured. */
+  hub: Rect | null;
+  /** The drawn lines' routes before hops. */
+  lines?: Point[][];
+  /** The count badges that are drawn. */
+  badges?: Rect[];
+  width: number;
+  height: number;
+}
+
 /**
- * A You or Temper hub's route to a member (D5): the hub's line leaves from
- * the middle of its side that faces the receiver and keeps clear of every
- * card. Null when there is no clear route (no dot then).
+ * One step's hub lines (Design D81, glance.mjs hubPaths): a hub line is a
+ * later line like any other. Each receiver in turn is routed after the drawn
+ * lines and the step's earlier hub lines: it never takes their ports, never
+ * runs within LINE.track beside them, pays HUB_COST to cross or run near one,
+ * keeps HUB_BADGE_CLEAR from every count badge (badges are grown by the gap
+ * left over the router's own pad, so a gutter midline exactly 16 px away
+ * stays open), and hops where it crosses. A looser try only when the strict
+ * one can't route it. When the gutters are taken, the grid goes round by the
+ * map's edge. The hub's short ends keep one port in their middle (D5).
  */
-export function hubRoute(
-  hub: Rect,
-  to: string,
-  cards: Map<string, Rect>,
-  otherHubs: Rect[],
-  box: { w: number; h: number },
-): Point[] | null {
+export function hubPaths(receivers: Iterable<string>, input: HubPathsInput): Map<string, HubPath> {
+  const { rects, hub, lines: drawn = [], badges = [], width, height } = input;
+  const out = new Map<string, HubPath>();
+  const tos = [...new Set(receivers)].filter((t) => rects.has(t));
+  if (!tos.length || !hub) return out;
   const HUB = '\u0000hub';
-  const rects = new Map<string, Rect>([[HUB, hub], ...cards]);
-  const r = routeLines([{ a: HUB, b: to }], rects, { width: box.w, height: box.h, obstacles: otherHubs, centred: [HUB] });
-  return r.lines.get(`${HUB}\u0000${to}`)?.pts ?? null;
+  const all = new Map<string, Rect>([[HUB, hub], ...rects]);
+  const clear = HUB_BADGE_CLEAR - LINE.pad;
+  const boxes = [...rects.values(), hub, ...badges];
+  const earlier: Point[][] = [];
+  for (const b of tos) {
+    const placed = [...drawn, ...earlier];
+    const tries: Array<Pick<RouteOptions, 'placed' | 'avoid' | 'cost'>> = [
+      { placed, avoid: badges.map((x) => inflate(x, clear)), cost: HUB_COST },
+      { placed, avoid: badges, cost: HUB_COST },
+      { placed, cost: HUB_COST },
+      {},
+    ];
+    for (const [k, extra] of tries.entries()) {
+      const { lines: got, failed } = routeLines([{ a: HUB, b }], all, { width, height, ...extra });
+      const r = got.get(`${HUB}\u0000${b}`);
+      if ((failed.length || !r) && k < tries.length - 1) continue;
+      if (!r) break;
+      const paint = bridgeLine(r.pts, placed, boxes);
+      earlier.push(r.pts);
+      out.set(b, {
+        pts: paint.pts,
+        path: paint.path,
+        base: r.pts,
+        try: k + 1,
+        hops: paint.bridges.length,
+        unhopped: paint.skipped.length,
+      });
+      break;
+    }
+  }
+  return out;
 }

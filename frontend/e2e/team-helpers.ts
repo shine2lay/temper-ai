@@ -176,6 +176,19 @@ export async function openRun(
   return { sent, seen };
 }
 
+/**
+ * The glance page's ready point for anything that reads sizes (D80): its map,
+ * when it has one, measured its cards again once the page's two font faces
+ * loaded, or failed to load (data-fonts leaves 'waiting'). Call it after the
+ * page shows; a page with no map is ready at once.
+ */
+export async function glanceFontsSettled(page: Page) {
+  await page.waitForFunction(() => {
+    const map = document.querySelector('[data-testid="glance-map"]');
+    return !map || map.getAttribute('data-fonts') !== 'waiting';
+  });
+}
+
 /** Temper's words in a refusal body, as the page must show them. */
 export function refusalText(name: string): string {
   const body = fixture(name).body as { problem?: string; message?: string; detail?: string };

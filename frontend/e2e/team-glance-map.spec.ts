@@ -10,21 +10,26 @@
  * on its own straight run and a socket at both ends, never shares a stretch
  * with another line or crosses a card; a dot flies only on a drawn line, the
  * rest join "+N more sent"; and every pair of the hour is listed under the
- * map at every width.
+ * map at every width. The cards are measured with the page's own fonts
+ * (D80), and a line from You or Temper is routed after the drawn ones, clear
+ * of their counts, hopped where it crosses (D81).
  *
  * One journey first, as the owner's test rule asks (bp-be8d76b9): a team of
  * six read 50 minutes in (five recent pairs, four lines, one green), then the
  * leader's same-second burst over five pairs, in both themes at 390x844,
  * 1024x768 and 1440x900. It checks the lines, counts, list, legend, dots and
  * the switch by keyboard, with axe and 24 px targets at each step. Then
- * contract points only: every team size from 2 to 6, the leader's work to
+ * contract points only: every team size from 2 to 6, the font landing late,
+ * the corner messaging members (every group it must keep the bars for, and
+ * the known gaps pinned in team-glance-hub-groups.ts), the leader's work to
  * five members, no recent pair, and an ended run.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { expectAxeClean, expectTargets, serveTeam, type Fixture } from './team-helpers';
-import { expectMapBars, measureMap } from './team-glance-map-measure';
+import { expectAxeClean, expectTargets, glanceFontsSettled, serveTeam, type Fixture } from './team-helpers';
+import { expectMapBars, measureMap, readHubRoutes, routeHubGroup } from './team-glance-map-measure';
+import { checkHubGroups, type HubInput } from './team-glance-hub-groups';
 
 type Raw = Record<string, unknown>;
 type MapStep =
@@ -37,11 +42,17 @@ type MapStep =
   | 'map_fanout_before'
   | 'map_fanout'
   | 'map_quiet'
-  | 'map_ended';
+  | 'map_ended'
+  | 'check_in';
 
-const DERIVED = path.join(process.cwd(), 'e2e/fixtures/team/flow/derived');
-const read = (step: MapStep, feed = false) =>
-  JSON.parse(readFileSync(path.join(DERIVED, `${step}${feed ? '-events' : ''}.json`), 'utf8')) as Raw;
+const FLOW = path.join(process.cwd(), 'e2e/fixtures/team/flow');
+/** A step's run, or its event feed: the map stories are derived, the check-in is Temper's own reply. */
+const read = (step: MapStep, feed = false) => {
+  const name = `${step}${feed ? '-events' : ''}.json`;
+  const file = ['derived', 'real'].map((dir) => path.join(FLOW, dir, name)).find((f) => existsSync(f));
+  if (!file) throw new Error(`no flow fixture ${name}`);
+  return JSON.parse(readFileSync(file, 'utf8')) as Raw;
+};
 const asOf = (step: MapStep) => read(step).as_of as string;
 
 /**
@@ -51,12 +62,14 @@ const asOf = (step: MapStep) => read(step).as_of as string;
  */
 async function serveMap(page: Page, start: MapStep) {
   // `down`: Temper stops answering, the run read and the feed alike.
-  const state = { step: start, down: false };
+  // `extra`: messages released after the step's own (hubBatch), past its cursor.
+  const state = { step: start, down: false, extra: [] as Raw[] };
   const id = read(start).execution_id as string;
+  const cursorOf = () => (read(state.step).events_cursor as number) + state.extra.length;
   const run = (): Fixture =>
     state.down
       ? { route: '', status: 503, body: { detail: 'Temper is not answering' } }
-      : { route: '', status: 200, body: { ...read(state.step), execution_id: id } };
+      : { route: '', status: 200, body: { ...read(state.step), execution_id: id, events_cursor: cursorOf() } };
   await serveTeam(page, { run });
   await page.route(/\/api\/team\/runs\/[^/]+\/events(\?|$)/, async (route) => {
     if (state.down) {
@@ -66,9 +79,9 @@ async function serveMap(page: Page, start: MapStep) {
     const url = new URL(route.request().url());
     const after = Number(url.searchParams.get('after') ?? '0');
     const limit = Number(url.searchParams.get('limit') ?? '200');
-    const upTo = read(state.step).events_cursor as number;
+    const upTo = cursorOf();
     const feed = read(state.step, true) as { events: Raw[]; as_of: string };
-    const past = feed.events.filter((e) => (e.seq as number) > after && (e.seq as number) <= upTo);
+    const past = [...feed.events, ...state.extra].filter((e) => (e.seq as number) > after && (e.seq as number) <= upTo);
     const shown = past.slice(0, limit);
     const more = past.length > shown.length;
     const cursor = more ? (shown[shown.length - 1].seq as number) : Math.max(after, upTo);
@@ -81,15 +94,51 @@ async function serveMap(page: Page, start: MapStep) {
   return { state, id };
 }
 
-/** Open a map story at its first step, with the page's clock on Temper's. */
-async function open(page: Page, start: MapStep) {
+/**
+ * Open a map story at its first step, with the page's clock on Temper's. Ready once the history is read
+ * and the map measured with the page's own fonts (D80); `fonts: false` for a test that holds them back.
+ */
+async function open(page: Page, start: MapStep, { fonts = true }: { fonts?: boolean } = {}) {
   await page.clock.setFixedTime(new Date(asOf(start)));
   const served = await serveMap(page, start);
   await page.goto(`/app/team/runs/${served.id}`);
   await expect(page.getByTestId('glance-page')).toBeVisible();
   await expect(page.getByTestId('glance-just-sent')).not.toContainText('Reading the team');
+  if (fonts) await glanceFontsSettled(page);
   return served.state;
 }
+
+/**
+ * You and Temper message each of `to` at once (D81), a second before Temper's clock, so the page's next poll
+ * reads them as one fresh batch: one dot each, from the corner, in this order.
+ */
+function hubBatch(state: { step: MapStep; extra: Raw[] }, to: string[]) {
+  const cursor = read(state.step).events_cursor as number;
+  const at = new Date(Date.parse(asOf(state.step)) - 1000).toISOString();
+  state.extra = to.map((name, i) => {
+    const from = i % 2 === 0 ? 'owner' : 'temper';
+    return {
+      seq: cursor + i + 1,
+      at,
+      kind: 'message',
+      member: from,
+      from,
+      from_kind: from,
+      to: name,
+      message_kind: from === 'owner' ? 'guide' : 'info',
+      text: `A word for ${name}.`,
+      message_id: `hub-${cursor + i + 1}`,
+      mid_turn: false,
+    };
+  });
+}
+
+/** The drawn lines as painted: pair and path, in the map's order. */
+const linePaths = (page: Page) =>
+  page
+    .getByTestId('glance-lines')
+    .locator('path.glance-line')
+    .evaluateAll((ps) => ps.map((p) => [(p as SVGPathElement).dataset.line, p.getAttribute('d')]));
 
 /** Move the story on: the page's clock first, then what Temper says; the page's own poll reads it. */
 async function goTo(page: Page, state: { step: MapStep }, step: MapStep) {
@@ -307,17 +356,20 @@ test('contract: once the page font lands, the lines are routed round the cards a
     await route.continue();
   });
   await page.setViewportSize({ width: 1024, height: 768 });
-  await open(page, 'map_members_6');
+  await open(page, 'map_members_6', { fonts: false });
   await expect(page.getByTestId('glance-lines').locator('g[data-pair]')).toHaveCount(4);
   const font = () => page.evaluate(() => document.fonts.check('16px "Source Sans Pro"'));
   expect(await font(), 'the page font is still held back').toBe(false);
+  // Not ready while the page's faces are out: the checks' ready point waits for them.
+  await expect(map(page)).toHaveAttribute('data-fonts', 'waiting');
   const before = (await measureMap(page)).routedBoxes;
 
   landFont();
-  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  // Ready once both faces loaded and the cards were measured again: the router's boxes are the painted ones
+  // at that point, with no wait after it, and the font did change some of them.
+  await expect(map(page)).toHaveAttribute('data-fonts', 'loaded');
   expect(await font(), 'the page font has landed').toBe(true);
-  // Measured again: the router's boxes are the painted ones, and the font did change some of them.
-  await expect.poll(async () => (await measureMap(page)).boxDrift, { timeout: 5_000 }).toBeLessThanOrEqual(0.5);
+  expect((await measureMap(page)).boxDrift, 'boxes measured with the page font').toBeLessThanOrEqual(0.5);
   const after = (await measureMap(page)).routedBoxes;
   const changed = Object.keys(after).filter((key) => {
     const [a, b] = [before[key], after[key]];
@@ -332,6 +384,79 @@ test('contract: once the page font lands, the lines are routed round the cards a
   await expectMapBars(page);
   await expectSound(page);
 });
+
+/**
+ * The stories You and Temper message members on: every team size, the check-in's team of three, and the
+ * six-member stories (quiet, before and after the leader's burst, the burst itself).
+ */
+const HUB_STORIES: MapStep[] = [
+  'map_members_2',
+  'map_members_3',
+  'check_in',
+  'map_members_4',
+  'map_members_5',
+  'map_members_6',
+  'map_quiet',
+  'map_fanout_before',
+  'map_burst',
+  'map_fanout',
+];
+
+for (const step of HUB_STORIES) {
+  test(`contract: You and Temper's lines are later lines on ${step}: 16 px from every count, never beside a line, every crossing hopped, at 1024 and 1440 in both themes (D81)`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const members = (read(step).members as Array<{ name: string }>).map((m) => m.name);
+    // The map as each width and theme measured it: the groups are routed once per distinct map.
+    const measured = new Map<string, { width: number; input: HubInput; seen: string[] }>();
+    for (const width of [1024, 1440]) {
+      for (const theme of ['dark', 'light'] as const) {
+        const label = `${step} at ${width}, ${theme}`;
+        await page.unrouteAll();
+        await page.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
+        await page.setViewportSize({ width, height: width === 1024 ? 768 : 900 });
+        const state = await open(page, step);
+        const drawn = await linePaths(page);
+        // Every member gets a message from the corner at once, each line routed after the drawn ones and the
+        // batch's earlier ones.
+        hubBatch(state, members);
+        await expect(map(page), `${label}: the batch flew`).toHaveAttribute('data-dots-launched', String(members.length), {
+          timeout: 15_000,
+        });
+        const hub = await readHubRoutes(page);
+        expect(hub, `${label}: the hub routes are reported`).not.toBeNull();
+        expect(hub!.routes.map((r) => r.to), `${label}: one line per receiver, in order`).toEqual(members);
+        for (const r of hub!.routes) {
+          const [first, last] = [r.pts[0], r.pts[r.pts.length - 1]];
+          const onEdge = (p: { x: number; y: number }, b: { x: number; y: number; w: number; h: number }) =>
+            p.x >= b.x - 0.5 && p.x <= b.x + b.w + 0.5 && p.y >= b.y - 0.5 && p.y <= b.y + b.h + 0.5;
+          expect(onEdge(first, hub!.hub!), `${label}: ${r.to}'s line leaves the corner`).toBe(true);
+          expect(onEdge(last, hub!.rects[r.to]), `${label}: ${r.to}'s line reaches its card`).toBe(true);
+        }
+        // The drawn lines are routed round as before: the batch changes none of them.
+        expect(hub!.lines.length, `${label}: routed round the drawn lines`).toBe(drawn.length);
+        expect(await linePaths(page), `${label}: drawn lines unchanged`).toEqual(drawn);
+        await expectMapBars(page);
+        // The page routed with hubPaths on what it measured: the same router in Node draws the same lines, so
+        // every other group can be routed here on the page's own map.
+        const { routes, ...input } = hub!;
+        expect(routeHubGroup(input, members).routes, `${label}: the page's routes are hubPaths' on its map`).toEqual(routes);
+        const key = JSON.stringify(input);
+        const known = measured.get(key);
+        if (known) known.seen.push(theme);
+        else measured.set(key, { width, input, seen: [theme] });
+      }
+    }
+    // Each member alone, any two at once, any three at once at 1440, a whole team of three: D81's bars. Groups
+    // of three at 1024 and all members at once on 4-6 member maps: no worse than the known gaps pinned.
+    for (const { width, input, seen } of measured.values()) {
+      const { results, problems } = checkHubGroups(step, width, input, members);
+      expect(results.length, `${step} at ${width}: groups routed`).toBeGreaterThan(0);
+      expect(problems, `${step} at ${width}, ${seen.join(' and ')}: D81 bars`).toEqual([]);
+    }
+  });
+}
 
 test('contract: the corner says who is outside the team, row-mates share a height, and the hour list keeps its time column (D69, D71, D74, D76, D78)', async ({
   page,

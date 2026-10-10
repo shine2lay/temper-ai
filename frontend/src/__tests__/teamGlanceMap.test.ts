@@ -9,8 +9,9 @@ import {
   BADGE_TIERS,
   LINE,
   badgeWidth,
+  HUB_BADGE_CLEAR,
   bridgeLine,
-  hubRoute,
+  hubPaths,
   mapGeometry,
   placeBadges,
   routeLines,
@@ -418,24 +419,144 @@ describe('counts on their own straight run (D43, D57, D58)', () => {
   });
 });
 
-describe("the You and Temper hub's line (D5)", () => {
-  it('leaves from the middle of the hub side that faces the receiver', () => {
-    const hub = { x: 10, y: 8, w: 120, h: 24 };
+describe("the You and Temper hub's lines (D5, D81)", () => {
+  // Design's measures (glance.test.mjs, D81): a segment's gap to a box; the distance between two parallel
+  // segments that overlap by more than 10 px (else Infinity); a strict crossing, 1 px in from both ends.
+  const gap = ([p, q]: readonly [Point, Point], b: Rect) =>
+    Math.hypot(
+      Math.max(b.x - Math.max(p.x, q.x), Math.min(p.x, q.x) - (b.x + b.w), 0),
+      Math.max(b.y - Math.max(p.y, q.y), Math.min(p.y, q.y) - (b.y + b.h), 0),
+    );
+  const vert = ([p, q]: readonly [Point, Point]) => Math.abs(p.x - q.x) < 0.01;
+  const span = ([p, q]: readonly [Point, Point], k: 'x' | 'y') => [Math.min(p[k], q[k]), Math.max(p[k], q[k])];
+  const beside = (s: readonly [Point, Point], t: readonly [Point, Point]) => {
+    if (vert(s) !== vert(t)) return Infinity;
+    const [k, o] = vert(s) ? (['y', 'x'] as const) : (['x', 'y'] as const);
+    const [a0, a1] = span(s, k);
+    const [b0, b1] = span(t, k);
+    return Math.min(a1, b1) - Math.max(a0, b0) > 10 ? Math.abs(s[0][o] - t[0][o]) : Infinity;
+  };
+  const crosses = (s: readonly [Point, Point], t: readonly [Point, Point]): boolean => {
+    if (vert(s) === vert(t)) return false;
+    if (!vert(s)) return crosses(t, s);
+    return (
+      Math.min(t[0].x, t[1].x) + 1 < s[0].x &&
+      s[0].x < Math.max(t[0].x, t[1].x) - 1 &&
+      Math.min(s[0].y, s[1].y) + 1 < t[0].y &&
+      t[0].y < Math.max(s[0].y, s[1].y) - 1
+    );
+  };
+  /** Every hub line of one step against the D81 bars, in order: what it fails, by receiver. */
+  const hubFaults = (got: ReturnType<typeof hubPaths>, drawn: Point[][], badges: Rect[]) => {
+    const earlier: Point[][] = [];
+    const faults: string[] = [];
+    for (const [to, r] of got) {
+      const clear = Math.min(Infinity, ...segsOf(r.base).flatMap((s) => badges.map((b) => gap(s, b))));
+      if (clear < HUB_BADGE_CLEAR - 1e-6) faults.push(`${to}: ${clear} px from a count`);
+      const others = [...drawn, ...earlier].flatMap(segsOf);
+      const near = Math.min(Infinity, ...segsOf(r.base).flatMap((s) => others.map((t) => beside(s, t))));
+      if (near < LINE.track) faults.push(`${to}: ${near} px beside a line`);
+      const n = segsOf(r.base).reduce((k, s) => k + others.filter((t) => crosses(s, t)).length, 0);
+      if (r.unhopped > 0 || r.hops < n) faults.push(`${to}: ${n} crossings, ${r.hops} hops, ${r.unhopped} unhopped`);
+      earlier.push(r.base);
+    }
+    return faults;
+  };
+
+  it('D81: hub lines keep 16 px clear of count badges, never run beside a line, and hop what they cross', () => {
+    // checkin-asked at 1024 (Design's numbers): five cards, the Backend-QA line and its count badge. Before D81,
+    // You -> Design was routed alone and ran down x=375 through the badge and across the line without a hop.
+    const rects = new Map<string, Rect>([
+      ['Product', { x: 215, y: 64, w: 284, h: 169 }],
+      ['Frontend', { x: 60, y: 305, w: 249, h: 169 }],
+      ['Backend', { x: 405, y: 305, w: 249, h: 169 }],
+      ['QA', { x: 60, y: 546, w: 249, h: 169 }],
+      ['Design', { x: 405, y: 546, w: 249, h: 169 }],
+    ]);
+    const hub: Rect = { x: 10, y: 8, w: 256, h: 24.3 };
+    const drawn: Point[][] = [[{ x: 405, y: 446 }, { x: 357, y: 446 }, { x: 357, y: 574 }, { x: 309, y: 574 }]];
+    const badges: Rect[] = [{ x: 367, y: 435, w: 28, h: 22 }];
+    const size = { width: 714, height: 779 };
+    const before = routeLines([{ a: '@hub', b: 'Design' }], new Map([['@hub', hub], ...rects]), size).lines.get('@hub\u0000Design')!.pts;
+    expect(Math.min(...segsOf(before).map((s) => gap(s, badges[0]))), 'the old route runs through the badge (the test sees the fault)').toBe(0);
+
+    const got = hubPaths(['Design', 'QA', 'Product'], { rects, hub, lines: drawn, badges, ...size });
+    expect([...got.keys()]).toEqual(['Design', 'QA', 'Product']);
+    for (const [to, r] of got) expect(r.try, `${to}: strict try`).toBe(1);
+    expect(hubFaults(got, drawn, badges)).toEqual([]);
+    // The same routes as Design's reference router (glance.mjs hubPaths, pinned 724a6254): Design's to the map's
+    // right edge and down, as the gutters are taken; QA's down the left of the line; Product's short jog.
+    const rounded = (pts: Point[]) => pts.map((p) => [Math.round(p.x * 1000) / 1000, Math.round(p.y * 1000) / 1000]);
+    expect(rounded(got.get('Design')!.base)).toEqual([[266, 20.15], [684, 20.15], [684, 510], [433, 510], [433, 546]]);
+    expect(rounded(got.get('QA')!.base)).toEqual([[184.5, 32.3], [184.5, 269], [339, 269], [339, 492], [281, 492], [281, 546]]);
+    expect(rounded(got.get('Product')!.base)).toEqual([[238, 32.3], [238, 48.25], [243, 48.25], [243, 64]]);
+    // The dot follows the painted route: no crossing here, so it is the route itself.
+    for (const [to, r] of got) expect(r.pts, to).toEqual(r.base);
+
+    // The map's own lines are routed exactly as before: D81's options are empty there.
+    const map = routeLines([{ a: 'QA', b: 'Backend' }], rects, size);
+    const same = routeLines([{ a: 'QA', b: 'Backend' }], rects, { ...size, placed: [], avoid: [], cost: {} });
+    expect(same.lines.get('QA\u0000Backend')!.pts).toEqual(map.lines.get('QA\u0000Backend')!.pts);
+  });
+
+  // The page's You/Temper corner, as measured at 1024 and 1440.
+  const pageHub: Rect = { x: 10, y: 8, w: 256, h: 24 };
+  /** Every receiver alone, then every two at once in either order: the batches D81's bars must hold for on any map. */
+  const alonesAndPairs = (names: string[]) => [
+    ...names.map((a) => [a]),
+    ...names.flatMap((a) => names.filter((b) => b !== a).map((b) => [a, b])),
+  ];
+
+  it("a hub line starts on the hub's edge: a short end's middle (D5) or a port 28 px from the corners, and never crosses a card", () => {
+    const hub = pageHub;
     const { rects, box } = appLayout(5, 1110);
-    for (const to of ['lead', 'm1', 'm2']) {
-      const route = hubRoute(hub, to, rects, [], box);
-      expect(route, to).not.toBeNull();
-      const start = route![0];
-      const r = rects.get(to)!;
-      // Every receiver sits below the hub's corner chip: the bottom side's middle (or the right side's, level with it).
-      const bottom = start.y === hub.y + hub.h && start.x === hub.x + hub.w / 2;
-      const right = start.x === hub.x + hub.w && start.y === hub.y + hub.h / 2;
-      expect(bottom || right, `${to}: starts at ${start.x},${start.y}`).toBe(true);
+    for (const to of rects.keys()) {
+      const r = hubPaths([to], { rects, hub, width: box.w, height: box.h }).get(to)!;
+      expect(r.try, `${to}: strict try`).toBe(1);
+      const start = r.base[0];
+      const bottom = start.y === hub.y + hub.h && start.x >= hub.x + LINE.corner && start.x <= hub.x + hub.w - LINE.corner;
+      const end = (start.x === hub.x || start.x === hub.x + hub.w) && start.y === hub.y + hub.h / 2;
+      expect(bottom || end, `${to}: starts at ${start.x},${start.y}`).toBe(true);
       for (const [name, c] of rects) {
         if (name === to) continue;
-        for (const [p, q] of segsOf(route!)) expect(segRect(p, q, c), `${to} crosses ${name}`).toBe(false);
+        for (const [p, q] of segsOf(r.pts)) expect(segRect(p, q, c), `${to} crosses ${name}`).toBe(false);
       }
-      expect(route![route!.length - 1].y >= r.y && route![route!.length - 1].y <= r.y + r.h).toBe(true);
+      const last = r.base[r.base.length - 1];
+      const card = rects.get(to)!;
+      expect(last.x >= card.x && last.x <= card.x + card.w && last.y >= card.y && last.y <= card.y + card.h, `${to} ends on its card`).toBe(true);
+    }
+    // An earlier hub line is a placed line too: two at once never share a port or run beside each other.
+    for (const pair of alonesAndPairs([...rects.keys()]).filter((g) => g.length === 2)) {
+      const got = hubPaths(pair, { rects, hub, width: box.w, height: box.h });
+      expect([...got.keys()], `${pair}`).toEqual(pair);
+      const [a, b] = [...got.values()].map((r) => r.base[0]);
+      expect(a.x === b.x && a.y === b.y, `${pair}: one port each`).toBe(false);
+      expect(hubFaults(got, [], []), `${pair}`).toEqual([]);
+    }
+  });
+
+  // Three or more at once can miss the bars on a crowded map: a known D81 gap Design was asked about, pinned
+  // with its numbers in the browser test (e2e/team-glance-hub-groups.ts).
+  it('the app map with its drawn lines and counts: each member alone, and any two at once, keep the D81 bars', () => {
+    const hub = pageHub;
+    for (const width of [1024, 1440]) {
+      const { rects, box } = appLayout(5, width);
+      const pairs = [
+        { a: 'lead', b: 'm1' },
+        { a: 'lead', b: 'm2' },
+        { a: 'm1', b: 'm3' },
+        { a: 'm2', b: 'm4' },
+      ];
+      const g = mapGeometry(pairs.map((p) => ({ ...p, key: pairKey(p.a, p.b), count: 12 })), rects, [hub], box);
+      const drawn = g.lines.map((l) => l.route);
+      const badges = g.badges.filter((b) => !b.forced).map((b) => b.box);
+      expect(drawn.length, `${width}: four drawn lines`).toBe(4);
+      expect(badges.length, `${width}: counts drawn`).toBeGreaterThan(0);
+      for (const group of alonesAndPairs([...rects.keys()])) {
+        const got = hubPaths(group, { rects, hub, lines: drawn, badges, width: box.w, height: box.h });
+        expect([...got.keys()], `${width} ${group}: every receiver routed, in order`).toEqual(group);
+        expect(hubFaults(got, drawn, badges), `${width} ${group}`).toEqual([]);
+      }
     }
   });
 });

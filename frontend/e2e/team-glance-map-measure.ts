@@ -6,6 +6,7 @@
  * team-glance-map.spec.ts holds the map to the bars with it.
  */
 import { expect, type Page } from '@playwright/test';
+import { hubPaths } from '../src/lib/teamGlanceRoute';
 
 export interface BadgeMeasure {
   /** The spot used, 1 (best) to 4 (a short run between cards), as the page marks it. */
@@ -199,4 +200,137 @@ export async function expectMapBars(page: Page): Promise<MapMeasure> {
     if (badge.badgeGap !== null) expect(badge.badgeGap, `${name}: count to count`).toBeGreaterThanOrEqual(9.5);
   }
   return measure;
+}
+
+// --- You/Temper hub lines (D81) -----------------------------------------------------------
+
+type HubPoint = { x: number; y: number };
+type HubBox = { x: number; y: number; w: number; h: number };
+
+/** The map's last You/Temper batch (data-hub-routes): what it was routed round, map-relative, and its routes. */
+export interface HubReport {
+  rects: Record<string, HubBox>;
+  hub: HubBox | null;
+  /** The drawn lines before hops. */
+  lines: HubPoint[][];
+  /** The drawn counts. */
+  badges: HubBox[];
+  width: number;
+  height: number;
+  /** In routing order: `base` before hops, `pts` as painted (the dot's path); `try` 1 is the strict one. */
+  routes: Array<{ to: string; try: number; hops: number; unhopped: number; base: HubPoint[]; pts: HubPoint[] }>;
+}
+
+/** The map's last hub batch, or null before one has flown. */
+export async function readHubRoutes(page: Page): Promise<HubReport | null> {
+  const raw = await page.getByTestId('glance-map').getAttribute('data-hub-routes');
+  return raw ? (JSON.parse(raw) as HubReport) : null;
+}
+
+/** D81's bars, as Design's motion.py hub_geometry checks them (16 px and 18 px, less float noise). */
+export const HUB_BARS = { badgeClear: 15.99, beside: 17.99 } as const;
+
+// Design's measures (motion.py hub_geometry, glance.test.mjs D81) on straight segments.
+type Seg = readonly [HubPoint, HubPoint];
+const segs = (pts: HubPoint[]): Seg[] => pts.slice(1).map((q, i) => [pts[i], q] as const);
+/** A segment's gap to a box (0 when it touches or enters it). */
+const gapTo = ([p, q]: Seg, b: HubBox) =>
+  Math.hypot(
+    Math.max(b.x - Math.max(p.x, q.x), Math.min(p.x, q.x) - (b.x + b.w), 0),
+    Math.max(b.y - Math.max(p.y, q.y), Math.min(p.y, q.y) - (b.y + b.h), 0),
+  );
+const vert = ([p, q]: Seg) => Math.abs(p.x - q.x) < 0.01;
+const span = ([p, q]: Seg, k: 'x' | 'y') => [Math.min(p[k], q[k]), Math.max(p[k], q[k])];
+/** Two parallel segments that overlap by more than 10 px: how far apart, and how long they run together. */
+const sideBySide = (s: Seg, t: Seg): { gap: number; run: number } | null => {
+  if (vert(s) !== vert(t)) return null;
+  const [k, o] = vert(s) ? (['y', 'x'] as const) : (['x', 'y'] as const);
+  const [a0, a1] = span(s, k);
+  const [b0, b1] = span(t, k);
+  const run = Math.min(a1, b1) - Math.max(a0, b0);
+  return run > 10 ? { gap: Math.abs(s[0][o] - t[0][o]), run } : null;
+};
+/** A strict crossing, 1 px in from both ends of both segments. */
+const crosses = (s: Seg, t: Seg): boolean => {
+  if (vert(s) === vert(t)) return false;
+  if (!vert(s)) return crosses(t, s);
+  return (
+    Math.min(t[0].x, t[1].x) + 1 < s[0].x &&
+    s[0].x < Math.max(t[0].x, t[1].x) - 1 &&
+    Math.min(s[0].y, s[1].y) + 1 < t[0].y &&
+    t[0].y < Math.max(s[0].y, s[1].y) - 1
+  );
+};
+
+/**
+ * One way a hub line misses D81's bars, with its numbers (px, to 0.1): too
+ * close to a count; a run beside a drawn line ("builder|lead") or the batch's
+ * earlier hub line ("hub>checker"), how far apart and how long; crossings
+ * left without a hop.
+ */
+export type HubGap =
+  | { to: string; kind: 'count'; clear: number }
+  | { to: string; kind: 'beside'; line: string; gap: number; run: number }
+  | { to: string; kind: 'unhopped'; crossings: number; hops: number; unhopped: number };
+
+const tenth = (v: number) => Math.round(v * 10) / 10;
+
+/** A drawn line's name, by the cards its two ends sit on ("builder|lead"). */
+function drawnName(pts: HubPoint[], rects: Record<string, HubBox>): string {
+  const on = (p: HubPoint) =>
+    Object.entries(rects).find(([, r]) => p.x >= r.x - 0.6 && p.x <= r.x + r.w + 0.6 && p.y >= r.y - 0.6 && p.y <= r.y + r.h + 0.6)?.[0] ?? '?';
+  return [on(pts[0]), on(pts[pts.length - 1])].sort().join('|');
+}
+
+/**
+ * Every way a batch's hub lines miss D81's bars, in routing order, each
+ * against the drawn lines and the batch's earlier hub lines (Design's
+ * motion.py hub_geometry, glance.test.mjs D81): none is the bar.
+ */
+export function hubGaps(report: HubReport): HubGap[] {
+  const placed = report.lines.map((pts) => ({ name: drawnName(pts, report.rects), pts }));
+  const out: HubGap[] = [];
+  for (const r of report.routes) {
+    const own = segs(r.base);
+    const clear = Math.min(Infinity, ...own.flatMap((s) => report.badges.map((b) => gapTo(s, b))));
+    if (clear < HUB_BARS.badgeClear) out.push({ to: r.to, kind: 'count', clear: tenth(clear) });
+    for (const other of placed) {
+      for (const s of own) {
+        for (const t of segs(other.pts)) {
+          const side = sideBySide(s, t);
+          if (side && side.gap < HUB_BARS.beside) out.push({ to: r.to, kind: 'beside', line: other.name, gap: tenth(side.gap), run: tenth(side.run) });
+        }
+      }
+    }
+    const crossings = own.reduce((n, s) => n + placed.flatMap((o) => segs(o.pts)).filter((t) => crosses(s, t)).length, 0);
+    if (r.unhopped > 0 || r.hops < crossings) out.push({ to: r.to, kind: 'unhopped', crossings, hops: r.hops, unhopped: r.unhopped });
+    placed.push({ name: `hub>${r.to}`, pts: r.base });
+  }
+  return out;
+}
+
+export const describeGap = (g: HubGap): string =>
+  g.kind === 'count'
+    ? `${g.to}: ${g.clear} px from a count`
+    : g.kind === 'beside'
+      ? `${g.to}: runs ${g.run} px beside ${g.line}, ${g.gap} px apart`
+      : `${g.to}: ${g.crossings} crossings, ${g.hops} hops, ${g.unhopped} unhopped`;
+
+/**
+ * The same router as the page (hubPaths), run here on the page's own measured
+ * input (what a flown batch reported): the hub lines `to` would get, in that
+ * order. The D81 test checks it draws the flown batch exactly as the page did.
+ */
+export function routeHubGroup(input: Omit<HubReport, 'routes'>, to: string[]): HubReport {
+  const { rects, hub, lines, badges, width, height } = input;
+  const got = hubPaths(to, { rects: new Map(Object.entries(rects)), hub, lines, badges, width, height });
+  return {
+    rects,
+    hub,
+    lines,
+    badges,
+    width,
+    height,
+    routes: [...got].map(([name, r]) => ({ to: name, try: r.try, hops: r.hops, unhopped: r.unhopped, base: r.base, pts: r.pts })),
+  };
 }

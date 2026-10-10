@@ -19,7 +19,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { expectAxeClean, expectTargets, nothingSent, serveActions, serveTeam, type Fixture } from './team-helpers';
+import { expectAxeClean, expectTargets, glanceFontsSettled, nothingSent, serveActions, serveTeam, type Fixture } from './team-helpers';
 
 type Raw = Record<string, unknown>;
 type Feed = { events: Raw[]; as_of: string };
@@ -96,6 +96,7 @@ async function open(page: Page, name: string, change?: Change) {
   await page.goto(`/app/team/runs/${run.execution_id as string}`);
   await expect(page.getByTestId('glance-page')).toBeVisible();
   await expect(page.getByTestId('glance-just-sent')).not.toContainText('Reading the team');
+  await glanceFontsSettled(page);
   return served;
 }
 

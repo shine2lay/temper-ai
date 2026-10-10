@@ -47,6 +47,9 @@ REFUSAL_CODES = {"share": "conflict", "message": "new_messages", "share_after": 
 #: The phase while a team-level wait of that kind is open.
 WAIT_PHASE = {"closing": "closing", SETTINGS: "settings", "limit": "limit", "pause": "check_in",
               "stalled": "quiet"}
+#: Who ended a usage-limit hold, by the answer word: the owner's Restart (whichever key or
+#: channel he answered with), or Temper's own resume after a fresh usage check (team_flow).
+LIMIT_OVER_BY = {"restart": "owner", "resumed": "temper"}
 PHASE_WORDS = {
     "starting": "Starting: the leader has the goal",
     "closing": "Finishing up: the leader said done",
@@ -154,21 +157,28 @@ class FlowRead:
     def _member_events(self, name: str, kind: str) -> list[dict]:
         return [e for e in self.events if e["member"] == name and e["kind"] == kind]
 
-    def member(self, base: dict) -> dict:
+    def member(self, base: dict, *, run_ended: bool = False, run_end: Any = None) -> dict:
+        """One member's card. Once the run has ended (``run_ended``; ``run_end`` its end, or
+        None when not known) every member is ``ended``, since the run's end unless it left
+        the team earlier, with no running turn and no open wait of its own."""
         name = base["name"]
         p = self.parts.get(name)
         if p is None:
-            return {**base, "state": None, "since": None, "turn_no": None, "on": None,
+            return {**base, "state": "ended" if run_ended else None,
+                    "since": utc_text(run_end) if run_ended else None, "turn_no": None, "on": None,
                     "idle_note": None, "idle_reason": None, "tools_now": None,
                     "ready_messages": 0, "last_sent": None, "last_share": None,
                     "conflicts": [], "wait_id": None, "last_activity_at": None}
         pid = p["participant_id"]
-        state = self.state_of(p)
+        state = "ended" if run_ended else self.state_of(p)
         mine = [t for t in self.turns if t["participant_id"] == pid]
-        running = next((t for t in mine if t["state"] == "running"), None)
-        wait = self.member_wait(pid)
+        running = None if run_ended else next((t for t in mine if t["state"] == "running"),
+                                              None)
+        wait = None if run_ended else self.member_wait(pid)
         since: Any = None
-        if state == "working" and running:
+        if run_ended:
+            since = (p.get("retired_at") if p["state"] == "retired" else None) or run_end
+        elif state == "working" and running:
             since = running["started_at"]
         elif state == "idle":
             since = p.get("idle_since")
@@ -353,18 +363,19 @@ def flow_view(reader: TeamReader, record: dict, *, outcome: dict | None,
     """The glance fields of a free-flowing team's run reply (contract sections 3-6).
     ``members`` are today's member entries (team_view.members_view), extended here."""
     read = FlowRead(reader, record)
-    mine = [read.member(m) for m in members]
-    counts: dict[str, int] = {"members": len(mine)}
-    for state in ("working", "ready", "idle", "held", "failed", "ended"):
-        counts[state] = sum(1 for m in mine if m["state"] == state)
     start = utc_moment(started_at)
     ended = bool(outcome or run_status in RUN_ENDED or run_status == "interrupted")
     end = (utc_moment(ended_at or (outcome or {}).get("at")) if ended else read.now)
     if end is None and ended:
         ending = next((e for e in reversed(read.events) if e["kind"] == "ended"), None)
         end = utc_moment(ending["at"]) if ending else None
+    mine = [read.member(m, run_ended=ended, run_end=end if ended else None) for m in members]
+    counts: dict[str, int] = {"members": len(mine)}
+    for state in ("working", "ready", "idle", "held", "failed", "ended"):
+        counts[state] = sum(1 for m in mine if m["state"] == state)
     activity = [e["at"] for e in read.events if e["kind"] not in ("wait_opened",)]
     feed_waits = {w["wait_id"]: w for w in read.waits}
+    notices = _share_notices(reader, read.msgs)
     return {
         "kind": FLOW,
         "phase": read.phase(outcome, run_status, mine),
@@ -379,14 +390,26 @@ def flow_view(reader: TeamReader, record: dict, *, outcome: dict | None,
         "links": read.links(),
         "work": read.work(outcome),
         "events_cursor": read.cursor,
-        "events_total": sum(1 for e in read.events if _event(e, feed_waits) is not None),
+        "events_total": sum(1 for e in read.events
+                            if _event(e, feed_waits, notices) is not None),
     }
 
 
 # --- the event feed ---------------------------------------------------------------------------
 
-def _event(e: dict, waits_by_id: dict[str, dict]) -> dict | None:
-    """One feed event in the contract's shape, or None for the engine's own bookkeeping."""
+def _share_notices(reader: TeamReader, msgs: list[dict]) -> dict[str, str]:
+    """Temper's notice to each member whose share was refused, by the share's act id: the
+    notice is posted with the ``share_refused`` event under the dedupe key
+    ``{run_id}:{host_path}:share:{act_id}`` (team_flow ``_share``)."""
+    key = f"{reader.run_id}:{reader.host_path}:share:"
+    return {m["dedupe_key"][len(key):]: m["body"] for m in msgs
+            if m["kind"] == "notice" and str(m.get("dedupe_key") or "").startswith(key)}
+
+
+def _event(e: dict, waits_by_id: dict[str, dict],
+           notices: dict[str, str] | None = None) -> dict | None:
+    """One feed event in the contract's shape, or None for the engine's own bookkeeping.
+    ``notices``: Temper's notices for refused shares, by act id (:func:`_share_notices`)."""
     d, kind = e["data"] or {}, e["kind"]
     base = {"seq": e["seq"], "at": e["at"], "kind": kind, "member": e["member"]}
     if kind == "message":
@@ -408,7 +431,9 @@ def _event(e: dict, waits_by_id: dict[str, dict]) -> dict | None:
                 "commit_short": _short(d.get("commit")), "note": d.get("note"),
                 "files_changed": d.get("files_changed")}
     if kind == "share_refused":
-        return {**base, "why": d.get("status"), "paths": d.get("paths") or []}
+        # reason: the notice's first sentence, at most 160 characters (cut as a wait's words)
+        return {**base, "why": d.get("status"), "paths": d.get("paths") or [],
+                "reason": wait_words({"question": (notices or {}).get(d.get("act_id") or "")})}
     if kind == "conflict":
         return {**base, "paths": d.get("paths") or [], "at_step": d.get("at_step")}
     if kind == "idle":
@@ -440,14 +465,19 @@ def _event(e: dict, waits_by_id: dict[str, dict]) -> dict | None:
                         "resumes_at": utc_text(s.get("resumes_at")) if live else None,
                         "resets_known": s.get("how") == "reset",
                         "weekly": (s.get("kind") or limit_kind(s.get("limit"))) != FIVE_HOUR}
-            if d.get("word") in ("resumed", "restart"):
-                return {**base, "kind": "limit_over"}
+            if d.get("word") in LIMIT_OVER_BY:
+                return {**base, "kind": "limit_over", "by": LIMIT_OVER_BY[d["word"]]}
         wk = str(d.get("wait_kind") or "")
         out = {**base, "wait_id": d.get("wait_id"),
                "wait_kind": WAIT_KIND_SHOWN.get(wk, wk)}
         if kind == "wait_opened":
             return {**out, "words": wait_words(s) or _cut(d.get("question"))}
-        return {**out, "answer": d.get("word"), "by": d.get("by")}
+        out = {**out, "answer": d.get("word"), "by": d.get("by")}
+        decision = w.get("decision") or {}
+        if w.get("kind") == SETTINGS and decision.get("applied") is False:
+            # a go on that came too late: recorded, nothing re-pinned (D86)
+            out.update(applied=False, why=decision.get("why"))
+        return out
     if kind == "ended":
         return {**base, "decision": {"team_done": "done", "team_stopped": "stopped",
                                      "run_cancelled": "cancelled"}.get(d.get("reason") or "",
@@ -463,6 +493,7 @@ def events_view(reader: TeamReader, after: int, limit: int) -> dict:
     more = len(rows) > limit
     rows = rows[:limit]
     waits_by_id = {w["wait_id"]: w for w in reader._rows(waits)}
-    out = [x for x in (_event(e, waits_by_id) for e in rows) if x is not None]
+    notices = _share_notices(reader, reader._rows(messages, messages.c.kind == "notice"))
+    out = [x for x in (_event(e, waits_by_id, notices) for e in rows) if x is not None]
     return {"events": out, "cursor": rows[-1]["seq"] if rows else after, "more": more,
             "as_of": utc_text(utcnow())}

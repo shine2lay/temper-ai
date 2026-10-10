@@ -56,9 +56,9 @@ import {
   type GlanceRun,
 } from '@/lib/teamGlance';
 import {
+  badgeCount,
   flightPoints,
   hubPaths,
-  mapGeometry,
   type HubPath,
   type HubPathsInput,
   type Point,
@@ -66,6 +66,7 @@ import {
 } from '@/lib/teamGlanceRoute';
 import { onFontsLoaded, type FontsState } from '@/lib/fontsLoaded';
 import type { GlanceFeed } from '@/hooks/useTeamGlanceEvents';
+import { useMapGeometry, type MapAsk } from '@/hooks/useMapGeometry';
 import { teamCard } from '@/components/team/teamUi';
 import { MemberCard } from './MemberCard';
 import { glanceCardHead } from './glanceStyle';
@@ -262,21 +263,28 @@ export function TeamMap({
     };
   }, [layout]);
 
-  // Routing needs only the drawn pairs, their counts (a badge's width) and
-  // the measured boxes: keep the geometry while those are unchanged.
-  const drawnKey = JSON.stringify(drawn.map((l) => [l.a, l.b, l.count]));
-  const geometry = useMemo(() => {
+  // Routing needs only the drawn pairs, in order, the width of each one's count badge and the measured boxes: keep
+  // the geometry while those are unchanged. A count reaches the router only as its badge's width, so the router is
+  // given the smallest count of that width (badgeCount): a count that keeps its badge's width (12 to 13) routes
+  // nothing; the numbers drawn are the pairs' own (countOf).
+  const drawnKey = JSON.stringify(drawn.map((l) => [l.a, l.b, badgeCount(l.count)]));
+  const ask = useMemo((): MapAsk | null => {
     if (!layout || !parts) return null;
     const list = JSON.parse(drawnKey) as Array<[string, string, number]>;
     if (list.length === 0) return null;
-    return mapGeometry(
-      list.map(([a, b, count]) => ({ key: pairKey(a, b), a, b, count })),
-      parts.cards,
-      parts.hubs,
-      layout.box,
-    );
+    return {
+      lines: list.map(([a, b, count]) => ({ key: pairKey(a, b), a, b, count })),
+      cards: parts.cards,
+      hubs: parts.hubs,
+      box: layout.box,
+    };
   }, [layout, parts, drawnKey]);
+  // Routed off the main thread (a worker); until the answer, the lines drawn stay and `ready` is false.
+  const { geometry, ready } = useMapGeometry(ask);
   const lines = useMemo(() => geometry?.lines ?? [], [geometry]);
+  // Each pair's own count: the number in its badge and in the dropped list (the geometry's are badgeCount's).
+  // Every pair in the hour, so a line still drawn while the map is routed again keeps its real number.
+  const countOf = useMemo(() => new Map(pairs.map((l) => [pairKey(l.a, l.b), l.count])), [pairs]);
   // Nothing is green while Temper doesn't answer: "in the last minute" can't be known then (D75).
   const green = useMemo(
     () => new Set(stale ? [] : drawn.filter((l) => lineGreen(l, asOf)).map((l) => pairKey(l.a, l.b))),
@@ -336,6 +344,8 @@ export function TeamMap({
   // Fresh messages: one dot each on a drawn line, as dotPlan spaces them. Never for history.
   useEffect(() => {
     if (feed.freshKey === 0 || feed.freshKey === flown.current) return;
+    // A batch flies on the lines drawn for it: while the map is routed again (a new pair), it waits for them.
+    if (!ready) return;
     flown.current = feed.freshKey;
     if (feed.fresh.length === 0) return;
     const box = boxRef.current;
@@ -432,7 +442,7 @@ export function TeamMap({
     }
     // Only a new batch starts dots; a re-measure mid-flight doesn't replay them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feed.freshKey, layout]);
+  }, [feed.freshKey, layout, ready]);
 
   const ordered = useMemo(() => listOrder(run.members), [run.members]);
   const counts = teamCountWords(run);
@@ -441,7 +451,7 @@ export function TeamMap({
   // left off the map (D83); the list under the map keeps every count, and the
   // checks find each dropped one there with the same number.
   const forced = badges.filter((b) => b.forced).length;
-  const dropped = lines.flatMap((l, i) => (badges[i]?.forced ? [{ pair: l.key, count: l.count }] : []));
+  const dropped = lines.flatMap((l, i) => (badges[i]?.forced ? [{ pair: l.key, count: countOf.get(l.key) ?? l.count }] : []));
   const quiet = pairs.length > 0 && drawn.length === 0;
 
   return (
@@ -515,6 +525,8 @@ export function TeamMap({
         // The boxes the lines were routed round, as last measured: the checks compare them with the painted cards [D80].
         data-card-boxes={layout ? JSON.stringify(layout.rects) : ''}
         data-fonts={fonts}
+        // The map is being routed again (in a worker): what it draws and these marks are the last answer's.
+        data-geometry={ready ? 'ready' : 'pending'}
       >
         <svg className="glance-lines" aria-hidden="true" focusable="false" data-testid="glance-lines">
           {/* Each line over a 6 px panel-coloured casing, with a socket at both ends (D23, D58). */}
@@ -587,7 +599,7 @@ export function TeamMap({
               <g key={`${l.key}-n`} className="glance-count" data-count={l.key} data-tier={badge.tier}>
                 <rect x={badge.box.x} y={badge.box.y} width={badge.box.w} height={badge.box.h} rx={badge.box.h / 2} />
                 <text x={badge.at.x} y={badge.at.y} textAnchor="middle" dominantBaseline="central">
-                  {l.count}
+                  {countOf.get(l.key) ?? l.count}
                 </text>
               </g>
             );

@@ -179,13 +179,16 @@ export async function openRun(
 /**
  * The glance page's ready point for anything that reads sizes (D80): its map,
  * when it has one, measured its cards again once the page's two font faces
- * loaded, or failed to load (data-fonts leaves 'waiting'). Call it after the
- * page shows; a page with no map is ready at once.
+ * loaded, or failed to load (data-fonts leaves 'waiting'), and drew the lines
+ * routed for what it measured (the router answers from a worker:
+ * data-geometry leaves 'pending'). Call it after the page shows, and again
+ * after anything that can route the map again; a page with no map is ready
+ * at once.
  */
 export async function glanceFontsSettled(page: Page) {
   await page.waitForFunction(() => {
     const map = document.querySelector('[data-testid="glance-map"]');
-    return !map || map.getAttribute('data-fonts') !== 'waiting';
+    return !map || (map.getAttribute('data-fonts') !== 'waiting' && map.getAttribute('data-geometry') !== 'pending');
   });
 }
 

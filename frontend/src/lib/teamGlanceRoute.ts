@@ -284,42 +284,6 @@ export function bridgeLine(
   return { pts: out, path: roundedPath(out), bridges, skipped };
 }
 
-type Entry = [cost: number, seq: number, i: number, j: number, d: number];
-
-/** Before b in the open list: lower cost, then first in (the reference's stable sort pops ties first in, first out). */
-const before = (a: Entry, b: Entry) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
-
-function heapPush(h: Entry[], e: Entry) {
-  h.push(e);
-  let k = h.length - 1;
-  while (k > 0) {
-    const p = (k - 1) >> 1;
-    if (!before(h[k], h[p])) break;
-    [h[k], h[p]] = [h[p], h[k]];
-    k = p;
-  }
-}
-
-function heapPop(h: Entry[]): Entry {
-  const top = h[0];
-  const last = h.pop()!;
-  if (h.length > 0) {
-    h[0] = last;
-    let k = 0;
-    for (;;) {
-      const l = 2 * k + 1;
-      const r = l + 1;
-      let m = k;
-      if (l < h.length && before(h[l], h[m])) m = l;
-      if (r < h.length && before(h[r], h[m])) m = r;
-      if (m === k) break;
-      [h[k], h[m]] = [h[m], h[k]];
-      k = m;
-    }
-  }
-  return top;
-}
-
 const DIRS: Dir[] = [
   [1, 0],
   [-1, 0],
@@ -327,8 +291,76 @@ const DIRS: Dir[] = [
   [0, -1],
 ];
 const dirIdx = (d: Dir) => DIRS.findIndex((v) => v[0] === d[0] && v[1] === d[1]);
+/** Each direction's U-turn (no U-turn on the grid). */
+const BACK = [1, 0, 3, 2];
 
-/** Shortest orthogonal path on the midline grid (Dijkstra over node + direction, no U-turn, 60 px a bend). */
+/**
+ * gridPath's working arrays, kept from call to call (one call at a time) and grown for a bigger grid. A slot
+ * counts in a call only when its stamp is that call's number, so nothing needs clearing between calls.
+ */
+const scratch = {
+  cap: 0,
+  gen: 0,
+  /** Per state: stamp, cost so far, previous state. */
+  seen: new Int32Array(0),
+  dist: new Float64Array(0),
+  prev: new Int32Array(0),
+  /** Per directed edge: stamp, length (Infinity: blocked), cost of the placed lines on it. */
+  asked: new Int32Array(0),
+  step: new Float64Array(0),
+  extra: new Float64Array(0),
+  /** Per node: stamp, free (1) or not (0). */
+  nodeSeen: new Int32Array(0),
+  free: new Uint8Array(0),
+  /** The open list's entries: cost, push number, state. */
+  hc: new Float64Array(0),
+  hs: new Int32Array(0),
+  hk: new Int32Array(0),
+};
+
+function gridScratch(states: number): typeof scratch {
+  const s = scratch;
+  if (states > s.cap) {
+    const cap = Math.max(states, 2 * s.cap);
+    s.cap = cap;
+    s.gen = 0;
+    s.seen = new Int32Array(cap);
+    s.dist = new Float64Array(cap);
+    s.prev = new Int32Array(cap);
+    s.asked = new Int32Array(cap);
+    s.step = new Float64Array(cap);
+    s.extra = new Float64Array(cap);
+    s.nodeSeen = new Int32Array(cap);
+    s.free = new Uint8Array(cap);
+    // A state is settled once and then pushes at most 3 entries: 1 + 3 * states bounds the open list.
+    s.hc = new Float64Array(1 + 3 * cap);
+    s.hs = new Int32Array(1 + 3 * cap);
+    s.hk = new Int32Array(1 + 3 * cap);
+  }
+  if (s.gen >= 0x3fffffff) {
+    s.seen.fill(0);
+    s.asked.fill(0);
+    s.nodeSeen.fill(0);
+    s.gen = 0;
+  }
+  s.gen += 1;
+  return s;
+}
+
+/**
+ * Shortest orthogonal path on the midline grid (Dijkstra over node + direction, no U-turn, 60 px a bend).
+ *
+ * The open list pops the lowest cost, ties first in first out (the reference's stable sort): (cost, push number)
+ * orders every entry, so any heap pops them in the same order. Costs never go down along a path, so the search
+ * stops once the cheapest open entry costs no less than the best route found: nothing after it can be strictly
+ * cheaper, the only way the best changes. A node's and an edge's checks are asked once each (they are pure for
+ * the call); the sums keep the reference's order, so every cost is the same number.
+ *
+ * `beaten`: the caller needs this route only if it costs less than one it has. Asked with the cheapest open cost
+ * (no route found here can cost less), true gives up (null); asked with the least any route through an entry can
+ * cost, true leaves that entry unexpanded. A route that wins keeps every entry on it and on every route as cheap,
+ * so it is the route found without `beaten`.
+ */
 function gridPath(
   start: Point,
   startDir: Dir,
@@ -336,9 +368,8 @@ function gridPath(
   endDir: Dir,
   xs: number[],
   ys: number[],
-  blockedSeg: (p: Point, q: Point) => boolean,
-  nodeFree: (p: Point) => boolean,
-  used: (p: Point, q: Point) => number,
+  grid: GridAsk,
+  beaten?: (cost: number) => boolean,
 ): { pts: Point[]; cost: number } | null {
   const X = [...new Set(xs)].sort((a, b) => a - b);
   const Y = [...new Set(ys)].sort((a, b) => a - b);
@@ -347,49 +378,148 @@ function gridPath(
   const xe = X.indexOf(end.x);
   const ye = Y.indexOf(end.y);
   if (xi < 0 || yi < 0 || xe < 0 || ye < 0) return null;
-  const key = (i: number, j: number, d: number) => (i * Y.length + j) * 4 + d;
-  const dist = new Map<number, number>();
-  const prev = new Map<number, number>();
+  const nx = X.length;
+  const ny = Y.length;
+  const xk = X.map(grid.xNum);
+  const yk = Y.map(grid.yNum);
+  // A state is (i * ny + j) * 4 + d; a directed edge is its from-node * 4 + its direction.
+  const { gen, seen, dist, prev, asked, step, extra, nodeSeen, free, hc, hs, hk } = gridScratch(nx * ny * 4);
+  // The open list: a binary heap on (cost, push number).
+  let size = 0;
+  const push = (c: number, s: number, k: number) => {
+    let at = size++;
+    while (at > 0) {
+      const up = (at - 1) >> 1;
+      if (!(c < hc[up] || (c === hc[up] && s < hs[up]))) break;
+      hc[at] = hc[up];
+      hs[at] = hs[up];
+      hk[at] = hk[up];
+      at = up;
+    }
+    hc[at] = c;
+    hs[at] = s;
+    hk[at] = k;
+  };
+  // Remove the top entry (read it first).
+  const pop = () => {
+    size -= 1;
+    if (size === 0) return;
+    const c = hc[size];
+    const s = hs[size];
+    const k = hk[size];
+    let at = 0;
+    for (;;) {
+      const l = 2 * at + 1;
+      if (l >= size) break;
+      const r = l + 1;
+      const m = r < size && (hc[r] < hc[l] || (hc[r] === hc[l] && hs[r] < hs[l])) ? r : l;
+      if (!(hc[m] < c || (hc[m] === c && hs[m] < s))) break;
+      hc[at] = hc[m];
+      hs[at] = hs[m];
+      hk[at] = hk[m];
+      at = m;
+    }
+    hc[at] = c;
+    hs[at] = s;
+    hk[at] = k;
+  };
   const d0 = dirIdx(startDir);
   const dEnd = dirIdx(endDir);
-  const s0 = key(xi, yi, d0);
-  dist.set(s0, 0);
+  const ex = X[xe];
+  const ey = Y[ye];
+  const s0 = (xi * ny + yi) * 4 + d0;
+  seen[s0] = gen;
+  dist[s0] = 0;
+  prev[s0] = -1;
   let seq = 0;
-  const open: Entry[] = [[0, seq++, xi, yi, d0]];
-  let best: { cost: number; k: number } | null = null;
-  while (open.length > 0) {
-    const [c, i, j, d] = ((e) => [e[0], e[2], e[3], e[4]])(heapPop(open));
-    if (c > (dist.get(key(i, j, d)) ?? Infinity)) continue;
+  push(0, seq++, s0);
+  let bestCost = Infinity;
+  let bestK = -1;
+  while (size > 0) {
+    const c = hc[0];
+    const k = hk[0];
+    pop();
+    if (bestK >= 0 && c >= bestCost) break;
+    // Every route still to be found here, and the one found (it costs more than c), costs at least c.
+    if (beaten?.(c)) return null;
+    if (c > dist[k]) continue;
+    const d = k & 3;
+    const node = k >> 2;
+    const i = Math.floor(node / ny);
+    const j = node - i * ny;
+    if (beaten) {
+      // The least the rest can cost: its length is at least the distance across and up, and it bends at least
+      // twice when it heads as it must end but the end isn't straight ahead, once when it heads otherwise (an end
+      // met on another heading costs a bend too). Less a margin, as sums of the same numbers may round lower.
+      const [ux, uy] = DIRS[d];
+      const di = xe - i;
+      const dj = ye - j;
+      const ahead = ux !== 0 ? dj === 0 && (di === 0 || Math.sign(di) === ux) : di === 0 && (dj === 0 || Math.sign(dj) === uy);
+      const bends = d === dEnd ? (ahead ? 0 : 2) : 1;
+      const least = c + Math.abs(ex - X[i]) + Math.abs(ey - Y[j]) + bends * LINE.bend;
+      if (beaten(least * (1 - 1e-9) - 1e-6)) continue;
+    }
     if (i === xe && j === ye) {
       const total = c + (d === dEnd ? 0 : LINE.bend);
-      if (!best || total < best.cost) best = { cost: total, k: key(i, j, d) };
+      if (bestK < 0 || total < bestCost) {
+        bestCost = total;
+        bestK = k;
+      }
       continue;
     }
     for (let nd = 0; nd < 4; nd++) {
-      if (DIRS[nd][0] === -DIRS[d][0] && DIRS[nd][1] === -DIRS[d][1]) continue; // no U-turn
+      if (nd === BACK[d]) continue; // no U-turn
       const ni = i + DIRS[nd][0];
       const nj = j + DIRS[nd][1];
-      if (ni < 0 || nj < 0 || ni >= X.length || nj >= Y.length) continue;
-      const p = { x: X[i], y: Y[j] };
-      const q = { x: X[ni], y: Y[nj] };
-      if (!nodeFree(q) || blockedSeg(p, q)) continue;
-      const nc = c + Math.hypot(q.x - p.x, q.y - p.y) + (nd === d ? 0 : LINE.bend) + used(p, q);
-      const k = key(ni, nj, nd);
-      if (nc < (dist.get(k) ?? Infinity)) {
-        dist.set(k, nc);
-        prev.set(k, key(i, j, d));
-        heapPush(open, [nc, seq++, ni, nj, nd]);
+      if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
+      // The edge's length (Infinity: blocked) and what running near or crossing the placed lines costs on it.
+      const e = node * 4 + nd;
+      if (asked[e] !== gen) {
+        asked[e] = gen;
+        const qn = ni * ny + nj;
+        if (nodeSeen[qn] !== gen) {
+          nodeSeen[qn] = gen;
+          free[qn] = grid.free(X[ni], Y[nj], xk[ni], yk[nj]) ? 1 : 0;
+        }
+        const price = free[qn] ? grid.price(X[i], Y[j], X[ni], Y[nj], xk[i], yk[j], xk[ni], yk[nj]) : Infinity;
+        if (price === Infinity) step[e] = Infinity;
+        else {
+          step[e] = Math.hypot(X[ni] - X[i], Y[nj] - Y[j]);
+          extra[e] = price;
+        }
+      }
+      const len = step[e];
+      if (len === Infinity) continue;
+      const nc = c + len + (nd === d ? 0 : LINE.bend) + extra[e];
+      const nk = (ni * ny + nj) * 4 + nd;
+      if (seen[nk] !== gen || nc < dist[nk]) {
+        seen[nk] = gen;
+        dist[nk] = nc;
+        prev[nk] = k;
+        push(nc, seq++, nk);
       }
     }
   }
-  if (!best) return null;
+  if (bestK < 0) return null;
   const pts: Point[] = [];
-  for (let k: number | undefined = best.k; k !== undefined; k = prev.get(k)) {
-    const n = Math.floor(k / 4);
-    pts.unshift({ x: X[Math.floor(n / Y.length)], y: Y[n % Y.length] });
+  for (let k = bestK; k !== -1; k = prev[k]) {
+    const n = k >> 2;
+    pts.push({ x: X[Math.floor(n / ny)], y: Y[n % ny] });
     if (k === s0) break;
   }
-  return { pts, cost: best.cost };
+  return { pts: pts.reverse(), cost: bestCost };
+}
+
+/**
+ * What a grid search asks of the map: numbers for the grid's coordinates (the same for every search of a map),
+ * whether a node is free, and an edge p-q's price apart from its length (Infinity: it can't be run). The numbers
+ * are given so the answers can be kept by them.
+ */
+interface GridAsk {
+  xNum: (x: number) => number;
+  yNum: (y: number) => number;
+  free: (x: number, y: number, xn: number, yn: number) => boolean;
+  price: (px: number, py: number, qx: number, qy: number, pxn: number, pyn: number, qxn: number, qyn: number) => number;
 }
 
 /** Does segment p-q touch rect r? (Liang-Barsky clip.) */
@@ -398,13 +528,10 @@ export function segRect(p: Point, q: Point, r: Rect): boolean {
   let t1 = 1;
   const dx = q.x - p.x;
   const dy = q.y - p.y;
-  const checks: Array<[number, number]> = [
-    [-dx, p.x - r.x],
-    [dx, r.x + r.w - p.x],
-    [-dy, p.y - r.y],
-    [dy, r.y + r.h - p.y],
-  ];
-  for (const [pp, qq] of checks) {
+  // The four clip checks [pp, qq], in order: [-dx, p.x - r.x], [dx, r.x + r.w - p.x], [-dy, p.y - r.y], [dy, r.y + r.h - p.y].
+  for (let k = 0; k < 4; k++) {
+    const pp = k === 0 ? -dx : k === 1 ? dx : k === 2 ? -dy : dy;
+    const qq = k === 0 ? p.x - r.x : k === 1 ? r.x + r.w - p.x : k === 2 ? p.y - r.y : r.y + r.h - p.y;
     if (pp === 0) {
       if (qq < 0) return false;
       continue;
@@ -539,21 +666,48 @@ const OPPOSITE: Record<Side, Side> = { left: 'right', right: 'left', top: 'botto
  * Design's routeLines (glance.mjs) step for step, so the same cards give the
  * same routes.
  */
-export function routeLines(
+export function routeLines(pairs: Array<{ a: string; b: string }>, rects: Map<string, Rect>, options: RouteOptions): RouteResult {
+  return lineRouter(pairs, rects, options)(options);
+}
+
+/** One line's route where the lines before it lie (lineRouter keeps them); failed: it has none. */
+type Placement =
+  | { kind: 'straight'; c: number; p: Point; q: Point }
+  | { kind: 'gap'; sA: Side; ca: number; sB: Side; cb: number; pts: Point[] }
+  | { kind: 'failed' };
+
+/** A line's tries where the lines before it lie: its straight heights, then its routes through the gaps, cheapest first. */
+interface Tries {
+  straights: Array<{ c: number; p: Point; q: Point }>;
+  gaps: Array<{ sA: Side; ca: number; sB: Side; cb: number; pts: Point[] }>;
+}
+
+/** Try n of a line's tries; failed past the last. */
+function tryOf(t: Tries, n: number): Placement {
+  if (n < t.straights.length) {
+    const s = t.straights[n];
+    return { kind: 'straight', c: s.c, p: s.p, q: s.q };
+  }
+  const g = t.gaps[n - t.straights.length];
+  return g ? { kind: 'gap', ...g } : { kind: 'failed' };
+}
+
+/**
+ * routeLines in two steps: what stays the same for one map (its cards, grid, lines and prices), then any number
+ * of routings of it, each with its own pins, order and listed line (mapGeometry's D83 re-routes share one).
+ *
+ * A line's route depends only on its pin and on the lines placed before it (their routes and ports). So each
+ * line's route is kept per state of the lines before it: another order (D52 tries every one) or a re-route that
+ * brings the line to the same state takes it from there instead of routing it again. With whole-number prices
+ * the order those lines were placed in doesn't matter (a run's price is a sum of whole numbers, and every other
+ * check is yes or no for each line), so the state is the set of them; otherwise it is the sequence. The listed
+ * line (`vary`) is always routed, for its tries.
+ */
+function lineRouter(
   pairs: Array<{ a: string; b: string }>,
   rects: Map<string, Rect>,
-  {
-    width,
-    height,
-    obstacles = [],
-    placed: fixedLines = [],
-    avoid = [],
-    cost: prices = {},
-    pins = new Map(),
-    order: fixedOrder,
-    vary,
-  }: RouteOptions,
-): RouteResult {
+  { width, height, obstacles = [], placed: fixedLines = [], avoid = [], cost: prices = {} }: RouteOptions,
+): (ask?: Pick<RouteOptions, 'pins' | 'order' | 'vary'>) => RouteResult {
   const P: Record<keyof typeof LINE, number> = { ...LINE, ...prices };
   const all = [...rects.values(), ...obstacles];
   // D58: vertical midlines come from the cards only (not the hub).
@@ -565,6 +719,15 @@ export function routeLines(
   let taken = new Map<string, number[]>();
   let out = new Map<string, RoutedPair>();
   let failed: string[] = [];
+  // The lines placed so far, as ids (`place`): the state the next line is routed in; and their segments.
+  let placedIds: string[] = [];
+  let segsNow: Seg[] | null = null;
+  // The placed lines' price on each directed edge a grid search asked (see `grid`), while they stay as they are.
+  let placedPrice = [new Map<number, number>(), new Map<number, number>()];
+  // Per line and state: the route it takes unpinned, and (once asked for) all its tries.
+  const firstTry = new Map<string, Placement>();
+  const everyTry = new Map<string, Tries>();
+  const asSet = Object.values(P).every((v) => Number.isInteger(v));
   const isFree = (name: string, s: Side, c: number) => (taken.get(`${name}|${s}`) ?? []).every((t) => Math.abs(t - c) >= P.port);
   const take = (name: string, s: Side, c: number) => {
     const k = `${name}|${s}`;
@@ -588,7 +751,7 @@ export function routeLines(
     return null;
   };
   const fixedSegs: Seg[] = fixedLines.flatMap((pts) => segsOf(pts));
-  const placedSegs = (): Seg[] => [...fixedSegs, ...[...out.values()].flatMap((o) => segsOf(o.pts))];
+  const placedSegs = (): Seg[] => (segsNow ??= [...fixedSegs, ...[...out.values()].flatMap((o) => segsOf(o.pts))]);
   // D81: a placed line's ends keep their ports, so a later line (a hub line) never lands on a socket.
   const seedTaken = () => {
     for (const pts of fixedLines) {
@@ -673,55 +836,130 @@ export function routeLines(
     .filter((j): j is Job => j !== null)
     .sort((x, y) => Number(y.straightable) - Number(x.straightable) || x.dist - y.dist);
 
+  // What a route through the gaps keeps clear of (the cards, the hub, the counts) and what a run of it costs: the
+  // same for every line (the cost reads the lines placed when it is asked).
+  const allObs = [...all, ...avoid].map((r) => inflate(r, P.pad - 0.5));
+  const nodeFree = (p: Point) => !allObs.some((r) => inside(p, r));
+  const fullBlocked = (p: Point, q: Point) => allObs.some((r) => segRect(p, q, r));
+  const cost = (p: Point, q: Point) => used(p, q) + hugLength(p, q, all) * P.hugCost;
+  // The grid searches' answers, kept by the coordinates' numbers (as first met; past NUMS of them, asked afresh):
+  // whether a node is free, and a directed edge's own price (blocked, else running beside a card) for the map; the
+  // placed lines' price on it for the lines placed now (emptied whenever they change). An edge's price is the sum
+  // cost() makes of the same two parts.
+  const NUMS = 1024;
+  const xNums = new Map<number, number>();
+  const yNums = new Map<number, number>();
+  const numOf = (nums: Map<number, number>, v: number) => {
+    let n = nums.get(v);
+    if (n === undefined) {
+      n = nums.size;
+      nums.set(v, n);
+    }
+    return n;
+  };
+  const freeAt = new Map<number, boolean>();
+  // [across, up and down]
+  const ownPrice = [new Map<number, number>(), new Map<number, number>()];
+  const grid: GridAsk = {
+    xNum: (x) => numOf(xNums, x),
+    yNum: (y) => numOf(yNums, y),
+    free: (x, y, xn, yn) => {
+      if (xn >= NUMS || yn >= NUMS) return nodeFree({ x, y });
+      const key = xn * NUMS + yn;
+      let f = freeAt.get(key);
+      if (f === undefined) {
+        f = nodeFree({ x, y });
+        freeAt.set(key, f);
+      }
+      return f;
+    },
+    price: (px, py, qx, qy, pxn, pyn, qxn, qyn) => {
+      const upDown = pxn === qxn;
+      const at = upDown ? pxn : pyn;
+      const from = upDown ? pyn : pxn;
+      const to = upDown ? qyn : qxn;
+      if (at >= NUMS || from >= NUMS || to >= NUMS) {
+        const p = { x: px, y: py };
+        const q = { x: qx, y: qy };
+        return fullBlocked(p, q) ? Infinity : cost(p, q);
+      }
+      const key = (at * NUMS + from) * NUMS + to;
+      const way = upDown ? 1 : 0;
+      let own = ownPrice[way].get(key);
+      if (own === undefined) {
+        const p = { x: px, y: py };
+        const q = { x: qx, y: qy };
+        own = fullBlocked(p, q) ? Infinity : hugLength(p, q, all) * P.hugCost;
+        ownPrice[way].set(key, own);
+      }
+      if (own === Infinity) return Infinity;
+      let lines = placedPrice[way].get(key);
+      if (lines === undefined) {
+        lines = used({ x: px, y: py }, { x: qx, y: qy });
+        placedPrice[way].set(key, lines);
+      }
+      return lines + own;
+    },
+  };
+
   /**
-   * Route the lines in this order. A pinned line (D83) takes its try of that index; `count` names the line whose
-   * tries are listed.
+   * Place a line's route: its ports taken, its route drawn. A route kept for later is drawn as a copy, as pulling
+   * shared stretches apart moves a drawn route's points; the listed line's route is drawn as found, so its tries
+   * share those points as the reference's do.
    */
-  const attempt = (order: Job[], pinned: ReadonlyMap<string, number> = new Map(), count?: string) => {
-    taken = new Map();
-    out = new Map();
-    failed = [];
-    seedTaken();
-    let listed: Point[][] = [];
-    for (const j of order) {
-      const { A, B, sa, sb } = j;
-      const key = `${j.a}\u0000${j.b}`;
-      // Which of the line's tries it takes; null: the usual one, found without listing the others.
-      const pin = pinned.get(key) ?? (key === count ? 0 : null);
-      const obs = [...others(A, B), ...avoid].map((r) => inflate(r, P.pad - 0.5));
-      const segBlocked = (p: Point, q: Point) => obs.some((r) => segRect(p, q, r));
-      // 1. Straight, when the facing sides overlap and nothing is between.
-      const straights: Array<{ c: number; p: Point; q: Point }> = [];
-      if (j.straightable) {
-        const [lo, hi] = j.overlap;
-        const mid = (lo + hi) / 2;
-        // SPEC [D58]: a line stays 28 px from a card it doesn't join. glance.mjs takes the first free
-        // height from the middle out, which can pass a card 10 px off when card heights differ (the app's
-        // cards grow with their words); so the nearest height that keeps 28 px wins, else glance.mjs's pick.
-        const unrelated = others(A, B);
-        const clean: typeof straights = [];
-        const hugging: typeof straights = [];
-        for (let k = 0; k < 80 && !(pin === null && clean.length); k++) {
-          for (const c of k === 0 ? [mid] : [mid + 3 * k, mid - 3 * k]) {
-            if (c < lo || c > hi || !isFree(j.a, sa, c) || !isFree(j.b, sb, c)) continue;
-            const p = portPoint(A, sa, c);
-            const q = portPoint(B, sb, c);
-            if (segBlocked(p, q) || parallelClose(p, q, placedSegs(), P.track)) continue;
-            (hugLength(p, q, unrelated) > 0.5 ? hugging : clean).push({ c, p, q });
-            if (pin === null && clean.length) break;
-          }
+  const place = (j: Job, key: string, at: Placement, copy: boolean) => {
+    if (at.kind === 'failed') {
+      failed.push(`${j.a}\u2013${j.b}`);
+      return;
+    }
+    if (at.kind === 'straight') {
+      take(j.a, j.sa, at.c);
+      take(j.b, j.sb, at.c);
+      out.set(key, { a: j.a, b: j.b, pts: copy ? [{ ...at.p }, { ...at.q }] : [at.p, at.q], path: '', straight: true });
+    } else {
+      take(j.a, at.sA, at.ca);
+      take(j.b, at.sB, at.cb);
+      out.set(key, { a: j.a, b: j.b, pts: copy ? at.pts.map((p) => ({ ...p })) : at.pts, path: '', straight: false });
+    }
+    const ends = at.kind === 'straight' ? `${j.sa} ${at.c} ${j.sb} ${at.c}` : `${at.sA} ${at.ca} ${at.sB} ${at.cb}`;
+    placedIds.push(`${key}\u0003${ends}\u0003${out.get(key)!.pts.map((p) => `${p.x},${p.y}`).join(' ')}`);
+    segsNow = null;
+    placedPrice = [new Map(), new Map()];
+  };
+
+  /**
+   * One line's tries where the lines placed so far lie. every: all of them, in the router's order (a pinned or
+   * listed line); else only the one it takes unpinned (the first), found without the rest.
+   */
+  const tryLine = (j: Job, lineCount: number, every: boolean): Tries => {
+    const { A, B, sa, sb } = j;
+    const obs = [...others(A, B), ...avoid].map((r) => inflate(r, P.pad - 0.5));
+    const segBlocked = (p: Point, q: Point) => obs.some((r) => segRect(p, q, r));
+    // 1. Straight, when the facing sides overlap and nothing is between.
+    const straights: Tries['straights'] = [];
+    if (j.straightable) {
+      const [lo, hi] = j.overlap;
+      const mid = (lo + hi) / 2;
+      // SPEC [D58]: a line stays 28 px from a card it doesn't join. glance.mjs takes the first free
+      // height from the middle out, which can pass a card 10 px off when card heights differ (the app's
+      // cards grow with their words); so the nearest height that keeps 28 px wins, else glance.mjs's pick.
+      const unrelated = others(A, B);
+      const clean: typeof straights = [];
+      const hugging: typeof straights = [];
+      for (let k = 0; k < 80 && (every || !clean.length); k++) {
+        for (const c of k === 0 ? [mid] : [mid + 3 * k, mid - 3 * k]) {
+          if (c < lo || c > hi || !isFree(j.a, sa, c) || !isFree(j.b, sb, c)) continue;
+          const p = portPoint(A, sa, c);
+          const q = portPoint(B, sb, c);
+          if (segBlocked(p, q) || parallelClose(p, q, placedSegs(), P.track)) continue;
+          (hugLength(p, q, unrelated) > 0.5 ? hugging : clean).push({ c, p, q });
+          if (!every && clean.length) break;
         }
-        straights.push(...clean, ...hugging);
       }
-      const straight = (s: { c: number; p: Point; q: Point }) => {
-        take(j.a, sa, s.c);
-        take(j.b, sb, s.c);
-        out.set(key, { a: j.a, b: j.b, pts: [s.p, s.q], path: '', straight: true });
-      };
-      if (pin === null && straights.length) {
-        straight(straights[0]);
-        continue;
-      }
+      straights.push(...clean, ...hugging);
+    }
+    if (!every && straights.length) return { straights: [straights[0]], gaps: [] };
+    {
       // 2. Through the gaps.
       const ideal = (s: Side, o: Rect) => (horizSide(s) ? o.y + o.h / 2 : o.x + o.w / 2);
       // A port whose stub would run along another line reads as that line: skip it.
@@ -735,13 +973,13 @@ export function routeLines(
       // D58: the port facing the other card and the two ends of the side (page maps only: at most 6 lines).
       const portsOf = (name: string, r: Rect, s: Side, id: number) => {
         const [s0, s1] = sideSpan(r, s);
-        const tries = order.length <= 6 ? [id, s0 + P.corner, s1 - P.corner] : [id];
+        const tries = lineCount <= 6 ? [id, s0 + P.corner, s1 - P.corner] : [id];
         return [...new Set(tries.map((c) => pickPort(name, r, s, c, stubOk(r, s))).filter((c): c is number => c !== null))];
       };
       type Combo = [Side, number, number, Side, number, number];
       const combos: Combo[] = [];
       for (const ca of portsOf(j.a, A, sa, idA)) for (const cb of portsOf(j.b, B, sb, idB)) combos.push([sa, ca, idA, sb, cb, idB]);
-      if (order.length <= 6) {
+      if (lineCount <= 6) {
         const one = (name: string, r: Rect, s: Side | null, o: Rect): [Side, number, number] | null => {
           if (!s) return null;
           const id = ideal(s, o);
@@ -756,11 +994,11 @@ export function routeLines(
         if (fa && xb) combos.push([...fa, ...xb]);
         if (xa && xb) combos.push([...xa, ...xb]);
       }
-      const allObs = [...all, ...avoid].map((r) => inflate(r, P.pad - 0.5));
-      const nodeFree = (p: Point) => !allObs.some((r) => inside(p, r));
-      const fullBlocked = (p: Point, q: Point) => allObs.some((r) => segRect(p, q, r));
-      const cost = (p: Point, q: Point) => used(p, q) + hugLength(p, q, all) * P.hugCost;
       const gaps: Array<{ total: number; sA: Side; ca: number; sB: Side; cb: number; pa: Point; pb: Point; mid: Point[] }> = [];
+      // Only the cheapest route is wanted when not every try is: of equal ones the first found, so a later one
+      // counts only if it costs less than the cheapest so far. A route's total grows with its middle's cost (each
+      // sum of the total does), so its search gives up once even the cheapest open cost can't win.
+      let cheapest = Infinity;
       for (const [sA, ca, iA, sB, cb, iB] of combos) {
         const pa = portPoint(A, sA, ca);
         const pb = portPoint(B, sB, cb);
@@ -770,33 +1008,75 @@ export function routeLines(
         const xs = [...xGrid, ea.x, eb.x];
         const ys = [...yGrid, ea.y, eb.y];
         const [odx, ody] = OUT[sB];
-        const mid = gridPath(ea, OUT[sA], eb, [-odx, -ody], xs, ys, fullBlocked, nodeFree, cost);
+        const toA = Math.hypot(ea.x - pa.x, ea.y - pa.y);
+        const toB = Math.hypot(pb.x - eb.x, pb.y - eb.y);
+        const stubA = cost(pa, ea);
+        const stubB = cost(eb, pb);
+        const off = 0.5 * (Math.abs(ca - iA) + Math.abs(cb - iB));
+        const totalOf = (midCost: number) => midCost + toA + toB + stubA + stubB + off;
+        // (Nothing to beat yet: no bound.)
+        const beaten = every || cheapest === Infinity ? undefined : (c: number) => totalOf(c) >= cheapest;
+        const mid = gridPath(ea, OUT[sA], eb, [-odx, -ody], xs, ys, grid, beaten);
         if (!mid) continue;
-        const total =
-          mid.cost +
-          Math.hypot(ea.x - pa.x, ea.y - pa.y) +
-          Math.hypot(pb.x - eb.x, pb.y - eb.y) +
-          cost(pa, ea) +
-          cost(eb, pb) +
-          0.5 * (Math.abs(ca - iA) + Math.abs(cb - iB));
+        const total = totalOf(mid.cost);
+        if (total < cheapest) cheapest = total;
         gaps.push({ total, sA, ca, sB, cb, pa, pb, mid: mid.pts });
       }
       // Cheapest first; the sort is stable, so of equal ones the first found stays first, as the router picks.
       gaps.sort((x, y) => x.total - y.total);
-      if (key === count) listed = [...straights.map((s) => [s.p, s.q]), ...gaps.map((g) => simplify([g.pa, ...g.mid, g.pb]))];
-      const n = pin ?? 0;
-      if (n < straights.length) {
-        straight(straights[n]);
+      return {
+        straights,
+        gaps: (every ? gaps : gaps.slice(0, 1)).map((g) => ({ sA: g.sA, ca: g.ca, sB: g.sB, cb: g.cb, pts: simplify([g.pa, ...g.mid, g.pb]) })),
+      };
+    }
+  };
+
+  /**
+   * Route the lines in this order. A pinned line (D83) takes its try of that index; `count` names the line whose
+   * tries are listed.
+   */
+  const attempt = (order: Job[], pinned: ReadonlyMap<string, number> = new Map(), count?: string) => {
+    taken = new Map();
+    out = new Map();
+    failed = [];
+    placedIds = [];
+    segsNow = null;
+    placedPrice = [new Map(), new Map()];
+    seedTaken();
+    let listed: Point[][] = [];
+    for (const j of order) {
+      const key = `${j.a}\u0000${j.b}`;
+      // Which of the line's tries it takes; null: the usual one, found without listing the others.
+      const pin = pinned.get(key) ?? (key === count ? 0 : null);
+      // The same line where the same lines lie as in an earlier order or re-route: its tries from then.
+      const mk = `${key}\u0001${order.length}\u0001${(asSet ? [...placedIds].sort() : placedIds).join('\u0002')}`;
+      const known = everyTry.get(mk);
+      if (pin === null) {
+        let at = firstTry.get(mk) ?? (known && tryOf(known, 0));
+        if (!at) {
+          at = tryOf(tryLine(j, order.length, false), 0);
+          firstTry.set(mk, at);
+        }
+        place(j, key, at, true);
         continue;
       }
-      const pick = gaps[n - straights.length];
-      if (!pick) {
-        failed.push(`${j.a}\u2013${j.b}`);
+      let tries = known;
+      if (!tries) {
+        tries = tryLine(j, order.length, true);
+        everyTry.set(mk, tries);
+      }
+      if (key !== count) {
+        place(j, key, tryOf(tries, pin), true);
         continue;
       }
-      take(j.a, pick.sA, pick.ca);
-      take(j.b, pick.sB, pick.cb);
-      out.set(key, { a: j.a, b: j.b, pts: simplify([pick.pa, ...pick.mid, pick.pb]), path: '', straight: false });
+      // The listed line: its tries as found here, and its route is one of them (the same points, as the stretches
+      // pulled apart below move them).
+      const own = [...tries.straights.map((s) => [{ ...s.p }, { ...s.q }]), ...tries.gaps.map((g) => g.pts.map((p) => ({ ...p })))];
+      listed = own;
+      const at = tryOf(tries, pin);
+      if (at.kind === 'straight') place(j, key, { ...at, p: own[pin][0], q: own[pin][1] }, false);
+      else if (at.kind === 'gap') place(j, key, { ...at, pts: [...own[pin]] }, false);
+      else place(j, key, at, false);
     }
     // 3. Pull shared stretches apart: interior segments on the same midline that overlap get 18 px tracks.
     const segsAll: Array<{ L: RoutedPair; i: number; vert: boolean; c: number; lo: number; hi: number }> = [];
@@ -899,33 +1179,35 @@ export function routeLines(
   // and keep the best: fewest failures, then shared stretches, then crossings x 700 + hug x 6 + near x 6 + length.
   // D83: an order given (a result's own) is kept, with the pinned lines by their tries.
   const keyOf = (j: Job) => `${j.a}\u0000${j.b}`;
-  const first = fixedOrder?.flatMap((k) => jobs.filter((j) => keyOf(j) === k));
-  let best = first ? attempt([...first, ...jobs.filter((j) => !first.includes(j))], pins, vary) : attempt(jobs);
-  if (!first && (best.failed.length || best.shared.length || best.crossings || best.hug || best.near) && jobs.length <= 6) {
-    const score = (x: typeof best) => [
-      x.failed.length,
-      x.shared.length,
-      x.crossings * P.cross + x.hug * P.hugCost + x.near * P.nearCost + x.length,
-    ];
-    for (const order of permutations(jobs)) {
-      const r = attempt(order);
-      const [a, b] = [score(r), score(best)];
-      const k = a.findIndex((v, i) => v !== b[i]);
-      if (k >= 0 && a[k] < b[k]) best = r;
+  return ({ pins = new Map(), order: fixedOrder, vary } = {}) => {
+    const first = fixedOrder?.flatMap((k) => jobs.filter((j) => keyOf(j) === k));
+    let best = first ? attempt([...first, ...jobs.filter((j) => !first.includes(j))], pins, vary) : attempt(jobs);
+    if (!first && (best.failed.length || best.shared.length || best.crossings || best.hug || best.near) && jobs.length <= 6) {
+      const score = (x: typeof best) => [
+        x.failed.length,
+        x.shared.length,
+        x.crossings * P.cross + x.hug * P.hugCost + x.near * P.nearCost + x.length,
+      ];
+      for (const order of permutations(jobs)) {
+        const r = attempt(order);
+        const [a, b] = [score(r), score(best)];
+        const k = a.findIndex((v, i) => v !== b[i]);
+        if (k >= 0 && a[k] < b[k]) best = r;
+      }
     }
-  }
-  if (!first && (pins.size || vary !== undefined)) best = attempt(best.order, pins, vary);
-  return {
-    lines: best.lines,
-    failed: best.failed,
-    shared: best.shared,
-    hugs: best.hugs,
-    crossings: best.crossings,
-    near: Math.round(best.near),
-    hug: best.hug,
-    length: best.length,
-    order: best.order.map(keyOf),
-    tries: vary === undefined ? undefined : best.listed,
+    if (!first && (pins.size || vary !== undefined)) best = attempt(best.order, pins, vary);
+    return {
+      lines: best.lines,
+      failed: best.failed,
+      shared: best.shared,
+      hugs: best.hugs,
+      crossings: best.crossings,
+      near: Math.round(best.near),
+      hug: best.hug,
+      length: best.length,
+      order: best.order.map(keyOf),
+      tries: vary === undefined ? undefined : best.listed,
+    };
   };
 }
 
@@ -935,6 +1217,15 @@ export function routeLines(
 export const BADGE_H = 20;
 export function badgeWidth(count: number): number {
   return Math.max(28, 16 + 9 * String(count).length);
+}
+
+/**
+ * The smallest count drawn in a badge as wide as this one's (the width counts the digits). The map sees a count only
+ * through its badge's width, so counts with the same badgeCount route the same map: the page routes with this, and a
+ * count that keeps its badge's width (12 to 13) routes nothing, while one that crosses a width (9 to 10) does.
+ */
+export function badgeCount(count: number): number {
+  return 10 ** (String(count).length - 1);
 }
 
 /**
@@ -1123,8 +1414,8 @@ export function mapGeometry(
   { reroutes = D83_REROUTES }: { reroutes?: number } = {},
 ): MapGeometry {
   const pairs = lines.map((l) => ({ a: l.a, b: l.b }));
-  const route = (more: Pick<RouteOptions, 'pins' | 'order' | 'vary'> = {}) =>
-    routeLines(pairs, cards, { width: box.w, height: box.h, obstacles: hubs, ...more });
+  // One router for the map: a re-route (D83) takes the lines it shares with an earlier routing from it.
+  const route = lineRouter(pairs, cards, { width: box.w, height: box.h, obstacles: hubs });
   let routes = route();
   let map = paintMap(lines, routes, cards, hubs);
   const pins = new Map<string, number>();

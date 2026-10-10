@@ -129,8 +129,9 @@ function member(run: GlanceRun, name: string): GlanceMember {
 }
 const chip = (s: Story, name: string) => memberChip(member(s.run, name), s.run.phase.name, s.now);
 /** Latest as the page reads it: a limit row names its check only while the team is in its limit phase. */
+// As the page calls it: the run names the starter and the cards (D110: All activity's words).
 const momentText = (s: Story) =>
-  latestMoments(s.events, s.run.leader, 5, s.run.phase.name === 'limit').map((m) => m.parts.map((p) => p.text).join(''));
+  latestMoments(s.events, s.run.leader, 5, s.run.phase.name === 'limit', null, s.run).map((m) => m.parts.map((p) => p.text).join(''));
 
 /** The value at a dotted path of a raw reply, or undefined. */
 function at(raw: unknown, path: string): unknown {
@@ -879,23 +880,23 @@ describe('Latest: big moments only, newest first, at most 5', () => {
   it('ends on the done moment and leaves idle and wake rows out', () => {
     const rows = momentText(story('done'));
     expect(rows.length).toBeLessThanOrEqual(5);
-    expect(rows.slice(0, 2)).toEqual(['Done with v1', 'builder shared v1']);
+    expect(rows.slice(0, 2)).toEqual(['Done: v1 is the result', 'builder shared v1: \u201cBuilder\'s part is shared\u201d']);
     expect(rows.join(' ')).not.toMatch(/\bidle\b|woke/i);
   });
 
   it('folds a same-second fan-out into one row', () => {
-    expect(momentText(story('idle'))).toEqual(['lead sent work to 2 members', 'Project started: lead has the goal']);
+    expect(momentText(story('idle'))).toEqual(['lead sent work to 2 members', 'You started the project; lead has the goal']);
   });
 
   it('a check-in, a refused done, a question and a stall each get their row', () => {
     expect(momentText(story('check_in'))).toEqual([
       'Spend reached $100.00: check-in. No new work starts.',
-      'builder shared v1',
+      'builder shared v1: \u201cBuilder\'s part is shared\u201d',
       'lead sent work to 2 members',
-      'Project started: lead has the goal',
+      'You started the project; lead has the goal',
     ]);
-    expect(momentText(story('closing'))[0]).toBe('lead said done');
-    expect(momentText(story('done_refused'))[0]).toBe('lead said done; refused: A new message reached the leader');
+    expect(momentText(story('closing'))[0]).toMatch(/^lead said done: \u201c.+\u201d$/);
+    expect(momentText(story('done_refused'))[0]).toBe('Done refused: A new message reached the leader');
     expect(momentText(story('failed'))[0]).toMatch(/^builder asked you: \u201cbuilder's turn 1 failed/);
     expect(momentText(story('stalled'))[0]).toBe(
       'Temper asked you: \u201cThe team is stalled: nothing is running, nothing is waiting to be delivered and lead has not said done.\u201d',
@@ -927,9 +928,9 @@ describe('Latest: big moments only, newest first, at most 5', () => {
   });
 
   it("the owner's answers and the end", () => {
-    expect(momentText(story('resumed'))[0]).toBe('You answered guide');
+    expect(momentText(story('resumed'))[0]).toBe('You answered: guide');
     // D41: the label once, then the reason.
-    expect(momentText(story('stopped')).slice(0, 2)).toEqual(['Stopped: The owner stopped the team.', 'You answered stop']);
+    expect(momentText(story('stopped')).slice(0, 2)).toEqual(['Stopped: The owner stopped the team.', 'You answered: stop']);
     expect(momentText(story('run_failed'))[0]).toMatch(/^Failed: builder's turn 1 failed/);
   });
 });

@@ -111,9 +111,11 @@ function story(name: RunName, change?: (feed: Raw[]) => void): Story {
 const textOf = (m: Moment) => m.parts.map((p) => p.text).join('');
 /** Latest as LatestMoments.tsx reads it. */
 const latest = (s: Story) =>
-  latestMoments(s.events, s.run.leader, 5, limitCheckShown(s.run.phase), new Set(s.run.members.map((m) => m.name))).map(textOf);
+  latestMoments(s.events, s.run.leader, 5, limitCheckShown(s.run.phase), new Set(s.run.members.map((m) => m.name)), s.run, {
+    now: s.now,
+  }).map(textOf);
 /** All activity as AllActivity.tsx reads it, newest first. */
-const activity = (s: Story) => activityRows(s.events, s.run, limitCheckShown(s.run.phase)).map(textOf);
+const activity = (s: Story) => activityRows(s.events, s.run, limitCheckShown(s.run.phase), { now: s.now }).map(textOf);
 function member(s: Story, name: string): GlanceMember {
   const m = s.run.members.find((x) => x.name === name);
   if (!m) throw new Error(`no member ${name}`);
@@ -291,21 +293,22 @@ const latestOf = (e: GlanceEvent) => latestMoments([e], RUN.leader).map(textOf)[
 
 describe('answer words: every answer Temper records (api-fields:260), never a raw code word', () => {
   it.each([
-    ['continue', 'You answered: continue', 'You answered continue'],
-    ['guide', 'You answered: guide', 'You answered guide'],
-    ['stop', 'You answered: stop', 'You answered stop'],
-    ['nudge', 'You answered: nudge', 'You answered nudge'],
-    ['accept', 'You answered: accept', 'You answered accept'],
-    ['retry', 'You answered: retry', 'You answered retry'],
-    ['go on', 'You answered: go on', 'You answered go on'],
+    ['continue', 'You answered: continue'],
+    ['guide', 'You answered: guide'],
+    ['stop', 'You answered: stop'],
+    ['nudge', 'You answered: nudge'],
+    ['accept', 'You answered: accept'],
+    ['retry', 'You answered: retry'],
+    ['go on', 'You answered: go on'],
     // The owner replied to a member's question: as the old `reply` (D86 note 6).
-    ['given', 'You answered: a reply', 'You answered a reply'],
-    ['reply', 'You answered: a reply', 'You answered a reply'],
-    ['invalid', `You answered. ${NOT_APPLIED.invalid}`, `You answered. ${NOT_APPLIED.invalid}`],
-    ['restart_deferred', `You answered: restart. ${NOT_APPLIED.restartDeferred}`, `You answered restart. ${NOT_APPLIED.restartDeferred}`],
-  ])('%s', (word, row, inLatest) => {
+    ['given', 'You answered: a reply'],
+    ['reply', 'You answered: a reply'],
+    ['invalid', `You answered. ${NOT_APPLIED.invalid}`],
+    ['restart_deferred', `You answered: restart. ${NOT_APPLIED.restartDeferred}`],
+  ])('%s', (word, row) => {
     expect(rowOf(answer(word))).toBe(row);
-    expect(latestOf(answer(word))).toBe(inLatest);
+    // D110: Latest words an event as All activity does.
+    expect(latestOf(answer(word))).toBe(row);
   });
 
   it('an answer the page has no words for says who answered, without the word', () => {
@@ -315,11 +318,11 @@ describe('answer words: every answer Temper records (api-fields:260), never a ra
     expect(latestOf(answer('later_maybe'))).toBe('You answered');
   });
 
-  it('member_question: the owner\u2019s reply reads as a reply, then his words come from you', () => {
+  it('member_question: the owner\u2019s reply reads as a reply, then his words answer checker (D108)', () => {
     const s = story('member_question');
     const rows = activity(s);
-    expect(rows.slice(0, 2)).toEqual(['You messaged checker: \u201cyes\u201d', 'You answered: a reply']);
-    expect(latest(s)[0]).toBe('You answered a reply');
+    expect(rows.slice(0, 2)).toEqual(['You answered checker: \u201cyes\u201d', 'You answered: a reply']);
+    expect(latest(s)[0]).toBe('You answered: a reply');
     for (const text of [...rows, ...latest(s)]) expect(text).not.toMatch(/\bgiven\b/);
   });
 
@@ -339,7 +342,7 @@ describe('D86: an answer that wasn\u2019t applied says so (g6/TEMPER-D86.md)', (
     for (const why of ['the settings changed again before the answer took effect', null]) {
       const s = late(false, why);
       expect(activity(s)).toContain(`You answered: go on. ${NOT_APPLIED.settingsLate}`);
-      expect(latest(s)).toContain(`You answered go on. ${NOT_APPLIED.settingsLate}`);
+      expect(latest(s)).toContain(`You answered: go on. ${NOT_APPLIED.settingsLate}`);
     }
     expect(NOT_APPLIED.settingsLate).toBe('Not applied: the settings changed before the answer took effect.');
     // The mark is its own part after the answer, in normal text (not bold).
@@ -350,12 +353,13 @@ describe('D86: an answer that wasn\u2019t applied says so (g6/TEMPER-D86.md)', (
   it('1b. without applied (the real sample) or with applied true: an ordinary go on, never inferred from the next question', () => {
     for (const s of [story('settings_late'), late(true, null)]) {
       expect(activity(s)).toContain('You answered: go on');
-      expect(latest(s)).toContain('You answered go on');
+      expect(latest(s)).toContain('You answered: go on');
       expect([...activity(s), ...latest(s)].join('\n')).not.toMatch(/Not applied/);
     }
     // The real sample: the go on, then the new settings question (Temper asked again) with its own words.
     const rows = activity(story('settings_late'));
-    expect(rows.slice(0, 2)).toEqual([expect.stringMatching(/^The team asked you: .*fixture-3\u201d$/), 'You answered: go on']);
+    // D110: Temper asked it (a settings question is Temper's own wait).
+    expect(rows.slice(0, 2)).toEqual([expect.stringMatching(/^Temper asked you: .*fixture-3\u201d$/), 'You answered: go on']);
   });
 
   it('2. invalid (the real sample): who answered, no word, then the mark', () => {
@@ -368,17 +372,17 @@ describe('D86: an answer that wasn\u2019t applied says so (g6/TEMPER-D86.md)', (
   it('3. restart_deferred (the real sample): answered restart, then the mark', () => {
     const s = story('restart_deferred');
     expect(activity(s)).toContain(`You answered: restart. ${NOT_APPLIED.restartDeferred}`);
-    expect(latest(s)).toContain(`You answered restart. ${NOT_APPLIED.restartDeferred}`);
+    expect(latest(s)).toContain(`You answered: restart. ${NOT_APPLIED.restartDeferred}`);
     expect(NOT_APPLIED.restartDeferred).toBe('Not applied: Temper couldn\u2019t confirm the usage limit has reset.');
   });
 
   it('4. applied false on any other answer: "Not applied", plus Temper\u2019s why word for word', () => {
     const withWhy = answer('continue', { applied: false, why: 'the check-in had already closed' });
     expect(rowOf(withWhy)).toBe('You answered: continue. Not applied: the check-in had already closed');
-    expect(latestOf(withWhy)).toBe('You answered continue. Not applied: the check-in had already closed');
+    expect(latestOf(withWhy)).toBe('You answered: continue. Not applied: the check-in had already closed');
     const bare = answer('continue', { applied: false });
     expect(rowOf(bare)).toBe('You answered: continue. Not applied.');
-    expect(latestOf(bare)).toBe('You answered continue. Not applied.');
+    expect(latestOf(bare)).toBe('You answered: continue. Not applied.');
     // A go on to a question that isn't a settings one is "any other row".
     expect(answerMark({ waitKind: 'pause', answer: 'go on', applied: false, why: null })).toBe('Not applied.');
     expect(answerMark({ waitKind: 'settings', answer: 'go on', applied: null, why: 'x' })).toBeNull();
@@ -405,12 +409,18 @@ describe('the binding words the real runs showed missing (#21 fixes)', () => {
     }
   });
 
-  it('interrupted: SPEC\u2019s one sentence, not Temper\u2019s reason in its own code words; the D16 line', () => {
+  it('interrupted: SPEC\u2019s one sentence with an end time, D105\u2019s without one; Temper\u2019s reason second; the D16 line', () => {
     for (const name of ['interrupted', 'interrupted_no_end'] as const) {
       const s = story(name);
+      // D105: Temper recorded no end time for interrupted_no_end (elapsed_s null).
+      const sentence =
+        name === 'interrupted'
+          ? 'The run ended without the team ending.'
+          : `Last activity ${clockOf(s.raw.last_activity_at as string)}. Temper didn\u2019t record when it ended.`;
       expect(nowCell(s.run, s.now), name).toMatchObject({
         word: 'Interrupted',
-        sentence: 'The run ended without the team ending.',
+        sentence,
+        reason: 'the run ended (interrupted) without the team ending',
         edge: 'red',
       });
       expect(youCell(s.run), name).toMatchObject({
@@ -479,10 +489,11 @@ describe('the binding words the real runs showed missing (#21 fixes)', () => {
 
   it('Latest: a conflict is a big moment, a refused share is not (SPEC 8); both rows are in All activity', () => {
     const s = story('conflict');
-    expect(latest(s)[0]).toBe('checker: 1 file in conflict');
-    expect(latest(s).join('\n')).not.toMatch(/refused/);
+    expect(latest(s)[0]).toBe('checker has 1 file in conflict after a sync');
+    expect(latest(s).join('\n')).not.toMatch(/refused|shared\./);
     expect(activity(s).slice(0, 4)).toEqual([
-      'checker\u2019s share was refused: refused',
+      // D107: Temper's why only repeats the verb.
+      'checker\u2019s version wasn\u2019t shared. Temper gave no reason.',
       'Temper told checker: \u201cNot shared: these files still hold git\'s conflict markers: part.md. Remove the markers and share again.\u201d',
       'checker ended turn 2: completed',
       'checker has 1 file in conflict after a sync',
@@ -519,7 +530,7 @@ describe('each pinned run against its binding rows (g6/G6-TRUTH.md)', () => {
       'builder started turn 2 (Temper\u2019s retry of turn 1)',
       'builder ended turn 1: failed',
       'checker went idle: \u201cchecker: waiting for the next part\u201d',
-      'checker ended turn 1: completed (call cap)',
+      'checker\u2019s turn 1 ended at its tool-call limit.',
       'lead went idle without a note',
       'lead ended turn 1: completed (no tool call)',
     ]);
@@ -552,8 +563,10 @@ describe('each pinned run against its binding rows (g6/G6-TRUTH.md)', () => {
 
   it('limit_ended: the limit and its end, never a reset time', () => {
     const s = story('limit_ended');
-    expect(activity(s).slice(0, 2)).toEqual(['The usage limit is over; the team carries on', 'Usage limit']);
-    expect(latest(s).slice(0, 2)).toEqual(['The usage limit is over: the team carries on', 'Usage limit']);
+    // D109: no `by`, so nobody is named.
+    const over = `The usage limit is over. The team carried on at ${clockOf(eventsOf(s, 'limit_over')[0].at)}.`;
+    expect(activity(s).slice(0, 2)).toEqual([over, 'Usage limit']);
+    expect(latest(s).slice(0, 2)).toEqual([over, 'Usage limit']);
     expect([...activity(s), ...latest(s)].join('\n')).not.toMatch(/reset at|carries on at/i);
     expect(youCell(s.run)).toMatchObject({ tone: 'calm', title: 'Nothing needs you' });
   });

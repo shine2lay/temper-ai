@@ -590,7 +590,7 @@ for (const theme of ['dark', 'light'] as const) {
       await expect(spend(page)).toContainText('At $205 the team pauses and asks you.');
       await expect(teamCount(page)).toHaveText('1 working · 2 idle');
       await expect(justSent(page)).toContainText(`You → lead: “${GUIDE}”`, { timeout: 12_000 });
-      await expect(latestFirst(page)).toContainText('You answered guide');
+      await expect(latestFirst(page)).toContainText('You answered: guide');
       // The owner's first message flies from the You hub (D5).
       if (wide) await expect.poll(() => dotsLaunched(page)).toBe('3');
       await expectSound(page);
@@ -610,7 +610,7 @@ for (const theme of ['dark', 'light'] as const) {
       await openFresh(page, state, 'done');
       await expect(nowWord(page)).toHaveText('Done');
       await expect(teamCount(page)).toHaveText('3 members \u00b7 all ended');
-      await expect(latestFirst(page)).toContainText('Done with v1');
+      await expect(latestFirst(page)).toContainText('Done: v1 is the result');
       // D67: no next check-in, said once.
       await expect(spend(page)).toContainText('Spent in all. 0 check-ins, none to come · 1 shared version.');
       const doneVersion = (flowRaw('done').work as { latest: { commit_short: string } }).latest.commit_short;
@@ -1000,7 +1000,7 @@ test('contract: history is read quietly in pages, and an ended run is read once'
   await page.setViewportSize({ width: 1440, height: 900 });
   // Temper answers five events a page: the page follows `more` and the cursor.
   const { reads, seen } = await open(page, 'done', { cap: 5 });
-  await expect(latestFirst(page)).toContainText('Done with v1');
+  await expect(latestFirst(page)).toContainText('Done: v1 is the result');
   await expect(justSent(page)).toContainText('lead → checker');
   expect(reads.slice(0, 4)).toEqual([0, 5, 10, 15]);
   expect(await dotsLaunched(page)).toBe('0');
@@ -1009,7 +1009,7 @@ test('contract: history is read quietly in pages, and an ended run is read once'
   await page.waitForTimeout(6_000);
   expect(runReads(seen)).toBe(before);
   await page.reload();
-  await expect(latestFirst(page)).toContainText('Done with v1');
+  await expect(latestFirst(page)).toContainText('Done: v1 is the result');
   expect(await dotsLaunched(page)).toBe('0');
 });
 

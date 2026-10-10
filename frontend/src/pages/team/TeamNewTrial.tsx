@@ -34,9 +34,27 @@ import { TeamPageHeader } from '@/components/team/TeamPageHeader';
 import { TeamNote } from '@/components/team/TeamNote';
 import { EngineQuote } from '@/components/team/TeamQuote';
 import { TeamCharCount } from '@/components/team/TeamCharCount';
-import { teamBtn, teamCard, teamChip, teamChipTone, teamField, teamFieldBad, teamFieldTag, teamLabel } from '@/components/team/teamUi';
+import {
+  teamBtn,
+  teamCard,
+  teamChip,
+  teamChipTone,
+  teamField as sharedField,
+  teamFieldBad,
+  teamFieldTag as sharedFieldTag,
+  teamLabel as sharedLabel,
+} from '@/components/team/teamUi';
 import { FieldNotes, FieldProblems, FindingLink, FindingsSummary } from '@/components/team/form/FormFindings';
 import { MemberRow } from '@/components/team/form/MemberRow';
+
+/*
+ * Design's note on the form's phone text (Oct 10): below 768 px (max-md) the
+ * form's labels and help text are 14 px or more, and its fields and their
+ * typed text 16 px, or iOS zooms in on focus. At 768 px and up nothing changes.
+ */
+const teamField = cn(sharedField, 'max-md:text-base');
+const teamFieldTag = cn(sharedFieldTag, 'max-md:text-sm');
+const teamLabel = cn(sharedLabel, 'max-md:text-sm');
 
 const DEFAULT_GOAL_MAX = 20_000;
 
@@ -195,7 +213,8 @@ export default function TeamNewTrial() {
     <div className="flex h-full flex-col overflow-auto bg-temper-bg">
       <TeamPageHeader tab={null} updatedAt={updatedAt} />
       <div className="flex flex-col gap-4 px-6 py-4">
-        <TeamGuardBanner mode={status?.guard_mode} />
+        {/* Its "Show details" button, shown on a phone only, at 14 px (Design's note above). */}
+        <TeamGuardBanner mode={status?.guard_mode} textScale="glance" />
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_384px]">
           <form
             data-testid="team-form"
@@ -214,7 +233,7 @@ export default function TeamNewTrial() {
                   Goal
                 </label>
                 <span className={teamFieldTag}>required</span>
-                <TeamCharCount text={form.goal} limit={goalMax} id="team-goal-count" className="ml-auto" />
+                <TeamCharCount text={form.goal} limit={goalMax} id="team-goal-count" className="ml-auto max-md:text-sm" />
               </div>
               <textarea
                 id="team-goal"
@@ -228,7 +247,7 @@ export default function TeamNewTrial() {
               />
               <FieldProblems id="team-goal" problems={goalProblems} className="mt-1.5" />
               <FieldNotes id="team-goal" notes={notes.fields.goal} className="mt-1.5" />
-              <p id="team-goal-help" className="m-0 mt-1.5 text-xs text-temper-text-muted">
+              <p id="team-goal-help" className="m-0 mt-1.5 text-xs text-temper-text-muted max-md:text-sm">
                 What the team should do. Markdown is fine; it is shown as text.
               </p>
             </section>
@@ -238,11 +257,11 @@ export default function TeamNewTrial() {
                 <h2 id="team-members-title" className="m-0 text-sm font-semibold text-temper-text">
                   Members
                 </h2>
-                <span id="team-members-count" className="ml-auto text-xs text-temper-text-muted">
+                <span id="team-members-count" className="ml-auto text-xs text-temper-text-muted max-md:text-sm">
                   {n} of up to {TEAM_MAX_MEMBERS}
                 </span>
               </div>
-              <p className="m-0 mt-1 text-xs text-temper-text-muted">
+              <p className="m-0 mt-1 text-xs text-temper-text-muted max-md:text-sm">
                 Team names: lower-case letters, digits, - and _, up to 40 characters, starting with a letter. Each role
                 joins once. The leader is one of the members.
               </p>
@@ -276,7 +295,7 @@ export default function TeamNewTrial() {
                 </TeamNote>
               )}
               {!roles.data && roles.error == null && (
-                <p role="status" className="m-0 mt-3 text-xs text-temper-text-muted">
+                <p role="status" className="m-0 mt-3 text-xs text-temper-text-muted max-md:text-sm">
                   Loading the role list…
                 </p>
               )}
@@ -323,7 +342,7 @@ export default function TeamNewTrial() {
                 <span>Add member</span>
               </button>
               {tools.includes('Bash') && !bashAllowed && (
-                <p id="team-bash-why" className="m-0 mt-3 flex items-start gap-1.5 text-xs text-temper-text-muted">
+                <p id="team-bash-why" className="m-0 mt-3 flex items-start gap-1.5 text-xs text-temper-text-muted max-md:text-sm">
                   <Lock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                   <span>
                     <b className="font-semibold text-temper-text">Bash:</b>{' '}
@@ -360,7 +379,7 @@ export default function TeamNewTrial() {
                   />
                   <FieldProblems id="team-pause" problems={pauseProblems} className="mt-1.5" />
                   <FieldNotes id="team-pause" notes={notes.fields.pause_after_rounds} className="mt-1.5" />
-                  <p id="team-pause-help" className="m-0 mt-1.5 text-xs text-temper-text-muted">
+                  <p id="team-pause-help" className="m-0 mt-1.5 text-xs text-temper-text-muted max-md:text-sm">
                     No default. The team pauses for you when it has kept going this many rounds in a row without the
                     leader saying done.
                   </p>
@@ -401,14 +420,14 @@ export default function TeamNewTrial() {
                     <span
                       aria-hidden="true"
                       data-prefix=""
-                      className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-temper-text-muted peer-disabled:opacity-55"
+                      className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-temper-text-muted peer-disabled:opacity-55 max-md:text-base"
                     >
                       $
                     </span>
                   </div>
                   <FieldProblems id="team-pause-every" problems={everyProblems} className="mt-1.5" />
                   <FieldNotes id="team-pause-every" notes={notes.fields.pause_every_usd} className="mt-1.5" />
-                  <p id="team-pause-every-help" className="m-0 mt-1.5 text-xs text-temper-text-muted">
+                  <p id="team-pause-every-help" className="m-0 mt-1.5 text-xs text-temper-text-muted max-md:text-sm">
                     When spend grows by this much, the team pauses and asks you to continue, guide or stop.
                   </p>
 
@@ -441,7 +460,7 @@ export default function TeamNewTrial() {
                   />
                   <FieldProblems id="team-max-parallel" problems={atOnceProblems} className="mt-1.5" />
                   <FieldNotes id="team-max-parallel" notes={notes.fields.max_parallel} className="mt-1.5" />
-                  <p id="team-max-parallel-help" className="m-0 mt-1.5 text-xs text-temper-text-muted">
+                  <p id="team-max-parallel-help" className="m-0 mt-1.5 text-xs text-temper-text-muted max-md:text-sm">
                     {maxParallelHelp(n)}
                   </p>
                 </>
@@ -481,7 +500,7 @@ export default function TeamNewTrial() {
                     />
                     <span>{way}</span>
                     {COMMUNICATION_WORDS[way] && <span>· {COMMUNICATION_WORDS[way]}</span>}
-                    <span className={cn(teamChip, teamChipTone.neutral, 'ml-2 text-temper-text-muted')}>
+                    <span className={cn(teamChip, teamChipTone.neutral, 'ml-2 text-temper-text-muted max-md:text-sm')}>
                       <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
                       comes later
                     </span>
@@ -513,7 +532,7 @@ export default function TeamNewTrial() {
               />
               <FieldProblems id="team-project" problems={projectProblems} className="mt-1.5" />
               <FieldNotes id="team-project" notes={notes.fields.project_path} className="mt-1.5" />
-              <p id="team-project-help" className="m-0 mt-1.5 text-xs break-words text-temper-text-muted">
+              <p id="team-project-help" className="m-0 mt-1.5 text-xs break-words text-temper-text-muted max-md:text-sm">
                 {roots.length > 0 ? (
                   <>
                     A git folder in:{' '}
@@ -551,11 +570,11 @@ export default function TeamNewTrial() {
                   </p>
                   {value.notes.all.length > 0 && (
                     <>
-                      <p className="m-0 mt-1 text-xs text-temper-text-muted">
+                      <p className="m-0 mt-1 text-xs text-temper-text-muted max-md:text-sm">
                         Temper&apos;s note, so a passed check doesn&apos;t promise the start:
                       </p>
                       {/* 26 px lines: a wrapped note keeps its bullet on its first line (FindingLink). */}
-                      <ul className="m-0 mt-1.5 list-disc pl-5 text-xs leading-[26px]">
+                      <ul className="m-0 mt-1.5 list-disc pl-5 text-xs leading-[26px] max-md:text-sm">
                         {value.notes.all.map((p, i) => (
                           <li key={i}>
                             <FindingLink placed={p} />
@@ -593,7 +612,7 @@ export default function TeamNewTrial() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <p className="m-0 mr-auto text-xs text-temper-text-muted">
+              <p className="m-0 mr-auto text-xs text-temper-text-muted max-md:text-sm">
                 {busy !== null ? 'Sending to Temper…' : 'Check runs the same checks without starting anything.'}
               </p>
               <button
@@ -631,13 +650,13 @@ export default function TeamNewTrial() {
               ) : (
                 <p className="m-0 text-sm text-temper-text-muted">Temper&apos;s default model.</p>
               )}
-              <p className="m-0 mt-1 text-xs text-temper-text-muted">
+              <p className="m-0 mt-1 text-xs text-temper-text-muted max-md:text-sm">
                 Every member uses these. Choosing per member comes later.
               </p>
             </section>
             <section className={cn(teamCard, 'p-4')}>
               <h2 className={teamLabel}>When you press Run project</h2>
-              <ol className="m-0 flex list-decimal flex-col gap-1.5 pl-5 text-xs text-temper-text">
+              <ol className="m-0 flex list-decimal flex-col gap-1.5 pl-5 text-xs text-temper-text max-md:text-sm">
                 <li>
                   Temper starts one run named <code className="font-mono">team-trial-…</code>; it shows in Workflows
                   too.

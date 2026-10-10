@@ -54,7 +54,7 @@ export function FindingsSummary({
         <h2 ref={headingRef} tabIndex={-1} className="m-0 text-sm font-semibold text-temper-text">
           {title}
         </h2>
-        <p className="m-0 mt-1 text-xs text-temper-text-muted">Nothing was saved. Your inputs are kept below.</p>
+        <p className="m-0 mt-1 text-xs text-temper-text-muted max-md:text-sm">Nothing was saved. Your inputs are kept below.</p>
         {/* 26 px lines to match FindingLink: (26 - 20) / 2 = its 3 px top padding. */}
         <ul className="m-0 mt-2 flex list-disc flex-col gap-1.5 pl-5 leading-[26px]">
           {placed.map((p, i) => (
@@ -101,7 +101,7 @@ export function FieldNotes({ id, notes, className }: { id: string; notes: readon
           key={i}
           id={`${id}-note-${i}`}
           data-field-note
-          className="m-0 flex items-start gap-1.5 text-xs break-words text-temper-text-muted"
+          className="m-0 flex items-start gap-1.5 text-xs break-words text-temper-text-muted max-md:text-sm"
         >
           <Info className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>

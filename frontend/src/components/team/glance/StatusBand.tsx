@@ -72,8 +72,8 @@ function WorkingList({ run, stale }: { run: GlanceRun; stale: boolean }) {
   );
 }
 
-function NowBox({ run, agesAt, stale }: { run: GlanceRun; agesAt: number | null; stale: boolean }) {
-  const cell = nowCell(run, agesAt, stale);
+function NowBox({ run, agesAt, stale, lastAt }: { run: GlanceRun; agesAt: number | null; stale: boolean; lastAt?: string | null }) {
+  const cell = nowCell(run, agesAt, stale, lastAt);
   const latest = run.work.latest;
   const latestAge = latest ? agoText(latest.at, agesAt) : '';
   return (
@@ -95,6 +95,12 @@ function NowBox({ run, agesAt, stale }: { run: GlanceRun; agesAt: number | null;
       {cell.sentence && (
         <p className="m-0 text-base break-words text-temper-text md:text-lg" data-testid="glance-now-sentence">
           {cell.sentence}
+        </p>
+      )}
+      {/* D105: an interrupted run's reason, Temper's words, as the sentence's second line. */}
+      {cell.reason && (
+        <p className="m-0 text-base break-words text-temper-text md:text-lg" data-testid="glance-now-reason">
+          {cell.reason}
         </p>
       )}
       {cell.countLine && <p className="m-0 text-[15px] text-temper-text-muted">{cell.countLine}</p>}
@@ -487,10 +493,13 @@ export function StatusBand({
   sender,
   limits,
   executionId,
+  lastAt,
 }: {
   run: GlanceRun;
   /** Temper's clock: durations count to it. */
   now: number | null;
+  /** D105: the newest time Temper recorded in the loaded reply and feed (lastRecordedAt). */
+  lastAt?: string | null;
   /** The clock every "ago" counts to: Temper's, plus the time it hasn't answered (D64). */
   agesAt?: number | null;
   /** How long Temper hasn't answered ("2 min"), while it doesn't. */
@@ -512,7 +521,7 @@ export function StatusBand({
       </h2>
       {/* SPEC layout table: stacked on a phone; Now across the top with You and Spend under it; one row of three once the band is 900 px wide (glance.css). */}
       <div className="glance-band-grid min-w-0">
-        <NowBox run={run} agesAt={agesAt} stale={stale} />
+        <NowBox run={run} agesAt={agesAt} stale={stale} lastAt={lastAt} />
         <YouBox
           run={run}
           wait={wait}

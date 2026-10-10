@@ -12,10 +12,10 @@ const TABS: Array<{ id: TeamTab; label: string; to: string }> = [
 ];
 
 /** "Updated 10:42:05 AM", and " · not current" while the last read failed (boards T1, T3). */
-function Updated({ at, stale }: { at: number | null | undefined; stale?: boolean }) {
+function Updated({ at, stale, className }: { at: number | null | undefined; stale?: boolean; className?: string }) {
   if (at === null || at === undefined) return null;
   return (
-    <p className="m-0 text-xs text-temper-text-muted" data-testid="team-updated">
+    <p className={cn('m-0 text-xs text-temper-text-muted', className)} data-testid="team-updated">
       Updated {clockTime(at)}
       {stale && <> · not current</>}
     </p>
@@ -42,7 +42,8 @@ export function TeamPageHeader({
     return (
       <header className="flex flex-wrap items-end gap-x-4 gap-y-1 px-6 pt-3 pb-3">
         <div className="flex min-w-0 flex-col">
-          <nav aria-label="Breadcrumb" className="text-xs text-temper-text-muted">
+          {/* Design's note on the New project form's phone text (Oct 10): 14 px below 768 px. */}
+          <nav aria-label="Breadcrumb" className="text-xs text-temper-text-muted max-md:text-sm">
             <ol className="m-0 flex list-none items-center gap-1.5 p-0">
               <li>
                 <Link to="/team" className={teamLink}>
@@ -56,7 +57,7 @@ export function TeamPageHeader({
           <h1 className="m-0 text-xl font-semibold text-temper-text">New project</h1>
         </div>
         <span className="flex-1" />
-        <Updated at={updatedAt} stale={stale} />
+        <Updated at={updatedAt} stale={stale} className="max-md:text-sm" />
       </header>
     );
   }

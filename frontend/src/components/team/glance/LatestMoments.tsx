@@ -28,9 +28,10 @@ export function LatestMoments({
   const liveLimit = limitCheckShown(run.phase);
   // The team's cards: a receiver with none doesn't count towards D82's "sent a message to N members".
   const members = useMemo(() => new Set(run.members.map((m) => m.name)), [run.members]);
+  // D110: All activity's words for each moment; D104: a future time in them gets its day by Temper's clock.
   const moments = useMemo(
-    () => latestMoments(events, run.leader, 5, liveLimit, members),
-    [events, run.leader, liveLimit, members],
+    () => latestMoments(events, run.leader, 5, liveLimit, members, run, { now }),
+    [events, run, liveLimit, members, now],
   );
   return (
     <section className={cn(teamCard, 'flex min-w-0 flex-col gap-2 p-4')} aria-labelledby="glance-latest-title">

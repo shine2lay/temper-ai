@@ -33,7 +33,18 @@ import { teamBtn, teamCard, teamLink } from '@/components/team/teamUi';
 import { GIcon, PathText } from './glanceUi';
 import { glanceCardHead } from './glanceStyle';
 
-export function AllActivity({ run, events, ready }: { run: GlanceRun; events: GlanceEvent[]; ready: boolean }) {
+export function AllActivity({
+  run,
+  events,
+  ready,
+  now = null,
+}: {
+  run: GlanceRun;
+  events: GlanceEvent[];
+  ready: boolean;
+  /** Temper's clock (as Latest's): a future time in a row gets its day (D104). */
+  now?: number | null;
+}) {
   const [older, setOlder] = useState(false);
   // D85: the rows opened with Show all, by row key (a row's key is its event's seq, so it survives new events).
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
@@ -46,10 +57,12 @@ export function AllActivity({ run, events, ready }: { run: GlanceRun; events: Gl
   }, []);
   // D31: a limit row names its check only while Now does (never once verified or asked).
   const liveLimit = limitCheckShown(run.phase);
-  const rows = useMemo(() => activityRows(events, run, liveLimit), [events, run, liveLimit]);
-  const total = run.eventsTotal ?? rows.length;
+  const rows = useMemo(() => activityRows(events, run, liveLimit, { now }), [events, run, liveLimit, now]);
+  // D105's reason row is the page's own, not one of Temper's events: the count stays Temper's (D14).
+  const own = rows.length - events.length;
+  const total = run.eventsTotal ?? events.length;
   const shown = older ? rows : rows.slice(0, ACTIVITY_FIRST);
-  const more = Math.max(0, total - shown.length);
+  const more = Math.max(0, total + own - shown.length);
   return (
     <section id="glance-activity" className={cn(teamCard, 'flex min-w-0 flex-col gap-2 p-4')} aria-labelledby="glance-activity-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">

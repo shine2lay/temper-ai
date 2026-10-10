@@ -24,10 +24,11 @@ import type { TeamMessageSender } from '@/hooks/useTeamMessage';
 import { useTeamGlanceEvents } from '@/hooks/useTeamGlanceEvents';
 import { toGlanceRun } from '@/lib/teamGlanceAdapter';
 import {
-  clockOf,
+  atWords,
   composerHint,
   durationWords,
   glanceClock,
+  lastRecordedAt,
   msOf,
   nowCountsMembers,
   phaseEnded,
@@ -102,13 +103,14 @@ function folderName(path: string | null): string | null {
 
 /**
  * Live: started_at to as_of; a start after Temper's clock has no age (D22),
- * it shows its clock time. Ended: the frozen elapsed_s (G5), never the clock.
+ * it shows its clock time, with its day after today (D104). Ended: the
+ * frozen elapsed_s (G5), never the clock.
  */
 function runningWords(run: GlanceRun, now: number | null): string | null {
   const start = msOf(run.startedAt);
   if (!phaseEnded(run.phase.name)) {
     if (start === null || now === null) return null;
-    return start > now ? `started at ${clockOf(run.startedAt)}` : `running ${durationWords(now - start)}`;
+    return start > now ? `started ${atWords(run.startedAt, now)}` : `running ${durationWords(now - start)}`;
   }
   if (run.elapsedS !== null) return `ran ${durationWords(run.elapsedS * 1000)}`;
   return null;
@@ -219,6 +221,8 @@ export function GlanceRunView({
   const staleMs = stale && read.updatedAt !== null ? Math.max(0, (read.failedAt ?? 0) - read.updatedAt) : 0;
   const staleFor = stale ? durationWords(staleMs) : null;
   const agesAt = now !== null ? now + staleMs : null;
+  // D105: an interrupted run without an end time says when Temper last recorded anything.
+  const lastAt = useMemo(() => lastRecordedAt(run, feed.events), [run, feed.events]);
   const messaging = canMessage(raw);
 
   const toComposer = useCallback(() => {
@@ -279,6 +283,7 @@ export function GlanceRunView({
           sender={sender}
           limits={status?.limits ?? null}
           executionId={raw.execution_id}
+          lastAt={lastAt}
         />
         <TeamMap
           run={run}
@@ -295,7 +300,7 @@ export function GlanceRunView({
           <LatestMoments run={run} events={feed.events} now={agesAt} ready={feed.ready} />
         </div>
         {/* The one history and the one count (home decision 3): no Timeline card on this page. */}
-        <AllActivity run={run} events={feed.events} ready={feed.ready} />
+        <AllActivity run={run} events={feed.events} ready={feed.ready} now={agesAt} />
         {(messaging || messenger.result !== null) && (
           <div id="glance-message" className="min-w-0">
             <MessageComposer
@@ -305,7 +310,7 @@ export function GlanceRunView({
               sender={messenger}
               hint={(to) => {
                 // D56: what happens to the message, from the chosen member's state.
-                const h = composerHint(run, to);
+                const h = composerHint(run, to, now);
                 return h.name ? (
                   <>
                     <b className="font-semibold text-temper-text">{h.name}</b> {h.text}

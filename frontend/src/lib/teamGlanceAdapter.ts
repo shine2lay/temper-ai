@@ -254,6 +254,8 @@ function memberOf(v: unknown, waitWords: Map<string, string>, waitKinds: Map<str
     retryOf: num(turn?.retry_of),
     // Carried as Temper sends it; the card shows it while the turn has failed.
     lastError: str(turn?.error),
+    // D105: when Temper last recorded this member's turn (its end, else its start).
+    lastTurnAt: str(turn?.ended_at) ?? str(turn?.started_at),
   };
 }
 

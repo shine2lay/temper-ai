@@ -36,7 +36,8 @@ function hiddenFor(): string | null {
  * On a phone-width screen it shows its first sentence, with the rest behind
  * "Show details", so it doesn't push the page down by half a screen.
  * `textScale="glance"`: the glance page's type, where no text is under 14 px
- * (its "Show details" button too); the other Team pages keep theirs.
+ * (its "Show details" button too); the New project form uses it too, for its
+ * phone text (the button shows on a phone only); the other Team pages keep theirs.
  */
 export function TeamGuardBanner({
   mode,

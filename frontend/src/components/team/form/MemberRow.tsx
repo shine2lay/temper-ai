@@ -2,10 +2,12 @@ import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { memberAnchor, reservedHint, reservedWords, type FormMember } from '@/lib/teamForm';
 import type { TeamFinding, TeamRole } from '@/types/team';
-import { teamField } from '../teamUi';
+import { teamField as sharedField } from '../teamUi';
 import { FieldProblems } from './FormFindings';
 
 const LABEL = 'mb-1 block text-sm font-semibold text-temper-text';
+/** Design's note on the form's phone text (Oct 10): below 768 px a field and its typed text are 16 px, or iOS zooms in on focus. */
+const teamField = cn(sharedField, 'max-md:text-base');
 
 /** A role in the Role select: "<id>: <title>"; one that can't join says so and can't be picked. */
 function roleOption(role: TeamRole): string {
@@ -134,12 +136,12 @@ export function MemberRow({
         </button>
       </div>
       {hint && (
-        <p id={`${id}-reserved`} className="m-0 mt-1.5 text-xs text-temper-text-muted">
+        <p id={`${id}-reserved`} className="m-0 mt-1.5 text-xs text-temper-text-muted max-md:text-sm">
           {reservedWords(member.role)}
         </p>
       )}
       <fieldset className="m-0 mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 border-0 p-0">
-        <legend className="float-left mr-1 p-0 text-xs text-temper-text-muted">Tools</legend>
+        <legend className="float-left mr-1 p-0 text-xs text-temper-text-muted max-md:text-sm">Tools</legend>
         {tools.map((tool) => {
           const off = tool === 'Bash' && !bashAllowed;
           return (

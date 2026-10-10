@@ -76,15 +76,25 @@ the dashboard.
    are for the build pair), or a config in a `local/` folder under `configs/`
    (gitignored, this installation only). Configs are found by name, so a
    candidate always gets a name of its own, never a live config's.
-2. **Re-run past work with it.** Either fork a past run onto a candidate
-   workflow (`POST /api/runs/fork` takes the `workflow` to continue on, the
-   `source_execution_id` and the checkpoint `sequence`; the new run shares
-   the old one's history up to that point, then goes on by itself), or use a
-   replay workflow: `epd_build_replay` (a past bet built again by the
-   candidate coder and reviewer), `epd_review_replay` (the candidate reviewer
-   alone on a past change), `epd_build_new` (a new project from nothing), or
-   `epd_probe` (the deploy and verify mechanics, with no model work except the
-   browser check).
+2. **Test each stage alone, then re-run past work with it.**
+   - **Each stage alone first.** Before any whole run, run each new or
+     changed stage on its own, on fixed inputs whose right answers are known:
+     cases it must catch, and clean cases it must pass. Run an AI stage more
+     than once, to see that it's steady. To run an agent stage alone, give it
+     a one-node test workflow that calls the same agent, with the fixed
+     inputs as run inputs (as `epd_review_replay` does for the reviewer).
+     Fix the stage until it does its job; only then run the whole workflow.
+     When a whole run goes wrong, test the doubtful stage alone instead of
+     re-running everything.
+   - **Then re-run past work.** Either fork a past run onto a candidate
+     workflow (`POST /api/runs/fork` takes the `workflow` to continue on,
+     the `source_execution_id` and the checkpoint `sequence`; the new run
+     shares the old one's history up to that point, then goes on by
+     itself), or use a replay workflow: `epd_build_replay` (a past bet
+     built again by the candidate coder and reviewer), `epd_review_replay`
+     (the candidate reviewer alone on a past change), `epd_build_new` (a
+     new project from nothing), or `epd_probe` (the deploy and verify
+     mechanics, with no model work except the browser check).
 3. **Grade both**, the live config's work and the candidate's, with the role's
    grader (below). A role without one builds one first, and checks it against
    verdicts the owner has already given.
@@ -103,7 +113,7 @@ the dashboard.
 
 **Trial rules**
 
-- Never trial on live bets: forks and replays only.
+- Never trial on live bets: stage tests, forks and replays only.
 - Trials have no spending cap: the role decides what to run.
 - Before a big run, check the spare subscription allowance, and wait when a
   subscription is near its weekly limit.

@@ -21,12 +21,14 @@ export const PAGE_FACES = ['400 16px "Source Sans Pro"', '600 16px "Source Sans 
 
 /**
  * The text the faces are asked for: a space for the page's own files, and the
- * four symbols they lack (right and down arrows, play and warning signs), whose
- * small faces in index.css cover only those. `fonts.load` fetches only the faces
- * whose unicode-range holds a character of its text, a single space by default,
- * so without the symbols here the ready point would not wait for their faces.
+ * symbols they lack that this page shows, from small faces in index.css: the
+ * right and down arrows, the play and warning signs, and the check, cross and
+ * square of an ended run's status (the Stop dialog's "had already ended"
+ * badge). `fonts.load` fetches only the faces whose unicode-range holds a
+ * character of its text, a single space by default, so without the symbols
+ * here the ready point would not wait for their faces.
  */
-export const PAGE_TEXT = ' \u2192\u2193\u25B6\u26A0';
+export const PAGE_TEXT = ' \u2192\u2193\u25B6\u26A0\u2713\u2717\u25A0';
 
 /** 'waiting' until the faces' load has settled; then what `onFontsLoaded` reported. */
 export type FontsState = 'waiting' | 'loaded' | 'failed' | 'none';

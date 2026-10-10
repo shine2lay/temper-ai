@@ -1,18 +1,23 @@
 {
-  "purpose": "Source Sans Pro (licenses.json) has no glyphs for these four characters, so each browser drew them in its own system font. Small Noto subsets supply exactly these four, under the CSS family 'Source Sans Pro' with a unicode-range each (index.css), so they are the same everywhere. The arrows are as heavy as the letters beside them (Design D100): each face of the text gets the Noto Sans Symbols weight whose shaft is as thick as that face's 'l' stem.",
+  "purpose": "Source Sans Pro (licenses.json) has no glyphs for these characters, so each browser drew them in its own system font: the four arrows, the minus sign, the status signs (check, cross, circle, square, circled slash, pause, play), the warning sign, the multiplication x, command and return, and the less-or-equal, greater-or-equal and almost-equal signs. Small Noto subsets supply exactly these, under the CSS family 'Source Sans Pro' with a unicode-range each (index.css), so they are the same everywhere. Where a variable Noto face has a symbol, it is as heavy as the letters beside it (Design D100, D101): each face of the text gets the weight whose stroke is as thick as that face's 'l' stem. The rest come from faces with one weight; one file serves both faces, never faked bold.",
   "css_family": "Source Sans Pro",
+  "target_stems": {
+    "note": "Stems in font units per 1000 em, measured on the outlines with fontTools. A ratio is the symbol's stroke over the 'l' stem of the face beside it.",
+    "sourcesanspro-regular.ttf": {"l_stem": "168/2048 = 82.03/1000 em", "cap_height_H": 655.76},
+    "sourcesanspro-semibold.ttf": {"l_stem": "235/2048 = 114.75/1000 em", "cap_height_H": 653.81}
+  },
   "installed_fonts": [
     {
       "file": "notosanssymbols-arrows-regular.woff2",
-      "bytes": 848,
-      "sha256": "10aeba5aac5bc6f1fe6cea9ef993c15dd2be5214829f89029479e4b7b6cdb8e4",
-      "code_points": ["U+2192", "U+2193"],
-      "characters": "\u2192 \u2193",
-      "css": {"unicode_range": "U+2192-2193", "font_weight": "400"},
+      "bytes": 964,
+      "sha256": "22b9b898e90c5936e25ea64833743ec9867cee007c3a208a5ea7bb61c09b7971",
+      "code_points": ["U+2190", "U+2191", "U+2192", "U+2193"],
+      "characters": "\u2190 \u2191 \u2192 \u2193",
+      "css": {"unicode_range": "U+2190-2193", "font_weight": "400"},
       "instance": {
         "wght": 700,
         "style": "Bold",
-        "stem": "The shaft of both arrows is 82/1000 em thick; the 'l' stem of sourcesanspro-regular.ttf is 168/2048 = 82.03/1000 em (ratio 1.00). Of wght 100..900 in steps of 10, 700 is the closest (the default 400 is 42/1000, half the stem).",
+        "stem": "Shafts at wght 700: right and down 82, left 82.26, up 82.87 per 1000 em; the 'l' stem of sourcesanspro-regular.ttf is 82.03 (ratios 1.00, 1.00, 1.01). Of wght 100..900 in steps of 10, 700 is the closest for the right and down arrows (the default 400 is 42, half the stem); the up arrow's own closest, 690 (81.33), differs by 0.9%.",
         "bytes": 184992,
         "sha256": "401920731c95f8b23bb62a794eb600bea0f2794ec20e1b5c9141567f479edfd3",
         "command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 fonttools varLib.instancer 'NotoSansSymbols[wght].ttf' wght=700 --update-name-table --no-recalc-timestamp -o NotoSansSymbols-wght700.ttf"
@@ -34,20 +39,20 @@
         "sha256": "f7e7e04b4a24b6c78893d50cbfd2b2f6cae49617ab047bfef668d252adb128f7",
         "upstream": "https://github.com/notofonts/symbols at commit b61fa7f86fb7d4163ee11d46d0977393f98d4f7a"
       },
-      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols-wght700.ttf --unicodes=U+2192,U+2193 --layout-features= --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols-arrows-regular.woff2",
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols-wght700.ttf --unicodes=U+2190,U+2191,U+2192,U+2193 --layout-features= --no-bidi-closure --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols-arrows-regular.woff2",
       "license": "SIL Open Font License 1.1, Noto-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
     },
     {
       "file": "notosanssymbols-arrows-semibold.woff2",
-      "bytes": 860,
-      "sha256": "dae2c8486478a2b851aff4f288f7e6a8e48b5567a2c88e26d9bdfd30b88d8fe4",
-      "code_points": ["U+2192", "U+2193"],
-      "characters": "\u2192 \u2193",
-      "css": {"unicode_range": "U+2192-2193", "font_weight": "500 900"},
+      "bytes": 980,
+      "sha256": "23d69f00927d55474050f997f3673ca39461b4cd319929dc6787f56aae2a6f52",
+      "code_points": ["U+2190", "U+2191", "U+2192", "U+2193"],
+      "characters": "\u2190 \u2191 \u2192 \u2193",
+      "css": {"unicode_range": "U+2190-2193", "font_weight": "500 900"},
       "instance": {
         "wght": 900,
         "style": "Black",
-        "stem": "The shaft of both arrows is 108/1000 em thick; the 'l' stem of sourcesanspro-semibold.ttf is 235/2048 = 114.75/1000 em (ratio 0.94). 900 is the heaviest weight the font has, so the closest.",
+        "stem": "Shafts at wght 900: right, down and left 108, up 109 per 1000 em; the 'l' stem of sourcesanspro-semibold.ttf is 114.75 (ratios 0.94, 0.95). 900 is the heaviest weight the font has, so the closest.",
         "bytes": 184832,
         "sha256": "9e45280a9cc4b2bb35fc15071e6dee238def68859c18cc81adb710f2ee8e68c1",
         "command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 fonttools varLib.instancer 'NotoSansSymbols[wght].ttf' wght=900 --update-name-table --no-recalc-timestamp -o NotoSansSymbols-wght900.ttf"
@@ -69,20 +74,99 @@
         "sha256": "f7e7e04b4a24b6c78893d50cbfd2b2f6cae49617ab047bfef668d252adb128f7",
         "upstream": "https://github.com/notofonts/symbols at commit b61fa7f86fb7d4163ee11d46d0977393f98d4f7a"
       },
-      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols-wght900.ttf --unicodes=U+2192,U+2193 --layout-features= --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols-arrows-semibold.woff2",
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols-wght900.ttf --unicodes=U+2190,U+2191,U+2192,U+2193 --layout-features= --no-bidi-closure --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols-arrows-semibold.woff2",
       "license": "SIL Open Font License 1.1, Noto-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
     },
     {
-      "file": "notosanssymbols2-play-warning.woff2",
-      "bytes": 2676,
-      "sha256": "a3f53b9e8b53b5ed9826b98c8ab9e1ff923bfc92169142ac92fabd54cdc6c7b3",
-      "code_points": ["U+25B6", "U+26A0"],
-      "characters": "\u25b6 \u26a0",
-      "css": {"unicode_range": "U+25B6, U+26A0", "font_weight": ["400", "500 900"]},
+      "file": "notosans-minus-regular.woff2",
+      "bytes": 820,
+      "sha256": "5c2aceee324bdf0b8a762952ea9172f53f70f94c16e70f48bec2265f4c43ec92",
+      "code_points": ["U+2212"],
+      "characters": "\u2212",
+      "css": {"unicode_range": "U+2212", "font_weight": "400"},
+      "instance": {
+        "wght": 500,
+        "wdth": 100,
+        "style": "Medium",
+        "stem": "The bar at wght 500 is 81.8 per 1000 em; the 'l' stem of sourcesanspro-regular.ttf is 82.03 (ratio 1.00). Of wght 100..900 in steps of 10, 500 is the closest. Noto Sans Symbols also has U+2212, but as short as a hyphen (ink 242 wide); Noto Sans' minus is as wide as a plus sign (ink 474.5; Source Sans Pro's plus 428.7).",
+        "bytes": 648308,
+        "sha256": "2cb9b0be5792612e1649c50fb2d493999ce02e3d7af6f51073fb020915af6bdf",
+        "command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 fonttools varLib.instancer 'NotoSans[wdth,wght].ttf' wght=500 wdth=100 --no-recalc-timestamp -o NotoSans-wght500.ttf",
+        "name_note": "The name table is the variable font's default (Noto Sans Regular): --update-name-table needs a STAT axis value at the location, which wght 770 lacks, so neither minus instance is renamed. usWeightClass is set to the instance's weight."
+      },
+      "variation_axes": {},
+      "name_table": {
+        "0": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)",
+        "1": "Noto Sans",
+        "2": "Regular",
+        "4": "Noto Sans Regular",
+        "5": "Version 2.015",
+        "6": "NotoSans-Regular"
+      },
+      "source": {
+        "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+        "pinned_url": "https://raw.githubusercontent.com/google/fonts/2984c575fdce412ee02b2baaba67672b9a9434d8/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+        "file": "NotoSans[wdth,wght].ttf",
+        "bytes": 2049096,
+        "sha256": "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
+        "upstream": "https://github.com/notofonts/latin-greek-cyrillic at commit c4a321e123e4d4ff315f57f4e0adf294fe3a95be"
+      },
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSans-wght500.ttf --unicodes=U+2212 --layout-features= --no-bidi-closure --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosans-minus-regular.woff2",
+      "license": "SIL Open Font License 1.1, Noto-Sans-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
+    },
+    {
+      "file": "notosans-minus-semibold.woff2",
+      "bytes": 816,
+      "sha256": "b9caae3eb4dbf925396ba2a82ef5201cfd5b7265918f170779fc8b48ac7d7dab",
+      "code_points": ["U+2212"],
+      "characters": "\u2212",
+      "css": {"unicode_range": "U+2212", "font_weight": "500 900"},
+      "instance": {
+        "wght": 770,
+        "wdth": 100,
+        "style": "(none: between Bold 700 and ExtraBold 800)",
+        "stem": "The bar at wght 770 is 115.16 per 1000 em; the 'l' stem of sourcesanspro-semibold.ttf is 114.75 (ratio 1.00). Of wght 100..900 in steps of 10, 770 is the closest.",
+        "bytes": 648816,
+        "sha256": "19fda483ded921494b7f50a1bea2b7aed8dd4be4f1b4dc7dc0376f63d75b193c",
+        "command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 fonttools varLib.instancer 'NotoSans[wdth,wght].ttf' wght=770 wdth=100 --no-recalc-timestamp -o NotoSans-wght770.ttf",
+        "name_note": "As for the regular minus: the default name table (Noto Sans Regular), usWeightClass 770."
+      },
+      "variation_axes": {},
+      "name_table": {
+        "0": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)",
+        "1": "Noto Sans",
+        "2": "Regular",
+        "4": "Noto Sans Regular",
+        "5": "Version 2.015",
+        "6": "NotoSans-Regular"
+      },
+      "source": {
+        "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+        "pinned_url": "https://raw.githubusercontent.com/google/fonts/2984c575fdce412ee02b2baaba67672b9a9434d8/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+        "file": "NotoSans[wdth,wght].ttf",
+        "bytes": 2049096,
+        "sha256": "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
+        "upstream": "https://github.com/notofonts/latin-greek-cyrillic at commit c4a321e123e4d4ff315f57f4e0adf294fe3a95be"
+      },
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSans-wght770.ttf --unicodes=U+2212 --layout-features= --no-bidi-closure --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosans-minus-semibold.woff2",
+      "license": "SIL Open Font License 1.1, Noto-Sans-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
+    },
+    {
+      "file": "notosanssymbols2.woff2",
+      "bytes": 3312,
+      "sha256": "3d62b7bded1c5c5e78685fa0f773f3aca34a34b127ae82c6e4393b12a541239d",
+      "code_points": ["U+2318", "U+23F8", "U+25B6", "U+26A0", "U+2715", "U+2717"],
+      "characters": "\u2318 \u23f8 \u25b6 \u26a0 \u2715 \u2717",
+      "css": {"unicode_range": "U+2318, U+23F8, U+25B6, U+26A0, U+2715, U+2717", "font_weight": ["400", "500 900"]},
+      "weight": {
+        "static": "One weight (Regular 400); this file serves both faces and is never faked bold. Of the surveyed sources (Noto Sans Symbols [wght], Noto Sans Symbols 2, Noto Sans Math, Noto Sans [wdth,wght]), only Noto Sans Symbols 2 has the ballot x, the pause sign, the multiplication x and the command sign; play and warning are as #22 shipped them.",
+        "stems": "Per 1000 em, with the ratio to the regular and semibold 'l' stems (82.03, 114.75): ballot x U+2717 115.46 and 99.3 (1.41 and 1.21; 1.01 and 0.87); pause U+23F8 bars 152 and 153 (1.85 and 1.87; 1.32 and 1.33), 656 tall (cap height 1.00); multiplication x U+2715 76.37 and 75.92 (0.93; 0.67 and 0.66); command U+2318 70 (0.85; 0.61)."
+      },
       "variation_axes": {},
       "name_table": {
         "0": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)",
         "1": "Noto Sans Symbols 2",
+        "2": "Regular",
         "4": "Noto Sans Symbols 2 Regular",
         "5": "Version 2.008; ttfautohint (v1.8.4.7-5d5b)",
         "6": "NotoSansSymbols2-Regular"
@@ -95,20 +179,77 @@
         "sha256": "7d5fb73b7ca67a6798101741f5d280a3d016a56a197afcd4199dbb57b4b82a21",
         "upstream": "https://github.com/notofonts/symbols at commit 25b00f0d3f40873a005287514ba2a48558655314"
       },
-      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols2-Regular.ttf --unicodes=U+25B6,U+26A0 --layout-features= --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols2-play-warning.woff2",
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansSymbols2-Regular.ttf --unicodes=U+2318,U+23F8,U+25B6,U+26A0,U+2715,U+2717 --layout-features= --no-bidi-closure --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --output-file=notosanssymbols2.woff2",
       "license": "SIL Open Font License 1.1, Noto-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
+    },
+    {
+      "file": "notosansmath.woff2",
+      "bytes": 3220,
+      "sha256": "81b60c446d0dbfa12dd35fe0f23482252c8535630fefe1dd2d3d8dc6daee88a3",
+      "code_points": ["U+21B5", "U+2248", "U+2264", "U+2265", "U+2298", "U+25A0", "U+25CB", "U+2713"],
+      "characters": "\u21b5 \u2248 \u2264 \u2265 \u2298 \u25a0 \u25cb \u2713",
+      "css": {"unicode_range": "U+21B5, U+2248, U+2264-2265, U+2298, U+25A0, U+25CB, U+2713", "font_weight": ["400", "500 900"]},
+      "weight": {
+        "static": "One weight (Regular 400); this file serves both faces and is never faked bold. Of the surveyed sources, only Noto Sans Math has the return arrow, the circled slash and the three relation signs; the check, circle and square are in Noto Sans Symbols 2 too, and Noto Sans Math's are closer to the text (check 1.36 against 1.40 at the regular face; circle 51 against 42 thick; square 714 against 732 tall).",
+        "stems": "Per 1000 em, with the ratio to the regular and semibold 'l' stems (82.03, 114.75): check U+2713 111.37 (1.36; 0.97); white circle U+25CB 51 (0.62; 0.44); circled slash U+2298 ring 72.04 (0.88; 0.63), slash 63.64 (0.78; 0.55); return U+21B5 71 (0.87; 0.62); less-or-equal and greater-or-equal U+2264, U+2265 71 (0.87; 0.62); almost equal U+2248 72.97 (0.89; 0.64). Black square U+25A0 is solid: 714 tall, against the cap heights 655.76 and 653.81 (1.09)."
+      },
+      "variation_axes": {},
+      "name_table": {
+        "0": "Copyright 2022 Google LLC. All Rights Reserved.",
+        "1": "Noto Sans Math",
+        "2": "Regular",
+        "4": "Noto Sans Math Regular",
+        "5": "Version 3.000; ttfautohint (v1.8.4.7-5d5b)",
+        "6": "NotoSansMath-Regular"
+      },
+      "source": {
+        "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/NotoSansMath-Regular.ttf",
+        "pinned_url": "https://raw.githubusercontent.com/google/fonts/dbd1ab6e65dc59bcda3ca8de9fd372f58f98e0af/ofl/notosansmath/NotoSansMath-Regular.ttf",
+        "file": "NotoSansMath-Regular.ttf",
+        "bytes": 1015396,
+        "sha256": "3f495fe933c06786e4d5f6d86b8ee70b6753a68ee3b9d87528726de0f6e2c47d",
+        "upstream": "https://github.com/notofonts/math at commit 4b78263eac2301b04367d600a07b521cfbff0867"
+      },
+      "subset_command": "uvx --from fonttools==4.66.1 --with brotli==1.2.0 pyftsubset NotoSansMath-Regular.ttf --unicodes=U+2713,U+21B5,U+2248,U+2264,U+2265,U+2298,U+25A0,U+25CB --layout-features= --no-bidi-closure --name-IDs=0,1,2,3,4,5,6,7,13,14 --flavor=woff2 --drop-tables+=MATH --output-file=notosansmath.woff2",
+      "subset_note": "The MATH table is dropped (it serves MathML layout only). --no-bidi-closure keeps out the bidi mirror pyftsubset would otherwise add (U+29B8 for U+2298).",
+      "license": "SIL Open Font License 1.1, Noto-Sans-Math-OFL.txt; no Reserved Font Name, so the subset keeps its upstream names"
     }
   ],
-  "license_document": {
-    "file": "Noto-OFL.txt",
-    "bytes": 4383,
-    "sha256": "b118dd41337806a5d4797052c77caf3bd096aed783e5eb21b4d11154351e1ac0",
-    "source_urls": [
-      "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols/OFL.txt",
-      "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols2/OFL.txt"
-    ],
-    "note": "Both upstream OFL.txt files are this same file, copied unchanged."
-  },
+  "license_documents": [
+    {
+      "file": "Noto-OFL.txt",
+      "bytes": 4383,
+      "sha256": "b118dd41337806a5d4797052c77caf3bd096aed783e5eb21b4d11154351e1ac0",
+      "for": ["notosanssymbols-arrows-regular.woff2", "notosanssymbols-arrows-semibold.woff2", "notosanssymbols2.woff2"],
+      "source_urls": [
+        "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols/OFL.txt",
+        "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols2/OFL.txt"
+      ],
+      "note": "Both upstream OFL.txt files are this same file, copied unchanged."
+    },
+    {
+      "file": "Noto-Sans-OFL.txt",
+      "bytes": 4396,
+      "sha256": "cee9892f9f0cc8fe882c9e9537ee6a89621d86ee7ceaf70b02e2b2b1c25c061a",
+      "for": ["notosans-minus-regular.woff2", "notosans-minus-semibold.woff2"],
+      "source_urls": [
+        "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/OFL.txt",
+        "https://raw.githubusercontent.com/google/fonts/c92b209a838649c205a1565b5f28c1973e049659/ofl/notosans/OFL.txt"
+      ],
+      "note": "Copied unchanged."
+    },
+    {
+      "file": "Noto-Sans-Math-OFL.txt",
+      "bytes": 4380,
+      "sha256": "403a95275b469061b7d4371c328e0ada3bc7d63328abe2e88aad5cd243b2fe21",
+      "for": ["notosansmath.woff2"],
+      "source_urls": [
+        "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmath/OFL.txt",
+        "https://raw.githubusercontent.com/google/fonts/5550c02f35bc4563ba213a221be017fdada4039e/ofl/notosansmath/OFL.txt"
+      ],
+      "note": "Copied unchanged."
+    }
+  ],
   "license": "SIL Open Font License 1.1",
-  "note": "Reproducible: the commands above, run on the upstream files, give these exact bytes (an arrows file: the instance command, then its subset command). Each subset holds .notdef and its glyphs, with no layout features. The Source Sans Pro files are unchanged."
+  "note": "Reproducible: the commands above, run on the upstream files, give these exact bytes (a file made from a variable font: the instance command, then its subset command). Each subset holds .notdef and its glyphs, with no layout features. The Source Sans Pro files are unchanged."
 }

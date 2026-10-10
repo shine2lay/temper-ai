@@ -19,6 +19,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { STATUS_ICONS } from '../src/lib/constants';
 import { expectAxeClean, expectTargets, glanceFontsSettled, nothingSent, serveActions, serveTeam, type Fixture } from './team-helpers';
 
 type Raw = Record<string, unknown>;
@@ -282,8 +283,21 @@ for (const theme of ['dark', 'light'] as const) {
   }
 }
 
-/** The four symbols Source Sans Pro lacks: index.css draws them from two small Noto faces (Design rm-753d7aa4 (b)). */
-const SYMBOLS = ['\u2192', '\u2193', '\u25B6', '\u26A0'];
+/**
+ * The symbols Source Sans Pro lacks, which index.css draws from small Noto faces (Design rm-753d7aa4 (b), D100,
+ * D101): the four arrows, the minus sign, the status signs (check, cross, circle, square, circled slash, pause,
+ * play), the warning sign, the multiplication x, command and return, and the less-or-equal, greater-or-equal and
+ * almost-equal signs.
+ */
+const SYMBOLS = [
+  '\u2190', '\u2191', '\u2192', '\u2193', '\u2212', '\u2713', '\u2717', '\u25CB', '\u25A0', '\u2298',
+  '\u23F8', '\u25B6', '\u26A0', '\u2715', '\u2318', '\u21B5', '\u2264', '\u2265', '\u2248',
+];
+/**
+ * The ones the glance page can show, whose faces its ready point (D80) waits for: the right and down arrows, the
+ * play and warning signs, and the check, cross and square of an ended run's badge (the Stop dialog).
+ */
+const GLANCE_SYMBOLS = ['\u2192', '\u2193', '\u25B6', '\u26A0', '\u2713', '\u2717', '\u25A0'];
 const FONT_FILE = /\.(woff2|ttf)(\?|$)/;
 
 /** A unicode-range's characters ("U+2192-2193, U+25B6" gives the three). */
@@ -294,16 +308,91 @@ const rangeCharacters = (range: string) =>
     return Array.from({ length: (to ? parseInt(to, 16) : start) - start + 1 }, (_, i) => String.fromCodePoint(start + i));
   });
 
-/** The symbol faces as the browser read index.css: each one's weight, characters and load status. */
-const symbolFaces = (page: Page) =>
-  page.evaluate(() =>
-    Array.from(document.fonts)
-      .filter((face) => face.unicodeRange.toUpperCase() !== 'U+0-10FFFF')
-      .map((face) => ({ family: face.family.replace(/["']/g, ''), weight: face.weight, range: face.unicodeRange, status: face.status })),
-  );
+interface SymbolFace {
+  family: string;
+  file: string;
+  weight: string;
+  characters: string[];
+  status: string;
+}
 
 /**
- * Each element whose own text holds one of the four, with the fonts Chromium drew its text in
+ * The symbol faces as the browser read index.css (the faces with a unicode-range; the page's own two files have
+ * none): each one's file, weight, characters and load status.
+ */
+async function symbolFaces(page: Page): Promise<SymbolFace[]> {
+  const { rules, faces } = await page.evaluate(() => ({
+    rules: Array.from(document.styleSheets)
+      .flatMap((sheet) => {
+        try {
+          return Array.from(sheet.cssRules);
+        } catch {
+          return []; // a sheet from another origin keeps its rules to itself
+        }
+      })
+      .filter((rule): rule is CSSFontFaceRule => rule instanceof CSSFontFaceRule)
+      .map((rule) => ({
+        family: rule.style.getPropertyValue('font-family'),
+        src: rule.style.getPropertyValue('src'),
+        weight: rule.style.getPropertyValue('font-weight'),
+        range: rule.style.getPropertyValue('unicode-range'),
+      })),
+    faces: Array.from(document.fonts)
+      .filter((face) => face.unicodeRange.toUpperCase() !== 'U+0-10FFFF')
+      .map((face) => ({ weight: face.weight, range: face.unicodeRange, status: face.status })),
+  }));
+  const key = (weight: string, range: string) => `${weight} ${rangeCharacters(range).join('')}`;
+  const status = new Map(faces.map((face) => [key(face.weight, face.range), face.status]));
+  const fileOf = (src: string) => {
+    const url = /url\("?([^")]+)"?\)/.exec(src)?.[1] ?? '';
+    // A file small enough for Vite to put into the stylesheet, unless its url says ?no-inline: every page carries it.
+    return url.startsWith('data:') ? `${url.slice(0, url.indexOf(';'))}, inlined into the stylesheet` : new URL(url, page.url()).pathname;
+  };
+  return rules
+    .filter((rule) => rule.range !== '')
+    .map((rule) => ({
+      family: rule.family.replace(/["']/g, ''),
+      file: fileOf(rule.src),
+      weight: rule.weight,
+      characters: rangeCharacters(rule.range),
+      status: status.get(key(rule.weight, rule.range)) ?? 'not in document.fonts',
+    }));
+}
+
+/** The path of every font file the page asks for, in the order asked. */
+function fontFiles(page: Page) {
+  const files: string[] = [];
+  page.on('request', (request) => {
+    if (FONT_FILE.test(request.url())) files.push(new URL(request.url()).pathname);
+  });
+  return files;
+}
+
+/** The symbol files among the font files a page asked for. */
+function symbolFiles(faces: SymbolFace[], fetched: string[]) {
+  const all = new Set(faces.map((face) => face.file));
+  return [...new Set(fetched.filter((file) => all.has(file)))].sort();
+}
+
+/** The symbol files some text calls for: the file of each face holding one of its characters, at either weight. */
+const filesFor = (faces: SymbolFace[], text: string) =>
+  [...new Set(faces.filter((face) => face.characters.some((c) => text.includes(c))).map((face) => face.file))].sort();
+
+/**
+ * index.css's symbol faces join the page's family at its two weights, and each weight holds every symbol in one face
+ * only: no two files of one weight overlap, so which file draws a symbol is never left to the browser.
+ */
+function expectSymbolFaces(faces: SymbolFace[], where: string) {
+  expect([...new Set(faces.map((face) => face.family))], where).toEqual(['Source Sans Pro']);
+  expect([...new Set(faces.map((face) => face.weight))].sort(), where).toEqual(['400', '500 900']);
+  for (const weight of ['400', '500 900']) {
+    const held = faces.filter((face) => face.weight === weight).flatMap((face) => face.characters);
+    expect(held.sort(), `${where}: the symbols at ${weight}, each once`).toEqual([...SYMBOLS].sort());
+  }
+}
+
+/**
+ * Each element whose own text holds one of the symbols, with the fonts Chromium drew its text in
  * (CDP CSS.getPlatformFontsForNode): a system font there means a fallback the browser chose.
  */
 async function symbolFonts(page: Page) {
@@ -330,59 +419,113 @@ async function symbolFonts(page: Page) {
   }
 }
 
-for (const { theme, width, height } of [
+/** Every element drawing a symbol is drawn in the page's own faces only: no system font. */
+function expectOwnFaces(drawn: Awaited<ReturnType<typeof symbolFonts>>, where: string) {
+  for (const { html, fonts } of drawn) {
+    expect(fonts.filter((font) => !font.isCustomFont).map((font) => font.familyName), `${where}: system font for ${html}`).toEqual([]);
+  }
+}
+
+/** The run list with one run in each status it marks with a sign (STATUS_ICONS); nothing else is answered. */
+async function serveRunList(page: Page) {
+  const runs = Object.keys(STATUS_ICONS).map((status, i) => ({
+    id: `00000000-0000-4000-8000-00000000000${i}`,
+    workflow_name: `signs-${status}`,
+    status,
+    start_time: '2026-10-10T09:00:00Z',
+    end_time: null,
+    duration_seconds: 60,
+    total_tokens: 1200,
+    total_cost_usd: 0.01,
+    total_llm_calls: 2,
+    total_tool_calls: 1,
+  }));
+  await page.route(/\/api\/workflows(\?|$)/, (route) => route.fulfill({ json: { runs, total: runs.length } }));
+  return runs;
+}
+
+const SYMBOL_SIZES = [
   { theme: 'dark', width: 1440, height: 900 },
   { theme: 'light', width: 1440, height: 900 },
   { theme: 'dark', width: 390, height: 844 },
-] as const) {
-  test(`contract: the four symbols Source Sans Pro lacks are drawn in the page's own faces on every state, never a system font, ${theme}, ${width}x${height} (rm-753d7aa4)`, async ({
+] as const;
+
+for (const { theme, width, height } of SYMBOL_SIZES) {
+  test(`contract: the run list draws its status signs in the page's own faces and fetches only their files, ${theme}, ${width}x${height} (D101)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
+    const files = fontFiles(page);
+
+    // With no run to list it shows no symbol, and the unicode-range keeps every symbol file unloaded.
+    await page.goto('/app/');
+    await page.waitForLoadState('networkidle');
+    await page.evaluate(() => document.fonts.ready);
+    const empty = (await page.locator('body').textContent()) ?? '';
+    expect(empty).toContain('Workflows');
+    expect(SYMBOLS.filter((symbol) => empty.includes(symbol)), 'symbols on the empty run list').toEqual([]);
+    expect(files.some((file) => /sourcesanspro-regular/.test(file)), `font files: ${files.join(', ')}`).toBe(true);
+    const faces = await symbolFaces(page);
+    expectSymbolFaces(faces, 'empty run list');
+    expect(symbolFiles(faces, files), 'symbol files on the empty run list').toEqual([]);
+    expect(faces.filter((face) => face.status !== 'unloaded').map((face) => `${face.file} ${face.status}`)).toEqual([]);
+
+    // With one run in each status it shows each status's sign, drawn in the page's own faces only.
+    const runs = await serveRunList(page);
+    await page.goto('/app/');
+    for (const run of runs) await expect(page.getByText(run.workflow_name).first()).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    await page.evaluate(() => document.fonts.ready);
+    const text = (await page.locator('body').textContent()) ?? '';
+    const signs = [...new Set(runs.map((run) => STATUS_ICONS[run.status]))].sort();
+    expect(SYMBOLS.filter((symbol) => text.includes(symbol)).sort(), 'symbols on the run list').toEqual(signs);
+    const drawn = (await symbolFonts(page)).filter(({ fonts }) => fonts.length > 0);
+    expect(drawn.length, 'elements drawing a sign').toBeGreaterThanOrEqual(runs.length);
+    expectOwnFaces(drawn, 'run list');
+    // It fetches the files of the signs it shows and no other: never the arrows' or the minus sign's.
+    const fetched = symbolFiles(faces, files);
+    expect(fetched, 'symbol files on the run list').toEqual(filesFor(faces, signs.join('')));
+    expect(fetched.filter((file) => /arrows|minus/.test(file)), 'arrow or minus files on the run list').toEqual([]);
+  });
+
+  test(`contract: the glance page draws its symbols in the page's own faces on every state, never a system font, and fetches only the files of those it can show, ${theme}, ${width}x${height} (rm-753d7aa4, D101)`, async ({
     page,
   }) => {
     test.setTimeout(240_000);
     await page.setViewportSize({ width, height });
     await page.addInitScript((t) => localStorage.setItem('temper_theme', t), theme);
-    const files: string[] = [];
-    page.on('request', (request) => {
-      if (FONT_FILE.test(request.url())) files.push(new URL(request.url()).pathname);
-    });
-
-    if (theme === 'dark' && width === 1440) {
-      // A page without the symbols (the run list) loads the page's own faces, but no symbol file:
-      // the unicode-range keeps them unloaded until a page shows one.
-      await page.goto('/app/');
-      await page.waitForLoadState('networkidle');
-      await page.evaluate(() => document.fonts.ready);
-      const text = await page.locator('body').innerText();
-      expect(text).toContain('Workflows');
-      expect(SYMBOLS.filter((symbol) => text.includes(symbol)), 'symbols on the run list').toEqual([]);
-      expect(files.some((file) => /sourcesanspro-regular/.test(file)), `font files: ${files.join(', ')}`).toBe(true);
-      expect(files.filter((file) => /notosanssymbols/.test(file)), 'symbol files on the run list').toEqual([]);
-      const faces = await symbolFaces(page);
-      expect(faces.map((face) => face.status)).toEqual(['unloaded', 'unloaded', 'unloaded', 'unloaded']);
-    }
-
+    const files = fontFiles(page);
     const shown: string[] = [];
+    const held = new Set<string>(GLANCE_SYMBOLS);
+    let faces: SymbolFace[] = [];
     for (const name of STATES) {
       await page.unrouteAll();
       await open(page, name);
-      // The symbol faces join the page's family at its two weights, cover exactly the four, and the
-      // ready point (D80) waited for them: the map's measure was taken with them.
-      const faces = await symbolFaces(page);
-      expect(faces.map((face) => face.family), name).toEqual(Array(4).fill('Source Sans Pro'));
-      expect(faces.map((face) => face.weight).sort(), name).toEqual(['400', '400', '500 900', '500 900']);
-      expect([...new Set(faces.flatMap((face) => rangeCharacters(face.range)))].sort(), name).toEqual([...SYMBOLS].sort());
-      expect(faces.map((face) => face.status), name).toEqual(['loaded', 'loaded', 'loaded', 'loaded']);
+      faces = await symbolFaces(page);
+      expectSymbolFaces(faces, name);
+      const text = (await page.locator('body').textContent()) ?? '';
+      for (const symbol of SYMBOLS) if (text.includes(symbol)) held.add(symbol);
+      // The ready point (D80) waited for the faces of the symbols the page can show, at both weights: the map's
+      // measure was taken with them. A face holding none of those, nor any of the page's text, stays unloaded.
+      for (const face of faces) {
+        const where = `${name}: ${face.file} at ${face.weight}`;
+        if (face.characters.some((c) => GLANCE_SYMBOLS.includes(c))) expect(face.status, where).toBe('loaded');
+        else if (!face.characters.some((c) => text.includes(c))) expect(face.status, where).toBe('unloaded');
+      }
       // Every element showing one is drawn in the page's own faces only (one not drawn has no fonts).
       const drawn = (await symbolFonts(page)).filter(({ fonts }) => fonts.length > 0);
-      for (const { html, fonts } of drawn) {
-        expect(fonts.filter((font) => !font.isCustomFont).map((font) => font.familyName), `${name}: system font for ${html}`).toEqual([]);
-      }
+      expectOwnFaces(drawn, name);
       if (drawn.length > 0) shown.push(name);
     }
     // The Just sent line's arrow is on every state today; a state without one is noted, not failed.
     expect(shown.length, 'states showing a symbol').toBeGreaterThan(0);
     test.info().annotations.push({ type: 'states-without-symbols', description: STATES.filter((name) => !shown.includes(name)).join(', ') || 'none' });
-    expect(files.filter((file) => /notosanssymbols/.test(file)).length, 'symbol files fetched for the glance').toBeGreaterThan(0);
+    // It fetches the files of the symbols it can show, and no file but those and the files of symbols its text holds.
+    const fetched = symbolFiles(faces, files);
+    expect(fetched, 'symbol files for the glance').toEqual(expect.arrayContaining(filesFor(faces, GLANCE_SYMBOLS.join(''))));
+    const used = filesFor(faces, [...held].join(''));
+    expect(fetched.filter((file) => !used.includes(file)), 'symbol files the glance has no use for').toEqual([]);
   });
 }
 

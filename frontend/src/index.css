@@ -25,29 +25,35 @@
   font-display: swap;
 }
 
-/* The four symbols Source Sans Pro lacks (U+2192, U+2193, U+25B6, U+26A0: the
-   right and down arrows, play and warning signs), from small Noto subsets
-   (SIL Open Font License 1.1, Noto-OFL.txt; sources and commands in
-   symbols-licenses.json), so no browser draws them in a system font. The
-   unicode-range keeps each file unloaded until a page shows one of its
-   symbols, and ?no-inline keeps it a file of its own (Vite would put files
-   this small into the stylesheet, so every page would carry them). Each
-   symbol is declared once per face above, with the same descriptors:
-   browsers only join faces with equal descriptors into one font, and with
-   any other weight range they pick the symbol face alone for a whole
-   weight, drawing every letter in a system font. The arrows are as heavy as
-   the letters beside them (Design D100): each face gets the Noto Sans
-   Symbols weight whose shaft is as thick as its own "l" stem, Bold (700)
-   beside the regular face and Black (900, the heaviest there is) beside the
-   semibold one. The play and warning signs have one weight and are never
-   faked bold. */
+/* The symbols Source Sans Pro lacks, from small Noto subsets (SIL Open Font
+   License 1.1: Noto-OFL.txt, Noto-Sans-OFL.txt, Noto-Sans-Math-OFL.txt;
+   sources and commands in symbols-licenses.json), so no browser draws them
+   in a system font: the four arrows, the minus sign, the status signs
+   (check, cross, circle, square, circled slash, pause, play), the warning
+   sign, the multiplication x, command and return, and the less-or-equal,
+   greater-or-equal and almost-equal signs. The unicode-range keeps each
+   file unloaded until a page shows one of its symbols, and ?no-inline keeps
+   it a file of its own (Vite would put files this small into the
+   stylesheet, so every page would carry them). Each file is declared once
+   per face above, with the same descriptors: browsers only join faces with
+   equal descriptors into one font, and with any other weight range they
+   pick the symbol face alone for a whole weight, drawing every letter in a
+   system font. No two files of one weight share a character. Where a
+   variable face has a symbol, it is as heavy as the letters beside it
+   (Design D100, D101): the arrows at the Noto Sans Symbols weight whose
+   shaft is as thick as each face's own "l" stem, Bold (700) beside the
+   regular face and Black (900, the heaviest there is) beside the semibold
+   one, and the minus sign at the Noto Sans weights that match the same
+   stems (500 and 770). The rest come from faces with one weight (Noto Sans
+   Symbols 2, Noto Sans Math): one file serves both faces, never faked
+   bold. */
 @font-face {
   font-family: 'Source Sans Pro';
   src: url('./assets/fonts/notosanssymbols-arrows-regular.woff2?no-inline') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+2192-2193;
+  unicode-range: U+2190-2193;
 }
 
 @font-face {
@@ -56,25 +62,61 @@
   font-weight: 500 900;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+2192-2193;
+  unicode-range: U+2190-2193;
 }
 
 @font-face {
   font-family: 'Source Sans Pro';
-  src: url('./assets/fonts/notosanssymbols2-play-warning.woff2?no-inline') format('woff2');
+  src: url('./assets/fonts/notosans-minus-regular.woff2?no-inline') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+25B6, U+26A0;
+  unicode-range: U+2212;
 }
 
 @font-face {
   font-family: 'Source Sans Pro';
-  src: url('./assets/fonts/notosanssymbols2-play-warning.woff2?no-inline') format('woff2');
+  src: url('./assets/fonts/notosans-minus-semibold.woff2?no-inline') format('woff2');
   font-weight: 500 900;
   font-style: normal;
   font-display: swap;
-  unicode-range: U+25B6, U+26A0;
+  unicode-range: U+2212;
+}
+
+@font-face {
+  font-family: 'Source Sans Pro';
+  src: url('./assets/fonts/notosanssymbols2.woff2?no-inline') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+2318, U+23F8, U+25B6, U+26A0, U+2715, U+2717;
+}
+
+@font-face {
+  font-family: 'Source Sans Pro';
+  src: url('./assets/fonts/notosanssymbols2.woff2?no-inline') format('woff2');
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+2318, U+23F8, U+25B6, U+26A0, U+2715, U+2717;
+}
+
+@font-face {
+  font-family: 'Source Sans Pro';
+  src: url('./assets/fonts/notosansmath.woff2?no-inline') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+21B5, U+2248, U+2264-2265, U+2298, U+25A0, U+25CB, U+2713;
+}
+
+@font-face {
+  font-family: 'Source Sans Pro';
+  src: url('./assets/fonts/notosansmath.woff2?no-inline') format('woff2');
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+21B5, U+2248, U+2264-2265, U+2298, U+25A0, U+25CB, U+2713;
 }
 
 @theme {

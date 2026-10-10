@@ -17,6 +17,27 @@ failed after its retry: phase `waiting_for_owner`). Each is its own small run
 (execution_id `fixture-flow-<state>`) of one team: lead (the leader), builder
 and checker writing a README.
 
+## `real-g6/`: Temper's runs of its own engine, unchanged
+
+Twelve runs Temper made with its real engine and no model (FLOW G6). Each has
+the run reply (`<run>.json`) and its feed (`<run>-events.json`). Copied byte
+for byte; never edit them. `G6-INPUTS.sha256` is a copy of Temper's manifest,
+and `src/__tests__/teamGlanceG6.test.ts` checks every file against it.
+
+`member_question` (one member's question open; you answered another's),
+`retry` (Temper's retry of a failed turn; turns ended without a tool call and
+at the call cap), `interrupted` and `interrupted_no_end` (the run ended
+without the team ending, with and without its elapsed time), `limit_waiting`
+(a 5-hour limit: Temper's own wait, nothing for you), `limit_unavailable`
+(usage could not be checked), `limit_ready` (a weekly limit with fresh room:
+restart or stop?), `limit_ended` (the limit is over), `restart_deferred` (you
+said restart before the limit had reset), `conflict` (a file in conflict and
+a refused share), `settings_late` (you said go on, then the settings changed
+again), `invalid` (an answer that matched no choice; Temper asked again).
+
+Ids, times and sequence numbers change each time Temper remakes them, so no
+test depends on them.
+
 ## `derived/`: the states Temper did not send
 
 Made by `node scripts/make_flow_fixtures.mjs` (run from `frontend/`) from one

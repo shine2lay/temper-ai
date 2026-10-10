@@ -510,7 +510,7 @@ for (const theme of ['dark', 'light'] as const) {
       if (wide) await holdDots(page);
       await goTo(page, state, 'working');
       await expect(teamCount(page)).toHaveText('3 working', { timeout: 12_000 });
-      await expect(nowSentence(page)).toHaveText('3 of 3 members are working. Last activity 0 s ago.');
+      await expect(nowSentence(page)).toHaveText('3 of 3 members working. Last activity 0 s ago.');
       // The goal and the leader's two work requests were released in the same second: a burst (D74).
       await expect(justSent(page)).toContainText(
         'Just sent · 3 messages in the same second, last: lead → checker: “Build the checker part and share it.”',
@@ -566,7 +566,8 @@ for (const theme of ['dark', 'light'] as const) {
       await goTo(page, state, 'check_in');
       await expect(youTitle(page)).toHaveText('Needs you: carry on?', { timeout: 12_000 });
       await expect(phase(page)).toHaveAttribute('data-phase', 'check_in');
-      await expect(nowWord(page)).toHaveText('Check-in at $100');
+      // SPEC: "Check-in at $X" uses spend.cost_usd.
+      await expect(nowWord(page)).toHaveText('Check-in at $105.00');
       await expect(nowSentence(page)).toHaveText('No new work starts until you answer.');
       await expect(spend(page)).toContainText('$105.00');
       await expect(spend(page)).toContainText('If you continue, the next check-in is at $205.');
@@ -608,7 +609,7 @@ for (const theme of ['dark', 'light'] as const) {
       // Done: the last version; nothing runs any more.
       await openFresh(page, state, 'done');
       await expect(nowWord(page)).toHaveText('Done');
-      await expect(teamCount(page)).toHaveText('3 ended');
+      await expect(teamCount(page)).toHaveText('3 members \u00b7 all ended');
       await expect(latestFirst(page)).toContainText('Done with v1');
       // D67: no next check-in, said once.
       await expect(spend(page)).toContainText('Spent in all. 0 check-ins, none to come · 1 shared version.');
@@ -782,7 +783,7 @@ test("contract: a burst past six dots counts the rest, on Temper's clock", async
   await installDotHold(page);
   // The device clock is years off: every age still counts to Temper's as_of (D4, D14).
   const { state } = await open(page, 'working', { clock: '2031-01-01T00:00:00Z' });
-  await expect(nowSentence(page)).toHaveText('3 of 3 members are working. Last activity 0 s ago.');
+  await expect(nowSentence(page)).toHaveText('3 of 3 members working. Last activity 0 s ago.');
   expect(await dotsLaunched(page)).toBe('0');
   await holdDots(page);
   state.step = 'burst';
@@ -797,7 +798,7 @@ test("contract: a burst past six dots counts the rest, on Temper's clock", async
   await expect(page.locator('.glance-dot')).toHaveCount(0, { timeout: 5_000 });
   await expect(page.locator('.glance-extra')).toHaveCount(0, { timeout: 5_000 });
   await expect(justSent(page)).toContainText("lead → builder: “Use the project's name as the title.”");
-  await expect(nowSentence(page)).toHaveText('2 of 3 members are working. Last activity 5 s ago.');
+  await expect(nowSentence(page)).toHaveText('2 of 3 members working. Last activity 5 s ago.');
   await expect(members(page, true).getByTestId('glance-chip').filter({ hasText: 'Working · 40 s' })).toHaveCount(2);
   await expectSound(page);
 });

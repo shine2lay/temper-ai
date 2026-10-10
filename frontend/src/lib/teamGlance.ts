@@ -268,7 +268,17 @@ export type GlanceEvent =
   | (EventBase & { kind: 'done_refused'; reasons: string[] })
   | (EventBase & { kind: 'done'; summary: string | null; versionNo: number | null; commitShort: string | null })
   | (EventBase & { kind: 'wait_opened'; waitId: string | null; waitKind: string; words: string | null })
-  | (EventBase & { kind: 'wait_answered'; waitId: string | null; waitKind: string; answer: string; by: string | null })
+  | (EventBase & {
+      kind: 'wait_answered';
+      waitId: string | null;
+      waitKind: string;
+      answer: string;
+      by: string | null;
+      /** api-fields:260: false on a settings go on that came too late; absent (null) otherwise. */
+      applied: boolean | null;
+      /** Temper's reason when `applied` is false, word for word. */
+      why: string | null;
+    })
   | (EventBase & { kind: 'check_in'; atUsd: number | null })
   | (EventBase & { kind: 'limit'; resumesAt: string | null; resetsKnown: boolean | null })
   | (EventBase & { kind: 'limit_over' })
@@ -650,7 +660,8 @@ export function nowCell(run: GlanceRun, now: number | null, stale = false): NowC
       const total = counts.members;
       return {
         word: 'Working',
-        sentence: `${counts.working} of ${total} ${total === 1 ? 'member is' : 'members are'} working.${lastPart}`,
+        // SPEC Now table, working: "N of M members working."
+        sentence: `${counts.working} of ${total} ${total === 1 ? 'member' : 'members'} working.${lastPart}`,
         countLine: countLine(counts),
         edge: 'blue',
         icon: 'play',
@@ -665,7 +676,8 @@ export function nowCell(run: GlanceRun, now: number | null, stale = false): NowC
         icon: 'flag',
       };
     case 'check_in': {
-      const at = run.spend ? ` at ${money(run.spend.nextCheckIn, true)}` : '';
+      // SPEC Now table: "Check-in at $X" uses spend.cost_usd ("Check-in at $100.40").
+      const at = run.spend ? ` at ${money(run.spend.cost)}` : '';
       if (!phase.asked) {
         return {
           word: `Check-in${at}`,
@@ -686,7 +698,8 @@ export function nowCell(run: GlanceRun, now: number | null, stale = false): NowC
     case 'quiet':
       return { word: 'Everyone is idle', sentence: `Nothing is waiting for the team.${lastPart}`, countLine: null, edge: 'yellow', icon: 'moon' };
     case 'settings':
-      return { word: 'Settings changed', sentence: 'No new work starts until you answer.', countLine: null, edge: 'yellow', icon: 'settings' };
+      // SPEC Now table, settings: Design's words; You says what is asked.
+      return { word: 'Settings changed', sentence: 'A setting changed while the team waited.', countLine: null, edge: 'yellow', icon: 'settings' };
     case 'waiting_for_owner':
       return { word: 'Waiting for you', sentence: 'Nothing runs until you answer.', countLine: null, edge: 'yellow', icon: 'hand' };
     case 'limit': {
@@ -697,7 +710,7 @@ export function nowCell(run: GlanceRun, now: number | null, stale = false): NowC
       let sentence = fullStop(phase.words?.split('\n')[0].trim() || 'The account hit its usage limit.');
       const at = clockOf(phase.resumesAt);
       // Design SPEC limit row: the pending check first, then the missing reset.
-      if (!phase.asked && phase.resumeVerified !== true) {
+      if (limitCheckShown(phase)) {
         if (at) sentence += ` Next allowance check at ${at}.`;
         if (phase.resetsKnown === false) sentence += ' No usable reset time.';
       }
@@ -713,9 +726,11 @@ export function nowCell(run: GlanceRun, now: number | null, stale = false): NowC
     case 'failed':
       return { word: 'Failed', sentence: phase.reason, countLine: null, edge: 'red', icon: 'alert' };
     case 'interrupted':
+      // SPEC Now table: one fixed sentence. Temper's phase.reason ("the run ended
+      // (interrupted) without the team ending") says the same in its own code words.
       return {
         word: 'Interrupted',
-        sentence: phase.reason ?? 'The run ended without the team ending.',
+        sentence: 'The run ended without the team ending.',
         countLine: null,
         edge: 'red',
         icon: 'alert',
@@ -786,7 +801,8 @@ export function youCell(run: GlanceRun, staleFor: string | null = null): YouCell
   if (phase.name === 'check_in' && !phase.asked) {
     return calm('Nothing needs you yet', "You'll be asked to carry on once these turns finish.");
   }
-  if (phase.name === 'limit') return calm('Nothing needs you', 'Stop stays in the header.');
+  // SPEC You table: a limit with no open answerable wait.
+  if (phase.name === 'limit') return calm('Nothing needs you', 'Stop stays at the top if you want to end it.');
   return calm('Nothing needs you', CALM_LINE, { hint: true });
 }
 
@@ -982,19 +998,22 @@ export function conflictLine(m: GlanceMember): string | null {
 }
 
 /**
- * "Team now" header count: "4 working · 1 idle". It uses the cards' words
- * (D12): ready members count as "paused" while draining, and while closing
- * every ready member but the leader does.
+ * "Team now" header count: "4 working · 1 idle", in the cards' own words
+ * (SPEC 5, D12, D18): a running turn counts as "finishing" where its card
+ * says "Finishing its turn"; a ready member counts as "paused" where its
+ * card says "Paused: …" (while the team waits, in draining, and every one
+ * but the leader while closing); an ended run reads "3 members · all ended",
+ * whatever states Temper left its members in.
  */
 export function teamCountWords(run: GlanceRun): string {
   const c = run.counts;
-  const waiting = waitingForLeader(run).length;
   const phase = run.phase.name;
-  const readyLeader = run.members.some((m) => m.leader && m.state === 'ready') ? 1 : 0;
-  const ready = phase === 'draining' ? 0 : phase === 'closing' ? Math.min(readyLeader, c.ready) : c.ready;
-  const paused = c.ready - ready;
+  if (phaseEnded(phase)) return `${plural(run.members.length, 'member', 'members')} \u00b7 all ended`;
+  const waiting = waitingForLeader(run).length;
+  const paused = Math.min(c.ready, run.members.filter((m) => m.state === 'ready' && readyPause(m, phase) !== null).length);
+  const ready = c.ready - paused;
   const parts: string[] = [];
-  if (c.working) parts.push(`${c.working} working`);
+  if (c.working) parts.push(`${c.working} ${FINISHING_PHASES.has(phase) ? 'finishing' : 'working'}`);
   if (ready) parts.push(`${ready} ready`);
   if (paused) parts.push(`${paused} paused`);
   if (waiting) parts.push(`${waiting} waiting for the leader`);
@@ -1480,6 +1499,13 @@ export function endedWords(decision: string | null | undefined, reason: string |
   if (!why) return label;
   return why.toLowerCase().startsWith(label.toLowerCase()) ? why : `${label}: ${why}`;
 }
+/**
+ * The words for each answer Temper records (api-fields:260). Never a raw
+ * code word: an answer not listed here shows as "<who> answered" alone.
+ * `given`: the owner replied to a member's question (his words follow as an
+ * owner_reply message), shown as the old `reply`. `invalid` has no words: the
+ * answer named none of the choices.
+ */
 const ANSWER_WORDS: Record<string, string> = {
   continue: 'continue',
   guide: 'guide',
@@ -1488,8 +1514,46 @@ const ANSWER_WORDS: Record<string, string> = {
   accept: 'accept',
   retry: 'retry',
   'go on': 'go on',
+  given: 'a reply',
   reply: 'a reply',
+  // The choice made was Restart; its mark says it wasn't applied (D86).
+  restart_deferred: 'restart',
 };
+
+/** D86 (Design's words, g6/TEMPER-D86.md): every mark starts "Not applied". */
+export const NOT_APPLIED = {
+  settingsLate: 'Not applied: the settings changed before the answer took effect.',
+  invalid: 'Not applied: the answer didn\u2019t match any of the choices. Temper asked again.',
+  restartDeferred: 'Not applied: Temper couldn\u2019t confirm the usage limit has reset.',
+} as const;
+
+type AnswerEvent = Extract<GlanceEvent, { kind: 'wait_answered' }>;
+
+/** An answer's words, or null when the page has none for it. */
+export function answerWord(answer: string): string | null {
+  return Object.hasOwn(ANSWER_WORDS, answer) ? ANSWER_WORDS[answer] : null;
+}
+
+/**
+ * D86: the line after an answer that wasn't applied. A settings go on is late
+ * only when Temper says applied === false (never inferred from the next
+ * settings question), in one fixed sentence whatever its why; any other
+ * applied === false says "Not applied" with Temper's why when it gives one.
+ */
+export function answerMark(e: Pick<AnswerEvent, 'waitKind' | 'answer' | 'applied' | 'why'>): string | null {
+  if (e.answer === 'invalid') return NOT_APPLIED.invalid;
+  if (e.answer === 'restart_deferred') return NOT_APPLIED.restartDeferred;
+  if (e.applied !== false) return null;
+  if (e.waitKind === 'settings' && e.answer === 'go on') return NOT_APPLIED.settingsLate;
+  const why = e.why?.trim();
+  return why ? `Not applied: ${why}` : 'Not applied.';
+}
+
+/** The mark as its own part: after the answer, in normal (not muted) text (D86). */
+function markParts(e: AnswerEvent): MomentPart[] {
+  const mark = answerMark(e);
+  return mark ? [{ text: `. ${mark}` }] : [];
+}
 
 function momentOf(e: GlanceEvent, leader: string, liveLimit: boolean): Moment | null {
   const key = `e${e.seq}`;
@@ -1529,13 +1593,19 @@ function momentOf(e: GlanceEvent, leader: string, liveLimit: boolean): Moment | 
           { text: e.words ? ` asked you: ${q(rowWords(e.waitKind, e.words))}` : ' asked you' },
         ],
       };
-    case 'wait_answered':
+    case 'wait_answered': {
+      const word = answerWord(e.answer);
       return {
         key,
         at: e.at,
         icon: 'check',
-        parts: [{ text: whoName(e.by ?? 'owner'), strong: true }, { text: ' answered ' }, { text: ANSWER_WORDS[e.answer] ?? e.answer, strong: true }],
+        parts: [
+          { text: whoName(e.by ?? 'owner'), strong: true },
+          ...(word ? [{ text: ' answered ' }, { text: word, strong: true }] : [{ text: ' answered' }]),
+          ...markParts(e),
+        ],
       };
+    }
     case 'check_in':
       return {
         key,
@@ -1564,13 +1634,9 @@ function momentOf(e: GlanceEvent, leader: string, liveLimit: boolean): Moment | 
         parts: [{ text: whoName(e.member), strong: true }, { text: `: ${plural(e.paths, 'file', 'files')} in conflict` }],
       };
     case 'share_refused':
-      // Design's words (glance.mjs): "<member>\u2019s share was refused: <why>".
-      return {
-        key,
-        at: e.at,
-        icon: 'conflict',
-        parts: [{ text: whoName(e.member), strong: true }, { text: `\u2019s share was refused${e.why ? `: ${e.why}` : ''}` }],
-      };
+      // Not a big moment: SPEC 8's list has none, nor Design's glance.mjs BIG.
+      // Its row is in All activity, next to the conflict that is in Latest.
+      return null;
     case 'done_refused':
       return {
         key,
@@ -1596,12 +1662,22 @@ function momentOf(e: GlanceEvent, leader: string, liveLimit: boolean): Moment | 
 }
 
 /**
+ * D31: a limit's next allowance check is named (in Now, and in Latest's and
+ * All activity's limit rows) only while the team is in its limit and neither
+ * asked nor verified: a verified recovery shows its status and question,
+ * never a pending check.
+ */
+export function limitCheckShown(phase: Pick<GlancePhase, 'name' | 'asked' | 'resumeVerified'>): boolean {
+  return phase.name === 'limit' && !phase.asked && phase.resumeVerified !== true;
+}
+
+/**
  * Latest: big moments only, newest first. A same-second fan-out of work
  * requests from one member is one row ("lead sent work to 4 members"), and
  * so is You or Temper messaging three or more members in one second (D82:
  * "Temper sent a message to 6 members"). Plain info and reply messages, turn
  * starts and ends, idle and wake stay in the full list and on the map.
- * `liveLimit`: the team is in its limit phase now, so a limit row may name
+ * `liveLimit`: limitCheckShown(run.phase) (D31), so a limit row may name
  * its next check. `members`: the team's cards (a receiver with none doesn't
  * count towards D82's three).
  */
@@ -1692,9 +1768,9 @@ const MESSAGE_VERBS: Record<string, string> = {
 /**
  * One All activity row (SPEC 9; Design's eventRow in glance.mjs): every
  * event of the feed, one row per kind, in the event's own words. A row's
- * icon is the member state's own icon (D66, D77). `liveLimit`: the team is
- * in its limit phase now, so a limit row may name its next check; an ended
- * hold has none (home decision 2, resumes_at null).
+ * icon is the member state's own icon (D66, D77). `liveLimit`:
+ * limitCheckShown(run.phase) (D31), so a limit row may name its next check;
+ * an ended or verified hold has none (home decision 2, resumes_at null).
  */
 export function activityRow(e: GlanceEvent, run: Pick<GlanceRun, 'startedBy' | 'members'>, liveLimit = false): Moment {
   const key = `a${e.seq}`;
@@ -1787,13 +1863,15 @@ export function activityRow(e: GlanceEvent, run: Pick<GlanceRun, 'startedBy' | '
         ? { key, at: e.at, icon: 'hand', parts: [{ text: who, strong: true }, { text: ` asked you: ${words}` }] }
         : { key, at: e.at, icon: 'hand', parts: [{ text: `The team asked you: ${words}` }] };
     }
-    case 'wait_answered':
+    case 'wait_answered': {
+      const word = answerWord(e.answer);
       return {
         key,
         at: e.at,
         icon: 'check',
-        parts: [{ text: e.by ? whoName(e.by) : 'Someone', strong: true }, { text: ` answered: ${ANSWER_WORDS[e.answer] ?? e.answer}` }],
+        parts: [{ text: e.by ? whoName(e.by) : 'Someone', strong: true }, { text: word ? ` answered: ${word}` : ' answered' }, ...markParts(e)],
       };
+    }
     case 'check_in':
       return {
         key,

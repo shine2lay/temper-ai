@@ -109,17 +109,21 @@ const stopButton = (page: Page) => page.getByRole('button', { name: 'Stop projec
 /**
  * D84: states whose band still ends past 844 px at the 320 reflow (264 px of page beside the rail), with text at
  * SPEC's sizes, the reference's phone spacing (D9) and Now's rows capped: recorded for Design with where the band
- * ends (px). Each may not grow.
+ * ends (px). Each may not grow. The check-in and limit states grew by one line with SPEC's own words: Now's
+ * "Check-in at $X" from spend.cost_usd (l.129-130, l.141) and the limit's You line "Stop stays at the top if you want
+ * to end it." (l.148); recorded for Design again with the new ends.
  */
 const D84_OVER_AT_320: Record<string, number> = {
   burst: 853.1,
-  check_in: 957.6,
-  check_in_running: 878.6,
+  check_in: 985.6,
+  check_in_running: 906.6,
   draining: 850.6,
   failed: 914.6,
-  limit: 924.6,
+  limit: 944.6,
   limit_asked: 972.6,
-  limit_spent: 858.6,
+  limit_spent: 878.6,
+  limit_start_check: 854.6,
+  limit_unavailable: 854.6,
   map_fanout: 875.1,
   member_question: 1015.1,
   settings: 945.6,
@@ -200,7 +204,7 @@ for (const theme of ['dark', 'light'] as const) {
       // Now: Temper's count first, then who works on what, one line each (D8); a phone lists two and counts the
       // rest, 768 px and wider list three (D84).
       await expect(nowWord(page)).toHaveText('Working');
-      await expect(nowSentence(page)).toHaveText(/^3 of 3 members are working\. Last activity \d+\u00a0s\u00a0ago\.$/);
+      await expect(nowSentence(page)).toHaveText(/^3 of 3 members working\. Last activity \d+\u00a0s\u00a0ago\.$/);
       const working = page.getByTestId('glance-working');
       await expect(working).toHaveAttribute('aria-label', 'Working now');
       await expect(working.getByTestId('glance-working-row').locator('b')).toHaveText(phone ? ['lead', 'builder'] : ['lead', 'builder', 'checker']);
@@ -559,7 +563,7 @@ test('contract: when Temper stops answering, Now says "Last seen" and You says w
   state.down = true;
   await expect(page.getByText(/^Temper hasn.t answered for /).first()).toBeVisible({ timeout: 15_000 });
   await expect(nowWord(page)).toHaveText('Last seen: Working');
-  await expect(nowSentence(page)).toHaveText('3 of 3 members are working.');
+  await expect(nowSentence(page)).toHaveText('3 of 3 members working.');
   const working = page.getByTestId('glance-working');
   await expect(working).toHaveAttribute('aria-label', 'Working when last seen');
   // D84: with the stale note on a phone, Now lists one member and counts the rest.

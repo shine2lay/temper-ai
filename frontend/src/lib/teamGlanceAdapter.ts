@@ -420,6 +420,9 @@ export function toGlanceEvent(raw: unknown): GlanceEvent | null {
         waitKind: str(e.wait_kind) ?? 'question',
         answer: str(e.answer) ?? '',
         by: str(e.by),
+        // api-fields:260 (D86): a settings go on that came too late; only these fields say so.
+        applied: bool(e.applied),
+        why: str(e.why),
       };
     case 'check_in':
       return { ...base, kind, atUsd: num(e.at_usd) };

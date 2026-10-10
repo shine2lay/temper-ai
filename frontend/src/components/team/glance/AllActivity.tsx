@@ -21,6 +21,7 @@ import {
   ACTIVITY_FIRST,
   activityRows,
   clockSecOf,
+  limitCheckShown,
   messageWholeParts,
   type GlanceEvent,
   type GlanceRun,
@@ -43,7 +44,8 @@ export function AllActivity({ run, events, ready }: { run: GlanceRun; events: Gl
       return next;
     });
   }, []);
-  const liveLimit = run.phase.name === 'limit';
+  // D31: a limit row names its check only while Now does (never once verified or asked).
+  const liveLimit = limitCheckShown(run.phase);
   const rows = useMemo(() => activityRows(events, run, liveLimit), [events, run, liveLimit]);
   const total = run.eventsTotal ?? rows.length;
   const shown = older ? rows : rows.slice(0, ACTIVITY_FIRST);

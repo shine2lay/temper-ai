@@ -15,6 +15,7 @@ piA2.spec.ts
 safeRendering.spec.ts
 team-c.spec.ts
 team-form-flow.spec.ts
+team-glance-g6.spec.ts
 team-glance-map.spec.ts
 team-glance-words.spec.ts
 team-glance.spec.ts

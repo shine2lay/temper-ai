@@ -492,12 +492,12 @@ describe("Temper's clock (D4, D14)", () => {
     vi.setSystemTime(new Date('2031-01-01T00:00:00Z'));
     expect([nowCell(s.run, s.now).sentence, chip(s, 'builder').text]).toEqual(before);
     // D59: "5 s ago" never breaks apart.
-    expect(before).toEqual(['2 of 3 members are working. Last activity 5\u00a0s\u00a0ago.', 'Working \u00b7 40 s']);
+    expect(before).toEqual(['2 of 3 members working. Last activity 5\u00a0s\u00a0ago.', 'Working \u00b7 40 s']);
   });
 
   it('without a clock no age shows at all', () => {
     const s = story('working');
-    expect(nowCell(s.run, null).sentence).toBe('3 of 3 members are working.');
+    expect(nowCell(s.run, null).sentence).toBe('3 of 3 members working.');
     expect(memberChip(member(s.run, 'lead'), 'working', null).text).toBe('Working');
   });
 
@@ -531,19 +531,21 @@ describe('Now: phase -> word, sentence and band edge', () => {
     ['starting', 'Starting', 'No one is working yet. The leader has the goal.', 'blue', 'play'],
     // D69: the age stays on one line.
     ['start', 'Working', 'The leader is working; 2 members wait for its first message. Last activity 0\u00a0s\u00a0ago.', 'blue', 'play'],
-    ['working', 'Working', '3 of 3 members are working. Last activity 0\u00a0s\u00a0ago.', 'blue', 'play'],
-    ['idle', 'Working', '0 of 3 members are working. Last activity 0\u00a0s\u00a0ago.', 'blue', 'play'],
-    ['check_in_running', 'Check-in at $100', 'No new work starts. 1 member is finishing its turn.', 'blue', 'pause'],
-    ['check_in', 'Check-in at $100', 'No new work starts until you answer.', 'yellow', 'pause'],
+    // SPEC Now table: "N of M members working."; "Check-in at $X" uses spend.cost_usd.
+    ['working', 'Working', '3 of 3 members working. Last activity 0\u00a0s\u00a0ago.', 'blue', 'play'],
+    ['idle', 'Working', '0 of 3 members working. Last activity 0\u00a0s\u00a0ago.', 'blue', 'play'],
+    ['check_in_running', 'Check-in at $100.40', 'No new work starts. 1 member is finishing its turn.', 'blue', 'pause'],
+    ['check_in', 'Check-in at $105.00', 'No new work starts until you answer.', 'yellow', 'pause'],
     ['closing', 'Finishing up', 'The leader said done.', 'blue', 'flag'],
     ['done', 'Done', null, 'green', 'check'],
     ['stalled', 'Everyone is idle', 'Nothing is waiting for the team. Last activity 0\u00a0s\u00a0ago.', 'yellow', 'moon'],
     ['failed', 'Waiting for you', 'Nothing runs until you answer.', 'yellow', 'hand'],
-    ['settings', 'Settings changed', 'No new work starts until you answer.', 'yellow', 'settings'],
+    ['settings', 'Settings changed', 'A setting changed while the team waited.', 'yellow', 'settings'],
     ['draining', 'Temper is restarting', 'The team carries on after it.', 'grey', 'restart'],
     ['stopped', 'Stopped', 'The owner stopped the team.', 'grey', 'stop'],
     ['run_failed', 'Failed', "builder's turn 1 failed after its automatic retry, and you stopped the team.", 'red', 'alert'],
-    ['interrupted', 'Interrupted', 'Temper restarted while 3 turns were running.', 'red', 'alert'],
+    // SPEC Now table: one fixed sentence, whatever Temper's phase.reason says.
+    ['interrupted', 'Interrupted', 'The run ended without the team ending.', 'red', 'alert'],
   ];
 
   it.each(NOW)('%s: %s', (name, word, sentence, edge, icon) => {
@@ -623,7 +625,12 @@ describe('Now: phase -> word, sentence and band edge', () => {
       expect(s.run.phase, name).toMatchObject({ asked: false, resumeVerified: false, resetsKnown: false });
       expect(s.run.you.count, name).toBe(0);
       expect(nowCell(s.run, s.now).sentence, name).toBe(`${words}. Next allowance check at ${clockOf(s.run.phase.resumesAt)}. No usable reset time.`);
-      expect(youCell(s.run), name).toMatchObject({ tone: 'calm', title: 'Nothing needs you', line: 'Stop stays in the header.', action: null });
+      expect(youCell(s.run), name).toMatchObject({
+        tone: 'calm',
+        title: 'Nothing needs you',
+        line: 'Stop stays at the top if you want to end it.',
+        action: null,
+      });
       expect(screenWords(s).join(' '), name).not.toMatch(/available again|restart or stop/i);
     }
     expect(story('limit_spent').run.phase.blockedWindows).toEqual(['7d']);
@@ -744,7 +751,8 @@ describe('member state + team phase -> chip, ring and line', () => {
     expect(chip(s, 'checker').text).toBe('Finishing its turn \u00b7 0 s');
     expect(toolsLine(member(s.run, 'checker'))).toBe('Bash \u00d73');
     expect(turnsLine(member(s.run, 'checker'))).toBe('1 turn \u00b7 $45.40');
-    expect(teamCountWords(s.run)).toBe('1 working \u00b7 2 idle');
+    // SPEC 5: counted in the card's own words.
+    expect(teamCountWords(s.run)).toBe('1 finishing \u00b7 2 idle');
     expect(chip(story('limit'), 'builder').text).toBe('Finishing its turn \u00b7 30 s');
   });
 
@@ -752,7 +760,7 @@ describe('member state + team phase -> chip, ring and line', () => {
     const s = story('draining');
     expect(chip(s, 'lead')).toMatchObject({ text: 'Paused: Temper is restarting', icon: 'pause', ring: 'dashed-yellow' });
     expect(chip(s, 'builder').text).toBe('Finishing its turn \u00b7 15 s');
-    expect(teamCountWords(s.run)).toBe('2 working \u00b7 1 paused');
+    expect(teamCountWords(s.run)).toBe('2 finishing \u00b7 1 paused');
   });
 
   it('closing: only the leader may take a turn (D1, D12)', () => {
@@ -777,7 +785,8 @@ describe('member state + team phase -> chip, ring and line', () => {
     for (const name of ['done', 'stopped', 'interrupted'] as const) {
       const s = story(name);
       for (const m of s.run.members) expect(chip(s, m.name), name).toMatchObject({ text: 'Ended', icon: 'stop', ring: 'thin-grey' });
-      expect(teamCountWords(s.run), name).toBe('3 ended');
+      // SPEC 5: "an ended run reads '5 members \u00b7 all ended'".
+      expect(teamCountWords(s.run), name).toBe('3 members \u00b7 all ended');
       expect(memberLine(member(s.run, 'lead'))?.label, name).toBe('Sent checker:');
     }
   });
@@ -1097,7 +1106,7 @@ describe("a time after Temper's clock has no age (D22)", () => {
       raw.last_activity_at = future;
       rawMember(raw, 'lead').since = future;
     });
-    expect(nowCell(ahead.run, ahead.now).sentence).toBe(`3 of 3 members are working. Last activity recorded at ${at}.`);
+    expect(nowCell(ahead.run, ahead.now).sentence).toBe(`3 of 3 members working. Last activity recorded at ${at}.`);
     expect(chip(ahead, 'lead').text).toBe(`Working \u00b7 since ${at}`);
     // Now itself is still an age.
     const present = new Date(now).toISOString();
@@ -1145,7 +1154,7 @@ describe('You and Spend', () => {
     });
     // SPEC You table: "and N more" goes with the title, not on the line.
     expect(youCell(story('waiting').run)).toMatchObject({ tone: 'needs', more: 1, line: null, from: 'From lead' });
-    expect(youCell(story('limit').run)).toMatchObject({ tone: 'calm', line: 'Stop stays in the header.' });
+    expect(youCell(story('limit').run)).toMatchObject({ tone: 'calm', line: 'Stop stays at the top if you want to end it.' });
   });
 
   it('after a guided check-in the bar measures to the next one', () => {

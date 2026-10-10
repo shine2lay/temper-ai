@@ -70,7 +70,7 @@ describe('a working team at a glance', () => {
     // released message is not work it is on.
     expect(nowCell(s.run, s.now)).toMatchObject({
       word: 'Working',
-      sentence: '3 of 3 members are working. Last activity 0\u00a0s\u00a0ago.',
+      sentence: '3 of 3 members working. Last activity 0\u00a0s\u00a0ago.',
     });
     expect(workingNow(s.run)).toEqual({
       rows: [
@@ -206,7 +206,7 @@ describe('the start (D36, D63)', () => {
 describe('while Temper does not answer (D64)', () => {
   it('leaves out "Last activity" and says when something last needed you', () => {
     const s = story('working');
-    expect(nowCell(s.run, s.now, true).sentence).toBe('3 of 3 members are working.');
+    expect(nowCell(s.run, s.now, true).sentence).toBe('3 of 3 members working.');
     expect(youCell(s.run, '15 min')).toMatchObject({
       tone: 'stale',
       title: 'Nothing needed you 15 min ago',

@@ -8,7 +8,7 @@
 import { useMemo } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { latestAgo, latestMoments, type GlanceEvent, type GlanceRun } from '@/lib/teamGlance';
+import { latestAgo, latestMoments, limitCheckShown, type GlanceEvent, type GlanceRun } from '@/lib/teamGlance';
 import { teamCard, teamLink } from '@/components/team/teamUi';
 import { GIcon, PathText } from './glanceUi';
 import { glanceCardHead } from './glanceStyle';
@@ -24,7 +24,8 @@ export function LatestMoments({
   now: number | null;
   ready: boolean;
 }) {
-  const liveLimit = run.phase.name === 'limit';
+  // D31: a limit row names its check only while Now does (never once verified or asked).
+  const liveLimit = limitCheckShown(run.phase);
   // The team's cards: a receiver with none doesn't count towards D82's "sent a message to N members".
   const members = useMemo(() => new Set(run.members.map((m) => m.name)), [run.members]);
   const moments = useMemo(

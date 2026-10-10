@@ -1,0 +1,185 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "at": "2026-10-10T03:49:33.474995+00:00",
+      "kind": "message",
+      "member": "temper",
+      "from": "temper",
+      "from_kind": "temper",
+      "to": "lead",
+      "message_kind": "goal",
+      "text": "This tiny project has no README. Write a short one.",
+      "message_id": "8682a9c9a1f54df38898e35401bca227",
+      "mid_turn": false
+    },
+    {
+      "seq": 2,
+      "at": "2026-10-10T03:49:33.478379+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 3,
+      "at": "2026-10-10T03:49:33.479379+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": null,
+      "reason": "start"
+    },
+    {
+      "seq": 4,
+      "at": "2026-10-10T03:49:33.480425+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "builder",
+      "message_kind": "work_request",
+      "text": "Build the builder part and share it.",
+      "message_id": "2faacec6382c4646926bb5990ff3d8bb",
+      "mid_turn": false
+    },
+    {
+      "seq": 5,
+      "at": "2026-10-10T03:49:33.480929+00:00",
+      "kind": "wake",
+      "member": "builder",
+      "by": "lead"
+    },
+    {
+      "seq": 6,
+      "at": "2026-10-10T03:49:33.481848+00:00",
+      "kind": "message",
+      "member": "lead",
+      "from": "lead",
+      "from_kind": "member",
+      "to": "checker",
+      "message_kind": "work_request",
+      "text": "Build the checker part and share it.",
+      "message_id": "bcd0017f4d734eb8b5eba2746dce4d45",
+      "mid_turn": false
+    },
+    {
+      "seq": 7,
+      "at": "2026-10-10T03:49:33.482394+00:00",
+      "kind": "wake",
+      "member": "checker",
+      "by": "lead"
+    },
+    {
+      "seq": 8,
+      "at": "2026-10-10T03:49:33.491303+00:00",
+      "kind": "turn_start",
+      "member": "lead",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 9,
+      "at": "2026-10-10T03:49:33.495904+00:00",
+      "kind": "turn_start",
+      "member": "builder",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 10,
+      "at": "2026-10-10T03:49:33.499938+00:00",
+      "kind": "turn_start",
+      "member": "checker",
+      "turn_no": 1,
+      "retry_of": null
+    },
+    {
+      "seq": 11,
+      "at": "2026-10-10T03:49:33.503335+00:00",
+      "kind": "turn_end",
+      "member": "lead",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 5.0,
+      "tool_calls": 1
+    },
+    {
+      "seq": 12,
+      "at": "2026-10-10T03:49:33.503656+00:00",
+      "kind": "idle",
+      "member": "lead",
+      "note": "lead: waiting for the next part",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 13,
+      "at": "2026-10-10T03:49:33.504973+00:00",
+      "kind": "turn_end",
+      "member": "builder",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 50.0,
+      "tool_calls": 1
+    },
+    {
+      "seq": 14,
+      "at": "2026-10-10T03:49:33.505238+00:00",
+      "kind": "idle",
+      "member": "builder",
+      "note": "builder: waiting for the next part",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 15,
+      "at": "2026-10-10T03:49:33.506906+00:00",
+      "kind": "turn_end",
+      "member": "checker",
+      "turn_no": 1,
+      "ended": "completed",
+      "ended_by": null,
+      "cost_usd": 50.0,
+      "tool_calls": 1
+    },
+    {
+      "seq": 16,
+      "at": "2026-10-10T03:49:33.507186+00:00",
+      "kind": "idle",
+      "member": "checker",
+      "note": "checker: waiting for the next part",
+      "reason": "idle_call"
+    },
+    {
+      "seq": 17,
+      "at": "2026-10-10T03:49:33.509428+00:00",
+      "kind": "wait_opened",
+      "member": null,
+      "wait_id": "32fd9fd98936413f8663849f8fc70295",
+      "wait_kind": "settings",
+      "words": "The team's settings changed since its conversations started: builder: box image sha256:000000000000 -> temper-pi-box:fixture-2"
+    },
+    {
+      "seq": 18,
+      "at": "2026-10-10T03:49:33.512287+00:00",
+      "kind": "wait_answered",
+      "member": null,
+      "wait_id": "32fd9fd98936413f8663849f8fc70295",
+      "wait_kind": "settings",
+      "answer": "go on",
+      "by": "owner"
+    },
+    {
+      "seq": 19,
+      "at": "2026-10-10T03:49:33.513571+00:00",
+      "kind": "wait_opened",
+      "member": null,
+      "wait_id": "b3192ba145644041985e8733d0f586a6",
+      "wait_kind": "settings",
+      "words": "The team's settings changed since its conversations started: builder: box image sha256:000000000000 -> temper-pi-box:fixture-3"
+    }
+  ],
+  "cursor": 19,
+  "more": false,
+  "as_of": "2026-10-10T03:49:33.529876+00:00"
+}

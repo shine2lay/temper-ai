@@ -44,6 +44,7 @@ export function TeamNote({
   children,
   action,
   icon,
+  iconClassName,
   live,
   className,
 }: {
@@ -52,6 +53,8 @@ export function TeamNote({
   children?: ReactNode;
   action?: ReactNode;
   icon?: LucideIcon;
+  /** The icon's place beside larger text (its top margin). */
+  iconClassName?: string;
   /** Announce changes politely (a refresh that failed). */
   live?: boolean;
   className?: string;
@@ -64,7 +67,7 @@ export function TeamNote({
       role={live ? 'status' : undefined}
       className={cn('flex items-start gap-2 rounded-lg border px-3 py-2 text-sm text-temper-text', t.box, className)}
     >
-      <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', t.icon)} aria-hidden="true" />
+      <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', t.icon, iconClassName)} aria-hidden="true" />
       <div className="min-w-0 flex-1">
         {title && <p className="m-0 font-semibold">{title}</p>}
         {children && <div className={cn(title ? 'mt-0.5' : '', 'text-temper-text')}>{children}</div>}

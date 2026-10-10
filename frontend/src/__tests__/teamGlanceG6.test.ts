@@ -121,7 +121,8 @@ function member(s: Story, name: string): GlanceMember {
   if (!m) throw new Error(`no member ${name}`);
   return m;
 }
-const chip = (s: Story, name: string) => memberChip(member(s, name), s.run.phase.name, s.now);
+// As the page calls it: the whole phase, so a pause knows whether its question is open (D88).
+const chip = (s: Story, name: string) => memberChip(member(s, name), s.run.phase, s.now);
 const rawEvents = (s: Story) => s.feedRaw.events as Raw[];
 const rawPhase = (s: Story) => s.raw.phase as Raw;
 function eventsOf<K extends GlanceEvent['kind']>(s: Story, kind: K): Extract<GlanceEvent, { kind: K }>[] {
@@ -426,31 +427,38 @@ describe('the binding words the real runs showed missing (#21 fixes)', () => {
       expect(youCell(s.run), name).toMatchObject({
         tone: 'ended',
         title: 'Nothing needs you',
-        line: 'Read what it made below, or start a new Project.',
+        line: 'Read what it made below, or start a new project.',
         action: 'next',
       });
     }
   });
 
-  it('settings: "A setting changed while the team waited." and "go on or stop?" (SPEC tables)', () => {
+  it('settings: "No one is working until you answer." and "go on or stop?" (SPEC tables, D112)', () => {
     const s = story('settings_late');
-    expect(nowCell(s.run, s.now)).toMatchObject({ word: 'Settings changed', sentence: 'A setting changed while the team waited.' });
+    // D112: Temper counts no member working and no turn running while it asks.
+    expect(nowCell(s.run, s.now)).toMatchObject({ word: 'Settings changed', sentence: 'No one is working until you answer.' });
     expect(youCell(s.run)).toMatchObject({ tone: 'needs', title: 'Needs you: go on or stop?', action: 'answers' });
     const { wait } = teamWaits(s.raw as unknown as TeamRun);
     expect(wait?.question).toContain('fixture-3');
-    expect(wait?.answers.map((a) => glanceAnswerLabel(a))).toEqual(['Go on', 'Stop']);
+    // D92: every stop reads "Stop project".
+    expect(wait?.answers.map((a) => glanceAnswerLabel(a))).toEqual(['Go on', 'Stop project']);
   });
 
   it('check-in: "Check-in at $X" from spend.cost_usd (SPEC Now table)', () => {
     const s = story('invalid');
-    expect(nowCell(s.run, s.now)).toMatchObject({ word: 'Check-in at $105.00', sentence: 'No new work starts until you answer.' });
+    expect(nowCell(s.run, s.now)).toMatchObject({ word: 'Check-in at $105.00', sentence: 'No one is working until you answer.' });
     expect(youCell(s.run)).toMatchObject({ tone: 'needs', title: 'Needs you: carry on?' });
   });
 
   it('a verified limit names no pending check anywhere; a waiting one names it in Now and its row (D31)', () => {
     const ready = story('limit_ready');
     expect(limitCheckShown(ready.run.phase)).toBe(false);
-    expect(nowCell(ready.run, ready.now).sentence).toBe('Usage is available again: restart or stop?');
+    // D89 + D112: its own yellow word; no one works while it asks.
+    expect(nowCell(ready.run, ready.now)).toMatchObject({
+      word: 'Usage limit: waiting for you',
+      sentence: 'No one is working until you answer.',
+      edge: 'yellow',
+    });
     expect(latest(ready)[0]).toBe('Usage limit');
     expect(activity(ready)[0]).toBe('Usage limit');
     expect([...latest(ready), ...activity(ready)].join('\n')).not.toMatch(/allowance check at|reset at/i);
@@ -517,7 +525,9 @@ describe('each pinned run against its binding rows (g6/G6-TRUTH.md)', () => {
     );
     expect(chip(s, 'builder').text).toBe('Needs you');
     expect(memberLine(member(s, 'builder'))?.text).toBe((s.raw.you as { first: { words: string } }).first.words);
-    expect(chip(s, 'checker').text).toBe('Ready \u00b7 waiting for a free turn \u00b7 1 message');
+    // D95: the chip keeps one line; the waiting message goes on the On line.
+    expect(chip(s, 'checker').text).toBe('Ready \u00b7 waiting for a free turn');
+    expect(memberLine(member(s, 'checker'), s.run.phase)?.messages).toBe('1\u00a0message');
     expect(chip(s, 'lead').text).toMatch(/^Idle \u00b7 /);
   });
 
@@ -549,16 +559,21 @@ describe('each pinned run against its binding rows (g6/G6-TRUTH.md)', () => {
     expect(s.run.you.count).toBe(0);
     expect(s.raw.open_waits).toEqual([]);
     expect(nowCell(s.run, s.now)).toMatchObject({ word: 'Usage limit', edge: 'grey' });
-    expect(chip(s, 'builder')).toMatchObject({ text: 'Paused: usage limit', ring: 'dashed-yellow' });
+    // D88: Temper's own wait asks nothing, so the pause is grey.
+    expect(chip(s, 'builder')).toMatchObject({ text: 'Paused: usage limit', ring: 'dashed-grey', tone: 'grey' });
   });
 
   it('limit_ready: a verified weekly limit asks restart or stop', () => {
     const s = story('limit_ready');
     const words = (s.raw.you as { first: { words: string } }).first.words;
-    expect(youCell(s.run)).toMatchObject({ tone: 'needs', title: `Needs you: \u201c${words}\u201d`, action: 'answers' });
+    // D94: Temper's own words, not quoted.
+    expect(youCell(s.run)).toMatchObject({ tone: 'needs', title: `Needs you: ${words}`, action: 'answers' });
     const { wait } = teamWaits(s.raw as unknown as TeamRun);
     expect(wait?.kind).toBe('limit');
-    expect(wait?.answers.map((a) => glanceAnswerLabel(a))).toEqual(['Restart', 'Stop']);
+    expect(wait?.answers.map((a) => glanceAnswerLabel(a))).toEqual(['Restart', 'Stop project']);
+    // D88: a ready member's pause is yellow while the limit asks the owner.
+    const paused = s.run.members.filter((m) => m.state === 'ready');
+    for (const m of paused) expect(chip(s, m.name), m.name).toMatchObject({ text: 'Paused: usage limit', ring: 'dashed-yellow' });
   });
 
   it('limit_ended: the limit and its end, never a reset time', () => {

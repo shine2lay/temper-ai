@@ -29,9 +29,9 @@ import {
   type MomentPart,
 } from '@/lib/teamGlance';
 import { formatNumber } from '@/lib/teamText';
-import { teamBtn, teamCard, teamLink } from '@/components/team/teamUi';
+import { teamCard, teamLink } from '@/components/team/teamUi';
 import { GIcon, PathText } from './glanceUi';
-import { glanceCardHead } from './glanceStyle';
+import { glanceBtn, glanceCardHead } from './glanceStyle';
 
 export function AllActivity({
   run,
@@ -84,7 +84,7 @@ export function AllActivity({
       )}
       {!older && more > 0 && (
         <p className="m-0">
-          <button type="button" className={teamBtn.secondary} onClick={() => setOlder(true)} data-testid="glance-activity-older">
+          <button type="button" className={glanceBtn.secondary} onClick={() => setOlder(true)} data-testid="glance-activity-older">
             <ChevronDown className="h-4 w-4" aria-hidden="true" />
             <span>Show older ({formatNumber(more)})</span>
           </button>
@@ -92,7 +92,7 @@ export function AllActivity({
       )}
       {older && rows.length > ACTIVITY_FIRST && (
         <p className="m-0">
-          <button type="button" className={teamBtn.secondary} onClick={() => setOlder(false)}>
+          <button type="button" className={glanceBtn.secondary} onClick={() => setOlder(false)}>
             <ChevronUp className="h-4 w-4" aria-hidden="true" />
             <span>Show fewer</span>
           </button>

@@ -39,6 +39,69 @@
     border-right: 1px solid var(--temper-border);
   }
 }
+/*
+ * D116: in the two-row band (768 px and wider, the band under 900 px), the
+ * version lines sit beside the state word only; the sentence, the counts and
+ * who is working use Now's full width under them, so a busy row is never cut
+ * to a few letters.
+ */
+@media (min-width: 768px) {
+  @container (max-width: 899.98px) {
+    .glance-now:has(> .glance-ver) {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      column-gap: 28px;
+      align-content: start;
+    }
+    .glance-now:has(> .glance-ver) > * {
+      grid-column: 1 / -1;
+    }
+    .glance-now:has(> .glance-ver) > .glance-now-word {
+      grid-column: 1;
+    }
+    .glance-now:has(> .glance-ver) > .glance-ver {
+      grid-column: 2;
+      grid-row: 2;
+      align-self: start;
+      margin-top: 0;
+    }
+  }
+}
+
+/* --- Now's version lines (D97, D111) ------------------------------------------ */
+/* 16 px; who and when in --text-2 (NowVersion). The band's 4 px gap plus 4 px here: 8 px over line 1. */
+.glance-ver {
+  margin-top: 4px;
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--temper-text);
+}
+.glance-ver2 {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  margin-top: 2px;
+}
+.glance-ver2 > * {
+  flex: none;
+  white-space: nowrap;
+}
+/* The note: one line, cut to the room left (NowVersion's fit; the ellipsis is the fallback). */
+.glance-ver2 > .glance-trunc {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.glance-ver2 > .glance-vsep {
+  width: 0.9em;
+  text-align: center;
+  color: var(--temper-text-muted);
+}
+.glance-ver2 > .glance-vsep::before {
+  content: '\00b7';
+  content: '\00b7' / '';
+}
 
 /* --- band edges ----------------------------------------------------------- */
 .glance-edge-left {
@@ -138,6 +201,10 @@
 }
 .glance-ring[data-ring='dashed-yellow'] {
   border: 3px dashed var(--badge-waiting-text);
+}
+/* D88: a pause that waits on Temper or the team, not on the owner: dashed like every pause, grey like its words. */
+.glance-ring[data-ring='dashed-grey'] {
+  border: 3px dashed var(--temper-text-muted);
 }
 .glance-ring[data-ring='dashed-red'] {
   border: 3px dashed var(--badge-failed-text);

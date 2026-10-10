@@ -27,7 +27,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   expectAxeClean,
   expectTargets,
@@ -196,6 +196,24 @@ const teamCount = (page: Page) => page.getByTestId('glance-team-count');
 const spend = (page: Page) => page.getByTestId('glance-spend');
 const latestFirst = (page: Page) => page.getByTestId('glance-latest').locator('li').first();
 const dotsLaunched = (page: Page) => page.getByTestId('glance-map').getAttribute('data-dots-launched');
+
+/** A CSS colour (a token, `var(--x)`) as the page computes it, to compare with what an element shows. */
+const cssColor = (page: Page, value: string) =>
+  page.evaluate((v) => {
+    const el = document.createElement('span');
+    el.style.color = v;
+    document.body.appendChild(el);
+    const c = getComputedStyle(el).color;
+    el.remove();
+    return c;
+  }, value);
+
+/** What an element's text looks like: its size and colour, and its own fill. */
+const looks = (locator: Locator) =>
+  locator.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { size: s.fontSize, color: s.color, fill: s.backgroundColor };
+  });
 
 /**
  * Lets a test hold the flying dots and the +N cue still, so one frame can be
@@ -496,6 +514,15 @@ for (const theme of ['dark', 'light'] as const) {
       await expect(page.getByTestId('glance-work-empty')).toHaveText(
         'No shared version yet. When a member shares its work it shows here as v1, v2 and so on.',
       );
+      await expect(page.getByTestId('glance-version')).toHaveText('No shared version yet.');
+      // The guard notice is calm (D96): the panel's fill, a line-colour border, 15 px text in the secondary colour.
+      const text2 = await cssColor(page, 'var(--temper-text-2)');
+      const guard = page.locator('[data-guard-look="calm"]');
+      await expect(guard).toBeVisible();
+      expect(await looks(guard)).toMatchObject({ size: '15px', color: text2 });
+      expect((await looks(page.locator('[data-note="neutral"]').filter({ has: guard }))).fill).toBe(
+        await cssColor(page, 'var(--temper-panel)'),
+      );
       if (wide) {
         await expect(page.getByTestId('glance-lines').locator('path[data-line]')).toHaveCount(0);
         // History never moves: the page loaded with the goal already sent.
@@ -542,6 +569,21 @@ for (const theme of ['dark', 'light'] as const) {
       await goTo(page, state, 'share');
       await expect(latestFirst(page)).toContainText('builder shared v1', { timeout: 12_000 });
       await expect(page.getByTestId('glance-latest-version')).toContainText('Shared by builder');
+      // Now says which version is the latest, from whom, and its note, on two 16 px lines (D97); a phone starts the
+      // second with the time (D111). Shared work's number is 28 px (D93).
+      const version = page.getByTestId('glance-version');
+      await expect(version.getByTestId('glance-version-line1')).toContainText(/Latest version v1 from\sbuilder/);
+      // At 320 the note is cut to its room, inside its quotes; the whole note is the line's title.
+      await expect(version.getByTestId('glance-version-line2')).toHaveText(
+        wide
+          ? '\u201cBuilder\'s part is shared\u201d'
+          : width >= 390
+            ? /^\d+\s(s|min)\sago\s*\u201cBuilder's part is shared\u201d$/
+            : /^\d+\s(s|min)\sago\s*\u201cBuilder.*\u2026\u201d$/,
+      );
+      await expect(version.getByTestId('glance-version-line2')).toHaveAttribute('title', "Builder's part is shared");
+      for (const line of ['glance-version-line1', 'glance-version-line2']) expect((await looks(version.getByTestId(line))).size).toBe('16px');
+      expect((await looks(page.getByTestId('glance-version-number'))).size).toBe('28px');
       await expect(teamCount(page)).toHaveText('3 idle');
       await expect(members(page, wide)).toContainText('Idle: “lead: waiting for the next part”');
       // Animate messages is there at every width while the run is live, and works from the keyboard
@@ -568,12 +610,19 @@ for (const theme of ['dark', 'light'] as const) {
       await expect(phase(page)).toHaveAttribute('data-phase', 'check_in');
       // SPEC: "Check-in at $X" uses spend.cost_usd.
       await expect(nowWord(page)).toHaveText('Check-in at $105.00');
-      await expect(nowSentence(page)).toHaveText('No new work starts until you answer.');
+      // D112: no one works while it asks.
+      await expect(nowSentence(page)).toHaveText('No one is working until you answer.');
       await expect(spend(page)).toContainText('$105.00');
       await expect(spend(page)).toContainText('If you continue, the next check-in is at $205.');
+      // D98: the next check-in line, 16 px in the secondary colour. D99: You's title 20 px, 17 under 768.
+      expect(await looks(page.getByTestId('glance-spend-line'))).toMatchObject({ size: '16px', color: await cssColor(page, 'var(--temper-text-2)') });
+      expect((await looks(youTitle(page))).size).toBe(wide ? '20px' : '17px');
       await expect(latestFirst(page)).toContainText('Spend reached $100.00: check-in. No new work starts.');
       const answers = page.getByTestId('glance-answers').getByRole('button');
-      await expect(answers).toHaveText(['Continue', 'Guide…', 'Stop']);
+      // D91, D92: 44 px buttons; the stop reads "Stop project" with the header's square icon.
+      await expect(answers).toHaveText(['Continue', 'Guide…', 'Stop project']);
+      for (const b of await answers.all()) expect((await b.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      await expect(answers.last().locator('svg')).toHaveCount(1);
       await expectSound(page);
 
       // Guide: the owner's words go once through the answer path; the leader works on them.
@@ -694,11 +743,12 @@ test('contract: a verified weekly limit asks restart or stop, and Restart sends 
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   const { sent } = await open(page, 'limit_asked', { answer: [RESTARTED] });
-  await expect(nowWord(page)).toHaveText('Usage limit');
-  await expect(nowSentence(page)).toHaveText('Usage is available again: restart or stop?');
-  await expect(youTitle(page)).toHaveText(`Needs you: \u201c${LIMIT_WAIT.words}\u201d`);
+  // D89: its own word; D112: no one works while it asks; D94: Temper's words, not quoted.
+  await expect(nowWord(page)).toHaveText('Usage limit: waiting for you');
+  await expect(nowSentence(page)).toHaveText('No one is working until you answer.');
+  await expect(youTitle(page)).toHaveText(`Needs you: ${LIMIT_WAIT.words}`);
   const answers = page.getByTestId('glance-answers').getByRole('button');
-  await expect(answers).toHaveText(['Restart', 'Stop']);
+  await expect(answers).toHaveText(['Restart', 'Stop project']);
   await expectSound(page);
   await page.setViewportSize({ width: 320, height: 568 });
   await expectSound(page);

@@ -13,15 +13,16 @@ import {
   memberLine,
   toolsLine,
   turnsLine,
+  type CardPhase,
   type GlanceMember,
-  type GlancePhaseName,
 } from '@/lib/teamGlance';
 import { GIcon } from './glanceUi';
 import { initialOf, ringAttr, toneText } from './glanceStyle';
 
 export interface MemberCardProps {
   member: GlanceMember;
-  phase: GlancePhaseName;
+  /** The team phase, with whether its question to the owner is open (D88: a pause is yellow only then). */
+  phase: CardPhase;
   /** Temper's clock (as_of), or null when no reply carried one. */
   now: number | null;
   /** The busy ring may turn (Animate on, no reduced motion, fresh data). */
@@ -35,7 +36,7 @@ export const MemberCard = forwardRef<HTMLDivElement, MemberCardProps>(function M
   ref,
 ) {
   const chip = memberChip(m, phase, now);
-  const line = memberLine(m);
+  const line = memberLine(m, phase);
   const tools = toolsLine(m);
   const conflict = conflictLine(m);
   return (
@@ -84,7 +85,9 @@ export const MemberCard = forwardRef<HTMLDivElement, MemberCardProps>(function M
       {line && (
         <p className="m-0 min-w-0 text-[15px] break-words text-temper-text" data-testid="glance-on">
           {line.label && <span className="text-temper-text-muted">{line.label} </span>}
-          {line.quoted ? <>&ldquo;{line.text}&rdquo;</> : line.text}
+          {line.text && (line.quoted ? <>&ldquo;{line.text}&rdquo;</> : line.text)}
+          {/* D95: a ready member's waiting messages, after its words; no-break spaces keep "· 2 messages" whole (D69). */}
+          {line.messages && <span data-testid="glance-on-messages">{line.text ? `\u00a0\u00b7\u00a0${line.messages}` : line.messages}</span>}
         </p>
       )}
       {conflict && (

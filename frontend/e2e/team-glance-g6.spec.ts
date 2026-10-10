@@ -108,7 +108,8 @@ interface Truth {
 
 const LIMIT_NEVER = /reset at|carries on at/i;
 const STOP_LINE = 'Stop stays at the top if you want to end it.';
-const ENDED_LINE = 'Read what it made below, or start a new Project.';
+// D90: sentence case, "new project".
+const ENDED_LINE = 'Read what it made below, or start a new project.';
 
 const TRUTH: Record<Run, Truth> = {
   member_question: {
@@ -119,7 +120,8 @@ const TRUTH: Record<Run, Truth> = {
     spend: [spent('member_question'), 'At $100 the team pauses and asks you.'],
     cards: {
       builder: { chip: 'Needs you', on: youWords('member_question') },
-      checker: { chip: 'Ready \u00b7 waiting for a free turn \u00b7 1 message' },
+      // D95: the waiting messages move from the chip to the On line.
+      checker: { chip: 'Ready \u00b7 waiting for a free turn', on: '1 message' },
       lead: { chip: /^Idle \u00b7 / },
     },
     latestFirst: 'You answered: a reply',
@@ -207,14 +209,16 @@ const TRUTH: Record<Run, Truth> = {
   },
   limit_ready: {
     phase: 'limit',
-    now: ['Usage limit', 'Usage is available again: restart or stop?'],
+    // D89: the asked limit has its own word; D112: no one works while it asks.
+    now: ['Usage limit: waiting for you', 'No one is working until you answer.'],
     team: '1 paused \u00b7 2 idle',
-    you: `Needs you: \u201c${youWords('limit_ready')}\u201d`,
+    // D94: Temper's own words, not quoted.
+    you: `Needs you: ${youWords('limit_ready')}`,
     spend: [spent('limit_ready')],
     cards: { builder: { chip: 'Paused: usage limit' } },
     latestFirst: 'Usage limit',
     activity: ['Usage limit'],
-    answers: ['Restart', 'Stop'],
+    answers: ['Restart', 'Stop project'],
     // A verified limit names no pending check anywhere (D31).
     never: /allowance check at|reset at|carries on at/i,
   },
@@ -224,7 +228,7 @@ const TRUTH: Record<Run, Truth> = {
     team: '1 ready \u00b7 2 idle',
     you: 'Nothing needs you',
     spend: [spent('limit_ended')],
-    cards: { builder: { chip: 'Ready \u00b7 waiting for a free turn \u00b7 1 message' } },
+    cards: { builder: { chip: 'Ready \u00b7 waiting for a free turn', on: '1 message' } },
     latestFirst: 'The usage limit is over. The team carried on at 8:40 PM.',
     latest: ['Usage limit'],
     activity: ['The usage limit is over. The team carried on at 8:40 PM.', 'Usage limit'],
@@ -253,7 +257,7 @@ const TRUTH: Record<Run, Truth> = {
     team: '1 ready \u00b7 2 idle',
     you: 'Nothing needs you',
     spend: [spent('conflict')],
-    cards: { checker: { chip: 'Ready \u00b7 waiting for a free turn \u00b7 1 message', has: '1 file in conflict' } },
+    cards: { checker: { chip: 'Ready \u00b7 waiting for a free turn', on: '1 message', has: '1 file in conflict' } },
     latestFirst: 'checker has 1 file in conflict after a sync',
     activity: [
       // D107: Temper's why is only the verb.
@@ -264,7 +268,7 @@ const TRUTH: Record<Run, Truth> = {
   },
   settings_late: {
     phase: 'settings',
-    now: ['Settings changed', 'A setting changed while the team waited.'],
+    now: ['Settings changed', 'No one is working until you answer.'],
     team: '3 idle',
     you: 'Needs you: go on or stop?',
     spend: [spent('settings_late')],
@@ -273,20 +277,20 @@ const TRUTH: Record<Run, Truth> = {
     latestFirst: `Temper asked you: \u201c${lastAsk('settings_late')}\u201d`,
     latest: ['You answered: go on'],
     activity: [`Temper asked you: \u201c${lastAsk('settings_late')}\u201d`, 'You answered: go on'],
-    answers: ['Go on', 'Stop'],
+    answers: ['Go on', 'Stop project'],
     // D86: without `applied` the go on is an ordinary one.
     never: /Not applied/,
   },
   invalid: {
     phase: 'check_in',
-    now: ['Check-in at $105.00', 'No new work starts until you answer.'],
+    now: ['Check-in at $105.00', 'No one is working until you answer.'],
     team: '3 idle',
     you: 'Needs you: carry on?',
     spend: [spent('invalid'), 'If you continue, the next check-in is at $205.'],
     cards: { lead: { chip: /^Idle/ } },
     latestFirst: `You answered. ${NOT_APPLIED_INVALID}`,
     activity: [`You answered. ${NOT_APPLIED_INVALID}`],
-    answers: ['Continue', 'Guide\u2026', 'Stop'],
+    answers: ['Continue', 'Guide\u2026', 'Stop project'],
   },
 };
 
@@ -464,7 +468,8 @@ for (const name of RUNS) {
         if (truth.never) await expect.soft(main).not.toContainText(truth.never);
 
         // Stop and Animate only while the team is live (D24, D47); an ended run's time is frozen at its end (G5).
-        await expect.soft(page.getByRole('button', { name: 'Stop project' })).toHaveCount(ended ? 0 : 1);
+        // D92: You's stop reads "Stop project" too, so count the header's.
+        await expect.soft(main.locator('header').getByRole('button', { name: 'Stop project' })).toHaveCount(ended ? 0 : 1);
         await expect.soft(page.getByRole('switch', { name: 'Animate messages' })).toHaveCount(ended ? 0 : 1);
         const facts = page.getByTestId('glance-facts');
         if (name === 'interrupted') await expect.soft(facts).toContainText('ran 45 s');

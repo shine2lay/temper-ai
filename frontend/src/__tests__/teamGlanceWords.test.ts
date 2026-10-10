@@ -152,7 +152,8 @@ describe('a member asks the owner itself (ask_owner)', () => {
     const failed = story('failed', (raw) => {
       firstOf(raw).words = long;
     });
-    expect(youCell(failed.run)).toMatchObject({ title: `Needs you: \u201c${long}\u201d`, from: 'From builder', action: 'answer' });
+    // D94: Temper's own words (a held turn) are not quoted.
+    expect(youCell(failed.run)).toMatchObject({ title: `Needs you: ${long}`, from: 'From builder', action: 'answer' });
   });
 });
 
@@ -160,7 +161,8 @@ describe('the usage limit', () => {
   it("shows the question Temper asks as it comes, with the run's own account", () => {
     const s = story('limit_asked');
     const words = firstOf(s.raw).words as string;
-    expect(youCell(s.run).title).toBe(`Needs you: \u201c${words}\u201d`);
+    // D94: Temper's own words, not quoted.
+    expect(youCell(s.run).title).toBe(`Needs you: ${words}`);
     expect(words).toContain('anthropic-4');
     const { wait } = teamWaits(s.raw as unknown as TeamRun);
     expect(wait?.question?.startsWith(words)).toBe(true);

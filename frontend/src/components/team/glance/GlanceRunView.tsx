@@ -50,7 +50,7 @@ import { SharedWork } from './SharedWork';
 import { LatestMoments } from './LatestMoments';
 import { AllActivity } from './AllActivity';
 import { Facts } from './glanceUi';
-import { glanceBodyBox, glanceHeadButton, glanceHeaderBox } from './glanceStyle';
+import { glanceBodyBox, glanceBtn, glanceHeadButton, glanceHeaderBox } from './glanceStyle';
 import './glance.css';
 
 const ANIMATE_KEY = 'temper_glance_animate';
@@ -251,7 +251,7 @@ export function GlanceRunView({
         onStopped={read.refresh}
       />
       <div className={glanceBodyBox}>
-        <TeamGuardBanner mode={status?.guard_mode} textScale="glance" />
+        <TeamGuardBanner mode={status?.guard_mode} textScale="glance" look="calm" />
         {/* D64: read out once when Temper stops answering; the note's count goes up every few seconds, so it isn't live. */}
         <p role="status" className="sr-only">
           {staleFor !== null ? 'Temper isn\u2019t answering. The page shows what it said last.' : ''}
@@ -268,7 +268,8 @@ export function GlanceRunView({
             <span className="text-temper-text-muted">
               This is what it said last; nothing below moves until it answers again.
             </span>{' '}
-            <button type="button" className={cn(teamBtn.secondary, 'ml-1.5 align-middle')} onClick={() => void read.refresh()}>
+            {/* D91: a 44 px outline button like every button on the page (solid only in the error view). */}
+            <button type="button" className={cn(glanceBtn.secondary, 'ml-1.5 align-middle')} onClick={() => void read.refresh()}>
               <RefreshCw className="h-4 w-4" aria-hidden="true" />
               <span>Try again</span>
             </button>

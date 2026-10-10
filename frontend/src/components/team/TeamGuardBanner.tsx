@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { ChevronDown, ChevronUp, ShieldAlert, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Info, ShieldAlert, X } from 'lucide-react';
 import { useIsNarrow } from '@/lib/useMediaQuery';
 import { cn } from '@/lib/utils';
 import type { TeamGuardMode } from '@/types/team';
@@ -38,15 +38,22 @@ function hiddenFor(): string | null {
  * `textScale="glance"`: the glance page's type, where no text is under 14 px
  * (its "Show details" button too); the New project form uses it too, for its
  * phone text (the button shows on a phone only); the other Team pages keep theirs.
+ * `look="calm"` (the glance page, D96): it is about who may answer, not about this
+ * run, and yellow means "you're asked" (D88). So the card's own panel fill and a
+ * 1 px line-colour border, a muted info icon and 15 px text in the secondary
+ * text colour (--text-2), the lead sentence semibold; words, place, hide button
+ * and "Show details" as before.
  */
 export function TeamGuardBanner({
   mode,
   className,
   textScale = 'team',
+  look = 'warn',
 }: {
   mode: TeamGuardMode | string | undefined;
   className?: string;
   textScale?: 'team' | 'glance';
+  look?: 'warn' | 'calm';
 }) {
   const [hidden, setHidden] = useState<string | null>(hiddenFor);
   const [details, setDetails] = useState(false);
@@ -65,11 +72,13 @@ export function TeamGuardBanner({
     setHidden(String(mode));
   }
 
+  const calm = look === 'calm';
   return (
     <TeamNote
-      tone="warn"
-      icon={ShieldAlert}
-      className={cn('shrink-0', className)}
+      tone={calm ? 'neutral' : 'warn'}
+      icon={calm ? Info : ShieldAlert}
+      iconClassName={calm ? 'mt-[3px]' : undefined}
+      className={cn('shrink-0', calm && 'border-temper-control text-[15px]', className)}
       action={
         <button
           type="button"
@@ -82,7 +91,7 @@ export function TeamGuardBanner({
         </button>
       }
     >
-      <p className="m-0" data-guard-mode={mode}>
+      <p className={cn('m-0', calm && 'text-temper-text-2')} data-guard-mode={mode} data-guard-look={look}>
         <b className="font-semibold">{words.lead}</b>{' '}
         <span id={detailsId} hidden={narrow && !details}>
           {words.rest}

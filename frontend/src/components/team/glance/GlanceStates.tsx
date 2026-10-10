@@ -8,11 +8,11 @@ import { Link } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TeamGuardBanner } from '@/components/team/TeamGuardBanner';
-import { teamBtn, teamCard } from '@/components/team/teamUi';
+import { teamCard } from '@/components/team/teamUi';
 import type { TeamGuardMode } from '@/types/team';
 import { GlanceCrumbs } from './GlanceRunView';
 import { GIcon } from './glanceUi';
-import { glanceBodyBox, glanceHeaderBox, toneText } from './glanceStyle';
+import { glanceBodyBox, glanceBtn, glanceHeaderBox, toneText } from './glanceStyle';
 import { StatusBandSkeleton } from './StatusBand';
 import './glance.css';
 
@@ -46,7 +46,7 @@ export function GlanceLoading({ guardMode }: { guardMode?: TeamGuardMode }) {
         </div>
       }
     >
-      <TeamGuardBanner mode={guardMode} textScale="glance" />
+      <TeamGuardBanner mode={guardMode} textScale="glance" look="calm" />
       <StatusBandSkeleton />
       <p role="status" className="m-0 text-sm text-temper-text-muted">
         Loading the project from Temper…
@@ -83,11 +83,11 @@ export function GlanceReadError({ onRetry }: { onRetry: () => void }) {
           The page asked Temper for this project and got no answer. Nothing was changed. It may be restarting.
         </p>
         <div className="flex flex-wrap gap-2.5">
-          <button type="button" className={teamBtn.primary} onClick={onRetry}>
+          <button type="button" className={glanceBtn.primary} onClick={onRetry}>
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
             <span>Try again</span>
           </button>
-          <Link to="/team" className={teamBtn.secondary}>
+          <Link to="/team" className={glanceBtn.secondary}>
             Back to Projects
           </Link>
         </div>

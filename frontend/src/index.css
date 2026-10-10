@@ -134,6 +134,9 @@
   --color-temper-control: var(--temper-control);
   --color-temper-text: var(--temper-text);
   --color-temper-text-muted: var(--temper-text-muted);
+  /* The secondary text that still reads as text (Design SPEC 12, --text-2): the
+     guard notice, the version's "from" and time, the spend line. */
+  --color-temper-text-2: var(--temper-text-2);
   --color-temper-text-dim: var(--temper-text-dim);
   --color-temper-accent: var(--temper-accent);
   --color-temper-accent-dim: var(--temper-accent-dim);
@@ -190,6 +193,8 @@
   --temper-control: #858277;
   --temper-text: #f7f5ef;
   --temper-text-muted: #a8a396;
+  /* Halfway between text and secondary text (OKLab): 9.7:1 on the panel. */
+  --temper-text-2: #cfcbc2;
   --temper-text-dim: #a8a396;
   --temper-accent: #5cb27f;
   /* Hover for solid green buttons: the green moved 15% towards the text
@@ -263,6 +268,7 @@
     --temper-control: #857f72;
     --temper-text: #1a1a17;
     --temper-text-muted: #5e5b53;
+    --temper-text-2: #3a3934;
     --temper-text-dim: #5e5b53;
     --temper-accent: #2e7d4f;
     --temper-accent-dim: #2b6e47;
@@ -336,6 +342,8 @@
   --temper-control: #857f72;
   --temper-text: #1a1a17;
   --temper-text-muted: #5e5b53;
+  /* Halfway between text and secondary text (OKLab): 11.6:1 on the panel. */
+  --temper-text-2: #3a3934;
   --temper-text-dim: #5e5b53;
   --temper-accent: #2e7d4f;
   --temper-accent-dim: #2b6e47;

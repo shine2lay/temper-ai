@@ -8,31 +8,39 @@
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, Plus } from 'lucide-react';
+import { ExternalLink, Plus, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsNarrow } from '@/lib/useMediaQuery';
-import { nowCell, spendCell, youCell, agoText, keepTogether, workingNow, type GlanceRun } from '@/lib/teamGlance';
+import { nowCell, phaseEnded, spendCell, youCell, workingNow, type GlanceRun } from '@/lib/teamGlance';
 import { checkAnswer, wordsLabel, type AnswerCheck } from '@/lib/teamAnswer';
 import type { TeamAnswerSender } from '@/hooks/useTeamAnswer';
 import type { TeamAnswerOption, TeamStatus, TeamWait } from '@/types/team';
-import { teamBtn, teamCard, teamLink } from '@/components/team/teamUi';
+import { teamCard, teamLink } from '@/components/team/teamUi';
 import { AnswerResultNote } from '@/components/team/run/AnswerResultNote';
 import { StopAnswerDialog } from '@/components/team/run/StopAnswerDialog';
 import { GIcon } from './glanceUi';
-import { glanceAnswerLabel, glanceBandLabel, toneText } from './glanceStyle';
-
-/** Cell padding and label spacing: tighter on a phone (D9: 12 px by 14, as the reference). */
-const CELL = 'flex min-w-0 flex-col px-[14px] py-3 md:p-4';
-const LABEL = cn(glanceBandLabel, 'mb-0.5 md:mb-1');
+import { NowVersion } from './NowVersion';
+import { glanceAnswerLabel, glanceBandLabel, glanceBtn, toneText } from './glanceStyle';
 
 /**
- * D84: on a phone Now lists at most 2 working members, and 1 while the stale
- * note takes its own room, so the band ends on the first screen; 768 px and
- * wider keep SPEC's 3. "and N more working" counts the rest.
+ * Cell padding and label spacing: tighter on a phone (D9: 12 px by 14, as the reference). On a phone the label sits
+ * 2 px above its cell's first line, as the reference's `.band .label { margin-bottom: 2px }`: its margin takes back
+ * the cell's gap (4 px; 6 px in You), so with D97's two version lines the band still ends on the first screen.
+ */
+const CELL = 'flex min-w-0 flex-col px-[14px] py-3 md:p-4';
+const LABEL = cn(glanceBandLabel, 'max-md:-mb-0.5 md:mb-1');
+const LABEL_YOU = cn(glanceBandLabel, 'max-md:-mb-1 md:mb-1');
+
+/**
+ * D84 + D111: on a phone Now lists 1 working member, and none while the stale
+ * note takes its own room, so the band ends on the first screen with the two
+ * version lines; 768 px and wider keep SPEC's 3. "and N more working" counts
+ * the rest, only under at least one row (D113: with none the list is left out
+ * and the count line keeps the number).
  */
 function workingRowsMax(narrow: boolean, stale: boolean): number {
   if (!narrow) return 3;
-  return stale ? 1 : 2;
+  return stale ? 0 : 1;
 }
 
 /**
@@ -74,21 +82,19 @@ function WorkingList({ run, stale }: { run: GlanceRun; stale: boolean }) {
 
 function NowBox({ run, agesAt, stale, lastAt }: { run: GlanceRun; agesAt: number | null; stale: boolean; lastAt?: string | null }) {
   const cell = nowCell(run, agesAt, stale, lastAt);
-  const latest = run.work.latest;
-  const latestAge = latest ? agoText(latest.at, agesAt) : '';
   return (
-    <div className={cn('glance-edge-left gap-1', CELL)} data-tone={cell.edge} data-testid="glance-now">
+    <div className={cn('glance-now glance-edge-left gap-1', CELL)} data-tone={cell.edge} data-testid="glance-now">
       <h3 className={LABEL}>Now</h3>
-      {/* SPEC 4: the word 26 px (22 on a phone), the sentence 18 (16), the counts and the version line 15. */}
+      {/* SPEC 4: the word 26 px (22 on a phone), the sentence 18 (16), the counts 15; the version lines 16 (D97). */}
       <p
         className={cn(
-          'm-0 flex items-start gap-2 text-[22px] leading-7 font-semibold md:text-[26px] md:leading-8',
+          'glance-now-word m-0 flex items-start gap-2 text-[22px] leading-7 font-semibold md:text-[26px] md:leading-8',
           toneText[cell.edge],
         )}
       >
         <GIcon name={cell.icon} className="mt-1 h-5 w-5 shrink-0 md:mt-1.5" />
-        {/* D48: frozen data can't say what runs now. */}
-        <span className="min-w-0 break-words" data-testid="glance-now-word">
+        {/* D48: frozen data can't say what runs now. D116: a long word breaks into even lines. */}
+        <span className="min-w-0 break-words text-balance" data-testid="glance-now-word">
           {stale ? `Last seen: ${cell.word}` : cell.word}
         </span>
       </p>
@@ -105,12 +111,7 @@ function NowBox({ run, agesAt, stale, lastAt }: { run: GlanceRun; agesAt: number
       )}
       {cell.countLine && <p className="m-0 text-[15px] text-temper-text-muted">{cell.countLine}</p>}
       <WorkingList run={run} stale={stale} />
-      {latest && (
-        <p className="m-0 text-[15px] text-temper-text-muted">
-          Latest shared version: v{latest.versionNo}
-          {latestAge ? `, ${latestAge.endsWith(' ago') ? keepTogether(latestAge) : latestAge}` : ''}.
-        </p>
-      )}
+      <NowVersion latest={run.work.latest} agesAt={agesAt} />
     </div>
   );
 }
@@ -172,10 +173,10 @@ function WordsBox({
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={teamBtn.primary} disabled={busy}>
+        <button type="submit" className={glanceBtn.primary} disabled={busy}>
           Send {glanceAnswerLabel({ ...option, needs_text: 'none' }).toLowerCase()}
         </button>
-        <button type="button" className={teamBtn.secondary} onClick={onCancel}>
+        <button type="button" className={glanceBtn.secondary} onClick={onCancel}>
           Cancel
         </button>
       </div>
@@ -259,7 +260,7 @@ function YouBox({
           ref={i === 0 ? firstAnswer : undefined}
           type="button"
           disabled={sender.sending}
-          className={o.answer === 'stop' ? teamBtn.danger : i === 0 ? teamBtn.primary : teamBtn.secondary}
+          className={o.answer === 'stop' ? glanceBtn.danger : i === 0 ? glanceBtn.primary : glanceBtn.secondary}
           title={o.means}
           onClick={() => {
             if (o.answer === 'stop') setStopOpen(true);
@@ -267,11 +268,13 @@ function YouBox({
             else setWords(o);
           }}
         >
+          {/* D92: "Stop project" with the header's square icon. */}
+          {o.answer === 'stop' && <Square className="h-4 w-4 shrink-0" aria-hidden="true" />}
           {glanceAnswerLabel(o)}
         </button>
       ))}
       {viewing && (
-        <button type="button" className={teamBtn.secondary} onClick={closeView}>
+        <button type="button" className={glanceBtn.secondary} onClick={closeView}>
           Cancel
         </button>
       )}
@@ -295,11 +298,11 @@ function YouBox({
       data-tone={needs ? 'yellow' : undefined}
       data-testid="glance-you"
     >
-      <h3 className={LABEL}>You</h3>
+      <h3 className={LABEL_YOU}>You</h3>
       <p
         className={cn(
-          // SPEC 4: the You title is 20 px.
-          'm-0 flex items-start gap-2 text-xl font-semibold break-words',
+          // D99: the You title is 20 px from 768 px up, 17 px under it.
+          'm-0 flex items-start gap-2 text-[17px] leading-[1.3] font-semibold break-words md:text-xl',
           needs
             ? toneText.yellow
             : cell.tone === 'ended' || cell.tone === 'stale'
@@ -310,7 +313,7 @@ function YouBox({
       >
         <GIcon
           name={needs ? 'alert' : cell.tone === 'ended' ? 'circle' : cell.tone === 'stale' ? 'clock' : 'check'}
-          className="mt-1 h-5 w-5 shrink-0"
+          className="mt-0.5 h-[18px] w-[18px] shrink-0 md:mt-1 md:h-5 md:w-5"
         />
         <span className="min-w-0">
           {cell.title}
@@ -340,7 +343,7 @@ function YouBox({
             <button
               ref={answerButton}
               type="button"
-              className={teamBtn.primary}
+              className={glanceBtn.primary}
               disabled={sender.sending}
               onClick={openView}
             >
@@ -411,20 +414,17 @@ function YouBox({
         </p>
       )}
       {cell.action === 'next' && (
-        <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
-          <li>
-            <Link to="/team/new" className={teamLink}>
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Start a new Project</span>
-            </Link>
-          </li>
-          <li>
-            <Link to={`/workflow/${executionId}`} className={teamLink}>
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Open the run page</span>
-            </Link>
-          </li>
-        </ul>
+        // D90 + D91: "New project" is this view's one main action, a 44 px solid button; the run page stays a link.
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link to="/team/new" className={glanceBtn.primary} data-testid="glance-new-project">
+            <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>New project</span>
+          </Link>
+          <Link to={`/workflow/${executionId}`} className={cn(teamLink, 'text-sm')}>
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Open the run page</span>
+          </Link>
+        </div>
       )}
       {result && <AnswerResultNote outcome={result.outcome} executionId={executionId} hasWords={false} />}
     </div>
@@ -449,7 +449,15 @@ function SpendBox({ run }: { run: GlanceRun }) {
           </div>
         )}
       </div>
-      {cell.line && <p className="m-0 text-sm text-temper-text-muted">{cell.line}</p>}
+      {/* D98: the next check-in line 16 px in --text-2; an ended run's total line as before. */}
+      {cell.line && (
+        <p
+          className={cn('m-0', phaseEnded(run.phase.name) ? 'text-sm text-temper-text-muted' : 'text-base text-temper-text-2')}
+          data-testid="glance-spend-line"
+        >
+          {cell.line}
+        </p>
+      )}
     </div>
   );
 }

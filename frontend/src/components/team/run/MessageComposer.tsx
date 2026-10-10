@@ -7,6 +7,7 @@ import type { TeamRun } from '@/types/team';
 import { TeamCharCount } from '../TeamCharCount';
 import { TeamNote } from '../TeamNote';
 import { teamBtn, teamCard, teamField, teamLabel } from '../teamUi';
+import { glanceBtnSize } from '../glance/glanceStyle';
 
 const NO_ANSWER = "Temper didn't answer. Trying again is safe: the same request counts once.";
 
@@ -16,11 +17,14 @@ function MessageResultNote({
   paused,
   sending,
   onRetry,
+  glance = false,
 }: {
   result: MessageResult;
   paused: boolean;
   sending: boolean;
   onRetry: () => void;
+  /** The glance page: its buttons are 44 px (D91). */
+  glance?: boolean;
 }) {
   const { outcome } = result;
   if (outcome.kind === 'sent') {
@@ -51,7 +55,7 @@ function MessageResultNote({
     <TeamNote
       tone="bad"
       action={
-        <button type="button" className={teamBtn.secondary} onClick={onRetry} disabled={sending}>
+        <button type="button" className={cn(teamBtn.secondary, glance && glanceBtnSize)} onClick={onRetry} disabled={sending}>
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
           <span>Try again</span>
         </button>
@@ -156,6 +160,7 @@ export function MessageComposer({
             paused={run.state === 'paused'}
             sending={sending}
             onRetry={() => void retry()}
+            glance={glance}
           />
         )}
       </div>
@@ -170,7 +175,7 @@ export function MessageComposer({
         {/* While a question waits, Send answer is the page's main action (O2). */}
         <button
           type="button"
-          className={waitOpen ? teamBtn.secondaryMd : teamBtn.primaryMd}
+          className={cn(waitOpen ? teamBtn.secondaryMd : teamBtn.primaryMd, glance && glanceBtnSize)}
           onClick={() => void send()}
           disabled={sending}
           aria-busy={sending || undefined}

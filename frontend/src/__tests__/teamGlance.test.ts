@@ -127,7 +127,8 @@ function member(run: GlanceRun, name: string): GlanceMember {
   if (!m) throw new Error(`no member ${name}`);
   return m;
 }
-const chip = (s: Story, name: string) => memberChip(member(s.run, name), s.run.phase.name, s.now);
+// As the page calls it: the whole phase, so a pause knows whether its question is open (D88).
+const chip = (s: Story, name: string) => memberChip(member(s.run, name), s.run.phase, s.now);
 /** Latest as the page reads it: a limit row names its check only while the team is in its limit phase. */
 // As the page calls it: the run names the starter and the cards (D110: All activity's words).
 const momentText = (s: Story) =>
@@ -535,13 +536,15 @@ describe('Now: phase -> word, sentence and band edge', () => {
     // SPEC Now table: "N of M members working."; "Check-in at $X" uses spend.cost_usd.
     ['working', 'Working', '3 of 3 members working. Last activity 0\u00a0s\u00a0ago.', 'blue', 'play'],
     ['idle', 'Working', '0 of 3 members working. Last activity 0\u00a0s\u00a0ago.', 'blue', 'play'],
-    ['check_in_running', 'Check-in at $100.40', 'No new work starts. 1 member is finishing its turn.', 'blue', 'pause'],
-    ['check_in', 'Check-in at $105.00', 'No new work starts until you answer.', 'yellow', 'pause'],
+    // D95: a check-in that is not asking yet says why in its word while turns finish.
+    ['check_in_running', 'Check-in at $100.40: finishing turns', 'No new work starts. 1 member is finishing its turn.', 'blue', 'pause'],
+    // D112: asked, and Temper counts no member working and no turn running.
+    ['check_in', 'Check-in at $105.00', 'No one is working until you answer.', 'yellow', 'pause'],
     ['closing', 'Finishing up', 'The leader said done.', 'blue', 'flag'],
     ['done', 'Done', null, 'green', 'check'],
-    ['stalled', 'Everyone is idle', 'Nothing is waiting for the team. Last activity 0\u00a0s\u00a0ago.', 'yellow', 'moon'],
-    ['failed', 'Waiting for you', 'Nothing runs until you answer.', 'yellow', 'hand'],
-    ['settings', 'Settings changed', 'A setting changed while the team waited.', 'yellow', 'settings'],
+    ['stalled', 'Everyone is idle', 'No one is working until you answer.', 'yellow', 'moon'],
+    ['failed', 'Waiting for you', 'No one is working until you answer.', 'yellow', 'hand'],
+    ['settings', 'Settings changed', 'No one is working until you answer.', 'yellow', 'settings'],
     ['draining', 'Temper is restarting', 'The team carries on after it.', 'grey', 'restart'],
     ['stopped', 'Stopped', 'The owner stopped the team.', 'grey', 'stop'],
     ['run_failed', 'Failed', "builder's turn 1 failed after its automatic retry, and you stopped the team.", 'red', 'alert'],
@@ -552,6 +555,35 @@ describe('Now: phase -> word, sentence and band edge', () => {
   it.each(NOW)('%s: %s', (name, word, sentence, edge, icon) => {
     const s = story(name);
     expect(nowCell(s.run, s.now)).toMatchObject({ word, sentence, edge, icon });
+  });
+
+  // D112: "No one is working until you answer." only when the owner is asked, Temper counts no member working and no
+  // turn is still running; otherwise each phase keeps its own sentence (SPEC 155-160), and an unknown count says nothing.
+  it('says no one is working only while the owner is asked and Temper counts no one working (D112)', () => {
+    const busy = story('check_in', (raw) => {
+      (raw.phase as Raw).running = 1;
+    });
+    expect(nowCell(busy.run, busy.now).sentence).toBe('No new work starts until you answer.');
+    const working = story('failed', (raw) => {
+      Object.assign(raw.counts as Raw, { working: 1 });
+    });
+    expect(nowCell(working.run, working.now).sentence).toBe('Nothing runs until you answer.');
+    const settings = story('settings', (raw) => {
+      Object.assign(raw.counts as Raw, { working: 2 });
+    });
+    expect(nowCell(settings.run, settings.now).sentence).toBe('A setting changed while the team waited.');
+    const quiet = story('stalled', (raw) => {
+      delete (raw.counts as Raw).working;
+    });
+    expect(nowCell(quiet.run, quiet.now).sentence).toBe('Nothing is waiting for the team. Last activity 0\u00a0s\u00a0ago.');
+    // A phase that asks nothing never says it; with no turn finishing, the check-in word has no ": finishing turns" (D95).
+    const notAsked = story('check_in_running', (raw) => {
+      Object.assign(raw.counts as Raw, { working: 0 });
+      (raw.phase as Raw).running = 0;
+    });
+    const cell = nowCell(notAsked.run, notAsked.now);
+    expect(cell.word).toBe('Check-in at $100.40');
+    expect(cell.sentence).not.toBe('No one is working until you answer.');
   });
 
   it('the count line names who is not working', () => {
@@ -603,15 +635,22 @@ describe('Now: phase -> word, sentence and band edge', () => {
     const s = story('limit_asked');
     expect(s.run.phase).toMatchObject({ asked: true, resumeVerified: true, resetsKnown: false, blockedWindows: [] });
     expect(s.run.phase.usage).toMatchObject({ status: 'ok' });
-    expect(nowCell(s.run, s.now)).toMatchObject({ word: 'Usage limit', sentence: 'Usage is available again: restart or stop?' });
+    // D89: its own yellow word, like an asked check-in; D112: no one works, so the sentence says so.
+    expect(nowCell(s.run, s.now)).toMatchObject({
+      word: 'Usage limit: waiting for you',
+      sentence: 'No one is working until you answer.',
+      edge: 'yellow',
+      icon: 'pause',
+    });
     const wait = (s.raw.open_waits as Raw[])[0];
     expect(wait.answers).toEqual([
       expect.objectContaining({ answer: 'restart' }),
       expect.objectContaining({ answer: 'stop' }),
     ]);
+    // D94: Temper's own words, not quoted.
     expect(youCell(s.run)).toMatchObject({
       tone: 'needs',
-      title: `Needs you: \u201c${String(wait.words)}\u201d`,
+      title: `Needs you: ${String(wait.words)}`,
       action: 'answers',
       waitId: firstWait('limit_asked'),
     });
@@ -695,9 +734,10 @@ describe('member state + team phase -> chip, ring and line', () => {
     expect(turnsLine(member(s.run, 'lead'))).toBe('1 turn \u00b7 $5.00');
   });
 
-  it('a ready leader waits for a free turn and counts its messages', () => {
+  it('a ready leader waits for a free turn; its messages go on the On line (D95)', () => {
     const s = story('done_refused');
-    expect(chip(s, 'lead')).toMatchObject({ text: 'Ready \u00b7 waiting for a free turn \u00b7 1 message', icon: 'ready', ring: 'solid-grey' });
+    expect(chip(s, 'lead')).toMatchObject({ text: 'Ready \u00b7 waiting for a free turn', icon: 'ready', ring: 'solid-grey' });
+    expect(memberLine(member(s.run, 'lead'), s.run.phase)).toMatchObject({ messages: '1\u00a0message' });
   });
 
   it("a held member shows its own wait's words (D13)", () => {
@@ -759,7 +799,8 @@ describe('member state + team phase -> chip, ring and line', () => {
 
   it('draining: a ready member is paused, and the team count says so (D1, D12)', () => {
     const s = story('draining');
-    expect(chip(s, 'lead')).toMatchObject({ text: 'Paused: Temper is restarting', icon: 'pause', ring: 'dashed-yellow' });
+    // D88: a pause that waits on Temper is grey, not the owner's yellow.
+    expect(chip(s, 'lead')).toMatchObject({ text: 'Paused: Temper is restarting', icon: 'pause', ring: 'dashed-grey', tone: 'grey' });
     expect(chip(s, 'builder').text).toBe('Finishing its turn \u00b7 15 s');
     expect(teamCountWords(s.run)).toBe('2 finishing \u00b7 1 paused');
   });
@@ -770,26 +811,45 @@ describe('member state + team phase -> chip, ring and line', () => {
       rawMember(raw, 'builder').state = 'ready';
       Object.assign(raw.counts as Raw, { ready: 2, idle: 1 });
     });
-    expect(chip(s, 'builder')).toMatchObject({ text: 'Paused: the team is finishing up', ring: 'dashed-yellow' });
+    expect(chip(s, 'builder')).toMatchObject({ text: 'Paused: the team is finishing up', ring: 'dashed-grey', tone: 'grey' });
     expect(chip(s, 'lead').text).toMatch(/^Ready \u00b7 waiting for a free turn/);
     expect(teamCountWords(s.run)).toBe('1 ready \u00b7 1 paused \u00b7 1 idle');
   });
 
-  it('a check-in pauses a ready member', () => {
-    const s = story('check_in', (raw) => {
+  // D88: the pause is yellow only while its question is open to the owner; before that, grey.
+  it('a check-in pauses a ready member: yellow once it asks you, grey before (D88)', () => {
+    const asked = story('check_in', (raw) => {
       rawMember(raw, 'builder').state = 'ready';
     });
-    expect(chip(s, 'builder')).toMatchObject({ text: 'Paused: check-in', ring: 'dashed-yellow' });
+    expect(chip(asked, 'builder')).toMatchObject({ text: 'Paused: check-in', ring: 'dashed-yellow', tone: 'yellow' });
+    const finishing = story('check_in_running', (raw) => {
+      rawMember(raw, 'lead').state = 'ready';
+    });
+    expect(chip(finishing, 'lead')).toMatchObject({ text: 'Paused: check-in', ring: 'dashed-grey', tone: 'grey' });
+    // A paused card shows no waiting messages (SPEC 244).
+    expect(memberLine(member(finishing.run, 'lead'), finishing.run.phase)?.messages).toBeUndefined();
   });
 
-  it('ended: every card ends, the leader still shows what it sent last', () => {
+  it('ended: every card ends, and says what it was last on (SPEC 252)', () => {
     for (const name of ['done', 'stopped', 'interrupted'] as const) {
       const s = story(name);
       for (const m of s.run.members) expect(chip(s, m.name), name).toMatchObject({ text: 'Ended', icon: 'stop', ring: 'thin-grey' });
       // SPEC 5: "an ended run reads '5 members \u00b7 all ended'".
       expect(teamCountWords(s.run), name).toBe('3 members \u00b7 all ended');
-      expect(memberLine(member(s.run, 'lead'))?.label, name).toBe('Sent checker:');
+      // SPEC 252: "Last:", the leader too (what it sent last), and never a message count.
+      const lead = memberLine(member(s.run, 'lead'), s.run.phase);
+      expect(lead, name).toMatchObject({ label: 'Last:', quoted: true });
+      expect(lead?.messages, name).toBeUndefined();
     }
+    // Temper's contract (10-10 12:17): an interrupted run can leave a member ready with messages waiting; its card
+    // still reads Ended with "Last:" and no count (D95's count is for a live ready member only, SPEC 244).
+    const cut = story('interrupted', (raw) => {
+      Object.assign(rawMember(raw, 'builder'), { state: 'ready', ready_messages: 2 });
+    });
+    expect(chip(cut, 'builder')).toMatchObject({ text: 'Ended', ring: 'thin-grey' });
+    const line = memberLine(member(cut.run, 'builder'), cut.run.phase);
+    expect(line).toMatchObject({ label: 'Last:' });
+    expect(line?.messages).toBeUndefined();
   });
 
   it('a merge conflict is counted in files', () => {
@@ -1147,12 +1207,17 @@ describe('You and Spend', () => {
   });
 
   it("each open question gets its own title; more questions are counted", () => {
-    expect(youCell(story('stalled').run)).toMatchObject({ title: 'Needs you: nudge the team or stop', waitId: firstWait('stalled') });
+    // D94: every question Temper writes ends with "?"; quotes only around a person's words.
+    expect(youCell(story('stalled').run)).toMatchObject({ title: 'Needs you: nudge the team or stop?', waitId: firstWait('stalled') });
     expect(youCell(story('settings').run)).toMatchObject({ title: 'Needs you: go on or stop?', waitId: firstWait('settings') });
+    // A held turn's words are Temper's own: not quoted.
     expect(youCell(story('failed').run)).toMatchObject({
-      title: "Needs you: \u201cbuilder's turn 1 failed: builder turn failed after its automatic retry.\u201d",
+      title: "Needs you: builder's turn 1 failed: builder turn failed after its automatic retry.",
       waitId: firstWait('failed'),
     });
+    // A member's own question is a person's words: quoted.
+    const asks = youCell(story('waiting').run);
+    expect(asks.title).toMatch(/^Needs you: \u201c.+\u201d$/);
     // SPEC You table: "and N more" goes with the title, not on the line.
     expect(youCell(story('waiting').run)).toMatchObject({ tone: 'needs', more: 1, line: null, from: 'From lead' });
     expect(youCell(story('limit').run)).toMatchObject({ tone: 'calm', line: 'Stop stays at the top if you want to end it.' });
@@ -1169,7 +1234,7 @@ describe('You and Spend', () => {
       expect(youCell(story(name).run), name).toEqual({
         tone: 'ended',
         title: 'Nothing needs you',
-        line: 'Read what it made below, or start a new Project.',
+        line: 'Read what it made below, or start a new project.',
         hint: false,
         from: null,
         waitId: null,

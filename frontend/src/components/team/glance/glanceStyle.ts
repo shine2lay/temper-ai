@@ -4,6 +4,8 @@
  */
 import type { GlanceTone, RingStyle } from '@/lib/teamGlance';
 import type { TeamAnswerOption } from '@/types/team';
+import { cn } from '@/lib/utils';
+import { teamBtn } from '@/components/team/teamUi';
 
 /** Text colour of a tone (the StatusBadge colours, 4.5:1 on the panel in both themes). */
 export const toneText: Record<GlanceTone, string> = {
@@ -34,6 +36,19 @@ export const glanceBodyBox = 'flex min-w-0 flex-col gap-[14px] px-[14px] pt-[14p
 /** The header's two buttons (SPEC 3): 44 px tall; on a phone they share one row, 8 px sides (D9). */
 export const glanceHeadButton = 'min-h-11 max-md:flex-[1_1_auto] max-md:px-2';
 
+/**
+ * D91: every button on the page is 44 px tall, 16 px sides, and its words wrap rather than overflow. Solid (primary)
+ * only for the view's main action, at most one per view; the rest are outlined. A stop button reads "Stop project"
+ * with the header's square icon (D92), red outline.
+ */
+export const glanceBtnSize = 'min-h-11 px-4 whitespace-normal text-center';
+const GLANCE_BTN = glanceBtnSize;
+export const glanceBtn = {
+  primary: cn(teamBtn.primary, GLANCE_BTN),
+  secondary: cn(teamBtn.secondary, GLANCE_BTN),
+  danger: cn(teamBtn.danger, GLANCE_BTN),
+};
+
 /** The ring around a member's initial (glance.css draws each style). */
 export function ringAttr(ring: RingStyle): { 'data-ring': RingStyle } {
   return { 'data-ring': ring };
@@ -44,12 +59,12 @@ export function initialOf(name: string): string {
   return (name.trim()[0] ?? '?').toUpperCase();
 }
 
-/** How the You cell names an answer on its button (what is sent is always Temper's word). */
+/** How the You cell names an answer on its button (what is sent is always Temper's word). D92: stop is "Stop project". */
 export function glanceAnswerLabel(option: Pick<TeamAnswerOption, 'answer' | 'needs_text'>): string {
   const named: Record<string, string> = {
     continue: 'Continue',
     guide: 'Guide',
-    stop: 'Stop',
+    stop: 'Stop project',
     nudge: 'Nudge',
     'go on': 'Go on',
     reply: 'Reply',

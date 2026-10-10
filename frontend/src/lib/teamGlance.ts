@@ -662,6 +662,61 @@ export function nowCountsMembers(run: GlanceRun): boolean {
  * interrupted run with no end time (D105); without it, the reply's own.
  */
 export function nowCell(run: GlanceRun, now: number | null, stale = false, lastAt?: string | null): NowCell {
+  const cell = phaseNowCell(run, now, stale, lastAt);
+  // D112: when the team waits for the owner's answer and no member is working, the sentence says so ("Nothing runs
+  // until you answer." didn't tell a cold reader who was busy). Only on Temper's own counts: an unknown count or a
+  // turn still running keeps the phase's own sentence.
+  return nobodyWorksUntilYouAnswer(run) ? { ...cell, sentence: 'No one is working until you answer.' } : cell;
+}
+
+/** D112: the team waits for the owner's answer, Temper says no member works, and no turn is still finishing. */
+export function nobodyWorksUntilYouAnswer(run: Pick<GlanceRun, 'phase' | 'counts'>): boolean {
+  const { phase, counts } = run;
+  const asked =
+    phase.name === 'waiting_for_owner' ||
+    phase.name === 'quiet' ||
+    phase.name === 'settings' ||
+    ((phase.name === 'check_in' || phase.name === 'limit') && phase.asked);
+  return asked && counts.workingSupplied !== false && counts.working === 0 && phase.running === 0;
+}
+
+/**
+ * D97: what the latest version holds, for Now's two version lines, from `work.latest`. Line 1: "Latest version v6
+ * from Backend \u00b7 4 min ago"; line 2: the member's share note (its own words, quoted, one line: line breaks become
+ * spaces), or with no note "4 files changed". Null before any share ("No shared version yet.").
+ */
+export interface VersionLines {
+  versionNo: number;
+  /** Who shared it, as Temper named the member; null when it didn't say. */
+  by: string | null;
+  /** "4 min ago" (a time in the future reads "recorded \u2026", as everywhere on the page); null without a time. */
+  ago: string | null;
+  /** The share note on one line; null when there is none (a blank note is none). */
+  note: string | null;
+  /** "4 files changed" / "1 file changed" when there is no note; null when Temper sent no count. */
+  files: string | null;
+}
+
+export function versionLines(latest: GlanceShare | null, now: number | null): VersionLines | null {
+  if (!latest) return null;
+  const ago = agoText(latest.at, now) || null;
+  const note = (latest.note ?? '').replace(/\s+/g, ' ').trim() || null;
+  const files =
+    note === null && latest.filesChanged !== null ? plural(latest.filesChanged, 'file changed', 'files changed') : null;
+  return { versionNo: latest.versionNo, by: latest.by, ago, note, files };
+}
+
+/**
+ * D111: a share note too long for its line is cut to the room left, keeping its opening quote and closing it right
+ * after the ellipsis ("\u201cExport button and CSV wri\u2026\u201d"), with no space or stray comma before the ellipsis.
+ * `keep` is how many of the note's characters stay.
+ */
+export function cutNote(note: string, keep: number): string {
+  if (keep >= note.length) return `\u201c${note}\u201d`;
+  return `\u201c${note.slice(0, Math.max(0, keep)).replace(/[\s,;:\u2013\u2014-]+$/, '')}\u2026\u201d`;
+}
+
+function phaseNowCell(run: GlanceRun, now: number | null, stale: boolean, lastAt?: string | null): NowCell {
   const { phase, counts } = run;
   const last = stale ? '' : agoText(run.lastActivityAt, now);
   // D69: "12 s ago" stays on one line.
@@ -726,7 +781,8 @@ export function nowCell(run: GlanceRun, now: number | null, stale = false, lastA
       const at = run.spend ? ` at ${money(run.spend.cost)}` : '';
       if (!phase.asked) {
         return {
-          word: `Check-in${at}`,
+          // D95: the word alone tells "not asked yet" from "asked", only while turns are really finishing.
+          word: `Check-in${at}${phase.running > 0 ? ': finishing turns' : ''}`,
           sentence: `No new work starts. ${plural(phase.running, 'member is finishing its turn', 'members are finishing their turns')}.`,
           countLine: null,
           edge: 'blue',
@@ -762,6 +818,8 @@ export function nowCell(run: GlanceRun, now: number | null, stale = false, lastA
         if (phase.resetsKnown === false) sentence += ' No usable reset time.';
       }
       if (phase.running > 0) sentence += ` ${plural(phase.running, 'turn', 'turns')} finishing.`;
+      // D89: usage is back and the team waits for the owner: it reads like an asked check-in (yellow, pause).
+      if (phase.asked) return { word: 'Usage limit: waiting for you', sentence, countLine: null, edge: 'yellow', icon: 'pause' };
       return { word: 'Usage limit', sentence, countLine: null, edge: 'grey', icon: 'clock' };
     }
     case 'draining':
@@ -844,22 +902,25 @@ export function youCell(run: GlanceRun, staleFor: string | null = null): YouCell
   const { phase, you } = run;
   if (phase.name === 'done') return calm('Nothing needs you', null, { action: run.work.summary ? 'summary' : null });
   if (phaseEnded(phase.name)) {
-    // D16: nothing waits on the owner once it ended; the next action is optional.
-    return calm('Nothing needs you', 'Read what it made below, or start a new Project.', { tone: 'ended', action: 'next' });
+    // D16: nothing waits on the owner once it ended; the next action is optional. D90: sentence case.
+    return calm('Nothing needs you', 'Read what it made below, or start a new project.', { tone: 'ended', action: 'next' });
   }
   const first = you.first;
   if (you.count > 0 && first) {
     const more = Math.max(0, you.count - 1);
     const needs = { tone: 'needs' as const, line: null, hint: false, from: null, waitId: first.waitId, more, action: 'answers' as const };
     if (phase.name === 'check_in' || first.kind === 'pause') return { ...needs, title: 'Needs you: carry on?' };
-    if (phase.name === 'quiet' || first.kind === 'stalled') return { ...needs, title: 'Needs you: nudge the team or stop' };
+    // D94: quotes mark a person's words only; Temper's own questions are not quoted, and each ends with "?".
+    if (phase.name === 'quiet' || first.kind === 'stalled') return { ...needs, title: 'Needs you: nudge the team or stop?' };
     if (phase.name === 'settings' || first.kind === 'settings') return { ...needs, title: 'Needs you: go on or stop?' };
-    if (first.kind === 'limit') return { ...needs, title: `Needs you: \u201c${firstLineOf(first.words)}\u201d` };
+    if (first.kind === 'limit') return { ...needs, title: `Needs you: ${firstLineOf(first.words)}` };
     // A member's question or held turn (D9, D62): its words (a member's own
     // question cut at 90; Temper's whole), "From <member>" beside one Answer.
+    // D94: a member's own question is a person's words, in quotes; a held turn's words are Temper's, unquoted.
+    const words = bandWords(first.kind, first.words);
     return {
       ...needs,
-      title: `Needs you: \u201c${bandWords(first.kind, first.words)}\u201d`,
+      title: `Needs you: ${isMemberQuestion(first.kind) ? `\u201c${words}\u201d` : words}`,
       from: first.member ? `From ${first.member}` : null,
       action: 'answer',
     };
@@ -938,6 +999,7 @@ export type RingStyle =
   | 'solid-blue'
   | 'solid-grey'
   | 'dashed-yellow'
+  | 'dashed-grey'
   | 'dashed-red'
   | 'thin-grey';
 
@@ -973,8 +1035,27 @@ function readyPause(m: GlanceMember, phase: GlancePhaseName): string | null {
 
 const ENDED_CHIP: MemberChip = { text: 'Ended', icon: 'stop', ring: 'thin-grey', tone: 'grey', busy: false };
 
+/** The team phase a card is read in: its name, and whether its own question is open (D88). A bare name is a phase that asks nothing. */
+export type CardPhase = GlancePhaseName | Pick<GlancePhase, 'name' | 'asked'>;
+
+function phaseOf(p: CardPhase): Pick<GlancePhase, 'name' | 'asked'> {
+  return typeof p === 'string' ? { name: p, asked: false } : p;
+}
+
+/**
+ * D88: a ready member's pause is yellow only while the owner is asked ("your
+ * answer", or a check-in or usage limit that asks); one that waits on Temper
+ * or the team is grey, like Now and You for the same wait.
+ */
+function pauseAsksYou(wait: string, phase: Pick<GlancePhase, 'name' | 'asked'>): boolean {
+  if (wait === 'your answer') return true;
+  return (phase.name === 'check_in' || phase.name === 'limit') && phase.asked;
+}
+
 /** A member's chip, ring and tone (GLANCE.md, member state table). */
-export function memberChip(m: GlanceMember, phase: GlancePhaseName, now: number | null): MemberChip {
+export function memberChip(m: GlanceMember, cardPhase: CardPhase, now: number | null): MemberChip {
+  const p = phaseOf(cardPhase);
+  const phase = p.name;
   // D105: once the run has ended in any way, every card reads Ended, in the neutral tone, with no live duration.
   if (phaseEnded(phase)) return { ...ENDED_CHIP };
   const since = sinceWords(m.since, now);
@@ -986,9 +1067,13 @@ export function memberChip(m: GlanceMember, phase: GlancePhaseName, now: number 
       return { text: `Working${how}`, icon: 'play', ring: 'solid-blue', tone: 'blue', busy: true };
     case 'ready': {
       const wait = readyPause(m, phase);
-      if (wait) return { text: `Paused: ${wait}`, icon: 'pause', ring: 'dashed-yellow', tone: 'yellow', busy: false };
-      const msgs = m.readyMessages > 0 ? ` \u00b7 ${plural(m.readyMessages, 'message', 'messages')}` : '';
-      return { text: `Ready \u00b7 waiting for a free turn${msgs}`, icon: 'ready', ring: 'solid-grey', tone: 'grey', busy: false };
+      if (wait) {
+        return pauseAsksYou(wait, p)
+          ? { text: `Paused: ${wait}`, icon: 'pause', ring: 'dashed-yellow', tone: 'yellow', busy: false }
+          : { text: `Paused: ${wait}`, icon: 'pause', ring: 'dashed-grey', tone: 'grey', busy: false };
+      }
+      // D95: the chip keeps one line; the waiting messages go on the On line (memberLine).
+      return { text: 'Ready \u00b7 waiting for a free turn', icon: 'ready', ring: 'solid-grey', tone: 'grey', busy: false };
     }
     case 'idle':
       // D77: a clock on a filled dotted ring; a dashed circle on an empty ring read as loading.
@@ -1009,11 +1094,18 @@ export function memberChip(m: GlanceMember, phase: GlancePhaseName, now: number 
 }
 
 export interface MemberLine {
-  /** "On:", "Sent QA:", "Idle:", or null for a line without a label. */
+  /** "On:", "Sent QA:", "Idle:", "Last:" (an ended card), or null for a line without a label. */
   label: string | null;
+  /** The words; empty when the line holds only the waiting messages. */
   text: string;
   /** The text is someone's words (shown in quotes). */
   quoted: boolean;
+  /**
+   * D95: a ready member's waiting messages ("2\u00a0messages"), after the words on this line (never on the
+   * chip), with no-break spaces so "\u00b7 2 messages" stays with the word before it (D69). Only for a ready
+   * member that waits for a free turn: never on a paused or an ended card (SPEC 244, 252).
+   */
+  messages?: string;
 }
 
 function onText(m: GlanceMember): string | null {
@@ -1029,7 +1121,28 @@ function onText(m: GlanceMember): string | null {
  * message it released ("Sent QA: ..."). A member that waits for the leader
  * shows none: no made-up note.
  */
-export function memberLine(m: GlanceMember): MemberLine | null {
+export function memberLine(m: GlanceMember, cardPhase?: CardPhase): MemberLine | null {
+  const phase = cardPhase === undefined ? null : phaseOf(cardPhase).name;
+  // SPEC 252: an ended card says what the member was last on, "Last: \u201c\u2026\u201d", the leader too, with no
+  // message count (SPEC 244), even on an interrupted run whose member still had messages waiting.
+  if ((phase !== null && phaseEnded(phase)) || m.state === 'ended') {
+    const sent = m.leader ? lastSentOf(m) : null;
+    const text = sent?.text || onText(m);
+    return text ? { label: 'Last:', text, quoted: true } : null;
+  }
+  const line = liveMemberLine(m);
+  // D95: a ready member's waiting messages move from the chip to this line.
+  if (m.state !== 'ready' || m.readyMessages <= 0 || (phase !== null && readyPause(m, phase))) return line;
+  const messages = plural(m.readyMessages, 'message', 'messages').replace(' ', '\u00a0');
+  return line ? { ...line, messages } : { label: null, text: '', quoted: false, messages };
+}
+
+/** The message the leader released last: Temper's last_sent, else its `on` of kind "message". */
+function lastSentOf(m: GlanceMember): { to: string; text: string } | null {
+  return m.lastSent ?? (m.on?.kind === 'message' && m.on.to ? { to: m.on.to, text: m.on.text } : null);
+}
+
+function liveMemberLine(m: GlanceMember): MemberLine | null {
   if (waitsForLeader(m)) return null;
   if (m.state === 'idle') {
     if (m.idleReason === 'no_tool_call') return { label: null, text: 'Ended its turn without a note', quoted: false };
@@ -1043,7 +1156,7 @@ export function memberLine(m: GlanceMember): MemberLine | null {
   if (m.state === 'failed') return m.lastError ? { label: null, text: m.lastError, quoted: false } : null;
   // The leader shows the last message it sent, also once the run ended: its
   // `on` of kind "message" is that message, not work it is on.
-  const sent = m.leader ? (m.lastSent ?? (m.on?.kind === 'message' && m.on.to ? { to: m.on.to, text: m.on.text } : null)) : null;
+  const sent = m.leader ? lastSentOf(m) : null;
   if (sent) return { label: `Sent ${whoName(sent.to)}:`, text: sent.text, quoted: true };
   const text = onText(m);
   return text ? { label: 'On:', text, quoted: true } : null;

@@ -579,7 +579,7 @@ export function TeamMap({
                   alignSelf: staggered ? 'center' : 'stretch',
                 }}
               >
-                <MemberCard ref={setCard(s.name)} member={m} phase={run.phase.name} now={now} moving={ringsMove} />
+                <MemberCard ref={setCard(s.name)} member={m} phase={run.phase} now={now} moving={ringsMove} />
               </li>
             );
           })}
@@ -613,7 +613,7 @@ export function TeamMap({
       <ol className="m-0 list-none divide-y divide-temper-border p-0 md:hidden" data-testid="glance-list">
         {ordered.map((m) => (
           <li key={m.name} className="min-w-0">
-            <MemberCard member={m} phase={run.phase.name} now={now} moving={ringsMove} row />
+            <MemberCard member={m} phase={run.phase} now={now} moving={ringsMove} row />
           </li>
         ))}
       </ol>

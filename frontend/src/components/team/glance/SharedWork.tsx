@@ -45,8 +45,11 @@ export function SharedWork({ run, now }: { run: GlanceRun; now: number | null })
       )}
       {latest ? (
         <div className="flex min-w-0 items-start gap-3" data-testid="glance-latest-version">
-          {/* SPEC 7: "v6" 30 px semibold; who and when, files and commit 15 px; the share note 16 px. */}
-          <span className="rounded-md border border-temper-control px-2.5 py-1 text-[30px] leading-9 font-semibold text-temper-text">
+          {/* SPEC 7: "v6" 28 px semibold (D93); who and when, files and commit 15 px; the share note 16 px. */}
+          <span
+            className="rounded-md border border-temper-control px-2.5 py-1 text-[28px] leading-9 font-semibold text-temper-text"
+            data-testid="glance-version-number"
+          >
             v{latest.versionNo}
           </span>
           <div className="flex min-w-0 flex-col gap-0.5 text-[15px]">

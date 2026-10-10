@@ -5,7 +5,9 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -314,6 +316,127 @@ class ServerRunTests(unittest.TestCase):
         self.assertEqual(result["nodes"][0]["nodes"][0]["status"], "waiting")
         self.assertEqual(server.safe_status({"nodes": [{"name": "leaf", "child_nodes": None}]})["nodes"][0]["nodes"], [])
         self.assertIn("/app/workflow/", server.links("smoke", "id")["run_url"])
+
+
+class LiveConsumerBriefTests(unittest.TestCase):
+    """Queue #48: the deployed consumer brief is a live Product workflow like the business brief.
+
+    #39 found opportunity_brief_consumer missing from LIVE: start.sh asked for a registration receipt to
+    launch it by name, and assert_idle did not see a consumer brief going on the server. Fake server,
+    units and quota only: nothing is submitted and no model is called.
+    """
+
+    BEFORE = {"scan_market", "scan_serving", "signal_harvest", "signal_grade", "opportunity_brief", "desk_check",
+              "shape_mvp", "pmf_evidence", "feature_screen", "confidence_check"}  # LIVE before #48; none drops out
+    EXECUTION = "22222222-2222-4222-8222-222222222222"
+    CANDIDATE = "product_q48_opportunity_brief_consumer_0123456789"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.workspace = self.root / "shared/run"
+        self.workspace.mkdir(parents=True)
+        self.calls = []  # (method, route) in order
+        self.bodies = []  # every run start the fake server got
+        self.active = {}  # status -> the runs the fake server lists for it
+        self.configs = {}  # (kind, name) -> the definition the fake server holds
+        quota = types.SimpleNamespace(load=lambda path, default: default,
+                                      _pool=lambda threshold: {"ok": True, "headroom": True})
+        for patcher in (patch.object(server, "ROOT", self.root), patch.object(server, "SHARED", self.root / "shared"),
+                        patch.object(server, "prepare_workspace"), patch.object(server, "start_monitor"),
+                        patch.object(server, "api", side_effect=self.api),
+                        patch.object(server.subprocess, "run", return_value=Mock(stdout="")),
+                        patch.dict(sys.modules, {"digest": quota})):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def api(self, method, route, body=None, base=None):
+        self.calls.append((method, route))
+        if (method, route) == ("POST", "/api/runs"):
+            self.bodies.append(body)
+            return {"execution_id": self.EXECUTION, "status": "queued"}
+        if method == "GET" and route.startswith("/api/workflows?"):
+            runs = self.active.get(urllib.parse.parse_qs(route.split("?", 1)[1])["status"][0], [])
+            return {"runs": runs, "total": len(runs)}
+        if method == "GET" and route.startswith("/api/studio/configs/"):
+            key = tuple(route.rsplit("/", 2)[-2:])
+            if key not in self.configs:
+                raise server.APIError(404)
+            return {"config": self.configs[key]}
+        raise AssertionError(f"unexpected fake API call {method} {route}")
+
+    def running(self, name, state="running"):
+        return {state: [{"id": "33333333-3333-4333-8333-333333333333", "workflow_name": name}]}
+
+    def test_consumer_brief_launches_by_name_without_a_receipt_when_idle(self):
+        job = server.launch("consumer-brief", "opportunity_brief_consumer", None, self.workspace)
+        self.assertEqual((job["execution_id"], job["state"]), (self.EXECUTION, "queued"))
+        self.assertIsNone(job["candidate_receipt"])
+        self.assertEqual([body["workflow"] for body in self.bodies], ["opportunity_brief_consumer"])
+        self.assertEqual(server.load(server.filename("consumer-brief", "job.json"))["workflow"],
+                         "opportunity_brief_consumer")
+        # The real one-at-a-time check asked the server for every active state; no receipt was looked up.
+        asked = [route for _, route in self.calls if route.startswith("/api/workflows?")]
+        self.assertEqual([urllib.parse.parse_qs(route.split("?", 1)[1])["status"][0] for route in asked],
+                         ["pending", "queued", "running", "waiting"])
+        self.assertFalse([route for _, route in self.calls if route.startswith("/api/studio/configs/")])
+
+    def test_an_active_consumer_brief_refuses_another_product_launch(self):
+        # Started outside this helper (no local job record): only the server's run list shows it.
+        for state in ("pending", "queued", "running", "waiting"):
+            self.active = self.running("opportunity_brief_consumer", state)
+            with self.subTest(state=state):
+                with self.assertRaises(server.Refused) as caught:
+                    server.assert_idle()
+                self.assertIn(f"still {state}: 33333333-3333-4333-8333-333333333333", str(caught.exception))
+                for workflow in ("opportunity_brief_consumer", "scan_market"):
+                    name = f"next-{state}-{workflow.split('_')[0]}"
+                    with self.assertRaises(server.Refused) as caught:
+                        server.launch(name, workflow, None, self.workspace)
+                    self.assertIn("shared Product execution still", str(caught.exception))
+                    self.assertFalse(server.filename(name, "job.json").exists())
+        self.assertEqual(self.bodies, [])
+
+    def test_every_other_live_name_still_fences_and_other_runs_do_not(self):
+        self.assertLessEqual(self.BEFORE | {"opportunity_brief_consumer"}, server.LIVE)
+        for name in [*sorted(self.BEFORE), self.CANDIDATE]:
+            self.active = self.running(name)
+            with self.subTest(active=name), self.assertRaises(server.Refused):
+                server.assert_idle()
+        # Not Product's: another department's workflow, or a local name that was never registered.
+        for name in ("epd_build", "opportunity_brief_consumer_next"):
+            self.active = self.running(name)
+            with self.subTest(active=name):
+                server.assert_idle()
+
+    def test_candidates_still_need_their_matching_receipt(self):
+        definition = {"workflow": {"name": self.CANDIDATE, "nodes": []}}
+        self.configs = {("workflow", self.CANDIDATE): definition}
+        receipt = self.root / "registration.json"
+        server.save(receipt, {"state": "registered", "workflow": self.CANDIDATE, "configs": [
+            {"type": "workflow", "name": self.CANDIDATE, "sha256": server.digest(definition)}]})
+        partial = self.root / "partial.json"
+        server.save(partial, {**server.load(receipt), "state": "registering"})
+        other = self.root / "other.json"
+        server.save(other, {**server.load(receipt), "workflow": "product_q48_other_0123456789"})
+        refused = [("opportunity_brief_consumer_next", None), (self.CANDIDATE, None),
+                   (self.CANDIDATE, partial), (self.CANDIDATE, other)]
+        for index, (workflow, given) in enumerate(refused):
+            with self.subTest(workflow=workflow, receipt=given):
+                with self.assertRaises(server.Refused) as caught:
+                    server.launch(f"candidate-{index}", workflow, None, self.workspace, receipt=given)
+                self.assertIn("receipt", str(caught.exception))
+        self.configs[("workflow", self.CANDIDATE)] = {"workflow": {"name": self.CANDIDATE, "nodes": [{"name": "x"}]}}
+        with self.assertRaises(server.Refused) as caught:
+            server.launch("candidate-changed", self.CANDIDATE, None, self.workspace, receipt=receipt)
+        self.assertIn("changed since registration", str(caught.exception))
+        self.assertEqual(self.bodies, [])
+        self.assertFalse(list((self.root / "runs").glob("candidate-*")))
+        self.configs[("workflow", self.CANDIDATE)] = definition
+        job = server.launch("candidate-ok", self.CANDIDATE, None, self.workspace, receipt=receipt)
+        self.assertEqual(job["candidate_receipt"], str(receipt))
+        self.assertEqual([body["workflow"] for body in self.bodies], [self.CANDIDATE])
 
 
 class WeeklyTests(unittest.TestCase):

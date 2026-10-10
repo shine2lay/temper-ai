@@ -12,18 +12,18 @@ import { teamBtn, teamCard } from '@/components/team/teamUi';
 import type { TeamGuardMode } from '@/types/team';
 import { GlanceCrumbs } from './GlanceRunView';
 import { GIcon } from './glanceUi';
-import { toneText } from './glanceStyle';
+import { glanceBodyBox, glanceHeaderBox, toneText } from './glanceStyle';
 import { StatusBandSkeleton } from './StatusBand';
 import './glance.css';
 
 function Page({ header, children, testId }: { header: ReactNode; children: ReactNode; testId: string }) {
   return (
     <div className="glance-root flex h-full flex-col overflow-auto bg-temper-bg" data-testid={testId}>
-      <header className="flex flex-col gap-2 border-b border-temper-border px-4 pt-4 pb-4 sm:px-6">
+      <header className={glanceHeaderBox}>
         <GlanceCrumbs />
         {header}
       </header>
-      <div className="flex min-w-0 flex-col gap-4 px-4 pt-4 pb-8 sm:px-6">{children}</div>
+      <div className={glanceBodyBox}>{children}</div>
     </div>
   );
 }
@@ -46,7 +46,7 @@ export function GlanceLoading({ guardMode }: { guardMode?: TeamGuardMode }) {
         </div>
       }
     >
-      <TeamGuardBanner mode={guardMode} />
+      <TeamGuardBanner mode={guardMode} textScale="glance" />
       <StatusBandSkeleton />
       <p role="status" className="m-0 text-sm text-temper-text-muted">
         Loading the project from Temper…

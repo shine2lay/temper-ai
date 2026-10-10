@@ -8,8 +8,9 @@
  */
 import { cn } from '@/lib/utils';
 import { agoText, type GlanceRun, type GlanceShare } from '@/lib/teamGlance';
-import { teamCard, teamLabel } from '@/components/team/teamUi';
+import { teamCard } from '@/components/team/teamUi';
 import { Facts } from './glanceUi';
+import { glanceCardHead } from './glanceStyle';
 
 function filesWords(s: GlanceShare): string | null {
   if (s.filesChanged === null) return null;
@@ -23,7 +24,7 @@ export function SharedWork({ run, now }: { run: GlanceRun; now: number | null })
   return (
     <section className={cn(teamCard, 'flex min-w-0 flex-col gap-3 p-4')} aria-labelledby="glance-work-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="glance-work-title" className={cn(teamLabel, 'mb-0')}>
+        <h2 id="glance-work-title" className={glanceCardHead}>
           Shared work
         </h2>
         {total > 0 && (
@@ -44,10 +45,11 @@ export function SharedWork({ run, now }: { run: GlanceRun; now: number | null })
       )}
       {latest ? (
         <div className="flex min-w-0 items-start gap-3" data-testid="glance-latest-version">
-          <span className="rounded-md border border-temper-control px-2.5 py-1 text-xl font-semibold text-temper-text">
+          {/* SPEC 7: "v6" 30 px semibold; who and when, files and commit 15 px; the share note 16 px. */}
+          <span className="rounded-md border border-temper-control px-2.5 py-1 text-[30px] leading-9 font-semibold text-temper-text">
             v{latest.versionNo}
           </span>
-          <div className="flex min-w-0 flex-col gap-0.5 text-sm">
+          <div className="flex min-w-0 flex-col gap-0.5 text-[15px]">
             <Facts
               className="text-temper-text"
               testId="glance-latest-by"
@@ -67,7 +69,7 @@ export function SharedWork({ run, now }: { run: GlanceRun; now: number | null })
                 )}
               />
             )}
-            {latest.note && <p className="m-0 break-words text-temper-text">&ldquo;{latest.note}&rdquo;</p>}
+            {latest.note && <p className="m-0 text-base break-words text-temper-text">&ldquo;{latest.note}&rdquo;</p>}
           </div>
         </div>
       ) : (

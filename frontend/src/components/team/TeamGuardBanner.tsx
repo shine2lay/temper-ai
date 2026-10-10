@@ -35,8 +35,18 @@ function hiddenFor(): string | null {
  * of the session once the owner closes it; a change of mode shows it again.
  * On a phone-width screen it shows its first sentence, with the rest behind
  * "Show details", so it doesn't push the page down by half a screen.
+ * `textScale="glance"`: the glance page's type, where no text is under 14 px
+ * (its "Show details" button too); the other Team pages keep theirs.
  */
-export function TeamGuardBanner({ mode, className }: { mode: TeamGuardMode | string | undefined; className?: string }) {
+export function TeamGuardBanner({
+  mode,
+  className,
+  textScale = 'team',
+}: {
+  mode: TeamGuardMode | string | undefined;
+  className?: string;
+  textScale?: 'team' | 'glance';
+}) {
   const [hidden, setHidden] = useState<string | null>(hiddenFor);
   const [details, setDetails] = useState(false);
   const narrow = useIsNarrow();
@@ -80,7 +90,7 @@ export function TeamGuardBanner({ mode, className }: { mode: TeamGuardMode | str
       {narrow && (
         <button
           type="button"
-          className={cn(teamBtn.ghostXs, '-ml-2.5 mt-1')}
+          className={cn(teamBtn.ghostXs, '-ml-2.5 mt-1', textScale === 'glance' && 'text-sm')}
           aria-expanded={details}
           aria-controls={detailsId}
           onClick={() => setDetails((v) => !v)}

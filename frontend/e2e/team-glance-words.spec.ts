@@ -9,8 +9,8 @@
  * then 320 px (reflow). Now names who works on what, You and Spend say what
  * they mean, the cards put role and leader under the name, Latest says "...
  * ago" and All activity tells the time to the second; with axe, 24 px
- * targets, 14 px header buttons and no sideways scroll; on a phone the band
- * ends on the first screen.
+ * targets, 14 px header buttons, no text under 14 px and no sideways
+ * scroll; on a phone the band ends on the first screen.
  * Then contract points only: a member's own long question (named, cut in
  * the band, whole with Temper's note in the answer view), the phone band in
  * every state Temper can be in, a usage check that can't be read, ended
@@ -106,6 +106,27 @@ const youTitle = (page: Page) => page.getByTestId('glance-you-title');
 const activity = (page: Page) => page.getByRole('region', { name: 'All activity' });
 const stopButton = (page: Page) => page.getByRole('button', { name: 'Stop project' });
 
+/**
+ * D84: states whose band still ends past 844 px at the 320 reflow (264 px of page beside the rail), with text at
+ * SPEC's sizes, the reference's phone spacing (D9) and Now's rows capped: recorded for Design with where the band
+ * ends (px). Each may not grow.
+ */
+const D84_OVER_AT_320: Record<string, number> = {
+  burst: 853.1,
+  check_in: 957.6,
+  check_in_running: 878.6,
+  draining: 850.6,
+  failed: 914.6,
+  limit: 924.6,
+  limit_asked: 972.6,
+  limit_spent: 858.6,
+  map_fanout: 875.1,
+  member_question: 1015.1,
+  settings: 945.6,
+  stalled: 916.6,
+  waiting: 970.6,
+};
+
 /** Where the status band ends, in CSS px from the top of the window (D9: at most 844 on a 390x844 phone). */
 const bandEnd = (page: Page) =>
   page.getByTestId('glance-band').evaluate((band) => Math.round(band.getBoundingClientRect().bottom * 10) / 10);
@@ -127,6 +148,23 @@ async function expectNoSideways(page: Page) {
     return out;
   });
   expect(wide, 'sideways scroll').toEqual([]);
+}
+
+/** No visible text on the page is under 14 px (SPEC: "Nothing is smaller than 14"); the sidebar is not the page's. */
+async function expectNoSmallText(page: Page) {
+  const small = await page.getByRole('main').evaluate((main) => {
+    const out: string[] = [];
+    const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const el = n.parentElement;
+      if (!n.textContent?.trim() || !el || el.closest('.sr-only, svg') || !el.getClientRects().length) continue;
+      const s = getComputedStyle(el);
+      if (s.visibility === 'hidden' || parseFloat(s.fontSize) >= 14) continue;
+      out.push(`${s.fontSize} "${n.textContent.trim().slice(0, 40)}"`);
+    }
+    return out;
+  });
+  expect(small, 'text under 14 px').toEqual([]);
 }
 
 const SIZES = [
@@ -159,16 +197,20 @@ for (const theme of ['dark', 'light'] as const) {
       if (phone) await expect(facts).not.toContainText('3 members', { useInnerText: true });
       else await expect(facts).toContainText('3 members', { useInnerText: true });
 
-      // Now: Temper's count first, then who works on what, one line each (D8).
+      // Now: Temper's count first, then who works on what, one line each (D8); a phone lists two and counts the
+      // rest, 768 px and wider list three (D84).
       await expect(nowWord(page)).toHaveText('Working');
       await expect(nowSentence(page)).toHaveText(/^3 of 3 members are working\. Last activity \d+\u00a0s\u00a0ago\.$/);
       const working = page.getByTestId('glance-working');
       await expect(working).toHaveAttribute('aria-label', 'Working now');
-      await expect(working.getByTestId('glance-working-row').locator('b')).toHaveText(['lead', 'builder', 'checker']);
+      await expect(working.getByTestId('glance-working-row').locator('b')).toHaveText(phone ? ['lead', 'builder'] : ['lead', 'builder', 'checker']);
       await expect(working.getByTestId('glance-working-on')).toHaveText([
         '\u201cBuild the builder part and share it.\u201d',
-        '\u201cBuild the checker part and share it.\u201d',
+        ...(phone ? [] : ['\u201cBuild the checker part and share it.\u201d']),
       ]);
+      const rest = working.getByText('and 1 more working', { exact: true });
+      if (phone) await expect(rest).toBeVisible();
+      else await expect(rest).toHaveCount(0);
 
       // You and Spend: nothing needs you; the general hint stays off a phone (D9).
       await expect(youTitle(page)).toHaveText('Nothing needs you');
@@ -217,11 +259,20 @@ for (const theme of ['dark', 'light'] as const) {
       await expectAxeClean(page);
       await expectTargets(page);
       await expectNoSideways(page);
+      await expectNoSmallText(page);
       if (phone) {
         await page.setViewportSize({ width: 320, height: 568 });
-        await expect(working.getByTestId('glance-working-row')).toHaveCount(3);
+        await expect(working.getByTestId('glance-working-row')).toHaveCount(2);
+        await expect(rest).toBeVisible();
+        // D84: the band ends on a 844 px screen at the 320 reflow too.
+        await page.getByRole('main').evaluate((main) => main.scrollTo(0, 0));
+        expect(await bandEnd(page), 'band end at 320').toBeLessThanOrEqual(844);
         await expectTargets(page);
         await expectNoSideways(page);
+        await expectNoSmallText(page);
+      } else if (width === 1024) {
+        // D84: at 1024x768 the band ends on the first screen.
+        expect(await bandEnd(page), 'band end at 1024x768').toBeLessThanOrEqual(768);
       }
     });
   }
@@ -296,7 +347,7 @@ test("contract: a member's own long question names it, fits the phone band, and 
   await expectTargets(page);
 });
 
-test('contract: in every state Temper can be in, the phone band ends on the first screen and Stop is offered only while the team is live', async ({
+test('contract: in every state Temper can be in, the band ends on the first screen (390x844, 320 and 1024x768, D84), no text is under 14 px, and Stop is offered only while the team is live', async ({
   context,
 }) => {
   test.setTimeout(240_000);
@@ -312,12 +363,26 @@ test('contract: in every state Temper can be in, the phone band ends on the firs
     // A phone band leaves Temper's note to the answer view (D9, D79).
     await expect(page.getByTestId('glance-question-note'), `${name}: no answer view`).toHaveCount(0);
     await expect(page.getByTestId('glance-you-note'), `${name}: no note in the phone band`).toBeHidden();
-    // Reflow: nothing sideways at 320 px in any state.
+    await expectNoSmallText(page);
+    // Reflow: nothing sideways at 320 px in any state; where the band ends is checked for all states below (D84).
     await page.setViewportSize({ width: 320, height: 568 });
     await expectNoSideways(page);
+    ends[`${name} at 320`] = await bandEnd(page);
+    // D84: at 1024x768 the band ends on the first screen; no text under 14 px, phone or wide.
+    await page.setViewportSize({ width: 1024, height: 768 });
+    ends[`${name} at 1024`] = await bandEnd(page);
+    expect(ends[`${name} at 1024`], `${name}: band end at 1024x768`).toBeLessThanOrEqual(768);
+    await expectNoSmallText(page);
     await page.close();
   }
-  test.info().annotations.push({ type: 'band-end-390x844', description: JSON.stringify(ends) });
+  test.info().annotations.push({ type: 'band-ends', description: JSON.stringify(ends) });
+  // D84: at the 320 reflow the band ends by 844 px too, except the states recorded for Design, which may not grow.
+  const over = STATES.flatMap((name) => {
+    const end = ends[`${name} at 320`];
+    const recorded = D84_OVER_AT_320[name];
+    return end <= 844 || (recorded !== undefined && end <= recorded + 2) ? [] : [`${name}: ${end}`];
+  });
+  expect(over, 'band ends past 844 px at 320 (D84)').toEqual([]);
 });
 
 test("contract: on a wide screen Temper's note sits under a member's own question, said once, and never under Temper's own waits (D79)", async ({
@@ -495,7 +560,12 @@ test('contract: when Temper stops answering, Now says "Last seen" and You says w
   await expect(page.getByText(/^Temper hasn.t answered for /).first()).toBeVisible({ timeout: 15_000 });
   await expect(nowWord(page)).toHaveText('Last seen: Working');
   await expect(nowSentence(page)).toHaveText('3 of 3 members are working.');
-  await expect(page.getByTestId('glance-working')).toHaveAttribute('aria-label', 'Working when last seen');
+  const working = page.getByTestId('glance-working');
+  await expect(working).toHaveAttribute('aria-label', 'Working when last seen');
+  // D84: with the stale note on a phone, Now lists one member and counts the rest.
+  await expect(working.getByTestId('glance-working-row').locator('b')).toHaveText(['lead']);
+  await expect(working.getByText('and 2 more working', { exact: true })).toBeVisible();
+  expect(await bandEnd(page), 'band end').toBeLessThanOrEqual(844);
   await expect(youTitle(page)).toHaveText(/^Nothing needed you .+ ago$/);
   await expect(page.getByTestId('glance-you')).toContainText('Questions show up once Temper answers.');
   await expectAxeClean(page);

@@ -9,8 +9,9 @@ import { useMemo } from 'react';
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { latestAgo, latestMoments, type GlanceEvent, type GlanceRun } from '@/lib/teamGlance';
-import { teamCard, teamLabel, teamLink } from '@/components/team/teamUi';
+import { teamCard, teamLink } from '@/components/team/teamUi';
 import { GIcon, PathText } from './glanceUi';
+import { glanceCardHead } from './glanceStyle';
 
 export function LatestMoments({
   run,
@@ -24,11 +25,16 @@ export function LatestMoments({
   ready: boolean;
 }) {
   const liveLimit = run.phase.name === 'limit';
-  const moments = useMemo(() => latestMoments(events, run.leader, 5, liveLimit), [events, run.leader, liveLimit]);
+  // The team's cards: a receiver with none doesn't count towards D82's "sent a message to N members".
+  const members = useMemo(() => new Set(run.members.map((m) => m.name)), [run.members]);
+  const moments = useMemo(
+    () => latestMoments(events, run.leader, 5, liveLimit, members),
+    [events, run.leader, liveLimit, members],
+  );
   return (
     <section className={cn(teamCard, 'flex min-w-0 flex-col gap-2 p-4')} aria-labelledby="glance-latest-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="glance-latest-title" className={cn(teamLabel, 'mb-0')}>
+        <h2 id="glance-latest-title" className={glanceCardHead}>
           Latest
         </h2>
         <p className="m-0 text-sm text-temper-text-muted">big moments only</p>

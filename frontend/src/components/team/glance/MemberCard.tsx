@@ -56,12 +56,13 @@ export const MemberCard = forwardRef<HTMLDivElement, MemberCardProps>(function M
           <span className="glance-pulse" data-pulse={m.name} />
         </span>
         <div className={cn('flex min-w-0 flex-1 gap-x-2 gap-y-1', row ? 'flex-wrap items-center justify-between' : 'flex-col')}>
-          <h3 className="m-0 flex min-w-0 flex-col text-sm text-temper-text">
+          {/* SPEC 5: the name 17 px semibold, the role 15 px muted, the leader tag 14 px. */}
+          <h3 className="m-0 flex min-w-0 flex-col text-[17px] leading-[1.25] text-temper-text">
             <span className="font-semibold break-words">{m.name}</span>
             {/* D51: role and leader tag on their own line under the name, no middot to orphan. */}
             {(m.role || m.leader) && (
               <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5" data-testid="glance-role">
-                {m.role && <span className="break-words text-temper-text-muted">{m.role}</span>}
+                {m.role && <span className="text-[15px] leading-5 break-words text-temper-text-muted">{m.role}</span>}
                 {m.leader && (
                   <span className="rounded-md border border-temper-control px-2 py-px text-sm leading-5 font-semibold whitespace-nowrap text-temper-text">
                     leader
@@ -70,8 +71,9 @@ export const MemberCard = forwardRef<HTMLDivElement, MemberCardProps>(function M
               </span>
             )}
           </h3>
+          {/* SPEC 5: the chip 15 px semibold, the On line 15 px. */}
           <p
-            className={cn('m-0 flex min-w-0 items-center gap-1.5 text-sm font-medium', toneText[chip.tone])}
+            className={cn('m-0 flex min-w-0 items-center gap-1.5 text-[15px] font-semibold', toneText[chip.tone])}
             data-testid="glance-chip"
           >
             <GIcon name={chip.icon} />
@@ -80,7 +82,7 @@ export const MemberCard = forwardRef<HTMLDivElement, MemberCardProps>(function M
         </div>
       </div>
       {line && (
-        <p className="m-0 min-w-0 text-sm break-words text-temper-text" data-testid="glance-on">
+        <p className="m-0 min-w-0 text-[15px] break-words text-temper-text" data-testid="glance-on">
           {line.label && <span className="text-temper-text-muted">{line.label} </span>}
           {line.quoted ? <>&ldquo;{line.text}&rdquo;</> : line.text}
         </p>

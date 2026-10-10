@@ -40,6 +40,7 @@ import {
   withBody,
   type Fixture,
 } from './team-helpers';
+import { expectDroppedCountsListed } from './team-glance-map-measure';
 
 type Raw = Record<string, unknown>;
 type Step =
@@ -98,7 +99,12 @@ type Tweak = (step: Step, run: Raw, feed: { events: Raw[]; as_of: string }) => v
 async function serveFlow(
   page: Page,
   start: Step,
-  { cap = Infinity, answer = [GUIDED], tweak }: { cap?: number; answer?: Fixture[]; tweak?: Tweak } = {},
+  {
+    cap = Infinity,
+    answer = [GUIDED],
+    tweak,
+    bodies,
+  }: { cap?: number; answer?: Fixture[]; tweak?: Tweak; bodies?: Record<string, string> } = {},
 ) {
   // `down`: Temper doesn't answer run reads (the page goes stale).
   const state = { step: start, id: start === 'closing' || start === 'done' ? ownId(start) : FLOW_ID, down: false };
@@ -116,6 +122,15 @@ async function serveFlow(
       : { route: '', status: 200, body: { ...data(stepNow()).run, execution_id: state.id } };
   const seen = await serveTeam(page, { run: runNow });
   await serveActions(page, sent, { answer });
+  // `bodies`: a message's whole body by id, as Temper's message read sends it; any other id as serveTeam answers.
+  if (bodies) {
+    await page.route(/\/api\/team\/runs\/[^/]+\/messages\/[^/]+$/, async (route) => {
+      const id = new URL(route.request().url()).pathname.split('/').pop() ?? '';
+      if (!(id in bodies)) return route.fallback();
+      const read = withBody('message-read', (b) => ({ ...b, message_id: id, body: bodies[id] }));
+      await route.fulfill({ status: read.status, contentType: 'application/json', body: JSON.stringify(read.body) });
+    });
+  }
   const reads: number[] = [];
   // Set up after serveTeam, so it answers the feed first.
   await page.route(/\/api\/team\/runs\/[^/]+\/events(\?|$)/, async (route) => {
@@ -140,7 +155,11 @@ async function serveFlow(
   return { state, sent, reads, seen };
 }
 
-async function open(page: Page, start: Step, options?: { cap?: number; clock?: string; answer?: Fixture[]; tweak?: Tweak }) {
+async function open(
+  page: Page,
+  start: Step,
+  options?: { cap?: number; clock?: string; answer?: Fixture[]; tweak?: Tweak; bodies?: Record<string, string> },
+) {
   await page.clock.setFixedTime(new Date(options?.clock ?? asOf(start)));
   const served = await serveFlow(page, start, options);
   await page.goto(`/app/team/runs/${served.state.id}`);
@@ -428,8 +447,9 @@ async function expectSound(page: Page) {
   await expectAxeClean(page);
   await expectTargets(page);
   await expectNoSideways(page);
-  // Every count on a clear spot, and no two lines running closer than 18 px (Design D23).
-  await expect(page.getByTestId('glance-map')).toHaveAttribute('data-badges-forced', '0');
+  // Every count on a clear spot, or left off the map and kept in the list (D83), and no two lines running closer
+  // than 18 px (Design D23).
+  await expectDroppedCountsListed(page);
   await expect(page.getByTestId('glance-map')).toHaveAttribute('data-lines-alongside', '0');
   await expectBadgeClearance(page);
   // D28: time words stay in their 64 px slot and can wrap rather than clip.
@@ -899,6 +919,79 @@ test('glance with reduced motion: no dot moves, the words still update', async (
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await page.reload();
   await expect(page.getByRole('switch', { name: 'Animate messages' })).toHaveAttribute('aria-checked', 'false');
+});
+
+test('contract: a cut activity row opens whole in place with Show all, by keyboard, and stays open as new events arrive (D85)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  // lead's request to builder says more than its first line: Temper's message read holds the whole body.
+  const asked = (flowRaw('working', true).events as Raw[]).find((e) => e.kind === 'message' && e.to === 'builder')!;
+  const tail = 'Share it once the Install and Usage sections both run as written.';
+  const body = `${asked.text as string}\n\nStart from the template in docs/README-template.md.\n${tail}`;
+  // Temper's next event, once `later.on`: one new message, read by the page's own poll.
+  const later = { on: false };
+  const next = { ...(flowRaw('burst', true).events as Raw[]).find((e) => e.seq === 12)!, seq: 11, at: asOf('working') };
+  await open(page, 'working', {
+    bodies: { [asked.message_id as string]: body },
+    tweak: (_step, run, feed) => {
+      if (!later.on) return;
+      feed.events.push(next);
+      run.events_cursor = 11;
+      run.events_total = 11;
+    },
+  });
+  const region = page.getByRole('region', { name: 'All activity' });
+  const heading = region.getByRole('heading', { name: 'All activity' });
+  // Only the cut row offers it: every other row is whole, or its body says no more.
+  const showAll = region.getByRole('button', { name: 'Show all' });
+  await expect(showAll).toHaveCount(1);
+  // An inner locator is matched inside each row, so it starts from the page, not from the region.
+  const key = await region.locator('li', { has: page.getByRole('button', { name: 'Show all' }) }).getAttribute('data-row');
+  const row = region.locator(`li[data-row="${key}"]`);
+  await expect(row).toContainText(`\u201c${asked.text as string}\u201d`);
+  await expect(row).not.toContainText(tail);
+  await expect(showAll).toHaveAttribute('aria-expanded', 'false');
+  const text = row.locator(`#${await showAll.getAttribute('aria-controls')}`);
+  await expect(text).toHaveCount(1);
+  const target = (await showAll.boundingBox())!;
+  expect(Math.min(target.width, target.height), 'Show all target').toBeGreaterThanOrEqual(24);
+
+  // The keyboard reaches it in order from the heading, with the focus ring; Enter opens it in place: the row's
+  // top and everything above stay put, and focus stays on the button, now Show less.
+  await heading.click();
+  for (let i = 0; i < 20 && !(await showAll.evaluate((el) => el === document.activeElement)); i += 1) await page.keyboard.press('Tab');
+  await expectFocusRing(showAll);
+  await row.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const y = async () => [(await row.boundingBox())!.y, (await heading.boundingBox())!.y];
+  const [rowTop, headTop] = await y();
+  await page.keyboard.press('Enter');
+  const showLess = region.getByRole('button', { name: 'Show less' });
+  await expect(showLess).toHaveAttribute('aria-expanded', 'true');
+  await expect(showLess).toBeFocused();
+  await expect(text).toContainText('Start from the template in docs/README-template.md.');
+  await expect(text).toContainText(tail);
+  const [rowOpen, headOpen] = await y();
+  expect(rowOpen, 'the row top stays put').toBeCloseTo(rowTop, 0);
+  expect(headOpen, 'what is above stays put').toBeCloseTo(headTop, 0);
+  await expectAxeClean(page);
+  await expectTargets(page);
+
+  // A new event arrives on the page's poll: the open row stays open, whole.
+  later.on = true;
+  await expect(region.locator('li').first()).toContainText(next.text as string, { timeout: 15_000 });
+  await expect(showLess).toHaveAttribute('aria-expanded', 'true');
+  await expect(text).toContainText(tail);
+
+  // Space closes it: the first line again, the row's top where it was.
+  const [rowBefore] = await y();
+  await showLess.focus();
+  await page.keyboard.press('Space');
+  await expect(showAll).toHaveAttribute('aria-expanded', 'false');
+  await expect(showAll).toBeFocused();
+  await expect(row).not.toContainText(tail);
+  expect((await y())[0], 'the row top stays put on Show less').toBeCloseTo(rowBefore, 0);
 });
 
 test('contract: history is read quietly in pages, and an ended run is read once', async ({ page }) => {

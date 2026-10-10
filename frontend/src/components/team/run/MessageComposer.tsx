@@ -73,13 +73,20 @@ export function MessageComposer({
   limit,
   sender,
   hint,
+  textScale = 'team',
 }: {
   run: TeamRun;
   limit: number | undefined;
   sender: TeamMessageSender;
   /** The hint under the box for the chosen member (the glance page's D56); the round page keeps its own. */
   hint?: (to: string) => ReactNode;
+  /**
+   * The glance page's type: its card head (20 px), and no text under 14 px (the hint and the counter).
+   * The round page keeps the app's small label.
+   */
+  textScale?: 'team' | 'glance';
 }) {
+  const glance = textScale === 'glance';
   const ids = useId();
   const titleId = `${ids}-title`;
   const toId = `${ids}-to`;
@@ -107,7 +114,7 @@ export function MessageComposer({
 
   return (
     <section data-card="composer" aria-labelledby={titleId} className={cn(teamCard, 'flex flex-col gap-3 p-4')}>
-      <h2 id={titleId} className={cn(teamLabel, 'mb-0')}>
+      <h2 id={titleId} className={glance ? 'm-0 text-xl font-semibold text-temper-text' : cn(teamLabel, 'mb-0')}>
         Message a member
       </h2>
       <div className="flex flex-wrap items-center gap-2">
@@ -126,7 +133,7 @@ export function MessageComposer({
             </option>
           ))}
         </select>
-        <TeamCharCount id={countId} className="ml-auto" text={body} limit={max} />
+        <TeamCharCount id={countId} className={cn('ml-auto', glance && 'text-sm')} text={body} limit={max} />
       </div>
       <label htmlFor={bodyId} className="sr-only">
         Message
@@ -153,7 +160,7 @@ export function MessageComposer({
         )}
       </div>
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <p id={helpId} className="m-0 flex-1 text-xs text-temper-text-muted">
+        <p id={helpId} className={cn('m-0 flex-1 text-xs text-temper-text-muted', glance && 'text-sm')}>
           {hint
             ? hint(to)
             : waitOpen

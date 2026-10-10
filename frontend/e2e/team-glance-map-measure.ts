@@ -167,12 +167,37 @@ export const SPOTS: Record<number, { line: number; card: number }> = {
   4: { line: 8, card: 0 },
 };
 
+/** The counts the map left off (D83): each line's pair and count. */
+export async function droppedCounts(page: Page): Promise<Array<{ pair: string; count: number }>> {
+  const raw = await page.getByTestId('glance-map').getAttribute('data-counts-dropped');
+  return raw ? (JSON.parse(raw) as Array<{ pair: string; count: number }>) : [];
+}
+
+/**
+ * D83: a count with no allowed spot, once its line's other routes were tried, is left off the map; the pair list
+ * under the map keeps it, with the same number. Returns the dropped ones.
+ */
+export async function expectDroppedCountsListed(page: Page): Promise<Array<{ pair: string; count: number }>> {
+  const dropped = await droppedCounts(page);
+  await expect(page.getByTestId('glance-map'), 'every count off the map is a dropped one').toHaveAttribute(
+    'data-badges-forced',
+    String(dropped.length),
+  );
+  for (const { pair, count } of dropped) {
+    const row = page.getByTestId('glance-pair-counts').locator(`li[data-pair="${pair}"] .glance-hour-pair`);
+    await expect(row, `${pair}: its dropped count is in the list`).toHaveText(new RegExp(`: ${count}\\smessages?$`));
+    await expect(page.locator(`[data-testid="glance-counts"] [data-count="${pair}"]`), `${pair}: no count drawn`).toHaveCount(0);
+  }
+  return dropped;
+}
+
 /**
  * Design's bars on the drawn map: no route fails, nothing across a card or
  * the corner, no shared stretch, 28 px from cards a line doesn't join, a
  * socket on both ends of every line, every
  * crossing hopped, and each count on its own line in an allowed spot, 10 px
- * from the next count. Returns the measure for the record.
+ * from the next count, or left off the map and kept in the list (D83).
+ * Returns the measure for the record.
  */
 export async function expectMapBars(page: Page): Promise<MapMeasure> {
   const measure = await measureMap(page);
@@ -180,7 +205,7 @@ export async function expectMapBars(page: Page): Promise<MapMeasure> {
   expect(report.routeFailed, 'routes that failed').toBe('0');
   expect(report.linesAlongside, 'shared stretches the router found').toBe('0');
   expect(report.unhopped, 'crossings without a hop').toBe('0');
-  expect(report.badgesForced, 'counts with no allowed spot').toBe('0');
+  const dropped = (await expectDroppedCountsListed(page)).map((d) => d.pair);
   expect(Number(report.linesDrawn)).toBe(measure.lines.length);
   for (const line of measure.lines) {
     const name = `line ${line.pair}`;
@@ -190,6 +215,7 @@ export async function expectMapBars(page: Page): Promise<MapMeasure> {
     if (line.cardClear !== null) expect(line.cardClear, `${name}: clearance from a card it doesn't join`).toBeGreaterThanOrEqual(27.5);
     expect(line.sockets, `${name}: sockets`).toBe(2);
     expect(line.socketsAtEnds, `${name}: a socket on both ends`).toBe(true);
+    if (dropped.includes(line.pair)) continue;
     expect(line.badge, `${name}: count`).not.toBeNull();
     const badge = line.badge!;
     const spot = SPOTS[badge.tier];

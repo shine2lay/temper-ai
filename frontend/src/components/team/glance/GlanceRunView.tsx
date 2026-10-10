@@ -40,6 +40,7 @@ import type { TeamRun, TeamStatus } from '@/types/team';
 import { TeamNote } from '@/components/team/TeamNote';
 import { TeamGuardBanner } from '@/components/team/TeamGuardBanner';
 import { teamBtn } from '@/components/team/teamUi';
+import { cn } from '@/lib/utils';
 import { StopRunDialog } from '@/components/team/run/StopRunDialog';
 import { MessageComposer } from '@/components/team/run/MessageComposer';
 import { StatusBand } from './StatusBand';
@@ -48,6 +49,7 @@ import { SharedWork } from './SharedWork';
 import { LatestMoments } from './LatestMoments';
 import { AllActivity } from './AllActivity';
 import { Facts } from './glanceUi';
+import { glanceBodyBox, glanceHeadButton, glanceHeaderBox } from './glanceStyle';
 import './glance.css';
 
 const ANIMATE_KEY = 'temper_glance_animate';
@@ -152,26 +154,30 @@ function GlanceHeader({
     folderName(run.project) ? `code folder ${folderName(run.project)}` : null,
   ].filter((f) => f !== null);
   return (
-    <header className="flex flex-col gap-2 border-b border-temper-border px-4 pt-4 pb-4 sm:px-6">
+    <header className={glanceHeaderBox}>
       <GlanceCrumbs />
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          {/* D40: the goal wraps balanced, never cut. */}
-          <h1 className="m-0 text-xl font-semibold text-balance break-words text-temper-text" data-testid="glance-title">
+      {/* D9, as the reference: on a phone 6 px round the goal, the buttons 10 px under it, full width in one row. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2.5 md:gap-y-3">
+        <div className="flex min-w-0 flex-col gap-1.5 md:gap-1">
+          {/* D40: the goal wraps balanced, never cut. SPEC 3: 28 px (22 on a phone); the meta line 15 px (14). */}
+          <h1
+            className="m-0 text-[22px] leading-[1.2] font-semibold text-balance break-words text-temper-text md:text-[28px]"
+            data-testid="glance-title"
+          >
             {firstLine(run.goal) || 'Team project'}
           </h1>
-          <Facts className="text-sm text-temper-text-muted" testId="glance-facts" items={facts} />
+          <Facts className="text-sm text-temper-text-muted md:text-[15px]" testId="glance-facts" items={facts} />
         </div>
         {(onMessage || onStop) && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-wrap gap-2 md:w-auto">
             {onMessage && (
-              <button type="button" className={teamBtn.secondary} onClick={onMessage}>
+              <button type="button" className={cn(teamBtn.secondary, glanceHeadButton)} onClick={onMessage}>
                 <MessageSquare className="h-4 w-4" aria-hidden="true" />
                 <span>Message a member</span>
               </button>
             )}
             {onStop && (
-              <button type="button" className={teamBtn.danger} onClick={onStop}>
+              <button type="button" className={cn(teamBtn.danger, glanceHeadButton)} onClick={onStop}>
                 <Square className="h-4 w-4" aria-hidden="true" />
                 <span>Stop project</span>
               </button>
@@ -240,8 +246,8 @@ export function GlanceRunView({
         reasonLimit={status?.limits.stop_reason_max_chars}
         onStopped={read.refresh}
       />
-      <div className="flex min-w-0 flex-col gap-4 px-4 pt-4 pb-8 sm:px-6">
-        <TeamGuardBanner mode={status?.guard_mode} />
+      <div className={glanceBodyBox}>
+        <TeamGuardBanner mode={status?.guard_mode} textScale="glance" />
         {/* D64: read out once when Temper stops answering; the note's count goes up every few seconds, so it isn't live. */}
         <p role="status" className="sr-only">
           {staleFor !== null ? 'Temper isn\u2019t answering. The page shows what it said last.' : ''}
@@ -250,17 +256,18 @@ export function GlanceRunView({
           <TeamNote
             tone="warn"
             icon={WifiOff}
-            action={
-              <button type="button" className={teamBtn.secondary} onClick={() => void read.refresh()}>
-                <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                <span>Try again</span>
-              </button>
-            }
+            // SPEC 3: the stale note's words are 15 px. As the reference, Try again follows the words (not a column
+            // beside them), so on a phone the note stays short and the band ends on the first screen (D84).
+            className="text-[15px] max-md:px-2.5"
           >
             <b className="font-semibold">Temper hasn&apos;t answered for {staleFor}.</b>{' '}
             <span className="text-temper-text-muted">
               This is what it said last; nothing below moves until it answers again.
-            </span>
+            </span>{' '}
+            <button type="button" className={cn(teamBtn.secondary, 'ml-1.5 align-middle')} onClick={() => void read.refresh()}>
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              <span>Try again</span>
+            </button>
           </TeamNote>
         )}
         <StatusBand
@@ -283,7 +290,7 @@ export function GlanceRunView({
           staleFor={staleFor}
           agesAt={agesAt}
         />
-        <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 items-start gap-[14px] md:gap-4 lg:grid-cols-2">
           <SharedWork run={run} now={agesAt} />
           <LatestMoments run={run} events={feed.events} now={agesAt} ready={feed.ready} />
         </div>
@@ -292,6 +299,7 @@ export function GlanceRunView({
         {(messaging || messenger.result !== null) && (
           <div id="glance-message" className="min-w-0">
             <MessageComposer
+              textScale="glance"
               run={raw}
               limit={status?.limits.message_max_chars}
               sender={messenger}

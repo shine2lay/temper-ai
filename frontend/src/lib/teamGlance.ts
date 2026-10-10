@@ -1152,11 +1152,98 @@ export interface DotPlan {
   dots: Array<{ event: GlanceMessageEvent; delay: number }>;
   /** Messages past the dots allowed at once: one grouped "+N more sent" cue (D10). */
   extra: number;
+  /** D82: the corner's batches that light up instead of flying, each at its second's turn in the plan. */
+  lights: Array<{ batch: HubBatch; delay: number }>;
 }
 
 /** The grouped cue's words (Design D10). */
 export function extraWords(extra: number): string {
   return `+${extra} more sent`;
+}
+
+/**
+ * D82 (Design, HOME-DECISIONS-2026-10-09-2030 Q1 and its 21:10 follow-up):
+ * when You or Temper message this many members or more in the same second
+ * (Temper's clock), at every width, the map draws no lines and no dots from
+ * the corner for them. The sender's tag glows, each receiving ring gets its
+ * highlight and one cue names the batch: "Temper \u2192 6 members". Fewer
+ * receivers keep D81's lines.
+ */
+export const HUB_BATCH_MIN = 3;
+
+/** One sender's part of a corner batch: You or Temper, and the members it reached, each once, in release order. */
+export interface HubPart {
+  fromKind: 'owner' | 'temper';
+  to: string[];
+}
+
+/**
+ * A same-second batch from the corner that lights up (D82). Every line from
+ * the corner leaves the same box, so the receivers are counted for the
+ * corner as a whole: a batch where You and Temper each message one or two
+ * members still has no lines once three members are reached (recorded for
+ * Design). Each sender's part keeps its own words.
+ */
+export interface HubBatch {
+  /** The second it was released in, by Temper's clock ("2026-10-09T10:13:23"). */
+  second: string;
+  /** Each sender's part, in release order. */
+  parts: HubPart[];
+  /** Every member reached, each once, in release order. */
+  to: string[];
+  /** Its messages, each id once, oldest first. */
+  events: GlanceMessageEvent[];
+}
+
+const isCorner = (m: GlanceMessageEvent): m is GlanceMessageEvent & { fromKind: 'owner' | 'temper' } =>
+  m.fromKind === 'owner' || m.fromKind === 'temper';
+
+/**
+ * D82: the corner's same-second batches that reach at least `min` members.
+ * Each message id counts once; a receiver with no card (`members`, when
+ * given) doesn't count, and a message with no time is never in a batch.
+ */
+export function hubBatches(
+  messages: GlanceMessageEvent[],
+  members: ReadonlySet<string> | null = null,
+  min = HUB_BATCH_MIN,
+): HubBatch[] {
+  const batches = new Map<string, HubBatch>();
+  const ids = new Set<string>();
+  for (const m of [...messages].sort((a, b) => a.seq - b.seq)) {
+    if (!isCorner(m) || (members !== null && !members.has(m.to))) continue;
+    const second = (m.at ?? '').slice(0, 19);
+    if (!second) continue;
+    if (m.messageId !== null) {
+      if (ids.has(m.messageId)) continue;
+      ids.add(m.messageId);
+    }
+    let batch = batches.get(second);
+    if (!batch) {
+      batch = { second, parts: [], to: [], events: [] };
+      batches.set(second, batch);
+    }
+    batch.events.push(m);
+    if (!batch.to.includes(m.to)) batch.to.push(m.to);
+    let part = batch.parts.find((p) => p.fromKind === m.fromKind);
+    if (!part) {
+      part = { fromKind: m.fromKind, to: [] };
+      batch.parts.push(part);
+    }
+    if (!part.to.includes(m.to)) part.to.push(m.to);
+  }
+  return [...batches.values()].filter((b) => b.to.length >= min);
+}
+
+/** A sender's part in the cue's words (D82): "Temper \u2192 6 members", "You \u2192 1 member". */
+export function hubPartWords(part: HubPart): string {
+  const n = part.to.length;
+  return `${whoName(null, part.fromKind)} \u2192 ${n} ${n === 1 ? 'member' : 'members'}`;
+}
+
+/** The batch `m` belongs to when it lights up, else null. */
+function hubBatchOf(batches: HubBatch[], m: GlanceMessageEvent): HubBatch | null {
+  return batches.find((b) => b.events.some((e) => e.seq === m.seq)) ?? null;
 }
 
 /**
@@ -1173,8 +1260,12 @@ export function extraWords(extra: number): string {
  */
 export function dotPlan(messages: GlanceMessageEvent[], drawn?: ReadonlySet<string>, members?: ReadonlySet<string>): DotPlan {
   const dots: DotPlan['dots'] = [];
+  const lights: DotPlan['lights'] = [];
   let extra = 0;
   let start = 0;
+  // D82: with the members known, the corner's batches of three or more light up instead of flying.
+  const lit = members ? hubBatches(messages, members) : [];
+  const litSeqs = new Set(lit.flatMap((b) => b.events.map((e) => e.seq)));
   const bursts = new Map<string, GlanceMessageEvent[]>();
   const ids = new Set<string>();
   for (const m of [...messages].sort((a, b) => a.seq - b.seq)) {
@@ -1194,14 +1285,18 @@ export function dotPlan(messages: GlanceMessageEvent[], drawn?: ReadonlySet<stri
     m.from !== m.to &&
     (!members || (members.has(m.from) && members.has(m.to))) &&
     !drawn.has(pairKey(m.from, m.to));
-  for (const burst of bursts.values()) {
-    const flying = burst.filter((m) => !undrawn(m));
+  for (const [second, burst] of bursts) {
+    const here = lit.filter((b) => b.second === second);
+    here.forEach((batch) => lights.push({ batch, delay: start }));
+    const rest = burst.filter((m) => !litSeqs.has(m.seq));
+    const flying = rest.filter((m) => !undrawn(m));
     const shown = flying.slice(0, DOT_MAX_AT_ONCE);
     shown.forEach((event, i) => dots.push({ event, delay: start + i * DOT_STAGGER_MS }));
-    extra += burst.length - shown.length;
-    if (shown.length > 0) start += (shown.length - 1) * DOT_STAGGER_MS + DOT_MS;
+    extra += rest.length - shown.length;
+    // A light-up takes a dot's time, so the next second's dots follow it.
+    if (shown.length > 0 || here.length > 0) start += Math.max(0, shown.length - 1) * DOT_STAGGER_MS + DOT_MS;
   }
-  return { dots, extra };
+  return { dots, extra, lights };
 }
 
 // --- words for the newest message and the big moments ------------------------------------
@@ -1217,6 +1312,11 @@ export interface JustSent {
    * second, last: \u2026" when more than 1). 1 when it comes from `last_sent` or the links count.
    */
   burst: number;
+  /**
+   * D82: the sender (You or Temper) messaged this many members in that second, at least HUB_BATCH_MIN:
+   * `to` then reads "6 members" and `burst` is 1 ("Temper \u2192 6 members: \u201c\u2026\u201d").
+   */
+  members?: number;
 }
 
 /** "Just sent" only while the newest message is at most this old, by Temper's clock (D22). */
@@ -1278,12 +1378,19 @@ export function justSent(events: GlanceEvent[], run?: Pick<GlanceRun, 'members' 
   let newest: GlanceMessageEvent | null = null;
   for (const e of events) if (e.kind === 'message' && (!newest || e.seq > newest.seq)) newest = e;
   if (newest) {
+    const m = newest;
+    // D82: the newest is You or Temper's, to three or more members in its second: name the batch.
+    const batch = run ? hubBatchOf(hubBatches(messagesOf(events), new Set(run.members.map((x) => x.name))), m) : null;
+    const part = batch?.parts.find((p) => p.fromKind === m.fromKind);
+    if (part && part.to.length >= HUB_BATCH_MIN) {
+      return { from: whoName(m.from, m.fromKind), to: `${part.to.length} members`, text: m.text, at: m.at, burst: 1, members: part.to.length };
+    }
     return {
-      from: whoName(newest.from, newest.fromKind),
-      to: receiverName(newest.to, run),
-      text: newest.text,
-      at: newest.at,
-      burst: sameSecond(events, newest),
+      from: whoName(m.from, m.fromKind),
+      to: receiverName(m.to, run),
+      text: m.text,
+      at: m.at,
+      burst: sameSecond(events, m),
     };
   }
   let sent: { from: string; s: GlanceSent } | null = null;
@@ -1322,14 +1429,43 @@ export interface MomentPart {
   strong?: boolean;
 }
 
+/**
+ * D85: an All activity row whose words are a cut of a longer text.
+ * `whole`: the event holds the whole text (a share or idle note, an ended
+ * reason: the row shows its first line), so the whole row is known.
+ * `messageId`: a message's row shows Temper's first line of it (at most 120
+ * characters); its whole body is read from Temper, and the row is a cut only
+ * when the body says more (`messageWholeParts`). `lead` is the row's words
+ * before the quoted text; `shown` the text the row quotes.
+ */
+export type MomentMore = { whole: MomentPart[] } | { messageId: string; lead: MomentPart[]; shown: string };
+
 export interface Moment {
   key: string;
   at: string | null;
   icon: GlanceIcon | 'message' | 'share' | 'start' | 'conflict';
   parts: MomentPart[];
+  /** D85: the row's words are (or may be) a cut; see MomentMore. */
+  more?: MomentMore;
 }
 
 const q = (s: string) => `\u201c${s}\u201d`;
+
+/** A text with more than its first line (the rest is cut from a row that shows the first line). */
+function hasMoreThanFirstLine(s: string | null | undefined): s is string {
+  return !!s && s.trim() !== firstLineOf(s);
+}
+
+/**
+ * D85: a message row's whole words once its body is read: the row's lead,
+ * then the whole body quoted. Null when the body says no more than the row
+ * already shows (that row isn't cut, so it gets no Show all).
+ */
+export function messageWholeParts(more: { lead: MomentPart[]; shown: string }, body: string | null | undefined): MomentPart[] | null {
+  const whole = (body ?? '').trim();
+  if (!whole || whole === more.shown.trim()) return null;
+  return [...more.lead, { text: `: ${q(whole)}` }];
+}
 
 const ENDED_LABELS: Record<string, string> = { done: 'Ended: done', stopped: 'Stopped', cancelled: 'Cancelled', failed: 'Failed' };
 
@@ -1337,9 +1473,10 @@ const ENDED_LABELS: Record<string, string> = { done: 'Ended: done', stopped: 'St
  * An ended row (D41): its label, then the reason's first line; a reason
  * that already starts with the label stands alone (no "Stopped: Stopped by you").
  */
-export function endedWords(decision: string | null | undefined, reason: string | null | undefined): string {
+export function endedWords(decision: string | null | undefined, reason: string | null | undefined, whole = false): string {
   const label = (decision && ENDED_LABELS[decision]) || 'Ended';
-  const why = firstLineOf(reason);
+  // D85: `whole` gives the whole reason (the row's Show all).
+  const why = whole ? (reason ?? '').trim() : firstLineOf(reason);
   if (!why) return label;
   return why.toLowerCase().startsWith(label.toLowerCase()) ? why : `${label}: ${why}`;
 }
@@ -1460,14 +1597,40 @@ function momentOf(e: GlanceEvent, leader: string, liveLimit: boolean): Moment | 
 
 /**
  * Latest: big moments only, newest first. A same-second fan-out of work
- * requests from one member is one row ("lead sent work to 4 members").
- * Plain info and reply messages, turn starts and ends, idle and wake stay
- * in the full list and on the map. `liveLimit`: the team is in its limit
- * phase now, so a limit row may name its next check.
+ * requests from one member is one row ("lead sent work to 4 members"), and
+ * so is You or Temper messaging three or more members in one second (D82:
+ * "Temper sent a message to 6 members"). Plain info and reply messages, turn
+ * starts and ends, idle and wake stay in the full list and on the map.
+ * `liveLimit`: the team is in its limit phase now, so a limit row may name
+ * its next check. `members`: the team's cards (a receiver with none doesn't
+ * count towards D82's three).
  */
-export function latestMoments(events: GlanceEvent[], leader: string, limit = 5, liveLimit = false): Moment[] {
+export function latestMoments(
+  events: GlanceEvent[],
+  leader: string,
+  limit = 5,
+  liveLimit = false,
+  members: ReadonlySet<string> | null = null,
+): Moment[] {
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
   const out: Moment[] = [];
+  // A sender's part of three or more is one row, where its first message is; its other messages
+  // have none. A smaller part of a lit batch keeps its usual rows.
+  const partRows = new Map<number, Moment>();
+  const litSeqs = new Set<number>();
+  for (const batch of hubBatches(messagesOf(sorted), members)) {
+    for (const part of batch.parts) {
+      if (part.to.length < HUB_BATCH_MIN) continue;
+      const mine = batch.events.filter((e) => e.fromKind === part.fromKind);
+      mine.forEach((e) => litSeqs.add(e.seq));
+      partRows.set(mine[0].seq, {
+        key: `hub${mine[0].seq}`,
+        at: mine[0].at,
+        icon: 'message',
+        parts: [{ text: whoName(null, part.fromKind), strong: true }, { text: ` sent a message to ${part.to.length} members` }],
+      });
+    }
+  }
   let fan: { from: string; second: string; first: GlanceMessageEvent; count: number } | null = null;
   const flush = () => {
     if (!fan) return;
@@ -1485,6 +1648,15 @@ export function latestMoments(events: GlanceEvent[], leader: string, limit = 5, 
     fan = null;
   };
   for (const e of sorted) {
+    if (litSeqs.has(e.seq)) {
+      flush();
+      const row = partRows.get(e.seq);
+      if (row) out.push(row);
+      // The start keeps its own row.
+      const start = e.kind === 'message' && e.messageKind === 'goal' ? momentOf(e, leader, liveLimit) : null;
+      if (start) out.push(start);
+      continue;
+    }
     if (e.kind === 'message' && e.messageKind === 'work_request') {
       const second = (e.at ?? '').slice(0, 19);
       if (fan && fan.from === e.from && fan.second === second && second !== '') {
@@ -1538,30 +1710,35 @@ export function activityRow(e: GlanceEvent, run: Pick<GlanceRun, 'startedBy' | '
           parts: [{ text: by, strong: true }, { text: ' started the project; ' }, { text: whoName(e.to), strong: true }, { text: ' has the goal' }],
         };
       }
+      const lead: MomentPart[] = [
+        { text: whoName(e.from, e.fromKind), strong: true },
+        { text: MESSAGE_VERBS[e.messageKind] ?? ' messaged ' },
+        { text: receiverName(e.to, run), strong: true },
+      ];
+      const shown = firstLineOf(e.text);
       return {
         key,
         at: e.at,
         icon: 'message',
-        parts: [
-          { text: whoName(e.from, e.fromKind), strong: true },
-          { text: MESSAGE_VERBS[e.messageKind] ?? ' messaged ' },
-          { text: receiverName(e.to, run), strong: true },
-          { text: `: ${q(firstLineOf(e.text))}` },
-        ],
+        parts: [...lead, { text: `: ${q(shown)}` }],
+        // D85: the feed carries Temper's first line of the message; its body may say more.
+        ...(e.messageId ? { more: { messageId: e.messageId, lead, shown } } : {}),
       };
     }
-    case 'share':
+    case 'share': {
+      const lead: MomentPart[] = [
+        { text: who, strong: true },
+        { text: ' shared ' },
+        { text: e.versionNo !== null ? `v${e.versionNo}` : 'a version', strong: true },
+      ];
       return {
         key,
         at: e.at,
         icon: 'share',
-        parts: [
-          { text: who, strong: true },
-          { text: ' shared ' },
-          { text: e.versionNo !== null ? `v${e.versionNo}` : 'a version', strong: true },
-          { text: e.note ? `: ${q(firstLineOf(e.note))}` : '' },
-        ],
+        parts: [...lead, { text: e.note ? `: ${q(firstLineOf(e.note))}` : '' }],
+        ...(hasMoreThanFirstLine(e.note) ? { more: { whole: [...lead, { text: `: ${q(e.note.trim())}` }] } } : {}),
       };
+    }
     case 'conflict':
       return {
         key,
@@ -1580,6 +1757,7 @@ export function activityRow(e: GlanceEvent, run: Pick<GlanceRun, 'startedBy' | '
             at: e.at,
             icon: 'moon',
             parts: [{ text: who, strong: true }, { text: e.note ? ` went idle: ${q(firstLineOf(e.note))}` : ' went idle without a note' }],
+            ...(hasMoreThanFirstLine(e.note) ? { more: { whole: [{ text: who, strong: true }, { text: ` went idle: ${q(e.note.trim())}` }] } } : {}),
           };
     case 'wake':
       return { key, at: e.at, icon: 'play', parts: [{ text: who, strong: true }, { text: ' woke up: a message from ' }, { text: whoName(e.by), strong: true }] };
@@ -1647,7 +1825,13 @@ export function activityRow(e: GlanceEvent, run: Pick<GlanceRun, 'startedBy' | '
         parts: [{ text: 'Done: ' }, { text: e.versionNo !== null ? `v${e.versionNo}` : 'the shared version', strong: true }, { text: ' is the result' }],
       };
     case 'ended':
-      return { key, at: e.at, icon: e.decision === 'failed' ? 'alert' : 'stop', parts: [{ text: endedWords(e.decision, e.reason) }] };
+      return {
+        key,
+        at: e.at,
+        icon: e.decision === 'failed' ? 'alert' : 'stop',
+        parts: [{ text: endedWords(e.decision, e.reason) }],
+        ...(hasMoreThanFirstLine(e.reason) ? { more: { whole: [{ text: endedWords(e.decision, e.reason, true) }] } } : {}),
+      };
     default:
       return { key, at: e.at, icon: 'circle', parts: [{ text: e.raw || 'event' }] };
   }

@@ -120,7 +120,8 @@
   height: 36px;
   border-radius: 9999px;
   font-weight: 600;
-  font-size: 15px;
+  /* SPEC 5: the initial is 17 px semibold. */
+  font-size: 17px;
   color: var(--temper-text);
   background: var(--temper-surface);
   border: 2px solid var(--temper-text-muted);

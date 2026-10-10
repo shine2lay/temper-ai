@@ -487,6 +487,10 @@ export interface RouteResult {
   /** px within 28 px of a card, all lines. */
   hug: number;
   length: number;
+  /** The order the lines were routed in ("a\u0000b"): a later line is routed round the earlier ones. */
+  order: string[];
+  /** With `vary`: that line's tries, in the router's order (D83): index 0 is the route it gets anyway. */
+  tries?: Point[][];
 }
 
 export interface RouteOptions {
@@ -504,6 +508,16 @@ export interface RouteOptions {
   avoid?: Rect[];
   /** Prices over LINE's (D81: a hub line pays less to cross or run near a line, as it hops and lasts one cue). */
   cost?: Partial<Record<keyof typeof LINE, number>>;
+  /**
+   * D83: lines ("a\u0000b") routed by another of the router's tries for them: the index into that line's tries
+   * (0 = the route it gets anyway; its straight heights in the router's order, then its routes through the gaps,
+   * cheapest first). The chosen order stays; the lines after a pinned one are routed round it as usual.
+   */
+  pins?: ReadonlyMap<string, number>;
+  /** D83: route in this order (a result's `order`) instead of choosing one. */
+  order?: string[];
+  /** D83: also return this line's ("a\u0000b") tries, as it would take them where it is routed. */
+  vary?: string;
 }
 
 interface Job {
@@ -528,7 +542,17 @@ const OPPOSITE: Record<Side, Side> = { left: 'right', right: 'left', top: 'botto
 export function routeLines(
   pairs: Array<{ a: string; b: string }>,
   rects: Map<string, Rect>,
-  { width, height, obstacles = [], placed: fixedLines = [], avoid = [], cost: prices = {} }: RouteOptions,
+  {
+    width,
+    height,
+    obstacles = [],
+    placed: fixedLines = [],
+    avoid = [],
+    cost: prices = {},
+    pins = new Map(),
+    order: fixedOrder,
+    vary,
+  }: RouteOptions,
 ): RouteResult {
   const P: Record<keyof typeof LINE, number> = { ...LINE, ...prices };
   const all = [...rects.values(), ...obstacles];
@@ -649,16 +673,25 @@ export function routeLines(
     .filter((j): j is Job => j !== null)
     .sort((x, y) => Number(y.straightable) - Number(x.straightable) || x.dist - y.dist);
 
-  const attempt = (order: Job[]) => {
+  /**
+   * Route the lines in this order. A pinned line (D83) takes its try of that index; `count` names the line whose
+   * tries are listed.
+   */
+  const attempt = (order: Job[], pinned: ReadonlyMap<string, number> = new Map(), count?: string) => {
     taken = new Map();
     out = new Map();
     failed = [];
     seedTaken();
+    let listed: Point[][] = [];
     for (const j of order) {
       const { A, B, sa, sb } = j;
+      const key = `${j.a}\u0000${j.b}`;
+      // Which of the line's tries it takes; null: the usual one, found without listing the others.
+      const pin = pinned.get(key) ?? (key === count ? 0 : null);
       const obs = [...others(A, B), ...avoid].map((r) => inflate(r, P.pad - 0.5));
       const segBlocked = (p: Point, q: Point) => obs.some((r) => segRect(p, q, r));
       // 1. Straight, when the facing sides overlap and nothing is between.
+      const straights: Array<{ c: number; p: Point; q: Point }> = [];
       if (j.straightable) {
         const [lo, hi] = j.overlap;
         const mid = (lo + hi) / 2;
@@ -666,29 +699,28 @@ export function routeLines(
         // height from the middle out, which can pass a card 10 px off when card heights differ (the app's
         // cards grow with their words); so the nearest height that keeps 28 px wins, else glance.mjs's pick.
         const unrelated = others(A, B);
-        let done: { c: number; p: Point; q: Point } | null = null;
-        let fallback: { c: number; p: Point; q: Point } | null = null;
-        for (let k = 0; k < 80 && !done; k++) {
+        const clean: typeof straights = [];
+        const hugging: typeof straights = [];
+        for (let k = 0; k < 80 && !(pin === null && clean.length); k++) {
           for (const c of k === 0 ? [mid] : [mid + 3 * k, mid - 3 * k]) {
             if (c < lo || c > hi || !isFree(j.a, sa, c) || !isFree(j.b, sb, c)) continue;
             const p = portPoint(A, sa, c);
             const q = portPoint(B, sb, c);
             if (segBlocked(p, q) || parallelClose(p, q, placedSegs(), P.track)) continue;
-            if (hugLength(p, q, unrelated) > 0.5) {
-              fallback ??= { c, p, q };
-              continue;
-            }
-            done = { c, p, q };
-            break;
+            (hugLength(p, q, unrelated) > 0.5 ? hugging : clean).push({ c, p, q });
+            if (pin === null && clean.length) break;
           }
         }
-        done ??= fallback;
-        if (done) {
-          take(j.a, sa, done.c);
-          take(j.b, sb, done.c);
-          out.set(`${j.a}\u0000${j.b}`, { a: j.a, b: j.b, pts: [done.p, done.q], path: '', straight: true });
-          continue;
-        }
+        straights.push(...clean, ...hugging);
+      }
+      const straight = (s: { c: number; p: Point; q: Point }) => {
+        take(j.a, sa, s.c);
+        take(j.b, sb, s.c);
+        out.set(key, { a: j.a, b: j.b, pts: [s.p, s.q], path: '', straight: true });
+      };
+      if (pin === null && straights.length) {
+        straight(straights[0]);
+        continue;
       }
       // 2. Through the gaps.
       const ideal = (s: Side, o: Rect) => (horizSide(s) ? o.y + o.h / 2 : o.x + o.w / 2);
@@ -728,7 +760,7 @@ export function routeLines(
       const nodeFree = (p: Point) => !allObs.some((r) => inside(p, r));
       const fullBlocked = (p: Point, q: Point) => allObs.some((r) => segRect(p, q, r));
       const cost = (p: Point, q: Point) => used(p, q) + hugLength(p, q, all) * P.hugCost;
-      let pick: { total: number; sA: Side; ca: number; sB: Side; cb: number; pa: Point; pb: Point; mid: Point[] } | null = null;
+      const gaps: Array<{ total: number; sA: Side; ca: number; sB: Side; cb: number; pa: Point; pb: Point; mid: Point[] }> = [];
       for (const [sA, ca, iA, sB, cb, iB] of combos) {
         const pa = portPoint(A, sA, ca);
         const pb = portPoint(B, sB, cb);
@@ -747,15 +779,24 @@ export function routeLines(
           cost(pa, ea) +
           cost(eb, pb) +
           0.5 * (Math.abs(ca - iA) + Math.abs(cb - iB));
-        if (!pick || total < pick.total) pick = { total, sA, ca, sB, cb, pa, pb, mid: mid.pts };
+        gaps.push({ total, sA, ca, sB, cb, pa, pb, mid: mid.pts });
       }
+      // Cheapest first; the sort is stable, so of equal ones the first found stays first, as the router picks.
+      gaps.sort((x, y) => x.total - y.total);
+      if (key === count) listed = [...straights.map((s) => [s.p, s.q]), ...gaps.map((g) => simplify([g.pa, ...g.mid, g.pb]))];
+      const n = pin ?? 0;
+      if (n < straights.length) {
+        straight(straights[n]);
+        continue;
+      }
+      const pick = gaps[n - straights.length];
       if (!pick) {
         failed.push(`${j.a}\u2013${j.b}`);
         continue;
       }
       take(j.a, pick.sA, pick.ca);
       take(j.b, pick.sB, pick.cb);
-      out.set(`${j.a}\u0000${j.b}`, { a: j.a, b: j.b, pts: simplify([pick.pa, ...pick.mid, pick.pb]), path: '', straight: false });
+      out.set(key, { a: j.a, b: j.b, pts: simplify([pick.pa, ...pick.mid, pick.pb]), path: '', straight: false });
     }
     // 3. Pull shared stretches apart: interior segments on the same midline that overlap get 18 px tracks.
     const segsAll: Array<{ L: RoutedPair; i: number; vert: boolean; c: number; lo: number; hi: number }> = [];
@@ -850,14 +891,17 @@ export function routeLines(
       }
     }
     const shared = groups.filter((g) => g.items.length >= 2).map((g) => g.items.map((s) => `${s.L.a}\u2013${s.L.b}`).join(' / '));
-    return { lines: out, failed, shared, crossings, length, hug, hugs, near };
+    return { lines: out, failed, shared, crossings, length, hug, hugs, near, order, listed };
   };
 
   // D52: the routing order decides who gets a shared gutter. Try the default order; when it leaves a failure, a
   // shared stretch, a crossing, a run beside a card or a bundle, try every order (page maps only: at most 6 lines)
   // and keep the best: fewest failures, then shared stretches, then crossings x 700 + hug x 6 + near x 6 + length.
-  let best = attempt(jobs);
-  if ((best.failed.length || best.shared.length || best.crossings || best.hug || best.near) && jobs.length <= 6) {
+  // D83: an order given (a result's own) is kept, with the pinned lines by their tries.
+  const keyOf = (j: Job) => `${j.a}\u0000${j.b}`;
+  const first = fixedOrder?.flatMap((k) => jobs.filter((j) => keyOf(j) === k));
+  let best = first ? attempt([...first, ...jobs.filter((j) => !first.includes(j))], pins, vary) : attempt(jobs);
+  if (!first && (best.failed.length || best.shared.length || best.crossings || best.hug || best.near) && jobs.length <= 6) {
     const score = (x: typeof best) => [
       x.failed.length,
       x.shared.length,
@@ -870,6 +914,7 @@ export function routeLines(
       if (k >= 0 && a[k] < b[k]) best = r;
     }
   }
+  if (!first && (pins.size || vary !== undefined)) best = attempt(best.order, pins, vary);
   return {
     lines: best.lines,
     failed: best.failed,
@@ -879,6 +924,8 @@ export function routeLines(
     near: Math.round(best.near),
     hug: best.hug,
     length: best.length,
+    order: best.order.map(keyOf),
+    tries: vary === undefined ? undefined : best.listed,
   };
 }
 
@@ -928,16 +975,19 @@ const lengthOf = (pts: Point[]) => segsOf(pts).reduce((s, [p, q]) => s + Math.hy
  * unrelated cards as the spot order allows. Returned in the input's order.
  * A count with no allowed spot is marked forced and is never drawn, so it
  * keeps no other count away (page.mjs drew it mid-line and failed its check).
+ * With `only`, just that line's count, with no other count in its way (D83).
  */
 export function placeBadges(
   lines: Array<{ key: string; a: string; b: string; pts: Point[]; w: number; h: number }>,
   cards: Map<string, Rect>,
   hubs: Rect[] = [],
+  only?: string,
 ): BadgeSpot[] {
   const all = [...cards.values()];
   const boxes = [...all, ...hubs];
   const placed = new Map<string, BadgeSpot>();
   for (const L of [...lines].sort((a, b) => lengthOf(a.pts) - lengthOf(b.pts))) {
+    if (only !== undefined && L.key !== only) continue;
     const otherSegs = lines.filter((o) => o !== L).flatMap((o) => segsOf(o.pts));
     const tries = segsOf(L.pts)
       .map(([p, q]) => ({ p, q, l: Math.hypot(q.x - p.x, q.y - p.y) }))
@@ -978,7 +1028,7 @@ export function placeBadges(
     }
     placed.set(L.key, spot);
   }
-  return lines.map((l) => placed.get(l.key)!);
+  return lines.flatMap((l) => placed.get(l.key) ?? []);
 }
 
 // --- the whole map -------------------------------------------------------------------------
@@ -1042,24 +1092,83 @@ export interface MapGeometry {
   unhopped: number;
   near: number;
   hug: number;
+  /**
+   * D83: a count had no allowed spot on its line's usual route, and another of
+   * the router's tries for that line gave it one: these lines are that route.
+   */
+  rerouted: boolean;
 }
 
 /**
  * Route, place the counts, then paint: in the drawn order (newest first),
  * each later line hops the earlier ones it crosses, clear of cards, the hub
  * and the counts (page.mjs drawMap).
+ *
+ * D83: when a count has no allowed spot (tier 5), its line first tries the
+ * router's other tries for it (its other straight heights, then its routes
+ * through the gaps, cheapest first; the lines after it routed round it as
+ * usual) and takes the first that gives the count a spot, takes no other
+ * count's spot and is no worse on the map's bars (failures, shared
+ * stretches, runs near cards, unhopped crossings). None: the line keeps its
+ * route and its count is left off the map (the pair list keeps the number).
+ * Each re-route costs as much as routing the map once, so a count gets at
+ * most `reroutes` of them (D83_REROUTES), the first tries in the router's
+ * order whose count has a spot among the lines before it.
  */
 export function mapGeometry(
   lines: MapLineIn[],
   cards: Map<string, Rect>,
   hubs: Rect[],
   box: { w: number; h: number },
+  { reroutes = D83_REROUTES }: { reroutes?: number } = {},
 ): MapGeometry {
-  const routed = routeLines(
-    lines.map((l) => ({ a: l.a, b: l.b })),
-    cards,
-    { width: box.w, height: box.h, obstacles: hubs },
-  );
+  const pairs = lines.map((l) => ({ a: l.a, b: l.b }));
+  const route = (more: Pick<RouteOptions, 'pins' | 'order' | 'vary'> = {}) =>
+    routeLines(pairs, cards, { width: box.w, height: box.h, obstacles: hubs, ...more });
+  let routes = route();
+  let map = paintMap(lines, routes, cards, hubs);
+  const pins = new Map<string, number>();
+  const dropped = (g: MapGeometry) => new Set(g.badges.filter((b) => b.forced).map((b) => b.key));
+  for (const key of dropped(map)) {
+    // An earlier line's new route may have given this count its spot.
+    if (!dropped(map).has(key)) continue;
+    const line = lines.find((l) => l.key === key)!;
+    const id = `${line.a}\u0000${line.b}`;
+    const before = dropped(map);
+    const { order } = routes;
+    // The lines routed before this one stay as they are whichever try it takes, and the later ones only take
+    // spots away: a try with no spot even among the earlier ones alone is passed over without routing the rest.
+    const earlier = order.slice(0, order.indexOf(id)).flatMap((k) => {
+      const r = routes.lines.get(k);
+      return r ? [{ key: k, a: r.a, b: r.b, pts: r.pts, w: 0, h: 0 }] : [];
+    });
+    const size = { w: badgeWidth(line.count), h: BADGE_H };
+    let left = reroutes;
+    for (const [k, pts] of (route({ pins, order, vary: id }).tries ?? []).entries()) {
+      if (left <= 0) break;
+      if (k === 0 || placeBadges([{ key, a: line.a, b: line.b, pts, ...size }, ...earlier], cards, hubs, key)[0].forced) continue;
+      left -= 1;
+      const other = route({ pins: new Map([...pins, [id, k]]), order });
+      if (other.failed.length > routes.failed.length || other.shared.length > routes.shared.length) continue;
+      if (other.hug > routes.hug + 0.5) continue;
+      const geometry = paintMap(lines, other, cards, hubs);
+      const after = dropped(geometry);
+      if (geometry.lines.length < map.lines.length || geometry.unhopped > map.unhopped) continue;
+      if (after.has(key) || [...after].some((x) => !before.has(x))) continue;
+      pins.set(id, k);
+      routes = other;
+      map = { ...geometry, rerouted: true };
+      break;
+    }
+  }
+  return map;
+}
+
+/** D83: at most this many re-routes for a count with no spot (each costs one routing of the map). */
+export const D83_REROUTES = 8;
+
+/** Place the counts on routed lines and paint them (mapGeometry's second half). */
+function paintMap(lines: MapLineIn[], routed: RouteResult, cards: Map<string, Rect>, hubs: Rect[]): MapGeometry {
   const kept = lines.flatMap((l) => {
     const r = routed.lines.get(`${l.a}\u0000${l.b}`);
     return r ? [{ ...l, route: r.pts, straight: r.straight }] : [];
@@ -1104,6 +1213,7 @@ export function mapGeometry(
     unhopped,
     near: routed.near,
     hug: routed.hug,
+    rerouted: false,
   };
 }
 

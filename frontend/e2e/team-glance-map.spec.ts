@@ -12,7 +12,9 @@
  * rest join "+N more sent"; and every pair of the hour is listed under the
  * map at every width. The cards are measured with the page's own fonts
  * (D80), and a line from You or Temper is routed after the drawn ones, clear
- * of their counts, hopped where it crosses (D81).
+ * of their counts, hopped where it crosses (D81); when they message three or
+ * more members in one second, no line is drawn: the sender's tag and the
+ * receiving rings light up and one cue names the batch (D82).
  *
  * One journey first, as the owner's test rule asks (bp-be8d76b9): a team of
  * six read 50 minutes in (five recent pairs, four lines, one green), then the
@@ -20,15 +22,15 @@
  * 1024x768 and 1440x900. It checks the lines, counts, list, legend, dots and
  * the switch by keyboard, with axe and 24 px targets at each step. Then
  * contract points only: every team size from 2 to 6, the font landing late,
- * the corner messaging members (every group it must keep the bars for, and
- * the known gaps pinned in team-glance-hub-groups.ts), the leader's work to
- * five members, no recent pair, and an ended run.
+ * the corner messaging members (every group of one or two keeps the bars,
+ * team-glance-hub-groups.ts; three or more light up, also with motion off),
+ * the leader's work to five members, no recent pair, and an ended run.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { expectAxeClean, expectTargets, glanceFontsSettled, serveTeam, type Fixture } from './team-helpers';
-import { expectMapBars, measureMap, readHubRoutes, routeHubGroup } from './team-glance-map-measure';
+import { droppedCounts, expectMapBars, measureMap, readHubRoutes, routeHubGroup } from './team-glance-map-measure';
 import { checkHubGroups, type HubInput } from './team-glance-hub-groups';
 
 type Raw = Record<string, unknown>;
@@ -60,16 +62,17 @@ const asOf = (step: MapStep) => read(step).as_of as string;
  * answers what is past `after`, up to the run's own events_cursor (each
  * step's feed carries on where the one before ended).
  */
-async function serveMap(page: Page, start: MapStep) {
+async function serveMap(page: Page, start: MapStep, links: Raw[] | null = null) {
   // `down`: Temper stops answering, the run read and the feed alike.
   // `extra`: messages released after the step's own (hubBatch), past its cursor.
+  // `links`: the run's pair counts in place of the step's own (D83's maps).
   const state = { step: start, down: false, extra: [] as Raw[] };
   const id = read(start).execution_id as string;
   const cursorOf = () => (read(state.step).events_cursor as number) + state.extra.length;
   const run = (): Fixture =>
     state.down
       ? { route: '', status: 503, body: { detail: 'Temper is not answering' } }
-      : { route: '', status: 200, body: { ...read(state.step), execution_id: id, events_cursor: cursorOf() } };
+      : { route: '', status: 200, body: { ...read(state.step), ...(links ? { links } : {}), execution_id: id, events_cursor: cursorOf() } };
   await serveTeam(page, { run });
   await page.route(/\/api\/team\/runs\/[^/]+\/events(\?|$)/, async (route) => {
     if (state.down) {
@@ -98,9 +101,9 @@ async function serveMap(page: Page, start: MapStep) {
  * Open a map story at its first step, with the page's clock on Temper's. Ready once the history is read
  * and the map measured with the page's own fonts (D80); `fonts: false` for a test that holds them back.
  */
-async function open(page: Page, start: MapStep, { fonts = true }: { fonts?: boolean } = {}) {
+async function open(page: Page, start: MapStep, { fonts = true, links = null }: { fonts?: boolean; links?: Raw[] | null } = {}) {
   await page.clock.setFixedTime(new Date(asOf(start)));
-  const served = await serveMap(page, start);
+  const served = await serveMap(page, start, links);
   await page.goto(`/app/team/runs/${served.id}`);
   await expect(page.getByTestId('glance-page')).toBeVisible();
   await expect(page.getByTestId('glance-just-sent')).not.toContainText('Reading the team');
@@ -109,29 +112,69 @@ async function open(page: Page, start: MapStep, { fonts = true }: { fonts?: bool
 }
 
 /**
- * You and Temper message each of `to` at once (D81), a second before Temper's clock, so the page's next poll
- * reads them as one fresh batch: one dot each, from the corner, in this order.
+ * You and Temper message each of `to` at once (D81), `second` seconds before Temper's clock, so the page's next
+ * poll reads them as one fresh batch, after any batch before it: one dot each from the corner, in this order,
+ * for one or two members; three or more light up instead (D82). `from`: one sender for the whole batch;
+ * otherwise You and Temper take turns.
  */
-function hubBatch(state: { step: MapStep; extra: Raw[] }, to: string[]) {
-  const cursor = read(state.step).events_cursor as number;
-  const at = new Date(Date.parse(asOf(state.step)) - 1000).toISOString();
-  state.extra = to.map((name, i) => {
-    const from = i % 2 === 0 ? 'owner' : 'temper';
-    return {
-      seq: cursor + i + 1,
-      at,
-      kind: 'message',
-      member: from,
-      from,
-      from_kind: from,
-      to: name,
-      message_kind: from === 'owner' ? 'guide' : 'info',
-      text: `A word for ${name}.`,
-      message_id: `hub-${cursor + i + 1}`,
-      mid_turn: false,
+function hubBatch(
+  state: { step: MapStep; extra: Raw[] },
+  to: string[],
+  { from, second = 1 }: { from?: 'owner' | 'temper'; second?: number } = {},
+) {
+  const cursor = (read(state.step).events_cursor as number) + state.extra.length;
+  const at = new Date(Date.parse(asOf(state.step)) - second * 1000).toISOString();
+  state.extra = [
+    ...state.extra,
+    ...to.map((name, i) => {
+      const by = from ?? (i % 2 === 0 ? 'owner' : 'temper');
+      return {
+        seq: cursor + i + 1,
+        at,
+        kind: 'message',
+        member: by,
+        from: by,
+        from_kind: by,
+        to: name,
+        message_kind: by === 'owner' ? 'guide' : 'info',
+        text: `A word for ${name}.`,
+        message_id: `hub-${cursor + i + 1}`,
+        mid_turn: false,
+      };
+    }),
+  ];
+}
+
+type Glow = { ring?: string; tag?: string; cue?: string; delay: number };
+
+/** Logs each ring highlight, corner tag glow and cue the page starts, with its delay (D82), on every page load. */
+async function installGlowLog(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __glows?: Glow[]; __glowLog?: boolean };
+    if (w.__glowLog) return;
+    w.__glowLog = true;
+    const play = Element.prototype.animate;
+    Element.prototype.animate = function (this: Element, ...args: Parameters<Element['animate']>) {
+      const el = this as HTMLElement;
+      const timing = args[1];
+      const delay = typeof timing === 'object' && timing !== null ? Number(timing.delay ?? 0) : 0;
+      const log = (w.__glows ??= []);
+      if (el.dataset?.pulse !== undefined) log.push({ ring: el.dataset.pulse, delay });
+      else if (el.dataset?.hubTag !== undefined) log.push({ tag: el.dataset.hubTag, delay });
+      else if (el.classList?.contains('glance-extra')) log.push({ cue: el.textContent ?? '', delay });
+      return play.apply(this, args);
     };
   });
 }
+
+/** What lit up since the last call. */
+const takeGlows = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { __glows?: Glow[] };
+    const out = w.__glows ?? [];
+    w.__glows = [];
+    return out;
+  });
 
 /** The drawn lines as painted: pair and path, in the map's order. */
 const linePaths = (page: Page) =>
@@ -346,6 +389,67 @@ test('contract: every team from 2 to 6 members keeps the bars at 1024 and 1440 (
   }
 });
 
+/**
+ * D83: four pairs of the six-member team, each with 12 messages in the same second (so drawn A-Z), whose usual
+ * routes leave designer and lead's count no allowed spot on this map. In `rescued`, another route of a line gives
+ * it one; in `dropped`, none does. Every line of each set keeps 28 px from the cards it doesn't join (D58), as the
+ * map bars check. Found on the measured map with type/d83_e2e_cases.mts (private).
+ */
+const D83_SETS: Record<number, { rescued: string[]; dropped: string[] }> = {
+  1024: {
+    rescued: ['builder|checker', 'builder|lead', 'checker|writer', 'designer|lead'],
+    dropped: ['builder|lead', 'builder|tester', 'designer|lead', 'lead|writer'],
+  },
+  1440: {
+    rescued: ['builder|checker', 'builder|lead', 'builder|tester', 'designer|lead'],
+    dropped: ['builder|lead', 'builder|tester', 'designer|lead', 'lead|writer'],
+  },
+};
+
+test("contract: a count with no spot takes another route of its line, or stays off the map and keeps its number in the list (D83), at 1024 and 1440", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  // Two minutes before Temper's clock: drawn (D42), not green.
+  const lastAt = new Date(Date.parse(asOf('map_members_6')) - 120_000).toISOString();
+  const links = (pairs: string[]) =>
+    pairs.map((p) => {
+      const [a, b] = p.split('|');
+      return { from: b, to: a, count: 12, last_at: lastAt };
+    });
+  for (const width of [1024, 1440]) {
+    for (const [kind, pairs] of Object.entries(D83_SETS[width])) {
+      const label = `${kind} at ${width}`;
+      await page.unrouteAll();
+      await page.setViewportSize({ width, height: width === 1024 ? 768 : 900 });
+      await open(page, 'map_members_6', { links: links(pairs) });
+      expect(await drawnPairs(page), `${label}: the four lines`).toEqual(pairs);
+      const m = map(page);
+      const listed = await rows(page);
+      expect(listed.map((r) => r[0]), `${label}: every pair listed`).toEqual(pairs);
+      for (const [pair, drawn, words] of listed) {
+        expect(drawn, `${label}: ${pair} drawn`).toBe('true');
+        expect(words, `${label}: ${pair} in the list`).toMatch(/: 12\smessages$/);
+      }
+      if (kind === 'rescued') {
+        await expect(m, `${label}: another route placed the count`).toHaveAttribute('data-badges-rerouted', 'true');
+        await expect(m).toHaveAttribute('data-badges-forced', '0');
+        expect(Object.keys(await counts(page)).sort(), `${label}: every count on the map`).toEqual([...pairs].sort());
+        expect(Object.values(await counts(page)), `${label}: each shows 12`).toEqual(['12', '12', '12', '12']);
+      } else {
+        expect(await droppedCounts(page), `${label}: designer and lead's count is left off the map`).toEqual([
+          { pair: 'designer|lead', count: 12 },
+        ]);
+        expect(Object.keys(await counts(page)).sort(), `${label}: the other counts are drawn`).toEqual(
+          pairs.filter((p) => p !== 'designer|lead').sort(),
+        );
+      }
+      // The bars, with a dropped count found in the list with the same number and not drawn.
+      await expectMapBars(page);
+    }
+  }
+});
+
 test('contract: once the page font lands, the lines are routed round the cards as painted, at 1024 and 1440 (D80)', async ({ page }) => {
   test.setTimeout(60_000);
   // Hold the page's own font back: the first layout uses a fallback font, and boxes change size when it lands.
@@ -403,13 +507,14 @@ const HUB_STORIES: MapStep[] = [
 ];
 
 for (const step of HUB_STORIES) {
-  test(`contract: You and Temper's lines are later lines on ${step}: 16 px from every count, never beside a line, every crossing hopped, at 1024 and 1440 in both themes (D81)`, async ({
+  test(`contract: You and Temper on ${step}: one or two members get later lines, 16 px from every count, never beside a line, every crossing hopped (D81); three or more light up with no line (D82); at 1024 and 1440 in both themes`, async ({
     page,
   }) => {
     test.setTimeout(180_000);
     const members = (read(step).members as Array<{ name: string }>).map((m) => m.name);
     // The map as each width and theme measured it: the groups are routed once per distinct map.
     const measured = new Map<string, { width: number; input: HubInput; seen: string[] }>();
+    await installGlowLog(page);
     for (const width of [1024, 1440]) {
       for (const theme of ['dark', 'light'] as const) {
         const label = `${step} at ${width}, ${theme}`;
@@ -418,15 +523,16 @@ for (const step of HUB_STORIES) {
         await page.setViewportSize({ width, height: width === 1024 ? 768 : 900 });
         const state = await open(page, step);
         const drawn = await linePaths(page);
-        // Every member gets a message from the corner at once, each line routed after the drawn ones and the
-        // batch's earlier ones.
-        hubBatch(state, members);
-        await expect(map(page), `${label}: the batch flew`).toHaveAttribute('data-dots-launched', String(members.length), {
+        // Two members get a message from the corner at once (You, then Temper), each line routed after the
+        // drawn ones and the batch's earlier one.
+        const two = members.slice(0, 2);
+        hubBatch(state, two);
+        await expect(map(page), `${label}: the batch flew`).toHaveAttribute('data-dots-launched', String(two.length), {
           timeout: 15_000,
         });
         const hub = await readHubRoutes(page);
         expect(hub, `${label}: the hub routes are reported`).not.toBeNull();
-        expect(hub!.routes.map((r) => r.to), `${label}: one line per receiver, in order`).toEqual(members);
+        expect(hub!.routes.map((r) => r.to), `${label}: one line per receiver, in order`).toEqual(two);
         for (const r of hub!.routes) {
           const [first, last] = [r.pts[0], r.pts[r.pts.length - 1]];
           const onEdge = (p: { x: number; y: number }, b: { x: number; y: number; w: number; h: number }) =>
@@ -441,15 +547,58 @@ for (const step of HUB_STORIES) {
         // The page routed with hubPaths on what it measured: the same router in Node draws the same lines, so
         // every other group can be routed here on the page's own map.
         const { routes, ...input } = hub!;
-        expect(routeHubGroup(input, members).routes, `${label}: the page's routes are hubPaths' on its map`).toEqual(routes);
+        expect(routeHubGroup(input, two).routes, `${label}: the page's routes are hubPaths' on its map`).toEqual(routes);
         const key = JSON.stringify(input);
         const known = measured.get(key);
         if (known) known.seen.push(theme);
         else measured.set(key, { width, input, seen: [theme] });
+
+        // D82: three members or more in one second, each size up to the whole team, one sender each, You and
+        // Temper in turn, each batch in its own second, all read in one poll. No line and no dot: at the
+        // batch's turn the sender's tag glows, each receiving ring gets its highlight, and one cue names it.
+        await expect.poll(async () => (await page.evaluate(() => (window as unknown as { __glows?: Glow[] }).__glows ?? [])).filter((g) => g.ring).length, {
+          message: `${label}: the two dots landed`,
+        }).toBe(two.length);
+        await takeGlows(page);
+        const sizes = members.map((_, i) => i + 1).filter((n) => n >= 3);
+        if (sizes.length === 0) continue;
+        const sender = (n: number) => (n % 2 === 0 ? 'owner' : 'temper');
+        const who = (n: number) => (n % 2 === 0 ? 'You' : 'Temper');
+        // A different set each time: the batch of n starts at member n - 3, round the team.
+        const batchTo = (n: number) => members.map((_, i) => members[(n - 3 + i) % members.length]).slice(0, n);
+        sizes.forEach((n, i) => hubBatch(state, batchTo(n), { from: sender(n), second: 2 + i }));
+        await expect(map(page), `${label}: every batch lit up`).toHaveAttribute('data-hub-lit', String(sizes.length), { timeout: 15_000 });
+        expect(await map(page).getAttribute('data-dots-launched'), `${label}: no dot for a lit batch`).toBe(String(two.length));
+        expect(await map(page).getAttribute('data-hub-routes'), `${label}: no hub line for a lit batch`).toBeNull();
+        await expect(page.locator('.glance-dot'), `${label}: nothing flies`).toHaveCount(0);
+        const glows = await takeGlows(page);
+        sizes.forEach((n, i) => {
+          // Each batch has its turn, a dot's time (400 ms) after the one before.
+          const at = glows.filter((g) => g.delay === i * 400);
+          expect(at.filter((g) => g.ring).map((g) => g.ring).sort(), `${label}, ${n}: one highlight per receiver`).toEqual([...batchTo(n)].sort());
+          expect(at.filter((g) => g.tag).map((g) => g.tag), `${label}, ${n}: the sender's tag glows`).toEqual([sender(n)]);
+        });
+        // One cue at a time at the top right, 1.6 s each, in order.
+        expect(glows.filter((g) => g.cue !== undefined), `${label}: the cues`).toEqual(
+          sizes.map((n, i) => ({ cue: `${who(n)} \u2192 ${n} members`, delay: Math.max(i * 400, i * 1600) })),
+        );
+        expect(glows.filter((g) => g.ring).length, `${label}: no other highlight`).toBe(sizes.reduce((sum, n) => sum + n, 0));
+        expect(glows.filter((g) => g.tag).length, `${label}: no other tag glow`).toBe(sizes.length);
+        // The words: Just sent names the newest batch; Latest has one row per batch, newest first.
+        const last = sizes[sizes.length - 1];
+        await expect(page.getByTestId('glance-sent-words')).toHaveText(
+          `Just sent \u00b7 ${who(last)} \u2192 ${last} members: \u201cA word for ${batchTo(last)[last - 1]}.\u201d`,
+        );
+        const latest = page.getByTestId('glance-latest').locator('li');
+        for (const [i, n] of [...sizes].reverse().entries()) {
+          await expect(latest.nth(i), `${label}: Latest row ${i + 1}`).toContainText(`${who(n)} sent a message to ${n} members`);
+        }
+        // The drawn lines are as they were.
+        expect(await linePaths(page), `${label}: drawn lines unchanged`).toEqual(drawn);
+        await expectMapBars(page);
       }
     }
-    // Each member alone, any two at once, any three at once at 1440, a whole team of three: D81's bars. Groups
-    // of three at 1024 and all members at once on 4-6 member maps: no worse than the known gaps pinned.
+    // Each member alone and any two at once, in either order: D81's bars, with no known gap left (D82).
     for (const { width, input, seen } of measured.values()) {
       const { results, problems } = checkHubGroups(step, width, input, members);
       expect(results.length, `${step} at ${width}: groups routed`).toBeGreaterThan(0);
@@ -457,6 +606,36 @@ for (const step of HUB_STORIES) {
     }
   });
 }
+
+test('contract: with motion reduced, or Animate off, three members messaged at once light nothing up, and the words still change (D82)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await installGlowLog(page);
+  const team = ['lead', 'builder', 'checker'];
+  for (const how of ['reduced', 'off'] as const) {
+    await page.unrouteAll();
+    await page.setViewportSize(how === 'reduced' ? { width: 1440, height: 900 } : { width: 1024, height: 768 });
+    await page.emulateMedia({ reducedMotion: how === 'reduced' ? 'reduce' : 'no-preference' });
+    const state = await open(page, 'map_members_6');
+    if (how === 'off') {
+      await animate(page).click();
+      await expect(animate(page)).toHaveAttribute('aria-checked', 'false');
+    } else {
+      await expect(animate(page)).toHaveAttribute('aria-checked', 'false');
+    }
+    await takeGlows(page);
+    hubBatch(state, team, { from: 'temper' });
+    await expect(page.getByTestId('glance-sent-words')).toHaveText('Just sent \u00b7 Temper \u2192 3 members: \u201cA word for checker.\u201d', {
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId('glance-latest').locator('li').first()).toContainText('Temper sent a message to 3 members');
+    expect(await takeGlows(page), `${how}: no glow, highlight or cue`).toEqual([]);
+    expect(await map(page).getAttribute('data-hub-lit'), `${how}: nothing lit`).toBeNull();
+    await expect(page.locator('.glance-extra')).toHaveCount(0);
+    await expect(page.locator('.glance-dot')).toHaveCount(0);
+  }
+});
 
 test('contract: the corner says who is outside the team, row-mates share a height, and the hour list keeps its time column (D69, D71, D74, D76, D78)', async ({
   page,

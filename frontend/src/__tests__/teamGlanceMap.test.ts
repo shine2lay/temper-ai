@@ -22,17 +22,23 @@ import {
 } from '@/lib/teamGlanceRoute';
 import {
   DOT_STAGGER_MS,
+  HUB_BATCH_MIN,
   MAX_LINES,
   RECENT_LINE_MS,
   dotPlan,
   drawnLines,
   extraWords,
   hourRows,
+  hubBatches,
+  hubPartWords,
+  justSent,
+  latestMoments,
   lineGreen,
   mapSlots,
   pairKey,
   type GlanceMember,
   type GlanceMessageEvent,
+  type GlanceRun,
   type MapLine,
 } from '@/lib/teamGlance';
 
@@ -188,6 +194,90 @@ describe('dots only on drawn lines (D43)', () => {
   });
 });
 
+describe('D82: You or Temper messaging three or more members in one second light up instead of drawing lines', () => {
+  const S = '2026-10-09T09:59:59.000Z';
+  const T = '2026-10-09T09:59:58.000Z';
+  const corner = (seq: number, fromKind: 'owner' | 'temper', to: string, at = S, id = `c${seq}`): GlanceMessageEvent =>
+    ({
+      kind: 'message',
+      seq,
+      at,
+      member: null,
+      from: fromKind,
+      fromKind,
+      to,
+      messageKind: fromKind === 'owner' ? 'owner_reply' : 'notice',
+      text: `A word for ${to}.\nMore below.`,
+      messageId: id,
+    }) as GlanceMessageEvent;
+  const member = (seq: number, from: string, to: string, at = S): GlanceMessageEvent =>
+    ({ kind: 'message', seq, at, member: from, from, fromKind: 'member', to, messageKind: 'info', text: `m${seq}`, messageId: `m${seq}` }) as GlanceMessageEvent;
+  const team = new Set(['lead', 'A', 'B', 'C', 'D']);
+  const run = { members: [...team].map((name) => ({ name })), links: [] } as unknown as Pick<GlanceRun, 'members' | 'links'>;
+
+  it('the threshold is 3 (Design, 21:10), counted per second of Temper\u2019s clock, each message id and member once', () => {
+    expect(HUB_BATCH_MIN).toBe(3);
+    const three = [corner(1, 'temper', 'A'), corner(2, 'temper', 'B'), corner(3, 'temper', 'C')];
+    expect(hubBatches(three, team)).toEqual([
+      { second: '2026-10-09T09:59:59', parts: [{ fromKind: 'temper', to: ['A', 'B', 'C'] }], to: ['A', 'B', 'C'], events: three },
+    ]);
+    // Two members, another second, the same id twice, a receiver with no card, a member's own message: no batch.
+    expect(hubBatches(three.slice(0, 2), team)).toEqual([]);
+    expect(hubBatches([...three.slice(0, 2), corner(3, 'temper', 'C', T)], team)).toEqual([]);
+    expect(hubBatches([...three.slice(0, 2), corner(3, 'temper', 'C', S, 'c2')], team)).toEqual([]);
+    expect(hubBatches([...three.slice(0, 2), corner(3, 'temper', 'Z')], team)).toEqual([]);
+    expect(hubBatches([...three.slice(0, 2), member(3, 'lead', 'C')], team)).toEqual([]);
+    // A member messaged twice in the batch counts once.
+    expect(hubBatches([...three.slice(0, 2), corner(3, 'temper', 'A')], team)).toEqual([]);
+    // Every line leaves the same corner: You and Temper together reaching three members light up too, each
+    // sender's part in its own words.
+    const mixed = [corner(1, 'owner', 'A'), corner(2, 'temper', 'B'), corner(3, 'owner', 'C')];
+    const [batch] = hubBatches(mixed, team);
+    expect(batch.to).toEqual(['A', 'B', 'C']);
+    expect(batch.parts.map(hubPartWords)).toEqual(['You \u2192 2 members', 'Temper \u2192 1 member']);
+    expect(hubPartWords({ fromKind: 'temper', to: ['A', 'B', 'C', 'D', 'lead', 'x'] })).toBe('Temper \u2192 6 members');
+  });
+
+  it('a lit batch flies no dot; the members\u2019 own messages in that second still fly, and two receivers keep their lines', () => {
+    const batch = [corner(1, 'temper', 'A'), corner(2, 'temper', 'B'), corner(3, 'temper', 'C')];
+    const plan = dotPlan([...batch, member(4, 'A', 'B')], new Set(['A|B']), team);
+    expect(plan.dots.map((d) => `${d.event.from}>${d.event.to}@${d.delay}`)).toEqual(['A>B@0']);
+    expect(plan.lights.map((l) => [l.batch.to, l.delay])).toEqual([[['A', 'B', 'C'], 0]]);
+    expect(plan.extra).toBe(0);
+    // A batch in a later second starts after this second's dot.
+    const later = dotPlan([...batch.map((m) => ({ ...m, at: T })), corner(4, 'owner', 'A'), corner(5, 'owner', 'B'), corner(6, 'owner', 'C')], new Set(), team);
+    expect(later.lights.map((l) => [l.batch.parts[0].fromKind, l.delay])).toEqual([
+      ['temper', 0],
+      ['owner', 400],
+    ]);
+    expect(later.dots).toEqual([]);
+    // Two receivers: D81's lines and dots, unchanged.
+    const two = dotPlan(batch.slice(0, 2), new Set(), team);
+    expect(two.lights).toEqual([]);
+    expect(two.dots.map((d) => d.event.to)).toEqual(['A', 'B']);
+    // Without the team, nothing lights up (the map isn't measured).
+    expect(dotPlan(batch).lights).toEqual([]);
+  });
+
+  it('Just sent and Latest name the batch: \u201cTemper \u2192 3 members\u201d and one row \u201cTemper sent a message to 3 members\u201d', () => {
+    const batch = [corner(1, 'temper', 'A'), corner(2, 'temper', 'B'), corner(3, 'temper', 'C')];
+    expect(justSent(batch, run)).toEqual({ from: 'Temper', to: '3 members', text: 'A word for C.\nMore below.', at: S, burst: 1, members: 3 });
+    // Below the threshold, Just sent is as before.
+    expect(justSent(batch.slice(0, 2), run)).toMatchObject({ from: 'Temper', to: 'B', burst: 2 });
+    // A mixed second: the newest sender reached one member, so its words stay as before.
+    const mixed = [corner(1, 'owner', 'A'), corner(2, 'owner', 'B'), corner(3, 'temper', 'C')];
+    expect(justSent(mixed, run)).toMatchObject({ from: 'Temper', to: 'C', burst: 3 });
+    const words = (rows: ReturnType<typeof latestMoments>) => rows.map((m) => m.parts.map((p) => p.text).join(''));
+    const U = '2026-10-09T10:00:00.000Z';
+    const owner = [corner(4, 'owner', 'A', U), corner(5, 'owner', 'B', U), corner(6, 'owner', 'D', U)];
+    const rows = latestMoments([...batch, ...owner], 'lead', 5, false, team);
+    expect(words(rows)).toEqual(['You sent a message to 3 members', 'Temper sent a message to 3 members']);
+    expect(rows.map((m) => m.at)).toEqual([U, S]);
+    // Without the team's cards nothing is grouped (an unknown receiver never counts).
+    expect(words(latestMoments(batch, 'lead', 5, false, new Set(['lead'])))).toEqual([]);
+  });
+});
+
 describe("the router (Design's glance.mjs, D52 and D58)", () => {
   it("keeps Design's constants and cost order", () => {
     expect(LINE).toEqual({
@@ -327,15 +417,19 @@ describe("the router (Design's glance.mjs, D52 and D58)", () => {
   it(
     "the app's own layout at the 1024 and 1440 map widths: every bar on every 4-pair set (sampled for 5-6 members)",
     () => {
-      // Sets where one count has no allowed spot. Design's glance.mjs routes these sets the same way (the
-      // count's only straight run is crossed by another line), so the page leaves that count off the map;
-      // the hour list below still has it. Pinned so a router change shows here.
-      const noSpot: Record<number, Record<number, number>> = { 742: { 5: 9, 6: 6 }, 1110: { 5: 8, 6: 7 } };
+      // Sets where the usual routes leave a count no allowed spot: D83 tries that line's other routes, and the
+      // sets it rescues have every count on the map; where none gives a spot the page leaves that count off the
+      // map and the pair list keeps it. Pinned so a router change shows here (#19, before D83: 9, 6, 8 and 7).
+      // At most D83_REROUTES re-routes a count: at 1110 px with six members, more would rescue 4 more sets but
+      // take seconds of routing each.
+      const rescued: Record<number, Record<number, number>> = { 742: { 5: 6, 6: 6 }, 1110: { 5: 5, 6: 2 } };
+      const noSpot: Record<number, Record<number, number>> = { 742: { 5: 3, 6: 0 }, 1110: { 5: 3, 6: 5 } };
       // The map box at 1024 x 768 and 1440 x 900 (measured in the browser: the page's column beside the sidebar).
       for (const width of [742, 1110]) {
         for (let n = 2; n <= 6; n++) {
           const { rects, box } = appLayout(n, width);
           let forcedSets = 0;
+          let reroutedSets = 0;
           for (const set of pairSets([...rects.keys()])) {
             const label = `${width} px, ${n} members, ${set.map((p) => `${p.a}-${p.b}`).join(' ')}`;
             const geometry = mapGeometry(
@@ -384,8 +478,10 @@ describe("the router (Design's glance.mjs, D52 and D58)", () => {
               expect(own, `${label}: ${badge.key} count on its own run`).toBe(true);
             });
             if (geometry.badges.some((b) => b.forced)) forcedSets += 1;
+            if (geometry.rerouted) reroutedSets += 1;
           }
           expect(forcedSets, `${width} px, ${n} members: sets with a count left off`).toBe(noSpot[width][n] ?? 0);
+          expect(reroutedSets, `${width} px, ${n} members: sets D83 rescued`).toBe(rescued[width][n] ?? 0);
         }
       }
     },
@@ -416,6 +512,43 @@ describe('counts on their own straight run (D43, D57, D58)', () => {
     expect(placeBadges([straight], beside)[0].tier).toBe(3);
     // 2 px from another line: no allowed spot. Reported, and the page doesn't draw it.
     expect(placeBadges([straight, line(12)], cards)[0]).toMatchObject({ tier: 5, forced: true });
+  });
+});
+
+describe("a count with no spot tries its line's other routes (D83)", () => {
+  // The app's own five-member map at 1024 x 768 (the map box 742 px wide), four lines, 12 messages each.
+  const { rects, box } = appLayout(5, 742);
+  const lines = (set: string) =>
+    set.split(' ').map((pair) => {
+      const [a, b] = pair.split('-');
+      return { key: pairKey(a, b), a, b, count: 12 };
+    });
+  const routes = (g: ReturnType<typeof mapGeometry>) => new Map(g.lines.map((l) => [l.key, JSON.stringify(l.route)]));
+
+  it('another straight run gives the count a spot: that line takes it, the lines after it route round it, every bar holds', () => {
+    const set = lines('lead-m1 lead-m4 m1-m2 m1-m3');
+    // The usual routes leave lead-m4's count no allowed spot.
+    const usual = mapGeometry(set, rects, [], box, { reroutes: 0 });
+    expect(usual.rerouted).toBe(false);
+    expect(usual.badges.filter((b) => b.forced).map((b) => [b.key, b.tier])).toEqual([['lead|m4', 5]]);
+    const g = mapGeometry(set, rects, [], box);
+    expect(g.rerouted).toBe(true);
+    expect(g.badges.map((b) => [b.key, b.forced, b.tier <= 4])).toEqual(set.map((l) => [l.key, false, true]));
+    const before = routes(usual);
+    expect([...routes(g)].filter(([key, r]) => before.get(key) !== r).map(([key]) => key), 'only that line moved').toEqual(['lead|m4']);
+    expect(g.failed).toEqual([]);
+    expect(g.shared).toEqual([]);
+    expect(g.unhopped).toBe(0);
+  });
+
+  it('no route gives it a spot: the line keeps its usual route and the count is left off the map (the list keeps it)', () => {
+    const set = lines('lead-m1 lead-m2 m1-m3 m3-m4');
+    const usual = mapGeometry(set, rects, [], box, { reroutes: 0 });
+    const g = mapGeometry(set, rects, [], box);
+    expect(g.rerouted).toBe(false);
+    expect(routes(g)).toEqual(routes(usual));
+    expect(g.badges.filter((b) => b.forced).map((b) => [b.key, b.tier])).toEqual([['lead|m2', 5]]);
+    expect(g.lines.map((l) => l.key), 'the line is still drawn').toContain('lead|m2');
   });
 });
 
@@ -535,8 +668,8 @@ describe("the You and Temper hub's lines (D5, D81)", () => {
     }
   });
 
-  // Three or more at once can miss the bars on a crowded map: a known D81 gap Design was asked about, pinned
-  // with its numbers in the browser test (e2e/team-glance-hub-groups.ts).
+  // Three or more at once draw no lines: they light up instead (D82, dotPlan above). The browser test routes
+  // every group of one or two on each map story's own measured map (e2e/team-glance-hub-groups.ts).
   it('the app map with its drawn lines and counts: each member alone, and any two at once, keep the D81 bars', () => {
     const hub = pageHub;
     for (const width of [1024, 1440]) {

@@ -10,7 +10,10 @@
  * The count on a line is the pair's last-hour count, on the line's own
  * straight run. A dot runs along a drawn line each time a message is
  * released (only for messages newer than the page's first load); the rest
- * goes to one "+N more sent" cue.
+ * goes to one "+N more sent" cue. When You or Temper message three or more
+ * members in one second (D82), nothing flies from the corner: the sender's
+ * tag glows, each receiving ring gets its highlight, and the cue names the
+ * batch ("Temper \u2192 6 members").
  *
  * The lines, dots and counts are decoration (aria-hidden): the cards are
  * real text, and the visible "Messages in the last hour" list under the map
@@ -38,6 +41,7 @@ import {
   drawnLines,
   extraWords,
   hourRows,
+  hubPartWords,
   justSent,
   lineGreen,
   listOrder,
@@ -62,8 +66,9 @@ import {
 } from '@/lib/teamGlanceRoute';
 import { onFontsLoaded, type FontsState } from '@/lib/fontsLoaded';
 import type { GlanceFeed } from '@/hooks/useTeamGlanceEvents';
-import { teamCard, teamLabel } from '@/components/team/teamUi';
+import { teamCard } from '@/components/team/teamUi';
 import { MemberCard } from './MemberCard';
+import { glanceCardHead } from './glanceStyle';
 
 interface Layout {
   box: { w: number; h: number };
@@ -77,8 +82,25 @@ const HUB = 'hub';
 const SOCKET_R = 4.5;
 /** How long the "+N more sent" cue shows (SPEC 6, D10). */
 const EXTRA_MS = 1600;
-/** How long a receiving ring glows when a dot lands (SPEC 6). */
+/** How long a receiving ring glows when a dot lands (SPEC 6), and a lit batch's sender tag (D82). */
 const RING_GLOW_MS = 500;
+
+/** The 6 px accent glow for 500 ms (SPEC 6): a receiving ring when its dot lands, or a lit batch's ring and tag (D82). */
+function glow(el: HTMLElement | null, delay = 0) {
+  if (!el) return;
+  const accent = getComputedStyle(el).getPropertyValue('--temper-accent').trim() || 'currentColor';
+  const on = `0 0 0 6px color-mix(in srgb, ${accent} 45%, transparent)`;
+  const off = `0 0 0 0 color-mix(in srgb, ${accent} 45%, transparent)`;
+  el.animate?.(
+    [
+      { boxShadow: off, offset: 0 },
+      { boxShadow: on, offset: 0.3 },
+      { boxShadow: on, offset: 0.7 },
+      { boxShadow: off, offset: 1 },
+    ],
+    delay > 0 ? { duration: RING_GLOW_MS, delay, easing: 'linear' } : { duration: RING_GLOW_MS, easing: 'linear' },
+  );
+}
 
 /** The legend's first sentence; on stale data its windows end at Temper's last answer, `staleFor` ago (D75). */
 function legendLines(staleFor: string | null): string {
@@ -158,6 +180,8 @@ export function TeamMap({
   const [fonts, setFonts] = useState<FontsState>('waiting');
   const launched = useRef(0);
   const extras = useRef(0);
+  // D82: batches lit up so far (the checks wait on it, as on dots launched).
+  const lit = useRef(0);
   // The last batch of fresh messages that was flown (or let go): each batch flies once.
   const flown = useRef(0);
   // Where the browser can't animate, timers take the dots away; cleared on leaving the page.
@@ -304,7 +328,7 @@ export function TeamMap({
       }
     }
     boxRef.current
-      ?.querySelectorAll<HTMLElement>('[data-pulse]')
+      ?.querySelectorAll<HTMLElement>('[data-pulse], [data-hub-tag]')
       .forEach((el) => el.getAnimations?.().forEach((a) => a.cancel()));
     timers.current.splice(0).forEach((t) => window.clearTimeout(t));
   }, [ringsMove]);
@@ -318,19 +342,39 @@ export function TeamMap({
     const layer = dotsRef.current;
     const cues = extrasRef.current;
     if (!ringsMove || !motionAllowed() || !box || !layer || !cues || !layout) return;
-    // A message between two members whose pair isn't drawn joins "+N more sent" (D43).
+    // A message between two members whose pair isn't drawn joins "+N more sent" (D43); You or Temper
+    // messaging three or more members in one second lights up instead of flying (D82).
     const plan = dotPlan(feed.fresh, onMap, members);
     // The batch's You/Temper lines, one receiver at a time after the drawn lines (D81): clear of the
     // counts, never beside a drawn or earlier hub line, hopped where they cross.
     const receivers = plan.dots.filter((d) => d.event.fromKind !== 'member').map((d) => d.event.to);
     const hubRoutes = hubInput ? hubPaths(receivers, hubInput) : new Map<string, HubPath>();
+    // For the checks only, never shown: what this batch's hub lines were routed round, and how; and what lit up.
     if (hubInput && hubRoutes.size > 0) {
-      // For the checks only, never shown: what the batch's hub lines were routed round, and how.
       box.dataset.hubRoutes = JSON.stringify({
         ...hubInput,
         rects: Object.fromEntries(hubInput.rects),
         routes: [...hubRoutes].map(([to, r]) => ({ to, try: r.try, hops: r.hops, unhopped: r.unhopped, base: r.base, pts: r.pts })),
       });
+    } else {
+      delete box.dataset.hubRoutes;
+    }
+    if (plan.lights.length > 0) {
+      lit.current += plan.lights.length;
+      box.dataset.hubLit = String(lit.current);
+      box.dataset.hubLights = JSON.stringify(
+        plan.lights.map(({ batch, delay }) => ({ second: batch.second, to: batch.to, parts: batch.parts, delay })),
+      );
+    } else {
+      delete box.dataset.hubLights;
+    }
+    // The cues share one spot at the map's top right, one at a time (SPEC 6, D10, D43, D82).
+    const cueList: Array<{ words: string; delay: number; kind: 'hub' | 'extra' }> = [];
+    // D82: at the batch's moment, the sender's tag glows and every receiving ring gets its highlight.
+    for (const { batch, delay } of plan.lights) {
+      for (const part of batch.parts) glow(box.querySelector<HTMLElement>(`[data-hub-tag="${part.fromKind}"]`), delay);
+      for (const name of batch.to) glow(box.querySelector<HTMLElement>(`[data-pulse="${CSS.escape(name)}"]`), delay);
+      cueList.push({ words: batch.parts.map(hubPartWords).join(' \u00b7 '), delay, kind: 'hub' });
     }
     let lastDelay = 0;
     for (const { event, delay } of plan.dots) {
@@ -358,19 +402,7 @@ export function TeamMap({
       const done = () => {
         dot.remove();
         // The receiving ring glows 6 px in the accent for 500 ms (SPEC 6).
-        const pulse = box.querySelector<HTMLElement>(`[data-pulse="${CSS.escape(event.to)}"]`);
-        const accent = pulse ? getComputedStyle(pulse).getPropertyValue('--temper-accent').trim() : '';
-        const glow = `0 0 0 6px color-mix(in srgb, ${accent || 'currentColor'} 45%, transparent)`;
-        const none = `0 0 0 0 color-mix(in srgb, ${accent || 'currentColor'} 45%, transparent)`;
-        pulse?.animate?.(
-          [
-            { boxShadow: none, offset: 0 },
-            { boxShadow: glow, offset: 0.3 },
-            { boxShadow: glow, offset: 0.7 },
-            { boxShadow: none, offset: 1 },
-          ],
-          { duration: RING_GLOW_MS, easing: 'linear' },
-        );
+        glow(box.querySelector<HTMLElement>(`[data-pulse="${CSS.escape(event.to)}"]`));
       };
       if (anim) anim.onfinish = done;
       else timers.current.push(window.setTimeout(done, delay + DOT_MS));
@@ -379,17 +411,24 @@ export function TeamMap({
     if (plan.extra > 0) {
       extras.current += plan.extra;
       box.dataset.dotsExtra = String(extras.current);
-      // One cue at the map's top right, never on a line (SPEC 6, D10, D43).
+      cueList.push({ words: extraWords(plan.extra), delay: lastDelay, kind: 'extra' });
+    }
+    // One cue at a time at the map's top right, never on a line: a later one waits for the one before.
+    let free = 0;
+    for (const { words, delay, kind } of cueList.sort((a, b) => a.delay - b.delay)) {
+      const at = Math.max(delay, free);
+      free = at + EXTRA_MS;
       const cue = document.createElement('div');
       cue.className = 'glance-extra';
-      cue.textContent = extraWords(plan.extra);
+      cue.dataset.cue = kind;
+      cue.textContent = words;
       cues.appendChild(cue);
       const anim = cue.animate?.(
         [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }],
-        { duration: EXTRA_MS, delay: lastDelay, fill: 'both' },
+        { duration: EXTRA_MS, delay: at, fill: 'both' },
       );
       if (anim) anim.onfinish = () => cue.remove();
-      else timers.current.push(window.setTimeout(() => cue.remove(), lastDelay + EXTRA_MS));
+      else timers.current.push(window.setTimeout(() => cue.remove(), at + EXTRA_MS));
     }
     // Only a new batch starts dots; a re-measure mid-flight doesn't replay them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -398,20 +437,23 @@ export function TeamMap({
   const ordered = useMemo(() => listOrder(run.members), [run.members]);
   const counts = teamCountWords(run);
   const badges = geometry?.badges ?? [];
-  // A count with no allowed spot is never drawn over another line (D57); the
-  // list under the map carries every count, and the checks reject it.
+  // A count with no allowed spot, after the line's other routes were tried, is
+  // left off the map (D83); the list under the map keeps every count, and the
+  // checks find each dropped one there with the same number.
   const forced = badges.filter((b) => b.forced).length;
+  const dropped = lines.flatMap((l, i) => (badges[i]?.forced ? [{ pair: l.key, count: l.count }] : []));
   const quiet = pairs.length > 0 && drawn.length === 0;
 
   return (
     <section className={cn(teamCard, 'flex min-w-0 flex-col gap-3 p-4')} aria-labelledby="glance-team-title">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-          <h2 id="glance-team-title" className={cn(teamLabel, 'mb-0')}>
+          <h2 id="glance-team-title" className={glanceCardHead}>
             Team now
           </h2>
+          {/* SPEC 5: the count line is 15 px. */}
           {counts && (
-            <p className="m-0 text-sm text-temper-text" data-testid="glance-team-count">
+            <p className="m-0 text-[15px] text-temper-text" data-testid="glance-team-count">
               {counts}
             </p>
           )}
@@ -467,6 +509,8 @@ export function TeamMap({
         data-crossing-hops={lines.reduce((n, l) => n + l.hops, 0)}
         data-unhopped={geometry?.unhopped ?? 0}
         data-badges-forced={forced}
+        data-counts-dropped={JSON.stringify(dropped)}
+        data-badges-rerouted={geometry?.rerouted ? 'true' : 'false'}
         data-badge-tiers={badges.map((b) => b.tier).join(',')}
         // The boxes the lines were routed round, as last measured: the checks compare them with the painted cards [D80].
         data-card-boxes={layout ? JSON.stringify(layout.rects) : ''}
@@ -498,8 +542,12 @@ export function TeamMap({
         {/* Decoration: the legend's last sentence says what it is (D76). One box, where owner and Temper lines start. */}
         <div ref={setCard(HUB)} className="glance-hub" aria-hidden="true" data-testid="glance-hub">
           <span className="glance-hub-cap">From outside the team:</span>
-          <span className="glance-hub-tag">You</span>
-          <span className="glance-hub-tag">Temper</span>
+          <span className="glance-hub-tag" data-hub-tag="owner">
+            You
+          </span>
+          <span className="glance-hub-tag" data-hub-tag="temper">
+            Temper
+          </span>
         </div>
         <ol className="glance-map-grid m-0 list-none" style={{ gridTemplateRows: `repeat(${rows}, auto)` }}>
           {slots.map((s) => {
@@ -559,7 +607,8 @@ export function TeamMap({
       </ol>
 
       <div
-        className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-md border border-temper-border bg-temper-surface px-3 py-2 text-sm"
+        // SPEC 5: the "Just sent" line is 16 px, its age too.
+        className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-md border border-temper-border bg-temper-surface px-3 py-2 text-base"
         data-testid="glance-just-sent"
       >
         <p className="m-0 flex min-w-0 items-baseline gap-2 text-temper-text" aria-live="polite" aria-atomic="true">
@@ -599,7 +648,7 @@ export function TeamMap({
             <span className="text-temper-text-muted">Reading the team&apos;s messages…</span>
           )}
         </p>
-        {said?.time && <span className="text-sm text-temper-text-muted">{said.time}</span>}
+        {said?.time && <span className="text-temper-text-muted">{said.time}</span>}
       </div>
       {feed.failed && (
         <p className="m-0 text-sm text-temper-text-muted" role="status">
